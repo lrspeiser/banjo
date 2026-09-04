@@ -12,6 +12,7 @@ enum class MaterialModel : std::uint8_t {
 
 struct SolverCalibration {
     double activation_energy_scale{1.0};
+    double stress_activation_energy_floor_ratio{0.02};
     double damage_strain_multiplier{1.0};
     double break_strain_multiplier{2.0};
 };
@@ -20,7 +21,6 @@ struct MaterialDefinition {
     std::string name;
     MaterialModel model{MaterialModel::RigidOnly};
 
-    // Bulk mechanical response at the declared reference state.
     double density_kg_m3{};
     double young_modulus_pa{};
     double poisson_ratio{};
@@ -31,8 +31,6 @@ struct MaterialDefinition {
     double hardness_pa{};
     double fracture_energy_j_m2{};
 
-    // Surface/contact response. `friction` remains the legacy fallback for
-    // existing content; new content should author static and dynamic values.
     double friction{0.5};
     double static_friction{-1.0};
     double dynamic_friction{-1.0};
@@ -41,7 +39,6 @@ struct MaterialDefinition {
     double contact_damping_ratio{0.05};
     bool derive_restitution_from_damping{};
 
-    // Internal material dissipation and directional structure.
     double damping_ratio{0.01};
     double anisotropy_ratio{1.0};
     double reference_temperature_k{293.15};

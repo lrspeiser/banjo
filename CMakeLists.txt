@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.25)
 
 project(
     banjo
-    VERSION 0.4.0
+    VERSION 0.5.0
     DESCRIPTION "A matter-first runtime for editable-physics worlds"
     LANGUAGES C CXX)
 
@@ -31,6 +31,7 @@ add_library(
     src/material/MaterialCompiler.cpp
     src/material/MaterialCatalog.cpp
     src/matter/Lattice.cpp
+    src/physics/ContactMechanics.cpp
     src/fracture/ActivationPolicy.cpp
     src/fracture/BrittleBondSolver.cpp
     src/fracture/ConnectedComponents.cpp
@@ -125,6 +126,12 @@ if(BANJO_BUILD_TESTS)
     target_compile_features(banjo_material_tests PRIVATE cxx_std_23)
     banjo_enable_warnings(banjo_material_tests)
     add_test(NAME banjo_material_tests COMMAND banjo_material_tests)
+
+    add_executable(banjo_contact_tests tests/contact_mechanics_tests.cpp)
+    target_link_libraries(banjo_contact_tests PRIVATE banjo_core)
+    target_compile_features(banjo_contact_tests PRIVATE cxx_std_23)
+    banjo_enable_warnings(banjo_contact_tests)
+    add_test(NAME banjo_contact_tests COMMAND banjo_contact_tests)
 
     add_executable(banjo_constitutive_tests tests/constitutive_tests.cpp)
     target_link_libraries(banjo_constitutive_tests PRIVATE banjo_core)

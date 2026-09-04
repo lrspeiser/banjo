@@ -38,7 +38,24 @@ MaterialDefinition
 - effective Hertz contact modulus
 - damping-derived pair restitution
 
-`CompiledBrittleMaterial` converts continuum-scale stiffness and strength targets into resolution-aware bond compliance and damage thresholds. The calibration layer remains explicit because a simple bond lattice is not a complete constitutive model.
+`CompiledBrittleMaterial` converts continuum-scale stiffness and strength targets into resolution-aware bond compliance and tension, compression, and shear damage thresholds. The local solver reconstructs a deformation gradient from each node's live neighborhood and evaluates Green-Lagrange principal strain. That makes the strain measure insensitive to rigid rotation and lets the three strength channels fail differently. The calibration layer remains explicit because a simple bond lattice is not a complete constitutive model.
+
+## Contact activation
+
+Whole-object fracture energy alone is not enough to decide whether detailed matter must be activated. A concentrated contact can exceed a brittle material's local strength while carrying less energy than would be needed to create a crack across the object's full projected area.
+
+The activation policy therefore combines:
+
+- available normal impact energy
+- material fracture energy and object scale
+- reduced mass and radius
+- pair effective elastic modulus
+- Hertz peak contact pressure
+- a subsurface tensile/shear screening stress
+- tensile and compressive strength
+- an explicit minimum energy floor that rejects tiny numerical contacts
+
+Hertz theory is used as a fast elastic screening model. It does not encode surface flaws, cone-crack statistics, plastic indentation, rate dependence, or complex geometry. Once the screening threshold is crossed, the detailed material solver—not the Hertz predictor—determines the evolving damage topology.
 
 ## What is first-principles today
 
@@ -51,6 +68,7 @@ The implementation currently preserves these relationships:
 - contact deformation screening uses effective elastic modulus and reduced radius
 - rolling/sliding classification follows slope, sphere inertia, and available friction
 - brittle activation depends on energy, stress, strength, and fracture properties rather than names
+- brittle damage distinguishes tension, compression, and shear in a rotation-invariant local strain measure
 - representation transitions preserve material mass and bulk momentum
 
 ## What remains model-dependent
@@ -60,7 +78,6 @@ No finite-resolution real-time solver can infer every material behavior from a s
 Planned additions include:
 
 - strain-rate dependence
-- tension/compression/shear damage separation
 - plastic flow and work hardening
 - anisotropic stiffness and fracture tensors
 - temperature, moisture, phase, and fatigue state
