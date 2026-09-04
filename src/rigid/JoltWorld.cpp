@@ -434,10 +434,10 @@ void JoltWorld::addFragments(const std::vector<RigidFragmentDescription> &fragme
             const JPH::RefConst<JPH::Shape> inner_shape = hull_result.Get();
             const JPH::RefConst<JPH::Shape> centered_shape =
                 new JPH::OffsetCenterOfMassShape(
-                    inner_shape.Get(), -inner_shape->GetCenterOfMass());
+                    inner_shape.GetPtr(), -inner_shape->GetCenterOfMass());
 
             JPH::BodyCreationSettings settings(
-                centered_shape.Get(),
+                centered_shape.GetPtr(),
                 toJoltPosition(fragment.mass_properties.center_of_mass_world_m),
                 JPH::Quat::sIdentity(),
                 JPH::EMotionType::Dynamic,
