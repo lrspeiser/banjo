@@ -2,12 +2,13 @@ cmake_minimum_required(VERSION 3.25)
 
 project(
     banjo
-    VERSION 0.2.0
+    VERSION 0.3.0
     DESCRIPTION "A matter-first runtime for editable-physics worlds"
     LANGUAGES C CXX)
 
 option(BANJO_BUILD_LAB "Build the interactive rolling-ball visual laboratory" ON)
 option(BANJO_BUILD_HEADLESS "Build the automated headless rolling-ball laboratory" ON)
+option(BANJO_BUILD_PRECOMPUTE "Build the deterministic scenario precomputation tool" ON)
 option(BANJO_BUILD_TESTS "Build Banjo unit tests" ON)
 
 set(CMAKE_CXX_STANDARD 23)
@@ -28,16 +29,26 @@ endfunction()
 add_library(
     banjo_core
     src/material/MaterialCompiler.cpp
+    src/material/MaterialCatalog.cpp
     src/matter/Lattice.cpp
     src/fracture/ActivationPolicy.cpp
     src/fracture/BrittleBondSolver.cpp
     src/fracture/ConnectedComponents.cpp
     src/fracture/FragmentMassProperties.cpp
-    src/fracture/FragmentGeometry.cpp)
+    src/fracture/FragmentGeometry.cpp
+    src/prediction/BallScenarioProjection.cpp
+    src/prediction/ScenarioCache.cpp)
 
 target_include_directories(banjo_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_features(banjo_core PUBLIC cxx_std_23)
 banjo_enable_warnings(banjo_core)
+
+if(BANJO_BUILD_PRECOMPUTE)
+    add_executable(banjo_precompute src/app/precompute_main.cpp)
+    target_link_libraries(banjo_precompute PRIVATE banjo_core)
+    target_compile_features(banjo_precompute PRIVATE cxx_std_23)
+    banjo_enable_warnings(banjo_precompute)
+endif()
 
 if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
     include(FetchContent)
@@ -111,6 +122,11 @@ if(BANJO_BUILD_TESTS)
     target_link_libraries(banjo_tests PRIVATE banjo_core)
     target_compile_features(banjo_tests PRIVATE cxx_std_23)
     banjo_enable_warnings(banjo_tests)
-
     add_test(NAME banjo_tests COMMAND banjo_tests)
+
+    add_executable(banjo_material_tests tests/material_prediction_tests.cpp)
+    target_link_libraries(banjo_material_tests PRIVATE banjo_core)
+    target_compile_features(banjo_material_tests PRIVATE cxx_std_23)
+    banjo_enable_warnings(banjo_material_tests)
+    add_test(NAME banjo_material_tests COMMAND banjo_material_tests)
 endif()
