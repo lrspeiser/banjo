@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numbers>
 #include <stdexcept>
 
@@ -27,6 +28,16 @@ void validateElasticProperties(const MaterialDefinition &material) {
            material.young_modulus_pa;
 }
 
+[[nodiscard]] double compiledFailureStrain(
+    double physical_failure_strain,
+    double multiplier,
+    double minimum = 1.0e-5) {
+    if (physical_failure_strain <= 0.0) {
+        return std::numeric_limits<double>::infinity();
+    }
+    return std::max(minimum, physical_failure_strain * multiplier);
+}
+
 } // namespace
 
 CompiledBrittleMaterial compileBrittleMaterial(
@@ -47,18 +58,47 @@ CompiledBrittleMaterial compileBrittleMaterial(
         voxel_size_m * static_cast<double>(neighbor_horizon_cells);
     const double spring_stiffness_n_m =
         material.young_modulus_pa * representative_area_m2 / representative_length_m;
-    const double physical_failure_strain =
+    const double physical_tensile_strain =
         material.tensile_strength_pa / material.young_modulus_pa;
+    const double physical_compressive_strain =
+        material.compressive_strength_pa > 0.0
+            ? material.compressive_strength_pa / material.young_modulus_pa
+            : 0.0;
+    const double shear_modulus_pa =
+        material.young_modulus_pa / (2.0 * (1.0 + material.poisson_ratio));
+    const double physical_shear_strain = material.shear_strength_pa > 0.0
+                                             ? material.shear_strength_pa /
+                                                   shear_modulus_pa
+                                             : 0.0;
 
     CompiledBrittleMaterial compiled;
     compiled.density_kg_m3 = material.density_kg_m3;
+    compiled.poisson_ratio = material.poisson_ratio;
     compiled.bond_compliance = 1.0 / spring_stiffness_n_m;
-    compiled.damage_start_stretch = std::max(
-        1.0e-5,
-        physical_failure_strain * material.calibration.damage_strain_multiplier);
+    compiled.damage_start_stretch = compiledFailureStrain(
+        physical_tensile_strain,
+        material.calibration.damage_strain_multiplier);
     compiled.damage_end_stretch = std::max(
         compiled.damage_start_stretch * 1.01,
-        physical_failure_strain * material.calibration.break_strain_multiplier);
+        compiledFailureStrain(
+            physical_tensile_strain,
+            material.calibration.break_strain_multiplier));
+    compiled.compression_damage_start_strain = compiledFailureStrain(
+        physical_compressive_strain,
+        material.calibration.damage_strain_multiplier);
+    compiled.compression_damage_end_strain = std::max(
+        compiled.compression_damage_start_strain * 1.01,
+        compiledFailureStrain(
+            physical_compressive_strain,
+            material.calibration.break_strain_multiplier));
+    compiled.shear_damage_start_strain = compiledFailureStrain(
+        physical_shear_strain,
+        material.calibration.damage_strain_multiplier);
+    compiled.shear_damage_end_strain = std::max(
+        compiled.shear_damage_start_strain * 1.01,
+        compiledFailureStrain(
+            physical_shear_strain,
+            material.calibration.break_strain_multiplier));
     compiled.bond_damping = std::clamp(material.damping_ratio, 0.0, 1.0);
     compiled.fracture_energy_j_m2 = material.fracture_energy_j_m2;
     compiled.activation_energy_scale =

@@ -29,7 +29,12 @@ struct MaterialStepStats {
     std::size_t broken_bonds_this_step{};
     std::size_t live_bonds{};
     std::size_t total_broken_bonds{};
+    std::size_t tensile_failures{};
+    std::size_t compressive_failures{};
+    std::size_t shear_failures{};
     double maximum_tensile_stretch{};
+    double maximum_compressive_strain{};
+    double maximum_shear_strain{};
     double kinetic_energy_j{};
     double estimated_elastic_energy_j{};
     double maximum_speed_m_s{};

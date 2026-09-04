@@ -53,9 +53,16 @@ struct MaterialDefinition {
 
 struct CompiledBrittleMaterial {
     double density_kg_m3{};
+    double poisson_ratio{};
     double bond_compliance{};
+
     double damage_start_stretch{};
     double damage_end_stretch{};
+    double compression_damage_start_strain{};
+    double compression_damage_end_strain{};
+    double shear_damage_start_strain{};
+    double shear_damage_end_strain{};
+
     double bond_damping{};
     double fracture_energy_j_m2{};
     double activation_energy_scale{1.0};

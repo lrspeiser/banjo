@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.25)
 
 project(
     banjo
-    VERSION 0.3.0
+    VERSION 0.4.0
     DESCRIPTION "A matter-first runtime for editable-physics worlds"
     LANGUAGES C CXX)
 
@@ -53,8 +53,6 @@ endif()
 if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
     include(FetchContent)
 
-    # Jolt 5.6 enables optional compute backends by default. They are deliberately
-    # disabled in this CPU reference runtime; GPU fracture will be a separate backend.
     set(JPH_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
     set(ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
     set(ENABLE_ALL_WARNINGS OFF CACHE BOOL "" FORCE)
@@ -92,8 +90,6 @@ if(BANJO_BUILD_HEADLESS)
 endif()
 
 if(BANJO_BUILD_LAB)
-    # raylib is a temporary visual shell for the physics laboratory. The simulation
-    # has no raylib dependency, so a Dawn/WebGPU renderer can replace it later.
     set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
     set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
     set(CUSTOMIZE_BUILD ON CACHE BOOL "" FORCE)
@@ -129,6 +125,12 @@ if(BANJO_BUILD_TESTS)
     target_compile_features(banjo_material_tests PRIVATE cxx_std_23)
     banjo_enable_warnings(banjo_material_tests)
     add_test(NAME banjo_material_tests COMMAND banjo_material_tests)
+
+    add_executable(banjo_constitutive_tests tests/constitutive_tests.cpp)
+    target_link_libraries(banjo_constitutive_tests PRIVATE banjo_core)
+    target_compile_features(banjo_constitutive_tests PRIVATE cxx_std_23)
+    banjo_enable_warnings(banjo_constitutive_tests)
+    add_test(NAME banjo_constitutive_tests COMMAND banjo_constitutive_tests)
 
     if(TARGET banjo_runtime)
         add_executable(banjo_runtime_tests tests/runtime_dynamics_tests.cpp)
