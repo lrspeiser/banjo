@@ -95,11 +95,13 @@ public:
     }
 };
 
-[[nodiscard]] Vec3 fromJolt(JPH::Vec3Arg value) {
-    return {value.GetX(), value.GetY(), value.GetZ()};
+[[nodiscard]] Vec3 fromJoltVector(JPH::Vec3Arg value) {
+    return {static_cast<double>(value.GetX()),
+            static_cast<double>(value.GetY()),
+            static_cast<double>(value.GetZ())};
 }
 
-[[nodiscard]] Vec3 fromJolt(JPH::RVec3Arg value) {
+[[nodiscard]] Vec3 fromJoltPosition(JPH::RVec3Arg value) {
     return {static_cast<double>(value.GetX()),
             static_cast<double>(value.GetY()),
             static_cast<double>(value.GetZ())};
@@ -110,7 +112,10 @@ public:
 }
 
 [[nodiscard]] JPH::RVec3 toJoltPosition(const Vec3 &value) {
-    return {value.x, value.y, value.z};
+    return JPH::RVec3(
+        static_cast<JPH::Real>(value.x),
+        static_cast<JPH::Real>(value.y),
+        static_cast<JPH::Real>(value.z));
 }
 
 void traceImpl(const char *format, ...) {
@@ -193,9 +198,9 @@ public:
         event.fixed_tick = tick_.load(std::memory_order_relaxed);
         event.body_a = id1;
         event.body_b = id2;
-        event.contact_point_world_m = fromJolt(contact_point);
-        event.normal_a_to_b = normalized(fromJolt(manifold.mWorldSpaceNormal));
-        event.relative_velocity_b_minus_a_m_s = fromJolt(relative_velocity);
+        event.contact_point_world_m = fromJoltPosition(contact_point);
+        event.normal_a_to_b = normalized(fromJoltVector(manifold.mWorldSpaceNormal));
+        event.relative_velocity_b_minus_a_m_s = fromJoltVector(relative_velocity);
         event.closing_speed_m_s = closing_speed;
         event.estimated_normal_impulse_n_s = estimated_normal_impulse;
         event.available_normal_energy_j = 0.5 * reduced_mass * closing_speed * closing_speed;
@@ -377,10 +382,10 @@ RigidSnapshot JoltWorld::snapshot(MatterBodyId body_id) const {
     const JPH::RVec3 position = body_interface.GetCenterOfMassPosition(found->second);
     const JPH::Quat rotation = body_interface.GetRotation(found->second);
     return {
-        fromJolt(position),
+        fromJoltPosition(position),
         {rotation.GetW(), rotation.GetX(), rotation.GetY(), rotation.GetZ()},
-        fromJolt(body_interface.GetLinearVelocity(found->second)),
-        fromJolt(body_interface.GetAngularVelocity(found->second)),
+        fromJoltVector(body_interface.GetLinearVelocity(found->second)),
+        fromJoltVector(body_interface.GetAngularVelocity(found->second)),
     };
 }
 
