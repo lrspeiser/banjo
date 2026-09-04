@@ -1,110 +1,116 @@
-# Banjo bootstrap architecture
+# Banjo runtime architecture
 
-## Goal of this repository
-
-The bootstrap proves one complete state transition:
+## Current executable pipeline
 
 ```text
-Jolt rigid sphere
-    -> measured impact event
-    -> material activation decision
-    -> procedural intact voxel/bond lattice
-    -> locally driven brittle fracture
-    -> connected material components
-    -> derived fragment mass properties
-    -> future Jolt rigid fragments
+RollingBallExperiment
+├── JoltWorld
+│   ├── floor and rigid spheres
+│   ├── multithreaded contact listener
+│   └── generated rigid fragment bodies
+├── ActivationPolicy
+├── procedural LatticeAsset
+├── BrittleBondSolver
+├── connected-component analysis
+├── FragmentGeometry builder
+└── lightweight debris integrator
 ```
 
-The source of truth is material, while rigid bodies, meshes, and collision hulls are disposable runtime representations.
+`RollingBallExperiment` is shared by the windowed viewer and the automated headless executable. Rendering therefore does not own or duplicate simulation state.
 
-## Runtime layers
-
-### 1. Rigid world
-
-Jolt Physics owns broad-phase collision, contact generation, rolling, gravity, and normal rigid-body response. Each body carries a Banjo `MatterBodyId` in Jolt user data. Jolt callbacks only copy immutable contact information into a queue because callbacks may execute concurrently while bodies are locked.
-
-### 2. Impact translation
-
-`ImpactEvent` is independent of Jolt. It records body IDs, contact point, manifold normal, closing speed, estimated normal impulse, and available normal kinetic energy. Material code therefore has no dependency on Jolt types.
-
-### 3. Activation policy
-
-The policy compares impact energy with a fracture-energy scale derived from the target material and projected object area. This is intentionally a policy, not a material-name lookup. An iron ball moving too slowly should not shatter glass, while another sufficiently energetic object may.
-
-### 4. Procedural matter
-
-`LatticeAsset` is the immutable intact representation of a sphere:
-
-- sampled occupied material cells,
-- represented volume and mass,
-- object-local node positions,
-- breakable neighbor bonds,
-- compact adjacency,
-- rest center of mass and inertia.
-
-No fragments exist in the asset. A fragment is discovered only after broken bonds disconnect a set of nodes.
-
-### 5. Active material solver
-
-`BrittleBondSolver` creates mutable node positions, velocities, and bond state from the immutable lattice. The current solver is an XPBD-style distance-constraint reference implementation. It records peak tensile stretch before constraint correction and converts excessive stretch into progressive bond damage.
-
-At activation, the Jolt post-collision linear and angular velocities are transferred to every node. A separate localized velocity pattern supplies internal fracture energy. Its mass-weighted translational component is removed so the pulse does not double-apply the collision's bulk impulse.
-
-### 6. Fragment discovery
-
-`findConnectedComponents` unions nodes linked by live bonds. This topology, not a stored fracture plane, defines the resulting pieces.
-
-### 7. Fragment handoff
-
-`calculateFragmentMassProperties` derives each component's mass, center of mass, linear velocity, inertia tensor, angular momentum, and angular velocity. A future `FragmentRigidBuilder` will create render surfaces and convex Jolt collision proxies while preserving these material-derived quantities.
-
-## Frame ordering
-
-The intended fixed-step order is:
+## Representation state machine
 
 ```text
-1. Capture pre-step rigid state if required.
-2. Step Jolt.
-3. Drain and deterministically sort impact events.
-4. Evaluate activation outside Jolt callbacks.
-5. Capture post-contact rigid state.
-6. Remove activated rigid bodies at a safe synchronization point.
-7. Initialize and step active material objects.
-8. Analyze connectivity only when bonds changed.
-9. Convert stable components to rigid fragments in a batch.
-10. Update render caches and conservation metrics.
+Rigid
+  Jolt owns one smooth sphere and its collision shape.
+    ↓ measured impact exceeds the material threshold
+Active material
+  The glass sphere becomes material nodes plus breakable bonds.
+    ↓ the fracture becomes stable or reaches its simulation budget
+Fragmenting
+  Surviving-bond connectivity defines components; exposed voxel faces,
+  collision samples, and material mass properties are generated.
+    ↓ batch insertion
+Rigid fragments
+  Jolt owns a bounded set of convex fragment bodies. Remaining tiny
+  components use a lower-cost debris representation.
 ```
 
-## Why the first activation resolves the whole ball
+The immutable `LatticeAsset` contains no fragment definitions. Every bond begins intact. Pieces exist only after runtime damage disconnects the bond graph.
 
-A 3D local patch coupled to a still-rigid remainder is the scalable design, but it adds boundary constraints, patch growth rules, two-way force transfer, and crack continuation across the patch boundary. The first prototype activates the complete glass sphere so fracture, topology, and conservation can be validated independently. Local activation is a later optimization, not a different object model.
+## Impact capture
 
-## Determinism contract
+Jolt contact callbacks may run concurrently while bodies are locked. `ImpactCollector` therefore performs no world mutation. It copies contact position, normal, relative velocity, estimated impulse, reduced-mass impact energy, body IDs, and fixed tick into a protected queue.
 
-A replay must record at least:
+After `PhysicsSystem::Update` returns, the experiment drains and deterministically sorts those engine-neutral `ImpactEvent` values. Only then may it remove the rigid glass body and activate material simulation.
 
-- fixed step and substep size,
-- initial transforms and velocities,
-- material definitions and compiler version,
-- lattice resolution and neighbor horizon,
-- seeded bond variation,
-- impact-event ordering,
-- solver iteration count,
-- Jolt and Banjo runtime versions.
+## Rigid-to-material handoff
 
-Cross-platform bitwise identity is not promised by the bootstrap. Stable topology and close conservation metrics on a pinned toolchain are the initial target.
+The current prototype uses a rigid-first handoff:
 
-## Long-term solver boundary
+1. Jolt resolves the original iron/glass collision.
+2. Banjo captures the glass sphere's post-contact center of mass, orientation, linear velocity, and angular velocity.
+3. Every material node receives the corresponding rigid velocity:
+   `linear velocity + angular velocity × node offset`.
+4. A localized internal velocity field is placed near the contact.
+5. Its mass-weighted translation and best-fit rigid rotation are projected out.
+6. The residual deformation mode is scaled to a bounded fraction of measured impact energy.
 
-`BrittleBondSolver` is a first solver family, not the universal physics law. The same authored material layer should later compile to different runtime programs:
+This avoids applying the whole collision impulse twice while still giving the material solver a localized disturbance from which cracks can emerge.
 
-```text
-Rigid-only
-Brittle XPBD bonds
-Peridynamic brittle fracture
-Ductile/plastic solid
-Granular material
-Material-point or continuum solver
-```
+## Active material
 
-The language and package system should describe physical intent and permitted computational patterns, while solver plugins implement the numerical method.
+`BrittleBondSolver` is a CPU reference implementation:
+
+- gravity predicts node positions,
+- XPBD distance constraints resist bond extension,
+- a simple plane constraint handles the floor,
+- peak tensile stretch accumulates progressive damage,
+- failed bonds are removed from subsequent solves,
+- velocities are reconstructed from corrected positions.
+
+The solver reports broken bonds, maximum tensile stretch, kinetic energy, estimated elastic energy, and maximum node speed. These measurements are debugging signals, not yet a complete thermodynamic energy ledger.
+
+## Fragment discovery and geometry
+
+A disjoint-set pass joins every node pair that still has a live bond. Each resulting connected component becomes an independent material piece.
+
+For each component:
+
+1. Sum node mass and momentum.
+2. Compute center of mass, full inertia tensor, angular momentum, and angular velocity.
+3. Emit a quad wherever a voxel face has no same-component grid neighbor.
+4. Remove internal faces automatically.
+5. Select directional extrema and distributed surface samples for a convex proxy.
+6. Preserve the full block-style surface mesh separately from the collision proxy.
+
+This is generated geometry, not a selected animation or precut Voronoi asset.
+
+## Material-to-rigid handoff
+
+The largest bounded set of components is inserted into Jolt in one batch. Each body uses:
+
+- a generated convex hull,
+- a center-of-mass-adjusted collision shape,
+- the material component's mass,
+- the material component's full inertia tensor,
+- derived linear and angular velocity,
+- continuous collision detection for small fast pieces.
+
+Collision hull density is not allowed to overwrite material-derived mass properties. Components outside the rigid-body budget remain represented as lightweight debris, and their mass is still included in accounting.
+
+## Renderer boundary
+
+The viewer consumes only public experiment state:
+
+- rigid snapshots,
+- active node and bond arrays,
+- generated fragment surface meshes,
+- lightweight debris positions,
+- diagnostics.
+
+raylib is currently used to make the transition visible quickly. It is not referenced by `banjo_core`, `banjo_runtime`, the solver, or fragment geometry. A future Dawn/WebGPU renderer can consume the same data without changing the physical state machine.
+
+## Known correctness boundary
+
+The initial collision is still rigid-authoritative. Once the glass body is removed, the iron sphere is not coupled to active material. The next architecture step is to make activating contacts sensor-like, solve the contact inside the material system, and apply the equal-and-opposite reaction back to Jolt. That is required before Banjo can claim fully unified rigid/material contact.

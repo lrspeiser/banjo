@@ -3,6 +3,7 @@
 #include "core/Math.hpp"
 #include "core/Types.hpp"
 #include "fracture/ActiveMatter.hpp"
+#include "fracture/FragmentGeometry.hpp"
 #include "fracture/ImpactEvent.hpp"
 #include "material/Material.hpp"
 
@@ -18,6 +19,7 @@ struct RigidBallDescription {
     Vec3 position_world_m{};
     Vec3 linear_velocity_m_s{};
     Vec3 angular_velocity_rad_s{};
+    double mass_override_kg{};
 };
 
 class JoltWorld {
@@ -30,8 +32,10 @@ public:
     JoltWorld(JoltWorld &&) noexcept;
     JoltWorld &operator=(JoltWorld &&) noexcept;
 
+    void setGravity(const Vec3 &gravity_m_s2);
     void addFloor();
     void addBall(const RigidBallDescription &description);
+    void addFragments(const std::vector<RigidFragmentDescription> &fragments);
     void step(double fixed_dt_s);
 
     [[nodiscard]] std::vector<ImpactEvent> drainImpacts();

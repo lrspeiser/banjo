@@ -12,8 +12,8 @@ struct BrittleSolverSettings {
     unsigned constraint_iterations{8};
     double floor_height_m{0.0};
     double floor_friction{0.4};
-    double impact_internal_energy_fraction{0.18};
-    double maximum_internal_energy_j{5000.0};
+    double impact_internal_energy_fraction{0.04};
+    double maximum_internal_energy_j{350.0};
 };
 
 struct MaterialStepStats {
@@ -21,6 +21,9 @@ struct MaterialStepStats {
     std::size_t live_bonds{};
     std::size_t total_broken_bonds{};
     double maximum_tensile_stretch{};
+    double kinetic_energy_j{};
+    double estimated_elastic_energy_j{};
+    double maximum_speed_m_s{};
 };
 
 class BrittleBondSolver {

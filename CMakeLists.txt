@@ -1,18 +1,29 @@
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.25)
 
 project(
     banjo
-    VERSION 0.1.0
+    VERSION 0.2.0
     DESCRIPTION "A matter-first runtime for editable-physics worlds"
-    LANGUAGES CXX)
+    LANGUAGES C CXX)
 
-option(BANJO_BUILD_LAB "Build the headless rolling-ball laboratory" ON)
+option(BANJO_BUILD_LAB "Build the interactive rolling-ball visual laboratory" ON)
+option(BANJO_BUILD_HEADLESS "Build the automated headless rolling-ball laboratory" ON)
 option(BANJO_BUILD_TESTS "Build Banjo unit tests" ON)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+function(banjo_enable_warnings target)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /W4 /permissive-)
+    else()
+        target_compile_options(
+            ${target}
+            PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+    endif()
+endfunction()
 
 add_library(
     banjo_core
@@ -21,22 +32,18 @@ add_library(
     src/fracture/ActivationPolicy.cpp
     src/fracture/BrittleBondSolver.cpp
     src/fracture/ConnectedComponents.cpp
-    src/fracture/FragmentMassProperties.cpp)
+    src/fracture/FragmentMassProperties.cpp
+    src/fracture/FragmentGeometry.cpp)
 
 target_include_directories(banjo_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_features(banjo_core PUBLIC cxx_std_23)
+banjo_enable_warnings(banjo_core)
 
-if(MSVC)
-    target_compile_options(banjo_core PRIVATE /W4 /permissive-)
-else()
-    target_compile_options(banjo_core PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
-endif()
-
-if(BANJO_BUILD_LAB)
+if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
     include(FetchContent)
 
-    # Jolt 5.6 enables optional compute backends by default. Disable them in this
-    # CPU reference build so Vulkan/DX12/Metal shader tooling is not required.
+    # Jolt 5.6 enables optional compute backends by default. They are deliberately
+    # disabled in this CPU reference runtime; GPU fracture will be a separate backend.
     set(JPH_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
     set(ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
     set(ENABLE_ALL_WARNINGS OFF CACHE BOOL "" FORCE)
@@ -56,18 +63,44 @@ if(BANJO_BUILD_LAB)
         SOURCE_SUBDIR Build)
     FetchContent_MakeAvailable(JoltPhysics)
 
-    add_executable(
-        banjo_lab
-        src/app/main.cpp
-        src/rigid/JoltWorld.cpp)
-    target_link_libraries(banjo_lab PRIVATE banjo_core Jolt)
-    target_compile_features(banjo_lab PRIVATE cxx_std_23)
+    add_library(
+        banjo_runtime
+        src/rigid/JoltWorld.cpp
+        src/sim/RollingBallExperiment.cpp)
+    target_include_directories(banjo_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(banjo_runtime PUBLIC banjo_core Jolt)
+    target_compile_features(banjo_runtime PUBLIC cxx_std_23)
+    banjo_enable_warnings(banjo_runtime)
+endif()
 
-    if(MSVC)
-        target_compile_options(banjo_lab PRIVATE /W4 /permissive-)
-    else()
-        target_compile_options(banjo_lab PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
-    endif()
+if(BANJO_BUILD_HEADLESS)
+    add_executable(banjo_headless src/app/headless_main.cpp)
+    target_link_libraries(banjo_headless PRIVATE banjo_runtime)
+    target_compile_features(banjo_headless PRIVATE cxx_std_23)
+    banjo_enable_warnings(banjo_headless)
+endif()
+
+if(BANJO_BUILD_LAB)
+    # raylib is a temporary visual shell for the physics laboratory. The simulation
+    # has no raylib dependency, so a Dawn/WebGPU renderer can replace it later.
+    set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    set(CUSTOMIZE_BUILD ON CACHE BOOL "" FORCE)
+    set(USE_AUDIO OFF CACHE BOOL "" FORCE)
+    set(GLFW_BUILD_X11 ON CACHE BOOL "" FORCE)
+    set(GLFW_BUILD_WAYLAND OFF CACHE BOOL "" FORCE)
+
+    FetchContent_Declare(
+        raylib
+        GIT_REPOSITORY https://github.com/raysan5/raylib.git
+        GIT_TAG 6.0
+        GIT_SHALLOW TRUE)
+    FetchContent_MakeAvailable(raylib)
+
+    add_executable(banjo_lab src/viewer/main.cpp)
+    target_link_libraries(banjo_lab PRIVATE banjo_runtime raylib)
+    target_compile_features(banjo_lab PRIVATE cxx_std_23)
+    banjo_enable_warnings(banjo_lab)
 endif()
 
 if(BANJO_BUILD_TESTS)
@@ -77,12 +110,7 @@ if(BANJO_BUILD_TESTS)
     add_executable(banjo_tests tests/test_main.cpp)
     target_link_libraries(banjo_tests PRIVATE banjo_core)
     target_compile_features(banjo_tests PRIVATE cxx_std_23)
-
-    if(MSVC)
-        target_compile_options(banjo_tests PRIVATE /W4 /permissive-)
-    else()
-        target_compile_options(banjo_tests PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
-    endif()
+    banjo_enable_warnings(banjo_tests)
 
     add_test(NAME banjo_tests COMMAND banjo_tests)
 endif()

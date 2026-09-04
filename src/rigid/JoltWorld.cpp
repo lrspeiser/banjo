@@ -9,6 +9,8 @@
 #include <Jolt/Physics/Collision/ContactListener.h>
 #include <Jolt/Physics/Collision/EstimateCollisionResponse.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
+#include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
+#include <Jolt/Physics/Collision/Shape/OffsetCenterOfMassShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 
@@ -21,6 +23,7 @@
 #include <mutex>
 #include <numbers>
 #include <stdexcept>
+#include <string>
 #include <thread>
 #include <unordered_map>
 #include <utility>
@@ -96,19 +99,27 @@ public:
 };
 
 [[nodiscard]] Vec3 fromJoltVector(JPH::Vec3Arg value) {
-    return {static_cast<double>(value.GetX()),
-            static_cast<double>(value.GetY()),
-            static_cast<double>(value.GetZ())};
+    return {
+        static_cast<double>(value.GetX()),
+        static_cast<double>(value.GetY()),
+        static_cast<double>(value.GetZ()),
+    };
 }
 
 [[nodiscard]] Vec3 fromJoltPosition(JPH::RVec3Arg value) {
-    return {static_cast<double>(value.GetX()),
-            static_cast<double>(value.GetY()),
-            static_cast<double>(value.GetZ())};
+    return {
+        static_cast<double>(value.GetX()),
+        static_cast<double>(value.GetY()),
+        static_cast<double>(value.GetZ()),
+    };
 }
 
 [[nodiscard]] JPH::Vec3 toJolt(const Vec3 &value) {
-    return {static_cast<float>(value.x), static_cast<float>(value.y), static_cast<float>(value.z)};
+    return {
+        static_cast<float>(value.x),
+        static_cast<float>(value.y),
+        static_cast<float>(value.z),
+    };
 }
 
 [[nodiscard]] JPH::RVec3 toJoltPosition(const Vec3 &value) {
@@ -116,6 +127,16 @@ public:
         static_cast<JPH::Real>(value.x),
         static_cast<JPH::Real>(value.y),
         static_cast<JPH::Real>(value.z));
+}
+
+[[nodiscard]] JPH::Mat44 toJoltInertia(const Mat3 &inertia) {
+    JPH::Mat44 result = JPH::Mat44::sIdentity();
+    for (JPH::uint row = 0; row < 3; ++row) {
+        for (JPH::uint column = 0; column < 3; ++column) {
+            result(row, column) = static_cast<float>(inertia.m[row][column]);
+        }
+    }
+    return result;
 }
 
 void traceImpl(const char *format, ...) {
@@ -192,7 +213,8 @@ public:
                                           ? body2.GetMotionProperties()->GetInverseMass()
                                           : 0.0;
         const double inverse_reduced_mass = inverse_mass_1 + inverse_mass_2;
-        const double reduced_mass = inverse_reduced_mass > 0.0 ? 1.0 / inverse_reduced_mass : 0.0;
+        const double reduced_mass =
+            inverse_reduced_mass > 0.0 ? 1.0 / inverse_reduced_mass : 0.0;
 
         ImpactEvent event;
         event.fixed_tick = tick_.load(std::memory_order_relaxed);
@@ -227,8 +249,6 @@ private:
 class JoltWorld::Impl {
 public:
     Impl() : impact_collector_(tick_) {
-        // Jolt's allocator and type system must be initialized before constructing
-        // objects that can allocate through Jolt.
         JPH::RegisterDefaultAllocator();
         JPH::Trace = traceImpl;
 #ifdef JPH_ENABLE_ASSERTS
@@ -246,10 +266,10 @@ public:
             worker_threads);
         physics_ = std::make_unique<JPH::PhysicsSystem>();
         physics_->Init(
-            4096,
-            0,
             8192,
-            4096,
+            0,
+            16384,
+            8192,
             broad_phase_interface_,
             object_vs_broad_phase_filter_,
             object_pair_filter_);
@@ -298,6 +318,10 @@ JoltWorld::~JoltWorld() = default;
 JoltWorld::JoltWorld(JoltWorld &&) noexcept = default;
 JoltWorld &JoltWorld::operator=(JoltWorld &&) noexcept = default;
 
+void JoltWorld::setGravity(const Vec3 &gravity_m_s2) {
+    impl_->physics_->SetGravity(toJolt(gravity_m_s2));
+}
+
 void JoltWorld::addFloor() {
     if (!impl_->floor_id_.IsInvalid()) {
         throw std::logic_error("floor already exists");
@@ -328,7 +352,9 @@ void JoltWorld::addBall(const RigidBallDescription &description) {
 
     const double volume = (4.0 / 3.0) * std::numbers::pi *
                           description.radius_m * description.radius_m * description.radius_m;
-    const double mass = volume * description.material.density_kg_m3;
+    const double computed_mass = volume * description.material.density_kg_m3;
+    const double mass =
+        description.mass_override_kg > 0.0 ? description.mass_override_kg : computed_mass;
 
     JPH::BodyCreationSettings settings(
         new JPH::SphereShape(static_cast<float>(description.radius_m)),
@@ -350,9 +376,122 @@ void JoltWorld::addBall(const RigidBallDescription &description) {
     if (body_id.IsInvalid()) {
         throw std::runtime_error("Jolt could not create ball body");
     }
-    body_interface.SetLinearVelocity(body_id, toJolt(description.linear_velocity_m_s));
-    body_interface.SetAngularVelocity(body_id, toJolt(description.angular_velocity_rad_s));
+    body_interface.SetLinearAndAngularVelocity(
+        body_id,
+        toJolt(description.linear_velocity_m_s),
+        toJolt(description.angular_velocity_rad_s));
     impl_->bodies_.emplace(description.body_id, body_id);
+}
+
+void JoltWorld::addFragments(const std::vector<RigidFragmentDescription> &fragments) {
+    if (fragments.empty()) {
+        return;
+    }
+
+    struct PendingBody {
+        MatterBodyId logical_id{kInvalidMatterBodyId};
+        JPH::BodyID body_id{};
+        Vec3 linear_velocity_m_s{};
+        Vec3 angular_velocity_rad_s{};
+    };
+
+    JPH::BodyInterface &body_interface = impl_->physics_->GetBodyInterface();
+    std::vector<PendingBody> pending;
+    std::vector<JPH::BodyID> body_ids;
+    pending.reserve(fragments.size());
+    body_ids.reserve(fragments.size());
+
+    try {
+        for (const RigidFragmentDescription &fragment : fragments) {
+            if (fragment.body_id == kInvalidMatterBodyId ||
+                impl_->bodies_.contains(fragment.body_id) ||
+                fragment.mass_properties.mass_kg <= 0.0 ||
+                fragment.collision_points_local_m.size() < 4U) {
+                throw std::invalid_argument("rigid fragment description is invalid");
+            }
+            if (fragment.collision_points_local_m.size() >
+                static_cast<std::size_t>(JPH::ConvexHullShape::cMaxPointsInHull)) {
+                throw std::invalid_argument("rigid fragment exceeds Jolt convex hull point limit");
+            }
+
+            std::vector<JPH::Vec3> hull_points;
+            hull_points.reserve(fragment.collision_points_local_m.size());
+            for (const Vec3 &point : fragment.collision_points_local_m) {
+                hull_points.push_back(toJolt(point));
+            }
+
+            JPH::ConvexHullShapeSettings hull_settings(
+                hull_points.data(),
+                static_cast<int>(hull_points.size()),
+                0.0F);
+            const JPH::ShapeSettings::ShapeResult hull_result = hull_settings.Create();
+            if (hull_result.HasError()) {
+                const JPH::String &error = hull_result.GetError();
+                throw std::runtime_error(
+                    "Jolt could not build a fragment convex hull: " +
+                    std::string(error.begin(), error.end()));
+            }
+            const JPH::RefConst<JPH::Shape> inner_shape = hull_result.Get();
+            const JPH::RefConst<JPH::Shape> centered_shape =
+                new JPH::OffsetCenterOfMassShape(
+                    inner_shape.Get(), -inner_shape->GetCenterOfMass());
+
+            JPH::BodyCreationSettings settings(
+                centered_shape.Get(),
+                toJoltPosition(fragment.mass_properties.center_of_mass_world_m),
+                JPH::Quat::sIdentity(),
+                JPH::EMotionType::Dynamic,
+                Layers::kMoving);
+            settings.mFriction = static_cast<float>(fragment.friction);
+            settings.mRestitution = static_cast<float>(fragment.restitution);
+            settings.mLinearDamping = 0.02F;
+            settings.mAngularDamping = 0.02F;
+            settings.mUserData = fragment.body_id;
+            settings.mMotionQuality = JPH::EMotionQuality::LinearCast;
+            settings.mOverrideMassProperties =
+                JPH::EOverrideMassProperties::MassAndInertiaProvided;
+            settings.mMassPropertiesOverride.mMass =
+                static_cast<float>(fragment.mass_properties.mass_kg);
+            settings.mMassPropertiesOverride.mInertia =
+                toJoltInertia(fragment.mass_properties.inertia_world_kg_m2);
+
+            JPH::Body *body = body_interface.CreateBody(settings);
+            if (body == nullptr) {
+                throw std::runtime_error("Jolt ran out of bodies while creating fragments");
+            }
+            pending.push_back({
+                fragment.body_id,
+                body->GetID(),
+                fragment.mass_properties.linear_velocity_m_s,
+                fragment.mass_properties.angular_velocity_rad_s,
+            });
+            body_ids.push_back(body->GetID());
+        }
+
+        const JPH::BodyInterface::AddState add_state = body_interface.AddBodiesPrepare(
+            body_ids.data(), static_cast<int>(body_ids.size()));
+        body_interface.AddBodiesFinalize(
+            body_ids.data(),
+            static_cast<int>(body_ids.size()),
+            add_state,
+            JPH::EActivation::Activate);
+
+        for (const PendingBody &body : pending) {
+            body_interface.SetLinearAndAngularVelocity(
+                body.body_id,
+                toJolt(body.linear_velocity_m_s),
+                toJolt(body.angular_velocity_rad_s));
+            impl_->bodies_.emplace(body.logical_id, body.body_id);
+        }
+    } catch (...) {
+        for (const PendingBody &body : pending) {
+            if (body_interface.IsAdded(body.body_id)) {
+                body_interface.RemoveBody(body.body_id);
+            }
+            body_interface.DestroyBody(body.body_id);
+        }
+        throw;
+    }
 }
 
 void JoltWorld::step(double fixed_dt_s) {
@@ -370,7 +509,9 @@ void JoltWorld::step(double fixed_dt_s) {
     }
 }
 
-std::vector<ImpactEvent> JoltWorld::drainImpacts() { return impl_->impact_collector_.drain(); }
+std::vector<ImpactEvent> JoltWorld::drainImpacts() {
+    return impl_->impact_collector_.drain();
+}
 
 RigidSnapshot JoltWorld::snapshot(MatterBodyId body_id) const {
     const auto found = impl_->bodies_.find(body_id);
@@ -383,13 +524,20 @@ RigidSnapshot JoltWorld::snapshot(MatterBodyId body_id) const {
     const JPH::Quat rotation = body_interface.GetRotation(found->second);
     return {
         fromJoltPosition(position),
-        {rotation.GetW(), rotation.GetX(), rotation.GetY(), rotation.GetZ()},
+        {
+            static_cast<double>(rotation.GetW()),
+            static_cast<double>(rotation.GetX()),
+            static_cast<double>(rotation.GetY()),
+            static_cast<double>(rotation.GetZ()),
+        },
         fromJoltVector(body_interface.GetLinearVelocity(found->second)),
         fromJoltVector(body_interface.GetAngularVelocity(found->second)),
     };
 }
 
-bool JoltWorld::contains(MatterBodyId body_id) const { return impl_->bodies_.contains(body_id); }
+bool JoltWorld::contains(MatterBodyId body_id) const {
+    return impl_->bodies_.contains(body_id);
+}
 
 void JoltWorld::removeAndDestroy(MatterBodyId body_id) {
     const auto found = impl_->bodies_.find(body_id);

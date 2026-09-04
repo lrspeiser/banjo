@@ -68,6 +68,84 @@ void solveBond(
     b.position_world_m += inverse_mass_b * delta_lambda * direction;
 }
 
+[[nodiscard]] Vec3 centerOfMass(const ActiveMatter &matter) {
+    double total_mass = 0.0;
+    Vec3 weighted{};
+    for (const ActiveNodeState &node : matter.nodes) {
+        total_mass += node.mass_kg;
+        weighted += node.mass_kg * node.position_world_m;
+    }
+    return total_mass > 0.0 ? weighted / total_mass : Vec3{};
+}
+
+[[nodiscard]] Mat3 pointMassInertia(
+    const ActiveMatter &matter,
+    const Vec3 &center_of_mass) {
+    Mat3 inertia{};
+    for (const ActiveNodeState &node : matter.nodes) {
+        const Vec3 r = node.position_world_m - center_of_mass;
+        inertia.m[0][0] += node.mass_kg * (r.y * r.y + r.z * r.z);
+        inertia.m[1][1] += node.mass_kg * (r.x * r.x + r.z * r.z);
+        inertia.m[2][2] += node.mass_kg * (r.x * r.x + r.y * r.y);
+        inertia.m[0][1] -= node.mass_kg * r.x * r.y;
+        inertia.m[1][0] = inertia.m[0][1];
+        inertia.m[0][2] -= node.mass_kg * r.x * r.z;
+        inertia.m[2][0] = inertia.m[0][2];
+        inertia.m[1][2] -= node.mass_kg * r.y * r.z;
+        inertia.m[2][1] = inertia.m[1][2];
+    }
+    return inertia;
+}
+
+void removeRigidMomentumComponents(
+    const ActiveMatter &matter,
+    std::vector<Vec3> &delta_velocity) {
+    if (matter.nodes.empty() || delta_velocity.size() != matter.nodes.size()) {
+        return;
+    }
+
+    double total_mass = 0.0;
+    Vec3 linear_momentum{};
+    for (std::size_t index = 0; index < matter.nodes.size(); ++index) {
+        total_mass += matter.nodes[index].mass_kg;
+        linear_momentum += matter.nodes[index].mass_kg * delta_velocity[index];
+    }
+    if (total_mass <= 0.0) {
+        return;
+    }
+
+    const Vec3 mean_delta = linear_momentum / total_mass;
+    for (Vec3 &velocity : delta_velocity) {
+        velocity -= mean_delta;
+    }
+
+    const Vec3 center = centerOfMass(matter);
+    Vec3 angular_momentum{};
+    for (std::size_t index = 0; index < matter.nodes.size(); ++index) {
+        const Vec3 r = matter.nodes[index].position_world_m - center;
+        angular_momentum += cross(r, matter.nodes[index].mass_kg * delta_velocity[index]);
+    }
+
+    const Mat3 inertia = pointMassInertia(matter, center);
+    if (const auto inverse = inertia.inverse(1.0e-18)) {
+        const Vec3 angular_velocity = *inverse * angular_momentum;
+        for (std::size_t index = 0; index < matter.nodes.size(); ++index) {
+            const Vec3 r = matter.nodes[index].position_world_m - center;
+            delta_velocity[index] -= cross(angular_velocity, r);
+        }
+    }
+
+    // Remove residual translation from floating-point roundoff after the rotational projection.
+    Vec3 residual_momentum{};
+    for (std::size_t index = 0; index < matter.nodes.size(); ++index) {
+        residual_momentum += matter.nodes[index].mass_kg * delta_velocity[index];
+    }
+    const Vec3 residual_mean = residual_momentum / total_mass;
+    for (Vec3 &velocity : delta_velocity) {
+        velocity -= residual_mean;
+    }
+}
+
 } // namespace
 
 BrittleBondSolver::BrittleBondSolver(BrittleSolverSettings settings) : settings_(settings) {
@@ -124,32 +202,25 @@ void BrittleBondSolver::injectInternalImpactPulse(
         0.30 * matter.asset->recipe.radius_m);
     std::vector<Vec3> delta_velocity(matter.nodes.size());
 
-    double total_mass = 0.0;
-    Vec3 added_momentum{};
-    for (std::size_t i = 0; i < matter.nodes.size(); ++i) {
-        const ActiveNodeState &node = matter.nodes[i];
+    for (std::size_t index = 0; index < matter.nodes.size(); ++index) {
+        const ActiveNodeState &node = matter.nodes[index];
         const double distance = length(node.position_world_m - impact.contact_point_world_m);
         const double normalized_distance = distance / influence_radius;
         const double weight = normalized_distance < 1.0
                                   ? std::exp(-4.0 * normalized_distance * normalized_distance)
                                   : 0.0;
-        delta_velocity[i] = weight * normal_into_target;
-        added_momentum += node.mass_kg * delta_velocity[i];
-        total_mass += node.mass_kg;
+        delta_velocity[index] = weight * normal_into_target;
     }
 
-    if (total_mass <= 0.0) {
-        return;
-    }
+    // Jolt already transferred the whole-object collision impulse. Project both the
+    // uniform translation and rigid rotation out of this local pulse so it can only
+    // add internal deformation energy.
+    removeRigidMomentumComponents(matter, delta_velocity);
 
-    // Jolt has already transferred the whole-object impulse. Remove the pulse's uniform
-    // translation so this injection adds internal motion without a second bulk impulse.
-    const Vec3 mean_delta = added_momentum / total_mass;
     double raw_internal_energy = 0.0;
-    for (std::size_t i = 0; i < matter.nodes.size(); ++i) {
-        delta_velocity[i] -= mean_delta;
+    for (std::size_t index = 0; index < matter.nodes.size(); ++index) {
         raw_internal_energy +=
-            0.5 * matter.nodes[i].mass_kg * lengthSquared(delta_velocity[i]);
+            0.5 * matter.nodes[index].mass_kg * lengthSquared(delta_velocity[index]);
     }
     if (raw_internal_energy <= 1.0e-12) {
         return;
@@ -159,8 +230,8 @@ void BrittleBondSolver::injectInternalImpactPulse(
         settings_.maximum_internal_energy_j,
         settings_.impact_internal_energy_fraction * impact.available_normal_energy_j);
     const double scale = std::sqrt(requested_energy / raw_internal_energy);
-    for (std::size_t i = 0; i < matter.nodes.size(); ++i) {
-        matter.nodes[i].velocity_m_s += scale * delta_velocity[i];
+    for (std::size_t index = 0; index < matter.nodes.size(); ++index) {
+        matter.nodes[index].velocity_m_s += scale * delta_velocity[index];
     }
 }
 
@@ -230,6 +301,26 @@ MaterialStepStats BrittleBondSolver::step(
     stats.broken_bonds_this_step = broken_after - broken_before;
     stats.total_broken_bonds = broken_after;
     stats.live_bonds = matter.bonds.size() - broken_after;
+
+    for (const ActiveNodeState &node : matter.nodes) {
+        const double speed = length(node.velocity_m_s);
+        stats.maximum_speed_m_s = std::max(stats.maximum_speed_m_s, speed);
+        stats.kinetic_energy_j += 0.5 * node.mass_kg * speed * speed;
+    }
+    for (std::size_t bond_index = 0; bond_index < matter.bonds.size(); ++bond_index) {
+        if (!matter.bonds[bond_index].alive) {
+            continue;
+        }
+        const BondRest &rest = matter.asset->bonds[bond_index];
+        const double extension =
+            length(matter.nodes[rest.node_b].position_world_m -
+                   matter.nodes[rest.node_a].position_world_m) -
+            rest.rest_length_m;
+        if (rest.compliance > 0.0) {
+            stats.estimated_elastic_energy_j += 0.5 * extension * extension / rest.compliance;
+        }
+    }
+
     ++matter.step_index;
     return stats;
 }

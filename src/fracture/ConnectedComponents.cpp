@@ -14,8 +14,8 @@ namespace {
 class DisjointSet {
 public:
     explicit DisjointSet(std::size_t size) : parent_(size), rank_(size, 0U) {
-        for (std::size_t i = 0; i < size; ++i) {
-            parent_[i] = static_cast<std::uint32_t>(i);
+        for (std::size_t index = 0; index < size; ++index) {
+            parent_[index] = static_cast<std::uint32_t>(index);
         }
     }
 
@@ -67,15 +67,18 @@ std::vector<FragmentComponent> findConnectedComponents(const ActiveMatter &matte
     std::vector<FragmentComponent> result;
     for (std::uint32_t node = 0; node < matter.nodes.size(); ++node) {
         const std::uint32_t root = components.find(node);
-        auto [it, inserted] = component_by_root.emplace(root, result.size());
+        auto [iterator, inserted] = component_by_root.emplace(root, result.size());
         if (inserted) {
             result.push_back({static_cast<std::uint32_t>(result.size()), {}});
         }
-        result[it->second].node_indices.push_back(node);
+        result[iterator->second].node_indices.push_back(node);
     }
 
-    std::sort(result.begin(), result.end(), [](const auto &a, const auto &b) {
-        return a.node_indices.size() > b.node_indices.size();
+    std::sort(result.begin(), result.end(), [](const auto &left, const auto &right) {
+        if (left.node_indices.size() != right.node_indices.size()) {
+            return left.node_indices.size() > right.node_indices.size();
+        }
+        return left.node_indices.front() < right.node_indices.front();
     });
     for (std::uint32_t index = 0; index < result.size(); ++index) {
         result[index].id = index;
