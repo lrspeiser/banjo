@@ -1,0 +1,27 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build/ci -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DBANJO_BUILD_LAB=ON
+          -DBANJO_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build/ci --parallel 2
+
+      - name: Test
+        run: ctest --test-dir build/ci --output-on-failure
+
+      - name: Run headless laboratory
+        run: ./build/ci/banjo_lab
