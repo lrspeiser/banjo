@@ -10,6 +10,7 @@ namespace banjo {
     unsigned neighbor_horizon_cells);
 
 [[nodiscard]] double coefficientOfRestitutionFromDamping(double damping_ratio);
+[[nodiscard]] double dampingRatioFromCoefficientOfRestitution(double restitution);
 [[nodiscard]] CompiledContactMaterial compileContactMaterial(
     const MaterialDefinition &material);
 [[nodiscard]] CombinedContactMaterial combineContactMaterials(

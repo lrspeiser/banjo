@@ -16,20 +16,48 @@ namespace {
         }));
 }
 
-void solveFloorContact(
+void solveSupportPosition(
     ActiveNodeState &node,
-    double floor_height_m,
-    double floor_friction) {
-    if (node.position_world_m.y >= floor_height_m) {
+    const SupportPlaneFrame &plane) {
+    const double distance = signedDistanceToPlane(plane, node.position_world_m);
+    if (distance < 0.0) {
+        node.position_world_m -= distance * plane.normal_world;
+    }
+}
+
+void applySupportContactVelocity(
+    ActiveNodeState &node,
+    const SupportPlaneFrame &plane,
+    double dynamic_friction,
+    double restitution,
+    double substep_dt_s) {
+    if (signedDistanceToPlane(plane, node.position_world_m) > 1.0e-8) {
         return;
     }
-    node.position_world_m.y = floor_height_m;
-    const double friction_scale = std::clamp(1.0 - floor_friction, 0.0, 1.0);
-    const Vec3 displacement = node.position_world_m - node.previous_position_world_m;
-    node.position_world_m.x =
-        node.previous_position_world_m.x + friction_scale * displacement.x;
-    node.position_world_m.z =
-        node.previous_position_world_m.z + friction_scale * displacement.z;
+
+    Vec3 velocity =
+        (node.position_world_m - node.previous_position_world_m) / substep_dt_s;
+    const double normal_speed = dot(velocity, plane.normal_world);
+    Vec3 tangent_velocity = velocity - normal_speed * plane.normal_world;
+
+    if (normal_speed < 0.0) {
+        const double tangent_speed = length(tangent_velocity);
+        if (tangent_speed > 1.0e-12) {
+            const double maximum_friction_delta =
+                std::max(0.0, dynamic_friction) *
+                (1.0 + std::clamp(restitution, 0.0, 1.0)) *
+                (-normal_speed);
+            const double retained_speed =
+                std::max(0.0, tangent_speed - maximum_friction_delta);
+            tangent_velocity *= retained_speed / tangent_speed;
+        }
+        velocity = tangent_velocity -
+                   std::clamp(restitution, 0.0, 1.0) *
+                       normal_speed * plane.normal_world;
+    } else {
+        velocity = tangent_velocity + normal_speed * plane.normal_world;
+    }
+    node.velocity_m_s = velocity;
 }
 
 void solveBond(
@@ -135,7 +163,6 @@ void removeRigidMomentumComponents(
         }
     }
 
-    // Remove residual translation from floating-point roundoff after the rotational projection.
     Vec3 residual_momentum{};
     for (std::size_t index = 0; index < matter.nodes.size(); ++index) {
         residual_momentum += matter.nodes[index].mass_kg * delta_velocity[index];
@@ -151,6 +178,12 @@ void removeRigidMomentumComponents(
 BrittleBondSolver::BrittleBondSolver(BrittleSolverSettings settings) : settings_(settings) {
     if (settings_.substeps == 0U || settings_.constraint_iterations == 0U) {
         throw std::invalid_argument("solver requires at least one substep and constraint iteration");
+    }
+    if (!settings_.use_support_plane) {
+        settings_.support_plane = makeSupportPlane(
+            {0.0, settings_.floor_height_m, 0.0},
+            {0.0, 1.0, 0.0});
+        settings_.surface_dynamic_friction = settings_.floor_friction;
     }
 }
 
@@ -212,9 +245,6 @@ void BrittleBondSolver::injectInternalImpactPulse(
         delta_velocity[index] = weight * normal_into_target;
     }
 
-    // Jolt already transferred the whole-object collision impulse. Project both the
-    // uniform translation and rigid rotation out of this local pulse so it can only
-    // add internal deformation energy.
     removeRigidMomentumComponents(matter, delta_velocity);
 
     double raw_internal_energy = 0.0;
@@ -264,7 +294,7 @@ MaterialStepStats BrittleBondSolver::step(
                 solveBond(matter, bond_index, substep_dt);
             }
             for (ActiveNodeState &node : matter.nodes) {
-                solveFloorContact(node, settings_.floor_height_m, settings_.floor_friction);
+                solveSupportPosition(node, settings_.support_plane);
             }
         }
 
@@ -272,6 +302,12 @@ MaterialStepStats BrittleBondSolver::step(
         for (ActiveNodeState &node : matter.nodes) {
             node.velocity_m_s =
                 damping * (node.position_world_m - node.previous_position_world_m) / substep_dt;
+            applySupportContactVelocity(
+                node,
+                settings_.support_plane,
+                settings_.surface_dynamic_friction,
+                settings_.surface_restitution,
+                substep_dt);
         }
 
         for (std::size_t bond_index = 0; bond_index < matter.bonds.size(); ++bond_index) {
@@ -317,7 +353,8 @@ MaterialStepStats BrittleBondSolver::step(
                    matter.nodes[rest.node_a].position_world_m) -
             rest.rest_length_m;
         if (rest.compliance > 0.0) {
-            stats.estimated_elastic_energy_j += 0.5 * extension * extension / rest.compliance;
+            stats.estimated_elastic_energy_j +=
+                0.5 * extension * extension / rest.compliance;
         }
     }
 

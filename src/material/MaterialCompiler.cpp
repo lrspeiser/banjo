@@ -81,6 +81,22 @@ double coefficientOfRestitutionFromDamping(double damping_ratio) {
         1.0);
 }
 
+double dampingRatioFromCoefficientOfRestitution(double restitution) {
+    const double bounded = std::clamp(restitution, 0.0, 1.0);
+    if (bounded >= 1.0) {
+        return 0.0;
+    }
+    if (bounded <= 1.0e-12) {
+        return 0.999999;
+    }
+    const double logarithm = std::log(bounded);
+    return std::clamp(
+        -logarithm /
+            std::sqrt(std::numbers::pi * std::numbers::pi + logarithm * logarithm),
+        0.0,
+        0.999999);
+}
+
 CompiledContactMaterial compileContactMaterial(const MaterialDefinition &material) {
     validateElasticProperties(material);
 
