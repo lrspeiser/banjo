@@ -22,6 +22,31 @@ int main(){try{
         near(length(spatial.velocity_b_m_s-spatial.velocity_a_m_s),scalar.velocity_b_m_s-scalar.velocity_a_m_s,speed*1e-6,"rotated relative velocity matches finite-pair reference");
         near(evaluateCohesiveInterface(law,spatial.interface).dissipated_energy_j,work,work*1e-12,"spatial separation uses Gc area");
         std::cout<<materialPresetName(preset)<<" max_step_energy_residual_j="<<max_energy<<" max_step_angular_residual="<<max_angular<<'\n';
+        // Independent elastic circular-orbit oracle: tension supplies exactly
+        // mu*v^2/r. Compare one full revolution, not just conserved quantities.
+        const double orbit_rest=10*cohesiveSeparationOpening(law);
+        const double opening=.1*cohesiveDamageOpening(law),radius=orbit_rest+opening;
+        const double orbit_speed=std::sqrt(area*law.stiffness_pa_per_m*opening*radius/mu);
+        const double period=2*std::acos(-1.0)*radius/orbit_speed;
+        double previous_error=0;
+        for(unsigned count:{512u,1024u,2048u}){
+            CohesiveSpatialPairState orbit{{},{radius,0,0},{0,-mb/(ma+mb)*orbit_speed,0},{0,ma/(ma+mb)*orbit_speed,0},{opening,opening}};
+            const auto start=orbit;double maximum_radius_error=0;
+            for(unsigned j=0;j<count;++j){
+                const auto step=advanceCohesiveSpatialPair(law,ma,mb,orbit_rest,orbit,period/count);
+                require(step.substeps==1,"orbit refinement measures requested timestep without hidden subdivision");
+                orbit=step.state;maximum_radius_error=std::max(maximum_radius_error,std::abs(length(orbit.separation_m)-radius));
+                near(evaluateCohesiveInterface(law,orbit.interface).dissipated_energy_j,0,0,"elastic orbit never enters damage");
+            }
+            const double position_error=length(orbit.separation_m-start.separation_m)/radius;
+            const double velocity_error=length((orbit.velocity_b_m_s-orbit.velocity_a_m_s)-(start.velocity_b_m_s-start.velocity_a_m_s))/orbit_speed;
+            const double error=std::max(position_error,velocity_error);
+            if(previous_error>0)require(previous_error/error>3.8&&previous_error/error<4.2,"circular trajectory converges at second order");
+            require(maximum_radius_error/radius<1e-8,"central discrete orbit preserves circular radius");
+            if(count==2048)require(error<1e-5,"finest circular trajectory agrees with analytical orbit");
+            std::cout<<materialPresetName(preset)<<" orbit_steps="<<count<<" period_s="<<period<<" position_relative_error="<<position_error<<" velocity_relative_error="<<velocity_error<<" radius_relative_error="<<maximum_radius_error/radius<<'\n';
+            previous_error=error;
+        }
     }
     const CohesiveInterfaceLaw law{1000,10,1,.1};const double ma=1,mb=2,rest=.1,mu=ma*mb/(ma+mb);
     CohesiveSpatialPairState state{{},{rest,0,0},{0,-2.0/3,0},{0,1.0/3,0},{}};
