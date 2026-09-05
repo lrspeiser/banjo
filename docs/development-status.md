@@ -1,6 +1,8 @@
 # Development status and handoff
 
-**Current adaptive checkpoint:** `8cf33bccf3c21eea69efaea192efa10e1be43198` adds bounded transactional accuracy control, residual-budget allocation and a buried grazing-contact guard. All 13 Windows CTest executables pass (10.23 s). [Twelve full-size glass/oak/iron runs](adaptive-checkpoint.md), recorded at controller source `a7acccfe60cfa3a77159aa831079c67c55380c7f`, complete with closed work/reaction ledgers and 15 matched full-node comparisons. Local error indicators do not prove global convergence; the reference remains far from real time. Next: the [first collected-materials creator loop](creator-loop.md), using an LLM request, inspectable specification, validated inventory debit and a visible physical object. Carry this planned application slice through the shared workbench, one clock/contact owner, work-accounted friction and shape comparisons. Default viewer energy/fracture defects remain. All changes are local and Gate 1 remains open.
+**Current creator checkpoint:** `9cd9197bb99492b1a834622cd87d35302468c4dd` adds the [material workshop](creator-checkpoint.md), a shared bounded recipe/compiler/CLI, world pickup inventory, transactional sphere creation and versioned local persistence. A real manual Codex file exchange produced a visible 16 cm oak ball from collected material; automatic in-app model calls and edits/refunds of existing objects remain open. Glass/oak/iron creation, free fall, measured rolling and finite pair collisions pass; all 14 Windows CTest executables pass (9.86 s). Normal interactive controls and capture were checked, including a generated-copy GLFW active-window guard and safe multi-world Jolt lifetime. Next: automatic assistant connection and another geometry through this same creator path, alongside the open detailed-material physics gates. Local only; no push/merge and no full-platform completion.
+
+**Previous adaptive checkpoint:** `8cf33bccf3c21eea69efaea192efa10e1be43198` adds bounded transactional accuracy control, residual-budget allocation and a buried grazing-contact guard. All 13 Windows CTest executables pass (10.23 s). [Twelve full-size glass/oak/iron runs](adaptive-checkpoint.md), recorded at controller source `a7acccfe60cfa3a77159aa831079c67c55380c7f`, complete with closed work/reaction ledgers and 15 matched full-node comparisons. Local error indicators do not prove global convergence; the reference remains far from real time. Next: the [first collected-materials creator loop](creator-loop.md), using an LLM request, inspectable specification, validated inventory debit and a visible physical object. Carry this planned application slice through the shared workbench, one clock/contact owner, work-accounted friction and shape comparisons. Default viewer energy/fracture defects remain. All changes are local and Gate 1 remains open.
 
 **Previous trajectory checkpoint:** `e5b883e6d5d47dc85a5e1ea42c671d94a83cee99` adds complete node-state export and matched-time comparison. All 30 glass/oak/iron impact runs complete across five timesteps; all 12 CTest executables pass (8.60 s). [Measured differences](trajectory-checkpoint.md) show that bulk rebound can hide unresolved internal motion: finest-pair damped node-velocity RMS differences remain 0.0339, 0.0603 and 0.0124 m/s for glass, oak and iron. Full trajectory accuracy remains open, with a bounded state-error controller next. This probe/analysis update changes no solver law or default viewer behavior. Changes are local, not pushed or merged; Gate 1 remains open.
 
@@ -69,9 +71,9 @@ Read the [pinned contact checkpoint](https://github.com/lrspeiser/banjo/blob/138
 | Analytical scenario cache | Implemented; 960-scenario generator | Planner summaries do not execute adaptive scheduling or cached fracture playback |
 | Material outcome capture/load/apply | Prototype library and tests | No automatic runtime reuse; state identity, frame applicability and time alignment incomplete |
 | Physical LOD, sparse large worlds | Design only | Whole-object ball activation currently; no adaptive local patch hierarchy |
-| Runtime material-file editing | JSON examples exist | No complete schema/unit-aware live authoring path; presets are compiled in code |
-| Door/hinge assemblies, LawScript, AI authoring | Design only | Not implemented |
-| Universe publishing, persistence, multiplayer | Design only | Not implemented |
+| Runtime material-file editing | General material JSON examples remain design | Local creator schema validates SI fields for intact spheres and catalog material IDs; custom constitutive material loading remains open |
+| Door/hinge assemblies, LawScript, AI authoring | Design only on main | Local manual Codex proposal → validated creator recipe works; automatic model connection, assemblies and LawScript remain open |
+| Universe publishing, persistence, multiplayer | Design only on main | Local creator inventory/recipe/rigid-state persistence exists; world packages, history, publishing and multiplayer remain open |
 
 Contact combination rules, damping-derived restitution, Hertz screening, point contacts, XPBD iterations, geometric correction and lightweight debris are model choices. They must be visible in tests and documentation, not labeled exact consequences of a handful of material constants.
 
@@ -107,7 +109,8 @@ No new physics executable was built for this documentation-only audit. Historica
 | Deformation/fracture | `src/fracture/ActiveMatter.hpp`, `BrittleBondSolver.*`, `ConnectedComponents.*` |
 | Fragment transfer | `src/fracture/FragmentGeometry.*`, `FragmentMassProperties.*` |
 | Predictions/outcome serialization | `src/prediction/`, `src/precompute/MaterialOutcome.*` |
-| Viewer and tools | `src/viewer/main.cpp`, `src/app/headless_main.cpp`, `precompute_main.cpp` |
+| Viewer and tools | `src/viewer/main.cpp`, `src/viewer/workshop.cpp`, `src/app/creator_main.cpp`, `headless_main.cpp`, `precompute_main.cpp` |
+| Creator contract, compilation and state | `src/creator/CreatorWorld.*`, `assets/creator/`, `tests/creator_world_tests.cpp` |
 | Verification | `tests/`; inspect branch additions for conservative contact and rolling diagnostics |
 
 ## 6. Build and exercise the appropriate version

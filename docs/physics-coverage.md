@@ -1,5 +1,7 @@
 # Physical property and capability coverage
 
+The [creator checkpoint at `9cd9197`](creator-checkpoint.md) adds a shared runtime consumer for bounded SI recipes, exact solid-sphere volume, density-derived mass/inertia and inventory allocation. Headless and workshop objects share `CreatorWorld`. Glass/oak/iron creation, density-independent free fall, friction-generated rolling with measured slip, finite pair collisions and persistence checks pass; all 14 Windows CTest executables pass. This explicitly selected intact-rigid mode does not add calibrated material laws, deformation or fracture. The detailed-path defects below remain open.
+
 The [adaptive reference at `8cf33bc`](adaptive-checkpoint.md) adds numerical accuracy controls consumed by `CompliantAdvance` and stricter equation-residual budgets consumed by `CompliantStep`. Every accepted trial retains the explicit normal spring/dashpot law; a swept finite-sphere guard rejects buried contact. Thirteen CTest executables pass; glass/oak/iron remain in the 12-run full-size comparison. These are numerical/geometry capabilities, not additional material laws or calibration. Default runtime consumers remain unchanged.
 
 The [full-state trajectory checkpoint at `e5b883e`](trajectory-checkpoint.md) adds round-trip node position/velocity/spin/mass export and independently verified COM/kinetic summaries. Thirty glass/oak/iron runs at five rates provide 24 matched-time comparisons. Bulk motion is much more consistent than internal node velocity, so no new constitutive calibration or full-trajectory accuracy claim follows. The material/contact law and default runtime consumers are unchanged.
@@ -30,6 +32,6 @@ Local source checkpoint: `d56611c`, September 4, 2026. This matrix describes con
 | Seed / strength variation | Deterministic bond strength variation | Physical defect-distribution calibration and statistical convergence |
 | Gravity / slope / support enable | Rigid/material/debris paths; free-flight gravity reference and runtime tests | Full support impulse/torque/work ledger, finite/curved/moving supports and general activation |
 | Solid spheres / generated fragments | Procedural sphere lattice, smooth rigid sphere and convex fragment proxies | Hollow spheres, cylinders, boxes, ellipsoids, irregular/composite authored shapes and proxy-error validation |
-| Object interfaces / laws | Design documents and authoring examples | Assemblies, hinges, fastener failure, unit-aware loader and bounded law/AI APIs |
+| Object interfaces / laws | Strict SI creator schema and catalog capability validation for intact rigid spheres; manual AI proposals use the same compiler | Additional shapes, custom unit conversion/material laws, assemblies, hinges, fastener failure and automatic model adapter |
 
 For every new property, add an explicit runtime consumer, units, a reference test, a stated validity domain and convergence evidence. A field, preset name, green unit test or visually plausible run alone is insufficient. Plasticity, viscoelasticity, anisotropy and thermal mechanics require distinct implemented laws and energy accounting before their names can describe supported behavior.
