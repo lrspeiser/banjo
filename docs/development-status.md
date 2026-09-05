@@ -1,5 +1,7 @@
 # Development status and handoff
 
+**First-person assembly table:** [Remembered assembly designs](starter-assembly-table-checkpoint.md) persist in starter v4 with v1–3 migration and save-before-publish revisions. Native oak import/restart verified; three-material persistence checks and 21 suites pass. Table tests/LLM review and live creation remain open. Local `f210372`; full goal active.
+
 **First-person assembly stock:** [Shared assessment adapter](starter-assembly-stock-checkpoint.md) uses real starter inventory and loose objects, excluding attached branches/tools. Three-material pickup, restoration, tool debit and mixed-material checks pass; full build and 21 suites pass. Starter assembly persistence/table controls remain next. Local `b02bab9`; full goal active.
 
 **Assembly LLM review controls:** [Regenerated evidence review](assembly-review-ui-checkpoint.md) runs from current tests, invalidates world/spec changes and supports cancellation. Real native oak explanation, inventory invalidation and cancellation verified; 21 suites pass. First-person integration and live construction remain open. Local `c06ee32`; full goal active.
