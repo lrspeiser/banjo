@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Explicit precision conversion:** [Source-preserving review packages](precision-conversion-checkpoint.md) validate v5 32-to-64 upgrades for creator and starter worlds. Real workspace-copy normalization/conversion/reload and overwrite rejection pass; 24 default and 25 double-position suites pass. Application promotion remains next. Local `3bd8b74`; full goal active.
+
 **Saved precision identity:** [World/starter v5](precision-identity-checkpoint.md) records compiled position precision and rejects cross-precision loads. Four-way real CLI checks, glass/oak/iron persistence, 23 default and 24 double-position suites pass. Explicit conversion and application promotion remain next. Local `7887177`; full goal active.
 
 **Runtime joint precision evidence:** [Cohesive forces through live drift](runtime-cohesive-checkpoint.md) expose 11/12 finest accuracy failures in the current single-position build. A separate double-position build passes all 24 suites and all 12 checks. Precision identity/save compatibility must precede application integration. Local `f5d2226`; full goal active.
