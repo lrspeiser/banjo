@@ -1,5 +1,7 @@
 # Physical property and capability coverage
 
+**Tension with surface contact:** [Runtime tensile kicks](tension-contact-checkpoint.md) retain Jolt collisions, reject duplicate compression/activation ownership, and keep externally advanced bodies awake. Glass/oak/iron opening, failed-bond collision and coupled contact fixtures pass; 27 promoted and 25 legacy suites pass. Finite-area/application integration remains open. Local `0b01533`; full goal active.
+
 **Double-position application:** [Converted graphical workspaces](double-application-checkpoint.md) now run the promoted configuration. Native inventory/three-material requirements, assembly test/export and save/restart checks pass; all 25 suites pass. New builds default to double positions; explicit legacy builds remain. Local `d96ca7e`; full goal active.
 
 **Explicit precision conversion:** [Source-preserving review packages](precision-conversion-checkpoint.md) validate v5 32-to-64 upgrades for creator and starter worlds. Real workspace-copy normalization/conversion/reload and overwrite rejection pass; 24 default and 25 double-position suites pass. Application promotion remains next. Local `3bd8b74`; full goal active.
