@@ -30,6 +30,7 @@ add_library(
     banjo_core
     src/material/MaterialCompiler.cpp
     src/material/MaterialCatalog.cpp
+    src/material/NetworkMaterial.cpp
     src/matter/Lattice.cpp
     src/physics/ContactMechanics.cpp
     src/physics/CohesiveInterface.cpp
@@ -118,7 +119,7 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
     add_library(banjo_material_lab src/creator/BondedBowl.cpp src/creator/BowlRecording.cpp src/platform/BowlGeometry.cpp)
     target_link_libraries(banjo_material_lab PUBLIC banjo_core)
     banjo_enable_warnings(banjo_material_lab)
-    add_library(banjo_platform src/platform/PlatformWorld.cpp src/platform/PlatformPlayback.cpp src/platform/CompiledObject.cpp src/platform/CompiledRuntime.cpp)
+    add_library(banjo_platform src/platform/PlatformWorld.cpp src/platform/PlatformPlayback.cpp src/platform/CompiledObject.cpp src/platform/CompiledRuntime.cpp src/platform/NetworkWorld.cpp)
     target_link_libraries(banjo_platform PUBLIC banjo_runtime banjo_material_lab PRIVATE nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_platform)
     add_executable(banjo_platform_cli src/app/platform_main.cpp)
@@ -376,6 +377,16 @@ if(BANJO_BUILD_TESTS AND TARGET banjo_creator_runtime)
 endif()
 
 if(BANJO_BUILD_TESTS AND TARGET banjo_platform)
+ add_executable(banjo_network_material_tests tests/network_material_tests.cpp)
+ target_link_libraries(banjo_network_material_tests PRIVATE banjo_core)
+ add_test(NAME banjo_network_material_tests COMMAND banjo_network_material_tests)
+ add_executable(banjo_network_runtime_tests tests/network_runtime_tests.cpp)
+ target_link_libraries(banjo_network_runtime_tests PRIVATE banjo_platform nlohmann_json::nlohmann_json)
+ target_compile_definitions(banjo_network_runtime_tests PRIVATE BANJO_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+ add_test(NAME banjo_network_runtime_tests COMMAND banjo_network_runtime_tests)
+ add_executable(banjo_network_spring_tests tests/network_spring_tests.cpp)
+ target_link_libraries(banjo_network_spring_tests PRIVATE banjo_platform)
+ add_test(NAME banjo_network_spring_tests COMMAND banjo_network_spring_tests)
  add_executable(banjo_compiled_runtime_tests tests/compiled_runtime_tests.cpp)
  target_link_libraries(banjo_compiled_runtime_tests PRIVATE banjo_platform nlohmann_json::nlohmann_json)
  target_compile_definitions(banjo_compiled_runtime_tests PRIVATE BANJO_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
@@ -389,6 +400,9 @@ if(BANJO_BUILD_TESTS AND TARGET banjo_platform)
 endif()
 
 if(TARGET raylib AND TARGET banjo_platform)
+ add_executable(banjo_network_lab src/viewer/runtime.cpp)
+ target_compile_definitions(banjo_network_lab PRIVATE BANJO_NETWORK_LAB=1)
+ target_link_libraries(banjo_network_lab PRIVATE banjo_platform raylib nlohmann_json::nlohmann_json)
  add_executable(banjo_runtime_lab src/viewer/runtime.cpp)
  target_link_libraries(banjo_runtime_lab PRIVATE banjo_platform raylib nlohmann_json::nlohmann_json)
  add_executable(banjo_platform_lab src/viewer/platform.cpp)

@@ -13,13 +13,20 @@ struct PlatformInstance {
     MaterialPreset material{};
     RigidPrimitive geometry;
     RigidSnapshot state;
+    std::uint32_t color_rgba{};
+    std::vector<std::array<Vec3,3>> local_mesh;
+    std::string material_id; // Property-defined v2 material; empty for legacy presets.
 };
 struct PlatformStep {
     unsigned completed_steps{};
     double elapsed_s{}, wall_ms{};
     std::string error;
 };
-struct PlatformBondLine {Vec3 a,b;bool live{};};
+struct PlatformBondLine {
+    Vec3 a,b;bool live{};
+    double damage{},plastic_extension_m{};
+    unsigned object_id{},a_element{},b_element{};
+};
 // Host-thread API. No inventory, model calls, file access or renderer dependency.
 // A package is initial authoring state, not a saved simulation checkpoint.
 // Explicit backend selection; no unvalidated rigid/material switching.

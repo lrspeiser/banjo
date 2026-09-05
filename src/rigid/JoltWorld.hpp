@@ -57,6 +57,14 @@ struct RigidCompoundDescription {
     double mass_kg{};
     Mat3 inertia_local_kg_m2;
 };
+struct RigidConvexDescription {
+    MatterBodyId body_id{};
+    std::vector<Vec3> vertices_local_m;
+    MaterialDefinition material;
+    RigidSnapshot state;
+    double mass_kg{};
+    Mat3 inertia_local_kg_m2;
+};
 
 enum class PairContactOwner { Jolt, External };
 
@@ -78,6 +86,7 @@ struct CohesiveTensionPatchKick {
 class JoltWorld {
 public:
     JoltWorld();
+    explicit JoltWorld(unsigned worker_threads);
     ~JoltWorld();
 
     JoltWorld(const JoltWorld &) = delete;
@@ -100,6 +109,15 @@ public:
     void addBox(const RigidBoxDescription &description);
     // Bounded compound collision proxy with independent matter-derived inertia.
     void addCompound(const RigidCompoundDescription &description);
+    void addConvex(const RigidConvexDescription &description);
+    // Physical central springs solved in Jolt's contact/constraint iterations.
+    // Topology/history and constitutive work remain owned by the caller.
+    unsigned addDistanceSpring(MatterBodyId a, MatterBodyId b, double rest_m,
+        double stiffness_n_m, double damping_n_s_m);
+    void updateDistanceSpring(unsigned spring, double rest_m, double stiffness_n_m,
+        double damping_n_s_m);
+    void removeDistanceSpring(unsigned spring);
+    double distanceSpringImpulse(unsigned spring) const;
     // Opt-in observation only. Includes support/persisted contacts for reduced
     // fracture experiments; impulses remain estimates, not measured reactions.
     void setDetailedImpactObservations(bool enabled);

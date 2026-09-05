@@ -1,0 +1,239 @@
+#include "platform/NetworkWorld.hpp"
+#include "material/NetworkMaterial.hpp"
+#include "rigid/JoltWorld.hpp"
+#include <nlohmann/json.hpp>
+#include <algorithm>
+#include <cmath>
+#include <map>
+#include <numeric>
+#include <set>
+#include <stdexcept>
+
+namespace banjo {
+namespace {
+using json=nlohmann::json;
+void require(bool ok,const char *message){if(!ok)throw std::invalid_argument(message);}
+void fields(const json &j,std::initializer_list<const char*> allowed){
+    require(j.is_object(),"network declaration must be an object");
+    for(auto it=j.begin();it!=j.end();++it){bool found=false;for(auto key:allowed)found|=it.key()==key;require(found,"unknown network field");}
+}
+double scalar(const json &j,double lo,double hi){require(j.is_number(),"expected network SI number");auto v=j.get<double>();require(std::isfinite(v)&&v>=lo&&v<=hi,"network SI number outside bounds");return v;}
+unsigned integer(const json &j,unsigned lo,unsigned hi){require(j.is_number_integer(),"expected network integer");const auto v=j.get<long long>();require(v>=lo&&v<=hi,"network integer outside bounds");return unsigned(v);}
+Vec3 vector(const json &j,double lo,double hi){require(j.is_array()&&j.size()==3,"expected three network components");return {scalar(j[0],lo,hi),scalar(j[1],lo,hi),scalar(j[2],lo,hi)};}
+Quat quaternion(const json &j){require(j.is_array()&&j.size()==4,"expected quaternion");Quat q{scalar(j[0],-1,1),scalar(j[1],-1,1),scalar(j[2],-1,1),scalar(j[3],-1,1)};require(std::abs(q.w*q.w+q.x*q.x+q.y*q.y+q.z*q.z-1)<1e-8,"quaternion must be unit length");return q;}
+json vec(Vec3 v){return {v.x,v.y,v.z};}
+MaterialDefinition contactMaterial(const NetworkMaterial &m){
+    MaterialDefinition c;c.name=m.name;c.model=MaterialModel::RigidOnly;c.density_kg_m3=m.density_kg_m3;
+    c.young_modulus_pa=std::min({m.young_modulus_pa.x,m.young_modulus_pa.y,m.young_modulus_pa.z});c.poisson_ratio=.25;
+    c.static_friction=c.dynamic_friction=c.friction=m.friction;c.restitution=0;c.contact_damping_ratio=0;c.derive_restitution_from_damping=false;return c;
+}
+}
+struct NetworkWorld::Impl {
+    struct Material {NetworkMaterial law;std::uint32_t color;};
+    struct Node {unsigned object;MatterBodyId body;Vec3 reference;double mass;RigidPrimitive proxy;};
+    struct Bond {unsigned object,a,b,spring;double rest,damping;DirectionalNetworkParameters parameters;NetworkBondHistory history;bool live{true};double current_stiffness{},current_damping{};};
+    struct Object {unsigned id,material;std::string name;std::vector<unsigned> nodes;std::vector<std::array<Vec3,3>> mesh;double first_damage{-1},first_break{-1},max_pair_frequency{};};
+    JoltWorld rigid{0}; // Small connected networks avoid thread-pool wakeup overhead.
+    std::vector<Material> materials;
+    std::vector<Node> nodes;
+    std::vector<Bond> bonds;
+    std::vector<Object> objects;
+    std::vector<RigidSnapshot> states;
+    std::vector<std::array<Vec3,3>> surface;
+    json events=json::array();
+    Vec3 gravity;
+    unsigned broken{},damaged{},pinned{};
+    double time{},elastic{},fracture{},plastic{},initial_energy{},maximum_strain{};
+    double total_spring_impulse{},unreleased{},maximum_extension_discrepancy{},dt{};
+    std::vector<unsigned> components() const {
+        std::vector<unsigned> roots(nodes.size());std::iota(roots.begin(),roots.end(),0);
+        auto root=[&](unsigned a){while(roots[a]!=a){roots[a]=roots[roots[a]];a=roots[a];}return a;};
+        for(auto &b:bonds)if(b.live)roots[root(b.b)]=root(b.a);
+        for(auto &r:roots)r=root(r);return roots;
+    }
+    void refresh(){states.clear();for(auto &n:nodes)states.push_back(rigid.snapshot(n.body));}
+};
+NetworkWorld::NetworkWorld():impl_(std::make_unique<Impl>()){}
+NetworkWorld::~NetworkWorld()=default;
+
+std::unique_ptr<NetworkWorld> NetworkWorld::load(const std::string &text){
+    require(text.size()<=4194304,"network package byte budget");auto source=json::parse(text);
+    fields(source,{"package_version","physics_abi","name","units","backend","required_capabilities","fixed_dt_s","max_steps_per_call","gravity_m_s2","ground","materials","objects","solver_iterations"});
+    require(source.at("package_version")==2&&source.at("physics_abi")=="banjo-network-2"&&source.at("backend")=="material-network-v2"&&source.at("units")=="SI","unsupported network ABI or units");
+    require(source.at("name").is_string()&&source["name"].get<std::string>().size()<=120,"invalid network name");
+    scalar(source.at("fixed_dt_s"),1./4800,1./240);integer(source.at("max_steps_per_call"),1,240);
+    const std::set<std::string> capabilities{"cell-deformation","cohesive-damage","axial-plasticity","directional-lattice","box","ellipsoid","wedge","finite-ground","gravity","contact","render-instances"};
+    require(source.at("required_capabilities").is_array()&&source["required_capabilities"].size()<=16,"invalid network capabilities");
+    for(auto &v:source["required_capabilities"])require(v.is_string()&&capabilities.contains(v.get<std::string>()),"unsupported network capability");
+    auto result=std::unique_ptr<NetworkWorld>(new NetworkWorld);auto &w=*result->impl_;
+    w.dt=source["fixed_dt_s"].get<double>();
+    w.gravity=vector(source.at("gravity_m_s2"),-30,30);w.rigid.setGravity(w.gravity);
+    w.rigid.setContactSolverIterations(integer(source.value("solver_iterations",json(24)),4,128),4);
+    require(source.at("materials").is_array()&&!source["materials"].empty()&&source["materials"].size()<=16,"network material budget");
+    std::map<std::string,unsigned> materialIds;
+    for(auto &m:source["materials"]){
+        fields(m,{"id","density_kg_m3","young_modulus_pa","tensile_strength_pa","fracture_energy_j_m2","damping_ratio","friction","yield_strength_pa","fracture_enabled","failure_law","color_rgb","provenance"});
+        require(m.at("id").is_string()&&m["id"].get<std::string>().size()<=80,"invalid network material ID");
+        NetworkMaterial law;law.name=m["id"].get<std::string>();law.density_kg_m3=scalar(m.at("density_kg_m3"),10,25000);
+        law.young_modulus_pa=vector(m.at("young_modulus_pa"),100,1e12);law.tensile_strength_pa=vector(m.at("tensile_strength_pa"),1,1e10);
+        law.fracture_energy_j_m2=vector(m.at("fracture_energy_j_m2"),.001,1e7);law.damping_ratio=scalar(m.at("damping_ratio"),0,2);
+        law.friction=scalar(m.at("friction"),0,2);law.yield_strength_pa=scalar(m.value("yield_strength_pa",json(0)),0,1e10);
+        require(m.at("fracture_enabled").is_boolean(),"fracture_enabled must be boolean");law.fracture_enabled=m["fracture_enabled"].get<bool>();
+        const auto failure=m.value("failure_law",std::string("cohesive"));require(failure=="cohesive"||failure=="brittle","unknown failure law");
+        law.failure_law=failure=="brittle"?NetworkFailureLaw::Brittle:NetworkFailureLaw::Cohesive;
+        require(m.at("provenance").is_string()&&m["provenance"].get<std::string>().size()<=500,"material provenance required");
+        validateNetworkMaterial(law);const auto rgb=integer(m.at("color_rgb"),0,0xffffff);
+        require(materialIds.emplace(law.name,unsigned(w.materials.size())).second,"duplicate material ID");
+        w.materials.push_back({law,(rgb<<8)|255u});
+    }
+    if(!source.at("ground").is_null()){
+        auto &g=source["ground"];fields(g,{"half_length_m","half_width_m","friction"});
+        const double x=scalar(g.at("half_length_m"),.1,10),z=scalar(g.at("half_width_m"),.1,10);
+        RigidSurfaceDescription floor;floor.material=contactMaterial(w.materials[0].law);floor.material.static_friction=floor.material.dynamic_friction=scalar(g.at("friction"),0,2);
+        floor.half_length_tangent_m=x;floor.half_length_bitangent_m=z;floor.thickness_m=.1;w.rigid.addSupportSurface(floor);
+        w.surface={{{{-x,0,-z},{x,0,z},{x,0,-z}}},{{{-x,0,-z},{-x,0,z},{x,0,z}}}};
+    }
+    require(source.at("objects").is_array()&&!source["objects"].empty()&&source["objects"].size()<=32,"network object budget");
+    std::set<unsigned> ids;
+    for(auto &o:source["objects"]){
+        fields(o,{"id","name","material","shape","representation","dimensions_m","resolution","position_m","orientation_wxyz","velocity_m_s","spin_rad_s","pin_boundary","grain_wxyz"});
+        const auto id=integer(o.at("id"),1,1000000);require(ids.insert(id).second,"duplicate network object ID");
+        require(o.at("name").is_string()&&o["name"].get<std::string>().size()<=100,"invalid network object name");
+        require(o.at("material").is_string()&&materialIds.contains(o["material"].get<std::string>()),"unknown network material");
+        const auto material=materialIds.at(o["material"].get<std::string>());const auto &law=w.materials[material].law;
+        const auto d=vector(o.at("dimensions_m"),.004,2);const auto p=vector(o.at("position_m"),-10,10);const auto q=quaternion(o.at("orientation_wxyz"));
+        const auto velocity=vector(o.at("velocity_m_s"),-30,30),spin=vector(o.at("spin_rad_s"),-100,100);
+        const auto shape=o.at("shape").get<std::string>(),representation=o.at("representation").get<std::string>();
+        require(shape=="box"||shape=="ellipsoid"||shape=="wedge","unsupported network shape");
+        require(representation=="rigid"||representation=="network","unsupported representation");
+        require(shape!="wedge"||representation=="rigid","wedge currently requires rigid representation");
+        require(shape!="ellipsoid"||representation=="network","ellipsoid currently requires network representation");
+        w.objects.push_back({id,material,o["name"].get<std::string>(),{}, {}});auto &object=w.objects.back();const unsigned objectIndex=unsigned(w.objects.size()-1);
+        if(representation=="rigid"){
+            require(w.nodes.size()<1024,"world cell budget exceeded");
+            require(!o.contains("resolution")&&!o.contains("pin_boundary")&&!o.contains("grain_wxyz"),"network-only rigid object fields");
+            const MatterBodyId body=1000001+w.nodes.size();RigidSnapshot state{p,q,velocity,spin};double mass;
+            RigidPrimitive proxy;proxy.kind=PrimitiveKind::Box;proxy.dimensions_m=d;
+            if(shape=="wedge"){
+                std::vector<Vec3> points;
+                for(double z:{-d.z/2,d.z/2}){points.push_back({-d.x/2,d.y/3,z});points.push_back({d.x/2,d.y/3,z});points.push_back({0,-2*d.y/3,z});}
+                mass=law.density_kg_m3*d.x*d.y*d.z/2;Mat3 inertia;
+                inertia.m[0][0]=mass*(d.y*d.y/18+d.z*d.z/12);inertia.m[1][1]=mass*(d.x*d.x/24+d.z*d.z/12);inertia.m[2][2]=mass*(d.x*d.x/24+d.y*d.y/18);
+                w.rigid.addConvex({body,points,contactMaterial(law),state,mass,inertia});
+                for(auto t:std::vector<std::array<unsigned,3>>{{0,2,1},{3,4,5},{0,1,4},{0,4,3},{1,2,5},{1,5,4},{2,0,3},{2,3,5}})object.mesh.push_back({points[t[0]],points[t[1]],points[t[2]]});
+            }else {mass=law.density_kg_m3*proxy.volume();w.rigid.addBox({body,d,contactMaterial(law),state});}
+            object.nodes.push_back(unsigned(w.nodes.size()));w.nodes.push_back({objectIndex,body,{},mass,proxy});continue;
+        }
+        require(o.at("resolution").is_array()&&o["resolution"].size()==3,"network resolution required");
+        const unsigned nx=integer(o["resolution"][0],2,16),ny=integer(o["resolution"][1],2,16),nz=integer(o["resolution"][2],2,16);
+        require(nx*ny*nz<=800,"network object cell budget");
+        const Vec3 h{d.x/nx,d.y/ny,d.z/nz};const double volume=h.x*h.y*h.z,mass=law.density_kg_m3*volume;
+        const double radius=.49*std::min({h.x,h.y,h.z});
+        require(radius>=.001,"network cells below collision resolution");
+        const auto grain=quaternion(o.value("grain_wxyz",json::array({1,0,0,0})));const Quat inverseGrain{grain.w,-grain.x,-grain.y,-grain.z};
+        bool pin=false;if(o.contains("pin_boundary")){require(o["pin_boundary"].is_boolean(),"pin_boundary must be boolean");pin=o["pin_boundary"].get<bool>();}
+        std::map<std::array<int,3>,unsigned> indices;
+        for(unsigned x=0;x<nx;++x)for(unsigned y=0;y<ny;++y)for(unsigned z=0;z<nz;++z){
+            const Vec3 local{(x+.5)*h.x-d.x/2,(y+.5)*h.y-d.y/2,(z+.5)*h.z-d.z/2};
+            if(shape=="ellipsoid"&&4*(local.x*local.x/(d.x*d.x)+local.y*local.y/(d.y*d.y)+local.z*local.z/(d.z*d.z))>1)continue;
+            require(w.nodes.size()<1024,"world cell budget exceeded");const unsigned index=unsigned(w.nodes.size());const MatterBodyId body=1000001+index;
+            RigidPrimitive proxy;proxy.radius_m=radius;
+            RigidPrimitive matter;matter.kind=PrimitiveKind::Box;matter.dimensions_m=h;
+            RigidCompoundDescription cell;cell.body_id=body;cell.material=contactMaterial(law);cell.parts={{proxy,{}}};cell.mass_kg=mass;cell.inertia_local_kg_m2=matter.inertia(mass);
+            const auto offset=q.rotate(local);cell.state={p+offset,q,velocity+cross(spin,offset),spin};w.rigid.addCompound(cell);
+            if(pin&&(x==0||x==nx-1||y==0||y==ny-1)){w.rigid.pinToWorld(body);++w.pinned;}
+            indices.emplace(std::array<int,3>{int(x),int(y),int(z)},index);object.nodes.push_back(index);w.nodes.push_back({objectIndex,body,local,mass,proxy});
+        }
+        require(!indices.empty(),"empty occupied network");
+        const double area=std::pow(volume,2./3)/6;
+        for(auto &[grid,a]:indices)for(int dx=-1;dx<=1;++dx)for(int dy=-1;dy<=1;++dy)for(int dz=-1;dz<=1;++dz){
+            if(dx*dx+dy*dy+dz*dz>2||dx*dx+dy*dy+dz*dz==0)continue;
+            const auto it=indices.find({grid[0]+dx,grid[1]+dy,grid[2]+dz});if(it==indices.end()||it->second<=a)continue;const auto b=it->second;
+            const Vec3 rest=w.nodes[b].reference-w.nodes[a].reference;const double length0=length(rest);
+            auto parameters=directionalNetworkParameters(law,inverseGrain.rotate(rest/length0),area,length0);
+            object.max_pair_frequency=std::max(object.max_pair_frequency,std::sqrt(2*parameters.stiffness_n_m/mass));
+            (void)advanceNetworkBond(law,parameters,{},0,length0);
+            const double damping=2*law.damping_ratio*std::sqrt(parameters.stiffness_n_m*mass/2);
+            const auto spring=w.rigid.addDistanceSpring(w.nodes[a].body,w.nodes[b].body,length0,parameters.stiffness_n_m,damping);
+            w.bonds.push_back({objectIndex,a,b,spring,length0,damping,parameters,{},true});
+            w.bonds.back().current_stiffness=parameters.stiffness_n_m;w.bonds.back().current_damping=damping;
+        }
+    }
+    w.refresh();w.initial_energy=w.rigid.mechanicalTotals(w.gravity).mechanicalEnergy();return result;
+}
+void NetworkWorld::step(double dt){
+    auto &w=*impl_;require(std::isfinite(dt)&&std::abs(dt-w.dt)<1e-15,"network step must match admitted fixed timestep");w.rigid.step(dt);w.time+=dt;w.refresh();w.elastic=0;w.damaged=0;
+    for(auto &b:w.bonds){
+        if(!b.live)continue;
+        auto &object=w.objects[b.object];const auto &law=w.materials[object.material].law;
+        const Vec3 separation=w.states[b.b].center_of_mass_world_m-w.states[b.a].center_of_mass_world_m;
+        const double geometricExtension=length(separation)-b.rest;
+        const double rate=dot(w.states[b.b].linear_velocity_m_s-w.states[b.a].linear_velocity_m_s,normalized(separation));
+        const double impulse=w.rigid.distanceSpringImpulse(b.spring);
+        // Reconstruct the spring's elastic opening from its actually applied
+        // axial reaction, separating its damping term. Finite-iteration
+        // positional residuals must not masquerade as enormous elastic energy
+        // in very stiff glass/metal networks. This remains an averaged-step
+        // reaction model; unresolved wave peaks require temporal refinement.
+        const double elasticForce=-impulse/dt-b.current_damping*rate;
+        const double extension=elasticForce/b.current_stiffness+b.history.plastic_extension_m;
+        w.maximum_extension_discrepancy=std::max(w.maximum_extension_discrepancy,std::abs(extension-geometricExtension));
+        w.maximum_strain=std::max(w.maximum_strain,std::abs(extension/b.rest));
+        w.total_spring_impulse+=std::abs(impulse);
+        auto update=advanceNetworkBond(law,b.parameters,b.history,extension,b.rest);
+        const bool changed=update.history.damage!=b.history.damage||update.history.plastic_extension_m!=b.history.plastic_extension_m;
+        if(update.history.damage>0&&object.first_damage<0)object.first_damage=w.time;
+        w.fracture+=update.fracture_increment_j;w.plastic+=update.plastic_increment_j;w.elastic+=update.elastic_energy_j;w.unreleased+=update.unreleased_energy_j;
+        b.history=update.history;if(b.history.damage>0)++w.damaged;
+        if(update.failed){
+            b.live=false;++w.broken;w.rigid.removeDistanceSpring(b.spring);if(object.first_break<0)object.first_break=w.time;
+            if(w.events.size()<20000)w.events.push_back({{"time_s",w.time},{"object_id",object.id},{"a",b.a},{"b",b.b},{"position_m",vec((w.states[b.a].center_of_mass_world_m+w.states[b.b].center_of_mass_world_m)/2)},{"fracture_work_j",b.history.fracture_dissipation_j}});
+        }else {
+            // Compression remains recoverable even when the tensile branch is
+            // damaged. The current branch is refreshed every physical step.
+            const double stiffness=std::max(update.stiffness_n_m,1e-8);
+            const double newRest=b.rest+b.history.plastic_extension_m;
+            require(newRest>=1e-6,"plastic cell collapse exceeded model validity");
+            const double damping=b.damping*std::sqrt(stiffness/b.parameters.stiffness_n_m);
+            if(changed||stiffness!=b.current_stiffness)w.rigid.updateDistanceSpring(b.spring,newRest,stiffness,damping);
+            b.current_stiffness=stiffness;b.current_damping=damping;
+        }
+    }
+    (void)w.rigid.drainImpacts();
+}
+std::vector<PlatformInstance> NetworkWorld::renderInstances() const {
+    const auto &w=*impl_;auto groups=w.components();std::vector<PlatformInstance> result;result.reserve(w.nodes.size());
+    for(unsigned i=0;i<w.nodes.size();++i){const auto &n=w.nodes[i];const auto &o=w.objects[n.object];
+        PlatformInstance instance{o.id,i,groups[i],MaterialPreset::Glass,n.proxy,w.states[i]};instance.color_rgba=w.materials[o.material].color;instance.material_id=w.materials[o.material].law.name;instance.local_mesh=o.mesh;result.push_back(std::move(instance));}
+    return result;
+}
+std::vector<PlatformBondLine> NetworkWorld::renderBonds() const {
+    const auto &w=*impl_;std::vector<PlatformBondLine> result;
+    for(auto &b:w.bonds)if(b.live||length(w.states[b.a].center_of_mass_world_m-w.states[b.b].center_of_mass_world_m)<b.rest*1.5)
+        result.push_back({w.states[b.a].center_of_mass_world_m,w.states[b.b].center_of_mass_world_m,b.live,b.history.damage,b.history.plastic_extension_m,w.objects[b.object].id,b.a,b.b});return result;
+}
+const std::vector<std::array<Vec3,3>> &NetworkWorld::supportMesh() const {return impl_->surface;}
+unsigned NetworkWorld::fractureCount() const{return impl_->broken;}
+double NetworkWorld::energy() const{return impl_->rigid.mechanicalTotals(impl_->gravity).mechanicalEnergy()+impl_->elastic;}
+std::string NetworkWorld::reportJson() const {
+    const auto &w=*impl_;auto groups=w.components();json objects=json::array();
+    for(unsigned i=0;i<w.objects.size();++i){const auto &o=w.objects[i];double mass=0;Vec3 center,velocity;std::set<unsigned> components;unsigned broken=0,damaged=0,links=0;double plastic=0;
+        for(auto node:o.nodes){const auto &n=w.nodes[node];mass+=n.mass;center+=w.states[node].center_of_mass_world_m*n.mass;velocity+=w.states[node].linear_velocity_m_s*n.mass;components.insert(groups[node]);}
+        for(auto &b:w.bonds)if(b.object==i){++links;broken+=!b.live;damaged+=b.history.damage>0;plastic+=b.history.plastic_dissipation_j;}
+        objects.push_back({{"id",o.id},{"name",o.name},{"material",w.materials[o.material].law.name},{"mass_kg",mass},{"position_m",vec(center/mass)},{"velocity_m_s",vec(velocity/mass)},{"spin_rad_s",nullptr},
+            {"cells",o.nodes.size()},{"links",links},{"damaged_links",damaged},{"broken_links",broken},{"components",components.size()},{"largest_component_cells",0},{"first_damage_s",o.first_damage},{"first_break_s",o.first_break},{"plastic_work_j",plastic},
+            {"max_isolated_pair_frequency_rad_s",o.max_pair_frequency},{"step_times_pair_frequency",w.dt*o.max_pair_frequency}});
+        std::map<unsigned,unsigned> sizes;for(auto node:o.nodes)++sizes[groups[node]];unsigned largest=0;for(auto &[key,count]:sizes){(void)key;largest=std::max(largest,count);}objects.back()["largest_component_cells"]=largest;
+    }
+    const auto mechanics=w.rigid.mechanicalTotals(w.gravity);
+    return json{{"model","material-network-v2"},{"physical_response_validated",false},{"objects",objects},{"material_results",objects},{"cells",w.nodes.size()},{"links",w.bonds.size()},{"broken_links",w.broken},{"damaged_links",w.damaged},
+        {"connected_components",std::set<unsigned>(groups.begin(),groups.end()).size()},{"pinned_cells",w.pinned},{"fracture_events",w.events},
+        {"mechanical_energy_j",mechanics.mechanicalEnergy()},{"elastic_energy_j",w.elastic},{"fracture_work_j",w.fracture},{"plastic_work_j",w.plastic},
+        {"energy_residual_j",nullptr},{"unreleased_fracture_energy_j",w.unreleased},{"unseparated_energy_change_j",mechanics.mechanicalEnergy()+w.elastic+w.fracture+w.plastic+w.unreleased-w.initial_energy},
+        {"linear_momentum_kg_m_s",vec(mechanics.linear_momentum_kg_m_s)},{"angular_momentum_kg_m2_s",vec(mechanics.angular_momentum_kg_m2_s)},
+        {"maximum_observed_axial_strain",w.maximum_strain},{"summed_spring_impulse_n_s",w.total_spring_impulse},
+        {"maximum_reaction_geometric_extension_discrepancy_m",w.maximum_extension_discrepancy},
+        {"runtime_limits",{{"cells",1024},{"links",20000},{"objects",32}}},
+        {"limitations",{"Experimental central-force directional cohesive lattice; not a calibrated continuum or real tomato/wood prediction", "Cohesive state updates after each coupled spring/contact step; integration and damping/contact losses are not fully separated", "Cell sphere collision proxies leave subcell gaps; wedge sharpness below cell spacing unresolved", "All cells remain active representations; no automatic local refinement or rigid re-coarsening", "No fluid/pulp, skin pressure, full orthotropic shear/compression damage, hinge failure or live-state save", "Cell intrinsic spin is not coupled by center-to-center springs; finite-cell bending requires a richer connector"}}}.dump();
+}
+}

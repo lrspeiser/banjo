@@ -82,7 +82,8 @@ ordinary desktop scheduling, not an isolated benchmark environment.
 
 Drop labels are **upper-body initial center heights above ground**. For the
 45 mm spheres, the nominal centered travel to the lower sphere is height
-minus 90 mm. The 4 mm horizontal offset allows contact geometry to deflect
+minus 135 mm (45 mm lower-center height plus 90 mm center separation).
+The 4 mm horizontal offset allows contact geometry to deflect
 the falling body without a fabricated sideways impulse.
 
 | Experiment | Glass broken links / final components | CPU physics for 3 s (range) | Step p95 (range) | Largest step |

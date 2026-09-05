@@ -19,6 +19,7 @@
 #include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
 #include <Jolt/Physics/Collision/Shape/OffsetCenterOfMassShape.h>
 #include <Jolt/Physics/Constraints/FixedConstraint.h>
+#include <Jolt/Physics/Constraints/DistanceConstraint.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
 #include <Jolt/Physics/PhysicsSystem.h>
@@ -395,7 +396,7 @@ void ensureJoltRuntime() { static JoltRuntime runtime; }
 
 class JoltWorld::Impl {
 public:
-    Impl() : impact_collector_(tick_, contact_states_,external_pairs_) {
+    explicit Impl(int requested_workers=-1) : impact_collector_(tick_, contact_states_,external_pairs_) {
         ensureJoltRuntime();
 
         temp_allocator_ =
@@ -407,7 +408,7 @@ public:
         job_system_ = std::make_unique<JPH::JobSystemThreadPool>(
             JPH::cMaxPhysicsJobs,
             JPH::cMaxPhysicsBarriers,
-            worker_threads);
+            requested_workers<0?int(worker_threads):requested_workers);
         physics_ = std::make_unique<JPH::PhysicsSystem>();
         physics_->Init(
             8192,
@@ -423,6 +424,8 @@ public:
 
     ~Impl() {
         if (physics_) {
+            for(auto &[id,spring]:springs_) { (void)id;physics_->RemoveConstraint(spring.constraint); }
+            springs_.clear();
             for(auto &[id,constraint]:pins_) { (void)id;physics_->RemoveConstraint(constraint); }
             pins_.clear();
             JPH::BodyInterface &body_interface = physics_->GetBodyInterface();
@@ -522,12 +525,19 @@ public:
     ImpactCollector impact_collector_;
     JPH::BodyID floor_id_;
     std::unordered_map<MatterBodyId,JPH::Ref<JPH::Constraint>> pins_;
+    struct Spring { MatterBodyId a,b; JPH::Ref<JPH::DistanceConstraint> constraint; };
+    std::unordered_map<unsigned,Spring> springs_;
+    unsigned next_spring_{1};
     std::unordered_map<MatterBodyId, JPH::BodyID> bodies_;
     std::optional<RigidSurfaceDescription> support_surface_;
     Vec3 gravity_m_s2_{0.0, -9.81, 0.0};
 };
 
 JoltWorld::JoltWorld() : impl_(std::make_unique<Impl>()) {}
+JoltWorld::JoltWorld(unsigned workers) {
+    if(workers>64)throw std::invalid_argument("worker thread budget exceeded");
+    impl_=std::make_unique<Impl>(int(workers));
+}
 JoltWorld::~JoltWorld() = default;
 JoltWorld::JoltWorld(JoltWorld &&) noexcept = default;
 JoltWorld &JoltWorld::operator=(JoltWorld &&) noexcept = default;
@@ -826,6 +836,52 @@ void JoltWorld::addCompound(const RigidCompoundDescription &d){
         impl_->bodies_.emplace(d.body_id,id);impl_->contact_states_.emplace(d.body_id,BodyContactState{contact,0,0,false,d.mass_kg,{}});
     }catch(...){impl_->bodies_.erase(d.body_id);impl_->contact_states_.erase(d.body_id);bodies.RemoveBody(id);bodies.DestroyBody(id);throw;}
 }
+
+void JoltWorld::addConvex(const RigidConvexDescription &d) {
+    impl_->requireConfigurationMutable();
+    if(d.vertices_local_m.size()<4||d.vertices_local_m.size()>64)throw std::invalid_argument("convex requires 4..64 vertices");
+    std::vector<JPH::Vec3> vertices;
+    for(auto v:d.vertices_local_m){if(!std::isfinite(lengthSquared(v))||length(v)>10)throw std::invalid_argument("invalid convex vertex");vertices.push_back(toJolt(v));}
+    JPH::ConvexHullShapeSettings settings(vertices.data(),int(vertices.size()),0);
+    auto built=settings.Create();if(built.HasError())throw std::invalid_argument(built.GetError().c_str());
+    JPH::RefConst<JPH::Shape> inner=built.Get();
+    JPH::RefConst<JPH::Shape> centered=new JPH::OffsetCenterOfMassShape(inner.GetPtr(),-inner->GetCenterOfMass());
+    // Reuse the independent mass/inertia validation and tiny-inertia handling.
+    RigidCompoundDescription proxy;proxy.body_id=d.body_id;proxy.material=d.material;proxy.state=d.state;
+    proxy.mass_kg=d.mass_kg;proxy.inertia_local_kg_m2=d.inertia_local_kg_m2;proxy.parts={{{PrimitiveKind::Sphere,.01}, {}}};
+    addCompound(proxy);
+    impl_->physics_->GetBodyInterface().SetShape(impl_->bodies_.at(d.body_id),centered.GetPtr(),false,JPH::EActivation::Activate);
+}
+
+namespace {
+void validateSpring(double rest,double stiffness,double damping) {
+    if(!std::isfinite(rest)||rest<1e-6||rest>10||!std::isfinite(stiffness)||stiffness<=0||stiffness>1e13||
+       !std::isfinite(damping)||damping<0||damping>1e10)throw std::invalid_argument("invalid bounded distance spring");
+}
+}
+unsigned JoltWorld::addDistanceSpring(MatterBodyId a,MatterBodyId b,double rest,double stiffness,double damping) {
+    impl_->requireConfigurationMutable();validateSpring(rest,stiffness,damping);
+    if(a==b||!contains(a)||!contains(b)||impl_->springs_.size()>=20000)throw std::invalid_argument("invalid spring endpoints or budget");
+    JPH::DistanceConstraintSettings settings;settings.mSpace=JPH::EConstraintSpace::LocalToBodyCOM;
+    settings.mPoint1=JPH::RVec3::sZero();settings.mPoint2=JPH::RVec3::sZero();
+    settings.mMinDistance=settings.mMaxDistance=float(rest);
+    settings.mLimitsSpringSettings={JPH::ESpringMode::StiffnessAndDamping,float(stiffness),float(damping)};
+    auto *raw=impl_->physics_->GetBodyInterface().CreateConstraint(&settings,impl_->bodies_.at(a),impl_->bodies_.at(b));
+    if(!raw)throw std::runtime_error("spring creation failed");
+    const auto id=impl_->next_spring_++;
+    impl_->springs_.emplace(id,Impl::Spring{a,b,static_cast<JPH::DistanceConstraint*>(raw)});
+    impl_->physics_->AddConstraint(raw);return id;
+}
+void JoltWorld::updateDistanceSpring(unsigned id,double rest,double stiffness,double damping) {
+    impl_->requireConfigurationMutable();validateSpring(rest,stiffness,damping);
+    auto &spring=impl_->springs_.at(id);spring.constraint->SetDistance(float(rest),float(rest));
+    spring.constraint->SetLimitsSpringSettings({JPH::ESpringMode::StiffnessAndDamping,float(stiffness),float(damping)});
+}
+void JoltWorld::removeDistanceSpring(unsigned id) {
+    impl_->requireConfigurationMutable();auto it=impl_->springs_.find(id);if(it==impl_->springs_.end())throw std::invalid_argument("unknown spring");
+    impl_->physics_->RemoveConstraint(it->second.constraint);impl_->springs_.erase(it);
+}
+double JoltWorld::distanceSpringImpulse(unsigned id) const {return impl_->springs_.at(id).constraint->GetTotalLambdaPosition();}
 
 PairContactOwner JoltWorld::pairContactOwner(MatterBodyId a,MatterBodyId b) const {
     if(a==b||!contains(a)||!contains(b))throw std::invalid_argument("contact ownership requires two distinct registered bodies");
@@ -1246,6 +1302,9 @@ void JoltWorld::removeAndDestroy(MatterBodyId body_id) {
         return;
     }
     releaseFromWorld(body_id);
+    std::vector<unsigned> attached;
+    for(auto &[id,spring]:impl_->springs_)if(spring.a==body_id||spring.b==body_id)attached.push_back(id);
+    for(auto id:attached)removeDistanceSpring(id);
     std::erase_if(impl_->external_pairs_,[&](const auto &pair){return pair.first==body_id||pair.second==body_id;});
     JPH::BodyInterface &body_interface = impl_->physics_->GetBodyInterface();
     body_interface.RemoveBody(found->second);
