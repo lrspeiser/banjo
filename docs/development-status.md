@@ -1,5 +1,7 @@
 # Development status and handoff
 
+**Assembly test controls:** [Revision-bound background tests](assembly-test-ui-checkpoint.md) expose settings, measured outcomes and evidence export. Native oak pass/fail, stale-revision and budget-error paths verified; all 21 suites pass with glass/oak/iron coverage. LLM review controls and first-person integration remain open. Local `22932be`; full goal active.
+
 **Assembly workshop UI:** [Saved-design review](assembly-ui-checkpoint.md) shows parts, joint quantities and current inventory shortages; native oak import/collection/revision/restart and glass/iron layouts verified. All 21 suites pass. Testing/review controls, first-person integration and live construction remain open. Local `acf41d1`; full goal active.
 
 **Saved assembly drafts:** [Revisioned declarations](assembly-draft-checkpoint.md) survive CreatorWorld save v4, migrate v1–3 and reassess current stock. Glass/oak/iron CLI restart checks and all 21 suites pass. UI, live construction and physical energy remain open. Local `931be9f`; full goal active.
