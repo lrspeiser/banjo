@@ -37,6 +37,7 @@ add_library(
     src/physics/NormalImpact.cpp
     src/physics/NormalCompliance.cpp
     src/physics/CompliantStep.cpp
+    src/physics/CompliantAdvance.cpp
     src/physics/ElasticNewton.cpp
     src/physics/MechanicalAccounting.cpp
     src/physics/RollingKinematics.cpp
@@ -183,6 +184,11 @@ if(BANJO_BUILD_TESTS)
     target_link_libraries(banjo_compliant_step_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_compliant_step_tests)
     add_test(NAME banjo_compliant_step_tests COMMAND banjo_compliant_step_tests)
+
+    add_executable(banjo_compliant_advance_tests tests/compliant_advance_tests.cpp)
+    target_link_libraries(banjo_compliant_advance_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_compliant_advance_tests)
+    add_test(NAME banjo_compliant_advance_tests COMMAND banjo_compliant_advance_tests)
 
     add_executable(banjo_outcome_tests tests/material_outcome_tests.cpp)
     target_link_libraries(banjo_outcome_tests PRIVATE banjo_core)

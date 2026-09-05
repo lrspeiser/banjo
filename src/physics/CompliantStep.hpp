@@ -9,6 +9,12 @@ struct CompliantStepSettings {
     // Declared validity bound on modeled interface compression, not a relaxed
     // tolerance for an unresolved rigid constraint. Must be chosen explicitly.
     double maximum_compression_m{};
+    // Optional stricter nonlinear stopping budgets. These bound the physical
+    // moments of the equation residual, not differences of rounded state sums.
+    // Independent state-based acceptance tolerances remain in solver.
+    double maximum_residual_work_j{std::numeric_limits<double>::infinity()};
+    double maximum_residual_linear_impulse_kg_m_s{std::numeric_limits<double>::infinity()};
+    double maximum_residual_angular_impulse_kg_m2_s{std::numeric_limits<double>::infinity()};
 };
 enum class CompliantStepFailure { None, Convergence, Geometry, Compression, Balance };
 [[nodiscard]] constexpr const char *compliantFailureName(CompliantStepFailure failure) {

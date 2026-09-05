@@ -27,6 +27,8 @@ CompliantStepResult tryCompliantStep(ActiveMatter &matter, double dt, const Comp
     if (!s.global_elastic_solve || !std::isfinite(settings.normal.stiffness_n_m) || settings.normal.stiffness_n_m <= 0 ||
         !std::isfinite(settings.normal.compression_damping_kg_s) || settings.normal.compression_damping_kg_s < 0 ||
         !std::isfinite(settings.maximum_compression_m) || settings.maximum_compression_m <= 0 ||
+        !(settings.maximum_residual_work_j>0) || !(settings.maximum_residual_linear_impulse_kg_m_s>0) ||
+        !(settings.maximum_residual_angular_impulse_kg_m2_s>0) ||
         (sphere && settings.maximum_compression_m >= sphere->radius_m))
         throw std::invalid_argument("compliant reference requires global solve, positive stiffness/compression bound and nonnegative damping");
     CompliantStepResult result;
@@ -75,9 +77,12 @@ CompliantStepResult tryCompliantStep(ActiveMatter &matter, double dt, const Comp
     // or work defect. Continue Newton until the residual's physical moments
     // also fit inside half the audit budget, reserving room for roundoff in
     // the independent state-based audit below. Never project the final state.
-    const double work_stop = .5*s.relative_energy_tolerance*std::max(1.0,kinetic+before.elastic_energy_j+initial_contact_energy);
-    const double momentum_stop = .5*s.relative_momentum_tolerance*std::max(1.0,length(before.linear_momentum_kg_m_s));
-    const double angular_stop = .5*s.relative_momentum_tolerance*std::max(1.0,length(before.angular_momentum_kg_m2_s));
+    const double work_stop = .5*std::min(settings.maximum_residual_work_j,
+        s.relative_energy_tolerance*std::max(1.0,kinetic+before.elastic_energy_j+initial_contact_energy));
+    const double momentum_stop = .5*std::min(settings.maximum_residual_linear_impulse_kg_m_s,
+        s.relative_momentum_tolerance*std::max(1.0,length(before.linear_momentum_kg_m_s)));
+    const double angular_stop = .5*std::min(settings.maximum_residual_angular_impulse_kg_m2_s,
+        s.relative_momentum_tolerance*std::max(1.0,length(before.angular_momentum_kg_m2_s)));
     const auto solved = [&]() {
         std::vector<Vec3> residual;
         balance.constitutive_velocity_residual_m_s = detail::elasticVelocityResidual(

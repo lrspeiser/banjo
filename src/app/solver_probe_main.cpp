@@ -3,6 +3,7 @@
 #include "physics/ConservativeStep.hpp"
 #include "physics/ConservativeAdvance.hpp"
 #include "physics/CompliantStep.hpp"
+#include "physics/CompliantAdvance.hpp"
 #include "physics/MechanicalAccounting.hpp"
 #include <chrono>
 #include <algorithm>
@@ -26,7 +27,10 @@ int main(int argc, char **argv) {
         bool sample_every_set = false;
         bool global = true;
         bool floor = false, global_support = true;
-        bool events = false, compliant = false, restitution_set = false, compliance_set = false;
+        bool events = false, compliant = false, adaptive = false, restitution_set = false, compliance_set = false;
+        bool adaptive_options = false;
+        double error_scale=1;
+        banjo::CompliantAdvanceSettings adaptive_settings;
         banjo::MaterialPreset preset = banjo::MaterialPreset::Glass;
         for (int i = 1; i < argc; ++i) {
             const std::string option = argv[i];
@@ -42,10 +46,11 @@ int main(int argc, char **argv) {
             }
             if (option == "--step-mode") {
                 const std::string name = argv[i];
-                if (name != "raw" && name != "events" && name != "compliant")
-                    throw std::invalid_argument("step mode must be raw, events, or compliant");
+                if (name != "raw" && name != "events" && name != "compliant" && name != "adaptive")
+                    throw std::invalid_argument("step mode must be raw, events, compliant, or adaptive");
                 events = name == "events";
-                compliant = name == "compliant";
+                adaptive = name == "adaptive";
+                compliant = name == "compliant" || adaptive;
                 continue;
             }
             if (option == "--solver") {
@@ -82,11 +87,16 @@ int main(int argc, char **argv) {
             else if (option == "--normal-stiffness") { normal_stiffness = value; compliance_set = true; }
             else if (option == "--normal-damping") { normal_damping = value; compliance_set = true; }
             else if (option == "--max-compression") { max_compression = value; compliance_set = true; }
-            else if ((option == "--steps" || option == "--iterations" || option == "--linear-iterations" || option == "--sample-every") &&
+            else if (option == "--error-scale") { error_scale=value; adaptive_options=true; }
+            else if (option == "--error-reference-time") { adaptive_settings.error.reference_time_s=value; adaptive_options=true; }
+            else if (option == "--max-trial-dt") { adaptive_settings.maximum_trial_dt_s=value; adaptive_options=true; }
+            else if (option == "--min-trial-dt") { adaptive_settings.minimum_trial_dt_s=value; adaptive_options=true; }
+            else if ((option == "--steps" || option == "--iterations" || option == "--linear-iterations" || option == "--sample-every" || option == "--trial-budget") &&
                      value <= 100000 && std::floor(value) == value) {
                 if (option == "--steps") steps = static_cast<unsigned>(value);
                 else if (option == "--iterations") iterations = static_cast<unsigned>(value);
                 else if (option == "--linear-iterations") linear_iterations = static_cast<unsigned>(value);
+                else if (option == "--trial-budget") { adaptive_settings.maximum_trials=static_cast<unsigned>(value); adaptive_options=true; }
                 else { sample_every=static_cast<unsigned>(value); sample_every_set=true; }
             } else throw std::invalid_argument("unknown probe option or invalid integer count");
         }
@@ -96,6 +106,12 @@ int main(int argc, char **argv) {
         if (compliant && (!global || !global_support || normal_stiffness<=0 || max_compression<=0))
             throw std::invalid_argument("compliant mode requires global coupling, --normal-stiffness and --max-compression");
         if (sample_every_set && trajectory_path.empty()) throw std::invalid_argument("--sample-every requires --trajectory");
+        if (adaptive_options && !adaptive) throw std::invalid_argument("adaptive error/trial options require --step-mode adaptive");
+        adaptive_settings.error.position_m*=error_scale;
+        adaptive_settings.error.velocity_m_s*=error_scale;
+        adaptive_settings.error.bond_strain*=error_scale;
+        adaptive_settings.error.damping_work_j*=error_scale;
+        adaptive_settings.initial_trial_dt_s=adaptive_settings.maximum_trial_dt_s;
         std::ofstream trajectory;
         if (!trajectory_path.empty()) {
             trajectory.exceptions(std::ios::badbit | std::ios::failbit);
@@ -139,11 +155,16 @@ int main(int argc, char **argv) {
                   << " dt=" << dt << " requested_steps=" << steps << " solver=" << (global ? "newton" : "local") << '\n'
                   << "case=" << (floor ? "floor" : "free") << " floor_gap_m=" << gap << " floor_speed_m_s=" << speed
                   << " support_solver=" << (global && global_support ? "coupled" : "split")
-                  << " step_mode=" << (events ? "events" : (compliant ? "compliant" : "raw")) << " gravity_m_s2=" << gravity_magnitude;
+                  << " step_mode=" << (events ? "events" : (adaptive ? "adaptive" : (compliant ? "compliant" : "raw"))) << " gravity_m_s2=" << gravity_magnitude;
         if (events) std::cout << " prescribed_event_restitution=" << restitution;
         if (compliant) std::cout << " normal_stiffness_n_m=" << normal_stiffness << " compression_damping_kg_s=" << normal_damping
             << " max_compression_m=" << max_compression << "; explicit per-contact law, uncalibrated interface";
-        std::cout << "\nstep,accepted,iterations,linear_iterations,velocity_residual_m_s,energy_residual_j,wall_ms,normal_loss_j,support_impulse_y,penetration_m,impact_loss_j,substeps,trials,impact_events,contact_energy_j,contact_damping_loss_j,modeled_compression_m,body_elastic_energy_j,internal_kinetic_energy_j,com_y_m,com_vy_m_s\n";
+        if (adaptive) std::cout << "\nerror_position_m=" << adaptive_settings.error.position_m
+            << " error_velocity_m_s=" << adaptive_settings.error.velocity_m_s << " error_bond_strain=" << adaptive_settings.error.bond_strain
+            << " error_damping_work_j=" << adaptive_settings.error.damping_work_j << " error_reference_time_s=" << adaptive_settings.error.reference_time_s
+            << " max_trial_dt_s=" << adaptive_settings.maximum_trial_dt_s << " min_trial_dt_s=" << adaptive_settings.minimum_trial_dt_s
+            << " maximum_trials=" << adaptive_settings.maximum_trials << "; local full-vs-two-half indicators; no exact-solution guarantee";
+        std::cout << "\nstep,accepted,iterations,linear_iterations,velocity_residual_m_s,energy_residual_j,wall_ms,normal_loss_j,support_impulse_y,penetration_m,impact_loss_j,substeps,trials,impact_events,contact_energy_j,contact_damping_loss_j,modeled_compression_m,body_elastic_energy_j,internal_kinetic_energy_j,com_y_m,com_vy_m_s,rejected_segments,max_accepted_error,min_accepted_step_s\n";
         for (unsigned i = 0; i < steps; ++i) {
             const auto start = std::chrono::steady_clock::now();
             const banjo::ConservativeStepSettings step_settings{.maximum_iterations = iterations,
@@ -151,10 +172,17 @@ int main(int argc, char **argv) {
                 .maximum_linear_iterations = linear_iterations, .global_support_solve = global_support};
             banjo::ConservativeAdvanceResult advance;
             banjo::CompliantStepResult compliant_result;
+            banjo::CompliantAdvanceResult adaptive_result;
             banjo::ConservativeStepResult result;
             if (events) {
                 advance = banjo::tryConservativeAdvance(matter, dt, gravity, nullptr, {.step=step_settings,.normal_restitution=restitution});
                 result = advance.balance;
+            } else if (adaptive) {
+                adaptive_settings.step={.solver=step_settings,.normal={normal_stiffness,normal_damping},.maximum_compression_m=max_compression};
+                adaptive_result=banjo::tryCompliantAdvance(matter,dt,adaptive_settings,gravity);
+                compliant_result=adaptive_result.step;
+                result=compliant_result.balance;
+                if (result.converged) adaptive_settings.initial_trial_dt_s=adaptive_result.suggested_trial_dt_s;
             } else if (compliant) {
                 compliant_result = banjo::tryCompliantStep(matter,dt,
                     {.solver=step_settings,.normal={normal_stiffness,normal_damping},.maximum_compression_m=max_compression},gravity);
@@ -169,8 +197,8 @@ int main(int argc, char **argv) {
             if (result.balance_measured) std::cout << result.normal_contact_loss_j << ',' << result.support_impulse_kg_m_s.y
                                                  << ',' << result.maximum_penetration_m;
             else std::cout << ",,";
-            std::cout << ',' << advance.impact_loss_j << ',' << (events ? advance.substeps : (result.converged ? 1 : 0))
-                      << ',' << (events ? advance.trials : 1) << ',' << advance.impact_events << ','
+            std::cout << ',' << advance.impact_loss_j << ',' << (events ? advance.substeps : (adaptive ? 2*adaptive_result.accepted_segments : (result.converged ? 1 : 0)))
+                      << ',' << (events ? advance.trials : (adaptive ? adaptive_result.trials : 1)) << ',' << advance.impact_events << ','
                       << compliant_result.contact_energy_after_j << ',' << compliant_result.contact_damping_loss_j
                       << ',' << compliant_result.maximum_compression_m << ',';
             if (result.converged) {
@@ -178,7 +206,8 @@ int main(int argc, char **argv) {
                 std::cout << measured.elastic_energy_j << ',' << measured.kinetic_energy_j-bulk << ','
                     << measured.mass_first_moment_kg_m.y/measured.mass_kg << ',' << measured.linear_momentum_kg_m_s.y/measured.mass_kg;
             } else std::cout << ",,,";
-            std::cout << '\n';
+            std::cout << ',' << adaptive_result.rejected_segments << ',' << adaptive_result.maximum_accepted_error
+                << ',' << adaptive_result.minimum_accepted_step_s << '\n';
             if (!result.converged) {
                 std::cout << "REJECTED: convergence/energy/contact contract not met; input state retained. Failed-row work/counters are unpublished trial diagnostics.\n";
                 if (events) std::cout << "advance_failure=" << banjo::advanceFailureName(advance.failure)
@@ -187,7 +216,14 @@ int main(int argc, char **argv) {
                     << " remaining_s=" << advance.remaining_time_s << " last_dt_s=" << advance.last_trial_dt_s
                     << " gap_m=" << advance.last_new_gap_m << " bracket_s=[" << advance.event_lo_s << ',' << advance.event_hi_s
                     << "] bracket_gap_m=[" << advance.event_lo_gap_m << ',' << advance.event_hi_gap_m << "]\n";
-                if (compliant) std::cout << "compliant_failure=" << banjo::compliantFailureName(compliant_result.failure) << '\n';
+                if (adaptive) std::cout << "adaptive_failure=" << banjo::compliantAdvanceFailureName(adaptive_result.failure)
+                    << " last_raw_failure=" << banjo::compliantFailureName(adaptive_result.last_trial.failure)
+                    << " remaining_s=" << adaptive_result.remaining_time_s << " trial_dt_s=" << adaptive_result.last_trial_dt_s
+                    << " error=" << adaptive_result.last_error.normalized
+                    << " last_E=" << adaptive_result.last_trial.balance.energy_residual_j
+                    << " last_P=" << banjo::length(adaptive_result.last_trial.balance.linear_momentum_residual_kg_m_s)
+                    << " last_L=" << banjo::length(adaptive_result.last_trial.balance.angular_momentum_residual_kg_m2_s) << '\n';
+                else if (compliant) std::cout << "compliant_failure=" << banjo::compliantFailureName(compliant_result.failure) << '\n';
                 return 2;
             }
             support_impulse += result.support_impulse_kg_m_s;
