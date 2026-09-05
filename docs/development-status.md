@@ -1,5 +1,11 @@
 # Development status and handoff
 
+**Saved-action checkpoint:** [Starter save-before-publication](starter-transactions-checkpoint.md) prevents failed saves from spending live resources or granting XP/tools. Glass/oak/iron failure/reload/retry tests and all 16 suites pass; native failed and successful wooden-tool crafting verified. Single-writer local scope; recovery UI, common durable APIs and physical energy remain open. Source `659cc54`, local only.
+
+
+**Saved-action checkpoint:** [Starter save-before-publication](starter-transactions-checkpoint.md) prevents failed saves from spending live resources or granting XP/tools. Glass/oak/iron failure/reload/retry tests and all 16 suites pass; native failed and successful wooden-tool crafting verified. Single-writer local scope; recovery UI, common durable APIs and physical energy remain open. Source `659cc54`, local only.
+
+
 **Starter designer checkpoint:** [The real LLM crafting table](starter-designer-checkpoint.md) now proposes supported shapes from actual player stock/level/stamina, preserves shortages, and independently validates Build. Five real trials and all 16 suites pass; native request/paste and blocked proposal verified. Save v2 migrates v1 progress. Full native gameplay, durable common APIs, physical energy and realistic branch cutting remain open. Local source `29e46a2`; full goal active.
 
 
@@ -89,7 +95,7 @@ Read the [pinned contact checkpoint](https://github.com/lrspeiser/banjo/blob/138
 | Material outcome capture/load/apply | Prototype library and tests | No automatic runtime reuse; state identity, frame applicability and time alignment incomplete |
 | Physical LOD, sparse large worlds | Design only | Whole-object ball activation currently; no adaptive local patch hierarchy |
 | Runtime material-file editing | General material JSON examples remain design | Local creator schema validates SI fields for intact spheres and catalog material IDs; custom constitutive material loading remains open |
-| Door/hinge assemblies, LawScript, AI authoring | Design only on main | Local manual Codex proposal → validated creator recipe works; automatic model connection, assemblies and LawScript remain open |
+| Door/hinge assemblies, LawScript, AI authoring | Design only on main | Local manual Codex proposal â†’ validated creator recipe works; automatic model connection, assemblies and LawScript remain open |
 | Universe publishing, persistence, multiplayer | Design only on main | Local creator inventory/recipe/rigid-state persistence exists; world packages, history, publishing and multiplayer remain open |
 
 Contact combination rules, damping-derived restitution, Hertz screening, point contacts, XPBD iterations, geometric correction and lightweight debris are model choices. They must be visible in tests and documentation, not labeled exact consequences of a handful of material constants.
