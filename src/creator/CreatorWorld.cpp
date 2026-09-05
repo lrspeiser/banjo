@@ -470,6 +470,7 @@ std::string testRuntimeAssembly(const CompiledAssembly &compiled,std::string_vie
         transfer_error+=result.transfer.numerical_energy_change_j;kick_work+=result.transfer.impulse_work_j;
         for(const auto &increment:result.interface_increments)opening_work+=increment.opening_work_j;};
     const auto advance_step=[&](double h) {
+        check(h>0&&static_cast<double>(static_cast<float>(h))==h&&std::isfinite(1.0F/static_cast<float>(h)),"runtime timestep is not representable with a finite reciprocal");
         if(adaptive&&evaluations>=maximum_evaluations)throw std::runtime_error("adaptive runtime evaluation budget exhausted");
         ++evaluations;++accepted_steps;elapsed+=h;
         const double previous_opening_work=opening_work,previous_kick_work=kick_work,previous_transfer=transfer_error;

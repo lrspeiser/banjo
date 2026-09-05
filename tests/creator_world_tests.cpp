@@ -77,6 +77,8 @@ void assemblyAssessment(){
             require(run(runtime,exhausted)["ok"]==false,"adaptive exhaustion cannot publish partial results");
             exhausted=adaptive_spec;exhausted["adaptive"]["minimum_step_s"]=1;
             require(run(runtime,exhausted)["ok"]==false,"minimum actual half-step bound validated");
+            exhausted=adaptive_spec;exhausted["duration_s"]=1e-40;exhausted["adaptive"]["minimum_step_s"]=1e-45;
+            require(run(runtime,exhausted)["ok"]==false,"unsafe float reciprocal timestep rejects");
             auto tight=runtime_spec;tight["energy_error_budget_j"]=fracture_work*1e-12;tight["transfer_roundoff_budget_j"]=0;
             const auto failed=run(runtime,tight);require(failed["ok"]==false||failed["result"]["status"]=="failed","insufficient transfer/integration budget cannot pass");
         } else require(result["ok"]==false,"legacy precision rejects runtime assembly fixture");
