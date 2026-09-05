@@ -140,7 +140,12 @@ void ScenarioProjectionCache::store(
 ProjectionLookup ScenarioProjectionCache::lookupOrProject(
     const ScenarioKey &key,
     const BallScenarioInput &input) {
-    if (const auto cached = lookup(key)) {
+    // CSV v1/v2 are analytical summaries, not complete runtime projections:
+    // they omit masses and other fields. Reproject from the actual input on
+    // first use instead of returning zero-valued diagnostics as a cache hit.
+    if (const auto cached = lookup(key);
+        cached && cached->impact.striker_mass_kg > 0.0 &&
+        cached->impact.target_mass_kg > 0.0) {
         return {*cached, true};
     }
     ScenarioProjection projection = projectBallScenario(input);

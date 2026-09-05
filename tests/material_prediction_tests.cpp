@@ -246,6 +246,19 @@ void scenarioCacheRoundTripsCsvAndKeysGravityDirection() {
     require(
         loaded.lookup(key).has_value(),
         "reloaded cache should contain the exact field-vector key");
+    const auto restored = loaded.lookupOrProject(key, input);
+    require(!restored.cache_hit,
+        "partial CSV summaries must be recomputed, not reported as full cache hits");
+    require(restored.projection.impact.striker_mass_kg > 0.0 &&
+            restored.projection.impact.target_mass_kg > 0.0,
+        "loading a CSV must not turn the viewer's masses into zero");
+    require(std::abs(restored.projection.impact.striker_mass_kg -
+                     first.projection.impact.striker_mass_kg) < 1e-12 &&
+            std::abs(restored.projection.impact.peak_force_n -
+                     first.projection.impact.peak_force_n) < 1e-12,
+        "CSV-backed runtime diagnostics must agree with the live analytical reference");
+    require(loaded.lookupOrProject(key, input).cache_hit,
+        "the completed projection can be reused on the next lookup");
     std::filesystem::remove(path);
 }
 
