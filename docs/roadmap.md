@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Saved assembly drafts:** [Revisioned declarations](assembly-draft-checkpoint.md) survive CreatorWorld save v4, migrate v1–3 and reassess current stock. Glass/oak/iron CLI restart checks and all 21 suites pass. UI, live construction and physical energy remain open. Local `931be9f`; full goal active.
+
 **Real LLM assembly review:** [Verified assessment/test evidence](assembly-review-checkpoint.md) reaches the provider through a review-only boundary. Six glass/oak/iron replies correctly distinguish outcomes, stock and unsupported creation; recipe injection rejects; 21 suites pass. UI/build integration remains open. Local `b08d0d7`; full goal active.
 
 **Assembly test API:** [Bounded isolated separation tests](assembly-test-checkpoint.md) share assessment compilation and return measured pass/fail with body/site/energy evidence. Three-material CLI checks preserve live state; 21 suites pass. Live assembly creation and LLM/UI integration remain open. Local `9ddcc4e`; full goal active.
