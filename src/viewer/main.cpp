@@ -808,7 +808,15 @@ int main(int argc, char **argv) {
                     std::filesystem::create_directories(
                         capture_path.parent_path());
                 }
-                TakeScreenshot(options.capture_path.c_str());
+                // TakeScreenshot prefixes the working directory even for absolute
+                // paths and returns no export status. Export the framebuffer
+                // directly so Windows drive paths work and failed captures fail CI.
+                Image capture = LoadImageFromScreen();
+                const bool exported = ExportImage(capture, options.capture_path.c_str());
+                UnloadImage(capture);
+                if (!exported) {
+                    throw std::runtime_error("failed to export capture: " + options.capture_path);
+                }
                 break;
             }
         }
