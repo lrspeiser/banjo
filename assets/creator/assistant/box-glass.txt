@@ -1,0 +1,1 @@
+Make a solid glass rectangular block, with full local X/Y/Z lengths 8 cm, 6 cm, and 10 cm respectively. Use collected glass, start at rest, align its bottom face with the 10-degree ramp, place its center at tangent -2 m and lane 0 m, and leave 2 mm clearance below its lowest point.

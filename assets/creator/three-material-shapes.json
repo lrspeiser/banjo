@@ -1,0 +1,255 @@
+[
+  {
+    "type": "collect",
+    "lot_id": "glass-pile"
+  },
+  {
+    "type": "collect",
+    "lot_id": "oak-pile"
+  },
+  {
+    "type": "collect",
+    "lot_id": "iron-pile"
+  },
+  {
+    "type": "create",
+    "request_id": "glass-sphere",
+    "recipe": {
+      "schema_version": 2,
+      "name": "glass sphere",
+      "material": "glass",
+      "physics": "rigid-v1",
+      "shape": {
+        "type": "sphere",
+        "radius_m": 0.04
+      },
+      "placement": {
+        "tangent_m": -2,
+        "bitangent_m": -1.125,
+        "clearance_m": 0.002,
+        "orientation_wxyz": [
+          1,
+          0,
+          0,
+          0
+        ]
+      },
+      "motion": {
+        "linear_velocity_m_s": [
+          0,
+          0,
+          0
+        ],
+        "angular_velocity_rad_s": [
+          0,
+          0,
+          0
+        ]
+      }
+    }
+  },
+  {
+    "type": "create",
+    "request_id": "glass-box",
+    "recipe": {
+      "schema_version": 2,
+      "name": "glass box",
+      "material": "glass",
+      "physics": "rigid-v1",
+      "shape": {
+        "type": "box",
+        "dimensions_m": [
+          0.08,
+          0.06,
+          0.055850536063818554
+        ]
+      },
+      "placement": {
+        "tangent_m": -2,
+        "bitangent_m": -0.675,
+        "clearance_m": 0.002,
+        "orientation_wxyz": [
+          0.9961946980917455,
+          0,
+          0,
+          -0.08715574274765817
+        ]
+      },
+      "motion": {
+        "linear_velocity_m_s": [
+          0,
+          0,
+          0
+        ],
+        "angular_velocity_rad_s": [
+          0,
+          0,
+          0
+        ]
+      }
+    }
+  },
+  {
+    "type": "create",
+    "request_id": "oak-sphere",
+    "recipe": {
+      "schema_version": 2,
+      "name": "oak sphere",
+      "material": "oak",
+      "physics": "rigid-v1",
+      "shape": {
+        "type": "sphere",
+        "radius_m": 0.04
+      },
+      "placement": {
+        "tangent_m": -2,
+        "bitangent_m": -0.225,
+        "clearance_m": 0.002,
+        "orientation_wxyz": [
+          1,
+          0,
+          0,
+          0
+        ]
+      },
+      "motion": {
+        "linear_velocity_m_s": [
+          0,
+          0,
+          0
+        ],
+        "angular_velocity_rad_s": [
+          0,
+          0,
+          0
+        ]
+      }
+    }
+  },
+  {
+    "type": "create",
+    "request_id": "oak-box",
+    "recipe": {
+      "schema_version": 2,
+      "name": "oak box",
+      "material": "oak",
+      "physics": "rigid-v1",
+      "shape": {
+        "type": "box",
+        "dimensions_m": [
+          0.08,
+          0.06,
+          0.055850536063818554
+        ]
+      },
+      "placement": {
+        "tangent_m": -2,
+        "bitangent_m": 0.225,
+        "clearance_m": 0.002,
+        "orientation_wxyz": [
+          0.9961946980917455,
+          0,
+          0,
+          -0.08715574274765817
+        ]
+      },
+      "motion": {
+        "linear_velocity_m_s": [
+          0,
+          0,
+          0
+        ],
+        "angular_velocity_rad_s": [
+          0,
+          0,
+          0
+        ]
+      }
+    }
+  },
+  {
+    "type": "create",
+    "request_id": "iron-sphere",
+    "recipe": {
+      "schema_version": 2,
+      "name": "iron sphere",
+      "material": "iron",
+      "physics": "rigid-v1",
+      "shape": {
+        "type": "sphere",
+        "radius_m": 0.04
+      },
+      "placement": {
+        "tangent_m": -2,
+        "bitangent_m": 0.675,
+        "clearance_m": 0.002,
+        "orientation_wxyz": [
+          1,
+          0,
+          0,
+          0
+        ]
+      },
+      "motion": {
+        "linear_velocity_m_s": [
+          0,
+          0,
+          0
+        ],
+        "angular_velocity_rad_s": [
+          0,
+          0,
+          0
+        ]
+      }
+    }
+  },
+  {
+    "type": "create",
+    "request_id": "iron-box",
+    "recipe": {
+      "schema_version": 2,
+      "name": "iron box",
+      "material": "iron",
+      "physics": "rigid-v1",
+      "shape": {
+        "type": "box",
+        "dimensions_m": [
+          0.08,
+          0.06,
+          0.055850536063818554
+        ]
+      },
+      "placement": {
+        "tangent_m": -2,
+        "bitangent_m": 1.125,
+        "clearance_m": 0.002,
+        "orientation_wxyz": [
+          0.9961946980917455,
+          0,
+          0,
+          -0.08715574274765817
+        ]
+      },
+      "motion": {
+        "linear_velocity_m_s": [
+          0,
+          0,
+          0
+        ],
+        "angular_velocity_rad_s": [
+          0,
+          0,
+          0
+        ]
+      }
+    }
+  },
+  {
+    "type": "step",
+    "ticks": 240
+  },
+  {
+    "type": "inspect"
+  }
+]

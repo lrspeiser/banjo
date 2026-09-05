@@ -53,6 +53,12 @@ void protocol() {
     j["mint_mass_kg"]=100;rejects([&]{(void)CodexAssistant::parseReply(j.dump(),"a");});
     rejects([&]{(void)CodexAssistant::parseReply("{\"request_id\":\"a\",\"request_id\":\"a\"}","a");});
     require(Json::parse(CodexAssistant::responseSchema())["additionalProperties"]==false,"Output schema rejects extra fields");
+    ObjectRecipe box;box.schema_version=2;box.shape="box";box.dimensions_m={.08,.06,.1};
+    j=reply("box");j["recipe"]=Json::parse(CreatorWorld::recipeJson(box));
+    const auto parsed_box=CodexAssistant::parseReply(j.dump(),"box");
+    require(parsed_box.recipe&&parsed_box.recipe->shape=="box"&&parsed_box.recipe->dimensions_m.z==.1,"Assistant carries full box dimensions through shared parser");
+    j["recipe"]["placement"]["orientation_wxyz"]={2,0,0,0};
+    rejects([&]{(void)CodexAssistant::parseReply(j.dump(),"box");});
     CreatorWorld world;const auto before=world.serialize();
     const auto request=Json::parse(CodexAssistant::requestDocument(world,"a","Make an oak ball.",{}));
     require(request["world"]["inventory"].empty()&&world.serialize()==before,"Request cannot collect or spend resources");

@@ -11,6 +11,7 @@
 #include <iomanip>
 #include <iostream>
 #include <optional>
+#include <numbers>
 #include <sstream>
 
 namespace {
@@ -46,15 +47,35 @@ std::string read(const std::filesystem::path &path) {
 void write(const std::filesystem::path &path,const Json &j) {
     std::ofstream file(path,std::ios::binary);file<<j.dump(2);file.flush();if(!file)throw std::runtime_error("Cannot write AI request");
 }
+Quat tilt(double degrees) {const double half=degrees*std::numbers::pi/360;return {std::cos(half),0,0,std::sin(half)};}
+void drawObject(const ObjectRecipe &recipe,Vec3 position,Quat q,Color tint,bool wire=false) {
+    if(recipe.shape=="sphere") {
+        if(wire)DrawSphereWires(v(position),static_cast<float>(recipe.radius_m),12,18,tint);
+        else {
+            DrawSphereEx(v(position),static_cast<float>(recipe.radius_m),20,30,tint);
+            const auto tip=position+q.rotate({0,0,recipe.radius_m*1.02});
+            DrawLine3D(v(position),v(tip),background);DrawSphere(v(tip),static_cast<float>(recipe.radius_m*.1),ink);
+        }
+    }else {
+        const auto x=q.rotate({1,0,0}),y=q.rotate({0,1,0}),z=q.rotate({0,0,1});
+        const float matrix[]{static_cast<float>(x.x),static_cast<float>(x.y),static_cast<float>(x.z),0,
+            static_cast<float>(y.x),static_cast<float>(y.y),static_cast<float>(y.z),0,
+            static_cast<float>(z.x),static_cast<float>(z.y),static_cast<float>(z.z),0,0,0,0,1};
+        rlPushMatrix();rlTranslatef(static_cast<float>(position.x),static_cast<float>(position.y),static_cast<float>(position.z));rlMultMatrixf(matrix);
+        if(!wire)DrawCubeV({0,0,0},v(recipe.dimensions_m),tint);
+        DrawCubeWiresV({0,0,0},v(recipe.dimensions_m),wire?tint:ink);rlPopMatrix();
+    }
+}
 }
 int main(int argc,char **argv) {
     try {
         std::filesystem::path workspace=std::filesystem::absolute(argv[0]).parent_path()/"workshop-data",capture;unsigned frames=180;
-        std::filesystem::path assistant_exe=ChildProcess::findExecutable("codex");bool manual_assistant=false;
+        std::filesystem::path assistant_exe=ChildProcess::findExecutable("codex");bool manual_assistant=false,shape_capture=false;
         for(int i=1;i<argc;++i) {
             const std::string option=argv[i];if(++i>=argc)throw std::invalid_argument("missing workshop option value");
             if(option=="--workspace")workspace=argv[i];else if(option=="--capture")capture=argv[i];
             else if(option=="--assistant-exe")assistant_exe=std::filesystem::absolute(argv[i]);
+            else if(option=="--capture-layout") {const std::string layout=argv[i];if(layout!="materials"&&layout!="shapes")throw std::invalid_argument("capture layout must be materials or shapes");shape_capture=layout=="shapes";}
             else if(option=="--assistant") {const std::string mode=argv[i];if(mode!="auto"&&mode!="manual")throw std::invalid_argument("assistant must be auto or manual");manual_assistant=mode=="manual";}
             else if(option=="--frames")frames=static_cast<unsigned>(std::stoul(argv[i]));else throw std::invalid_argument("unknown workshop option");
         }
@@ -66,16 +87,24 @@ int main(int argc,char **argv) {
         ObjectRecipe draft;std::string prompt="Use some of my wood to make a ball that rolls down this ramp.";
         std::string status="Collect a material, then design an object.",request_id,pending_id,proposal_message;
         bool paused=capture.empty(),typing=false,built=false,follow=false;double accumulator=0,poll_at=0;unsigned rendered=0,serial=0;
+        unsigned dimension_axis=0,orientation_preset=0;
         const auto session=std::to_string(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
         const auto new_id=[&]{return "workshop-"+session+"-"+std::to_string(++serial);};request_id=new_id();
         const auto save=[&]{if(capture.empty())world.save(workspace/"world.json");};
         if(!capture.empty()) {
             for(auto m:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
-                world.collect(std::string(materialPresetName(m))+"-pile");auto r=draft;r.material=m;r.bitangent_m=.45*(static_cast<double>(world.objects().size())-1);
+                world.collect(std::string(materialPresetName(m))+"-pile");auto r=draft;r.material=m;
+                r.bitangent_m=.45*(static_cast<double>(world.objects().size())-(shape_capture?2.5:1));
+                if(shape_capture)r.radius_m=.04;
                 (void)world.create(std::string(materialPresetName(m))+"-capture",r);
+                if(shape_capture) {
+                    const double volume=r.geometry().volume();r.shape="box";r.schema_version=2;r.name=name(m)+" box";
+                    r.dimensions_m={.08,.06,volume/(.08*.06)};r.orientation_world=tilt(-world.settings().slope_degrees);r.bitangent_m+=.45;
+                    (void)world.create(std::string(materialPresetName(m))+"-box-capture",r);
+                }
             }
             draft=world.objects().back().recipe;request_id=world.objects().back().request_id;
-            built=true;status="Three materials, one creation path. Motion comes from contact and gravity.";
+            built=true;status=shape_capture?"Equal-volume sphere/box pairs in glass, oak and iron. Same ramp, zero initial motion.":"Three materials, one creation path. Motion comes from contact and gravity.";
         }
         SetConfigFlags(FLAG_MSAA_4X_HINT);InitWindow(1440,900,"Banjo - Material Workshop");SetTargetFPS(60);
         SetExitKey(KEY_NULL);
@@ -138,13 +167,8 @@ int main(int argc,char **argv) {
             DrawCube({0,0,0},16,.2F,6,{69,83,88,255});DrawCubeWires({0,0,0},16,.2F,6,{103,119,124,255});rlPopMatrix();
             const auto plane=world.support();
             for(int i=-8;i<=8;++i)DrawLine3D(v(pointInPlaneFrame(plane,i,-3,.001)),v(pointInPlaneFrame(plane,i,3,.001)),{83,99,105,255});
-            for(const auto &object:world.objects()) {
-                DrawSphereEx(v(object.state.center_of_mass_world_m),static_cast<float>(object.recipe.radius_m),20,30,color(object.recipe.material));
-                const auto tip=object.state.center_of_mass_world_m+object.state.orientation_world.rotate({0,0,object.recipe.radius_m*1.02});
-                DrawLine3D(v(object.state.center_of_mass_world_m),v(tip),background);
-                DrawSphere(v(tip),static_cast<float>(object.recipe.radius_m*.1),ink);
-            }
-            if(preview&&!built)DrawSphereWires(v(preview->position_world_m),static_cast<float>(draft.radius_m),12,18,accent);
+            for(const auto &object:world.objects())drawObject(object.recipe,object.state.center_of_mass_world_m,object.state.orientation_world,color(object.recipe.material));
+            if(preview&&!built)drawObject(draft,preview->position_world_m,draft.orientation_world,accent,true);
             for(std::size_t i=0;i<world.lots().size();++i)if(!world.lots()[i].collected) {
                 const auto &lot=world.lots()[i];const double size=std::cbrt(lot.remaining_mass_kg/makeReferenceMaterial(lot.material).density_kg_m3);
                 DrawCubeV(v(pointInPlaneFrame(plane,-2.7,.45*(static_cast<double>(i)-1),size/2)),{static_cast<float>(size),static_cast<float>(size),static_cast<float>(size)},color(lot.material));
@@ -161,23 +185,35 @@ int main(int argc,char **argv) {
                 if(button({36,static_cast<float>(y+65),248,40},lot.collected?"Collected":"Collect material",!lot.collected))try {world.collect(lot.id);save();status="Material collected. Your inventory is ready.";}catch(const std::exception &e){status=e.what();}
             }
             wrap("Material keeps its identity. The object compiler calculates how much your design needs.",36,635,245);
-            DrawText("SUPPORTED NOW",36,751,17,accent);wrap("Intact rigid spheres. No deformation or fracture.",36,780,242,17);
+            DrawText("SUPPORTED NOW",36,751,17,accent);wrap("Rigid spheres and boxes. No deformation or fracture.",36,780,242,17);
             DrawRectangleRounded({1092,114,330,748},.035F,8,panel);DrawText("OBJECT PREVIEW",1110,135,20,accent);
-            DrawText(draft.name.substr(0,24).c_str(),1110,173,22,ink);DrawText("Sphere / rigid-v1",1110,205,17,muted);
+            DrawText(draft.name.substr(0,24).c_str(),1110,173,22,ink);
             const auto edit=[&]{assistant.cancel();pending_id.clear();request_id=new_id();built=false;proposal_message.clear();status="Design updated. Review the material cost before building.";};
+            if(button({1110,202,292,30},draft.shape=="sphere"?"Shape: sphere":"Shape: box")) {
+                draft.shape=draft.shape=="sphere"?"box":"sphere";draft.schema_version=2;draft.name=name(draft.material)+(draft.shape=="sphere"?" ball":" box");
+                draft.orientation_world=draft.shape=="box"?tilt(-world.settings().slope_degrees):Quat{};edit();
+            }
             if(button({1110,244,292,40},"Material: "+name(draft.material))) {draft.material=draft.material==MaterialPreset::Oak?MaterialPreset::Glass:draft.material==MaterialPreset::Glass?MaterialPreset::Iron:MaterialPreset::Oak;edit();}
-            DrawText(("Radius  "+fixed(draft.radius_m,3)+" m").c_str(),1110,306,20,ink);
-            if(button({1110,341,140,36},"- 5 mm")){draft.radius_m=std::max(.025,draft.radius_m-.005);edit();}
-            if(button({1262,341,140,36},"+ 5 mm")){draft.radius_m=std::min(.5,draft.radius_m+.005);edit();}
+            if(draft.shape=="box") {
+                if(button({1110,291,292,36},"Edit dimension: "+std::string(1,"XYZ"[dimension_axis])))dimension_axis=(dimension_axis+1)%3;
+                DrawText((fixed(draft.dimensions_m.x)+" x "+fixed(draft.dimensions_m.y)+" x "+fixed(draft.dimensions_m.z)+" m").c_str(),1110,331,15,ink);
+            }else DrawText(("Radius  "+fixed(draft.radius_m,3)+" m").c_str(),1110,306,20,ink);
+            double &dimension=draft.shape=="sphere"?draft.radius_m:(dimension_axis==0?draft.dimensions_m.x:dimension_axis==1?draft.dimensions_m.y:draft.dimensions_m.z);
+            if(button({1110,353,140,32},"- 5 mm")){dimension=std::max(.025,dimension-.005);edit();}
+            if(button({1262,353,140,32},"+ 5 mm")){dimension=std::min(draft.shape=="sphere"?.5:1,dimension+.005);edit();}
             if(button({1110,390,292,36},"Lane: "+fixed(draft.bitangent_m,2)+" m")){draft.bitangent_m=draft.bitangent_m>=.45?-.45:draft.bitangent_m+.45;edit();}
+            if(button({1110,430,292,28},"Orientation: cycle presets")) {
+                orientation_preset=(orientation_preset+1)%3;draft.schema_version=2;
+                draft.orientation_world=orientation_preset==0?Quat{}:tilt(orientation_preset==1?-world.settings().slope_degrees:45-world.settings().slope_degrees);edit();
+            }
             if(built) {
                 const auto found=std::find_if(world.objects().begin(),world.objects().end(),[&](const auto &o){return o.request_id==request_id;});
-                if(found!=world.objects().end())DrawText(("Built with "+fixed(found->mass_kg)+" kg").c_str(),1110,452,22,ink);
-                DrawText(("Available "+fixed(world.inventoryMass(draft.material))+" kg").c_str(),1110,484,18,muted);
+                if(found!=world.objects().end())DrawText(("Built with "+fixed(found->mass_kg)+" kg").c_str(),1110,468,22,ink);
+                DrawText(("Available "+fixed(world.inventoryMass(draft.material))+" kg").c_str(),1110,500,18,muted);
             } else if(preview) {
-                DrawText(("Uses "+fixed(preview->mass_kg)+" kg").c_str(),1110,452,22,ink);
-                DrawText(("Leaves "+fixed(world.inventoryMass(draft.material)-preview->mass_kg)+" kg").c_str(),1110,484,18,muted);
-            } else if(!built)wrap(problem,1110,450,288,17,{237,189,137,255});
+                DrawText(("Uses "+fixed(preview->mass_kg)+" kg").c_str(),1110,468,22,ink);
+                DrawText(("Leaves "+fixed(world.inventoryMass(draft.material)-preview->mass_kg)+" kg").c_str(),1110,500,18,muted);
+            } else if(!built)wrap(problem,1110,464,288,17,{237,189,137,255});
             if(button({1110,548,292,48},built?"Object created":"Build this object",preview.has_value()&&!built&&pending_id.empty(),true))try {
                 (void)world.create(request_id,draft);built=true;paused=true;save();status="Created from your inventory. Press Run to test it.";
             }catch(const std::exception &e){status=e.what();}
@@ -185,10 +221,10 @@ int main(int argc,char **argv) {
             if(button({1262,614,140,40},"Step")){paused=true;world.step();}
             if(button({1110,669,292,38},"Save world"))try{save();status="Inventory, object recipes and motion saved.";}catch(const std::exception &e){status=e.what();}
             if(!world.objects().empty()) {
-                const auto &o=world.objects().back();const auto motion=measureRollingKinematics(o.state,o.recipe.radius_m,plane,insideSupportFootprint(plane,o.state.center_of_mass_world_m,8,3));
-                DrawText(("Last object: "+std::string(rollingStateName(motion.state))).c_str(),1110,739,17,ink);
-                DrawText(("Slip "+fixed(motion.contact_slip_speed_m_s)+" m/s").c_str(),1110,769,17,muted);
-                DrawText(("Speed "+fixed(motion.translation_speed_m_s)+" m/s").c_str(),1110,797,17,muted);
+                const auto motion=measureCreatorMotion(world.objects().back(),plane);
+                DrawText(("Last object: "+motion.state).c_str(),1110,739,17,ink);
+                DrawText((motion.near_support_points?"Slip "+fixed(motion.slip_m_s)+" m/s":"Slip: no top-support sample").c_str(),1110,769,17,muted);
+                DrawText(("Speed "+fixed(motion.speed_m_s)+" m/s").c_str(),1110,797,17,muted);
             }
             DrawRectangleRounded({324,681,750,181},.035F,8,panel);
             DrawRectangleRounded({330,700,725,76},.1F,5,typing?Color{47,60,67,255}:Color{37,48,55,255});wrap(prompt,345,714,690,18,ink);

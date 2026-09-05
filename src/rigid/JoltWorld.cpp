@@ -658,6 +658,48 @@ void JoltWorld::addBall(const RigidBallDescription &description) {
     }
 }
 
+void JoltWorld::addBox(const RigidBoxDescription &description) {
+    const auto d=description.dimensions_m;
+    const auto &s=description.state;
+    const auto finite=[](Vec3 v){return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z);};
+    const auto q=s.orientation_world;
+    if(description.body_id==kInvalidMatterBodyId||description.body_id==kSupportSurfaceMatterId||
+        !finite(d)||d.x<=0||d.y<=0||d.z<=0||
+        !std::isfinite(description.material.density_kg_m3)||description.material.density_kg_m3<=0||
+        !finite(s.center_of_mass_world_m)||!finite(s.linear_velocity_m_s)||!finite(s.angular_velocity_rad_s)||
+        !std::isfinite(q.w+q.x+q.y+q.z)||std::abs(q.w*q.w+q.x*q.x+q.y*q.y+q.z*q.z-1)>1e-5)
+        throw std::invalid_argument("box requires finite positive dimensions/density and valid rigid state");
+    if(impl_->bodies_.contains(description.body_id))throw std::logic_error("body ID is already in the Jolt world");
+    const RigidPrimitive shape{PrimitiveKind::Box,0,d};
+    const double mass=shape.volume()*description.material.density_kg_m3;
+    const auto contact=compileContactMaterial(description.material);
+    JPH::BodyCreationSettings settings(new JPH::BoxShape(toJolt(d/2),0.0F),
+        toJoltPosition(s.center_of_mass_world_m),
+        JPH::Quat(static_cast<float>(q.x),static_cast<float>(q.y),static_cast<float>(q.z),static_cast<float>(q.w)),
+        JPH::EMotionType::Dynamic,Layers::kMoving);
+    settings.mFriction=static_cast<float>(contact.dynamic_friction);
+    settings.mRestitution=static_cast<float>(contact.restitution);
+    settings.mLinearDamping=0;settings.mAngularDamping=0;settings.mMaxAngularVelocity=1000;
+    settings.mApplyGyroscopicForce=true;
+    settings.mMotionQuality=JPH::EMotionQuality::LinearCast;
+    settings.mUserData=description.body_id;
+    settings.mOverrideMassProperties=JPH::EOverrideMassProperties::MassAndInertiaProvided;
+    settings.mMassPropertiesOverride.mMass=static_cast<float>(mass);
+    settings.mMassPropertiesOverride.mInertia=toJoltInertia(shape.inertia(mass));
+    auto &bodies=impl_->physics_->GetBodyInterface();
+    impl_->bodies_.reserve(impl_->bodies_.size()+1);impl_->contact_states_.reserve(impl_->contact_states_.size()+1);
+    const auto id=bodies.CreateAndAddBody(settings,JPH::EActivation::Activate);
+    if(id.IsInvalid())throw std::runtime_error("Jolt could not create box body");
+    bodies.SetLinearAndAngularVelocity(id,toJolt(s.linear_velocity_m_s),toJolt(s.angular_velocity_rad_s));
+    try {
+        impl_->bodies_.emplace(description.body_id,id);
+        impl_->contact_states_.emplace(description.body_id,BodyContactState{contact,0,0,false,mass,{}});
+    }catch(...) {
+        impl_->bodies_.erase(description.body_id);impl_->contact_states_.erase(description.body_id);
+        bodies.RemoveBody(id);bodies.DestroyBody(id);throw;
+    }
+}
+
 void JoltWorld::addFragments(
     const std::vector<RigidFragmentDescription> &fragments) {
     if (fragments.empty()) {
@@ -880,7 +922,12 @@ void JoltWorld::applySphereContactState(MatterBodyId body_id, const CoupledSpher
     const auto it = impl_->bodies_.find(body_id);
     if (it == impl_->bodies_.end() || !impl_->contact_states_.at(body_id).is_sphere)
         throw std::invalid_argument("coupled sphere is missing");
-    const auto &m = state.motion;
+    applyRigidState(body_id,state.motion);
+}
+
+void JoltWorld::applyRigidState(MatterBodyId body_id,const RigidSnapshot &m) {
+    const auto it=impl_->bodies_.find(body_id);
+    if(it==impl_->bodies_.end())throw std::invalid_argument("rigid body is missing");
     impl_->physics_->GetBodyInterface().SetPositionRotationAndVelocity(it->second,
         toJoltPosition(m.center_of_mass_world_m),
         JPH::Quat(static_cast<float>(m.orientation_world.x), static_cast<float>(m.orientation_world.y),

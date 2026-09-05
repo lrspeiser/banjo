@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/Math.hpp"
+#include "core/RigidPrimitive.hpp"
 #include "core/Plane.hpp"
 #include "core/Types.hpp"
 #include "fracture/ActiveMatter.hpp"
@@ -35,6 +36,13 @@ struct RigidBallDescription {
     bool defer_brittle_contacts_to_material{};
 };
 
+struct RigidBoxDescription {
+    MatterBodyId body_id{kInvalidMatterBodyId};
+    Vec3 dimensions_m{};
+    MaterialDefinition material{};
+    RigidSnapshot state{};
+};
+
 class JoltWorld {
 public:
     JoltWorld();
@@ -49,6 +57,8 @@ public:
     void addFloor();
     void addSupportSurface(const RigidSurfaceDescription &description);
     void addBall(const RigidBallDescription &description);
+    void addBox(const RigidBoxDescription &description);
+    void applyRigidState(MatterBodyId body_id,const RigidSnapshot &state);
     void addFragments(const std::vector<RigidFragmentDescription> &fragments);
     void step(double fixed_dt_s);
     [[nodiscard]] CoupledSphereState sphereContactState(MatterBodyId body_id) const;
