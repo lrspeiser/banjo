@@ -34,6 +34,7 @@ add_library(
     src/physics/ContactMechanics.cpp
     src/physics/CohesiveInterface.cpp
     src/physics/CohesivePair.cpp
+    src/physics/CohesiveSpatialPair.cpp
     src/physics/ConservativeStep.cpp
     src/physics/ConservativeAdvance.cpp
     src/physics/NormalImpact.cpp
@@ -182,6 +183,10 @@ if(BANJO_BUILD_LAB)
 endif()
 
 if(BANJO_BUILD_TESTS)
+    add_executable(banjo_cohesive_spatial_tests tests/cohesive_spatial_tests.cpp)
+    target_link_libraries(banjo_cohesive_spatial_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_cohesive_spatial_tests)
+    add_test(NAME banjo_cohesive_spatial_tests COMMAND banjo_cohesive_spatial_tests)
     add_executable(banjo_cohesive_pair_tests tests/cohesive_pair_tests.cpp)
     target_link_libraries(banjo_cohesive_pair_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_cohesive_pair_tests)
