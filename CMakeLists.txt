@@ -47,6 +47,7 @@ add_library(
     src/physics/RollingKinematics.cpp
     src/physics/SphereMaterialContact.cpp
     src/fracture/ActivationPolicy.cpp
+    src/fracture/EnergyRupture.cpp
     src/fracture/BrittleBondSolver.cpp
     src/fracture/ConnectedComponents.cpp
     src/fracture/FragmentMassProperties.cpp
@@ -204,6 +205,10 @@ if(BANJO_BUILD_LAB)
 endif()
 
 if(BANJO_BUILD_TESTS)
+    add_executable(banjo_energy_rupture_tests tests/energy_rupture_tests.cpp)
+    target_link_libraries(banjo_energy_rupture_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_energy_rupture_tests)
+    add_test(NAME banjo_energy_rupture_tests COMMAND banjo_energy_rupture_tests)
     if(TARGET banjo_runtime_cohesive_probe AND DOUBLE_PRECISION)
         add_test(NAME banjo_runtime_cohesive_accuracy COMMAND banjo_runtime_cohesive_probe
             "${CMAKE_CURRENT_BINARY_DIR}/runtime-cohesive-accuracy.csv" --require-accuracy)

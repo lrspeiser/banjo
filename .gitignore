@@ -32,3 +32,8 @@ _deps/
 # Python analysis tools
 __pycache__/
 *.pyc
+
+# Local credentials
+.env
+.env.*
+!.env.example
