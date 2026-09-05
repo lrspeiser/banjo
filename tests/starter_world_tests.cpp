@@ -126,7 +126,20 @@ int main() {try {
         check(StarterWorld::deserialize(built).serialize()==built,"custom recipe state round trips");
         custom.step(240);check(custom.objects().back().state.center_of_mass_world_m.y>1.19,"custom body rests on physical bench");
     }
-    {auto legacy=nlohmann::json::parse(initial);legacy.erase("assembly_draft");legacy["starter_version"]=3;check(StarterWorld::deserialize(legacy.dump()).serialize()==initial,"version three saves migrate without invented assemblies");legacy.erase("remembered_design");legacy["starter_version"]=2;check(StarterWorld::deserialize(legacy.dump()).serialize()==initial,"version two starter saves migrate with no invented design");legacy["starter_version"]=1;legacy["rules"]="starter-stamina-v1/whole-branch-cut-v1/raw-volume-v1";for(auto &o:legacy["objects"])o.erase("custom_design");check(StarterWorld::deserialize(legacy.dump()).serialize()==initial,"version one starter saves migrate without invented progress");}
+    {
+        const auto current=nlohmann::json::parse(initial);
+        check(current["starter_version"]==5&&current["physics_signature"]==nlohmann::json::parse(CreatorWorld::physicsSignatureJson()),"starter stores shared material/runtime/precision identity");
+        auto wrong=current;wrong["physics_signature"]["position_bits"]=JoltWorld::positionPrecisionBits()==32?64:32;
+        rejects([&]{(void)StarterWorld::deserialize(wrong.dump());});
+        wrong=current;wrong["physics_signature"].erase("position_bits");rejects([&]{(void)StarterWorld::deserialize(wrong.dump());});
+        wrong=current;wrong["physics_signature"]["profiles"][0]["density_kg_m3"]=0;rejects([&]{(void)StarterWorld::deserialize(wrong.dump());});
+        auto legacy=current;legacy.erase("physics_signature");legacy["starter_version"]=4;
+        const auto verify=[&]{if(JoltWorld::positionPrecisionBits()==32)check(StarterWorld::deserialize(legacy.dump()).serialize()==initial,"legacy starter migrates without invented progress");else rejects([&]{(void)StarterWorld::deserialize(legacy.dump());});};
+        verify();legacy.erase("assembly_draft");legacy["starter_version"]=3;verify();
+        legacy.erase("remembered_design");legacy["starter_version"]=2;verify();
+        legacy["starter_version"]=1;legacy["rules"]="starter-stamina-v1/whole-branch-cut-v1/raw-volume-v1";
+        for(auto &o:legacy["objects"])o.erase("custom_design");verify();
+    }
     {
         const auto directory=std::filesystem::current_path()/("starter-transaction-test-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
         check(std::filesystem::create_directory(directory),"fresh save test directory");

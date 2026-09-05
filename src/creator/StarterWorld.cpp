@@ -212,14 +212,16 @@ std::string StarterWorld::serialize() const {
     for(const auto &r:receipts_)receipts.push_back({{"id",r.id},{"command",r.command},{"result",r.result}});
     Json remembered=nullptr;
     if(remembered_design_){const auto &d=*remembered_design_;remembered={{"request_id",d.request_id},{"prompt",d.prompt},{"explanation",d.explanation},{"recipe",d.recipe?Json::parse(CreatorWorld::recipeJson(*d.recipe)):Json(nullptr)}};}
-    return Json{{"starter_version",4},{"assembly_draft",{{"revision",assembly_revision_},{"declaration",remembered_assembly_?Json::parse(*remembered_assembly_):Json(nullptr)}}},{"rules","starter-stamina-v1/whole-branch-cut-v1/raw-volume-v1/custom-design-v1"},{"remembered_design",remembered},{"inventory_m3",inventory_m3_},{"stamina",stamina_},{"spent",spent_},{"restored",restored_},{"xp",xp_},{"ticks",ticks_},{"next_id",next_},{"objects",objects},{"receipts",receipts}}.dump(2);
+    return Json{{"starter_version",5},{"physics_signature",Json::parse(CreatorWorld::physicsSignatureJson())},{"assembly_draft",{{"revision",assembly_revision_},{"declaration",remembered_assembly_?Json::parse(*remembered_assembly_):Json(nullptr)}}},{"rules","starter-stamina-v1/whole-branch-cut-v1/raw-volume-v1/custom-design-v1"},{"remembered_design",remembered},{"inventory_m3",inventory_m3_},{"stamina",stamina_},{"spent",spent_},{"restored",restored_},{"xp",xp_},{"ticks",ticks_},{"next_id",next_},{"objects",objects},{"receipts",receipts}}.dump(2);
 }
 StarterWorld StarterWorld::deserialize(std::string_view document) {
     check(document.size()<=1024*1024,"starter save exceeds 1 MiB");
     std::vector<std::set<std::string>> keys;
     const auto j=Json::parse(document,[&](int depth,Json::parse_event_t event,Json &value){check(depth<=24,"starter save nesting exceeds 24");if(event==Json::parse_event_t::object_start)keys.emplace_back();if(event==Json::parse_event_t::key)check(keys.back().insert(value.get<std::string>()).second,"duplicate starter save field");if(event==Json::parse_event_t::object_end)keys.pop_back();return true;});
-    check(j.is_object(),"starter save must be an object");const bool legacy=j.at("starter_version")==1,has_assembly=j.at("starter_version")==4,has_design=j.at("starter_version")==3||has_assembly;
-    check(j.size()==(has_assembly?13:has_design?12:11),"unexpected starter save fields");
+    check(j.is_object(),"starter save must be an object");const bool has_precision=j.at("starter_version")==5,legacy=j.at("starter_version")==1,has_assembly=j.at("starter_version")==4||has_precision,has_design=j.at("starter_version")==3||has_assembly;
+    check(j.size()==(has_precision?14:has_assembly?13:has_design?12:11),"unexpected starter save fields");
+    if(has_precision)check(j.at("physics_signature")==Json::parse(CreatorWorld::physicsSignatureJson()),"saved starter material/runtime signature differs; explicit migration is required");
+    else check(JoltWorld::positionPrecisionBits()==32,"legacy starter has unrecorded position precision; load in the legacy 32-bit configuration before explicit conversion");
     check((legacy&&j.at("rules")=="starter-stamina-v1/whole-branch-cut-v1/raw-volume-v1")||((j.at("starter_version")==2||has_design)&&j.at("rules")=="starter-stamina-v1/whole-branch-cut-v1/raw-volume-v1/custom-design-v1"),"incompatible starter rules");
     StarterWorld w;const auto sources=w.objects_;w.objects_.clear();w.receipts_.clear();w.inventory_m3_=j.at("inventory_m3").get<std::array<double,3>>();
     if(has_design&&!j.at("remembered_design").is_null()){

@@ -42,7 +42,7 @@ void assemblyAssessment(){
         auto changed=declaration;changed["joint"]["id"]="revised-joint";rejects([&]{(void)loaded.rememberAssembly(changed.dump(),0);});require(loaded.serialize()==saved,"stale draft edit preserves state");
         loaded.collect(name+"-pile");const auto reassessed=Json::parse(loaded.executeJson(R"({"type":"assess_saved_assembly"})"));require(reassessed["result"]["materials_sufficient"]==true&&reassessed["result"]["declaration"]==declaration,"restored exact draft reassesses current stock");
         ObjectRecipe item;item.material=preset;item.radius_m=.03;(void)loaded.create("draft-preservation",item);require(Json::parse(loaded.serialize())["assembly_draft"]["declaration"]==declaration,"normal object publication preserves saved draft");
-        auto legacy=Json::parse(loaded.serialize());legacy["world_version"]=3;legacy.erase("assembly_draft");const auto migrated=Json::parse(CreatorWorld::deserialize(legacy.dump()).serialize());require(migrated["world_version"]==4&&migrated["assembly_draft"]["declaration"].is_null()&&migrated["lots"]==legacy["lots"],"known v3 migrates without inventing a draft");
+        auto legacy=Json::parse(loaded.serialize());legacy["world_version"]=3;legacy.erase("assembly_draft");legacy["physics_signature"].erase("position_bits");if(JoltWorld::positionPrecisionBits()==32){const auto migrated=Json::parse(CreatorWorld::deserialize(legacy.dump()).serialize());require(migrated["world_version"]==5&&migrated["assembly_draft"]["declaration"].is_null()&&migrated["lots"]==legacy["lots"],"known v3 migrates without inventing a draft");}else rejects([&]{(void)CreatorWorld::deserialize(legacy.dump());});
         auto bad=Json::parse(saved);bad["assembly_draft"]["declaration"]["joint"]["face_a"]["width_m"]=1;rejects([&]{(void)CreatorWorld::deserialize(bad.dump());});
         require(loaded.rememberAssembly(changed.dump(),1)==2,"current draft revision can be replaced");rejects([&]{(void)loaded.clearAssembly(1);});require(loaded.clearAssembly(2)==3,"explicit clear advances draft revision");require(Json::parse(loaded.serialize())["assembly_draft"]["declaration"].is_null(),"cleared draft is absent");
     }
@@ -231,11 +231,30 @@ void spinningBoxesAndMixedCollisions() {
         }
     }
 }
+void precisionIdentity() {
+    for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        CreatorWorld world;world.collect(std::string(materialPresetName(material))+"-pile");
+        ObjectRecipe recipe;recipe.material=material;(void)world.create("precision",recipe);
+        const auto saved=world.serialize();const auto current=Json::parse(saved);
+        require(current["world_version"]==5&&current["physics_signature"]==Json::parse(CreatorWorld::physicsSignatureJson()),"v5 stores actual shared physics identity");
+        require(current["physics_signature"]["position_bits"]==JoltWorld::positionPrecisionBits(),"signature reflects compiled Jolt precision");
+        require(CreatorWorld::deserialize(saved).serialize()==saved,"matching precision round trips state and allocations");
+        auto wrong=current;wrong["physics_signature"]["position_bits"]=JoltWorld::positionPrecisionBits()==32?64:32;
+        rejects([&]{(void)CreatorWorld::deserialize(wrong.dump());});
+        wrong=current;wrong["physics_signature"].erase("position_bits");rejects([&]{(void)CreatorWorld::deserialize(wrong.dump());});
+        wrong=current;wrong["physics_signature"]["unrecognized_precision_option"]=true;rejects([&]{(void)CreatorWorld::deserialize(wrong.dump());});
+        auto legacy=current;legacy["world_version"]=4;legacy["physics_signature"].erase("position_bits");
+        if(JoltWorld::positionPrecisionBits()==32)require(CreatorWorld::deserialize(legacy.dump()).serialize()==saved,"v4 upgrades metadata without changing objects, inventory or history");
+        else rejects([&]{(void)CreatorWorld::deserialize(legacy.dump());});
+        require(world.serialize()==saved,"rejected saved precision does not mutate live world");
+    }
+}
 void legacyWorldMigration() {
     CreatorWorld world;world.collect("oak-pile");(void)world.create("old",{});world.step(10);
-    auto old=Json::parse(world.serialize());old["world_version"]=1;old.erase("assembly_draft");old["physics_signature"]["object_compiler"]=1;
+    auto old=Json::parse(world.serialize());old["world_version"]=1;old["physics_signature"].erase("position_bits");old.erase("assembly_draft");old["physics_signature"]["object_compiler"]=1;
     old["physics_signature"]["runtime"]="jolt-5.6/banjo-rigid-v1";
     old.erase("history");old.erase("next_object_id");old.erase("authoring_policy");for(auto &o:old["objects"])o.erase("revision");
+    if(JoltWorld::positionPrecisionBits()!=32){rejects([&]{(void)CreatorWorld::deserialize(old.dump());});return;}
     auto loaded=CreatorWorld::deserialize(old.dump());const auto migrated=Json::parse(loaded.serialize());
     require(migrated["lots"]==old["lots"]&&migrated["ticks"]==old["ticks"]&&migrated["objects"][0]["state"]==old["objects"][0]["state"],"known v1 migration retains quantities, time and motion");
     require(loaded.history().size()==1&&loaded.history()[0].operation=="import"&&loaded.create("old",{})==1,"migration marks imported history and preserves request replay");
@@ -307,8 +326,9 @@ void materialSwapAndHistoryValidation() {
         rejects([&]{(void)CreatorWorld::deserialize(bad.dump());});
     }
     rejects([&]{world.reclaim("peer",{id,2});});require(world.serialize()==saved,"cross-operation request collisions preserve state");
-    auto legacy=current;legacy["world_version"]=2;legacy.erase("assembly_draft");legacy.erase("history");legacy.erase("next_object_id");legacy.erase("authoring_policy");
+    auto legacy=current;legacy["world_version"]=2;legacy["physics_signature"].erase("position_bits");legacy.erase("assembly_draft");legacy.erase("history");legacy.erase("next_object_id");legacy.erase("authoring_policy");
     for(auto &o:legacy["objects"])o.erase("revision");
+    if(JoltWorld::positionPrecisionBits()!=32){rejects([&]{(void)CreatorWorld::deserialize(legacy.dump());});return;}
     auto imported=CreatorWorld::deserialize(legacy.dump());require(imported.history().size()==2&&imported.history()[1].operation=="import","known box worlds migrate as explicit baseline imports");
     require(imported.objects()[0].recipe.shape=="box"&&Json::parse(imported.serialize())["lots"]==legacy["lots"],"box migration preserves allocated matter and geometry");
 }
@@ -405,6 +425,7 @@ int main() {
         {"three-material created-object rolling",createdObjectsRoll},{"finite created material collisions",finiteMaterialCollision},
         {"primitive geometry and oriented placement",primitiveGeometryAndPlacement},{"three-material box mass/tensor/free fall",threeMaterialBoxMassInertiaAndFall},
         {"matched-volume shape ramp and persistence",matchedShapeRampAndPersistence},{"asymmetric spin and mixed shape collisions",spinningBoxesAndMixedCollisions},
+        {"saved runtime precision",precisionIdentity},
         {"known sphere world migration",legacyWorldMigration},
         {"three-material rebuild/reclaim lifecycle",threeMaterialRebuildAndReclaim},{"material swap, unrelated state and history validation",materialSwapAndHistoryValidation},
         {"bounded authoring history",boundedAuthoringHistory},{"glass/oak/iron inventory requirements",inventoryRequirements},

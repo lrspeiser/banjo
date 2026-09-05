@@ -96,6 +96,8 @@ struct AssemblyMaterialStock {
 };
 class CreatorWorld {
 public:
+    // Current compiler/material/runtime identity, including position precision.
+    [[nodiscard]] static std::string physicsSignatureJson();
     explicit CreatorWorld(CreatorSettings settings = {});
     ~CreatorWorld();
     CreatorWorld(CreatorWorld &&) noexcept;

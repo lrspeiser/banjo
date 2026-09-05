@@ -117,7 +117,7 @@ CreationPreview compile(const ObjectRecipe &r,const CreatorSettings &settings) {
     return {r,volume,mass,geometry.inertia(mass),
         pointInPlaneFrame(plane,r.tangent_m,r.bitangent_m,geometry.extent(plane.normal_world,r.orientation_world)+r.clearance_m),{}};
 }
-Json signature(unsigned version=2) {
+Json signature(unsigned version=2,bool include_precision=true) {
     Json profiles=Json::array();
     for (auto p:kMaterialPresets) {
         const auto m=makeReferenceMaterial(p);const auto c=compileContactMaterial(m);
@@ -126,7 +126,9 @@ Json signature(unsigned version=2) {
             {"restitution",c.restitution},{"contact_damping_ratio",c.contact_damping_ratio},
             {"young_modulus_pa",c.young_modulus_pa},{"poisson_ratio",c.poisson_ratio}});
     }
-    return {{"object_compiler",version},{"runtime",version==1?"jolt-5.6/banjo-rigid-v1":"jolt-5.6/banjo-rigid-primitives-v2"},{"profiles",profiles}};
+    Json result={{"object_compiler",version},{"runtime",version==1?"jolt-5.6/banjo-rigid-v1":"jolt-5.6/banjo-rigid-primitives-v2"},{"profiles",profiles}};
+    if(include_precision)result["position_bits"]=JoltWorld::positionPrecisionBits();
+    return result;
 }
 Json state(const RigidSnapshot &s) {
     return {{"position_m",vector(s.center_of_mass_world_m)},
@@ -544,13 +546,14 @@ CreatorProposal CreatorWorld::parseProposal(std::string_view document) {
     const auto j=parse(document);fields(j,{"request_id","explanation","recipe"});
     return {string(j.at("request_id")),string(j.at("explanation"),512),recipe(j.at("recipe"))};
 }
+std::string CreatorWorld::physicsSignatureJson() { return signature().dump(); }
 std::string CreatorWorld::serialize() const {
     Json lots=Json::array(),objects=Json::array(),history=Json::array();
     for (const auto &lot:lots_) lots.push_back({{"id",lot.id},{"provenance",lot.provenance},{"material",materialPresetName(lot.material)},
         {"initial_mass_kg",lot.initial_mass_kg},{"remaining_mass_kg",lot.remaining_mass_kg},{"collected",lot.collected}});
     for(const auto &o:objects_)objects.push_back(objectJson(o));
     for(const auto &c:history_)history.push_back(changeJson(c));
-    return Json{{"world_version",4},{"physics_signature",signature()},{"authoring_policy",authoring_policy},
+    return Json{{"world_version",5},{"physics_signature",signature()},{"authoring_policy",authoring_policy},
         {"assembly_draft",{{"revision",assembly_revision_},{"declaration",assembly_draft_?parse(*assembly_draft_):Json(nullptr)}}},
         {"settings",{{"slope_degrees",settings_.slope_degrees},{"gravity_m_s2",vector(settings_.gravity_m_s2)},{"surface",materialPresetName(settings_.surface)}}},
         {"ticks",ticks_},{"lots",lots},{"objects",objects},{"history",history},{"next_object_id",next_object_id_}}.dump(2);
@@ -558,11 +561,12 @@ std::string CreatorWorld::serialize() const {
 CreatorWorld CreatorWorld::deserialize(std::string_view document) {
     const auto j=parse(document);check(j.is_object()&&j.contains("world_version"),"world version is required");
     const auto version=integer(j.at("world_version"),100);
-    check(version>=1&&version<=4,"incompatible world version");
+    check(version>=1&&version<=5,"incompatible world version");
     if(version<3)fields(j,{"world_version","physics_signature","settings","ticks","lots","objects"});
     else if(version==3)fields(j,{"world_version","physics_signature","settings","ticks","lots","objects","authoring_policy","history","next_object_id"});
     else fields(j,{"world_version","physics_signature","settings","ticks","lots","objects","authoring_policy","history","next_object_id","assembly_draft"});
-    check(j.at("physics_signature")==signature(version==1?1:2),"saved material/runtime signature differs; explicit migration is required");
+    check(version>=5||JoltWorld::positionPrecisionBits()==32,"legacy world has unrecorded position precision; load in the legacy 32-bit configuration before explicit conversion");
+    check(j.at("physics_signature")==signature(version==1?1:2,version>=5),"saved material/runtime signature differs; explicit migration is required");
     if(version>=3)check(j.at("authoring_policy")==authoring_policy,"unsupported authoring recovery policy");
     const auto &s=j.at("settings");fields(s,{"slope_degrees","gravity_m_s2","surface"});
     const CreatorSettings config{number(s.at("slope_degrees")),vector(s.at("gravity_m_s2")),material(s.at("surface"))};
@@ -570,7 +574,7 @@ CreatorWorld CreatorWorld::deserialize(std::string_view document) {
     check(lots.is_array()&&!lots.empty()&&lots.size()<=128,"world must have 1–128 material lots");
     check(objects.is_array()&&objects.size()<=max_objects,"saved object budget exceeds 64");
     CreatorWorld world(config);world.lots_.clear();world.ticks_=integer(j.at("ticks"),240ULL*60*60*24*365);
-    if(version==4){const auto &draft=j.at("assembly_draft");fields(draft,{"revision","declaration"});world.assembly_revision_=integer(draft.at("revision"),1000000000);if(!draft.at("declaration").is_null()){check(world.assembly_revision_>0,"saved assembly draft requires a revision");world.assembly_draft_=compileAssembly(draft.at("declaration").dump()).declaration.dump();}}
+    if(version>=4){const auto &draft=j.at("assembly_draft");fields(draft,{"revision","declaration"});world.assembly_revision_=integer(draft.at("revision"),1000000000);if(!draft.at("declaration").is_null()){check(world.assembly_revision_>0,"saved assembly draft requires a revision");world.assembly_draft_=compileAssembly(draft.at("declaration").dump()).declaration.dump();}}
     std::set<std::string> lot_ids,request_ids;
     for (const auto &value:lots) {
         fields(value,{"id","provenance","material","initial_mass_kg","remaining_mass_kg","collected"});

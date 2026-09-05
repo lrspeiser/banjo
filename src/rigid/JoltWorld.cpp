@@ -948,6 +948,8 @@ void JoltWorld::addFragments(
     }
 }
 
+unsigned JoltWorld::positionPrecisionBits() noexcept { return 8*sizeof(JPH::Real); }
+
 void JoltWorld::step(double fixed_dt_s) {
     if (fixed_dt_s <= 0.0) {
         throw std::invalid_argument("Jolt step must be positive");

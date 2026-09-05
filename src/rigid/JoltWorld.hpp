@@ -61,6 +61,7 @@ public:
     JoltWorld &operator=(const JoltWorld &) = delete;
     JoltWorld(JoltWorld &&) noexcept;
     JoltWorld &operator=(JoltWorld &&) noexcept;
+    [[nodiscard]] static unsigned positionPrecisionBits() noexcept;
 
     void setGravity(const Vec3 &gravity_m_s2);
     void addFloor();
