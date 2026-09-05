@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <utility>
 
 namespace banjo::detail {
 namespace {
@@ -46,7 +47,7 @@ struct Edge { std::uint32_t a, b; Mat3 tangent; };
 
 double elasticVelocityResidual(const ActiveMatter &matter, double dt,
     const Vector &initial, const Vector &base, const std::vector<double> &inverse_mass,
-    const Vector &velocity, Vector *output) {
+    const Vector &velocity, Vector *output, const ElasticSupport *support, std::vector<bool> *active_support) {
     Vector residual(velocity.size());
     for (std::size_t i = 0; i < velocity.size(); ++i) residual[i] = velocity[i] - base[i];
     for (std::size_t i = 0; i < matter.bonds.size(); ++i) if (matter.bonds[i].alive) {
@@ -56,6 +57,17 @@ double elasticVelocityResidual(const ActiveMatter &matter, double dt,
             .5 * dt * (initial[b] - initial[a] + velocity[b] - velocity[a]), dt);
         residual[a] += inverse_mass[a] * e.impulse;
         residual[b] -= inverse_mass[b] * e.impulse;
+    }
+    if (active_support) active_support->assign(velocity.size(), false);
+    if (support) for (std::size_t i = 0; i < velocity.size(); ++i) {
+        const double reaction_velocity = dot(residual[i], support->normal);
+        const double gap_velocity = dot(velocity[i], support->normal) - support->minimum_velocity[i];
+        // Complementarity: R.n = lambda/m >= 0, gap >= 0, lambda*gap = 0.
+        // Replace the normal equation by min(R.n, 2*gap/dt) = 0. Active
+        // constraints get a normal-velocity row; tangential momentum is kept.
+        const bool active = reaction_velocity > gap_velocity;
+        if (active) residual[i] += (gap_velocity - reaction_velocity) * support->normal;
+        if (active_support) (*active_support)[i] = active;
     }
     double maximum = 0;
     for (const auto r : residual) {
@@ -69,9 +81,11 @@ double elasticVelocityResidual(const ActiveMatter &matter, double dt,
 
 bool elasticNewtonUpdate(const ActiveMatter &matter, double dt,
     const Vector &initial, const Vector &base, const std::vector<double> &inverse_mass,
-    Vector &velocity, double tolerance, unsigned maximum_linear_iterations, unsigned &linear_iterations) {
+    Vector &velocity, double tolerance, unsigned maximum_linear_iterations, unsigned &linear_iterations,
+    const ElasticSupport *support) {
     Vector residual;
-    const double maximum = elasticVelocityResidual(matter, dt, initial, base, inverse_mass, velocity, &residual);
+    std::vector<bool> active;
+    const double maximum = elasticVelocityResidual(matter, dt, initial, base, inverse_mass, velocity, &residual, support, &active);
     if (!std::isfinite(maximum)) return false;
     if (maximum <= tolerance) return true;
     const std::size_t count = velocity.size();
@@ -88,7 +102,20 @@ bool elasticNewtonUpdate(const ActiveMatter &matter, double dt,
         add(diagonal[b], e.tangent, inverse_mass[b]);
     }
     std::vector<Mat3> inverse_diagonal(count);
-    for (std::size_t i = 0; i < count; ++i) inverse_diagonal[i] = diagonal[i].inverse(0).value_or(identity());
+    for (std::size_t i = 0; i < count; ++i) {
+        if (active[i]) {
+            const auto n = support->normal;
+            const double normal[3]{n.x, n.y, n.z};
+            for (unsigned j = 0; j < 3; ++j) {
+                Vec3 column{diagonal[i].m[0][j], diagonal[i].m[1][j], diagonal[i].m[2][j]};
+                column += (normal[j] - dot(column, n)) * n;
+                diagonal[i].m[0][j] = column.x;
+                diagonal[i].m[1][j] = column.y;
+                diagonal[i].m[2][j] = column.z;
+            }
+        }
+        inverse_diagonal[i] = diagonal[i].inverse(0).value_or(identity());
+    }
     const auto precondition = [&](Vector &v) {
         for (std::size_t i = 0; i < count; ++i) v[i] = inverse_diagonal[i] * v[i];
     };
@@ -99,6 +126,8 @@ bool elasticNewtonUpdate(const ActiveMatter &matter, double dt,
             out[edge.a] += inverse_mass[edge.a] * product;
             out[edge.b] -= inverse_mass[edge.b] * product;
         }
+        if (support) for (std::size_t i = 0; i < count; ++i) if (active[i])
+            out[i] += (dot(v[i], support->normal) - dot(out[i], support->normal)) * support->normal;
         precondition(out);
         return out;
     };
@@ -169,7 +198,7 @@ bool elasticNewtonUpdate(const ActiveMatter &matter, double dt,
         Vector trial = velocity;
         axpy(trial, scale, increment);
         Vector trial_residual;
-        const double trial_max = elasticVelocityResidual(matter, dt, initial, base, inverse_mass, trial, &trial_residual);
+        const double trial_max = elasticVelocityResidual(matter, dt, initial, base, inverse_mass, trial, &trial_residual, support);
         if (trial_max <= tolerance || (std::isfinite(trial_max) && norm(trial_residual) < old_norm * (1 - 1e-4*scale))) {
             velocity = std::move(trial);
             return true;

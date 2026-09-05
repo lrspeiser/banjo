@@ -2,6 +2,7 @@
 #include "physics/MechanicalAccounting.hpp"
 #include "material/MaterialCatalog.hpp"
 #include "material/MaterialCompiler.hpp"
+#include <algorithm>
 #include <cmath>
 #include <functional>
 #include <iostream>
@@ -307,6 +308,142 @@ void actualGlassAtPracticalStep() {
     std::cout << "actual glass nodes=" << matter.nodes.size() << " bonds=" << matter.bonds.size()
               << " linear_iterations=" << linear_iterations << '\n';
 }
+
+void supportSolversAndFramesAgree() {
+    Fixture coupled, split, moved;
+    coupled.matter.nodes[0].position_world_m = {1, .05, .2};
+    coupled.matter.nodes[1].position_world_m = {1, 1.05, .2};
+    for (auto &node : coupled.matter.nodes) node.velocity_m_s = {.3, -1, -.2};
+    coupled.asset.bonds[0].compliance = .001;
+    split.asset = moved.asset = coupled.asset;
+    split.matter.nodes = moved.matter.nodes = coupled.matter.nodes;
+    const Vec3 axis = normalized(Vec3{1, 2, -1});
+    const Quat rotation{std::cos(.31), axis.x*std::sin(.31), axis.y*std::sin(.31), axis.z*std::sin(.31)};
+    const Vec3 offset{2, -3, 1}, tangent_boost{.2, 0, -.3};
+    for (auto &node : moved.matter.nodes) {
+        node.position_world_m = rotation.rotate(node.position_world_m) + offset;
+        node.velocity_m_s = rotation.rotate(node.velocity_m_s + tangent_boost);
+    }
+    const auto plane = makeSupportPlane({}, {0, 1, 0});
+    const auto moved_plane = makeSupportPlane(offset, rotation.rotate({0, 1, 0}));
+    const Vec3 gravity{0, -10, 0};
+    const auto a = tryConservativeStep(coupled.matter, .1, gravity, nullptr, {.support = &plane});
+    const auto b = tryConservativeStep(split.matter, .1, gravity, nullptr,
+        {.support = &plane, .global_support_solve = false});
+    const auto c = tryConservativeStep(moved.matter, .1, rotation.rotate(gravity), nullptr, {.support = &moved_plane});
+    require(a.converged && b.converged && c.converged, "coupled/split/rotated support solves converge");
+    near(a.normal_contact_loss_j, b.normal_contact_loss_j, 1e-8, "support solve methods agree on work");
+    near(c.normal_contact_loss_j, a.normal_contact_loss_j, 1e-8, "rotated/tangentially boosted support work");
+    near(length(c.support_impulse_kg_m_s - rotation.rotate(a.support_impulse_kg_m_s)), 0, 1e-8,
+         "support reaction rotates with the problem");
+    for (std::size_t i = 0; i < coupled.matter.nodes.size(); ++i) {
+        near(length(coupled.matter.nodes[i].position_world_m - split.matter.nodes[i].position_world_m), 0, 1e-8,
+             "coupled and split support positions");
+        near(length(coupled.matter.nodes[i].velocity_m_s - split.matter.nodes[i].velocity_m_s), 0, 1e-8,
+             "coupled and split support velocities");
+        near(length(moved.matter.nodes[i].position_world_m - offset -
+            rotation.rotate(coupled.matter.nodes[i].position_world_m + .1*tangent_boost)), 0, 1e-8,
+             "support trajectory rotates and translates");
+        near(length(moved.matter.nodes[i].velocity_m_s -
+            rotation.rotate(coupled.matter.nodes[i].velocity_m_s + tangent_boost)), 0, 1e-8,
+             "support velocity rotates with tangential boost");
+    }
+}
+
+void unilateralSupportAndFootprint() {
+    Fixture f;
+    f.asset.bonds.clear(); f.matter.bonds.clear();
+    f.matter.nodes = {{{0, 0, 0}, {}, {0, 1, 0}, 1, {}},
+        {{2, .05, 0}, {}, {0, -1, 0}, 1, {}}, {{.5, .05, 0}, {}, {0, -1, 0}, 1, {}}};
+    const auto plane = makeSupportPlane({}, {0, 1, 0});
+    const auto before = totals(f.matter);
+    const auto result = tryConservativeStep(f.matter, .1, {}, nullptr,
+        {.support = &plane, .support_half_tangent_m = 1, .support_half_bitangent_m = 1});
+    require(result.converged, "unilateral finite support converges");
+    near(f.matter.nodes[0].velocity_m_s.y, 1, 1e-12, "support cannot attract a separating node");
+    near(f.matter.nodes[1].position_world_m.y, -.05, 1e-12, "outside-footprint node remains free");
+    near(f.matter.nodes[2].position_world_m.y, 0, 1e-12, "inside-footprint node reaches the plane");
+    near(result.support_impulse_kg_m_s.y, 1, 1e-12, "only the approaching supported node contributes reaction");
+    const auto after = totals(f.matter);
+    near(after.mechanicalEnergy() + result.normal_contact_loss_j, before.mechanicalEnergy(), 1e-12,
+         "finite support ledger includes numerical normal loss");
+
+    f.matter.nodes.resize(1);
+    f.matter.nodes[0] = {{.9, .5, 0}, {}, {2, 0, 0}, 1, {}};
+    const auto crossing = tryConservativeStep(f.matter, .1, {}, nullptr,
+        {.support = &plane, .support_half_tangent_m = 1, .support_half_bitangent_m = 1});
+    require(!crossing.converged, "unresolved footprint transition is rejected");
+    near(f.matter.nodes[0].position_world_m.x, .9, 0, "footprint rejection is transactional");
+}
+
+void normalImpactPhaseLossIsExplicit() {
+    const auto plane = makeSupportPlane({}, {0, 1, 0});
+    for (const double phase : {0.0, .25, .5, .75, 1.25}) {
+        Fixture f;
+        f.asset.bonds.clear(); f.matter.bonds.clear();
+        f.matter.nodes = {{{0, .1*phase, 0}, {}, {0, -1, 0}, 2, {}}};
+        const auto before = totals(f.matter);
+        const auto result = tryConservativeStep(f.matter, .1, {}, nullptr, {.support = &plane});
+        require(result.converged, "point/plane phase probe converges");
+        // The raw endpoint constraint has timing-dependent numerical loss.
+        // This diagnoses its limitation; it is not a restitution calibration.
+        const double expected_loss = phase < 1 ? 4*phase*(1-phase) : 0;
+        near(result.normal_contact_loss_j, expected_loss, 1e-12, "all phase-dependent energy loss is reported");
+        near(totals(f.matter).mechanicalEnergy() + result.normal_contact_loss_j,
+             before.mechanicalEnergy(), 1e-12, "point/plane energy closes for every phase");
+    }
+}
+
+void actualGlassSupportConserves() {
+    const auto compiled = compileBrittleMaterial(makeReferenceMaterial(MaterialPreset::Glass, 17), .04, 2);
+    const auto asset = generateSphereLattice({.25, .04, 2, 3}, compiled);
+    ActiveMatter matter;
+    matter.asset = &asset; matter.material = compiled; matter.bonds.resize(asset.bonds.size());
+    double minimum_y = 0;
+    for (const auto &node : asset.nodes) {
+        matter.nodes.push_back({node.local_position_m, {}, {.3, -1, .2},
+            node.represented_volume_m3 * compiled.density_kg_m3, {}});
+        minimum_y = std::min(minimum_y, node.local_position_m.y);
+    }
+    const auto plane = makeSupportPlane({0, minimum_y - .001, 0}, {0, 1, 0});
+    const auto before = totals(matter);
+    Vec3 support_impulse, support_angular_impulse;
+    double loss = 0;
+    for (unsigned i = 0; i < 5; ++i) {
+        const auto result = tryConservativeStep(matter, .002, {}, nullptr, {.support = &plane});
+        require(result.converged && result.balance_measured, "full glass floor impact converges");
+        require(result.maximum_penetration_m <= 1e-10, "full glass support gap is bounded");
+        support_impulse += result.support_impulse_kg_m_s;
+        support_angular_impulse += result.support_angular_impulse_kg_m2_s;
+        loss += result.normal_contact_loss_j;
+    }
+    const auto after = totals(matter);
+    near(length(after.linear_momentum_kg_m_s - before.linear_momentum_kg_m_s - support_impulse), 0, 1e-8,
+         "full glass external support momentum balance");
+    near(length(after.angular_momentum_kg_m2_s - before.angular_momentum_kg_m2_s - support_angular_impulse), 0, 1e-8,
+         "full glass external support angular balance");
+    near(after.mechanicalEnergy() + loss, before.mechanicalEnergy(), 1e-8, "full glass support energy balance");
+}
+
+void sphereBetweenMaterialAndSupport() {
+    Fixture f;
+    f.matter.nodes[0].position_world_m = {0, 1.1, 0};
+    f.matter.nodes[1].position_world_m = {0, 2.1, 0};
+    for (auto &node : f.matter.nodes) node.velocity_m_s = {0, -1, 0};
+    CoupledSphereState sphere{{{0, .5, 0}, {}, {}, {}}, .5, 2, .2};
+    const auto plane = makeSupportPlane({}, {0, 1, 0});
+    const auto before = totals(f.matter, &sphere);
+    const auto result = tryConservativeStep(f.matter, .2, {}, &sphere, {.support = &plane});
+    require(result.converged, "material/sphere/support coupled reactions converge");
+    const auto after = totals(f.matter, &sphere);
+    near(length(after.linear_momentum_kg_m_s - before.linear_momentum_kg_m_s - result.support_impulse_kg_m_s),
+         0, 1e-8, "finite sphere contact and support reaction are counted once");
+    near(length(after.angular_momentum_kg_m2_s - before.angular_momentum_kg_m2_s - result.support_angular_impulse_kg_m2_s),
+         0, 1e-8, "material/sphere/support angular ledger");
+    near(after.mechanicalEnergy() + result.normal_contact_loss_j, before.mechanicalEnergy(), 1e-8,
+         "material/sphere/support energy ledger");
+    require(sphere.motion.center_of_mass_world_m.y >= .5 - 1e-10, "sphere stays above support");
+}
 }
 
 int main() {
@@ -322,7 +459,12 @@ int main() {
         {"energy audit rejects unresolved solve", energyCheckRejectsUnresolvedNetwork},
         {"local and global elastic solutions agree", localAndGlobalSolveAgree},
         {"analytical timestep convergence", analyticalTimeStepConvergence},
-        {"actual glass at practical timestep", actualGlassAtPracticalStep}};
+        {"actual glass at practical timestep", actualGlassAtPracticalStep},
+        {"support methods and reference frames agree", supportSolversAndFramesAgree},
+        {"unilateral support and finite footprint", unilateralSupportAndFootprint},
+        {"normal impact phase loss is explicit", normalImpactPhaseLossIsExplicit},
+        {"actual glass support conservation", actualGlassSupportConserves},
+        {"material, sphere and support reactions", sphereBetweenMaterialAndSupport}};
     unsigned failures = 0;
     for (const auto &[name, test] : tests) {
         try { test(); std::cout << "[PASS] " << name << '\n'; }

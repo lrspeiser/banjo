@@ -140,11 +140,21 @@ ConservativeStepResult tryConservativeStep(ActiveMatter &matter, double dt, cons
     const auto sphere_position = [&]() {
         return candidate_sphere.motion.center_of_mass_world_m + .5 * dt * (sphere_v0 + sphere_velocity);
     };
+    detail::ElasticSupport elastic_support;
+    const bool coupled_support = settings.global_elastic_solve && settings.global_support_solve && settings.support;
+    if (coupled_support) {
+        elastic_support.normal = settings.support->normal_world;
+        elastic_support.minimum_velocity.resize(count, -std::numeric_limits<double>::infinity());
+        for (std::size_t i = 0; i < count; ++i) if (supported[i])
+            elastic_support.minimum_velocity[i] = -dot(v0[i], elastic_support.normal) -
+                2 * signedDistanceToPlane(*settings.support, matter.nodes[i].position_world_m) / dt;
+    }
+    const auto *support_constraint = coupled_support ? &elastic_support : nullptr;
     const auto elastic_base = [&]() {
         std::vector<Vec3> base(count);
         for (std::size_t i = 0; i < count; ++i) {
             base[i] = v0[i] + dt * gravity + inverse_mass[i] * contact_impulses[i];
-            if (supported[i]) base[i] += inverse_mass[i] * support_impulses[i] * settings.support->normal_world;
+            if (supported[i] && !coupled_support) base[i] += inverse_mass[i] * support_impulses[i] * settings.support->normal_world;
         }
         return base;
     };
@@ -153,10 +163,10 @@ ConservativeStepResult tryConservativeStep(ActiveMatter &matter, double dt, cons
         if (settings.global_elastic_solve) {
             const auto previous_velocity = velocity;
             if (!detail::elasticNewtonUpdate(matter, dt, v0, elastic_base(), inverse_mass, velocity,
-                    settings.velocity_tolerance_m_s, settings.maximum_linear_iterations, result.linear_iterations)) {
+                    settings.velocity_tolerance_m_s, settings.maximum_linear_iterations, result.linear_iterations, support_constraint)) {
                 result.iterations = iteration + 1;
                 result.constitutive_velocity_residual_m_s = detail::elasticVelocityResidual(
-                    matter, dt, v0, elastic_base(), inverse_mass, velocity);
+                    matter, dt, v0, elastic_base(), inverse_mass, velocity, nullptr, support_constraint);
                 return result;
             }
             for (std::size_t i = 0; i < count; ++i)
@@ -194,7 +204,19 @@ ConservativeStepResult tryConservativeStep(ActiveMatter &matter, double dt, cons
         }
         if (settings.support) {
             const auto normal = settings.support->normal_world;
-            for (std::size_t i = 0; i < count; ++i) if (supported[i]) {
+            if (coupled_support) {
+                std::vector<Vec3> free_residual;
+                const double residual = detail::elasticVelocityResidual(matter, dt, v0, elastic_base(),
+                    inverse_mass, velocity, &free_residual);
+                if (!std::isfinite(residual)) return result;
+                for (std::size_t i = 0; i < count; ++i) if (supported[i]) {
+                    const double reaction = dot(free_residual[i], normal);
+                    const double gap_velocity = dot(velocity[i], normal) - elastic_support.minimum_velocity[i];
+                    // Recover the support reaction from the solved momentum
+                    // equation; do not apply a second impulse or position edit.
+                    support_impulses[i] = reaction > gap_velocity ? std::max(0.0, reaction) / inverse_mass[i] : 0;
+                }
+            } else for (std::size_t i = 0; i < count; ++i) if (supported[i]) {
                 velocity[i] -= inverse_mass[i] * support_impulses[i] * normal;
                 const double impulse = std::max(0.0, -2 * signedDistanceToPlane(*settings.support, position(i)) /
                     (dt * inverse_mass[i]));
@@ -216,7 +238,7 @@ ConservativeStepResult tryConservativeStep(ActiveMatter &matter, double dt, cons
         if (change > settings.velocity_tolerance_m_s) continue;
         double residual = 0;
         if (settings.global_elastic_solve) {
-            residual = detail::elasticVelocityResidual(matter, dt, v0, elastic_base(), inverse_mass, velocity);
+            residual = detail::elasticVelocityResidual(matter, dt, v0, elastic_base(), inverse_mass, velocity, nullptr, support_constraint);
         } else for (std::size_t i = 0; i < matter.bonds.size(); ++i) {
             if (!matter.bonds[i].alive) continue;
             const auto &bond = matter.asset->bonds[i];

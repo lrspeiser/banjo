@@ -23,6 +23,9 @@ struct ConservativeStepSettings {
     bool global_elastic_solve{true};
     // Krylov iterations per Newton update, not a relaxed physical tolerance.
     unsigned maximum_linear_iterations{400};
+    // Solve unilateral material/plane support within the global Newton system.
+    // False retains the alternating support-impulse iteration for comparison.
+    bool global_support_solve{true};
 };
 
 struct ConservativeStepResult {
