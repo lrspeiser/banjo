@@ -1,5 +1,7 @@
 # Physical property and capability coverage
 
+**Assembly assessment API:** [Read-only two-box declarations](assembly-assessment-checkpoint.md) report derived quantities, aggregated inventory shortages and explicit unsupported live creation. Six three-material CLI assessments preserve state; 21 suites pass. Local `daecb00`; full goal active.
+
 **Compiled-joint loading:** [Box-face compilation through separation](compiled-load-checkpoint.md) passes nine material/axis cases with geometry-derived fracture work and bounded energy error; 21 suites pass. Creator assembly/contact ownership remains next. Local `3c5d007`; full goal active.
 
 **Box-face attachments:** [Material-backed geometry compiler](box-face-checkpoint.md) derives mass/inertia and validates interface rectangles on opposing box faces. Nine material/axis cases and 21 suites pass. Creator API/contact ownership and spatial convergence remain open. Local `a815321`; full goal active.
