@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cmath>
 #include <fstream>
+#include <future>
 #include <iomanip>
 #include <iostream>
 #include <optional>
@@ -75,9 +76,56 @@ void drawObject(const ObjectRecipe &recipe,Vec3 position,Quat q,Color tint,bool 
         DrawCubeWiresV({0,0,0},v(recipe.dimensions_m),wire?tint:ink);rlPopMatrix();
     }
 }
+struct AssemblyTestView {
+    bool visible{};
+    std::string specification, tested_declaration, error;
+    std::uint64_t revision{};
+    std::future<std::string> job;
+    std::optional<Json> report;
+};
+void assemblyTestPanel(AssemblyTestView &test,const Json &saved,const std::filesystem::path &workspace) {
+    const bool running=test.job.valid();
+    const bool present=!saved.at("declaration").is_null();
+    const bool current=present&&test.revision==saved.at("revision")&&test.tested_declaration==saved.at("declaration").dump();
+    DrawText("ISOLATED SEPARATION TEST",748,147,22,accent);
+    wrap("Test a virtual copy with outward motion. No gravity, external collisions or live material consumption.",748,190,615,18);
+    if(button({748,248,295,38},"Load test specification",!running))try {
+        test.specification=read(workspace/"assembly-test.json");
+        test.report.reset();test.error.clear();
+        const auto spec=Json::parse(test.specification);
+        if(!spec.is_object())throw std::invalid_argument("Test specification must be an object");
+    }catch(const std::exception &e){test.specification.clear();test.error=e.what();}
+    if(button({1055,248,325,38},running?"TEST RUNNING...":"Run on saved revision",present&&!running&&!test.specification.empty()))try {
+        test.report.reset();test.error.clear();test.revision=saved.at("revision");test.tested_declaration=saved.at("declaration").dump();
+        test.job=std::async(std::launch::async,[declaration=test.tested_declaration,specification=test.specification]{return CreatorWorld::testAssemblyJson(declaration,specification);});
+    }catch(const std::exception &e){test.error=e.what();}
+    if(!test.specification.empty())try {
+        const auto spec=Json::parse(test.specification);int y=304;
+        for(const auto &[key,label]:std::initializer_list<std::pair<const char*,const char*>>{
+            {"relative_kinetic_energy_j","Initial relative energy (J)"},{"duration_s","Duration (s)"},
+            {"minimum_separated_area_fraction","Required separated fraction"},{"energy_error_budget_j","Numerical energy budget (J)"},
+            {"state_error_tolerance","State tolerance"},{"maximum_evaluations","Evaluation limit"}}) {
+            const std::string value=spec.contains(key)?spec.at(key).dump().substr(0,30):"missing";
+            DrawText((std::string(label)+": "+value).c_str(),748,y,17,muted);y+=25;
+        }
+    }catch(const std::exception &e){test.error=e.what();}
+    else wrap("Place the declared experiment in assembly-test.json in this workshop's folder, then load and review its settings.",748,310,615,19,muted);
+    if(test.report&&current) {
+        const auto &r=*test.report;
+        DrawText(("Revision "+std::to_string(test.revision)+": "+r.at("status").get<std::string>()).c_str(),748,469,24,accent);
+        DrawText(("Separated: "+fixed(100*r.at("separated_area_fraction").get<double>(),2)+"% / required: "+fixed(100*r.at("specification").at("minimum_separated_area_fraction").get<double>(),2)+"%").c_str(),748,505,18,ink);
+        DrawText(("Energy residual (J): "+r.at("energy_residual_j").dump()).c_str(),748,534,17,muted);
+        DrawText(("Accumulated error (J): "+r.at("accumulated_absolute_energy_error_j").dump()).c_str(),748,560,17,muted);
+        if(button({748,602,230,36},"Export test evidence"))try {
+            write(workspace/"assembly-test-result.json",Json{{"draft_revision",test.revision},{"report",r}});
+            test.error="Evidence exported with declaration, settings and revision.";
+        }catch(const std::exception &e){test.error=e.what();}
+    }else if(test.report||running)wrap(current?"Computing the declared experiment...":"Design changed. Results for an earlier revision are not current; run again.",748,475,610,21,ink);
+    if(!test.error.empty())wrap(test.error,748,643,615,15,ink);
+}
 // Assembly authoring is separate from live rigid-object creation. Publish only
 // after the existing save succeeds, so failed imports do not replace the draft.
-bool assemblyScreen(CreatorWorld &world,const std::filesystem::path &workspace,bool persistent,std::string &message) {
+bool assemblyScreen(CreatorWorld &world,const std::filesystem::path &workspace,bool persistent,std::string &message,AssemblyTestView &test) {
     const auto saved=Json::parse(world.serialize()).at("assembly_draft");
     const auto revision=saved.at("revision").get<std::uint64_t>();
     const bool present=!saved.at("declaration").is_null();
@@ -86,6 +134,9 @@ bool assemblyScreen(CreatorWorld &world,const std::filesystem::path &workspace,b
         if(persistent)candidate.save(workspace/"world.json");
         world=std::move(candidate);
     };
+    if(test.job.valid()&&test.job.wait_for(std::chrono::seconds(0))==std::future_status::ready)try {
+        test.report=Json::parse(test.job.get());
+    }catch(const std::exception &e){test.report.reset();test.error=std::string("Test rejected: ")+e.what();}
     BeginDrawing();ClearBackground(background);
     DrawText("BANJO / ASSEMBLY DESIGN",36,30,30,ink);
     DrawText("Keep a design. Gather its materials. Review what is supported.",36,76,20,muted);
@@ -93,7 +144,7 @@ bool assemblyScreen(CreatorWorld &world,const std::filesystem::path &workspace,b
     DrawRectangleRounded({28,123,680,585},.03F,8,panel);
     DrawRectangleRounded({728,123,680,585},.03F,8,panel);
     DrawText(("SAVED DESIGN / revision "+std::to_string(revision)).c_str(),48,147,22,accent);
-    DrawText("MATERIAL REQUIREMENTS",748,147,22,accent);
+    if(!test.visible)DrawText("MATERIAL REQUIREMENTS",748,147,22,accent);
     if(present)try {
         const auto &declaration=saved.at("declaration");
         const auto assessment=Json::parse(world.assessAssemblyJson(declaration.dump()));
@@ -110,6 +161,7 @@ bool assemblyScreen(CreatorWorld &world,const std::filesystem::path &workspace,b
         DrawText(("Area "+fixed(joint.at("area_m2"),6)+" m2 / gap "+fixed(joint.at("rest_gap_m"),6)+" m").c_str(),48,491,18,ink);
         DrawText(("Complete separation work: "+fixed(joint.at("complete_tensile_separation_work_j"),6)+" J").c_str(),48,524,18,ink);
         wrap("Separation work is not the energy cost of making this joint. Manufacturing processes and tools are not modeled yet.",48,570,625,18);
+        if(!test.visible) {
         y=203;
         for(const auto &need:assessment.at("material_requirements")) {
             DrawText(need.at("material").get<std::string>().c_str(),748,y,23,ink);
@@ -120,11 +172,14 @@ bool assemblyScreen(CreatorWorld &world,const std::filesystem::path &workspace,b
         }
         DrawText(assessment.at("materials_sufficient").get<bool>()?"Materials ready":"Collect the missing materials",748,515,22,accent);
         wrap("Building assemblies is not supported yet. Having enough material does not enable construction. This design remains available as you gather.",748,559,620,20,ink);
+        }
     }catch(const std::exception &e){message=e.what();}
     else {
         wrap("No assembly saved. Drop an assembly design file into this window, or place it in the workshop folder as assembly.json and choose Import design. A valid import replaces the saved design; a rejected import leaves it intact.",48,211,620,21,ink);
-        wrap("Import a design to see exact material quantities. The current assembly model supports two boxes and one declared joint.",748,211,610,21,muted);
+        if(!test.visible)wrap("Import a design to see exact material quantities. The current assembly model supports two boxes and one declared joint.",748,211,610,21,muted);
     }
+    if(test.visible)assemblyTestPanel(test,saved,workspace);
+    if(button({48,647,610,38},test.visible?"Show material requirements":"Review a physics test"))test.visible=!test.visible;
     if(button({36,730,225,44},"Import design"))try {
         const auto document=read(workspace/"assembly.json");
         change([&](CreatorWorld &w){(void)w.rememberAssembly(document,revision);});message="Design validated and saved. Its material requirements are current.";
@@ -176,6 +231,7 @@ int main(int argc,char **argv) {
         const bool automatic_assistant=!manual_assistant&&assistant.available();
         ObjectRecipe draft;std::string prompt="Use some of my wood to make a ball that rolls down this ramp.";
         std::string status="Collect a material, then design an object.",request_id,pending_id,proposal_message;
+        AssemblyTestView assembly_test;
         std::optional<RevisionTarget> editing;
         MatterBodyId selected_id=world.objects().empty()?0:world.objects().back().id,built_id=0;
         bool paused=capture.empty(),typing=false,built=false,follow=false,clarification_required=false;double accumulator=0,poll_at=0;unsigned rendered=0,serial=0;
@@ -243,7 +299,7 @@ int main(int argc,char **argv) {
                     if(key==KEY_ESCAPE)assembly_view=false;
                     if(key==KEY_F12)screenshot_requested=true;
                 }
-                if(assemblyScreen(world,workspace,capture.empty(),status))assembly_view=false;
+                if(assemblyScreen(world,workspace,capture.empty(),status,assembly_test))assembly_view=false;
                 if(screenshot_requested&&capture.empty()) {
                     Image image=LoadImageFromScreen();const bool success=ExportImage(image,(workspace/"assembly.png").string().c_str());UnloadImage(image);
                     status=success?"Assembly image saved.":"Could not save assembly image.";
