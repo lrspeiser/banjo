@@ -1,5 +1,7 @@
 # Banjo runtime architecture
 
+> Scope note (September 4, 2026 audit): this is a focused design/model document, not a complete implementation-status ledger. Read the [master plan](project-master-plan.md) and [development status](development-status.md) first. Main's audited code is `62cf812`; conservative-contact work in PR #2 is not merged.
+
 ## Current executable pipeline
 
 ```text
@@ -56,7 +58,7 @@ The current prototype uses a rigid-first handoff:
 5. Its mass-weighted translation and best-fit rigid rotation are projected out.
 6. The residual deformation mode is scaled to a bounded fraction of measured impact energy.
 
-This avoids applying the whole collision impulse twice while still giving the material solver a localized disturbance from which cracks can emerge.
+This projects out the added bulk impulse, but it does not establish a closed collision-energy budget. It is a provisional main-baseline mechanism, not the desired authoritative physics path. PR #2 disables the runtime synthetic pulse and instead couples material points to a finite-mass sphere. Its integration and full conservation audit remain open.
 
 ## Active material
 
@@ -65,7 +67,7 @@ This avoids applying the whole collision impulse twice while still giving the ma
 - gravity predicts node positions,
 - XPBD distance constraints resist bond extension,
 - a simple plane constraint handles the floor,
-- peak tensile stretch accumulates progressive damage,
+- local rotation-invariant strain and tension/compression/shear thresholds accumulate damage,
 - failed bonds are removed from subsequent solves,
 - velocities are reconstructed from corrected positions.
 
@@ -113,4 +115,4 @@ raylib is currently used to make the transition visible quickly. It is not refer
 
 ## Known correctness boundary
 
-The initial collision is still rigid-authoritative. Once the glass body is removed, the iron sphere is not coupled to active material. The next architecture step is to make activating contacts sensor-like, solve the contact inside the material system, and apply the equal-and-opposite reaction back to Jolt. That is required before Banjo can claim fully unified rigid/material contact.
+The initial collision is still rigid-authoritative. Once the glass body is removed, the iron sphere is not coupled to active material. PR #2 implements the first sphere/material version of sensor-deferred activation and equal-and-opposite reaction. It remains unmerged and does not yet cover arbitrary shapes, self-contact, or full-pipeline validation. Read development-status.md before deciding whether a capability is on main.

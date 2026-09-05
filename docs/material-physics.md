@@ -1,5 +1,7 @@
 # Material physics contract
 
+> Scope note (September 4, 2026 audit): this is a focused design/model document, not a complete implementation-status ledger. Read the [master plan](project-master-plan.md) and [development status](development-status.md) first. Main's audited code is `62cf812`; conservative-contact work in PR #2 is not merged.
+
 Banjo separates **authored physical characteristics** from the numerical model that executes them. A material name is descriptive only; no collision rule is allowed to ask whether a material is called `iron`, `glass`, or `rubber`.
 
 ## Authored characteristics
@@ -57,7 +59,7 @@ The activation policy therefore combines:
 
 Hertz theory is used as a fast elastic screening model. It does not encode surface flaws, cone-crack statistics, plastic indentation, rate dependence, or complex geometry. Once the screening threshold is crossed, the detailed material solver—not the Hertz predictor—determines the evolving damage topology.
 
-## What is first-principles today
+## Physically grounded relationships and current limits
 
 The implementation currently preserves these relationships:
 
@@ -66,10 +68,10 @@ The implementation currently preserves these relationships:
 - gravity is an acceleration, so ideal free-fall does not depend on density
 - collision momentum depends on both masses
 - contact deformation screening uses effective elastic modulus and reduced radius
-- rolling/sliding classification follows slope, sphere inertia, and available friction
+- analytical rolling/sliding classification uses slope, sphere inertia, and available friction; measured runtime slip diagnostics are in the unmerged contact branch
 - brittle activation depends on energy, stress, strength, and fracture properties rather than names
 - brittle damage distinguishes tension, compression, and shear in a rotation-invariant local strain measure
-- representation transitions preserve material mass and bulk momentum
+- representation transitions reconstruct material mass and bulk motion; mass-accounting tests exist, while complete angular-momentum/energy correctness is still under review
 
 ## What remains model-dependent
 

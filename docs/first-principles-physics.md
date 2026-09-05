@@ -1,5 +1,7 @@
 # First-principles physics contract
 
+> Scope note (September 4, 2026 audit): this is a focused design/model document, not a complete implementation-status ledger. Read the [master plan](project-master-plan.md) and [development status](development-status.md) first. Main's audited code is `62cf812`; conservative-contact work in PR #2 is not merged.
+
 Banjo's goal is not to attach a bespoke behavior script to every named material. The runtime takes measurable material, geometry, contact, field, and state properties and compiles them into the cheapest solver representation that can answer the current interaction.
 
 This document defines the contract used by the rolling-ball laboratory and the direction for later objects.
@@ -16,7 +18,7 @@ Creators author quantities with units and physical meaning. Examples include:
 - coefficient of static and dynamic friction
 - coefficient of restitution
 - rolling-resistance coefficient
-- linear and rotational damping
+- explicitly modeled environmental drag, separate from internal material and contact damping
 - thermal expansion, conductivity, heat capacity, melting point, and ignition state (future solver families)
 - anisotropy axes, grain direction, layers, porosity, and defect distributions
 
@@ -54,7 +56,7 @@ a = g sin(theta) / (1 + I/(m r^2))
 
 For a solid sphere this becomes `5/7 g sin(theta)`. The actual runtime may depart from that value because authored rolling resistance, slipping, damping, deformation, and contact compliance are real energy-loss channels. The laboratory uses the ideal equation as a reference rather than forcing every ball to follow it.
 
-For a normal collision, the rigid broad phase estimates effective mass from both translational masses and rotational inertia at the contact point. The contact law then combines surface coefficients and computes normal and tangential impulse limits. Fracture activation is based on available local energy and the target's fracture-energy scale, not names such as `iron` or `glass`.
+For a general contact, the desired effective-mass calculation includes translational mass and rotational inertia at each torque arm. Main's sphere impact-energy screen uses the reduced translational mass; do not mistake that special-case screen for a validated general-contact solver. Contact laws combine surface coefficients and impose impulse limits. Activation uses energy/stress/material screening, not names such as `iron` or `glass`.
 
 ## 3. One support-plane model
 
@@ -87,7 +89,7 @@ Interfaces will later support coatings, lubrication, adhesion, welding, fastener
 
 A voxel or lattice bond is a numerical sample, not a physical atom. Material strength may not be defined as a fixed force per bond because changing resolution changes the number of bonds crossing an area.
 
-The compiler scales stiffness, represented mass, failure work, and neighborhood weights from physical length, area, volume, and fracture energy. Every material backend must publish canonical tests at several resolutions:
+The intended compiler must scale stiffness, represented mass, failure work, and neighborhood weights from physical length, area, volume, and fracture energy. Some stiffness/mass/threshold compilation exists, but fracture-work accounting and resolution convergence are unfinished. Every material backend must publish canonical tests at several resolutions:
 
 - static mass and inertia
 - rolling acceleration and stopping distance
@@ -113,7 +115,7 @@ support plane and gravity
 solver version, resolution, and deterministic seed
 ```
 
-The current ball laboratory can generate a deterministic grid of candidate collision outcomes and store it in a scenario cache. Runtime lookup follows these rules:
+The current ball laboratory generates a deterministic grid of analytical scenario summaries and stores it in a projection cache. MaterialOutcome serialization APIs also exist, but automatic authoritative outcome reuse is not integrated. The following are target rules for a future validated runtime cache, not current playback behavior:
 
 1. Use an exact cached state when available.
 2. Interpolate only within a validated tile whose neighboring outcomes have compatible topology and bounded error.
@@ -121,11 +123,11 @@ The current ball laboratory can generate a deterministic grid of candidate colli
 4. Select or refine a branch when the real contact manifold becomes known.
 5. Fall back to live simulation whenever the request is outside the validated domain, conservation residuals exceed tolerance, or the topology is ambiguous.
 
-A cache stores solver results, not a prerecorded animation. Cached fracture state consists of material damage/connectivity, fragment transforms and velocities, energy accounting, and provenance. Gravity and subsequent collisions continue to be simulated after a cached transition is instantiated.
+The future authoritative cache must store solver results, not an unrelated prerecorded animation: material state/connectivity, motion, accounted work and provenance with applicability checks and consistent elapsed time. Gravity and subsequent collisions must remain live. The current CSV contains analytical summaries only; the current outcome format does not yet satisfy the full state/key/energy contract.
 
 ## 7. Conservation ledger
 
-Every representation transition records:
+Every representation transition must eventually record the following ledger; current diagnostics do not yet cover every term:
 
 ```text
 mass
@@ -142,11 +144,11 @@ potential-energy change
 numerical residual
 ```
 
-Mass, linear momentum, and angular momentum are hard invariants unless an authored world law explicitly declares otherwise. Energy may move into irreversible channels, but unexplained energy creation is a failed test.
+For an isolated closed system, mass and total momentum are invariants unless an authored law explicitly declares otherwise. For bodies acted on by gravity, supports, boundaries, or actuators, include the corresponding external impulse, torque and work. Transfers must not introduce unexplained changes. Energy may move into named irreversible channels; unexplained energy creation is a failed test.
 
 ## 8. Current model boundaries
 
-The present brittle-ball implementation is a physically parameterized reference solver, not a certified continuum-mechanics package. It already removes material-name rules, derives aggregate mass from density, derives fracture thresholds from strength/fracture-energy inputs, preserves momentum through representation changes, supports arbitrary gravity and inclined support planes, and creates fragments from broken connectivity.
+The present brittle-ball implementation is a physically parameterized reference solver, not a certified continuum-mechanics package. It removes material-name outcome rules, derives aggregate mass from density, uses strength/fracture-energy screening inputs, supports gravity vectors and inclined support planes, and creates fragments from broken connectivity. Mass bookkeeping and selected momentum/contact tests exist; whole-pipeline momentum/energy consistency, finite-cell angular state and fracture-work calibration still require an audit.
 
 Still required for stronger physical fidelity:
 

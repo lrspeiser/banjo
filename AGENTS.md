@@ -1,0 +1,40 @@
+# Working on Banjo
+
+## Read before changing the project
+
+1. `docs/project-master-plan.md`: complete product intent and architecture.
+2. `docs/development-status.md`: implemented/experimental/planned status, source refs and verification evidence.
+3. `docs/roadmap.md`: ordered work and acceptance criteria.
+4. The relevant source/tests and, for conservative contact work, PR #2 and its pinned checkpoint note.
+
+These docs are a snapshot. Fetch current branch/PR state before integration. The contact-development branch is not automatically main. Preserve concurrent changes, especially main's raylib frame-control/busy-wait and MSVC runtime fixes. Do not reset or force-push over other work.
+
+## Physics requirements
+
+Banjo is an editable-physics publishing platform; the balls are a validation laboratory. Material/geometry/state/law inputs drive behavior, not material display names. A declared property is not an implemented constitutive model.
+
+Do not add precut shards, shatter animations, explosion impulses, arbitrary fragment launch velocities, or continual no-slip velocity assignments to make tests look better. Initialize chosen spin explicitly; measure contact-point slip; let friction and torque determine later rolling/sliding. Keep internal damping separate from environmental drag and contact/rolling losses.
+
+Use one authoritative response per contact and account for reactions/torques. Preserve material-derived mass and audit full momentum/energy transfers with external forces/work and numerical correction. Pairwise conservation tests and mass sums are not proof of full-pipeline conservation. Document model assumptions, calibration, units, validity and tolerances.
+
+Analytical projections are not cached fracture simulations. Automatic outcome reuse requires complete physical-state/material/solver keys, applicability/invalidation checks and consistent elapsed time. Do not blend incompatible topology or silently use an unrelated cache entry.
+
+Keep simulation independent of rendering. Start with the CPU reference; optimize measured bottlenecks without changing the material law unnoticed. Support unit-bearing declarative authoring and bounded APIs rather than untrusted arbitrary GPU code.
+
+## Verification and reporting
+
+Use a separate build directory. Typical commands:
+
+```sh
+cmake -S . -B build/agent-test -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build/agent-test --parallel 4
+ctest --test-dir build/agent-test --output-on-failure
+./build/agent-test/banjo_headless
+./build/agent-test/banjo_lab
+```
+
+For headless work configure with `-DBANJO_BUILD_LAB=OFF`. Record environment and exact commit. Test the normal interactive window/input loop as well as automated capture. Do not claim macOS/Windows, cross-GPU determinism, or material realism from Linux tests alone.
+
+For behavioral changes, add analytical/constitutive/regression tests and record conservation residuals and performance where relevant. Explain any tolerance change. For documentation-only work, validate links and changed-file scope; do not imply new physical validation.
+
+Keep `docs/development-status.md` and `docs/roadmap.md` accurate. Label design, implementation, experimental result and validated behavior separately. State where changes are committed and whether they are on main. Leave a usable checkpoint with remaining defects and next tests rather than claiming the entire platform is complete.

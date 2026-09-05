@@ -1,100 +1,81 @@
-# Banjo roadmap
+# Banjo roadmap and acceptance gates
 
-## Milestone 0 — material bootstrap ✅
+This roadmap implements the [master plan](project-master-plan.md). See [development status](development-status.md) for pinned source/CI evidence. “Prototype implemented” does not mean physically validated. These are ordered engineering gates, not delivery dates. Later research can proceed in parallel, but should not conceal unfinished correctness work.
 
-- C++23/CMake project and CI
-- Jolt 5.6.0 integration
-- Engine-neutral impact events
-- Energy-based material activation
-- Procedural sphere lattice with no precut chunks
-- XPBD-style brittle bond reference solver
-- Connected-component fragment discovery
-- Fragment mass and momentum reconstruction
+## Existing foundation
 
-## Milestone 1 — observable and safer fracture ◐
+**On main:** C++23/CMake/Jolt; procedural spheres; parameterized contact and brittle laws; rotation-invariant local strain with tension/compression/shear channels; target activation; generated components/meshes/collision proxies; Jolt fragments and overflow debris; raylib laboratory; material/surface/slope/gravity controls; analytical scenario cache; material-outcome serialization; tests and CI. Main also has interactive frame-control and MSVC build fixes.
 
-Completed in the current iteration:
+**Not merged at audit:** PR #2's measured rolling/sliding, rolling-resistance torque, damping separation, sensor-deferred activation, two-way sphere/material impulses, synchronized microsteps, footprint checks and diagnostics. Its PR CI now passes, including graphical capture. Full physical validation does not.
 
-- Remove both linear and angular momentum from the internal fracture pulse
-- Deterministically sort contact events
-- Report kinetic energy, estimated elastic energy, maximum stretch, and maximum node speed
-- Expose active nodes, bonds, damage, and component counts to a shared simulation controller
+## Gate 0 — integrate the development checkpoint safely
 
-Still required:
+Inspect main and PR #2, preserve concurrent edits and the explicit raylib/MSVC options, and reconcile on a development branch. Review new contact and rolling tests. Run headless tests, the screenshot path, and a normal interactive session; test launch-spin control, pause, reset, slope/gravity changes, and window input/timing. Record exact source and environment.
 
-- Calibrate glass at coarse, normal, and fine resolutions
-- Track fracture energy, damping loss, and numerical error separately
-- Add compression- and shear-sensitive failure rather than tensile stretch alone
-- Record portable deterministic replay packages
+**Exit:** code is reviewable with no lost main fixes; normal input/frame presentation is verified; the CI result is tied to the tested commit; known physics defects remain documented. Documentation on main does not itself satisfy this gate.
 
-## Milestone 2 — return fragments to Jolt ✅ prototype
+## Gate 1 — conservation and physical bookkeeping
 
-- Generate exposed voxel-face meshes while removing internal faces
-- Sample component surfaces into convex collision proxies
-- Convert a bounded set of components into Jolt bodies
-- Convert overflow/tiny components into lightweight debris
-- Batch-create Jolt fragment bodies
-- Supply material-derived mass and inertia instead of collision-hull mass
-- Verify complete component mass accounting in tests and the headless run
+Instrument rigid bodies, material nodes, constraints, supports and debris. Record external impulse/work and distinguish contact, rolling, damping, fracture/plastic, geometric-correction, and coarsening terms. Audit one owner per contact and consistent rigid/material clocks. Check finite-mass reactions, angular torque arms, frame invariance, and no attractive separating contacts.
 
-Next quality work:
+Review rigid-to-lattice and lattice-to-fragment mass, COM and full inertia equivalence, including intrinsic cell spin. Do not infer whole-system correctness from pairwise tests or a zero mass error.
 
-- Better convex decomposition for strongly concave fragments
-- Sleeping and debris retirement policies
-- Smoothed visual surfaces independent of collision proxies
-- More explicit system angular-momentum error reporting at handoff
+**Exit:** isolated and supported reference experiments bound momentum and energy residuals across activation, active contact and handoff. Numerical stabilization and intentional losses are measured and documented. Unexplained energy creation fails tests.
 
-## Milestone 3 — visual laboratory ✅ bootstrap
+## Gate 2 — trustworthy material response and fracture
 
-The current visual laboratory uses raylib 6.0 as a deliberately lightweight shell:
+Create parameter/property coverage tests and provenance for presets. Calibrate elasticity and tension/compression/shear failure using coupons before tuning an impact spectacle. Tie irreversible fracture work to modeled crack area or another explicit energy-consistent law; audit horizon weights and double counting. Fix severe over-fragmentation without explosion pulses, pre-cut shards, or an imposed physical shard count.
 
-- Resizable 3D window and camera controls
-- Rigid iron and glass spheres
-- Instanced-style active voxel view
-- Optional live/broken bond overlay
-- Generated fragment mesh rendering after Jolt handoff
-- Opaque/frosted glass presentation
-- Runtime speed, resolution, gravity, pause, step, reset, and wireframe controls
-- Deterministic offscreen CI screenshot capture
+Sweep voxel size, timestep, iterations, grid orientation, seed, density, speed and impact offset. Reference-model/data comparisons must state their validity domain. Add plasticity for metals, viscoelasticity for rubber and anisotropy for wood as separate tested capabilities, not labels applied to the brittle solver.
 
-Production renderer work remains:
+**Exit:** changing a supported characteristic produces the expected quantified response; canonical load/stiffness/failure/energy envelopes converge within specified tolerances; unsupported characteristics are surfaced honestly.
 
-- SDL3 application shell
-- Dawn/WebGPU rendering and compute
-- GPU buffers for active voxels and bonds
-- Dear ImGui material and solver panels
-- Stress, contact, and energy overlays
-- Transparent/refractive glass after opaque geometry is stable
+## Gate 3 — complete the ball test ground
 
-## Milestone 4 — authoritative two-way rigid/material coupling
+Add controlled free-flight/drop, frictionless sliding, slide-to-roll, backspin/overspin, inclined slipping/rolling, off-center collisions, both-body activation, support-impact activation and repeated shard impacts. Add file-driven reproducible experiment configuration and per-run metrics. Retain material lineage and state after fragmentation.
 
-- Turn an activating Jolt contact into sensor-like contact before rigid response
-- Let the material solver distribute the authoritative contact impulse
-- Return equal-and-opposite reaction impulse to the rigid body
-- Keep iron colliding with glass during active fracture
-- Collide active nodes against arbitrary rigid environment shapes
-- Define synchronization and substepping rules
+**Exit:** real contact-point velocity determines measured rolling/slipping; frictionless tests do not self-spin; ideal reference tests do not acquire spurious density dependence; gravity/slope experiments and fragment landings remain consistent; input changes are reproducible without manual timing.
 
-## Milestone 5 — local physicalization
+## Gate 4 — general contacts, supports, and geometry
 
-- Activate a contact-centered material patch instead of the whole object
-- Couple patch boundaries to an aggregate rigid body
-- Expand the patch when stress or damage approaches its edge
-- Split only disconnected matter into new bodies
-- Re-coarsen stable regions
+Extend beyond a rigid sphere and material points: arbitrary supported rigid shapes, multiple active objects, material self-contact, finite support extent/thickness, curved/moving surfaces and continuous collision handling. Use actual support/contact loads where required rather than an `m*g` proximity shortcut. Improve concave fragment collision proxies without changing material mass.
 
-## Milestone 6 — material validation
+**Exit:** objects fall off edges and land without invisible infinite planes, persistent interpenetration, or missing counterpart reactions; representative high-speed and mixed-representation scenes remain within declared numerical limits.
 
-- Beam, tension, compression, shear, impact, and fracture calibration scenes
-- Resolution-invariant outcome envelopes
-- Reference comparison against peridynamic or finite-element solvers
-- Material versioning and uncertainty ranges
+## Gate 5 — adaptive matter and measured real-time cost
 
-## Milestone 7 — authoring language and publishing
+Profile each stage and establish a reference machine and reproducible scenes. Add sparse bricks for larger objects, aggregate physical summaries, contact-centered activation, boundary coupling, error-driven expansion, persistent damage transfer, stable re-coarsening and sleeping. Add budget-aware debris policies with explicit fidelity limits. Port only measured bottlenecks to GPU, retaining a CPU reference.
 
-- JSON Schema for materials, objects, scenes, and tests
-- Unit-aware intermediate representation
-- Static cost and capability declarations
-- Trusted law primitives and solver selection
-- AI-generated source plus required behavioral tests
-- Versioned universe packages and deterministic dependency locks
+**Exit:** many inactive objects stay cheap; impact cost follows the active region rather than total world volume; refinement does not change the material law or violate transfer accounting; frame/latency/memory percentiles and worst cases are measured. A target such as 60 Hz is not a completed benchmark until measured.
+
+## Gate 6 — validated precomputation and speculation
+
+Keep analytical projections distinct from simulated outcomes. Complete cache identity with material-content/geometry/state/solver hashes, both spins, contact frame, damage, gravity/support, time integration and numerical provenance. Harden serialization validation and cache invalidation. Add time-aligned outcome replay/resumption that does not jump a future terminal state into the current tick.
+
+Then schedule multiple likely continuations before contact, prioritize by expected benefit, cancel stale branches, and select only after actual conditions are checked. Fall back to live/refined/explicit lower-fidelity physics outside the validated domain. Do not interpolate incompatible fracture topologies.
+
+**Exit:** cached and live trajectories/ledgers agree within documented applicability bounds; changed state invalidates a result; misses never choose unrelated animation; end-to-end saved time exceeds speculation overhead on measured scenarios.
+
+## Gate 7 — assemblies and editable laws
+
+Implement material-backed interfaces and semantic hinges/fasteners/welds/adhesives. Build the door test: assembled wood/metal mass properties, constrained swing, local failure, anchor detachment, and post-failure motion. Introduce schema/unit checking, solver capability declarations and a small trusted law intermediate representation before a broad language grammar.
+
+Add family-specific models and fields only with stated coupling, work and validation rules. Surface coatings, orientation, thermal/state dependence and fictional laws require explicit consumers and tests.
+
+**Exit:** a creator changes matter/constraints/laws rather than authoring an outcome; invalid units/unsupported behaviors are rejected; interfaces fail based on their loads/materials; assemblies remain compatible with local activation and conservation bookkeeping.
+
+## Gate 8 — creator language, APIs and AI workflow
+
+Expose bounded authoring, queries, events, tests, diagnostics and serialization. Implement the LawScript-equivalent declarative front end, cost/capability checks and sandboxed high-level behaviors. AI produces inspectable source and tests, not uncontrolled per-voxel runtime loops or mandatory per-tick model calls. Keep trusted solver plugins separate from ordinary creator permissions.
+
+**Exit:** a user/AI can generate, test, revise and reproduce a material experiment or assembly through the public API; code and memory limits are enforced; source is portable within a declared physics ABI.
+
+## Gate 9 — engine and publishing V1
+
+Add persistent procedural worlds and sparse damage state, versioned universe packages, dependency locks, capability compatibility, preview/validation, safe distribution and remix/version handling. Decide multiplayer authority/replication, resource budgets and correction policy explicitly; cross-platform bitwise determinism is not assumed. Hosting and commercial features require separate product decisions.
+
+**Exit:** publish, load and modify a bounded world without losing material history or changing laws silently; untrusted packages respect permissions and resources; a published object declares its required physics capabilities. This is the publishing milestone, distinct from a good destruction demo.
+
+## Keep the project on track
+
+Every checkpoint should state: source commit/branch; implemented change; reproducible tests; quantitative result and tolerance; numerical/model limitations; measured performance; remaining work; and main-versus-experimental status. Update the status document and property coverage matrix when features move between categories. Do not call a gate complete merely because its types, menu items, or future enum values exist.

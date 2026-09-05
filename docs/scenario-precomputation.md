@@ -1,5 +1,7 @@
 # Scenario projection and precomputation
 
+> Scope note (September 4, 2026 audit): this is a focused design/model document, not a complete implementation-status ledger. Read the [master plan](project-master-plan.md) and [development status](development-status.md) first. Main's audited code is `62cf812`; conservative-contact work in PR #2 is not merged.
+
 Banjo should not discover at the instant of contact that a requested material solve is too expensive. The scenario projection layer estimates the likely contact regime and computational cost before detailed material activation.
 
 ## Analytic projection
@@ -25,7 +27,7 @@ For a sphere on a plane, it estimates:
 - rolling-resistance loss
 - acceleration along the slope
 
-These are fast screening calculations. They select a solver and budget; they do not replace the detailed fracture solver or claim to predict a unique crack surface.
+These are fast screening calculations and advisory runtime-strategy estimates. They do not implement adaptive scheduling or replace the detailed fracture solver, and do not claim to predict a unique crack surface.
 
 ## Deterministic keys
 
@@ -45,6 +47,6 @@ The projector classifies each scenario as:
 - `material realtime` — the estimated bond workload fits the declared budget
 - `adaptive hybrid` — local physicalization or reduced resolution is recommended
 - `precompute recommended` — a full detailed solve is unlikely to fit the budget
-- `cached material outcome` — an exact precomputed material result is available
+- `cached material outcome` — a future strategy/enum category, not proof that automatic validated cached-outcome reuse is implemented
 
-The current projection CSV stores analytic summaries. The next cache level stores solver-generated canonical outcomes: node motion in a contact-relative frame, broken-bond topology, component-local meshes, normalized fragment velocities, conservation totals, solver version, and validity ranges. Canonical sphere impacts can then be rotated into a matching contact frame. Cache misses always fall back to simulation or a cheaper declared model; they never silently select an unrelated fracture animation.
+The current projection CSV stores analytic summaries. Prototype MaterialOutcome capture/load/apply APIs exist separately, but full keys, applicability validation, automatic selection and time-aligned playback remain work. The intended next cache level stores solver-generated canonical outcomes: node motion in a contact-relative frame, broken-bond topology, component-local meshes, normalized fragment velocities, conservation totals, solver version, and validity ranges. Frame transformation is valid only when the full material, gravity, support, velocity and boundary-state problem has the corresponding symmetry; a matching sphere orientation alone is insufficient. Cache misses always fall back to simulation or a cheaper declared model; they never silently select an unrelated fracture animation.
