@@ -88,6 +88,20 @@ void StarterWorld::rebuildPhysics() {
     }
     physics_=std::move(next);
 }
+std::string StarterWorld::assessAssemblyJson(std::string_view declaration) const {
+    std::vector<AssemblyMaterialStock> stock;
+    for(auto m:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        double loose=0;
+        for(const auto &o:objects_)if(o.recipe.material==m&&!o.collected&&!o.tool&&!o.attached)
+            loose+=o.recipe.geometry().volume()*makeReferenceMaterial(m).density_kg_m3;
+        stock.push_back({m,inventoryKg(m),loose});
+    }
+    auto result=Json::parse(CreatorWorld::assessAssemblyWithStockJson(declaration,stock));
+    result["inventory_scope"]="first-person-starter";
+    result["collection_note"]="Collectible mass includes only loose uncollected objects, not attached branches or equipped tools. Actual pickup still requires reach, settled motion and stamina.";
+    result["player"]={{"level",level()},{"stamina",stamina()},{"assembly_creation_supported",false},{"assembly_level_requirement",nullptr},{"assembly_stamina_cost",nullptr}};
+    return result.dump(2);
+}
 double StarterWorld::inventoryKg(MaterialPreset m) const {return inventory_m3_[index(m)]*makeReferenceMaterial(m).density_kg_m3;}
 double StarterWorld::inventoryVoxels(MaterialPreset m) const {return inventory_m3_[index(m)]/voxel_volume;}
 std::string StarterWorld::equippedTool() const {

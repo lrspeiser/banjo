@@ -49,6 +49,7 @@ public:
     [[nodiscard]] StarterQuote quote(std::string_view design) const;
     [[nodiscard]] StarterQuote quoteRecipe(const ObjectRecipe &recipe) const;
     [[nodiscard]] static ObjectRecipe defaultDraft();
+    [[nodiscard]] std::string assessAssemblyJson(std::string_view declaration) const;
     [[nodiscard]] std::string designerRequest(std::string_view id,std::string_view prompt) const;
     [[nodiscard]] const std::optional<StarterRememberedDesign> &rememberedDesign() const {return remembered_design_;}
     void rememberDesignAndSave(const std::filesystem::path &path,const StarterRememberedDesign &design);

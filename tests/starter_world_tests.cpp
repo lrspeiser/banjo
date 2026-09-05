@@ -10,7 +10,40 @@ void check(bool ok,const char *s) {if(!ok)throw std::runtime_error(s);}
 void near(double a,double b,double tolerance,const char *s) {check(std::isfinite(a)&&std::abs(a-b)<=tolerance,s);}
 void rejects(std::function<void()> f){bool bad=false;try{f();}catch(const std::exception&){bad=true;}check(bad,"expected rejection");}
 Vec3 eye(const StarterWorld &w,unsigned i) {auto p=w.objects().at(i-1).state.center_of_mass_world_m;p.y+=1;return p;}
+void assemblyInventory() {
+    using Json=nlohmann::json;
+    for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        StarterWorld world;const auto m=makeReferenceMaterial(material);const auto name=std::string(materialPresetName(material));
+        Json a={{"id","a"},{"material",name},{"dimensions_m",{.02,.02,.02}},{"center_m",{0,0,0}},{"orientation_wxyz",{1,0,0,0}}};auto b=a;b["id"]="b";b["dimensions_m"]={.03,.03,.03};b["center_m"]={.026,0,0};
+        Json fa={{"normal_axis",0},{"positive",true},{"u_offset_m",0},{"v_offset_m",0},{"width_m",.01},{"height_m",.012}};auto fb=fa;fb["positive"]=false;
+        Json law={{"model","central-cohesive-v1"},{"stiffness_pa_per_m",2*m.tensile_strength_pa*m.tensile_strength_pa/m.fracture_energy_j_m2},{"strength_pa",m.tensile_strength_pa},{"fracture_energy_j_m2",m.fracture_energy_j_m2},{"compression_stiffness_pa_per_m",0},{"provenance","illustrative regression law"}};
+        Json declaration={{"schema_version",1},{"parts",Json::array({a,b})},{"joint",{{"id","join"},{"part_a","a"},{"part_b","b"},{"face_a",fa},{"face_b",fb},{"cells_per_axis",4},{"contact_owner","cohesive_patch_only"},{"law",law}}}};
+        const auto initial=world.serialize();const auto report=Json::parse(world.assessAssemblyJson(declaration.dump()));
+        check(world.serialize()==initial,"starter assembly assessment is read-only");check(report["inventory_scope"]=="first-person-starter"&&!report["materials_sufficient"].get<bool>()&&!report["creation_supported"].get<bool>(),"starter stock and unsupported creation are distinct");
+        check(report["player"]["assembly_level_requirement"].is_null()&&report["player"]["assembly_stamina_cost"].is_null(),"unsupported construction costs are not fabricated");
+        const auto bill=report["material_requirements"][0];near(bill["required_mass_kg"],.000035*m.density_kg_m3,1e-12,"shared compiler derives required material");near(bill["inventory_mass_kg"],0,0,"fresh starter has no held material");
+        double loose=0;unsigned pickup=0;for(const auto &o:world.objects())if(o.recipe.material==material&&!o.attached&&!o.tool&&!o.collected){loose+=o.recipe.geometry().volume()*m.density_kg_m3;if(!pickup)pickup=static_cast<unsigned>(o.id);}
+        near(bill["collectible_mass_kg"],6*(material==MaterialPreset::Oak?.2*.08*.08:.08*.08*.08)*m.density_kg_m3,1e-12,"six declared pickups exclude the attached branch");check(loose!=10,"starter must not inherit the workshop ten-kilogram pile");
+        (void)world.interact("assembly-pickup",pickup,eye(world,pickup));const auto collected=world.serialize();auto ready=Json::parse(world.assessAssemblyJson(declaration.dump()));
+        check(world.serialize()==collected,"readiness does not spend XP, stamina, stock or time");check(ready["materials_sufficient"].get<bool>()&&!ready["creation_supported"].get<bool>(),"pickup supplies material but cannot enable unsupported creation");
+        const auto after=ready["material_requirements"][0];near(after["inventory_mass_kg"],world.inventoryKg(material),1e-12,"assembly uses real collected inventory");near(after["collectible_mass_kg"].get<double>()+after["inventory_mass_kg"].get<double>(),loose,1e-12,"pickup transfers mass without duplicating supply");
+        auto restored=StarterWorld::deserialize(collected);check(restored.assessAssemblyJson(declaration.dump())==ready.dump(2),"restored starter reports identical assembly requirements");
+        if(material==MaterialPreset::Oak) {
+            (void)world.craft("assembly-tool","prybar",{0,1.65,0});const auto tools=Json::parse(world.assessAssemblyJson(declaration.dump()));
+            near(tools["material_requirements"][0]["collectible_mass_kg"],after["collectible_mass_kg"],1e-12,"equipped tool is not counted as collectible material");
+            near(tools["material_requirements"][0]["inventory_mass_kg"],world.inventoryKg(material),1e-12,"tool fabrication debit reaches assembly bill");
+        }
+        rejects([&]{(void)CreatorWorld::assessAssemblyWithStockJson(declaration.dump(),{{material,1,0},{material,2,0}});});
+        rejects([&]{(void)CreatorWorld::assessAssemblyWithStockJson(declaration.dump(),{{material,-1,0}});});
+        auto mixed=declaration;mixed["parts"][1]["material"]=material==MaterialPreset::Iron?"glass":"iron";
+        const auto mixed_report=Json::parse(world.assessAssemblyJson(mixed.dump()));check(mixed_report["material_requirements"].size()==2,"mixed assembly keeps separate material bills");
+        check(!mixed_report["materials_sufficient"].get<bool>(),"stock of one material cannot pay for another");
+        const auto empty=Json::parse(CreatorWorld::assessAssemblyWithStockJson(declaration.dump(),{}));near(empty["material_requirements"][0]["collectible_mass_kg"],0,0,"missing stock entries never mint material");
+        std::cout<<name<<" assembly required="<<bill["required_mass_kg"]<<" loose="<<loose<<" collected="<<after["inventory_mass_kg"]<<'\n';
+    }
+}
 int main() {try {
+    assemblyInventory();
     StarterWorld w;const auto initial=w.serialize();
     check(w.level()==1&&w.stamina()==100&&!w.quote("prybar").ready(),"fresh game starts with empty inventory and locked costs");
     rejects([&]{(void)w.interact("far",1,{10,2,10});});check(w.serialize()==initial,"out-of-reach action is atomic");

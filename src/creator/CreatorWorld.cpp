@@ -376,11 +376,26 @@ CompiledAssembly compileAssembly(std::string_view declaration){
 }
 }
 std::string CreatorWorld::assessAssemblyJson(std::string_view declaration) const {
+    std::vector<AssemblyMaterialStock> stock;
+    for(auto m:kMaterialPresets) {
+        double collectible=0;for(const auto &lot:lots_)if(!lot.collected&&lot.material==m)collectible+=lot.remaining_mass_kg;
+        stock.push_back({m,inventoryMass(m),collectible});
+    }
+    return assessAssemblyWithStockJson(declaration,stock);
+}
+std::string CreatorWorld::assessAssemblyWithStockJson(std::string_view declaration,const std::vector<AssemblyMaterialStock> &stock) {
+    check(stock.size()<=kMaterialPresets.size(),"assembly stock exceeds material catalog");
+    std::map<MaterialPreset,AssemblyMaterialStock> supplied;
+    for(const auto &entry:stock) {
+        check(std::find(kMaterialPresets.begin(),kMaterialPresets.end(),entry.material)!=kMaterialPresets.end(),"unknown assembly stock material");
+        check(std::isfinite(entry.inventory_mass_kg)&&entry.inventory_mass_kg>=0&&entry.inventory_mass_kg<=1e12&&std::isfinite(entry.collectible_mass_kg)&&entry.collectible_mass_kg>=0&&entry.collectible_mass_kg<=1e12,"invalid assembly stock mass");
+        check(supplied.emplace(entry.material,entry).second,"duplicate assembly stock material");
+    }
     const auto result=compileAssembly(declaration);const auto &j=result.declaration;const auto &compiled=result.patch;const auto &law=result.law;const auto &ids=result.ids;const auto &materials=result.materials;const auto ai=result.a_index;const double area=law.area_m2;
     Json derived=Json::array();std::map<MaterialPreset,double> requirements;
     for(unsigned i=0;i<2;++i){const auto &body=i==ai?compiled.a:compiled.b;requirements[materials[i]]+=body.mass_kg;derived.push_back({{"id",ids[i]},{"material",materialPresetName(materials[i])},{"mass_kg",body.mass_kg},{"principal_inertia_kg_m2",vector(body.principal_inertia_kg_m2)}});}
     Json bill=Json::array();bool sufficient=true;
-    for(const auto &[m,required]:requirements){const double held=inventoryMass(m),missing=std::max(0.0,required-held);double collectible=0;for(const auto &lot:lots_)if(!lot.collected&&lot.material==m)collectible+=lot.remaining_mass_kg;
+    for(const auto &[m,required]:requirements){const auto it=supplied.find(m);const double held=it==supplied.end()?0:it->second.inventory_mass_kg,collectible=it==supplied.end()?0:it->second.collectible_mass_kg,missing=std::max(0.0,required-held);
         sufficient=sufficient&&missing==0;bill.push_back({{"material",materialPresetName(m)},{"required_mass_kg",required},{"inventory_mass_kg",held},{"collectible_mass_kg",collectible},{"missing_from_inventory_kg",missing},{"missing_after_collection_kg",std::max(0.0,missing-collectible)}});}
     return Json{{"assessment_version",1},{"declaration",j},{"compiled",true},{"materials_sufficient",sufficient},{"creation_supported",false},{"parts",derived},{"material_requirements",bill},
         {"joint",{{"area_m2",area},{"rest_gap_m",compiled.sites.front().rest_distance_m},{"site_count",compiled.sites.size()},{"complete_tensile_separation_work_j",area*law.fracture_energy_j_m2},{"contact_policy","cohesive_patch_only"}}},

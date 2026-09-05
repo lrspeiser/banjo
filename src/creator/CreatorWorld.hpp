@@ -90,6 +90,10 @@ struct CreatorMotion {
 [[nodiscard]] CreatorMotion measureCreatorMotion(const CreatedObject &object,const SupportPlaneFrame &support);
 // Single-thread-owned authoring/runtime state. Callers serialize commands on
 // the simulation thread. The reference matter solver is a separate selection.
+struct AssemblyMaterialStock {
+    MaterialPreset material;
+    double inventory_mass_kg{},collectible_mass_kg{};
+};
 class CreatorWorld {
 public:
     explicit CreatorWorld(CreatorSettings settings = {});
@@ -115,6 +119,8 @@ public:
     // Read-only two-box cohesive assembly assessment; does not authorize live
     // creation or claim collision ownership has been integrated into Jolt.
     [[nodiscard]] std::string assessAssemblyJson(std::string_view declaration) const;
+    // Host-provided read-only stock view; this does not create inventory authority.
+    [[nodiscard]] static std::string assessAssemblyWithStockJson(std::string_view declaration,const std::vector<AssemblyMaterialStock> &stock);
     [[nodiscard]] static std::string testAssemblyJson(std::string_view declaration,std::string_view specification);
     [[nodiscard]] std::uint64_t rememberAssembly(std::string_view declaration,std::uint64_t expected_revision);
     [[nodiscard]] std::uint64_t clearAssembly(std::uint64_t expected_revision);
