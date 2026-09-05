@@ -1,5 +1,7 @@
 # Interactive fracture microscope
 
+**Fracture now runs in the bowl:** [Experimental bonded-cell checkpoint](bonded-bowl-checkpoint.md) connects crafted balls to local energy-driven failure, surviving internal networks and continued curved-support/multiple-body contact. Glass fractures during release; oak and iron retain elastic connections. Source `f55f996`, UI `a939df0`, local only. This is a slow, coarse 19-cell model with uncalibrated strength and contact geometry, not the completed realistic-fracture gate.
+
 September 5, 2026. Source `413852a`, local `codex/physics-foundation`, not main. The existing bowl app now opens a separate microscope view of the [progressive connector solver](rupture-cascade-checkpoint.md). This makes its computed behavior inspectable; it does not enable shattering of crafted balls.
 
 ## Use
