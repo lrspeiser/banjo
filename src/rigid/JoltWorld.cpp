@@ -11,6 +11,7 @@
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyLock.h>
+#include <Jolt/Physics/StateRecorderImpl.h>
 #include <Jolt/Physics/Collision/ContactListener.h>
 #include <Jolt/Physics/Collision/EstimateCollisionResponse.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
@@ -226,6 +227,8 @@ public:
         processContact(body1, body2, manifold, settings, false);
     }
 
+    [[nodiscard]] std::vector<ImpactEvent> capture() {std::scoped_lock lock(mutex_);if(events_.size()>65536)throw std::runtime_error("trial event queue budget exceeded");return events_;}
+    void restore(std::vector<ImpactEvent> events) {std::scoped_lock lock(mutex_);events_.swap(events);}
     [[nodiscard]] std::vector<ImpactEvent> drain() {
         std::scoped_lock lock(mutex_);
         std::vector<ImpactEvent> result;
@@ -499,6 +502,10 @@ public:
         }
     }
 
+    void requireConfigurationMutable() const {
+        if(trial_depth_!=0)throw std::logic_error("configuration/topology changes are forbidden during a reversible trial");
+    }
+    unsigned trial_depth_{};
     BroadPhaseLayerInterface broad_phase_interface_;
     ObjectVsBroadPhaseLayerFilter object_vs_broad_phase_filter_;
     ObjectLayerPairFilter object_pair_filter_;
@@ -522,11 +529,13 @@ JoltWorld::JoltWorld(JoltWorld &&) noexcept = default;
 JoltWorld &JoltWorld::operator=(JoltWorld &&) noexcept = default;
 
 void JoltWorld::setGravity(const Vec3 &gravity_m_s2) {
+    impl_->requireConfigurationMutable();
     impl_->gravity_m_s2_ = gravity_m_s2;
     impl_->physics_->SetGravity(toJolt(gravity_m_s2));
 }
 
 void JoltWorld::addFloor() {
+    impl_->requireConfigurationMutable();
     MaterialDefinition concrete;
     concrete.name = "default_concrete_surface";
     concrete.density_kg_m3 = 2400.0;
@@ -545,6 +554,7 @@ void JoltWorld::addFloor() {
 }
 
 void JoltWorld::addSupportSurface(const RigidSurfaceDescription &description) {
+    impl_->requireConfigurationMutable();
     if (!impl_->floor_id_.IsInvalid()) {
         throw std::logic_error("support surface already exists");
     }
@@ -595,6 +605,7 @@ void JoltWorld::addSupportSurface(const RigidSurfaceDescription &description) {
 }
 
 void JoltWorld::addBall(const RigidBallDescription &description) {
+    impl_->requireConfigurationMutable();
     if (description.body_id == kInvalidMatterBodyId ||
         description.body_id == kSupportSurfaceMatterId ||
         description.radius_m <= 0.0 ||
@@ -673,6 +684,7 @@ void JoltWorld::addBall(const RigidBallDescription &description) {
 }
 
 void JoltWorld::addBox(const RigidBoxDescription &description) {
+    impl_->requireConfigurationMutable();
     const auto d=description.dimensions_m;
     const auto &s=description.state;
     const auto finite=[](Vec3 v){return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z);};
@@ -736,6 +748,7 @@ PairContactOwner JoltWorld::pairContactOwner(MatterBodyId a,MatterBodyId b) cons
     return impl_->external_pairs_.contains(std::minmax(a,b))?PairContactOwner::External:PairContactOwner::Jolt;
 }
 void JoltWorld::setPairContactOwner(MatterBodyId a,MatterBodyId b,PairContactOwner owner) {
+    impl_->requireConfigurationMutable();
     if(owner!=PairContactOwner::External&&owner!=PairContactOwner::Jolt)throw std::invalid_argument("unknown pair contact owner");
     if(pairContactOwner(a,b)==owner)return;
     const std::pair<MatterBodyId,MatterBodyId> key=std::minmax(a,b);
@@ -864,6 +877,7 @@ PairImpulseAudit JoltWorld::applyAuditedPairImpulses(MatterBodyId a,MatterBodyId
 }
 
 void JoltWorld::pinToWorld(MatterBodyId body_id) {
+    impl_->requireConfigurationMutable();
     const auto found=impl_->bodies_.find(body_id);
     if(found==impl_->bodies_.end()||impl_->pins_.contains(body_id))throw std::invalid_argument("missing or already pinned body");
     if(impl_->physics_->GetBodyInterface().GetMotionType(found->second)!=JPH::EMotionType::Dynamic)throw std::invalid_argument("only a dynamic body can be pinned");
@@ -874,6 +888,7 @@ void JoltWorld::pinToWorld(MatterBodyId body_id) {
     impl_->pins_.emplace(body_id,owned);impl_->physics_->AddConstraint(constraint);
 }
 void JoltWorld::releaseFromWorld(MatterBodyId body_id) {
+    impl_->requireConfigurationMutable();
     const auto found=impl_->pins_.find(body_id);
     if(found==impl_->pins_.end())return;
     impl_->physics_->RemoveConstraint(found->second);impl_->pins_.erase(found);
@@ -882,6 +897,7 @@ void JoltWorld::releaseFromWorld(MatterBodyId body_id) {
 
 void JoltWorld::addFragments(
     const std::vector<RigidFragmentDescription> &fragments) {
+    impl_->requireConfigurationMutable();
     if (fragments.empty()) {
         return;
     }
@@ -1011,6 +1027,24 @@ void JoltWorld::addFragments(
 
 unsigned JoltWorld::positionPrecisionBits() noexcept { return 8*sizeof(JPH::Real); }
 
+bool JoltWorld::runReversibleTrial(const std::function<bool()> &trial) {
+    if(!trial||impl_->bodies_.size()>256||impl_->trial_depth_>=16)
+        throw std::invalid_argument("invalid reversible trial or body/depth budget exceeded");
+    JPH::StateRecorderImpl recorder;impl_->physics_->SaveState(recorder);
+    if(recorder.IsFailed()||recorder.GetDataSize()>16U*1024U*1024U)
+        throw std::runtime_error("cannot capture bounded Jolt trial state");
+    auto events=impl_->impact_collector_.capture();const auto tick=impl_->tick_.load(std::memory_order_relaxed);
+    const auto restore=[&] {
+        recorder.Rewind();
+        if(!impl_->physics_->RestoreState(recorder)||recorder.IsFailed())
+            throw std::runtime_error("Jolt trial restore failed; discard this world");
+        impl_->tick_.store(tick,std::memory_order_relaxed);impl_->impact_collector_.restore(std::move(events));
+    };
+    ++impl_->trial_depth_;bool accepted=false;
+    try {accepted=trial();}catch(...) {--impl_->trial_depth_;restore();throw;}
+    --impl_->trial_depth_;if(!accepted)restore();return accepted;
+}
+
 void JoltWorld::step(double fixed_dt_s) {
     if (fixed_dt_s <= 0.0) {
         throw std::invalid_argument("Jolt step must be positive");
@@ -1122,6 +1156,7 @@ bool JoltWorld::contains(MatterBodyId body_id) const {
 }
 
 void JoltWorld::removeAndDestroy(MatterBodyId body_id) {
+    impl_->requireConfigurationMutable();
     const auto found = impl_->bodies_.find(body_id);
     if (found == impl_->bodies_.end()) {
         return;

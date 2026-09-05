@@ -15,6 +15,7 @@
 #include "physics/RigidAttachment.hpp"
 
 #include <memory>
+#include <functional>
 #include <vector>
 
 namespace banjo {
@@ -117,6 +118,12 @@ public:
     void releaseFromWorld(MatterBodyId body_id);
     void applyRigidState(MatterBodyId body_id,const RigidSnapshot &state);
     void addFragments(const std::vector<RigidFragmentDescription> &fragments);
+    // Trusted host callback, between steps. True accepts; false or an exception
+    // restores Jolt bodies/contacts/constraints/global state, ticks and queued
+    // impacts. Geometry/configuration mutations reject while a trial is open.
+    // Caller owns external histories and must keep this world alive/unmoved.
+    // At most 256 bodies and 16 nested trials; no persistence/portable snapshot.
+    [[nodiscard]] bool runReversibleTrial(const std::function<bool()> &trial);
     void step(double fixed_dt_s);
     [[nodiscard]] CoupledSphereState sphereContactState(MatterBodyId body_id) const;
     void applySphereContactState(MatterBodyId body_id, const CoupledSphereState &state);
