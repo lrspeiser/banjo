@@ -1,6 +1,7 @@
 #pragma once
 #include "creator/CreatorWorld.hpp"
 #include <array>
+#include <functional>
 
 namespace banjo {
 struct StarterObject {
@@ -48,6 +49,11 @@ public:
     std::string craftRecipe(std::string request,const ObjectRecipe &recipe,Vec3 eye);
     std::string interact(std::string request,MatterBodyId object,Vec3 eye);
     std::string craft(std::string request,std::string_view design,Vec3 eye);
+    // Single-writer local host boundary: publish the candidate save before
+    // changing live state or acknowledging a resource-changing action.
+    std::string interactAndSave(const std::filesystem::path &path,std::string request,MatterBodyId object,Vec3 eye);
+    std::string craftAndSave(const std::filesystem::path &path,std::string request,std::string_view design,Vec3 eye);
+    std::string craftRecipeAndSave(const std::filesystem::path &path,std::string request,const ObjectRecipe &recipe,Vec3 eye);
     void rest(double seconds);
     void step(unsigned ticks=1);
     [[nodiscard]] std::string serialize() const;
@@ -72,5 +78,6 @@ private:
     std::string interactUnchecked(MatterBodyId object,Vec3 eye);
     std::string craftUnchecked(std::string_view design,Vec3 eye);
     std::string craftRecipeUnchecked(const ObjectRecipe &recipe,Vec3 eye);
+    std::string commitSaved(const std::filesystem::path &path,const std::function<std::string(StarterWorld&)> &action);
 };
 }

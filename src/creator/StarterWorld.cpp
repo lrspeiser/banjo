@@ -227,12 +227,35 @@ StarterWorld StarterWorld::deserialize(std::string_view document) {
 }
 void StarterWorld::save(const std::filesystem::path &path) const {
     const auto text=serialize();check(text.size()<=1024*1024,"save exceeds 1 MiB");auto pending=path;pending+=".pending";check(!std::filesystem::exists(pending),"pending save exists");
-    std::ofstream stream(pending,std::ios::binary);stream<<text;stream.close();check(bool(stream),"cannot write starter save");
 #ifdef _WIN32
+    // Exclusive creation prevents a second writer from truncating an existing
+    // recovery file. Preserve failed writes for inspection; never auto-promote.
+    const HANDLE file=CreateFileW(pending.c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);
+    check(file!=INVALID_HANDLE_VALUE,"cannot create pending starter save");
+    DWORD written=0;
+    const bool wrote=WriteFile(file,text.data(),static_cast<DWORD>(text.size()),&written,nullptr)!=0&&written==text.size();
+    const bool flushed=wrote&&FlushFileBuffers(file)!=0;
+    const bool closed=CloseHandle(file)!=0;
+    check(wrote&&flushed&&closed,"cannot flush pending starter save; live state unchanged");
     check(MoveFileExW(pending.c_str(),path.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)!=0,"cannot publish starter save");
 #else
+    std::ofstream stream(pending,std::ios::binary);stream<<text;stream.close();check(bool(stream),"cannot write starter save");
     std::filesystem::rename(pending,path);
 #endif
+}
+std::string StarterWorld::commitSaved(const std::filesystem::path &path,const std::function<std::string(StarterWorld&)> &action) {
+    auto candidate=deserialize(serialize());auto result=action(candidate);
+    candidate.save(path); // Failure leaves this world and its receipts untouched.
+    *this=std::move(candidate);return result;
+}
+std::string StarterWorld::interactAndSave(const std::filesystem::path &path,std::string request,MatterBodyId object,Vec3 eye) {
+    return commitSaved(path,[&](StarterWorld &w){return w.interact(request,object,eye);});
+}
+std::string StarterWorld::craftAndSave(const std::filesystem::path &path,std::string request,std::string_view design,Vec3 eye) {
+    return commitSaved(path,[&](StarterWorld &w){return w.craft(request,design,eye);});
+}
+std::string StarterWorld::craftRecipeAndSave(const std::filesystem::path &path,std::string request,const ObjectRecipe &recipe,Vec3 eye) {
+    return commitSaved(path,[&](StarterWorld &w){return w.craftRecipe(request,recipe,eye);});
 }
 StarterWorld StarterWorld::load(const std::filesystem::path &path) {
     check(std::filesystem::file_size(path)<=1024*1024,"save exceeds 1 MiB");std::ifstream f(path,std::ios::binary);check(bool(f),"cannot read starter save");const std::string document{std::istreambuf_iterator<char>(f),{}};return deserialize(document);

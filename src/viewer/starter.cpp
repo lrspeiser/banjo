@@ -98,7 +98,7 @@ int main(int argc,char **argv){try{
         if(trunkHit.hit&&trunkHit.distance<distance){distance=trunkHit.distance;table=false;}
         for(const auto &o:world.objects())if(!o.collected&&!o.tool){const float d=hit(ray,o);if(d<distance&&d<=3.2F){distance=d;target=o.id;table=false;}}
         if(!modal&&capture.empty()&&IsMouseButtonPressed(MOUSE_BUTTON_LEFT))try{
-            if(table){crafting=true;EnableCursor();}else if(target){message=world.interact(id(),target,v(camera.position));save();}
+            if(table){crafting=true;EnableCursor();}else if(target){message=world.interactAndSave(save_path,id(),target,v(camera.position));}
         }catch(const std::exception &e){message=e.what();}
         save_timer+=dt;if(capture.empty()&&save_timer>10){try{save();}catch(const std::exception &e){message=e.what();}save_timer=0;}
         BeginDrawing();ClearBackground({159,199,210,255});BeginMode3D(camera);scenery();for(const auto &o:world.objects())if(!o.collected&&!o.tool){shape(o);if(o.id==target&&!modal)shape(o,true);}
@@ -134,14 +134,14 @@ int main(int argc,char **argv){try{
                         text(std::string(materialPresetName(proposal->material))+": need "+number(q.required_kg,3)+" kg / held "+number(q.held_kg,3),432,483,18);
                         text("Level "+std::to_string(q.level)+" / stamina "+number(q.stamina,1)+" / missing "+number(q.missing_kg,3)+" kg",432,515,17);
                         if(!q.missing.empty())wrap(q.missing.front(),432,548,490,16,gold);
-                        if(button({432,592,490,48},"BUILD REVIEWED DESIGN",q.ready()))try{message=world.craftRecipe(id(),*proposal,v(camera.position));save();}catch(const std::exception &e){message=e.what();}
+                        if(button({432,592,490,48},"BUILD REVIEWED DESIGN",q.ready()))try{message=world.craftRecipeAndSave(save_path,id(),*proposal,v(camera.position));}catch(const std::exception &e){message=e.what();}
                     }catch(const std::exception &e){wrap(e.what(),432,483,490,17,gold);}
                 }else{
                 const auto &d=designs[selected];const auto q=world.quote(d.id);text(d.label,432,200,27);wrap(d.description,432,244,510,20);text("Requires level "+std::to_string(q.level)+"  /  Your level "+std::to_string(world.level()),432,320,20,q.level>world.level()?gold:ink);
                 text("Material: "+std::string(materialPresetName(d.recipe.material)),432,367,20);text("Need "+number(q.required_kg,3)+" kg   /   Have "+number(q.held_kg,3)+" kg",432,403,20);
                 text("Missing: "+number(q.missing_kg,3)+" kg",432,439,20,q.missing_kg>1e-12?gold:green);text("Crafting stamina: "+number(q.stamina,0),432,485,20);
                 if(!q.missing.empty())wrap(q.missing.front(),432,528,510,18,gold);
-                if(button({432,592,490,48},q.ready()?"CRAFT AND USE MATERIALS":"NOT READY - SEE REQUIREMENTS",q.ready()))try{message=world.craft(id(),d.id,v(camera.position));save();}catch(const std::exception &e){message=e.what();}
+                if(button({432,592,490,48},q.ready()?"CRAFT AND USE MATERIALS":"NOT READY - SEE REQUIREMENTS",q.ready()))try{message=world.craftAndSave(save_path,id(),d.id,v(camera.position));}catch(const std::exception &e){message=e.what();}
                 }
             }else{wrap("Click loose material to bring its substance and volume into inventory. Craft a wooden pry tool first, then gather iron and reach level 2 for the cutting tool. Cut the attached branch, let gravity drop it, and collect the wood.",64,220,800,24);text("Gathering costs "+number(world.gatheringCost(),1)+" stamina per pickup",64,425,23,green);}
             if(button({1190,654,195,43},"BACK TO WORLD")){crafting=false;inventory=false;if(capture.empty())DisableCursor();}

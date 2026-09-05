@@ -3,6 +3,8 @@
 #include <cmath>
 #include <iostream>
 #include <functional>
+#include <fstream>
+#include <chrono>
 using namespace banjo;
 void check(bool ok,const char *s) {if(!ok)throw std::runtime_error(s);}
 void near(double a,double b,double tolerance,const char *s) {check(std::isfinite(a)&&std::abs(a-b)<=tolerance,s);}
@@ -31,7 +33,7 @@ int main() {try {
     w.step(480);const double prior=w.inventoryKg(MaterialPreset::Oak);(void)w.interact("branch-pickup",19,eye(w,19));
     near(w.inventoryKg(MaterialPreset::Oak)-prior,.9*.08*.08*700,1e-12,"whole branch volume is conserved on inventory conversion");
     auto saved=StarterWorld::deserialize(w.serialize());check(saved.serialize()==w.serialize(),"progress, raw stock, cut state and receipts round trip");
-    const auto path=std::filesystem::current_path()/"starter-test-save.json";w.save(path);w.save(path);auto loaded=StarterWorld::load(path);check(loaded.serialize()==w.serialize(),"save replacement and disk reload retain the complete starter state");std::filesystem::remove(path);
+    const auto basic_save_path=std::filesystem::current_path()/"starter-test-save.json";w.save(basic_save_path);w.save(basic_save_path);auto loaded=StarterWorld::load(basic_save_path);check(loaded.serialize()==w.serialize(),"save replacement and disk reload retain the complete starter state");std::filesystem::remove(basic_save_path);
     const auto before_rest=w.stamina();w.rest(1);near(w.stamina()-before_rest,std::min(12.0,100-before_rest),1e-12,"rest explicitly restores bounded gameplay stamina");
     const auto bad=nlohmann::json::parse(w.serialize());auto altered=bad;altered["inventory_m3"][0]=1;rejects([&]{(void)StarterWorld::deserialize(altered.dump());});
     altered=bad;altered["stamina"]=100;rejects([&]{(void)StarterWorld::deserialize(altered.dump());});
@@ -70,6 +72,42 @@ int main() {try {
         custom.step(240);check(custom.objects().back().state.center_of_mass_world_m.y>1.19,"custom body rests on physical bench");
     }
     {auto legacy=nlohmann::json::parse(initial);legacy["starter_version"]=1;legacy["rules"]="starter-stamina-v1/whole-branch-cut-v1/raw-volume-v1";for(auto &o:legacy["objects"])o.erase("custom_design");check(StarterWorld::deserialize(legacy.dump()).serialize()==initial,"version one starter saves migrate without invented progress");}
+    {
+        const auto directory=std::filesystem::current_path()/("starter-transaction-test-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+        check(std::filesystem::create_directory(directory),"fresh save test directory");
+        for(auto m:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+            StarterWorld game;const auto path=directory/(std::string(materialPresetName(m))+".json");auto pending=path;pending+=".pending";
+            const unsigned first=m==MaterialPreset::Glass?13:m==MaterialPreset::Oak?1:7;
+            game.save(path);const auto before=game.serialize();
+            {std::ofstream blocked(pending);blocked<<"retained recovery evidence";}
+            rejects([&]{(void)game.interactAndSave(path,"saved-pickup",first,eye(game,first));});
+            check(game.serialize()==before&&StarterWorld::load(path).serialize()==before,"failed pickup save changes neither live state nor published save");
+            {std::ifstream blocked(pending);std::string content{std::istreambuf_iterator<char>(blocked),{}};check(content=="retained recovery evidence","existing pending data is never truncated");}
+            std::filesystem::remove(pending);
+            (void)game.interactAndSave(path,"saved-pickup",first,eye(game,first));
+            auto recovered=StarterWorld::load(path);const auto after=recovered.serialize();(void)recovered.interactAndSave(path,"saved-pickup",first,{99,0,99});
+            check(recovered.serialize()==after&&game.serialize()==after,"uncertain acknowledged pickup replays after reload");
+            for(unsigned i=1;i<4;++i)(void)game.interactAndSave(path,"saved-gather-"+std::to_string(i),first+i,eye(game,first+i));
+            auto recipe=StarterWorld::defaultDraft();recipe.material=m;recipe.shape="box";recipe.dimensions_m={.08,.06,.1};
+            const auto funded=game.serialize();{std::ofstream blocked(pending);blocked<<"pending";}
+            rejects([&]{(void)game.craftRecipeAndSave(path,"saved-custom",recipe,{0,1.65,0});});
+            const auto preset=m==MaterialPreset::Glass?"glass-ball":m==MaterialPreset::Oak?"oak-ball":"iron-ball";
+            rejects([&]{(void)game.craftAndSave(path,"saved-preset",preset,{0,1.65,0});});
+            check(game.serialize()==funded&&StarterWorld::load(path).serialize()==funded,"both craft paths retain stock stamina XP and receipts on save failure");
+            std::filesystem::remove(pending);
+            (void)game.craftRecipeAndSave(path,"saved-custom",recipe,{0,1.65,0});
+            recovered=StarterWorld::load(path);const auto crafted=recovered.serialize();(void)recovered.craftRecipeAndSave(path,"saved-custom",recipe,{99,0,99});
+            check(recovered.serialize()==crafted&&game.serialize()==crafted,"custom craft receipt survives save and replay without duplicate debit");
+            // A failure after writing/flushing the candidate still cannot publish
+            // an in-memory action. A directory cannot be replaced by a save file.
+            const auto blocked_target=directory/(std::string(materialPresetName(m))+"-directory");std::filesystem::create_directory(blocked_target);
+            rejects([&]{(void)game.interactAndSave(blocked_target,"publish-fail",first+4,eye(game,first+4));});
+            check(game.serialize()==crafted,"failed file publication cannot expose candidate state");
+            auto evidence=blocked_target;evidence+=".pending";check(std::filesystem::is_regular_file(evidence),"failed publication retains candidate evidence");
+            std::filesystem::remove(evidence);std::filesystem::remove(blocked_target);std::filesystem::remove(path);
+        }
+        std::filesystem::remove(directory);
+    }
     for(auto m:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
         JoltWorld physics;physics.setGravity({0,-9.81,0});physics.addFloor();
         physics.addBox({1,{.08,.06,.1},makeReferenceMaterial(m),{{0,2,0},{},{},{}},false});physics.pinToWorld(1);
