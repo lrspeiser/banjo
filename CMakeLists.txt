@@ -32,6 +32,7 @@ add_library(
     src/material/MaterialCatalog.cpp
     src/matter/Lattice.cpp
     src/physics/ContactMechanics.cpp
+    src/physics/ConservativeStep.cpp
     src/physics/MechanicalAccounting.cpp
     src/physics/RollingKinematics.cpp
     src/physics/SphereMaterialContact.cpp
@@ -91,6 +92,10 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
 endif()
 
 if(BANJO_BUILD_HEADLESS)
+    add_executable(banjo_solver_probe src/app/solver_probe_main.cpp)
+    target_link_libraries(banjo_solver_probe PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_solver_probe)
+
     add_executable(banjo_headless src/app/headless_main.cpp)
     target_link_libraries(banjo_headless PRIVATE banjo_runtime)
     target_compile_features(banjo_headless PRIVATE cxx_std_23)
@@ -158,6 +163,11 @@ if(BANJO_BUILD_TESTS)
     target_link_libraries(banjo_material_stage_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_material_stage_tests)
     add_test(NAME banjo_material_stage_tests COMMAND banjo_material_stage_tests)
+
+    add_executable(banjo_conservative_step_tests tests/conservative_step_tests.cpp)
+    target_link_libraries(banjo_conservative_step_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_conservative_step_tests)
+    add_test(NAME banjo_conservative_step_tests COMMAND banjo_conservative_step_tests)
 
     add_executable(banjo_outcome_tests tests/material_outcome_tests.cpp)
     target_link_libraries(banjo_outcome_tests PRIVATE banjo_core)
