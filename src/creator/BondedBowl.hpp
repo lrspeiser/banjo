@@ -4,14 +4,14 @@
 #include "material/MaterialCatalog.hpp"
 #include <vector>
 namespace banjo {
-// Experimental coarse energy-regularized lattice. Catalog tensile strength is
-// NOT calibrated by this discretization. Contact spheres are collision proxies.
+// Experimental coarse lattice with strength AND fracture-work gates.
+// Released elastic energy stays in the local nodes. Contact remains approximate.
 struct BowlCell { Vec3 x,v,spin; double mass{},radius{},inertia{}; unsigned object{}; };
-struct BowlLink { unsigned a{},b{}; double rest{},stiffness{},work{},damping{}; bool live{true},brittle{}; };
+struct BowlLink { unsigned a{},b{}; double rest{},stiffness{},work{},damping{},threshold_energy{}; bool live{true},brittle{}; };
 struct BowlCellObject { MatterBodyId id{}; MaterialPreset material{}; unsigned first{},count{}; double radius{}; };
-struct BowlBreak { double time_s{}; unsigned link{},object{}; double work_j{},overshoot_j{}; };
+struct BowlBreak { double time_s{}; unsigned link{},object{}; double work_j{},overshoot_j{},elastic_release_j{}; };
 struct BondedBowlLedger {
- double initial_energy_j{},fracture_work_j{},event_overshoot_j{},internal_damping_j{},contact_damping_j{},friction_j{};
+ double initial_energy_j{},fracture_work_j{},event_overshoot_j{},elastic_release_j{},internal_damping_j{},contact_damping_j{},friction_j{};
  Vec3 support_impulse{},support_angular_impulse{},gravity_impulse{},gravity_angular_impulse{};
 };
 class BondedBowl {
@@ -41,5 +41,6 @@ private:
  bool step(double dt,unsigned depth);
  double time_{},step_limit_{};
  unsigned evaluations_{};
+ std::vector<double> damping_impulse_factors_;
 };
 }

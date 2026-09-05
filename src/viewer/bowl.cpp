@@ -1,4 +1,5 @@
 #include "creator/BowlLab.hpp"
+#include "creator/BowlRecording.hpp"
 #include "viewer/FractureView.hpp"
 #include <raylib.h>
 #include <rlgl.h>
@@ -29,10 +30,16 @@ int main(int argc,char **argv){try{
     SetConfigFlags(FLAG_MSAA_4X_HINT);InitWindow(1380,850,"Banjo - Craft and Roll Bowl Lab");SetTargetFPS(60);
     RenderTexture2D scene=LoadRenderTexture(1000,560);
     Camera3D camera{{2.5F,2.8F,3.0F},{0,.15F,0},{0,1,0},28,CAMERA_PERSPECTIVE};
-    std::string message=lab.stock().objects().empty()?"Collect each material, then craft two balls of each.":"Release to test crafted balls. Experimental fracture runs slowly.";double accumulator=0;int frames=0;
+    BowlRecording recording;
+    std::string message=lab.stock().objects().empty()?"Collect each material, then craft two balls of each.":"Calculate release once, then replay the computed motion at normal speed.";double accumulator=0;int frames=0;
     while(!WindowShouldClose()){
         bool open_fracture=false;
-        const double frame=std::min(double(GetFrameTime()),.1);if(lab.running()){try{if(lab.bonded())lab.step();else{accumulator+=frame;while(accumulator>=1.0/240){lab.step();accumulator-=1.0/240;}}}catch(const std::exception &e){lab.pause();message=e.what();}}else accumulator=0;
+        const double frame=std::min(double(GetFrameTime()),.1);
+        recording.poll(frame);
+        if(auto recorded=recording.frame())lab.presentRecordingFrame(*recorded);
+        if(!recording.error().empty())message=recording.error();
+        if(lab.running()){try{accumulator+=frame;while(accumulator>=1.0/240){lab.step();accumulator-=1.0/240;}}catch(const std::exception &e){lab.pause();message=e.what();}}else accumulator=0;
+        const bool active=lab.running()||recording.computing()||recording.playing();
         BeginTextureMode(scene);ClearBackground(bg);
         BeginMode3D(camera);
         for(const auto &t:lab.triangles()){
@@ -60,7 +67,7 @@ int main(int argc,char **argv){try{
         DrawTextureRec(scene.texture,{0,0,1000,-560},{0,145},WHITE);
         DrawText("BANJO / MATERIAL LAB",32,30,18,lime);DrawText("Craft. Release. Observe.",32,63,34,ink);
         DrawText(lab.bonded()?"Experimental cell contact / glass + wood + iron":"Rigid contact geometry / glass + wood + iron",32,110,18,muted);
-        if(button(32,145,310,"Open fracture microscope")){lab.pause();open_fracture=true;}
+        if(button(32,145,310,"Open fracture microscope")){lab.pause();recording.pause();open_fracture=true;}
         DrawRectangle(1000,0,380,850,panel);DrawText("01  COLLECT & CRAFT",1024,30,21,lime);
         int y=78;
         for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}){
@@ -70,31 +77,36 @@ int main(int argc,char **argv){try{
             DrawText(("Ball needs "+number(report.material.required_mass_kg)+" kg").c_str(),1024,y+27,16,muted);
             try{
                 bool collected=false;for(const auto &lot:lab.stock().lots())if(lot.material==material)collected=lot.collected;
-                if(button(1024,y+51,150,collected?"Collected":"Collect",!collected&&!lab.running())){lab.collect(material);lab.stock().save(workspace/"stock.json");message="Collected "+name+" into inventory.";}
-                if(button(1185,y+51,170,"Craft ball",report.buildable()&&!lab.running()&&lab.timeSeconds()==0&&lab.stock().objects().size()<9)){(void)lab.craft(material);lab.stock().save(workspace/"stock.json");message="Crafted "+name+" ball. Allocated material retained on reset.";}
+                if(button(1024,y+51,150,collected?"Collected":"Collect",!collected&&!active)){recording.clear();lab.collect(material);lab.stock().save(workspace/"stock.json");message="Collected "+name+" into inventory.";}
+                if(button(1185,y+51,170,"Craft ball",report.buildable()&&!active&&lab.timeSeconds()==0&&lab.stock().objects().size()<9)){recording.clear();(void)lab.craft(material);lab.stock().save(workspace/"stock.json");message="Crafted "+name+" ball. Allocated material retained on reset.";}
             }catch(const std::exception &e){message=e.what();}y+=116;
         }
         DrawText("02  SET THE EXPERIMENT",1024,437,21,lime);
         auto s=lab.settings();bool changed=false;
         DrawText(("Tilt: "+number(s.tilt_degrees)+" degrees").c_str(),1024,475,18,ink);
-        if(button(1024,502,155,"Tilt -5",!lab.running()&&s.tilt_degrees>-20)){s.tilt_degrees-=5;changed=true;}
-        if(button(1190,502,165,"Tilt +5",!lab.running()&&s.tilt_degrees<20)){s.tilt_degrees+=5;changed=true;}
-        if(button(1024,548,331,"Surface: "+std::string(materialPresetName(s.surface)),!lab.running())){
+        if(button(1024,502,155,"Tilt -5",!active&&s.tilt_degrees>-20)){s.tilt_degrees-=5;changed=true;}
+        if(button(1190,502,165,"Tilt +5",!active&&s.tilt_degrees<20)){s.tilt_degrees+=5;changed=true;}
+        if(button(1024,548,331,"Surface: "+std::string(materialPresetName(s.surface)),!active)){
             s.surface=s.surface==MaterialPreset::Concrete?MaterialPreset::Glass:s.surface==MaterialPreset::Glass?MaterialPreset::Oak:s.surface==MaterialPreset::Oak?MaterialPreset::Iron:MaterialPreset::Concrete;changed=true;
         }
         try{
-            if(changed){lab.configure(s);message="New setup: same crafted balls, reset positions and energy.";}
-            if(button(1024,604,155,lab.running()?"Pause":"Release",!lab.stock().objects().empty())){if(lab.running())lab.pause();else lab.release();}
-            if(button(1190,604,165,"Reset placement")){lab.configure(s);message="Placement reset. Inventory unchanged.";}
+            if(changed){recording.clear();lab.configure(s);message="New setup: same crafted balls, reset positions and energy.";}
+            const std::string action=lab.bonded()?(recording.computing()?"Cancel":recording.playing()?"Pause":recording.ready()?"Replay":"Calculate release"):(lab.running()?"Pause":"Release");
+            if(button(1024,604,170,action,!lab.stock().objects().empty())){
+                if(lab.bonded()){if(recording.computing())recording.clear();else if(recording.playing())recording.pause();else if(recording.ready())recording.play();else{recording.start(*lab.bonded());message="Calculating the actual experiment. Replay will be available when ready.";}}
+                else if(lab.running())lab.pause();else lab.release();
+            }
+            if(button(1200,604,155,"Reset placement")){recording.clear();lab.configure(s);message="Placement reset. Inventory unchanged.";}
             if(button(1024,650,331,"Export experiment")){write(workspace/"experiment.json",lab.reportJson());message="Saved experiment.json with settings, states and inventory.";}
         }catch(const std::exception &e){message=e.what();}
         DrawText(("Time "+number(lab.timeSeconds())+" s   /   "+std::to_string(lab.stock().objects().size())+" balls").c_str(),32,720,22,ink);
-        DrawText(message.substr(0,95).c_str(),32,757,18,lime);
+        std::string status=recording.computing()?"Calculating physics: "+std::to_string(int(recording.progress()*100))+"% (window remains responsive)":recording.ready()?"Computed replay / normal speed. Replay repeats the same experiment.":message;
+        DrawText(status.substr(0,98).c_str(),32,757,18,lime);
         if(auto b=lab.bonded()){auto roots=b->components();std::set<unsigned> groups(roots.begin(),roots.end());DrawText(("Experimental fracture: "+std::to_string(b->breaks.size())+" bonds / "+std::to_string(groups.size())+" groups").c_str(),32,794,18,muted);}
         else DrawText("Rigid comparison: fracture disabled.",32,794,18,muted);
-        DrawText("First 3 balls: center. Next 6: rim.",1024,714,16,ink);
-        if(button(1024,734,331,lab.bonded()?"Mode: experimental fracture":"Mode: rigid comparison",!lab.running())){s.experimental_fracture=!s.experimental_fracture;lab.configure(s);message=lab.bonded()?"Coarse energy fracture; strength uncalibrated. Slow simulation.":"Rigid comparison; fracture disabled.";}
-        DrawText(lab.bonded()?"Slow / coarse, uncalibrated glass":"Crafting work / energy: pending",1024,780,16,muted);
+        if(button(1024,692,331,s.impact_trial?"Trial: impact at 10 m/s":"Trial: normal bowl release",!active&&lab.stock().objects().size()>=2)){recording.clear();s.impact_trial=!s.impact_trial;lab.configure(s);message=s.impact_trial?"First two balls launched at 10 m/s; added initial kinetic energy is accounted.":"Normal gravity-driven release.";}
+        if(button(1024,734,331,lab.bonded()?"Mode: experimental fracture":"Mode: rigid comparison",!active)){s.experimental_fracture=!s.experimental_fracture;recording.clear();lab.configure(s);message=lab.bonded()?"Strength + fracture energy. Calculate, then replay at normal speed.":"Rigid comparison; fracture disabled.";}
+        DrawText(lab.bonded()?"Strength gated / coarse geometry":"Crafting work / energy: pending",1024,780,16,muted);
         if(button(1024,808,331,"Save lab image")){rlDrawRenderBatchActive();Image shot=LoadImageFromScreen();ExportImage(shot,(workspace/"bowl-fracture.png").string().c_str());UnloadImage(shot);}
         EndDrawing();if(open_fracture)runFractureView(workspace);if(capture&&++frames==3){Image shot=LoadImageFromScreen();ExportImage(shot,(workspace/"bowl.png").string().c_str());UnloadImage(shot);break;}
     }

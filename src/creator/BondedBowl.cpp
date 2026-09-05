@@ -4,9 +4,14 @@
 #include <numbers>
 #include <stdexcept>
 #include <numeric>
+#include <array>
 namespace banjo {
 namespace {
 constexpr double skin=.008;
+const MaterialDefinition &referenceMaterial(MaterialPreset p){
+ static const auto catalog=[] {std::array<MaterialDefinition,8> v;for(unsigned i=0;i<v.size();++i)v[i]=makeReferenceMaterial(static_cast<MaterialPreset>(i));return v;}();
+ return catalog.at(static_cast<unsigned>(p));
+}
 Quat tilt(double degrees){double a=degrees*std::numbers::pi/360;return {std::cos(a),0,0,std::sin(a)};}
 double kinetic(const BowlCell &c){return .5*c.mass*lengthSquared(c.v)+.5*c.inertia*lengthSquared(c.spin);}
 }
@@ -24,7 +29,9 @@ void BondedBowl::add(MatterBodyId id,MaterialPreset preset,double radius,const R
  const double area=h*h/6;
  for(unsigned a=first;a<cells.size();++a)for(unsigned b=a+1;b<cells.size();++b){double d=length(cells[b].x-cells[a].x);if(d>h*1.42)continue;
   double k=m.young_modulus_pa*area/d;
-  links.push_back({a,b,d,k,m.fracture_energy_j_m2*area,2*m.damping_ratio*std::sqrt(k*mass/2),true,m.model==MaterialModel::BrittleBond});
+  const double work=m.fracture_energy_j_m2*area,force=m.tensile_strength_pa*area;
+  const double threshold=std::max(work,.5*force*force/k);
+  links.push_back({a,b,d,k,work,2*m.damping_ratio*std::sqrt(k*mass/2),threshold,true,m.model==MaterialModel::BrittleBond});
  }
 }
 void BondedBowl::initialize(){
@@ -48,12 +55,12 @@ std::vector<BondedBowl::Contact> BondedBowl::contacts() const{
  std::vector<Contact> result;
  for(auto [a,b]:neighbors_){auto &p=cells[a];auto &q=cells[b];Vec3 delta=p.x-q.x;double d2=lengthSquared(delta),r=p.radius+q.radius;if(d2>=r*r)continue;
   double d=std::sqrt(d2);if(d<1e-12)throw std::runtime_error("coincident cell contact");
-  auto ma=makeReferenceMaterial(objects[p.object].material),mb=makeReferenceMaterial(objects[q.object].material);
+  const auto &ma=referenceMaterial(objects[p.object].material), &mb=referenceMaterial(objects[q.object].material);
   double E=1/(1/ma.young_modulus_pa+1/mb.young_modulus_pa),k=E*std::min(p.radius,q.radius);
   Vec3 n=delta/d,point=(p.x-n*p.radius+q.x+n*q.radius)*.5;
   result.push_back({a,b,n,point,r-d,k,std::sqrt(ma.dynamic_friction*mb.dynamic_friction),.5*(ma.contact_damping_ratio+mb.contact_damping_ratio),false});
  }
- if(support){const auto rot=tilt(tilt_degrees),inv=tilt(-tilt_degrees);const double a=bowl_depth/(bowl_radius*bowl_radius);auto ms=makeReferenceMaterial(surface);
+ if(support){const auto rot=tilt(tilt_degrees),inv=tilt(-tilt_degrees);const double a=bowl_depth/(bowl_radius*bowl_radius);const auto &ms=referenceMaterial(surface);
   for(unsigned i=0;i<cells.size();++i){auto &c=cells[i];Vec3 p=inv.rotate(c.x);double rho=std::hypot(p.x,p.z);
    if(rho>bowl_radius+c.radius||p.y-a*rho*rho>c.radius*2)continue;
    // Closest point on the paraboloid of revolution (bounded interior Newton).
@@ -63,7 +70,7 @@ std::vector<BondedBowl::Contact> BondedBowl::contacts() const{
    if(r>=bowl_radius-1e-10){distance=length(delta);sign=1;} // finite rim contact, no infinite extension
    if(distance>=c.radius)continue;
    Vec3 n=rot.rotate(length(delta)>1e-12?normalized(delta)*sign:up);
-   auto m=makeReferenceMaterial(objects[c.object].material);double k=c.radius/(1/m.young_modulus_pa+1/ms.young_modulus_pa);
+   const auto &m=referenceMaterial(objects[c.object].material);double k=c.radius/(1/m.young_modulus_pa+1/ms.young_modulus_pa);
    result.push_back({i,0,n,c.x-n*c.radius,c.radius-distance,k,std::sqrt(m.dynamic_friction*ms.dynamic_friction),.5*(m.contact_damping_ratio+ms.contact_damping_ratio),true});
   }
  }
@@ -77,7 +84,7 @@ void BondedBowl::forces(std::vector<Vec3> &f,const std::vector<Contact> &c) cons
 void BondedBowl::dissipate(double dt,const std::vector<Contact> &c){
  // Exact dissipative pair maps. Central internal damping conserves angular
  // momentum. Surface friction includes finite-cell spin at one common point.
- for(auto &e:links)if(e.live){auto &a=cells[e.a];auto &b=cells[e.b];Vec3 n=normalized(b.x-a.x);double rel=dot(b.v-a.v,n),mu=1/(1/a.mass+1/b.mass);double j=mu*rel*(-std::expm1(-e.damping*dt/mu));
+ for(unsigned i=0;i<links.size();++i){auto &e=links[i];if(!e.live)continue;auto &a=cells[e.a];auto &b=cells[e.b];Vec3 n=normalized(b.x-a.x);double rel=dot(b.v-a.v,n),mu=1/(1/a.mass+1/b.mass);double j=rel*(dt==step_limit_?damping_impulse_factors_[i]:mu*(-std::expm1(-e.damping*dt/mu)));
   double before=kinetic(a)+kinetic(b);a.v+=n*(j/a.mass);b.v-=n*(j/b.mass);ledger.internal_damping_j+=before-kinetic(a)-kinetic(b);}
  for(auto &p:c){auto &a=cells[p.a];BowlCell *b=p.fixed?nullptr:&cells[p.b];Vec3 ra=p.point-a.x,rb=b?p.point-b->x:Vec3{};
   auto relative=[&]{return a.v+cross(a.spin,ra)-(b?b->v+cross(b->spin,rb):Vec3{});};
@@ -94,8 +101,18 @@ bool BondedBowl::step(double dt,unsigned depth){
  for(unsigned i=0;i<cells.size();++i){auto &p=cells[i];p.v+=f[i]*(dt*.5/p.mass);p.x+=p.v*dt;ledger.gravity_impulse+=gravity*(p.mass*dt);ledger.gravity_angular_impulse+=cross((before[i].x+p.x)*.5,gravity*(p.mass*dt));}
  std::vector<unsigned> broken;double work=0,overshoot=0;
  if(failure_enabled)for(unsigned i=0;i<links.size();++i){auto &e=links[i];if(!e.live||!e.brittle)continue;double extension=length(cells[e.b].x-cells[e.a].x)-e.rest,U=.5*e.stiffness*extension*extension;
-  if(extension>0&&U>=e.work){if(U-e.work>e.work*.02){cells=std::move(before);ledger=oldLedger;if(depth>=16)throw std::runtime_error("fracture event refinement floor");return step(dt/2,depth+1)&&step(dt/2,depth+1);}broken.push_back(i);work+=e.work;overshoot+=U-e.work;}}
- for(auto i:broken){auto &e=links[i];e.live=false;breaks.push_back({time_+dt,i,cells[e.a].object,e.work,.5*e.stiffness*std::pow(length(cells[e.b].x-cells[e.a].x)-e.rest,2)-e.work});}
+  if(extension>0&&U>=e.threshold_energy){if(U-e.threshold_energy>e.work*.02){cells=std::move(before);ledger=oldLedger;if(depth>=16)throw std::runtime_error("fracture event refinement floor");return step(dt/2,depth+1)&&step(dt/2,depth+1);}broken.push_back(i);work+=e.work;overshoot+=U-e.threshold_energy;}}
+ for(auto i:broken){auto &e=links[i];auto &a=cells[e.a];auto &b=cells[e.b];
+  // Ideal brittle potential drop: Gc*A is consumed; the remaining stored
+  // elastic energy relaxes locally. Equal/opposite central impulses preserve
+  // linear/angular momentum and add exactly this energy, never a shard kick.
+  const double release=e.threshold_energy-e.work;Vec3 n=normalized(b.x-a.x);
+  double mu=1/(1/a.mass+1/b.mass),v=dot(b.v-a.v,n);
+  double next=std::sqrt(v*v+2*release/mu);
+  double j=release>0?mu*(next-v):0;a.v-=n*(j/a.mass);b.v+=n*(j/b.mass);
+  ledger.elastic_release_j+=release;e.live=false;
+  breaks.push_back({time_+dt,i,a.object,e.work,.5*e.stiffness*std::pow(length(b.x-a.x)-e.rest,2)-e.threshold_energy,release});
+ }
  ledger.fracture_work_j+=work;ledger.event_overshoot_j+=overshoot;
  c=contacts();forces(f,c);
  for(auto &p:c)if(p.fixed){Vec3 j=p.n*(p.stiffness*p.compression*dt*.5);ledger.support_impulse+=j;ledger.support_angular_impulse+=cross(p.point,j);}
@@ -104,6 +121,8 @@ bool BondedBowl::step(double dt,unsigned depth){
 }
 void BondedBowl::advance(double seconds){
  if(!std::isfinite(seconds)||seconds<=0||seconds>.005||step_limit_<=0)throw std::invalid_argument("bounded bowl advance requires initialized world and <=5 ms");
+ damping_impulse_factors_.resize(links.size());
+ for(unsigned i=0;i<links.size();++i){auto &e=links[i];double mu=1/(1/cells[e.a].mass+1/cells[e.b].mass);damping_impulse_factors_[i]=mu*(-std::expm1(-e.damping*step_limit_/mu));}
  // Exact common free flight before the first contact. Distance bounds prevent
  // stepping across a cell/support or cell/cell encounter. No elastic mode is
  // suppressed after impact; this path requires zero internal relative motion.

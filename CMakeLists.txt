@@ -115,7 +115,7 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
         GIT_REPOSITORY https://github.com/nlohmann/json.git
         GIT_TAG 65ee68451d8eb2b5f3a30b410476ab83deb3289b)
     FetchContent_MakeAvailable(nlohmann_json)
-    add_library(banjo_creator_runtime src/creator/CreatorWorld.cpp src/creator/BowlLab.cpp src/creator/BondedBowl.cpp)
+    add_library(banjo_creator_runtime src/creator/CreatorWorld.cpp src/creator/BowlLab.cpp src/creator/BondedBowl.cpp src/creator/BowlRecording.cpp)
     target_link_libraries(banjo_creator_runtime PUBLIC banjo_runtime PRIVATE nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_creator_runtime)
     add_library(banjo_starter_runtime src/creator/StarterWorld.cpp)

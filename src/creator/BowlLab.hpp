@@ -7,6 +7,7 @@ struct BowlSettings {
     MaterialPreset surface{MaterialPreset::Concrete};
     unsigned rings{24},sectors{96};
     bool experimental_fracture{true};
+    bool impact_trial{};
 };
 // Parabolic finite open bowl, upward-facing triangles, shared by renderer/solver.
 std::vector<std::array<Vec3,3>> compileBowl(const BowlSettings &settings);
@@ -28,6 +29,7 @@ public:
     // Never a physical energy refund or an inventory credit.
     void configure(BowlSettings settings);
     void release();
+    void presentRecordingFrame(const BondedBowl &frame);
     void pause() {running_=false;}
     void step(unsigned ticks=1);
     RigidSnapshot state(MatterBodyId id) const;
