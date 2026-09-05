@@ -19,6 +19,7 @@ struct PlatformStep {
     double elapsed_s{}, wall_ms{};
     std::string error;
 };
+struct PlatformBondLine {Vec3 a,b;bool live{};};
 // Host-thread API. No inventory, model calls, file access or renderer dependency.
 // A package is initial authoring state, not a saved simulation checkpoint.
 // Explicit backend selection; no unvalidated rigid/material switching.
@@ -29,6 +30,7 @@ public:
     ~PlatformWorld();
     PlatformStep step(unsigned fixed_steps=1);
     std::vector<PlatformInstance> renderInstances() const;
+    std::vector<PlatformBondLine> renderBonds() const;
     std::string reportJson() const;
     std::string packageJson() const;
     const std::vector<std::array<Vec3,3>> &supportMesh() const;

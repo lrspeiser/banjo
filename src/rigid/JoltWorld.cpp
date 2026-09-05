@@ -20,6 +20,7 @@
 #include <Jolt/Physics/Collision/Shape/OffsetCenterOfMassShape.h>
 #include <Jolt/Physics/Constraints/FixedConstraint.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
+#include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 
 #include <algorithm>
@@ -201,6 +202,7 @@ bool assertFailedImpl(
 
 class ImpactCollector final : public JPH::ContactListener {
 public:
+    bool detailed_observations{};
     ImpactCollector(
         std::atomic<std::uint64_t> &tick,
         const std::unordered_map<MatterBodyId, BodyContactState> &contact_states,
@@ -355,9 +357,10 @@ private:
             event.response_deferred_to_material = true;
         }
         const bool surface_contact = id1 == kSupportSurfaceMatterId || id2 == kSupportSurfaceMatterId;
-        if (!event.response_deferred_to_material && (!record_impact || surface_contact)) return;
+        if (!event.response_deferred_to_material && (!record_impact || surface_contact) && !detailed_observations) return;
+        if(detailed_observations && closing_speed<.01) return;
         std::scoped_lock lock(mutex_);
-        events_.push_back(event);
+        if(!detailed_observations||events_.size()<65536)events_.push_back(event);
     }
 
     std::atomic<std::uint64_t> &tick_;
@@ -778,6 +781,50 @@ void JoltWorld::addBox(const RigidBoxDescription &description) {
         impl_->bodies_.erase(description.body_id);impl_->contact_states_.erase(description.body_id);
         bodies.RemoveBody(id);bodies.DestroyBody(id);throw;
     }
+}
+
+void JoltWorld::setDetailedImpactObservations(bool enabled){impl_->requireConfigurationMutable();impl_->impact_collector_.detailed_observations=enabled;}
+
+void JoltWorld::addCompound(const RigidCompoundDescription &d){
+    impl_->requireConfigurationMutable();
+    auto finite=[](Vec3 v){return std::isfinite(lengthSquared(v));};const auto q=d.state.orientation_world;
+    if(d.body_id==kInvalidMatterBodyId||d.body_id==kSupportSurfaceMatterId||impl_->bodies_.contains(d.body_id)||d.parts.empty()||d.parts.size()>64||
+       !std::isfinite(d.mass_kg)||d.mass_kg<=0||!finite(d.state.center_of_mass_world_m)||!finite(d.state.linear_velocity_m_s)||!finite(d.state.angular_velocity_rad_s)||
+       !std::isfinite(q.w+q.x+q.y+q.z)||std::abs(q.w*q.w+q.x*q.x+q.y*q.y+q.z*q.z-1)>1e-5)
+        throw std::invalid_argument("invalid compiled compound description");
+    JPH::StaticCompoundShapeSettings compound;
+    for(unsigned i=0;i<3;++i)for(unsigned j=0;j<3;++j)
+        if(!std::isfinite(d.inertia_local_kg_m2.m[i][j])||std::abs(d.inertia_local_kg_m2.m[i][j]-d.inertia_local_kg_m2.m[j][i])>1e-10)
+            throw std::invalid_argument("compound inertia must be finite and symmetric");
+    for(const auto &p:d.parts){if(!finite(p.center_local_m))throw std::invalid_argument("invalid compound point");
+        JPH::RefConst<JPH::Shape> shape;
+        if(p.geometry.kind==PrimitiveKind::Sphere){if(!std::isfinite(p.geometry.radius_m)||p.geometry.radius_m<=0)throw std::invalid_argument("invalid compound sphere");shape=new JPH::SphereShape(float(p.geometry.radius_m));}
+        else {auto v=p.geometry.dimensions_m;if(!finite(v)||std::min({v.x,v.y,v.z})<=0)throw std::invalid_argument("invalid compound box");shape=new JPH::BoxShape(toJolt(v/2),0);}
+        compound.AddShape(toJolt(p.center_local_m),JPH::Quat::sIdentity(),shape.GetPtr());
+    }
+    auto built=compound.Create();if(built.HasError())throw std::invalid_argument(built.GetError().c_str());
+    JPH::RefConst<JPH::Shape> inner=built.Get();
+    JPH::RefConst<JPH::Shape> centered=new JPH::OffsetCenterOfMassShape(inner.GetPtr(),-inner->GetCenterOfMass());
+    const auto contact=compileContactMaterial(d.material);
+    JPH::BodyCreationSettings settings(centered.GetPtr(),toJoltPosition(d.state.center_of_mass_world_m),
+        JPH::Quat(float(q.x),float(q.y),float(q.z),float(q.w)),JPH::EMotionType::Dynamic,Layers::kMoving);
+    settings.mUserData=d.body_id;settings.mLinearDamping=0;settings.mAngularDamping=0;settings.mApplyGyroscopicForce=true;
+    settings.mFriction=float(contact.dynamic_friction);settings.mRestitution=float(contact.restitution);settings.mMaxAngularVelocity=1000;
+    settings.mMotionQuality=JPH::EMotionQuality::LinearCast;settings.mOverrideMassProperties=JPH::EOverrideMassProperties::MassAndInertiaProvided;
+    settings.mMassPropertiesOverride.mMass=float(d.mass_kg);settings.mMassPropertiesOverride.mInertia=toJoltInertia(d.inertia_local_kg_m2);
+    // Scale before diagonalization to avoid Jolt's absolute tiny-inertia fallback.
+    JPH::MassProperties scaled=settings.mMassPropertiesOverride;scaled.mInertia*=1.0e6F;
+    JPH::Mat44 rotation;JPH::Vec3 diagonal;
+    if(!scaled.DecomposePrincipalMomentsOfInertia(rotation,diagonal)||diagonal.GetX()<=0||diagonal.GetY()<=0||diagonal.GetZ()<=0)
+        throw std::invalid_argument("compound inertia must be positive definite");
+    auto &bodies=impl_->physics_->GetBodyInterface();impl_->bodies_.reserve(impl_->bodies_.size()+1);impl_->contact_states_.reserve(impl_->contact_states_.size()+1);
+    auto id=bodies.CreateAndAddBody(settings,JPH::EActivation::Activate);if(id.IsInvalid())throw std::runtime_error("compound body budget exhausted");
+    try{
+        {JPH::BodyLockWrite lock(impl_->physics_->GetBodyLockInterface(),id);if(!lock.Succeeded())throw std::runtime_error("compound inertia lock failed");
+            lock.GetBody().GetMotionProperties()->SetInverseInertia(JPH::Vec3::sReplicate(1.0e6F)/diagonal,rotation.GetQuaternion());}
+        bodies.SetLinearAndAngularVelocity(id,toJolt(d.state.linear_velocity_m_s),toJolt(d.state.angular_velocity_rad_s));
+        impl_->bodies_.emplace(d.body_id,id);impl_->contact_states_.emplace(d.body_id,BodyContactState{contact,0,0,false,d.mass_kg,{}});
+    }catch(...){impl_->bodies_.erase(d.body_id);impl_->contact_states_.erase(d.body_id);bodies.RemoveBody(id);bodies.DestroyBody(id);throw;}
 }
 
 PairContactOwner JoltWorld::pairContactOwner(MatterBodyId a,MatterBodyId b) const {

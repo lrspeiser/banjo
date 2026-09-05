@@ -1,0 +1,219 @@
+{
+  "package_version": 1,
+  "physics_abi": "banjo-platform-1",
+  "name": "Live cube drop / glass, wood, iron / 1.5 m",
+  "units": "SI",
+  "backend": "compiled-impact-v1",
+  "required_capabilities": [
+    "compiled-response",
+    "persistent-damage"
+  ],
+  "fixed_dt_s": 0.0020833333333333333,
+  "max_steps_per_call": 240,
+  "gravity_m_s2": [
+    0,
+    -9.81,
+    0
+  ],
+  "bowl": null,
+  "objects": [
+    {
+      "id": 1,
+      "material": "glass",
+      "shape": "box",
+      "position_m": [
+        -0.4,
+        0.045,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "dimensions_m": [
+        0.09,
+        0.09,
+        0.09
+      ]
+    },
+    {
+      "id": 2,
+      "material": "iron",
+      "shape": "box",
+      "position_m": [
+        -0.396,
+        1.5,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "dimensions_m": [
+        0.09,
+        0.09,
+        0.09
+      ]
+    },
+    {
+      "id": 3,
+      "material": "oak",
+      "shape": "box",
+      "position_m": [
+        0.0,
+        0.045,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "dimensions_m": [
+        0.09,
+        0.09,
+        0.09
+      ]
+    },
+    {
+      "id": 4,
+      "material": "iron",
+      "shape": "box",
+      "position_m": [
+        0.004,
+        1.5,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "dimensions_m": [
+        0.09,
+        0.09,
+        0.09
+      ]
+    },
+    {
+      "id": 5,
+      "material": "iron",
+      "shape": "box",
+      "position_m": [
+        0.4,
+        0.045,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "dimensions_m": [
+        0.09,
+        0.09,
+        0.09
+      ]
+    },
+    {
+      "id": 6,
+      "material": "iron",
+      "shape": "box",
+      "position_m": [
+        0.404,
+        1.5,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "dimensions_m": [
+        0.09,
+        0.09,
+        0.09
+      ]
+    }
+  ],
+  "ground": {
+    "half_length_m": 1.4,
+    "half_width_m": 0.7,
+    "thickness_m": 0.2,
+    "surface": "concrete"
+  }
+}

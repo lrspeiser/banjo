@@ -48,6 +48,16 @@ struct RigidBoxDescription {
     bool fixed{};
 };
 
+struct RigidCompoundPart { RigidPrimitive geometry; Vec3 center_local_m; };
+struct RigidCompoundDescription {
+    MatterBodyId body_id{};
+    std::vector<RigidCompoundPart> parts;
+    MaterialDefinition material;
+    RigidSnapshot state;
+    double mass_kg{};
+    Mat3 inertia_local_kg_m2;
+};
+
 enum class PairContactOwner { Jolt, External };
 
 struct PairImpulseAudit {
@@ -88,6 +98,11 @@ public:
     void addTriangleSupport(const std::vector<std::array<Vec3,3>> &triangles,const MaterialDefinition &material);
     void addBall(const RigidBallDescription &description);
     void addBox(const RigidBoxDescription &description);
+    // Bounded compound collision proxy with independent matter-derived inertia.
+    void addCompound(const RigidCompoundDescription &description);
+    // Opt-in observation only. Includes support/persisted contacts for reduced
+    // fracture experiments; impulses remain estimates, not measured reactions.
+    void setDetailedImpactObservations(bool enabled);
     // Host-thread only, between steps. External suppresses this pair's Jolt
     // contact response/events over both entire bodies, not just a joint face;
     // the caller must provide the physical response for all their contacts.

@@ -1,0 +1,2715 @@
+{
+  "package_version": 1,
+  "physics_abi": "banjo-platform-1",
+  "name": "Live load test / 96 objects / glass, wood, iron",
+  "units": "SI",
+  "backend": "compiled-impact-v1",
+  "required_capabilities": [
+    "compiled-response",
+    "persistent-damage"
+  ],
+  "fixed_dt_s": 0.0020833333333333333,
+  "max_steps_per_call": 240,
+  "gravity_m_s2": [
+    0,
+    -9.81,
+    0
+  ],
+  "bowl": null,
+  "objects": [
+    {
+      "id": 1,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        -1.375,
+        0.2,
+        -0.875
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 2,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        -1.125,
+        0.2,
+        -0.875
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 3,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        -0.875,
+        0.2,
+        -0.875
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 4,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        -0.625,
+        0.2,
+        -0.875
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 5,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        -0.375,
+        0.2,
+        -0.875
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 6,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        -0.125,
+        0.2,
+        -0.875
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 7,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        0.125,
+        0.2,
+        -0.875
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 8,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        0.375,
+        0.2,
+        -0.875
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 9,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        0.625,
+        0.2,
+        -0.875
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 10,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        0.875,
+        0.2,
+        -0.875
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 11,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        1.125,
+        0.2,
+        -0.875
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 12,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        1.375,
+        0.2,
+        -0.875
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 13,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        -1.375,
+        0.4,
+        -0.625
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 14,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        -1.125,
+        0.4,
+        -0.625
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 15,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        -0.875,
+        0.4,
+        -0.625
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 16,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        -0.625,
+        0.4,
+        -0.625
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 17,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        -0.375,
+        0.4,
+        -0.625
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 18,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        -0.125,
+        0.4,
+        -0.625
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 19,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        0.125,
+        0.4,
+        -0.625
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 20,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        0.375,
+        0.4,
+        -0.625
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 21,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        0.625,
+        0.4,
+        -0.625
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 22,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        0.875,
+        0.4,
+        -0.625
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 23,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        1.125,
+        0.4,
+        -0.625
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 24,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        1.375,
+        0.4,
+        -0.625
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 25,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        -1.375,
+        0.6000000000000001,
+        -0.375
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 26,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        -1.125,
+        0.6000000000000001,
+        -0.375
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 27,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        -0.875,
+        0.6000000000000001,
+        -0.375
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 28,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        -0.625,
+        0.6000000000000001,
+        -0.375
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 29,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        -0.375,
+        0.6000000000000001,
+        -0.375
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 30,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        -0.125,
+        0.6000000000000001,
+        -0.375
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 31,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        0.125,
+        0.6000000000000001,
+        -0.375
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 32,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        0.375,
+        0.6000000000000001,
+        -0.375
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 33,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        0.625,
+        0.6000000000000001,
+        -0.375
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 34,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        0.875,
+        0.6000000000000001,
+        -0.375
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 35,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        1.125,
+        0.6000000000000001,
+        -0.375
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 36,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        1.375,
+        0.6000000000000001,
+        -0.375
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 37,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        -1.375,
+        0.8,
+        -0.125
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 38,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        -1.125,
+        0.8,
+        -0.125
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 39,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        -0.875,
+        0.8,
+        -0.125
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 40,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        -0.625,
+        0.8,
+        -0.125
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 41,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        -0.375,
+        0.8,
+        -0.125
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 42,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        -0.125,
+        0.8,
+        -0.125
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 43,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        0.125,
+        0.8,
+        -0.125
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 44,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        0.375,
+        0.8,
+        -0.125
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 45,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        0.625,
+        0.8,
+        -0.125
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 46,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        0.875,
+        0.8,
+        -0.125
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 47,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        1.125,
+        0.8,
+        -0.125
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 48,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        1.375,
+        0.8,
+        -0.125
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 49,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        -1.375,
+        1.0,
+        0.125
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 50,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        -1.125,
+        1.0,
+        0.125
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 51,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        -0.875,
+        1.0,
+        0.125
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 52,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        -0.625,
+        1.0,
+        0.125
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 53,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        -0.375,
+        1.0,
+        0.125
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 54,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        -0.125,
+        1.0,
+        0.125
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 55,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        0.125,
+        1.0,
+        0.125
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 56,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        0.375,
+        1.0,
+        0.125
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 57,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        0.625,
+        1.0,
+        0.125
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 58,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        0.875,
+        1.0,
+        0.125
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 59,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        1.125,
+        1.0,
+        0.125
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 60,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        1.375,
+        1.0,
+        0.125
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 61,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        -1.375,
+        1.2,
+        0.375
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 62,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        -1.125,
+        1.2,
+        0.375
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 63,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        -0.875,
+        1.2,
+        0.375
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 64,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        -0.625,
+        1.2,
+        0.375
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 65,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        -0.375,
+        1.2,
+        0.375
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 66,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        -0.125,
+        1.2,
+        0.375
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 67,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        0.125,
+        1.2,
+        0.375
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 68,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        0.375,
+        1.2,
+        0.375
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 69,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        0.625,
+        1.2,
+        0.375
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 70,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        0.875,
+        1.2,
+        0.375
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 71,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        1.125,
+        1.2,
+        0.375
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 72,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        1.375,
+        1.2,
+        0.375
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 73,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        -1.375,
+        1.4000000000000001,
+        0.625
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 74,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        -1.125,
+        1.4000000000000001,
+        0.625
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 75,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        -0.875,
+        1.4000000000000001,
+        0.625
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 76,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        -0.625,
+        1.4000000000000001,
+        0.625
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 77,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        -0.375,
+        1.4000000000000001,
+        0.625
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 78,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        -0.125,
+        1.4000000000000001,
+        0.625
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 79,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        0.125,
+        1.4000000000000001,
+        0.625
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 80,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        0.375,
+        1.4000000000000001,
+        0.625
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 81,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        0.625,
+        1.4000000000000001,
+        0.625
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 82,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        0.875,
+        1.4000000000000001,
+        0.625
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 83,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        1.125,
+        1.4000000000000001,
+        0.625
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 84,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        1.375,
+        1.4000000000000001,
+        0.625
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 85,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        -1.375,
+        1.6,
+        0.875
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 86,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        -1.125,
+        1.6,
+        0.875
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 87,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        -0.875,
+        1.6,
+        0.875
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 88,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        -0.625,
+        1.6,
+        0.875
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 89,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        -0.375,
+        1.6,
+        0.875
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 90,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        -0.125,
+        1.6,
+        0.875
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 91,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        0.125,
+        1.6,
+        0.875
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 92,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        0.375,
+        1.6,
+        0.875
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 93,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        0.625,
+        1.6,
+        0.875
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 94,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        0.875,
+        1.6,
+        0.875
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 95,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        1.125,
+        1.6,
+        0.875
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 96,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        1.375,
+        1.6,
+        0.875
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    }
+  ],
+  "ground": {
+    "half_length_m": 4,
+    "half_width_m": 4,
+    "thickness_m": 0.2,
+    "surface": "concrete"
+  }
+}

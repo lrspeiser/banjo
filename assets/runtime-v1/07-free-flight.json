@@ -1,0 +1,105 @@
+{
+  "package_version": 1,
+  "physics_abi": "banjo-platform-1",
+  "name": "Live free flight / zero local solves",
+  "units": "SI",
+  "backend": "compiled-impact-v1",
+  "required_capabilities": [
+    "compiled-response",
+    "persistent-damage"
+  ],
+  "fixed_dt_s": 0.0020833333333333333,
+  "max_steps_per_call": 240,
+  "gravity_m_s2": [
+    0,
+    0,
+    0
+  ],
+  "bowl": null,
+  "objects": [
+    {
+      "id": 1,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        -0.4,
+        0.5,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0.4
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 2,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        0.0,
+        0.5,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0.4
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    },
+    {
+      "id": 3,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        0.4,
+        0.5,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0.4
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "seed": 1729,
+      "radius_m": 0.045
+    }
+  ]
+}
