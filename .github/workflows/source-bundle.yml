@@ -1,0 +1,31 @@
+name: source-bundle
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/source-bundle.yml
+permissions:
+  contents: read
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Assemble source and pinned dependencies
+        shell: bash
+        run: |
+          mkdir -p bundle/banjo/third_party
+          git archive HEAD | tar -x -C bundle/banjo
+          git clone --depth 1 --branch v5.6.0 https://github.com/jrouwe/JoltPhysics.git bundle/banjo/third_party/JoltPhysics
+          git clone --depth 1 --branch 6.0 https://github.com/raysan5/raylib.git bundle/banjo/third_party/raylib
+          git rev-parse HEAD > bundle/banjo/SOURCE_COMMIT
+          git -C bundle/banjo/third_party/JoltPhysics rev-parse HEAD > bundle/banjo/third_party/JOLT_COMMIT
+          git -C bundle/banjo/third_party/raylib rev-parse HEAD > bundle/banjo/third_party/RAYLIB_COMMIT
+          tar --exclude=.git -czf banjo-offline-source.tar.gz -C bundle banjo
+      - uses: actions/upload-artifact@v4
+        with:
+          name: banjo-offline-source
+          path: banjo-offline-source.tar.gz
+          retention-days: 7
