@@ -1,5 +1,7 @@
 # Finite-cell spin and representation-transfer checkpoint
 
+Subsequent work: [accepted-state damage and stage diagnostics at `d56611c`](material-stage-checkpoint.md) supersedes the latest-status interpretation, while measurements below remain tied to `68c4908`.
+
 Date: September 4, 2026, America/Los_Angeles. Tested code: **`68c49084f1bdcb2cc20e1c20f55f0499e1a4a3b9`**, local branch `codex/physics-foundation`, worktree `C:/Users/henry/dev/banjo-integration`.
 
 The branch contains main `3a38d7d6e37f12657baa2777cb906c1682c9b098` and draft PR #2 head `138260d2f3d2e30a112f28034731db6052ae1720`. Both remote refs were refreshed before this work and were unchanged. The original checkout remains on main. No changes in this checkpoint have been pushed or merged into GitHub main. Earlier PR CI is not CI for this local code.
