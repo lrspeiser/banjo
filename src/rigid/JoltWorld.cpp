@@ -353,11 +353,12 @@ private:
     std::vector<ImpactEvent> events_;
 };
 
-} // namespace
-
-class JoltWorld::Impl {
+// Factory/type registration belongs to the process, not an individual world.
+// A creator reload can prepare a second world before publishing it; destroying
+// either world must not invalidate the other's shapes and type registry.
+class JoltRuntime {
 public:
-    Impl() : impact_collector_(tick_, contact_states_) {
+    JoltRuntime() {
         JPH::RegisterDefaultAllocator();
         JPH::Trace = traceImpl;
 #ifdef JPH_ENABLE_ASSERTS
@@ -365,6 +366,20 @@ public:
 #endif
         JPH::Factory::sInstance = new JPH::Factory();
         JPH::RegisterTypes();
+    }
+    ~JoltRuntime() {
+        JPH::UnregisterTypes();
+        delete JPH::Factory::sInstance;
+        JPH::Factory::sInstance = nullptr;
+    }
+};
+void ensureJoltRuntime() { static JoltRuntime runtime; }
+} // namespace
+
+class JoltWorld::Impl {
+public:
+    Impl() : impact_collector_(tick_, contact_states_) {
+        ensureJoltRuntime();
 
         temp_allocator_ =
             std::make_unique<JPH::TempAllocatorImpl>(32U * 1024U * 1024U);
@@ -408,9 +423,6 @@ public:
         physics_.reset();
         job_system_.reset();
         temp_allocator_.reset();
-        JPH::UnregisterTypes();
-        delete JPH::Factory::sInstance;
-        JPH::Factory::sInstance = nullptr;
     }
 
     void applyRollingResistance(double fixed_dt_s) {
@@ -611,6 +623,9 @@ void JoltWorld::addBall(const RigidBallDescription &description) {
         description.sphere_inertia_factor / 0.4);
 
     JPH::BodyInterface &body_interface = impl_->physics_->GetBodyInterface();
+    // Finish potentially allocating map growth before publishing a Jolt body.
+    impl_->bodies_.reserve(impl_->bodies_.size()+1);
+    impl_->contact_states_.reserve(impl_->contact_states_.size()+1);
     const JPH::BodyID body_id =
         body_interface.CreateAndAddBody(settings, JPH::EActivation::Activate);
     if (body_id.IsInvalid()) {
@@ -620,8 +635,9 @@ void JoltWorld::addBall(const RigidBallDescription &description) {
         body_id,
         toJolt(description.linear_velocity_m_s),
         toJolt(description.angular_velocity_rad_s));
-    impl_->bodies_.emplace(description.body_id, body_id);
-    impl_->contact_states_.emplace(
+    try {
+        impl_->bodies_.emplace(description.body_id, body_id);
+        impl_->contact_states_.emplace(
         description.body_id,
         BodyContactState{
             contact,
@@ -633,6 +649,13 @@ void JoltWorld::addBall(const RigidBallDescription &description) {
                 description.material.model == MaterialModel::BrittleBond
                 ? std::optional<MaterialDefinition>{description.material} : std::nullopt,
         });
+    } catch (...) {
+        impl_->bodies_.erase(description.body_id);
+        impl_->contact_states_.erase(description.body_id);
+        body_interface.RemoveBody(body_id);
+        body_interface.DestroyBody(body_id);
+        throw;
+    }
 }
 
 void JoltWorld::addFragments(

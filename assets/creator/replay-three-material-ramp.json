@@ -1,0 +1,98 @@
+[
+  {
+    "type": "create",
+    "request_id": "glass-ramp-v1",
+    "recipe": {
+      "schema_version": 1,
+      "name": "Glass ramp ball",
+      "shape": {
+        "type": "sphere",
+        "radius_m": 0.06
+      },
+      "material": "glass",
+      "physics": "rigid-v1",
+      "placement": {
+        "tangent_m": -2,
+        "bitangent_m": -1,
+        "clearance_m": 0.002
+      },
+      "motion": {
+        "linear_velocity_m_s": [
+          0,
+          0,
+          0
+        ],
+        "angular_velocity_rad_s": [
+          0,
+          0,
+          0
+        ]
+      }
+    }
+  },
+  {
+    "type": "create",
+    "request_id": "oak-ramp-v1",
+    "recipe": {
+      "schema_version": 1,
+      "name": "Oak ramp ball",
+      "shape": {
+        "type": "sphere",
+        "radius_m": 0.06
+      },
+      "material": "oak",
+      "physics": "rigid-v1",
+      "placement": {
+        "tangent_m": -2,
+        "bitangent_m": 0,
+        "clearance_m": 0.002
+      },
+      "motion": {
+        "linear_velocity_m_s": [
+          0,
+          0,
+          0
+        ],
+        "angular_velocity_rad_s": [
+          0,
+          0,
+          0
+        ]
+      }
+    }
+  },
+  {
+    "type": "create",
+    "request_id": "iron-ramp-v1",
+    "recipe": {
+      "schema_version": 1,
+      "name": "Iron ramp ball",
+      "shape": {
+        "type": "sphere",
+        "radius_m": 0.06
+      },
+      "material": "iron",
+      "physics": "rigid-v1",
+      "placement": {
+        "tangent_m": -2,
+        "bitangent_m": 1,
+        "clearance_m": 0.002
+      },
+      "motion": {
+        "linear_velocity_m_s": [
+          0,
+          0,
+          0
+        ],
+        "angular_velocity_rad_s": [
+          0,
+          0,
+          0
+        ]
+      }
+    }
+  },
+  {
+    "type": "inspect"
+  }
+]
