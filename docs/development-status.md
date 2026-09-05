@@ -1,5 +1,7 @@
 # Development status and handoff
 
+**Playback speed correction:** [Exact-scene playback](platform-playback-checkpoint.md) calculates reference trajectories once and replays at normal wall-clock speed, retaining four exact initial-package recordings within the process. Scratch-buffer reuse preserves the tested physical outputs; calculation still takes roughly 38 s for the tested 1.1 s drop. Live adaptive real-time physics remains unfinished.
+
 **Offset and fracture-height drops:** [New comparative evidence](height-drop-checkpoint.md) retains centred controls, adds physically deflecting off-centre drops, and compares iron-on-glass with iron-on-oak from four heights. Glass progresses from intact to separated pieces in the reference model. Finite solid-ground contact, visible bond counts and zoom are implemented; real-glass calibration and near-real-time reference performance remain open.
 
 **Object-on-object drop tests:** [Four new drop examples](drop-test-checkpoint.md) add spheres/cubes falling onto freely resting targets on finite concrete ground, each comparing glass/oak/iron. All 12 combinations pass motion/contact checks; all 21 example packages pass. This is rigid collision coverage, not fracture. Source `de8129f`; published with this checkpoint.
