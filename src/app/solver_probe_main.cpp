@@ -8,7 +8,9 @@
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
+#include <fstream>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 
@@ -19,7 +21,9 @@ int main(int argc, char **argv) {
     try {
         double h = .08, dt = 1.0 / 240.0, gap = .001, speed = 1, restitution = 1, gravity_magnitude = 0;
         double normal_stiffness = 0, normal_damping = 0, max_compression = 0;
-        unsigned steps = 1, iterations = 256, linear_iterations = 400;
+        unsigned steps = 1, iterations = 256, linear_iterations = 400, sample_every = 1;
+        std::string trajectory_path;
+        bool sample_every_set = false;
         bool global = true;
         bool floor = false, global_support = true;
         bool events = false, compliant = false, restitution_set = false, compliance_set = false;
@@ -27,6 +31,7 @@ int main(int argc, char **argv) {
         for (int i = 1; i < argc; ++i) {
             const std::string option = argv[i];
             if (++i >= argc) throw std::invalid_argument("missing probe option value");
+            if (option == "--trajectory") { trajectory_path = argv[i]; continue; }
             if (option == "--material") {
                 const std::string name = argv[i];
                 if (name == "glass") preset = banjo::MaterialPreset::Glass;
@@ -77,11 +82,12 @@ int main(int argc, char **argv) {
             else if (option == "--normal-stiffness") { normal_stiffness = value; compliance_set = true; }
             else if (option == "--normal-damping") { normal_damping = value; compliance_set = true; }
             else if (option == "--max-compression") { max_compression = value; compliance_set = true; }
-            else if ((option == "--steps" || option == "--iterations" || option == "--linear-iterations") &&
+            else if ((option == "--steps" || option == "--iterations" || option == "--linear-iterations" || option == "--sample-every") &&
                      value <= 100000 && std::floor(value) == value) {
                 if (option == "--steps") steps = static_cast<unsigned>(value);
                 else if (option == "--iterations") iterations = static_cast<unsigned>(value);
-                else linear_iterations = static_cast<unsigned>(value);
+                else if (option == "--linear-iterations") linear_iterations = static_cast<unsigned>(value);
+                else { sample_every=static_cast<unsigned>(value); sample_every_set=true; }
             } else throw std::invalid_argument("unknown probe option or invalid integer count");
         }
         if (!events && restitution_set)
@@ -89,6 +95,14 @@ int main(int argc, char **argv) {
         if (!compliant && compliance_set) throw std::invalid_argument("normal-compliance parameters require --step-mode compliant");
         if (compliant && (!global || !global_support || normal_stiffness<=0 || max_compression<=0))
             throw std::invalid_argument("compliant mode requires global coupling, --normal-stiffness and --max-compression");
+        if (sample_every_set && trajectory_path.empty()) throw std::invalid_argument("--sample-every requires --trajectory");
+        std::ofstream trajectory;
+        if (!trajectory_path.empty()) {
+            trajectory.exceptions(std::ios::badbit | std::ios::failbit);
+            trajectory.open(trajectory_path);
+            trajectory << std::setprecision(std::numeric_limits<double>::max_digits10)
+                << "time_s,node,mass_kg,x_m,y_m,z_m,vx_m_s,vy_m_s,vz_m_s,wx_rad_s,wy_rad_s,wz_rad_s\n";
+        }
         const auto material = banjo::makeReferenceMaterial(preset, 17);
         const auto compiled = banjo::compileElasticLatticeReference(material, h, 2);
         const auto asset = banjo::generateSphereLattice({.25, h, 2, 3}, compiled);
@@ -101,6 +115,16 @@ int main(int argc, char **argv) {
         for (const auto &node : asset.nodes) matter.nodes.push_back({node.local_position_m, {},
             translation + banjo::cross(spin, node.local_position_m),
             node.represented_volume_m3 * compiled.density_kg_m3, spin});
+        const auto write_trajectory = [&](double time) {
+            if (trajectory_path.empty()) return;
+            for (std::size_t n=0;n<matter.nodes.size();++n) {
+                const auto &node=matter.nodes[n];
+                const auto p=node.position_world_m, v=node.velocity_m_s, w=node.spin_angular_velocity_rad_s;
+                trajectory << time << ',' << n << ',' << node.mass_kg << ',' << p.x << ',' << p.y << ',' << p.z
+                    << ',' << v.x << ',' << v.y << ',' << v.z << ',' << w.x << ',' << w.y << ',' << w.z << '\n';
+            }
+        };
+        write_trajectory(0);
         double minimum_y = matter.nodes.front().position_world_m.y;
         for (const auto &node : matter.nodes) minimum_y = std::min(minimum_y, node.position_world_m.y);
         const auto support = banjo::makeSupportPlane({0, minimum_y - gap, 0}, {0, 1, 0});
@@ -119,7 +143,7 @@ int main(int argc, char **argv) {
         if (events) std::cout << " prescribed_event_restitution=" << restitution;
         if (compliant) std::cout << " normal_stiffness_n_m=" << normal_stiffness << " compression_damping_kg_s=" << normal_damping
             << " max_compression_m=" << max_compression << "; explicit per-contact law, uncalibrated interface";
-        std::cout << "\nstep,accepted,iterations,linear_iterations,velocity_residual_m_s,energy_residual_j,wall_ms,normal_loss_j,support_impulse_y,penetration_m,impact_loss_j,substeps,trials,impact_events,contact_energy_j,contact_damping_loss_j,modeled_compression_m\n";
+        std::cout << "\nstep,accepted,iterations,linear_iterations,velocity_residual_m_s,energy_residual_j,wall_ms,normal_loss_j,support_impulse_y,penetration_m,impact_loss_j,substeps,trials,impact_events,contact_energy_j,contact_damping_loss_j,modeled_compression_m,body_elastic_energy_j,internal_kinetic_energy_j,com_y_m,com_vy_m_s\n";
         for (unsigned i = 0; i < steps; ++i) {
             const auto start = std::chrono::steady_clock::now();
             const banjo::ConservativeStepSettings step_settings{.maximum_iterations = iterations,
@@ -137,6 +161,7 @@ int main(int argc, char **argv) {
                 result = compliant_result.balance;
             } else result = banjo::tryConservativeStep(matter, dt, gravity, nullptr, step_settings);
             const auto elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+            const auto measured = banjo::measureMaterialMechanics(matter,gravity);
             std::cout << i << ',' << result.converged << ',' << result.iterations << ',' << result.linear_iterations << ','
                       << result.constitutive_velocity_residual_m_s << ',';
             if (result.balance_measured) std::cout << result.energy_residual_j;
@@ -147,7 +172,13 @@ int main(int argc, char **argv) {
             std::cout << ',' << advance.impact_loss_j << ',' << (events ? advance.substeps : (result.converged ? 1 : 0))
                       << ',' << (events ? advance.trials : 1) << ',' << advance.impact_events << ','
                       << compliant_result.contact_energy_after_j << ',' << compliant_result.contact_damping_loss_j
-                      << ',' << compliant_result.maximum_compression_m << '\n';
+                      << ',' << compliant_result.maximum_compression_m << ',';
+            if (result.converged) {
+                const double bulk = .5*banjo::lengthSquared(measured.linear_momentum_kg_m_s)/measured.mass_kg;
+                std::cout << measured.elastic_energy_j << ',' << measured.kinetic_energy_j-bulk << ','
+                    << measured.mass_first_moment_kg_m.y/measured.mass_kg << ',' << measured.linear_momentum_kg_m_s.y/measured.mass_kg;
+            } else std::cout << ",,,";
+            std::cout << '\n';
             if (!result.converged) {
                 std::cout << "REJECTED: convergence/energy/contact contract not met; input state retained. Failed-row work/counters are unpublished trial diagnostics.\n";
                 if (events) std::cout << "advance_failure=" << banjo::advanceFailureName(advance.failure)
@@ -166,9 +197,10 @@ int main(int argc, char **argv) {
             compliance_loss += compliant_result.contact_damping_loss_j;
             contact_energy = compliant_result.contact_energy_after_j;
             if (i==0) initial_contact_energy = compliant_result.contact_energy_before_j;
-            const auto moment = banjo::measureMaterialMechanics(matter,gravity).mass_first_moment_kg_m;
+            const auto moment = measured.mass_first_moment_kg_m;
             gravity_angular_impulse += banjo::cross(.5*dt*(previous_moment+moment),gravity);
             previous_moment = moment;
+            if ((i+1)%sample_every==0 || i+1==steps) write_trajectory((i+1)*dt);
         }
         const auto after = banjo::measureMaterialMechanics(matter,gravity);
         std::cout << "balance-P=" << banjo::length(after.linear_momentum_kg_m_s - before.linear_momentum_kg_m_s - support_impulse - (dt*steps*before.mass_kg)*gravity)
@@ -177,6 +209,7 @@ int main(int argc, char **argv) {
                   << " normal-loss=" << contact_loss << " impact-loss=" << impact_loss << " support-impulse-y=" << support_impulse.y
                   << " final-COM-vy=" << after.linear_momentum_kg_m_s.y / after.mass_kg
                   << " contact-energy=" << contact_energy << " compliance-loss=" << compliance_loss << '\n';
+        if (!trajectory_path.empty()) trajectory.close();
         return 0;
     } catch (const std::exception &error) {
         std::cerr << "Probe error: " << error.what() << '\n';

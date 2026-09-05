@@ -28,3 +28,7 @@ _deps/
 *.dylib
 *.dll
 *.exe
+
+# Python analysis tools
+__pycache__/
+*.pyc
