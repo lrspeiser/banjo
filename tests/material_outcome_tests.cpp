@@ -152,6 +152,9 @@ void capturedOutcomeCanBeAppliedInAnotherRigidFrame() {
                 a.velocity_minus_activation_linear_local_m_s -
                 b.velocity_minus_activation_linear_local_m_s) < 1.0e-10,
             "contact-frame node velocity must round trip through another rigid pose");
+        require(banjo::length(a.spin_angular_velocity_local_rad_s -
+                             b.spin_angular_velocity_local_rad_s) < 1e-12,
+                "subcell spin must rotate with the cached outcome frame");
     }
     for (std::size_t index = 0; index < captured.bonds.size(); ++index) {
         require(captured.bonds[index].alive == recaptured.bonds[index].alive,
@@ -173,7 +176,7 @@ void outcomeFileRoundTripsDeterministically() {
         banjo::compileBrittleMaterial(glass, 0.12, 1U);
     const banjo::LatticeAsset lattice =
         banjo::generateSphereLattice({0.25, 0.12, 1U, 2U}, compiled);
-    const banjo::RigidSnapshot rigid{{1.0, 2.0, 3.0}, {}, {0.5, 0.0, 0.0}, {}};
+    const banjo::RigidSnapshot rigid{{1.0, 2.0, 3.0}, {}, {0.5, 0.0, 0.0}, {1, -2, 3}};
     const banjo::ActiveMatter active = makeActive(lattice, compiled, rigid);
     const banjo::MaterialOutcome original = banjo::captureMaterialOutcome(
         defaultKey(), active, rigid, 17U);
@@ -190,6 +193,16 @@ void outcomeFileRoundTripsDeterministically() {
             "serialized outcome nodes must round trip");
     require(loaded.bonds.size() == original.bonds.size(),
             "serialized outcome bonds must round trip");
+    require(banjo::length(loaded.nodes.front().spin_angular_velocity_local_rad_s -
+                         original.nodes.front().spin_angular_velocity_local_rad_s) < 1e-15,
+            "serialized subcell spin must retain double precision");
+    auto incompatible = loaded;
+    incompatible.key.format_version = 1U;
+    auto target = makeActive(lattice, compiled, rigid);
+    bool rejected = false;
+    try { banjo::applyMaterialOutcome(incompatible, rigid, target); }
+    catch (const std::invalid_argument &) { rejected = true; }
+    require(rejected, "old files without subcell spin must not be silently applied");
     requireNear(
         loaded.nodes.front().position_from_activation_com_local_m.x,
         original.nodes.front().position_from_activation_com_local_m.x,

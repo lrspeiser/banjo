@@ -22,6 +22,10 @@ struct ActiveNodeState {
     Vec3 previous_position_world_m{};
     Vec3 velocity_m_s{};
     double mass_kg{};
+    // Isotropic subcell spin: central bond forces and point contacts apply no
+    // nodal torque. Keep it through activation/coarsening instead of losing the
+    // rotational momentum and energy represented by finite-cell inertia.
+    Vec3 spin_angular_velocity_rad_s{};
 };
 
 enum class BondFailureMode : std::uint8_t {

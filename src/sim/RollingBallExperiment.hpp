@@ -52,6 +52,7 @@ struct ExperimentSettings {
     double striker_spin_ratio{1.0}; // 1 = rolling; 0 = initially sliding
 
     Vec3 gravity_m_s2{0.0, -9.81, 0.0};
+    bool support_enabled{true};
     std::uint64_t material_seed{971};
 
     double rigid_step_s{1.0 / 120.0};
@@ -118,6 +119,14 @@ struct ExperimentStats {
     double internal_damping_loss_j{};
     double maximum_contact_penetration_m{};
     bool activation_response_deferred{};
+    RepresentationTransferAudit activation_transfer{};
+    RepresentationTransferAudit fragment_transfer{};
+    double coarsening_kinetic_loss_j{};
+    double coarsening_elastic_loss_j{};
+    Vec3 contact_correction_angular_momentum_delta_kg_m2_s{};
+    Vec3 constraint_angular_momentum_delta_kg_m2_s{};
+    double constraint_mechanical_energy_delta_j{};
+    double unassigned_bond_removal_energy_j{};
 };
 
 struct DebrisParticleState {
@@ -126,6 +135,7 @@ struct DebrisParticleState {
     Vec3 angular_velocity_rad_s{};
     double mass_kg{};
     double radius_m{};
+    Mat3 inertia_world_kg_m2{};
 };
 
 class RollingBallExperiment {
@@ -165,6 +175,7 @@ public:
     [[nodiscard]] std::optional<RigidSnapshot> rigidSnapshot(
         MatterBodyId body_id) const;
     [[nodiscard]] const ActiveMatter *activeMatter() const;
+    [[nodiscard]] MechanicalTotals mechanicalTotals() const;
     [[nodiscard]] const std::optional<ImpactEvent> &activatingImpact() const {
         return activating_impact_;
     }

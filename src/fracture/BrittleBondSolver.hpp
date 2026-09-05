@@ -30,6 +30,7 @@ struct BrittleSolverSettings {
     // The runtime uses zero: contact, not synthetic excitation, drives fracture.
     double impact_internal_energy_fraction{0.0};
     double maximum_internal_energy_j{350.0};
+    bool support_enabled{true};
 };
 
 struct MaterialStepStats {
@@ -46,6 +47,9 @@ struct MaterialStepStats {
     double estimated_elastic_energy_j{};
     double maximum_speed_m_s{};
     double internal_damping_loss_j{};
+    Vec3 constraint_angular_momentum_delta_kg_m2_s{};
+    double constraint_mechanical_energy_delta_j{};
+    double unassigned_bond_removal_energy_j{};
     SphereMaterialContactStats rigid_contact{};
 };
 

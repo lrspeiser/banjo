@@ -8,6 +8,7 @@
 #include "fracture/ImpactEvent.hpp"
 #include "material/Material.hpp"
 #include "physics/SphereMaterialContact.hpp"
+#include "physics/MechanicalAccounting.hpp"
 
 #include <memory>
 #include <vector>
@@ -55,6 +56,8 @@ public:
 
     [[nodiscard]] std::vector<ImpactEvent> drainImpacts();
     [[nodiscard]] RigidSnapshot snapshot(MatterBodyId body_id) const;
+    [[nodiscard]] RigidMechanicalState mechanicalState(MatterBodyId body_id) const;
+    [[nodiscard]] MechanicalTotals mechanicalTotals(const Vec3 &gravity_m_s2 = {}) const;
     [[nodiscard]] bool contains(MatterBodyId body_id) const;
     void removeAndDestroy(MatterBodyId body_id);
 

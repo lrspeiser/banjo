@@ -26,6 +26,7 @@ struct SphereMaterialContactStats {
     double dissipated_kinetic_energy_j{};
     double maximum_penetration_m{};
     double maximum_position_correction_m{};
+    Vec3 position_correction_angular_momentum_delta_kg_m2_s{};
 };
 
 // Point-material / finite-mass sphere contact. Uses a shared application point

@@ -84,9 +84,13 @@ SphereMaterialContactStats solveSphereMaterialContacts(
             const double correction = std::min(-gap - settings.contact_margin_m,
                 0.2 * std::max(settings.node_contact_radius_m, sphere.radius_m * 0.01));
             const double sum_inverse_mass = inverse_node_mass + inverse_sphere_mass;
-            node.position_world_m += (correction * inverse_node_mass / sum_inverse_mass) * normal;
-            sphere.motion.center_of_mass_world_m -=
-                (correction * inverse_sphere_mass / sum_inverse_mass) * normal;
+            const Vec3 node_shift = (correction * inverse_node_mass / sum_inverse_mass) * normal;
+            const Vec3 sphere_shift = -(correction * inverse_sphere_mass / sum_inverse_mass) * normal;
+            stats.position_correction_angular_momentum_delta_kg_m2_s +=
+                cross(node_shift, node.mass_kg * node.velocity_m_s) +
+                cross(sphere_shift, sphere.mass_kg * sphere.motion.linear_velocity_m_s);
+            node.position_world_m += node_shift;
+            sphere.motion.center_of_mass_world_m += sphere_shift;
             stats.maximum_position_correction_m = std::max(stats.maximum_position_correction_m, correction);
         }
     }

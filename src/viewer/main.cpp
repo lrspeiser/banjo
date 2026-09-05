@@ -512,6 +512,24 @@ void drawOverlay(
     motion_line("Contact loss: " + formatDouble(stats.coupled_contact_dissipation_j, 2) + " J");
     motion_line("Synthetic fracture pulse: OFF");
 
+    DrawRectangle(panel_x, 330, 394, 160, Fade(BLACK, 0.82F));
+    DrawText("REPRESENTATION TRANSFERS", panel_x + 12, 342, 16, kGlassLight);
+    const auto &transfer = stats.fragment_transfer;
+    if (transfer.measured) {
+        DrawText(TextFormat("Handoff dP: %.2e N s", banjo::length(
+            transfer.after.linear_momentum_kg_m_s - transfer.before.linear_momentum_kg_m_s)),
+            panel_x + 12, 369, 15, kText);
+        DrawText(TextFormat("Handoff dL: %.2e kg m^2/s", banjo::length(
+            transfer.after.angular_momentum_kg_m2_s - transfer.before.angular_momentum_kg_m2_s)),
+            panel_x + 12, 391, 15, kText);
+        DrawText(TextFormat("Coarsening K / strain: %.3g / %.3g J",
+            stats.coarsening_kinetic_loss_j, stats.coarsening_elastic_loss_j),
+            panel_x + 12, 413, 15, kText);
+    } else {
+        DrawText("Waiting for fragment handoff", panel_x + 12, 369, 15, kMuted);
+    }
+    DrawText("Full-step ledger: incomplete", panel_x + 12, 462, 15, kIronHighlight);
+
     DrawText(
         TextFormat(
             "R reset  SPACE pause  N step  B bonds [%s]  W wire [%s]",

@@ -15,6 +15,9 @@ struct FragmentMassProperties {
     Mat3 inertia_world_kg_m2{};
     Vec3 angular_momentum_kg_m2_s{};
     Vec3 angular_velocity_rad_s{};
+    double source_kinetic_energy_j{};
+    double rigid_kinetic_energy_j{};
+    double coarsening_kinetic_loss_j{};
 };
 
 [[nodiscard]] FragmentMassProperties calculateFragmentMassProperties(

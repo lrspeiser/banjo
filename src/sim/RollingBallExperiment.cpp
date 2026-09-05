@@ -142,6 +142,7 @@ void RollingBallExperiment::reset(ExperimentSettings settings) {
         .support_half_bitangent_m = 6.0,
         .impact_internal_energy_fraction = 0.0,
         .maximum_internal_energy_j = settings_.maximum_internal_energy_j,
+        .support_enabled = settings_.support_enabled,
     });
 
     stats_ = {};
@@ -234,7 +235,7 @@ void RollingBallExperiment::saveProjectionCache(
 void RollingBallExperiment::initializeWorld() {
     rigid_world_ = std::make_unique<JoltWorld>();
     rigid_world_->setGravity(settings_.gravity_m_s2);
-    rigid_world_->addSupportSurface({
+    if (settings_.support_enabled) rigid_world_->addSupportSurface({
         .frame = support_plane_,
         .material = surface_material_,
         .half_length_tangent_m = 12.0,
@@ -278,7 +279,12 @@ void RollingBallExperiment::initializeWorld() {
         .mass_override_kg = target_lattice_
                                 ? target_lattice_->total_mass_kg
                                 : 0.0,
-        .sphere_inertia_factor = settings_.sphere_inertia_factor,
+        // The sphere recipe is symmetric, so sampled inertia is isotropic.
+        // Use its matter-derived value before activation as well as afterward.
+        .sphere_inertia_factor = target_lattice_
+            ? target_lattice_->rest_inertia_kg_m2.m[0][0] /
+                (target_lattice_->total_mass_kg * settings_.radius_m * settings_.radius_m)
+            : settings_.sphere_inertia_factor,
         .defer_brittle_contacts_to_material = target_lattice_.has_value(),
     });
 }
@@ -315,6 +321,7 @@ void RollingBallExperiment::updateMotionDiagnostics() {
         const auto body = rigidSnapshot(id);
         if (!body) return RollingKinematics{};
         return measureRollingKinematics(*body, settings_.radius_m, support_plane_,
+            settings_.support_enabled &&
             insideSupportFootprint(support_plane_, body->center_of_mass_world_m, 12.0, 6.0));
     };
     stats_.striker_motion = measure(kStrikerBallId);
@@ -362,6 +369,8 @@ void RollingBallExperiment::stepRigidPhase(double dt_s) {
         activating_impact_ = impact;
         const RigidSnapshot post_contact_target =
             rigid_world_->snapshot(kTargetBallId);
+        stats_.activation_transfer.before = measureRigidMechanics(
+            rigid_world_->mechanicalState(kTargetBallId), settings_.gravity_m_s2);
         rigid_world_->removeAndDestroy(kTargetBallId);
         active_target_ = solver_.activate(
             kTargetBallId,
@@ -369,6 +378,9 @@ void RollingBallExperiment::stepRigidPhase(double dt_s) {
             *compiled_target_,
             post_contact_target,
             impact);
+        stats_.activation_transfer.after = measureMaterialMechanics(
+            *active_target_, settings_.gravity_m_s2);
+        stats_.activation_transfer.measured = true;
         stats_.phase = ExperimentPhase::Fracturing;
         stats_.broken_bonds = 0U;
         stats_.connected_components = 1U;
@@ -405,6 +417,12 @@ void RollingBallExperiment::stepFracturingPhase(double dt_s) {
     stats_.coupled_impulse_n_s += length(material_stats.rigid_contact.impulse_to_material_n_s);
     stats_.coupled_contact_dissipation_j += material_stats.rigid_contact.dissipated_kinetic_energy_j;
     stats_.internal_damping_loss_j += material_stats.internal_damping_loss_j;
+    stats_.contact_correction_angular_momentum_delta_kg_m2_s +=
+        material_stats.rigid_contact.position_correction_angular_momentum_delta_kg_m2_s;
+    stats_.constraint_angular_momentum_delta_kg_m2_s +=
+        material_stats.constraint_angular_momentum_delta_kg_m2_s;
+    stats_.constraint_mechanical_energy_delta_j += material_stats.constraint_mechanical_energy_delta_j;
+    stats_.unassigned_bond_removal_energy_j += material_stats.unassigned_bond_removal_energy_j;
     stats_.maximum_contact_penetration_m = std::max(stats_.maximum_contact_penetration_m,
         material_stats.rigid_contact.maximum_penetration_m);
 
@@ -454,6 +472,8 @@ void RollingBallExperiment::finalizeFragments() {
 
     const CompiledContactMaterial target_contact =
         compileContactMaterial(target_material_);
+    stats_.fragment_transfer.before = measureMaterialMechanics(
+        *active_target_, settings_.gravity_m_s2);
     fragment_build_ = buildFragmentRepresentations(
         *active_target_,
         latest_components_,
@@ -477,8 +497,21 @@ void RollingBallExperiment::finalizeFragments() {
             particle.angular_velocity_rad_s,
             particle.mass_kg,
             particle.radius_m,
+            particle.inertia_world_kg_m2,
         });
     }
+    for (const auto &fragment : fragment_build_.rigid_fragments) {
+        stats_.fragment_transfer.after += measureRigidMechanics(
+            rigid_world_->mechanicalState(fragment.body_id), settings_.gravity_m_s2);
+    }
+    for (const auto &particle : debris_particles_) {
+        stats_.fragment_transfer.after += measureRigidMechanics({
+            {particle.position_world_m, {}, particle.velocity_m_s, particle.angular_velocity_rad_s},
+            particle.mass_kg, particle.inertia_world_kg_m2}, settings_.gravity_m_s2);
+    }
+    stats_.fragment_transfer.measured = true;
+    stats_.coarsening_kinetic_loss_j = fragment_build_.coarsening_kinetic_loss_j;
+    stats_.coarsening_elastic_loss_j = stats_.fragment_transfer.before.elastic_energy_j;
 
     stats_.rigid_fragments = fragment_build_.rigid_fragments.size();
     stats_.debris_particles = debris_particles_.size();
@@ -497,6 +530,8 @@ void RollingBallExperiment::integrateDebris(double dt_s) {
     for (DebrisParticleState &particle : debris_particles_) {
         particle.velocity_m_s += dt_s * settings_.gravity_m_s2;
         particle.position_world_m += dt_s * particle.velocity_m_s;
+
+        if (!settings_.support_enabled) continue;
 
         const double distance =
             signedDistanceToPlane(support_plane_, particle.position_world_m);
@@ -552,6 +587,17 @@ std::optional<RigidSnapshot> RollingBallExperiment::rigidSnapshot(
         return std::nullopt;
     }
     return rigid_world_->snapshot(body_id);
+}
+
+MechanicalTotals RollingBallExperiment::mechanicalTotals() const {
+    MechanicalTotals totals = rigid_world_->mechanicalTotals(settings_.gravity_m_s2);
+    if (active_target_) totals += measureMaterialMechanics(*active_target_, settings_.gravity_m_s2);
+    for (const auto &particle : debris_particles_) {
+        totals += measureRigidMechanics({
+            {particle.position_world_m, {}, particle.velocity_m_s, particle.angular_velocity_rad_s},
+            particle.mass_kg, particle.inertia_world_kg_m2}, settings_.gravity_m_s2);
+    }
+    return totals;
 }
 
 const ActiveMatter *RollingBallExperiment::activeMatter() const {

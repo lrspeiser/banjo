@@ -50,12 +50,28 @@ FragmentMassProperties calculateFragmentMassProperties(
         result.inertia_world_kg_m2.m[2][1] = result.inertia_world_kg_m2.m[1][2];
 
         result.angular_momentum_kg_m2_s +=
-            cross(r, node.mass_kg * (node.velocity_m_s - result.linear_velocity_m_s));
+            cross(r, node.mass_kg * (node.velocity_m_s - result.linear_velocity_m_s)) +
+            cell_diagonal_inertia * node.spin_angular_velocity_rad_s;
+        result.source_kinetic_energy_j +=
+            0.5 * node.mass_kg * lengthSquared(node.velocity_m_s) +
+            0.5 * cell_diagonal_inertia * lengthSquared(node.spin_angular_velocity_rad_s);
     }
 
-    if (const auto inverse = result.inertia_world_kg_m2.inverse()) {
+    // Finite cells make this tensor positive definite. An absolute determinant
+    // cutoff rejects perfectly valid small fragments (determinant scales as m^3 h^6).
+    if (const auto inverse = result.inertia_world_kg_m2.inverse(0.0)) {
         result.angular_velocity_rad_s = *inverse * result.angular_momentum_kg_m2_s;
+    } else {
+        throw std::runtime_error("fragment inertia is singular");
     }
+    result.rigid_kinetic_energy_j =
+        0.5 * result.mass_kg * lengthSquared(result.linear_velocity_m_s) +
+        0.5 * dot(result.angular_velocity_rad_s, result.angular_momentum_kg_m2_s);
+    // Keep the signed result: a negative value exposes energy creation rather
+    // than hiding it behind a clamp. Non-rigid motion removed by coarsening is a
+    // numerical loss, not automatically fracture work or heat.
+    result.coarsening_kinetic_loss_j =
+        result.source_kinetic_energy_j - result.rigid_kinetic_energy_j;
     return result;
 }
 

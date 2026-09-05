@@ -1,4 +1,5 @@
 #include "fracture/BrittleBondSolver.hpp"
+#include "physics/MechanicalAccounting.hpp"
 
 #include <algorithm>
 #include <array>
@@ -26,6 +27,7 @@ struct NodeStrainState {
 
 void applySupportContact(
     ActiveNodeState &node, const BrittleSolverSettings &settings) {
+    if (!settings.support_enabled) return;
     const auto &plane = settings.support_plane;
     if (!insideSupportFootprint(plane, node.position_world_m,
             settings.support_half_tangent_m, settings.support_half_bitangent_m)) return;
@@ -58,6 +60,8 @@ void accumulateContactStats(SphereMaterialContactStats &out,
     out.dissipated_kinetic_energy_j += in.dissipated_kinetic_energy_j;
     out.maximum_penetration_m = std::max(out.maximum_penetration_m, in.maximum_penetration_m);
     out.maximum_position_correction_m = std::max(out.maximum_position_correction_m, in.maximum_position_correction_m);
+    out.position_correction_angular_momentum_delta_kg_m2_s +=
+        in.position_correction_angular_momentum_delta_kg_m2_s;
 }
 
 // Radial pair damping is translation/rotation invariant and exchanges equal,
@@ -466,6 +470,7 @@ ActiveMatter BrittleBondSolver::activate(
             position,
             velocity,
             rest_node.represented_volume_m3 * material.density_kg_m3,
+            rigid.angular_velocity_rad_s,
         });
         matter.reference_positions_world_m.push_back(position);
     }
@@ -563,6 +568,7 @@ MaterialStepStats BrittleBondSolver::step(
             node.position_world_m += substep_dt * node.velocity_m_s;
         }
 
+        const auto before_constraints = measureMaterialMechanics(matter, gravity_m_s2);
         for (unsigned iteration = 0;
              iteration < settings_.constraint_iterations;
              ++iteration) {
@@ -577,6 +583,11 @@ MaterialStepStats BrittleBondSolver::step(
             node.velocity_m_s =
                 (node.position_world_m - node.previous_position_world_m) / substep_dt;
         }
+        const auto after_constraints = measureMaterialMechanics(matter, gravity_m_s2);
+        stats.constraint_angular_momentum_delta_kg_m2_s +=
+            after_constraints.angular_momentum_kg_m2_s - before_constraints.angular_momentum_kg_m2_s;
+        stats.constraint_mechanical_energy_delta_j +=
+            after_constraints.mechanicalEnergy() - before_constraints.mechanicalEnergy();
         stats.internal_damping_loss_j += dampInternalBonds(matter, substep_dt);
         if (sphere) {
             accumulateContactStats(stats.rigid_contact, solveSphereMaterialContacts(
@@ -652,6 +663,12 @@ MaterialStepStats BrittleBondSolver::step(
                 state.failure_mode = driving_mode;
             }
             if (state.damage >= 1.0) {
+                // This is removed stored energy, not a calibrated crack-work law.
+                // Name it explicitly so damage cannot silently erase the ledger.
+                const double extension = length(matter.nodes[rest.node_b].position_world_m -
+                    matter.nodes[rest.node_a].position_world_m) - rest.rest_length_m;
+                if (rest.compliance > 0.0)
+                    stats.unassigned_bond_removal_energy_j += .5 * extension * extension / rest.compliance;
                 state.alive = false;
                 matter.connectivity_dirty = true;
             }
@@ -670,6 +687,9 @@ MaterialStepStats BrittleBondSolver::step(
             std::max(stats.maximum_speed_m_s, speed);
         stats.kinetic_energy_j +=
             0.5 * node.mass_kg * speed * speed;
+        const double cell_size = matter.asset->recipe.voxel_size_m;
+        stats.kinetic_energy_j += node.mass_kg * cell_size * cell_size / 12.0 *
+            lengthSquared(node.spin_angular_velocity_rad_s);
     }
     for (std::size_t bond_index = 0;
          bond_index < matter.bonds.size();

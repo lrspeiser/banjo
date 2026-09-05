@@ -243,6 +243,7 @@ MaterialOutcome captureMaterialOutcome(
             inverse_orientation.rotate(
                 node.velocity_m_s -
                 activation_rigid.linear_velocity_m_s),
+            inverse_orientation.rotate(node.spin_angular_velocity_rad_s),
         });
     }
     for (const ActiveBondState &bond : matter.bonds) {
@@ -279,6 +280,8 @@ void applyMaterialOutcome(
             activation_rigid.linear_velocity_m_s +
             activation_rigid.orientation_world.rotate(
                 cached.velocity_minus_activation_linear_local_m_s);
+        node.spin_angular_velocity_rad_s = activation_rigid.orientation_world.rotate(
+            cached.spin_angular_velocity_local_rad_s);
     }
     for (std::size_t index = 0; index < matter.bonds.size(); ++index) {
         ActiveBondState &bond = matter.bonds[index];
@@ -316,7 +319,10 @@ void saveMaterialOutcome(
                << node.position_from_activation_com_local_m.z << ' '
                << node.velocity_minus_activation_linear_local_m_s.x << ' '
                << node.velocity_minus_activation_linear_local_m_s.y << ' '
-               << node.velocity_minus_activation_linear_local_m_s.z << '\n';
+               << node.velocity_minus_activation_linear_local_m_s.z << ' '
+               << node.spin_angular_velocity_local_rad_s.x << ' '
+               << node.spin_angular_velocity_local_rad_s.y << ' '
+               << node.spin_angular_velocity_local_rad_s.z << '\n';
     }
     for (const CachedMaterialBond &bond : outcome.bonds) {
         output << (bond.alive ? 1 : 0) << ' '
@@ -361,7 +367,10 @@ MaterialOutcome loadMaterialOutcome(const std::filesystem::path &path) {
                     >> node.position_from_activation_com_local_m.z
                     >> node.velocity_minus_activation_linear_local_m_s.x
                     >> node.velocity_minus_activation_linear_local_m_s.y
-                    >> node.velocity_minus_activation_linear_local_m_s.z)) {
+                    >> node.velocity_minus_activation_linear_local_m_s.z
+                    >> node.spin_angular_velocity_local_rad_s.x
+                    >> node.spin_angular_velocity_local_rad_s.y
+                    >> node.spin_angular_velocity_local_rad_s.z)) {
             throw std::runtime_error("material outcome node state is truncated");
         }
     }

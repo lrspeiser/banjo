@@ -233,6 +233,7 @@ FragmentBuildResult buildFragmentRepresentations(
         const FragmentMassProperties properties =
             calculateFragmentMassProperties(matter, component->node_indices);
         result.total_mass_kg += properties.mass_kg;
+        result.coarsening_kinetic_loss_j += properties.coarsening_kinetic_loss_j;
         const Vec3 linear_momentum = properties.mass_kg * properties.linear_velocity_m_s;
         result.total_linear_momentum_kg_m_s += linear_momentum;
         result.total_angular_momentum_about_origin_kg_m2_s +=
@@ -252,6 +253,7 @@ FragmentBuildResult buildFragmentRepresentations(
                 properties.angular_velocity_rad_s,
                 properties.mass_kg,
                 std::max(0.2 * matter.asset->recipe.voxel_size_m, equivalent_radius),
+                properties.inertia_world_kg_m2,
             });
             result.debris_mass_kg += properties.mass_kg;
             continue;

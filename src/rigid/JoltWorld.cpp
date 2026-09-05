@@ -9,6 +9,7 @@
 #include <Jolt/Core/JobSystemThreadPool.h>
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
+#include <Jolt/Physics/Body/BodyLock.h>
 #include <Jolt/Physics/Collision/ContactListener.h>
 #include <Jolt/Physics/Collision/EstimateCollisionResponse.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
@@ -806,6 +807,41 @@ RigidSnapshot JoltWorld::snapshot(MatterBodyId body_id) const {
         fromJoltVector(body_interface.GetLinearVelocity(found->second)),
         fromJoltVector(body_interface.GetAngularVelocity(found->second)),
     };
+}
+
+RigidMechanicalState JoltWorld::mechanicalState(MatterBodyId body_id) const {
+    const auto found = impl_->bodies_.find(body_id);
+    if (found == impl_->bodies_.end()) throw std::out_of_range("mechanical body is missing");
+    // Read solver state after Update, including the actual float mass/inertia
+    // accepted by Jolt. Authored fragment descriptions are not insertion proof.
+    const RigidSnapshot motion = snapshot(body_id);
+    JPH::BodyLockRead lock(impl_->physics_->GetBodyLockInterface(), found->second);
+    if (!lock.Succeeded()) throw std::runtime_error("cannot lock mechanical body");
+    const JPH::Body &body = lock.GetBody();
+    if (!body.IsDynamic()) return {motion, 0.0, {}};
+    const double inverse_mass = body.GetMotionProperties()->GetInverseMass();
+    const JPH::Mat44 jolt_inverse = body.GetInverseInertia();
+    Mat3 inverse_inertia;
+    for (JPH::uint row = 0; row < 3; ++row)
+        for (JPH::uint column = 0; column < 3; ++column)
+            inverse_inertia.m[row][column] = jolt_inverse(row, column);
+    const auto inertia = inverse_inertia.inverse(0.0);
+    if (inverse_mass <= 0.0 || !inertia)
+        throw std::runtime_error("dynamic body has invalid mass or locked inertia");
+    return {motion, 1.0 / inverse_mass, *inertia};
+}
+
+MechanicalTotals JoltWorld::mechanicalTotals(const Vec3 &gravity_m_s2) const {
+    std::vector<MatterBodyId> ids;
+    ids.reserve(impl_->bodies_.size());
+    for (const auto &[id, body] : impl_->bodies_) {
+        (void)body;
+        if (id != kSupportSurfaceMatterId) ids.push_back(id);
+    }
+    std::sort(ids.begin(), ids.end());
+    MechanicalTotals totals;
+    for (const auto id : ids) totals += measureRigidMechanics(mechanicalState(id), gravity_m_s2);
+    return totals;
 }
 
 CoupledSphereState JoltWorld::sphereContactState(MatterBodyId body_id) const {

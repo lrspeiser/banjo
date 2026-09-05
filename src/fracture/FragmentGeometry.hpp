@@ -42,6 +42,7 @@ struct DebrisParticleDescription {
     Vec3 angular_velocity_rad_s{};
     double mass_kg{};
     double radius_m{};
+    Mat3 inertia_world_kg_m2{};
 };
 
 struct FragmentBuildSettings {
@@ -61,6 +62,7 @@ struct FragmentBuildResult {
     double debris_mass_kg{};
     Vec3 total_linear_momentum_kg_m_s{};
     Vec3 total_angular_momentum_about_origin_kg_m2_s{};
+    double coarsening_kinetic_loss_j{};
 };
 
 [[nodiscard]] FragmentSurfaceMesh buildExposedVoxelSurface(

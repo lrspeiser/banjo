@@ -32,6 +32,7 @@ add_library(
     src/material/MaterialCatalog.cpp
     src/matter/Lattice.cpp
     src/physics/ContactMechanics.cpp
+    src/physics/MechanicalAccounting.cpp
     src/physics/RollingKinematics.cpp
     src/physics/SphereMaterialContact.cpp
     src/fracture/ActivationPolicy.cpp
@@ -165,6 +166,11 @@ if(BANJO_BUILD_TESTS)
     add_test(NAME banjo_conservative_contact_tests COMMAND banjo_conservative_contact_tests)
 
     if(TARGET banjo_runtime)
+        add_executable(banjo_transfer_tests tests/transfer_accounting_tests.cpp)
+        target_link_libraries(banjo_transfer_tests PRIVATE banjo_runtime)
+        banjo_enable_warnings(banjo_transfer_tests)
+        add_test(NAME banjo_transfer_tests COMMAND banjo_transfer_tests)
+
         add_executable(banjo_runtime_tests tests/runtime_dynamics_tests.cpp)
         target_link_libraries(banjo_runtime_tests PRIVATE banjo_runtime)
         target_compile_features(banjo_runtime_tests PRIVATE cxx_std_23)

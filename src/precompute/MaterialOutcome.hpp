@@ -11,8 +11,8 @@
 
 namespace banjo {
 
-inline constexpr std::uint32_t kMaterialOutcomeFormatVersion = 1U;
-inline constexpr std::uint32_t kMaterialSolverModelVersion = 3U;
+inline constexpr std::uint32_t kMaterialOutcomeFormatVersion = 2U;
+inline constexpr std::uint32_t kMaterialSolverModelVersion = 4U;
 
 struct MaterialOutcomeKeyInput {
     MaterialPreset striker{MaterialPreset::Iron};
@@ -73,6 +73,7 @@ struct MaterialOutcomeKey {
 struct CachedMaterialNode {
     Vec3 position_from_activation_com_local_m{};
     Vec3 velocity_minus_activation_linear_local_m_s{};
+    Vec3 spin_angular_velocity_local_rad_s{};
 };
 
 struct CachedMaterialBond {
