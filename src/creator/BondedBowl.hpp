@@ -16,6 +16,8 @@ struct BondedBowlLedger {
 };
 class BondedBowl {
 public:
+ bool flat_support{};
+ double ground_half_length{1.4},ground_half_width{.7},ground_thickness{.2};
  double bowl_radius{1.2},bowl_depth{.55},tilt_degrees{};
  MaterialPreset surface{MaterialPreset::Concrete};
  double wave_step_fraction{.35};

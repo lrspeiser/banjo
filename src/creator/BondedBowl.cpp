@@ -60,7 +60,23 @@ std::vector<BondedBowl::Contact> BondedBowl::contacts() const{
   Vec3 n=delta/d,point=(p.x-n*p.radius+q.x+n*q.radius)*.5;
   result.push_back({a,b,n,point,r-d,k,std::sqrt(ma.dynamic_friction*mb.dynamic_friction),.5*(ma.contact_damping_ratio+mb.contact_damping_ratio),false});
  }
- if(support){const auto rot=tilt(tilt_degrees),inv=tilt(-tilt_degrees);const double a=bowl_depth/(bowl_radius*bowl_radius);const auto &ms=referenceMaterial(surface);
+ if(support&&flat_support){
+  const auto &ms=referenceMaterial(surface);
+  for(unsigned i=0;i<cells.size();++i){auto &c=cells[i];Vec3 p=c.x;
+   Vec3 q{std::clamp(p.x,-ground_half_length,ground_half_length),std::clamp(p.y,-ground_thickness,0.),std::clamp(p.z,-ground_half_width,ground_half_width)};
+   Vec3 delta=p-q,n;double distance=length(delta);
+   if(distance>1e-14)n=delta/distance;
+   else {
+    const double gaps[6]{ground_half_length-p.x,p.x+ground_half_length,-p.y,p.y+ground_thickness,ground_half_width-p.z,p.z+ground_half_width};
+    const Vec3 normals[6]{{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}};
+    unsigned face=unsigned(std::min_element(gaps,gaps+6)-gaps);n=normals[face];distance=-gaps[face];
+   }
+   if(distance>=c.radius)continue;
+   const auto &m=referenceMaterial(objects[c.object].material);double k=c.radius/(1/m.young_modulus_pa+1/ms.young_modulus_pa);
+   result.push_back({i,0,n,c.x-n*c.radius,c.radius-distance,k,std::sqrt(m.dynamic_friction*ms.dynamic_friction),.5*(m.contact_damping_ratio+ms.contact_damping_ratio),true});
+  }
+ }
+ if(support&&!flat_support){const auto rot=tilt(tilt_degrees),inv=tilt(-tilt_degrees);const double a=bowl_depth/(bowl_radius*bowl_radius);const auto &ms=referenceMaterial(surface);
   for(unsigned i=0;i<cells.size();++i){auto &c=cells[i];Vec3 p=inv.rotate(c.x);double rho=std::hypot(p.x,p.z);
    if(rho>bowl_radius+c.radius||p.y-a*rho*rho>c.radius*2)continue;
    // Closest point on the paraboloid of revolution (bounded interior Newton).
@@ -126,7 +142,7 @@ void BondedBowl::advance(double seconds){
  // Exact common free flight before the first contact. Distance bounds prevent
  // stepping across a cell/support or cell/cell encounter. No elastic mode is
  // suppressed after impact; this path requires zero internal relative motion.
- bool free=breaks.empty()&&!cells.empty();Vec3 common=cells.empty()?Vec3{}:cells[0].v;
+ bool free=breaks.empty()&&!cells.empty()&&!flat_support;Vec3 common=cells.empty()?Vec3{}:cells[0].v;
  for(auto &c:cells)if(length(c.v-common)>1e-12||length(c.spin)>1e-12)free=false;
  for(auto &e:links)if(std::abs(length(cells[e.b].x-cells[e.a].x)-e.rest)>1e-12)free=false;
  if(free){double travel=length(common)*seconds+.5*length(gravity)*seconds*seconds;auto inv=tilt(-tilt_degrees);double a=bowl_depth/(bowl_radius*bowl_radius);

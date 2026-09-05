@@ -46,8 +46,8 @@ PlatformWorld::~PlatformWorld()=default;
 std::string PlatformWorld::capabilitiesJson(){return json{
     {"package_version",1},{"physics_abi","banjo-platform-1"},{"units","SI"},
     {"backends",{{"rigid-v1",{"sphere","box","finite-bowl","finite-ground","gravity","contact","render-instances"}},
-                 {"bonded-reference-v2",{"sphere","finite-bowl","gravity","contact","render-instances","experimental-glass-fracture"}}}},
-    {"limits",{{"package_bytes",4194304},{"rigid_objects",4096},{"reference_objects",12},{"steps_per_call",240}}},
+                 {"bonded-reference-v2",{"sphere","finite-bowl","finite-ground","gravity","contact","render-instances","experimental-glass-fracture"}}}},
+    {"limits",{{"package_bytes",4194304},{"rigid_objects",4096},{"reference_objects",9},{"steps_per_call",240}}},
     {"unsupported",{"automatic-physical-LOD","plasticity","anisotropic-fracture","live-state-package-save","scripts","network-publishing"}},
     {"realtime_guaranteed",false}}.dump(2);}
 std::unique_ptr<PlatformWorld> PlatformWorld::load(const std::string &text){
@@ -72,7 +72,7 @@ std::unique_ptr<PlatformWorld> PlatformWorld::load(const std::string &text){
     const bool hasGround=source.contains("ground")&&!source["ground"].is_null();
     RigidSurfaceDescription ground;
     if(hasGround){
-        require(!support&&!w.reference,"finite ground requires rigid backend and no bowl");
+        require(!support,"finite ground and bowl are mutually exclusive");
         auto &g=source["ground"];fields(g,{"half_length_m","half_width_m","thickness_m","surface"});
         ground.half_length_tangent_m=number(g.at("half_length_m"),.2,10);
         ground.half_length_bitangent_m=number(g.at("half_width_m"),.2,10);
@@ -81,13 +81,13 @@ std::unique_ptr<PlatformWorld> PlatformWorld::load(const std::string &text){
         const double x=ground.half_length_tangent_m,z=ground.half_length_bitangent_m;
         w.triangles={{{{-x,0,-z},{x,0,z},{x,0,-z}}},{{{-x,0,-z},{-x,0,z},{x,0,z}}}};
     }
-    require(source.at("objects").is_array()&&!source["objects"].empty()&&source["objects"].size()<=(w.reference?12:4096),"object budget exceeded or empty scene");
+    require(source.at("objects").is_array()&&!source["objects"].empty()&&source["objects"].size()<=(w.reference?9:4096),"object budget exceeded or empty scene");
     std::set<unsigned> ids;
     for(auto &o:source["objects"]){
         fields(o,{"id","material","shape","radius_m","dimensions_m","position_m","orientation_wxyz","velocity_m_s","spin_rad_s"});
         Body b;b.id=integer(o.at("id"),1,1000000);require(ids.insert(b.id).second,"duplicate object ID");b.material=material(o.at("material"));
         require(o.at("shape")=="sphere"||o.at("shape")=="box","unsupported shape");
-        if(o["shape"]=="sphere"){require(!o.contains("dimensions_m"),"sphere must not declare box dimensions");b.geometry.radius_m=number(o.at("radius_m"),.01,.5);}
+        if(o["shape"]=="sphere"){require(!o.contains("dimensions_m"),"sphere must not declare box dimensions");b.geometry.radius_m=number(o.at("radius_m"),.01,.5);require(!w.reference||b.geometry.radius_m==.045,"reference spheres require 45 mm radius");}
         else {require(!w.reference,"reference backend does not support boxes");require(!o.contains("radius_m"),"box must not declare radius");b.geometry.kind=PrimitiveKind::Box;b.geometry.dimensions_m=vector(o.at("dimensions_m"),1);require(b.geometry.dimensions_m.x>=.02&&b.geometry.dimensions_m.y>=.02&&b.geometry.dimensions_m.z>=.02,"invalid box dimensions");}
         b.state.center_of_mass_world_m=vector(o.at("position_m"),1000);b.state.linear_velocity_m_s=vector(o.at("velocity_m_s"),100);b.state.angular_velocity_rad_s=vector(o.at("spin_rad_s"),1000);require(length(b.state.angular_velocity_rad_s)<=1000,"spin exceeds runtime magnitude limit");
         auto &q=o.at("orientation_wxyz");require(q.is_array()&&q.size()==4,"expected quaternion wxyz");b.state.orientation_world={number(q[0],-1,1),number(q[1],-1,1),number(q[2],-1,1),number(q[3],-1,1)};
@@ -98,7 +98,8 @@ std::unique_ptr<PlatformWorld> PlatformWorld::load(const std::string &text){
     }
     // All declarations are validated before allocating a solver. No live world is mutated.
     if(w.reference){
-        w.bonded=std::make_unique<BondedBowl>();auto &b=*w.bonded;b.gravity=w.gravity;b.support=support;b.bowl_radius=bowl.radius_m;b.bowl_depth=bowl.depth_m;b.tilt_degrees=bowl.tilt_degrees;b.surface=bowl.surface;
+        w.bonded=std::make_unique<BondedBowl>();auto &b=*w.bonded;b.gravity=w.gravity;b.support=support||hasGround;b.bowl_radius=bowl.radius_m;b.bowl_depth=bowl.depth_m;b.tilt_degrees=bowl.tilt_degrees;b.surface=bowl.surface;
+        if(hasGround){b.flat_support=true;b.ground_half_length=ground.half_length_tangent_m;b.ground_half_width=ground.half_length_bitangent_m;b.ground_thickness=ground.thickness_m;b.surface=material(source["ground"]["surface"]);}
         for(auto &o:w.bodies)b.add(o.id,o.material,o.geometry.radius_m,o.state);b.initialize();w.initial_energy=b.energy();
     }else {
         w.rigid=std::make_unique<JoltWorld>();w.rigid->setGravity(w.gravity);
@@ -139,5 +140,6 @@ std::string PlatformWorld::reportJson() const{
 }
 std::string PlatformWorld::packageJson() const{return impl_->source.dump(2);}
 const std::vector<std::array<Vec3,3>> &PlatformWorld::supportMesh() const{return impl_->triangles;}
+unsigned PlatformWorld::fractureCount() const{return impl_->bonded?unsigned(impl_->bonded->breaks.size()):0;}
 double PlatformWorld::fixedStep() const{return impl_->dt;}
 }

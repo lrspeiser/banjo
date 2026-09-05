@@ -1,5 +1,7 @@
 # Development status and handoff
 
+**Offset and fracture-height drops:** [New comparative evidence](height-drop-checkpoint.md) retains centred controls, adds physically deflecting off-centre drops, and compares iron-on-glass with iron-on-oak from four heights. Glass progresses from intact to separated pieces in the reference model. Finite solid-ground contact, visible bond counts and zoom are implemented; real-glass calibration and near-real-time reference performance remain open.
+
 **Object-on-object drop tests:** [Four new drop examples](drop-test-checkpoint.md) add spheres/cubes falling onto freely resting targets on finite concrete ground, each comparing glass/oak/iron. All 12 combinations pass motion/contact checks; all 21 example packages pass. This is rigid collision coverage, not fracture. Source `de8129f`; published with this checkpoint.
 
 **Main publication checkpoint — September 5, 2026:** This checkpoint brings the accumulated physics, application and platform work through `60173e6` onto main. Full Windows MSVC Release build passes; all 34 tests pass in 69.08 s. Outgoing history was checked for API-key patterns with no matches. The owner now authorizes regular verified main updates (see AGENTS.md). Earlier “local only” notes describe historical checkpoint publication status; they do not indicate that code included here is absent from this main checkpoint. Experimental physics limitations and all unfinished platform gates remain in force. GitHub CI is a separate check and must be reported from its actual result.

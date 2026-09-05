@@ -6,7 +6,7 @@ exe=args.exe
 rows=[]
 for path in sorted(Path('assets/platform').glob('*.json')):
  s=json.loads(path.read_text());ref=s['backend']=='bonded-reference-v2'
- steps=720 if 'isolated' in path.name else (24 if ref else 240)
+ steps=2640 if 'iron-on-glass-and-wood' in path.name else (720 if 'isolated' in path.name else (24 if ref else 240))
  start=time.perf_counter()
  run=subprocess.run([exe,'--run',str(path),str(steps)],capture_output=True,text=True)
  try:r=json.loads(run.stdout)
@@ -15,6 +15,11 @@ for path in sorted(Path('assets/platform').glob('*.json')):
  ok=run.returncode==0
  if ref and 'strong-impact' in path.name:ok &= bool(r.get('fracture_events')) if 'glass' in path.name else not r.get('fracture_events')
  if ref and ('gentle-impact' in path.name or 'isolated' in path.name):ok &= not r.get('fracture_events')
+ if 'offset-glass' in path.name:
+  for pair in range(3):ok &= r['objects'][2*pair+1]['position_m'][0]-s['objects'][2*pair+1]['position_m'][0]>.03
+ if 'iron-on-glass-and-wood' in path.name:
+  ok &= r.get('elapsed_s',0)>=1.099
+  ok &= all(e['object_id']==1 for e in r.get('fracture_events',[]))
  if '-onto-' in path.name:
   for pair in range(3):
    ok &= any({e['body_a'],e['body_b']}=={2*pair+1,2*pair+2} and e['closing_speed_m_s']>1 for e in r.get('ball_contact_events',[]))

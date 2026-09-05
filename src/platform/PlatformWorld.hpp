@@ -33,6 +33,7 @@ public:
     std::string packageJson() const;
     const std::vector<std::array<Vec3,3>> &supportMesh() const;
     double fixedStep() const;
+    unsigned fractureCount() const;
 private:
     PlatformWorld();
     struct Impl;

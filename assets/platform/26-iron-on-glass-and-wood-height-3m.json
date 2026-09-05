@@ -1,0 +1,135 @@
+{
+  "package_version": 1,
+  "physics_abi": "banjo-platform-1",
+  "name": "Iron drop from center height 3.0 m onto glass and oak",
+  "units": "SI",
+  "backend": "bonded-reference-v2",
+  "required_capabilities": [
+    "finite-ground",
+    "experimental-glass-fracture"
+  ],
+  "fixed_dt_s": 0.0004166666666666667,
+  "max_steps_per_call": 240,
+  "gravity_m_s2": [
+    0,
+    -9.81,
+    0
+  ],
+  "bowl": null,
+  "ground": {
+    "half_length_m": 1.4,
+    "half_width_m": 0.7,
+    "thickness_m": 0.2,
+    "surface": "concrete"
+  },
+  "objects": [
+    {
+      "id": 1,
+      "material": "glass",
+      "shape": "sphere",
+      "radius_m": 0.045,
+      "position_m": [
+        -0.2,
+        0.045,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": 2,
+      "material": "iron",
+      "shape": "sphere",
+      "radius_m": 0.045,
+      "position_m": [
+        -0.196,
+        3.0,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": 3,
+      "material": "oak",
+      "shape": "sphere",
+      "radius_m": 0.045,
+      "position_m": [
+        0.2,
+        0.045,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": 4,
+      "material": "iron",
+      "shape": "sphere",
+      "radius_m": 0.045,
+      "position_m": [
+        0.20400000000000001,
+        3.0,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}

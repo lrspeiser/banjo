@@ -52,5 +52,16 @@ int main(){try{
         invalid=drop;invalid["objects"][0]["position_m"]={0,-.1,0};rejects(invalid);
         std::cout<<"drop "<<upper<<" onto "<<lower<<": glass/oak/iron passed\n";
     }
+
+    for(auto m:{"glass","oak","iron"})for(double offset:{-.015,0.,.015}){
+        auto d=scene();d["objects"]={body(1,m,0),body(2,m,offset)};d["gravity_m_s2"]={0,-9.81,0};
+        d["ground"]={{"half_length_m",1.4},{"half_width_m",.7},{"thickness_m",.2},{"surface","concrete"}};
+        for(unsigned i=0;i<2;++i){d["objects"][i]["radius_m"]=.09;d["objects"][i]["position_m"]={i?offset:0.,i?1.25:.09,0};d["objects"][i]["velocity_m_s"]={0,0,0};}
+        auto w=PlatformWorld::load(d.dump());check(w->step(240).error.empty(),"offset drop");
+        auto x=w->renderInstances()[1].state.center_of_mass_world_m.x;
+        if(offset==0)check(std::abs(x)<.001,"ideal centered drop remains symmetric");
+        else check(x*offset>0&&std::abs(x)>.03,"off-center contact deflects without lateral launch");
+        std::cout<<m<<" offset="<<offset<<" final_x="<<x<<'\n';
+    }
     std::cout<<"Platform package validation, three-material motion, box geometry, reference cells, clone and call budgets pass\n";return 0;
 }catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}

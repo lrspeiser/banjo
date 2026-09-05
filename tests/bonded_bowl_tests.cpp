@@ -68,6 +68,17 @@ int main(int argc,char **){try{
  recording.play();recording.poll(.02);auto displayed=recording.frame();check(displayed&&displayed->time()>start.time(),"wall time drives actual recorded motion");
  recording.play();recording.poll(0);check(recording.frame()->time()==start.time(),"replay restarts exact initial frame");
  recording.clear();recording.start(start,2);recording.clear();check(!recording.ready()&&!recording.computing(),"cancel discards prior frames and worker");
+
+ for(auto m:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}){
+  BondedBowl flat;flat.flat_support=true;flat.add(1,m,.045,{{0,.045,0}});flat.initialize();
+  auto p0=flat.momentum();for(unsigned i=0;i<240;++i)flat.advance(1./2400);
+  check(flat.breaks.empty(),"flat-ground settling does not fracture");
+  check(length(flat.momentum()-p0-flat.ledger.gravity_impulse-flat.ledger.support_impulse)<1e-8,"flat ground reaction ledger");
+  check(std::abs(flat.energyResidual())<.01*flat.ledger.initial_energy_j,"flat ground energy");
+  BondedBowl edge;edge.flat_support=true;edge.add(1,m,.045,{{2,1,0}});edge.initialize();
+  for(unsigned i=0;i<120;++i)edge.advance(1./2400);
+  check(std::abs(edge.state(1).center_of_mass_world_m.y-(1-.5*9.81*.05*.05))<1e-8,"finite ground has no support beyond its edge");
+ }
  lab.configure({});check(lab.bonded()->breaks.empty()&&lab.stock().serialize()==stock,"authoring reset restores intact allocations");
  return 0;
 }catch(const std::exception &e){std::cerr<<e.what()<<std::endl;return 1;}}
