@@ -1,5 +1,7 @@
 # API and functional-platform review
 
+**Starter application update:** [The first-person game](starter-checkpoint.md) adds a bounded C++ gameplay layer with XP/stamina, preset design quotes and replay-safe collection/crafting. Integrating this player inventory and level/tool checks with the existing LLM-facing creator facade is still required. The prior API reliability/functional-test/authority gaps remain open; this is not a new network service or complete SDK.
+
 **Current update:** [Inventory requirements](requirements-checkpoint.md) at `fca0cb3` adds read-only `assess` / `assess_rebuild`, exact material shortfalls and retained assistant proposals. The [revision checkpoint](revision-checkpoint.md) completed the lifecycle implementation described as uncommitted below. Current full-suite and provider evidence is in the new checkpoint; the original review below is a historical snapshot. Command/receipt/durability, full resource lifecycle, functional-test and assembly gaps remain open.
 
 Reviewed September 4, 2026, Pacific time (September 5 UTC). This is a source review and proposed implementation order, not a new physics validation or a shipped API specification.

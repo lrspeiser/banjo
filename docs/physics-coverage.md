@@ -1,5 +1,7 @@
 # Physical property and capability coverage
 
+**Starter support/release coverage:** [Willow Clearing](starter-checkpoint.md) tests glass/oak/iron fixed attachments, release without a launch impulse, gravity and crafted-sphere raw-volume collection. Its stamina costs, tool multipliers and whole-branch cut completion are game policies, not constitutive/energy validation. No calibrated wood grain, crack growth, tool efficiency or manufacturing law is added. Full physics gates remain open.
+
 **Inventory assessment at `fca0cb3`:** [Three-material requirements tests and real provider trials](requirements-checkpoint.md) verify homogeneous volume/density cost, inventory versus uncollected stock, selected recovery and no implicit transmutation/reclamation. All 15 suites pass (11.73 s); no physical law or conservation tolerance changes. Fabrication energy, functional success and normal new-control input remain unverified/unsupported as detailed there.
 
 The [selected-revision checkpoint](revision-checkpoint.md) at `14bb0b7` adds material-reuse/return and before/after mechanical records through actual created objects. Glass/oak/iron lifecycle and real provider cases pass; all 15 suites pass (11.71 s). These are explicit authoring discontinuities, not manufacturing, conservation or fracture-work validation. Energy accounting remains unsupported and the normal new-control check remains pending.
