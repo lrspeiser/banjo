@@ -28,7 +28,7 @@ The local `codex/physics-foundation` branch integrates main and PR #2's contact-
 
 ## Build and watch it
 
-An experimental [conservative coupled reference](docs/conservative-reference-checkpoint.md) is available through `banjo_solver_probe`. It has strict rejected-step accounting and passes its small reference cases, but its current glass-lattice convergence/cost is unsuitable for replacing the lab. The default viewer still has the conservation defects described above.
+An experimental [conservative coupled reference](docs/conservative-reference-checkpoint.md) is available through `banjo_solver_probe`. Its [global Newton/GMRES solve](docs/elastic-newton-checkpoint.md) now advances the full isolated glass lattice at 2 ms and 1/240 s with strict conservation checks. Larger steps, runtime cost and contact/material integration remain unresolved. The default viewer still has the conservation defects described above.
 
 Requirements:
 

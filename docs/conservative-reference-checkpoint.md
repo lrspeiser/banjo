@@ -1,5 +1,7 @@
 # Coupled conservative reference solver
 
+Historical checkpoint. [Global Newton/GMRES at `dc7bcfb`](elastic-newton-checkpoint.md) supersedes the practical-step convergence measurements below while retaining the same elastic law and conservation budgets. This document records the original local-sweep implementation and its results.
+
 Tested code: **`1d29545035b50a32f5596274dfc9c10cded848bc`**, September 4, 2026, America/Los_Angeles. Local branch `codex/physics-foundation`, worktree `C:/Users/henry/dev/banjo-integration`. Original main remains `3a38d7d`; this work is not pushed or merged. The Windows Release toolchain and dependencies are unchanged from the preceding checkpoints: MSVC 19.44, Windows 11 build 26200, Jolt v5.6.0, raylib 6.0.
 
 ## Result and boundary
