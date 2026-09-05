@@ -18,6 +18,21 @@ void assemblyInventory() {
         Json fa={{"normal_axis",0},{"positive",true},{"u_offset_m",0},{"v_offset_m",0},{"width_m",.01},{"height_m",.012}};auto fb=fa;fb["positive"]=false;
         Json law={{"model","central-cohesive-v1"},{"stiffness_pa_per_m",2*m.tensile_strength_pa*m.tensile_strength_pa/m.fracture_energy_j_m2},{"strength_pa",m.tensile_strength_pa},{"fracture_energy_j_m2",m.fracture_energy_j_m2},{"compression_stiffness_pa_per_m",0},{"provenance","illustrative regression law"}};
         Json declaration={{"schema_version",1},{"parts",Json::array({a,b})},{"joint",{{"id","join"},{"part_a","a"},{"part_b","b"},{"face_a",fa},{"face_b",fb},{"cells_per_axis",4},{"contact_owner","cohesive_patch_only"},{"law",law}}}};
+        const auto folder=std::filesystem::temp_directory_path()/("banjo-assembly-save-"+name+"-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+        std::filesystem::create_directories(folder);const auto path=folder/"world.json";auto pending=path;pending+=".pending";
+        const auto pristine=world.serialize();check(world.rememberAssemblyAndSave(path,declaration.dump(),0)==1,"assembly first revision saved");
+        auto restored_draft=StarterWorld::load(path);check(restored_draft.serialize()==world.serialize()&&restored_draft.rememberedAssembly().has_value(),"starter assembly survives real file reload");
+        auto without_draft=Json::parse(world.serialize());without_draft["assembly_draft"]={{"revision",0},{"declaration",nullptr}};check(without_draft==Json::parse(pristine),"remembering assembly changes no gameplay state");
+        const auto remembered=world.serialize();check(world.rememberAssemblyAndSave(path,declaration.dump(),0)==1&&world.serialize()==remembered,"identical retries preserve revision");
+        auto revised=declaration;revised["joint"]["id"]="revised";rejects([&]{(void)world.rememberAssemblyAndSave(path,revised.dump(),0);});check(world.serialize()==remembered,"stale revision leaves live state unchanged");
+        {std::ofstream block(pending);block<<"retain pending data";}
+        rejects([&]{(void)world.rememberAssemblyAndSave(path,revised.dump(),1);});check(world.serialize()==remembered&&StarterWorld::load(path).serialize()==remembered,"failed save cannot replace live or durable draft");
+        std::filesystem::remove(pending);
+        check(world.rememberAssemblyAndSave(path,revised.dump(),1)==2,"intentional revision persists");
+        auto bad=Json::parse(world.serialize());bad["assembly_draft"]["declaration"]["joint"]["face_a"]["width_m"]=10;rejects([&]{(void)StarterWorld::deserialize(bad.dump());});
+        rejects([&]{(void)world.clearAssemblyAndSave(path,1);});check(world.clearAssemblyAndSave(path,2)==3&&!world.rememberedAssembly(),"revisioned clear retains inventory");
+        check(world.rememberAssemblyAndSave(path,declaration.dump(),3)==4,"assembly can be saved after clear");
+        std::filesystem::remove(path);std::filesystem::remove(folder);
         const auto initial=world.serialize();const auto report=Json::parse(world.assessAssemblyJson(declaration.dump()));
         check(world.serialize()==initial,"starter assembly assessment is read-only");check(report["inventory_scope"]=="first-person-starter"&&!report["materials_sufficient"].get<bool>()&&!report["creation_supported"].get<bool>(),"starter stock and unsupported creation are distinct");
         check(report["player"]["assembly_level_requirement"].is_null()&&report["player"]["assembly_stamina_cost"].is_null(),"unsupported construction costs are not fabricated");
@@ -104,7 +119,7 @@ int main() {try {
         check(StarterWorld::deserialize(built).serialize()==built,"custom recipe state round trips");
         custom.step(240);check(custom.objects().back().state.center_of_mass_world_m.y>1.19,"custom body rests on physical bench");
     }
-    {auto legacy=nlohmann::json::parse(initial);legacy.erase("remembered_design");legacy["starter_version"]=2;check(StarterWorld::deserialize(legacy.dump()).serialize()==initial,"version two starter saves migrate with no invented design");legacy["starter_version"]=1;legacy["rules"]="starter-stamina-v1/whole-branch-cut-v1/raw-volume-v1";for(auto &o:legacy["objects"])o.erase("custom_design");check(StarterWorld::deserialize(legacy.dump()).serialize()==initial,"version one starter saves migrate without invented progress");}
+    {auto legacy=nlohmann::json::parse(initial);legacy.erase("assembly_draft");legacy["starter_version"]=3;check(StarterWorld::deserialize(legacy.dump()).serialize()==initial,"version three saves migrate without invented assemblies");legacy.erase("remembered_design");legacy["starter_version"]=2;check(StarterWorld::deserialize(legacy.dump()).serialize()==initial,"version two starter saves migrate with no invented design");legacy["starter_version"]=1;legacy["rules"]="starter-stamina-v1/whole-branch-cut-v1/raw-volume-v1";for(auto &o:legacy["objects"])o.erase("custom_design");check(StarterWorld::deserialize(legacy.dump()).serialize()==initial,"version one starter saves migrate without invented progress");}
     {
         const auto directory=std::filesystem::current_path()/("starter-transaction-test-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
         check(std::filesystem::create_directory(directory),"fresh save test directory");

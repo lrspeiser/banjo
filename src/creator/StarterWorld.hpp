@@ -49,6 +49,10 @@ public:
     [[nodiscard]] StarterQuote quote(std::string_view design) const;
     [[nodiscard]] StarterQuote quoteRecipe(const ObjectRecipe &recipe) const;
     [[nodiscard]] static ObjectRecipe defaultDraft();
+    [[nodiscard]] const std::optional<std::string> &rememberedAssembly() const {return remembered_assembly_;}
+    [[nodiscard]] std::uint64_t assemblyRevision() const {return assembly_revision_;}
+    std::uint64_t rememberAssemblyAndSave(const std::filesystem::path &path,std::string_view declaration,std::uint64_t expected_revision);
+    std::uint64_t clearAssemblyAndSave(const std::filesystem::path &path,std::uint64_t expected_revision);
     [[nodiscard]] std::string assessAssemblyJson(std::string_view declaration) const;
     [[nodiscard]] std::string designerRequest(std::string_view id,std::string_view prompt) const;
     [[nodiscard]] const std::optional<StarterRememberedDesign> &rememberedDesign() const {return remembered_design_;}
@@ -74,6 +78,8 @@ private:
     std::vector<StarterObject> objects_;
     std::vector<Receipt> receipts_;
     std::optional<StarterRememberedDesign> remembered_design_;
+    std::optional<std::string> remembered_assembly_;
+    std::uint64_t assembly_revision_{};
     std::array<double,3> inventory_m3_{};
     std::unique_ptr<JoltWorld> physics_;
     unsigned xp_{};

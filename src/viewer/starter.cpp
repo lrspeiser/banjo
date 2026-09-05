@@ -50,14 +50,14 @@ int main(int argc,char **argv){try{
     std::filesystem::path workspace="starter-data",capture;std::string layout="clearing";unsigned frames=60;
     for(int i=1;i<argc;++i){const std::string arg=argv[i];if(++i>=argc)throw std::invalid_argument("missing option");if(arg=="--workspace")workspace=argv[i];else if(arg=="--capture")capture=argv[i];else if(arg=="--layout")layout=argv[i];else if(arg=="--frames")frames=static_cast<unsigned>(std::stoul(argv[i]));else throw std::invalid_argument("unknown option");}
     if(frames==0||frames>3600)throw std::invalid_argument("invalid capture frame count");
-    if(layout!="clearing"&&layout!="crafting"&&layout!="designer")throw std::invalid_argument("layout must be clearing, crafting or designer");
+    if(layout!="clearing"&&layout!="crafting"&&layout!="designer"&&layout!="assembly")throw std::invalid_argument("layout must be clearing, crafting, designer or assembly");
     std::filesystem::create_directories(workspace);const auto save_path=workspace/"starter-world.json";
-    auto world=capture.empty()&&std::filesystem::exists(save_path)?StarterWorld::load(save_path):StarterWorld{};
+    auto world=(capture.empty()||layout=="assembly")&&std::filesystem::exists(save_path)?StarterWorld::load(save_path):StarterWorld{};
     if(!capture.empty()&&layout=="crafting"){(void)world.interact("capture-pick",1,{-2.8,1.65,1});(void)world.craft("capture-pry","prybar",{0,1.65,0});}
     SetConfigFlags(FLAG_MSAA_4X_HINT);InitWindow(1440,900,"Banjo - First Person Clearing");SetTargetFPS(60);SetExitKey(KEY_NULL);
     Camera3D camera{{0,1.65F,4.7F},{0,1.25F,-2},{0,1,0},65,CAMERA_PERSPECTIVE};
     float yaw=0,pitch=-.15F;bool crafting=layout!="clearing",inventory=false,paused=false;unsigned selected=0,rendered=0,serial=0;double accumulator=0,save_timer=0;
-    if(crafting){camera.position={0,1.65F,.2F};selected=layout=="designer"?6:1;}
+    if(crafting){camera.position={0,1.65F,.2F};selected=layout=="assembly"?7:layout=="designer"?6:1;}
     std::string message="Welcome to Willow Clearing. Collect loose wood to begin.";
     CodexAssistant assistant;std::string prompt,submitted_prompt,explanation="Describe a solid ball or block. Custom designs unlock at level 2.";std::optional<ObjectRecipe> proposal;bool prompt_focus=false;
     if(const auto &saved=world.rememberedDesign()){prompt=saved->prompt;explanation=saved->explanation;proposal=saved->recipe;}
@@ -134,7 +134,30 @@ int main(int argc,char **argv){try{
             wrap("Tools are carried in inventory. Your body and hands are never drawn.",1000,578,345,18,muted);
             if(crafting){const auto designs=StarterWorld::designs();for(unsigned i=0;i<designs.size();++i){const auto &d=designs[i];const auto q=world.quote(d.id);Rectangle card{48,static_cast<float>(187+i*72),345,64};DrawRectangleRec(card,i==selected?Color{65,87,65,255}:Color{36,51,44,255});text(d.label,63,static_cast<int>(card.y)+10,20);text(q.ready()?"Ready to craft":"Requirements missing",63,static_cast<int>(card.y)+37,15,q.ready()?green:muted);if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT)&&CheckCollisionPointRec(GetMousePosition(),card))selected=i;}
                 if(button({48,619,345,64},"ASK THE DESIGNER")){selected=6;prompt_focus=false;}
-                if(selected==6){
+                if(button({680,132,240,38},"ASSEMBLY DESIGNS")){selected=7;prompt_focus=false;}
+                if(selected==7){
+                    text("Saved assembly / revision "+std::to_string(world.assemblyRevision()),432,200,23);
+                    if(button({432,246,235,40},"IMPORT DESIGN"))try {
+                        const auto path=workspace/"assembly.json";if(std::filesystem::file_size(path)>1024*1024)throw std::runtime_error("Assembly file exceeds 1 MiB");
+                        std::ifstream input(path,std::ios::binary);if(!input)throw std::runtime_error("Cannot read assembly.json");
+                        const std::string declaration{std::istreambuf_iterator<char>(input),{}};
+                        (void)world.rememberAssemblyAndSave(save_path,declaration,world.assemblyRevision());message="Assembly saved. Collect its missing materials and return here.";
+                    }catch(const std::exception &e){message=e.what();}
+                    if(button({687,246,235,40},"CLEAR DESIGN",world.rememberedAssembly().has_value()))try {
+                        (void)world.clearAssemblyAndSave(save_path,world.assemblyRevision());message="Assembly cleared. Materials and progress unchanged.";
+                    }catch(const std::exception &e){message=e.what();}
+                    if(world.rememberedAssembly())try {
+                        const auto report=nlohmann::json::parse(world.assessAssemblyJson(*world.rememberedAssembly()));int row=310;
+                        for(const auto &need:report.at("material_requirements")) {
+                            text(need.at("material").get<std::string>()+": need "+number(need.at("required_mass_kg"),4)+" kg / held "+number(need.at("inventory_mass_kg"),4),432,row,19);
+                            text("Missing "+number(need.at("missing_from_inventory_kg"),4)+" kg / loose "+number(need.at("collectible_mass_kg"),4)+" kg",432,row+29,17,gold);
+                            text("After gathering: still need "+number(need.at("missing_after_collection_kg"),4)+" kg",432,row+56,16,muted);row+=96;
+                        }
+                        text(report.at("materials_sufficient").get<bool>()?"Materials available":"Gather the missing materials",432,517,21,gold);
+                        wrap("Assembly construction is not supported yet. Level and stamina costs are not defined. Attached branches and equipped tools are excluded from loose supplies.",432,556,490,18,muted);
+                    }catch(const std::exception &e){message=e.what();}
+                    else wrap("Place an assembly design in assembly.json in this world's folder, then import it. Your saved design stays here while you gather materials.",432,319,490,21,muted);
+                }else if(selected==6){
                     text("Make something from your materials",432,200,23);
                     Rectangle input{432,240,490,80};DrawRectangleRec(input,{36,51,44,255});DrawRectangleLinesEx(input,1,prompt_focus?gold:muted);
                     wrap(prompt.empty()?"Click here and describe your design...":prompt,444,250,465,17,ink);
