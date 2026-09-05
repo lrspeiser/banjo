@@ -1,6 +1,7 @@
 #include "creator/CreatorWorld.hpp"
 #include "material/MaterialCompiler.hpp"
 #include "physics/RollingKinematics.hpp"
+#include "physics/CohesiveRigidPair.hpp"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cmath>
@@ -353,6 +354,31 @@ CreationAssessment CreatorWorld::assess(const ObjectRecipe &r,std::optional<Revi
     if(result.buildable())allocate(result.creation,available,old?old->allocations:std::vector<MaterialAllocation>{});
     return result;
 }
+std::string CreatorWorld::assessAssemblyJson(std::string_view declaration) const {
+    const auto j=parse(declaration);fields(j,{"schema_version","parts","joint"});check(integer(j.at("schema_version"),1)==1,"unsupported assembly version");
+    const auto &parts=j.at("parts");check(parts.is_array()&&parts.size()==2,"assembly assessment requires exactly two boxes");
+    std::array<CohesiveBoxDeclaration,2> boxes;std::array<std::string,2> ids;std::array<MaterialPreset,2> materials;
+    for(unsigned i=0;i<2;++i){const auto &p=parts[i];fields(p,{"id","material","dimensions_m","center_m","orientation_wxyz"});ids[i]=string(p.at("id"),64);materials[i]=material(p.at("material"));check(materials[i]==MaterialPreset::Glass||materials[i]==MaterialPreset::Oak||materials[i]==MaterialPreset::Iron,"assembly material is outside the tested reference set");
+        boxes[i]={vector(p.at("dimensions_m")),makeReferenceMaterial(materials[i]).density_kg_m3,vector(p.at("center_m")),quaternion(p.at("orientation_wxyz"))};const auto d=boxes[i].dimensions_m,c=boxes[i].center_m;
+        check(std::min({d.x,d.y,d.z})>=.001&&std::max({d.x,d.y,d.z})<=1,"assembly dimensions must be 0.001 to 1 m");check(std::max({std::abs(c.x),std::abs(c.y),std::abs(c.z)})<=10,"assembly centers must be within 10 m of origin");}
+    check(ids[0]!=ids[1],"assembly part IDs must be distinct");const auto &joint=j.at("joint");fields(joint,{"id","part_a","part_b","face_a","face_b","cells_per_axis","law","contact_owner"});(void)string(joint.at("id"),64);
+    const auto a_id=string(joint.at("part_a"),64),b_id=string(joint.at("part_b"),64);check(a_id!=b_id&&(a_id==ids[0]||a_id==ids[1])&&(b_id==ids[0]||b_id==ids[1]),"joint references must name the two declared parts");
+    check(string(joint.at("contact_owner"))=="cohesive_patch_only","reference joint requires exclusive cohesive_patch_only contact policy");
+    const auto face=[](const Json &f){fields(f,{"normal_axis","positive","u_offset_m","v_offset_m","width_m","height_m"});check(f.at("positive").is_boolean(),"face positive must be boolean");return CohesiveBoxFace{static_cast<unsigned>(integer(f.at("normal_axis"),2)),f.at("positive").get<bool>(),number(f.at("u_offset_m")),number(f.at("v_offset_m")),number(f.at("width_m")),number(f.at("height_m"))};};
+    const unsigned ai=a_id==ids[0]?0:1,bi=1-ai;const auto compiled=makeBoxFaceCohesivePatch(boxes[ai],boxes[bi],face(joint.at("face_a")),face(joint.at("face_b")),static_cast<unsigned>(integer(joint.at("cells_per_axis"),16)));
+    double area=0;for(const auto &site:compiled.sites){check(site.rest_distance_m<=.1,"reference interface gap must be at most 0.1 m");area+=site.area_m2;}
+    const auto &l=joint.at("law");fields(l,{"model","stiffness_pa_per_m","strength_pa","fracture_energy_j_m2","compression_stiffness_pa_per_m","provenance"});check(string(l.at("model"))=="central-cohesive-v1","unsupported assembly interface model");(void)string(l.at("provenance"),256);
+    const CohesiveInterfaceLaw law{number(l.at("stiffness_pa_per_m")),number(l.at("strength_pa")),number(l.at("fracture_energy_j_m2")),area,number(l.at("compression_stiffness_pa_per_m"))};(void)evaluateCohesiveInterface(law,{});
+    check(law.stiffness_pa_per_m<=1e22&&law.compression_stiffness_pa_per_m<=1e22&&law.strength_pa<=1e12&&law.fracture_energy_j_m2<=1e12,"interface law exceeds assessment numeric limits");
+    Json derived=Json::array();std::map<MaterialPreset,double> requirements;
+    for(unsigned i=0;i<2;++i){const auto &body=i==ai?compiled.a:compiled.b;requirements[materials[i]]+=body.mass_kg;derived.push_back({{"id",ids[i]},{"material",materialPresetName(materials[i])},{"mass_kg",body.mass_kg},{"principal_inertia_kg_m2",vector(body.principal_inertia_kg_m2)}});}
+    Json bill=Json::array();bool sufficient=true;
+    for(const auto &[m,required]:requirements){const double held=inventoryMass(m),missing=std::max(0.0,required-held);double collectible=0;for(const auto &lot:lots_)if(!lot.collected&&lot.material==m)collectible+=lot.remaining_mass_kg;
+        sufficient=sufficient&&missing==0;bill.push_back({{"material",materialPresetName(m)},{"required_mass_kg",required},{"inventory_mass_kg",held},{"collectible_mass_kg",collectible},{"missing_from_inventory_kg",missing},{"missing_after_collection_kg",std::max(0.0,missing-collectible)}});}
+    return Json{{"assessment_version",1},{"declaration",j},{"compiled",true},{"materials_sufficient",sufficient},{"creation_supported",false},{"parts",derived},{"material_requirements",bill},
+        {"joint",{{"area_m2",area},{"rest_gap_m",compiled.sites.front().rest_distance_m},{"site_count",compiled.sites.size()},{"complete_tensile_separation_work_j",area*law.fracture_energy_j_m2},{"contact_policy","cohesive_patch_only"}}},
+        {"limitations",Json::array({"Experimental isolated two-box reference; live assembly creation and collision ownership are not integrated.","No shear/friction, calibrated material failure or proven spatial damage-front convergence.","Separation work is not fabrication cost; joining energy, tools and processes remain unsupported."})}}.dump(2);
+}
 std::string CreatorWorld::assessJson(const ObjectRecipe &r,std::optional<RevisionTarget> editing) const {
     const auto report=assess(r,editing);const auto &m=report.material;Json issues=Json::array();
     bool other_blocker=false;for(const auto &issue:report.issues) {
@@ -596,6 +622,7 @@ std::string CreatorWorld::inspectJson() const {
         {"note","Read-only requirements distinguish collected inventory, recoverable selected matter, uncollected lots and remaining shortfall. Assessments do not reserve resources or prove functional performance."}};
     result["capabilities"]["functional_tests"]={{"version",1},{"operation","test_recipe"},{"fixture","concrete-incline-v1"},{"max_ticks",1200},{"dt_s",1.0/240},{"note","Isolated virtual fixture with explicit endpoint criteria; does not spend live resources. Rolling predicate supports spheres only."}};
     result["history_count"]=history_.size();
+    result["capabilities"]["assembly_assessment"]={{"version",1},{"operation","assess_assembly"},{"parts",2},{"shape","box"},{"creation_supported",false},{"note","Read-only experimental interface geometry and material requirements; live assembly/contact integration is unsupported."}};
     result["inventory"]=Json::array();for (auto m:kMaterialPresets) if (inventoryMass(m)>0) result["inventory"].push_back({{"material",materialPresetName(m)},{"mass_kg",inventoryMass(m)}});
     for (std::size_t i=0;i<objects_.size();++i) {
         const auto &object=objects_[i];auto &j=result["objects"][i];
@@ -622,6 +649,7 @@ std::string CreatorWorld::executeJson(std::string_view commands) {
             else if (type=="collect") {fields(command,{"type","lot_id"});value={{"collected",collect(string(command.at("lot_id")))}};}
             else if (type=="preview") {fields(command,{"type","recipe"});value=previewJson(preview(recipe(command.at("recipe"))));}
             else if (type=="assess") {fields(command,{"type","recipe"});value=parse(assessJson(recipe(command.at("recipe"))));}
+            else if (type=="assess_assembly") {fields(command,{"type","assembly"});value=parse(assessAssemblyJson(command.at("assembly").dump()));}
             else if (type=="test_recipe") {fields(command,{"type","recipe","test"});value=parse(testRecipeJson(recipe(command.at("recipe")),command.at("test").dump()));}
             else if (type=="assess_rebuild") {
                 fields(command,{"type","object_id","expected_revision","recipe"});

@@ -14,6 +14,21 @@ using Json=nlohmann::json;
 void require(bool value,const char *message) {if (!value) throw std::runtime_error(message);}
 void near(double a,double b,double tolerance,const char *message) {require(std::isfinite(a)&&std::abs(a-b)<=tolerance,message);}
 void rejects(const std::function<void()> &action) {bool failed=false;try {action();}catch(const std::exception &){failed=true;}require(failed,"invalid command must reject");}
+void assemblyAssessment(){
+    for(auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}){
+        CreatorWorld world;const auto m=makeReferenceMaterial(preset);const auto name=std::string(materialPresetName(preset));
+        Json face={{"normal_axis",0},{"positive",true},{"u_offset_m",0},{"v_offset_m",0},{"width_m",.01},{"height_m",.012}};
+        Json part={{"id","a"},{"material",name},{"dimensions_m",{.02,.02,.02}},{"center_m",{0,0,0}},{"orientation_wxyz",{1,0,0,0}}};auto second=part;second["id"]="b";second["dimensions_m"]={.03,.03,.03};second["center_m"]={.026,0,0};auto face_b=face;face_b["positive"]=false;
+        Json law={{"model","central-cohesive-v1"},{"stiffness_pa_per_m",2*m.tensile_strength_pa*m.tensile_strength_pa/m.fracture_energy_j_m2},{"strength_pa",m.tensile_strength_pa},{"fracture_energy_j_m2",m.fracture_energy_j_m2},{"compression_stiffness_pa_per_m",0},{"provenance","illustrative test parameters; not calibrated"}};
+        Json joint={{"id","join"},{"part_a","a"},{"part_b","b"},{"face_a",face},{"face_b",face_b},{"cells_per_axis",4},{"contact_owner","cohesive_patch_only"},{"law",law}};
+        Json declaration={{"schema_version",1},{"parts",Json::array({part,second})},{"joint",joint}};
+        const auto before=world.serialize();const auto response=Json::parse(world.executeJson(Json{{"type","assess_assembly"},{"assembly",declaration}}.dump()));require(response["ok"]==true,"assembly assessment command succeeds");const auto report=response["result"];
+        require(report["compiled"]==true&&report["materials_sufficient"]==false&&report["creation_supported"]==false,"assembly reports missing inventory and unsupported creation independently");
+        near(report["material_requirements"][0]["required_mass_kg"].get<double>(),m.density_kg_m3*.000035,1e-12,"assembly aggregates same material across parts");near(report["joint"]["area_m2"].get<double>(),.00012,1e-16,"assembly report uses geometry-derived area");require(world.serialize()==before,"assembly assessment changes no live state");
+        world.collect(name+"-pile");const auto collected=world.serialize();const auto ready=Json::parse(world.assessAssemblyJson(declaration.dump()));require(ready["materials_sufficient"]==true&&ready["creation_supported"]==false,"sufficient material does not claim live assembly support");require(world.serialize()==collected,"read-only recheck does not reserve inventory");
+        for(unsigned invalid=0;invalid<4;++invalid){auto bad=declaration;if(invalid==0)bad["joint"]["contact_owner"]="cohesive_and_jolt";if(invalid==1)bad["joint"]["part_b"]="a";if(invalid==2)bad["parts"][0]["density_kg_m3"]=1;if(invalid==3)bad["joint"]["face_a"]["width_m"]=.04;const auto error=Json::parse(world.executeJson(Json{{"type","assess_assembly"},{"assembly",bad}}.dump()));require(error["ok"]==false,"invalid assembly rejects through public command");require(world.serialize()==collected,"invalid assembly leaves live state untouched");}
+    }
+}
 void boundedFunctionalTests() {
     CreatorWorld live;const auto before=live.serialize();
     Json specification{{"test_version",1},{"fixture","concrete-incline-v1"},{"ticks",480},{"slope_degrees",10},{"minimum_travel_m",.3},{"maximum_final_slip_m_s",.02},{"require_rolling",true}};
@@ -367,6 +382,7 @@ int main() {
     unsigned failures=0;
     for (const auto &[name,action]:std::vector<std::pair<const char*,std::function<void()>>>{
         {"bounded isolated functional test API",boundedFunctionalTests},
+        {"read-only assembly assessment API",assemblyAssessment},
         {"inventory and transactional creation",inventoryAndAtomicCreation},{"glass/oak/iron creation and free fall",threeMaterialCreationAndFreeFall},
         {"three-material created-object rolling",createdObjectsRoll},{"finite created material collisions",finiteMaterialCollision},
         {"primitive geometry and oriented placement",primitiveGeometryAndPlacement},{"three-material box mass/tensor/free fall",threeMaterialBoxMassInertiaAndFall},
