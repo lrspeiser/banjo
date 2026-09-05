@@ -176,6 +176,28 @@ void packageValidationAndMaterialRenaming() {
                 "renaming material IDs must preserve object velocities");
     }
 }
+
+void temporalAdmissionIsSeparateFromValidation() {
+    auto source=fixture("06-rest-control.json");
+    auto diagnostic=load(source);
+    const auto unresolved=report(*diagnostic).at("temporal_resolution");
+    require(!unresolved.at("resolved").get<bool>()&&unresolved.at("required_substeps")>1,
+            "stiff comparative scene must expose unresolved temporal dynamics");
+    require(!unresolved.at("material_validation").get<bool>()&&!unresolved.at("includes_contact_stiffness").get<bool>(),
+            "spring sampling must not certify material or contact accuracy");
+    source["temporal_policy"]="require-resolved";
+    rejects(source,"strict policy must reject unresolved scene before simulation");
+    source["temporal_policy"]="silent-softening";
+    rejects(source,"unknown temporal policy must not silently alter material stiffness");
+    source["temporal_policy"]="require-resolved";
+    // A deliberately soft numerical coupon exercises successful admission.
+    // It is not a replacement glass/wood/iron material calibration.
+    for(auto &material:source["materials"]){material["young_modulus_pa"]={100,100,100};material["fracture_enabled"]=false;material["yield_strength_pa"]=0;}
+    source["fixed_dt_s"]=1./4800;
+    auto soft=load(source);
+    require(report(*soft).at("temporal_resolution").at("resolved").get<bool>(),
+            "resolved soft numerical coupon passes temporal admission");
+}
 }
 
 int main() {
@@ -185,6 +207,7 @@ int main() {
         sharpLocalDamageAndBluntControl();
         ductileCouponHasPlasticWorkWithoutFracture();
         packageValidationAndMaterialRenaming();
+        temporalAdmissionIsSeparateFromValidation();
         std::cout << "[PASS] network runtime controls, local damage, plastic work, validation and ID invariance\n";
         return 0;
     } catch (const std::exception &error) {

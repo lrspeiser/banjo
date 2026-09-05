@@ -31,6 +31,8 @@ add_library(
     src/material/MaterialCompiler.cpp
     src/material/MaterialCatalog.cpp
     src/material/NetworkMaterial.cpp
+    src/physics/ResolutionBudget.cpp
+    src/thermal/ThermalKernel.cpp
     src/matter/Lattice.cpp
     src/physics/ContactMechanics.cpp
     src/physics/CohesiveInterface.cpp
@@ -122,6 +124,12 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
     add_library(banjo_platform src/platform/PlatformWorld.cpp src/platform/PlatformPlayback.cpp src/platform/CompiledObject.cpp src/platform/CompiledRuntime.cpp src/platform/NetworkWorld.cpp)
     target_link_libraries(banjo_platform PUBLIC banjo_runtime banjo_material_lab PRIVATE nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_platform)
+    add_library(banjo_sparse_world src/world/SparseThermalWorld.cpp src/world/WorldLabFixture.cpp)
+    target_link_libraries(banjo_sparse_world PUBLIC banjo_core PRIVATE nlohmann_json::nlohmann_json)
+    banjo_enable_warnings(banjo_sparse_world)
+    add_executable(banjo_world_cli src/app/world_main.cpp)
+    target_link_libraries(banjo_world_cli PRIVATE banjo_sparse_world nlohmann_json::nlohmann_json)
+    banjo_enable_warnings(banjo_world_cli)
     add_executable(banjo_platform_cli src/app/platform_main.cpp)
     target_link_libraries(banjo_platform_cli PRIVATE banjo_platform nlohmann_json::nlohmann_json)
     add_library(banjo_creator_runtime src/creator/CreatorWorld.cpp src/creator/BowlLab.cpp)
@@ -377,6 +385,15 @@ if(BANJO_BUILD_TESTS AND TARGET banjo_creator_runtime)
 endif()
 
 if(BANJO_BUILD_TESTS AND TARGET banjo_platform)
+ add_executable(banjo_thermal_kernel_tests tests/thermal_kernel_tests.cpp)
+ target_link_libraries(banjo_thermal_kernel_tests PRIVATE banjo_core)
+ add_test(NAME banjo_thermal_kernel_tests COMMAND banjo_thermal_kernel_tests)
+ add_executable(banjo_sparse_world_tests tests/sparse_world_tests.cpp)
+ target_link_libraries(banjo_sparse_world_tests PRIVATE banjo_sparse_world nlohmann_json::nlohmann_json)
+ add_test(NAME banjo_sparse_world_tests COMMAND banjo_sparse_world_tests)
+ add_executable(banjo_resolution_budget_tests tests/resolution_budget_tests.cpp)
+ target_link_libraries(banjo_resolution_budget_tests PRIVATE banjo_core)
+ add_test(NAME banjo_resolution_budget_tests COMMAND banjo_resolution_budget_tests)
  add_executable(banjo_network_material_tests tests/network_material_tests.cpp)
  target_link_libraries(banjo_network_material_tests PRIVATE banjo_core)
  add_test(NAME banjo_network_material_tests COMMAND banjo_network_material_tests)
@@ -400,6 +417,9 @@ if(BANJO_BUILD_TESTS AND TARGET banjo_platform)
 endif()
 
 if(TARGET raylib AND TARGET banjo_platform)
+ add_executable(banjo_world_lab src/viewer/world.cpp)
+ target_link_libraries(banjo_world_lab PRIVATE banjo_sparse_world raylib nlohmann_json::nlohmann_json)
+ banjo_enable_warnings(banjo_world_lab)
  add_executable(banjo_network_lab src/viewer/runtime.cpp)
  target_compile_definitions(banjo_network_lab PRIVATE BANJO_NETWORK_LAB=1)
  target_link_libraries(banjo_network_lab PRIVATE banjo_platform raylib nlohmann_json::nlohmann_json)

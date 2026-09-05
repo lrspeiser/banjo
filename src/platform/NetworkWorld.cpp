@@ -1,5 +1,6 @@
 #include "platform/NetworkWorld.hpp"
 #include "material/NetworkMaterial.hpp"
+#include "physics/ResolutionBudget.hpp"
 #include "rigid/JoltWorld.hpp"
 #include <nlohmann/json.hpp>
 #include <algorithm>
@@ -45,6 +46,7 @@ struct NetworkWorld::Impl {
     unsigned broken{},damaged{},pinned{};
     double time{},elastic{},fracture{},plastic{},initial_energy{},maximum_strain{};
     double total_spring_impulse{},unreleased{},maximum_extension_discrepancy{},dt{};
+    ResolutionBudget resolution;
     std::vector<unsigned> components() const {
         std::vector<unsigned> roots(nodes.size());std::iota(roots.begin(),roots.end(),0);
         auto root=[&](unsigned a){while(roots[a]!=a){roots[a]=roots[roots[a]];a=roots[a];}return a;};
@@ -58,7 +60,9 @@ NetworkWorld::~NetworkWorld()=default;
 
 std::unique_ptr<NetworkWorld> NetworkWorld::load(const std::string &text){
     require(text.size()<=4194304,"network package byte budget");auto source=json::parse(text);
-    fields(source,{"package_version","physics_abi","name","units","backend","required_capabilities","fixed_dt_s","max_steps_per_call","gravity_m_s2","ground","materials","objects","solver_iterations"});
+    fields(source,{"package_version","physics_abi","name","units","backend","required_capabilities","fixed_dt_s","max_steps_per_call","gravity_m_s2","ground","materials","objects","solver_iterations","temporal_policy"});
+    const auto temporalPolicy=source.value("temporal_policy",std::string("diagnose"));
+    require(temporalPolicy=="diagnose"||temporalPolicy=="require-resolved","unknown temporal policy");
     require(source.at("package_version")==2&&source.at("physics_abi")=="banjo-network-2"&&source.at("backend")=="material-network-v2"&&source.at("units")=="SI","unsupported network ABI or units");
     require(source.at("name").is_string()&&source["name"].get<std::string>().size()<=120,"invalid network name");
     scalar(source.at("fixed_dt_s"),1./4800,1./240);integer(source.at("max_steps_per_call"),1,240);
@@ -159,6 +163,11 @@ std::unique_ptr<NetworkWorld> NetworkWorld::load(const std::string &text){
             w.bonds.back().current_stiffness=parameters.stiffness_n_m;w.bonds.back().current_damping=damping;
         }
     }
+    std::vector<double> masses;for(auto &node:w.nodes)masses.push_back(node.mass);
+    std::vector<ResolutionLink> links;for(auto &bond:w.bonds)links.push_back({bond.a,bond.b,bond.parameters.stiffness_n_m});
+    w.resolution=assessSpringResolution(masses,links,w.dt);
+    require(temporalPolicy!="require-resolved"||w.resolution.temporally_resolved,
+        "unresolved material dynamics: requested timestep exceeds the spring-network temporal bound; use a resolved local solver");
     w.refresh();w.initial_energy=w.rigid.mechanicalTotals(w.gravity).mechanicalEnergy();return result;
 }
 void NetworkWorld::step(double dt){
@@ -226,7 +235,9 @@ std::string NetworkWorld::reportJson() const {
         std::map<unsigned,unsigned> sizes;for(auto node:o.nodes)++sizes[groups[node]];unsigned largest=0;for(auto &[key,count]:sizes){(void)key;largest=std::max(largest,count);}objects.back()["largest_component_cells"]=largest;
     }
     const auto mechanics=w.rigid.mechanicalTotals(w.gravity);
-    return json{{"model","material-network-v2"},{"physical_response_validated",false},{"objects",objects},{"material_results",objects},{"cells",w.nodes.size()},{"links",w.bonds.size()},{"broken_links",w.broken},{"damaged_links",w.damaged},
+    return json{{"model","material-network-v2"},{"physical_response_validated",false},
+        {"temporal_resolution",{{"resolved",w.resolution.temporally_resolved},{"maximum_frequency_bound_rad_s",w.resolution.maximum_frequency_bound_rad_s},{"maximum_step_s",w.resolution.maximum_step_s},{"required_substeps",w.resolution.required_substeps},{"fits_256_substep_budget",w.resolution.fits_substep_budget},{"includes_contact_stiffness",false},{"material_validation",false}}},
+        {"objects",objects},{"material_results",objects},{"cells",w.nodes.size()},{"links",w.bonds.size()},{"broken_links",w.broken},{"damaged_links",w.damaged},
         {"connected_components",std::set<unsigned>(groups.begin(),groups.end()).size()},{"pinned_cells",w.pinned},{"fracture_events",w.events},
         {"mechanical_energy_j",mechanics.mechanicalEnergy()},{"elastic_energy_j",w.elastic},{"fracture_work_j",w.fracture},{"plastic_work_j",w.plastic},
         {"energy_residual_j",nullptr},{"unreleased_fracture_energy_j",w.unreleased},{"unseparated_energy_change_j",mechanics.mechanicalEnergy()+w.elastic+w.fracture+w.plastic+w.unreleased-w.initial_energy},
