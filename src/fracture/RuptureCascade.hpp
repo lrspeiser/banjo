@@ -11,12 +11,20 @@ struct RuptureCascadeSettings {
     double maximum_event_overshoot_j{}; // one budget for the ENTIRE advance
     unsigned maximum_evaluations{65536};
     unsigned maximum_refinement_depth{30};
+    double capture_interval_s{}; // zero disables; accepted trace only, <=128 nodes
+    unsigned maximum_capture_frames{2048};
 };
 struct RuptureCascadeEvent {
     double time_s{}; // relative to this advance
     std::vector<std::uint32_t> broken_bonds;
     std::vector<unsigned> component_node_counts;
     double fracture_work_j{},event_overshoot_loss_j{};
+};
+struct RuptureCascadeFrame {
+    double time_s{};
+    std::vector<Vec3> positions;
+    std::vector<bool> live_bonds;
+    Vec3 impactor_position;
 };
 struct RuptureCascadeResult {
     bool accepted{};
@@ -25,6 +33,7 @@ struct RuptureCascadeResult {
     double fracture_work_j{},event_overshoot_loss_j{},contact_damping_loss_j{};
     double final_contact_energy_j{},initial_contact_energy_j{};
     std::vector<RuptureCascadeEvent> events;
+    std::vector<RuptureCascadeFrame> frames;
     const char *failure{"none"};
 };
 // Local forces evolve the entire surviving connector network. Breaks remove

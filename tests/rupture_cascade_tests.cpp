@@ -64,6 +64,17 @@ int main(){try{
         const auto result=tryRuptureCascade(c.matter,c.sphere,1e-7,c.laws,settings());
         check(result.accepted&&result.events.empty()&&findConnectedComponents(c.matter).size()==1,"large bulk kinetic energy does not trigger a fracture cascade without local strain");
     }
+    {
+        Chain plain(MaterialPreset::Glass,60),recorded(MaterialPreset::Glass,60);auto s=settings();s.capture_interval_s=1e-10;
+        const auto baseline=tryRuptureCascade(plain.matter,plain.sphere,1e-7,plain.laws,settings());
+        const auto trace=tryRuptureCascade(recorded.matter,recorded.sphere,1e-7,recorded.laws,s);
+        check(baseline.accepted&&trace.accepted&&trace.frames.size()>500&&trace.frames.front().time_s==0,"bounded accepted visual trace");
+        check(trace.events.size()==baseline.events.size()&&trace.evaluations==baseline.evaluations,"recording does not change solver steps");
+        for(unsigned i=0;i<8;++i)check(length(plain.matter.nodes[i].position_world_m-recorded.matter.nodes[i].position_world_m)==0,"recording preserves exact final state");
+        for(const auto &event:trace.events){bool found=false;for(const auto &frame:trace.frames)if(frame.time_s==event.time_s){found=true;for(auto bond:event.broken_bonds)check(!frame.live_bonds[bond],"event capture shows accepted broken connections");}check(found,"every fracture event has a visual frame");}
+        Chain exhausted(MaterialPreset::Glass,60);s.maximum_capture_frames=2;auto failed=tryRuptureCascade(exhausted.matter,exhausted.sphere,1e-7,exhausted.laws,s);
+        check(!failed.accepted&&failed.frames.empty()&&failed.events.empty()&&exhausted.matter.step_index==0,"capture exhaustion rolls back and publishes no frames");
+    }
     // Matched early-time wave transmission: identical chain geometry, impactor,
     // speed/contact settings and 2e-11 s maximum step. Oak/iron remain elastic
     // references; their material models are never converted to brittle.

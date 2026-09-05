@@ -14,6 +14,8 @@ RuptureCascadeResult tryRuptureCascade(ActiveMatter &matter,CoupledSphereState &
        !std::isfinite(settings.maximum_event_overshoot_j)||settings.maximum_event_overshoot_j<0||
        settings.maximum_evaluations<1||settings.maximum_evaluations>65536||settings.maximum_refinement_depth>40)
         throw std::invalid_argument("invalid bounded rupture cascade settings");
+    if(!std::isfinite(settings.capture_interval_s)||settings.capture_interval_s<0||settings.maximum_capture_frames<2||settings.maximum_capture_frames>4096||
+       (settings.capture_interval_s>0&&matter.nodes.size()>128))throw std::invalid_argument("invalid bounded cascade capture settings");
     // Validate the physical state/laws without changing the caller. Resolve no
     // initial failures implicitly: their event time/energy belongs to the caller.
     auto candidate=matter;auto candidate_sphere=sphere;
@@ -28,6 +30,15 @@ RuptureCascadeResult tryRuptureCascade(ActiveMatter &matter,CoupledSphereState &
     RuptureCascadeResult result;result.stiffness_step_limit_s=settings.wave_step_fraction/std::sqrt(max_frequency_squared);
     const double maximum_step=std::min(settings.maximum_step_s,result.stiffness_step_limit_s);
     if(!std::isfinite(maximum_step)||maximum_step<settings.minimum_step_s){result.failure="stiffness step below minimum";return result;}
+    const auto capture=[&]{
+        if(settings.capture_interval_s==0)return true;
+        if(result.frames.size()>=settings.maximum_capture_frames)return false;
+        RuptureCascadeFrame frame;frame.time_s=result.advanced_time_s;frame.impactor_position=candidate_sphere.motion.center_of_mass_world_m;
+        for(const auto &node:candidate.nodes)frame.positions.push_back(node.position_world_m);
+        for(const auto &bond:candidate.bonds)frame.live_bonds.push_back(bond.alive);
+        result.frames.push_back(std::move(frame));return true;
+    };
+    (void)capture();double next_capture=settings.capture_interval_s;
     const auto fail=[&](const char *why){result.failure=why;return false;};
     std::function<bool(double,unsigned)> advance=[&](double dt,unsigned depth){
         if(result.evaluations>=settings.maximum_evaluations)return fail("evaluation budget");
@@ -49,6 +60,10 @@ RuptureCascadeResult tryRuptureCascade(ActiveMatter &matter,CoupledSphereState &
             for(const auto &component:findConnectedComponents(candidate))event.component_node_counts.push_back(static_cast<unsigned>(component.node_indices.size()));
             result.events.push_back(std::move(event));
         }
+        if(settings.capture_interval_s>0&&(result.advanced_time_s>=next_capture||!trial.rupture.broken_bonds.empty()||result.advanced_time_s>=duration)){
+            if(!capture())return fail("capture frame budget");
+            next_capture=result.advanced_time_s+settings.capture_interval_s;
+        }
         return true;
     };
     while(result.advanced_time_s<duration){
@@ -56,7 +71,7 @@ RuptureCascadeResult tryRuptureCascade(ActiveMatter &matter,CoupledSphereState &
         if(result.advanced_time_s+std::min(remaining,maximum_step)==result.advanced_time_s||!advance(std::min(remaining,maximum_step),0)){
             if(result.failure==std::string_view("none"))result.failure="time not representable";
             // Failed intervals publish no candidate events, work or elapsed time.
-            result.discarded_events=static_cast<unsigned>(result.events.size());result.accepted_steps=0;result.advanced_time_s=0;result.events.clear();result.fracture_work_j=0;result.event_overshoot_loss_j=0;
+            result.discarded_events=static_cast<unsigned>(result.events.size());result.accepted_steps=0;result.advanced_time_s=0;result.events.clear();result.frames.clear();result.fracture_work_j=0;result.event_overshoot_loss_j=0;
             result.contact_damping_loss_j=0;result.initial_contact_energy_j=0;result.final_contact_energy_j=0;return result;
         }
     }

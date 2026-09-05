@@ -1,4 +1,5 @@
 #include "creator/BowlLab.hpp"
+#include "viewer/FractureView.hpp"
 #include <raylib.h>
 #include <algorithm>
 #include <fstream>
@@ -28,6 +29,7 @@ int main(int argc,char **argv){try{
     Camera3D camera{{2.5F,2.8F,3.0F},{0,.15F,0},{0,1,0},28,CAMERA_PERSPECTIVE};
     std::string message="Collect each material, then craft two balls of each.";double accumulator=0;int frames=0;
     while(!WindowShouldClose()){
+        bool open_fracture=false;
         const double frame=std::min(double(GetFrameTime()),.1);if(lab.running()){accumulator+=frame;while(accumulator>=1.0/240){lab.step();accumulator-=1.0/240;}}else accumulator=0;
         BeginTextureMode(scene);ClearBackground(bg);
         BeginMode3D(camera);
@@ -49,6 +51,7 @@ int main(int argc,char **argv){try{
         DrawTextureRec(scene.texture,{0,0,1000,-560},{0,145},WHITE);
         DrawText("BANJO / MATERIAL LAB",32,30,18,lime);DrawText("Craft. Release. Observe.",32,63,34,ink);
         DrawText("Real contact geometry / glass + wood + iron",32,110,18,muted);
+        if(button(32,145,310,"Open fracture microscope")){lab.pause();open_fracture=true;}
         DrawRectangle(1000,0,380,850,panel);DrawText("01  COLLECT & CRAFT",1024,30,21,lime);
         int y=78;
         for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}){
@@ -82,7 +85,7 @@ int main(int argc,char **argv){try{
         DrawText("First 3 balls: center. Next 6: rim.",1024,714,16,ink);
         DrawText("Surface / tilt edits reset placement.",1024,741,16,muted);
         DrawText("Crafting work / energy: pending.",1024,780,16,muted);
-        EndDrawing();if(capture&&++frames==3){TakeScreenshot((workspace/"bowl.png").string().c_str());break;}
+        EndDrawing();if(open_fracture)runFractureView(workspace);if(capture&&++frames==3){TakeScreenshot((workspace/"bowl.png").string().c_str());break;}
     }
     write(workspace/"experiment.json",lab.reportJson());lab.stock().save(workspace/"stock.json");UnloadRenderTexture(scene);CloseWindow();return 0;
 }catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}

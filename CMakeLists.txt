@@ -47,6 +47,7 @@ add_library(
     src/physics/RollingKinematics.cpp
     src/physics/SphereMaterialContact.cpp
     src/fracture/ActivationPolicy.cpp
+    src/fracture/FracturePreview.cpp
     src/fracture/RuptureCascade.cpp
     src/fracture/EnergyRupture.cpp
     src/fracture/BrittleBondSolver.cpp
@@ -191,7 +192,7 @@ if(BANJO_BUILD_LAB)
     target_link_libraries(banjo_lab PRIVATE banjo_runtime raylib)
     target_compile_features(banjo_lab PRIVATE cxx_std_23)
     banjo_enable_warnings(banjo_lab)
-    add_executable(banjo_bowl src/viewer/bowl.cpp)
+    add_executable(banjo_bowl src/viewer/bowl.cpp src/viewer/fracture_view.cpp)
     target_link_libraries(banjo_bowl PRIVATE banjo_creator_runtime raylib)
     banjo_enable_warnings(banjo_bowl)
     add_executable(banjo_workshop src/viewer/workshop.cpp)
@@ -206,6 +207,10 @@ if(BANJO_BUILD_LAB)
 endif()
 
 if(BANJO_BUILD_TESTS)
+    add_executable(banjo_fracture_preview_tests tests/fracture_preview_tests.cpp)
+    target_link_libraries(banjo_fracture_preview_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_fracture_preview_tests)
+    add_test(NAME banjo_fracture_preview_tests COMMAND banjo_fracture_preview_tests)
     add_executable(banjo_rupture_cascade_tests tests/rupture_cascade_tests.cpp)
     target_link_libraries(banjo_rupture_cascade_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_rupture_cascade_tests)
