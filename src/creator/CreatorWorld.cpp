@@ -367,13 +367,14 @@ CompiledAssembly compileAssembly(std::string_view declaration){
         check(std::min({d.x,d.y,d.z})>=.001&&std::max({d.x,d.y,d.z})<=1,"assembly dimensions must be 0.001 to 1 m");check(std::max({std::abs(c.x),std::abs(c.y),std::abs(c.z)})<=10,"assembly centers must be within 10 m of origin");}
     check(ids[0]!=ids[1],"assembly part IDs must be distinct");const auto &joint=j.at("joint");fields(joint,{"id","part_a","part_b","face_a","face_b","cells_per_axis","law","contact_owner"});(void)string(joint.at("id"),64);
     const auto a_id=string(joint.at("part_a"),64),b_id=string(joint.at("part_b"),64);check(a_id!=b_id&&(a_id==ids[0]||a_id==ids[1])&&(b_id==ids[0]||b_id==ids[1]),"joint references must name the two declared parts");
-    check(string(joint.at("contact_owner"))=="cohesive_patch_only","reference joint requires exclusive cohesive_patch_only contact policy");
+    const auto policy=string(joint.at("contact_owner"));check(policy=="cohesive_patch_only"||policy=="tension_with_jolt_surfaces","unsupported assembly contact policy");
     const auto face=[](const Json &f){fields(f,{"normal_axis","positive","u_offset_m","v_offset_m","width_m","height_m"});check(f.at("positive").is_boolean(),"face positive must be boolean");return CohesiveBoxFace{static_cast<unsigned>(integer(f.at("normal_axis"),2)),f.at("positive").get<bool>(),number(f.at("u_offset_m")),number(f.at("v_offset_m")),number(f.at("width_m")),number(f.at("height_m"))};};
     const unsigned ai=a_id==ids[0]?0:1,bi=1-ai;const auto compiled=makeBoxFaceCohesivePatch(boxes[ai],boxes[bi],face(joint.at("face_a")),face(joint.at("face_b")),static_cast<unsigned>(integer(joint.at("cells_per_axis"),16)));
     double area=0;for(const auto &site:compiled.sites){check(site.rest_distance_m<=.1,"reference interface gap must be at most 0.1 m");area+=site.area_m2;}
     const auto &l=joint.at("law");fields(l,{"model","stiffness_pa_per_m","strength_pa","fracture_energy_j_m2","compression_stiffness_pa_per_m","provenance"});check(string(l.at("model"))=="central-cohesive-v1","unsupported assembly interface model");(void)string(l.at("provenance"),256);
     const CohesiveInterfaceLaw law{number(l.at("stiffness_pa_per_m")),number(l.at("strength_pa")),number(l.at("fracture_energy_j_m2")),area,number(l.at("compression_stiffness_pa_per_m"))};(void)evaluateCohesiveInterface(law,{});
     check(law.stiffness_pa_per_m<=1e22&&law.compression_stiffness_pa_per_m<=1e22&&law.strength_pa<=1e12&&law.fracture_energy_j_m2<=1e12,"interface law exceeds assessment numeric limits");
+    check(policy!="tension_with_jolt_surfaces"||law.compression_stiffness_pa_per_m==0,"Jolt surface policy requires zero cohesive compression stiffness");
     return {j,compiled,law,ids,materials,ai};
 }
 }
@@ -400,8 +401,8 @@ std::string CreatorWorld::assessAssemblyWithStockJson(std::string_view declarati
     for(const auto &[m,required]:requirements){const auto it=supplied.find(m);const double held=it==supplied.end()?0:it->second.inventory_mass_kg,collectible=it==supplied.end()?0:it->second.collectible_mass_kg,missing=std::max(0.0,required-held);
         sufficient=sufficient&&missing==0;bill.push_back({{"material",materialPresetName(m)},{"required_mass_kg",required},{"inventory_mass_kg",held},{"collectible_mass_kg",collectible},{"missing_from_inventory_kg",missing},{"missing_after_collection_kg",std::max(0.0,missing-collectible)}});}
     return Json{{"assessment_version",1},{"declaration",j},{"compiled",true},{"materials_sufficient",sufficient},{"creation_supported",false},{"parts",derived},{"material_requirements",bill},
-        {"joint",{{"area_m2",area},{"rest_gap_m",compiled.sites.front().rest_distance_m},{"site_count",compiled.sites.size()},{"complete_tensile_separation_work_j",area*law.fracture_energy_j_m2},{"contact_policy","cohesive_patch_only"}}},
-        {"limitations",Json::array({"Experimental isolated two-box reference; live assembly creation and collision ownership are not integrated.","No shear/friction, calibrated material failure or proven spatial damage-front convergence.","Separation work is not fabrication cost; joining energy, tools and processes remain unsupported."})}}.dump(2);
+        {"joint",{{"area_m2",area},{"rest_gap_m",compiled.sites.front().rest_distance_m},{"site_count",compiled.sites.size()},{"complete_tensile_separation_work_j",area*law.fracture_energy_j_m2},{"contact_policy",j.at("joint").at("contact_owner")}}},
+        {"limitations",Json::array({"Experimental two-box design; live assembly creation is unsupported. Test version 1 uses isolated cohesion; version 2 requires tension_with_jolt_surfaces and double positions.","No shear/friction, calibrated material failure or proven spatial damage-front convergence.","Separation work is not fabrication cost; joining energy, tools and processes remain unsupported."})}}.dump(2);
 }
 std::uint64_t CreatorWorld::rememberAssembly(std::string_view declaration,std::uint64_t expected){
     const auto compiled=compileAssembly(declaration);const auto canonical=compiled.declaration.dump();
@@ -413,8 +414,66 @@ std::uint64_t CreatorWorld::clearAssembly(std::uint64_t expected){
     check(expected==assembly_revision_,"stale assembly draft revision");if(!assembly_draft_)return assembly_revision_;
     check(assembly_revision_<1000000000,"assembly draft revision exhausted");assembly_draft_.reset();return ++assembly_revision_;
 }
+namespace {
+std::string testRuntimeAssembly(const CompiledAssembly &compiled,std::string_view specification) {
+    check(JoltWorld::positionPrecisionBits()==64,"runtime assembly tests require double positions");
+    const auto spec=parse(specification);
+    fields(spec,{"test_version","relative_kinetic_energy_j","duration_s","steps","energy_error_budget_j","transfer_roundoff_budget_j","minimum_separated_area_fraction"});
+    check(integer(spec.at("test_version"),2)==2,"Jolt assembly fixture requires test version 2");
+    const auto input=number(spec.at("relative_kinetic_energy_j")),duration=number(spec.at("duration_s"));
+    const auto budget=number(spec.at("energy_error_budget_j")),transfer_budget=number(spec.at("transfer_roundoff_budget_j")),minimum=number(spec.at("minimum_separated_area_fraction"));
+    const auto steps=integer(spec.at("steps"),4096);
+    check(input>0&&input<=1e4&&duration>0&&duration<=1&&steps>=1,"runtime assembly duration/energy/step bounds exceeded");
+    check(budget>0&&budget<=.01*input&&transfer_budget>=0&&transfer_budget<=budget&&minimum>=0&&minimum<=1,"invalid runtime assembly error budget or criterion");
+    const double dt=static_cast<float>(duration/static_cast<double>(steps));
+    check(dt>0&&std::isfinite(dt),"unrepresentable runtime assembly timestep");
+    auto sites=compiled.patch.sites;const auto &pa=compiled.patch.a,&pb=compiled.patch.b;
+    const auto delta=pb.center_m+pb.orientation.rotate(sites.front().attachment_b_m)-pa.center_m-pa.orientation.rotate(sites.front().attachment_a_m);
+    const auto normal=delta/length(delta);const double ma=pa.mass_kg,mb=pb.mass_kg,mu=ma*mb/(ma+mb),speed=std::sqrt(2*input/mu);
+    check(std::isfinite(speed)&&speed<=100,"runtime assembly initialization speed exceeds 100 m/s");
+    JoltWorld world;world.setGravity({});
+    for(unsigned n=0;n<2;++n) {
+        const unsigned index=n==0?compiled.a_index:1-compiled.a_index;const auto &body=n==0?pa:pb;
+        const Vec3 velocity=(n==0?-mb:ma)/(ma+mb)*speed*normal;
+        const auto &part=compiled.declaration.at("parts").at(index);
+        world.addBox({n+1,vector(part.at("dimensions_m")),makeReferenceMaterial(compiled.materials[index]),
+            {body.center_m,body.orientation,velocity,{}},false});
+    }
+    const auto totals=[&]{auto result=measureRigidMechanics(world.mechanicalState(1));result+=measureRigidMechanics(world.mechanicalState(2));return result;};
+    const auto initial=totals();double jolt_change=0,transfer_error=0,max_error=0,max_momentum=0,max_angular=0;unsigned contacts=0;
+    const auto energies=[&]{double stored=0,damage=0;for(const auto &site:sites){auto law=compiled.law;law.area_m2=site.area_m2;const auto response=evaluateCohesiveInterface(law,site.history);stored+=response.stored_energy_j;damage+=response.dissipated_energy_j;}return std::pair{stored,damage};};
+    const auto kick=[&]{const auto result=world.applyCohesiveTensionPatchKick(1,2,sites,compiled.law,dt/2,transfer_budget);
+        for(std::size_t k=0;k<sites.size();++k)sites[k].history=result.interface_increments[k].state;
+        transfer_error+=result.transfer.numerical_energy_change_j;};
+    for(std::uint64_t tick=0;tick<steps;++tick) {
+        kick();const double before=totals().kinetic_energy_j;world.step(dt);jolt_change+=totals().kinetic_energy_j-before;
+        contacts+=static_cast<unsigned>(world.drainImpacts().size());kick();
+        const auto now=totals();const auto [stored,damage]=energies();
+        const double residual=now.kinetic_energy_j+stored+damage-initial.kinetic_energy_j-jolt_change-transfer_error;
+        check(std::isfinite(residual),"runtime assembly trajectory overflow");
+        max_error=std::max(max_error,std::abs(residual));
+        max_momentum=std::max(max_momentum,length(now.linear_momentum_kg_m_s-initial.linear_momentum_kg_m_s));
+        max_angular=std::max(max_angular,length(now.angular_momentum_kg_m2_s-initial.angular_momentum_kg_m2_s));
+        check(std::isfinite(max_error),"runtime assembly trajectory overflow");
+    }
+    Json histories=Json::array(),bodies=Json::array();double separated=0;
+    for(const auto &site:sites){auto law=compiled.law;law.area_m2=site.area_m2;const auto response=evaluateCohesiveInterface(law,site.history);if(response.separated)separated+=site.area_m2;
+        histories.push_back({{"area_m2",site.area_m2},{"opening_m",site.history.opening_m},{"maximum_opening_m",site.history.maximum_opening_m},{"damage",response.damage}});}
+    for(unsigned n=0;n<2;++n){const auto state=world.snapshot(n+1);bodies.push_back({{"id",compiled.ids[n==0?compiled.a_index:1-compiled.a_index]},{"center_m",vector(state.center_of_mass_world_m)},{"orientation_wxyz",quaternion(state.orientation_world)},{"linear_velocity_m_s",vector(state.linear_velocity_m_s)},{"angular_velocity_rad_s",vector(state.angular_velocity_rad_s)}});}
+    const auto [stored,damage]=energies();const double fraction=separated/compiled.law.area_m2;
+    return Json{{"test_version",2},{"fixture","jolt-tensile-patch-separation-v1"},{"declaration",compiled.declaration},{"specification",spec},
+        {"physics_signature",Json::parse(CreatorWorld::physicsSignatureJson())},{"status",fraction>=minimum&&max_error<=budget?"passed":"failed"},
+        {"predicates",{{"separated_area",fraction>=minimum},{"integration_energy",max_error<=budget}}},{"actual_duration_s",dt*static_cast<double>(steps)},
+        {"initial_kinetic_energy_j",initial.kinetic_energy_j},{"final_kinetic_energy_j",totals().kinetic_energy_j},{"stored_energy_j",stored},{"damage_work_j",damage},
+        {"separated_area_fraction",fraction},{"energy_residual_j",totals().kinetic_energy_j+stored+damage-initial.kinetic_energy_j},{"maximum_integration_energy_error_j",max_error},{"jolt_stage_energy_change_j",jolt_change},{"signed_transfer_roundoff_j",transfer_error},
+        {"maximum_momentum_change_kg_m_s",max_momentum},{"maximum_angular_momentum_change_kg_m2_s",max_angular},{"contact_events",contacts},{"sites",histories},{"bodies",bodies},
+        {"boundary","Temporary two-box world, zero gravity and initial separating velocity. Jolt owns surfaces. Events may be speculative. Jolt-stage energy change includes solver effects, not automatically heat. Fixed-step evidence is not a convergence certificate. No live resources, objects or clock changed; no fabrication or cutting certification."}}.dump(2);
+}
+}
 std::string CreatorWorld::testAssemblyJson(std::string_view declaration,std::string_view specification){
-    const auto compiled=compileAssembly(declaration);auto state=compiled.patch;const auto &law=compiled.law;
+    const auto compiled=compileAssembly(declaration);
+    if(compiled.declaration.at("joint").at("contact_owner")=="tension_with_jolt_surfaces")return testRuntimeAssembly(compiled,specification);
+    auto state=compiled.patch;const auto &law=compiled.law;
     const auto spec=parse(specification);fields(spec,{"test_version","relative_kinetic_energy_j","duration_s","energy_error_budget_j","state_error_tolerance","maximum_evaluations","minimum_separated_area_fraction"});check(integer(spec.at("test_version"),1)==1,"unsupported assembly test version");
     const double input=number(spec.at("relative_kinetic_energy_j")),duration=number(spec.at("duration_s")),minimum=number(spec.at("minimum_separated_area_fraction"));check(input>0&&input<=1e4,"assembly test input energy must be positive and at most 10000 J");check(minimum>=0&&minimum<=1,"separated-area fraction must be 0 to 1");
     const CohesiveAdaptiveControls controls{number(spec.at("energy_error_budget_j")),number(spec.at("state_error_tolerance")),static_cast<unsigned>(integer(spec.at("maximum_evaluations"),65536))};

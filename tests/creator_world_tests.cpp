@@ -33,6 +33,36 @@ void assemblyAssessment(){
             if(preset==MaterialPreset::Iron&&loading==.1){auto unsupported=spec;unsupported["duration_s"]=16*duration;const auto error=Json::parse(world.executeJson(Json{{"type","test_assembly"},{"assembly",declaration},{"test",unsupported}}.dump()));require(error["ok"]==false,"unsupported closing geometry remains explicit");require(world.serialize()==collected,"unsupported geometry changes no live state");}
             spec["maximum_evaluations"]=3;const auto rejected=Json::parse(world.executeJson(Json{{"type","test_assembly"},{"assembly",declaration},{"test",spec}}.dump()));require(rejected["ok"]==false,"exhausted assembly test cannot pass");require(world.serialize()==collected,"exhausted assembly test changes no live state");
         }
+        auto runtime=declaration;runtime["joint"]["contact_owner"]="tension_with_jolt_surfaces";
+        const auto runtime_assessment=Json::parse(world.assessAssemblyJson(runtime.dump()));
+        require(runtime_assessment["joint"]["contact_policy"]=="tension_with_jolt_surfaces"&&runtime_assessment["creation_supported"]==false,"explicit runtime policy is assessed without authorizing creation");
+        auto compression=runtime;compression["joint"]["law"]["compression_stiffness_pa_per_m"]=1;
+        rejects([&]{(void)world.assessAssemblyJson(compression.dump());});
+        const double fracture_work=.00012*m.fracture_energy_j_m2,ma=m.density_kg_m3*.000008,mb=m.density_kg_m3*.000027;
+        const double speed=std::sqrt(12*fracture_work/(ma*mb/(ma+mb)));
+        Json runtime_spec={{"test_version",2},{"relative_kinetic_energy_j",6*fracture_work},{"duration_s",8*(2*m.fracture_energy_j_m2/m.tensile_strength_pa)/speed},
+            {"steps",1024},{"energy_error_budget_j",fracture_work*1e-4},{"transfer_roundoff_budget_j",fracture_work*1e-6},{"minimum_separated_area_fraction",1}};
+        const auto run=[&](const Json &d,const Json &spec){return Json::parse(world.executeJson(Json{{"type","test_assembly"},{"assembly",d},{"test",spec}}.dump()));};
+        const auto result=run(runtime,runtime_spec);
+        if(JoltWorld::positionPrecisionBits()==64) {
+            if(result["ok"]!=true)std::cerr<<result.dump()<<'\n';
+            require(result["ok"]==true,"runtime assembly test executes through public API");const auto &r=result["result"];
+            std::cout<<name<<" runtime assembly "<<r["status"]<<" max_E="<<r["maximum_integration_energy_error_j"]<<" D="<<r["damage_work_j"]<<'\n';
+            require(r["status"]=="passed"&&r["sites"].size()==16&&r["bodies"].size()==2,"runtime geometry-derived patch separates within energy budget");
+            near(r["damage_work_j"].get<double>(),fracture_work,fracture_work*1e-12,"runtime patch retains complete Gc area work");
+            auto coarse_spec=runtime_spec;coarse_spec["steps"]=512;const auto coarse=run(runtime,coarse_spec);
+            require(coarse["ok"]==true&&coarse["result"]["maximum_integration_energy_error_j"].get<double>()>r["maximum_integration_energy_error_j"].get<double>(),"runtime energy error improves with timestep refinement");
+            std::cout<<name<<" coarse runtime max_E="<<coarse["result"]["maximum_integration_energy_error_j"]<<'\n';
+            auto reordered=runtime;std::swap(reordered["parts"][0],reordered["parts"][1]);const auto reordered_result=run(reordered,runtime_spec);
+            require(reordered_result["ok"]==true&&reordered_result["result"]["bodies"]==r["bodies"],"part array order preserves referenced runtime body assignment");
+            auto tight=runtime_spec;tight["energy_error_budget_j"]=fracture_work*1e-12;tight["transfer_roundoff_budget_j"]=0;
+            const auto failed=run(runtime,tight);require(failed["ok"]==false||failed["result"]["status"]=="failed","insufficient transfer/integration budget cannot pass");
+        } else require(result["ok"]==false,"legacy precision rejects runtime assembly fixture");
+        auto excessive=runtime_spec;excessive["steps"]=4097;require(run(runtime,excessive)["ok"]==false,"runtime test step budget is bounded");
+        require(run(declaration,runtime_spec)["ok"]==false,"old contact policy cannot silently select Jolt fixture");
+        require(world.serialize()==collected,"all temporary runtime tests preserve live inventory and state");
+        CreatorWorld runtime_draft;(void)runtime_draft.rememberAssembly(runtime.dump(),0);
+        require(CreatorWorld::deserialize(runtime_draft.serialize()).serialize()==runtime_draft.serialize(),"explicit contact policy survives draft persistence");
         for(unsigned invalid=0;invalid<4;++invalid){auto bad=declaration;if(invalid==0)bad["joint"]["contact_owner"]="cohesive_and_jolt";if(invalid==1)bad["joint"]["part_b"]="a";if(invalid==2)bad["parts"][0]["density_kg_m3"]=1;if(invalid==3)bad["joint"]["face_a"]["width_m"]=.04;const auto error=Json::parse(world.executeJson(Json{{"type","assess_assembly"},{"assembly",bad}}.dump()));require(error["ok"]==false,"invalid assembly rejects through public command");require(world.serialize()==collected,"invalid assembly leaves live state untouched");}
         CreatorWorld drafts;const auto original=Json::parse(drafts.serialize());
         const auto remembered=Json::parse(drafts.executeJson(Json{{"type","remember_assembly"},{"assembly",declaration},{"expected_revision",0}}.dump()));require(remembered["ok"]==true&&remembered["result"]["revision"]==1,"assembly draft command records first revision");
