@@ -33,17 +33,23 @@ int main(int argc,char **argv) {
         while(true) {
             if(auto reply=assistant.poll()) {
                 std::cout<<reply->explanation<<'\n';
+                bool applied=false;
                 if(reply->recipe) {
-                    const auto plan=editing?world.previewRebuild(*editing,*reply->recipe).creation:world.preview(*reply->recipe);
-                    std::cout<<"Validated material cost: "<<plan.mass_kg<<" kg\n";
-                    if(apply) {
+                    const auto assessment=world.assess(*reply->recipe,editing);
+                    std::ofstream report(workspace/(id+"-assessment.json"));report<<world.assessJson(*reply->recipe,editing);report.close();
+                    if(!report)throw std::runtime_error("cannot save assessment");
+                    std::cout<<"Required material: "<<assessment.material.required_mass_kg<<" kg; inventory "<<assessment.material.inventory_mass_kg
+                        <<" kg; recoverable "<<assessment.material.recoverable_mass_kg<<" kg; missing "<<assessment.material.missing_mass_kg<<" kg\n";
+                    for(const auto &issue:assessment.issues)std::cout<<issue.code<<": "<<issue.message<<'\n';
+                    if(apply&&assessment.buildable()) {
                         if(editing)(void)world.rebuild(id,*editing,*reply->recipe);else (void)world.create(id,*reply->recipe);
+                        applied=true;
                         world.step(240);world.save(workspace/(id+"-world.json"));
                         std::ofstream result(workspace/(id+"-inspect.json"));result<<world.inspectJson();
                         if(!result)throw std::runtime_error("cannot save inspection");
                     }
                 }else std::cout<<"Clarification only; no object created.\n";
-                if((!apply||!reply->recipe)&&before!=world.serialize())throw std::logic_error("Proposal changed world before acceptance");
+                if(!applied&&before!=world.serialize())throw std::logic_error("Proposal changed world before acceptance");
                 return 0;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(50));

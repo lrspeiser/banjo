@@ -295,14 +295,44 @@ bool CreatorWorld::collect(std::string_view id) {
     auto found=std::find_if(lots_.begin(),lots_.end(),[&](const auto &lot){return lot.id==id;});
     check(found!=lots_.end(),"pickup is not in this world");if (found->collected)return false;found->collected=true;return true;
 }
-CreationPreview CreatorWorld::preview(const ObjectRecipe &r) const {
-    auto result=compile(r,settings_);check(objects_.size()<max_objects,"world object budget of 64 is exhausted");
-    check(history_.size()<max_changes,"authoring history budget of 256 operations is exhausted");
-    for (const auto &object:objects_) check(!primitivesOverlap(object.recipe.geometry(),object.state.center_of_mass_world_m,object.state.orientation_world,
-        r.geometry(),result.position_world_m,r.orientation_world),
-        "placement overlaps an existing object; choose another location");
-    allocate(result,lots_);
+CreationAssessment CreatorWorld::assess(const ObjectRecipe &r,std::optional<RevisionTarget> editing) const {
+    const auto *old=editing?&targetObject(*editing):nullptr;
+    CreationAssessment result;result.creation=compile(r,settings_);
+    result.material.material=r.material;result.material.required_mass_kg=result.creation.mass_kg;
+    result.material.inventory_mass_kg=inventoryMass(r.material);
+    if(old&&old->recipe.material==r.material)result.material.recoverable_mass_kg=old->mass_kg;
+    for(const auto &lot:lots_)if(!lot.collected&&lot.material==r.material)result.material.collectible_mass_kg+=lot.remaining_mass_kg;
+    auto available=lots_;if(old)applyAllocations(available,old->allocations,1);
+    double total=0;for(const auto &lot:available)if(lot.collected&&lot.material==r.material)total+=lot.remaining_mass_kg;
+    result.material.missing_mass_kg=std::max(0.0,result.creation.mass_kg-total);
+    result.material.missing_after_collection_kg=std::max(0.0,result.material.missing_mass_kg-result.material.collectible_mass_kg);
+    if(!editing&&objects_.size()>=max_objects)result.issues.push_back({"object_limit","world.objects","world object budget of 64 is exhausted"});
+    if(history_.size()>=max_changes)result.issues.push_back({"history_limit","world.history","authoring history budget of 256 operations is exhausted"});
+    for(const auto &object:objects_)if((!old||object.id!=old->id)&&primitivesOverlap(object.recipe.geometry(),object.state.center_of_mass_world_m,object.state.orientation_world,
+        r.geometry(),result.creation.position_world_m,r.orientation_world)) {
+        result.issues.push_back({"placement_overlap","recipe.placement","placement overlaps object #"+std::to_string(object.id)+"; choose another location"});break;
+    }
+    if(result.material.missing_mass_kg>0)result.issues.push_back({"insufficient_material","recipe.material","not enough collected or selected-object material; collect more or explicitly choose another design"});
+    if(result.buildable())allocate(result.creation,available,old?old->allocations:std::vector<MaterialAllocation>{});
     return result;
+}
+std::string CreatorWorld::assessJson(const ObjectRecipe &r,std::optional<RevisionTarget> editing) const {
+    const auto report=assess(r,editing);const auto &m=report.material;Json issues=Json::array();
+    bool other_blocker=false;for(const auto &issue:report.issues) {
+        issues.push_back({{"code",issue.code},{"field",issue.field},{"message",issue.message}});
+        other_blocker|=issue.code!="insufficient_material";
+    }
+    return Json{{"assessment_version",1},{"status",report.buildable()?"buildable":other_blocker?"blocked":"needs_resources"},
+        {"buildable_with_inventory",report.buildable()},{"buildable_after_collection",!other_blocker&&m.missing_after_collection_kg==0},
+        {"scope","intact-authoring sandbox; functional performance still requires a physical test"},
+        {"fabrication_energy_j",nullptr},{"energy_note","fabrication energy is unsupported, not zero"},
+        {"compiled",previewJson(report.creation)},{"issues",issues},
+        {"material_requirements",Json::array({{{"material",materialPresetName(m.material)},{"required_mass_kg",m.required_mass_kg},
+            {"inventory_mass_kg",m.inventory_mass_kg},{"recoverable_mass_kg",m.recoverable_mass_kg},{"collectible_mass_kg",m.collectible_mass_kg},
+            {"missing_mass_kg",m.missing_mass_kg},{"missing_after_collection_kg",m.missing_after_collection_kg}}})}}.dump(2);
+}
+CreationPreview CreatorWorld::preview(const ObjectRecipe &r) const {
+    auto result=assess(r);if(!result.buildable())throw std::invalid_argument(result.issues.front().message);return std::move(result.creation);
 }
 MatterBodyId CreatorWorld::create(std::string request_id,const ObjectRecipe &r) {
     (void)string(Json(request_id));
@@ -329,11 +359,8 @@ const AuthoringChange *CreatorWorld::receipt(std::string_view request_id) const 
     return found==history_.end()?nullptr:&*found;
 }
 RebuildPreview CreatorWorld::previewRebuild(RevisionTarget target,const ObjectRecipe &r) const {
-    const auto &old=targetObject(target);check(history_.size()<max_changes,"authoring history budget of 256 operations is exhausted");
-    RebuildPreview result{compile(r,settings_),target.object_id,target.expected_revision};
-    for(const auto &o:objects_)if(o.id!=old.id)check(!primitivesOverlap(o.recipe.geometry(),o.state.center_of_mass_world_m,o.state.orientation_world,
-        r.geometry(),result.creation.position_world_m,r.orientation_world),"replacement placement overlaps another object");
-    auto available=lots_;applyAllocations(available,old.allocations,1);allocate(result.creation,available,old.allocations);
+    auto report=assess(r,target);if(!report.buildable())throw std::invalid_argument(report.issues.front().message);
+    const auto &old=targetObject(target);RebuildPreview result{std::move(report.creation),target.object_id,target.expected_revision};
     for(const auto &lot:lots_) {
         const auto amount=[&](const auto &parts){double value=0;for(const auto &p:parts)if(p.lot_id==lot.id)value+=p.mass_kg;return value;};
         const double prior=amount(old.allocations),next=amount(result.creation.allocations),reuse=std::min(prior,next);
@@ -527,6 +554,8 @@ std::string CreatorWorld::inspectJson() const {
         {"history_limit",max_changes},{"note","Rebuild/reclaim are explicit authoring operations with full intact material recovery and before/after mechanics; no manufacturing process or damage repair is simulated."}};
     result["capabilities"]["energy"]={{"fabrication_supported",false},{"mode","authoring-sandbox"},
         {"note","No fabrication energy source, cost or power limit is implemented. Before/after mechanical quantities record authoring discontinuities; they do not pay for construction."}};
+    result["capabilities"]["assessment"]={{"version",1},{"operations",Json::array({"assess","assess_rebuild"})},
+        {"note","Read-only requirements distinguish collected inventory, recoverable selected matter, uncollected lots and remaining shortfall. Assessments do not reserve resources or prove functional performance."}};
     result["history_count"]=history_.size();
     result["inventory"]=Json::array();for (auto m:kMaterialPresets) if (inventoryMass(m)>0) result["inventory"].push_back({{"material",materialPresetName(m)},{"mass_kg",inventoryMass(m)}});
     for (std::size_t i=0;i<objects_.size();++i) {
@@ -553,6 +582,11 @@ std::string CreatorWorld::executeJson(std::string_view commands) {
             if (type=="inspect") {fields(command,{"type"});value=parse(inspectJson());}
             else if (type=="collect") {fields(command,{"type","lot_id"});value={{"collected",collect(string(command.at("lot_id")))}};}
             else if (type=="preview") {fields(command,{"type","recipe"});value=previewJson(preview(recipe(command.at("recipe"))));}
+            else if (type=="assess") {fields(command,{"type","recipe"});value=parse(assessJson(recipe(command.at("recipe"))));}
+            else if (type=="assess_rebuild") {
+                fields(command,{"type","object_id","expected_revision","recipe"});
+                value=parse(assessJson(recipe(command.at("recipe")),RevisionTarget{integer(command.at("object_id"),max_changes),integer(command.at("expected_revision"),max_changes)}));
+            }
             else if (type=="create") {fields(command,{"type","request_id","recipe"});value={{"object_id",create(string(command.at("request_id")),recipe(command.at("recipe")))}};}
             else if(type=="preview_rebuild"||type=="rebuild") {
                 if(type=="rebuild")fields(command,{"type","request_id","object_id","expected_revision","recipe"});

@@ -60,6 +60,17 @@ struct RebuildPreview {
     std::vector<MaterialAllocation> reused,withdrawn,returned;
 };
 struct RevisionTarget { MatterBodyId object_id{};std::uint64_t expected_revision{}; };
+struct MaterialRequirement {
+    MaterialPreset material{MaterialPreset::Oak};
+    double required_mass_kg{},inventory_mass_kg{},recoverable_mass_kg{},collectible_mass_kg{},missing_mass_kg{},missing_after_collection_kg{};
+};
+struct AssessmentIssue { std::string code,field,message; };
+struct CreationAssessment {
+    CreationPreview creation;
+    MaterialRequirement material;
+    std::vector<AssessmentIssue> issues;
+    [[nodiscard]] bool buildable() const {return issues.empty();}
+};
 // Authoring history is distinct from physical evolution. The intact-material
 // policy returns all allocated matter; it does not simulate manufacturing.
 struct AuthoringChange {
@@ -97,6 +108,10 @@ public:
     [[nodiscard]] double inventoryMass(MaterialPreset material) const;
     [[nodiscard]] RigidMechanicalState mechanicalState(MatterBodyId id) const;
     bool collect(std::string_view lot_id);
+    // Read-only feasibility within the supported intact-authoring model.
+    // Uncollected lots are reported separately and never become inventory here.
+    [[nodiscard]] CreationAssessment assess(const ObjectRecipe &recipe,std::optional<RevisionTarget> editing={}) const;
+    [[nodiscard]] std::string assessJson(const ObjectRecipe &recipe,std::optional<RevisionTarget> editing={}) const;
     [[nodiscard]] CreationPreview preview(const ObjectRecipe &recipe) const;
     [[nodiscard]] MatterBodyId create(std::string request_id,const ObjectRecipe &recipe);
     [[nodiscard]] RebuildPreview previewRebuild(RevisionTarget target,const ObjectRecipe &recipe) const;

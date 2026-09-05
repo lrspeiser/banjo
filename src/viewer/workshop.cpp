@@ -79,12 +79,12 @@ void drawObject(const ObjectRecipe &recipe,Vec3 position,Quat q,Color tint,bool 
 int main(int argc,char **argv) {
     try {
         std::filesystem::path workspace=std::filesystem::absolute(argv[0]).parent_path()/"workshop-data",capture;unsigned frames=180;
-        std::filesystem::path assistant_exe=ChildProcess::findExecutable("codex");bool manual_assistant=false,shape_capture=false,revision_capture=false;
+        std::filesystem::path assistant_exe=ChildProcess::findExecutable("codex");bool manual_assistant=false,shape_capture=false,revision_capture=false,requirements_capture=false;
         for(int i=1;i<argc;++i) {
             const std::string option=argv[i];if(++i>=argc)throw std::invalid_argument("missing workshop option value");
             if(option=="--workspace")workspace=argv[i];else if(option=="--capture")capture=argv[i];
             else if(option=="--assistant-exe")assistant_exe=std::filesystem::absolute(argv[i]);
-            else if(option=="--capture-layout") {const std::string layout=argv[i];if(layout!="materials"&&layout!="shapes"&&layout!="revisions")throw std::invalid_argument("capture layout must be materials, shapes or revisions");shape_capture=layout=="shapes";revision_capture=layout=="revisions";}
+            else if(option=="--capture-layout") {const std::string layout=argv[i];if(layout!="materials"&&layout!="shapes"&&layout!="revisions"&&layout!="requirements")throw std::invalid_argument("capture layout must be materials, shapes, revisions or requirements");shape_capture=layout=="shapes";revision_capture=layout=="revisions";requirements_capture=layout=="requirements";}
             else if(option=="--assistant") {const std::string mode=argv[i];if(mode!="auto"&&mode!="manual")throw std::invalid_argument("assistant must be auto or manual");manual_assistant=mode=="manual";}
             else if(option=="--frames")frames=static_cast<unsigned>(std::stoul(argv[i]));else throw std::invalid_argument("unknown workshop option");
         }
@@ -97,7 +97,7 @@ int main(int argc,char **argv) {
         std::string status="Collect a material, then design an object.",request_id,pending_id,proposal_message;
         std::optional<RevisionTarget> editing;
         MatterBodyId selected_id=world.objects().empty()?0:world.objects().back().id,built_id=0;
-        bool paused=capture.empty(),typing=false,built=false,follow=false;double accumulator=0,poll_at=0;unsigned rendered=0,serial=0;
+        bool paused=capture.empty(),typing=false,built=false,follow=false,clarification_required=false;double accumulator=0,poll_at=0;unsigned rendered=0,serial=0;
         unsigned dimension_axis=0,orientation_preset=0;
         const auto session=std::to_string(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
         const auto new_id=[&]{return "workshop-"+session+"-"+std::to_string(++serial);};request_id=new_id();
@@ -107,7 +107,7 @@ int main(int argc,char **argv) {
             return found==world.objects().end()?nullptr:&*found;
         };
         const auto invalidate_design=[&] {
-            assistant.cancel();pending_id.clear();request_id=new_id();built=false;built_id=0;proposal_message.clear();
+            assistant.cancel();pending_id.clear();request_id=new_id();built=false;built_id=0;proposal_message.clear();clarification_required=false;
             status="Design updated. Review the material cost before building.";
         };
         const auto select_edit=[&](MatterBodyId id) {
@@ -116,13 +116,12 @@ int main(int argc,char **argv) {
             invalidate_design();paused=true;accumulator=0;typing=false;
             status="Editing object #"+std::to_string(id)+". Rebuild reuses its intact material and resets its motion to the design.";
         };
-        const auto preview_recipe=[&](const ObjectRecipe &recipe) {return editing?world.previewRebuild(*editing,recipe).creation:world.preview(recipe);};
         if(!capture.empty()) {
             for(auto m:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
                 world.collect(std::string(materialPresetName(m))+"-pile");auto r=draft;r.material=m;
                 r.bitangent_m=.45*(static_cast<double>(world.objects().size())-(shape_capture?2.5:1));
                 if(shape_capture)r.radius_m=.04;
-                if(revision_capture)r.radius_m=std::cbrt(9.9/(makeReferenceMaterial(m).density_kg_m3*(4.0/3)*std::numbers::pi));
+                if(revision_capture||requirements_capture)r.radius_m=std::cbrt(9.9/(makeReferenceMaterial(m).density_kg_m3*(4.0/3)*std::numbers::pi));
                 (void)world.create(std::string(materialPresetName(m))+"-capture",r);
                 if(shape_capture) {
                     const double volume=r.geometry().volume();r.shape="box";r.schema_version=2;r.name=name(m)+" box";
@@ -143,6 +142,12 @@ int main(int argc,char **argv) {
                 select_edit(3);draft.schema_version=2;draft.shape="box";draft.name="Iron replacement";draft.dimensions_m={.08,.06,.1};draft.orientation_world=tilt(-world.settings().slope_degrees);
                 prompt="Rebuild this iron ball as an 8 x 6 x 10 cm block using its recovered material.";
                 status="Glass and oak were rebuilt from 9.9 kg spheres. Previewing an iron rebuild with 0.1 kg free stock.";
+            }
+            if(requirements_capture) {
+                world.step(120);built=false;built_id=0;paused=true;draft.schema_version=2;draft.shape="box";draft.name="Requested iron block";
+                draft.dimensions_m={.08,.06,.1};draft.orientation_world=tilt(-world.settings().slope_degrees);
+                prompt="Keep my existing balls. Make a new solid iron block, 8 x 6 x 10 cm. What else do I need?";
+                status="The requested design is kept. Its exact material shortfall comes from the compiler; nothing is built or collected.";
             }
         }
         SetConfigFlags(FLAG_MSAA_4X_HINT);InitWindow(1440,900,"Banjo - Material Workshop");SetTargetFPS(60);
@@ -187,27 +192,31 @@ int main(int argc,char **argv) {
                 if(automatic_assistant)try {
                     if(auto reply=assistant.poll()) {
                         if(reply->recipe) {
-                            (void)preview_recipe(*reply->recipe);draft=*reply->recipe;request_id=pending_id;built=false;built_id=0;
-                            status="Assistant proposal ready. Review the cost, then build.";
-                        }else status="The assistant needs a different choice. Update your request below.";
+                            const auto assessment=world.assess(*reply->recipe,editing);draft=*reply->recipe;request_id=pending_id;built=false;built_id=0;clarification_required=false;
+                            status=assessment.buildable()?"Assistant proposal ready. Review the cost, then build.":"Requested design retained. Review what is missing, collect resources or ask for an alternative.";
+                        }else {status="The assistant needs a different choice. Update your request below.";clarification_required=true;}
                         proposal_message=reply->explanation;pending_id.clear();paused=true;
                     }
                 }catch(const std::exception &e){status=e.what();pending_id.clear();assistant.cancel();paused=true;}
                 else if(std::filesystem::exists(path))try {
                     auto proposal=CreatorWorld::parseProposal(read(path));if(proposal.request_id!=pending_id)throw std::invalid_argument("AI response belongs to another request");
-                    (void)preview_recipe(proposal.recipe);draft=proposal.recipe;request_id=pending_id;pending_id.clear();built=false;built_id=0;
-                    proposal_message=proposal.explanation;status="AI proposal ready. Review its material cost, then build.";paused=true;
+                    const auto assessment=world.assess(proposal.recipe,editing);draft=proposal.recipe;request_id=pending_id;pending_id.clear();built=false;built_id=0;clarification_required=false;
+                    proposal_message=proposal.explanation;status=assessment.buildable()?"AI proposal ready. Review its material cost, then build.":"Requested design retained. Review its requirements before building.";paused=true;
                 }catch(const std::exception &e){status=std::string("Proposal needs revision: ")+e.what();}
             }
-            std::optional<CreationPreview> preview;std::optional<RebuildPreview> rebuild_preview;std::string problem;
-            try {if(editing){rebuild_preview=world.previewRebuild(*editing,draft);preview=rebuild_preview->creation;}else preview=world.preview(draft);}catch(const std::exception &e){problem=e.what();}
+            std::optional<CreationPreview> preview;std::optional<RebuildPreview> rebuild_preview;std::optional<CreationAssessment> assessment;std::string problem;
+            try {
+                assessment=world.assess(draft,editing);
+                if(assessment->buildable()) {if(editing){rebuild_preview=world.previewRebuild(*editing,draft);preview=rebuild_preview->creation;}else preview=assessment->creation;}
+                else problem=assessment->issues.front().message;
+            }catch(const std::exception &e){problem=e.what();}
             BeginDrawing();ClearBackground(background);BeginMode3D(camera);
             rlPushMatrix();rlRotatef(static_cast<float>(-world.settings().slope_degrees),0,0,1);rlTranslatef(0,-.1F,0);
             DrawCube({0,0,0},16,.2F,6,{69,83,88,255});DrawCubeWires({0,0,0},16,.2F,6,{103,119,124,255});rlPopMatrix();
             const auto plane=world.support();
             for(int i=-8;i<=8;++i)DrawLine3D(v(pointInPlaneFrame(plane,i,-3,.001)),v(pointInPlaneFrame(plane,i,3,.001)),{83,99,105,255});
             for(const auto &object:world.objects())drawObject(object.recipe,object.state.center_of_mass_world_m,object.state.orientation_world,color(object.recipe.material));
-            if(preview&&!built)drawObject(draft,preview->position_world_m,draft.orientation_world,accent,true);
+            if(assessment&&!built)drawObject(draft,assessment->creation.position_world_m,draft.orientation_world,assessment->buildable()?accent:Color{244,165,131,255},true);
             for(std::size_t i=0;i<world.lots().size();++i)if(!world.lots()[i].collected) {
                 const auto &lot=world.lots()[i];const double size=std::cbrt(lot.remaining_mass_kg/makeReferenceMaterial(lot.material).density_kg_m3);
                 DrawCubeV(v(pointInPlaneFrame(plane,-2.7,.45*(static_cast<double>(i)-1),size/2)),{static_cast<float>(size),static_cast<float>(size),static_cast<float>(size)},color(lot.material));
@@ -249,6 +258,12 @@ int main(int argc,char **argv) {
             if(built) {
                 if(const auto *object=find_object(built_id))DrawText(("Built with "+fixed(object->mass_kg)+" kg").c_str(),1110,468,22,ink);
                 DrawText(("Available "+fixed(world.inventoryMass(draft.material))+" kg").c_str(),1110,500,18,muted);
+            } else if(assessment&&assessment->material.missing_mass_kg>0) {
+                const auto &m=assessment->material;
+                DrawText(("Requires: "+fixed(m.required_mass_kg)+" kg").c_str(),1110,466,17,ink);
+                DrawText(("In inventory: "+fixed(m.inventory_mass_kg)+" kg").c_str(),1110,488,15,muted);
+                DrawText(("Recoverable: "+fixed(m.recoverable_mass_kg)+" kg").c_str(),1110,508,15,muted);
+                DrawText(("Need: "+fixed(m.missing_mass_kg)+" kg "+name(m.material)).c_str(),1110,528,15,{244,165,131,255});
             } else if(rebuild_preview) {
                 DrawText(("New mass: "+fixed(rebuild_preview->creation.mass_kg)+" kg").c_str(),1110,466,17,ink);
                 DrawText(("Reuse: "+allocationLabel(world,rebuild_preview->reused)).c_str(),1110,488,15,muted);
@@ -258,7 +273,7 @@ int main(int argc,char **argv) {
                 DrawText(("Uses "+fixed(preview->mass_kg)+" kg").c_str(),1110,468,22,ink);
                 DrawText(("Leaves "+fixed(world.inventoryMass(draft.material)-preview->mass_kg)+" kg").c_str(),1110,500,18,muted);
             } else if(!built)wrap(problem,1110,464,288,17,{237,189,137,255});
-            if(button({1110,548,292,48},built?"Object ready":editing?"Rebuild from materials":"Build this object",preview.has_value()&&!built&&pending_id.empty(),true))try {
+            if(button({1110,548,292,48},built?"Object ready":clarification_required?"Clarification needed":editing?"Rebuild from materials":"Build this object",preview.has_value()&&!built&&pending_id.empty()&&!clarification_required,true))try {
                 const bool rebuilding=editing.has_value();
                 built_id=rebuilding?world.rebuild(request_id,*editing,draft):world.create(request_id,draft);
                 selected_id=built_id;editing=RevisionTarget{built_id,find_object(built_id)->revision};built=true;paused=true;accumulator=0;save();
@@ -293,6 +308,10 @@ int main(int argc,char **argv) {
             wrap(status,330,122,735,19,ink);
             DrawText(automatic_assistant?"Assistant: Codex (automatic)":"Assistant: manual file bridge",330,179,17,accent);
             if(!proposal_message.empty())wrap(proposal_message,330,212,730,17,muted);
+            if(assessment&&!built&&assessment->material.missing_mass_kg>0) {
+                const auto &m=assessment->material;
+                wrap(m.collectible_mass_kg>0?"In the world: "+fixed(m.collectible_mass_kg)+" kg "+name(m.material)+" to collect. Remaining shortfall after collection: "+fixed(m.missing_after_collection_kg)+" kg.":"Collect "+fixed(m.missing_mass_kg)+" kg more "+name(m.material)+", or ask for an alternative. Existing objects are only reused when selected for editing.",330,451,725,15,{244,165,131,255});
+            }
             if(editing)wrap("Rebuild returns or reuses intact material and places this object at the design's start position and motion. No manufacturing or damage repair is simulated.",330,493,725,15,muted);
             if(button({330,550,150,34},"New design")) {editing.reset();draft=ObjectRecipe{};invalidate_design();paused=true;accumulator=0;}
             if(button({490,550,170,34},"Edit selected",find_object(selected_id)!=nullptr))select_edit(selected_id);

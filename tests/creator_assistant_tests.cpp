@@ -64,6 +64,10 @@ void protocol() {
     const auto request=Json::parse(CodexAssistant::requestDocument(world,"a","Make an oak ball.",{}));
     require(request["world"]["inventory"].empty()&&world.serialize()==before,"Request cannot collect or spend resources");
     require(request["world"]["capabilities"]["energy"]["fabrication_supported"]==false,"Assistant sees that energy-limited fabrication is unavailable");
+    require(request["current_design_assessment"]["status"]=="needs_resources"&&request["current_design_assessment"]["material_requirements"][0]["inventory_mass_kg"]==0,"Assistant sees compiler-checked shortfall with no automatic collection");
+    ObjectRecipe outside;outside.tangent_m=8;
+    const auto invalid=Json::parse(CodexAssistant::requestDocument(world,"fix","Help fix this placement.",outside));
+    require(invalid["current_design_assessment"]["status"]=="invalid_or_unsupported"&&world.serialize()==before,"invalid draft can be explained without bypassing validation");
     std::cout<<"[PASS] proposal/clarification, stale identity, duplicate fields and read-only request\n";
 }
 void selectedRevisionContext() {
@@ -83,6 +87,11 @@ void selectedRevisionContext() {
         rejects([&]{(void)CodexAssistant::requestDocument(world,"stale","Rebuild it.",original,{},RevisionTarget{id,0});});
         rejects([&]{(void)CodexAssistant::requestDocument(world,"missing","Rebuild it.",original,{},RevisionTarget{id+1,1});});
         ObjectRecipe box=original;box.schema_version=2;box.shape="box";box.dimensions_m={.08,.06,.1};
+        box.tangent_m=2;
+        const auto short_request=Json::parse(CodexAssistant::requestDocument(world,"short","Make this block and keep my sphere.",box));
+        require(short_request["editing"].is_null()&&short_request["current_design_assessment"]["status"]=="needs_resources","new-design context does not reclaim existing material");
+        const auto edit_request=Json::parse(CodexAssistant::requestDocument(world,"edit","Use the selected sphere to make this block.",box,{},RevisionTarget{id,1}));
+        require(edit_request["current_design_assessment"]["status"]=="buildable"&&world.serialize()==before,"selected-revision requirements are read-only and include recovery");
         auto response=reply("edit");response["recipe"]=Json::parse(CreatorWorld::recipeJson(box));
         const auto proposal=CodexAssistant::parseReply(response.dump(),"edit");
         rejects([&]{(void)world.preview(*proposal.recipe);}); // Replacement requires the selected material credit.

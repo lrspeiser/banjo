@@ -260,9 +260,61 @@ void boundedAuthoringHistory() {
     }
     require(world.history().size()==256&&world.objects().empty(),"bounded history retains all accepted operations");
     const auto before=world.serialize();rejects([&]{(void)world.create("overflow",r);});
+    const auto assessment=Json::parse(world.assessJson(r));
+    require(assessment["status"]=="blocked"&&!assessment["buildable_after_collection"].get<bool>()&&assessment["issues"][0]["code"]=="history_limit","more resources cannot solve exhausted authoring history");
     require(world.serialize()==before&&world.create("create-0",r)==1,"budget rejection and old receipt replay preserve the world");
     auto loaded=CreatorWorld::deserialize(before);require(loaded.serialize()==before,"full history budget remains loadable");
     std::cout<<"256 authoring operations seconds="<<std::chrono::duration<double>(std::chrono::steady_clock::now()-start).count()<<" saved-bytes="<<before.size()<<'\n';
+}
+void inventoryRequirements() {
+    for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        CreatorWorld world;auto r=boxRecipe(material);r.tangent_m=2;
+        const double required=.08*.06*.1*makeReferenceMaterial(material).density_kg_m3;
+        const auto initial=world.serialize();const auto uncollected=world.assess(r);
+        require(!uncollected.buildable()&&uncollected.issues.size()==1&&uncollected.issues[0].code=="insufficient_material","uncollected lots are not spendable inventory");
+        near(uncollected.material.required_mass_kg,required,1e-12,"requirements use occupied volume and catalog density");
+        near(uncollected.material.inventory_mass_kg,0,0,"empty inventory stays empty");
+        near(uncollected.material.collectible_mass_kg,10,0,"available world material is reported separately");
+        near(uncollected.material.missing_mass_kg,required,1e-12,"all required mass must first be collected");
+        near(uncollected.material.missing_after_collection_kg,0,0,"existing lot can satisfy this design after collection");
+        require(uncollected.creation.allocations.empty(),"a short design does not reserve material");
+        auto report=Json::parse(world.executeJson(Json{{"type","assess"},{"recipe",Json::parse(CreatorWorld::recipeJson(r))}}.dump()));
+        require(report["ok"]==true&&report["result"]["status"]=="needs_resources"&&report["result"]["buildable_after_collection"]==true,"API returns actionable requirements as a successful query");
+        require(report["result"]["fabrication_energy_j"].is_null(),"unsupported energy is not a zero-cost claim");
+        require(world.serialize()==initial,"assessment cannot collect, debit, create, step or write history");
+        require(world.collect(std::string(materialPresetName(material))+"-pile"),"collection transfers the lot into inventory");
+        require(!world.collect(std::string(materialPresetName(material))+"-pile"),"repeated collection does not duplicate a resource");
+        const auto collected=world.serialize();const auto available=world.assess(r);
+        require(available.buildable()&&world.serialize()==collected,"collection makes the unchanged design buildable without building it");
+        near(available.material.inventory_mass_kg,10,0,"collected lot enters inventory once");
+        near(available.material.collectible_mass_kg,0,0,"collected lot is no longer available for pickup");
+        auto huge=r;huge.dimensions_m={1,1,1};const auto shortage=world.assess(huge);
+        near(shortage.material.missing_mass_kg,makeReferenceMaterial(material).density_kg_m3-10,1e-12,"larger designs report a real remaining shortfall");
+        require(!shortage.buildable()&&Json::parse(world.assessJson(huge))["buildable_after_collection"]==false,"collecting existing lots cannot cover nonexistent material");
+        ObjectRecipe original;original.material=material;original.radius_m=std::cbrt(9.9/(makeReferenceMaterial(material).density_kg_m3*4*std::numbers::pi/3));
+        const auto id=world.create("original",original);world.step(120);const auto moving=world.serialize();
+        const auto additional=world.assess(r),replacement=world.assess(r,RevisionTarget{id,1});
+        near(additional.material.missing_mass_kg,required-.1,1e-12,"new object cannot use existing object matter");
+        near(additional.material.recoverable_mass_kg,0,0,"new designs have no implicit recovery");
+        require(replacement.buildable(),"explicit revision can reuse its own original matter");
+        near(replacement.material.recoverable_mass_kg,9.9,1e-12,"selected object's recoverable mass is counted once");
+        near(replacement.material.inventory_mass_kg,.1,1e-12,"selected recovery is distinct from free inventory");
+        const auto other=material==MaterialPreset::Glass?MaterialPreset::Oak:MaterialPreset::Glass;
+        auto swapped=r;swapped.material=other;const auto swap=world.assess(swapped,RevisionTarget{id,1});
+        require(!swap.buildable()&&swap.material.inventory_mass_kg==0&&swap.material.recoverable_mass_kg==0,"recovering another substance cannot fund a material swap");
+        near(swap.material.missing_mass_kg,swap.material.required_mass_kg,0,"missing replacement material cannot transmute from selected matter");
+        auto overlap=original;const auto &position=world.objects()[0].state.center_of_mass_world_m;
+        overlap.tangent_m=dot(position,world.support().tangent_world);overlap.bitangent_m=dot(position,world.support().bitangent_world);
+        const auto blocked=Json::parse(world.assessJson(overlap));
+        require(blocked["status"]=="blocked"&&blocked["issues"].size()==2&&blocked["issues"][0]["code"]=="placement_overlap","placement and shortage remain distinct blockers");
+        rejects([&]{(void)world.create("too-short",r);});
+        rejects([&]{(void)world.assess(r,RevisionTarget{id,0});});
+        auto unsupported=r;unsupported.physics="hinged-door";rejects([&]{(void)world.assess(unsupported);});
+        require(world.serialize()==moving,"requirements and all rejected operations preserve a moving source object");
+        report=Json::parse(world.executeJson(Json{{"type","assess_rebuild"},{"object_id",id},{"expected_revision",1},{"recipe",Json::parse(CreatorWorld::recipeJson(r))}}.dump()));
+        require(report["ok"]==true&&report["result"]["buildable_with_inventory"]==true&&world.serialize()==moving,"revision assessment shares the read-only API");
+        std::cout<<materialPresetName(material)<<" required="<<required<<" free="<<additional.material.inventory_mass_kg<<" missing="<<additional.material.missing_mass_kg<<" recoverable="<<replacement.material.recoverable_mass_kg<<'\n';
+    }
 }
 void persistenceAndInputBoundary() {
     CreatorWorld world;world.collect("oak-pile");ObjectRecipe r;r.name="Collected oak ball";(void)world.create("persist",r);world.step(100);
@@ -293,7 +345,7 @@ int main() {
         {"matched-volume shape ramp and persistence",matchedShapeRampAndPersistence},{"asymmetric spin and mixed shape collisions",spinningBoxesAndMixedCollisions},
         {"known sphere world migration",legacyWorldMigration},
         {"three-material rebuild/reclaim lifecycle",threeMaterialRebuildAndReclaim},{"material swap, unrelated state and history validation",materialSwapAndHistoryValidation},
-        {"bounded authoring history",boundedAuthoringHistory},
+        {"bounded authoring history",boundedAuthoringHistory},{"glass/oak/iron inventory requirements",inventoryRequirements},
         {"persistence, multi-world lifetime and input boundary",persistenceAndInputBoundary}}) {
         try {action();std::cout<<"[PASS] "<<name<<'\n';}catch(const std::exception &e){++failures;std::cerr<<"[FAIL] "<<name<<": "<<e.what()<<'\n';}
     }
