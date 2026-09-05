@@ -1,5 +1,7 @@
 # Physical property and capability coverage
 
+The [conservative reference at `1d29545`](conservative-reference-checkpoint.md) adds validated small elastic/contact bookkeeping cases and actual-glass convergence probes. It is separate from the default lab and does not add calibrated friction, restitution, fracture, or new material families. The matrix below describes the default runtime at `d56611c` unless stated otherwise.
+
 Local source checkpoint: `d56611c`, September 4, 2026. This matrix describes consumers and current evidence, not certified material data. Iron, aluminum, glass, ceramic, oak, rubber, ice and concrete presets are examples with incomplete provenance and calibration. Read the [stage checkpoint](material-stage-checkpoint.md) for current conservation defects and the [transfer checkpoint](transfer-accounting-checkpoint.md) for finite-cell accounting.
 
 | Property / capability | Current consumer and evidence | Remaining boundary |
