@@ -81,6 +81,19 @@ int main(){try{
         const auto m=makeReferenceMaterial(preset);const double area=.0001,mass=m.density_kg_m3*.012*.01*.008,work=area*m.fracture_energy_j_m2,rest=.02;
         const CohesiveInterfaceLaw law{2*m.tensile_strength_pa*m.tensile_strength_pa/m.fracture_energy_j_m2,m.tensile_strength_pa,m.fracture_energy_j_m2,area};
         const Vec3 inertia{mass*(.01*.01+.008*.008)/12,mass*(.012*.012+.008*.008)/12,mass*(.012*.012+.01*.01)/12};
+        {
+            auto compression=law;compression.compression_stiffness_pa_per_m=law.stiffness_pa_per_m;
+            CohesiveRigidBody a{mass,inertia,{-.016,0,0},{},{},{},{}},b=a;b.center_m={.016,0,0};
+            auto contact=makeRectangularCohesivePatch(a,b,{.006,0,0},{-.006,0,0},{0,1,0},{0,0,1},{0,1,0},{0,0,1},.01,.008,4);
+            const double contact_work=.00008*m.fracture_energy_j_m2,mu=mass/2,closing_speed=std::sqrt(.2*contact_work/mu),frequency=std::sqrt(.00008*compression.compression_stiffness_pa_per_m/mu);
+            contact.a.velocity_m_s={.5*closing_speed,0,0};contact.b.velocity_m_s={-.5*closing_speed,0,0};
+            for(auto &site:contact.sites)site.history={0,cohesiveSeparationOpening(law)};
+            const auto rebound=advanceCohesivePatchAdaptive(compression,contact,std::acos(-1.0)/frequency,{contact_work*1e-6,1e-5,65536});
+            const double speed_error=std::abs(rebound.state.b.velocity_m_s.x-rebound.state.a.velocity_m_s.x-closing_speed)/closing_speed;
+            require(speed_error<1e-4,"failed compressive patch rebounds against half-period oscillator oracle");
+            for(const auto &site:rebound.state.sites){auto local=compression;local.area_m2=site.area_m2;require(evaluateCohesiveInterface(local,site.history).damage==1,"rebound does not heal separated sites");}
+            std::cout<<materialPresetName(preset)<<" compression_rebound evaluations="<<rebound.evaluations<<" relative_speed_error="<<speed_error<<" accumulated_energy_error_j="<<rebound.accumulated_absolute_energy_error_j<<'\n';
+        }
         for(double loading:{.25,1.0,4.0}){
             double previous_work=0,previous_work_difference=0,previous_spin_difference=0;Vec3 previous_spin{};
             for(unsigned cells:{2u,4u,8u,16u}){

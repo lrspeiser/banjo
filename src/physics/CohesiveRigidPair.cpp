@@ -63,7 +63,8 @@ CohesivePatchResult advanceCohesivePatch(const CohesiveInterfaceLaw &common,cons
         if(!finite(site.attachment_a_m)||!finite(site.attachment_b_m)||!std::isfinite(site.rest_distance_m)||site.rest_distance_m<=0||!std::isfinite(gap)||gap<site.rest_distance_m*.25||std::abs(gap-site.rest_distance_m-site.history.opening_m)>1e-12*site.rest_distance_m+1e-14*cohesiveSeparationOpening(law))throw std::invalid_argument("invalid cohesive patch site history/geometry");
         energy0+=response.stored_energy_j+response.dissipated_energy_j;
         const auto mobility=[](const CohesiveRigidBody &b){return 1/b.mass_kg+lengthSquared(b.attachment_local_m)/std::min({b.principal_inertia_kg_m2.x,b.principal_inertia_kg_m2.y,b.principal_inertia_kg_m2.z});};
-        if(!response.separated)frequency2+=law.area_m2*std::max(law.stiffness_pa_per_m,law.strength_pa/(cohesiveSeparationOpening(law)-cohesiveDamageOpening(law)))*(mobility(p.a)+mobility(p.b));
+        const double tensile_slope=response.separated?0:std::max(law.stiffness_pa_per_m,law.strength_pa/(cohesiveSeparationOpening(law)-cohesiveDamageOpening(law)));
+        frequency2+=law.area_m2*std::max(tensile_slope,law.compression_stiffness_pa_per_m)*(mobility(p.a)+mobility(p.b));
     }
     if(!std::isfinite(frequency2)||dt*std::sqrt(frequency2)>.1||dt*std::max(length(omega(pair.a)),length(omega(pair.b)))>.1)throw CohesiveTimestepRefinement("cohesive patch timestep needs refinement");
     const auto allKicks=[&](){for(const auto &site:s.sites){auto p=sitePair(site);auto law=common;law.area_m2=site.area_m2;const auto gap=point(p.b)-point(p.a);kick(p,(.5*dt*evaluateCohesiveInterface(law,site.history).force_n/length(gap))*gap);pair.a.velocity_m_s=p.a.velocity_m_s;pair.b.velocity_m_s=p.b.velocity_m_s;pair.a.angular_momentum_kg_m2_s=p.a.angular_momentum_kg_m2_s;pair.b.angular_momentum_kg_m2_s=p.b.angular_momentum_kg_m2_s;}};
@@ -74,6 +75,7 @@ CohesivePatchResult advanceCohesivePatch(const CohesiveInterfaceLaw &common,cons
     if(!std::isfinite(result.energy_residual_j)||!finite(result.momentum_residual)||!finite(result.angular_residual))throw std::invalid_argument("cohesive patch numerical overflow");return result;
 }
 CohesiveRigidPairResult advanceCohesiveRigidPair(const CohesiveInterfaceLaw &law,double rest,const CohesiveRigidPairState &initial,double dt){
+    if(law.compression_stiffness_pa_per_m!=0)throw std::invalid_argument("compression requires distributed patch solver");
     validate(initial.a);validate(initial.b);const auto response=evaluateCohesiveInterface(law,initial.interface);
     if(!std::isfinite(rest)||rest<=0||!std::isfinite(dt)||dt<=0||dt>1)throw std::invalid_argument("invalid rigid cohesive rest distance/timestep");
     const auto r0=point(initial.b)-point(initial.a);const double length0=length(r0);

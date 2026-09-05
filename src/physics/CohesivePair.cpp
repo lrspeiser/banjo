@@ -10,6 +10,7 @@ double kinetic(double ma,double mb,const CohesivePairState &s){return .5*ma*s.ve
 double momentum(double ma,double mb,const CohesivePairState &s){return ma*s.velocity_a_m_s+mb*s.velocity_b_m_s;}
 }
 CohesivePairResult advanceCohesivePair(const CohesiveInterfaceLaw &law,double ma,double mb,const CohesivePairState &initial,double dt,std::size_t budget){
+    require(law.compression_stiffness_pa_per_m==0,"compression requires distributed patch solver");
     const auto initial_response=evaluateCohesiveInterface(law,initial.interface);
     require(std::isfinite(ma)&&std::isfinite(mb)&&ma>0&&mb>0&&std::isfinite(ma+mb),"pair masses must be finite and positive");
     require(std::isfinite(initial.center_position_m)&&std::isfinite(initial.velocity_a_m_s)&&std::isfinite(initial.velocity_b_m_s),"pair state must be finite");

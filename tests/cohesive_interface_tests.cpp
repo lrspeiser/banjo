@@ -33,11 +33,21 @@ int main(){try{
         near(reopened.opening_work_j,0,0,"separated interface does not reform bonds on recontact");near(reopened.response.dissipated_energy_j,budget,tolerance,"separation cost cannot be refunded or charged twice");
         for(unsigned patches:{1U,4U,16U,100U}){auto patch_law=law;patch_law.area_m2=area/patches;const auto patch=advanceCohesiveInterface(patch_law,{},failure);near(patch.opening_work_j*patches,budget,tolerance,"same interface area partition preserves prescribed opening work");near(patch.response.dissipated_energy_j*patches,budget,tolerance,"fracture work follows physical area not number of samples");}
         std::cout<<materialPresetName(preset)<<" area_m2="<<area<<" Gc="<<gc<<" strength_pa="<<strength<<" delta0_m="<<onset<<" deltaf_m="<<failure<<" separation_work_j="<<budget<<'\n';
+        auto compression=law;compression.compression_stiffness_pa_per_m=law.stiffness_pa_per_m;
+        const auto compressed=advanceCohesiveInterface(compression,separated.state,-.1*failure);
+        near(compressed.response.force_n,-area*compression.compression_stiffness_pa_per_m*.1*failure,tolerance,"failed joint carries reversible compression");
+        near(compressed.response.dissipated_energy_j,budget,tolerance,"compression cannot heal tensile damage");
+        near(compressed.balance_residual_j,0,tolerance,"crossing tension to compression accounts for work");
+        const auto released=advanceCohesiveInterface(compression,compressed.state,0);
+        near(released.opening_work_j,-compressed.response.stored_energy_j,tolerance,"compression returns only stored energy");
+        near(released.response.force_n,0,0,"compression release at zero opening has no attraction");
+        near(released.response.damage,1,0,"reclosed failed interface remains tensile-separated");
     }
     const CohesiveInterfaceLaw good{1000,10,1,.1};
     rejects([&]{(void)evaluateCohesiveInterface(good,{.1,.05});});
     auto bad=good;bad.fracture_energy_j_m2=.01;rejects([&]{(void)advanceCohesiveInterface(bad,{},1);});
     bad=good;bad.area_m2=-1;rejects([&]{(void)advanceCohesiveInterface(bad,{},1);});
+    bad=good;bad.compression_stiffness_pa_per_m=-1;rejects([&]{(void)advanceCohesiveInterface(bad,{},1);});
     rejects([&]{(void)advanceCohesiveInterface(good,{},std::numeric_limits<double>::quiet_NaN());});
     std::cout<<"[PASS] cohesive traction/work/damage/cycles/area-partition/bounds\n";return 0;
 }catch(const std::exception &e){std::cerr<<"[FAIL] "<<e.what()<<'\n';return 1;}}

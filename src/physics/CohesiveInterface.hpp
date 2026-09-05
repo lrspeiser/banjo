@@ -1,13 +1,15 @@
 #pragma once
 
 namespace banjo {
-// Explicitly selected normal-opening cohesive law, version 1. No compression,
-// shear, friction, bulk plasticity, thermal conversion or material-name rules.
+// Explicit normal-opening cohesive law with optional reversible compression.
+// No shear, friction, bulk plasticity, thermal conversion or name-based rules.
 struct CohesiveInterfaceLaw {
     double stiffness_pa_per_m{};
     double strength_pa{};
     double fracture_energy_j_m2{};
     double area_m2{};
+    // Optional reversible compression stiffness. Zero retains tension-only law.
+    double compression_stiffness_pa_per_m{};
 };
 struct CohesiveInterfaceState {
     double opening_m{};

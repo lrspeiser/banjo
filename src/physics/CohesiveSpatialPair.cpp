@@ -11,6 +11,7 @@ Vec3 angular(double a,double b,const CohesiveSpatialPairState &s){return cross(s
 double kinetic(double a,double b,const CohesiveSpatialPairState &s){return .5*a*lengthSquared(s.velocity_a_m_s)+.5*b*lengthSquared(s.velocity_b_m_s);}
 }
 CohesiveSpatialPairResult advanceCohesiveSpatialPair(const CohesiveInterfaceLaw &law,double ma,double mb,double rest,const CohesiveSpatialPairState &initial,double dt,std::size_t budget){
+    require(law.compression_stiffness_pa_per_m==0,"compression requires distributed patch solver");
     const auto response0=evaluateCohesiveInterface(law,initial.interface);
     require(std::isfinite(ma)&&std::isfinite(mb)&&ma>0&&mb>0&&std::isfinite(ma+mb)&&std::isfinite(ma*mb),"spatial pair masses are invalid");
     require(std::isfinite(rest)&&rest>0&&finite(initial.center_position_m)&&finite(initial.separation_m)&&finite(initial.velocity_a_m_s)&&finite(initial.velocity_b_m_s),"spatial pair geometry/state is invalid");
