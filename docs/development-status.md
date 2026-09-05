@@ -1,5 +1,7 @@
 # Development status and handoff
 
+**First-person assembly stock:** [Shared assessment adapter](starter-assembly-stock-checkpoint.md) uses real starter inventory and loose objects, excluding attached branches/tools. Three-material pickup, restoration, tool debit and mixed-material checks pass; full build and 21 suites pass. Starter assembly persistence/table controls remain next. Local `b02bab9`; full goal active.
+
 **Assembly LLM review controls:** [Regenerated evidence review](assembly-review-ui-checkpoint.md) runs from current tests, invalidates world/spec changes and supports cancellation. Real native oak explanation, inventory invalidation and cancellation verified; 21 suites pass. First-person integration and live construction remain open. Local `c06ee32`; full goal active.
 
 **Assembly test controls:** [Revision-bound background tests](assembly-test-ui-checkpoint.md) expose settings, measured outcomes and evidence export. Native oak pass/fail, stale-revision and budget-error paths verified; all 21 suites pass with glass/oak/iron coverage. LLM review controls and first-person integration remain open. Local `22932be`; full goal active.
