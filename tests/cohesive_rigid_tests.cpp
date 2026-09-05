@@ -123,6 +123,21 @@ int main(){try{
             }
             previous_work=damage_work;previous_spin=patch.b.angular_momentum_kg_m2_s;previous_work_difference=work_difference;previous_spin_difference=spin_difference;
             if(cells==8&&loading==4){
+                {
+                    auto bilateral=law;bilateral.compression_stiffness_pa_per_m=law.stiffness_pa_per_m;
+                    const double budget=total_area*m.fracture_energy_j_m2*1e-6;
+                    const auto combined=advanceCohesivePatchAdaptive(bilateral,initial_patch,duration,{budget,1e-5,65536});
+                    unsigned compressed=0,tensile=0,damaged=0;double energy=cohesiveRigidKineticEnergy({combined.state.a,combined.state.b,{}}),damage_work=0;
+                    for(const auto &site:combined.state.sites){auto local=bilateral;local.area_m2=site.area_m2;const auto response=evaluateCohesiveInterface(local,site.history);compressed+=response.force_n<0;tensile+=response.force_n>0;damaged+=response.damage>0;damage_work+=response.dissipated_energy_j;energy+=response.stored_energy_j+response.dissipated_energy_j;}
+                    const auto &a=combined.state.a,&b=combined.state.b;
+                    const auto p=a.mass_kg*a.velocity_m_s+b.mass_kg*b.velocity_m_s;
+                    const auto l=cross(a.center_m,a.mass_kg*a.velocity_m_s)+cross(b.center_m,b.mass_kg*b.velocity_m_s)+a.angular_momentum_kg_m2_s+b.angular_momentum_kg_m2_s;
+                    const double angular_error=length(l-initial_patch.b.angular_momentum_kg_m2_s);
+                    require(compressed>0&&tensile>0&&damaged>0,"bending simultaneously carries compression and damaging tension");
+                    require(length(p)<1e-10&&angular_error<1e-10,"combined patch whole-system momentum closes");
+                    require(std::abs(energy-e0)<=budget+1e-12,"combined patch energy closes within requested budget");
+                    std::cout<<materialPresetName(preset)<<" combined_bending compressed_sites="<<compressed<<" tensile_sites="<<tensile<<" damaged_sites="<<damaged<<" damage_work_j="<<damage_work<<" energy_error_j="<<std::abs(energy-e0)<<" angular_error="<<angular_error<<" evaluations="<<combined.evaluations<<'\n';
+                }
                 double previous_error=0;
                 for(double tolerance:{1e-4,1e-5}){
                     const double budget=total_area*m.fracture_energy_j_m2*tolerance;
