@@ -170,7 +170,7 @@ void RollingBallExperiment::updateScenarioProjection() {
     input.striker_speed_m_s = settings_.iron_speed_m_s;
     input.target_speed_m_s = settings_.target_initial_speed_m_s;
     input.slope_angle_degrees = settings_.surface_slope_degrees;
-    input.gravity_m_s2 = length(settings_.gravity_m_s2);
+    input.gravity_world_m_s2 = settings_.gravity_m_s2;
     input.sphere_inertia_factor = settings_.sphere_inertia_factor;
     input.voxel_size_m = settings_.voxel_size_m;
     input.estimated_active_nodes =
@@ -187,7 +187,7 @@ void RollingBallExperiment::updateScenarioProjection() {
         settings_.radius_m,
         settings_.iron_speed_m_s,
         settings_.surface_slope_degrees,
-        input.gravity_m_s2,
+        settings_.gravity_m_s2,
         settings_.voxel_size_m,
         settings_.material_seed);
     const ProjectionLookup lookup = projection_cache_.lookupOrProject(key, input);
@@ -305,10 +305,11 @@ void RollingBallExperiment::stepRigidPhase() {
         const ActivationDecision decision = activation_policy_.evaluate(
             impact,
             {
-                kTargetBallId,
-                settings_.radius_m,
-                target_material_,
-                0.0,
+                .body_id = kTargetBallId,
+                .radius_m = settings_.radius_m,
+                .material = target_material_,
+                .accumulated_damage = 0.0,
+                .reduced_radius_m = 0.5 * settings_.radius_m,
             });
         stats_.impact_speed_m_s = impact.closing_speed_m_s;
         stats_.impact_tangential_speed_m_s =

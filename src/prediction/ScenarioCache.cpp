@@ -30,7 +30,8 @@ namespace {
 template <typename Value>
 void hashCombine(std::size_t &seed, const Value &value) noexcept {
     const std::size_t hashed = std::hash<Value>{}(value);
-    seed ^= hashed + static_cast<std::size_t>(0x9e3779b9U) + (seed << 6U) + (seed >> 2U);
+    seed ^= hashed + static_cast<std::size_t>(0x9e3779b9U) +
+            (seed << 6U) + (seed >> 2U);
 }
 
 [[nodiscard]] auto sortableKey(const ScenarioKey &key) {
@@ -41,7 +42,9 @@ void hashCombine(std::size_t &seed, const Value &value) noexcept {
         key.radius_micrometers,
         key.speed_millimeters_per_second,
         key.slope_millidegrees,
-        key.gravity_millimeters_per_second2,
+        key.gravity_x_millimeters_per_second2,
+        key.gravity_y_millimeters_per_second2,
+        key.gravity_z_millimeters_per_second2,
         key.voxel_micrometers,
         key.material_seed,
     };
@@ -84,7 +87,9 @@ std::size_t ScenarioKeyHash::operator()(const ScenarioKey &key) const noexcept {
     hashCombine(seed, key.radius_micrometers);
     hashCombine(seed, key.speed_millimeters_per_second);
     hashCombine(seed, key.slope_millidegrees);
-    hashCombine(seed, key.gravity_millimeters_per_second2);
+    hashCombine(seed, key.gravity_x_millimeters_per_second2);
+    hashCombine(seed, key.gravity_y_millimeters_per_second2);
+    hashCombine(seed, key.gravity_z_millimeters_per_second2);
     hashCombine(seed, key.voxel_micrometers);
     hashCombine(seed, key.material_seed);
     return seed;
@@ -97,11 +102,10 @@ ScenarioKey makeScenarioKey(
     double radius_m,
     double speed_m_s,
     double slope_degrees,
-    double gravity_m_s2,
+    const Vec3 &gravity_world_m_s2,
     double voxel_size_m,
     std::uint64_t material_seed) {
-    if (radius_m <= 0.0 || speed_m_s < 0.0 || gravity_m_s2 < 0.0 ||
-        voxel_size_m <= 0.0) {
+    if (radius_m <= 0.0 || speed_m_s < 0.0 || voxel_size_m <= 0.0) {
         throw std::invalid_argument("scenario key physical values are invalid");
     }
     return {
@@ -111,7 +115,9 @@ ScenarioKey makeScenarioKey(
         quantize(radius_m, 1.0e6),
         quantize(speed_m_s, 1.0e3),
         quantize(slope_degrees, 1.0e3),
-        quantize(gravity_m_s2, 1.0e3),
+        quantize(gravity_world_m_s2.x, 1.0e3),
+        quantize(gravity_world_m_s2.y, 1.0e3),
+        quantize(gravity_world_m_s2.z, 1.0e3),
         quantize(voxel_size_m, 1.0e6),
         material_seed,
     };
@@ -151,21 +157,25 @@ void ScenarioProjectionCache::saveCsv(const std::filesystem::path &path) const {
         throw std::runtime_error("could not open scenario cache for writing");
     }
 
-    output << "striker,target,surface,radius_um,speed_mm_s,slope_mdeg,gravity_mm_s2,"
-              "voxel_um,seed,impact_energy_j,peak_force_n,peak_pressure_pa,"
-              "fracture_energy_ratio,tensile_stress_ratio,post_striker_m_s,"
-              "post_target_m_s,rolling_accel_m_s2,required_static_friction,"
-              "combined_static_friction,combined_dynamic_friction,restitution,"
-              "failure,regime,strategy,constraint_solves\n";
+    output << "striker,target,surface,radius_um,speed_mm_s,slope_mdeg,"
+              "gravity_x_mm_s2,gravity_y_mm_s2,gravity_z_mm_s2,voxel_um,seed,"
+              "impact_energy_j,peak_force_n,peak_pressure_pa,fracture_energy_ratio,"
+              "tensile_stress_ratio,post_striker_m_s,post_target_m_s,"
+              "rolling_accel_m_s2,required_static_friction,combined_static_friction,"
+              "combined_dynamic_friction,restitution,failure,regime,strategy,"
+              "constraint_solves\n";
 
     std::vector<std::pair<ScenarioKey, ScenarioProjection>> ordered;
     ordered.reserve(entries_.size());
     for (const auto &[key, projection] : entries_) {
         ordered.emplace_back(key, projection);
     }
-    std::sort(ordered.begin(), ordered.end(), [](const auto &left, const auto &right) {
-        return sortableKey(left.first) < sortableKey(right.first);
-    });
+    std::sort(
+        ordered.begin(),
+        ordered.end(),
+        [](const auto &left, const auto &right) {
+            return sortableKey(left.first) < sortableKey(right.first);
+        });
 
     output.precision(17);
     for (const auto &[key, projection] : ordered) {
@@ -177,7 +187,9 @@ void ScenarioProjectionCache::saveCsv(const std::filesystem::path &path) const {
                << key.radius_micrometers << ','
                << key.speed_millimeters_per_second << ','
                << key.slope_millidegrees << ','
-               << key.gravity_millimeters_per_second2 << ','
+               << key.gravity_x_millimeters_per_second2 << ','
+               << key.gravity_y_millimeters_per_second2 << ','
+               << key.gravity_z_millimeters_per_second2 << ','
                << key.voxel_micrometers << ','
                << key.material_seed << ','
                << impact.available_energy_j << ','
@@ -216,8 +228,10 @@ std::size_t ScenarioProjectionCache::loadCsv(const std::filesystem::path &path) 
             continue;
         }
         const std::vector<std::string> fields = splitCsvLine(line);
-        if (fields.size() != 25U) {
-            throw std::runtime_error("scenario cache CSV row has unexpected field count");
+        const bool legacy = fields.size() == 25U;
+        if (!legacy && fields.size() != 27U) {
+            throw std::runtime_error(
+                "scenario cache CSV row has unexpected field count");
         }
 
         ScenarioKey key;
@@ -227,30 +241,56 @@ std::size_t ScenarioProjectionCache::loadCsv(const std::filesystem::path &path) 
         key.radius_micrometers = parseInt32(fields[3]);
         key.speed_millimeters_per_second = parseInt32(fields[4]);
         key.slope_millidegrees = parseInt32(fields[5]);
-        key.gravity_millimeters_per_second2 = parseInt32(fields[6]);
-        key.voxel_micrometers = parseInt32(fields[7]);
-        key.material_seed = std::stoull(fields[8]);
+
+        std::size_t projection_offset = 0U;
+        if (legacy) {
+            key.gravity_y_millimeters_per_second2 = -parseInt32(fields[6]);
+            key.voxel_micrometers = parseInt32(fields[7]);
+            key.material_seed = std::stoull(fields[8]);
+            projection_offset = 9U;
+        } else {
+            key.gravity_x_millimeters_per_second2 = parseInt32(fields[6]);
+            key.gravity_y_millimeters_per_second2 = parseInt32(fields[7]);
+            key.gravity_z_millimeters_per_second2 = parseInt32(fields[8]);
+            key.voxel_micrometers = parseInt32(fields[9]);
+            key.material_seed = std::stoull(fields[10]);
+            projection_offset = 11U;
+        }
 
         ScenarioProjection projection;
-        projection.impact.available_energy_j = std::stod(fields[9]);
-        projection.impact.peak_force_n = std::stod(fields[10]);
-        projection.impact.peak_contact_pressure_pa = std::stod(fields[11]);
-        projection.impact.fracture_energy_ratio = std::stod(fields[12]);
-        projection.impact.tensile_stress_ratio = std::stod(fields[13]);
-        projection.impact.striker_post_speed_m_s = std::stod(fields[14]);
-        projection.impact.target_post_speed_m_s = std::stod(fields[15]);
-        projection.incline.acceleration_along_slope_m_s2 = std::stod(fields[16]);
-        projection.incline.required_static_friction = std::stod(fields[17]);
-        projection.impact.combined_static_friction = std::stod(fields[18]);
-        projection.impact.combined_dynamic_friction = std::stod(fields[19]);
-        projection.impact.combined_restitution = std::stod(fields[20]);
-        projection.impact.predicted_failure = static_cast<PredictedFailureMode>(
-            parseUnsigned(fields[21]));
+        projection.impact.available_energy_j =
+            std::stod(fields[projection_offset + 0U]);
+        projection.impact.peak_force_n =
+            std::stod(fields[projection_offset + 1U]);
+        projection.impact.peak_contact_pressure_pa =
+            std::stod(fields[projection_offset + 2U]);
+        projection.impact.fracture_energy_ratio =
+            std::stod(fields[projection_offset + 3U]);
+        projection.impact.tensile_stress_ratio =
+            std::stod(fields[projection_offset + 4U]);
+        projection.impact.striker_post_speed_m_s =
+            std::stod(fields[projection_offset + 5U]);
+        projection.impact.target_post_speed_m_s =
+            std::stod(fields[projection_offset + 6U]);
+        projection.incline.acceleration_along_slope_m_s2 =
+            std::stod(fields[projection_offset + 7U]);
+        projection.incline.required_static_friction =
+            std::stod(fields[projection_offset + 8U]);
+        projection.impact.combined_static_friction =
+            std::stod(fields[projection_offset + 9U]);
+        projection.impact.combined_dynamic_friction =
+            std::stod(fields[projection_offset + 10U]);
+        projection.impact.combined_restitution =
+            std::stod(fields[projection_offset + 11U]);
+        projection.impact.predicted_failure =
+            static_cast<PredictedFailureMode>(
+                parseUnsigned(fields[projection_offset + 12U]));
         projection.incline.regime = static_cast<InclineMotionRegime>(
-            parseUnsigned(fields[22]));
+            parseUnsigned(fields[projection_offset + 13U]));
         projection.runtime_strategy = static_cast<RuntimeStrategy>(
-            parseUnsigned(fields[23]));
-        projection.estimated_constraint_solves = std::stoull(fields[24]);
+            parseUnsigned(fields[projection_offset + 14U]));
+        projection.estimated_constraint_solves =
+            std::stoull(fields[projection_offset + 15U]);
         entries_[key] = projection;
         ++loaded;
     }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/Math.hpp"
 #include "material/MaterialCatalog.hpp"
 #include "prediction/BallScenarioProjection.hpp"
 
@@ -18,7 +19,9 @@ struct ScenarioKey {
     std::int32_t radius_micrometers{};
     std::int32_t speed_millimeters_per_second{};
     std::int32_t slope_millidegrees{};
-    std::int32_t gravity_millimeters_per_second2{};
+    std::int32_t gravity_x_millimeters_per_second2{};
+    std::int32_t gravity_y_millimeters_per_second2{};
+    std::int32_t gravity_z_millimeters_per_second2{};
     std::int32_t voxel_micrometers{};
     std::uint64_t material_seed{};
 
@@ -41,13 +44,14 @@ struct ProjectionLookup {
     double radius_m,
     double speed_m_s,
     double slope_degrees,
-    double gravity_m_s2,
+    const Vec3 &gravity_world_m_s2,
     double voxel_size_m,
     std::uint64_t material_seed);
 
 class ScenarioProjectionCache {
 public:
-    [[nodiscard]] std::optional<ScenarioProjection> lookup(const ScenarioKey &key) const;
+    [[nodiscard]] std::optional<ScenarioProjection> lookup(
+        const ScenarioKey &key) const;
     void store(const ScenarioKey &key, const ScenarioProjection &projection);
 
     [[nodiscard]] ProjectionLookup lookupOrProject(

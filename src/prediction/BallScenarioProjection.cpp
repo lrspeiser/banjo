@@ -1,6 +1,8 @@
 #include "prediction/BallScenarioProjection.hpp"
 
+#include "core/Plane.hpp"
 #include "material/MaterialCompiler.hpp"
+#include "physics/ContactMechanics.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -13,6 +15,11 @@ namespace {
 
 [[nodiscard]] double sphereVolume(double radius_m) {
     return (4.0 / 3.0) * std::numbers::pi * radius_m * radius_m * radius_m;
+}
+
+[[nodiscard]] bool finiteVector(const Vec3 &value) {
+    return std::isfinite(value.x) && std::isfinite(value.y) &&
+           std::isfinite(value.z);
 }
 
 [[nodiscard]] std::uint64_t saturatedProduct(
@@ -67,7 +74,8 @@ namespace {
         failure == PredictedFailureMode::BrittleCrack ||
         failure == PredictedFailureMode::Fragmentation ||
         failure == PredictedFailureMode::SurfaceDamage;
-    if (!material_response || input.target_material.model != MaterialModel::BrittleBond) {
+    if (!material_response ||
+        input.target_material.model != MaterialModel::BrittleBond) {
         return RuntimeStrategy::RigidRealtime;
     }
     if (input.cached_material_outcome_available) {
@@ -111,6 +119,8 @@ std::string_view inclineMotionRegimeName(InclineMotionRegime regime) {
         return "rolling without slip";
     case InclineMotionRegime::Sliding:
         return "sliding";
+    case InclineMotionRegime::Detached:
+        return "detached / ballistic";
     }
     return "unknown";
 }
@@ -134,9 +144,10 @@ std::string_view runtimeStrategyName(RuntimeStrategy strategy) {
 ScenarioProjection projectBallScenario(const BallScenarioInput &input) {
     if (input.striker_radius_m <= 0.0 || input.target_radius_m <= 0.0 ||
         input.striker_speed_m_s < 0.0 || input.target_speed_m_s < 0.0 ||
-        input.gravity_m_s2 < 0.0 || input.sphere_inertia_factor <= 0.0 ||
-        input.voxel_size_m <= 0.0 || input.material_substeps == 0U ||
-        input.constraint_iterations == 0U || input.estimated_material_steps == 0U) {
+        !finiteVector(input.gravity_world_m_s2) ||
+        input.sphere_inertia_factor <= 0.0 || input.voxel_size_m <= 0.0 ||
+        input.material_substeps == 0U || input.constraint_iterations == 0U ||
+        input.estimated_material_steps == 0U) {
         throw std::invalid_argument("ball scenario input is invalid");
     }
 
@@ -153,10 +164,10 @@ ScenarioProjection projectBallScenario(const BallScenarioInput &input) {
 
     ScenarioProjection projection;
     ImpactProjection &impact = projection.impact;
-    impact.striker_mass_kg =
-        sphereVolume(input.striker_radius_m) * input.striker_material.density_kg_m3;
-    impact.target_mass_kg =
-        sphereVolume(input.target_radius_m) * input.target_material.density_kg_m3;
+    impact.striker_mass_kg = sphereVolume(input.striker_radius_m) *
+                             input.striker_material.density_kg_m3;
+    impact.target_mass_kg = sphereVolume(input.target_radius_m) *
+                            input.target_material.density_kg_m3;
     impact.reduced_mass_kg =
         (impact.striker_mass_kg * impact.target_mass_kg) /
         (impact.striker_mass_kg + impact.target_mass_kg);
@@ -165,50 +176,38 @@ ScenarioProjection projectBallScenario(const BallScenarioInput &input) {
         (input.striker_radius_m + input.target_radius_m);
     impact.relative_normal_speed_m_s =
         std::max(0.0, input.striker_speed_m_s - input.target_speed_m_s);
-    impact.available_energy_j = 0.5 * impact.reduced_mass_kg *
-                                impact.relative_normal_speed_m_s *
-                                impact.relative_normal_speed_m_s;
     impact.effective_modulus_pa = impact_contact.effective_modulus_pa;
     impact.combined_static_friction = impact_contact.static_friction;
     impact.combined_dynamic_friction = impact_contact.dynamic_friction;
     impact.combined_restitution = impact_contact.restitution;
     impact.combined_rolling_resistance = impact_contact.rolling_resistance;
 
-    if (impact.available_energy_j > 0.0) {
-        const double hertz_coefficient =
-            (4.0 / 3.0) * impact.effective_modulus_pa *
-            std::sqrt(impact.reduced_radius_m);
-        impact.maximum_indent_m = std::pow(
-            (5.0 * impact.reduced_mass_kg *
-             impact.relative_normal_speed_m_s * impact.relative_normal_speed_m_s) /
-                (4.0 * hertz_coefficient),
-            0.4);
-        impact.peak_force_n = hertz_coefficient *
-                              std::pow(impact.maximum_indent_m, 1.5);
-        impact.contact_radius_m =
-            std::sqrt(impact.reduced_radius_m * impact.maximum_indent_m);
-        const double contact_area = std::numbers::pi * impact.contact_radius_m *
-                                    impact.contact_radius_m;
-        if (contact_area > 0.0) {
-            impact.peak_contact_pressure_pa =
-                1.5 * impact.peak_force_n / contact_area;
-        }
-    }
+    const HertzSphereImpactResult hertz = projectHertzSphereImpact({
+        impact.effective_modulus_pa,
+        impact.reduced_radius_m,
+        impact.reduced_mass_kg,
+        impact.relative_normal_speed_m_s,
+    });
+    impact.available_energy_j = hertz.available_energy_j;
+    impact.maximum_indent_m = hertz.maximum_indent_m;
+    impact.peak_force_n = hertz.peak_force_n;
+    impact.contact_radius_m = hertz.contact_radius_m;
+    impact.peak_contact_pressure_pa = hertz.peak_pressure_pa;
 
     const double nominal_fracture_area =
         std::numbers::pi * input.target_radius_m * input.target_radius_m;
     impact.fracture_energy_threshold_j =
         nominal_fracture_area * input.target_material.fracture_energy_j_m2 *
-        std::max(0.0, input.target_material.calibration.activation_energy_scale);
+        std::max(
+            0.0,
+            input.target_material.calibration.activation_energy_scale);
     if (impact.fracture_energy_threshold_j > 0.0) {
         impact.fracture_energy_ratio =
             impact.available_energy_j / impact.fracture_energy_threshold_j;
     }
     if (input.target_material.tensile_strength_pa > 0.0) {
-        // A screening index for the subsurface tensile field generated by Hertz contact.
-        // It is not a complete cone-crack or flaw-population model.
         impact.tensile_stress_ratio =
-            0.31 * impact.peak_contact_pressure_pa /
+            hertz.maximum_subsurface_shear_pa /
             input.target_material.tensile_strength_pa;
     }
     if (input.target_material.compressive_strength_pa > 0.0) {
@@ -216,18 +215,20 @@ ScenarioProjection projectBallScenario(const BallScenarioInput &input) {
             impact.peak_contact_pressure_pa /
             input.target_material.compressive_strength_pa;
     }
-    const double yield_reference = input.target_material.yield_strength_pa > 0.0
-                                       ? input.target_material.yield_strength_pa
-                                       : input.target_material.hardness_pa;
+    const double yield_reference =
+        input.target_material.yield_strength_pa > 0.0
+            ? input.target_material.yield_strength_pa
+            : input.target_material.hardness_pa;
     if (yield_reference > 0.0) {
         impact.yield_stress_ratio =
             impact.peak_contact_pressure_pa / yield_reference;
     }
 
-    const double momentum = impact.striker_mass_kg * input.striker_speed_m_s +
-                            impact.target_mass_kg * input.target_speed_m_s;
-    const double relative_after = -impact.combined_restitution *
-                                  impact.relative_normal_speed_m_s;
+    const double momentum =
+        impact.striker_mass_kg * input.striker_speed_m_s +
+        impact.target_mass_kg * input.target_speed_m_s;
+    const double relative_after =
+        -impact.combined_restitution * impact.relative_normal_speed_m_s;
     impact.striker_post_speed_m_s =
         (momentum + impact.target_mass_kg * relative_after) /
         (impact.striker_mass_kg + impact.target_mass_kg);
@@ -238,38 +239,54 @@ ScenarioProjection projectBallScenario(const BallScenarioInput &input) {
 
     InclineProjection &incline = projection.incline;
     incline.slope_angle_degrees = input.slope_angle_degrees;
-    const double slope_radians =
-        input.slope_angle_degrees * std::numbers::pi / 180.0;
-    incline.gravity_tangent_m_s2 = input.gravity_m_s2 * std::sin(slope_radians);
+    const SupportPlaneFrame plane =
+        makeSupportPlaneFromSlopeDegrees(input.slope_angle_degrees);
+    incline.gravity_tangent_m_s2 =
+        dot(input.gravity_world_m_s2, plane.tangent_world);
+    incline.gravity_outward_m_s2 =
+        dot(input.gravity_world_m_s2, plane.normal_world);
     incline.gravity_normal_m_s2 =
-        input.gravity_m_s2 * std::max(0.0, std::cos(slope_radians));
-    incline.required_static_friction =
-        input.sphere_inertia_factor / (1.0 + input.sphere_inertia_factor) *
-        std::abs(std::tan(slope_radians));
+        std::max(0.0, -incline.gravity_outward_m_s2);
     incline.available_static_friction = incline_contact.static_friction;
     incline.available_dynamic_friction = incline_contact.dynamic_friction;
     incline.rolling_resistance = incline_contact.rolling_resistance;
+    incline.required_static_friction =
+        incline.gravity_normal_m_s2 > 1.0e-12
+            ? input.sphere_inertia_factor /
+                  (1.0 + input.sphere_inertia_factor) *
+                  std::abs(incline.gravity_tangent_m_s2) /
+                  incline.gravity_normal_m_s2
+            : std::numeric_limits<double>::infinity();
     incline.no_slip_angle_limit_degrees =
         std::atan(
             incline.available_static_friction *
-            (1.0 + input.sphere_inertia_factor) / input.sphere_inertia_factor) *
+            (1.0 + input.sphere_inertia_factor) /
+            input.sphere_inertia_factor) *
         180.0 / std::numbers::pi;
 
-    if (std::abs(incline.gravity_tangent_m_s2) <=
-        incline.rolling_resistance * incline.gravity_normal_m_s2) {
+    const double tangent_magnitude =
+        std::abs(incline.gravity_tangent_m_s2);
+    const double direction =
+        incline.gravity_tangent_m_s2 >= 0.0 ? 1.0 : -1.0;
+    if (incline.gravity_outward_m_s2 > 1.0e-9) {
+        incline.regime = InclineMotionRegime::Detached;
+        incline.acceleration_along_slope_m_s2 =
+            incline.gravity_tangent_m_s2;
+    } else if (tangent_magnitude <=
+               incline.rolling_resistance * incline.gravity_normal_m_s2) {
         incline.regime = InclineMotionRegime::AtRest;
         incline.acceleration_along_slope_m_s2 = 0.0;
-    } else if (incline.available_static_friction + 1.0e-12 >=
-               incline.required_static_friction) {
+    } else if (incline.gravity_normal_m_s2 > 1.0e-12 &&
+               incline.available_static_friction + 1.0e-12 >=
+                   incline.required_static_friction) {
         incline.regime = InclineMotionRegime::RollingWithoutSlip;
-        const double direction = incline.gravity_tangent_m_s2 >= 0.0 ? 1.0 : -1.0;
         incline.acceleration_along_slope_m_s2 =
             (incline.gravity_tangent_m_s2 -
-             direction * incline.rolling_resistance * incline.gravity_normal_m_s2) /
+             direction * incline.rolling_resistance *
+                 incline.gravity_normal_m_s2) /
             (1.0 + input.sphere_inertia_factor);
     } else {
         incline.regime = InclineMotionRegime::Sliding;
-        const double direction = incline.gravity_tangent_m_s2 >= 0.0 ? 1.0 : -1.0;
         incline.acceleration_along_slope_m_s2 =
             incline.gravity_tangent_m_s2 -
             direction * incline.available_dynamic_friction *

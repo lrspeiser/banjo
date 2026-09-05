@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/Math.hpp"
 #include "material/Material.hpp"
 
 #include <cstddef>
@@ -21,6 +22,7 @@ enum class InclineMotionRegime : std::uint8_t {
     AtRest,
     RollingWithoutSlip,
     Sliding,
+    Detached,
 };
 
 enum class RuntimeStrategy : std::uint8_t {
@@ -45,7 +47,7 @@ struct BallScenarioInput {
     double striker_speed_m_s{8.0};
     double target_speed_m_s{};
     double slope_angle_degrees{};
-    double gravity_m_s2{9.81};
+    Vec3 gravity_world_m_s2{0.0, -9.81, 0.0};
     double sphere_inertia_factor{0.4};
 
     double voxel_size_m{0.04};
@@ -92,6 +94,7 @@ struct InclineProjection {
     double slope_angle_degrees{};
     double gravity_tangent_m_s2{};
     double gravity_normal_m_s2{};
+    double gravity_outward_m_s2{};
     double required_static_friction{};
     double available_static_friction{};
     double available_dynamic_friction{};
