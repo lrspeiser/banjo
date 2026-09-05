@@ -128,6 +128,7 @@ public:
     // do not debit inventory. No filesystem paths or executable code in commands.
     [[nodiscard]] std::string executeJson(std::string_view commands);
     [[nodiscard]] static ObjectRecipe parseRecipe(std::string_view document);
+    [[nodiscard]] static CreationPreview compileRecipe(const ObjectRecipe &recipe,CreatorSettings settings={});
     [[nodiscard]] static std::string recipeJson(const ObjectRecipe &recipe);
     [[nodiscard]] static CreatorProposal parseProposal(std::string_view document);
 private:

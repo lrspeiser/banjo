@@ -425,6 +425,7 @@ void CreatorWorld::step(unsigned ticks) {
     }
 }
 ObjectRecipe CreatorWorld::parseRecipe(std::string_view document) {return recipe(parse(document));}
+CreationPreview CreatorWorld::compileRecipe(const ObjectRecipe &r,CreatorSettings settings) {return compile(r,settings);}
 std::string CreatorWorld::recipeJson(const ObjectRecipe &r) {return recipe(r).dump(2);}
 CreatorProposal CreatorWorld::parseProposal(std::string_view document) {
     const auto j=parse(document);fields(j,{"request_id","explanation","recipe"});

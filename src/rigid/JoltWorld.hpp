@@ -41,6 +41,7 @@ struct RigidBoxDescription {
     Vec3 dimensions_m{};
     MaterialDefinition material{};
     RigidSnapshot state{};
+    bool fixed{};
 };
 
 class JoltWorld {
@@ -58,6 +59,8 @@ public:
     void addSupportSurface(const RigidSurfaceDescription &description);
     void addBall(const RigidBallDescription &description);
     void addBox(const RigidBoxDescription &description);
+    void pinToWorld(MatterBodyId body_id);
+    void releaseFromWorld(MatterBodyId body_id);
     void applyRigidState(MatterBodyId body_id,const RigidSnapshot &state);
     void addFragments(const std::vector<RigidFragmentDescription> &fragments);
     void step(double fixed_dt_s);

@@ -1,0 +1,67 @@
+#include "creator/StarterWorld.hpp"
+#include <nlohmann/json.hpp>
+#include <cmath>
+#include <iostream>
+#include <functional>
+using namespace banjo;
+void check(bool ok,const char *s) {if(!ok)throw std::runtime_error(s);}
+void near(double a,double b,double tolerance,const char *s) {check(std::isfinite(a)&&std::abs(a-b)<=tolerance,s);}
+void rejects(std::function<void()> f){bool bad=false;try{f();}catch(const std::exception&){bad=true;}check(bad,"expected rejection");}
+Vec3 eye(const StarterWorld &w,unsigned i) {auto p=w.objects().at(i-1).state.center_of_mass_world_m;p.y+=1;return p;}
+int main() {try {
+    StarterWorld w;const auto initial=w.serialize();
+    check(w.level()==1&&w.stamina()==100&&!w.quote("prybar").ready(),"fresh game starts with empty inventory and locked costs");
+    rejects([&]{(void)w.interact("far",1,{10,2,10});});check(w.serialize()==initial,"out-of-reach action is atomic");
+    (void)w.interact("wood",1,eye(w,1));near(w.inventoryKg(MaterialPreset::Oak),.2*.08*.08*700,1e-12,"picked volume becomes exact raw oak mass");
+    const auto picked=w.serialize();(void)w.interact("wood",1,eye(w,1));check(w.serialize()==picked,"pickup retry changes neither XP nor stamina nor mass");
+    rejects([&]{(void)w.interact("wood",2,eye(w,2));});
+    (void)w.craft("pry","prybar",{0,1.65,0});check(w.equippedTool()=="Wooden pry tool","craft equips a persistent tool");
+    near(w.gatheringCost(),5.6,1e-12,"crafted tool reduces gathering stamina");
+    const auto made=w.serialize();(void)w.craft("pry","prybar",{0,1.65,0});check(w.serialize()==made,"craft replay cannot debit twice or award XP twice");
+    rejects([&]{(void)w.craft("locked","chisel",{0,1.65,0});});check(w.serialize()==made,"missing level/material retains all state");
+    (void)w.interact("iron",7,eye(w,7));check(w.level()==2&&w.quote("chisel").ready(),"experience unlocks an affordable iron tool");
+    (void)w.craft("chisel","chisel",{0,1.65,0});near(w.gatheringCost(),3.6,1e-12,"iron tool reduces later gathering cost");
+    const double branch_y=w.objects()[18].state.center_of_mass_world_m.y;w.step(120);
+    near(w.objects()[18].state.center_of_mass_world_m.y,branch_y,1e-4,"attached branch carries gravity through a fixed constraint");
+    for(unsigned i=0;i<4;++i)(void)w.interact("cut-"+std::to_string(i),19,eye(w,19));
+    check(!w.objects()[18].attached&&!w.objects()[18].collected,"cut releases whole branch without silently collecting it");
+    const auto released=w.objects()[18].state;
+    near(length(released.linear_velocity_m_s),0,1e-3,"severing adds no launch impulse");
+    w.step(120);check(w.objects()[18].state.center_of_mass_world_m.y<branch_y-.3,"severed branch falls through actual gravity");
+    w.step(480);const double prior=w.inventoryKg(MaterialPreset::Oak);(void)w.interact("branch-pickup",19,eye(w,19));
+    near(w.inventoryKg(MaterialPreset::Oak)-prior,.9*.08*.08*700,1e-12,"whole branch volume is conserved on inventory conversion");
+    auto saved=StarterWorld::deserialize(w.serialize());check(saved.serialize()==w.serialize(),"progress, raw stock, cut state and receipts round trip");
+    const auto path=std::filesystem::current_path()/"starter-test-save.json";w.save(path);w.save(path);auto loaded=StarterWorld::load(path);check(loaded.serialize()==w.serialize(),"save replacement and disk reload retain the complete starter state");std::filesystem::remove(path);
+    const auto before_rest=w.stamina();w.rest(1);near(w.stamina()-before_rest,std::min(12.0,100-before_rest),1e-12,"rest explicitly restores bounded gameplay stamina");
+    const auto bad=nlohmann::json::parse(w.serialize());auto altered=bad;altered["inventory_m3"][0]=1;rejects([&]{(void)StarterWorld::deserialize(altered.dump());});
+    altered=bad;altered["stamina"]=100;rejects([&]{(void)StarterWorld::deserialize(altered.dump());});
+    altered=bad;altered["xp"]=100;rejects([&]{(void)StarterWorld::deserialize(altered.dump());});
+    altered=bad;altered["bonus"]=true;rejects([&]{(void)StarterWorld::deserialize(altered.dump());});
+    rejects([&]{(void)StarterWorld::deserialize("{\"starter_version\":1,\"starter_version\":1}");});
+    auto exhausted=nlohmann::json::parse(initial);exhausted["stamina"]=0;exhausted["spent"]=100;
+    auto tired=StarterWorld::deserialize(exhausted.dump());const auto tired_before=tired.serialize();
+    rejects([&]{(void)tired.interact("tired",1,eye(tired,1));});check(tired.serialize()==tired_before,"insufficient stamina cannot partially collect or award experience");
+    for(auto m:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        StarterWorld game;const unsigned first=m==MaterialPreset::Glass?13:m==MaterialPreset::Oak?1:7;
+        for(unsigned i=0;i<4;++i)(void)game.interact("gather-"+std::to_string(i),first+i,eye(game,first+i));
+        const double held=game.inventoryKg(m);const auto name=m==MaterialPreset::Glass?"glass-ball":m==MaterialPreset::Oak?"oak-ball":"iron-ball";
+        const auto plan=game.quote(name);check(plan.ready(),"all three material sphere designs are affordable after collection/XP");
+        (void)game.craft("sphere",name,{0,1.65,0});const auto object=game.objects().back();
+        near(held-game.inventoryKg(m),object.recipe.geometry().volume()*makeReferenceMaterial(m).density_kg_m3,1e-12,"craft debit equals actual sphere matter");
+        game.step(24);near(game.objects().back().state.linear_velocity_m_s.y,-.981,1e-5,"three-material crafted sphere free fall follows same gravity");
+        const double spent_before=game.spent();game.step(240);(void)game.interact("recover-sphere",object.id,eye(game,static_cast<unsigned>(object.id)));
+        near(game.inventoryKg(m),held,1e-12,"collecting physical crafted sphere returns raw volume without creating material");check(game.spent()>spent_before,"recovering material does not refund spent stamina");
+    }
+    for(auto m:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        JoltWorld physics;physics.setGravity({0,-9.81,0});physics.addFloor();
+        physics.addBox({1,{.08,.06,.1},makeReferenceMaterial(m),{{0,2,0},{},{},{}},false});physics.pinToWorld(1);
+        for(unsigned i=0;i<120;++i)physics.step(1.0/240);
+        near(physics.snapshot(1).center_of_mass_world_m.y,2,1e-4,"three-material attachment supports weight");
+        const auto state=physics.snapshot(1);physics.releaseFromWorld(1);
+        near(length(physics.snapshot(1).linear_velocity_m_s-state.linear_velocity_m_s),0,0,"constraint release has no invented impulse");
+        for(unsigned i=0;i<48;++i)physics.step(1.0/240);
+        near(physics.snapshot(1).linear_velocity_m_s.y,-9.81*.2,1e-4,"released material obeys gravity independently of density");
+        std::cout<<materialPresetName(m)<<" release-vy="<<physics.snapshot(1).linear_velocity_m_s.y<<'\n';
+    }
+    std::cout<<"[PASS] starter collect/craft/tool/XP/stamina/replay/branch/gravity/persistence\n";return 0;
+}catch(const std::exception &e){std::cerr<<"[FAIL] "<<e.what()<<'\n';return 1;}}

@@ -15,6 +15,7 @@
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
 #include <Jolt/Physics/Collision/Shape/OffsetCenterOfMassShape.h>
+#include <Jolt/Physics/Constraints/FixedConstraint.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 
@@ -406,6 +407,8 @@ public:
 
     ~Impl() {
         if (physics_) {
+            for(auto &[id,constraint]:pins_) { (void)id;physics_->RemoveConstraint(constraint); }
+            pins_.clear();
             JPH::BodyInterface &body_interface = physics_->GetBodyInterface();
             for (const auto &[logical_id, body_id] : bodies_) {
                 (void)logical_id;
@@ -497,6 +500,7 @@ public:
     std::atomic<std::uint64_t> tick_{0};
     ImpactCollector impact_collector_;
     JPH::BodyID floor_id_;
+    std::unordered_map<MatterBodyId,JPH::Ref<JPH::Constraint>> pins_;
     std::unordered_map<MatterBodyId, JPH::BodyID> bodies_;
     std::optional<RigidSurfaceDescription> support_surface_;
     Vec3 gravity_m_s2_{0.0, -9.81, 0.0};
@@ -670,13 +674,14 @@ void JoltWorld::addBox(const RigidBoxDescription &description) {
         !std::isfinite(q.w+q.x+q.y+q.z)||std::abs(q.w*q.w+q.x*q.x+q.y*q.y+q.z*q.z-1)>1e-5)
         throw std::invalid_argument("box requires finite positive dimensions/density and valid rigid state");
     if(impl_->bodies_.contains(description.body_id))throw std::logic_error("body ID is already in the Jolt world");
+    if(description.fixed&&(lengthSquared(s.linear_velocity_m_s)>0||lengthSquared(s.angular_velocity_rad_s)>0))throw std::invalid_argument("fixed box cannot have initial motion");
     const RigidPrimitive shape{PrimitiveKind::Box,0,d};
     const double mass=shape.volume()*description.material.density_kg_m3;
     const auto contact=compileContactMaterial(description.material);
     JPH::BodyCreationSettings settings(new JPH::BoxShape(toJolt(d/2),0.0F),
         toJoltPosition(s.center_of_mass_world_m),
         JPH::Quat(static_cast<float>(q.x),static_cast<float>(q.y),static_cast<float>(q.z),static_cast<float>(q.w)),
-        JPH::EMotionType::Dynamic,Layers::kMoving);
+        description.fixed?JPH::EMotionType::Static:JPH::EMotionType::Dynamic,description.fixed?Layers::kNonMoving:Layers::kMoving);
     settings.mFriction=static_cast<float>(contact.dynamic_friction);
     settings.mRestitution=static_cast<float>(contact.restitution);
     settings.mLinearDamping=0;settings.mAngularDamping=0;settings.mMaxAngularVelocity=1000;
@@ -688,9 +693,9 @@ void JoltWorld::addBox(const RigidBoxDescription &description) {
     settings.mMassPropertiesOverride.mInertia=toJoltInertia(shape.inertia(mass));
     auto &bodies=impl_->physics_->GetBodyInterface();
     impl_->bodies_.reserve(impl_->bodies_.size()+1);impl_->contact_states_.reserve(impl_->contact_states_.size()+1);
-    const auto id=bodies.CreateAndAddBody(settings,JPH::EActivation::Activate);
+    const auto id=bodies.CreateAndAddBody(settings,description.fixed?JPH::EActivation::DontActivate:JPH::EActivation::Activate);
     if(id.IsInvalid())throw std::runtime_error("Jolt could not create box body");
-    bodies.SetLinearAndAngularVelocity(id,toJolt(s.linear_velocity_m_s),toJolt(s.angular_velocity_rad_s));
+    if(!description.fixed)bodies.SetLinearAndAngularVelocity(id,toJolt(s.linear_velocity_m_s),toJolt(s.angular_velocity_rad_s));
     try {
         impl_->bodies_.emplace(description.body_id,id);
         impl_->contact_states_.emplace(description.body_id,BodyContactState{contact,0,0,false,mass,{}});
@@ -698,6 +703,23 @@ void JoltWorld::addBox(const RigidBoxDescription &description) {
         impl_->bodies_.erase(description.body_id);impl_->contact_states_.erase(description.body_id);
         bodies.RemoveBody(id);bodies.DestroyBody(id);throw;
     }
+}
+
+void JoltWorld::pinToWorld(MatterBodyId body_id) {
+    const auto found=impl_->bodies_.find(body_id);
+    if(found==impl_->bodies_.end()||impl_->pins_.contains(body_id))throw std::invalid_argument("missing or already pinned body");
+    if(impl_->physics_->GetBodyInterface().GetMotionType(found->second)!=JPH::EMotionType::Dynamic)throw std::invalid_argument("only a dynamic body can be pinned");
+    JPH::FixedConstraintSettings settings;settings.mAutoDetectPoint=true;
+    auto *constraint=impl_->physics_->GetBodyInterface().CreateConstraint(&settings,JPH::BodyID(),found->second);
+    if(!constraint)throw std::runtime_error("cannot create world attachment");
+    JPH::Ref<JPH::Constraint> owned=constraint;
+    impl_->pins_.emplace(body_id,owned);impl_->physics_->AddConstraint(constraint);
+}
+void JoltWorld::releaseFromWorld(MatterBodyId body_id) {
+    const auto found=impl_->pins_.find(body_id);
+    if(found==impl_->pins_.end())return;
+    impl_->physics_->RemoveConstraint(found->second);impl_->pins_.erase(found);
+    impl_->physics_->GetBodyInterface().ActivateBody(impl_->bodies_.at(body_id));
 }
 
 void JoltWorld::addFragments(
@@ -944,6 +966,7 @@ void JoltWorld::removeAndDestroy(MatterBodyId body_id) {
     if (found == impl_->bodies_.end()) {
         return;
     }
+    releaseFromWorld(body_id);
     JPH::BodyInterface &body_interface = impl_->physics_->GetBodyInterface();
     body_interface.RemoveBody(found->second);
     body_interface.DestroyBody(found->second);
