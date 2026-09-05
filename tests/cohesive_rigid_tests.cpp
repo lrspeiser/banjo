@@ -54,8 +54,9 @@ int main(){try{
         const auto m=makeReferenceMaterial(preset);const double area=.0001,mass=m.density_kg_m3*.012*.01*.008,work=area*m.fracture_energy_j_m2,rest=.02;
         const CohesiveInterfaceLaw law{2*m.tensile_strength_pa*m.tensile_strength_pa/m.fracture_energy_j_m2,m.tensile_strength_pa,m.fracture_energy_j_m2,area};
         const Vec3 inertia{mass*(.01*.01+.008*.008)/12,mass*(.012*.012+.008*.008)/12,mass*(.012*.012+.01*.01)/12};
-        for(unsigned cells:{2u,4u,8u}){
-            for(double loading:{.25,1.0,4.0}){
+        for(double loading:{.25,1.0,4.0}){
+            double previous_work=0,previous_work_difference=0,previous_spin_difference=0;Vec3 previous_spin{};
+            for(unsigned cells:{2u,4u,8u,16u}){
             CohesiveRigidBody a{mass,inertia,{-.016,0,0},{},{},{},{}},b{mass,inertia,{.016,0,0},{},{},{},{}};
             auto patch=makeRectangularCohesivePatch(a,b,{.006,0,0},{-.006,0,0},{0,1,0},{0,0,1},{0,1,0},{0,0,1},.01,.008,cells);
             double total_area=0;for(const auto &site:patch.sites)total_area+=site.area_m2;
@@ -66,10 +67,20 @@ int main(){try{
             double damage_min=1,damage_max=0,max_error=0,max_trajectory_error=0;
             const double e0=cohesiveRigidKineticEnergy({patch.a,patch.b,{}});
             for(unsigned i=0;i<2048;++i){const auto next=advanceCohesivePatch(law,patch,dt);patch=next.state;max_error=std::max(max_error,std::abs(next.energy_residual_j));require(length(next.angular_residual)<1e-10,"distributed patch preserves total angular momentum");double energy=cohesiveRigidKineticEnergy({patch.a,patch.b,{}});for(const auto &site:patch.sites){auto local=law;local.area_m2=site.area_m2;const auto response=evaluateCohesiveInterface(local,site.history);energy+=response.stored_energy_j+response.dissipated_energy_j;}max_trajectory_error=std::max(max_trajectory_error,std::abs(energy-e0));}
-            for(const auto &site:patch.sites){auto local=law;local.area_m2=site.area_m2;const auto response=evaluateCohesiveInterface(local,site.history);damage_min=std::min(damage_min,response.damage);damage_max=std::max(damage_max,response.damage);}
+            double damage_work=0;
+            for(const auto &site:patch.sites){auto local=law;local.area_m2=site.area_m2;const auto response=evaluateCohesiveInterface(local,site.history);damage_min=std::min(damage_min,response.damage);damage_max=std::max(damage_max,response.damage);damage_work+=response.dissipated_energy_j;}
             if(loading==4)require(damage_max>damage_min+.01,"bending damages different parts of the finite joint differently");
             require(max_trajectory_error<total_area*m.fracture_energy_j_m2*1e-4,"patch whole-trajectory energy error bounded in test");
             std::cout<<materialPresetName(preset)<<" patch_sites="<<patch.sites.size()<<" loading="<<loading<<" area_m2="<<total_area<<" min_damage="<<damage_min<<" max_damage="<<damage_max<<" max_step_energy_error_j="<<max_error<<" max_trajectory_energy_error_j="<<max_trajectory_error<<'\n';
+            const double work_difference=std::abs(damage_work-previous_work)/(total_area*m.fracture_energy_j_m2),spin_difference=length(patch.b.angular_momentum_kg_m2_s-previous_spin)/(inertia.z*rotation_speed);
+            std::cout<<materialPresetName(preset)<<" patch_integral cells="<<cells<<" loading="<<loading<<" damage_work_j="<<damage_work<<" normalized_work_difference="<<(cells==2?0:work_difference)<<" normalized_spin_difference="<<(cells==2?0:spin_difference)<<'\n';
+            if(cells==16){
+                // A newly resolved damage front need not converge monotonically.
+                // Bound this grid comparison without asserting an asymptotic rate.
+                require(work_difference<.02,"finest integrated patch damage-work difference is bounded");require(spin_difference<.02,"finest integrated patch spin difference is bounded");
+                std::cout<<materialPresetName(preset)<<" patch_refinement loading="<<loading<<" damage_difference_decreased="<<(work_difference<=previous_work_difference+1e-12)<<" spin_difference_decreased="<<(spin_difference<previous_spin_difference)<<'\n';
+            }
+            previous_work=damage_work;previous_spin=patch.b.angular_momentum_kg_m2_s;previous_work_difference=work_difference;previous_spin_difference=spin_difference;
             }
         }
         for(double energy_factor:{1.5,6.0}){
