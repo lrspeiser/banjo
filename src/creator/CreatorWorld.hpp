@@ -119,7 +119,7 @@ public:
     [[nodiscard]] CreationAssessment assess(const ObjectRecipe &recipe,std::optional<RevisionTarget> editing={}) const;
     [[nodiscard]] std::string assessJson(const ObjectRecipe &recipe,std::optional<RevisionTarget> editing={}) const;
     // Read-only two-box cohesive assembly assessment; does not authorize live
-    // creation or claim collision ownership has been integrated into Jolt.
+    // creation. Explicit policy selects isolated cohesion or a temporary Jolt test.
     [[nodiscard]] std::string assessAssemblyJson(std::string_view declaration) const;
     // Host-provided read-only stock view; this does not create inventory authority.
     [[nodiscard]] static std::string assessAssemblyWithStockJson(std::string_view declaration,const std::vector<AssemblyMaterialStock> &stock);
