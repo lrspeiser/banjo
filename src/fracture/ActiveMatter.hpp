@@ -24,10 +24,20 @@ struct ActiveNodeState {
     double mass_kg{};
 };
 
+enum class BondFailureMode : std::uint8_t {
+    None,
+    Tension,
+    Compression,
+    Shear,
+};
+
 struct ActiveBondState {
     double accumulated_lambda{};
     double damage{};
     double peak_tensile_stretch{};
+    double peak_compressive_strain{};
+    double peak_shear_strain{};
+    BondFailureMode failure_mode{BondFailureMode::None};
     bool alive{true};
 };
 
@@ -36,6 +46,7 @@ struct ActiveMatter {
     const LatticeAsset *asset{};
     CompiledBrittleMaterial material{};
     std::vector<ActiveNodeState> nodes;
+    std::vector<Vec3> reference_positions_world_m;
     std::vector<ActiveBondState> bonds;
     bool connectivity_dirty{};
     std::uint64_t step_index{};

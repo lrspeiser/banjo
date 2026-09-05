@@ -18,8 +18,15 @@ struct ImpactEvent {
     Vec3 relative_velocity_b_minus_a_m_s{};
 
     double closing_speed_m_s{};
+    double tangential_speed_m_s{};
     double estimated_normal_impulse_n_s{};
     double available_normal_energy_j{};
+
+    double combined_static_friction{};
+    double combined_dynamic_friction{};
+    double applied_friction{};
+    double combined_restitution{};
+    double effective_contact_modulus_pa{};
 
     [[nodiscard]] bool involves(MatterBodyId body) const {
         return body == body_a || body == body_b;

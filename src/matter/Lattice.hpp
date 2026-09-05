@@ -37,6 +37,10 @@ struct BondRest {
     double compliance{};
     double damage_start_stretch{};
     double damage_end_stretch{};
+    double compression_damage_start_strain{};
+    double compression_damage_end_strain{};
+    double shear_damage_start_strain{};
+    double shear_damage_end_strain{};
 };
 
 struct LatticeAsset {

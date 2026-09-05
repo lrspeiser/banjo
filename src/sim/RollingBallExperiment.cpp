@@ -5,60 +5,37 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 #include <stdexcept>
 #include <utility>
 
 namespace banjo {
 namespace {
 
-[[nodiscard]] MaterialDefinition makeIronMaterial() {
-    MaterialDefinition material;
-    material.name = "iron";
-    material.model = MaterialModel::RigidOnly;
-    material.density_kg_m3 = 7870.0;
-    material.young_modulus_pa = 211.0e9;
-    material.poisson_ratio = 0.29;
-    material.tensile_strength_pa = 200.0e6;
-    material.fracture_energy_j_m2 = 100000.0;
-    material.friction = 0.55;
-    material.restitution = 0.08;
-    return material;
-}
-
-[[nodiscard]] MaterialDefinition makeGlassMaterial(std::uint64_t seed) {
-    MaterialDefinition material;
-    material.name = "brittle_glass_v1";
-    material.model = MaterialModel::BrittleBond;
-    material.density_kg_m3 = 2500.0;
-    material.young_modulus_pa = 70.0e9;
-    material.poisson_ratio = 0.22;
-    material.tensile_strength_pa = 45.0e6;
-    material.fracture_energy_j_m2 = 8.0;
-    material.friction = 0.35;
-    material.restitution = 0.12;
-    material.damping_ratio = 0.015;
-    material.strength_variation = 0.12;
-    material.seed = seed;
-    material.calibration.activation_energy_scale = 1.0;
-    material.calibration.damage_strain_multiplier = 8.0;
-    material.calibration.break_strain_multiplier = 16.0;
-    return material;
-}
-
 void validateSettings(const ExperimentSettings &settings) {
     if (settings.radius_m <= 0.0 || settings.voxel_size_m <= 0.0 ||
-        settings.neighbor_horizon_cells == 0U || settings.occupancy_samples_per_axis == 0U ||
+        settings.neighbor_horizon_cells == 0U ||
+        settings.occupancy_samples_per_axis == 0U ||
         settings.rigid_step_s <= 0.0 || settings.material_step_s <= 0.0 ||
-        settings.maximum_material_steps == 0U || settings.maximum_rigid_fragments == 0U ||
-        settings.maximum_collision_points < 8U || settings.iron_speed_m_s <= 0.0) {
+        settings.maximum_material_steps == 0U ||
+        settings.maximum_rigid_fragments == 0U ||
+        settings.maximum_collision_points < 8U ||
+        settings.iron_speed_m_s <= 0.0 ||
+        settings.target_initial_speed_m_s < 0.0 ||
+        settings.sphere_inertia_factor <= 0.0 ||
+        !std::isfinite(settings.surface_slope_degrees) ||
+        std::abs(settings.surface_slope_degrees) >= 89.0) {
         throw std::invalid_argument("rolling-ball experiment settings are invalid");
     }
     if (settings.minimum_material_steps > settings.maximum_material_steps) {
-        throw std::invalid_argument("minimum material steps exceed maximum material steps");
+        throw std::invalid_argument(
+            "minimum material steps exceed maximum material steps");
     }
 }
 
-[[nodiscard]] bool impactLess(const ImpactEvent &left, const ImpactEvent &right) {
+[[nodiscard]] bool impactLess(
+    const ImpactEvent &left,
+    const ImpactEvent &right) {
     if (left.fixed_tick != right.fixed_tick) {
         return left.fixed_tick < right.fixed_tick;
     }
@@ -75,6 +52,13 @@ void validateSettings(const ExperimentSettings &settings) {
         return left.contact_point_world_m.y < right.contact_point_world_m.y;
     }
     return left.contact_point_world_m.z < right.contact_point_world_m.z;
+}
+
+[[nodiscard]] double sphereMass(
+    double radius_m,
+    const MaterialDefinition &material) {
+    return (4.0 / 3.0) * std::numbers::pi * radius_m * radius_m * radius_m *
+           material.density_kg_m3;
 }
 
 } // namespace
@@ -96,50 +80,79 @@ RollingBallExperiment::RollingBallExperiment(ExperimentSettings settings) {
 }
 
 RollingBallExperiment::~RollingBallExperiment() = default;
-RollingBallExperiment::RollingBallExperiment(RollingBallExperiment &&) noexcept = default;
-RollingBallExperiment &RollingBallExperiment::operator=(RollingBallExperiment &&) noexcept = default;
+RollingBallExperiment::RollingBallExperiment(
+    RollingBallExperiment &&) noexcept = default;
+RollingBallExperiment &RollingBallExperiment::operator=(
+    RollingBallExperiment &&) noexcept = default;
 
 void RollingBallExperiment::reset(ExperimentSettings settings) {
     validateSettings(settings);
 
-    // Destroy Jolt before constructing a replacement because Jolt owns process-global
-    // type registration state in this bootstrap integration.
+    // Jolt uses process-global type registration in this bootstrap integration,
+    // so the previous world must be destroyed before constructing its replacement.
     rigid_world_.reset();
-    active_glass_.reset();
+    active_target_.reset();
     latest_components_.clear();
     fragment_build_ = {};
     debris_particles_.clear();
     activating_impact_.reset();
+    compiled_target_.reset();
+    target_lattice_.reset();
 
     settings_ = std::move(settings);
-    iron_material_ = makeIronMaterial();
-    glass_material_ = makeGlassMaterial(settings_.material_seed);
-    compiled_glass_ = compileBrittleMaterial(
-        glass_material_, settings_.voxel_size_m, settings_.neighbor_horizon_cells);
-    glass_lattice_ = generateSphereLattice(
-        {
-            settings_.radius_m,
+    support_plane_ = makeSupportPlaneFromSlopeDegrees(
+        settings_.surface_slope_degrees);
+    striker_material_ = makeReferenceMaterial(
+        settings_.striker_material, settings_.material_seed);
+    target_material_ = makeReferenceMaterial(
+        settings_.target_material, settings_.material_seed);
+    surface_material_ = makeReferenceMaterial(
+        settings_.surface_material, settings_.material_seed);
+
+    if (target_material_.model == MaterialModel::BrittleBond) {
+        compiled_target_ = compileBrittleMaterial(
+            target_material_,
             settings_.voxel_size_m,
-            settings_.neighbor_horizon_cells,
-            settings_.occupancy_samples_per_axis,
-        },
-        compiled_glass_);
+            settings_.neighbor_horizon_cells);
+        target_lattice_ = generateSphereLattice(
+            {
+                settings_.radius_m,
+                settings_.voxel_size_m,
+                settings_.neighbor_horizon_cells,
+                settings_.occupancy_samples_per_axis,
+            },
+            *compiled_target_);
+    }
+
+    target_surface_contact_ = combineContactMaterials(
+        compileContactMaterial(target_material_),
+        compileContactMaterial(surface_material_));
 
     solver_ = BrittleBondSolver({
         .substeps = 2,
         .constraint_iterations = 8,
-        .floor_height_m = 0.0,
-        .floor_friction = 0.4,
-        .impact_internal_energy_fraction = settings_.impact_internal_energy_fraction,
+        .use_support_plane = true,
+        .support_plane = support_plane_,
+        .surface_dynamic_friction = target_surface_contact_.dynamic_friction,
+        .surface_restitution = target_surface_contact_.restitution,
+        .impact_internal_energy_fraction =
+            settings_.impact_internal_energy_fraction,
         .maximum_internal_energy_j = settings_.maximum_internal_energy_j,
     });
 
     stats_ = {};
     stats_.phase = ExperimentPhase::Rigid;
-    stats_.represented_glass_mass_kg = glass_lattice_.total_mass_kg;
-    stats_.active_nodes = glass_lattice_.nodes.size();
-    stats_.total_bonds = glass_lattice_.bonds.size();
+    stats_.represented_target_mass_kg = target_lattice_
+                                            ? target_lattice_->total_mass_kg
+                                            : sphereMass(
+                                                  settings_.radius_m,
+                                                  target_material_);
+    // Kept as a compatibility alias for the original glass-only headless test.
+    stats_.represented_glass_mass_kg = stats_.represented_target_mass_kg;
+    stats_.active_nodes = target_lattice_ ? target_lattice_->nodes.size() : 0U;
+    stats_.total_bonds = target_lattice_ ? target_lattice_->bonds.size() : 0U;
     stats_.connected_components = 1U;
+    updateScenarioProjection();
 
     last_broken_bonds_ = 0U;
     stable_material_steps_ = 0U;
@@ -147,32 +160,121 @@ void RollingBallExperiment::reset(ExperimentSettings settings) {
     initializeWorld();
 }
 
+void RollingBallExperiment::updateScenarioProjection() {
+    BallScenarioInput input;
+    input.striker_material = striker_material_;
+    input.target_material = target_material_;
+    input.surface_material = surface_material_;
+    input.striker_radius_m = settings_.radius_m;
+    input.target_radius_m = settings_.radius_m;
+    input.striker_speed_m_s = settings_.iron_speed_m_s;
+    input.target_speed_m_s = settings_.target_initial_speed_m_s;
+    input.slope_angle_degrees = settings_.surface_slope_degrees;
+    input.gravity_world_m_s2 = settings_.gravity_m_s2;
+    input.sphere_inertia_factor = settings_.sphere_inertia_factor;
+    input.voxel_size_m = settings_.voxel_size_m;
+    input.estimated_active_nodes =
+        target_lattice_ ? target_lattice_->nodes.size() : 0U;
+    input.estimated_bonds =
+        target_lattice_ ? target_lattice_->bonds.size() : 0U;
+    input.estimated_material_steps = settings_.maximum_material_steps;
+    input.realtime_constraint_budget = settings_.realtime_constraint_budget;
+
+    const ScenarioKey key = makeScenarioKey(
+        settings_.striker_material,
+        settings_.target_material,
+        settings_.surface_material,
+        settings_.radius_m,
+        settings_.iron_speed_m_s,
+        settings_.surface_slope_degrees,
+        settings_.gravity_m_s2,
+        settings_.voxel_size_m,
+        settings_.material_seed);
+    const ProjectionLookup lookup = projection_cache_.lookupOrProject(key, input);
+    scenario_projection_ = lookup.projection;
+
+    stats_.projection_cache_hit = lookup.cache_hit;
+    stats_.predicted_peak_force_n = scenario_projection_.impact.peak_force_n;
+    stats_.predicted_peak_pressure_pa =
+        scenario_projection_.impact.peak_contact_pressure_pa;
+    stats_.predicted_striker_mass_kg =
+        scenario_projection_.impact.striker_mass_kg;
+    stats_.predicted_target_mass_kg =
+        scenario_projection_.impact.target_mass_kg;
+    stats_.predicted_slope_acceleration_m_s2 =
+        scenario_projection_.incline.acceleration_along_slope_m_s2;
+    stats_.predicted_failure =
+        scenario_projection_.impact.predicted_failure;
+    stats_.predicted_incline_regime = scenario_projection_.incline.regime;
+    stats_.runtime_strategy = scenario_projection_.runtime_strategy;
+}
+
+std::size_t RollingBallExperiment::loadProjectionCache(
+    const std::filesystem::path &path) {
+    const std::size_t loaded = projection_cache_.loadCsv(path);
+    updateScenarioProjection();
+    return loaded;
+}
+
+void RollingBallExperiment::saveProjectionCache(
+    const std::filesystem::path &path) const {
+    projection_cache_.saveCsv(path);
+}
+
 void RollingBallExperiment::initializeWorld() {
     rigid_world_ = std::make_unique<JoltWorld>();
     rigid_world_->setGravity(settings_.gravity_m_s2);
-    rigid_world_->addFloor();
+    rigid_world_->addSupportSurface({
+        .frame = support_plane_,
+        .material = surface_material_,
+        .half_length_tangent_m = 12.0,
+        .half_length_bitangent_m = 6.0,
+        .thickness_m = 0.5,
+    });
+
+    const Vec3 striker_velocity =
+        settings_.iron_speed_m_s * support_plane_.tangent_world;
+    const Vec3 target_velocity =
+        settings_.target_initial_speed_m_s * support_plane_.tangent_world;
     rigid_world_->addBall({
-        .body_id = kIronBallId,
+        .body_id = kStrikerBallId,
         .radius_m = settings_.radius_m,
-        .material = iron_material_,
-        .position_world_m = {-1.50, settings_.radius_m + 0.001, 0.0},
-        .linear_velocity_m_s = {settings_.iron_speed_m_s, 0.0, 0.0},
-        .angular_velocity_rad_s = {0.0, 0.0, -settings_.iron_speed_m_s / settings_.radius_m},
+        .material = striker_material_,
+        .position_world_m = pointInPlaneFrame(
+            support_plane_,
+            -1.50,
+            0.0,
+            settings_.radius_m + 0.001),
+        .linear_velocity_m_s = striker_velocity,
+        .angular_velocity_rad_s =
+            cross(support_plane_.normal_world, striker_velocity) /
+            settings_.radius_m,
+        .sphere_inertia_factor = settings_.sphere_inertia_factor,
     });
     rigid_world_->addBall({
-        .body_id = kGlassBallId,
+        .body_id = kTargetBallId,
         .radius_m = settings_.radius_m,
-        .material = glass_material_,
-        .position_world_m = {0.0, settings_.radius_m + 0.001, 0.0},
-        .linear_velocity_m_s = {},
-        .angular_velocity_rad_s = {},
-        .mass_override_kg = glass_lattice_.total_mass_kg,
+        .material = target_material_,
+        .position_world_m = pointInPlaneFrame(
+            support_plane_,
+            0.0,
+            0.0,
+            settings_.radius_m + 0.001),
+        .linear_velocity_m_s = target_velocity,
+        .angular_velocity_rad_s =
+            cross(support_plane_.normal_world, target_velocity) /
+            settings_.radius_m,
+        .mass_override_kg = target_lattice_
+                                ? target_lattice_->total_mass_kg
+                                : 0.0,
+        .sphere_inertia_factor = settings_.sphere_inertia_factor,
     });
 }
 
 void RollingBallExperiment::stepFixed() {
     if (!rigid_world_) {
-        throw std::logic_error("rolling-ball experiment has no rigid world");
+        throw std::logic_error(
+            "rolling-ball experiment has no rigid world");
     }
 
     switch (stats_.phase) {
@@ -195,34 +297,45 @@ void RollingBallExperiment::stepRigidPhase() {
     std::vector<ImpactEvent> impacts = rigid_world_->drainImpacts();
     std::sort(impacts.begin(), impacts.end(), impactLess);
     for (const ImpactEvent &impact : impacts) {
-        if (!impact.involves(kGlassBallId)) {
+        if (!impact.involves(kTargetBallId) ||
+            !impact.involves(kStrikerBallId)) {
             continue;
         }
 
         const ActivationDecision decision = activation_policy_.evaluate(
             impact,
             {
-                kGlassBallId,
-                settings_.radius_m,
-                glass_material_,
-                0.0,
+                .body_id = kTargetBallId,
+                .radius_m = settings_.radius_m,
+                .material = target_material_,
+                .accumulated_damage = 0.0,
+                .reduced_radius_m = 0.5 * settings_.radius_m,
             });
         stats_.impact_speed_m_s = impact.closing_speed_m_s;
+        stats_.impact_tangential_speed_m_s =
+            impact.tangential_speed_m_s;
         stats_.impact_energy_j = impact.available_normal_energy_j;
         stats_.activation_threshold_j = decision.threshold_energy_j;
         stats_.normalized_impact_energy = decision.normalized_energy;
+        stats_.actual_contact_friction = impact.applied_friction;
+        stats_.actual_contact_restitution = impact.combined_restitution;
         if (!decision.activate) {
             continue;
         }
+        if (!target_lattice_ || !compiled_target_) {
+            throw std::logic_error(
+                "activatable target does not have a compiled material lattice");
+        }
 
         activating_impact_ = impact;
-        const RigidSnapshot post_contact_glass = rigid_world_->snapshot(kGlassBallId);
-        rigid_world_->removeAndDestroy(kGlassBallId);
-        active_glass_ = solver_.activate(
-            kGlassBallId,
-            glass_lattice_,
-            compiled_glass_,
-            post_contact_glass,
+        const RigidSnapshot post_contact_target =
+            rigid_world_->snapshot(kTargetBallId);
+        rigid_world_->removeAndDestroy(kTargetBallId);
+        active_target_ = solver_.activate(
+            kTargetBallId,
+            *target_lattice_,
+            *compiled_target_,
+            post_contact_target,
             impact);
         stats_.phase = ExperimentPhase::Fracturing;
         stats_.broken_bonds = 0U;
@@ -236,22 +349,29 @@ void RollingBallExperiment::stepFracturingPhase() {
     ++stats_.rigid_steps;
     (void)rigid_world_->drainImpacts();
 
-    if (!active_glass_) {
-        throw std::logic_error("fracturing phase has no active glass material");
+    if (!active_target_) {
+        throw std::logic_error(
+            "fracturing phase has no active target material");
     }
 
     material_time_accumulator_s_ += settings_.rigid_step_s;
-    while (material_time_accumulator_s_ + 1.0e-12 >= settings_.material_step_s) {
+    while (material_time_accumulator_s_ + 1.0e-12 >=
+           settings_.material_step_s) {
         material_time_accumulator_s_ -= settings_.material_step_s;
         const MaterialStepStats material_stats = solver_.step(
-            *active_glass_, settings_.material_step_s, settings_.gravity_m_s2);
+            *active_target_,
+            settings_.material_step_s,
+            settings_.gravity_m_s2);
         ++stats_.material_steps;
 
         stats_.broken_bonds = material_stats.total_broken_bonds;
-        stats_.maximum_tensile_stretch = material_stats.maximum_tensile_stretch;
+        stats_.maximum_tensile_stretch =
+            material_stats.maximum_tensile_stretch;
         stats_.active_kinetic_energy_j = material_stats.kinetic_energy_j;
-        stats_.active_elastic_energy_j = material_stats.estimated_elastic_energy_j;
-        stats_.maximum_node_speed_m_s = material_stats.maximum_speed_m_s;
+        stats_.active_elastic_energy_j =
+            material_stats.estimated_elastic_energy_j;
+        stats_.maximum_node_speed_m_s =
+            material_stats.maximum_speed_m_s;
 
         if (material_stats.total_broken_bonds == last_broken_bonds_) {
             ++stable_material_steps_;
@@ -268,10 +388,12 @@ void RollingBallExperiment::stepFracturingPhase() {
         const bool minimum_elapsed =
             stats_.material_steps >= settings_.minimum_material_steps;
         const bool fracture_is_stable =
-            stable_material_steps_ >= settings_.stable_material_steps_before_handoff;
+            stable_material_steps_ >=
+            settings_.stable_material_steps_before_handoff;
         const bool maximum_elapsed =
             stats_.material_steps >= settings_.maximum_material_steps;
-        if ((minimum_elapsed && fracture_is_stable && stats_.broken_bonds > 0U) ||
+        if ((minimum_elapsed && fracture_is_stable &&
+             stats_.broken_bonds > 0U) ||
             maximum_elapsed) {
             finalizeFragments();
             return;
@@ -287,37 +409,43 @@ void RollingBallExperiment::stepRigidFragmentsPhase() {
 }
 
 void RollingBallExperiment::updateComponentCount() {
-    if (!active_glass_) {
+    if (!active_target_) {
         return;
     }
-    latest_components_ = findConnectedComponents(*active_glass_);
+    latest_components_ = findConnectedComponents(*active_target_);
     stats_.connected_components = latest_components_.size();
 }
 
 void RollingBallExperiment::finalizeFragments() {
-    if (!active_glass_) {
-        throw std::logic_error("cannot finalize fragments without active material");
+    if (!active_target_) {
+        throw std::logic_error(
+            "cannot finalize fragments without active material");
     }
     updateComponentCount();
     if (latest_components_.empty()) {
-        throw std::runtime_error("fractured material produced no connected components");
+        throw std::runtime_error(
+            "fractured material produced no connected components");
     }
 
+    const CompiledContactMaterial target_contact =
+        compileContactMaterial(target_material_);
     fragment_build_ = buildFragmentRepresentations(
-        *active_glass_,
+        *active_target_,
         latest_components_,
         {
             .first_body_id = 1000,
             .maximum_rigid_fragments = settings_.maximum_rigid_fragments,
-            .minimum_nodes_per_rigid_fragment = settings_.minimum_nodes_per_rigid_fragment,
+            .minimum_nodes_per_rigid_fragment =
+                settings_.minimum_nodes_per_rigid_fragment,
             .maximum_collision_points = settings_.maximum_collision_points,
-            .friction = glass_material_.friction,
-            .restitution = glass_material_.restitution,
+            .friction = target_contact.dynamic_friction,
+            .restitution = target_contact.restitution,
         });
     rigid_world_->addFragments(fragment_build_.rigid_fragments);
 
     debris_particles_.reserve(fragment_build_.debris_particles.size());
-    for (const DebrisParticleDescription &particle : fragment_build_.debris_particles) {
+    for (const DebrisParticleDescription &particle :
+         fragment_build_.debris_particles) {
         debris_particles_.push_back({
             particle.position_world_m,
             particle.velocity_m_s,
@@ -331,31 +459,69 @@ void RollingBallExperiment::finalizeFragments() {
     stats_.debris_particles = debris_particles_.size();
     stats_.fragment_mass_kg = fragment_build_.total_mass_kg;
     stats_.mass_error_kg =
-        fragment_build_.total_mass_kg - stats_.represented_glass_mass_kg;
+        fragment_build_.total_mass_kg - stats_.represented_target_mass_kg;
     stats_.phase = ExperimentPhase::RigidFragments;
-    active_glass_.reset();
+    active_target_.reset();
 }
 
 void RollingBallExperiment::integrateDebris(double dt_s) {
+    const Vec3 &normal = support_plane_.normal_world;
+    const double normal_gravity =
+        std::max(0.0, -dot(settings_.gravity_m_s2, normal));
+
     for (DebrisParticleState &particle : debris_particles_) {
         particle.velocity_m_s += dt_s * settings_.gravity_m_s2;
         particle.position_world_m += dt_s * particle.velocity_m_s;
 
-        if (particle.position_world_m.y < particle.radius_m) {
-            particle.position_world_m.y = particle.radius_m;
-            if (particle.velocity_m_s.y < 0.0) {
-                particle.velocity_m_s.y *= -0.20;
+        const double distance =
+            signedDistanceToPlane(support_plane_, particle.position_world_m);
+        if (distance < particle.radius_m) {
+            particle.position_world_m +=
+                (particle.radius_m - distance) * normal;
+
+            const double incoming_normal_speed =
+                dot(particle.velocity_m_s, normal);
+            Vec3 tangent_velocity =
+                particle.velocity_m_s - incoming_normal_speed * normal;
+            if (incoming_normal_speed < 0.0) {
+                const double tangent_speed = length(tangent_velocity);
+                if (tangent_speed > 1.0e-12) {
+                    const double friction_delta =
+                        target_surface_contact_.dynamic_friction *
+                        (1.0 + target_surface_contact_.restitution) *
+                        (-incoming_normal_speed);
+                    tangent_velocity *=
+                        std::max(0.0, tangent_speed - friction_delta) /
+                        tangent_speed;
+                }
+                particle.velocity_m_s = tangent_velocity -
+                    target_surface_contact_.restitution *
+                        incoming_normal_speed * normal;
             }
-            particle.velocity_m_s.x *= 0.97;
-            particle.velocity_m_s.z *= 0.97;
-            if (std::abs(particle.velocity_m_s.y) < 0.03) {
-                particle.velocity_m_s.y = 0.0;
+
+            const double tangent_speed = length(tangent_velocity);
+            if (tangent_speed > 1.0e-12 && normal_gravity > 0.0) {
+                const double rolling_deceleration =
+                    target_surface_contact_.rolling_resistance *
+                    normal_gravity / 1.4;
+                const double retained_speed = std::max(
+                    0.0,
+                    tangent_speed - rolling_deceleration * dt_s);
+                const Vec3 normal_velocity =
+                    dot(particle.velocity_m_s, normal) * normal;
+                particle.velocity_m_s = normal_velocity +
+                    (retained_speed / tangent_speed) * tangent_velocity;
+            }
+
+            if (length(particle.velocity_m_s) < 0.02) {
+                particle.velocity_m_s = {};
             }
         }
     }
 }
 
-std::optional<RigidSnapshot> RollingBallExperiment::rigidSnapshot(MatterBodyId body_id) const {
+std::optional<RigidSnapshot> RollingBallExperiment::rigidSnapshot(
+    MatterBodyId body_id) const {
     if (!rigid_world_ || !rigid_world_->contains(body_id)) {
         return std::nullopt;
     }
@@ -363,7 +529,15 @@ std::optional<RigidSnapshot> RollingBallExperiment::rigidSnapshot(MatterBodyId b
 }
 
 const ActiveMatter *RollingBallExperiment::activeMatter() const {
-    return active_glass_ ? &*active_glass_ : nullptr;
+    return active_target_ ? &*active_target_ : nullptr;
+}
+
+const LatticeAsset &RollingBallExperiment::glassLattice() const {
+    if (!target_lattice_) {
+        throw std::logic_error(
+            "selected target material does not use the brittle lattice solver");
+    }
+    return *target_lattice_;
 }
 
 } // namespace banjo

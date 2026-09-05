@@ -1,5 +1,7 @@
 #include "rigid/JoltWorld.hpp"
 
+#include "material/MaterialCompiler.hpp"
+
 #include <Jolt/Jolt.h>
 #include <Jolt/RegisterTypes.h>
 #include <Jolt/Core/Factory.h>
@@ -16,12 +18,15 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstdarg>
 #include <cstdio>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <numbers>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -35,6 +40,9 @@ namespace banjo {
 namespace {
 
 using namespace JPH::literals;
+
+constexpr MatterBodyId kSupportSurfaceMatterId =
+    std::numeric_limits<MatterBodyId>::max() - 1U;
 
 namespace Layers {
 constexpr JPH::ObjectLayer kNonMoving = 0;
@@ -139,6 +147,28 @@ public:
     return result;
 }
 
+struct BodyContactState {
+    CompiledContactMaterial contact{};
+    double radius_m{};
+    double sphere_inertia_factor{0.4};
+    bool is_sphere{};
+};
+
+[[nodiscard]] CompiledContactMaterial legacyFragmentContact(
+    double friction,
+    double restitution) {
+    CompiledContactMaterial contact;
+    contact.static_friction = std::max(0.0, friction);
+    contact.dynamic_friction = std::max(0.0, friction);
+    contact.rolling_resistance = 0.001;
+    contact.restitution = std::clamp(restitution, 0.0, 1.0);
+    contact.contact_damping_ratio =
+        dampingRatioFromCoefficientOfRestitution(contact.restitution);
+    contact.young_modulus_pa = 70.0e9;
+    contact.poisson_ratio = 0.22;
+    return contact;
+}
+
 void traceImpl(const char *format, ...) {
     std::va_list args;
     va_start(args, format);
@@ -162,16 +192,46 @@ bool assertFailedImpl(
 
 class ImpactCollector final : public JPH::ContactListener {
 public:
-    explicit ImpactCollector(std::atomic<std::uint64_t> &tick) : tick_(tick) {}
+    ImpactCollector(
+        std::atomic<std::uint64_t> &tick,
+        const std::unordered_map<MatterBodyId, BodyContactState> &contact_states)
+        : tick_(tick), contact_states_(contact_states) {}
 
     void OnContactAdded(
         const JPH::Body &body1,
         const JPH::Body &body2,
         const JPH::ContactManifold &manifold,
         JPH::ContactSettings &settings) override {
+        processContact(body1, body2, manifold, settings, true);
+    }
+
+    void OnContactPersisted(
+        const JPH::Body &body1,
+        const JPH::Body &body2,
+        const JPH::ContactManifold &manifold,
+        JPH::ContactSettings &settings) override {
+        processContact(body1, body2, manifold, settings, false);
+    }
+
+    [[nodiscard]] std::vector<ImpactEvent> drain() {
+        std::scoped_lock lock(mutex_);
+        std::vector<ImpactEvent> result;
+        result.swap(events_);
+        return result;
+    }
+
+private:
+    void processContact(
+        const JPH::Body &body1,
+        const JPH::Body &body2,
+        const JPH::ContactManifold &manifold,
+        JPH::ContactSettings &settings,
+        bool record_impact) {
         const MatterBodyId id1 = body1.GetUserData();
         const MatterBodyId id2 = body2.GetUserData();
-        if (id1 == kInvalidMatterBodyId || id2 == kInvalidMatterBodyId) {
+        const auto state1 = contact_states_.find(id1);
+        const auto state2 = contact_states_.find(id2);
+        if (state1 == contact_states_.end() || state2 == contact_states_.end()) {
             return;
         }
 
@@ -186,12 +246,34 @@ public:
                            (manifold.GetWorldSpaceContactPointOn1(index) +
                             manifold.GetWorldSpaceContactPointOn2(index));
         }
-        const JPH::RVec3 contact_point = contact_sum / static_cast<float>(contact_count);
+        const JPH::RVec3 contact_point =
+            contact_sum / static_cast<float>(contact_count);
         const JPH::Vec3 relative_velocity =
-            body2.GetPointVelocity(contact_point) - body1.GetPointVelocity(contact_point);
-        const double closing_speed = std::max(
-            0.0,
-            -static_cast<double>(relative_velocity.Dot(manifold.mWorldSpaceNormal)));
+            body2.GetPointVelocity(contact_point) -
+            body1.GetPointVelocity(contact_point);
+        const double normal_speed =
+            static_cast<double>(relative_velocity.Dot(manifold.mWorldSpaceNormal));
+        const double closing_speed = std::max(0.0, -normal_speed);
+        const JPH::Vec3 tangent_velocity =
+            relative_velocity - static_cast<float>(normal_speed) *
+                                    manifold.mWorldSpaceNormal;
+        const double tangential_speed =
+            static_cast<double>(tangent_velocity.Length());
+
+        const CombinedContactMaterial combined = combineContactMaterials(
+            state1->second.contact, state2->second.contact);
+        const double applied_friction = tangential_speed < 0.05
+                                            ? combined.static_friction
+                                            : combined.dynamic_friction;
+        settings.mCombinedFriction = static_cast<float>(applied_friction);
+        settings.mCombinedRestitution =
+            static_cast<float>(combined.restitution);
+
+        if (!record_impact || id1 == kSupportSurfaceMatterId ||
+            id2 == kSupportSurfaceMatterId || id1 == kInvalidMatterBodyId ||
+            id2 == kInvalidMatterBodyId) {
+            return;
+        }
 
         JPH::CollisionEstimationResult estimation;
         JPH::EstimateCollisionResponse(
@@ -221,25 +303,27 @@ public:
         event.body_a = id1;
         event.body_b = id2;
         event.contact_point_world_m = fromJoltPosition(contact_point);
-        event.normal_a_to_b = normalized(fromJoltVector(manifold.mWorldSpaceNormal));
-        event.relative_velocity_b_minus_a_m_s = fromJoltVector(relative_velocity);
+        event.normal_a_to_b =
+            normalized(fromJoltVector(manifold.mWorldSpaceNormal));
+        event.relative_velocity_b_minus_a_m_s =
+            fromJoltVector(relative_velocity);
         event.closing_speed_m_s = closing_speed;
+        event.tangential_speed_m_s = tangential_speed;
         event.estimated_normal_impulse_n_s = estimated_normal_impulse;
-        event.available_normal_energy_j = 0.5 * reduced_mass * closing_speed * closing_speed;
+        event.available_normal_energy_j =
+            0.5 * reduced_mass * closing_speed * closing_speed;
+        event.combined_static_friction = combined.static_friction;
+        event.combined_dynamic_friction = combined.dynamic_friction;
+        event.applied_friction = applied_friction;
+        event.combined_restitution = combined.restitution;
+        event.effective_contact_modulus_pa = combined.effective_modulus_pa;
 
         std::scoped_lock lock(mutex_);
         events_.push_back(event);
     }
 
-    [[nodiscard]] std::vector<ImpactEvent> drain() {
-        std::scoped_lock lock(mutex_);
-        std::vector<ImpactEvent> result;
-        result.swap(events_);
-        return result;
-    }
-
-private:
     std::atomic<std::uint64_t> &tick_;
+    const std::unordered_map<MatterBodyId, BodyContactState> &contact_states_;
     std::mutex mutex_;
     std::vector<ImpactEvent> events_;
 };
@@ -248,7 +332,7 @@ private:
 
 class JoltWorld::Impl {
 public:
-    Impl() : impact_collector_(tick_) {
+    Impl() : impact_collector_(tick_, contact_states_) {
         JPH::RegisterDefaultAllocator();
         JPH::Trace = traceImpl;
 #ifdef JPH_ENABLE_ASSERTS
@@ -257,9 +341,12 @@ public:
         JPH::Factory::sInstance = new JPH::Factory();
         JPH::RegisterTypes();
 
-        temp_allocator_ = std::make_unique<JPH::TempAllocatorImpl>(32U * 1024U * 1024U);
-        const unsigned hardware_threads = std::max(1U, std::thread::hardware_concurrency());
-        const unsigned worker_threads = hardware_threads > 1U ? hardware_threads - 1U : 1U;
+        temp_allocator_ =
+            std::make_unique<JPH::TempAllocatorImpl>(32U * 1024U * 1024U);
+        const unsigned hardware_threads =
+            std::max(1U, std::thread::hardware_concurrency());
+        const unsigned worker_threads =
+            hardware_threads > 1U ? hardware_threads - 1U : 1U;
         job_system_ = std::make_unique<JPH::JobSystemThreadPool>(
             JPH::cMaxPhysicsJobs,
             JPH::cMaxPhysicsBarriers,
@@ -274,7 +361,7 @@ public:
             object_vs_broad_phase_filter_,
             object_pair_filter_);
         physics_->SetContactListener(&impact_collector_);
-        physics_->SetGravity(JPH::Vec3(0.0F, -9.81F, 0.0F));
+        physics_->SetGravity(toJolt(gravity_m_s2_));
     }
 
     ~Impl() {
@@ -301,16 +388,107 @@ public:
         JPH::Factory::sInstance = nullptr;
     }
 
+    void applyRollingResistance(double fixed_dt_s) {
+        if (!support_surface_) {
+            return;
+        }
+        const auto surface_state = contact_states_.find(kSupportSurfaceMatterId);
+        if (surface_state == contact_states_.end()) {
+            return;
+        }
+
+        JPH::BodyInterface &body_interface = physics_->GetBodyInterface();
+        const SupportPlaneFrame &plane = support_surface_->frame;
+        const double normal_gravity =
+            std::max(0.0, -dot(gravity_m_s2_, plane.normal_world));
+        if (normal_gravity <= 0.0) {
+            return;
+        }
+
+        for (const auto &[logical_id, body_id] : bodies_) {
+            const auto body_state = contact_states_.find(logical_id);
+            if (body_state == contact_states_.end() ||
+                !body_state->second.is_sphere ||
+                body_state->second.radius_m <= 0.0) {
+                continue;
+            }
+
+            const CombinedContactMaterial combined = combineContactMaterials(
+                body_state->second.contact, surface_state->second.contact);
+            if (combined.rolling_resistance <= 0.0) {
+                continue;
+            }
+
+            const Vec3 center = fromJoltPosition(
+                body_interface.GetCenterOfMassPosition(body_id));
+            const double distance = signedDistanceToPlane(plane, center);
+            const double contact_tolerance =
+                std::max(0.015, 0.08 * body_state->second.radius_m);
+            if (std::abs(distance - body_state->second.radius_m) >
+                contact_tolerance) {
+                continue;
+            }
+
+            const Vec3 linear =
+                fromJoltVector(body_interface.GetLinearVelocity(body_id));
+            const double normal_speed = dot(linear, plane.normal_world);
+            if (std::abs(normal_speed) > 0.5) {
+                continue;
+            }
+            const Vec3 tangent = linear - normal_speed * plane.normal_world;
+            const double tangent_speed = length(tangent);
+            if (tangent_speed <= 1.0e-8) {
+                continue;
+            }
+
+            const Vec3 angular =
+                fromJoltVector(body_interface.GetAngularVelocity(body_id));
+            const Vec3 contact_slip =
+                tangent - body_state->second.radius_m *
+                              cross(angular, plane.normal_world);
+            if (length(contact_slip) > std::max(0.08, 0.25 * tangent_speed)) {
+                continue;
+            }
+
+            const double inertia_factor =
+                std::max(1.0e-6, body_state->second.sphere_inertia_factor);
+            const double deceleration =
+                combined.rolling_resistance * normal_gravity /
+                (1.0 + inertia_factor);
+            const double new_speed =
+                std::max(0.0, tangent_speed - deceleration * fixed_dt_s);
+            if (new_speed >= tangent_speed) {
+                continue;
+            }
+
+            const Vec3 new_tangent = (new_speed / tangent_speed) * tangent;
+            const Vec3 new_linear =
+                normal_speed * plane.normal_world + new_tangent;
+            const Vec3 normal_spin =
+                dot(angular, plane.normal_world) * plane.normal_world;
+            const Vec3 rolling_angular =
+                cross(plane.normal_world, new_tangent) /
+                body_state->second.radius_m;
+            body_interface.SetLinearAndAngularVelocity(
+                body_id,
+                toJolt(new_linear),
+                toJolt(normal_spin + rolling_angular));
+        }
+    }
+
     BroadPhaseLayerInterface broad_phase_interface_;
     ObjectVsBroadPhaseLayerFilter object_vs_broad_phase_filter_;
     ObjectLayerPairFilter object_pair_filter_;
     std::unique_ptr<JPH::TempAllocatorImpl> temp_allocator_;
     std::unique_ptr<JPH::JobSystemThreadPool> job_system_;
     std::unique_ptr<JPH::PhysicsSystem> physics_;
+    std::unordered_map<MatterBodyId, BodyContactState> contact_states_;
     std::atomic<std::uint64_t> tick_{0};
     ImpactCollector impact_collector_;
     JPH::BodyID floor_id_;
     std::unordered_map<MatterBodyId, JPH::BodyID> bodies_;
+    std::optional<RigidSurfaceDescription> support_surface_;
+    Vec3 gravity_m_s2_{0.0, -9.81, 0.0};
 };
 
 JoltWorld::JoltWorld() : impl_(std::make_unique<Impl>()) {}
@@ -319,42 +497,100 @@ JoltWorld::JoltWorld(JoltWorld &&) noexcept = default;
 JoltWorld &JoltWorld::operator=(JoltWorld &&) noexcept = default;
 
 void JoltWorld::setGravity(const Vec3 &gravity_m_s2) {
+    impl_->gravity_m_s2_ = gravity_m_s2;
     impl_->physics_->SetGravity(toJolt(gravity_m_s2));
 }
 
 void JoltWorld::addFloor() {
+    MaterialDefinition concrete;
+    concrete.name = "default_concrete_surface";
+    concrete.density_kg_m3 = 2400.0;
+    concrete.young_modulus_pa = 30.0e9;
+    concrete.poisson_ratio = 0.20;
+    concrete.static_friction = 0.75;
+    concrete.dynamic_friction = 0.62;
+    concrete.friction = concrete.dynamic_friction;
+    concrete.rolling_resistance = 0.015;
+    concrete.contact_damping_ratio = 0.30;
+    concrete.derive_restitution_from_damping = true;
+    addSupportSurface({
+        .frame = makeSupportPlane({}, {0.0, 1.0, 0.0}),
+        .material = concrete,
+    });
+}
+
+void JoltWorld::addSupportSurface(const RigidSurfaceDescription &description) {
     if (!impl_->floor_id_.IsInvalid()) {
-        throw std::logic_error("floor already exists");
+        throw std::logic_error("support surface already exists");
+    }
+    if (description.half_length_tangent_m <= 0.0 ||
+        description.half_length_bitangent_m <= 0.0 ||
+        description.thickness_m <= 0.0) {
+        throw std::invalid_argument("support surface dimensions must be positive");
     }
 
+    RigidSurfaceDescription stored = description;
+    stored.frame = makeSupportPlane(
+        description.frame.point_world_m,
+        description.frame.normal_world,
+        description.frame.tangent_world);
+    const CompiledContactMaterial contact =
+        compileContactMaterial(stored.material);
+
+    const Vec3 center =
+        stored.frame.point_world_m -
+        0.5 * stored.thickness_m * stored.frame.normal_world;
+    const JPH::Quat orientation = JPH::Quat::sFromTo(
+        JPH::Vec3::sAxisY(), toJolt(stored.frame.normal_world));
     JPH::BodyCreationSettings settings(
-        new JPH::BoxShape(JPH::Vec3(10.0F, 0.25F, 5.0F)),
-        JPH::RVec3(0.0_r, -0.25_r, 0.0_r),
-        JPH::Quat::sIdentity(),
+        new JPH::BoxShape(JPH::Vec3(
+            static_cast<float>(stored.half_length_tangent_m),
+            static_cast<float>(0.5 * stored.thickness_m),
+            static_cast<float>(stored.half_length_bitangent_m))),
+        toJoltPosition(center),
+        orientation,
         JPH::EMotionType::Static,
         Layers::kNonMoving);
-    settings.mFriction = 0.65F;
-    settings.mRestitution = 0.02F;
-    settings.mUserData = kInvalidMatterBodyId;
+    settings.mFriction = static_cast<float>(contact.dynamic_friction);
+    settings.mRestitution = static_cast<float>(contact.restitution);
+    settings.mUserData = kSupportSurfaceMatterId;
 
     impl_->floor_id_ = impl_->physics_->GetBodyInterface().CreateAndAddBody(
         settings, JPH::EActivation::DontActivate);
+    if (impl_->floor_id_.IsInvalid()) {
+        throw std::runtime_error("Jolt could not create support surface");
+    }
+    impl_->support_surface_ = stored;
+    impl_->contact_states_[kSupportSurfaceMatterId] = {
+        contact,
+        0.0,
+        0.0,
+        false,
+    };
 }
 
 void JoltWorld::addBall(const RigidBallDescription &description) {
-    if (description.body_id == kInvalidMatterBodyId || description.radius_m <= 0.0 ||
-        description.material.density_kg_m3 <= 0.0) {
-        throw std::invalid_argument("ball requires a valid ID, radius, and density");
+    if (description.body_id == kInvalidMatterBodyId ||
+        description.body_id == kSupportSurfaceMatterId ||
+        description.radius_m <= 0.0 ||
+        description.material.density_kg_m3 <= 0.0 ||
+        description.sphere_inertia_factor <= 0.0) {
+        throw std::invalid_argument("ball requires a valid ID, radius, density, and inertia");
     }
     if (impl_->bodies_.contains(description.body_id)) {
         throw std::logic_error("body ID is already in the Jolt world");
     }
 
+    const CompiledContactMaterial contact =
+        compileContactMaterial(description.material);
     const double volume = (4.0 / 3.0) * std::numbers::pi *
-                          description.radius_m * description.radius_m * description.radius_m;
-    const double computed_mass = volume * description.material.density_kg_m3;
-    const double mass =
-        description.mass_override_kg > 0.0 ? description.mass_override_kg : computed_mass;
+                          description.radius_m * description.radius_m *
+                          description.radius_m;
+    const double computed_mass =
+        volume * description.material.density_kg_m3;
+    const double mass = description.mass_override_kg > 0.0
+                            ? description.mass_override_kg
+                            : computed_mass;
 
     JPH::BodyCreationSettings settings(
         new JPH::SphereShape(static_cast<float>(description.radius_m)),
@@ -362,13 +598,17 @@ void JoltWorld::addBall(const RigidBallDescription &description) {
         JPH::Quat::sIdentity(),
         JPH::EMotionType::Dynamic,
         Layers::kMoving);
-    settings.mFriction = static_cast<float>(description.material.friction);
-    settings.mRestitution = static_cast<float>(description.material.restitution);
-    settings.mLinearDamping = 0.01F;
-    settings.mAngularDamping = 0.01F;
+    settings.mFriction = static_cast<float>(contact.dynamic_friction);
+    settings.mRestitution = static_cast<float>(contact.restitution);
+    settings.mLinearDamping =
+        static_cast<float>(std::clamp(description.material.damping_ratio, 0.0, 1.0));
+    settings.mAngularDamping = settings.mLinearDamping;
     settings.mUserData = description.body_id;
-    settings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
+    settings.mOverrideMassProperties =
+        JPH::EOverrideMassProperties::CalculateInertia;
     settings.mMassPropertiesOverride.mMass = static_cast<float>(mass);
+    settings.mInertiaMultiplier = static_cast<float>(
+        description.sphere_inertia_factor / 0.4);
 
     JPH::BodyInterface &body_interface = impl_->physics_->GetBodyInterface();
     const JPH::BodyID body_id =
@@ -381,9 +621,18 @@ void JoltWorld::addBall(const RigidBallDescription &description) {
         toJolt(description.linear_velocity_m_s),
         toJolt(description.angular_velocity_rad_s));
     impl_->bodies_.emplace(description.body_id, body_id);
+    impl_->contact_states_.emplace(
+        description.body_id,
+        BodyContactState{
+            contact,
+            description.radius_m,
+            description.sphere_inertia_factor,
+            true,
+        });
 }
 
-void JoltWorld::addFragments(const std::vector<RigidFragmentDescription> &fragments) {
+void JoltWorld::addFragments(
+    const std::vector<RigidFragmentDescription> &fragments) {
     if (fragments.empty()) {
         return;
     }
@@ -393,6 +642,7 @@ void JoltWorld::addFragments(const std::vector<RigidFragmentDescription> &fragme
         JPH::BodyID body_id{};
         Vec3 linear_velocity_m_s{};
         Vec3 angular_velocity_rad_s{};
+        CompiledContactMaterial contact{};
     };
 
     JPH::BodyInterface &body_interface = impl_->physics_->GetBodyInterface();
@@ -404,14 +654,17 @@ void JoltWorld::addFragments(const std::vector<RigidFragmentDescription> &fragme
     try {
         for (const RigidFragmentDescription &fragment : fragments) {
             if (fragment.body_id == kInvalidMatterBodyId ||
+                fragment.body_id == kSupportSurfaceMatterId ||
                 impl_->bodies_.contains(fragment.body_id) ||
                 fragment.mass_properties.mass_kg <= 0.0 ||
                 fragment.collision_points_local_m.size() < 4U) {
                 throw std::invalid_argument("rigid fragment description is invalid");
             }
             if (fragment.collision_points_local_m.size() >
-                static_cast<std::size_t>(JPH::ConvexHullShape::cMaxPointsInHull)) {
-                throw std::invalid_argument("rigid fragment exceeds Jolt convex hull point limit");
+                static_cast<std::size_t>(
+                    JPH::ConvexHullShape::cMaxPointsInHull)) {
+                throw std::invalid_argument(
+                    "rigid fragment exceeds Jolt convex hull point limit");
             }
 
             std::vector<JPH::Vec3> hull_points;
@@ -424,7 +677,8 @@ void JoltWorld::addFragments(const std::vector<RigidFragmentDescription> &fragme
                 hull_points.data(),
                 static_cast<int>(hull_points.size()),
                 0.0F);
-            const JPH::ShapeSettings::ShapeResult hull_result = hull_settings.Create();
+            const JPH::ShapeSettings::ShapeResult hull_result =
+                hull_settings.Create();
             if (hull_result.HasError()) {
                 const JPH::String &error = hull_result.GetError();
                 throw std::runtime_error(
@@ -435,15 +689,20 @@ void JoltWorld::addFragments(const std::vector<RigidFragmentDescription> &fragme
             const JPH::RefConst<JPH::Shape> centered_shape =
                 new JPH::OffsetCenterOfMassShape(
                     inner_shape.GetPtr(), -inner_shape->GetCenterOfMass());
+            const CompiledContactMaterial contact = legacyFragmentContact(
+                fragment.friction, fragment.restitution);
 
             JPH::BodyCreationSettings settings(
                 centered_shape.GetPtr(),
-                toJoltPosition(fragment.mass_properties.center_of_mass_world_m),
+                toJoltPosition(
+                    fragment.mass_properties.center_of_mass_world_m),
                 JPH::Quat::sIdentity(),
                 JPH::EMotionType::Dynamic,
                 Layers::kMoving);
-            settings.mFriction = static_cast<float>(fragment.friction);
-            settings.mRestitution = static_cast<float>(fragment.restitution);
+            settings.mFriction =
+                static_cast<float>(contact.dynamic_friction);
+            settings.mRestitution =
+                static_cast<float>(contact.restitution);
             settings.mLinearDamping = 0.02F;
             settings.mAngularDamping = 0.02F;
             settings.mUserData = fragment.body_id;
@@ -453,23 +712,27 @@ void JoltWorld::addFragments(const std::vector<RigidFragmentDescription> &fragme
             settings.mMassPropertiesOverride.mMass =
                 static_cast<float>(fragment.mass_properties.mass_kg);
             settings.mMassPropertiesOverride.mInertia =
-                toJoltInertia(fragment.mass_properties.inertia_world_kg_m2);
+                toJoltInertia(
+                    fragment.mass_properties.inertia_world_kg_m2);
 
             JPH::Body *body = body_interface.CreateBody(settings);
             if (body == nullptr) {
-                throw std::runtime_error("Jolt ran out of bodies while creating fragments");
+                throw std::runtime_error(
+                    "Jolt ran out of bodies while creating fragments");
             }
             pending.push_back({
                 fragment.body_id,
                 body->GetID(),
                 fragment.mass_properties.linear_velocity_m_s,
                 fragment.mass_properties.angular_velocity_rad_s,
+                contact,
             });
             body_ids.push_back(body->GetID());
         }
 
-        const JPH::BodyInterface::AddState add_state = body_interface.AddBodiesPrepare(
-            body_ids.data(), static_cast<int>(body_ids.size()));
+        const JPH::BodyInterface::AddState add_state =
+            body_interface.AddBodiesPrepare(
+                body_ids.data(), static_cast<int>(body_ids.size()));
         body_interface.AddBodiesFinalize(
             body_ids.data(),
             static_cast<int>(body_ids.size()),
@@ -482,6 +745,9 @@ void JoltWorld::addFragments(const std::vector<RigidFragmentDescription> &fragme
                 toJolt(body.linear_velocity_m_s),
                 toJolt(body.angular_velocity_rad_s));
             impl_->bodies_.emplace(body.logical_id, body.body_id);
+            impl_->contact_states_.emplace(
+                body.logical_id,
+                BodyContactState{body.contact, 0.0, 0.0, false});
         }
     } catch (...) {
         for (const PendingBody &body : pending) {
@@ -498,6 +764,7 @@ void JoltWorld::step(double fixed_dt_s) {
     if (fixed_dt_s <= 0.0) {
         throw std::invalid_argument("Jolt step must be positive");
     }
+    impl_->applyRollingResistance(fixed_dt_s);
     impl_->tick_.fetch_add(1U, std::memory_order_relaxed);
     const JPH::EPhysicsUpdateError error = impl_->physics_->Update(
         static_cast<float>(fixed_dt_s),
@@ -519,9 +786,12 @@ RigidSnapshot JoltWorld::snapshot(MatterBodyId body_id) const {
         throw std::out_of_range("body is not in the Jolt world");
     }
 
-    const JPH::BodyInterface &body_interface = impl_->physics_->GetBodyInterface();
-    const JPH::RVec3 position = body_interface.GetCenterOfMassPosition(found->second);
-    const JPH::Quat rotation = body_interface.GetRotation(found->second);
+    const JPH::BodyInterface &body_interface =
+        impl_->physics_->GetBodyInterface();
+    const JPH::RVec3 position =
+        body_interface.GetCenterOfMassPosition(found->second);
+    const JPH::Quat rotation =
+        body_interface.GetRotation(found->second);
     return {
         fromJoltPosition(position),
         {
@@ -548,6 +818,7 @@ void JoltWorld::removeAndDestroy(MatterBodyId body_id) {
     body_interface.RemoveBody(found->second);
     body_interface.DestroyBody(found->second);
     impl_->bodies_.erase(found);
+    impl_->contact_states_.erase(body_id);
 }
 
 } // namespace banjo

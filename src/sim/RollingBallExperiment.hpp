@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/Math.hpp"
+#include "core/Plane.hpp"
 #include "core/Types.hpp"
 #include "fracture/ActivationPolicy.hpp"
 #include "fracture/ActiveMatter.hpp"
@@ -8,11 +9,15 @@
 #include "fracture/FragmentGeometry.hpp"
 #include "fracture/ImpactEvent.hpp"
 #include "material/Material.hpp"
+#include "material/MaterialCatalog.hpp"
 #include "matter/Lattice.hpp"
+#include "prediction/BallScenarioProjection.hpp"
+#include "prediction/ScenarioCache.hpp"
 #include "rigid/JoltWorld.hpp"
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string_view>
@@ -29,12 +34,20 @@ enum class ExperimentPhase : std::uint8_t {
 [[nodiscard]] std::string_view experimentPhaseName(ExperimentPhase phase);
 
 struct ExperimentSettings {
+    MaterialPreset striker_material{MaterialPreset::Iron};
+    MaterialPreset target_material{MaterialPreset::Glass};
+    MaterialPreset surface_material{MaterialPreset::Concrete};
+
     double radius_m{0.25};
     double voxel_size_m{0.04};
     unsigned neighbor_horizon_cells{2};
     unsigned occupancy_samples_per_axis{3};
 
+    // Retained name for source compatibility; this is the selected striker's speed.
     double iron_speed_m_s{8.0};
+    double target_initial_speed_m_s{};
+    double surface_slope_degrees{};
+    double sphere_inertia_factor{0.4};
     Vec3 gravity_m_s2{0.0, -9.81, 0.0};
     std::uint64_t material_seed{971};
 
@@ -50,6 +63,7 @@ struct ExperimentSettings {
     std::size_t maximum_rigid_fragments{64};
     std::size_t minimum_nodes_per_rigid_fragment{1};
     std::size_t maximum_collision_points{192};
+    std::uint64_t realtime_constraint_budget{50'000'000ULL};
 };
 
 struct ExperimentStats {
@@ -64,14 +78,28 @@ struct ExperimentStats {
     std::size_t rigid_fragments{};
     std::size_t debris_particles{};
 
+    double represented_target_mass_kg{};
     double represented_glass_mass_kg{};
     double fragment_mass_kg{};
     double mass_error_kg{};
 
     double impact_speed_m_s{};
+    double impact_tangential_speed_m_s{};
     double impact_energy_j{};
     double activation_threshold_j{};
     double normalized_impact_energy{};
+    double actual_contact_friction{};
+    double actual_contact_restitution{};
+
+    double predicted_peak_force_n{};
+    double predicted_peak_pressure_pa{};
+    double predicted_striker_mass_kg{};
+    double predicted_target_mass_kg{};
+    double predicted_slope_acceleration_m_s2{};
+    PredictedFailureMode predicted_failure{PredictedFailureMode::None};
+    InclineMotionRegime predicted_incline_regime{InclineMotionRegime::AtRest};
+    RuntimeStrategy runtime_strategy{RuntimeStrategy::RigidRealtime};
+    bool projection_cache_hit{};
 
     double maximum_tensile_stretch{};
     double active_kinetic_energy_j{};
@@ -100,26 +128,52 @@ public:
     void reset(ExperimentSettings settings);
     void stepFixed();
 
+    [[nodiscard]] std::size_t loadProjectionCache(
+        const std::filesystem::path &path);
+    void saveProjectionCache(const std::filesystem::path &path) const;
+
     [[nodiscard]] const ExperimentSettings &settings() const { return settings_; }
     [[nodiscard]] const ExperimentStats &stats() const { return stats_; }
     [[nodiscard]] ExperimentPhase phase() const { return stats_.phase; }
+    [[nodiscard]] const SupportPlaneFrame &supportPlane() const { return support_plane_; }
+    [[nodiscard]] const ScenarioProjection &scenarioProjection() const {
+        return scenario_projection_;
+    }
+    [[nodiscard]] const MaterialDefinition &strikerMaterial() const {
+        return striker_material_;
+    }
+    [[nodiscard]] const MaterialDefinition &targetMaterial() const {
+        return target_material_;
+    }
+    [[nodiscard]] const MaterialDefinition &surfaceMaterial() const {
+        return surface_material_;
+    }
 
-    [[nodiscard]] std::optional<RigidSnapshot> rigidSnapshot(MatterBodyId body_id) const;
+    [[nodiscard]] std::optional<RigidSnapshot> rigidSnapshot(
+        MatterBodyId body_id) const;
     [[nodiscard]] const ActiveMatter *activeMatter() const;
     [[nodiscard]] const std::optional<ImpactEvent> &activatingImpact() const {
         return activating_impact_;
     }
-    [[nodiscard]] const FragmentBuildResult &fragmentBuild() const { return fragment_build_; }
+    [[nodiscard]] const FragmentBuildResult &fragmentBuild() const {
+        return fragment_build_;
+    }
     [[nodiscard]] const std::vector<DebrisParticleState> &debrisParticles() const {
         return debris_particles_;
     }
-    [[nodiscard]] const LatticeAsset &glassLattice() const { return glass_lattice_; }
+    [[nodiscard]] const LatticeAsset *targetLattice() const {
+        return target_lattice_ ? &*target_lattice_ : nullptr;
+    }
+    [[nodiscard]] const LatticeAsset &glassLattice() const;
 
-    static constexpr MatterBodyId kIronBallId = 1;
-    static constexpr MatterBodyId kGlassBallId = 2;
+    static constexpr MatterBodyId kStrikerBallId = 1;
+    static constexpr MatterBodyId kTargetBallId = 2;
+    static constexpr MatterBodyId kIronBallId = kStrikerBallId;
+    static constexpr MatterBodyId kGlassBallId = kTargetBallId;
 
 private:
     void initializeWorld();
+    void updateScenarioProjection();
     void stepRigidPhase();
     void stepFracturingPhase();
     void stepRigidFragmentsPhase();
@@ -130,17 +184,23 @@ private:
     ExperimentSettings settings_{};
     ExperimentStats stats_{};
 
-    MaterialDefinition iron_material_{};
-    MaterialDefinition glass_material_{};
-    CompiledBrittleMaterial compiled_glass_{};
-    LatticeAsset glass_lattice_{};
+    MaterialDefinition striker_material_{};
+    MaterialDefinition target_material_{};
+    MaterialDefinition surface_material_{};
+    CombinedContactMaterial target_surface_contact_{};
+    std::optional<CompiledBrittleMaterial> compiled_target_;
+    std::optional<LatticeAsset> target_lattice_;
+    SupportPlaneFrame support_plane_{};
+
+    ScenarioProjectionCache projection_cache_{};
+    ScenarioProjection scenario_projection_{};
 
     ActivationPolicy activation_policy_{};
     BrittleBondSolver solver_{};
     std::unique_ptr<JoltWorld> rigid_world_;
 
     std::optional<ImpactEvent> activating_impact_;
-    std::optional<ActiveMatter> active_glass_;
+    std::optional<ActiveMatter> active_target_;
     std::vector<FragmentComponent> latest_components_;
     FragmentBuildResult fragment_build_{};
     std::vector<DebrisParticleState> debris_particles_;

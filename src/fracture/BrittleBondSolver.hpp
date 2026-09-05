@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/Plane.hpp"
 #include "fracture/ActiveMatter.hpp"
 #include "fracture/ImpactEvent.hpp"
 
@@ -10,8 +11,16 @@ namespace banjo {
 struct BrittleSolverSettings {
     unsigned substeps{2};
     unsigned constraint_iterations{8};
+
+    // General support surface. Legacy floor fields remain for source compatibility;
+    // set use_support_plane=true for tilted worlds.
+    bool use_support_plane{};
+    SupportPlaneFrame support_plane{};
+    double surface_dynamic_friction{0.4};
+    double surface_restitution{0.05};
     double floor_height_m{0.0};
     double floor_friction{0.4};
+
     double impact_internal_energy_fraction{0.04};
     double maximum_internal_energy_j{350.0};
 };
@@ -20,7 +29,12 @@ struct MaterialStepStats {
     std::size_t broken_bonds_this_step{};
     std::size_t live_bonds{};
     std::size_t total_broken_bonds{};
+    std::size_t tensile_failures{};
+    std::size_t compressive_failures{};
+    std::size_t shear_failures{};
     double maximum_tensile_stretch{};
+    double maximum_compressive_strain{};
+    double maximum_shear_strain{};
     double kinetic_energy_j{};
     double estimated_elastic_energy_j{};
     double maximum_speed_m_s{};

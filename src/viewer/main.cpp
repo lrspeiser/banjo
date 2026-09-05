@@ -22,17 +22,15 @@ namespace {
 
 constexpr Color kBackground{12, 18, 28, 255};
 constexpr Color kFloor{48, 55, 66, 255};
-constexpr Color kIron{116, 124, 136, 255};
 constexpr Color kIronHighlight{225, 198, 93, 255};
-constexpr Color kGlass{83, 185, 222, 255};
 constexpr Color kGlassLight{156, 224, 244, 255};
 constexpr Color kCrack{255, 111, 76, 255};
-constexpr Color kDebris{119, 204, 232, 255};
 constexpr Color kText{231, 236, 243, 255};
 constexpr Color kMuted{156, 165, 180, 255};
 
 struct ViewerOptions {
     std::string capture_path;
+    std::string cache_path;
     unsigned capture_frames{210};
 };
 
@@ -59,28 +57,59 @@ struct FragmentModel {
                 throw std::invalid_argument("--capture requires a file path");
             }
             options.capture_path = argv[++index];
+        } else if (argument == "--cache") {
+            if (index + 1 >= argc) {
+                throw std::invalid_argument("--cache requires a file path");
+            }
+            options.cache_path = argv[++index];
         } else if (argument == "--frames") {
             if (index + 1 >= argc) {
                 throw std::invalid_argument("--frames requires a positive integer");
             }
-            options.capture_frames = static_cast<unsigned>(std::stoul(argv[++index]));
+            options.capture_frames =
+                static_cast<unsigned>(std::stoul(argv[++index]));
             if (options.capture_frames == 0U) {
                 throw std::invalid_argument("--frames must be positive");
             }
         } else {
-            throw std::invalid_argument("unknown command-line argument: " + std::string(argument));
+            throw std::invalid_argument(
+                "unknown command-line argument: " + std::string(argument));
         }
     }
     return options;
 }
 
+[[nodiscard]] Color materialColor(banjo::MaterialPreset preset) {
+    switch (preset) {
+    case banjo::MaterialPreset::Iron:
+        return {116, 124, 136, 255};
+    case banjo::MaterialPreset::Aluminum:
+        return {183, 190, 198, 255};
+    case banjo::MaterialPreset::Glass:
+        return {83, 185, 222, 255};
+    case banjo::MaterialPreset::Ceramic:
+        return {224, 220, 205, 255};
+    case banjo::MaterialPreset::Oak:
+        return {145, 95, 55, 255};
+    case banjo::MaterialPreset::Rubber:
+        return {48, 54, 61, 255};
+    case banjo::MaterialPreset::Ice:
+        return {175, 222, 239, 255};
+    case banjo::MaterialPreset::Concrete:
+        return {116, 112, 108, 255};
+    }
+    return WHITE;
+}
+
 [[nodiscard]] Model buildModel(const banjo::FragmentSurfaceMesh &source) {
     if (source.indices.empty() || source.indices.size() % 3U != 0U) {
-        throw std::invalid_argument("fragment surface does not contain triangles");
+        throw std::invalid_argument(
+            "fragment surface does not contain triangles");
     }
     if (source.indices.size() >
         static_cast<std::size_t>(std::numeric_limits<int>::max())) {
-        throw std::overflow_error("fragment surface is too large for raylib");
+        throw std::overflow_error(
+            "fragment surface is too large for raylib");
     }
 
     Mesh mesh{};
@@ -90,10 +119,13 @@ struct FragmentModel {
     const std::size_t value_count = source.indices.size() * 3U;
     const std::size_t byte_count = value_count * sizeof(float);
     if (byte_count > std::numeric_limits<unsigned int>::max()) {
-        throw std::overflow_error("fragment vertex buffer exceeds raylib allocator limit");
+        throw std::overflow_error(
+            "fragment vertex buffer exceeds raylib allocator limit");
     }
-    mesh.vertices = static_cast<float *>(MemAlloc(static_cast<unsigned int>(byte_count)));
-    mesh.normals = static_cast<float *>(MemAlloc(static_cast<unsigned int>(byte_count)));
+    mesh.vertices = static_cast<float *>(
+        MemAlloc(static_cast<unsigned int>(byte_count)));
+    mesh.normals = static_cast<float *>(
+        MemAlloc(static_cast<unsigned int>(byte_count)));
     if (mesh.vertices == nullptr || mesh.normals == nullptr) {
         throw std::bad_alloc();
     }
@@ -101,15 +133,22 @@ struct FragmentModel {
     for (std::size_t output = 0; output < source.indices.size(); ++output) {
         const std::uint32_t source_index = source.indices[output];
         if (source_index >= source.vertices.size()) {
-            throw std::out_of_range("fragment surface index is invalid");
+            throw std::out_of_range(
+                "fragment surface index is invalid");
         }
         const banjo::SurfaceVertex &vertex = source.vertices[source_index];
-        mesh.vertices[3U * output + 0U] = static_cast<float>(vertex.position_local_m.x);
-        mesh.vertices[3U * output + 1U] = static_cast<float>(vertex.position_local_m.y);
-        mesh.vertices[3U * output + 2U] = static_cast<float>(vertex.position_local_m.z);
-        mesh.normals[3U * output + 0U] = static_cast<float>(vertex.normal_local.x);
-        mesh.normals[3U * output + 1U] = static_cast<float>(vertex.normal_local.y);
-        mesh.normals[3U * output + 2U] = static_cast<float>(vertex.normal_local.z);
+        mesh.vertices[3U * output + 0U] =
+            static_cast<float>(vertex.position_local_m.x);
+        mesh.vertices[3U * output + 1U] =
+            static_cast<float>(vertex.position_local_m.y);
+        mesh.vertices[3U * output + 2U] =
+            static_cast<float>(vertex.position_local_m.z);
+        mesh.normals[3U * output + 0U] =
+            static_cast<float>(vertex.normal_local.x);
+        mesh.normals[3U * output + 1U] =
+            static_cast<float>(vertex.normal_local.y);
+        mesh.normals[3U * output + 2U] =
+            static_cast<float>(vertex.normal_local.z);
     }
 
     UploadMesh(&mesh, false);
@@ -144,7 +183,8 @@ void syncFragmentModels(
     }
 }
 
-[[nodiscard]] std::vector<double> calculateNodeDamage(const banjo::ActiveMatter &matter) {
+[[nodiscard]] std::vector<double> calculateNodeDamage(
+    const banjo::ActiveMatter &matter) {
     std::vector<double> damage(matter.nodes.size(), 0.0);
     for (std::size_t index = 0; index < matter.bonds.size(); ++index) {
         const banjo::BondRest &rest = matter.asset->bonds[index];
@@ -159,12 +199,58 @@ void syncFragmentModels(
 [[nodiscard]] Color blendColor(Color from, Color to, double amount) {
     const double t = std::clamp(amount, 0.0, 1.0);
     const auto blend = [t](unsigned char a, unsigned char b) {
-        return static_cast<unsigned char>(
-            std::clamp((1.0 - t) * static_cast<double>(a) + t * static_cast<double>(b),
-                       0.0,
-                       255.0));
+        return static_cast<unsigned char>(std::clamp(
+            (1.0 - t) * static_cast<double>(a) +
+                t * static_cast<double>(b),
+            0.0,
+            255.0));
     };
-    return {blend(from.r, to.r), blend(from.g, to.g), blend(from.b, to.b), 255};
+    return {
+        blend(from.r, to.r),
+        blend(from.g, to.g),
+        blend(from.b, to.b),
+        255,
+    };
+}
+
+void drawSupportSurface(
+    const banjo::SupportPlaneFrame &plane,
+    Color surface_color) {
+    constexpr double kHalfLength = 10.0;
+    constexpr double kHalfWidth = 5.0;
+    const Vector3 a = toRaylib(
+        banjo::pointInPlaneFrame(plane, -kHalfLength, -kHalfWidth));
+    const Vector3 b = toRaylib(
+        banjo::pointInPlaneFrame(plane, kHalfLength, -kHalfWidth));
+    const Vector3 c = toRaylib(
+        banjo::pointInPlaneFrame(plane, kHalfLength, kHalfWidth));
+    const Vector3 d = toRaylib(
+        banjo::pointInPlaneFrame(plane, -kHalfLength, kHalfWidth));
+
+    const Color fill = blendColor(kFloor, surface_color, 0.32);
+    DrawTriangle3D(a, b, c, fill);
+    DrawTriangle3D(a, c, d, fill);
+    DrawTriangle3D(c, b, a, fill);
+    DrawTriangle3D(d, c, a, fill);
+
+    for (int index = -20; index <= 20; ++index) {
+        const double distance = 0.5 * static_cast<double>(index);
+        DrawLine3D(
+            toRaylib(banjo::pointInPlaneFrame(
+                plane, distance, -kHalfWidth, 0.002)),
+            toRaylib(banjo::pointInPlaneFrame(
+                plane, distance, kHalfWidth, 0.002)),
+            Fade(WHITE, index % 2 == 0 ? 0.16F : 0.08F));
+    }
+    for (int index = -10; index <= 10; ++index) {
+        const double distance = 0.5 * static_cast<double>(index);
+        DrawLine3D(
+            toRaylib(banjo::pointInPlaneFrame(
+                plane, -kHalfLength, distance, 0.002)),
+            toRaylib(banjo::pointInPlaneFrame(
+                plane, kHalfLength, distance, 0.002)),
+            Fade(WHITE, index % 2 == 0 ? 0.16F : 0.08F));
+    }
 }
 
 void drawRigidBall(
@@ -173,28 +259,48 @@ void drawRigidBall(
     double radius,
     Color color,
     Color marker_color) {
-    const std::optional<banjo::RigidSnapshot> snapshot = experiment.rigidSnapshot(body_id);
+    const std::optional<banjo::RigidSnapshot> snapshot =
+        experiment.rigidSnapshot(body_id);
     if (!snapshot) {
         return;
     }
     const Vector3 center = toRaylib(snapshot->center_of_mass_world_m);
     DrawSphere(center, static_cast<float>(radius), color);
-    DrawSphereWires(center, static_cast<float>(radius), 16, 24, Fade(marker_color, 0.45F));
-    const banjo::Vec3 marker_local = snapshot->orientation_world.rotate({radius, 0.0, 0.0});
-    DrawLine3D(center, toRaylib(snapshot->center_of_mass_world_m + marker_local), marker_color);
+    DrawSphereWires(
+        center,
+        static_cast<float>(radius),
+        16,
+        24,
+        Fade(marker_color, 0.45F));
+    const banjo::Vec3 marker_local =
+        snapshot->orientation_world.rotate({radius, 0.0, 0.0});
+    DrawLine3D(
+        center,
+        toRaylib(snapshot->center_of_mass_world_m + marker_local),
+        marker_color);
 }
 
-void drawActiveMatter(const banjo::ActiveMatter &matter, bool show_bonds, bool wireframe) {
+void drawActiveMatter(
+    const banjo::ActiveMatter &matter,
+    Color base_color,
+    bool show_bonds,
+    bool wireframe) {
     const double voxel_size = matter.asset->recipe.voxel_size_m;
     const float render_size = static_cast<float>(voxel_size * 0.90);
     const std::vector<double> node_damage = calculateNodeDamage(matter);
 
     for (std::size_t index = 0; index < matter.nodes.size(); ++index) {
-        const Color color = blendColor(kGlassLight, kCrack, node_damage[index]);
-        const Vector3 position = toRaylib(matter.nodes[index].position_world_m);
+        const Color color = blendColor(base_color, kCrack, node_damage[index]);
+        const Vector3 position =
+            toRaylib(matter.nodes[index].position_world_m);
         DrawCube(position, render_size, render_size, render_size, color);
         if (wireframe) {
-            DrawCubeWires(position, render_size, render_size, render_size, Fade(WHITE, 0.35F));
+            DrawCubeWires(
+                position,
+                render_size,
+                render_size,
+                render_size,
+                Fade(WHITE, 0.35F));
         }
     }
 
@@ -211,13 +317,15 @@ void drawActiveMatter(const banjo::ActiveMatter &matter, bool show_bonds, bool w
         DrawLine3D(
             toRaylib(matter.nodes[bond.node_a].position_world_m),
             toRaylib(matter.nodes[bond.node_b].position_world_m),
-            state.alive ? Fade(kGlassLight, 0.18F) : Fade(kCrack, 0.80F));
+            state.alive ? Fade(kGlassLight, 0.18F)
+                        : Fade(kCrack, 0.80F));
     }
 }
 
 void drawFragments(
     const banjo::RollingBallExperiment &experiment,
     const std::vector<FragmentModel> &models,
+    Color base_color,
     bool wireframe) {
     for (std::size_t index = 0; index < models.size(); ++index) {
         const FragmentModel &fragment = models[index];
@@ -236,17 +344,17 @@ void drawFragments(
         Vector3 axis{0.0F, 1.0F, 0.0F};
         float angle_radians = 0.0F;
         QuaternionToAxisAngle(rotation, &axis, &angle_radians);
-        const float angle_degrees = angle_radians * RAD2DEG;
         const Color tint = blendColor(
-            kGlass,
+            base_color,
             kGlassLight,
             static_cast<double>(index % 7U) / 9.0);
-        const Vector3 position = toRaylib(snapshot->center_of_mass_world_m);
+        const Vector3 position =
+            toRaylib(snapshot->center_of_mass_world_m);
         DrawModelEx(
             fragment.model,
             position,
             axis,
-            angle_degrees,
+            angle_radians * RAD2DEG,
             {1.0F, 1.0F, 1.0F},
             tint);
         if (wireframe) {
@@ -254,17 +362,18 @@ void drawFragments(
                 fragment.model,
                 position,
                 axis,
-                angle_degrees,
+                angle_radians * RAD2DEG,
                 {1.0F, 1.0F, 1.0F},
                 Fade(WHITE, 0.45F));
         }
     }
 
-    for (const banjo::DebrisParticleState &particle : experiment.debrisParticles()) {
+    for (const banjo::DebrisParticleState &particle :
+         experiment.debrisParticles()) {
         DrawSphere(
             toRaylib(particle.position_world_m),
             static_cast<float>(particle.radius_m),
-            kDebris);
+            blendColor(base_color, kGlassLight, 0.35));
     }
 }
 
@@ -276,7 +385,9 @@ void drawImpact(const std::optional<banjo::ImpactEvent> &impact) {
     DrawSphere(point, 0.035F, kCrack);
     DrawLine3D(
         point,
-        toRaylib(impact->contact_point_world_m + 0.40 * impact->normal_a_to_b),
+        toRaylib(
+            impact->contact_point_world_m +
+            0.40 * impact->normal_a_to_b),
         kCrack);
 }
 
@@ -284,6 +395,16 @@ void drawImpact(const std::optional<banjo::ImpactEvent> &impact) {
     std::ostringstream stream;
     stream << std::fixed << std::setprecision(precision) << value;
     return stream.str();
+}
+
+[[nodiscard]] std::string formatPressure(double pressure_pa) {
+    if (pressure_pa >= 1.0e9) {
+        return formatDouble(pressure_pa / 1.0e9, 2) + " GPa";
+    }
+    if (pressure_pa >= 1.0e6) {
+        return formatDouble(pressure_pa / 1.0e6, 1) + " MPa";
+    }
+    return formatDouble(pressure_pa / 1.0e3, 1) + " kPa";
 }
 
 void drawOverlay(
@@ -295,55 +416,111 @@ void drawOverlay(
     const banjo::ExperimentStats &stats = experiment.stats();
     const banjo::ExperimentSettings &settings = experiment.settings();
 
-    DrawRectangle(18, 18, 430, 324, Fade(BLACK, 0.78F));
-    DrawRectangleLines(18, 18, 430, 324, Fade(kGlass, 0.60F));
-    DrawText("BANJO // MATTER TRANSITION LAB", 34, 32, 20, kText);
-    DrawText(TextFormat("Phase: %s%s",
-                        std::string(banjo::experimentPhaseName(stats.phase)).c_str(),
-                        paused ? "  [PAUSED]" : ""),
-             34,
-             63,
-             18,
-             paused ? kIronHighlight : kGlassLight);
+    DrawRectangle(18, 18, 560, 430, Fade(BLACK, 0.80F));
+    DrawRectangleLines(18, 18, 560, 430, Fade(kGlassLight, 0.55F));
+    DrawText("BANJO // FIRST-PRINCIPLES BALL LAB", 34, 32, 20, kText);
+    DrawText(
+        TextFormat(
+            "Phase: %s%s",
+            std::string(banjo::experimentPhaseName(stats.phase)).c_str(),
+            paused ? "  [PAUSED]" : ""),
+        34,
+        61,
+        18,
+        paused ? kIronHighlight : kGlassLight);
 
-    int y = 94;
-    const auto row = [&y](std::string_view label, const std::string &value, Color color = kText) {
-        DrawText(std::string(label).c_str(), 34, y, 16, kMuted);
-        DrawText(value.c_str(), 225, y, 16, color);
-        y += 23;
+    int y = 91;
+    const auto row = [&y](
+                         std::string_view label,
+                         const std::string &value,
+                         Color color = kText) {
+        DrawText(std::string(label).c_str(), 34, y, 15, kMuted);
+        DrawText(value.c_str(), 250, y, 15, color);
+        y += 21;
     };
-    row("Iron speed", formatDouble(settings.iron_speed_m_s) + " m/s");
-    row("Voxel size", formatDouble(settings.voxel_size_m * 1000.0, 0) + " mm");
-    row("Nodes / bonds", TextFormat("%zu / %zu", stats.active_nodes, stats.total_bonds));
-    row("Broken bonds", TextFormat("%zu", stats.broken_bonds), stats.broken_bonds > 0 ? kCrack : kText);
-    row("Components", TextFormat("%zu", stats.connected_components));
-    row("Rigid / debris", TextFormat("%zu / %zu", stats.rigid_fragments, stats.debris_particles));
-    row("Impact energy",
-        stats.impact_energy_j > 0.0 ? formatDouble(stats.impact_energy_j, 1) + " J" : "waiting");
-    row("Threshold ratio",
-        stats.normalized_impact_energy > 0.0
-            ? formatDouble(stats.normalized_impact_energy, 1) + "x"
+
+    row("Striker / target",
+        std::string(banjo::materialPresetName(settings.striker_material)) +
+            " / " +
+            std::string(banjo::materialPresetName(settings.target_material)));
+    row("Surface / slope",
+        std::string(banjo::materialPresetName(settings.surface_material)) +
+            " / " + formatDouble(settings.surface_slope_degrees, 1) + " deg");
+    row("Speed / gravity",
+        formatDouble(settings.iron_speed_m_s) + " m/s / " +
+            formatDouble(banjo::length(settings.gravity_m_s2)) + " m/s^2");
+    row("Masses",
+        formatDouble(stats.predicted_striker_mass_kg, 1) + " / " +
+            formatDouble(stats.predicted_target_mass_kg, 1) + " kg");
+    row("Predicted contact",
+        std::string(banjo::predictedFailureModeName(stats.predicted_failure)),
+        stats.predicted_failure == banjo::PredictedFailureMode::Fragmentation
+            ? kCrack
+            : kText);
+    row("Runtime plan",
+        std::string(banjo::runtimeStrategyName(stats.runtime_strategy)) +
+            (stats.projection_cache_hit ? " [projection cache]" : " [calculated]"));
+    row("Slope regime",
+        std::string(banjo::inclineMotionRegimeName(
+            stats.predicted_incline_regime)) +
+            " / " +
+            formatDouble(stats.predicted_slope_acceleration_m_s2, 2) +
+            " m/s^2");
+    row("Peak force / pressure",
+        formatDouble(stats.predicted_peak_force_n / 1000.0, 1) +
+            " kN / " + formatPressure(stats.predicted_peak_pressure_pa));
+    row("Actual impact",
+        stats.impact_energy_j > 0.0
+            ? formatDouble(stats.impact_speed_m_s, 2) + " m/s / " +
+                  formatDouble(stats.impact_energy_j, 1) + " J"
             : "waiting");
+    row("Actual contact mu / e",
+        stats.impact_energy_j > 0.0
+            ? formatDouble(stats.actual_contact_friction, 3) + " / " +
+                  formatDouble(stats.actual_contact_restitution, 3)
+            : "waiting");
+    row("Voxel nodes / bonds",
+        TextFormat("%zu / %zu", stats.active_nodes, stats.total_bonds));
+    row("Broken / components",
+        TextFormat("%zu / %zu", stats.broken_bonds, stats.connected_components),
+        stats.broken_bonds > 0U ? kCrack : kText);
+    row("Rigid / debris",
+        TextFormat("%zu / %zu", stats.rigid_fragments, stats.debris_particles));
     row("Mass error", formatDouble(stats.mass_error_kg, 8) + " kg");
 
-    DrawText(TextFormat("R reset   SPACE pause   N step   B bonds [%s]   W wire [%s]",
-                        show_bonds ? "on" : "off",
-                        wireframe ? "on" : "off"),
-             24,
-             GetScreenHeight() - 64,
-             16,
-             kText);
-    DrawText(TextFormat("UP/DOWN speed   1/2/3 voxel detail   G gravity   RMB orbit   wheel zoom   sim %.2fx",
-                        simulation_speed),
-             24,
-             GetScreenHeight() - 38,
-             16,
-             kMuted);
+    DrawText(
+        TextFormat(
+            "R reset  SPACE pause  N step  B bonds [%s]  W wire [%s]",
+            show_bonds ? "on" : "off",
+            wireframe ? "on" : "off"),
+        24,
+        GetScreenHeight() - 85,
+        16,
+        kText);
+    DrawText(
+        "M striker  T target  S surface  [ / ] slope  UP/DOWN speed",
+        24,
+        GetScreenHeight() - 59,
+        16,
+        kText);
+    DrawText(
+        TextFormat(
+            "1/2/3 voxels  G gravity magnitude  V gravity direction  RMB orbit  wheel zoom  %.2fx",
+            simulation_speed),
+        24,
+        GetScreenHeight() - 33,
+        16,
+        kMuted);
     DrawFPS(GetScreenWidth() - 100, 24);
 }
 
-[[nodiscard]] Camera3D makeCamera(float yaw, float pitch, float distance) {
-    const Vector3 target{0.0F, 0.35F, 0.0F};
+[[nodiscard]] Camera3D makeCamera(
+    float yaw,
+    float pitch,
+    float distance,
+    const banjo::SupportPlaneFrame &plane) {
+    const Vector3 target = toRaylib(
+        plane.point_world_m + 0.35 * plane.normal_world);
     Camera3D camera{};
     camera.target = target;
     camera.position = {
@@ -357,6 +534,35 @@ void drawOverlay(
     return camera;
 }
 
+void cycleGravityMagnitude(banjo::ExperimentSettings &settings) {
+    const double magnitude = banjo::length(settings.gravity_m_s2);
+    const banjo::Vec3 direction =
+        banjo::normalized(settings.gravity_m_s2, {0.0, -1.0, 0.0});
+    if (magnitude > 5.0) {
+        settings.gravity_m_s2 = 1.62 * direction;
+    } else if (magnitude > 0.1) {
+        settings.gravity_m_s2 = {};
+    } else {
+        settings.gravity_m_s2 = {0.0, -9.81, 0.0};
+    }
+}
+
+void cycleGravityDirection(banjo::ExperimentSettings &settings) {
+    double magnitude = banjo::length(settings.gravity_m_s2);
+    if (magnitude < 0.1) {
+        magnitude = 9.81;
+    }
+    const banjo::Vec3 direction =
+        banjo::normalized(settings.gravity_m_s2, {0.0, -1.0, 0.0});
+    if (direction.y < -0.5) {
+        settings.gravity_m_s2 = {magnitude, 0.0, 0.0};
+    } else if (direction.x > 0.5) {
+        settings.gravity_m_s2 = {0.0, magnitude, 0.0};
+    } else {
+        settings.gravity_m_s2 = {0.0, -magnitude, 0.0};
+    }
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -365,11 +571,14 @@ int main(int argc, char **argv) {
         const bool capture_mode = !options.capture_path.empty();
 
         SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE);
-        InitWindow(1280, 800, "Banjo — Editable Matter Transition Lab");
+        InitWindow(1280, 800, "Banjo — First-Principles Matter Lab");
         SetTargetFPS(60);
 
         banjo::ExperimentSettings settings;
         banjo::RollingBallExperiment experiment(settings);
+        if (!options.cache_path.empty()) {
+            (void)experiment.loadProjectionCache(options.cache_path);
+        }
         std::vector<FragmentModel> fragment_models;
 
         bool paused = false;
@@ -401,11 +610,13 @@ int main(int argc, char **argv) {
 
                 bool reset = IsKeyPressed(KEY_R);
                 if (IsKeyPressed(KEY_UP)) {
-                    settings.iron_speed_m_s = std::min(18.0, settings.iron_speed_m_s + 1.0);
+                    settings.iron_speed_m_s =
+                        std::min(18.0, settings.iron_speed_m_s + 1.0);
                     reset = true;
                 }
                 if (IsKeyPressed(KEY_DOWN)) {
-                    settings.iron_speed_m_s = std::max(1.0, settings.iron_speed_m_s - 1.0);
+                    settings.iron_speed_m_s =
+                        std::max(0.5, settings.iron_speed_m_s - 1.0);
                     reset = true;
                 }
                 if (IsKeyPressed(KEY_ONE)) {
@@ -420,14 +631,37 @@ int main(int argc, char **argv) {
                     settings.voxel_size_m = 0.032;
                     reset = true;
                 }
+                if (IsKeyPressed(KEY_M)) {
+                    settings.striker_material =
+                        banjo::nextMaterialPreset(settings.striker_material);
+                    reset = true;
+                }
+                if (IsKeyPressed(KEY_T)) {
+                    settings.target_material =
+                        banjo::nextMaterialPreset(settings.target_material);
+                    reset = true;
+                }
+                if (IsKeyPressed(KEY_S)) {
+                    settings.surface_material =
+                        banjo::nextMaterialPreset(settings.surface_material);
+                    reset = true;
+                }
+                if (IsKeyPressed(KEY_LEFT_BRACKET)) {
+                    settings.surface_slope_degrees = std::max(
+                        -30.0, settings.surface_slope_degrees - 5.0);
+                    reset = true;
+                }
+                if (IsKeyPressed(KEY_RIGHT_BRACKET)) {
+                    settings.surface_slope_degrees = std::min(
+                        30.0, settings.surface_slope_degrees + 5.0);
+                    reset = true;
+                }
                 if (IsKeyPressed(KEY_G)) {
-                    if (std::abs(settings.gravity_m_s2.y + 9.81) < 0.01) {
-                        settings.gravity_m_s2 = {0.0, 0.0, -9.81};
-                    } else if (std::abs(settings.gravity_m_s2.z + 9.81) < 0.01) {
-                        settings.gravity_m_s2 = {0.0, 9.81, 0.0};
-                    } else {
-                        settings.gravity_m_s2 = {0.0, -9.81, 0.0};
-                    }
+                    cycleGravityMagnitude(settings);
+                    reset = true;
+                }
+                if (IsKeyPressed(KEY_V)) {
+                    cycleGravityDirection(settings);
                     reset = true;
                 }
                 if (reset) {
@@ -440,18 +674,26 @@ int main(int argc, char **argv) {
                 if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
                     const Vector2 delta = GetMouseDelta();
                     camera_yaw -= 0.006F * delta.x;
-                    camera_pitch = std::clamp(camera_pitch - 0.006F * delta.y, -0.15F, 1.25F);
+                    camera_pitch = std::clamp(
+                        camera_pitch - 0.006F * delta.y,
+                        -0.15F,
+                        1.25F);
                 }
                 camera_distance = std::clamp(
-                    camera_distance - 0.30F * GetMouseWheelMove(), 1.8F, 9.0F);
+                    camera_distance - 0.30F * GetMouseWheelMove(),
+                    1.8F,
+                    9.0F);
             }
 
-            const double frame_dt = capture_mode ? 1.0 / 60.0 : GetFrameTime();
+            const double frame_dt =
+                capture_mode ? 1.0 / 60.0 : GetFrameTime();
             if (!paused || capture_mode) {
-                accumulator_s += std::min(frame_dt, 0.05) * simulation_speed;
+                accumulator_s +=
+                    std::min(frame_dt, 0.05) * simulation_speed;
             }
             if (single_step) {
-                accumulator_s = std::max(accumulator_s, settings.rigid_step_s);
+                accumulator_s =
+                    std::max(accumulator_s, settings.rigid_step_s);
                 single_step = false;
             }
 
@@ -467,44 +709,65 @@ int main(int argc, char **argv) {
             }
             syncFragmentModels(experiment, fragment_models);
 
-            const Camera3D camera = makeCamera(camera_yaw, camera_pitch, camera_distance);
+            const Camera3D camera = makeCamera(
+                camera_yaw,
+                camera_pitch,
+                camera_distance,
+                experiment.supportPlane());
+            const Color striker_color = materialColor(settings.striker_material);
+            const Color target_color = materialColor(settings.target_material);
+            const Color surface_color = materialColor(settings.surface_material);
+
             BeginDrawing();
             ClearBackground(kBackground);
             BeginMode3D(camera);
 
-            DrawPlane({0.0F, -0.002F, 0.0F}, {20.0F, 10.0F}, kFloor);
-            DrawGrid(40, 0.25F);
-
+            drawSupportSurface(experiment.supportPlane(), surface_color);
             drawRigidBall(
                 experiment,
-                banjo::RollingBallExperiment::kIronBallId,
+                banjo::RollingBallExperiment::kStrikerBallId,
                 settings.radius_m,
-                kIron,
+                striker_color,
                 kIronHighlight);
 
             if (experiment.phase() == banjo::ExperimentPhase::Rigid) {
                 drawRigidBall(
                     experiment,
-                    banjo::RollingBallExperiment::kGlassBallId,
+                    banjo::RollingBallExperiment::kTargetBallId,
                     settings.radius_m,
-                    kGlass,
+                    target_color,
                     kGlassLight);
-            } else if (const banjo::ActiveMatter *matter = experiment.activeMatter()) {
-                drawActiveMatter(*matter, show_bonds, wireframe);
+            } else if (const banjo::ActiveMatter *matter =
+                           experiment.activeMatter()) {
+                drawActiveMatter(
+                    *matter,
+                    blendColor(target_color, kGlassLight, 0.30),
+                    show_bonds,
+                    wireframe);
             } else {
-                drawFragments(experiment, fragment_models, wireframe);
+                drawFragments(
+                    experiment,
+                    fragment_models,
+                    target_color,
+                    wireframe);
             }
             drawImpact(experiment.activatingImpact());
 
             EndMode3D();
-            drawOverlay(experiment, paused, show_bonds, wireframe, simulation_speed);
+            drawOverlay(
+                experiment,
+                paused,
+                show_bonds,
+                wireframe,
+                simulation_speed);
             EndDrawing();
 
             ++rendered_frames;
             if (capture_mode && rendered_frames >= options.capture_frames) {
                 const std::filesystem::path capture_path(options.capture_path);
                 if (capture_path.has_parent_path()) {
-                    std::filesystem::create_directories(capture_path.parent_path());
+                    std::filesystem::create_directories(
+                        capture_path.parent_path());
                 }
                 TakeScreenshot(options.capture_path.c_str());
                 break;
