@@ -42,6 +42,37 @@ void validate(const CohesiveRigidBody &b){
 }
 }
 double cohesiveRigidKineticEnergy(const CohesiveRigidPairState &s){return .5*s.a.mass_kg*lengthSquared(s.a.velocity_m_s)+.5*s.b.mass_kg*lengthSquared(s.b.velocity_m_s)+.5*dot(s.a.angular_momentum_kg_m2_s,omega(s.a))+.5*dot(s.b.angular_momentum_kg_m2_s,omega(s.b));}
+CohesivePatchState makeRectangularCohesivePatch(CohesiveRigidBody a,CohesiveRigidBody b,Vec3 ca,Vec3 cb,Vec3 ua,Vec3 va,Vec3 ub,Vec3 vb,double width,double height,unsigned n){
+    validate(a);validate(b);
+    const auto basis=[](Vec3 u,Vec3 v){return finite(u)&&finite(v)&&std::abs(length(u)-1)<1e-12&&std::abs(length(v)-1)<1e-12&&std::abs(dot(u,v))<1e-12;};
+    if(!finite(ca)||!finite(cb)||!basis(ua,va)||!basis(ub,vb)||!std::isfinite(width)||!std::isfinite(height)||width<=0||height<=0||n<1||n>16)throw std::invalid_argument("invalid rectangular cohesive geometry");
+    const auto u=a.orientation.rotate(ua),v=a.orientation.rotate(va),gap=b.center_m+b.orientation.rotate(cb)-a.center_m-a.orientation.rotate(ca);
+    const double rest=length(gap),area=width*height;
+    if(!std::isfinite(area)||area<=0||!std::isfinite(rest)||rest<=0||length(u-b.orientation.rotate(ub))>1e-12||length(v-b.orientation.rotate(vb))>1e-12||std::abs(dot(gap,u))>rest*1e-12||std::abs(dot(gap,v))>rest*1e-12)throw std::invalid_argument("cohesive faces must initially correspond across a normal gap");
+    CohesivePatchState out{a,b,{}};
+    for(unsigned i=0;i<n;++i)for(unsigned j=0;j<n;++j){const double x=width*((i+.5)/n-.5),y=height*((j+.5)/n-.5);out.sites.push_back({ca+x*ua+y*va,cb+x*ub+y*vb,rest,area/(n*n),{}});}
+    return out;
+}
+CohesivePatchResult advanceCohesivePatch(const CohesiveInterfaceLaw &common,const CohesivePatchState &initial,double dt){
+    validate(initial.a);validate(initial.b);
+    if(initial.sites.empty()||initial.sites.size()>256||!std::isfinite(dt)||dt<=0||dt>1)throw std::invalid_argument("invalid cohesive patch size/timestep");
+    CohesivePatchResult result;result.state=initial;auto &s=result.state;CohesiveRigidPairState pair{s.a,s.b,{}};
+    double energy0=cohesiveRigidKineticEnergy(pair),frequency2=0;const auto p0=momentum(pair),l0=angular(pair);
+    const auto sitePair=[&](const CohesivePatchSite &site){auto p=pair;p.a.attachment_local_m=site.attachment_a_m;p.b.attachment_local_m=site.attachment_b_m;return p;};
+    for(const auto &site:s.sites){auto law=common;law.area_m2=site.area_m2;const auto response=evaluateCohesiveInterface(law,site.history);const auto p=sitePair(site);const double gap=length(point(p.b)-point(p.a));
+        if(!finite(site.attachment_a_m)||!finite(site.attachment_b_m)||!std::isfinite(site.rest_distance_m)||site.rest_distance_m<=0||!std::isfinite(gap)||gap<site.rest_distance_m*.25||std::abs(gap-site.rest_distance_m-site.history.opening_m)>1e-12*site.rest_distance_m+1e-14*cohesiveSeparationOpening(law))throw std::invalid_argument("invalid cohesive patch site history/geometry");
+        energy0+=response.stored_energy_j+response.dissipated_energy_j;
+        const auto mobility=[](const CohesiveRigidBody &b){return 1/b.mass_kg+lengthSquared(b.attachment_local_m)/std::min({b.principal_inertia_kg_m2.x,b.principal_inertia_kg_m2.y,b.principal_inertia_kg_m2.z});};
+        if(!response.separated)frequency2+=law.area_m2*std::max(law.stiffness_pa_per_m,law.strength_pa/(cohesiveSeparationOpening(law)-cohesiveDamageOpening(law)))*(mobility(p.a)+mobility(p.b));
+    }
+    if(!std::isfinite(frequency2)||dt*std::sqrt(frequency2)>.1||dt*std::max(length(omega(pair.a)),length(omega(pair.b)))>.1)throw CohesiveTimestepRefinement("cohesive patch timestep needs refinement");
+    const auto allKicks=[&](){for(const auto &site:s.sites){auto p=sitePair(site);auto law=common;law.area_m2=site.area_m2;const auto gap=point(p.b)-point(p.a);kick(p,(.5*dt*evaluateCohesiveInterface(law,site.history).force_n/length(gap))*gap);pair.a.velocity_m_s=p.a.velocity_m_s;pair.b.velocity_m_s=p.b.velocity_m_s;pair.a.angular_momentum_kg_m2_s=p.a.angular_momentum_kg_m2_s;pair.b.angular_momentum_kg_m2_s=p.b.angular_momentum_kg_m2_s;}};
+    allKicks();drift(pair.a,dt);drift(pair.b,dt);double internal=0;
+    for(auto &site:s.sites){const auto p=sitePair(site);const double gap=length(point(p.b)-point(p.a));if(!std::isfinite(gap)||gap<site.rest_distance_m*.25)throw std::invalid_argument("unsupported coincident patch points");auto law=common;law.area_m2=site.area_m2;const auto increment=advanceCohesiveInterface(law,site.history,gap-site.rest_distance_m);site.history=increment.state;internal+=increment.response.stored_energy_j+increment.response.dissipated_energy_j;}
+    allKicks();validate(pair.a);validate(pair.b);s.a=pair.a;s.b=pair.b;
+    result.energy_residual_j=cohesiveRigidKineticEnergy(pair)+internal-energy0;result.momentum_residual=momentum(pair)-p0;result.angular_residual=angular(pair)-l0;
+    if(!std::isfinite(result.energy_residual_j)||!finite(result.momentum_residual)||!finite(result.angular_residual))throw std::invalid_argument("cohesive patch numerical overflow");return result;
+}
 CohesiveRigidPairResult advanceCohesiveRigidPair(const CohesiveInterfaceLaw &law,double rest,const CohesiveRigidPairState &initial,double dt){
     validate(initial.a);validate(initial.b);const auto response=evaluateCohesiveInterface(law,initial.interface);
     if(!std::isfinite(rest)||rest<=0||!std::isfinite(dt)||dt<=0||dt>1)throw std::invalid_argument("invalid rigid cohesive rest distance/timestep");

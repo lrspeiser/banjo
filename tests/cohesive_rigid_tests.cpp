@@ -54,6 +54,24 @@ int main(){try{
         const auto m=makeReferenceMaterial(preset);const double area=.0001,mass=m.density_kg_m3*.012*.01*.008,work=area*m.fracture_energy_j_m2,rest=.02;
         const CohesiveInterfaceLaw law{2*m.tensile_strength_pa*m.tensile_strength_pa/m.fracture_energy_j_m2,m.tensile_strength_pa,m.fracture_energy_j_m2,area};
         const Vec3 inertia{mass*(.01*.01+.008*.008)/12,mass*(.012*.012+.008*.008)/12,mass*(.012*.012+.01*.01)/12};
+        for(unsigned cells:{2u,4u,8u}){
+            for(double loading:{.25,1.0,4.0}){
+            CohesiveRigidBody a{mass,inertia,{-.016,0,0},{},{},{},{}},b{mass,inertia,{.016,0,0},{},{},{},{}};
+            auto patch=makeRectangularCohesivePatch(a,b,{.006,0,0},{-.006,0,0},{0,1,0},{0,0,1},{0,1,0},{0,0,1},.01,.008,cells);
+            double total_area=0;for(const auto &site:patch.sites)total_area+=site.area_m2;
+            require(std::abs(total_area-.00008)<1e-16,"patch area derives from physical rectangle");
+            const double rotation_speed=std::sqrt(2*loading*total_area*m.fracture_energy_j_m2/inertia.z);
+            patch.b.angular_momentum_kg_m2_s={0,0,inertia.z*rotation_speed};
+            const double duration=cohesiveSeparationOpening(law)/(.005*rotation_speed),dt=duration/2048;
+            double damage_min=1,damage_max=0,max_error=0,max_trajectory_error=0;
+            const double e0=cohesiveRigidKineticEnergy({patch.a,patch.b,{}});
+            for(unsigned i=0;i<2048;++i){const auto next=advanceCohesivePatch(law,patch,dt);patch=next.state;max_error=std::max(max_error,std::abs(next.energy_residual_j));require(length(next.angular_residual)<1e-10,"distributed patch preserves total angular momentum");double energy=cohesiveRigidKineticEnergy({patch.a,patch.b,{}});for(const auto &site:patch.sites){auto local=law;local.area_m2=site.area_m2;const auto response=evaluateCohesiveInterface(local,site.history);energy+=response.stored_energy_j+response.dissipated_energy_j;}max_trajectory_error=std::max(max_trajectory_error,std::abs(energy-e0));}
+            for(const auto &site:patch.sites){auto local=law;local.area_m2=site.area_m2;const auto response=evaluateCohesiveInterface(local,site.history);damage_min=std::min(damage_min,response.damage);damage_max=std::max(damage_max,response.damage);}
+            if(loading==4)require(damage_max>damage_min+.01,"bending damages different parts of the finite joint differently");
+            require(max_trajectory_error<total_area*m.fracture_energy_j_m2*1e-4,"patch whole-trajectory energy error bounded in test");
+            std::cout<<materialPresetName(preset)<<" patch_sites="<<patch.sites.size()<<" loading="<<loading<<" area_m2="<<total_area<<" min_damage="<<damage_min<<" max_damage="<<damage_max<<" max_step_energy_error_j="<<max_error<<" max_trajectory_energy_error_j="<<max_trajectory_error<<'\n';
+            }
+        }
         for(double energy_factor:{1.5,6.0}){
         const double speed=std::sqrt(4*energy_factor*work/mass),duration=8*cohesiveSeparationOpening(law)/speed;
         double first_error=0;
@@ -96,3 +114,4 @@ int main(){try{
     try{(void)advanceCohesiveRigidPair(free_law,1,invalid,.001);}catch(const std::invalid_argument&){rejected=true;}require(rejected,"invalid orientation rejected");
     std::cout<<"[PASS] coupled rigid cohesive separation and refinement\n";
 }catch(const std::exception &e){std::cerr<<"[FAIL] "<<e.what()<<'\n';return 1;}}
+

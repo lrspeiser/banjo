@@ -1,6 +1,7 @@
 #pragma once
 #include "physics/CohesiveInterface.hpp"
 #include "physics/RigidAttachment.hpp"
+#include <vector>
 
 namespace banjo {
 struct CohesiveTimestepRefinement : std::invalid_argument { using std::invalid_argument::invalid_argument; };
@@ -37,4 +38,16 @@ struct CohesiveAdaptiveResult {
 // caller input is immutable. This is error control, not exact event location.
 [[nodiscard]] CohesiveAdaptiveResult advanceCohesiveRigidAdaptive(const CohesiveInterfaceLaw &law,
     double rest_distance_m,const CohesiveRigidPairState &initial,double duration_s,const CohesiveAdaptiveControls &controls);
+struct CohesivePatchSite {
+    Vec3 attachment_a_m{},attachment_b_m{};
+    double rest_distance_m{},area_m2{};
+    CohesiveInterfaceState history;
+};
+struct CohesivePatchState { CohesiveRigidBody a,b;std::vector<CohesivePatchSite> sites; };
+struct CohesivePatchResult { CohesivePatchState state;double energy_residual_j{};Vec3 momentum_residual{},angular_residual{}; };
+// Corresponding congruent rectangular faces, midpoint area quadrature. Width
+// and height determine area; common law.area_m2 is ignored by the patch solver.
+[[nodiscard]] CohesivePatchState makeRectangularCohesivePatch(CohesiveRigidBody a,CohesiveRigidBody b,
+    Vec3 center_a,Vec3 center_b,Vec3 u_a,Vec3 v_a,Vec3 u_b,Vec3 v_b,double width_m,double height_m,unsigned cells_per_axis);
+[[nodiscard]] CohesivePatchResult advanceCohesivePatch(const CohesiveInterfaceLaw &law,const CohesivePatchState &initial,double dt_s);
 }
