@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Double-position application:** [Converted graphical workspaces](double-application-checkpoint.md) now run the promoted configuration. Native inventory/three-material requirements, assembly test/export and save/restart checks pass; all 25 suites pass. New builds default to double positions; explicit legacy builds remain. Local `d96ca7e`; full goal active.
+
 **Explicit precision conversion:** [Source-preserving review packages](precision-conversion-checkpoint.md) validate v5 32-to-64 upgrades for creator and starter worlds. Real workspace-copy normalization/conversion/reload and overwrite rejection pass; 24 default and 25 double-position suites pass. Application promotion remains next. Local `3bd8b74`; full goal active.
 
 **Saved precision identity:** [World/starter v5](precision-identity-checkpoint.md) records compiled position precision and rejects cross-precision loads. Four-way real CLI checks, glass/oak/iron persistence, 23 default and 24 double-position suites pass. Explicit conversion and application promotion remain next. Local `7887177`; full goal active.
