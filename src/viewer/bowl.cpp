@@ -1,6 +1,8 @@
 #include "creator/BowlLab.hpp"
 #include "viewer/FractureView.hpp"
 #include <raylib.h>
+#include <rlgl.h>
+#include <set>
 #include <algorithm>
 #include <fstream>
 #include <iomanip>
@@ -30,7 +32,7 @@ int main(int argc,char **argv){try{
     std::string message="Collect each material, then craft two balls of each.";double accumulator=0;int frames=0;
     while(!WindowShouldClose()){
         bool open_fracture=false;
-        const double frame=std::min(double(GetFrameTime()),.1);if(lab.running()){accumulator+=frame;while(accumulator>=1.0/240){lab.step();accumulator-=1.0/240;}}else accumulator=0;
+        const double frame=std::min(double(GetFrameTime()),.1);if(lab.running()){try{if(lab.bonded())lab.step();else{accumulator+=frame;while(accumulator>=1.0/240){lab.step();accumulator-=1.0/240;}}}catch(const std::exception &e){lab.pause();message=e.what();}}else accumulator=0;
         BeginTextureMode(scene);ClearBackground(bg);
         BeginMode3D(camera);
         for(const auto &t:lab.triangles()){
@@ -40,8 +42,15 @@ int main(int argc,char **argv){try{
         }
         for(unsigned a=0;a<96;++a){const double t=a*2*3.141592653589793/96,u=(a+1)*2*3.141592653589793/96,r=lab.settings().radius_m;DrawLine3D(v(bowlPoint(lab.settings(),r*cos(t),r*sin(t))),v(bowlPoint(lab.settings(),r*cos(u),r*sin(u))),lime);}
         for(const auto &o:lab.stock().objects()){
-            const auto s=lab.state(o.id);DrawSphereEx(v(s.center_of_mass_world_m),float(o.recipe.radius_m),16,24,color(o.recipe.material));
-            const auto tip=s.center_of_mass_world_m+s.orientation_world.rotate({0,0,o.recipe.radius_m*1.02});DrawSphere(v(tip),.007F,ink);
+            const auto s=lab.state(o.id);
+            bool damaged=false;if(auto b=lab.bonded())for(auto &event:b->breaks)if(b->objects[event.object].id==o.id){damaged=true;break;}
+            if(!damaged){DrawSphereEx(v(s.center_of_mass_world_m),float(o.recipe.radius_m),16,24,color(o.recipe.material));auto tip=s.center_of_mass_world_m+s.orientation_world.rotate({0,0,o.recipe.radius_m*1.02});if(auto b=lab.bonded())for(auto &bo:b->objects)if(bo.id==o.id){tip=s.center_of_mass_world_m+normalized(b->cells[bo.first].x-s.center_of_mass_world_m)*(o.recipe.radius_m*1.02);break;}DrawSphere(v(tip),.007F,ink);}
+            else if(auto b=lab.bonded()){
+                // Display the surviving numerical cells/links; no prebuilt shard
+                // meshes and no visual launch offsets. Physical state stays live.
+                for(auto &c:b->cells)if(b->objects[c.object].id==o.id)DrawSphereEx(v(c.x),float(c.radius),8,12,color(o.recipe.material));
+                for(auto &e:b->links)if(e.live&&b->objects[b->cells[e.a].object].id==o.id)DrawCylinderEx(v(b->cells[e.a].x),v(b->cells[e.b].x),float(b->cells[e.a].radius*.7),float(b->cells[e.b].radius*.7),6,color(o.recipe.material));
+            }
         }
         for(unsigned ring=4;ring<=24;ring+=4)for(unsigned a=0;a<96;++a){
             const double t=a*2*3.141592653589793/96,u=(a+1)*2*3.141592653589793/96,r=lab.settings().radius_m*ring/24;
@@ -50,7 +59,7 @@ int main(int argc,char **argv){try{
         EndMode3D();EndTextureMode();BeginDrawing();ClearBackground(bg);
         DrawTextureRec(scene.texture,{0,0,1000,-560},{0,145},WHITE);
         DrawText("BANJO / MATERIAL LAB",32,30,18,lime);DrawText("Craft. Release. Observe.",32,63,34,ink);
-        DrawText("Real contact geometry / glass + wood + iron",32,110,18,muted);
+        DrawText(lab.bonded()?"Experimental cell contact / glass + wood + iron":"Rigid contact geometry / glass + wood + iron",32,110,18,muted);
         if(button(32,145,310,"Open fracture microscope")){lab.pause();open_fracture=true;}
         DrawRectangle(1000,0,380,850,panel);DrawText("01  COLLECT & CRAFT",1024,30,21,lime);
         int y=78;
@@ -81,11 +90,13 @@ int main(int argc,char **argv){try{
         }catch(const std::exception &e){message=e.what();}
         DrawText(("Time "+number(lab.timeSeconds())+" s   /   "+std::to_string(lab.stock().objects().size())+" balls").c_str(),32,720,22,ink);
         DrawText(message.substr(0,95).c_str(),32,757,18,lime);
-        DrawText("Rigid preview: fracture is not connected yet.",32,794,18,muted);
+        if(auto b=lab.bonded()){auto roots=b->components();std::set<unsigned> groups(roots.begin(),roots.end());DrawText(("Experimental fracture: "+std::to_string(b->breaks.size())+" bonds / "+std::to_string(groups.size())+" groups").c_str(),32,794,18,muted);}
+        else DrawText("Rigid comparison: fracture disabled.",32,794,18,muted);
         DrawText("First 3 balls: center. Next 6: rim.",1024,714,16,ink);
-        DrawText("Surface / tilt edits reset placement.",1024,741,16,muted);
-        DrawText("Crafting work / energy: pending.",1024,780,16,muted);
-        EndDrawing();if(open_fracture)runFractureView(workspace);if(capture&&++frames==3){TakeScreenshot((workspace/"bowl.png").string().c_str());break;}
+        if(button(1024,734,331,lab.bonded()?"Mode: experimental fracture":"Mode: rigid comparison",!lab.running())){s.experimental_fracture=!s.experimental_fracture;lab.configure(s);message=lab.bonded()?"Coarse energy fracture; strength uncalibrated. Slow simulation.":"Rigid comparison; fracture disabled.";}
+        DrawText(lab.bonded()?"Slow / coarse, uncalibrated glass":"Crafting work / energy: pending",1024,780,16,muted);
+        if(button(1024,808,331,"Save lab image")){rlDrawRenderBatchActive();Image shot=LoadImageFromScreen();ExportImage(shot,(workspace/"bowl-fracture.png").string().c_str());UnloadImage(shot);}
+        EndDrawing();if(open_fracture)runFractureView(workspace);if(capture&&++frames==3){Image shot=LoadImageFromScreen();ExportImage(shot,(workspace/"bowl.png").string().c_str());UnloadImage(shot);break;}
     }
     write(workspace/"experiment.json",lab.reportJson());lab.stock().save(workspace/"stock.json");UnloadRenderTexture(scene);CloseWindow();return 0;
 }catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}
