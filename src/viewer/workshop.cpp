@@ -1,4 +1,5 @@
 #include "creator/CreatorWorld.hpp"
+#include "creator/CodexAssistant.hpp"
 #include "physics/RollingKinematics.hpp"
 #include <raylib.h>
 #include <rlgl.h>
@@ -49,17 +50,22 @@ void write(const std::filesystem::path &path,const Json &j) {
 int main(int argc,char **argv) {
     try {
         std::filesystem::path workspace=std::filesystem::absolute(argv[0]).parent_path()/"workshop-data",capture;unsigned frames=180;
+        std::filesystem::path assistant_exe=ChildProcess::findExecutable("codex");bool manual_assistant=false;
         for(int i=1;i<argc;++i) {
             const std::string option=argv[i];if(++i>=argc)throw std::invalid_argument("missing workshop option value");
             if(option=="--workspace")workspace=argv[i];else if(option=="--capture")capture=argv[i];
+            else if(option=="--assistant-exe")assistant_exe=std::filesystem::absolute(argv[i]);
+            else if(option=="--assistant") {const std::string mode=argv[i];if(mode!="auto"&&mode!="manual")throw std::invalid_argument("assistant must be auto or manual");manual_assistant=mode=="manual";}
             else if(option=="--frames")frames=static_cast<unsigned>(std::stoul(argv[i]));else throw std::invalid_argument("unknown workshop option");
         }
         if(frames==0||frames>3600)throw std::invalid_argument("capture frames must be 1–3600");
         std::filesystem::create_directories(workspace);workspace=std::filesystem::absolute(workspace);
         auto world=capture.empty()&&std::filesystem::exists(workspace/"world.json")?CreatorWorld::load(workspace/"world.json"):CreatorWorld{};
+        CodexAssistant assistant(assistant_exe);
+        const bool automatic_assistant=!manual_assistant&&assistant.available();
         ObjectRecipe draft;std::string prompt="Use some of my wood to make a ball that rolls down this ramp.";
         std::string status="Collect a material, then design an object.",request_id,pending_id,proposal_message;
-        bool paused=false,typing=false,built=false,follow=false;double accumulator=0,poll_at=0;unsigned rendered=0,serial=0;
+        bool paused=capture.empty(),typing=false,built=false,follow=false;double accumulator=0,poll_at=0;unsigned rendered=0,serial=0;
         const auto session=std::to_string(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
         const auto new_id=[&]{return "workshop-"+session+"-"+std::to_string(++serial);};request_id=new_id();
         const auto save=[&]{if(capture.empty())world.save(workspace/"world.json");};
@@ -77,12 +83,27 @@ int main(int argc,char **argv) {
         double yaw=.72,pitch=.4,distance=4.8;
         while(!WindowShouldClose()) {
             const auto mouse=GetMousePosition();
-            if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT))typing=CheckCollisionPointRec(mouse,{330,700,725,76});
-            if(typing) {
-                for(int c=GetCharPressed();c;c=GetCharPressed())if(c>=32&&c<127&&prompt.size()<500)prompt+=static_cast<char>(c);
-                if(IsKeyPressed(KEY_BACKSPACE)&&!prompt.empty())prompt.pop_back();
-            } else if(IsKeyPressed(KEY_SPACE))paused=!paused;
-            if(!typing&&IsKeyPressed(KEY_F))follow=!follow;
+            if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT))typing=pending_id.empty()&&CheckCollisionPointRec(mouse,{330,700,725,76});
+            // Short press/release pairs can both arrive between rendered frames.
+            // Consume the same key event queue used by the main laboratory.
+            bool control=IsKeyDown(KEY_LEFT_CONTROL)||IsKeyDown(KEY_RIGHT_CONTROL),take_screenshot=false;
+            for(int key=GetKeyPressed();key;key=GetKeyPressed()) {
+                if(key==KEY_LEFT_CONTROL||key==KEY_RIGHT_CONTROL)control=true;
+                if(key==KEY_F12)take_screenshot=true;
+                if(typing) {
+                    if(control&&key==KEY_A)prompt.clear();
+                    if(key==KEY_BACKSPACE&&!prompt.empty())prompt.pop_back();
+                    if(control&&key==KEY_V) {
+                        const char *clipboard=GetClipboardText();
+                        if(clipboard)for(const char *c=clipboard;*c&&prompt.size()<500;++c)if(*c>=32&&*c<127)prompt+=*c;
+                    }
+                    if(key==KEY_ESCAPE)typing=false;
+                }else {
+                    if(key==KEY_SPACE)paused=!paused;
+                    if(key==KEY_F)follow=!follow;
+                }
+            }
+            for(int c=GetCharPressed();c;c=GetCharPressed())if(typing&&!control&&c>=32&&c<127&&prompt.size()<500)prompt+=static_cast<char>(c);
             if(!typing&&mouse.x>310&&mouse.x<1080&&mouse.y<680) {
                 if(IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {const auto delta=GetMouseDelta();yaw-=delta.x*.006;pitch=std::clamp(pitch+delta.y*.006,.08,1.3);}
                 distance=std::clamp(distance-GetMouseWheelMove()*.25,1.2,12.0);
@@ -95,7 +116,16 @@ int main(int argc,char **argv) {
             camera.position={camera.target.x+static_cast<float>(distance*std::cos(pitch)*std::sin(yaw)),camera.target.y+static_cast<float>(distance*std::sin(pitch)),camera.target.z+static_cast<float>(distance*std::cos(pitch)*std::cos(yaw))};
             if(!pending_id.empty()&&GetTime()>poll_at) {
                 poll_at=GetTime()+.5;const auto path=workspace/("proposal-"+pending_id+".json");
-                if(std::filesystem::exists(path))try {
+                if(automatic_assistant)try {
+                    if(auto reply=assistant.poll()) {
+                        if(reply->recipe) {
+                            (void)world.preview(*reply->recipe);draft=*reply->recipe;request_id=pending_id;built=false;
+                            status="Assistant proposal ready. Review the cost, then build.";
+                        }else status="The assistant needs a different choice. Update your request below.";
+                        proposal_message=reply->explanation;pending_id.clear();paused=true;
+                    }
+                }catch(const std::exception &e){status=e.what();pending_id.clear();assistant.cancel();paused=true;}
+                else if(std::filesystem::exists(path))try {
                     auto proposal=CreatorWorld::parseProposal(read(path));if(proposal.request_id!=pending_id)throw std::invalid_argument("AI response belongs to another request");
                     (void)world.preview(proposal.recipe);draft=proposal.recipe;request_id=pending_id;pending_id.clear();built=false;
                     proposal_message=proposal.explanation;status="AI proposal ready. Review its material cost, then build.";paused=true;
@@ -134,7 +164,7 @@ int main(int argc,char **argv) {
             DrawText("SUPPORTED NOW",36,751,17,accent);wrap("Intact rigid spheres. No deformation or fracture.",36,780,242,17);
             DrawRectangleRounded({1092,114,330,748},.035F,8,panel);DrawText("OBJECT PREVIEW",1110,135,20,accent);
             DrawText(draft.name.substr(0,24).c_str(),1110,173,22,ink);DrawText("Sphere / rigid-v1",1110,205,17,muted);
-            const auto edit=[&]{request_id=new_id();built=false;proposal_message.clear();};
+            const auto edit=[&]{assistant.cancel();pending_id.clear();request_id=new_id();built=false;proposal_message.clear();status="Design updated. Review the material cost before building.";};
             if(button({1110,244,292,40},"Material: "+name(draft.material))) {draft.material=draft.material==MaterialPreset::Oak?MaterialPreset::Glass:draft.material==MaterialPreset::Glass?MaterialPreset::Iron:MaterialPreset::Oak;edit();}
             DrawText(("Radius  "+fixed(draft.radius_m,3)+" m").c_str(),1110,306,20,ink);
             if(button({1110,341,140,36},"- 5 mm")){draft.radius_m=std::max(.025,draft.radius_m-.005);edit();}
@@ -148,7 +178,7 @@ int main(int argc,char **argv) {
                 DrawText(("Uses "+fixed(preview->mass_kg)+" kg").c_str(),1110,452,22,ink);
                 DrawText(("Leaves "+fixed(world.inventoryMass(draft.material)-preview->mass_kg)+" kg").c_str(),1110,484,18,muted);
             } else if(!built)wrap(problem,1110,450,288,17,{237,189,137,255});
-            if(button({1110,548,292,48},built?"Object created":"Build this object",preview.has_value()&&!built,true))try {
+            if(button({1110,548,292,48},built?"Object created":"Build this object",preview.has_value()&&!built&&pending_id.empty(),true))try {
                 (void)world.create(request_id,draft);built=true;paused=true;save();status="Created from your inventory. Press Run to test it.";
             }catch(const std::exception &e){status=e.what();}
             if(button({1110,614,140,40},paused?"Run":"Pause"))paused=!paused;
@@ -163,26 +193,38 @@ int main(int argc,char **argv) {
             DrawRectangleRounded({324,681,750,181},.035F,8,panel);
             DrawRectangleRounded({330,700,725,76},.1F,5,typing?Color{47,60,67,255}:Color{37,48,55,255});wrap(prompt,345,714,690,18,ink);
             if(button({340,795,190,42},"Ask assistant",!prompt.empty()&&pending_id.empty(),true))try {
-                pending_id=new_id();const auto request=Json{{"request_id",pending_id},{"prompt",prompt},{"world",Json::parse(world.inspectJson())},
+                pending_id=new_id();typing=false;
+                if(automatic_assistant) {
+                    assistant.start(workspace,pending_id,CodexAssistant::requestDocument(world,pending_id,prompt,draft,proposal_message));
+                    status="The assistant is designing from your collected materials...";proposal_message.clear();
+                }else {
+                const auto request=Json{{"request_id",pending_id},{"prompt",prompt},{"world",Json::parse(world.inspectJson())},
                     {"example_recipe",Json::parse(CreatorWorld::recipeJson(draft))},
                     {"response_file",("proposal-"+pending_id+".json")},
                     {"instruction","Return request_id, explanation and a supported recipe. Use only collected materials. Do not invent capabilities or quantities. The application will validate and preview before creation."}};
                 write(workspace/("request-"+pending_id+".json"),request);status="AI request saved in the workshop folder. Awaiting an assistant proposal.";
-                proposal_message="AI bridge: your assistant reads the request file and returns a proposal. This build has no automatic model connection.";
+                proposal_message="Manual bridge: an assistant reads the request file and returns a proposal. For automatic replies, install/sign in to the Codex CLI and reopen the workshop.";
+                }
             }catch(const std::exception &e){pending_id.clear();status=e.what();}
-            if(button({545,795,175,42},"Cancel request",!pending_id.empty())) {pending_id.clear();status="Request cancelled. No material was spent.";}
+            if(button({545,795,175,42},"Cancel request",!pending_id.empty())) {assistant.cancel();pending_id.clear();proposal_message.clear();status="Request cancelled. No material was spent.";}
             DrawText(("Objects: "+std::to_string(world.objects().size())+" / 64").c_str(),852,807,17,muted);
-            wrap(status,330,122,735,19,ink);if(!proposal_message.empty())wrap(proposal_message,330,179,730,17,muted);
+            wrap(status,330,122,735,19,ink);
+            DrawText(automatic_assistant?"Assistant: Codex (automatic)":"Assistant: manual file bridge",330,179,17,accent);
+            if(!proposal_message.empty())wrap(proposal_message,330,212,730,17,muted);
             if(button({330,590,180,34},follow?"Following object":"Follow object",!world.objects().empty()))follow=!follow;
-            DrawText("Right-drag: orbit / wheel: zoom / Space: pause / F: follow",330,644,16,muted);
-            DrawText("Inventory and recipes stay local. Material behavior is a declared approximation.",24,875,16,muted);
+            DrawText("Orbit: right-drag / Space: pause / F: follow / F12: image",330,644,16,muted);
+            DrawText(automatic_assistant?"Ask assistant sends the prompt and virtual-world context to Codex. Build always requires your review.":"Inventory and recipes stay local. Material behavior is a declared approximation.",24,875,16,muted);
             EndDrawing();++rendered;
+            if(capture.empty()&&take_screenshot) {
+                Image screenshot=LoadImageFromScreen();const bool saved=ExportImage(screenshot,(workspace/"workshop.png").string().c_str());UnloadImage(screenshot);
+                status=saved?"Workshop image saved in the world folder.":"Could not save workshop image.";
+            }
             if(!capture.empty()&&rendered>=frames) {
                 if(capture.has_parent_path())std::filesystem::create_directories(capture.parent_path());
                 Image image=LoadImageFromScreen();const bool success=ExportImage(image,capture.string().c_str());UnloadImage(image);
                 if(!success)throw std::runtime_error("capture failed");break;
             }
         }
-        save();CloseWindow();return 0;
+        assistant.cancel();save();CloseWindow();return 0;
     }catch(const std::exception &e){std::cerr<<"Workshop error: "<<e.what()<<'\n';if(IsWindowReady())CloseWindow();return 1;}
 }
