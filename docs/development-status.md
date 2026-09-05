@@ -1,5 +1,7 @@
 # Development status and handoff
 
+**First-person assembly review:** [Table LLM review](starter-assembly-review-checkpoint.md) regenerates physics and actual player-stock evidence, with context invalidation. Real native oak reply/revision checks and three-material backend review checks pass; 21 suites pass. Live assembly contact and resource accounting remain open. Local `1a251cc`; full goal active.
+
 **First-person assembly testing:** [Table test controls](starter-assembly-test-checkpoint.md) run isolated physics in the background and export exact-revision evidence. Native oak run/export/stale checks and 21 suites pass. Table LLM review and live construction remain open. Local `6a5fae9`; full goal active.
 
 **First-person assembly table:** [Remembered assembly designs](starter-assembly-table-checkpoint.md) persist in starter v4 with v1–3 migration and save-before-publish revisions. Native oak import/restart verified; three-material persistence checks and 21 suites pass. Table tests/LLM review and live creation remain open. Local `f210372`; full goal active.
