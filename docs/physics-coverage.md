@@ -1,5 +1,7 @@
 # Physical property and capability coverage
 
+The [selected-revision checkpoint](revision-checkpoint.md) at `14bb0b7` adds material-reuse/return and before/after mechanical records through actual created objects. Glass/oak/iron lifecycle and real provider cases pass; all 15 suites pass (11.71 s). These are explicit authoring discontinuities, not manufacturing, conservation or fracture-work validation. Energy accounting remains unsupported and the normal new-control check remains pending.
+
 The [oriented box creator checkpoint](shape-checkpoint.md) adds full-dimension/orientation consumers, analytical homogeneous volume/inertia and actual solver tensors. Glass/oak/iron comparisons cover equal-volume sphere-versus-box ramp behavior, box free fall, asymmetric spin, finite shape collisions and persistence. Box top-support samples do not measure edge/side manifolds or support work; no constitutive/calibration/fracture claim changes. All 15 Windows suites pass; normal new-control verification remains pending.
 
 The [automatic assistant at `ae82167`](assistant-checkpoint.md) adds structured request/reply validation and a Windows provider process boundary. Glass/oak/iron LLM recipes feed the existing compiler and produce measured rolling; an unsupported door produces no recipe. All 15 Windows CTest executables pass. No constitutive/contact law or physics tolerance changed; semantic LLM coverage remains a small sample.

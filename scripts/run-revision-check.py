@@ -101,6 +101,10 @@ for case in args.cases:
         candidate = response['recipe']
         assert candidate['material'] == material and candidate['shape'] == {'type': 'box', 'dimensions_m': [.08, .06, .1]}
         assert candidate['motion'] == {'linear_velocity_m_s': [0, 0, 0], 'angular_velocity_rad_s': [0, 0, 0]}
+        placement = candidate['placement']
+        assert placement['tangent_m'] == -2 and placement['bitangent_m'] == 0 and placement['clearance_m'] == .002
+        aligned = [math.cos(math.pi / 36), 0, 0, -math.sin(math.pi / 36)]
+        assert abs(abs(sum(a * b for a, b in zip(placement['orientation_wxyz'], aligned))) - 1) < 1e-12
         state = read(applied)
         inspect = read(folder / (request_id + '-inspect.json'))
         assert state['world_version'] == 3 and state['ticks'] == 360
@@ -112,6 +116,7 @@ for case in args.cases:
         expected_mass = density * .08 * .06 * .1
         assert expected_mass > .1
         assert abs(inspect['objects'][0]['mass_kg'] - expected_mass) < 1e-12
+        assert inspect['objects'][0]['motion_state'] == 'resting' and inspect['objects'][0]['contact_slip_m_s'] < 1e-5
         assert change['mechanics_before']['kinetic_energy_j'] > 0 and change['mechanics_after']['kinetic_energy_j'] == 0
         lot = next(lot for lot in state['lots'] if lot['material'] == material)
         assert abs(lot['remaining_mass_kg'] + expected_mass - 10) < 1e-12

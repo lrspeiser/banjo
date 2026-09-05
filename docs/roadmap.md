@@ -1,8 +1,14 @@
 # Banjo roadmap and acceptance gates
 
+Application progress at `14bb0b7`: [selected-object rebuild/reclaim](revision-checkpoint.md) now has shared API/UI source, five real provider trials, format-3 history and 15 passing Windows suites. Capture passes; normal control verification remains pending. Continue the [API reliability/test loop](api-platform-review.md) and [energy contract](energy-system.md) without treating this as completion of the physics gates.
+
 This roadmap implements the [master plan](project-master-plan.md). See [development status](development-status.md) for pinned source/CI evidence. “Prototype implemented” does not mean physically validated. These are ordered engineering gates, not delivery dates. Later research can proceed in parallel, but should not conceal unfinished correctness work.
 
 ## Existing foundation
+
+**Energy requirement:** carry [identified energy sources and tool/process work](energy-system.md) into the application transaction contract. Start by declaring the physical state of inventory and the energy boundary; test stores/work transfers and resource failure/retry semantics, then connect supported fabrication/interface laws. Current authoring is energy-unconstrained. The energy-system plan preserves Gate 1 conservation and Gate 2 fracture/calibration requirements; it does not replace them with a resource counter.
+
+**Next functional API slice (revision update):** the [API/platform review](api-platform-review.md) proposes completing current rebuild/reclaim integration and reliable command/retry/durability contracts, then a bounded **build → test against measurable criteria → revise → reload** loop using today's primitives. Add physical actions/events and a simple assembly through that same boundary afterward. Current lifecycle backend work has focused tests only; assistant/UI integration remains incomplete. This application sequence runs alongside the ordered physics gates below and does not close them.
 
 **Application slice to carry through the early gates:** [collected materials → LLM request → validated object → physical test → revision](creator-loop.md). Start with a visible inventory and one supported single-material object, preserving quantity/provenance and using the same specification/compiler as laboratory tests. The [first rigid-sphere workshop](creator-checkpoint.md) is now implemented with a manual Codex proposal bridge, shared CLI/compiler, inventory transactions and saved state. The [automatic Windows Codex adapter](assistant-checkpoint.md) now supplies proposals/clarifications with cancellation and independent validation. [Oriented solid boxes](shape-checkpoint.md) now have comparative creator/LLM evidence. Normal box-control verification, safe replacement/reclamation and further shapes remain next; do not defer all user-facing creation until Gate 8 or use a small creator demo to claim the open physics gates are complete.
 
