@@ -5,7 +5,8 @@
 1. `docs/project-master-plan.md`: complete product intent and architecture.
 2. `docs/development-status.md`: implemented/experimental/planned status, source refs and verification evidence.
 3. `docs/roadmap.md`: ordered work and acceptance criteria.
-4. The relevant source/tests and, for conservative contact work, PR #2 and its pinned checkpoint note.
+4. `docs/mechanics-scorecard.md`: every retained mechanic, measured boundary and next step.
+5. The relevant source/tests and, for conservative contact work, PR #2 and its pinned checkpoint note.
 
 These docs are a snapshot. Fetch current branch/PR state before integration. The contact-development branch is not automatically main. Preserve concurrent changes, especially main's raylib frame-control/busy-wait and MSVC runtime fixes. Do not reset or force-push over other work.
 
@@ -22,6 +23,8 @@ Analytical projections are not cached fracture simulations. Automatic outcome re
 Keep simulation independent of rendering. Start with the CPU reference; optimize measured bottlenecks without changing the material law unnoticed. Support unit-bearing declarative authoring and bounded APIs rather than untrusted arbitrary GPU code.
 
 ## Verification and reporting
+
+Material-dependent physics work must compare at least glass and oak (wood) under the same declared experiment conditions. Retain iron in the growing regression set now that it is part of the catalog and comparison work; adding a substance must expand coverage rather than replace earlier cases. Analytical point/spring oracles may remain material-neutral, but general material claims need the comparative scenarios. Record per-material results, timestep/resolution, conserved quantities, expected density/stiffness differences, and unsupported laws. Do not turn oak into a brittle preset or claim grain/plasticity by changing a display name. Maintain `docs/mechanics-scorecard.md` with evidence, limitations and concrete next steps at every physics checkpoint.
 
 Use a separate build directory. Typical commands:
 

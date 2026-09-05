@@ -4,6 +4,8 @@
 
 Read [development status](development-status.md) next for what actually exists, where it is committed, verification evidence, and known defects. Read the [roadmap](roadmap.md) for ordered work and acceptance gates. A design in this document is **not** an implementation claim. Current source and test evidence take precedence over older descriptions of completed work.
 
+Owner's comparative-testing requirement: material-dependent experiments always include at least glass and oak (wood), retaining iron as the third reference and accumulating earlier substances as new ones are added. Use identical declared geometry, conditions and numerical settings unless an experiment explicitly controls mass or another variable. Report results and unsupported laws per substance. Maintain the [mechanics scorecard](mechanics-scorecard.md) with the status, evidence and next step for every retained mechanic and platform capability.
+
 ## 1. Product we are trying to build
 
 Banjo is a publishing and creation platform for interactive worlds whose **materials and laws of physics are editable**. It combines Minecraft-like construction with a deeper material model and eventually an engine/platform alternative to authoring every interaction manually in a conventional game engine.

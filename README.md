@@ -24,6 +24,8 @@ There are no precut chunks and no shatter animation. The pieces are the connecte
 
 [Development status](docs/development-status.md) records what is implemented, what remains experimental, exact commits/PRs, tests, known defects, and build instructions. [The roadmap](docs/roadmap.md) turns the remaining work into ordered acceptance gates. Coding agents should also read [AGENTS.md](AGENTS.md).
 
+The [mechanics scorecard](docs/mechanics-scorecard.md) tracks every retained mechanic and platform capability with evidence and next steps. Material-dependent testing now retains **glass, oak (wood), and iron** in a growing comparison set. The [event/material checkpoint](docs/event-material-checkpoint.md) records the new contact reference, 11 passing CTest executables, and 36 comparative runs including known rejected cases and timestep defects.
+
 The local `codex/physics-foundation` branch integrates main and PR #2's contact-driven fracture/rolling diagnostics. [Stage-accounting evidence](docs/material-stage-checkpoint.md) records tested code `d56611c`, nine passing CTest executables, headless/capture results and normal input verification. Damage uses accepted states, finite-cell spin survives transfers, and optional diagnostics expose numerical energy changes. This checkpoint is not pushed or merged into GitHub main; PR #2's earlier Linux CI belongs to its own head. This remains a physically parameterized prototype with known over-fragmentation and conservation defects.
 
 ## Build and watch it
