@@ -1,4 +1,5 @@
 #include "creator/StarterWorld.hpp"
+#include "creator/CodexAssistant.hpp"
 #include <raylib.h>
 #include <rlgl.h>
 #include <algorithm>
@@ -46,27 +47,36 @@ int main(int argc,char **argv){try{
     std::filesystem::path workspace="starter-data",capture;std::string layout="clearing";unsigned frames=60;
     for(int i=1;i<argc;++i){const std::string arg=argv[i];if(++i>=argc)throw std::invalid_argument("missing option");if(arg=="--workspace")workspace=argv[i];else if(arg=="--capture")capture=argv[i];else if(arg=="--layout")layout=argv[i];else if(arg=="--frames")frames=static_cast<unsigned>(std::stoul(argv[i]));else throw std::invalid_argument("unknown option");}
     if(frames==0||frames>3600)throw std::invalid_argument("invalid capture frame count");
+    if(layout!="clearing"&&layout!="crafting"&&layout!="designer")throw std::invalid_argument("layout must be clearing, crafting or designer");
     std::filesystem::create_directories(workspace);const auto save_path=workspace/"starter-world.json";
     auto world=capture.empty()&&std::filesystem::exists(save_path)?StarterWorld::load(save_path):StarterWorld{};
     if(!capture.empty()&&layout=="crafting"){(void)world.interact("capture-pick",1,{-2.8,1.65,1});(void)world.craft("capture-pry","prybar",{0,1.65,0});}
     SetConfigFlags(FLAG_MSAA_4X_HINT);InitWindow(1440,900,"Banjo - First Person Clearing");SetTargetFPS(60);SetExitKey(KEY_NULL);
     Camera3D camera{{0,1.65F,4.7F},{0,1.25F,-2},{0,1,0},65,CAMERA_PERSPECTIVE};
-    float yaw=0,pitch=-.15F;bool crafting=!capture.empty()&&layout=="crafting",inventory=false,paused=false;unsigned selected=0,rendered=0,serial=0;double accumulator=0,save_timer=0;
-    if(crafting){camera.position={0,1.65F,.2F};selected=1;}
+    float yaw=0,pitch=-.15F;bool crafting=layout!="clearing",inventory=false,paused=false;unsigned selected=0,rendered=0,serial=0;double accumulator=0,save_timer=0;
+    if(crafting){camera.position={0,1.65F,.2F};selected=layout=="designer"?6:1;}
     std::string message="Welcome to Willow Clearing. Collect loose wood to begin.";
+    CodexAssistant assistant;std::string prompt,explanation="Describe a solid ball or block. Custom designs unlock at level 2.";std::optional<ObjectRecipe> proposal;bool prompt_focus=false;
     const auto session=std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
     const auto id=[&]{return "play-"+session+"-"+std::to_string(++serial);};
     const auto save=[&]{world.save(save_path);};
-    if(capture.empty())DisableCursor();
+    if(capture.empty()&&!crafting)DisableCursor();
     while(!WindowShouldClose()){
         const float dt=std::min(GetFrameTime(),.05F);
         if(capture.empty()){
             // Consume key-down events, including taps released between frames.
+            bool control_event=IsKeyDown(KEY_LEFT_CONTROL)||IsKeyDown(KEY_RIGHT_CONTROL);
             for(int key=GetKeyPressed();key;key=GetKeyPressed()) {
+                if(key==KEY_LEFT_CONTROL||key==KEY_RIGHT_CONTROL)control_event=true;
+                if(crafting&&selected==6&&prompt_focus&&key==KEY_BACKSPACE&&!prompt.empty())prompt.pop_back();
+                if(crafting&&selected==6&&prompt_focus&&key==KEY_V&&control_event) {
+                    if(const char *paste=GetClipboardText())for(;*paste&&prompt.size()<500;++paste)if(*paste>=32&&*paste<127)prompt+=*paste;
+                }
                 if(key==KEY_ESCAPE){crafting=false;inventory=false;paused=!paused;if(paused)EnableCursor();else DisableCursor();}
                 if(key==KEY_TAB&&!crafting&&!paused){inventory=!inventory;if(inventory)EnableCursor();else DisableCursor();}
                 if(key==KEY_HOME){yaw=0;pitch=-.15F;}
             }
+            for(int ch=GetCharPressed();ch;ch=GetCharPressed())if(crafting&&selected==6&&prompt_focus&&ch>=32&&ch<127&&prompt.size()<500)prompt+=static_cast<char>(ch);
             if(!crafting&&!inventory&&!paused){
                 const auto mouse=GetMouseDelta();yaw+=mouse.x*.0025F;pitch=std::clamp(pitch-mouse.y*.0025F,-1.35F,1.35F);
                 Vec3 move{};const Vec3 forward{std::sin(yaw),0,-std::cos(yaw)},right{std::cos(yaw),0,std::sin(yaw)};
@@ -78,6 +88,7 @@ int main(int argc,char **argv){try{
                 if(IsKeyDown(KEY_R)){world.rest(dt);message="Resting: stamina recovers. No materials or experience are created.";}
             }
         }
+        if(assistant.running())try{if(auto reply=assistant.poll()){proposal=reply->recipe;explanation=reply->explanation;}}catch(const std::exception &e){proposal.reset();explanation=e.what();}
         const bool modal=crafting||inventory||paused;
         camera.target={camera.position.x+std::sin(yaw)*std::cos(pitch),camera.position.y+std::sin(pitch),camera.position.z-std::cos(yaw)*std::cos(pitch)};
         if(!paused){accumulator+=capture.empty()?dt:1.0/60;while(accumulator>=1.0/240){world.step();accumulator-=1.0/240;}}
@@ -109,11 +120,29 @@ int main(int argc,char **argv){try{
             for(auto m:{MaterialPreset::Oak,MaterialPreset::Iron,MaterialPreset::Glass}){DrawRectangle(1000,y,32,32,tint(m));text(std::string(materialPresetName(m)),1046,y,22);text(number(world.inventoryKg(m),3)+" kg",1046,y+34,20);text(number(world.inventoryVoxels(m),0)+" voxel equivalents",1046,y+64,16,muted);y+=119;}
             wrap("Tools are carried in inventory. Your body and hands are never drawn.",1000,578,345,18,muted);
             if(crafting){const auto designs=StarterWorld::designs();for(unsigned i=0;i<designs.size();++i){const auto &d=designs[i];const auto q=world.quote(d.id);Rectangle card{48,static_cast<float>(187+i*72),345,64};DrawRectangleRec(card,i==selected?Color{65,87,65,255}:Color{36,51,44,255});text(d.label,63,static_cast<int>(card.y)+10,20);text(q.ready()?"Ready to craft":"Requirements missing",63,static_cast<int>(card.y)+37,15,q.ready()?green:muted);if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT)&&CheckCollisionPointRec(GetMousePosition(),card))selected=i;}
+                if(button({48,619,345,64},"ASK THE DESIGNER")){selected=6;prompt_focus=false;}
+                if(selected==6){
+                    text("Make something from your materials",432,200,23);
+                    Rectangle input{432,240,490,80};DrawRectangleRec(input,{36,51,44,255});DrawRectangleLinesEx(input,1,prompt_focus?gold:muted);
+                    wrap(prompt.empty()?"Click here and describe your design...":prompt,444,250,465,17,ink);
+                    if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT))prompt_focus=CheckCollisionPointRec(GetMousePosition(),input);
+                    if(button({432,335,235,43},assistant.running()?"DESIGNING...":"ASK DESIGNER",!assistant.running()&&!prompt.empty()&&assistant.available()))try{proposal.reset();explanation="Checking your request...";const auto request=id();assistant.start(workspace,request,world.designerRequest(request,prompt));}catch(const std::exception &e){explanation=e.what();}
+                    if(button({687,335,235,43},"CANCEL",assistant.running())){assistant.cancel();proposal.reset();explanation="Request canceled. No resources spent.";}
+                    wrap(assistant.available()?explanation:"Codex is unavailable. Install/sign in to enable the designer.",432,391,490,17,muted);
+                    if(proposal)try{const auto q=world.quoteRecipe(*proposal);
+                        text(proposal->shape=="sphere"?"Sphere diameter: "+number(2*proposal->radius_m,3)+" m":"Box: "+number(proposal->dimensions_m.x,3)+" x "+number(proposal->dimensions_m.y,3)+" x "+number(proposal->dimensions_m.z,3)+" m",432,456,17,gold);
+                        text(std::string(materialPresetName(proposal->material))+": need "+number(q.required_kg,3)+" kg / held "+number(q.held_kg,3),432,483,18);
+                        text("Level "+std::to_string(q.level)+" / stamina "+number(q.stamina,1)+" / missing "+number(q.missing_kg,3)+" kg",432,515,17);
+                        if(!q.missing.empty())wrap(q.missing.front(),432,548,490,16,gold);
+                        if(button({432,592,490,48},"BUILD REVIEWED DESIGN",q.ready()))try{message=world.craftRecipe(id(),*proposal,v(camera.position));save();}catch(const std::exception &e){message=e.what();}
+                    }catch(const std::exception &e){wrap(e.what(),432,483,490,17,gold);}
+                }else{
                 const auto &d=designs[selected];const auto q=world.quote(d.id);text(d.label,432,200,27);wrap(d.description,432,244,510,20);text("Requires level "+std::to_string(q.level)+"  /  Your level "+std::to_string(world.level()),432,320,20,q.level>world.level()?gold:ink);
                 text("Material: "+std::string(materialPresetName(d.recipe.material)),432,367,20);text("Need "+number(q.required_kg,3)+" kg   /   Have "+number(q.held_kg,3)+" kg",432,403,20);
                 text("Missing: "+number(q.missing_kg,3)+" kg",432,439,20,q.missing_kg>1e-12?gold:green);text("Crafting stamina: "+number(q.stamina,0),432,485,20);
                 if(!q.missing.empty())wrap(q.missing.front(),432,528,510,18,gold);
                 if(button({432,592,490,48},q.ready()?"CRAFT AND USE MATERIALS":"NOT READY - SEE REQUIREMENTS",q.ready()))try{message=world.craft(id(),d.id,v(camera.position));save();}catch(const std::exception &e){message=e.what();}
+                }
             }else{wrap("Click loose material to bring its substance and volume into inventory. Craft a wooden pry tool first, then gather iron and reach level 2 for the cutting tool. Cut the attached branch, let gravity drop it, and collect the wood.",64,220,800,24);text("Gathering costs "+number(world.gatheringCost(),1)+" stamina per pickup",64,425,23,green);}
             if(button({1190,654,195,43},"BACK TO WORLD")){crafting=false;inventory=false;if(capture.empty())DisableCursor();}
         }
@@ -121,5 +150,5 @@ int main(int argc,char **argv){try{
         text("Prototype: gameplay stamina; whole-branch cutting approximation. Physical fabrication energy is not modeled.",25,881,14,muted);
         EndDrawing();if(!capture.empty()&&++rendered>=frames){TakeScreenshot(capture.string().c_str());break;}
     }
-    if(capture.empty())save();EnableCursor();CloseWindow();return 0;
+    assistant.cancel();if(capture.empty())save();EnableCursor();CloseWindow();return 0;
 }catch(const std::exception &e){std::cerr<<"Starter error: "<<e.what()<<'\n';return 1;}}

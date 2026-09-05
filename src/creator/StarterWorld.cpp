@@ -25,6 +25,26 @@ ObjectRecipe box(MaterialPreset material,Vec3 size,std::string name) {
 Json vector(Vec3 v) {return Json::array({v.x,v.y,v.z});}
 Vec3 vector(const Json &j) {check(j.is_array()&&j.size()==3,"invalid vector");Vec3 v{j.at(0).get<double>(),j.at(1).get<double>(),j.at(2).get<double>()};check(finite(v),"nonfinite vector");return v;}
 StarterDesign design(std::string_view id) {for(auto d:StarterWorld::designs())if(d.id==id)return d;throw std::invalid_argument("unknown crafting design");}
+CreationPreview customPlan(const ObjectRecipe &r) {
+    (void)index(r.material);
+    check(r.schema_version==2,"custom starter designs require schema 2");
+    check(std::abs(r.tangent_m)<1e-9&&std::abs(r.bitangent_m+2)<1e-9&&std::abs(r.clearance_m-1.182)<1e-9,"custom output must use the crafting-table placement: tangent 0, lane -2, clearance 1.182 m");
+    check(lengthSquared(r.linear_velocity_m_s)==0&&lengthSquared(r.angular_velocity_rad_s)==0,"starter fabrication supports at-rest output only");
+    return CreatorWorld::compileRecipe(r,{.slope_degrees=0});
+}
+}
+ObjectRecipe StarterWorld::defaultDraft() {
+    ObjectRecipe r;r.schema_version=2;r.radius_m=.04;r.tangent_m=0;r.bitangent_m=-2;r.clearance_m=1.182;return r;
+}
+std::string StarterWorld::designerRequest(std::string_view id,std::string_view prompt) const {
+    check(!id.empty()&&id.size()<=100&&!prompt.empty()&&prompt.size()<=500,"invalid designer request");
+    Json inventory=Json::array();
+    for(auto m:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})inventory.push_back({{"material",materialPresetName(m)},{"held_kg",inventoryKg(m)},{"density_kg_m3",makeReferenceMaterial(m).density_kg_m3}});
+    return Json{{"application","starter"},{"request_id",id},{"prompt",prompt},{"editing",nullptr},
+        {"current_design",Json::parse(CreatorWorld::recipeJson(defaultDraft()))},{"inventory",inventory},
+        {"player",{{"level",level()},{"xp",xp()},{"stamina",stamina()},{"tool",equippedTool()}}},
+        {"custom_rules",{{"minimum_level",2},{"stamina_cost","10 + 1000 * volume_m3"},{"stamina_capacity",100}}},
+        {"capabilities","One solid sphere or box in glass, oak or iron. Rigid gravity/contact only. No assemblies, tool behaviors, grain, fracture or physical fabrication energy. Custom names do not grant tool powers."}}.dump(2);
 }
 std::vector<StarterDesign> StarterWorld::designs() {
     ObjectRecipe ball;ball.schema_version=2;ball.name="Glass rolling ball";ball.material=MaterialPreset::Glass;ball.radius_m=.04;ball.tangent_m=0;ball.bitangent_m=0;
@@ -79,6 +99,20 @@ StarterQuote StarterWorld::quote(std::string_view id) const {
     if(objects_.size()>=64)q.missing.push_back("Starter object limit reached");
     return q;
 }
+StarterQuote StarterWorld::quoteRecipe(const ObjectRecipe &r) const {
+    const auto plan=customPlan(r);
+    // Explicit gameplay schedule; does not claim fabrication work in joules.
+    StarterQuote q{plan.mass_kg,inventoryKg(r.material),std::max(0.0,plan.mass_kg-inventoryKg(r.material)),10+1000*plan.volume_m3,2,{}};
+    if(q.missing_kg>1e-12)q.missing.push_back("Collect more "+std::string(materialPresetName(r.material)));
+    if(level()<q.level)q.missing.push_back("Reach level 2 to build custom designs");
+    if(stamina_<q.stamina)q.missing.push_back("Rest to recover stamina");
+    if(q.stamina>100)q.missing.push_back("This design exceeds the starter stamina capacity; explicitly choose a smaller design");
+    if(objects_.size()>=64)q.missing.push_back("Starter object limit reached");
+    for(const auto &o:objects_)if(!o.collected&&!o.tool&&primitivesOverlap(r.geometry(),plan.position_world_m,r.orientation_world,o.recipe.geometry(),o.state.center_of_mass_world_m,o.state.orientation_world)) {
+        q.missing.push_back("Clear the crafting-table output before building");break;
+    }
+    return q;
+}
 void StarterWorld::debit(double amount) {check(stamina_>=amount,"Not enough stamina. Rest at the camp.");stamina_-=amount;spent_+=amount;}
 std::optional<std::string> StarterWorld::replay(const std::string &id,const std::string &command) const {
     check(!id.empty()&&id.size()<=100,"invalid action ID");
@@ -120,6 +154,18 @@ std::string StarterWorld::craftUnchecked(std::string_view id,Vec3 eye) {
     objects_.push_back({next_++,d.recipe,{position,{},{},{}},false,false,false,d.tool,0});xp_+=10;rebuildPhysics();
     return d.tool?"Crafted and equipped "+d.label+". +10 XP":"Crafted "+d.label+" on the table. +10 XP";
 }
+std::string StarterWorld::craftRecipe(std::string request,const ObjectRecipe &r,Vec3 eye) {
+    const auto command="craft_recipe:"+CreatorWorld::recipeJson(r);if(auto old=replay(request,command))return *old;
+    auto candidate=deserialize(serialize());auto result=candidate.craftRecipeUnchecked(r,eye);
+    candidate.receipts_.push_back({std::move(request),command,result});check(candidate.serialize().size()<=1024*1024,"starter save budget is exhausted");*this=std::move(candidate);return result;
+}
+std::string StarterWorld::craftRecipeUnchecked(const ObjectRecipe &r,Vec3 eye) {
+    check(finite(eye)&&length(eye-benchPosition())<=3.2,"Move to the crafting table");
+    const auto q=quoteRecipe(r);check(q.ready(),"Custom design is blocked; review material, level, stamina and output placement");
+    const auto plan=customPlan(r);debit(q.stamina);auto &stock=inventory_m3_[index(r.material)];stock-=plan.volume_m3;check(stock>=-1e-15,"material deficit");stock=std::max(0.0,stock);
+    objects_.push_back({next_++,r,{plan.position_world_m,r.orientation_world,{},{ }},false,false,false,false,0,true});xp_+=10;rebuildPhysics();
+    return "Built "+r.name+" from the reviewed custom design. +10 XP";
+}
 void StarterWorld::rest(double seconds) {
     check(std::isfinite(seconds)&&seconds>=0&&seconds<=1,"rest interval must be 0–1 second");
     const double gain=std::min(100-stamina_,seconds*12);stamina_+=gain;restored_+=gain;
@@ -133,15 +179,16 @@ std::string StarterWorld::serialize() const {
     for(const auto &o:objects_)objects.push_back({{"id",o.id},{"recipe",Json::parse(CreatorWorld::recipeJson(o.recipe))},{"position",vector(o.state.center_of_mass_world_m)},
         {"orientation",Json::array({o.state.orientation_world.w,o.state.orientation_world.x,o.state.orientation_world.y,o.state.orientation_world.z})},
         {"velocity",vector(o.state.linear_velocity_m_s)},{"spin",vector(o.state.angular_velocity_rad_s)},
-        {"branch",o.branch},{"attached",o.attached},{"collected",o.collected},{"tool",o.tool},{"cut",o.cut_fraction}});
+        {"branch",o.branch},{"attached",o.attached},{"collected",o.collected},{"tool",o.tool},{"cut",o.cut_fraction},{"custom_design",o.custom_design}});
     for(const auto &r:receipts_)receipts.push_back({{"id",r.id},{"command",r.command},{"result",r.result}});
-    return Json{{"starter_version",1},{"rules","starter-stamina-v1/whole-branch-cut-v1/raw-volume-v1"},{"inventory_m3",inventory_m3_},{"stamina",stamina_},{"spent",spent_},{"restored",restored_},{"xp",xp_},{"ticks",ticks_},{"next_id",next_},{"objects",objects},{"receipts",receipts}}.dump(2);
+    return Json{{"starter_version",2},{"rules","starter-stamina-v1/whole-branch-cut-v1/raw-volume-v1/custom-design-v1"},{"inventory_m3",inventory_m3_},{"stamina",stamina_},{"spent",spent_},{"restored",restored_},{"xp",xp_},{"ticks",ticks_},{"next_id",next_},{"objects",objects},{"receipts",receipts}}.dump(2);
 }
 StarterWorld StarterWorld::deserialize(std::string_view document) {
     check(document.size()<=1024*1024,"starter save exceeds 1 MiB");
     std::vector<std::set<std::string>> keys;
     const auto j=Json::parse(document,[&](int depth,Json::parse_event_t event,Json &value){check(depth<=24,"starter save nesting exceeds 24");if(event==Json::parse_event_t::object_start)keys.emplace_back();if(event==Json::parse_event_t::key)check(keys.back().insert(value.get<std::string>()).second,"duplicate starter save field");if(event==Json::parse_event_t::object_end)keys.pop_back();return true;});
-    check(j.is_object()&&j.size()==11,"unexpected starter save fields");check(j.at("starter_version")==1&&j.at("rules")=="starter-stamina-v1/whole-branch-cut-v1/raw-volume-v1","incompatible starter rules");
+    check(j.is_object()&&j.size()==11,"unexpected starter save fields");const bool legacy=j.at("starter_version")==1;
+    check((legacy&&j.at("rules")=="starter-stamina-v1/whole-branch-cut-v1/raw-volume-v1")||(j.at("starter_version")==2&&j.at("rules")=="starter-stamina-v1/whole-branch-cut-v1/raw-volume-v1/custom-design-v1"),"incompatible starter rules");
     StarterWorld w;const auto sources=w.objects_;w.objects_.clear();w.receipts_.clear();w.inventory_m3_=j.at("inventory_m3").get<std::array<double,3>>();
     w.stamina_=j.at("stamina").get<double>();w.spent_=j.at("spent").get<double>();w.restored_=j.at("restored").get<double>();
     check(std::isfinite(w.stamina_+w.spent_+w.restored_)&&w.stamina_>=0&&w.stamina_<=100&&w.spent_>=0&&w.restored_>=0&&std::abs(100+w.restored_-w.spent_-w.stamina_)<1e-8,"invalid stamina ledger");
@@ -153,15 +200,17 @@ StarterWorld StarterWorld::deserialize(std::string_view document) {
     std::array<double,3> balance=w.inventory_m3_;
     for(auto v:balance)check(std::isfinite(v)&&v>=0,"invalid stock");
     for(const auto &v:j.at("objects")) {
-        check(v.is_object()&&v.size()==11&&v.at("id").is_number_unsigned()&&v.at("id").get<std::uint64_t>()<=64,"invalid object fields or ID");
+        check(v.is_object()&&v.size()==(legacy?11:12)&&v.at("id").is_number_unsigned()&&v.at("id").get<std::uint64_t>()<=64,"invalid object fields or ID");
         StarterObject o;o.id=v.at("id").get<MatterBodyId>();o.recipe=CreatorWorld::parseRecipe(v.at("recipe").dump());(void)CreatorWorld::compileRecipe(o.recipe,{.slope_degrees=0});
         check(o.id==w.objects_.size()+1,"unordered object ID");
         o.state.center_of_mass_world_m=vector(v.at("position"));o.state.linear_velocity_m_s=vector(v.at("velocity"));o.state.angular_velocity_rad_s=vector(v.at("spin"));
         const auto &q=v.at("orientation");check(q.is_array()&&q.size()==4,"invalid orientation");o.state.orientation_world={q[0].get<double>(),q[1].get<double>(),q[2].get<double>(),q[3].get<double>()};
         const auto r=o.state.orientation_world;check(std::isfinite(r.w+r.x+r.y+r.z)&&std::abs(r.w*r.w+r.x*r.x+r.y*r.y+r.z*r.z-1)<1e-5,"invalid rotation");
         o.branch=v.at("branch").get<bool>();o.attached=v.at("attached").get<bool>();o.collected=v.at("collected").get<bool>();o.tool=v.at("tool").get<bool>();o.cut_fraction=v.at("cut").get<double>();
+        o.custom_design=legacy?false:v.at("custom_design").get<bool>();
         check(std::isfinite(o.cut_fraction)&&o.cut_fraction>=0&&o.cut_fraction<=1&&(!o.attached||(o.branch&&!o.collected&&o.cut_fraction<1)),"invalid branch state");
-        if(o.id<=19)check(CreatorWorld::recipeJson(o.recipe)==CreatorWorld::recipeJson(sources[o.id-1].recipe)&&o.branch==(o.id==19)&&!o.tool,"starter source declaration changed");
+        if(o.id<=19)check(CreatorWorld::recipeJson(o.recipe)==CreatorWorld::recipeJson(sources[o.id-1].recipe)&&o.branch==(o.id==19)&&!o.tool&&!o.custom_design,"starter source declaration changed");
+        else if(o.custom_design){(void)customPlan(o.recipe);check(!o.tool&&!o.branch,"custom geometry cannot grant tool behavior");}
         else {bool match=false;for(const auto &d:designs())if(CreatorWorld::recipeJson(o.recipe)==CreatorWorld::recipeJson(d.recipe)&&o.tool==d.tool)match=true;check(match&&!o.branch,"unsupported crafted declaration");}
         check((o.branch||o.cut_fraction==0)&&(!o.tool||!o.collected),"invalid tool or cut state");
         if(!o.collected)balance[index(o.recipe.material)]+=o.recipe.geometry().volume();w.objects_.push_back(o);
@@ -173,7 +222,7 @@ StarterWorld StarterWorld::deserialize(std::string_view document) {
     for(const auto &o:w.objects_){if(o.collected)expected_xp+=5;if(o.branch&&o.cut_fraction==1)expected_xp+=10;}
     check(w.xp_==expected_xp,"experience disagrees with gathering/crafting progress");
     const auto &receipts=j.at("receipts");check(receipts.is_array()&&receipts.size()<=512,"invalid history");std::set<std::string> ids;
-    for(const auto &v:receipts){Receipt r{v.at("id").get<std::string>(),v.at("command").get<std::string>(),v.at("result").get<std::string>()};check(!r.id.empty()&&r.id.size()<=100&&r.command.size()<150&&r.result.size()<512&&ids.insert(r.id).second,"invalid receipt");w.receipts_.push_back(std::move(r));}
+    for(const auto &v:receipts){Receipt r{v.at("id").get<std::string>(),v.at("command").get<std::string>(),v.at("result").get<std::string>()};check(!r.id.empty()&&r.id.size()<=100&&r.command.size()<4096&&r.result.size()<512&&ids.insert(r.id).second,"invalid receipt");w.receipts_.push_back(std::move(r));}
     w.rebuildPhysics();return w;
 }
 void StarterWorld::save(const std::filesystem::path &path) const {

@@ -9,6 +9,7 @@ struct StarterObject {
     RigidSnapshot state;
     bool branch{},attached{},collected{},tool{};
     double cut_fraction{};
+    bool custom_design{};
 };
 struct StarterDesign {
     std::string id,label,description;
@@ -41,6 +42,10 @@ public:
     [[nodiscard]] const std::vector<StarterObject> &objects() const {return objects_;}
     [[nodiscard]] static std::vector<StarterDesign> designs();
     [[nodiscard]] StarterQuote quote(std::string_view design) const;
+    [[nodiscard]] StarterQuote quoteRecipe(const ObjectRecipe &recipe) const;
+    [[nodiscard]] static ObjectRecipe defaultDraft();
+    [[nodiscard]] std::string designerRequest(std::string_view id,std::string_view prompt) const;
+    std::string craftRecipe(std::string request,const ObjectRecipe &recipe,Vec3 eye);
     std::string interact(std::string request,MatterBodyId object,Vec3 eye);
     std::string craft(std::string request,std::string_view design,Vec3 eye);
     void rest(double seconds);
@@ -66,5 +71,6 @@ private:
     [[nodiscard]] std::optional<std::string> replay(const std::string &id,const std::string &command) const;
     std::string interactUnchecked(MatterBodyId object,Vec3 eye);
     std::string craftUnchecked(std::string_view design,Vec3 eye);
+    std::string craftRecipeUnchecked(const ObjectRecipe &recipe,Vec3 eye);
 };
 }

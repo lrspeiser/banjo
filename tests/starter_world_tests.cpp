@@ -53,6 +53,24 @@ int main() {try {
         near(game.inventoryKg(m),held,1e-12,"collecting physical crafted sphere returns raw volume without creating material");check(game.spent()>spent_before,"recovering material does not refund spent stamina");
     }
     for(auto m:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        StarterWorld custom;auto r=StarterWorld::defaultDraft();r.material=m;r.shape="box";r.dimensions_m={.08,.06,.1};r.name="Iron cutting tool";
+        const auto empty=custom.serialize();check(!custom.quoteRecipe(r).ready(),"empty beginner cannot custom craft");
+        rejects([&]{(void)custom.craftRecipe("early",r,{0,1.65,0});});check(custom.serialize()==empty,"blocked proposal spends nothing");
+        const unsigned first=m==MaterialPreset::Glass?13:m==MaterialPreset::Oak?1:7;
+        for(unsigned i=0;i<4;++i)(void)custom.interact("custom-gather-"+std::to_string(i),first+i,eye(custom,first+i));
+        const auto stock=custom.inventoryKg(m),stamina=custom.stamina();const auto quote=custom.quoteRecipe(r);check(quote.ready(),"custom design ready for each substance");
+        auto request=nlohmann::json::parse(custom.designerRequest("ask","Make a block"));check(request["player"]["level"]==2&&request["application"]=="starter","designer sees actual player progression");
+        (void)custom.craftRecipe("custom",r,{0,1.65,0});near(stock-custom.inventoryKg(m),.08*.06*.1*makeReferenceMaterial(m).density_kg_m3,1e-12,"custom mass debit follows geometry and density");
+        near(stamina-custom.stamina(),10.48,1e-12,"custom gameplay stamina schedule");check(custom.equippedTool()=="None","custom name cannot grant tool powers");
+        const auto built=custom.serialize();(void)custom.craftRecipe("custom",r,{99,0,99});check(custom.serialize()==built,"custom retries replay without double debit");
+        rejects([&]{(void)custom.craftRecipe("overlap",r,{0,1.65,0});});check(custom.serialize()==built,"occupied output rejects atomically");
+        auto moving=r;moving.linear_velocity_m_s={1,0,0};rejects([&]{(void)custom.quoteRecipe(moving);});
+        auto misplaced=r;misplaced.clearance_m=0;rejects([&]{(void)custom.quoteRecipe(misplaced);});
+        check(StarterWorld::deserialize(built).serialize()==built,"custom recipe state round trips");
+        custom.step(240);check(custom.objects().back().state.center_of_mass_world_m.y>1.19,"custom body rests on physical bench");
+    }
+    {auto legacy=nlohmann::json::parse(initial);legacy["starter_version"]=1;legacy["rules"]="starter-stamina-v1/whole-branch-cut-v1/raw-volume-v1";for(auto &o:legacy["objects"])o.erase("custom_design");check(StarterWorld::deserialize(legacy.dump()).serialize()==initial,"version one starter saves migrate without invented progress");}
+    for(auto m:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
         JoltWorld physics;physics.setGravity({0,-9.81,0});physics.addFloor();
         physics.addBox({1,{.08,.06,.1},makeReferenceMaterial(m),{{0,2,0},{},{},{}},false});physics.pinToWorld(1);
         for(unsigned i=0;i<120;++i)physics.step(1.0/240);
