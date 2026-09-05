@@ -3,6 +3,8 @@
 #include "core/Plane.hpp"
 #include "fracture/ActiveMatter.hpp"
 #include "fracture/ImpactEvent.hpp"
+#include "physics/SphereMaterialContact.hpp"
+#include <limits>
 
 #include <cstddef>
 
@@ -21,7 +23,12 @@ struct BrittleSolverSettings {
     double floor_height_m{0.0};
     double floor_friction{0.4};
 
-    double impact_internal_energy_fraction{0.04};
+    double surface_static_friction{0.5};
+    double support_half_tangent_m{std::numeric_limits<double>::infinity()};
+    double support_half_bitangent_m{std::numeric_limits<double>::infinity()};
+    // Legacy experimental pulse remains opt-in for isolated calibration tests.
+    // The runtime uses zero: contact, not synthetic excitation, drives fracture.
+    double impact_internal_energy_fraction{0.0};
     double maximum_internal_energy_j{350.0};
 };
 
@@ -38,6 +45,8 @@ struct MaterialStepStats {
     double kinetic_energy_j{};
     double estimated_elastic_energy_j{};
     double maximum_speed_m_s{};
+    double internal_damping_loss_j{};
+    SphereMaterialContactStats rigid_contact{};
 };
 
 class BrittleBondSolver {
@@ -54,7 +63,9 @@ public:
     [[nodiscard]] MaterialStepStats step(
         ActiveMatter &matter,
         double frame_dt_s,
-        const Vec3 &gravity_m_s2) const;
+        const Vec3 &gravity_m_s2,
+        CoupledSphereState *sphere = nullptr,
+        const SphereMaterialContactSettings &contact = {}) const;
 
 private:
     void injectInternalImpactPulse(

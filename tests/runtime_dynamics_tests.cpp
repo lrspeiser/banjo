@@ -2,6 +2,8 @@
 #include "material/MaterialCatalog.hpp"
 #include "material/MaterialCompiler.hpp"
 #include "rigid/JoltWorld.hpp"
+#include "sim/RollingBallExperiment.hpp"
+#include "physics/RollingKinematics.hpp"
 
 #include <cmath>
 #include <cstdlib>
@@ -288,6 +290,109 @@ void rollingResistanceChangesCoastingSpeed() {
             "higher rolling resistance should dissipate more coasting speed");
 }
 
+void slidingSpinsUpToAnalyticalRollingSpeed() {
+    auto material = controlledMaterial("friction_test", 2500.0);
+    material.derive_restitution_from_damping = false;
+    material.restitution = 0.0;
+    const auto plane = banjo::makeSupportPlaneFromSlopeDegrees(0.0);
+    banjo::JoltWorld world;
+    world.addSupportSurface({.frame=plane, .material=material});
+    world.addBall({.body_id=1, .radius_m=.25, .material=material,
+        .position_world_m={0,.25,0}, .linear_velocity_m_s={2,0,0}});
+    for (unsigned i=0;i<240;++i) world.step(1.0/480.0);
+    const auto body=world.snapshot(1);
+    const auto motion=banjo::measureRollingKinematics(body,.25,plane);
+    std::cout << "Measured slide-to-roll: v=" << body.linear_velocity_m_s.x
+              << " slip=" << motion.contact_slip_speed_m_s << " m/s\n";
+    require(std::abs(body.linear_velocity_m_s.x-2.0/1.4)<.02,
+        "solid sphere launched without spin should reach v=5/7 v0 under friction");
+    require(motion.contact_slip_speed_m_s<.02, "friction should spin up the initially sliding ball");
+}
+void frictionlessSurfaceCannotSpinUpBall() {
+    auto material=controlledMaterial("frictionless",2500.0);
+    material.static_friction=material.dynamic_friction=material.friction=0;
+    banjo::JoltWorld world;
+    world.addSupportSurface({.material=material});
+    world.addBall({.body_id=1,.radius_m=.25,.material=material,
+        .position_world_m={0,.25,0},.linear_velocity_m_s={2,0,0}});
+    for(unsigned i=0;i<120;++i)world.step(1.0/240.0);
+    const auto body=world.snapshot(1);
+    require(std::abs(body.linear_velocity_m_s.x-2.0)<1e-5,
+        "frictionless translation must not lose speed");
+    std::cout << "Frictionless angular drift=" << banjo::length(body.angular_velocity_rad_s) << " rad/s\n";
+    // Jolt uses single-precision contact geometry; measure the tiny spin drift
+    // in surface-speed units. This permits <10 micrometers/s, not macroscopic rolling.
+    require(.25 * banjo::length(body.angular_velocity_rad_s)<1e-5,
+        "surface without friction must not manufacture rolling spin");
+}
+void rollingResistanceIsTorqueNotSpinSnap() {
+    auto material=controlledMaterial("torque_test",2500.0,.03);
+    material.static_friction=material.dynamic_friction=material.friction=0;
+    banjo::JoltWorld world;
+    world.addSupportSurface({.material=material});
+    world.addBall({.body_id=1,.radius_m=.25,.material=material,
+        .position_world_m={0,.25,0},.linear_velocity_m_s={2,0,0},
+        .angular_velocity_rad_s={0,0,-7.2}});
+    for(unsigned i=0;i<24;++i)world.step(1.0/240.0);
+    const auto body=world.snapshot(1);
+    require(std::abs(body.linear_velocity_m_s.x-2.0)<1e-5,
+        "rolling-resistance torque without friction cannot change COM velocity");
+    require(std::abs(body.angular_velocity_rad_s.z)<7.2,
+        "resisting torque should reduce angular speed, not snap it to v/r");
+}
+void materialDampingIsNotVacuumDrag() {
+    auto material=controlledMaterial("damped_interior",2500.0);
+    material.damping_ratio=.9;
+    banjo::JoltWorld world;world.setGravity({});
+    world.addBall({.body_id=1,.radius_m=.25,.material=material,
+        .linear_velocity_m_s={2,0,0},.angular_velocity_rad_s={0,0,3}});
+    for(unsigned i=0;i<240;++i)world.step(1.0/240.0);
+    const auto body=world.snapshot(1);
+    require(std::abs(body.linear_velocity_m_s.x-2.0)<1e-5,
+        "internal damping must not slow rigid translation in vacuum");
+    require(std::abs(body.angular_velocity_rad_s.z-3.0)<1e-5,
+        "internal damping must not slow undistorted rigid rotation");
+}
+void sensorHandoffDoesNotDoubleApplyImpact() {
+    auto iron=banjo::makeReferenceMaterial(banjo::MaterialPreset::Iron,971);
+    auto glass=banjo::makeReferenceMaterial(banjo::MaterialPreset::Glass,971);
+    banjo::JoltWorld world;world.setGravity({});
+    world.addBall({.body_id=1,.radius_m=.25,.material=iron,
+        .position_world_m={-.8,0,0},.linear_velocity_m_s={4,0,0}});
+    world.addBall({.body_id=2,.radius_m=.25,.material=glass,
+        .position_world_m={0,0,0},.defer_brittle_contacts_to_material=true});
+    bool deferred=false;
+    for(unsigned i=0;i<240 && !deferred;++i){
+        world.step(1.0/480.0);
+        for(const auto &impact:world.drainImpacts())deferred|=impact.response_deferred_to_material;
+    }
+    require(deferred,"activating contact should be handed to material solver");
+    require(std::abs(world.snapshot(1).linear_velocity_m_s.x-4)<1e-5,
+        "Jolt must not also resolve an activating impact");
+    require(banjo::length(world.snapshot(2).linear_velocity_m_s)<1e-5,
+        "target must receive its impulse from material contacts, not twice");
+}
+void defaultExperimentUsesRealContactWithoutPulse() {
+    banjo::ExperimentSettings settings;
+    settings.minimum_material_steps=20;
+    settings.stable_material_steps_before_handoff=10;
+    settings.maximum_material_steps=120;
+    banjo::RollingBallExperiment experiment(settings);
+    require(experiment.stats().striker_motion.state==banjo::RollingState::Rolling,
+        "default ball should start rolling");
+    for(unsigned i=0;i<240 && experiment.phase()!=banjo::ExperimentPhase::RigidFragments;++i)
+        experiment.stepFixed();
+    const auto &stats=experiment.stats();
+    require(stats.activation_response_deferred,"initial rigid response must be suppressed");
+    require(stats.impact_speed_m_s>7.0,"default activation must originate in the ball collision");
+    require(stats.coupled_contact_points>0 && stats.coupled_impulse_n_s>0,
+        "active nodes must actually exchange impulses with rigid striker");
+    require(stats.coupled_contact_dissipation_j>=-1e-6,"contact must not manufacture energy");
+    require(stats.broken_bonds>0 && stats.rigid_fragments>0,
+        "contact alone must drive fracture and generated-fragment handoff");
+    require(std::abs(stats.mass_error_kg)<1e-8,"contact-driven handoff must conserve represented mass");
+}
+
 } // namespace
 
 int main() {
@@ -299,6 +404,12 @@ int main() {
         {"runtime uses compiled contact pair", runtimeContactUsesCompiledMaterialPair},
         {"mass controls momentum transfer", massDistributionChangesCollisionTransfer},
         {"rolling resistance changes coasting", rollingResistanceChangesCoastingSpeed},
+        {"slide to analytical rolling speed", slidingSpinsUpToAnalyticalRollingSpeed},
+        {"frictionless slide stays sliding", frictionlessSurfaceCannotSpinUpBall},
+        {"rolling resistance is torque", rollingResistanceIsTorqueNotSpinSnap},
+        {"no material damping as vacuum drag", materialDampingIsNotVacuumDrag},
+        {"sensor prevents double impulse", sensorHandoffDoesNotDoubleApplyImpact},
+        {"runtime contact drives fracture", defaultExperimentUsesRealContactWithoutPulse},
     };
 
     std::size_t failures = 0U;

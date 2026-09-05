@@ -418,7 +418,7 @@ void drawOverlay(
 
     DrawRectangle(18, 18, 560, 430, Fade(BLACK, 0.80F));
     DrawRectangleLines(18, 18, 560, 430, Fade(kGlassLight, 0.55F));
-    DrawText("BANJO // FIRST-PRINCIPLES BALL LAB", 34, 32, 20, kText);
+    DrawText("BANJO // CONTACT-DRIVEN MATERIAL LAB", 34, 32, 20, kText);
     DrawText(
         TextFormat(
             "Phase: %s%s",
@@ -488,6 +488,26 @@ void drawOverlay(
         TextFormat("%zu / %zu", stats.rigid_fragments, stats.debris_particles));
     row("Mass error", formatDouble(stats.mass_error_kg, 8) + " kg");
 
+    const int panel_x = GetScreenWidth() - 412;
+    DrawRectangle(panel_x, 64, 394, 250, Fade(BLACK, 0.82F));
+    DrawText("MEASURED MOTION / CONTACT", panel_x + 12, 77, 16, kGlassLight);
+    int motion_y = 102;
+    const auto motion_line = [&](const std::string &text) {
+        DrawText(text.c_str(), panel_x + 12, motion_y, 15, kText);
+        motion_y += 22;
+    };
+    motion_line("Striker: " + std::string(banjo::rollingStateName(stats.striker_motion.state)));
+    motion_line("v / r*w: " + formatDouble(stats.striker_motion.translation_speed_m_s, 3) +
+        " / " + formatDouble(stats.striker_motion.rolling_surface_speed_m_s, 3) + " m/s");
+    motion_line("Contact slip: " + formatDouble(stats.striker_motion.contact_slip_speed_m_s, 4) + " m/s");
+    motion_line("Initial spin ratio: " + formatDouble(settings.striker_spin_ratio, 1) + " [L]");
+    motion_line("Target: " + (experiment.phase() == banjo::ExperimentPhase::Rigid
+        ? std::string(banjo::rollingStateName(stats.target_motion.state)) : "active / fragmented"));
+    motion_line("Coupled contact impulses: " + std::to_string(stats.coupled_contact_points));
+    motion_line("Transferred impulse: " + formatDouble(stats.coupled_impulse_n_s, 2) + " N s");
+    motion_line("Contact loss: " + formatDouble(stats.coupled_contact_dissipation_j, 2) + " J");
+    motion_line("Synthetic fracture pulse: OFF");
+
     DrawText(
         TextFormat(
             "R reset  SPACE pause  N step  B bonds [%s]  W wire [%s]",
@@ -498,7 +518,7 @@ void drawOverlay(
         16,
         kText);
     DrawText(
-        "M striker  T target  S surface  [ / ] slope  UP/DOWN speed",
+        "M striker  T target  S surface  [ / ] slope  UP/DOWN speed  L spin",
         24,
         GetScreenHeight() - 59,
         16,
@@ -656,6 +676,12 @@ int main(int argc, char **argv) {
                         30.0, settings.surface_slope_degrees + 5.0);
                     reset = true;
                 }
+                if (IsKeyPressed(KEY_L)) {
+                    const double ratio = settings.striker_spin_ratio;
+                    settings.striker_spin_ratio = ratio == 1.0 ? 0.0
+                        : ratio == 0.0 ? -1.0 : ratio == -1.0 ? 2.0 : 1.0;
+                    reset = true;
+                }
                 if (IsKeyPressed(KEY_G)) {
                     cycleGravityMagnitude(settings);
                     reset = true;
@@ -704,9 +730,8 @@ int main(int argc, char **argv) {
                 accumulator_s -= settings.rigid_step_s;
                 ++fixed_steps_this_frame;
             }
-            if (fixed_steps_this_frame == 12U) {
-                accumulator_s = 0.0;
-            }
+            // Retain unprocessed simulation time. A slow solver slows display
+            // progression instead of silently skipping part of the experiment.
             syncFragmentModels(experiment, fragment_models);
 
             const Camera3D camera = makeCamera(
