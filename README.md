@@ -30,6 +30,8 @@ The local `codex/physics-foundation` branch integrates main and PR #2's contact-
 
 An experimental [conservative coupled reference](docs/conservative-reference-checkpoint.md) is available through `banjo_solver_probe`. Its [global Newton/GMRES solve](docs/elastic-newton-checkpoint.md) now advances the full isolated glass lattice at 2 ms and 1/240 s with strict conservation checks. Larger steps, runtime cost and contact/material integration remain unresolved. The default viewer still has the conservation defects described above.
 
+The [coupled plane-support update](docs/coupled-support-checkpoint.md) also converges for full-glass floor impacts. Its timestep sweep exposes numerical impact-phase loss and unconverged rebound, so this reference is not yet a reliable material collision model or the viewer's solver.
+
 Requirements:
 
 - CMake 3.25 or newer

@@ -1,5 +1,7 @@
 # Global elastic solve checkpoint
 
+Later checkpoint: [coupled support and impact-timing evidence at `1deb025`](coupled-support-checkpoint.md). The free-elastic measurements below remain historical evidence; the support solver and probe now have additional capabilities.
+
 Tested code: **`dc7bcfb6b9d9392bdf19e82e0baa48e53e0b16cc`**, September 4, 2026, America/Los_Angeles. Local branch `codex/physics-foundation`, worktree `C:/Users/henry/dev/banjo-integration`. Main remains `3a38d7d`; this work has not been pushed or merged.
 
 ## Result and scope
