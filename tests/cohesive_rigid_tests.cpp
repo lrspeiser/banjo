@@ -4,6 +4,32 @@
 #include <algorithm>
 using namespace banjo;
 void require(bool b,const char *s){if(!b)throw std::runtime_error(s);}
+void bendingIntegralOracle(MaterialPreset preset){
+    const auto material=makeReferenceMaterial(preset);const double width=.01,height=.008,half=width/2;
+    const CohesiveInterfaceLaw law{2*material.tensile_strength_pa*material.tensile_strength_pa/material.fracture_energy_j_m2,material.tensile_strength_pa,material.fracture_energy_j_m2,width*height};
+    const double d0=law.strength_pa/law.stiffness_pa_per_m,df=2*law.fracture_energy_j_m2/law.strength_pa;
+    for(double peak_factor:{.3,.7,1.4}){
+        // Prescribed small-angle opening q(y)=theta*y, on [-width/2,width/2].
+        // Integrate the piecewise polynomial branches directly, independently
+        // of the point constitutive evaluator used by quadrature below.
+        const double theta=peak_factor*df/half,elastic_end=std::min(half,d0/theta),soft_end=std::min(half,df/theta);
+        const double force=height*(.5*law.stiffness_pa_per_m*theta*elastic_end*elastic_end+law.strength_pa/(df-d0)*(df*(soft_end-elastic_end)-.5*theta*(soft_end*soft_end-elastic_end*elastic_end)));
+        const double moment=height*(law.stiffness_pa_per_m*theta*std::pow(elastic_end,3)/3+law.strength_pa/(df-d0)*(.5*df*(soft_end*soft_end-elastic_end*elastic_end)-theta*(std::pow(soft_end,3)-std::pow(elastic_end,3))/3));
+        const double damage=height*law.fracture_energy_j_m2*(.5*theta/(df-d0)*std::pow(soft_end-elastic_end,2)+std::max(0.0,half-df/theta));
+        double coarse_error=0;
+        for(unsigned cells:{2u,4u,8u,16u}){
+            CohesiveRigidBody a{1,{.01,.02,.025},{-.016,0,0},{},{},{},{}},b=a;b.center_m={.016,0,0};
+            const auto patch=makeRectangularCohesivePatch(a,b,{.006,0,0},{-.006,0,0},{0,1,0},{0,0,1},{0,1,0},{0,0,1},width,height,cells);
+            double measured_force=0,measured_moment=0,measured_damage=0;
+            for(const auto &site:patch.sites){auto local=law;local.area_m2=site.area_m2;const double opening=theta*site.attachment_a_m.y;
+                const auto value=evaluateCohesiveInterface(local,{opening,std::max(0.0,opening)});measured_force+=value.force_n;measured_moment+=site.attachment_a_m.y*value.force_n;measured_damage+=value.dissipated_energy_j;}
+            const double force_error=std::abs(measured_force-force)/(law.strength_pa*width*height),moment_error=std::abs(measured_moment-moment)/(law.strength_pa*width*height*half),damage_error=std::abs(measured_damage-damage)/(law.fracture_energy_j_m2*width*height);
+            const double error=std::max({force_error,moment_error,damage_error});if(cells==2)coarse_error=error;
+            if(cells==16)require(error<coarse_error&&error<.005,"prescribed patch integrals agree with independent exact branches");
+            std::cout<<materialPresetName(preset)<<" bending_oracle cells="<<cells<<" peak_factor="<<peak_factor<<" force_error_scaled="<<force_error<<" moment_error_scaled="<<moment_error<<" damage_error_scaled="<<damage_error<<'\n';
+        }
+    }
+}
 void asymmetric(MaterialPreset preset){
     const auto material=makeReferenceMaterial(preset);const double area=.0001,rest=.02;
     const CohesiveInterfaceLaw law{2*material.tensile_strength_pa*material.tensile_strength_pa/material.fracture_energy_j_m2,material.tensile_strength_pa,material.fracture_energy_j_m2,area};
@@ -50,6 +76,7 @@ void asymmetric(MaterialPreset preset){
 }
 int main(){try{
     for(auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}){
+        bendingIntegralOracle(preset);
         asymmetric(preset);
         const auto m=makeReferenceMaterial(preset);const double area=.0001,mass=m.density_kg_m3*.012*.01*.008,work=area*m.fracture_energy_j_m2,rest=.02;
         const CohesiveInterfaceLaw law{2*m.tensile_strength_pa*m.tensile_strength_pa/m.fracture_energy_j_m2,m.tensile_strength_pa,m.fracture_energy_j_m2,area};
