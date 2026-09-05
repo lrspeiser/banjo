@@ -1,0 +1,17 @@
+# LLM assembly review in the workshop
+
+Local source `c06ee324e7f4fa9df10fc83fc70c553c7c5c89b0`, September 5, 2026; not pushed or merged. Full goal remains active.
+
+After a current saved-revision test, Ask Codex to review captures the world, declaration and test specification. A background task deserializes that snapshot and calls the existing assemblyReviewDocument adapter to independently regenerate assessment and test evidence. Only then does the main loop launch the configured provider. The existing review-only response boundary rejects recipes and never receives mutable live world access. The UI explains that the design, test and current stock are sent to Codex. Automatic assembly review is disabled when manual-assistant mode is selected or the executable is unavailable.
+
+Review state is compared against the complete serialized live world and loaded test specification. A change cancels provider work and hides any old reply behind a stale-review message. This is deliberately conservative: unrelated world motion can invalidate a review too. Preparation results are discarded when cancelled or stale. Preparation itself is a bounded physics task without cooperative cancellation; shutdown can wait for it. One review preparation/provider request is owned separately from ordinary object design. The main loop polls it even when a different panel is visible. Reviews are not world-persisted, durable jobs or automatic construction approvals.
+
+## Native and provider evidence
+
+An oak assembly with zero held stock was tested to its declared 100% separation criterion through the native controls, then reviewed by the real provider. The returned clarification correctly reported the pass, explicitly denied that this validates usefulness/realism, identified 0.0245 kg oak needed and 10 kg uncollected, and stated live creation remains unsupported even with sufficient stock. The structured recipe was null. The full native reply fitted within its panel and was captured with F12.
+
+Clicking Collect Oak then replaced the reply with the explicit stale-world/test message. A second request used the changed inventory; Cancel review stopped it and the UI showed cancellation. Only the intentionally collected lot changed. The original physics-test pass remains valid for the unchanged declaration, while its inventory-dependent explanation does not. Native cancellation during evidence preparation, manual-mode disabled controls and each possible stale trigger were not individually exercised.
+
+The Windows MSVC 19.44 Release workshop build passes. All 21 CTest suites passed in 17.88 seconds with existing glass/oak/iron test coverage and review-only recipe rejection. A final manual-mode constructor guard was rebuilt after that suite run; it changes provider availability only. This turn's real native provider example was oak; the prior six glass/oak/iron provider cases remain separately recorded. No physical law, tolerance, criterion, material model or prompt boundary was relaxed. The configured provider executable/model settings are inherited; no credentials were copied.
+
+Next: integrate the same assembly declaration, assessment, test and review contract into the first-person crafting table, without creating a second material inventory authority. Then implement supported live assembly construction with authoritative contact ownership and material/energy accounting. Physical joining/cutting, calibrated material response, spatial convergence and all remaining gates stay open. All 40 mechanics/platform scorecard rows are retained.

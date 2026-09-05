@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Assembly LLM review controls:** [Regenerated evidence review](assembly-review-ui-checkpoint.md) runs from current tests, invalidates world/spec changes and supports cancellation. Real native oak explanation, inventory invalidation and cancellation verified; 21 suites pass. First-person integration and live construction remain open. Local `c06ee32`; full goal active.
+
 **Assembly test controls:** [Revision-bound background tests](assembly-test-ui-checkpoint.md) expose settings, measured outcomes and evidence export. Native oak pass/fail, stale-revision and budget-error paths verified; all 21 suites pass with glass/oak/iron coverage. LLM review controls and first-person integration remain open. Local `22932be`; full goal active.
 
 **Assembly workshop UI:** [Saved-design review](assembly-ui-checkpoint.md) shows parts, joint quantities and current inventory shortages; native oak import/collection/revision/restart and glass/iron layouts verified. All 21 suites pass. Testing/review controls, first-person integration and live construction remain open. Local `acf41d1`; full goal active.
