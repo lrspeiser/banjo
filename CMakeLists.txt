@@ -47,6 +47,7 @@ add_library(
     src/physics/RollingKinematics.cpp
     src/physics/SphereMaterialContact.cpp
     src/fracture/ActivationPolicy.cpp
+    src/fracture/RuptureCascade.cpp
     src/fracture/EnergyRupture.cpp
     src/fracture/BrittleBondSolver.cpp
     src/fracture/ConnectedComponents.cpp
@@ -205,6 +206,10 @@ if(BANJO_BUILD_LAB)
 endif()
 
 if(BANJO_BUILD_TESTS)
+    add_executable(banjo_rupture_cascade_tests tests/rupture_cascade_tests.cpp)
+    target_link_libraries(banjo_rupture_cascade_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_rupture_cascade_tests)
+    add_test(NAME banjo_rupture_cascade_tests COMMAND banjo_rupture_cascade_tests)
     add_executable(banjo_energy_rupture_tests tests/energy_rupture_tests.cpp)
     target_link_libraries(banjo_energy_rupture_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_energy_rupture_tests)
