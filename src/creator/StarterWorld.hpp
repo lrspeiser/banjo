@@ -25,6 +25,10 @@ struct StarterQuote {
     std::vector<std::string> missing;
     [[nodiscard]] bool ready() const {return missing.empty();}
 };
+struct StarterRememberedDesign {
+    std::string request_id,prompt,explanation;
+    std::optional<ObjectRecipe> recipe;
+};
 // A deliberately versioned game layer. Stamina and XP are gameplay units,
 // not joules or a calibrated manufacturing/fracture law.
 class StarterWorld {
@@ -46,6 +50,8 @@ public:
     [[nodiscard]] StarterQuote quoteRecipe(const ObjectRecipe &recipe) const;
     [[nodiscard]] static ObjectRecipe defaultDraft();
     [[nodiscard]] std::string designerRequest(std::string_view id,std::string_view prompt) const;
+    [[nodiscard]] const std::optional<StarterRememberedDesign> &rememberedDesign() const {return remembered_design_;}
+    void rememberDesignAndSave(const std::filesystem::path &path,const StarterRememberedDesign &design);
     std::string craftRecipe(std::string request,const ObjectRecipe &recipe,Vec3 eye);
     std::string interact(std::string request,MatterBodyId object,Vec3 eye);
     std::string craft(std::string request,std::string_view design,Vec3 eye);
@@ -66,6 +72,7 @@ private:
     struct Receipt {std::string id,command,result;};
     std::vector<StarterObject> objects_;
     std::vector<Receipt> receipts_;
+    std::optional<StarterRememberedDesign> remembered_design_;
     std::array<double,3> inventory_m3_{};
     std::unique_ptr<JoltWorld> physics_;
     unsigned xp_{};

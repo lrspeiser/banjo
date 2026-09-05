@@ -32,6 +32,11 @@ CreationPreview customPlan(const ObjectRecipe &r) {
     check(lengthSquared(r.linear_velocity_m_s)==0&&lengthSquared(r.angular_velocity_rad_s)==0,"starter fabrication supports at-rest output only");
     return CreatorWorld::compileRecipe(r,{.slope_degrees=0});
 }
+void validateRemembered(const StarterRememberedDesign &d) {
+    const auto bounded=[](const std::string &s,std::size_t maximum){return !s.empty()&&s.size()<=maximum&&std::none_of(s.begin(),s.end(),[](unsigned char c){return c<32;});};
+    check(bounded(d.request_id,100)&&bounded(d.prompt,500)&&bounded(d.explanation,512),"invalid remembered design text");
+    if(d.recipe)(void)customPlan(*d.recipe); // Stock/level may be short; capability may not.
+}
 }
 ObjectRecipe StarterWorld::defaultDraft() {
     ObjectRecipe r;r.schema_version=2;r.radius_m=.04;r.tangent_m=0;r.bitangent_m=-2;r.clearance_m=1.182;return r;
@@ -181,15 +186,24 @@ std::string StarterWorld::serialize() const {
         {"velocity",vector(o.state.linear_velocity_m_s)},{"spin",vector(o.state.angular_velocity_rad_s)},
         {"branch",o.branch},{"attached",o.attached},{"collected",o.collected},{"tool",o.tool},{"cut",o.cut_fraction},{"custom_design",o.custom_design}});
     for(const auto &r:receipts_)receipts.push_back({{"id",r.id},{"command",r.command},{"result",r.result}});
-    return Json{{"starter_version",2},{"rules","starter-stamina-v1/whole-branch-cut-v1/raw-volume-v1/custom-design-v1"},{"inventory_m3",inventory_m3_},{"stamina",stamina_},{"spent",spent_},{"restored",restored_},{"xp",xp_},{"ticks",ticks_},{"next_id",next_},{"objects",objects},{"receipts",receipts}}.dump(2);
+    Json remembered=nullptr;
+    if(remembered_design_){const auto &d=*remembered_design_;remembered={{"request_id",d.request_id},{"prompt",d.prompt},{"explanation",d.explanation},{"recipe",d.recipe?Json::parse(CreatorWorld::recipeJson(*d.recipe)):Json(nullptr)}};}
+    return Json{{"starter_version",3},{"rules","starter-stamina-v1/whole-branch-cut-v1/raw-volume-v1/custom-design-v1"},{"remembered_design",remembered},{"inventory_m3",inventory_m3_},{"stamina",stamina_},{"spent",spent_},{"restored",restored_},{"xp",xp_},{"ticks",ticks_},{"next_id",next_},{"objects",objects},{"receipts",receipts}}.dump(2);
 }
 StarterWorld StarterWorld::deserialize(std::string_view document) {
     check(document.size()<=1024*1024,"starter save exceeds 1 MiB");
     std::vector<std::set<std::string>> keys;
     const auto j=Json::parse(document,[&](int depth,Json::parse_event_t event,Json &value){check(depth<=24,"starter save nesting exceeds 24");if(event==Json::parse_event_t::object_start)keys.emplace_back();if(event==Json::parse_event_t::key)check(keys.back().insert(value.get<std::string>()).second,"duplicate starter save field");if(event==Json::parse_event_t::object_end)keys.pop_back();return true;});
-    check(j.is_object()&&j.size()==11,"unexpected starter save fields");const bool legacy=j.at("starter_version")==1;
-    check((legacy&&j.at("rules")=="starter-stamina-v1/whole-branch-cut-v1/raw-volume-v1")||(j.at("starter_version")==2&&j.at("rules")=="starter-stamina-v1/whole-branch-cut-v1/raw-volume-v1/custom-design-v1"),"incompatible starter rules");
+    check(j.is_object(),"starter save must be an object");const bool legacy=j.at("starter_version")==1,has_design=j.at("starter_version")==3;
+    check(j.size()==(has_design?12:11),"unexpected starter save fields");
+    check((legacy&&j.at("rules")=="starter-stamina-v1/whole-branch-cut-v1/raw-volume-v1")||((j.at("starter_version")==2||has_design)&&j.at("rules")=="starter-stamina-v1/whole-branch-cut-v1/raw-volume-v1/custom-design-v1"),"incompatible starter rules");
     StarterWorld w;const auto sources=w.objects_;w.objects_.clear();w.receipts_.clear();w.inventory_m3_=j.at("inventory_m3").get<std::array<double,3>>();
+    if(has_design&&!j.at("remembered_design").is_null()){
+        const auto &d=j.at("remembered_design");check(d.is_object()&&d.size()==4,"invalid remembered design fields");
+        StarterRememberedDesign remembered{d.at("request_id").get<std::string>(),d.at("prompt").get<std::string>(),d.at("explanation").get<std::string>(),{}};
+        if(!d.at("recipe").is_null())remembered.recipe=CreatorWorld::parseRecipe(d.at("recipe").dump());
+        validateRemembered(remembered);w.remembered_design_=std::move(remembered);
+    }
     w.stamina_=j.at("stamina").get<double>();w.spent_=j.at("spent").get<double>();w.restored_=j.at("restored").get<double>();
     check(std::isfinite(w.stamina_+w.spent_+w.restored_)&&w.stamina_>=0&&w.stamina_<=100&&w.spent_>=0&&w.restored_>=0&&std::abs(100+w.restored_-w.spent_-w.stamina_)<1e-8,"invalid stamina ledger");
     check(j.at("xp").is_number_unsigned()&&j.at("ticks").is_number_unsigned()&&j.at("next_id").is_number_unsigned(),"progress counters must be nonnegative integers");
@@ -247,6 +261,10 @@ std::string StarterWorld::commitSaved(const std::filesystem::path &path,const st
     auto candidate=deserialize(serialize());auto result=action(candidate);
     candidate.save(path); // Failure leaves this world and its receipts untouched.
     *this=std::move(candidate);return result;
+}
+void StarterWorld::rememberDesignAndSave(const std::filesystem::path &path,const StarterRememberedDesign &design) {
+    validateRemembered(design);
+    (void)commitSaved(path,[&](StarterWorld &w){w.remembered_design_=design;return "Design saved";});
 }
 std::string StarterWorld::interactAndSave(const std::filesystem::path &path,std::string request,MatterBodyId object,Vec3 eye) {
     return commitSaved(path,[&](StarterWorld &w){return w.interact(request,object,eye);});

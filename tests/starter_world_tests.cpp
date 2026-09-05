@@ -71,15 +71,22 @@ int main() {try {
         check(StarterWorld::deserialize(built).serialize()==built,"custom recipe state round trips");
         custom.step(240);check(custom.objects().back().state.center_of_mass_world_m.y>1.19,"custom body rests on physical bench");
     }
-    {auto legacy=nlohmann::json::parse(initial);legacy["starter_version"]=1;legacy["rules"]="starter-stamina-v1/whole-branch-cut-v1/raw-volume-v1";for(auto &o:legacy["objects"])o.erase("custom_design");check(StarterWorld::deserialize(legacy.dump()).serialize()==initial,"version one starter saves migrate without invented progress");}
+    {auto legacy=nlohmann::json::parse(initial);legacy.erase("remembered_design");legacy["starter_version"]=2;check(StarterWorld::deserialize(legacy.dump()).serialize()==initial,"version two starter saves migrate with no invented design");legacy["starter_version"]=1;legacy["rules"]="starter-stamina-v1/whole-branch-cut-v1/raw-volume-v1";for(auto &o:legacy["objects"])o.erase("custom_design");check(StarterWorld::deserialize(legacy.dump()).serialize()==initial,"version one starter saves migrate without invented progress");}
     {
         const auto directory=std::filesystem::current_path()/("starter-transaction-test-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
         check(std::filesystem::create_directory(directory),"fresh save test directory");
         for(auto m:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
             StarterWorld game;const auto path=directory/(std::string(materialPresetName(m))+".json");auto pending=path;pending+=".pending";
             const unsigned first=m==MaterialPreset::Glass?13:m==MaterialPreset::Oak?1:7;
+            auto retained=StarterWorld::defaultDraft();retained.material=m;retained.shape="box";retained.dimensions_m={.08,.06,.1};
+            game.rememberDesignAndSave(path,{"remembered","Make an 8 by 6 by 10 cm block","Collect material and reach level 2.",retained});
+            check(game.stamina()==100&&game.xp()==0&&game.inventoryKg(m)==0,"remembering does not collect spend or award progress");
+            game=StarterWorld::load(path);check(game.rememberedDesign().has_value()&&!game.quoteRecipe(*game.rememberedDesign()->recipe).ready(),"resource-short design survives closing and reopening");
+            check(CreatorWorld::recipeJson(*game.rememberedDesign()->recipe)==CreatorWorld::recipeJson(retained),"saved requested substance and size are exact");
             game.save(path);const auto before=game.serialize();
             {std::ofstream blocked(pending);blocked<<"retained recovery evidence";}
+            rejects([&]{game.rememberDesignAndSave(path,{"replacement","Make a different object","Unsupported.",{}});});
+            check(game.serialize()==before,"failed remembered-design save retains previous design");
             rejects([&]{(void)game.interactAndSave(path,"saved-pickup",first,eye(game,first));});
             check(game.serialize()==before&&StarterWorld::load(path).serialize()==before,"failed pickup save changes neither live state nor published save");
             {std::ifstream blocked(pending);std::string content{std::istreambuf_iterator<char>(blocked),{}};check(content=="retained recovery evidence","existing pending data is never truncated");}
@@ -88,6 +95,7 @@ int main() {try {
             auto recovered=StarterWorld::load(path);const auto after=recovered.serialize();(void)recovered.interactAndSave(path,"saved-pickup",first,{99,0,99});
             check(recovered.serialize()==after&&game.serialize()==after,"uncertain acknowledged pickup replays after reload");
             for(unsigned i=1;i<4;++i)(void)game.interactAndSave(path,"saved-gather-"+std::to_string(i),first+i,eye(game,first+i));
+            game=StarterWorld::load(path);check(game.quoteRecipe(*game.rememberedDesign()->recipe).ready(),"same saved design becomes ready after gathering without a provider call");
             auto recipe=StarterWorld::defaultDraft();recipe.material=m;recipe.shape="box";recipe.dimensions_m={.08,.06,.1};
             const auto funded=game.serialize();{std::ofstream blocked(pending);blocked<<"pending";}
             rejects([&]{(void)game.craftRecipeAndSave(path,"saved-custom",recipe,{0,1.65,0});});
@@ -106,6 +114,13 @@ int main() {try {
             auto evidence=blocked_target;evidence+=".pending";check(std::filesystem::is_regular_file(evidence),"failed publication retains candidate evidence");
             std::filesystem::remove(evidence);std::filesystem::remove(blocked_target);std::filesystem::remove(path);
         }
+        StarterWorld remembered;const auto remembered_path=directory/"clarification.json";
+        remembered.rememberDesignAndSave(remembered_path,{"unsupported","Make a functional saw","Physical cutting is unsupported.",{}});
+        auto clarification=StarterWorld::load(remembered_path);check(clarification.rememberedDesign()&&!clarification.rememberedDesign()->recipe,"clarifications survive reload without a buildable recipe");
+        auto malformed=nlohmann::json::parse(clarification.serialize());malformed["remembered_design"]["bonus"]=true;rejects([&]{(void)StarterWorld::deserialize(malformed.dump());});
+        const auto unchanged=remembered.serialize();auto moving=StarterWorld::defaultDraft();moving.linear_velocity_m_s={1,0,0};
+        rejects([&]{remembered.rememberDesignAndSave(remembered_path,{"bad","moving ball","Cannot create motion.",moving});});check(remembered.serialize()==unchanged,"unsupported saved recipes cannot replace valid context");
+        std::filesystem::remove(remembered_path);
         std::filesystem::remove(directory);
     }
     for(auto m:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {

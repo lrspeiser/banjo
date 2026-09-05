@@ -56,7 +56,8 @@ int main(int argc,char **argv){try{
     float yaw=0,pitch=-.15F;bool crafting=layout!="clearing",inventory=false,paused=false;unsigned selected=0,rendered=0,serial=0;double accumulator=0,save_timer=0;
     if(crafting){camera.position={0,1.65F,.2F};selected=layout=="designer"?6:1;}
     std::string message="Welcome to Willow Clearing. Collect loose wood to begin.";
-    CodexAssistant assistant;std::string prompt,explanation="Describe a solid ball or block. Custom designs unlock at level 2.";std::optional<ObjectRecipe> proposal;bool prompt_focus=false;
+    CodexAssistant assistant;std::string prompt,submitted_prompt,explanation="Describe a solid ball or block. Custom designs unlock at level 2.";std::optional<ObjectRecipe> proposal;bool prompt_focus=false;
+    if(const auto &saved=world.rememberedDesign()){prompt=saved->prompt;explanation=saved->explanation;proposal=saved->recipe;}
     const auto session=std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
     const auto id=[&]{return "play-"+session+"-"+std::to_string(++serial);};
     const auto save=[&]{world.save(save_path);};
@@ -88,7 +89,10 @@ int main(int argc,char **argv){try{
                 if(IsKeyDown(KEY_R)){world.rest(dt);message="Resting: stamina recovers. No materials or experience are created.";}
             }
         }
-        if(assistant.running())try{if(auto reply=assistant.poll()){proposal=reply->recipe;explanation=reply->explanation;}}catch(const std::exception &e){proposal.reset();explanation=e.what();}
+        if(assistant.running())try{if(auto reply=assistant.poll()){
+            world.rememberDesignAndSave(save_path,{reply->request_id,submitted_prompt,reply->explanation,reply->recipe});
+            prompt=submitted_prompt;proposal=reply->recipe;explanation=reply->explanation;message="Design saved. Collect what is missing, then return to this table.";
+        }}catch(const std::exception &e){proposal.reset();explanation=e.what();}
         const bool modal=crafting||inventory||paused;
         camera.target={camera.position.x+std::sin(yaw)*std::cos(pitch),camera.position.y+std::sin(pitch),camera.position.z-std::cos(yaw)*std::cos(pitch)};
         if(!paused){accumulator+=capture.empty()?dt:1.0/60;while(accumulator>=1.0/240){world.step();accumulator-=1.0/240;}}
@@ -126,9 +130,9 @@ int main(int argc,char **argv){try{
                     Rectangle input{432,240,490,80};DrawRectangleRec(input,{36,51,44,255});DrawRectangleLinesEx(input,1,prompt_focus?gold:muted);
                     wrap(prompt.empty()?"Click here and describe your design...":prompt,444,250,465,17,ink);
                     if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT))prompt_focus=CheckCollisionPointRec(GetMousePosition(),input);
-                    if(button({432,335,235,43},assistant.running()?"DESIGNING...":"ASK DESIGNER",!assistant.running()&&!prompt.empty()&&assistant.available()))try{proposal.reset();explanation="Checking your request...";const auto request=id();assistant.start(workspace,request,world.designerRequest(request,prompt));}catch(const std::exception &e){explanation=e.what();}
+                    if(button({432,335,235,43},assistant.running()?"DESIGNING...":"ASK DESIGNER",!assistant.running()&&!prompt.empty()&&assistant.available()))try{proposal.reset();explanation="Checking your request...";const auto request=id();submitted_prompt=prompt;assistant.start(workspace,request,world.designerRequest(request,submitted_prompt));}catch(const std::exception &e){explanation=e.what();}
                     if(button({687,335,235,43},"CANCEL",assistant.running())){assistant.cancel();proposal.reset();explanation="Request canceled. No resources spent.";}
-                    wrap(assistant.available()?explanation:"Codex is unavailable. Install/sign in to enable the designer.",432,391,490,17,muted);
+                    wrap(proposal?"Original note: "+explanation:assistant.available()?explanation:"Codex is unavailable. Saved designs can still be built.",432,391,490,17,muted);
                     if(proposal)try{const auto q=world.quoteRecipe(*proposal);
                         text(proposal->shape=="sphere"?"Sphere diameter: "+number(2*proposal->radius_m,3)+" m":"Box: "+number(proposal->dimensions_m.x,3)+" x "+number(proposal->dimensions_m.y,3)+" x "+number(proposal->dimensions_m.z,3)+" m",432,456,17,gold);
                         text(std::string(materialPresetName(proposal->material))+": need "+number(q.required_kg,3)+" kg / held "+number(q.held_kg,3),432,483,18);
