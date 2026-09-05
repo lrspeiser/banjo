@@ -120,6 +120,48 @@ void exactEndpointContactAndRest() {
     near(result.balance.support_impulse_kg_m_s.y,2,1e-10,"resting gravity reaction");
 }
 
+void departingContactReturnsAtClosingRoot() {
+    Point p({0,5e-15,0},{.3,1,.2});
+    const auto plane=makeSupportPlane({}, {0,1,0});
+    const double hit=(1+std::sqrt(1+20*p.matter.nodes[0].position_world_m.y))/10;
+    const double rest=.21-hit, outgoing=.3*(10*hit-1);
+    const auto result=tryConservativeAdvance(p.matter,.21,{0,-10,0},nullptr,
+        {.step={.support=&plane},.normal_restitution=.3});
+    require(result.balance.converged,"departing near-contact returns at a closing root");
+    near(p.matter.nodes[0].position_world_m.y,outgoing*rest-5*rest*rest,1e-10,"resolved departure and return position");
+    near(p.matter.nodes[0].velocity_m_s.y,outgoing-10*rest,1e-10,"one return impact then gravity");
+    require(result.impact_events==1,"departing contact is not an incoming event");
+}
+
+void sampledBoundaryRemainderAdvances() {
+    for (const auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        const auto compiled=compileElasticLatticeReference(makeReferenceMaterial(preset,17),.04,2);
+        const auto asset=generateSphereLattice({.25,.04,2,3},compiled);
+        ActiveMatter matter;
+        matter.asset=&asset; matter.material=compiled; matter.bonds.resize(asset.bonds.size());
+        double minimum_y=0;
+        for (const auto &node:asset.nodes) {
+            matter.nodes.push_back({node.local_position_m,{}, {.3,-1,.2},node.represented_volume_m3*compiled.density_kg_m3,{}});
+            minimum_y=std::min(minimum_y,node.local_position_m.y);
+        }
+        const auto before=measureMaterialMechanics(matter);
+        const auto plane=makeSupportPlane({0,minimum_y-.001,0},{0,1,0});
+        const auto result=tryConservativeAdvance(matter,.001,{},nullptr,{.step={.support=&plane}});
+        require(result.balance.converged,"all materials finish a nominal boundary arrival");
+        near(result.advanced_time_s,.001,0,"the entire boundary interval is published");
+        near(result.remaining_time_s,0,0,"no tiny remainder is dropped");
+        const auto after=measureMaterialMechanics(matter);
+        near(after.mechanicalEnergy()+result.impact_loss_j+result.balance.normal_contact_loss_j,
+            before.mechanicalEnergy(),1e-9*before.mechanicalEnergy(),"boundary interval independent energy ledger");
+        near(length(after.linear_momentum_kg_m_s-before.linear_momentum_kg_m_s-result.balance.support_impulse_kg_m_s),
+            0,1e-9*length(before.linear_momentum_kg_m_s),"boundary interval finite reaction");
+        for (const auto &node:matter.nodes)
+            require(signedDistanceToPlane(plane,node.position_world_m)>=-1e-10,"boundary interval has no unresolved penetration");
+        std::cout<<"boundary material="<<materialPresetName(preset)<<" substeps="<<result.substeps<<" last_dt_s="
+                 <<result.last_trial_dt_s<<" energy_residual_j="<<result.balance.energy_residual_j<<'\n';
+    }
+}
+
 void comparativeElasticCompilerAndImpacts() {
     for (const auto preset : {MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
         const auto definition=makeReferenceMaterial(preset,17);
@@ -165,6 +207,8 @@ int main() {
         {"finite sphere crossing and reaction",finiteSphereCrossingHasReaction},
         {"partial interval rollback",partialIntervalFailureRollsBack},
         {"boundary impact and resting support",exactEndpointContactAndRest},
+        {"departing contact returns at closing root",departingContactReturnsAtClosingRoot},
+        {"glass/oak/iron boundary remainder",sampledBoundaryRemainderAdvances},
         {"event frame and invalid state",eventFrameAndInvalidState},
         {"glass/oak/iron elastic reference and repeated impact",comparativeElasticCompilerAndImpacts}};
     unsigned failures=0;

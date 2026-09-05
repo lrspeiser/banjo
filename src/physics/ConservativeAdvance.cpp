@@ -47,6 +47,23 @@ double newGap(const ActiveMatter &matter, const CoupledSphereState *sphere,
         gap = std::min(gap, signedDistanceToPlane(*s.support, sphere->motion.center_of_mass_world_m) - sphere->radius_m);
     return gap;
 }
+bool arriving(const ActiveMatter &matter, const CoupledSphereState *sphere,
+              const ConservativeStepSettings &s, const Mask &mask, double tolerance) {
+    for (std::size_t i=0;i<matter.nodes.size();++i) {
+        const auto &node=matter.nodes[i];
+        if (!mask.support_nodes[i] && onSupport(node.position_world_m,s) &&
+            signedDistanceToPlane(*s.support,node.position_world_m)<=tolerance &&
+            dot(node.velocity_m_s,s.support->normal_world)<0) return true;
+        if (sphere && !mask.sphere_nodes[i]) {
+            const Vec3 q=node.position_world_m-sphere->motion.center_of_mass_world_m;
+            if (length(q)-sphere->radius_m<=tolerance &&
+                dot(q,node.velocity_m_s-sphere->motion.linear_velocity_m_s)<0) return true;
+        }
+    }
+    return sphere && !mask.sphere_support && onSupport(sphere->motion.center_of_mass_world_m,s) &&
+        signedDistanceToPlane(*s.support,sphere->motion.center_of_mass_world_m)-sphere->radius_m<=tolerance &&
+        dot(sphere->motion.linear_velocity_m_s,s.support->normal_world)<0;
+}
 bool crossedSphere(const ActiveMatter &start, const CoupledSphereState *sphere0,
                    const ActiveMatter &end, const CoupledSphereState *sphere1, const Mask &mask, double tolerance) {
     if (!sphere0) return false;
@@ -92,6 +109,7 @@ ConservativeAdvanceResult tryConservativeAdvance(ActiveMatter &matter, double dt
     Vec3 gravity_angular_impulse;
     double remaining = dt;
     while (remaining > 0 && result.substeps < settings.maximum_substeps) {
+        result.remaining_time_s = remaining;
         const auto impact_mask = touching(current, sphere ? &current_sphere : nullptr, settings.step, settings.event_gap_tolerance_m);
         const auto impact = detail::tryNormalImpact(current, sphere ? &current_sphere : nullptr, impact_mask, settings.step, settings.normal_restitution);
         result.balance.iterations += impact.iterations;
@@ -111,15 +129,21 @@ ConservativeAdvanceResult tryConservativeAdvance(ActiveMatter &matter, double dt
             if (result.trials >= settings.maximum_trials) return false;
             candidate = current; candidate_sphere = current_sphere;
             ++result.trials;
+            result.last_trial_dt_s = h;
             result.last_trial = detail::tryConservativeStepMasked(candidate, h, gravity,
                 sphere ? &candidate_sphere : nullptr, settings.step, &mask);
             result.balance.iterations += result.last_trial.iterations;
             result.balance.linear_iterations += result.last_trial.linear_iterations;
             return result.last_trial.converged;
         };
-        while (trial_dt >= settings.minimum_substep_s && result.trials < settings.maximum_trials) {
+        // A root can leave a representable remainder smaller than the subdivision
+        // floor. Attempt that exact remainder once, with all usual audits; do not
+        // discard elapsed time or recursively subdivide below the floor.
+        while ((trial_dt >= settings.minimum_substep_s || (trial_dt > 0 && trial_dt == remaining)) &&
+               result.trials < settings.maximum_trials) {
             if (!trial(trial_dt)) { trial_dt *= .5; continue; }
             double gap = newGap(candidate, sphere ? &candidate_sphere : nullptr, settings.step, mask);
+            result.last_new_gap_m = gap;
             const bool swept = crossedSphere(current, sphere ? &current_sphere : nullptr, candidate,
                 sphere ? &candidate_sphere : nullptr, mask, settings.event_gap_tolerance_m);
             if (gap >= 0 && swept) { trial_dt *= .5; continue; }
@@ -128,23 +152,39 @@ ConservativeAdvanceResult tryConservativeAdvance(ActiveMatter &matter, double dt
                 // arrival. No interpolated positions/velocities are committed.
                 double lo = 0, hi = trial_dt, lo_gap = starting_gap, hi_gap = gap;
                 bool arrival = false;
+                bool bisect = false;
+                bool retry_shorter = false;
                 for (unsigned root = 0; root < 80 && result.trials < settings.maximum_trials; ++root) {
+                    result.event_lo_s = lo; result.event_hi_s = hi;
+                    result.event_lo_gap_m = lo_gap; result.event_hi_gap_m = hi_gap;
+                    const double width = hi-lo;
                     double guess = lo + (hi-lo)*lo_gap/(lo_gap-hi_gap);
                     // A just-departing contact can have an almost-zero initial
                     // gap yet return later under elastic force. A tiny secant
                     // estimate is not proof that the later root is unresolved.
-                    if (!std::isfinite(guess) || guess < settings.minimum_substep_s || guess <= lo || guess >= hi || root % 8 == 7)
+                    if (bisect || !std::isfinite(guess) || guess < settings.minimum_substep_s || guess <= lo || guess >= hi)
                         guess = .5*(lo+hi);
                     if (guess < settings.minimum_substep_s || guess <= lo || guess >= hi) break;
-                    if (!trial(guess)) { hi = guess; hi_gap = std::min(hi_gap, -settings.event_gap_tolerance_m); continue; }
+                    if (!trial(guess)) {
+                        // A failed solve says nothing about the gap's sign. Retry
+                        // a shorter interval instead of inventing a negative end
+                        // of the geometric root bracket.
+                        trial_dt = .5*guess; retry_shorter = true; break;
+                    }
                     gap = newGap(candidate, sphere ? &candidate_sphere : nullptr, settings.step, mask);
+                    result.last_new_gap_m = gap;
                     if (gap >= 0 && gap <= settings.event_gap_tolerance_m &&
+                        arriving(candidate,sphere ? &candidate_sphere : nullptr,settings.step,mask,settings.event_gap_tolerance_m) &&
                         !crossedSphere(current, sphere ? &current_sphere : nullptr, candidate,
                             sphere ? &candidate_sphere : nullptr, mask, settings.event_gap_tolerance_m)) {
                         trial_dt = guess; arrival = true; ++result.event_splits; break;
                     }
                     if (gap >= 0) { lo = guess; lo_gap = gap; } else { hi = guess; hi_gap = gap; }
+                    // False position can stall when the two gap magnitudes differ
+                    // greatly. Guarantee bracket reduction on the following query.
+                    bisect = hi-lo > .5*width;
                 }
+                if (retry_shorter) continue;
                 if (!arrival) {
                     result.failure = result.trials >= settings.maximum_trials ? ConservativeAdvanceFailure::TrialBudget : ConservativeAdvanceFailure::EventLocation;
                     return result;
@@ -172,6 +212,7 @@ ConservativeAdvanceResult tryConservativeAdvance(ActiveMatter &matter, double dt
             accepted.constitutive_velocity_residual_m_s);
         current = std::move(candidate); current_sphere = candidate_sphere;
         remaining -= trial_dt;
+        result.remaining_time_s = remaining;
         ++result.substeps;
     }
     if (remaining > 0) { result.failure = ConservativeAdvanceFailure::SubstepBudget; return result; }

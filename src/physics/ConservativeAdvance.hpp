@@ -33,6 +33,9 @@ struct ConservativeAdvanceResult {
     unsigned trials{}, substeps{}, event_splits{}, impact_events{};
     double impact_loss_j{};
     double advanced_time_s{};
+    // Unpublished trial context, including on failure; never advanced caller time.
+    double remaining_time_s{}, last_trial_dt_s{}, last_new_gap_m{};
+    double event_lo_s{}, event_hi_s{}, event_lo_gap_m{}, event_hi_gap_m{};
     ConservativeAdvanceFailure failure{ConservativeAdvanceFailure::None};
 };
 // Advances all participants on one clock. New contact times are located through

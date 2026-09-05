@@ -128,7 +128,10 @@ int main(int argc, char **argv) {
                 std::cout << "REJECTED: convergence/energy/contact contract not met; input state retained. Failed-row work/counters are unpublished trial diagnostics.\n";
                 if (events) std::cout << "advance_failure=" << banjo::advanceFailureName(advance.failure)
                     << " last_trial_accepted=" << advance.last_trial.converged << " last_velocity_residual="
-                    << advance.last_trial.constitutive_velocity_residual_m_s << '\n';
+                    << advance.last_trial.constitutive_velocity_residual_m_s
+                    << " remaining_s=" << advance.remaining_time_s << " last_dt_s=" << advance.last_trial_dt_s
+                    << " gap_m=" << advance.last_new_gap_m << " bracket_s=[" << advance.event_lo_s << ',' << advance.event_hi_s
+                    << "] bracket_gap_m=[" << advance.event_lo_gap_m << ',' << advance.event_hi_gap_m << "]\n";
                 return 2;
             }
             support_impulse += result.support_impulse_kg_m_s;
