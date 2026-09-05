@@ -33,6 +33,7 @@ add_library(
     src/material/NetworkMaterial.cpp
     src/physics/ResolutionBudget.cpp
     src/thermal/ThermalKernel.cpp
+    src/thermal/EnthalpyLaw.cpp
     src/matter/Lattice.cpp
     src/physics/ContactMechanics.cpp
     src/physics/CohesiveInterface.cpp
@@ -124,7 +125,7 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
     add_library(banjo_platform src/platform/PlatformWorld.cpp src/platform/PlatformPlayback.cpp src/platform/CompiledObject.cpp src/platform/CompiledRuntime.cpp src/platform/NetworkWorld.cpp)
     target_link_libraries(banjo_platform PUBLIC banjo_runtime banjo_material_lab PRIVATE nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_platform)
-    add_library(banjo_sparse_world src/world/SparseThermalWorld.cpp src/world/WorldLabFixture.cpp)
+    add_library(banjo_sparse_world src/world/SparseThermalWorld.cpp src/world/WorldLabFixture.cpp src/world/WorldPackage.cpp)
     target_link_libraries(banjo_sparse_world PUBLIC banjo_core PRIVATE nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_sparse_world)
     add_executable(banjo_world_cli src/app/world_main.cpp)
@@ -385,6 +386,13 @@ if(BANJO_BUILD_TESTS AND TARGET banjo_creator_runtime)
 endif()
 
 if(BANJO_BUILD_TESTS AND TARGET banjo_platform)
+ add_executable(banjo_world_package_tests tests/world_package_tests.cpp)
+ target_link_libraries(banjo_world_package_tests PRIVATE banjo_sparse_world nlohmann_json::nlohmann_json)
+ target_compile_definitions(banjo_world_package_tests PRIVATE BANJO_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+ add_test(NAME banjo_world_package_tests COMMAND banjo_world_package_tests)
+ add_executable(banjo_enthalpy_law_tests tests/enthalpy_law_tests.cpp)
+ target_link_libraries(banjo_enthalpy_law_tests PRIVATE banjo_core)
+ add_test(NAME banjo_enthalpy_law_tests COMMAND banjo_enthalpy_law_tests)
  add_executable(banjo_thermal_kernel_tests tests/thermal_kernel_tests.cpp)
  target_link_libraries(banjo_thermal_kernel_tests PRIVATE banjo_core)
  add_test(NAME banjo_thermal_kernel_tests COMMAND banjo_thermal_kernel_tests)

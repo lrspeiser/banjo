@@ -1,7 +1,9 @@
 #pragma once
 #include "thermal/ThermalKernel.hpp"
+#include "thermal/EnthalpyLaw.hpp"
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -11,10 +13,12 @@ struct VoxelAddress {ChunkAddress chunk;unsigned x{},y{},z{};auto operator<=>(co
 struct WorldThermalMaterial {
     unsigned id{};double solid_density_kg_m3{},fuel_mass_fraction{},oxygen_kg_per_kg_solid{};
     thermal::MaterialProperties thermal;
+    std::optional<thermal::EnthalpyMaterial> phase_change;
 };
 struct ThermalCellView {
     VoxelAddress address;unsigned material{},region{};
-    double temperature_k{},fuel_kg{},oxygen_kg{},region_time_s{};
+    double temperature_k{},fuel_kg{},oxygen_kg{},region_time_s{},liquid_fraction{};
+    bool phase_change{};
 };
 struct WorldStepBudget {unsigned maximum_jobs{64},maximum_cell_operations{32768};double maximum_wall_ms{4};};
 struct WorldStepReceipt {
@@ -33,7 +37,7 @@ public:
     explicit SparseThermalWorld(double voxel_size_m);
     ~SparseThermalWorld();
     void addMaterial(WorldThermalMaterial material);
-    void addUniformChunk(ChunkAddress address,unsigned material,double temperature_k);
+    void addUniformChunk(ChunkAddress address,unsigned material,double temperature_k,double liquid_fraction_at_melt=0);
     void activateInsulatedRegion(unsigned id,const std::vector<VoxelAddress>& cells,double fixed_step_s=.05);
     // Applies work at the explicitly acknowledged accepted region time.
     // A stale timestamp or a backlogged region rejects before mutation.
