@@ -77,16 +77,41 @@ void drawObject(const ObjectRecipe &recipe,Vec3 position,Quat q,Color tint,bool 
     }
 }
 struct AssemblyTestView {
-    bool visible{};
+    bool visible{},review_visible{},review_cancelled{};
     std::string specification, tested_declaration, error;
     std::uint64_t revision{};
     std::future<std::string> job;
     std::optional<Json> report;
+    std::future<std::string> review_job;
+    std::string review_world,review_specification,review_id,review_reply,review_status;
+    unsigned review_serial{};
 };
-void assemblyTestPanel(AssemblyTestView &test,const Json &saved,const std::filesystem::path &workspace) {
+void pollAssemblyReview(AssemblyTestView &test,CodexAssistant &assistant,const CreatorWorld &world,const std::filesystem::path &workspace) {
+    const bool stale=!test.review_world.empty()&&(test.review_world!=world.serialize()||test.review_specification!=test.specification);
+    if(stale) {test.review_cancelled=true;assistant.cancel();test.review_status="World or test changed. This review is no longer current; request a new review.";}
+    if(test.review_job.valid()&&test.review_job.wait_for(std::chrono::seconds(0))==std::future_status::ready)try {
+        auto document=test.review_job.get();
+        if(!test.review_cancelled) {assistant.start(workspace,test.review_id,std::move(document));test.review_status="Codex is reviewing regenerated evidence...";}
+    }catch(const std::exception &e){test.review_status=std::string("Review rejected: ")+e.what();}
+    if(assistant.running())try {
+        if(auto reply=assistant.poll()) {test.review_reply=reply->explanation;test.review_status="Review complete. No objects or materials changed.";}
+    }catch(const std::exception &e){test.review_status=std::string("Review rejected: ")+e.what();assistant.cancel();}
+}
+void assemblyTestPanel(AssemblyTestView &test,const Json &saved,const std::filesystem::path &workspace,const CreatorWorld &world,CodexAssistant &assistant) {
     const bool running=test.job.valid();
     const bool present=!saved.at("declaration").is_null();
     const bool current=present&&test.revision==saved.at("revision")&&test.tested_declaration==saved.at("declaration").dump();
+    if(test.review_visible) {
+        DrawText("CODEX / ASSEMBLY REVIEW",748,147,22,accent);
+        wrap(test.review_status,748,194,615,19,ink);
+        if(button({748,263,295,38},"Back to test results"))test.review_visible=false;
+        if(button({1055,263,325,38},"Cancel review",test.review_job.valid()||assistant.running())) {
+            test.review_cancelled=true;assistant.cancel();test.review_status="Review cancelled. No resources spent.";
+        }
+        if(!test.review_reply.empty()&&!test.review_cancelled)wrap(test.review_reply,748,330,615,21,ink);
+        wrap("This explanation refers to the displayed test and captured inventory. A passed separation criterion does not prove usefulness or realistic material behavior. Live assembly creation remains unsupported.",748,560,615,18,muted);
+        return;
+    }
     DrawText("ISOLATED SEPARATION TEST",748,147,22,accent);
     wrap("Test a virtual copy with outward motion. No gravity, external collisions or live material consumption.",748,190,615,18);
     if(button({748,248,295,38},"Load test specification",!running))try {
@@ -120,12 +145,22 @@ void assemblyTestPanel(AssemblyTestView &test,const Json &saved,const std::files
             write(workspace/"assembly-test-result.json",Json{{"draft_revision",test.revision},{"report",r}});
             test.error="Evidence exported with declaration, settings and revision.";
         }catch(const std::exception &e){test.error=e.what();}
+        if(button({990,602,390,36},"Ask Codex to review",assistant.available()&&!test.review_job.valid()&&!assistant.running()))try {
+            test.review_world=world.serialize();test.review_specification=test.specification;
+            test.review_id="assembly-ui-"+std::to_string(std::chrono::system_clock::now().time_since_epoch().count())+"-"+std::to_string(++test.review_serial);
+            test.review_cancelled=false;test.review_reply.clear();test.review_visible=true;test.review_status="Regenerating test and inventory evidence...";
+            test.review_job=std::async(std::launch::async,[snapshot=test.review_world,spec=test.review_specification,id=test.review_id,declaration=test.tested_declaration]{
+                const auto copy=CreatorWorld::deserialize(snapshot);
+                return CodexAssistant::assemblyReviewDocument(copy,id,"Explain this test result, what materials I still need, and whether this assembly can be built. Do not change the design or test criterion.",declaration,spec);
+            });
+        }catch(const std::exception &e){test.error=e.what();}
     }else if(test.report||running)wrap(current?"Computing the declared experiment...":"Design changed. Results for an earlier revision are not current; run again.",748,475,610,21,ink);
     if(!test.error.empty())wrap(test.error,748,643,615,15,ink);
+    else if(test.report&&current)wrap("Ask Codex sends this design, test and current stock to the configured provider.",748,643,615,15,muted);
 }
 // Assembly authoring is separate from live rigid-object creation. Publish only
 // after the existing save succeeds, so failed imports do not replace the draft.
-bool assemblyScreen(CreatorWorld &world,const std::filesystem::path &workspace,bool persistent,std::string &message,AssemblyTestView &test) {
+bool assemblyScreen(CreatorWorld &world,const std::filesystem::path &workspace,bool persistent,std::string &message,AssemblyTestView &test,CodexAssistant &assembly_assistant) {
     const auto saved=Json::parse(world.serialize()).at("assembly_draft");
     const auto revision=saved.at("revision").get<std::uint64_t>();
     const bool present=!saved.at("declaration").is_null();
@@ -178,7 +213,7 @@ bool assemblyScreen(CreatorWorld &world,const std::filesystem::path &workspace,b
         wrap("No assembly saved. Drop an assembly design file into this window, or place it in the workshop folder as assembly.json and choose Import design. A valid import replaces the saved design; a rejected import leaves it intact.",48,211,620,21,ink);
         if(!test.visible)wrap("Import a design to see exact material quantities. The current assembly model supports two boxes and one declared joint.",748,211,610,21,muted);
     }
-    if(test.visible)assemblyTestPanel(test,saved,workspace);
+    if(test.visible)assemblyTestPanel(test,saved,workspace,world,assembly_assistant);
     if(button({48,647,610,38},test.visible?"Show material requirements":"Review a physics test"))test.visible=!test.visible;
     if(button({36,730,225,44},"Import design"))try {
         const auto document=read(workspace/"assembly.json");
@@ -227,7 +262,7 @@ int main(int argc,char **argv) {
         if(frames==0||frames>3600)throw std::invalid_argument("capture frames must be 1–3600");
         std::filesystem::create_directories(workspace);workspace=std::filesystem::absolute(workspace);
         auto world=(capture.empty()||assembly_capture)&&std::filesystem::exists(workspace/"world.json")?CreatorWorld::load(workspace/"world.json"):CreatorWorld{};
-        CodexAssistant assistant(assistant_exe);
+        CodexAssistant assistant(assistant_exe),assembly_assistant(manual_assistant?std::filesystem::path{}:assistant_exe);
         const bool automatic_assistant=!manual_assistant&&assistant.available();
         ObjectRecipe draft;std::string prompt="Use some of my wood to make a ball that rolls down this ramp.";
         std::string status="Collect a material, then design an object.",request_id,pending_id,proposal_message;
@@ -292,6 +327,7 @@ int main(int argc,char **argv) {
         Camera3D camera{{1.4F,2.2F,3.7F},{-1.3F,.3F,0},{0,1,0},45,CAMERA_PERSPECTIVE};
         double yaw=.72,pitch=.4,distance=4.8;
         while(!WindowShouldClose()) {
+            pollAssemblyReview(assembly_test,assembly_assistant,world,workspace);
             if(assembly_view) {
                 paused=true;accumulator=0;typing=false;
                 bool screenshot_requested=false;
@@ -299,7 +335,7 @@ int main(int argc,char **argv) {
                     if(key==KEY_ESCAPE)assembly_view=false;
                     if(key==KEY_F12)screenshot_requested=true;
                 }
-                if(assemblyScreen(world,workspace,capture.empty(),status,assembly_test))assembly_view=false;
+                if(assemblyScreen(world,workspace,capture.empty(),status,assembly_test,assembly_assistant))assembly_view=false;
                 if(screenshot_requested&&capture.empty()) {
                     Image image=LoadImageFromScreen();const bool success=ExportImage(image,(workspace/"assembly.png").string().c_str());UnloadImage(image);
                     status=success?"Assembly image saved.":"Could not save assembly image.";
@@ -497,6 +533,6 @@ int main(int argc,char **argv) {
                 if(!success)throw std::runtime_error("capture failed");break;
             }
         }
-        assistant.cancel();save();CloseWindow();return 0;
+        assistant.cancel();assembly_assistant.cancel();save();CloseWindow();return 0;
     }catch(const std::exception &e){std::cerr<<"Workshop error: "<<e.what()<<'\n';if(IsWindowReady())CloseWindow();return 1;}
 }
