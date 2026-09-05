@@ -114,4 +114,3 @@ int main(){try{
     try{(void)advanceCohesiveRigidPair(free_law,1,invalid,.001);}catch(const std::invalid_argument&){rejected=true;}require(rejected,"invalid orientation rejected");
     std::cout<<"[PASS] coupled rigid cohesive separation and refinement\n";
 }catch(const std::exception &e){std::cerr<<"[FAIL] "<<e.what()<<'\n';return 1;}}
-
