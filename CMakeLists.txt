@@ -69,6 +69,11 @@ endif()
 if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
     include(FetchContent)
 
+    # Cohesive opening distances are below float position resolution, even
+    # near ordinary gameplay coordinates. Preserve explicit OFF builds for
+    # legacy saves/regression; new builds use the validated position format.
+    option(DOUBLE_PRECISION "Use double-precision Jolt positions (saved-world identity)" ON)
+
     set(JPH_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
     set(ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
     set(ENABLE_ALL_WARNINGS OFF CACHE BOOL "" FORCE)
