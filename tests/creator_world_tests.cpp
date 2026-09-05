@@ -34,6 +34,17 @@ void assemblyAssessment(){
             spec["maximum_evaluations"]=3;const auto rejected=Json::parse(world.executeJson(Json{{"type","test_assembly"},{"assembly",declaration},{"test",spec}}.dump()));require(rejected["ok"]==false,"exhausted assembly test cannot pass");require(world.serialize()==collected,"exhausted assembly test changes no live state");
         }
         for(unsigned invalid=0;invalid<4;++invalid){auto bad=declaration;if(invalid==0)bad["joint"]["contact_owner"]="cohesive_and_jolt";if(invalid==1)bad["joint"]["part_b"]="a";if(invalid==2)bad["parts"][0]["density_kg_m3"]=1;if(invalid==3)bad["joint"]["face_a"]["width_m"]=.04;const auto error=Json::parse(world.executeJson(Json{{"type","assess_assembly"},{"assembly",bad}}.dump()));require(error["ok"]==false,"invalid assembly rejects through public command");require(world.serialize()==collected,"invalid assembly leaves live state untouched");}
+        CreatorWorld drafts;const auto original=Json::parse(drafts.serialize());
+        const auto remembered=Json::parse(drafts.executeJson(Json{{"type","remember_assembly"},{"assembly",declaration},{"expected_revision",0}}.dump()));require(remembered["ok"]==true&&remembered["result"]["revision"]==1,"assembly draft command records first revision");
+        const auto saved=drafts.serialize();auto loaded=CreatorWorld::deserialize(saved);require(loaded.serialize()==saved,"assembly declaration round trips exactly");
+        const auto stored=Json::parse(saved);require(stored["lots"]==original["lots"]&&stored["objects"]==original["objects"]&&stored["ticks"]==original["ticks"],"remembering draft changes no physical resources or clock");
+        require(loaded.rememberAssembly(declaration.dump(),0)==1&&loaded.serialize()==saved,"identical draft retry is idempotent");
+        auto changed=declaration;changed["joint"]["id"]="revised-joint";rejects([&]{(void)loaded.rememberAssembly(changed.dump(),0);});require(loaded.serialize()==saved,"stale draft edit preserves state");
+        loaded.collect(name+"-pile");const auto reassessed=Json::parse(loaded.executeJson(R"({"type":"assess_saved_assembly"})"));require(reassessed["result"]["materials_sufficient"]==true&&reassessed["result"]["declaration"]==declaration,"restored exact draft reassesses current stock");
+        ObjectRecipe item;item.material=preset;item.radius_m=.03;(void)loaded.create("draft-preservation",item);require(Json::parse(loaded.serialize())["assembly_draft"]["declaration"]==declaration,"normal object publication preserves saved draft");
+        auto legacy=Json::parse(loaded.serialize());legacy["world_version"]=3;legacy.erase("assembly_draft");const auto migrated=Json::parse(CreatorWorld::deserialize(legacy.dump()).serialize());require(migrated["world_version"]==4&&migrated["assembly_draft"]["declaration"].is_null()&&migrated["lots"]==legacy["lots"],"known v3 migrates without inventing a draft");
+        auto bad=Json::parse(saved);bad["assembly_draft"]["declaration"]["joint"]["face_a"]["width_m"]=1;rejects([&]{(void)CreatorWorld::deserialize(bad.dump());});
+        require(loaded.rememberAssembly(changed.dump(),1)==2,"current draft revision can be replaced");rejects([&]{(void)loaded.clearAssembly(1);});require(loaded.clearAssembly(2)==3,"explicit clear advances draft revision");require(Json::parse(loaded.serialize())["assembly_draft"]["declaration"].is_null(),"cleared draft is absent");
     }
 }
 void boundedFunctionalTests() {
@@ -222,7 +233,7 @@ void spinningBoxesAndMixedCollisions() {
 }
 void legacyWorldMigration() {
     CreatorWorld world;world.collect("oak-pile");(void)world.create("old",{});world.step(10);
-    auto old=Json::parse(world.serialize());old["world_version"]=1;old["physics_signature"]["object_compiler"]=1;
+    auto old=Json::parse(world.serialize());old["world_version"]=1;old.erase("assembly_draft");old["physics_signature"]["object_compiler"]=1;
     old["physics_signature"]["runtime"]="jolt-5.6/banjo-rigid-v1";
     old.erase("history");old.erase("next_object_id");old.erase("authoring_policy");for(auto &o:old["objects"])o.erase("revision");
     auto loaded=CreatorWorld::deserialize(old.dump());const auto migrated=Json::parse(loaded.serialize());
@@ -296,7 +307,7 @@ void materialSwapAndHistoryValidation() {
         rejects([&]{(void)CreatorWorld::deserialize(bad.dump());});
     }
     rejects([&]{world.reclaim("peer",{id,2});});require(world.serialize()==saved,"cross-operation request collisions preserve state");
-    auto legacy=current;legacy["world_version"]=2;legacy.erase("history");legacy.erase("next_object_id");legacy.erase("authoring_policy");
+    auto legacy=current;legacy["world_version"]=2;legacy.erase("assembly_draft");legacy.erase("history");legacy.erase("next_object_id");legacy.erase("authoring_policy");
     for(auto &o:legacy["objects"])o.erase("revision");
     auto imported=CreatorWorld::deserialize(legacy.dump());require(imported.history().size()==2&&imported.history()[1].operation=="import","known box worlds migrate as explicit baseline imports");
     require(imported.objects()[0].recipe.shape=="box"&&Json::parse(imported.serialize())["lots"]==legacy["lots"],"box migration preserves allocated matter and geometry");

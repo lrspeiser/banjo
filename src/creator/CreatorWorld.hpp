@@ -116,6 +116,8 @@ public:
     // creation or claim collision ownership has been integrated into Jolt.
     [[nodiscard]] std::string assessAssemblyJson(std::string_view declaration) const;
     [[nodiscard]] static std::string testAssemblyJson(std::string_view declaration,std::string_view specification);
+    [[nodiscard]] std::uint64_t rememberAssembly(std::string_view declaration,std::uint64_t expected_revision);
+    [[nodiscard]] std::uint64_t clearAssembly(std::uint64_t expected_revision);
     [[nodiscard]] CreationPreview preview(const ObjectRecipe &recipe) const;
     [[nodiscard]] MatterBodyId create(std::string request_id,const ObjectRecipe &recipe);
     [[nodiscard]] RebuildPreview previewRebuild(RevisionTarget target,const ObjectRecipe &recipe) const;
@@ -145,6 +147,8 @@ private:
     std::unique_ptr<JoltWorld> world_;
     std::uint64_t ticks_{};
     MatterBodyId next_object_id_{1};
+    std::optional<std::string> assembly_draft_;
+    std::uint64_t assembly_revision_{};
     [[nodiscard]] const CreatedObject &targetObject(RevisionTarget target) const;
     [[nodiscard]] const AuthoringChange *receipt(std::string_view request_id) const;
     void publish(std::vector<ResourceLot> lots,std::vector<CreatedObject> objects,AuthoringChange change,MatterBodyId next_id);

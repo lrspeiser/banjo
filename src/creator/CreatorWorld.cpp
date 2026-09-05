@@ -386,6 +386,16 @@ std::string CreatorWorld::assessAssemblyJson(std::string_view declaration) const
         {"joint",{{"area_m2",area},{"rest_gap_m",compiled.sites.front().rest_distance_m},{"site_count",compiled.sites.size()},{"complete_tensile_separation_work_j",area*law.fracture_energy_j_m2},{"contact_policy","cohesive_patch_only"}}},
         {"limitations",Json::array({"Experimental isolated two-box reference; live assembly creation and collision ownership are not integrated.","No shear/friction, calibrated material failure or proven spatial damage-front convergence.","Separation work is not fabrication cost; joining energy, tools and processes remain unsupported."})}}.dump(2);
 }
+std::uint64_t CreatorWorld::rememberAssembly(std::string_view declaration,std::uint64_t expected){
+    const auto compiled=compileAssembly(declaration);const auto canonical=compiled.declaration.dump();
+    if(assembly_draft_&&*assembly_draft_==canonical)return assembly_revision_;
+    check(expected==assembly_revision_,"stale assembly draft revision");check(assembly_revision_<1000000000,"assembly draft revision exhausted");
+    assembly_draft_=canonical;return ++assembly_revision_;
+}
+std::uint64_t CreatorWorld::clearAssembly(std::uint64_t expected){
+    check(expected==assembly_revision_,"stale assembly draft revision");if(!assembly_draft_)return assembly_revision_;
+    check(assembly_revision_<1000000000,"assembly draft revision exhausted");assembly_draft_.reset();return ++assembly_revision_;
+}
 std::string CreatorWorld::testAssemblyJson(std::string_view declaration,std::string_view specification){
     const auto compiled=compileAssembly(declaration);auto state=compiled.patch;const auto &law=compiled.law;
     const auto spec=parse(specification);fields(spec,{"test_version","relative_kinetic_energy_j","duration_s","energy_error_budget_j","state_error_tolerance","maximum_evaluations","minimum_separated_area_fraction"});check(integer(spec.at("test_version"),1)==1,"unsupported assembly test version");
@@ -494,6 +504,7 @@ void CreatorWorld::publish(std::vector<ResourceLot> lots,std::vector<CreatedObje
     // rebuilds solver contact caches; it does not advance the simulation clock.
     CreatorWorld candidate(settings_);candidate.lots_=std::move(lots);candidate.objects_=std::move(objects);
     candidate.ticks_=ticks_;candidate.next_object_id_=next_id;candidate.history_=history_;
+    candidate.assembly_draft_=assembly_draft_;candidate.assembly_revision_=assembly_revision_;
     for(auto &o:candidate.objects_) {insertObject(*candidate.world_,o);o.state=candidate.world_->snapshot(o.id);}
     if(change.after) {
         change.after=candidate.targetObject({change.object_id,change.after->revision});
@@ -524,24 +535,27 @@ std::string CreatorWorld::serialize() const {
         {"initial_mass_kg",lot.initial_mass_kg},{"remaining_mass_kg",lot.remaining_mass_kg},{"collected",lot.collected}});
     for(const auto &o:objects_)objects.push_back(objectJson(o));
     for(const auto &c:history_)history.push_back(changeJson(c));
-    return Json{{"world_version",3},{"physics_signature",signature()},{"authoring_policy",authoring_policy},
+    return Json{{"world_version",4},{"physics_signature",signature()},{"authoring_policy",authoring_policy},
+        {"assembly_draft",{{"revision",assembly_revision_},{"declaration",assembly_draft_?parse(*assembly_draft_):Json(nullptr)}}},
         {"settings",{{"slope_degrees",settings_.slope_degrees},{"gravity_m_s2",vector(settings_.gravity_m_s2)},{"surface",materialPresetName(settings_.surface)}}},
         {"ticks",ticks_},{"lots",lots},{"objects",objects},{"history",history},{"next_object_id",next_object_id_}}.dump(2);
 }
 CreatorWorld CreatorWorld::deserialize(std::string_view document) {
     const auto j=parse(document);check(j.is_object()&&j.contains("world_version"),"world version is required");
     const auto version=integer(j.at("world_version"),100);
-    check(version>=1&&version<=3,"incompatible world version");
+    check(version>=1&&version<=4,"incompatible world version");
     if(version<3)fields(j,{"world_version","physics_signature","settings","ticks","lots","objects"});
-    else fields(j,{"world_version","physics_signature","settings","ticks","lots","objects","authoring_policy","history","next_object_id"});
+    else if(version==3)fields(j,{"world_version","physics_signature","settings","ticks","lots","objects","authoring_policy","history","next_object_id"});
+    else fields(j,{"world_version","physics_signature","settings","ticks","lots","objects","authoring_policy","history","next_object_id","assembly_draft"});
     check(j.at("physics_signature")==signature(version==1?1:2),"saved material/runtime signature differs; explicit migration is required");
-    if(version==3)check(j.at("authoring_policy")==authoring_policy,"unsupported authoring recovery policy");
+    if(version>=3)check(j.at("authoring_policy")==authoring_policy,"unsupported authoring recovery policy");
     const auto &s=j.at("settings");fields(s,{"slope_degrees","gravity_m_s2","surface"});
     const CreatorSettings config{number(s.at("slope_degrees")),vector(s.at("gravity_m_s2")),material(s.at("surface"))};
     const auto &lots=j.at("lots"),&objects=j.at("objects");
     check(lots.is_array()&&!lots.empty()&&lots.size()<=128,"world must have 1–128 material lots");
     check(objects.is_array()&&objects.size()<=max_objects,"saved object budget exceeds 64");
     CreatorWorld world(config);world.lots_.clear();world.ticks_=integer(j.at("ticks"),240ULL*60*60*24*365);
+    if(version==4){const auto &draft=j.at("assembly_draft");fields(draft,{"revision","declaration"});world.assembly_revision_=integer(draft.at("revision"),1000000000);if(!draft.at("declaration").is_null()){check(world.assembly_revision_>0,"saved assembly draft requires a revision");world.assembly_draft_=compileAssembly(draft.at("declaration").dump()).declaration.dump();}}
     std::set<std::string> lot_ids,request_ids;
     for (const auto &value:lots) {
         fields(value,{"id","provenance","material","initial_mass_kg","remaining_mass_kg","collected"});
@@ -566,7 +580,7 @@ CreatorWorld CreatorWorld::deserialize(std::string_view document) {
     for (std::size_t i=0;i<world.lots_.size();++i) {
         const auto &lot=world.lots_[i];check(std::abs(lot.remaining_mass_kg+used[i]-lot.initial_mass_kg)<=1e-12*std::max(1.0,lot.initial_mass_kg),"saved inventory/object mass ledger is inconsistent");
     }
-    if(version==3) {
+    if(version>=3) {
         const auto &records=j.at("history");check(records.is_array()&&records.size()<=max_changes,"authoring history exceeds its budget");
         auto replay_lots=world.lots_;for(auto &l:replay_lots)l.remaining_mass_kg=l.initial_mass_kg;
         std::map<MatterBodyId,CreatedObject> live;std::set<std::string> receipts;MatterBodyId last_id=0;
@@ -648,6 +662,7 @@ std::string CreatorWorld::inspectJson() const {
     result["history_count"]=history_.size();
     result["capabilities"]["assembly_assessment"]={{"version",1},{"operation","assess_assembly"},{"parts",2},{"shape","box"},{"creation_supported",false},{"note","Read-only experimental interface geometry and material requirements; live assembly/contact integration is unsupported."}};
     result["capabilities"]["assembly_test"]={{"version",1},{"operation","test_assembly"},{"fixture","isolated-cohesive-separation-v1"},{"maximum_evaluations",65536},{"maximum_sites",256},{"note","Bounded isolated normal-separation experiment; no live resources consumed."}};
+    result["capabilities"]["assembly_draft"]={{"version",1},{"operations",Json::array({"remember_assembly","clear_assembly","assess_saved_assembly"})},{"note","One revisioned declaration persists with world save. Assessments are recomputed; no stored test or review result is trusted as current."}};
     result["inventory"]=Json::array();for (auto m:kMaterialPresets) if (inventoryMass(m)>0) result["inventory"].push_back({{"material",materialPresetName(m)},{"mass_kg",inventoryMass(m)}});
     for (std::size_t i=0;i<objects_.size();++i) {
         const auto &object=objects_[i];auto &j=result["objects"][i];
@@ -676,6 +691,9 @@ std::string CreatorWorld::executeJson(std::string_view commands) {
             else if (type=="assess") {fields(command,{"type","recipe"});value=parse(assessJson(recipe(command.at("recipe"))));}
             else if (type=="assess_assembly") {fields(command,{"type","assembly"});value=parse(assessAssemblyJson(command.at("assembly").dump()));}
             else if (type=="test_assembly") {fields(command,{"type","assembly","test"});value=parse(testAssemblyJson(command.at("assembly").dump(),command.at("test").dump()));}
+            else if (type=="remember_assembly") {fields(command,{"type","assembly","expected_revision"});value={{"revision",rememberAssembly(command.at("assembly").dump(),integer(command.at("expected_revision"),1000000000))}};}
+            else if (type=="clear_assembly") {fields(command,{"type","expected_revision"});value={{"revision",clearAssembly(integer(command.at("expected_revision"),1000000000))}};}
+            else if (type=="assess_saved_assembly") {fields(command,{"type"});check(assembly_draft_.has_value(),"no assembly draft is saved");value=parse(assessAssemblyJson(*assembly_draft_));value["draft_revision"]=assembly_revision_;}
             else if (type=="test_recipe") {fields(command,{"type","recipe","test"});value=parse(testRecipeJson(recipe(command.at("recipe")),command.at("test").dump()));}
             else if (type=="assess_rebuild") {
                 fields(command,{"type","object_id","expected_revision","recipe"});
