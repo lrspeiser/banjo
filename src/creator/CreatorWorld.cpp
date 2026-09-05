@@ -9,6 +9,7 @@
 #include <numbers>
 #include <set>
 #include <map>
+#include <tuple>
 #include <stdexcept>
 #ifdef _WIN32
 #define NOMINMAX
@@ -427,6 +428,13 @@ std::string testRuntimeAssembly(const CompiledAssembly &compiled,std::string_vie
             check(length(spin[n])<=10,"initial spin exceeds 10 rad/s");}
         required.erase("initial_angular_velocity_rad_s");
     }
+    bool adaptive=false;std::uint64_t maximum_evaluations=0;double state_tolerance=0,minimum_step=0;
+    if(required.contains("adaptive")) {
+        adaptive=true;const auto &control=required.at("adaptive");fields(control,{"maximum_evaluations","state_error_tolerance","minimum_step_s"});
+        maximum_evaluations=integer(control.at("maximum_evaluations"),65536);state_tolerance=number(control.at("state_error_tolerance"));minimum_step=number(control.at("minimum_step_s"));
+        check(maximum_evaluations>=3&&state_tolerance>0&&state_tolerance<=.1&&minimum_step>0&&minimum_step<=1,"invalid adaptive runtime controls");
+        required.erase("adaptive");
+    }
     fields(required,{"test_version","relative_kinetic_energy_j","duration_s","steps","energy_error_budget_j","transfer_roundoff_budget_j","minimum_separated_area_fraction"});
     check(integer(spec.at("test_version"),2)==2,"Jolt assembly fixture requires test version 2");
     const auto input=number(spec.at("relative_kinetic_energy_j")),duration=number(spec.at("duration_s"));
@@ -436,6 +444,7 @@ std::string testRuntimeAssembly(const CompiledAssembly &compiled,std::string_vie
     check(budget>0&&budget<=.01*input&&transfer_budget>=0&&transfer_budget<=budget&&minimum>=0&&minimum<=1,"invalid runtime assembly error budget or criterion");
     const double dt=static_cast<float>(duration/static_cast<double>(steps));
     check(dt>0&&std::isfinite(dt),"unrepresentable runtime assembly timestep");
+    check(!adaptive||minimum_step<=dt/2,"adaptive minimum step exceeds initial half step");
     auto sites=compiled.patch.sites;const auto &pa=compiled.patch.a,&pb=compiled.patch.b;
     const auto delta=pb.center_m+pb.orientation.rotate(sites.front().attachment_b_m)-pa.center_m-pa.orientation.rotate(sites.front().attachment_a_m);
     const auto normal=delta/length(delta);const double ma=pa.mass_kg,mb=pb.mass_kg,mu=ma*mb/(ma+mb),speed=std::sqrt(2*input/mu);
@@ -453,25 +462,28 @@ std::string testRuntimeAssembly(const CompiledAssembly &compiled,std::string_vie
     double initial_spin_energy=0;
     for(auto id:{1u,2u}){const auto state=world.mechanicalState(id);const auto w=state.motion.angular_velocity_rad_s;initial_spin_energy+=.5*dot(w,state.inertia_world_kg_m2*w);}
     double jolt_change=0,transfer_error=0,max_error=0,max_momentum=0,max_angular=0;unsigned contacts=0;
-    double opening_work=0,kick_work=0,previous_residual=0;std::vector<Json> worst_steps;
+    double opening_work=0,kick_work=0,previous_residual=0,absolute_error=0,elapsed=0;std::vector<Json> worst_steps;
+    std::uint64_t accepted_steps=0,evaluations=0,rejected_intervals=0;
     const auto energies=[&]{double stored=0,damage=0;for(const auto &site:sites){auto law=compiled.law;law.area_m2=site.area_m2;const auto response=evaluateCohesiveInterface(law,site.history);stored+=response.stored_energy_j;damage+=response.dissipated_energy_j;}return std::pair{stored,damage};};
-    const auto kick=[&]{const auto result=world.applyCohesiveTensionPatchKick(1,2,sites,compiled.law,dt/2,transfer_budget);
+    const auto kick=[&](double h){const auto result=world.applyCohesiveTensionPatchKick(1,2,sites,compiled.law,h/2,transfer_budget);
         for(std::size_t k=0;k<sites.size();++k)sites[k].history=result.interface_increments[k].state;
         transfer_error+=result.transfer.numerical_energy_change_j;kick_work+=result.transfer.impulse_work_j;
         for(const auto &increment:result.interface_increments)opening_work+=increment.opening_work_j;};
-    for(std::uint64_t tick=0;tick<steps;++tick) {
+    const auto advance_step=[&](double h) {
+        if(adaptive&&evaluations>=maximum_evaluations)throw std::runtime_error("adaptive runtime evaluation budget exhausted");
+        ++evaluations;++accepted_steps;elapsed+=h;
         const double previous_opening_work=opening_work,previous_kick_work=kick_work,previous_transfer=transfer_error;
         std::vector<double> previous_openings;previous_openings.reserve(sites.size());for(const auto &site:sites)previous_openings.push_back(site.history.opening_m);
-        kick();const double before=totals().kinetic_energy_j;world.step(dt);const double jolt_step_change=totals().kinetic_energy_j-before;jolt_change+=jolt_step_change;
-        const auto new_contacts=static_cast<unsigned>(world.drainImpacts().size());contacts+=new_contacts;kick();
+        kick(h);const double before=totals().kinetic_energy_j;world.step(h);const double jolt_step_change=totals().kinetic_energy_j-before;jolt_change+=jolt_step_change;
+        const auto new_contacts=static_cast<unsigned>(world.drainImpacts().size());contacts+=new_contacts;kick(h);
         const auto now=totals();const auto [stored,damage]=energies();
         const double residual=now.kinetic_energy_j+stored+damage-initial.kinetic_energy_j-jolt_change-transfer_error;
         check(std::isfinite(residual),"runtime assembly trajectory overflow");
-        max_error=std::max(max_error,std::abs(residual));
+        max_error=std::max(max_error,std::abs(residual));absolute_error+=std::abs(residual-previous_residual);
         unsigned slack_crossings=0;double minimum_opening=sites.front().history.opening_m,maximum_opening=minimum_opening;
         for(std::size_t k=0;k<sites.size();++k){const double q=sites[k].history.opening_m;
             if((q>0)!=(previous_openings[k]>0))++slack_crossings;minimum_opening=std::min(minimum_opening,q);maximum_opening=std::max(maximum_opening,q);}
-        worst_steps.push_back({{"tick",tick+1},{"time_s",dt*static_cast<double>(tick+1)},{"step_integration_error_j",residual-previous_residual},
+        worst_steps.push_back({{"tick",accepted_steps},{"time_s",elapsed},{"step_integration_error_j",residual-previous_residual},
             {"cumulative_integration_error_j",residual},{"jolt_stage_energy_change_j",jolt_step_change},{"transfer_roundoff_j",transfer_error-previous_transfer},
             {"cohesive_opening_work_j",opening_work-previous_opening_work},{"impulse_work_j",kick_work-previous_kick_work},
             {"new_contact_events",new_contacts},{"slack_crossings",slack_crossings},{"minimum_opening_m",minimum_opening},{"maximum_opening_m",maximum_opening}});
@@ -480,7 +492,46 @@ std::string testRuntimeAssembly(const CompiledAssembly &compiled,std::string_vie
         max_momentum=std::max(max_momentum,length(now.linear_momentum_kg_m_s-initial.linear_momentum_kg_m_s));
         max_angular=std::max(max_angular,length(now.angular_momentum_kg_m2_s-initial.angular_momentum_kg_m2_s));
         check(std::isfinite(max_error),"runtime assembly trajectory overflow");
-    }
+    };
+    // Runtime checkpoints own solver state. This tuple owns every accompanying
+    // history/diagnostic accumulator; evaluation cost deliberately never rewinds.
+    const auto save=[&]{return std::tuple{sites,jolt_change,transfer_error,max_error,max_momentum,max_angular,contacts,opening_work,kick_work,previous_residual,absolute_error,elapsed,worst_steps,accepted_steps};};
+    const auto restore=[&](const auto &saved){std::tie(sites,jolt_change,transfer_error,max_error,max_momentum,max_angular,contacts,opening_work,kick_work,previous_residual,absolute_error,elapsed,worst_steps,accepted_steps)=saved;};
+    const auto dims_a=vector(compiled.declaration.at("parts")[0].at("dimensions_m")),dims_b=vector(compiled.declaration.at("parts")[1].at("dimensions_m"));
+    const double length_scale=std::max({dims_a.x,dims_a.y,dims_a.z,dims_b.x,dims_b.y,dims_b.z});
+    std::function<void(double,unsigned)> integrate;
+    integrate=[&](double h,unsigned depth) {
+        const auto saved=save();const double prior_absolute_error=absolute_error;
+        std::array<RigidSnapshot,2> coarse;std::vector<CohesivePatchSite> coarse_sites;
+        (void)world.runReversibleTrial([&]{advance_step(h);coarse={world.snapshot(1),world.snapshot(2)};coarse_sites=sites;return false;});restore(saved);
+        // Spend only the remaining global absolute-work budget. The state
+        // comparison supplies local refinement control; exhaustion rejects the
+        // complete temporary trajectory instead of hiding cancellation.
+        const double local_allowance=budget-prior_absolute_error;
+        double candidate_difference=0,candidate_error=0;
+        const bool accepted=world.runReversibleTrial([&]{
+            advance_step(h/2);advance_step(h/2);double difference=0;
+            for(unsigned k=0;k<2;++k){const auto fine=world.snapshot(k+1);const auto &rough=coarse[k];
+                difference=std::max(difference,length(fine.center_of_mass_world_m-rough.center_of_mass_world_m)/length_scale);
+                difference=std::max(difference,length(fine.linear_velocity_m_s-rough.linear_velocity_m_s)/std::max({1.0,length(fine.linear_velocity_m_s),length(rough.linear_velocity_m_s)}));
+                difference=std::max(difference,length(fine.angular_velocity_rad_s-rough.angular_velocity_rad_s)/std::max({1.0,length(fine.angular_velocity_rad_s),length(rough.angular_velocity_rad_s)}));
+                const auto a=fine.orientation_world,b=rough.orientation_world;
+                const double minus=(a.w-b.w)*(a.w-b.w)+(a.x-b.x)*(a.x-b.x)+(a.y-b.y)*(a.y-b.y)+(a.z-b.z)*(a.z-b.z);
+                const double plus=(a.w+b.w)*(a.w+b.w)+(a.x+b.x)*(a.x+b.x)+(a.y+b.y)*(a.y+b.y)+(a.z+b.z)*(a.z+b.z);
+                difference=std::max(difference,2*std::sqrt(std::min(minus,plus)));
+            }
+            const double failure=cohesiveSeparationOpening(compiled.law);
+            for(std::size_t k=0;k<sites.size();++k){difference=std::max(difference,std::abs(sites[k].history.opening_m-coarse_sites[k].history.opening_m)/failure);difference=std::max(difference,std::abs(sites[k].history.maximum_opening_m-coarse_sites[k].history.maximum_opening_m)/failure);}
+            candidate_difference=difference;candidate_error=absolute_error-prior_absolute_error;
+            return difference<=state_tolerance&&candidate_error<=local_allowance;
+        });
+        if(accepted)return;
+        restore(saved);++rejected_intervals;
+        if(depth>=20||h/4<minimum_step)throw std::runtime_error("adaptive runtime refinement floor reached: "+Json{{"time_s",elapsed},{"step_s",h},{"state_error",candidate_difference},{"work_error_j",candidate_error},{"allowed_work_j",local_allowance}}.dump());
+        integrate(h/2,depth+1);integrate(h/2,depth+1);
+    };
+    for(std::uint64_t tick=0;tick<steps;++tick){if(adaptive)integrate(dt,0);else advance_step(dt);}
+    if(adaptive)check(absolute_error<=budget*(1+1e-10),"adaptive runtime accumulated work error exceeds budget");
     Json histories=Json::array(),bodies=Json::array();double separated=0;
     for(const auto &site:sites){auto law=compiled.law;law.area_m2=site.area_m2;const auto response=evaluateCohesiveInterface(law,site.history);if(response.separated)separated+=site.area_m2;
         histories.push_back({{"area_m2",site.area_m2},{"opening_m",site.history.opening_m},{"maximum_opening_m",site.history.maximum_opening_m},{"damage",response.damage}});}
@@ -488,11 +539,11 @@ std::string testRuntimeAssembly(const CompiledAssembly &compiled,std::string_vie
     const auto [stored,damage]=energies();const double fraction=separated/compiled.law.area_m2;
     return Json{{"test_version",2},{"fixture","jolt-tensile-patch-separation-v1"},{"declaration",compiled.declaration},{"specification",spec},
         {"physics_signature",Json::parse(CreatorWorld::physicsSignatureJson())},{"status",fraction>=minimum&&max_error<=budget?"passed":"failed"},
-        {"predicates",{{"separated_area",fraction>=minimum},{"integration_energy",max_error<=budget}}},{"actual_duration_s",dt*static_cast<double>(steps)},
+        {"predicates",{{"separated_area",fraction>=minimum},{"integration_energy",max_error<=budget}}},{"actual_duration_s",elapsed},{"integration",{{"mode",adaptive?"adaptive-step-doubling":"fixed"},{"evaluations",evaluations},{"accepted_steps",accepted_steps},{"rejected_intervals",rejected_intervals},{"accumulated_absolute_error_j",absolute_error}}},
         {"initial_kinetic_energy_j",initial.kinetic_energy_j},{"initial_rotational_kinetic_energy_j",initial_spin_energy},{"final_kinetic_energy_j",totals().kinetic_energy_j},{"stored_energy_j",stored},{"damage_work_j",damage},
         {"separated_area_fraction",fraction},{"energy_residual_j",totals().kinetic_energy_j+stored+damage-initial.kinetic_energy_j},{"maximum_integration_energy_error_j",max_error},{"jolt_stage_energy_change_j",jolt_change},{"signed_transfer_roundoff_j",transfer_error},
         {"cohesive_opening_work_j",opening_work},{"impulse_work_j",kick_work},{"largest_error_steps",worst_steps},{"maximum_momentum_change_kg_m_s",max_momentum},{"maximum_angular_momentum_change_kg_m2_s",max_angular},{"contact_events",contacts},{"sites",histories},{"bodies",bodies},
-        {"boundary","Temporary two-box world, zero gravity, initial separating velocity and optional declared spin. Jolt owns surfaces. Events may be speculative. Jolt-stage energy change includes solver effects, not automatically heat. Fixed-step evidence is not a convergence certificate. No live resources, objects or clock changed; no fabrication or cutting certification."}}.dump(2);
+        {"boundary","Temporary two-box world, zero gravity, initial separating velocity and optional declared spin. Jolt owns surfaces. Events may be speculative. Jolt-stage energy change includes solver effects, not automatically heat. Reported integration evidence is not a global convergence certificate. No live resources, objects or clock changed; no fabrication or cutting certification."}}.dump(2);
 }
 }
 std::string CreatorWorld::testAssemblyJson(std::string_view declaration,std::string_view specification){

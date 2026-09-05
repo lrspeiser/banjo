@@ -64,6 +64,19 @@ void assemblyAssessment(){
             std::cout<<name<<" coarse runtime max_E="<<coarse["result"]["maximum_integration_energy_error_j"]<<'\n';
             auto reordered=runtime;std::swap(reordered["parts"][0],reordered["parts"][1]);const auto reordered_result=run(reordered,runtime_spec);
             require(reordered_result["ok"]==true&&reordered_result["result"]["bodies"]==r["bodies"],"part array order preserves referenced runtime body assignment");
+            auto adaptive_spec=runtime_spec;adaptive_spec["steps"]=64;
+            adaptive_spec["adaptive"]={{"maximum_evaluations",65536},{"state_error_tolerance",1e-5},{"minimum_step_s",1e-14}};
+            const auto adaptive_result=run(runtime,adaptive_spec);require(adaptive_result["ok"]==true&&adaptive_result["result"]["status"]=="passed","adaptive smooth separation completes");
+            const auto &adaptive_report=adaptive_result["result"],&integration=adaptive_report["integration"];
+            require(integration["rejected_intervals"].get<unsigned>()>0&&integration["evaluations"].get<unsigned>()<=65536,"adaptive fixture actually refines within evaluation bounds");
+            require(integration["accumulated_absolute_error_j"].get<double>()<=adaptive_spec["energy_error_budget_j"].get<double>(),"accepted absolute work error respects unchanged global budget");
+            near(adaptive_report["damage_work_j"].get<double>(),fracture_work,fracture_work*1e-12,"adaptive history retains full separation work");
+            require(std::abs(adaptive_report["energy_residual_j"].get<double>())<2*adaptive_spec["energy_error_budget_j"].get<double>(),"smooth adaptive total energy closes independently of subtracted Jolt stages");
+            std::cout<<name<<" adaptive="<<integration.dump()<<'\n';
+            auto exhausted=adaptive_spec;exhausted["adaptive"]["maximum_evaluations"]=3;
+            require(run(runtime,exhausted)["ok"]==false,"adaptive exhaustion cannot publish partial results");
+            exhausted=adaptive_spec;exhausted["adaptive"]["minimum_step_s"]=1;
+            require(run(runtime,exhausted)["ok"]==false,"minimum actual half-step bound validated");
             auto tight=runtime_spec;tight["energy_error_budget_j"]=fracture_work*1e-12;tight["transfer_roundoff_budget_j"]=0;
             const auto failed=run(runtime,tight);require(failed["ok"]==false||failed["result"]["status"]=="failed","insufficient transfer/integration budget cannot pass");
         } else require(result["ok"]==false,"legacy precision rejects runtime assembly fixture");
@@ -89,6 +102,10 @@ void assemblyAssessment(){
                 if(preset==MaterialPreset::Iron)require(r["status"]=="failed","off-center iron integration failure remains visible");
                 std::cout<<name<<" spin steps="<<steps<<" status="<<r["status"]<<" max_E="<<r["maximum_integration_energy_error_j"]<<" max_H="<<r["maximum_angular_momentum_change_kg_m2_s"]<<'\n';
             }
+            auto adaptive_spin=spin_spec;adaptive_spin["steps"]=512;
+            adaptive_spin["adaptive"]={{"maximum_evaluations",65536},{"state_error_tolerance",.001},{"minimum_step_s",1e-8}};
+            const auto spin_refinement=run(spinning,adaptive_spin);
+            require(spin_refinement["ok"]==false&&spin_refinement["error"].get<std::string>().find("refinement floor")!=std::string::npos,"unresolved rotational contact-state refinement remains explicit");
             for(unsigned variant=0;variant<3;++variant){auto bad=spin_spec;
                 if(variant==0)bad["initial_angular_velocity_rad_s"]["a"]={0,0,11};
                 if(variant==1)bad["initial_angular_velocity_rad_s"].erase("b");
