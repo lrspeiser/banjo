@@ -12,7 +12,7 @@
 namespace banjo {
 
 inline constexpr std::uint32_t kMaterialOutcomeFormatVersion = 1U;
-inline constexpr std::uint32_t kMaterialSolverModelVersion = 2U;
+inline constexpr std::uint32_t kMaterialSolverModelVersion = 3U;
 
 struct MaterialOutcomeKeyInput {
     MaterialPreset striker{MaterialPreset::Iron};

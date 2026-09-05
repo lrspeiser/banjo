@@ -38,6 +38,12 @@ int main() {
                   << " m/s, energy=" << stats.impact_energy_j
                   << " J, threshold=" << stats.activation_threshold_j
                   << " J, normalized=" << stats.normalized_impact_energy << '\n';
+        std::cout << "Contact-driven: impulses=" << stats.coupled_contact_points
+                  << ", transfer=" << stats.coupled_impulse_n_s
+                  << " N*s, contact dissipation=" << stats.coupled_contact_dissipation_j << " J\n";
+        if (!stats.activation_response_deferred || stats.coupled_contact_points == 0U) {
+            throw std::runtime_error("contact-driven activation/coupling was not exercised");
+        }
         std::cout << "Fracture: broken bonds=" << stats.broken_bonds
                   << ", components=" << stats.connected_components << '\n';
         std::cout << "Handoff: rigid fragments=" << stats.rigid_fragments

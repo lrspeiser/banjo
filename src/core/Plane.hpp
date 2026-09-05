@@ -77,6 +77,14 @@ struct SupportPlaneFrame {
            normal_offset_m * plane.normal_world;
 }
 
+[[nodiscard]] inline bool insideSupportFootprint(
+    const SupportPlaneFrame &plane, const Vec3 &point,
+    double half_tangent_m, double half_bitangent_m) {
+    const Vec3 relative = point - plane.point_world_m;
+    return std::abs(dot(relative, plane.tangent_world)) <= half_tangent_m &&
+           std::abs(dot(relative, plane.bitangent_world)) <= half_bitangent_m;
+}
+
 [[nodiscard]] inline Vec3 projectVectorOntoPlane(
     const SupportPlaneFrame &plane,
     const Vec3 &vector_world) {

@@ -7,6 +7,7 @@
 #include "fracture/FragmentGeometry.hpp"
 #include "fracture/ImpactEvent.hpp"
 #include "material/Material.hpp"
+#include "physics/SphereMaterialContact.hpp"
 
 #include <memory>
 #include <vector>
@@ -30,6 +31,7 @@ struct RigidBallDescription {
     Vec3 angular_velocity_rad_s{};
     double mass_override_kg{};
     double sphere_inertia_factor{0.4};
+    bool defer_brittle_contacts_to_material{};
 };
 
 class JoltWorld {
@@ -48,6 +50,8 @@ public:
     void addBall(const RigidBallDescription &description);
     void addFragments(const std::vector<RigidFragmentDescription> &fragments);
     void step(double fixed_dt_s);
+    [[nodiscard]] CoupledSphereState sphereContactState(MatterBodyId body_id) const;
+    void applySphereContactState(MatterBodyId body_id, const CoupledSphereState &state);
 
     [[nodiscard]] std::vector<ImpactEvent> drainImpacts();
     [[nodiscard]] RigidSnapshot snapshot(MatterBodyId body_id) const;

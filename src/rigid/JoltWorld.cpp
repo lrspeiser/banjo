@@ -1,4 +1,5 @@
 #include "rigid/JoltWorld.hpp"
+#include "fracture/ActivationPolicy.hpp"
 
 #include "material/MaterialCompiler.hpp"
 
@@ -152,6 +153,8 @@ struct BodyContactState {
     double radius_m{};
     double sphere_inertia_factor{0.4};
     bool is_sphere{};
+    double mass_kg{};
+    std::optional<MaterialDefinition> activation_material;
 };
 
 [[nodiscard]] CompiledContactMaterial legacyFragmentContact(
@@ -269,9 +272,7 @@ private:
         settings.mCombinedRestitution =
             static_cast<float>(combined.restitution);
 
-        if (!record_impact || id1 == kSupportSurfaceMatterId ||
-            id2 == kSupportSurfaceMatterId || id1 == kInvalidMatterBodyId ||
-            id2 == kInvalidMatterBodyId) {
+        if (id1 == kInvalidMatterBodyId || id2 == kInvalidMatterBodyId) {
             return;
         }
 
@@ -318,6 +319,29 @@ private:
         event.combined_restitution = combined.restitution;
         event.effective_contact_modulus_pa = combined.effective_modulus_pa;
 
+        // The callback changes contact settings only; body lifetime/motion is
+        // changed by the experiment after PhysicsSystem::Update has returned.
+        const auto should_defer = [&](MatterBodyId id, const BodyContactState &target,
+                                      const BodyContactState &other) {
+            // This checkpoint supports a rigid sphere against active material.
+            // Do not suppress arbitrary support contacts without a matching solver.
+            if (!target.activation_material || !other.is_sphere) return false;
+            const double reduced_radius = other.is_sphere
+                ? target.radius_m * other.radius_m / (target.radius_m + other.radius_m)
+                : target.radius_m;
+            return ActivationPolicy{}.evaluate(event, {
+                .body_id = id, .radius_m = target.radius_m,
+                .material = *target.activation_material,
+                .reduced_radius_m = reduced_radius,
+            }).activate;
+        };
+        if (should_defer(id1, state1->second, state2->second) ||
+            should_defer(id2, state2->second, state1->second)) {
+            settings.mIsSensor = true;
+            event.response_deferred_to_material = true;
+        }
+        const bool surface_contact = id1 == kSupportSurfaceMatterId || id2 == kSupportSurfaceMatterId;
+        if (!event.response_deferred_to_material && (!record_impact || surface_contact)) return;
         std::scoped_lock lock(mutex_);
         events_.push_back(event);
     }
@@ -423,56 +447,30 @@ public:
                 body_interface.GetCenterOfMassPosition(body_id));
             const double distance = signedDistanceToPlane(plane, center);
             const double contact_tolerance =
-                std::max(0.015, 0.08 * body_state->second.radius_m);
+                std::max(0.001, 0.01 * body_state->second.radius_m);
             if (std::abs(distance - body_state->second.radius_m) >
                 contact_tolerance) {
                 continue;
             }
 
-            const Vec3 linear =
-                fromJoltVector(body_interface.GetLinearVelocity(body_id));
-            const double normal_speed = dot(linear, plane.normal_world);
-            if (std::abs(normal_speed) > 0.5) {
-                continue;
-            }
-            const Vec3 tangent = linear - normal_speed * plane.normal_world;
-            const double tangent_speed = length(tangent);
-            if (tangent_speed <= 1.0e-8) {
-                continue;
-            }
-
-            const Vec3 angular =
-                fromJoltVector(body_interface.GetAngularVelocity(body_id));
-            const Vec3 contact_slip =
-                tangent - body_state->second.radius_m *
-                              cross(angular, plane.normal_world);
-            if (length(contact_slip) > std::max(0.08, 0.25 * tangent_speed)) {
-                continue;
-            }
-
-            const double inertia_factor =
-                std::max(1.0e-6, body_state->second.sphere_inertia_factor);
-            const double deceleration =
-                combined.rolling_resistance * normal_gravity /
-                (1.0 + inertia_factor);
-            const double new_speed =
-                std::max(0.0, tangent_speed - deceleration * fixed_dt_s);
-            if (new_speed >= tangent_speed) {
-                continue;
-            }
-
-            const Vec3 new_tangent = (new_speed / tangent_speed) * tangent;
-            const Vec3 new_linear =
-                normal_speed * plane.normal_world + new_tangent;
-            const Vec3 normal_spin =
-                dot(angular, plane.normal_world) * plane.normal_world;
-            const Vec3 rolling_angular =
-                cross(plane.normal_world, new_tangent) /
-                body_state->second.radius_m;
-            body_interface.SetLinearAndAngularVelocity(
-                body_id,
-                toJolt(new_linear),
-                toJolt(normal_spin + rolling_angular));
+            if (!insideSupportFootprint(plane, center,
+                    support_surface_->half_length_tangent_m,
+                    support_surface_->half_length_bitangent_m)) continue;
+            const Vec3 linear = fromJoltVector(body_interface.GetLinearVelocity(body_id));
+            if (std::abs(dot(linear, plane.normal_world)) > 0.1) continue;
+            const Vec3 angular = fromJoltVector(body_interface.GetAngularVelocity(body_id));
+            const Vec3 rolling_spin = projectVectorOntoPlane(plane, angular);
+            const double speed = length(rolling_spin);
+            if (speed <= 1.0e-10) continue;
+            const double mass = body_state->second.mass_kg;
+            const double radius = body_state->second.radius_m;
+            const double inertia = body_state->second.sphere_inertia_factor * mass * radius * radius;
+            // tau_rr = mu_rr * N * radius. Static contact friction in Jolt,
+            // not a velocity overwrite here, determines rolling vs. sliding.
+            const double angular_impulse = std::min(inertia * speed,
+                combined.rolling_resistance * mass * normal_gravity * radius * fixed_dt_s);
+            body_interface.AddAngularImpulse(body_id,
+                toJolt((-angular_impulse / speed) * rolling_spin));
         }
     }
 
@@ -600,9 +598,10 @@ void JoltWorld::addBall(const RigidBallDescription &description) {
         Layers::kMoving);
     settings.mFriction = static_cast<float>(contact.dynamic_friction);
     settings.mRestitution = static_cast<float>(contact.restitution);
-    settings.mLinearDamping =
-        static_cast<float>(std::clamp(description.material.damping_ratio, 0.0, 1.0));
-    settings.mAngularDamping = settings.mLinearDamping;
+    // Bulk material damping is internal, not aerodynamic drag on a rigid body.
+    settings.mLinearDamping = 0.0F;
+    settings.mAngularDamping = 0.0F;
+    settings.mMaxAngularVelocity = 1000.0F;
     settings.mUserData = description.body_id;
     settings.mOverrideMassProperties =
         JPH::EOverrideMassProperties::CalculateInertia;
@@ -628,6 +627,10 @@ void JoltWorld::addBall(const RigidBallDescription &description) {
             description.radius_m,
             description.sphere_inertia_factor,
             true,
+            mass,
+            description.defer_brittle_contacts_to_material &&
+                description.material.model == MaterialModel::BrittleBond
+                ? std::optional<MaterialDefinition>{description.material} : std::nullopt,
         });
 }
 
@@ -803,6 +806,27 @@ RigidSnapshot JoltWorld::snapshot(MatterBodyId body_id) const {
         fromJoltVector(body_interface.GetLinearVelocity(found->second)),
         fromJoltVector(body_interface.GetAngularVelocity(found->second)),
     };
+}
+
+CoupledSphereState JoltWorld::sphereContactState(MatterBodyId body_id) const {
+    const auto it = impl_->contact_states_.find(body_id);
+    if (it == impl_->contact_states_.end() || !it->second.is_sphere)
+        throw std::invalid_argument("two-way contact currently supports rigid spheres only");
+    const auto &state = it->second;
+    return {snapshot(body_id), state.radius_m, state.mass_kg,
+        state.sphere_inertia_factor * state.mass_kg * state.radius_m * state.radius_m};
+}
+
+void JoltWorld::applySphereContactState(MatterBodyId body_id, const CoupledSphereState &state) {
+    const auto it = impl_->bodies_.find(body_id);
+    if (it == impl_->bodies_.end() || !impl_->contact_states_.at(body_id).is_sphere)
+        throw std::invalid_argument("coupled sphere is missing");
+    const auto &m = state.motion;
+    impl_->physics_->GetBodyInterface().SetPositionRotationAndVelocity(it->second,
+        toJoltPosition(m.center_of_mass_world_m),
+        JPH::Quat(static_cast<float>(m.orientation_world.x), static_cast<float>(m.orientation_world.y),
+                  static_cast<float>(m.orientation_world.z), static_cast<float>(m.orientation_world.w)),
+        toJolt(m.linear_velocity_m_s), toJolt(m.angular_velocity_rad_s));
 }
 
 bool JoltWorld::contains(MatterBodyId body_id) const {

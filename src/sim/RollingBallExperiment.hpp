@@ -14,6 +14,7 @@
 #include "prediction/BallScenarioProjection.hpp"
 #include "prediction/ScenarioCache.hpp"
 #include "rigid/JoltWorld.hpp"
+#include "physics/RollingKinematics.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -48,6 +49,8 @@ struct ExperimentSettings {
     double target_initial_speed_m_s{};
     double surface_slope_degrees{};
     double sphere_inertia_factor{0.4};
+    double striker_spin_ratio{1.0}; // 1 = rolling; 0 = initially sliding
+
     Vec3 gravity_m_s2{0.0, -9.81, 0.0};
     std::uint64_t material_seed{971};
 
@@ -57,7 +60,7 @@ struct ExperimentSettings {
     unsigned stable_material_steps_before_handoff{60};
     unsigned maximum_material_steps{480};
 
-    double impact_internal_energy_fraction{0.12};
+    double impact_internal_energy_fraction{0.0}; // must be zero in contact-driven runtime
     double maximum_internal_energy_j{1200.0};
 
     std::size_t maximum_rigid_fragments{64};
@@ -68,6 +71,8 @@ struct ExperimentSettings {
 
 struct ExperimentStats {
     ExperimentPhase phase{ExperimentPhase::Rigid};
+    std::uint64_t fixed_ticks{};
+    double simulated_time_s{};
     std::uint64_t rigid_steps{};
     std::uint64_t material_steps{};
 
@@ -105,6 +110,14 @@ struct ExperimentStats {
     double active_kinetic_energy_j{};
     double active_elastic_energy_j{};
     double maximum_node_speed_m_s{};
+    RollingKinematics striker_motion{};
+    RollingKinematics target_motion{};
+    std::size_t coupled_contact_points{};
+    double coupled_impulse_n_s{};
+    double coupled_contact_dissipation_j{};
+    double internal_damping_loss_j{};
+    double maximum_contact_penetration_m{};
+    bool activation_response_deferred{};
 };
 
 struct DebrisParticleState {
@@ -174,9 +187,10 @@ public:
 private:
     void initializeWorld();
     void updateScenarioProjection();
-    void stepRigidPhase();
-    void stepFracturingPhase();
-    void stepRigidFragmentsPhase();
+    void stepRigidPhase(double dt_s);
+    void stepFracturingPhase(double dt_s);
+    void stepRigidFragmentsPhase(double dt_s);
+    void updateMotionDiagnostics();
     void finalizeFragments();
     void updateComponentCount();
     void integrateDebris(double dt_s);
@@ -207,7 +221,8 @@ private:
 
     std::size_t last_broken_bonds_{};
     unsigned stable_material_steps_{};
-    double material_time_accumulator_s_{};
+    double material_time_accumulator_s_{}; // elapsed physical time in material mode
+    double stable_material_time_s_{};
 };
 
 } // namespace banjo

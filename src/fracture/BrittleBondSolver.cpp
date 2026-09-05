@@ -24,46 +24,63 @@ struct NodeStrainState {
         }));
 }
 
-void solveSupportPosition(
-    ActiveNodeState &node,
-    const SupportPlaneFrame &plane) {
+void applySupportContact(
+    ActiveNodeState &node, const BrittleSolverSettings &settings) {
+    const auto &plane = settings.support_plane;
+    if (!insideSupportFootprint(plane, node.position_world_m,
+            settings.support_half_tangent_m, settings.support_half_bitangent_m)) return;
     const double distance = signedDistanceToPlane(plane, node.position_world_m);
-    if (distance < 0.0) {
-        node.position_world_m -= distance * plane.normal_world;
+    if (distance > 1.0e-8) return;
+    const double normal_speed = dot(node.velocity_m_s, plane.normal_world);
+    if (normal_speed < 0.0) {
+        const double restitution = -normal_speed > 0.5
+            ? std::clamp(settings.surface_restitution, 0.0, 1.0) : 0.0;
+        const double normal_delta = -(1.0 + restitution) * normal_speed;
+        node.velocity_m_s += normal_delta * plane.normal_world;
+        const Vec3 tangent = projectVectorOntoPlane(plane, node.velocity_m_s);
+        const double speed = length(tangent);
+        if (speed > 1.0e-12) {
+            const double friction_delta = speed <= settings.surface_static_friction * normal_delta
+                ? speed : std::min(speed, settings.surface_dynamic_friction * normal_delta);
+            node.velocity_m_s -= (friction_delta / speed) * tangent;
+        }
     }
+    // Split position correction, after reconstructing velocities. A penetrating
+    // point is not given artificial rebound energy by moving it out of the floor.
+    node.position_world_m -= distance * plane.normal_world;
 }
 
-void applySupportContactVelocity(
-    ActiveNodeState &node,
-    const SupportPlaneFrame &plane,
-    double dynamic_friction,
-    double restitution,
-    double substep_dt_s) {
-    if (signedDistanceToPlane(plane, node.position_world_m) > 1.0e-8) {
-        return;
-    }
+void accumulateContactStats(SphereMaterialContactStats &out,
+                            const SphereMaterialContactStats &in) {
+    out.impulse_contacts += in.impulse_contacts;
+    out.impulse_to_material_n_s += in.impulse_to_material_n_s;
+    out.angular_impulse_to_sphere_kg_m2_s += in.angular_impulse_to_sphere_kg_m2_s;
+    out.dissipated_kinetic_energy_j += in.dissipated_kinetic_energy_j;
+    out.maximum_penetration_m = std::max(out.maximum_penetration_m, in.maximum_penetration_m);
+    out.maximum_position_correction_m = std::max(out.maximum_position_correction_m, in.maximum_position_correction_m);
+}
 
-    Vec3 velocity =
-        (node.position_world_m - node.previous_position_world_m) / substep_dt_s;
-    const double normal_speed = dot(velocity, plane.normal_world);
-    Vec3 tangent_velocity = velocity - normal_speed * plane.normal_world;
-
-    if (normal_speed < 0.0) {
-        const double tangent_speed = length(tangent_velocity);
-        if (tangent_speed > 1.0e-12) {
-            const double maximum_friction_delta =
-                std::max(0.0, dynamic_friction) *
-                (1.0 + std::clamp(restitution, 0.0, 1.0)) *
-                (-normal_speed);
-            const double retained_speed =
-                std::max(0.0, tangent_speed - maximum_friction_delta);
-            tangent_velocity *= retained_speed / tangent_speed;
-        }
-        velocity = tangent_velocity -
-                   std::clamp(restitution, 0.0, 1.0) *
-                       normal_speed * plane.normal_world;
+// Radial pair damping is translation/rotation invariant and exchanges equal,
+// opposite central impulses. It must not damp whole-object motion in a vacuum.
+double dampInternalBonds(ActiveMatter &matter, double dt) {
+    const double fraction = 1.0 - std::exp(-matter.material.bond_damping * dt);
+    double loss = 0.0;
+    if (fraction <= 0.0) return loss;
+    for (std::size_t i = 0; i < matter.bonds.size(); ++i) {
+        if (!matter.bonds[i].alive) continue;
+        const auto &bond = matter.asset->bonds[i];
+        auto &a = matter.nodes[bond.node_a];
+        auto &b = matter.nodes[bond.node_b];
+        if (a.mass_kg <= 0.0 || b.mass_kg <= 0.0) continue;
+        const Vec3 normal = normalized(b.position_world_m - a.position_world_m);
+        const double relative_speed = dot(b.velocity_m_s - a.velocity_m_s, normal);
+        const double inverse_mass = 1.0 / a.mass_kg + 1.0 / b.mass_kg;
+        const double impulse = -fraction * relative_speed / inverse_mass;
+        a.velocity_m_s -= (impulse / a.mass_kg) * normal;
+        b.velocity_m_s += (impulse / b.mass_kg) * normal;
+        loss += -(impulse * relative_speed + 0.5 * inverse_mass * impulse * impulse);
     }
-    node.velocity_m_s = velocity;
+    return loss;
 }
 
 void solveBond(
@@ -513,7 +530,9 @@ void BrittleBondSolver::injectInternalImpactPulse(
 MaterialStepStats BrittleBondSolver::step(
     ActiveMatter &matter,
     double frame_dt_s,
-    const Vec3 &gravity_m_s2) const {
+    const Vec3 &gravity_m_s2,
+    CoupledSphereState *sphere,
+    const SphereMaterialContactSettings &contact) const {
     if (matter.asset == nullptr || frame_dt_s <= 0.0) {
         throw std::invalid_argument(
             "active matter and positive frame step are required");
@@ -535,6 +554,12 @@ MaterialStepStats BrittleBondSolver::step(
         for (ActiveNodeState &node : matter.nodes) {
             node.previous_position_world_m = node.position_world_m;
             node.velocity_m_s += substep_dt * gravity_m_s2;
+        }
+        if (sphere) {
+            accumulateContactStats(stats.rigid_contact, solveSphereMaterialContacts(
+                matter, *sphere, substep_dt, contact));
+        }
+        for (ActiveNodeState &node : matter.nodes) {
             node.position_world_m += substep_dt * node.velocity_m_s;
         }
 
@@ -546,23 +571,19 @@ MaterialStepStats BrittleBondSolver::step(
                  ++bond_index) {
                 solveBond(matter, bond_index, substep_dt);
             }
-            for (ActiveNodeState &node : matter.nodes) {
-                solveSupportPosition(node, settings_.support_plane);
-            }
         }
 
-        const double damping =
-            std::exp(-matter.material.bond_damping * substep_dt);
         for (ActiveNodeState &node : matter.nodes) {
-            node.velocity_m_s = damping *
-                (node.position_world_m - node.previous_position_world_m) /
-                substep_dt;
-            applySupportContactVelocity(
-                node,
-                settings_.support_plane,
-                settings_.surface_dynamic_friction,
-                settings_.surface_restitution,
-                substep_dt);
+            node.velocity_m_s =
+                (node.position_world_m - node.previous_position_world_m) / substep_dt;
+        }
+        stats.internal_damping_loss_j += dampInternalBonds(matter, substep_dt);
+        if (sphere) {
+            accumulateContactStats(stats.rigid_contact, solveSphereMaterialContacts(
+                matter, *sphere, substep_dt, contact, true));
+        }
+        for (ActiveNodeState &node : matter.nodes) {
+            applySupportContact(node, settings_);
         }
 
         const std::vector<NodeStrainState> node_strains =

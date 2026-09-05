@@ -27,6 +27,7 @@ struct ImpactEvent {
     double applied_friction{};
     double combined_restitution{};
     double effective_contact_modulus_pa{};
+    bool response_deferred_to_material{};
 
     [[nodiscard]] bool involves(MatterBodyId body) const {
         return body == body_a || body == body_b;
