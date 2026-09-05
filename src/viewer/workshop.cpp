@@ -75,22 +75,103 @@ void drawObject(const ObjectRecipe &recipe,Vec3 position,Quat q,Color tint,bool 
         DrawCubeWiresV({0,0,0},v(recipe.dimensions_m),wire?tint:ink);rlPopMatrix();
     }
 }
+// Assembly authoring is separate from live rigid-object creation. Publish only
+// after the existing save succeeds, so failed imports do not replace the draft.
+bool assemblyScreen(CreatorWorld &world,const std::filesystem::path &workspace,bool persistent,std::string &message) {
+    const auto saved=Json::parse(world.serialize()).at("assembly_draft");
+    const auto revision=saved.at("revision").get<std::uint64_t>();
+    const bool present=!saved.at("declaration").is_null();
+    const auto change=[&](const auto &operation) {
+        auto candidate=CreatorWorld::deserialize(world.serialize());operation(candidate);
+        if(persistent)candidate.save(workspace/"world.json");
+        world=std::move(candidate);
+    };
+    BeginDrawing();ClearBackground(background);
+    DrawText("BANJO / ASSEMBLY DESIGN",36,30,30,ink);
+    DrawText("Keep a design. Gather its materials. Review what is supported.",36,76,20,muted);
+    const bool back=button({1150,28,250,44},"Back to workshop");
+    DrawRectangleRounded({28,123,680,585},.03F,8,panel);
+    DrawRectangleRounded({728,123,680,585},.03F,8,panel);
+    DrawText(("SAVED DESIGN / revision "+std::to_string(revision)).c_str(),48,147,22,accent);
+    DrawText("MATERIAL REQUIREMENTS",748,147,22,accent);
+    if(present)try {
+        const auto &declaration=saved.at("declaration");
+        const auto assessment=Json::parse(world.assessAssemblyJson(declaration.dump()));
+        int y=203;
+        for(const auto &part:assessment.at("parts")) {
+            const auto &authored=*std::find_if(declaration.at("parts").begin(),declaration.at("parts").end(),[&](const auto &p){return p.at("id")==part.at("id");});
+            const auto &d=authored.at("dimensions_m");
+            DrawText((part.at("id").get<std::string>().substr(0,32)+" / "+part.at("material").get<std::string>()).c_str(),48,y,22,ink);
+            DrawText((fixed(d[0])+" x "+fixed(d[1])+" x "+fixed(d[2])+" m").c_str(),48,y+33,19,muted);
+            DrawText(("Mass "+fixed(part.at("mass_kg"),6)+" kg").c_str(),48,y+62,18,muted);y+=115;
+        }
+        const auto &joint=assessment.at("joint");
+        DrawText("JOIN / experimental cohesive interface",48,454,20,accent);
+        DrawText(("Area "+fixed(joint.at("area_m2"),6)+" m2 / gap "+fixed(joint.at("rest_gap_m"),6)+" m").c_str(),48,491,18,ink);
+        DrawText(("Complete separation work: "+fixed(joint.at("complete_tensile_separation_work_j"),6)+" J").c_str(),48,524,18,ink);
+        wrap("Separation work is not the energy cost of making this joint. Manufacturing processes and tools are not modeled yet.",48,570,625,18);
+        y=203;
+        for(const auto &need:assessment.at("material_requirements")) {
+            DrawText(need.at("material").get<std::string>().c_str(),748,y,23,ink);
+            DrawText(("Required "+fixed(need.at("required_mass_kg"),6)+" kg / held "+fixed(need.at("inventory_mass_kg"),6)+" kg").c_str(),748,y+34,18,muted);
+            DrawText(("Missing from inventory: "+fixed(need.at("missing_from_inventory_kg"),6)+" kg").c_str(),748,y+65,18,accent);
+            DrawText(("Collectible "+fixed(need.at("collectible_mass_kg"),6)+" kg / still missing after: "+fixed(need.at("missing_after_collection_kg"),6)+" kg").c_str(),748,y+94,17,muted);
+            y+=140;
+        }
+        DrawText(assessment.at("materials_sufficient").get<bool>()?"Materials ready":"Collect the missing materials",748,515,22,accent);
+        wrap("Building assemblies is not supported yet. Having enough material does not enable construction. This design remains available as you gather.",748,559,620,20,ink);
+    }catch(const std::exception &e){message=e.what();}
+    else {
+        wrap("No assembly saved. Drop an assembly design file into this window, or place it in the workshop folder as assembly.json and choose Import design. A valid import replaces the saved design; a rejected import leaves it intact.",48,211,620,21,ink);
+        wrap("Import a design to see exact material quantities. The current assembly model supports two boxes and one declared joint.",748,211,610,21,muted);
+    }
+    if(button({36,730,225,44},"Import design"))try {
+        const auto document=read(workspace/"assembly.json");
+        change([&](CreatorWorld &w){(void)w.rememberAssembly(document,revision);});message="Design validated and saved. Its material requirements are current.";
+    }catch(const std::exception &e){message=std::string("Import rejected: ")+e.what();}
+    if(IsFileDropped()) {
+        auto files=LoadDroppedFiles();
+        try {
+            if(files.count!=1)throw std::invalid_argument("Drop exactly one assembly design file");
+            const auto document=read(files.paths[0]);
+            change([&](CreatorWorld &w){(void)w.rememberAssembly(document,revision);});message="Design validated and saved. Its material requirements are current.";
+        }catch(const std::exception &e){message=std::string("Import rejected: ")+e.what();}
+        UnloadDroppedFiles(files);
+    }
+    if(button({277,730,225,44},"Clear saved design",present))try {
+        change([&](CreatorWorld &w){(void)w.clearAssembly(revision);});message="Saved design cleared. Inventory is unchanged.";
+    }catch(const std::exception &e){message=e.what();}
+    unsigned i=0;
+    // Do not retain references to the old world across a candidate publication.
+    const auto lots=world.lots();
+    for(const auto &lot:lots)if(!lot.collected&&i<3) {
+        if(button({static_cast<float>(518+296*i),730,280,44},"Collect "+name(lot.material)))try {
+            change([&](CreatorWorld &w){w.collect(lot.id);});message="Material collected and saved. Requirements have been refreshed.";
+        }catch(const std::exception &e){message=e.what();}
+        ++i;
+    }
+    wrap(message,36,802,1345,19,ink);
+    DrawText("Design review only / live simulation paused / physical construction and cutting remain unfinished",36,869,17,muted);
+    EndDrawing();return back;
+}
+
 }
 int main(int argc,char **argv) {
     try {
         std::filesystem::path workspace=std::filesystem::absolute(argv[0]).parent_path()/"workshop-data",capture;unsigned frames=180;
-        std::filesystem::path assistant_exe=ChildProcess::findExecutable("codex");bool manual_assistant=false,shape_capture=false,revision_capture=false,requirements_capture=false;
+        std::filesystem::path assistant_exe=ChildProcess::findExecutable("codex");bool manual_assistant=false,shape_capture=false,revision_capture=false,requirements_capture=false,assembly_capture=false,assembly_view=false;
         for(int i=1;i<argc;++i) {
             const std::string option=argv[i];if(++i>=argc)throw std::invalid_argument("missing workshop option value");
             if(option=="--workspace")workspace=argv[i];else if(option=="--capture")capture=argv[i];
+            else if(option=="--view") {const std::string view=argv[i];if(view!="assembly"&&view!="objects")throw std::invalid_argument("view must be assembly or objects");assembly_view=view=="assembly";}
             else if(option=="--assistant-exe")assistant_exe=std::filesystem::absolute(argv[i]);
-            else if(option=="--capture-layout") {const std::string layout=argv[i];if(layout!="materials"&&layout!="shapes"&&layout!="revisions"&&layout!="requirements")throw std::invalid_argument("capture layout must be materials, shapes, revisions or requirements");shape_capture=layout=="shapes";revision_capture=layout=="revisions";requirements_capture=layout=="requirements";}
+            else if(option=="--capture-layout") {const std::string layout=argv[i];if(layout!="materials"&&layout!="shapes"&&layout!="revisions"&&layout!="requirements"&&layout!="assembly")throw std::invalid_argument("capture layout must be materials, shapes, revisions, requirements or assembly");shape_capture=layout=="shapes";revision_capture=layout=="revisions";requirements_capture=layout=="requirements";assembly_capture=layout=="assembly";assembly_view=assembly_capture;}
             else if(option=="--assistant") {const std::string mode=argv[i];if(mode!="auto"&&mode!="manual")throw std::invalid_argument("assistant must be auto or manual");manual_assistant=mode=="manual";}
             else if(option=="--frames")frames=static_cast<unsigned>(std::stoul(argv[i]));else throw std::invalid_argument("unknown workshop option");
         }
         if(frames==0||frames>3600)throw std::invalid_argument("capture frames must be 1–3600");
         std::filesystem::create_directories(workspace);workspace=std::filesystem::absolute(workspace);
-        auto world=capture.empty()&&std::filesystem::exists(workspace/"world.json")?CreatorWorld::load(workspace/"world.json"):CreatorWorld{};
+        auto world=(capture.empty()||assembly_capture)&&std::filesystem::exists(workspace/"world.json")?CreatorWorld::load(workspace/"world.json"):CreatorWorld{};
         CodexAssistant assistant(assistant_exe);
         const bool automatic_assistant=!manual_assistant&&assistant.available();
         ObjectRecipe draft;std::string prompt="Use some of my wood to make a ball that rolls down this ramp.";
@@ -116,7 +197,7 @@ int main(int argc,char **argv) {
             invalidate_design();paused=true;accumulator=0;typing=false;
             status="Editing object #"+std::to_string(id)+". Rebuild reuses its intact material and resets its motion to the design.";
         };
-        if(!capture.empty()) {
+        if(!capture.empty()&&!assembly_capture) {
             for(auto m:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
                 world.collect(std::string(materialPresetName(m))+"-pile");auto r=draft;r.material=m;
                 r.bitangent_m=.45*(static_cast<double>(world.objects().size())-(shape_capture?2.5:1));
@@ -155,6 +236,26 @@ int main(int argc,char **argv) {
         Camera3D camera{{1.4F,2.2F,3.7F},{-1.3F,.3F,0},{0,1,0},45,CAMERA_PERSPECTIVE};
         double yaw=.72,pitch=.4,distance=4.8;
         while(!WindowShouldClose()) {
+            if(assembly_view) {
+                paused=true;accumulator=0;typing=false;
+                bool screenshot_requested=false;
+                for(int key=GetKeyPressed();key;key=GetKeyPressed()) {
+                    if(key==KEY_ESCAPE)assembly_view=false;
+                    if(key==KEY_F12)screenshot_requested=true;
+                }
+                if(assemblyScreen(world,workspace,capture.empty(),status))assembly_view=false;
+                if(screenshot_requested&&capture.empty()) {
+                    Image image=LoadImageFromScreen();const bool success=ExportImage(image,(workspace/"assembly.png").string().c_str());UnloadImage(image);
+                    status=success?"Assembly image saved.":"Could not save assembly image.";
+                }
+                ++rendered;
+                if(!capture.empty()&&rendered>=frames) {
+                    if(capture.has_parent_path())std::filesystem::create_directories(capture.parent_path());
+                    Image image=LoadImageFromScreen();const bool success=ExportImage(image,capture.string().c_str());UnloadImage(image);
+                    if(!success)throw std::runtime_error("capture failed");break;
+                }
+                continue;
+            }
             const auto mouse=GetMousePosition();
             if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT))typing=pending_id.empty()&&CheckCollisionPointRec(mouse,{330,700,725,76});
             // Short press/release pairs can both arrive between rendered frames.
@@ -224,6 +325,7 @@ int main(int argc,char **argv) {
             EndMode3D();
             DrawRectangle(0,0,1440,100,background);DrawText("BANJO / MATERIAL WORKSHOP",24,22,30,ink);
             DrawText("Collect. Describe. Build. Try it.",26,62,19,muted);
+            if(button({810,28,270,44},"Assembly designs")) {assistant.cancel();pending_id.clear();assembly_view=true;}
             DrawText((fixed(world.timeSeconds(),2)+" s").c_str(),1200,30,22,muted);
             DrawRectangleRounded({18,114,288,748},.035F,8,panel);DrawText("YOUR MATERIALS",36,135,20,accent);
             for(std::size_t i=0;i<world.lots().size()&&i<3;++i) {
