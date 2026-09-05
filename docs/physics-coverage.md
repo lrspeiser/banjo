@@ -1,5 +1,7 @@
 # Physical property and capability coverage
 
+**Audited live impulses:** [Pair transfer accounting](pair-impulse-checkpoint.md) now preflights float/speed limits and measures work, momentum and noncentral couples for glass/oak/iron. All 23 suites pass. Joint-law integration, surface response and physical source accounting remain open. Local `2fa2fe2`; full goal active.
+
 **Runtime contact ownership:** [Explicit body-pair routing](contact-ownership-checkpoint.md) suppresses duplicate Jolt responses, invalidates cached contacts and cleans up reused IDs. Glass/oak/iron routing/free-flight tests and all 22 suites pass. External joint/surface response and live assembly creation remain open. Local `5e7aa4e`; full goal active.
 
 **Real LLM assembly review:** [Verified assessment/test evidence](assembly-review-checkpoint.md) reaches the provider through a review-only boundary. Six glass/oak/iron replies correctly distinguish outcomes, stock and unsupported creation; recipe injection rejects; 21 suites pass. UI/build integration remains open. Local `b08d0d7`; full goal active.
