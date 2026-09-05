@@ -1,5 +1,7 @@
 # Actual bowl fracture: experimental bonded-cell model
 
+**Rolling/fracture correction:** [Strength gate and computed replay](rolling-strength-checkpoint.md), source `aa3491f`, local only. Glass/oak/iron isolated rolling is damage-free over 0.3 s; strong glass impact still fractures progressively. The native eight-ball 1.25 s replay moves visibly and ends with four broken links but eight connected groups; contact attribution remains open. Calculate prepares a fresh trajectory, then Replay shows normal-speed motion. Coarse contact geometry, continuum calibration and the full platform remain unfinished. Earlier energy-only bowl notes below are historical.
+
 September 5, 2026. Physics/integration `f55f996`, final UI guidance `a939df0`, local `codex/physics-foundation`, not main. The bowl now defaults to an experimental fracture mode; its rigid Jolt comparison remains selectable. This extends the application, while material realism and the full platform gates remain unfinished.
 
 ## What the user can do
