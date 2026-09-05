@@ -76,9 +76,16 @@ public:
     JoltWorld &operator=(JoltWorld &&) noexcept;
     [[nodiscard]] static unsigned positionPrecisionBits() noexcept;
 
+    // Numerical experiment setting, before any bodies/supports are created.
+    // Disables only cached narrow-phase body-pair results, not contacts/forces.
+    void setBodyPairContactCacheEnabled(bool enabled);
+    void setContactSolverIterations(unsigned velocity,unsigned position);
     void setGravity(const Vec3 &gravity_m_s2);
     void addFloor();
     void addSupportSurface(const RigidSurfaceDescription &description);
+    // Static, single-sided triangle support; winding points into free space.
+    // Curved supports do not use the plane-only rolling-resistance approximation.
+    void addTriangleSupport(const std::vector<std::array<Vec3,3>> &triangles,const MaterialDefinition &material);
     void addBall(const RigidBallDescription &description);
     void addBox(const RigidBoxDescription &description);
     // Host-thread only, between steps. External suppresses this pair's Jolt

@@ -15,6 +15,7 @@
 #include <Jolt/Physics/Collision/ContactListener.h>
 #include <Jolt/Physics/Collision/EstimateCollisionResponse.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
+#include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
 #include <Jolt/Physics/Collision/Shape/OffsetCenterOfMassShape.h>
 #include <Jolt/Physics/Constraints/FixedConstraint.h>
@@ -528,6 +529,19 @@ JoltWorld::~JoltWorld() = default;
 JoltWorld::JoltWorld(JoltWorld &&) noexcept = default;
 JoltWorld &JoltWorld::operator=(JoltWorld &&) noexcept = default;
 
+void JoltWorld::setBodyPairContactCacheEnabled(bool enabled) {
+    impl_->requireConfigurationMutable();
+    if(!impl_->bodies_.empty()||!impl_->floor_id_.IsInvalid())throw std::logic_error("configure body-pair cache before creating bodies");
+    auto settings=impl_->physics_->GetPhysicsSettings();settings.mUseBodyPairContactCache=enabled;impl_->physics_->SetPhysicsSettings(settings);
+}
+
+void JoltWorld::setContactSolverIterations(unsigned velocity,unsigned position) {
+    impl_->requireConfigurationMutable();
+    if(!impl_->bodies_.empty()||!impl_->floor_id_.IsInvalid())throw std::logic_error("configure contact iterations before creating bodies");
+    if(velocity<2||velocity>256||position<1||position>64)throw std::invalid_argument("contact solver iteration bounds exceeded");
+    auto settings=impl_->physics_->GetPhysicsSettings();settings.mNumVelocitySteps=velocity;settings.mNumPositionSteps=position;impl_->physics_->SetPhysicsSettings(settings);
+}
+
 void JoltWorld::setGravity(const Vec3 &gravity_m_s2) {
     impl_->requireConfigurationMutable();
     impl_->gravity_m_s2_ = gravity_m_s2;
@@ -602,6 +616,29 @@ void JoltWorld::addSupportSurface(const RigidSurfaceDescription &description) {
         0.0,
         false,
     };
+}
+
+void JoltWorld::addTriangleSupport(const std::vector<std::array<Vec3,3>> &triangles,const MaterialDefinition &material) {
+    impl_->requireConfigurationMutable();
+    if (!impl_->floor_id_.IsInvalid()) throw std::logic_error("support surface already exists");
+    if (triangles.empty() || triangles.size()>32768) throw std::invalid_argument("triangle support requires 1..32768 triangles");
+    JPH::TriangleList mesh;
+    for (const auto &t:triangles) {
+        for(const auto &v:t) if(!std::isfinite(v.x)||!std::isfinite(v.y)||!std::isfinite(v.z)||length(v)>100)
+            throw std::invalid_argument("support vertex exceeds finite 100 m bounds");
+        if(length(cross(t[1]-t[0],t[2]-t[0]))<1e-10) throw std::invalid_argument("degenerate support triangle");
+        mesh.emplace_back(JPH::Float3(float(t[0].x),float(t[0].y),float(t[0].z)),
+            JPH::Float3(float(t[1].x),float(t[1].y),float(t[1].z)),JPH::Float3(float(t[2].x),float(t[2].y),float(t[2].z)));
+    }
+    const auto contact=compileContactMaterial(material);
+    const auto shape=JPH::MeshShapeSettings(mesh).Create();
+    if(shape.HasError()) throw std::invalid_argument(shape.GetError().c_str());
+    JPH::BodyCreationSettings settings(shape.Get(),JPH::RVec3::sZero(),JPH::Quat::sIdentity(),JPH::EMotionType::Static,Layers::kNonMoving);
+    settings.mFriction=float(contact.dynamic_friction);settings.mRestitution=float(contact.restitution);settings.mUserData=kSupportSurfaceMatterId;
+    const auto id=impl_->physics_->GetBodyInterface().CreateAndAddBody(settings,JPH::EActivation::DontActivate);
+    if(id.IsInvalid())throw std::runtime_error("Jolt could not create triangle support");
+    impl_->floor_id_=id;
+    impl_->contact_states_[kSupportSurfaceMatterId]={contact,0,0,false};
 }
 
 void JoltWorld::addBall(const RigidBallDescription &description) {

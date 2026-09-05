@@ -13,6 +13,10 @@ int main(){try{
         const auto material=makeReferenceMaterial(preset);JoltWorld world;world.setGravity({0,-9.81,0});
         world.addBox({1,{.1,.1,.1},material,{{0,.12,0},{},{0,-1,0},{0,0,.2}},false});
         world.addBox({2,{1,.1,1},material,{{0,0,0},{},{},{}},true});
+        bool configuration_rejected=false;try{world.setBodyPairContactCacheEnabled(false);}catch(const std::logic_error&){configuration_rejected=true;}
+        check(configuration_rejected,"cache setting cannot alter an existing scene");
+        configuration_rejected=false;try{world.setContactSolverIterations(80,8);}catch(const std::logic_error&){configuration_rejected=true;}
+        check(configuration_rejected,"iteration setting cannot alter an existing scene");
         const auto initial=world.snapshot(1);std::vector<ImpactEvent> events;RigidSnapshot candidate;
         const auto advance=[&]{for(unsigned k=0;k<40;++k)world.step(1.0/240);candidate=world.snapshot(1);events=world.drainImpacts();};
         check(!world.runReversibleTrial([&]{advance();return false;}),"rejected trial returns false");same(initial,world.snapshot(1));

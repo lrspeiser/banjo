@@ -108,6 +108,14 @@ void assemblyAssessment(){
             adaptive_spin["adaptive"]={{"maximum_evaluations",65536},{"state_error_tolerance",.001},{"minimum_step_s",1e-8}};
             const auto spin_refinement=run(spinning,adaptive_spin);
             require(spin_refinement["ok"]==false&&spin_refinement["error"].get<std::string>().find("refinement floor")!=std::string::npos,"unresolved rotational contact-state refinement remains explicit");
+            const auto diagnostic_text=spin_refinement["error"].get<std::string>();const auto diagnostic=Json::parse(diagnostic_text.substr(diagnostic_text.find(": ")+2));
+            require(diagnostic["component_errors"].size()==2&&diagnostic["coarse_motion"].size()==2&&diagnostic["fine_motion"].size()==2,"floor diagnostics are bounded to the two declared bodies");
+            require(std::max(diagnostic["component_errors"][0]["angular_velocity"].get<double>(),diagnostic["component_errors"][1]["angular_velocity"].get<double>())>.001,"rotational discrepancy remains identifiable");
+            auto numerical_trial=adaptive_spin;numerical_trial["body_pair_contact_cache"]=false;numerical_trial["contact_iterations"]={{"velocity",80},{"position",8}};
+            const auto numerical_result=run(spinning,numerical_trial);
+            require(numerical_result["ok"]==false&&numerical_result["error"].get<std::string>().find("refinement floor")!=std::string::npos,"more iterations without pair cache do not silently certify this contact fixture");
+            numerical_trial["contact_iterations"]["velocity"]=1;require(run(spinning,numerical_trial)["ok"]==false,"friction solver iteration lower bound enforced");
+            numerical_trial=adaptive_spin;numerical_trial["body_pair_contact_cache"]="false";require(run(spinning,numerical_trial)["ok"]==false,"cache mode requires a boolean");
             for(unsigned variant=0;variant<3;++variant){auto bad=spin_spec;
                 if(variant==0)bad["initial_angular_velocity_rad_s"]["a"]={0,0,11};
                 if(variant==1)bad["initial_angular_velocity_rad_s"].erase("b");

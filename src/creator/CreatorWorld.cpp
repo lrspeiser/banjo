@@ -435,6 +435,17 @@ std::string testRuntimeAssembly(const CompiledAssembly &compiled,std::string_vie
         check(maximum_evaluations>=3&&state_tolerance>0&&state_tolerance<=.1&&minimum_step>0&&minimum_step<=1,"invalid adaptive runtime controls");
         required.erase("adaptive");
     }
+    bool body_pair_cache=true;
+    if(required.contains("body_pair_contact_cache")) {
+        check(required.at("body_pair_contact_cache").is_boolean(),"body_pair_contact_cache must be boolean");
+        body_pair_cache=required.at("body_pair_contact_cache").get<bool>();required.erase("body_pair_contact_cache");
+    }
+    unsigned velocity_iterations=10,position_iterations=2;
+    if(required.contains("contact_iterations")) {
+        const auto &iterations=required.at("contact_iterations");fields(iterations,{"velocity","position"});
+        velocity_iterations=static_cast<unsigned>(integer(iterations.at("velocity"),256));position_iterations=static_cast<unsigned>(integer(iterations.at("position"),64));
+        check(velocity_iterations>=2&&position_iterations>=1,"contact solver iteration counts are too small");required.erase("contact_iterations");
+    }
     fields(required,{"test_version","relative_kinetic_energy_j","duration_s","steps","energy_error_budget_j","transfer_roundoff_budget_j","minimum_separated_area_fraction"});
     check(integer(spec.at("test_version"),2)==2,"Jolt assembly fixture requires test version 2");
     const auto input=number(spec.at("relative_kinetic_energy_j")),duration=number(spec.at("duration_s"));
@@ -449,7 +460,7 @@ std::string testRuntimeAssembly(const CompiledAssembly &compiled,std::string_vie
     const auto delta=pb.center_m+pb.orientation.rotate(sites.front().attachment_b_m)-pa.center_m-pa.orientation.rotate(sites.front().attachment_a_m);
     const auto normal=delta/length(delta);const double ma=pa.mass_kg,mb=pb.mass_kg,mu=ma*mb/(ma+mb),speed=std::sqrt(2*input/mu);
     check(std::isfinite(speed)&&speed<=100,"runtime assembly initialization speed exceeds 100 m/s");
-    JoltWorld world;world.setGravity({});
+    JoltWorld world;world.setGravity({});world.setBodyPairContactCacheEnabled(body_pair_cache);world.setContactSolverIterations(velocity_iterations,position_iterations);
     for(unsigned n=0;n<2;++n) {
         const unsigned index=n==0?compiled.a_index:1-compiled.a_index;const auto &body=n==0?pa:pb;
         const Vec3 velocity=(n==0?-mb:ma)/(ma+mb)*speed*normal;
@@ -509,7 +520,7 @@ std::string testRuntimeAssembly(const CompiledAssembly &compiled,std::string_vie
         // comparison supplies local refinement control; exhaustion rejects the
         // complete temporary trajectory instead of hiding cancellation.
         const double local_allowance=budget-prior_absolute_error;
-        double candidate_difference=0,candidate_error=0;
+        double candidate_difference=0,candidate_error=0;Json component_errors=Json::array(),fine_motion=Json::array(),coarse_motion=Json::array();
         const bool accepted=world.runReversibleTrial([&]{
             advance_step(h/2);advance_step(h/2);double difference=0;
             for(unsigned k=0;k<2;++k){const auto fine=world.snapshot(k+1);const auto &rough=coarse[k];
@@ -520,6 +531,12 @@ std::string testRuntimeAssembly(const CompiledAssembly &compiled,std::string_vie
                 const double minus=(a.w-b.w)*(a.w-b.w)+(a.x-b.x)*(a.x-b.x)+(a.y-b.y)*(a.y-b.y)+(a.z-b.z)*(a.z-b.z);
                 const double plus=(a.w+b.w)*(a.w+b.w)+(a.x+b.x)*(a.x+b.x)+(a.y+b.y)*(a.y+b.y)+(a.z+b.z)*(a.z+b.z);
                 difference=std::max(difference,2*std::sqrt(std::min(minus,plus)));
+                component_errors.push_back({{"part",compiled.ids[k==0?compiled.a_index:1-compiled.a_index]},
+                    {"position",length(fine.center_of_mass_world_m-rough.center_of_mass_world_m)/length_scale},
+                    {"linear_velocity",length(fine.linear_velocity_m_s-rough.linear_velocity_m_s)/std::max({1.0,length(fine.linear_velocity_m_s),length(rough.linear_velocity_m_s)})},
+                    {"angular_velocity",length(fine.angular_velocity_rad_s-rough.angular_velocity_rad_s)/std::max({1.0,length(fine.angular_velocity_rad_s),length(rough.angular_velocity_rad_s)})},
+                    {"orientation",2*std::sqrt(std::min(minus,plus))}});
+                fine_motion.push_back(state(fine));coarse_motion.push_back(state(rough));
             }
             const double failure=cohesiveSeparationOpening(compiled.law);
             for(std::size_t k=0;k<sites.size();++k){difference=std::max(difference,std::abs(sites[k].history.opening_m-coarse_sites[k].history.opening_m)/failure);difference=std::max(difference,std::abs(sites[k].history.maximum_opening_m-coarse_sites[k].history.maximum_opening_m)/failure);}
@@ -528,7 +545,7 @@ std::string testRuntimeAssembly(const CompiledAssembly &compiled,std::string_vie
         });
         if(accepted)return;
         restore(saved);++rejected_intervals;
-        if(depth>=20||h/4<minimum_step)throw std::runtime_error("adaptive runtime refinement floor reached: "+Json{{"time_s",elapsed},{"step_s",h},{"state_error",candidate_difference},{"work_error_j",candidate_error},{"allowed_work_j",local_allowance}}.dump());
+        if(depth>=20||h/4<minimum_step)throw std::runtime_error("adaptive runtime refinement floor reached: "+Json{{"time_s",elapsed},{"step_s",h},{"state_error",candidate_difference},{"work_error_j",candidate_error},{"allowed_work_j",local_allowance},{"contact_numerics",{{"body_pair_contact_cache",body_pair_cache},{"velocity_iterations",velocity_iterations},{"position_iterations",position_iterations}}},{"component_errors",component_errors},{"coarse_motion",coarse_motion},{"fine_motion",fine_motion}}.dump());
         integrate(h/2,depth+1);integrate(h/2,depth+1);
     };
     for(std::uint64_t tick=0;tick<steps;++tick){if(adaptive)integrate(dt,0);else advance_step(dt);}
@@ -540,7 +557,7 @@ std::string testRuntimeAssembly(const CompiledAssembly &compiled,std::string_vie
     const auto [stored,damage]=energies();const double fraction=separated/compiled.law.area_m2;
     return Json{{"test_version",2},{"fixture","jolt-tensile-patch-separation-v1"},{"declaration",compiled.declaration},{"specification",spec},
         {"physics_signature",Json::parse(CreatorWorld::physicsSignatureJson())},{"status",fraction>=minimum&&max_error<=budget?"passed":"failed"},
-        {"predicates",{{"separated_area",fraction>=minimum},{"integration_energy",max_error<=budget}}},{"actual_duration_s",elapsed},{"integration",{{"mode",adaptive?"adaptive-step-doubling":"fixed"},{"evaluations",evaluations},{"accepted_steps",accepted_steps},{"rejected_intervals",rejected_intervals},{"accumulated_absolute_error_j",absolute_error}}},
+        {"predicates",{{"separated_area",fraction>=minimum},{"integration_energy",max_error<=budget}}},{"actual_duration_s",elapsed},{"integration",{{"mode",adaptive?"adaptive-step-doubling":"fixed"},{"body_pair_contact_cache",body_pair_cache},{"velocity_iterations",velocity_iterations},{"position_iterations",position_iterations},{"evaluations",evaluations},{"accepted_steps",accepted_steps},{"rejected_intervals",rejected_intervals},{"accumulated_absolute_error_j",absolute_error}}},
         {"initial_kinetic_energy_j",initial.kinetic_energy_j},{"initial_rotational_kinetic_energy_j",initial_spin_energy},{"final_kinetic_energy_j",totals().kinetic_energy_j},{"stored_energy_j",stored},{"damage_work_j",damage},
         {"separated_area_fraction",fraction},{"energy_residual_j",totals().kinetic_energy_j+stored+damage-initial.kinetic_energy_j},{"maximum_integration_energy_error_j",max_error},{"jolt_stage_energy_change_j",jolt_change},{"signed_transfer_roundoff_j",transfer_error},
         {"cohesive_opening_work_j",opening_work},{"impulse_work_j",kick_work},{"largest_error_steps",worst_steps},{"maximum_momentum_change_kg_m_s",max_momentum},{"maximum_angular_momentum_change_kg_m2_s",max_angular},{"contact_events",contacts},{"sites",histories},{"bodies",bodies},
