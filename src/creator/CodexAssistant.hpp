@@ -21,7 +21,7 @@ public:
     void cancel() noexcept;
     [[nodiscard]] static std::string responseSchema();
     [[nodiscard]] static std::string requestDocument(const CreatorWorld &world,std::string_view request_id,
-        std::string_view prompt,const ObjectRecipe &draft,std::string_view previous_explanation={});
+        std::string_view prompt,const ObjectRecipe &draft,std::string_view previous_explanation={},std::optional<RevisionTarget> editing={});
     [[nodiscard]] static AssistantReply parseReply(std::string_view document,std::string_view expected_id);
 private:
     ChildProcess process_;

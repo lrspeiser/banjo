@@ -24,6 +24,15 @@ Color color(MaterialPreset m) {
     switch(m) {case MaterialPreset::Glass:return {121,205,216,255};case MaterialPreset::Oak:return {193,144,90,255};case MaterialPreset::Iron:return {148,159,175,255};default:return {180,185,190,255};}
 }
 std::string name(MaterialPreset m) {auto text=std::string(materialPresetName(m));if (!text.empty())text[0]=static_cast<char>(std::toupper(static_cast<unsigned char>(text[0])));return text;}
+std::string allocationLabel(const CreatorWorld &world,const std::vector<MaterialAllocation> &allocations) {
+    std::string label;
+    for(auto material:kMaterialPresets) {
+        double mass=0;
+        for(const auto &part:allocations)for(const auto &lot:world.lots())if(part.lot_id==lot.id&&lot.material==material)mass+=part.mass_kg;
+        if(mass>0) {if(!label.empty())label+=", ";label+=fixed(mass)+" kg "+name(material);}
+    }
+    return label.empty()?"0 kg":label;
+}
 bool button(Rectangle r,std::string_view label,bool enabled=true,bool strong=false) {
     const bool hover=enabled&&CheckCollisionPointRec(GetMousePosition(),r);
     DrawRectangleRounded(r,.16F,5,enabled?(strong?accent:(hover?Color{65,80,85,255}:Color{43,55,62,255})):Color{37,44,49,255});
@@ -70,12 +79,12 @@ void drawObject(const ObjectRecipe &recipe,Vec3 position,Quat q,Color tint,bool 
 int main(int argc,char **argv) {
     try {
         std::filesystem::path workspace=std::filesystem::absolute(argv[0]).parent_path()/"workshop-data",capture;unsigned frames=180;
-        std::filesystem::path assistant_exe=ChildProcess::findExecutable("codex");bool manual_assistant=false,shape_capture=false;
+        std::filesystem::path assistant_exe=ChildProcess::findExecutable("codex");bool manual_assistant=false,shape_capture=false,revision_capture=false;
         for(int i=1;i<argc;++i) {
             const std::string option=argv[i];if(++i>=argc)throw std::invalid_argument("missing workshop option value");
             if(option=="--workspace")workspace=argv[i];else if(option=="--capture")capture=argv[i];
             else if(option=="--assistant-exe")assistant_exe=std::filesystem::absolute(argv[i]);
-            else if(option=="--capture-layout") {const std::string layout=argv[i];if(layout!="materials"&&layout!="shapes")throw std::invalid_argument("capture layout must be materials or shapes");shape_capture=layout=="shapes";}
+            else if(option=="--capture-layout") {const std::string layout=argv[i];if(layout!="materials"&&layout!="shapes"&&layout!="revisions")throw std::invalid_argument("capture layout must be materials, shapes or revisions");shape_capture=layout=="shapes";revision_capture=layout=="revisions";}
             else if(option=="--assistant") {const std::string mode=argv[i];if(mode!="auto"&&mode!="manual")throw std::invalid_argument("assistant must be auto or manual");manual_assistant=mode=="manual";}
             else if(option=="--frames")frames=static_cast<unsigned>(std::stoul(argv[i]));else throw std::invalid_argument("unknown workshop option");
         }
@@ -86,16 +95,34 @@ int main(int argc,char **argv) {
         const bool automatic_assistant=!manual_assistant&&assistant.available();
         ObjectRecipe draft;std::string prompt="Use some of my wood to make a ball that rolls down this ramp.";
         std::string status="Collect a material, then design an object.",request_id,pending_id,proposal_message;
+        std::optional<RevisionTarget> editing;
+        MatterBodyId selected_id=world.objects().empty()?0:world.objects().back().id,built_id=0;
         bool paused=capture.empty(),typing=false,built=false,follow=false;double accumulator=0,poll_at=0;unsigned rendered=0,serial=0;
         unsigned dimension_axis=0,orientation_preset=0;
         const auto session=std::to_string(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
         const auto new_id=[&]{return "workshop-"+session+"-"+std::to_string(++serial);};request_id=new_id();
         const auto save=[&]{if(capture.empty())world.save(workspace/"world.json");};
+        const auto find_object=[&](MatterBodyId id)->const CreatedObject* {
+            const auto found=std::find_if(world.objects().begin(),world.objects().end(),[&](const auto &o){return o.id==id;});
+            return found==world.objects().end()?nullptr:&*found;
+        };
+        const auto invalidate_design=[&] {
+            assistant.cancel();pending_id.clear();request_id=new_id();built=false;built_id=0;proposal_message.clear();
+            status="Design updated. Review the material cost before building.";
+        };
+        const auto select_edit=[&](MatterBodyId id) {
+            const auto *object=find_object(id);if(!object)return;
+            draft=object->recipe;editing=RevisionTarget{id,object->revision};selected_id=id;
+            invalidate_design();paused=true;accumulator=0;typing=false;
+            status="Editing object #"+std::to_string(id)+". Rebuild reuses its intact material and resets its motion to the design.";
+        };
+        const auto preview_recipe=[&](const ObjectRecipe &recipe) {return editing?world.previewRebuild(*editing,recipe).creation:world.preview(recipe);};
         if(!capture.empty()) {
             for(auto m:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
                 world.collect(std::string(materialPresetName(m))+"-pile");auto r=draft;r.material=m;
                 r.bitangent_m=.45*(static_cast<double>(world.objects().size())-(shape_capture?2.5:1));
                 if(shape_capture)r.radius_m=.04;
+                if(revision_capture)r.radius_m=std::cbrt(9.9/(makeReferenceMaterial(m).density_kg_m3*(4.0/3)*std::numbers::pi));
                 (void)world.create(std::string(materialPresetName(m))+"-capture",r);
                 if(shape_capture) {
                     const double volume=r.geometry().volume();r.shape="box";r.schema_version=2;r.name=name(m)+" box";
@@ -104,7 +131,19 @@ int main(int argc,char **argv) {
                 }
             }
             draft=world.objects().back().recipe;request_id=world.objects().back().request_id;
+            selected_id=built_id=world.objects().back().id;
             built=true;status=shape_capture?"Equal-volume sphere/box pairs in glass, oak and iron. Same ramp, zero initial motion.":"Three materials, one creation path. Motion comes from contact and gravity.";
+            if(revision_capture) {
+                world.step(120);
+                for(MatterBodyId id:{MatterBodyId{1},MatterBodyId{2}}) {
+                    auto r=find_object(id)->recipe;r.schema_version=2;r.shape="box";r.name=name(r.material)+" rebuilt block";
+                    r.dimensions_m={.08,.06,.1};r.orientation_world=tilt(-world.settings().slope_degrees);
+                    (void)world.rebuild("capture-rebuild-"+std::to_string(id),{id,1},r);
+                }
+                select_edit(3);draft.schema_version=2;draft.shape="box";draft.name="Iron replacement";draft.dimensions_m={.08,.06,.1};draft.orientation_world=tilt(-world.settings().slope_degrees);
+                prompt="Rebuild this iron ball as an 8 x 6 x 10 cm block using its recovered material.";
+                status="Glass and oak were rebuilt from 9.9 kg spheres. Previewing an iron rebuild with 0.1 kg free stock.";
+            }
         }
         SetConfigFlags(FLAG_MSAA_4X_HINT);InitWindow(1440,900,"Banjo - Material Workshop");SetTargetFPS(60);
         SetExitKey(KEY_NULL);
@@ -141,14 +180,14 @@ int main(int argc,char **argv) {
                 accumulator+=capture.empty()?std::min(static_cast<double>(GetFrameTime()),.1):1.0/60;
                 while(accumulator>=1.0/240){world.step();accumulator-=1.0/240;}
             }
-            if(follow&&!world.objects().empty())camera.target=v(world.objects().back().state.center_of_mass_world_m);
+            if(follow)if(const auto *object=find_object(selected_id))camera.target=v(object->state.center_of_mass_world_m);
             camera.position={camera.target.x+static_cast<float>(distance*std::cos(pitch)*std::sin(yaw)),camera.target.y+static_cast<float>(distance*std::sin(pitch)),camera.target.z+static_cast<float>(distance*std::cos(pitch)*std::cos(yaw))};
             if(!pending_id.empty()&&GetTime()>poll_at) {
                 poll_at=GetTime()+.5;const auto path=workspace/("proposal-"+pending_id+".json");
                 if(automatic_assistant)try {
                     if(auto reply=assistant.poll()) {
                         if(reply->recipe) {
-                            (void)world.preview(*reply->recipe);draft=*reply->recipe;request_id=pending_id;built=false;
+                            (void)preview_recipe(*reply->recipe);draft=*reply->recipe;request_id=pending_id;built=false;built_id=0;
                             status="Assistant proposal ready. Review the cost, then build.";
                         }else status="The assistant needs a different choice. Update your request below.";
                         proposal_message=reply->explanation;pending_id.clear();paused=true;
@@ -156,12 +195,12 @@ int main(int argc,char **argv) {
                 }catch(const std::exception &e){status=e.what();pending_id.clear();assistant.cancel();paused=true;}
                 else if(std::filesystem::exists(path))try {
                     auto proposal=CreatorWorld::parseProposal(read(path));if(proposal.request_id!=pending_id)throw std::invalid_argument("AI response belongs to another request");
-                    (void)world.preview(proposal.recipe);draft=proposal.recipe;request_id=pending_id;pending_id.clear();built=false;
+                    (void)preview_recipe(proposal.recipe);draft=proposal.recipe;request_id=pending_id;pending_id.clear();built=false;built_id=0;
                     proposal_message=proposal.explanation;status="AI proposal ready. Review its material cost, then build.";paused=true;
                 }catch(const std::exception &e){status=std::string("Proposal needs revision: ")+e.what();}
             }
-            std::optional<CreationPreview> preview;std::string problem;
-            try {preview=world.preview(draft);}catch(const std::exception &e){problem=e.what();}
+            std::optional<CreationPreview> preview;std::optional<RebuildPreview> rebuild_preview;std::string problem;
+            try {if(editing){rebuild_preview=world.previewRebuild(*editing,draft);preview=rebuild_preview->creation;}else preview=world.preview(draft);}catch(const std::exception &e){problem=e.what();}
             BeginDrawing();ClearBackground(background);BeginMode3D(camera);
             rlPushMatrix();rlRotatef(static_cast<float>(-world.settings().slope_degrees),0,0,1);rlTranslatef(0,-.1F,0);
             DrawCube({0,0,0},16,.2F,6,{69,83,88,255});DrawCubeWires({0,0,0},16,.2F,6,{103,119,124,255});rlPopMatrix();
@@ -184,11 +223,12 @@ int main(int argc,char **argv) {
                 DrawText((fixed(lot.remaining_mass_kg)+" kg "+(lot.collected?"available":"in the world")).c_str(),38,y+32,17,muted);
                 if(button({36,static_cast<float>(y+65),248,40},lot.collected?"Collected":"Collect material",!lot.collected))try {world.collect(lot.id);save();status="Material collected. Your inventory is ready.";}catch(const std::exception &e){status=e.what();}
             }
-            wrap("Material keeps its identity. The object compiler calculates how much your design needs.",36,635,245);
+            wrap("Geometry and density determine the material cost. Lots keep their identity.",36,635,245);
+            DrawText("Energy: not modeled yet",36,723,16,muted);
             DrawText("SUPPORTED NOW",36,751,17,accent);wrap("Rigid spheres and boxes. No deformation or fracture.",36,780,242,17);
-            DrawRectangleRounded({1092,114,330,748},.035F,8,panel);DrawText("OBJECT PREVIEW",1110,135,20,accent);
+            DrawRectangleRounded({1092,114,330,748},.035F,8,panel);DrawText(editing?"REBUILD PREVIEW":"OBJECT PREVIEW",1110,135,20,accent);
             DrawText(draft.name.substr(0,24).c_str(),1110,173,22,ink);
-            const auto edit=[&]{assistant.cancel();pending_id.clear();request_id=new_id();built=false;proposal_message.clear();status="Design updated. Review the material cost before building.";};
+            const auto &edit=invalidate_design;
             if(button({1110,202,292,30},draft.shape=="sphere"?"Shape: sphere":"Shape: box")) {
                 draft.shape=draft.shape=="sphere"?"box":"sphere";draft.schema_version=2;draft.name=name(draft.material)+(draft.shape=="sphere"?" ball":" box");
                 draft.orientation_world=draft.shape=="box"?tilt(-world.settings().slope_degrees):Quat{};edit();
@@ -207,22 +247,29 @@ int main(int argc,char **argv) {
                 draft.orientation_world=orientation_preset==0?Quat{}:tilt(orientation_preset==1?-world.settings().slope_degrees:45-world.settings().slope_degrees);edit();
             }
             if(built) {
-                const auto found=std::find_if(world.objects().begin(),world.objects().end(),[&](const auto &o){return o.request_id==request_id;});
-                if(found!=world.objects().end())DrawText(("Built with "+fixed(found->mass_kg)+" kg").c_str(),1110,468,22,ink);
+                if(const auto *object=find_object(built_id))DrawText(("Built with "+fixed(object->mass_kg)+" kg").c_str(),1110,468,22,ink);
                 DrawText(("Available "+fixed(world.inventoryMass(draft.material))+" kg").c_str(),1110,500,18,muted);
+            } else if(rebuild_preview) {
+                DrawText(("New mass: "+fixed(rebuild_preview->creation.mass_kg)+" kg").c_str(),1110,466,17,ink);
+                DrawText(("Reuse: "+allocationLabel(world,rebuild_preview->reused)).c_str(),1110,488,15,muted);
+                DrawText(("From stock: "+allocationLabel(world,rebuild_preview->withdrawn)).c_str(),1110,508,15,muted);
+                DrawText(("Return: "+allocationLabel(world,rebuild_preview->returned)).c_str(),1110,528,15,muted);
             } else if(preview) {
                 DrawText(("Uses "+fixed(preview->mass_kg)+" kg").c_str(),1110,468,22,ink);
                 DrawText(("Leaves "+fixed(world.inventoryMass(draft.material)-preview->mass_kg)+" kg").c_str(),1110,500,18,muted);
             } else if(!built)wrap(problem,1110,464,288,17,{237,189,137,255});
-            if(button({1110,548,292,48},built?"Object created":"Build this object",preview.has_value()&&!built&&pending_id.empty(),true))try {
-                (void)world.create(request_id,draft);built=true;paused=true;save();status="Created from your inventory. Press Run to test it.";
+            if(button({1110,548,292,48},built?"Object ready":editing?"Rebuild from materials":"Build this object",preview.has_value()&&!built&&pending_id.empty(),true))try {
+                const bool rebuilding=editing.has_value();
+                built_id=rebuilding?world.rebuild(request_id,*editing,draft):world.create(request_id,draft);
+                selected_id=built_id;editing=RevisionTarget{built_id,find_object(built_id)->revision};built=true;paused=true;accumulator=0;save();
+                status=rebuilding?"Object rebuilt. Unused material returned; motion reset to the design. Press Run to test it.":"Created from your inventory. Press Run to test it, or revise this object.";
             }catch(const std::exception &e){status=e.what();}
             if(button({1110,614,140,40},paused?"Run":"Pause"))paused=!paused;
             if(button({1262,614,140,40},"Step")){paused=true;world.step();}
             if(button({1110,669,292,38},"Save world"))try{save();status="Inventory, object recipes and motion saved.";}catch(const std::exception &e){status=e.what();}
-            if(!world.objects().empty()) {
-                const auto motion=measureCreatorMotion(world.objects().back(),plane);
-                DrawText(("Last object: "+(motion.state=="no top-support sample"?std::string("contact not measured"):motion.state)).c_str(),1110,739,16,ink);
+            if(const auto *object=find_object(selected_id)) {
+                const auto motion=measureCreatorMotion(*object,plane);
+                DrawText(("Selected: "+(motion.state=="no top-support sample"?std::string("contact not measured"):motion.state)).c_str(),1110,739,16,ink);
                 DrawText((motion.near_support_points?"Slip "+fixed(motion.slip_m_s)+" m/s":"Slip: no top-support sample").c_str(),1110,769,17,muted);
                 DrawText(("Speed "+fixed(motion.speed_m_s)+" m/s").c_str(),1110,797,17,muted);
             }
@@ -231,13 +278,12 @@ int main(int argc,char **argv) {
             if(button({340,795,190,42},"Ask assistant",!prompt.empty()&&pending_id.empty(),true))try {
                 pending_id=new_id();typing=false;
                 if(automatic_assistant) {
-                    assistant.start(workspace,pending_id,CodexAssistant::requestDocument(world,pending_id,prompt,draft,proposal_message));
+                    assistant.start(workspace,pending_id,CodexAssistant::requestDocument(world,pending_id,prompt,draft,proposal_message,editing));
                     status="The assistant is designing from your collected materials...";proposal_message.clear();
                 }else {
-                const auto request=Json{{"request_id",pending_id},{"prompt",prompt},{"world",Json::parse(world.inspectJson())},
-                    {"example_recipe",Json::parse(CreatorWorld::recipeJson(draft))},
-                    {"response_file",("proposal-"+pending_id+".json")},
-                    {"instruction","Return request_id, explanation and a supported recipe. Use only collected materials. Do not invent capabilities or quantities. The application will validate and preview before creation."}};
+                auto request=Json::parse(CodexAssistant::requestDocument(world,pending_id,prompt,draft,proposal_message,editing));
+                request["response_file"]="proposal-"+pending_id+".json";
+                request["instruction"]="Return request_id, explanation and a supported recipe. Editing, when present, identifies the only replacement target; available_after_recovery includes its intact matter once. Use only collected materials. Rebuild resets placement/motion as an authoring operation, not simulated manufacturing. The application validates the proposal before acceptance.";
                 write(workspace/("request-"+pending_id+".json"),request);status="AI request saved in the workshop folder. Awaiting an assistant proposal.";
                 proposal_message="Manual bridge: an assistant reads the request file and returns a proposal. For automatic replies, install/sign in to the Codex CLI and reopen the workshop.";
                 }
@@ -247,7 +293,20 @@ int main(int argc,char **argv) {
             wrap(status,330,122,735,19,ink);
             DrawText(automatic_assistant?"Assistant: Codex (automatic)":"Assistant: manual file bridge",330,179,17,accent);
             if(!proposal_message.empty())wrap(proposal_message,330,212,730,17,muted);
+            if(editing)wrap("Rebuild returns or reuses intact material and places this object at the design's start position and motion. No manufacturing or damage repair is simulated.",330,493,725,15,muted);
+            if(button({330,550,150,34},"New design")) {editing.reset();draft=ObjectRecipe{};invalidate_design();paused=true;accumulator=0;}
+            if(button({490,550,170,34},"Edit selected",find_object(selected_id)!=nullptr))select_edit(selected_id);
+            if(button({670,550,140,34},"Next object",!world.objects().empty())) {
+                auto index=std::find_if(world.objects().begin(),world.objects().end(),[&](const auto &o){return o.id==selected_id;});
+                if(index==world.objects().end()||++index==world.objects().end())index=world.objects().begin();
+                select_edit(index->id);
+            }
+            if(button({820,550,230,34},"Reclaim selected",editing.has_value()&&pending_id.empty()))try {
+                const auto target=*editing;world.reclaim(new_id(),target);editing.reset();invalidate_design();paused=true;accumulator=0;
+                selected_id=world.objects().empty()?0:world.objects().back().id;save();status="Object #"+std::to_string(target.object_id)+" reclaimed. Its intact material is back in the original lots.";
+            }catch(const std::exception &e){status=e.what();}
             if(button({330,590,180,34},follow?"Following object":"Follow object",!world.objects().empty()))follow=!follow;
+            if(const auto *object=find_object(selected_id))DrawText(("Selected #"+std::to_string(object->id)+" / revision "+std::to_string(object->revision)+" / "+object->recipe.name.substr(0,22)).c_str(),530,599,17,ink);
             DrawText("Orbit: right-drag / Space: pause / F: follow / F12: image",330,644,16,muted);
             DrawText(automatic_assistant?"Ask assistant sends the prompt and virtual-world context to Codex. Build always requires your review.":"Inventory and recipes stay local. Material behavior is a declared approximation.",24,875,16,muted);
             EndDrawing();++rendered;

@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <string>
 #include <string_view>
+#include <optional>
 
 namespace banjo {
 // The versioned recipe is shared by a human editor and an LLM proposal.
@@ -37,6 +38,7 @@ struct CreatedObject {
     Mat3 inertia_local_kg_m2{};
     std::vector<MaterialAllocation> allocations;
     RigidSnapshot state;
+    std::uint64_t revision{1};
 };
 struct CreatorSettings {
     double slope_degrees{10};
@@ -51,6 +53,22 @@ struct CreationPreview {
     std::vector<MaterialAllocation> allocations;
 };
 struct CreatorProposal { std::string request_id,explanation;ObjectRecipe recipe; };
+struct RebuildPreview {
+    CreationPreview creation;
+    MatterBodyId object_id{};
+    std::uint64_t expected_revision{};
+    std::vector<MaterialAllocation> reused,withdrawn,returned;
+};
+struct RevisionTarget { MatterBodyId object_id{};std::uint64_t expected_revision{}; };
+// Authoring history is distinct from physical evolution. The intact-material
+// policy returns all allocated matter; it does not simulate manufacturing.
+struct AuthoringChange {
+    std::string request_id,operation;
+    MatterBodyId object_id{};
+    std::uint64_t expected_revision{},tick{};
+    std::optional<CreatedObject> before,after;
+    MechanicalTotals before_mechanics{},after_mechanics{};
+};
 struct CreatorMotion {
     std::string state;
     double speed_m_s{},slip_m_s{},support_gap_m{};
@@ -72,6 +90,7 @@ public:
 
     [[nodiscard]] const std::vector<ResourceLot> &lots() const { return lots_; }
     [[nodiscard]] const std::vector<CreatedObject> &objects() const { return objects_; }
+    [[nodiscard]] const std::vector<AuthoringChange> &history() const { return history_; }
     [[nodiscard]] const CreatorSettings &settings() const { return settings_; }
     [[nodiscard]] SupportPlaneFrame support() const;
     [[nodiscard]] double timeSeconds() const { return static_cast<double>(ticks_)/240; }
@@ -80,6 +99,9 @@ public:
     bool collect(std::string_view lot_id);
     [[nodiscard]] CreationPreview preview(const ObjectRecipe &recipe) const;
     [[nodiscard]] MatterBodyId create(std::string request_id,const ObjectRecipe &recipe);
+    [[nodiscard]] RebuildPreview previewRebuild(RevisionTarget target,const ObjectRecipe &recipe) const;
+    [[nodiscard]] MatterBodyId rebuild(std::string request_id,RevisionTarget target,const ObjectRecipe &recipe);
+    void reclaim(std::string request_id,RevisionTarget target);
     void step(unsigned ticks=1);
 
     [[nodiscard]] std::string inspectJson() const;
@@ -97,7 +119,12 @@ private:
     CreatorSettings settings_;
     std::vector<ResourceLot> lots_;
     std::vector<CreatedObject> objects_;
+    std::vector<AuthoringChange> history_;
     std::unique_ptr<JoltWorld> world_;
     std::uint64_t ticks_{};
+    MatterBodyId next_object_id_{1};
+    [[nodiscard]] const CreatedObject &targetObject(RevisionTarget target) const;
+    [[nodiscard]] const AuthoringChange *receipt(std::string_view request_id) const;
+    void publish(std::vector<ResourceLot> lots,std::vector<CreatedObject> objects,AuthoringChange change,MatterBodyId next_id);
 };
 }

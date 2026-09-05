@@ -6,6 +6,7 @@
 #include <iostream>
 #include <numbers>
 #include <stdexcept>
+#include <chrono>
 
 namespace {
 using namespace banjo;
@@ -174,9 +175,94 @@ void legacyWorldMigration() {
     CreatorWorld world;world.collect("oak-pile");(void)world.create("old",{});world.step(10);
     auto old=Json::parse(world.serialize());old["world_version"]=1;old["physics_signature"]["object_compiler"]=1;
     old["physics_signature"]["runtime"]="jolt-5.6/banjo-rigid-v1";
-    auto loaded=CreatorWorld::deserialize(old.dump());require(loaded.serialize()==world.serialize(),"known v1 sphere worlds migrate without changing matter/state");
+    old.erase("history");old.erase("next_object_id");old.erase("authoring_policy");for(auto &o:old["objects"])o.erase("revision");
+    auto loaded=CreatorWorld::deserialize(old.dump());const auto migrated=Json::parse(loaded.serialize());
+    require(migrated["lots"]==old["lots"]&&migrated["ticks"]==old["ticks"]&&migrated["objects"][0]["state"]==old["objects"][0]["state"],"known v1 migration retains quantities, time and motion");
+    require(loaded.history().size()==1&&loaded.history()[0].operation=="import"&&loaded.create("old",{})==1,"migration marks imported history and preserves request replay");
+    require(CreatorWorld::deserialize(loaded.serialize()).serialize()==loaded.serialize(),"migrated history persists");
     old["objects"][0]["recipe"]=Json::parse(CreatorWorld::recipeJson(boxRecipe()));
     rejects([&]{(void)CreatorWorld::deserialize(old.dump());});
+}
+double allocationMass(const std::vector<MaterialAllocation> &parts) {double mass=0;for(const auto &a:parts)mass+=a.mass_kg;return mass;}
+void threeMaterialRebuildAndReclaim() {
+    for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        CreatorWorld world;world.collect(std::string(materialPresetName(material))+"-pile");
+        ObjectRecipe original;original.material=material;original.radius_m=std::cbrt(9.9/(makeReferenceMaterial(material).density_kg_m3*4*std::numbers::pi/3));
+        const auto id=world.create("original",original);world.step(120);
+        const auto moving=measureRigidMechanics(world.mechanicalState(id));require(moving.kinetic_energy_j>.01,"rebuild starts from measured moving matter");
+        const auto box=boxRecipe(material);const auto untouched=world.serialize();const auto plan=world.previewRebuild({id,1},box);
+        require(world.serialize()==untouched,"rebuild preview neither releases old matter nor changes physical state");
+        require(plan.creation.mass_kg>world.inventoryMass(material),"rebuild needs selected object matter beyond free inventory");
+        near(allocationMass(plan.reused),plan.creation.mass_kg,1e-12,"selected matter is reused first");
+        near(allocationMass(plan.withdrawn),0,0,"shrinking into the block needs no extra stock");
+        near(allocationMass(plan.returned),9.9-plan.creation.mass_kg,1e-12,"unused original matter is returned to its lot");
+        rejects([&]{(void)world.rebuild("stale",{id,0},box);});
+        auto huge=box;huge.dimensions_m={1,1,1};rejects([&]{(void)world.rebuild("unaffordable",{id,1},huge);});
+        require(world.serialize()==untouched,"failed rebuild preserves the old body, stock, clock and history");
+        const double time=world.timeSeconds();require(world.rebuild("reshape",{id,1},box)==id,"replacement keeps object identity");
+        require(world.objects().size()==1&&world.objects()[0].revision==2&&world.history().size()==2,"rebuild increments object revision and retains history");
+        near(world.timeSeconds(),time,0,"authoring does not advance the physical clock");
+        near(world.inventoryMass(material)+world.objects()[0].mass_kg,10,1e-12,"rebuild closes the material ledger");
+        const auto &change=world.history().back();
+        near(change.before_mechanics.kinetic_energy_j,moving.kinetic_energy_j,1e-12,"removed kinetic energy is recorded at the authoring boundary");
+        near(change.after_mechanics.kinetic_energy_j,0,0,"accepted at-rest replacement has zero kinetic energy");
+        require(length(change.before_mechanics.linear_momentum_kg_m_s)>.01&&length(change.after_mechanics.linear_momentum_kg_m_s)==0,"momentum discontinuity is explicit, not called conserved simulation");
+        world.step(10);const auto rebuilt=world.serialize();
+        require(world.create("original",original)==id&&world.rebuild("reshape",{id,1},box)==id&&world.serialize()==rebuilt,"past operation replays do not overwrite later state");
+        rejects([&]{world.reclaim("bad-revision",{id,1});});require(world.serialize()==rebuilt,"stale reclamation does not release material");
+        world.reclaim("return",{id,2});near(world.inventoryMass(material),10,1e-12,"full intact recovery restores the original lot quantity");
+        require(world.objects().empty()&&world.history().size()==3,"reclaimed object is archived, not active");
+        const auto reclaimed=world.serialize();world.reclaim("return",{id,2});(void)world.create("original",original);(void)world.rebuild("reshape",{id,1},box);
+        require(world.serialize()==reclaimed,"old receipts cannot resurrect a reclaimed object or debit/refund twice");
+        const auto fresh=world.create("fresh",box);require(fresh>id&&world.objects()[0].id==fresh,"new objects do not reuse reclaimed IDs");
+        auto loaded=CreatorWorld::deserialize(world.serialize());require(loaded.serialize()==world.serialize(),"complete rebuild/reclaim history round trips");
+        const auto loaded_before=loaded.serialize();loaded.reclaim("return",{id,2});require(loaded.serialize()==loaded_before,"saved tombstone receipts remain idempotent");
+        std::cout<<materialPresetName(material)<<" recovered-block-mass="<<plan.creation.mass_kg<<" reused="<<allocationMass(plan.reused)<<" returned="<<allocationMass(plan.returned)<<" authoring-K-before="<<moving.kinetic_energy_j<<'\n';
+    }
+}
+void materialSwapAndHistoryValidation() {
+    CreatorWorld world;world.collect("glass-pile");world.collect("oak-pile");
+    ObjectRecipe a;a.material=MaterialPreset::Glass;a.radius_m=.04;const auto id=world.create("glass-source",a);
+    ObjectRecipe peer;peer.radius_m=.04;peer.tangent_m=2;(void)world.create("peer",peer);world.step(30);
+    const auto before=world.serialize();const auto peer_before=Json::parse(before)["objects"][1];
+    const auto iron=boxRecipe(MaterialPreset::Iron);rejects([&]{(void)world.rebuild("uncollected-metal",{id,1},iron);});
+    require(world.serialize()==before,"material swap cannot spend an uncollected lot or prematurely return the source");
+    const auto oak=boxRecipe();const auto plan=world.previewRebuild({id,1},oak);
+    near(allocationMass(plan.reused),0,0,"different substances are not transmuted into each other");
+    near(allocationMass(plan.returned),world.objects()[0].mass_kg,1e-12,"old substance is returned with its lot provenance");
+    near(allocationMass(plan.withdrawn),plan.creation.mass_kg,1e-12,"new substance comes from its own collected stock");
+    (void)world.rebuild("swap",{id,1},oak);const auto saved=world.serialize();const auto current=Json::parse(saved);
+    require(current["objects"][1]==peer_before,"unrelated object identity, definition and physical state remain unchanged");
+    near(world.inventoryMass(MaterialPreset::Glass),10,1e-12,"all glass returns to glass stock");
+    near(world.inventoryMass(MaterialPreset::Oak)+world.objects()[0].mass_kg+world.objects()[1].mass_kg,10,1e-12,"oak ledger includes both active objects");
+    for(unsigned mode=0;mode<7;++mode) {
+        auto bad=current;
+        if(mode==0)bad["history"][2]["expected_revision"]=9;
+        if(mode==1)bad["history"][2]["request_id"]="peer";
+        if(mode==2)bad["history"][2]["mechanics_before"]["kinetic_energy_j"]=100;
+        if(mode==3)bad["history"].erase(bad["history"].begin());
+        if(mode==4)bad["next_object_id"]=1;
+        if(mode==5)bad["authoring_policy"]="mint-extra-material";
+        if(mode==6)bad["objects"][0]["revision"]=1;
+        rejects([&]{(void)CreatorWorld::deserialize(bad.dump());});
+    }
+    rejects([&]{world.reclaim("peer",{id,2});});require(world.serialize()==saved,"cross-operation request collisions preserve state");
+    auto legacy=current;legacy["world_version"]=2;legacy.erase("history");legacy.erase("next_object_id");legacy.erase("authoring_policy");
+    for(auto &o:legacy["objects"])o.erase("revision");
+    auto imported=CreatorWorld::deserialize(legacy.dump());require(imported.history().size()==2&&imported.history()[1].operation=="import","known box worlds migrate as explicit baseline imports");
+    require(imported.objects()[0].recipe.shape=="box"&&Json::parse(imported.serialize())["lots"]==legacy["lots"],"box migration preserves allocated matter and geometry");
+}
+void boundedAuthoringHistory() {
+    CreatorWorld world;world.collect("oak-pile");ObjectRecipe r;r.radius_m=.025;
+    const auto start=std::chrono::steady_clock::now();
+    for(unsigned i=0;i<128;++i) {
+        const auto id=world.create("create-"+std::to_string(i),r);world.reclaim("reclaim-"+std::to_string(i),{id,1});
+    }
+    require(world.history().size()==256&&world.objects().empty(),"bounded history retains all accepted operations");
+    const auto before=world.serialize();rejects([&]{(void)world.create("overflow",r);});
+    require(world.serialize()==before&&world.create("create-0",r)==1,"budget rejection and old receipt replay preserve the world");
+    auto loaded=CreatorWorld::deserialize(before);require(loaded.serialize()==before,"full history budget remains loadable");
+    std::cout<<"256 authoring operations seconds="<<std::chrono::duration<double>(std::chrono::steady_clock::now()-start).count()<<" saved-bytes="<<before.size()<<'\n';
 }
 void persistenceAndInputBoundary() {
     CreatorWorld world;world.collect("oak-pile");ObjectRecipe r;r.name="Collected oak ball";(void)world.create("persist",r);world.step(100);
@@ -206,6 +292,8 @@ int main() {
         {"primitive geometry and oriented placement",primitiveGeometryAndPlacement},{"three-material box mass/tensor/free fall",threeMaterialBoxMassInertiaAndFall},
         {"matched-volume shape ramp and persistence",matchedShapeRampAndPersistence},{"asymmetric spin and mixed shape collisions",spinningBoxesAndMixedCollisions},
         {"known sphere world migration",legacyWorldMigration},
+        {"three-material rebuild/reclaim lifecycle",threeMaterialRebuildAndReclaim},{"material swap, unrelated state and history validation",materialSwapAndHistoryValidation},
+        {"bounded authoring history",boundedAuthoringHistory},
         {"persistence, multi-world lifetime and input boundary",persistenceAndInputBoundary}}) {
         try {action();std::cout<<"[PASS] "<<name<<'\n';}catch(const std::exception &e){++failures;std::cerr<<"[FAIL] "<<name<<": "<<e.what()<<'\n';}
     }

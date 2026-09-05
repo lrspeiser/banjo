@@ -1,5 +1,6 @@
 #include "creator/CodexAssistant.hpp"
 #include <nlohmann/json.hpp>
+#include <cmath>
 #include <fstream>
 #include <iostream>
 #include <thread>
@@ -62,7 +63,39 @@ void protocol() {
     CreatorWorld world;const auto before=world.serialize();
     const auto request=Json::parse(CodexAssistant::requestDocument(world,"a","Make an oak ball.",{}));
     require(request["world"]["inventory"].empty()&&world.serialize()==before,"Request cannot collect or spend resources");
+    require(request["world"]["capabilities"]["energy"]["fabrication_supported"]==false,"Assistant sees that energy-limited fabrication is unavailable");
     std::cout<<"[PASS] proposal/clarification, stale identity, duplicate fields and read-only request\n";
+}
+void selectedRevisionContext() {
+    for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        CreatorWorld world;world.collect(std::string(materialPresetName(material))+"-pile");
+        ObjectRecipe original;original.material=material;
+        original.radius_m=std::cbrt(9.9/(makeReferenceMaterial(material).density_kg_m3*(4.0/3)*std::acos(-1)));
+        const auto id=world.create("initial",original);world.step(120);const auto before=world.serialize();
+        const auto request=Json::parse(CodexAssistant::requestDocument(world,"edit","Rebuild the selected object as a smaller block.",original,{},RevisionTarget{id,1}));
+        require(!request["world"].contains("history")&&request["world"]["history_count"]==1,"Provider context omits receipt payload but retains count");
+        require(request["editing"]["object_id"]==id&&request["editing"]["expected_revision"]==1,"Edit context binds the selected identity and authoring revision");
+        const auto &available=request["editing"]["available_after_recovery"];
+        require(available.size()==1&&available[0]["material"].get<std::string>()==materialPresetName(material),"Recovery cannot include an uncollected substance");
+        require(std::abs(available[0]["mass_kg"].get<double>()-10)<1e-12&&std::abs(request["editing"]["recoverable_mass_kg"].get<double>()-9.9)<1e-12,"Selected recovery plus free stock is counted exactly once");
+        require(std::abs(request["world"]["inventory"][0]["mass_kg"].get<double>()-.1)<1e-12,"Free stock remains distinct from recoverable matter");
+        require(world.serialize()==before,"Editing context cannot reclaim or reset a moving object");
+        rejects([&]{(void)CodexAssistant::requestDocument(world,"stale","Rebuild it.",original,{},RevisionTarget{id,0});});
+        rejects([&]{(void)CodexAssistant::requestDocument(world,"missing","Rebuild it.",original,{},RevisionTarget{id+1,1});});
+        ObjectRecipe box=original;box.schema_version=2;box.shape="box";box.dimensions_m={.08,.06,.1};
+        auto response=reply("edit");response["recipe"]=Json::parse(CreatorWorld::recipeJson(box));
+        const auto proposal=CodexAssistant::parseReply(response.dump(),"edit");
+        rejects([&]{(void)world.preview(*proposal.recipe);}); // Replacement requires the selected material credit.
+        const auto preview=world.previewRebuild({id,1},*proposal.recipe);require(preview.creation.mass_kg>.1,"Recovery is necessary for every reference material");
+        (void)world.rebuild("edit",{id,1},*proposal.recipe);
+        rejects([&]{(void)CodexAssistant::requestDocument(world,"outdated","Change it again.",box,{},RevisionTarget{id,1});});
+        const auto revised=Json::parse(CodexAssistant::requestDocument(world,"again","Change it again.",box,{},RevisionTarget{id,2}));
+        require(revised["editing"]["expected_revision"]==2,"Follow-up binds the current version");
+        world.reclaim("remove",{id,2});
+        rejects([&]{(void)CodexAssistant::requestDocument(world,"gone","Rebuild it.",box,{},RevisionTarget{id,2});});
+        require(Json::parse(CodexAssistant::requestDocument(world,"new","Make a new ball.",{}))["editing"].is_null(),"New creation has no implicit edit target");
+    }
+    std::cout<<"[PASS] glass/oak/iron selected revision context, resource recovery and stale/reclaimed targets\n";
 }
 void processTests(const std::filesystem::path &exe,const std::filesystem::path &root) {
     CreatorWorld world;world.collect("oak-pile");const auto before=world.serialize();
@@ -108,7 +141,7 @@ void processTests(const std::filesystem::path &exe,const std::filesystem::path &
 int main(int argc,char **argv) {
     try {
         if(argc>1)return fixture(argc,argv);
-        protocol();
+        protocol();selectedRevisionContext();
         if(ChildProcess::supported()) {
             const auto suffix=std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
             const auto root=std::filesystem::current_path()/("assistant-test-"+suffix);std::filesystem::create_directory(root);
