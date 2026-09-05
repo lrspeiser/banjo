@@ -1,5 +1,8 @@
 # Development status and handoff
 
+**Immediate owner priority: craft-and-release bowl lab.** Complete inventory-backed glass/oak/iron ball crafting, placement/release in an adjustable concave bowl, rolling/collisions/rebound and physically driven fracture before moving to the next physics family. The [bowl checkpoint](bowl-checkpoint.md) records the new running rigid preview and the explicit unfinished fracture gate. Broader assembly contact research is paused, not discarded. Preserve every existing mechanic and platform gate.
+
+
 **Adaptive runtime trials:** [Full/half-step comparison with complete rollback](adaptive-runtime-checkpoint.md) accepts bounded smooth separation for glass/oak/iron using 318 evaluations and unchanged global work budgets. All rotational fixtures still reject at the state-refinement floor. Four affected suites pass in both builds; contact-state convergence remains next. Local `57102de`/`7229159`; full goal active.
 
 **Reversible contact trials:** [Complete runtime state restoration](reversible-trial-checkpoint.md) covers Jolt contacts/constraints/global state plus Banjo ticks/events, with configuration guards and nested rollback. Glass/oak/iron replay tests pass in both configurations; all 28 current and 26 legacy suites pass. Adaptive assembly integration remains next. Local `654c668`; full goal active.
