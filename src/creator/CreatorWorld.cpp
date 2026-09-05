@@ -453,17 +453,30 @@ std::string testRuntimeAssembly(const CompiledAssembly &compiled,std::string_vie
     double initial_spin_energy=0;
     for(auto id:{1u,2u}){const auto state=world.mechanicalState(id);const auto w=state.motion.angular_velocity_rad_s;initial_spin_energy+=.5*dot(w,state.inertia_world_kg_m2*w);}
     double jolt_change=0,transfer_error=0,max_error=0,max_momentum=0,max_angular=0;unsigned contacts=0;
+    double opening_work=0,kick_work=0,previous_residual=0;std::vector<Json> worst_steps;
     const auto energies=[&]{double stored=0,damage=0;for(const auto &site:sites){auto law=compiled.law;law.area_m2=site.area_m2;const auto response=evaluateCohesiveInterface(law,site.history);stored+=response.stored_energy_j;damage+=response.dissipated_energy_j;}return std::pair{stored,damage};};
     const auto kick=[&]{const auto result=world.applyCohesiveTensionPatchKick(1,2,sites,compiled.law,dt/2,transfer_budget);
         for(std::size_t k=0;k<sites.size();++k)sites[k].history=result.interface_increments[k].state;
-        transfer_error+=result.transfer.numerical_energy_change_j;};
+        transfer_error+=result.transfer.numerical_energy_change_j;kick_work+=result.transfer.impulse_work_j;
+        for(const auto &increment:result.interface_increments)opening_work+=increment.opening_work_j;};
     for(std::uint64_t tick=0;tick<steps;++tick) {
-        kick();const double before=totals().kinetic_energy_j;world.step(dt);jolt_change+=totals().kinetic_energy_j-before;
-        contacts+=static_cast<unsigned>(world.drainImpacts().size());kick();
+        const double previous_opening_work=opening_work,previous_kick_work=kick_work,previous_transfer=transfer_error;
+        std::vector<double> previous_openings;previous_openings.reserve(sites.size());for(const auto &site:sites)previous_openings.push_back(site.history.opening_m);
+        kick();const double before=totals().kinetic_energy_j;world.step(dt);const double jolt_step_change=totals().kinetic_energy_j-before;jolt_change+=jolt_step_change;
+        const auto new_contacts=static_cast<unsigned>(world.drainImpacts().size());contacts+=new_contacts;kick();
         const auto now=totals();const auto [stored,damage]=energies();
         const double residual=now.kinetic_energy_j+stored+damage-initial.kinetic_energy_j-jolt_change-transfer_error;
         check(std::isfinite(residual),"runtime assembly trajectory overflow");
         max_error=std::max(max_error,std::abs(residual));
+        unsigned slack_crossings=0;double minimum_opening=sites.front().history.opening_m,maximum_opening=minimum_opening;
+        for(std::size_t k=0;k<sites.size();++k){const double q=sites[k].history.opening_m;
+            if((q>0)!=(previous_openings[k]>0))++slack_crossings;minimum_opening=std::min(minimum_opening,q);maximum_opening=std::max(maximum_opening,q);}
+        worst_steps.push_back({{"tick",tick+1},{"time_s",dt*static_cast<double>(tick+1)},{"step_integration_error_j",residual-previous_residual},
+            {"cumulative_integration_error_j",residual},{"jolt_stage_energy_change_j",jolt_step_change},{"transfer_roundoff_j",transfer_error-previous_transfer},
+            {"cohesive_opening_work_j",opening_work-previous_opening_work},{"impulse_work_j",kick_work-previous_kick_work},
+            {"new_contact_events",new_contacts},{"slack_crossings",slack_crossings},{"minimum_opening_m",minimum_opening},{"maximum_opening_m",maximum_opening}});
+        std::stable_sort(worst_steps.begin(),worst_steps.end(),[](const Json &a,const Json &b){return std::abs(a.at("step_integration_error_j").get<double>())>std::abs(b.at("step_integration_error_j").get<double>());});
+        if(worst_steps.size()>8)worst_steps.pop_back();previous_residual=residual;
         max_momentum=std::max(max_momentum,length(now.linear_momentum_kg_m_s-initial.linear_momentum_kg_m_s));
         max_angular=std::max(max_angular,length(now.angular_momentum_kg_m2_s-initial.angular_momentum_kg_m2_s));
         check(std::isfinite(max_error),"runtime assembly trajectory overflow");
@@ -478,7 +491,7 @@ std::string testRuntimeAssembly(const CompiledAssembly &compiled,std::string_vie
         {"predicates",{{"separated_area",fraction>=minimum},{"integration_energy",max_error<=budget}}},{"actual_duration_s",dt*static_cast<double>(steps)},
         {"initial_kinetic_energy_j",initial.kinetic_energy_j},{"initial_rotational_kinetic_energy_j",initial_spin_energy},{"final_kinetic_energy_j",totals().kinetic_energy_j},{"stored_energy_j",stored},{"damage_work_j",damage},
         {"separated_area_fraction",fraction},{"energy_residual_j",totals().kinetic_energy_j+stored+damage-initial.kinetic_energy_j},{"maximum_integration_energy_error_j",max_error},{"jolt_stage_energy_change_j",jolt_change},{"signed_transfer_roundoff_j",transfer_error},
-        {"maximum_momentum_change_kg_m_s",max_momentum},{"maximum_angular_momentum_change_kg_m2_s",max_angular},{"contact_events",contacts},{"sites",histories},{"bodies",bodies},
+        {"cohesive_opening_work_j",opening_work},{"impulse_work_j",kick_work},{"largest_error_steps",worst_steps},{"maximum_momentum_change_kg_m_s",max_momentum},{"maximum_angular_momentum_change_kg_m2_s",max_angular},{"contact_events",contacts},{"sites",histories},{"bodies",bodies},
         {"boundary","Temporary two-box world, zero gravity, initial separating velocity and optional declared spin. Jolt owns surfaces. Events may be speculative. Jolt-stage energy change includes solver effects, not automatically heat. Fixed-step evidence is not a convergence certificate. No live resources, objects or clock changed; no fabrication or cutting certification."}}.dump(2);
 }
 }

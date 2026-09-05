@@ -78,6 +78,13 @@ void assemblyAssessment(){
                 spin_spec["steps"]=steps;const auto spinning_result=run(spinning,spin_spec);
                 require(spinning_result["ok"]==true,"bounded off-center spin trial returns measured result");const auto &r=spinning_result["result"];
                 near(r["initial_rotational_kinetic_energy_j"].get<double>(),expected_spin,expected_spin*1e-6,"declared spin contributes analytical solid-box rotational energy");
+                near(r["energy_residual_j"].get<double>()-r["jolt_stage_energy_change_j"].get<double>()-r["signed_transfer_roundoff_j"].get<double>(),
+                    r["cohesive_opening_work_j"].get<double>()+r["impulse_work_j"].get<double>(),1e-12+fracture_work*1e-9,"full trajectory work ledger closes independently of pass status");
+                require(r["largest_error_steps"].size()==8,"diagnostic output retains only eight worst steps");
+                for(const auto &entry:r["largest_error_steps"]){
+                    near(entry["step_integration_error_j"].get<double>(),entry["cohesive_opening_work_j"].get<double>()+entry["impulse_work_j"].get<double>(),1e-12+fracture_work*1e-9,"step work discrepancy is explicitly accounted");
+                    require(entry["tick"].get<unsigned>()>=1&&entry["tick"].get<unsigned>()<=steps,"diagnostic tick belongs to the tested interval");}
+
                 require(std::abs(r["bodies"][0]["angular_velocity_rad_s"][2].get<double>()-3)>1e-4,"evolving spin is not continually imposed");
                 if(preset==MaterialPreset::Iron)require(r["status"]=="failed","off-center iron integration failure remains visible");
                 std::cout<<name<<" spin steps="<<steps<<" status="<<r["status"]<<" max_E="<<r["maximum_integration_energy_error_j"]<<" max_H="<<r["maximum_angular_momentum_change_kg_m2_s"]<<'\n';
