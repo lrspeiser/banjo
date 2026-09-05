@@ -1,6 +1,6 @@
 # Banjo mechanics scorecard
 
-Living scorecard for the general-object platform. Latest tested code is `58546cbbcd3696db409124b9f353c231db0ae0e4` on local `codex/physics-foundation`; GitHub main remains separate. The [explicit-compliance checkpoint](compliance-checkpoint.md) adds a normal-interface spring/compression-dashpot reference, seven analytical/ledger/rollback groups and 27 full-resolution glass/oak/iron probes at three timesteps. Stored/dissipated contact work is accounted for, while sampled trajectory convergence remains open. The [rigid-contact checkpoint](event-root-checkpoint.md) and its e=0.3 failure are retained. Update this document at every physics checkpoint, including failed and unsupported cases.
+Living scorecard for the general-object platform. Latest tested code is `e5b883e6d5d47dc85a5e1ea42c671d94a83cee99` on local `codex/physics-foundation`; GitHub main remains separate. The [trajectory checkpoint](trajectory-checkpoint.md) records 30 glass/oak/iron impacts at five timesteps and 24 full-node comparisons at common physical times. Bulk rebound is much more consistent than internal motion; full trajectory accuracy remains open. The [explicit compliant law](compliance-checkpoint.md) and [rigid e=0.3 failure](event-root-checkpoint.md) remain distinct. Update this document at every physics checkpoint, including failed and unsupported cases.
 
 Status meanings: **Measured** = verified only within the stated reference bounds; **Defect** = evidence contradicts the required behavior; **Prototype** = implementation exists but the required validation is incomplete; **Planned** = required implementation is absent. A measured component does not make the full platform complete.
 
@@ -49,15 +49,15 @@ An elastic approximation uses the same declared bond law for each material's den
 | M26 Assemblies, hinges and constrained motion | Planned | Door/hinge example with material-derived inertia, anchor failure and post-failure motion |
 | M27 Thermal, moisture and phase state | Planned; declarations are not thermal evolution | Unit-bearing state, heat/expansion/transport and explicit mechanical coupling tests |
 | M28 Granular, fluid and further material families | Planned | Select and validate solver families; capability limits and consistent coupling to solids |
-| M29 Frame, timestep, resolution and orientation invariance | Defect: sampled trajectories remain unconverged; compliant analytical refinement/frame checks pass and three lattice rates are measured | Refine matched trajectories/internal modes and interface area scaling; then resolution/orientation sweeps without changing laws |
-| M30 Determinism, reproducibility and experiment diagnostics | Prototype: 27 compliant and 18 rigid-regression cases retain glass/oak/iron, commands, source and CSV work ledgers | Portable experiment files, matched per-material trajectories and state hashes; test before cross-platform claims |
+| M29 Frame, timestep, resolution and orientation invariance | Defect: full-node velocity differences remain substantial at the finest sampled pair despite stable bulk rebound; five-rate refinement measured | Bound temporal error over node motion and elastic state; preserve analytical/frame tests and add area-consistent resolution/orientation sweeps |
+| M30 Determinism, reproducibility and experiment diagnostics | Prototype: all-node export, executable/configuration checks, independent COM/kinetic verification and 24 common-time comparisons across 30 runs | Portable experiment declarations, rejection/error records and state identity through topology changes; no cross-platform determinism claim |
 
 ## Platform capabilities that must preserve those mechanics
 
 | ID / capability | Status | Next required step |
 |---|---|---|
 | P01 Adaptive/local matter and physical LOD | Planned beyond whole-ball activation | Sparse local patches, boundary coupling, refinement/re-coarsening and damage preservation |
-| P02 Sleeping, resource budgets and performance | Prototype limits; compliant probes take 1.11–2.56 s per 5 ms impact and 4.58–11.06 s per 20 ms loaded run | Profile coupled solves and establish distributions; do not compare different contact laws as an equivalent-model speedup |
+| P02 Sleeping, resource budgets and performance | Prototype limits; five-rate compliant probes take 2.40–33.49 solver seconds per 5 ms impact | Profile accuracy-controlled coupled solves and distributions; optimize without hiding internal modes or changing laws |
 | P03 Cache identity and reuse | Prototype serialization and scenario summaries | Full state/material/geometry/solver keys, invalidation and time-aligned validated reuse |
 | P04 Speculative precomputation | Planned | Likelihood/error bounds, cancellation and measured net benefit with live fallback |
 | P05 Units, extensible laws and capability checks | Design plus partial compiler validation | Unit-aware schema/IR, explicit unsupported-law errors and trusted solver plugins |
@@ -69,9 +69,9 @@ An elastic approximation uses the same declared bond law for each material's den
 
 ## Current order of work
 
-1. Establish timestep-accurate glass/oak/iron trajectories for the explicit compliant law and compile interface response against area before resolution claims. Retain the separate rigid e=0.3 repeated-impact failure.
+1. Implement bounded temporal error control for full node motion and elastic state, verified against the five-rate glass/oak/iron trajectories. Compile interface response against area before resolution claims; retain the separate rigid e=0.3 failure.
 2. Integrate friction and synchronized activation/handoff into the shared lab without losing contact storage, dissipation or reaction ledgers.
 3. Validate elastic/fracture coupons and substance-specific laws; expand shapes and repeatable material comparisons.
 4. Continue the adaptive-object, assembly, authoring and publishing gates in the full roadmap. The platform goal is not complete when balls work.
 
-Evidence: [explicit compliance/27-case checkpoint](compliance-checkpoint.md), [contact-root/full-resolution checkpoint](event-root-checkpoint.md), [event/material comparison](event-material-checkpoint.md), [support/timestep checkpoint](coupled-support-checkpoint.md), [elastic reference](elastic-newton-checkpoint.md), [default-stage defects](material-stage-checkpoint.md), [transfer accounting](transfer-accounting-checkpoint.md), [property consumers](physics-coverage.md), [ordered roadmap](roadmap.md). The table records the scope of that evidence, including missing evidence, rather than inferring completion from passing suites.
+Evidence: [full-state/five-rate checkpoint](trajectory-checkpoint.md), [explicit compliance/27-case checkpoint](compliance-checkpoint.md), [contact-root/full-resolution checkpoint](event-root-checkpoint.md), [event/material comparison](event-material-checkpoint.md), [support/timestep checkpoint](coupled-support-checkpoint.md), [elastic reference](elastic-newton-checkpoint.md), [default-stage defects](material-stage-checkpoint.md), [transfer accounting](transfer-accounting-checkpoint.md), [property consumers](physics-coverage.md), [ordered roadmap](roadmap.md). The table records the scope of that evidence, including missing evidence, rather than inferring completion from passing suites.
