@@ -1,5 +1,7 @@
 # Development status and handoff
 
+**Reversible contact trials:** [Complete runtime state restoration](reversible-trial-checkpoint.md) covers Jolt contacts/constraints/global state plus Banjo ticks/events, with configuration guards and nested rollback. Glass/oak/iron replay tests pass in both configurations; all 28 current and 26 legacy suites pass. Adaptive assembly integration remains next. Local `654c668`; full goal active.
+
 **Collision-step error localized:** [Bounded assembly work ledgers](assembly-work-checkpoint.md) place about 78/70 percent of the maximum oak/iron integration error in single steps with strong Jolt responses. Physics and tolerances are unchanged; all four affected suites pass in both configurations. Next restore/refine complete temporary contact steps. Local `4844fb2`; full goal active.
 
 **Rotational loading and inertia correction:** [Off-center assembly trials](assembly-spin-checkpoint.md) found and corrected small-box fallback inertia, with independent glass/oak/iron tensor/energy checks. Oak/iron integration failures remain explicit. All 27 current and 25 legacy suites pass. Runtime identity changed; existing graphical saves need explicit migration before promotion. Local `e86cb8e`; full goal active.
