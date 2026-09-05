@@ -65,6 +65,9 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
     set(JPH_USE_VK OFF CACHE BOOL "" FORCE)
     set(JPH_USE_MTL OFF CACHE BOOL "" FORCE)
     set(JPH_USE_CPU_COMPUTE OFF CACHE BOOL "" FORCE)
+    # Jolt defaults to the static MSVC runtime (/MT); Banjo and raylib use the
+    # dynamic one (/MD), so the link fails on Visual Studio without this.
+    set(USE_STATIC_MSVC_RUNTIME_LIBRARY OFF CACHE BOOL "" FORCE)
 
     FetchContent_Declare(
         JoltPhysics
@@ -95,6 +98,14 @@ if(BANJO_BUILD_LAB)
     set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
     set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
     set(CUSTOMIZE_BUILD ON CACHE BOOL "" FORCE)
+    # CUSTOMIZE_BUILD exposes every raylib SUPPORT_* switch, and in this build
+    # several that config.h leaves off came through enabled. Two of them break
+    # the interactive viewer: custom frame control removes the buffer swap,
+    # input polling, and frame timing from EndDrawing(), so the window stays
+    # black and GetFrameTime() is always zero; busy-wait pegs a core. Force
+    # both off so the lab behaves the same as a default raylib build.
+    set(SUPPORT_CUSTOM_FRAME_CONTROL OFF CACHE BOOL "" FORCE)
+    set(SUPPORT_BUSY_WAIT_LOOP OFF CACHE BOOL "" FORCE)
     set(USE_AUDIO OFF CACHE BOOL "" FORCE)
     set(GLFW_BUILD_X11 ON CACHE BOOL "" FORCE)
     set(GLFW_BUILD_WAYLAND OFF CACHE BOOL "" FORCE)
