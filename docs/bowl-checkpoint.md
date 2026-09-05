@@ -1,5 +1,8 @@
 # Craft-and-release bowl lab
 
+**Fracture component:** [Energy-accounted rupture](energy-rupture-checkpoint.md) now combines accepted elastic/contact motion with a transactional tensile break, explicit Gc-area work and a separate event-overshoot budget. Low/high glass impact cases and matched glass/oak/iron reference experiments pass; five affected suites pass, plus the new legacy test. Local `6b44c2f`. Whole-ball geometry, event convergence and live bowl fragment handoff remain unfinished; fracture is still disabled in the bowl.
+
+
 September 5, 2026. Local source commit `c717509` on codex/physics-foundation; not on main. The complete bowl milestone remains unfinished.
 
 ## Owner acceptance gate
