@@ -1,5 +1,7 @@
 # Development status and handoff
 
+**Runtime contact ownership:** [Explicit body-pair routing](contact-ownership-checkpoint.md) suppresses duplicate Jolt responses, invalidates cached contacts and cleans up reused IDs. Glass/oak/iron routing/free-flight tests and all 22 suites pass. External joint/surface response and live assembly creation remain open. Local `5e7aa4e`; full goal active.
+
 **First-person assembly review:** [Table LLM review](starter-assembly-review-checkpoint.md) regenerates physics and actual player-stock evidence, with context invalidation. Real native oak reply/revision checks and three-material backend review checks pass; 21 suites pass. Live assembly contact and resource accounting remain open. Local `1a251cc`; full goal active.
 
 **First-person assembly testing:** [Table test controls](starter-assembly-test-checkpoint.md) run isolated physics in the background and export exact-revision evidence. Native oak run/export/stale checks and 21 suites pass. Table LLM review and live construction remain open. Local `6a5fae9`; full goal active.

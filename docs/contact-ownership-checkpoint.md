@@ -1,0 +1,19 @@
+# Explicit runtime contact ownership
+
+Local source `5e7aa4ecd7fb405087936da36154d71783cf0180`, September 5, 2026; not pushed or merged. Full goal remains active.
+
+JoltWorld now exposes setPairContactOwner and pairContactOwner for two distinct registered bodies. The default is Jolt. External rejects all contacts for that entire pair through Jolt's contact-validation hook, before a constraint or impact event is produced. It does not apply an external response itself. An external solver must own every contact between those bodies, not merely a small joint face; blindly assigning a patch solver would leave other surfaces without a response.
+
+Ownership changes invalidate both bodies' contact caches and activate them, including changes to previously settled contacts. Identical assignments are no-ops. The map is symmetric, bounded at 4096 external pairs, rejects invalid bodies/owners, and removes every associated entry when a body is destroyed. A reused logical ID starts with default Jolt ownership. Call only on the host thread between steps; concurrent ownership mutation during Jolt callbacks is unsupported. Ownership is transient and must be restored when rebuilding a world; no world-save or authoring command is added yet. Built-in support-surface IDs outside the registered-body map are not accepted by this API.
+
+The implementation was checked against the vendored Jolt 5.6 ContactListener and BodyInterface contracts: persistent contacts may skip validation unless invalidated, and validation must not call locking body APIs. The callback only reads the stable pair map. Collision detection still occurs before validation, so this is a correctness boundary rather than a broad-phase optimization.
+
+## Glass/oak/iron evidence
+
+All three use identical geometry/timing, with catalog material changed consistently. Two 0.1 m cubes start at x +/-0.15 m with opposite 1 m/s velocities and zero gravity. With external ownership and no external force, after 72 steps at 1/240 s they pass through each other to x +/-0.15 m, retain velocities, emit no Jolt impact and have measured kinetic-energy change zero and linear-momentum change within 1e-12 kg m/s. This deliberately unphysical overlap fixture verifies suppression only; it is not a working contact or joint model.
+
+A separate fixed 1 x 0.1 x 1 m box supports two 0.1 m cubes. After 240 warm-up steps both settle at y=0.1 m. Reassigning one contact pair makes that cube fall to y=-0.347581 m after 72 steps while the unrelated cube stays at y=0.1 m. Returning ownership and resetting the test body's pose restores normal support; destruction/recreation also restores default support. Invalid same-body, absent-body and enum inputs reject. All three materials produce these results. The drop threshold tests routing/cache invalidation, not convergence or energy conservation of the default contact solver.
+
+Full Windows MSVC 19.44 x64 Release build and all 22 CTest suites pass in 18.43 seconds; the new ownership suite takes 0.25 seconds. Default contact, starter, creator, cohesive and provider tests remain green. Required custom-frame-control, busy-wait and static-MSVC-runtime settings remain OFF. The owned starter/workshop were stopped for relinking and both restarted successfully; no new native input verification is claimed. Environment remains Windows 11/Core Ultra 9 285K/RTX 5090/CMake 4.1.2/Jolt 5.6/raylib 6.
+
+Next: couple supported joint forces and all relevant surface contacts through this ownership boundary with external work and numerical-error accounting. Do not enable live assembly creation until uncovered contact, persistence and material/energy transaction behavior is explicit. Partial-face ownership, physical joining/cutting, calibration, spatial convergence and existing default-pipeline defects remain open. All 40 scorecard rows and all remaining goal gates are retained.
