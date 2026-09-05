@@ -1,5 +1,8 @@
 # Development status and handoff
 
+**Remembered-design checkpoint:** [Saved starter proposals](remembered-design-checkpoint.md) retain exact recipes across closing/reopening and update readiness after gathering. Three-material tests and 16 suites pass; one real native oak request survived restart without another model call. Save v3 migrates v1/v2. Local `8bde4da`; full goal remains active.
+
+
 **Saved-action checkpoint:** [Starter save-before-publication](starter-transactions-checkpoint.md) prevents failed saves from spending live resources or granting XP/tools. Glass/oak/iron failure/reload/retry tests and all 16 suites pass; native failed and successful wooden-tool crafting verified. Single-writer local scope; recovery UI, common durable APIs and physical energy remain open. Source `659cc54`, local only.
 
 
