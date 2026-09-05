@@ -42,6 +42,13 @@ void assemblyInventory() {
         (void)world.interact("assembly-pickup",pickup,eye(world,pickup));const auto collected=world.serialize();auto ready=Json::parse(world.assessAssemblyJson(declaration.dump()));
         check(world.serialize()==collected,"readiness does not spend XP, stamina, stock or time");check(ready["materials_sufficient"].get<bool>()&&!ready["creation_supported"].get<bool>(),"pickup supplies material but cannot enable unsupported creation");
         const auto after=ready["material_requirements"][0];near(after["inventory_mass_kg"],world.inventoryKg(material),1e-12,"assembly uses real collected inventory");near(after["collectible_mass_kg"].get<double>()+after["inventory_mass_kg"].get<double>(),loose,1e-12,"pickup transfers mass without duplicating supply");
+        const double work=.00012*m.fracture_energy_j_m2,ma=.000008*m.density_kg_m3,mb=.000027*m.density_kg_m3,mu=ma*mb/(ma+mb),speed=std::sqrt(12*work/mu);
+        Json spec={{"test_version",1},{"relative_kinetic_energy_j",6*work},{"duration_s",8*(2*m.fracture_energy_j_m2/m.tensile_strength_pa)/speed},{"energy_error_budget_j",work*1e-6},{"state_error_tolerance",1e-5},{"maximum_evaluations",65536},{"minimum_separated_area_fraction",1}};
+        const auto review=Json::parse(world.assemblyReviewDocument("starter-review","Explain this experiment and required supplies.",declaration.dump(),spec.dump()));
+        check(world.serialize()==collected,"preparing review preserves live progress and inventory");check(review["application"]=="assembly_review"&&review["assembly_test"]["status"]=="passed","starter review regenerates bounded measured evidence");
+        check(review["assembly_assessment"]==ready,"review uses authoritative starter assessment without workshop stock");check(review["assembly_test"]["declaration"]==declaration,"review preserves the exact tested declaration");
+        rejects([&]{(void)world.assemblyReviewDocument("bad","",declaration.dump(),spec.dump());});
+        auto exhausted=spec;exhausted["maximum_evaluations"]=3;rejects([&]{(void)world.assemblyReviewDocument("bad","Explain",declaration.dump(),exhausted.dump());});
         auto restored=StarterWorld::deserialize(collected);check(restored.assessAssemblyJson(declaration.dump())==ready.dump(2),"restored starter reports identical assembly requirements");
         if(material==MaterialPreset::Oak) {
             (void)world.craft("assembly-tool","prybar",{0,1.65,0});const auto tools=Json::parse(world.assessAssemblyJson(declaration.dump()));

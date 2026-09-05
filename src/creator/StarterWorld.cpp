@@ -102,6 +102,15 @@ std::string StarterWorld::assessAssemblyJson(std::string_view declaration) const
     result["player"]={{"level",level()},{"stamina",stamina()},{"assembly_creation_supported",false},{"assembly_level_requirement",nullptr},{"assembly_stamina_cost",nullptr}};
     return result.dump(2);
 }
+std::string StarterWorld::assemblyReviewDocument(std::string_view request_id,std::string_view prompt,std::string_view declaration,std::string_view test) const {
+    check(!prompt.empty()&&prompt.size()<=500,"review prompt must be 1 to 500 bytes");
+    // Regenerate both reports against this authoritative starter inventory.
+    // Never accept a supplied assessment or claimed test result as evidence.
+    const auto assessment=Json::parse(assessAssemblyJson(declaration));
+    const auto evidence=Json::parse(CreatorWorld::testAssemblyJson(declaration,test));
+    const auto document=Json{{"application","assembly_review"},{"request_id",request_id},{"prompt",prompt},{"assembly_assessment",assessment},{"assembly_test",evidence}}.dump(2);
+    check(document.size()<=256*1024,"assembly review context exceeds 256 KiB");return document;
+}
 double StarterWorld::inventoryKg(MaterialPreset m) const {return inventory_m3_[index(m)]*makeReferenceMaterial(m).density_kg_m3;}
 double StarterWorld::inventoryVoxels(MaterialPreset m) const {return inventory_m3_[index(m)]/voxel_volume;}
 std::string StarterWorld::equippedTool() const {

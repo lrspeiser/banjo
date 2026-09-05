@@ -63,12 +63,24 @@ int main(int argc,char **argv){try{
     if(const auto &saved=world.rememberedDesign()){prompt=saved->prompt;explanation=saved->explanation;proposal=saved->recipe;}
     bool assembly_testing=false;std::future<std::string> assembly_job;
     std::string assembly_spec,assembly_tested,assembly_error;std::uint64_t assembly_test_revision{};std::optional<nlohmann::json> assembly_result;
+    CodexAssistant assembly_assistant;bool assembly_reviewing=false,assembly_review_cancelled=false;std::future<std::string> assembly_review_job;
+    std::string assembly_review_key,assembly_review_decl,assembly_review_spec,assembly_review_id,assembly_review_reply,assembly_review_status;std::uint64_t assembly_review_revision{};
     std::future<std::string> test_job;std::string tested_name;std::filesystem::path test_report_path;
     const auto session=std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
     const auto id=[&]{return "play-"+session+"-"+std::to_string(++serial);};
     const auto save=[&]{world.save(save_path);};
     if(capture.empty()&&!crafting)DisableCursor();
     while(!WindowShouldClose()){
+        if(!assembly_review_key.empty()) {
+            const bool stale=!world.rememberedAssembly()||world.assemblyRevision()!=assembly_review_revision||*world.rememberedAssembly()!=assembly_review_decl||assembly_spec!=assembly_review_spec||world.assessAssemblyJson(assembly_review_decl)!=assembly_review_key;
+            if(stale){assembly_review_cancelled=true;assembly_assistant.cancel();assembly_review_status="Design, inventory, progress or test changed. Request a new review.";}
+        }
+        if(assembly_review_job.valid()&&assembly_review_job.wait_for(std::chrono::seconds(0))==std::future_status::ready)try {
+            const auto document=assembly_review_job.get();if(!assembly_review_cancelled){assembly_assistant.start(workspace,assembly_review_id,document);assembly_review_status="Codex is reviewing the measured evidence...";}
+        }catch(const std::exception &e){assembly_review_status=std::string("Review rejected: ")+e.what();}
+        if(assembly_assistant.running())try {
+            if(auto reply=assembly_assistant.poll()){assembly_review_reply=reply->explanation;assembly_review_status="Review complete. No resources spent.";}
+        }catch(const std::exception &e){assembly_assistant.cancel();assembly_review_status=e.what();}
         const float dt=std::min(GetFrameTime(),.05F);
         if(capture.empty()){
             // Consume key-down events, including taps released between frames.
@@ -144,6 +156,13 @@ int main(int argc,char **argv){try{
                     text("Saved assembly / revision "+std::to_string(world.assemblyRevision()),432,200,23);
                     if(assembly_testing) {
                         const bool current=world.rememberedAssembly()&&assembly_test_revision==world.assemblyRevision()&&assembly_tested==*world.rememberedAssembly();
+                        if(assembly_reviewing) {
+                            if(button({432,246,235,40},"BACK TO TEST"))assembly_reviewing=false;
+                            if(button({687,246,235,40},"CANCEL REVIEW",assembly_review_job.valid()||assembly_assistant.running())){assembly_assistant.cancel();assembly_review_cancelled=true;assembly_review_status="Review cancelled. No resources spent.";}
+                            wrap(assembly_review_status,432,310,490,17,gold);
+                            if(!assembly_review_cancelled&&!assembly_review_reply.empty())wrap(assembly_review_reply,432,365,490,18,ink);
+                            wrap("A separation pass does not certify useful or realistic behavior. Assembly construction remains unsupported.",432,601,490,16,muted);
+                        }else {
                         if(button({432,246,235,40},"LOAD TEST",!assembly_job.valid()))try {
                             const auto path=workspace/"assembly-test.json";if(std::filesystem::file_size(path)>1024*1024)throw std::runtime_error("Test file exceeds 1 MiB");
                             std::ifstream input(path,std::ios::binary);if(!input)throw std::runtime_error("Cannot read assembly-test.json");
@@ -165,13 +184,21 @@ int main(int argc,char **argv){try{
                             const auto &r=*assembly_result;text("Revision "+std::to_string(assembly_test_revision)+": "+r.at("status").get<std::string>(),432,456,22,gold);
                             text("Separated "+number(r.at("separated_area_fraction").get<double>()*100,2)+"%",432,489,18);
                             text("Energy residual J: "+r.at("energy_residual_j").dump(),432,516,15,muted);
-                            if(button({432,547,490,34},"EXPORT TEST EVIDENCE"))try {
+                            if(button({432,547,235,34},"EXPORT EVIDENCE"))try {
                                 std::ofstream output(workspace/"assembly-test-result.json",std::ios::binary);output<<nlohmann::json{{"draft_revision",assembly_test_revision},{"report",r}}.dump(2);output.close();if(!output)throw std::runtime_error("Cannot export test evidence");message="Test snapshot exported with its declaration and revision.";
+                            }catch(const std::exception &e){assembly_error=e.what();}
+                            if(button({687,547,235,34},"ASK CODEX",assembly_assistant.available()&&!assembly_review_job.valid()&&!assembly_assistant.running()))try {
+                                assembly_review_decl=assembly_tested;assembly_review_spec=assembly_spec;assembly_review_revision=world.assemblyRevision();assembly_review_key=world.assessAssemblyJson(assembly_review_decl);assembly_review_id=id();
+                                assembly_reviewing=true;assembly_review_cancelled=false;assembly_review_reply.clear();assembly_review_status="Regenerating test and player inventory evidence...";
+                                assembly_review_job=std::async(std::launch::async,[snapshot=world.serialize(),declaration=assembly_review_decl,spec=assembly_review_spec,request=assembly_review_id]{
+                                    const auto copy=StarterWorld::deserialize(snapshot);return copy.assemblyReviewDocument(request,"Explain this test, what materials I still need, and whether I can build the assembly. Preserve the design and criterion.",declaration,spec);
+                                });
                             }catch(const std::exception &e){assembly_error=e.what();}
                         }else if(assembly_result)wrap("Design changed. The previous test is not current. Run again.",432,456,490,20,gold);
                         else if(assembly_job.valid())text("Testing a virtual copy...",432,456,20,gold);
                         if(!assembly_error.empty())wrap(assembly_error,432,590,490,15,gold);
-                        else wrap("Isolated separation only; no resources spent. Passing does not prove useful or realistic behavior.",432,590,490,16,muted);
+                        else wrap("Isolated test; no resources spent. Ask Codex sends the design, test, player progress and inventory for review.",432,590,490,16,muted);
+                        }
                     }else {
                     if(button({432,246,235,40},"IMPORT DESIGN"))try {
                         const auto path=workspace/"assembly.json";if(std::filesystem::file_size(path)>1024*1024)throw std::runtime_error("Assembly file exceeds 1 MiB");
@@ -229,5 +256,5 @@ int main(int argc,char **argv){try{
         text("Prototype: gameplay stamina; whole-branch cutting approximation. Physical fabrication energy is not modeled.",25,881,14,muted);
         EndDrawing();if(!capture.empty()&&++rendered>=frames){TakeScreenshot(capture.string().c_str());break;}
     }
-    assistant.cancel();if(capture.empty())save();EnableCursor();CloseWindow();return 0;
+    assistant.cancel();assembly_assistant.cancel();if(capture.empty())save();EnableCursor();CloseWindow();return 0;
 }catch(const std::exception &e){std::cerr<<"Starter error: "<<e.what()<<'\n';return 1;}}

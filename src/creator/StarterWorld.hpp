@@ -54,6 +54,7 @@ public:
     std::uint64_t rememberAssemblyAndSave(const std::filesystem::path &path,std::string_view declaration,std::uint64_t expected_revision);
     std::uint64_t clearAssemblyAndSave(const std::filesystem::path &path,std::uint64_t expected_revision);
     [[nodiscard]] std::string assessAssemblyJson(std::string_view declaration) const;
+    [[nodiscard]] std::string assemblyReviewDocument(std::string_view request_id,std::string_view prompt,std::string_view declaration,std::string_view test) const;
     [[nodiscard]] std::string designerRequest(std::string_view id,std::string_view prompt) const;
     [[nodiscard]] const std::optional<StarterRememberedDesign> &rememberedDesign() const {return remembered_design_;}
     void rememberDesignAndSave(const std::filesystem::path &path,const StarterRememberedDesign &design);
