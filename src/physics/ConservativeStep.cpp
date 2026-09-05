@@ -1,5 +1,6 @@
 #include "physics/ConservativeStep.hpp"
 #include "physics/MechanicalAccounting.hpp"
+#include "physics/ElasticNewton.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -69,6 +70,7 @@ ConservativeStepResult tryConservativeStep(ActiveMatter &matter, double dt, cons
     CoupledSphereState *sphere, const ConservativeStepSettings &settings) {
     if (!matter.asset || matter.bonds.size() != matter.asset->bonds.size() ||
         !std::isfinite(dt) || dt <= 0 || !finite(gravity) || settings.maximum_iterations == 0 ||
+        settings.maximum_linear_iterations == 0 ||
         !std::isfinite(settings.velocity_tolerance_m_s) || settings.velocity_tolerance_m_s <= 0 ||
         !std::isfinite(settings.relative_energy_tolerance) || settings.relative_energy_tolerance <= 0 ||
         !std::isfinite(settings.relative_momentum_tolerance) || settings.relative_momentum_tolerance <= 0 ||
@@ -138,9 +140,28 @@ ConservativeStepResult tryConservativeStep(ActiveMatter &matter, double dt, cons
     const auto sphere_position = [&]() {
         return candidate_sphere.motion.center_of_mass_world_m + .5 * dt * (sphere_v0 + sphere_velocity);
     };
+    const auto elastic_base = [&]() {
+        std::vector<Vec3> base(count);
+        for (std::size_t i = 0; i < count; ++i) {
+            base[i] = v0[i] + dt * gravity + inverse_mass[i] * contact_impulses[i];
+            if (supported[i]) base[i] += inverse_mass[i] * support_impulses[i] * settings.support->normal_world;
+        }
+        return base;
+    };
     for (unsigned iteration = 0; iteration < settings.maximum_iterations; ++iteration) {
         double change = 0;
-        for (std::size_t i = 0; i < matter.bonds.size(); ++i) {
+        if (settings.global_elastic_solve) {
+            const auto previous_velocity = velocity;
+            if (!detail::elasticNewtonUpdate(matter, dt, v0, elastic_base(), inverse_mass, velocity,
+                    settings.velocity_tolerance_m_s, settings.maximum_linear_iterations, result.linear_iterations)) {
+                result.iterations = iteration + 1;
+                result.constitutive_velocity_residual_m_s = detail::elasticVelocityResidual(
+                    matter, dt, v0, elastic_base(), inverse_mass, velocity);
+                return result;
+            }
+            for (std::size_t i = 0; i < count; ++i)
+                change = std::max(change, length(velocity[i] - previous_velocity[i]));
+        } else for (std::size_t i = 0; i < matter.bonds.size(); ++i) {
             if (!matter.bonds[i].alive) continue;
             const auto &bond = matter.asset->bonds[i];
             const auto a = bond.node_a, b = bond.node_b;
@@ -194,7 +215,9 @@ ConservativeStepResult tryConservativeStep(ActiveMatter &matter, double dt, cons
         result.constitutive_velocity_residual_m_s = change;
         if (change > settings.velocity_tolerance_m_s) continue;
         double residual = 0;
-        for (std::size_t i = 0; i < matter.bonds.size(); ++i) {
+        if (settings.global_elastic_solve) {
+            residual = detail::elasticVelocityResidual(matter, dt, v0, elastic_base(), inverse_mass, velocity);
+        } else for (std::size_t i = 0; i < matter.bonds.size(); ++i) {
             if (!matter.bonds[i].alive) continue;
             const auto &bond = matter.asset->bonds[i];
             const Vec3 expected = bondImpulse(matter.nodes[bond.node_b].position_world_m - matter.nodes[bond.node_a].position_world_m,

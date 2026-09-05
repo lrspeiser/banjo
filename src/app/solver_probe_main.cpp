@@ -15,19 +15,29 @@
 int main(int argc, char **argv) {
     try {
         double h = .08, dt = 1.0 / 240.0;
-        unsigned steps = 1, iterations = 256;
+        unsigned steps = 1, iterations = 256, linear_iterations = 400;
+        bool global = true;
         for (int i = 1; i < argc; ++i) {
             const std::string option = argv[i];
             if (++i >= argc) throw std::invalid_argument("missing probe option value");
+            if (option == "--solver") {
+                const std::string solver = argv[i];
+                if (solver != "newton" && solver != "local")
+                    throw std::invalid_argument("solver must be newton or local");
+                global = solver == "newton";
+                continue;
+            }
             std::size_t used = 0;
             const double value = std::stod(argv[i], &used);
             if (used != std::string(argv[i]).size() || !std::isfinite(value) || value <= 0)
                 throw std::invalid_argument("probe values must be finite and positive");
             if (option == "--voxel-size") h = value;
             else if (option == "--dt") dt = value;
-            else if ((option == "--steps" || option == "--iterations") && value <= 100000 && std::floor(value) == value) {
+            else if ((option == "--steps" || option == "--iterations" || option == "--linear-iterations") &&
+                     value <= 100000 && std::floor(value) == value) {
                 if (option == "--steps") steps = static_cast<unsigned>(value);
-                else iterations = static_cast<unsigned>(value);
+                else if (option == "--iterations") iterations = static_cast<unsigned>(value);
+                else linear_iterations = static_cast<unsigned>(value);
             } else throw std::invalid_argument("unknown probe option or invalid integer count");
         }
         const auto material = banjo::makeReferenceMaterial(banjo::MaterialPreset::Glass, 17);
@@ -44,13 +54,15 @@ int main(int argc, char **argv) {
         const auto before = banjo::measureMaterialMechanics(matter);
         std::cout << std::setprecision(12) << "Elastic reference probe: actual glass preset, zero gravity/contact/damage\n"
                   << "nodes=" << matter.nodes.size() << " bonds=" << matter.bonds.size() << " h=" << h
-                  << " dt=" << dt << " requested_steps=" << steps << '\n'
-                  << "step,accepted,iterations,velocity_residual_m_s,energy_residual_j,wall_ms\n";
+                  << " dt=" << dt << " requested_steps=" << steps << " solver=" << (global ? "newton" : "local") << '\n'
+                  << "step,accepted,iterations,linear_iterations,velocity_residual_m_s,energy_residual_j,wall_ms\n";
         for (unsigned i = 0; i < steps; ++i) {
             const auto start = std::chrono::steady_clock::now();
-            const auto result = banjo::tryConservativeStep(matter, dt, {}, nullptr, {.maximum_iterations = iterations});
+            const auto result = banjo::tryConservativeStep(matter, dt, {}, nullptr,
+                {.maximum_iterations = iterations, .global_elastic_solve = global,
+                 .maximum_linear_iterations = linear_iterations});
             const auto elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-            std::cout << i << ',' << result.converged << ',' << result.iterations << ','
+            std::cout << i << ',' << result.converged << ',' << result.iterations << ',' << result.linear_iterations << ','
                       << result.constitutive_velocity_residual_m_s << ',';
             if (result.balance_measured) std::cout << result.energy_residual_j;
             std::cout << ',' << elapsed << '\n';

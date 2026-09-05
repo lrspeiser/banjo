@@ -222,6 +222,91 @@ void energyCheckRejectsUnresolvedNetwork() {
         near(length(f.matter.nodes[i].velocity_m_s - original[i].velocity_m_s), 0, 0,
              "energy rejection preserves the starting state");
 }
+
+void localAndGlobalSolveAgree() {
+    Fixture global, local;
+    global.matter.nodes.push_back({{0, 1, .2}, {}, {.4, -.3, .2}, 2, {}});
+    global.addBond(0, 2, .001);
+    global.addBond(1, 2, .002);
+    local.asset = global.asset;
+    local.matter.nodes = global.matter.nodes;
+    local.matter.bonds = global.matter.bonds;
+    for (unsigned step = 0; step < 20; ++step) {
+        require(tryConservativeStep(global.matter, .01).converged, "global comparison converges");
+        require(tryConservativeStep(local.matter, .01, {}, nullptr, {.global_elastic_solve = false}).converged,
+                "local comparison converges");
+        for (std::size_t i = 0; i < global.matter.nodes.size(); ++i) {
+            near(length(global.matter.nodes[i].position_world_m - local.matter.nodes[i].position_world_m),
+                 0, 1e-8, "independent elastic solvers agree on position");
+            near(length(global.matter.nodes[i].velocity_m_s - local.matter.nodes[i].velocity_m_s),
+                 0, 1e-8, "independent elastic solvers agree on velocity");
+        }
+    }
+}
+
+void analyticalTimeStepConvergence() {
+    // Two unit masses joined by k=100 N/m have relative frequency sqrt(200).
+    // The extension stays positive/small enough that the 1D harmonic oracle
+    // does not cross the nondifferentiable collapsed-spring configuration.
+    const double frequency = std::sqrt(200.0), duration = .2;
+    const double exact_extension = .4 / frequency * std::sin(frequency * duration);
+    const double exact_velocity = .4 * std::cos(frequency * duration);
+    double previous_position_error = 0, previous_velocity_error = 0;
+    for (const unsigned steps : {10u, 20u, 40u}) {
+        Fixture f;
+        for (unsigned i = 0; i < steps; ++i)
+            require(tryConservativeStep(f.matter, duration / steps).converged, "time refinement converges");
+        const double position_error = std::abs(f.matter.nodes[1].position_world_m.x -
+            f.matter.nodes[0].position_world_m.x - 1 - exact_extension);
+        const double velocity_error = std::abs(f.matter.nodes[1].velocity_m_s.x -
+            f.matter.nodes[0].velocity_m_s.x - exact_velocity);
+        if (previous_position_error > 0) {
+            require(previous_position_error / position_error > 3.8 && previous_position_error / position_error < 4.2,
+                    "radial trajectory has second-order position convergence");
+            require(previous_velocity_error / velocity_error > 3.8 && previous_velocity_error / velocity_error < 4.2,
+                    "radial trajectory has second-order velocity convergence");
+        }
+        previous_position_error = position_error;
+        previous_velocity_error = velocity_error;
+        std::cout << "radial dt=" << duration / steps << " position_error_m=" << position_error
+                  << " velocity_error_m_s=" << velocity_error << '\n';
+    }
+}
+
+void actualGlassAtPracticalStep() {
+    const auto compiled = compileBrittleMaterial(makeReferenceMaterial(MaterialPreset::Glass, 17), .04, 2);
+    const auto asset = generateSphereLattice({.25, .04, 2, 3}, compiled);
+    ActiveMatter matter;
+    matter.asset = &asset;
+    matter.material = compiled;
+    matter.bonds.resize(asset.bonds.size());
+    for (const auto &node : asset.nodes) matter.nodes.push_back({node.local_position_m, {},
+        Vec3{.3, -.1, .2} + cross(Vec3{1, -2, 3}, node.local_position_m),
+        node.represented_volume_m3 * compiled.density_kg_m3, {1, -2, 3}});
+    const auto before = totals(matter);
+    const auto original = matter.nodes;
+    const auto failed = tryConservativeStep(matter, .002, {}, nullptr,
+        {.maximum_iterations = 1, .maximum_linear_iterations = 1});
+    require(!failed.converged, "insufficient global solve budget is rejected");
+    for (std::size_t i = 0; i < original.size(); ++i) {
+        near(length(matter.nodes[i].position_world_m - original[i].position_world_m), 0, 0,
+             "limited global solve retains positions");
+        near(length(matter.nodes[i].velocity_m_s - original[i].velocity_m_s), 0, 0,
+             "limited global solve retains velocities");
+    }
+    unsigned linear_iterations = 0;
+    for (unsigned step = 0; step < 5; ++step) {
+        const auto result = tryConservativeStep(matter, .002);
+        require(result.converged && result.balance_measured, "full glass lattice passes unchanged acceptance checks");
+        require(result.constitutive_velocity_residual_m_s <= 1e-9, "glass constitutive residual");
+        linear_iterations += result.linear_iterations;
+    }
+    // This is a numerical regression of the actual preset, not calibration or
+    // a claim that unresolved glass vibration is accurate at this timestep.
+    momentumAndEnergy(before, totals(matter), 0, 1e-8);
+    std::cout << "actual glass nodes=" << matter.nodes.size() << " bonds=" << matter.bonds.size()
+              << " linear_iterations=" << linear_iterations << '\n';
+}
 }
 
 int main() {
@@ -234,7 +319,10 @@ int main() {
         {"transactional rejection and no tunneling", failedSolveIsTransactional},
         {"off-center contact and frame invariance", offCenterContactAndFrameInvariance},
         {"sampled elastic lattice", sampledLatticeReference},
-        {"energy audit rejects unresolved solve", energyCheckRejectsUnresolvedNetwork}};
+        {"energy audit rejects unresolved solve", energyCheckRejectsUnresolvedNetwork},
+        {"local and global elastic solutions agree", localAndGlobalSolveAgree},
+        {"analytical timestep convergence", analyticalTimeStepConvergence},
+        {"actual glass at practical timestep", actualGlassAtPracticalStep}};
     unsigned failures = 0;
     for (const auto &[name, test] : tests) {
         try { test(); std::cout << "[PASS] " << name << '\n'; }

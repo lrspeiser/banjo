@@ -33,6 +33,7 @@ add_library(
     src/matter/Lattice.cpp
     src/physics/ContactMechanics.cpp
     src/physics/ConservativeStep.cpp
+    src/physics/ElasticNewton.cpp
     src/physics/MechanicalAccounting.cpp
     src/physics/RollingKinematics.cpp
     src/physics/SphereMaterialContact.cpp

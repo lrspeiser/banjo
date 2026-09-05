@@ -18,12 +18,18 @@ struct ConservativeStepSettings {
     const SupportPlaneFrame *support{};
     double support_half_tangent_m{std::numeric_limits<double>::infinity()};
     double support_half_bitangent_m{std::numeric_limits<double>::infinity()};
+    // Newton/GMRES solves the whole elastic network; false retains the slower
+    // per-bond nonlinear sweep as an independent numerical comparison.
+    bool global_elastic_solve{true};
+    // Krylov iterations per Newton update, not a relaxed physical tolerance.
+    unsigned maximum_linear_iterations{400};
 };
 
 struct ConservativeStepResult {
     bool converged{};
     bool balance_measured{};
     unsigned iterations{};
+    unsigned linear_iterations{};
     double constitutive_velocity_residual_m_s{};
     double energy_residual_j{};
     Vec3 linear_momentum_residual_kg_m_s{};
