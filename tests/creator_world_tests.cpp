@@ -113,6 +113,9 @@ void threeMaterialBoxMassInertiaAndFall() {
         near(measured.inertia_world_kg_m2.m[0][1],(ix-iy)/2,expected_mass*1e-8,"nonzero world off-diagonal inertia survives insertion");
         near(measured.inertia_world_kg_m2.m[2][2],iz,expected_mass*1e-8,"solver box principal inertia");
         const double initial_y=o.state.center_of_mass_world_m.y;world.step(48);
+        const auto motion=measureCreatorMotion(world.objects()[0],world.support());
+        require(motion.near_support_points==0&&motion.state=="no top-support sample","absence of top-contact samples is not a claim about all contacts");
+        require(Json::parse(world.inspectJson())["objects"][0]["contact_slip_m_s"].is_null(),"unmeasured contact slip is unavailable rather than zero");
         near(world.objects()[0].state.linear_velocity_m_s.y,-1.962,1e-5,"box free-fall acceleration is density independent");
         near(world.objects()[0].state.center_of_mass_world_m.y,initial_y-.1962,.005,"box free-fall position within fixed-step truncation");
         near(world.inventoryMass(material)+expected_mass,10,1e-12,"box material ledger closes");

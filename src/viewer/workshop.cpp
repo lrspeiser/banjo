@@ -222,7 +222,7 @@ int main(int argc,char **argv) {
             if(button({1110,669,292,38},"Save world"))try{save();status="Inventory, object recipes and motion saved.";}catch(const std::exception &e){status=e.what();}
             if(!world.objects().empty()) {
                 const auto motion=measureCreatorMotion(world.objects().back(),plane);
-                DrawText(("Last object: "+motion.state).c_str(),1110,739,17,ink);
+                DrawText(("Last object: "+(motion.state=="no top-support sample"?std::string("contact not measured"):motion.state)).c_str(),1110,739,16,ink);
                 DrawText((motion.near_support_points?"Slip "+fixed(motion.slip_m_s)+" m/s":"Slip: no top-support sample").c_str(),1110,769,17,muted);
                 DrawText(("Speed "+fixed(motion.speed_m_s)+" m/s").c_str(),1110,797,17,muted);
             }

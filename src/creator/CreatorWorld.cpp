@@ -168,7 +168,7 @@ CreatorMotion measureCreatorMotion(const CreatedObject &object,const SupportPlan
         return {std::string(rollingStateName(m.state)),m.translation_speed_m_s,m.contact_slip_speed_m_s,
             signedDistanceToPlane(plane,s.center_of_mass_world_m)-geometry.radius_m,m.state==RollingState::Airborne?0U:1U};
     }
-    CreatorMotion result{"airborne",length(projectVectorOntoPlane(plane,s.linear_velocity_m_s)),0,
+    CreatorMotion result{"no top-support sample",length(projectVectorOntoPlane(plane,s.linear_velocity_m_s)),0,
         signedDistanceToPlane(plane,s.center_of_mass_world_m)-geometry.extent(plane.normal_world,s.orientation_world),0};
     double slip_squared=0;
     for(const auto local:geometry.corners()) {
