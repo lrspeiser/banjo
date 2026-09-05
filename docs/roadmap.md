@@ -10,7 +10,7 @@ This roadmap implements the [master plan](project-master-plan.md). See [developm
 
 ## Gate 0 — integrate the development checkpoint safely
 
-**Local checkpoint completed:** tested code `29254bd` on `codex/physics-foundation` reconciles main and PR #2 and passes Windows build, all seven CTest executables, headless handoff, capture and normal interactive controls. See [source, environment, quantitative results and remaining defects](windows-integration-checkpoint.md). This is not pushed or merged into main, and is not a new Linux/macOS or remote-CI claim. Gate 1 is the next active engineering gate.
+**Local checkpoint completed:** tested code `f29334d` on `codex/physics-foundation` reconciles main and PR #2 and passes Windows build, all seven CTest executables, headless handoff, capture and normal interactive controls. See [source, environment, quantitative results and remaining defects](windows-integration-checkpoint.md). This is not pushed or merged into main, and is not a new Linux/macOS or remote-CI claim. Gate 1 is the next active engineering gate.
 
 Inspect main and PR #2, preserve concurrent edits and the explicit raylib/MSVC options, and reconcile on a development branch. Review new contact and rolling tests. Run headless tests, the screenshot path, and a normal interactive session; test launch-spin control, pause, reset, slope/gravity changes, and window input/timing. Record exact source and environment.
 

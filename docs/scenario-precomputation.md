@@ -41,6 +41,8 @@ The initial grid contains five striker materials, four target materials, four sp
 
 ## Runtime strategy
 
+On the local physics-foundation branch, CSV v1/v2 rows remain partial analytical summaries: they omit masses and other runtime projection fields. `lookupOrProject` recomputes such a row from the current scenario input on first use and reports a miss, preventing zero mass readouts. A subsequent complete in-memory lookup can hit. This repair does not make the preset-based key a complete physical-state identity or implement authoritative cached outcomes.
+
 The projector classifies each scenario as:
 
 - `rigid realtime` — no detailed material solve is expected

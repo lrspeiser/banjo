@@ -1,6 +1,6 @@
 # Development status and handoff
 
-**Latest local checkpoint:** `codex/physics-foundation` integrates the audited main and PR #2 at tested code commit `29254bd`. Windows Release, seven CTest executables, headless handoff, graphical capture and normal input/frame presentation were verified. A short-tap input fix and explicit frictionless precision bound were added. See [Windows integration evidence](windows-integration-checkpoint.md). This work is local, not pushed or merged into GitHub main. The audit below remains historical evidence; Gate 1 conservation and Gate 2 material validation are still open.
+**Latest local checkpoint:** `codex/physics-foundation` integrates the audited main and PR #2 at tested code commit `f29334d`. Windows Release, seven CTest executables, headless handoff, graphical capture and normal input/frame presentation were verified. A short-tap input fix and explicit frictionless precision bound were added. See [Windows integration evidence](windows-integration-checkpoint.md). This work is local, not pushed or merged into GitHub main. The audit below remains historical evidence; Gate 1 conservation and Gate 2 material validation are still open.
 
 **Audit date:** September 4, 2026, America/Los_Angeles. Associated late-day GitHub events are dated September 5 in UTC. This is a pinned snapshot, not a promise that branch heads never change.
 

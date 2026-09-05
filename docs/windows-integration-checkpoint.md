@@ -4,7 +4,7 @@ Date: September 4, 2026, America/Los_Angeles.
 
 ## Source and scope
 
-The local branch `codex/physics-foundation` integrates main `3a38d7d6e37f12657baa2777cb906c1682c9b098` and PR #2 head `138260d2f3d2e30a112f28034731db6052ae1720`. The tested code commit is **`29254bd0a0f8287ac6470f5c1d5af5fad32d6161`**. The worktree is `C:/Users/henry/dev/banjo-integration`; the original checkout remains on main.
+The local branch `codex/physics-foundation` integrates main `3a38d7d6e37f12657baa2777cb906c1682c9b098` and PR #2 head `138260d2f3d2e30a112f28034731db6052ae1720`. The tested code commit is **`f29334d4a89a2e5df71a06d728caa6e34c94263f`**. The worktree is `C:/Users/henry/dev/banjo-integration`; the original checkout remains on main.
 
 This checkpoint is local. It has not been pushed or merged into GitHub main. PR #2 remains open/draft. Its successful Linux CI runs belong to `138260d`, not to this integration commit. See [development status](development-status.md) for the historical CI links.
 
@@ -16,6 +16,8 @@ The merge preserves main's `SUPPORT_CUSTOM_FRAME_CONTROL=OFF`, `SUPPORT_BUSY_WAI
 - Fixed missed short keyboard taps. The old viewer sampled final key-down state; a press and release processed together between frames disappeared. The viewer now consumes raylib's key-press queue. This was reproduced with Windows input and then verified after the change.
 - Added simulated time and fixed-tick readouts to make pause, reset and single-step observable.
 - Documented and bounded a platform-dependent frictionless spin residual. No compensating torque, velocity reset or extra damping was introduced.
+- Fixed screenshot export for absolute paths and checked the actual export result. Relative paths also pass; attempting to export to a directory returns exit code 1.
+- Recompute incomplete CSV v1/v2 summaries from the actual scenario input on first runtime use. They omit masses and other fields, so treating them as complete cache hits produced zero-valued diagnostics. The first use is now reported as a miss; the complete in-memory projection can subsequently be reused. A regression test covers loaded masses and agreement with the analytical reference. Complete physical cache identity/invalidation remains Gate 6 work.
 
 ## Environment and reproduction
 
@@ -45,6 +47,8 @@ For a fresh checkout omit the two `FETCHCONTENT_SOURCE_DIR_*` overrides and let 
 | Frictionless drift | Angular drift 4.48667e-5 rad/s; surface drift 1.12167e-5 m/s at radius 0.25 m |
 | Scenario generator | 960 analytical scenarios generated |
 | Capture with projection cache | 210-frame PNG exported and window exited successfully |
+| Capture artifact inspection | 1280×800 image exists and was viewed; mass readouts are nonzero, panels and clock render correctly |
+| Export failure | Writing to an existing directory fails with exit code 1 |
 | Normal window | Visible 3D scene and diagnostic overlays; frame presentation continued |
 | Pause and step | Paused at tick 875 / 7.2917 s; N advanced to tick 876 / 7.3000 s and remained paused |
 | Reset | R returned to rigid phase with intact bonds, cleared clock and resumed; first observed frame tick 2 / 0.0167 s |
@@ -54,6 +58,8 @@ For a fresh checkout omit the two `FETCHCONTENT_SOURCE_DIR_*` overrides and let 
 | Controls and overlays | Motion panel and bottom controls remained readable; new clock fits the left panel |
 
 The window showed roughly 50–60 FPS in these observations while another baseline lab was also running. This is an interactive smoke test, not an isolated performance benchmark or a demonstrated 60 Hz physics guarantee.
+
+**Evidence correction:** the first report at documentation commit `ff982de` mistakenly inferred successful capture from exit status. Inspecting the artifact found that raylib had prefixed the working directory to an absolute Windows path and saved no image. Commit `184d57d` replaced that API with checked framebuffer export. Artifact inspection then revealed incomplete CSV diagnostics; `f29334d` fixed that fallback. Release build, all seven CTest executables, headless and the 210-frame capture were rerun at `f29334d`. Relative-path and failed-export checks were exercised at `184d57d`; the export code is unchanged in `f29334d`. Detailed normal keyboard checks above were exercised at `29254bd`; later changes affect capture and CSV loading, and the final normal viewer was launched again.
 
 ### Frictionless tolerance change
 
@@ -91,4 +97,3 @@ Gate 1 remains open. Source inspection identifies concrete accounting gaps to in
 5. Bond failure removes stored constraints without a complete fracture-work budget. Coarsening can remove internal kinetic/elastic energy. Supports, Jolt contact, rolling resistance and debris interactions also need external impulse/torque/work and loss accounting.
 
 Next: establish scene/transition measurements with explicit boundaries and state identity, add isolated and supported analytical regressions, quantify these residuals, then repair the representation and solver transfers. Calibrated fracture, property/shape coverage, arbitrary contacts, adaptive matter, validated speculation, assemblies, authoring and publishing remain subsequent gates in the full project goal.
-
