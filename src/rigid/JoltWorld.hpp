@@ -11,6 +11,8 @@
 #include "physics/SphereMaterialContact.hpp"
 #include "physics/MechanicalAccounting.hpp"
 #include "physics/CohesiveInterface.hpp"
+#include "physics/CohesiveRigidPair.hpp"
+#include "physics/RigidAttachment.hpp"
 
 #include <memory>
 #include <vector>
@@ -57,6 +59,11 @@ struct CohesiveTensionKick {
     PairImpulseAudit transfer;
 };
 
+struct CohesiveTensionPatchKick {
+    std::vector<CohesiveInterfaceIncrement> interface_increments;
+    PairImpulseAudit transfer;
+};
+
 class JoltWorld {
 public:
     JoltWorld();
@@ -99,6 +106,13 @@ public:
         Vec3 attachment_a_local_m,Vec3 attachment_b_local_m,double rest_distance_m,
         const CohesiveInterfaceLaw &law,const CohesiveInterfaceState &history,
         double impulse_duration_s,double maximum_roundoff_energy_j);
+    // 1..256 caller-compiled local sites, each with its own area/history.
+    // Common law.area_m2 is ignored. Every site is evaluated from the same
+    // pose; the complete velocity update is preflighted before either write.
+    // Returns histories only on success; does not step or own persistence.
+    [[nodiscard]] CohesiveTensionPatchKick applyCohesiveTensionPatchKick(MatterBodyId a,MatterBodyId b,
+        const std::vector<CohesivePatchSite> &sites,const CohesiveInterfaceLaw &law,
+        double impulse_duration_s,double maximum_roundoff_energy_j);
     void pinToWorld(MatterBodyId body_id);
     void releaseFromWorld(MatterBodyId body_id);
     void applyRigidState(MatterBodyId body_id,const RigidSnapshot &state);
@@ -115,8 +129,8 @@ public:
     void removeAndDestroy(MatterBodyId body_id);
 
 private:
-    [[nodiscard]] PairImpulseAudit applyAuditedPairImpulse(MatterBodyId a,MatterBodyId b,
-        Vec3 point_a_m,Vec3 point_b_m,Vec3 impulse_on_a_n_s,double maximum_roundoff_energy_j);
+    [[nodiscard]] PairImpulseAudit applyAuditedPairImpulses(MatterBodyId a,MatterBodyId b,
+        const std::vector<AttachmentImpulse> &impulses,double maximum_roundoff_energy_j);
     class Impl;
     std::unique_ptr<Impl> impl_;
 };

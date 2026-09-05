@@ -35,6 +35,37 @@ int main(){try {
             rejects([&]{(void)sample.applyCohesiveTensionKick(1,3,{},{},1,law,{},.001,1);});
         }
 
+        // Finite-area batch: all sites use one pose and publish one kick.
+        std::vector<CohesivePatchSite> sites{{{0,.02,.01},{0,.02,.01},rest,area*.25,{}},
+            {{0,-.01,-.02},{0,-.01,-.02},rest,area*.75,{}}};
+        const auto initial_a=sample.snapshot(1),initial_b=sample.snapshot(2);
+        const auto unchanged=[&] {
+            for(auto id:{1u,2u}){const auto now=sample.snapshot(id);const auto &before=id==1?initial_a:initial_b;
+                require(length(now.linear_velocity_m_s-before.linear_velocity_m_s)==0&&length(now.angular_velocity_rad_s-before.angular_velocity_rad_s)==0,"rejected batch leaves both velocities unchanged");}
+            require(sites[0].history.maximum_opening_m==0&&sites[1].history.maximum_opening_m==0,"input histories immutable");
+        };
+        auto invalid=sites;invalid.back().area_m2=-1;
+        rejects([&]{(void)sample.applyCohesiveTensionPatchKick(1,2,invalid,law,.001,1);});unchanged();
+        rejects([&]{(void)sample.applyCohesiveTensionPatchKick(1,2,{},law,.001,1);});unchanged();
+        rejects([&]{(void)sample.applyCohesiveTensionPatchKick(1,2,std::vector<CohesivePatchSite>(257,sites[0]),law,.001,1);});unchanged();
+        rejects([&]{(void)sample.applyCohesiveTensionPatchKick(1,2,sites,law,.001,-1);});unchanged();
+        rejects([&]{(void)sample.applyCohesiveTensionPatchKick(1,2,sites,law,1,0);});unchanged();
+        JoltWorld reverse_world,split_world;bodies(reverse_world,material,.122);bodies(split_world,material,.122);
+        auto reverse_sites=sites;std::reverse(reverse_sites.begin(),reverse_sites.end());
+        std::vector<CohesivePatchSite> split_sites;for(auto site:sites){site.area_m2/=4;for(unsigned n=0;n<4;++n)split_sites.push_back(site);}
+        const auto batch=sample.applyCohesiveTensionPatchKick(1,2,sites,law,.001,1e-4);
+        (void)reverse_world.applyCohesiveTensionPatchKick(1,2,reverse_sites,law,.001,1e-4);
+        (void)split_world.applyCohesiveTensionPatchKick(1,2,split_sites,law,.001,1e-4);
+        const double force=area*law.stiffness_pa_per_m*(.122-rest),mass_now=sample.mechanicalState(1).mass_kg;
+        require(std::abs(sample.snapshot(1).linear_velocity_m_s.x-force*.001/mass_now)<1e-7,"patch net force follows sum of site areas");
+        require(std::abs(sample.snapshot(1).angular_velocity_rad_s.z)>0,"asymmetric areas produce spin");
+        for(auto id:{1u,2u}) {
+            require(length(sample.snapshot(id).angular_velocity_rad_s-reverse_world.snapshot(id).angular_velocity_rad_s)<1e-7,"runtime site order agreement");
+            require(length(sample.snapshot(id).linear_velocity_m_s-split_world.snapshot(id).linear_velocity_m_s)<1e-7&&length(sample.snapshot(id).angular_velocity_rad_s-split_world.snapshot(id).angular_velocity_rad_s)<1e-7,"runtime same-point area subdivision agreement");
+        }
+        require(batch.interface_increments.size()==2&&sites[0].history.maximum_opening_m==0,"histories returned separately");
+        std::cout<<materialPresetName(preset)<<" patch_transfer_error_j="<<batch.transfer.numerical_energy_change_j<<" patch_momentum_error="<<length(batch.transfer.momentum_error_kg_m_s)<<" patch_angular_error="<<length(batch.transfer.angular_momentum_error_kg_m2_s)<<'\n';
+
         // Failed connector must leave actual collision trajectories unchanged.
         JoltWorld plain,failed;bodies(plain,material,rest,1);bodies(failed,material,rest,1);
         CohesiveInterfaceState broken{0,cohesiveSeparationOpening(law)};unsigned events=0;

@@ -732,36 +732,51 @@ PairImpulseAudit JoltWorld::applyPairImpulse(MatterBodyId a,MatterBodyId b,
     Vec3 point_a_m,Vec3 point_b_m,Vec3 impulse_on_a_n_s,double maximum_roundoff_energy_j) {
     if(pairContactOwner(a,b)!=PairContactOwner::External)
         throw std::invalid_argument("pair impulse requires external contact ownership");
-    return applyAuditedPairImpulse(a,b,point_a_m,point_b_m,impulse_on_a_n_s,maximum_roundoff_energy_j);
+    return applyAuditedPairImpulses(a,b,{{point_a_m,point_b_m,impulse_on_a_n_s}},maximum_roundoff_energy_j);
 }
 CohesiveTensionKick JoltWorld::applyCohesiveTensionKick(MatterBodyId a,MatterBodyId b,
     Vec3 local_a,Vec3 local_b,double rest,const CohesiveInterfaceLaw &law,
     const CohesiveInterfaceState &history,double duration,double budget) {
+    const auto result=applyCohesiveTensionPatchKick(a,b,{{local_a,local_b,rest,law.area_m2,history}},law,duration,budget);
+    return {result.interface_increments.front(),result.transfer};
+}
+CohesiveTensionPatchKick JoltWorld::applyCohesiveTensionPatchKick(MatterBodyId a,MatterBodyId b,
+    const std::vector<CohesivePatchSite> &sites,const CohesiveInterfaceLaw &law,double duration,double budget) {
+    if(sites.empty()||sites.size()>256)throw std::invalid_argument("tensile patch site count must be 1..256");
     if(positionPrecisionBits()!=64)throw std::invalid_argument("runtime cohesion requires double positions");
     if(pairContactOwner(a,b)!=PairContactOwner::Jolt)throw std::invalid_argument("tensile connector requires Jolt surface ownership");
     for(auto id:{a,b})if(impl_->contact_states_.at(id).activation_material)
         throw std::invalid_argument("tensile connector cannot share deferred material activation contacts");
     const auto finite=[](Vec3 v){return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z);};
-    if(!finite(local_a)||!finite(local_b)||!std::isfinite(rest)||rest<=0||
-        !std::isfinite(duration)||duration<=0||duration>1||law.compression_stiffness_pa_per_m!=0)
-        throw std::invalid_argument("invalid tensile connector or duplicate compression response");
+    if(!std::isfinite(duration)||duration<=0||duration>1||law.compression_stiffness_pa_per_m!=0)
+        throw std::invalid_argument("invalid tensile duration or duplicate compression response");
     const auto sa=snapshot(a),sb=snapshot(b);
-    const auto pa=sa.center_of_mass_world_m+sa.orientation_world.rotate(local_a);
-    const auto pb=sb.center_of_mass_world_m+sb.orientation_world.rotate(local_b);
-    const Vec3 delta=pb-pa;const double distance=length(delta);
-    if(!std::isfinite(distance)||distance<=rest*1e-6)throw std::invalid_argument("tensile attachment points coincide or are unresolved");
-    const auto increment=advanceCohesiveInterface(law,history,distance-rest);
-    const Vec3 impulse=(increment.response.force_n*duration)*(delta/distance);
-    const auto transfer=applyAuditedPairImpulse(a,b,pa,pb,impulse,budget);
+    CohesiveTensionPatchKick result;
+    std::vector<AttachmentImpulse> impulses;impulses.reserve(sites.size());
+    result.interface_increments.reserve(sites.size());
+    for(const auto &site:sites) {
+        if(!finite(site.attachment_a_m)||!finite(site.attachment_b_m)||!std::isfinite(site.rest_distance_m)||site.rest_distance_m<=0)
+            throw std::invalid_argument("invalid tensile attachment geometry");
+        const auto pa=sa.center_of_mass_world_m+sa.orientation_world.rotate(site.attachment_a_m);
+        const auto pb=sb.center_of_mass_world_m+sb.orientation_world.rotate(site.attachment_b_m);
+        const Vec3 delta=pb-pa;const double distance=length(delta);
+        if(!std::isfinite(distance)||distance<=site.rest_distance_m*1e-6)
+            throw std::invalid_argument("tensile attachment points coincide or are unresolved");
+        auto site_law=law;site_law.area_m2=site.area_m2;
+        const auto increment=advanceCohesiveInterface(site_law,site.history,distance-site.rest_distance_m);
+        impulses.push_back({pa,pb,(increment.response.force_n*duration)*(delta/distance)});
+        result.interface_increments.push_back(increment);
+    }
+    result.transfer=applyAuditedPairImpulses(a,b,impulses,budget);
     // A caller advancing an external interface owns its sleeping decision.
     // Jolt's velocity-threshold sleep would otherwise discard low-speed KE
     // mid-trajectory. Stop issuing kicks when releasing that responsibility.
     auto &bodies=impl_->physics_->GetBodyInterface();
     for(auto id:{a,b}){bodies.ActivateBody(impl_->bodies_.at(id));bodies.ResetSleepTimer(impl_->bodies_.at(id));}
-    return {increment,transfer};
+    return result;
 }
-PairImpulseAudit JoltWorld::applyAuditedPairImpulse(MatterBodyId a,MatterBodyId b,
-    Vec3 point_a_m,Vec3 point_b_m,Vec3 impulse_on_a_n_s,double maximum_roundoff_energy_j) {
+PairImpulseAudit JoltWorld::applyAuditedPairImpulses(MatterBodyId a,MatterBodyId b,
+    const std::vector<AttachmentImpulse> &impulses,double maximum_roundoff_energy_j) {
     if(!std::isfinite(maximum_roundoff_energy_j)||maximum_roundoff_energy_j<0)
         throw std::invalid_argument("pair impulse requires a finite nonnegative roundoff budget");
     for(auto id:{a,b}) {
@@ -787,7 +802,7 @@ PairImpulseAudit JoltWorld::applyAuditedPairImpulse(MatterBodyId a,MatterBodyId 
         return AttachmentBody{s.mass_kg,inertia,s.motion.center_of_mass_world_m,
             s.motion.linear_velocity_m_s,s.motion.angular_velocity_rad_s};
     };
-    const auto solved=applyAttachmentImpulse(attachment(before_a),attachment(before_b),point_a_m,point_b_m,impulse_on_a_n_s);
+    const auto solved=applyAttachmentImpulses(attachment(before_a),attachment(before_b),impulses);
     const auto candidate=[&](MatterBodyId id,RigidMechanicalState state,const AttachmentBody &target) {
         const auto representable=[](Vec3 v) {
             const double limit=std::numeric_limits<float>::max();
