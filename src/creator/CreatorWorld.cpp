@@ -354,7 +354,9 @@ CreationAssessment CreatorWorld::assess(const ObjectRecipe &r,std::optional<Revi
     if(result.buildable())allocate(result.creation,available,old?old->allocations:std::vector<MaterialAllocation>{});
     return result;
 }
-std::string CreatorWorld::assessAssemblyJson(std::string_view declaration) const {
+namespace {
+struct CompiledAssembly {Json declaration;CohesivePatchState patch;CohesiveInterfaceLaw law;std::array<std::string,2> ids;std::array<MaterialPreset,2> materials;unsigned a_index;};
+CompiledAssembly compileAssembly(std::string_view declaration){
     const auto j=parse(declaration);fields(j,{"schema_version","parts","joint"});check(integer(j.at("schema_version"),1)==1,"unsupported assembly version");
     const auto &parts=j.at("parts");check(parts.is_array()&&parts.size()==2,"assembly assessment requires exactly two boxes");
     std::array<CohesiveBoxDeclaration,2> boxes;std::array<std::string,2> ids;std::array<MaterialPreset,2> materials;
@@ -370,6 +372,11 @@ std::string CreatorWorld::assessAssemblyJson(std::string_view declaration) const
     const auto &l=joint.at("law");fields(l,{"model","stiffness_pa_per_m","strength_pa","fracture_energy_j_m2","compression_stiffness_pa_per_m","provenance"});check(string(l.at("model"))=="central-cohesive-v1","unsupported assembly interface model");(void)string(l.at("provenance"),256);
     const CohesiveInterfaceLaw law{number(l.at("stiffness_pa_per_m")),number(l.at("strength_pa")),number(l.at("fracture_energy_j_m2")),area,number(l.at("compression_stiffness_pa_per_m"))};(void)evaluateCohesiveInterface(law,{});
     check(law.stiffness_pa_per_m<=1e22&&law.compression_stiffness_pa_per_m<=1e22&&law.strength_pa<=1e12&&law.fracture_energy_j_m2<=1e12,"interface law exceeds assessment numeric limits");
+    return {j,compiled,law,ids,materials,ai};
+}
+}
+std::string CreatorWorld::assessAssemblyJson(std::string_view declaration) const {
+    const auto result=compileAssembly(declaration);const auto &j=result.declaration;const auto &compiled=result.patch;const auto &law=result.law;const auto &ids=result.ids;const auto &materials=result.materials;const auto ai=result.a_index;const double area=law.area_m2;
     Json derived=Json::array();std::map<MaterialPreset,double> requirements;
     for(unsigned i=0;i<2;++i){const auto &body=i==ai?compiled.a:compiled.b;requirements[materials[i]]+=body.mass_kg;derived.push_back({{"id",ids[i]},{"material",materialPresetName(materials[i])},{"mass_kg",body.mass_kg},{"principal_inertia_kg_m2",vector(body.principal_inertia_kg_m2)}});}
     Json bill=Json::array();bool sufficient=true;
@@ -378,6 +385,23 @@ std::string CreatorWorld::assessAssemblyJson(std::string_view declaration) const
     return Json{{"assessment_version",1},{"declaration",j},{"compiled",true},{"materials_sufficient",sufficient},{"creation_supported",false},{"parts",derived},{"material_requirements",bill},
         {"joint",{{"area_m2",area},{"rest_gap_m",compiled.sites.front().rest_distance_m},{"site_count",compiled.sites.size()},{"complete_tensile_separation_work_j",area*law.fracture_energy_j_m2},{"contact_policy","cohesive_patch_only"}}},
         {"limitations",Json::array({"Experimental isolated two-box reference; live assembly creation and collision ownership are not integrated.","No shear/friction, calibrated material failure or proven spatial damage-front convergence.","Separation work is not fabrication cost; joining energy, tools and processes remain unsupported."})}}.dump(2);
+}
+std::string CreatorWorld::testAssemblyJson(std::string_view declaration,std::string_view specification){
+    const auto compiled=compileAssembly(declaration);auto state=compiled.patch;const auto &law=compiled.law;
+    const auto spec=parse(specification);fields(spec,{"test_version","relative_kinetic_energy_j","duration_s","energy_error_budget_j","state_error_tolerance","maximum_evaluations","minimum_separated_area_fraction"});check(integer(spec.at("test_version"),1)==1,"unsupported assembly test version");
+    const double input=number(spec.at("relative_kinetic_energy_j")),duration=number(spec.at("duration_s")),minimum=number(spec.at("minimum_separated_area_fraction"));check(input>0&&input<=1e4,"assembly test input energy must be positive and at most 10000 J");check(minimum>=0&&minimum<=1,"separated-area fraction must be 0 to 1");
+    const CohesiveAdaptiveControls controls{number(spec.at("energy_error_budget_j")),number(spec.at("state_error_tolerance")),static_cast<unsigned>(integer(spec.at("maximum_evaluations"),65536))};
+    check(controls.energy_error_budget_j<=input*.01,"numerical energy budget must be at most 1 percent of input energy");
+    const auto &site=state.sites.front();const auto delta=state.b.center_m+state.b.orientation.rotate(site.attachment_b_m)-state.a.center_m-state.a.orientation.rotate(site.attachment_a_m);const auto normal=delta/length(delta);
+    const double ma=state.a.mass_kg,mb=state.b.mass_kg,mu=ma*mb/(ma+mb),speed=std::sqrt(2*input/mu);check(std::isfinite(speed)&&speed<=1e4,"assembly test speed exceeds 10000 m/s bound");
+    state.a.velocity_m_s=-mb/(ma+mb)*speed*normal;state.b.velocity_m_s=ma/(ma+mb)*speed*normal;
+    const double initial_energy=cohesiveRigidKineticEnergy({state.a,state.b,{}});
+    const auto result=advanceCohesivePatchAdaptive(law,state,duration,controls);
+    double separated_area=0,stored=0,damage=0;Json histories=Json::array();
+    for(const auto &s:result.state.sites){auto local=law;local.area_m2=s.area_m2;const auto response=evaluateCohesiveInterface(local,s.history);if(response.separated)separated_area+=s.area_m2;stored+=response.stored_energy_j;damage+=response.dissipated_energy_j;histories.push_back({{"area_m2",s.area_m2},{"opening_m",s.history.opening_m},{"maximum_opening_m",s.history.maximum_opening_m},{"damage",response.damage}});}
+    const double fraction=separated_area/law.area_m2,kinetic=cohesiveRigidKineticEnergy({result.state.a,result.state.b,{}});
+    const auto body=[](const CohesiveRigidBody &b,const std::string &id){return Json{{"id",id},{"center_m",vector(b.center_m)},{"orientation_wxyz",quaternion(b.orientation)},{"linear_velocity_m_s",vector(b.velocity_m_s)},{"angular_momentum_kg_m2_s",vector(b.angular_momentum_kg_m2_s)}};};
+    return Json{{"test_version",1},{"fixture","isolated-cohesive-separation-v1"},{"declaration",compiled.declaration},{"specification",spec},{"status",fraction>=minimum?"passed":"failed"},{"separated_area_fraction",fraction},{"initial_kinetic_energy_j",initial_energy},{"final_kinetic_energy_j",kinetic},{"stored_energy_j",stored},{"damage_work_j",damage},{"energy_residual_j",kinetic+stored+damage-initial_energy},{"accumulated_absolute_energy_error_j",result.accumulated_absolute_energy_error_j},{"evaluations",result.evaluations},{"accepted_half_steps",result.accepted_half_steps},{"sites",histories},{"bodies",Json::array({body(result.state.a,compiled.ids[compiled.a_index]),body(result.state.b,compiled.ids[1-compiled.a_index])})},{"boundary","Virtual at-rest assembly initialized with separating normal kinetic energy and zero COM motion; no gravity or external collision owner. No live resources, objects or clock changed. Passing only measures the requested separation fraction; no general functional, material or cutting certification."}}.dump(2);
 }
 std::string CreatorWorld::assessJson(const ObjectRecipe &r,std::optional<RevisionTarget> editing) const {
     const auto report=assess(r,editing);const auto &m=report.material;Json issues=Json::array();
@@ -623,6 +647,7 @@ std::string CreatorWorld::inspectJson() const {
     result["capabilities"]["functional_tests"]={{"version",1},{"operation","test_recipe"},{"fixture","concrete-incline-v1"},{"max_ticks",1200},{"dt_s",1.0/240},{"note","Isolated virtual fixture with explicit endpoint criteria; does not spend live resources. Rolling predicate supports spheres only."}};
     result["history_count"]=history_.size();
     result["capabilities"]["assembly_assessment"]={{"version",1},{"operation","assess_assembly"},{"parts",2},{"shape","box"},{"creation_supported",false},{"note","Read-only experimental interface geometry and material requirements; live assembly/contact integration is unsupported."}};
+    result["capabilities"]["assembly_test"]={{"version",1},{"operation","test_assembly"},{"fixture","isolated-cohesive-separation-v1"},{"maximum_evaluations",65536},{"maximum_sites",256},{"note","Bounded isolated normal-separation experiment; no live resources consumed."}};
     result["inventory"]=Json::array();for (auto m:kMaterialPresets) if (inventoryMass(m)>0) result["inventory"].push_back({{"material",materialPresetName(m)},{"mass_kg",inventoryMass(m)}});
     for (std::size_t i=0;i<objects_.size();++i) {
         const auto &object=objects_[i];auto &j=result["objects"][i];
@@ -650,6 +675,7 @@ std::string CreatorWorld::executeJson(std::string_view commands) {
             else if (type=="preview") {fields(command,{"type","recipe"});value=previewJson(preview(recipe(command.at("recipe"))));}
             else if (type=="assess") {fields(command,{"type","recipe"});value=parse(assessJson(recipe(command.at("recipe"))));}
             else if (type=="assess_assembly") {fields(command,{"type","assembly"});value=parse(assessAssemblyJson(command.at("assembly").dump()));}
+            else if (type=="test_assembly") {fields(command,{"type","assembly","test"});value=parse(testAssemblyJson(command.at("assembly").dump(),command.at("test").dump()));}
             else if (type=="test_recipe") {fields(command,{"type","recipe","test"});value=parse(testRecipeJson(recipe(command.at("recipe")),command.at("test").dump()));}
             else if (type=="assess_rebuild") {
                 fields(command,{"type","object_id","expected_revision","recipe"});

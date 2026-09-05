@@ -115,6 +115,7 @@ public:
     // Read-only two-box cohesive assembly assessment; does not authorize live
     // creation or claim collision ownership has been integrated into Jolt.
     [[nodiscard]] std::string assessAssemblyJson(std::string_view declaration) const;
+    [[nodiscard]] static std::string testAssemblyJson(std::string_view declaration,std::string_view specification);
     [[nodiscard]] CreationPreview preview(const ObjectRecipe &recipe) const;
     [[nodiscard]] MatterBodyId create(std::string request_id,const ObjectRecipe &recipe);
     [[nodiscard]] RebuildPreview previewRebuild(RevisionTarget target,const ObjectRecipe &recipe) const;
