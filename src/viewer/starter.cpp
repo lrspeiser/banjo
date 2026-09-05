@@ -8,6 +8,9 @@
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <future>
+#include <fstream>
+#include <nlohmann/json.hpp>
 
 namespace {
 using namespace banjo;
@@ -58,6 +61,7 @@ int main(int argc,char **argv){try{
     std::string message="Welcome to Willow Clearing. Collect loose wood to begin.";
     CodexAssistant assistant;std::string prompt,submitted_prompt,explanation="Describe a solid ball or block. Custom designs unlock at level 2.";std::optional<ObjectRecipe> proposal;bool prompt_focus=false;
     if(const auto &saved=world.rememberedDesign()){prompt=saved->prompt;explanation=saved->explanation;proposal=saved->recipe;}
+    std::future<std::string> test_job;std::string tested_name;std::filesystem::path test_report_path;
     const auto session=std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
     const auto id=[&]{return "play-"+session+"-"+std::to_string(++serial);};
     const auto save=[&]{world.save(save_path);};
@@ -93,6 +97,11 @@ int main(int argc,char **argv){try{
             world.rememberDesignAndSave(save_path,{reply->request_id,submitted_prompt,reply->explanation,reply->recipe});
             prompt=submitted_prompt;proposal=reply->recipe;explanation=reply->explanation;message="Design saved. Collect what is missing, then return to this table.";
         }}catch(const std::exception &e){proposal.reset();explanation=e.what();}
+        if(test_job.valid()&&test_job.wait_for(std::chrono::seconds(0))==std::future_status::ready)try{
+            const auto document=test_job.get();const auto report=nlohmann::json::parse(document);
+            std::ofstream output(test_report_path,std::ios::binary);output<<document;output.close();if(!output)throw std::runtime_error("Cannot save physical test report");
+            message="Ramp test of "+tested_name+": "+report.at("status").get<std::string>()+". Travel "+number(report.at("final_travel_m").get<double>(),3)+" m; final slip "+(report.at("final_slip_m_s").is_null()?"no contact":number(report.at("final_slip_m_s").get<double>(),4)+" m/s")+". Isolated 2-second test; no materials spent.";
+        }catch(const std::exception &e){message=std::string("Physical test: ")+e.what();}
         const bool modal=crafting||inventory||paused;
         camera.target={camera.position.x+std::sin(yaw)*std::cos(pitch),camera.position.y+std::sin(pitch),camera.position.z-std::cos(yaw)*std::cos(pitch)};
         if(!paused){accumulator+=capture.empty()?dt:1.0/60;while(accumulator>=1.0/240){world.step();accumulator-=1.0/240;}}
@@ -139,6 +148,11 @@ int main(int argc,char **argv){try{
                         text("Level "+std::to_string(q.level)+" / stamina "+number(q.stamina,1)+" / missing "+number(q.missing_kg,3)+" kg",432,515,17);
                         if(!q.missing.empty())wrap(q.missing.front(),432,548,490,16,gold);
                         if(button({432,592,490,48},"BUILD REVIEWED DESIGN",q.ready()))try{message=world.craftRecipeAndSave(save_path,id(),*proposal,v(camera.position));}catch(const std::exception &e){message=e.what();}
+                        if(button({432,654,490,43},test_job.valid()?"TESTING...":"TEST ON 10 DEGREE RAMP",!test_job.valid())){
+                            const auto tested=*proposal;tested_name=tested.name;test_report_path=workspace/("test-"+id()+".json");
+                            const nlohmann::json test{{"test_version",1},{"fixture","concrete-incline-v1"},{"ticks",480},{"slope_degrees",10},{"minimum_travel_m",.3},{"maximum_final_slip_m_s",.02},{"require_rolling",tested.shape=="sphere"}};
+                            test_job=std::async(std::launch::async,[tested,spec=test.dump()]{return CreatorWorld::testRecipeJson(tested,spec);});message="Testing a virtual copy on a 10-degree concrete incline. Live resources are unchanged.";
+                        }
                     }catch(const std::exception &e){wrap(e.what(),432,483,490,17,gold);}
                 }else{
                 const auto &d=designs[selected];const auto q=world.quote(d.id);text(d.label,432,200,27);wrap(d.description,432,244,510,20);text("Requires level "+std::to_string(q.level)+"  /  Your level "+std::to_string(world.level()),432,320,20,q.level>world.level()?gold:ink);

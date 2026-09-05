@@ -286,6 +286,43 @@ CreatorWorld::CreatorWorld(CreatorSettings settings):settings_(settings) {
     world_->addSupportSurface({.frame=support(),.material=makeReferenceMaterial(settings.surface),.half_length_tangent_m=8,.half_length_bitangent_m=3});
 }
 CreatorWorld::~CreatorWorld()=default;
+std::string CreatorWorld::testRecipeJson(const ObjectRecipe &original,std::string_view specification) {
+    const auto test=parse(specification);fields(test,{"test_version","fixture","ticks","slope_degrees","minimum_travel_m","maximum_final_slip_m_s","require_rolling"});
+    check(integer(test.at("test_version"),1)==1,"unsupported test version");
+    check(string(test.at("fixture"))=="concrete-incline-v1","unsupported test fixture");
+    const auto ticks=integer(test.at("ticks"),1200);check(ticks>=24,"test needs at least 24 ticks");
+    const double slope=number(test.at("slope_degrees")),minimum=number(test.at("minimum_travel_m")),slip_limit=number(test.at("maximum_final_slip_m_s"));
+    check(slope>=0&&slope<=20&&minimum>=0&&minimum<=10&&slip_limit>=0&&slip_limit<=5,"test criteria exceed limits");
+    check(test.at("require_rolling").is_boolean(),"require_rolling must be boolean");
+    const bool require_rolling=test.at("require_rolling").get<bool>();
+    (void)compile(original,{}); // Reject malformed declarations before applying fixture state.
+    Json report{{"result_version",1},{"recipe",parse(recipeJson(original))},{"test",test},{"physics_signature",signature()},
+        {"boundary","One virtual rigid object on a fixed concrete incline, gravity [0,-9.81,0]. No live inventory, objects, progress or clock are changed. Placement and initial motion are explicitly replaced by the fixture; geometry/material/orientation are retained."},
+        {"limitations","Endpoint predicates and sampled kinematics only; not general functional certification. No deformation, fracture, manufacturing energy, support reaction/work or calibrated material realism. Box slip samples only vertices near the top plane."}};
+    if(require_rolling&&original.shape!="sphere") {report["status"]="unsupported";report["reason"]="A rolling predicate is supported only for spheres; box rotation is not sphere rolling.";return report.dump(2);}
+    ObjectRecipe fixture=original;fixture.tangent_m=-2;fixture.bitangent_m=0;fixture.clearance_m=.002;fixture.linear_velocity_m_s={};fixture.angular_velocity_rad_s={};
+    const CreatorSettings settings{.slope_degrees=slope};const auto plan=compile(fixture,settings);const auto plane=makeSupportPlaneFromSlopeDegrees(slope);
+    JoltWorld trial;trial.setGravity(settings.gravity_m_s2);trial.addSupportSurface({.frame=plane,.material=makeReferenceMaterial(MaterialPreset::Concrete),.half_length_tangent_m=8,.half_length_bitangent_m=3});
+    CreatedObject object;object.id=1;object.recipe=fixture;object.mass_kg=plan.mass_kg;object.volume_m3=plan.volume_m3;object.inertia_local_kg_m2=plan.inertia_local_kg_m2;object.state={plan.position_world_m,fixture.orientation_world,{},{}};
+    insertObject(trial,object);
+    const auto before=measureRigidMechanics(trial.mechanicalState(1),settings.gravity_m_s2);
+    Json samples=Json::array();CreatorMotion motion;double travel=0;
+    const auto sample=[&](std::uint64_t tick){object.state=trial.snapshot(1);motion=measureCreatorMotion(object,plane);travel=dot(object.state.center_of_mass_world_m-plan.position_world_m,plane.tangent_world);
+        const auto energy=measureRigidMechanics(trial.mechanicalState(1),settings.gravity_m_s2);
+        check(finite(object.state.center_of_mass_world_m)&&finite(object.state.linear_velocity_m_s)&&finite(object.state.angular_velocity_rad_s)&&std::isfinite(energy.mechanicalEnergy()),"test produced nonfinite state");
+        samples.push_back({{"tick",tick},{"time_s",static_cast<double>(tick)/240},{"state",state(object.state)},{"travel_m",travel},{"motion_state",motion.state},{"near_support_points",motion.near_support_points},{"slip_m_s",motion.near_support_points?Json(motion.slip_m_s):Json(nullptr)},{"mechanical_energy_j",energy.mechanicalEnergy()}});
+    };
+    sample(0);for(std::uint64_t tick=1;tick<=ticks;++tick){trial.step(1.0/240);(void)trial.drainImpacts();if(tick%24==0||tick==ticks)sample(tick);}
+    const bool travel_pass=travel>=minimum,contact_pass=motion.near_support_points>0,slip_pass=contact_pass&&motion.slip_m_s<=slip_limit;
+    const bool rolling_pass=!require_rolling||motion.state=="rolling (near-zero slip)";
+    report["status"]=travel_pass&&contact_pass&&slip_pass&&rolling_pass?"passed":"failed";
+    report["predicates"]={{"minimum_travel",travel_pass},{"final_top_contact",contact_pass},{"maximum_final_slip",slip_pass},{"rolling",require_rolling?Json(rolling_pass):Json(nullptr)}};
+    report["final_travel_m"]=travel;report["final_slip_m_s"]=contact_pass?Json(motion.slip_m_s):Json(nullptr);report["mass_kg"]=plan.mass_kg;report["inertia_local_kg_m2"]=matrix(plan.inertia_local_kg_m2);
+    report["fixture_recipe"]=parse(recipeJson(fixture));report["samples"]=samples;
+    report["mechanical_energy_change_j"]=measureRigidMechanics(trial.mechanicalState(1),settings.gravity_m_s2).mechanicalEnergy()-before.mechanicalEnergy();
+    report["energy_note"]="Measured mechanical change, not a closed work/dissipation ledger and not fabrication energy.";
+    return report.dump(2);
+}
 CreatorWorld::CreatorWorld(CreatorWorld &&) noexcept=default;
 CreatorWorld &CreatorWorld::operator=(CreatorWorld &&) noexcept=default;
 SupportPlaneFrame CreatorWorld::support() const {return makeSupportPlaneFromSlopeDegrees(settings_.slope_degrees);}
@@ -557,6 +594,7 @@ std::string CreatorWorld::inspectJson() const {
         {"note","No fabrication energy source, cost or power limit is implemented. Before/after mechanical quantities record authoring discontinuities; they do not pay for construction."}};
     result["capabilities"]["assessment"]={{"version",1},{"operations",Json::array({"assess","assess_rebuild"})},
         {"note","Read-only requirements distinguish collected inventory, recoverable selected matter, uncollected lots and remaining shortfall. Assessments do not reserve resources or prove functional performance."}};
+    result["capabilities"]["functional_tests"]={{"version",1},{"operation","test_recipe"},{"fixture","concrete-incline-v1"},{"max_ticks",1200},{"dt_s",1.0/240},{"note","Isolated virtual fixture with explicit endpoint criteria; does not spend live resources. Rolling predicate supports spheres only."}};
     result["history_count"]=history_.size();
     result["inventory"]=Json::array();for (auto m:kMaterialPresets) if (inventoryMass(m)>0) result["inventory"].push_back({{"material",materialPresetName(m)},{"mass_kg",inventoryMass(m)}});
     for (std::size_t i=0;i<objects_.size();++i) {
@@ -584,6 +622,7 @@ std::string CreatorWorld::executeJson(std::string_view commands) {
             else if (type=="collect") {fields(command,{"type","lot_id"});value={{"collected",collect(string(command.at("lot_id")))}};}
             else if (type=="preview") {fields(command,{"type","recipe"});value=previewJson(preview(recipe(command.at("recipe"))));}
             else if (type=="assess") {fields(command,{"type","recipe"});value=parse(assessJson(recipe(command.at("recipe"))));}
+            else if (type=="test_recipe") {fields(command,{"type","recipe","test"});value=parse(testRecipeJson(recipe(command.at("recipe")),command.at("test").dump()));}
             else if (type=="assess_rebuild") {
                 fields(command,{"type","object_id","expected_revision","recipe"});
                 value=parse(assessJson(recipe(command.at("recipe")),RevisionTarget{integer(command.at("object_id"),max_changes),integer(command.at("expected_revision"),max_changes)}));

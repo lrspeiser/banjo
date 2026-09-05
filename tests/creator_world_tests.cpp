@@ -14,6 +14,33 @@ using Json=nlohmann::json;
 void require(bool value,const char *message) {if (!value) throw std::runtime_error(message);}
 void near(double a,double b,double tolerance,const char *message) {require(std::isfinite(a)&&std::abs(a-b)<=tolerance,message);}
 void rejects(const std::function<void()> &action) {bool failed=false;try {action();}catch(const std::exception &){failed=true;}require(failed,"invalid command must reject");}
+void boundedFunctionalTests() {
+    CreatorWorld live;const auto before=live.serialize();
+    Json specification{{"test_version",1},{"fixture","concrete-incline-v1"},{"ticks",480},{"slope_degrees",10},{"minimum_travel_m",.3},{"maximum_final_slip_m_s",.02},{"require_rolling",true}};
+    for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        ObjectRecipe sphere;sphere.schema_version=2;sphere.material=material;sphere.radius_m=.04;
+        const Json command{{"type","test_recipe"},{"recipe",Json::parse(CreatorWorld::recipeJson(sphere))},{"test",specification}};
+        const auto result=Json::parse(live.executeJson(command.dump()));require(result.at("ok").get<bool>(),"functional API accepts bounded test");
+        const auto report=result.at("result");require(report["status"]=="passed","all three created spheres pass measured rolling criteria");
+        near(report["mass_kg"].get<double>(),4.0/3*std::numbers::pi*.04*.04*.04*makeReferenceMaterial(material).density_kg_m3,1e-12,"test uses matter-derived sphere mass");
+        require(report["samples"].size()==21&&report["samples"].back()["tick"]==480,"bounded trace includes exact final tick");
+        require(live.serialize()==before,"test cannot collect create spend or advance live state");
+        auto impossible=specification;impossible["minimum_travel_m"]=10;
+        require(Json::parse(CreatorWorld::testRecipeJson(sphere,impossible.dump()))["status"]=="failed","valid geometry can fail its requested function");
+        ObjectRecipe box=sphere;box.shape="box";const double side=std::cbrt(sphere.geometry().volume());box.dimensions_m={side,side,side};
+        box.orientation_world={std::cos(-std::numbers::pi/36),0,0,std::sin(-std::numbers::pi/36)};
+        require(Json::parse(CreatorWorld::testRecipeJson(box,specification.dump()))["status"]=="unsupported","box cannot silently inherit a sphere rolling test");
+        auto travel_test=specification;travel_test["require_rolling"]=false;
+        const auto box_report=Json::parse(CreatorWorld::testRecipeJson(box,travel_test.dump()));
+        require(box_report["status"]=="failed"&&box_report["predicates"]["minimum_travel"]==false,"equal-volume flat box fails travel on the same incline");
+        near(box_report["mass_kg"].get<double>(),report["mass_kg"].get<double>(),1e-12,"matched shape tests preserve mass and substance");
+        std::cout<<materialPresetName(material)<<" test travel="<<report["final_travel_m"]<<" slip="<<report["final_slip_m_s"]<<" box travel="<<box_report["final_travel_m"]<<'\n';
+    }
+    auto invalid=specification;invalid["ticks"]=1201;rejects([&]{(void)CreatorWorld::testRecipeJson(ObjectRecipe{},invalid.dump());});
+    invalid=specification;invalid["fixture"]="fracture-v1";rejects([&]{(void)CreatorWorld::testRecipeJson(ObjectRecipe{},invalid.dump());});
+    invalid=specification;invalid["extra"]=true;rejects([&]{(void)CreatorWorld::testRecipeJson(ObjectRecipe{},invalid.dump());});
+    require(live.serialize()==before,"failed and unsupported trials preserve live state");
+}
 void inventoryAndAtomicCreation() {
     CreatorWorld world;ObjectRecipe r;
     const auto before=world.serialize();rejects([&]{(void)world.create("first",r);});require(world.serialize()==before,"uncollected material cannot be spent");
@@ -339,6 +366,7 @@ void persistenceAndInputBoundary() {
 int main() {
     unsigned failures=0;
     for (const auto &[name,action]:std::vector<std::pair<const char*,std::function<void()>>>{
+        {"bounded isolated functional test API",boundedFunctionalTests},
         {"inventory and transactional creation",inventoryAndAtomicCreation},{"glass/oak/iron creation and free fall",threeMaterialCreationAndFreeFall},
         {"three-material created-object rolling",createdObjectsRoll},{"finite created material collisions",finiteMaterialCollision},
         {"primitive geometry and oriented placement",primitiveGeometryAndPlacement},{"three-material box mass/tensor/free fall",threeMaterialBoxMassInertiaAndFall},

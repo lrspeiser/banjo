@@ -130,6 +130,8 @@ public:
     [[nodiscard]] static ObjectRecipe parseRecipe(std::string_view document);
     [[nodiscard]] static CreationPreview compileRecipe(const ObjectRecipe &recipe,CreatorSettings settings={});
     [[nodiscard]] static std::string recipeJson(const ObjectRecipe &recipe);
+    // Isolated virtual test fixture; does not allocate or spend live matter.
+    [[nodiscard]] static std::string testRecipeJson(const ObjectRecipe &recipe,std::string_view specification);
     [[nodiscard]] static CreatorProposal parseProposal(std::string_view document);
 private:
     CreatorSettings settings_;
