@@ -61,6 +61,8 @@ int main(int argc,char **argv){try{
     std::string message="Welcome to Willow Clearing. Collect loose wood to begin.";
     CodexAssistant assistant;std::string prompt,submitted_prompt,explanation="Describe a solid ball or block. Custom designs unlock at level 2.";std::optional<ObjectRecipe> proposal;bool prompt_focus=false;
     if(const auto &saved=world.rememberedDesign()){prompt=saved->prompt;explanation=saved->explanation;proposal=saved->recipe;}
+    bool assembly_testing=false;std::future<std::string> assembly_job;
+    std::string assembly_spec,assembly_tested,assembly_error;std::uint64_t assembly_test_revision{};std::optional<nlohmann::json> assembly_result;
     std::future<std::string> test_job;std::string tested_name;std::filesystem::path test_report_path;
     const auto session=std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
     const auto id=[&]{return "play-"+session+"-"+std::to_string(++serial);};
@@ -97,6 +99,9 @@ int main(int argc,char **argv){try{
             world.rememberDesignAndSave(save_path,{reply->request_id,submitted_prompt,reply->explanation,reply->recipe});
             prompt=submitted_prompt;proposal=reply->recipe;explanation=reply->explanation;message="Design saved. Collect what is missing, then return to this table.";
         }}catch(const std::exception &e){proposal.reset();explanation=e.what();}
+        if(assembly_job.valid()&&assembly_job.wait_for(std::chrono::seconds(0))==std::future_status::ready)try {
+            assembly_result=nlohmann::json::parse(assembly_job.get());
+        }catch(const std::exception &e){assembly_result.reset();assembly_error=std::string("Test rejected: ")+e.what();}
         if(test_job.valid()&&test_job.wait_for(std::chrono::seconds(0))==std::future_status::ready)try{
             const auto document=test_job.get();const auto report=nlohmann::json::parse(document);
             std::ofstream output(test_report_path,std::ios::binary);output<<document;output.close();if(!output)throw std::runtime_error("Cannot save physical test report");
@@ -137,6 +142,37 @@ int main(int argc,char **argv){try{
                 if(button({680,132,240,38},"ASSEMBLY DESIGNS")){selected=7;prompt_focus=false;}
                 if(selected==7){
                     text("Saved assembly / revision "+std::to_string(world.assemblyRevision()),432,200,23);
+                    if(assembly_testing) {
+                        const bool current=world.rememberedAssembly()&&assembly_test_revision==world.assemblyRevision()&&assembly_tested==*world.rememberedAssembly();
+                        if(button({432,246,235,40},"LOAD TEST",!assembly_job.valid()))try {
+                            const auto path=workspace/"assembly-test.json";if(std::filesystem::file_size(path)>1024*1024)throw std::runtime_error("Test file exceeds 1 MiB");
+                            std::ifstream input(path,std::ios::binary);if(!input)throw std::runtime_error("Cannot read assembly-test.json");
+                            assembly_result.reset();assembly_error.clear();assembly_spec.assign(std::istreambuf_iterator<char>(input),{});
+                            if(!nlohmann::json::parse(assembly_spec).is_object())throw std::runtime_error("Test must be an object");
+                        }catch(const std::exception &e){assembly_spec.clear();assembly_result.reset();assembly_error=e.what();}
+                        if(button({687,246,235,40},assembly_job.valid()?"TESTING...":"RUN TEST",world.rememberedAssembly().has_value()&&!assembly_spec.empty()&&!assembly_job.valid()))try {
+                            assembly_tested=*world.rememberedAssembly();assembly_test_revision=world.assemblyRevision();assembly_result.reset();assembly_error.clear();
+                            assembly_job=std::async(std::launch::async,[declaration=assembly_tested,spec=assembly_spec]{return CreatorWorld::testAssemblyJson(declaration,spec);});
+                        }catch(const std::exception &e){assembly_error=e.what();}
+                        if(!assembly_spec.empty())try {
+                            const auto spec=nlohmann::json::parse(assembly_spec);int row=305;
+                            for(const auto &[key,label]:std::initializer_list<std::pair<const char*,const char*>>{{"relative_kinetic_energy_j","Energy J"},{"duration_s","Duration s"},{"minimum_separated_area_fraction","Required fraction"},{"energy_error_budget_j","Energy error budget J"},{"state_error_tolerance","State tolerance"},{"maximum_evaluations","Evaluation limit"}}) {
+                                text(std::string(label)+": "+(spec.contains(key)?spec.at(key).dump().substr(0,28):"missing"),432,row,15,muted);row+=23;
+                            }
+                        }catch(const std::exception &e){assembly_error=e.what();}
+                        else wrap("Load assembly-test.json from this world's folder to review the declared separation experiment.",432,309,490,19,muted);
+                        if(assembly_result&&current) {
+                            const auto &r=*assembly_result;text("Revision "+std::to_string(assembly_test_revision)+": "+r.at("status").get<std::string>(),432,456,22,gold);
+                            text("Separated "+number(r.at("separated_area_fraction").get<double>()*100,2)+"%",432,489,18);
+                            text("Energy residual J: "+r.at("energy_residual_j").dump(),432,516,15,muted);
+                            if(button({432,547,490,34},"EXPORT TEST EVIDENCE"))try {
+                                std::ofstream output(workspace/"assembly-test-result.json",std::ios::binary);output<<nlohmann::json{{"draft_revision",assembly_test_revision},{"report",r}}.dump(2);output.close();if(!output)throw std::runtime_error("Cannot export test evidence");message="Test snapshot exported with its declaration and revision.";
+                            }catch(const std::exception &e){assembly_error=e.what();}
+                        }else if(assembly_result)wrap("Design changed. The previous test is not current. Run again.",432,456,490,20,gold);
+                        else if(assembly_job.valid())text("Testing a virtual copy...",432,456,20,gold);
+                        if(!assembly_error.empty())wrap(assembly_error,432,590,490,15,gold);
+                        else wrap("Isolated separation only; no resources spent. Passing does not prove useful or realistic behavior.",432,590,490,16,muted);
+                    }else {
                     if(button({432,246,235,40},"IMPORT DESIGN"))try {
                         const auto path=workspace/"assembly.json";if(std::filesystem::file_size(path)>1024*1024)throw std::runtime_error("Assembly file exceeds 1 MiB");
                         std::ifstream input(path,std::ios::binary);if(!input)throw std::runtime_error("Cannot read assembly.json");
@@ -157,6 +193,8 @@ int main(int argc,char **argv){try{
                         wrap("Assembly construction is not supported yet. Level and stamina costs are not defined. Attached branches and equipped tools are excluded from loose supplies.",432,556,490,18,muted);
                     }catch(const std::exception &e){message=e.what();}
                     else wrap("Place an assembly design in assembly.json in this world's folder, then import it. Your saved design stays here while you gather materials.",432,319,490,21,muted);
+                    }
+                    if(button({432,654,490,43},assembly_testing?"BACK TO MATERIAL REQUIREMENTS":"PHYSICS TEST"))assembly_testing=!assembly_testing;
                 }else if(selected==6){
                     text("Make something from your materials",432,200,23);
                     Rectangle input{432,240,490,80};DrawRectangleRec(input,{36,51,44,255});DrawRectangleLinesEx(input,1,prompt_focus?gold:muted);
