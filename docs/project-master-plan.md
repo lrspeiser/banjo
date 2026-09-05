@@ -1,5 +1,8 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Owner fracture-propagation requirement:** impact loads a local region, forces and waves propagate through connected matter, and later damage follows the evolved state. A first break must not shatter every connection. Preserve surviving cores and internal state in detached fragments so later failures can arise physically. Numerical recursion may refine time/space; it must not prescribe a destruction tree. See [cascade evidence and remaining integration](rupture-cascade-checkpoint.md).
+
+
 **Immediate owner priority: craft-and-release bowl lab.** Complete inventory-backed glass/oak/iron ball crafting, placement/release in an adjustable concave bowl, rolling/collisions/rebound and physically driven fracture before moving to the next physics family. The [bowl checkpoint](bowl-checkpoint.md) records the new running rigid preview and the explicit unfinished fracture gate. Broader assembly contact research is paused, not discarded. Preserve every existing mechanic and platform gate.
 
 

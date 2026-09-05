@@ -1,5 +1,8 @@
 # Craft-and-release bowl lab
 
+**Local fracture cascades:** [Surviving-network propagation](rupture-cascade-checkpoint.md) now advances contact, local rupture and subsequent internal failure on one clock, with recursive time refinement and whole-interval rollback. An eight-region impact leaves a six-region core intact while a detached two-region piece breaks later. Four affected suites and the new legacy test pass. Local `334454d`; whole-ball/bowl integration remains open.
+
+
 **Fracture component:** [Energy-accounted rupture](energy-rupture-checkpoint.md) now combines accepted elastic/contact motion with a transactional tensile break, explicit Gc-area work and a separate event-overshoot budget. Low/high glass impact cases and matched glass/oak/iron reference experiments pass; five affected suites pass, plus the new legacy test. Local `6b44c2f`. Whole-ball geometry, event convergence and live bowl fragment handoff remain unfinished; fracture is still disabled in the bowl.
 
 
