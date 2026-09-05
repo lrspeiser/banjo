@@ -11,8 +11,9 @@
 namespace banjo {
 namespace {
 bool finite(Vec3 v) { return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z); }
+}
 
-Quat advanceSphereOrientation(Quat q, Vec3 omega, double dt) {
+Quat detail::advanceSphereOrientation(Quat q, Vec3 omega, double dt) {
     const double speed = length(omega), half_angle = .5 * dt * speed;
     const double scale = speed > 1e-14 ? std::sin(half_angle) / speed : .5 * dt;
     const Quat delta{std::cos(half_angle), scale * omega.x, scale * omega.y, scale * omega.z};
@@ -23,6 +24,7 @@ Quat advanceSphereOrientation(Quat q, Vec3 omega, double dt) {
     const double norm = std::sqrt(result.w*result.w + result.x*result.x + result.y*result.y + result.z*result.z);
     return {result.w/norm, result.x/norm, result.y/norm, result.z/norm};
 }
+namespace {
 
 // Discrete gradient of U(q)= (|q|-L)^2/(2*c). Its work is exactly U1-U0,
 // and the force is parallel to q0+q1, preserving midpoint angular momentum.
@@ -68,7 +70,7 @@ MechanicalTotals measure(const ActiveMatter &matter, const CoupledSphereState *s
 }
 
 void detail::validateConservativeState(const ActiveMatter &matter, double dt, const Vec3 &gravity,
-    const CoupledSphereState *sphere, const ConservativeStepSettings &settings) {
+    const CoupledSphereState *sphere, const ConservativeStepSettings &settings, bool allow_compression) {
     if (!matter.asset || matter.bonds.size() != matter.asset->bonds.size() ||
         !std::isfinite(dt) || dt <= 0 || !finite(gravity) || settings.maximum_iterations == 0 ||
         settings.maximum_linear_iterations == 0 ||
@@ -99,7 +101,7 @@ void detail::validateConservativeState(const ActiveMatter &matter, double dt, co
             !finite(node.spin_angular_velocity_rad_s) ||
             !std::isfinite(node.mass_kg) || node.mass_kg <= 0)
             throw std::invalid_argument("conservative reference requires finite positive-mass nodes");
-        if (on_support(node.position_world_m) && signedDistanceToPlane(*settings.support, node.position_world_m) < -settings.contact_tolerance_m)
+        if (!allow_compression && on_support(node.position_world_m) && signedDistanceToPlane(*settings.support, node.position_world_m) < -settings.contact_tolerance_m)
             throw std::invalid_argument("initial material/support overlap needs a valid initial state");
     }
     for (std::size_t i = 0; i < matter.bonds.size(); ++i) {
@@ -120,10 +122,10 @@ void detail::validateConservativeState(const ActiveMatter &matter, double dt, co
             !std::isfinite(sphere->inertia_kg_m2) || sphere->inertia_kg_m2 <= 0)
             throw std::invalid_argument("invalid sphere for conservative reference");
         for (const auto &node : matter.nodes)
-            if (length(node.position_world_m - sphere->motion.center_of_mass_world_m) <
+            if (!allow_compression && length(node.position_world_m - sphere->motion.center_of_mass_world_m) <
                 sphere->radius_m - settings.contact_tolerance_m)
                 throw std::invalid_argument("initial sphere/material overlap needs a valid initial state");
-        if (on_support(sphere->motion.center_of_mass_world_m) && signedDistanceToPlane(*settings.support, sphere->motion.center_of_mass_world_m) <
+        if (!allow_compression && on_support(sphere->motion.center_of_mass_world_m) && signedDistanceToPlane(*settings.support, sphere->motion.center_of_mass_world_m) <
             sphere->radius_m - settings.contact_tolerance_m)
             throw std::invalid_argument("initial sphere/support overlap needs a valid initial state");
     }
@@ -314,7 +316,7 @@ ConservativeStepResult detail::tryConservativeStepMasked(ActiveMatter &matter, d
         candidate_sphere.motion.center_of_mass_world_m = sphere_position();
         candidate_sphere.motion.linear_velocity_m_s = sphere_velocity;
         // Isotropic sphere spin is constant under the normal forces here.
-        candidate_sphere.motion.orientation_world = advanceSphereOrientation(
+        candidate_sphere.motion.orientation_world = detail::advanceSphereOrientation(
             sphere->motion.orientation_world, sphere->motion.angular_velocity_rad_s, dt);
     }
     const auto after = measure(candidate, sphere ? &candidate_sphere : nullptr, gravity);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "fracture/ActiveMatter.hpp"
+#include "physics/NormalCompliance.hpp"
 #include <vector>
 
 namespace banjo::detail {
@@ -17,11 +18,13 @@ struct ElasticSupport {
     const std::vector<Vec3> &initial_velocity, const std::vector<Vec3> &base_velocity,
     const std::vector<double> &inverse_mass, const std::vector<Vec3> &velocity,
     std::vector<Vec3> *residual = nullptr, const ElasticSupport *support = nullptr,
-    std::vector<bool> *active_support = nullptr);
+    std::vector<bool> *active_support = nullptr,
+    const std::vector<ElasticNormalContact> *normal_contacts = nullptr);
 
 [[nodiscard]] bool elasticNewtonUpdate(const ActiveMatter &matter, double dt,
     const std::vector<Vec3> &initial_velocity, const std::vector<Vec3> &base_velocity,
     const std::vector<double> &inverse_mass, std::vector<Vec3> &velocity,
     double velocity_tolerance, unsigned maximum_linear_iterations, unsigned &linear_iterations,
-    const ElasticSupport *support = nullptr);
+    const ElasticSupport *support = nullptr,
+    const std::vector<ElasticNormalContact> *normal_contacts = nullptr);
 }

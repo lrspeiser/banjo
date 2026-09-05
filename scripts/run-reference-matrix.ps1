@@ -25,8 +25,8 @@ foreach ($material in @("glass", "oak", "iron")) {
     foreach ($case in $cases) {
         $arguments = @("--material", $material, "--case", $case.Geometry,
             "--step-mode", $case.Mode, "--voxel-size", $VoxelSize.ToString("R", $culture),
-            "--dt", $case.Dt, "--steps", $case.Steps, "--gap", "0.001", "--speed", "1",
-            "--restitution", $case.Restitution)
+            "--dt", $case.Dt, "--steps", $case.Steps, "--gap", "0.001", "--speed", "1")
+        if ($case.Mode -eq "events") { $arguments += @("--restitution", $case.Restitution) }
         $log = Join-Path $destination ($material + "-" + $case.Name + ".txt")
         $started = [DateTime]::UtcNow
         $output = & $probe @arguments 2>&1

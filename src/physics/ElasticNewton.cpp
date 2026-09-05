@@ -42,12 +42,13 @@ BondEvaluation evaluate(const BondRest &bond, Vec3 q0, Vec3 displacement, double
         out.tangent.m[i][j] = scale * ((i == j ? coefficient : 0) + dyadic * u[i] * q[j]);
     return out;
 }
-struct Edge { std::uint32_t a, b; Mat3 tangent; };
+struct Edge { std::size_t a, b; Mat3 tangent; };
 }
 
 double elasticVelocityResidual(const ActiveMatter &matter, double dt,
     const Vector &initial, const Vector &base, const std::vector<double> &inverse_mass,
-    const Vector &velocity, Vector *output, const ElasticSupport *support, std::vector<bool> *active_support) {
+    const Vector &velocity, Vector *output, const ElasticSupport *support, std::vector<bool> *active_support,
+    const std::vector<ElasticNormalContact> *normal_contacts) {
     Vector residual(velocity.size());
     for (std::size_t i = 0; i < velocity.size(); ++i) residual[i] = velocity[i] - base[i];
     for (std::size_t i = 0; i < matter.bonds.size(); ++i) if (matter.bonds[i].alive) {
@@ -57,6 +58,12 @@ double elasticVelocityResidual(const ActiveMatter &matter, double dt,
             .5 * dt * (initial[b] - initial[a] + velocity[b] - velocity[a]), dt);
         residual[a] += inverse_mass[a] * e.impulse;
         residual[b] -= inverse_mass[b] * e.impulse;
+    }
+    if (normal_contacts) for (const auto &contact : *normal_contacts) {
+        const auto e = evaluateElasticContact(contact, initial, velocity, dt);
+        if (!e.valid) return std::numeric_limits<double>::infinity();
+        residual[contact.a] -= inverse_mass[contact.a]*e.impulse_on_a;
+        if (contact.b != fixed_contact_body) residual[contact.b] += inverse_mass[contact.b]*e.impulse_on_a;
     }
     if (active_support) active_support->assign(velocity.size(), false);
     if (support) for (std::size_t i = 0; i < velocity.size(); ++i) {
@@ -82,10 +89,10 @@ double elasticVelocityResidual(const ActiveMatter &matter, double dt,
 bool elasticNewtonUpdate(const ActiveMatter &matter, double dt,
     const Vector &initial, const Vector &base, const std::vector<double> &inverse_mass,
     Vector &velocity, double tolerance, unsigned maximum_linear_iterations, unsigned &linear_iterations,
-    const ElasticSupport *support) {
+    const ElasticSupport *support, const std::vector<ElasticNormalContact> *normal_contacts) {
     Vector residual;
     std::vector<bool> active;
-    const double maximum = elasticVelocityResidual(matter, dt, initial, base, inverse_mass, velocity, &residual, support, &active);
+    const double maximum = elasticVelocityResidual(matter, dt, initial, base, inverse_mass, velocity, &residual, support, &active, normal_contacts);
     if (!std::isfinite(maximum)) return false;
     if (maximum <= tolerance) return true;
     const std::size_t count = velocity.size();
@@ -100,6 +107,13 @@ bool elasticNewtonUpdate(const ActiveMatter &matter, double dt,
         edges.push_back({a, b, e.tangent});
         add(diagonal[a], e.tangent, inverse_mass[a]);
         add(diagonal[b], e.tangent, inverse_mass[b]);
+    }
+    if (normal_contacts) for (const auto &contact : *normal_contacts) {
+        const auto e = evaluateElasticContact(contact, initial, velocity, dt);
+        if (!e.valid) return false;
+        edges.push_back({contact.a, contact.b, e.velocity_tangent});
+        add(diagonal[contact.a], e.velocity_tangent, inverse_mass[contact.a]);
+        if (contact.b != fixed_contact_body) add(diagonal[contact.b], e.velocity_tangent, inverse_mass[contact.b]);
     }
     std::vector<Mat3> inverse_diagonal(count);
     for (std::size_t i = 0; i < count; ++i) {
@@ -122,9 +136,9 @@ bool elasticNewtonUpdate(const ActiveMatter &matter, double dt,
     const auto apply = [&](const Vector &v) {
         Vector out = v;
         for (const auto &edge : edges) {
-            const auto product = edge.tangent * (v[edge.a] - v[edge.b]);
+            const auto product = edge.tangent * (v[edge.a] - (edge.b != fixed_contact_body ? v[edge.b] : Vec3{}));
             out[edge.a] += inverse_mass[edge.a] * product;
-            out[edge.b] -= inverse_mass[edge.b] * product;
+            if (edge.b != fixed_contact_body) out[edge.b] -= inverse_mass[edge.b] * product;
         }
         if (support) for (std::size_t i = 0; i < count; ++i) if (active[i])
             out[i] += (dot(v[i], support->normal) - dot(out[i], support->normal)) * support->normal;
@@ -198,7 +212,7 @@ bool elasticNewtonUpdate(const ActiveMatter &matter, double dt,
         Vector trial = velocity;
         axpy(trial, scale, increment);
         Vector trial_residual;
-        const double trial_max = elasticVelocityResidual(matter, dt, initial, base, inverse_mass, trial, &trial_residual, support);
+        const double trial_max = elasticVelocityResidual(matter, dt, initial, base, inverse_mass, trial, &trial_residual, support, nullptr, normal_contacts);
         if (trial_max <= tolerance || (std::isfinite(trial_max) && norm(trial_residual) < old_norm * (1 - 1e-4*scale))) {
             velocity = std::move(trial);
             return true;

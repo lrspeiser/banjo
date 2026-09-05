@@ -12,7 +12,8 @@ struct ConservativeContactMask {
 };
 // Shared by the raw solver and the event controller before any impact work.
 void validateConservativeState(const ActiveMatter &matter, double dt_s, const Vec3 &gravity_m_s2,
-    const CoupledSphereState *sphere, const ConservativeStepSettings &settings);
+    const CoupledSphereState *sphere, const ConservativeStepSettings &settings, bool allow_compression = false);
+[[nodiscard]] Quat advanceSphereOrientation(Quat q, Vec3 omega, double dt);
 [[nodiscard]] ConservativeStepResult tryConservativeStepMasked(
     ActiveMatter &matter, double dt_s, const Vec3 &gravity_m_s2,
     CoupledSphereState *sphere, const ConservativeStepSettings &settings,
