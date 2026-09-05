@@ -126,7 +126,7 @@ Json signature(unsigned version=2,bool include_precision=true) {
             {"restitution",c.restitution},{"contact_damping_ratio",c.contact_damping_ratio},
             {"young_modulus_pa",c.young_modulus_pa},{"poisson_ratio",c.poisson_ratio}});
     }
-    Json result={{"object_compiler",version},{"runtime",version==1?"jolt-5.6/banjo-rigid-v1":"jolt-5.6/banjo-rigid-primitives-v2"},{"profiles",profiles}};
+    Json result={{"object_compiler",version},{"runtime",version==1?"jolt-5.6/banjo-rigid-v1":"jolt-5.6/banjo-rigid-primitives-v3-analytic-box"},{"profiles",profiles}};
     if(include_precision)result["position_bits"]=JoltWorld::positionPrecisionBits();
     return result;
 }
@@ -417,8 +417,17 @@ std::uint64_t CreatorWorld::clearAssembly(std::uint64_t expected){
 namespace {
 std::string testRuntimeAssembly(const CompiledAssembly &compiled,std::string_view specification) {
     check(JoltWorld::positionPrecisionBits()==64,"runtime assembly tests require double positions");
-    const auto spec=parse(specification);
-    fields(spec,{"test_version","relative_kinetic_energy_j","duration_s","steps","energy_error_budget_j","transfer_roundoff_budget_j","minimum_separated_area_fraction"});
+    const auto spec=parse(specification);auto required=spec;
+    std::array<Vec3,2> spin{};
+    if(required.contains("initial_angular_velocity_rad_s")) {
+        const auto &values=required.at("initial_angular_velocity_rad_s");
+        check(values.is_object()&&values.size()==2,"initial spin must name exactly both declared parts");
+        for(unsigned n=0;n<2;++n){const auto &id=compiled.ids[n==0?compiled.a_index:1-compiled.a_index];
+            check(values.contains(id),"initial spin must use declared part IDs");spin[n]=vector(values.at(id));
+            check(length(spin[n])<=10,"initial spin exceeds 10 rad/s");}
+        required.erase("initial_angular_velocity_rad_s");
+    }
+    fields(required,{"test_version","relative_kinetic_energy_j","duration_s","steps","energy_error_budget_j","transfer_roundoff_budget_j","minimum_separated_area_fraction"});
     check(integer(spec.at("test_version"),2)==2,"Jolt assembly fixture requires test version 2");
     const auto input=number(spec.at("relative_kinetic_energy_j")),duration=number(spec.at("duration_s"));
     const auto budget=number(spec.at("energy_error_budget_j")),transfer_budget=number(spec.at("transfer_roundoff_budget_j")),minimum=number(spec.at("minimum_separated_area_fraction"));
@@ -437,10 +446,13 @@ std::string testRuntimeAssembly(const CompiledAssembly &compiled,std::string_vie
         const Vec3 velocity=(n==0?-mb:ma)/(ma+mb)*speed*normal;
         const auto &part=compiled.declaration.at("parts").at(index);
         world.addBox({n+1,vector(part.at("dimensions_m")),makeReferenceMaterial(compiled.materials[index]),
-            {body.center_m,body.orientation,velocity,{}},false});
+            {body.center_m,body.orientation,velocity,spin[n]},false});
     }
     const auto totals=[&]{auto result=measureRigidMechanics(world.mechanicalState(1));result+=measureRigidMechanics(world.mechanicalState(2));return result;};
-    const auto initial=totals();double jolt_change=0,transfer_error=0,max_error=0,max_momentum=0,max_angular=0;unsigned contacts=0;
+    const auto initial=totals();check(initial.kinetic_energy_j<=1e4,"total initialized kinetic energy exceeds 10000 J");
+    double initial_spin_energy=0;
+    for(auto id:{1u,2u}){const auto state=world.mechanicalState(id);const auto w=state.motion.angular_velocity_rad_s;initial_spin_energy+=.5*dot(w,state.inertia_world_kg_m2*w);}
+    double jolt_change=0,transfer_error=0,max_error=0,max_momentum=0,max_angular=0;unsigned contacts=0;
     const auto energies=[&]{double stored=0,damage=0;for(const auto &site:sites){auto law=compiled.law;law.area_m2=site.area_m2;const auto response=evaluateCohesiveInterface(law,site.history);stored+=response.stored_energy_j;damage+=response.dissipated_energy_j;}return std::pair{stored,damage};};
     const auto kick=[&]{const auto result=world.applyCohesiveTensionPatchKick(1,2,sites,compiled.law,dt/2,transfer_budget);
         for(std::size_t k=0;k<sites.size();++k)sites[k].history=result.interface_increments[k].state;
@@ -464,10 +476,10 @@ std::string testRuntimeAssembly(const CompiledAssembly &compiled,std::string_vie
     return Json{{"test_version",2},{"fixture","jolt-tensile-patch-separation-v1"},{"declaration",compiled.declaration},{"specification",spec},
         {"physics_signature",Json::parse(CreatorWorld::physicsSignatureJson())},{"status",fraction>=minimum&&max_error<=budget?"passed":"failed"},
         {"predicates",{{"separated_area",fraction>=minimum},{"integration_energy",max_error<=budget}}},{"actual_duration_s",dt*static_cast<double>(steps)},
-        {"initial_kinetic_energy_j",initial.kinetic_energy_j},{"final_kinetic_energy_j",totals().kinetic_energy_j},{"stored_energy_j",stored},{"damage_work_j",damage},
+        {"initial_kinetic_energy_j",initial.kinetic_energy_j},{"initial_rotational_kinetic_energy_j",initial_spin_energy},{"final_kinetic_energy_j",totals().kinetic_energy_j},{"stored_energy_j",stored},{"damage_work_j",damage},
         {"separated_area_fraction",fraction},{"energy_residual_j",totals().kinetic_energy_j+stored+damage-initial.kinetic_energy_j},{"maximum_integration_energy_error_j",max_error},{"jolt_stage_energy_change_j",jolt_change},{"signed_transfer_roundoff_j",transfer_error},
         {"maximum_momentum_change_kg_m_s",max_momentum},{"maximum_angular_momentum_change_kg_m2_s",max_angular},{"contact_events",contacts},{"sites",histories},{"bodies",bodies},
-        {"boundary","Temporary two-box world, zero gravity and initial separating velocity. Jolt owns surfaces. Events may be speculative. Jolt-stage energy change includes solver effects, not automatically heat. Fixed-step evidence is not a convergence certificate. No live resources, objects or clock changed; no fabrication or cutting certification."}}.dump(2);
+        {"boundary","Temporary two-box world, zero gravity, initial separating velocity and optional declared spin. Jolt owns surfaces. Events may be speculative. Jolt-stage energy change includes solver effects, not automatically heat. Fixed-step evidence is not a convergence certificate. No live resources, objects or clock changed; no fabrication or cutting certification."}}.dump(2);
 }
 }
 std::string CreatorWorld::testAssemblyJson(std::string_view declaration,std::string_view specification){

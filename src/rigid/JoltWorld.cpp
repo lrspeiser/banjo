@@ -687,6 +687,12 @@ void JoltWorld::addBox(const RigidBoxDescription &description) {
     if(description.fixed&&(lengthSquared(s.linear_velocity_m_s)>0||lengthSquared(s.angular_velocity_rad_s)>0))throw std::invalid_argument("fixed box cannot have initial motion");
     const RigidPrimitive shape{PrimitiveKind::Box,0,d};
     const double mass=shape.volume()*description.material.density_kg_m3;
+    const auto inertia=shape.inertia(mass);
+    const JPH::Vec3 inverse_diagonal(static_cast<float>(1/inertia.m[0][0]),static_cast<float>(1/inertia.m[1][1]),static_cast<float>(1/inertia.m[2][2]));
+    if(!description.fixed&&(!std::isfinite(static_cast<float>(mass))||static_cast<float>(mass)<=0||
+        !std::isfinite(inverse_diagonal.GetX())||!std::isfinite(inverse_diagonal.GetY())||!std::isfinite(inverse_diagonal.GetZ())||
+        inverse_diagonal.GetX()<=0||inverse_diagonal.GetY()<=0||inverse_diagonal.GetZ()<=0))
+        throw std::invalid_argument("box mass/inverse inertia is not representable");
     const auto contact=compileContactMaterial(description.material);
     JPH::BodyCreationSettings settings(new JPH::BoxShape(toJolt(d/2),0.0F),
         toJoltPosition(s.center_of_mass_world_m),
@@ -705,8 +711,18 @@ void JoltWorld::addBox(const RigidBoxDescription &description) {
     impl_->bodies_.reserve(impl_->bodies_.size()+1);impl_->contact_states_.reserve(impl_->contact_states_.size()+1);
     const auto id=bodies.CreateAndAddBody(settings,description.fixed?JPH::EActivation::DontActivate:JPH::EActivation::Activate);
     if(id.IsInvalid())throw std::runtime_error("Jolt could not create box body");
-    if(!description.fixed)bodies.SetLinearAndAngularVelocity(id,toJolt(s.linear_velocity_m_s),toJolt(s.angular_velocity_rad_s));
     try {
+        if(!description.fixed) {
+            // Jolt's absolute near-zero principal-inertia test substitutes a
+            // radius-one sphere for sufficiently small valid boxes. The box
+            // principal axes are known analytically; install them directly.
+            {
+                JPH::BodyLockWrite lock(impl_->physics_->GetBodyLockInterface(),id);
+                if(!lock.Succeeded())throw std::runtime_error("cannot lock new box inertia");
+                lock.GetBody().GetMotionProperties()->SetInverseInertia(inverse_diagonal,JPH::Quat::sIdentity());
+            }
+            bodies.SetLinearAndAngularVelocity(id,toJolt(s.linear_velocity_m_s),toJolt(s.angular_velocity_rad_s));
+        }
         impl_->bodies_.emplace(description.body_id,id);
         impl_->contact_states_.emplace(description.body_id,BodyContactState{contact,0,0,false,mass,{}});
     }catch(...) {

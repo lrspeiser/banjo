@@ -17,6 +17,15 @@ void rejects(const std::function<void()> &action) {bool failed=false;try {action
 void assemblyAssessment(){
     for(auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}){
         CreatorWorld world;const auto m=makeReferenceMaterial(preset);const auto name=std::string(materialPresetName(preset));
+        // Small anisotropic boxes must not inherit Jolt's radius-one fallback.
+        JoltWorld tiny;const Vec3 dimensions{.002,.003,.004};const double tiny_mass=m.density_kg_m3*.002*.003*.004;
+        const double angle=std::numbers::pi/4;const Quat orientation{std::cos(angle/2),0,0,std::sin(angle/2)};
+        tiny.addBox({1,dimensions,m,{{},orientation,{},{1,2,3}},false});const auto actual=tiny.mechanicalState(1);
+        const double ix=tiny_mass*(.003*.003+.004*.004)/12,iy=tiny_mass*(.002*.002+.004*.004)/12,iz=tiny_mass*(.002*.002+.003*.003)/12;
+        near(actual.inertia_world_kg_m2.m[0][0],.5*(ix+iy),ix*1e-6,"tiny rotated box diagonal inertia");
+        near(actual.inertia_world_kg_m2.m[0][1],.5*(ix-iy),ix*1e-6,"tiny rotated box off-diagonal inertia");
+        near(actual.inertia_world_kg_m2.m[2][2],iz,ix*1e-6,"tiny rotated box axial inertia");
+
         Json face={{"normal_axis",0},{"positive",true},{"u_offset_m",0},{"v_offset_m",0},{"width_m",.01},{"height_m",.012}};
         Json part={{"id","a"},{"material",name},{"dimensions_m",{.02,.02,.02}},{"center_m",{0,0,0}},{"orientation_wxyz",{1,0,0,0}}};auto second=part;second["id"]="b";second["dimensions_m"]={.03,.03,.03};second["center_m"]={.026,0,0};auto face_b=face;face_b["positive"]=false;
         Json law={{"model","central-cohesive-v1"},{"stiffness_pa_per_m",2*m.tensile_strength_pa*m.tensile_strength_pa/m.fracture_energy_j_m2},{"strength_pa",m.tensile_strength_pa},{"fracture_energy_j_m2",m.fracture_energy_j_m2},{"compression_stiffness_pa_per_m",0},{"provenance","illustrative test parameters; not calibrated"}};
@@ -58,9 +67,33 @@ void assemblyAssessment(){
             auto tight=runtime_spec;tight["energy_error_budget_j"]=fracture_work*1e-12;tight["transfer_roundoff_budget_j"]=0;
             const auto failed=run(runtime,tight);require(failed["ok"]==false||failed["result"]["status"]=="failed","insufficient transfer/integration budget cannot pass");
         } else require(result["ok"]==false,"legacy precision rejects runtime assembly fixture");
+        auto spinning=runtime;auto &spin_law=spinning["joint"]["law"];
+        spin_law["strength_pa"]=2*m.fracture_energy_j_m2/.02;spin_law["stiffness_pa_per_m"]=(2*m.fracture_energy_j_m2/.02)/.005;
+        for(auto face_name:{"face_a","face_b"})spinning["joint"][face_name]["u_offset_m"]=.003;
+        auto spin_spec=runtime_spec;spin_spec["relative_kinetic_energy_j"]=.1*fracture_work;spin_spec["duration_s"]=.1;spin_spec["minimum_separated_area_fraction"]=0;
+        spin_spec["energy_error_budget_j"]=.0009*fracture_work;spin_spec["initial_angular_velocity_rad_s"]={{"a",{0,0,3}},{"b",{0,0,-2}}};
+        if(JoltWorld::positionPrecisionBits()==64) {
+            const double expected_spin=.5*(ma*.02*.02/6*9+mb*.03*.03/6*4);
+            for(unsigned steps:{512u,1024u,2048u}) {
+                spin_spec["steps"]=steps;const auto spinning_result=run(spinning,spin_spec);
+                require(spinning_result["ok"]==true,"bounded off-center spin trial returns measured result");const auto &r=spinning_result["result"];
+                near(r["initial_rotational_kinetic_energy_j"].get<double>(),expected_spin,expected_spin*1e-6,"declared spin contributes analytical solid-box rotational energy");
+                require(std::abs(r["bodies"][0]["angular_velocity_rad_s"][2].get<double>()-3)>1e-4,"evolving spin is not continually imposed");
+                if(preset==MaterialPreset::Iron)require(r["status"]=="failed","off-center iron integration failure remains visible");
+                std::cout<<name<<" spin steps="<<steps<<" status="<<r["status"]<<" max_E="<<r["maximum_integration_energy_error_j"]<<" max_H="<<r["maximum_angular_momentum_change_kg_m2_s"]<<'\n';
+            }
+            for(unsigned variant=0;variant<3;++variant){auto bad=spin_spec;
+                if(variant==0)bad["initial_angular_velocity_rad_s"]["a"]={0,0,11};
+                if(variant==1)bad["initial_angular_velocity_rad_s"].erase("b");
+                if(variant==2){bad["initial_angular_velocity_rad_s"].erase("b");bad["initial_angular_velocity_rad_s"]["unknown"]={0,0,0};}
+                require(run(spinning,bad)["ok"]==false,"invalid spin bounds or part references reject");}
+        }
+        require(world.serialize()==collected,"rotational trials and failures leave live world unchanged");
         auto excessive=runtime_spec;excessive["steps"]=4097;require(run(runtime,excessive)["ok"]==false,"runtime test step budget is bounded");
         require(run(declaration,runtime_spec)["ok"]==false,"old contact policy cannot silently select Jolt fixture");
         require(world.serialize()==collected,"all temporary runtime tests preserve live inventory and state");
+        auto old_runtime=Json::parse(world.serialize());old_runtime["physics_signature"]["runtime"]="jolt-5.6/banjo-rigid-primitives-v2";
+        rejects([&]{(void)CreatorWorld::deserialize(old_runtime.dump());});
         CreatorWorld runtime_draft;(void)runtime_draft.rememberAssembly(runtime.dump(),0);
         require(CreatorWorld::deserialize(runtime_draft.serialize()).serialize()==runtime_draft.serialize(),"explicit contact policy survives draft persistence");
         for(unsigned invalid=0;invalid<4;++invalid){auto bad=declaration;if(invalid==0)bad["joint"]["contact_owner"]="cohesive_and_jolt";if(invalid==1)bad["joint"]["part_b"]="a";if(invalid==2)bad["parts"][0]["density_kg_m3"]=1;if(invalid==3)bad["joint"]["face_a"]["width_m"]=.04;const auto error=Json::parse(world.executeJson(Json{{"type","assess_assembly"},{"assembly",bad}}.dump()));require(error["ok"]==false,"invalid assembly rejects through public command");require(world.serialize()==collected,"invalid assembly leaves live state untouched");}
