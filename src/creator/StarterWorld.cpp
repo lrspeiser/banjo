@@ -46,7 +46,8 @@ std::string StarterWorld::designerRequest(std::string_view id,std::string_view p
     Json inventory=Json::array();
     for(auto m:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})inventory.push_back({{"material",materialPresetName(m)},{"held_kg",inventoryKg(m)},{"density_kg_m3",makeReferenceMaterial(m).density_kg_m3}});
     return Json{{"application","starter"},{"request_id",id},{"prompt",prompt},{"editing",nullptr},
-        {"current_design",Json::parse(CreatorWorld::recipeJson(defaultDraft()))},{"inventory",inventory},
+        {"current_design",Json::parse(CreatorWorld::recipeJson(remembered_design_&&remembered_design_->recipe?*remembered_design_->recipe:defaultDraft()))},
+        {"previous_explanation",remembered_design_?remembered_design_->explanation:""},{"inventory",inventory},
         {"player",{{"level",level()},{"xp",xp()},{"stamina",stamina()},{"tool",equippedTool()}}},
         {"custom_rules",{{"minimum_level",2},{"stamina_cost","10 + 1000 * volume_m3"},{"stamina_capacity",100}}},
         {"capabilities","One solid sphere or box in glass, oak or iron. Rigid gravity/contact only. No assemblies, tool behaviors, grain, fracture or physical fabrication energy. Custom names do not grant tool powers."}}.dump(2);

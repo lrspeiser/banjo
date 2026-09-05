@@ -83,6 +83,8 @@ int main() {try {
             check(game.stamina()==100&&game.xp()==0&&game.inventoryKg(m)==0,"remembering does not collect spend or award progress");
             game=StarterWorld::load(path);check(game.rememberedDesign().has_value()&&!game.quoteRecipe(*game.rememberedDesign()->recipe).ready(),"resource-short design survives closing and reopening");
             check(CreatorWorld::recipeJson(*game.rememberedDesign()->recipe)==CreatorWorld::recipeJson(retained),"saved requested substance and size are exact");
+            const auto followup=nlohmann::json::parse(game.designerRequest("followup","Make this design smaller"));
+            check(followup["current_design"]==nlohmann::json::parse(CreatorWorld::recipeJson(retained))&&followup["previous_explanation"]=="Collect material and reach level 2.","follow-up context uses the saved design rather than an unrelated default");
             game.save(path);const auto before=game.serialize();
             {std::ofstream blocked(pending);blocked<<"retained recovery evidence";}
             rejects([&]{game.rememberDesignAndSave(path,{"replacement","Make a different object","Unsupported.",{}});});
