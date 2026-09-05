@@ -132,6 +132,8 @@ void processTests(const std::filesystem::path &exe,const std::filesystem::path &
 #endif
     require(!assistant.running()&&!assistant.poll()&&world.serialize()==before,"Cancel cannot publish a response or debit material");
     start("retry");require(wait(assistant).recipe.has_value(),"A cancelled/failed request can be followed by a new request");
+    auto review=Json::parse(CodexAssistant::requestDocument(world,"review-proposal","Review only.",{}));review["application"]="assembly_review";
+    assistant.start(root,"review-proposal",review.dump());rejects([&]{(void)wait(assistant);});require(world.serialize()==before&&!assistant.running(),"review-only provider cannot return an executable recipe");
     rejects([&]{start("../escape");});
     rejects([&]{start("retry");});
     std::cout<<"[PASS] background completion, clarification, failure, cancellation, stale response and retry\n";
