@@ -71,11 +71,11 @@ An elastic approximation uses the same declared bond law for each material's den
 | P03 Cache identity and reuse | Prototype serialization and scenario summaries | Full state/material/geometry/solver keys, invalidation and time-aligned validated reuse |
 | P04 Speculative precomputation | Planned | Likelihood/error bounds, cancellation and measured net benefit with live fallback |
 | P05 Units, extensible laws and capability checks | Prototype strict SI sphere/box schema; compiler-derived material requirements and placement/budget codes. Energy/tool accounting remains unsupported | General capability/error schemas; versioned energy/work/power and tool laws; preserve unsupported behavior |
-| P06 Human/AI creator APIs | Existing real LLM creator plus new preset first-person collect/craft/XP/stamina loop with replay tests; 16 suites pass | Connect starter player resources/levels/tools to LLM; versioned common APIs, receipts/durability and bounded functional tests |
-| P07 Persistence and material history | Creator format-3 history retained; starter format-1 saves raw volumes, tools, XP, stamina, cuts and receipts with ledger/reload checks | Unified state, player pose, physical inventory reference state, damage/assembly history and crash-durable acknowledgement |
+| P06 Human/AI creator APIs | Real starter LLM requests use inventory/XP/level/stamina; custom Build revalidates and replays; five live cases and 16 suites pass | Common versioned APIs, durable receipts, pending proposal persistence and bounded functional tests |
+| P07 Persistence and material history | Creator format-3 history retained; starter v2 saves custom recipes and migrates v1, with material/XP/stamina ledger tests | Unified state, pending proposals/player pose, physical inventory reference state and crash-durable acknowledgement |
 | P08 Publishing, distribution and remixing | Planned | World/object manifests, physics ABI, dependencies, validation, preview, permissions and migration |
 | P09 Multiplayer authority and compatibility | Undecided | Authority/snapshot/event model, stable IDs, version agreement and measured bandwidth/determinism |
-| P10 Usable shared laboratory and visualization | First-person clearing/table captures pass; native mouse look, inventory/back and pause/resume verified after quick-tap fix | Verify held-key walking and complete click-to-craft/cut progression normally; integrate LLM and functional-test feedback |
+| P10 Usable shared laboratory and visualization | First-person clearing/table/designer captures; native inventory/pause/mouse look plus real prompt/paste and blocked-design display verified | Verify held walking and full gather/craft/cut/custom-build flow; improve text editing and functional-test feedback |
 
 ## Current order of work
 
