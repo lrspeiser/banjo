@@ -18,6 +18,8 @@ Inspect main and PR #2, preserve concurrent edits and the explicit raylib/MSVC o
 
 ## Gate 1 — conservation and physical bookkeeping
 
+**Local progress at `68c4908`:** spinning activation and actual Jolt/debris insertion now have mass/COM/momentum/energy tests; finite-cell spin and component inertia survive transfer. Coarsening losses, removed spring energy and numerical angular changes are exported. [The measured checkpoint](transfer-accounting-checkpoint.md) records eight passing suites, but the full isolated run still changes angular momentum and the supported run reports 5.38 MJ of unassigned removed spring energy. Those are unresolved defects/diagnostic interpretation boundaries, not validated fracture work. Next, isolate prediction, constraint, contact correction, damage and support stages; close their work/impulse balances and fix numerical injection before declaring this gate complete. [Property coverage](physics-coverage.md) distinguishes tested consumers from declarations.
+
 Instrument rigid bodies, material nodes, constraints, supports and debris. Record external impulse/work and distinguish contact, rolling, damping, fracture/plastic, geometric-correction, and coarsening terms. Audit one owner per contact and consistent rigid/material clocks. Check finite-mass reactions, angular torque arms, frame invariance, and no attractive separating contacts.
 
 Review rigid-to-lattice and lattice-to-fragment mass, COM and full inertia equivalence, including intrinsic cell spin. Do not infer whole-system correctness from pairwise tests or a zero mass error.

@@ -86,6 +86,8 @@ The transfer diagnostic sums magnitudes of per-step net material impulses; it is
 
 ## Gate status and next engineering work
 
+**Subsequent checkpoint:** [transfer accounting at `68c4908`](transfer-accounting-checkpoint.md) addresses target inertia, finite-cell spin and actual Jolt/debris insertion measurements in items 1–3 below. It instruments parts of items 4–5 and records substantial unresolved solver residuals. The following list describes the gaps at this earlier `f29334d` checkpoint.
+
 Gate 0 is satisfied for this local Windows integration: source is reviewable, main's fixes survive, normal input/frame presentation and capture were exercised, test evidence is tied to the exact code commit, and defects remain explicit. It is not a claim of new Linux/macOS verification, remote CI, or main integration.
 
 Gate 1 remains open. Source inspection identifies concrete accounting gaps to instrument and test:

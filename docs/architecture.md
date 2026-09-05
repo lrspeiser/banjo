@@ -2,6 +2,8 @@
 
 **Local integration update:** `codex/physics-foundation` at tested code `f29334d` now contains PR #2's sphere/material coupling plus main's build fixes. In this branch activating contacts defer the Jolt response, the runtime pulse is disabled, and material impulses update the finite-mass striker between microsteps. The rigid-first pulse description below documents the historical main baseline, not this branch's authoritative path. See [Windows integration evidence and conservation gaps](windows-integration-checkpoint.md).
 
+**Transfer update at `68c4908`:** active cells retain intrinsic isotropic spin with inertia `m*h*h/6`; target rigid inertia comes from its sampled lattice. Fragment angular momentum includes orbital and cell-spin terms, and overflow debris keeps the component inertia. `MechanicalAccounting` measures mass, COM, world-origin angular momentum, kinetic energy, live-bond spring energy and gravity potential. Runtime transfer audits read actual inserted Jolt/debris states and report discarded internal kinetic/elastic energy. Outcome format 2 / solver model 4 includes cell spin and rejects format 1. This preserves transfer bookkeeping; active-cell spin has no torsional coupling and debris uses a fixed-inertia spin reservoir. The full-step solver budget remains incomplete. See [measured results and limitations](transfer-accounting-checkpoint.md).
+
 > Scope note (September 4, 2026 audit): this is a focused design/model document, not a complete implementation-status ledger. Read the [master plan](project-master-plan.md) and [development status](development-status.md) first. Main's audited code is `62cf812`; conservative-contact work in PR #2 is not merged.
 
 ## Current executable pipeline

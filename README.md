@@ -24,7 +24,7 @@ There are no precut chunks and no shatter animation. The pieces are the connecte
 
 [Development status](docs/development-status.md) records what is implemented, what remains experimental, exact commits/PRs, tests, known defects, and build instructions. [The roadmap](docs/roadmap.md) turns the remaining work into ordered acceptance gates. Coding agents should also read [AGENTS.md](AGENTS.md).
 
-The local `codex/physics-foundation` branch integrates main and PR #2's contact-driven fracture/rolling diagnostics. [Windows integration evidence](docs/windows-integration-checkpoint.md) records the exact tested source, all seven passing CTest executables, headless/capture results and normal window/input verification. This checkpoint is not pushed or merged into GitHub main; PR #2's earlier Linux CI belongs to its own head. This remains a physically parameterized prototype with known over-fragmentation and conservation-accounting gaps.
+The local `codex/physics-foundation` branch integrates main and PR #2's contact-driven fracture/rolling diagnostics. [Transfer-accounting evidence](docs/transfer-accounting-checkpoint.md) records tested code `68c4908`, eight passing CTest executables, headless/capture results and normal window/input verification. Finite-cell spin now survives representation changes, and actual Jolt/debris states are measured. This checkpoint is not pushed or merged into GitHub main; PR #2's earlier Linux CI belongs to its own head. This remains a physically parameterized prototype with known over-fragmentation and conservation-accounting gaps.
 
 ## Build and watch it
 
@@ -53,6 +53,8 @@ cmake --build --preset dev
 ```
 
 CMake fetches pinned copies of Jolt Physics `v5.6.0` and raylib `6.0`. The first build therefore compiles those dependencies as well as Banjo.
+
+To export per-tick mechanical diagnostics, run `banjo_headless --audit-csv run.csv`. Add `--isolated --target-speed 1` for a zero-gravity, unsupported run with a moving/spinning target; `--voxel-size` selects cell size in meters. On Windows with the Visual Studio generator, executables are under the build directory's `Release` folder. See the [transfer checkpoint](docs/transfer-accounting-checkpoint.md) for commands, tolerances and interpretation: successful handoff does not establish full-system conservation.
 
 ### Controls
 
@@ -117,7 +119,7 @@ ctest --preset core
 
 This is still a physics laboratory, not yet the publishing platform:
 
-- Active material exchanges impulses with the finite-mass striker through an experimental sphere/point contact solver. Full-system conservation, finite-cell spin and fracture-work accounting remain incomplete.
+- Active material exchanges impulses with the finite-mass striker through an experimental sphere/point contact solver. Finite-cell spin is retained, but full-system conservation and fracture-work accounting remain incomplete. Numerical correction changes angular momentum; removed spring energy is not validated fracture work.
 - Active voxels use a support-plane approximation with footprint checks. Arbitrary Jolt-shape collision, self-contact and robust support-load detection remain work.
 - The fracture model is visually useful but not yet calibrated across multiple resolutions against laboratory glass data.
 - Surface meshes are block-style exposed voxel faces. Smoothing and crack-surface material treatment are future rendering work.
