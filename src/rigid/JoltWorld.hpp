@@ -10,6 +10,7 @@
 #include "material/Material.hpp"
 #include "physics/SphereMaterialContact.hpp"
 #include "physics/MechanicalAccounting.hpp"
+#include "physics/CohesiveInterface.hpp"
 
 #include <memory>
 #include <vector>
@@ -51,6 +52,10 @@ struct PairImpulseAudit {
     double impulse_work_j{}, numerical_energy_change_j{};
     Vec3 momentum_error_kg_m_s{}, applied_couple_kg_m2_s{}, angular_momentum_error_kg_m2_s{};
 };
+struct CohesiveTensionKick {
+    CohesiveInterfaceIncrement interface_increment;
+    PairImpulseAudit transfer;
+};
 
 class JoltWorld {
 public:
@@ -82,6 +87,18 @@ public:
     // of impulse work and any noncentral couple. Host thread, between steps.
     [[nodiscard]] PairImpulseAudit applyPairImpulse(MatterBodyId a,MatterBodyId b,
         Vec3 point_a_m,Vec3 point_b_m,Vec3 impulse_on_a_n_s,double maximum_roundoff_energy_j);
+    // Central tensile connector between body-local points; Jolt retains every
+    // surface contact. Compression stiffness must be zero. Requires double
+    // positions and Jolt pair ownership; material-activation deferral rejects.
+    // Caller owns geometric validity, site
+    // history, time integration and its full work/error budget. No world step
+    // or multi-kick rollback is implied. History is returned only on success.
+    // Keeps both bodies awake while called, including a failed/slack site;
+    // the external scheduler must stop calls when normal sleeping may resume.
+    [[nodiscard]] CohesiveTensionKick applyCohesiveTensionKick(MatterBodyId a,MatterBodyId b,
+        Vec3 attachment_a_local_m,Vec3 attachment_b_local_m,double rest_distance_m,
+        const CohesiveInterfaceLaw &law,const CohesiveInterfaceState &history,
+        double impulse_duration_s,double maximum_roundoff_energy_j);
     void pinToWorld(MatterBodyId body_id);
     void releaseFromWorld(MatterBodyId body_id);
     void applyRigidState(MatterBodyId body_id,const RigidSnapshot &state);
@@ -98,6 +115,8 @@ public:
     void removeAndDestroy(MatterBodyId body_id);
 
 private:
+    [[nodiscard]] PairImpulseAudit applyAuditedPairImpulse(MatterBodyId a,MatterBodyId b,
+        Vec3 point_a_m,Vec3 point_b_m,Vec3 impulse_on_a_n_s,double maximum_roundoff_energy_j);
     class Impl;
     std::unique_ptr<Impl> impl_;
 };
