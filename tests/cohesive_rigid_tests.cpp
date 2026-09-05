@@ -35,6 +35,18 @@ void asymmetric(MaterialPreset preset){
         std::cout<<materialPresetName(preset)<<" asymmetric_steps="<<steps<<" duration_s="<<duration<<" max_energy_error_j="<<max_e<<" max_momentum_error="<<max_p<<" max_angular_error="<<max_l<<" relative_velocity_difference="<<(steps==512?0:difference)<<'\n';
         previous_relative_velocity=final_relative;previous_difference=difference;
     }
+    double previous_adaptive_error=0;
+    for(double tolerance:{1e-4,1e-5}){
+        const auto result=advanceCohesiveRigidAdaptive(law,rest,initial,duration,{work*tolerance,tolerance,65536});
+        const auto response=evaluateCohesiveInterface(law,result.state.interface);
+        const double error=std::abs(cohesiveRigidKineticEnergy(result.state)+response.stored_energy_j+response.dissipated_energy_j-e0);
+        require(response.separated,"adaptive asymmetric interface separates");
+        require(result.accumulated_absolute_energy_error_j<=work*tolerance&&error<=work*tolerance+1e-12,"adaptive accepted error stays in requested budget");
+        if(previous_adaptive_error>0)require(result.accumulated_absolute_energy_error_j<previous_adaptive_error,"tighter requested budget reduces accumulated numerical error");
+        std::cout<<materialPresetName(preset)<<" adaptive_tolerance="<<tolerance<<" evaluations="<<result.evaluations<<" accepted_half_steps="<<result.accepted_half_steps<<" accumulated_energy_error_j="<<result.accumulated_absolute_energy_error_j<<" final_energy_error_j="<<error<<'\n';
+        previous_adaptive_error=result.accumulated_absolute_energy_error_j;
+    }
+    bool exhausted=false;try{(void)advanceCohesiveRigidAdaptive(law,rest,initial,duration,{work*1e-5,1e-5,3});}catch(const std::runtime_error&){exhausted=true;}require(exhausted,"insufficient adaptive budget rejects entire candidate");
 }
 int main(){try{
     for(auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}){
