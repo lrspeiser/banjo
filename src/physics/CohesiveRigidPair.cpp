@@ -95,17 +95,18 @@ CohesiveRigidPairResult advanceCohesiveRigidPair(const CohesiveInterfaceLaw &law
     if(!std::isfinite(result.energy_residual_j)||!finite(result.momentum_residual_kg_m_s)||!finite(result.angular_residual_kg_m2_s))throw std::invalid_argument("rigid cohesive numerical overflow");
     return result;
 }
-CohesiveAdaptiveResult advanceCohesiveRigidAdaptive(const CohesiveInterfaceLaw &law,double rest,const CohesiveRigidPairState &initial,double duration,const CohesiveAdaptiveControls &controls){
-    validate(initial.a);validate(initial.b);(void)evaluateCohesiveInterface(law,initial.interface);
+template<class State,class Result,class Step,class HistoryError>
+Result adaptiveAdvance(const CohesiveInterfaceLaw &law,const State &initial,double duration,const CohesiveAdaptiveControls &controls,Step step,HistoryError historyError){
+    validate(initial.a);validate(initial.b);
     if(!std::isfinite(duration)||duration<=0||duration>1||!std::isfinite(controls.energy_error_budget_j)||controls.energy_error_budget_j<=0||!std::isfinite(controls.state_error_tolerance)||controls.state_error_tolerance<=0||controls.state_error_tolerance>.1||controls.maximum_evaluations<3||controls.maximum_evaluations>65536)throw std::invalid_argument("invalid adaptive cohesive controls");
-    CohesiveAdaptiveResult out;out.state=initial;
+    Result out;out.state=initial;
     const double distance_scale=cohesiveSeparationOpening(law),work=law.area_m2*law.fracture_energy_j_m2;
     const double speed_scale=std::sqrt(work/std::min(initial.a.mass_kg,initial.b.mass_kg));
     const double angular_scale=std::sqrt(work*std::min({initial.a.principal_inertia_kg_m2.x,initial.a.principal_inertia_kg_m2.y,initial.a.principal_inertia_kg_m2.z,initial.b.principal_inertia_kg_m2.x,initial.b.principal_inertia_kg_m2.y,initial.b.principal_inertia_kg_m2.z}));
     if(!std::isfinite(speed_scale)||!std::isfinite(angular_scale)||speed_scale<=0||angular_scale<=0)throw std::invalid_argument("adaptive scales overflow");
-    const auto evaluate=[&](const CohesiveRigidPairState &s,double h){if(out.evaluations>=controls.maximum_evaluations)throw std::runtime_error("adaptive cohesive evaluation budget exhausted");++out.evaluations;return advanceCohesiveRigidPair(law,rest,s,h);};
-    const auto disagreement=[&](const CohesiveRigidPairState &a,const CohesiveRigidPairState &b){
-        double error=std::max(std::abs(a.interface.opening_m-b.interface.opening_m),std::abs(a.interface.maximum_opening_m-b.interface.maximum_opening_m))/distance_scale;
+    const auto evaluate=[&](const State &s,double h){if(out.evaluations>=controls.maximum_evaluations)throw std::runtime_error("adaptive cohesive evaluation budget exhausted");++out.evaluations;return step(s,h);};
+    const auto disagreement=[&](const State &a,const State &b){
+        double error=historyError(a,b)/distance_scale;
         const auto compare=[&](const CohesiveRigidBody &x,const CohesiveRigidBody &y){
             const double qdot=x.orientation.w*y.orientation.w+x.orientation.x*y.orientation.x+x.orientation.y*y.orientation.y+x.orientation.z*y.orientation.z;
             const double sign=qdot<0?-1:1;const auto qx=x.orientation,qy=y.orientation;
@@ -113,7 +114,7 @@ CohesiveAdaptiveResult advanceCohesiveRigidAdaptive(const CohesiveInterfaceLaw &
             error=std::max({error,length(x.center_m-y.center_m)/distance_scale,length(x.velocity_m_s-y.velocity_m_s)/speed_scale,length(x.angular_momentum_kg_m2_s-y.angular_momentum_kg_m2_s)/angular_scale,qdistance});
         };compare(a.a,b.a);compare(a.b,b.b);return error;
     };
-    const auto advance=[&](auto &&self,const CohesiveRigidPairState &s,double h,unsigned depth)->CohesiveRigidPairState{
+    const auto advance=[&](auto &&self,const State &s,double h,unsigned depth)->State{
         if(depth>24||h<=0)throw std::runtime_error("adaptive cohesive refinement depth exhausted");
         try{
             const auto full=evaluate(s,h),half=evaluate(s,.5*h),fine=evaluate(half.state,.5*h);
@@ -129,5 +130,20 @@ CohesiveAdaptiveResult advanceCohesiveRigidAdaptive(const CohesiveInterfaceLaw &
     out.state=advance(advance,initial,duration,0);
     if(out.accumulated_absolute_energy_error_j>controls.energy_error_budget_j*(1+1e-12))throw std::runtime_error("adaptive cohesive accumulated error exceeds budget");
     return out;
+}
+CohesiveAdaptiveResult advanceCohesiveRigidAdaptive(const CohesiveInterfaceLaw &law,double rest,const CohesiveRigidPairState &initial,double duration,const CohesiveAdaptiveControls &controls){
+    (void)evaluateCohesiveInterface(law,initial.interface);
+    return adaptiveAdvance<CohesiveRigidPairState,CohesiveAdaptiveResult>(law,initial,duration,controls,
+        [&](const auto &s,double h){return advanceCohesiveRigidPair(law,rest,s,h);},
+        [](const auto &a,const auto &b){return std::max(std::abs(a.interface.opening_m-b.interface.opening_m),std::abs(a.interface.maximum_opening_m-b.interface.maximum_opening_m));});
+}
+CohesivePatchAdaptiveResult advanceCohesivePatchAdaptive(const CohesiveInterfaceLaw &common,const CohesivePatchState &initial,double duration,const CohesiveAdaptiveControls &controls){
+    if(initial.sites.empty()||initial.sites.size()>256)throw std::invalid_argument("invalid adaptive patch site count");
+    auto law=common;law.area_m2=0;
+    for(const auto &site:initial.sites){auto local=common;local.area_m2=site.area_m2;(void)evaluateCohesiveInterface(local,site.history);law.area_m2+=site.area_m2;}
+    (void)evaluateCohesiveInterface(law,{});
+    return adaptiveAdvance<CohesivePatchState,CohesivePatchAdaptiveResult>(law,initial,duration,controls,
+        [&](const auto &s,double h){return advanceCohesivePatch(common,s,h);},
+        [](const auto &a,const auto &b){double error=0;for(std::size_t i=0;i<a.sites.size();++i)error=std::max({error,std::abs(a.sites[i].history.opening_m-b.sites[i].history.opening_m),std::abs(a.sites[i].history.maximum_opening_m-b.sites[i].history.maximum_opening_m)});return error;});
 }
 }

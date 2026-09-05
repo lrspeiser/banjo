@@ -90,6 +90,7 @@ int main(){try{
             require(std::abs(total_area-.00008)<1e-16,"patch area derives from physical rectangle");
             const double rotation_speed=std::sqrt(2*loading*total_area*m.fracture_energy_j_m2/inertia.z);
             patch.b.angular_momentum_kg_m2_s={0,0,inertia.z*rotation_speed};
+            const auto initial_patch=patch;
             const double duration=cohesiveSeparationOpening(law)/(.005*rotation_speed),dt=duration/2048;
             double damage_min=1,damage_max=0,max_error=0,max_trajectory_error=0;
             const double e0=cohesiveRigidKineticEnergy({patch.a,patch.b,{}});
@@ -108,6 +109,20 @@ int main(){try{
                 std::cout<<materialPresetName(preset)<<" patch_refinement loading="<<loading<<" damage_difference_decreased="<<(work_difference<=previous_work_difference+1e-12)<<" spin_difference_decreased="<<(spin_difference<previous_spin_difference)<<'\n';
             }
             previous_work=damage_work;previous_spin=patch.b.angular_momentum_kg_m2_s;previous_work_difference=work_difference;previous_spin_difference=spin_difference;
+            if(cells==8&&loading==4){
+                double previous_error=0;
+                for(double tolerance:{1e-4,1e-5}){
+                    const double budget=total_area*m.fracture_energy_j_m2*tolerance;
+                    const auto adaptive=advanceCohesivePatchAdaptive(law,initial_patch,duration,{budget,tolerance,65536});
+                    double energy=cohesiveRigidKineticEnergy({adaptive.state.a,adaptive.state.b,{}}),adaptive_work=0;
+                    for(std::size_t k=0;k<adaptive.state.sites.size();++k){const auto &site=adaptive.state.sites[k];auto local=law;local.area_m2=site.area_m2;const auto response=evaluateCohesiveInterface(local,site.history);energy+=response.stored_energy_j+response.dissipated_energy_j;adaptive_work+=response.dissipated_energy_j;require(site.history.maximum_opening_m>=initial_patch.sites[k].history.maximum_opening_m,"adaptive patch retains site damage history");}
+                    require(adaptive.accumulated_absolute_energy_error_j<=budget&&std::abs(energy-e0)<=budget+1e-12,"adaptive patch respects global numerical energy budget");
+                    if(previous_error>0)require(adaptive.accumulated_absolute_energy_error_j<previous_error,"tighter patch control reduces energy error");
+                    std::cout<<materialPresetName(preset)<<" patch_adaptive tolerance="<<tolerance<<" evaluations="<<adaptive.evaluations<<" half_steps="<<adaptive.accepted_half_steps<<" accumulated_energy_error_j="<<adaptive.accumulated_absolute_energy_error_j<<" damage_work_j="<<adaptive_work<<'\n';previous_error=adaptive.accumulated_absolute_energy_error_j;
+                    if(tolerance==1e-5){const auto continued=advanceCohesivePatchAdaptive(law,adaptive.state,.5*duration,{budget,tolerance,65536});for(std::size_t k=0;k<continued.state.sites.size();++k)require(continued.state.sites[k].history.maximum_opening_m>=adaptive.state.sites[k].history.maximum_opening_m,"continuation cannot heal previously damaged patch sites");}
+                }
+                bool exhausted=false;try{(void)advanceCohesivePatchAdaptive(law,initial_patch,duration,{total_area*m.fracture_energy_j_m2*1e-5,1e-5,3});}catch(const std::runtime_error&){exhausted=true;}require(exhausted,"patch budget exhaustion rejects candidate");
+            }
             }
         }
         for(double energy_factor:{1.5,6.0}){

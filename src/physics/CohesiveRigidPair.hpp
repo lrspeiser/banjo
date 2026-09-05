@@ -50,4 +50,11 @@ struct CohesivePatchResult { CohesivePatchState state;double energy_residual_j{}
 [[nodiscard]] CohesivePatchState makeRectangularCohesivePatch(CohesiveRigidBody a,CohesiveRigidBody b,
     Vec3 center_a,Vec3 center_b,Vec3 u_a,Vec3 v_a,Vec3 u_b,Vec3 v_b,double width_m,double height_m,unsigned cells_per_axis);
 [[nodiscard]] CohesivePatchResult advanceCohesivePatch(const CohesiveInterfaceLaw &law,const CohesivePatchState &initial,double dt_s);
+struct CohesivePatchAdaptiveResult {
+    CohesivePatchState state;
+    double accumulated_absolute_energy_error_j{};
+    unsigned evaluations{},accepted_half_steps{};
+};
+[[nodiscard]] CohesivePatchAdaptiveResult advanceCohesivePatchAdaptive(const CohesiveInterfaceLaw &law,
+    const CohesivePatchState &initial,double duration_s,const CohesiveAdaptiveControls &controls);
 }
