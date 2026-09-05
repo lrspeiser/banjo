@@ -32,6 +32,7 @@ add_library(
     src/material/MaterialCatalog.cpp
     src/matter/Lattice.cpp
     src/physics/ContactMechanics.cpp
+    src/physics/CohesiveInterface.cpp
     src/physics/ConservativeStep.cpp
     src/physics/ConservativeAdvance.cpp
     src/physics/NormalImpact.cpp
@@ -118,6 +119,9 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
 endif()
 
 if(BANJO_BUILD_HEADLESS)
+    add_executable(banjo_cohesive_probe src/app/cohesive_probe_main.cpp)
+    target_link_libraries(banjo_cohesive_probe PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_cohesive_probe)
     add_executable(banjo_assistant_probe src/app/assistant_probe_main.cpp)
     target_link_libraries(banjo_assistant_probe PRIVATE banjo_creator_assistant)
     banjo_enable_warnings(banjo_assistant_probe)
@@ -174,6 +178,10 @@ if(BANJO_BUILD_LAB)
 endif()
 
 if(BANJO_BUILD_TESTS)
+    add_executable(banjo_cohesive_interface_tests tests/cohesive_interface_tests.cpp)
+    target_link_libraries(banjo_cohesive_interface_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_cohesive_interface_tests)
+    add_test(NAME banjo_cohesive_interface_tests COMMAND banjo_cohesive_interface_tests)
     include(CTest)
     enable_testing()
 
