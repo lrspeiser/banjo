@@ -1,6 +1,6 @@
 # Banjo mechanics scorecard
 
-Living scorecard for the general-object platform, not a claim that the ball lab is complete. Latest tested code is `dc49f1293dd656bac3a33e717e1a9bd29555bf5d` on local `codex/physics-foundation`; GitHub main remains separate. The [event/material checkpoint](event-material-checkpoint.md) records 36 comparisons across glass, oak and iron: 21 accepted numerical runs and 15 rejected runs. Timestep disagreement remains even in accepted coarse impacts. Update this document with every physics checkpoint, including failed and unsupported cases.
+Living scorecard for the general-object platform, not a claim that the ball lab is complete. Latest tested code is `b31a8a5cf51d09dc725fe1448c9eb27254aeb2ea` on local `codex/physics-foundation`; GitHub main remains separate. The [contact-root checkpoint](event-root-checkpoint.md) fixes interval-boundary rejection and records full-resolution glass/oak/iron impacts completing 2 ms in 20- and 10-microsecond intervals. The [earlier 36-case matrix](event-material-checkpoint.md) remains a historical baseline. Timestep accuracy and dissipative sustained contact remain open. Update this document at every physics checkpoint, including failed and unsupported cases.
 
 Status meanings: **Measured** = verified only within the stated reference bounds; **Defect** = evidence contradicts the required behavior; **Prototype** = implementation exists but the required validation is incomplete; **Planned** = required implementation is absent. A measured component does not make the full platform complete.
 
@@ -29,8 +29,8 @@ An elastic approximation uses the same declared bond law for each material's den
 | M06 Gravity, free flight and acceleration | Measured analytical/runtime cases | Retain density-independent gravity across glass/oak/iron, arbitrary gravity directions and transfers |
 | M07 Reversible elasticity | Measured spring/network references and glass/oak/iron full-lattice ledgers; uncalibrated response | Paired tension/compression/shear/bending coupons, load curves, horizon/resolution convergence |
 | M08 Contact ownership and nonpenetration | Prototype: coupled material/plane reference; separate default correction path | One response across rigid/material activation; general contact geometry and full runtime integration |
-| M09 Impact timing and rapid collisions | Defect: raw phase loss; event prototype passes analytical/coarse cases but full-resolution cases reject | Resolve endpoint/repeated-contact event limits, control elastic temporal error, retain rollback and all three materials |
-| M10 Restitution and rebound | Prototype: prescribed event law passes point/finite-pair work checks; sampled e=0.3 rejects for all three materials | Resolve dissipative event location, establish converged rebound, then calibrate interface/material speed dependence |
+| M09 Impact timing and rapid collisions | Prototype: boundary/departure oracles pass; all three full lattices finish at 20 and 10 microseconds; large intervals remain unvalidated | Resolve dense contact cost and temporal error with bounded rollback; preserve all three materials |
+| M10 Restitution and rebound | Defect: prescribed event law passes analytical work checks, but sampled e=0.3 accumulates tiny impacts and rejects for all three materials | Implement a consistent sustained-contact transition/integrator, establish converged rebound, then calibrate interface/material speed dependence |
 | M11 Static/dynamic friction and slip | Measured limited pair/rolling tests; not in new conservative reference | Integrate friction with consistent loads, torque and work; retain glass/oak/iron comparisons |
 | M12 Slide-to-roll, backspin and overspin | Measured limited rolling tests; default full energy ledger incomplete | Shared experiments with measured contact-point slip and analytical limits; no forced no-slip assignment |
 | M13 Rolling resistance and settling | Prototype resisting torque and regression | Calibrate losses using actual support loads; verify settling and arbitrary shapes |
@@ -49,15 +49,15 @@ An elastic approximation uses the same declared bond law for each material's den
 | M26 Assemblies, hinges and constrained motion | Planned | Door/hinge example with material-derived inertia, anchor failure and post-failure motion |
 | M27 Thermal, moisture and phase state | Planned; declarations are not thermal evolution | Unit-bearing state, heat/expansion/transport and explicit mechanical coupling tests |
 | M28 Granular, fluid and further material families | Planned | Select and validate solver families; capability limits and consistent coupling to solids |
-| M29 Frame, timestep, resolution and orientation invariance | Defect: all three coarse event trajectories change with timestep; analytical/frame checks pass | Control trajectory error and repeat full-resolution/orientation sweeps; conservation alone cannot close this row |
-| M30 Determinism, reproducibility and experiment diagnostics | Prototype: shared three-material script, 36 command/result records, seeds and CSV ledgers | Portable experiment files, per-material trajectories and state hashes; test before cross-platform claims |
+| M29 Frame, timestep, resolution and orientation invariance | Defect: coarse event trajectories change with timestep; full-resolution refinement is measured, not yet converged | Continue timestep/resolution/orientation sweeps and temporal error control; conservation alone cannot close this row |
+| M30 Determinism, reproducibility and experiment diagnostics | Prototype: three-material script, source/configuration records, CSV ledgers and root-failure diagnostics | Portable experiment files, per-material trajectories and state hashes; test before cross-platform claims |
 
 ## Platform capabilities that must preserve those mechanics
 
 | ID / capability | Status | Next required step |
 |---|---|---|
 | P01 Adaptive/local matter and physical LOD | Planned beyond whole-ball activation | Sparse local patches, boundary coupling, refinement/re-coarsening and damage preservation |
-| P02 Sleeping, resource budgets and performance | Prototype fragment/debris limits; reference slower than real time | Profile stages and percentiles; bounded fallbacks; optimize measured work without changing laws |
+| P02 Sleeping, resource budgets and performance | Prototype limits; full-resolution 2 ms reference runs take tens of seconds | Profile root/elastic solves, sustained-contact handling and percentiles; optimize without changing laws or hiding losses |
 | P03 Cache identity and reuse | Prototype serialization and scenario summaries | Full state/material/geometry/solver keys, invalidation and time-aligned validated reuse |
 | P04 Speculative precomputation | Planned | Likelihood/error bounds, cancellation and measured net benefit with live fallback |
 | P05 Units, extensible laws and capability checks | Design plus partial compiler validation | Unit-aware schema/IR, explicit unsupported-law errors and trusted solver plugins |
@@ -69,9 +69,9 @@ An elastic approximation uses the same declared bond law for each material's den
 
 ## Current order of work
 
-1. Resolve full-resolution event limits and sampled dissipative impacts with glass and oak, retaining iron. Analytical restitution/work/rollback checks now pass; the sampled failures remain open.
+1. Resolve sampled dissipative impacts and sustained contact with glass and oak, retaining iron. Full-resolution elastic impacts now complete with short intervals; repeated dissipative impacts still reject.
 2. Establish timestep-accurate trajectories, then integrate friction and synchronized activation/handoff without losing the ledgers.
 3. Validate elastic/fracture coupons and substance-specific laws; expand shapes and repeatable material comparisons.
 4. Continue the adaptive-object, assembly, authoring and publishing gates in the full roadmap. The platform goal is not complete when balls work.
 
-Evidence: [event/material comparison](event-material-checkpoint.md), [support/timestep checkpoint](coupled-support-checkpoint.md), [elastic reference](elastic-newton-checkpoint.md), [default-stage defects](material-stage-checkpoint.md), [transfer accounting](transfer-accounting-checkpoint.md), [property consumers](physics-coverage.md), [ordered roadmap](roadmap.md). The table records the scope of that evidence, including missing evidence, rather than inferring completion from passing suites.
+Evidence: [contact-root/full-resolution checkpoint](event-root-checkpoint.md), [event/material comparison](event-material-checkpoint.md), [support/timestep checkpoint](coupled-support-checkpoint.md), [elastic reference](elastic-newton-checkpoint.md), [default-stage defects](material-stage-checkpoint.md), [transfer accounting](transfer-accounting-checkpoint.md), [property consumers](physics-coverage.md), [ordered roadmap](roadmap.md). The table records the scope of that evidence, including missing evidence, rather than inferring completion from passing suites.
