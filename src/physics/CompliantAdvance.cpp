@@ -107,11 +107,11 @@ CompliantAdvanceResult tryCompliantAdvance(ActiveMatter &matter, double dt,
         // Allocate part of the whole-interval audit budget to each physical
         // substep. A fixed per-substep tolerance could accumulate excessive
         // drift as accuracy control adds thousands of very small steps.
-        // Reserve both a duration-proportional share and a bounded per-trial
-        // roundoff share, so an exact tiny remainder is not assigned a budget
-        // below floating-point measurement noise. Accepted durations sum to dt
-        // and accepted physical steps cannot exceed maximum_trials: together
-        // these shares consume at most half the whole-interval budget.
+        // Reserve a duration-proportional share and a bounded per-trial share
+        // for tiny final remainders. These tighten equation residuals only;
+        // rounded state sums keep their original independent audit tolerances.
+        // Accepted durations sum to dt and accepted physical steps cannot
+        // exceed maximum_trials: the shares total at most half the budget.
         const double share=.25*(interval/dt+1.0/settings.maximum_trials);
         local.maximum_residual_work_j=std::min(local.maximum_residual_work_j,share*interval_energy_budget);
         local.maximum_residual_linear_impulse_kg_m_s=std::min(local.maximum_residual_linear_impulse_kg_m_s,share*interval_momentum_budget);

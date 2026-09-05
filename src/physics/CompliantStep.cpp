@@ -114,6 +114,7 @@ CompliantStepResult tryCompliantStep(ActiveMatter &matter, double dt, const Comp
             result.failure = CompliantStepFailure::Geometry; return result;
         }
     }
+    bool buried_contact = false;
     for (const auto &contact : contacts) {
         const auto e = detail::evaluateElasticContact(contact,initial,velocity,dt);
         if (!e.valid) { result.failure = CompliantStepFailure::Convergence; return result; }
@@ -128,13 +129,20 @@ CompliantStepResult tryCompliantStep(ActiveMatter &matter, double dt, const Comp
             // A chord through the sphere is not a valid shallow compression.
             const Vec3 path = position1[contact.a]-position1[contact.b]-contact.relative0;
             const double t = lengthSquared(path)>0 ? std::clamp(-dot(contact.relative0,path)/lengthSquared(path),0.0,1.0) : 0;
-            result.maximum_compression_m = std::max(result.maximum_compression_m,
-                contact.sphere_radius_m-length(contact.relative0+t*path));
+            const double swept_compression = contact.sphere_radius_m-length(contact.relative0+t*path);
+            result.maximum_compression_m = std::max(result.maximum_compression_m,swept_compression);
+            // Outside endpoints have zero stored contact energy and can hide
+            // a complete shallow collision, even in both step-doubling paths.
+            // Require an endpoint inside the contact interval before accepting
+            // its force history. The caller must subdivide; no extra impulse.
+            buried_contact |= contact.gap0_m>=0 && length(contact.relative0+path)>=contact.sphere_radius_m &&
+                swept_compression>s.contact_tolerance_m;
         }
     }
     if (result.maximum_compression_m > settings.maximum_compression_m) {
         result.failure = CompliantStepFailure::Compression; return result;
     }
+    if (buried_contact) { result.failure = CompliantStepFailure::Geometry; return result; }
     ActiveMatter candidate = matter;
     for (std::size_t i=0;i<count;++i) {
         candidate.nodes[i].position_world_m = position1[i]; candidate.nodes[i].velocity_m_s = velocity[i];

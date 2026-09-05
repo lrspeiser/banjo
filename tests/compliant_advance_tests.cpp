@@ -148,12 +148,48 @@ void comparativeMaterialController() {
         std::cout<<materialPresetName(preset)<<" segments="<<result.accepted_segments<<" rejected="<<result.rejected_segments<<" trials="<<result.trials<<" min_step="<<result.minimum_accepted_step_s<<'\n';
     }
 }
+void shallowSweptContact() {
+    Fixture coarse,adaptive,reference;
+    coarse.matter.nodes={{{-.25,.499,0},{},{100,0,0},1,{}}};
+    adaptive.matter.nodes=reference.matter.nodes=coarse.matter.nodes;
+    CoupledSphereState coarse_sphere{{},.5,2,.2};
+    auto adaptive_sphere=coarse_sphere, reference_sphere=coarse_sphere;
+    auto s=settings(1e-5);
+    s.step.normal={1e6,100}; s.step.maximum_compression_m=.01;
+    s.error={1e-6,1e-3,1e-6,1e-5,.001};
+    s.initial_trial_dt_s=s.maximum_trial_dt_s=.01;
+    const auto skipped=tryCompliantStep(coarse.matter,.01,s.step,{},&coarse_sphere);
+    require(!skipped.balance.converged && skipped.failure==CompliantStepFailure::Geometry,
+        "raw step rejects shallow contact buried between outside endpoints");
+    near(coarse.matter.nodes[0].position_world_m.x,-.25,0,"swept rejection retains input state");
+    coarse.matter.nodes[0].position_world_m.y=.5;
+    const auto tangent=tryCompliantStep(coarse.matter,.01,s.step,{},&coarse_sphere);
+    require(tangent.balance.converged,"exactly tangent free flight is not a buried contact");
+    near(length(coarse_sphere.motion.linear_velocity_m_s),0,0,"tangent flight has no invented reaction");
+    const auto result=tryCompliantAdvance(adaptive.matter,.01,s,{},&adaptive_sphere);
+    require(result.step.balance.converged && result.rejected_segments>0,"adaptive sweep resolves grazing contact");
+    for (unsigned i=0;i<20000;++i) {
+        const auto step=tryCompliantStep(reference.matter,5e-7,s.step,{},&reference_sphere);
+        require(step.balance.converged,"fine grazing reference converges");
+    }
+    require(length(adaptive_sphere.motion.linear_velocity_m_s)>.01,"grazing finite body receives a reaction");
+    const double velocity_error=length(adaptive_sphere.motion.linear_velocity_m_s-reference_sphere.motion.linear_velocity_m_s);
+    near(velocity_error,0,1e-4,"adaptive grazing reaction matches fine trajectory");
+    near(length(adaptive.matter.nodes[0].position_world_m-reference.matter.nodes[0].position_world_m),0,1e-6,
+        "adaptive grazing position matches fine trajectory");
+    near(length(result.step.balance.linear_momentum_residual_kg_m_s),0,1e-9,"grazing momentum ledger");
+    near(length(result.step.balance.angular_momentum_residual_kg_m2_s),0,1e-9,"grazing angular ledger");
+    near(result.step.balance.energy_residual_j,0,1e-6,"grazing work ledger");
+    std::cout<<"grazing reaction="<<length(adaptive_sphere.motion.linear_velocity_m_s)<<" velocity difference="<<velocity_error
+        <<" segments="<<result.accepted_segments<<" rejected="<<result.rejected_segments<<'\n';
+}
 }
 int main() {
     const std::vector<std::pair<const char*,std::function<void()>>> tests{
         {"adaptive analytical oscillator",analyticalElasticAccuracy},{"adaptive analytical bounce",analyticalDampedContact},
         {"adaptive loaded gravity ledger",loadedGravityLedger},{"rollback, bounds and exact remainder",rollbackAndTinyRemainder},
-        {"adaptive finite pair reference frames",finitePairFrameInvariance},{"glass/oak/iron adaptive contact",comparativeMaterialController}};
+        {"adaptive finite pair reference frames",finitePairFrameInvariance},{"glass/oak/iron adaptive contact",comparativeMaterialController},
+        {"shallow swept finite-sphere contact",shallowSweptContact}};
     unsigned failures=0;
     for (const auto &[name,test]:tests) {
         try {test();std::cout<<"[PASS] "<<name<<'\n';}

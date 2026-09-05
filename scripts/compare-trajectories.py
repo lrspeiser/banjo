@@ -74,10 +74,19 @@ def read_run(row):
                 wall_s=sum(float(s['wall_ms']) for s in samples)/1000)
 
 
-def compare(coarse,fine):
+def compare(coarse,fine,*,allow_compliant_adaptive=False):
     if not coarse['row'].get('executable_sha256') or coarse['row']['executable_sha256']!=fine['row'].get('executable_sha256'):
         raise ValueError('Refinement comparison requires the same recorded solver executable hash')
-    if coarse['signature']!=fine['signature'] or coarse['states'][0]!=fine['states'][0]:
+    signatures=[coarse['signature'],fine['signature']]
+    if allow_compliant_adaptive:
+        # Only these two integrators share the explicitly selected compliance
+        # law. Never equate rigid/event contact or erase other physical inputs.
+        for index,signature in enumerate(signatures):
+            mode=re.search(r' step_mode=(\w+)',signature[2])
+            if not mode or mode[1] not in ('compliant','adaptive'):
+                raise ValueError('Mixed-integrator comparison requires the same compliant contact law')
+            signatures[index]=(*signature[:2],re.sub(r' step_mode=(?:compliant|adaptive)\b',' step_mode=compliant',signature[2]))
+    if signatures[0]!=signatures[1] or coarse['states'][0]!=fine['states'][0]:
         raise ValueError('Physical configuration or initial node state changed between rates')
     if set(coarse['states'])!=set(fine['states']):
         raise ValueError('Compare exact shared output times, without interpolation')

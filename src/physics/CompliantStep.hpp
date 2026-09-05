@@ -1,6 +1,7 @@
 #pragma once
 #include "physics/ConservativeStep.hpp"
 #include "physics/NormalCompliance.hpp"
+#include <limits>
 
 namespace banjo {
 struct CompliantStepSettings {
