@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Rotational loading and inertia correction:** [Off-center assembly trials](assembly-spin-checkpoint.md) found and corrected small-box fallback inertia, with independent glass/oak/iron tensor/energy checks. Oak/iron integration failures remain explicit. All 27 current and 25 legacy suites pass. Runtime identity changed; existing graphical saves need explicit migration before promotion. Local `e86cb8e`; full goal active.
+
 **Declared runtime assemblies:** [Explicit contact policy and public Jolt tests](runtime-assembly-checkpoint.md) compile face sites and run bounded temporary trajectories with per-site histories and energy diagnostics. Glass/oak/iron CLI trials and all four affected suites pass in both configurations. Live material-backed assembly creation remains open. Local `c7aa5d9`; full goal active.
 
 **Atomic tensile patches:** [One audited update for 1..256 sites](tension-patch-checkpoint.md) preserves individual area/history, shared torque/work and Jolt surfaces. Glass/oak/iron ordering, subdivision and rejection tests pass; all 27 promoted suites pass. Whole-step integration and live crafting remain next. Local `b948acc`; full goal active.
