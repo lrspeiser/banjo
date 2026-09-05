@@ -57,4 +57,19 @@ struct CohesivePatchAdaptiveResult {
 };
 [[nodiscard]] CohesivePatchAdaptiveResult advanceCohesivePatchAdaptive(const CohesiveInterfaceLaw &law,
     const CohesivePatchState &initial,double duration_s,const CohesiveAdaptiveControls &controls);
+struct CohesiveBoxDeclaration {
+    Vec3 dimensions_m{};
+    double density_kg_m3{};
+    Vec3 center_m{};
+    Quat orientation;
+};
+struct CohesiveBoxFace {
+    unsigned normal_axis{}; // 0=x, 1=y, 2=z. Tangents use cyclic next axes.
+    bool positive{};
+    double u_offset_m{},v_offset_m{},width_m{},height_m{};
+};
+// Creates at-rest bodies from matter and patches wholly contained in opposing
+// box faces. Positive initial gap required; no mass is assigned to the gap.
+[[nodiscard]] CohesivePatchState makeBoxFaceCohesivePatch(const CohesiveBoxDeclaration &a,const CohesiveBoxDeclaration &b,
+    const CohesiveBoxFace &face_a,const CohesiveBoxFace &face_b,unsigned cells_per_axis);
 }

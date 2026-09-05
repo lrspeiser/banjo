@@ -4,6 +4,23 @@
 #include <algorithm>
 using namespace banjo;
 void require(bool b,const char *s){if(!b)throw std::runtime_error(s);}
+void boxFaceCompilation(MaterialPreset preset){
+    const auto m=makeReferenceMaterial(preset);const Vec3 axes[3]={{1,0,0},{0,1,0},{0,0,1}};
+    const Quat rotation{std::cos(.2),0,0,std::sin(.2)};
+    for(unsigned axis=0;axis<3;++axis){
+        CohesiveBoxDeclaration a{{.02,.02,.02},m.density_kg_m3,{},rotation},b{{.03,.03,.03},m.density_kg_m3,rotation.rotate(.026*axes[axis]),rotation};
+        CohesiveBoxFace fa{axis,true,.002,-.001,.01,.012},fb=fa;fb.positive=false;
+        const auto patch=makeBoxFaceCohesivePatch(a,b,fa,fb,4);
+        require(std::abs(patch.a.mass_kg-m.density_kg_m3*.000008)<1e-12,"box A mass derives from matter");
+        require(std::abs(patch.b.mass_kg-m.density_kg_m3*.000027)<1e-12,"box B mass derives from matter");
+        require(std::abs(patch.a.principal_inertia_kg_m2.x-patch.a.mass_kg*.0008/12)<1e-14,"box inertia derives from dimensions");
+        double area=0;for(const auto &site:patch.sites){area+=site.area_m2;require(std::abs(site.rest_distance_m-.001)<1e-14,"face gap derives from transformed geometry");}
+        require(std::abs(area-.00012)<1e-16,"face geometry owns patch area");
+        auto invalid=fa;invalid.width_m=.03;bool rejected=false;try{(void)makeBoxFaceCohesivePatch(a,b,invalid,fb,4);}catch(const std::invalid_argument&){rejected=true;}require(rejected,"out-of-face patch rejected");
+        invalid=fb;invalid.positive=true;rejected=false;try{(void)makeBoxFaceCohesivePatch(a,b,fa,invalid,4);}catch(const std::invalid_argument&){rejected=true;}require(rejected,"nonopposing faces rejected");
+    }
+    std::cout<<materialPresetName(preset)<<" box_face_axes=3 derived_mass_inertia_area_gap=pass invalid_faces=rejected\n";
+}
 void bendingIntegralOracle(MaterialPreset preset){
     const auto material=makeReferenceMaterial(preset);const double width=.01,height=.008,half=width/2;
     const CohesiveInterfaceLaw law{2*material.tensile_strength_pa*material.tensile_strength_pa/material.fracture_energy_j_m2,material.tensile_strength_pa,material.fracture_energy_j_m2,width*height};
@@ -76,6 +93,7 @@ void asymmetric(MaterialPreset preset){
 }
 int main(){try{
     for(auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}){
+        boxFaceCompilation(preset);
         bendingIntegralOracle(preset);
         asymmetric(preset);
         const auto m=makeReferenceMaterial(preset);const double area=.0001,mass=m.density_kg_m3*.012*.01*.008,work=area*m.fracture_energy_j_m2,rest=.02;

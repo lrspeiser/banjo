@@ -53,6 +53,25 @@ CohesivePatchState makeRectangularCohesivePatch(CohesiveRigidBody a,CohesiveRigi
     for(unsigned i=0;i<n;++i)for(unsigned j=0;j<n;++j){const double x=width*((i+.5)/n-.5),y=height*((j+.5)/n-.5);out.sites.push_back({ca+x*ua+y*va,cb+x*ub+y*vb,rest,area/(n*n),{}});}
     return out;
 }
+CohesivePatchState makeBoxFaceCohesivePatch(const CohesiveBoxDeclaration &a,const CohesiveBoxDeclaration &b,const CohesiveBoxFace &fa,const CohesiveBoxFace &fb,unsigned cells){
+    struct CompiledFace {CohesiveRigidBody body;Vec3 center,u,v,normal;};
+    const auto compile=[](const CohesiveBoxDeclaration &box,const CohesiveBoxFace &face){
+        const auto d=box.dimensions_m;
+        if(!finite(d)||std::min({d.x,d.y,d.z})<=0||!std::isfinite(box.density_kg_m3)||box.density_kg_m3<=0||face.normal_axis>2||!std::isfinite(face.u_offset_m)||!std::isfinite(face.v_offset_m)||!std::isfinite(face.width_m)||!std::isfinite(face.height_m)||face.width_m<=0||face.height_m<=0)throw std::invalid_argument("invalid box-face declaration");
+        const double dimensions[3]={d.x,d.y,d.z};const Vec3 axes[3]={{1,0,0},{0,1,0},{0,0,1}};
+        const auto i=face.normal_axis,j=(i+1)%3,k=(i+2)%3;
+        if(std::abs(face.u_offset_m)+face.width_m*.5>dimensions[j]*.5+1e-12*dimensions[j]||std::abs(face.v_offset_m)+face.height_m*.5>dimensions[k]*.5+1e-12*dimensions[k])throw std::invalid_argument("attachment rectangle extends beyond box face");
+        CompiledFace out;out.normal=(face.positive?1.0:-1.0)*axes[i];out.u=axes[j];out.v=axes[k];out.center=.5*dimensions[i]*out.normal+face.u_offset_m*out.u+face.v_offset_m*out.v;
+        const double mass=box.density_kg_m3*d.x*d.y*d.z;
+        out.body={mass,mass/12*Vec3{d.y*d.y+d.z*d.z,d.x*d.x+d.z*d.z,d.x*d.x+d.y*d.y},box.center_m,{},{},{},box.orientation};validate(out.body);return out;
+    };
+    const auto ca=compile(a,fa),cb=compile(b,fb);
+    if(std::abs(fa.width_m-fb.width_m)>1e-12*fa.width_m||std::abs(fa.height_m-fb.height_m)>1e-12*fa.height_m)throw std::invalid_argument("box-face patch dimensions must correspond");
+    const auto gap=b.center_m+b.orientation.rotate(cb.center)-a.center_m-a.orientation.rotate(ca.center);
+    const auto na=a.orientation.rotate(ca.normal),nb=b.orientation.rotate(cb.normal);
+    if(length(na+nb)>1e-12||dot(gap,na)<=0||dot(gap,nb)>=0)throw std::invalid_argument("box faces must oppose across a positive gap");
+    return makeRectangularCohesivePatch(ca.body,cb.body,ca.center,cb.center,ca.u,ca.v,cb.u,cb.v,fa.width_m,fa.height_m,cells);
+}
 CohesivePatchResult advanceCohesivePatch(const CohesiveInterfaceLaw &common,const CohesivePatchState &initial,double dt){
     validate(initial.a);validate(initial.b);
     if(initial.sites.empty()||initial.sites.size()>256||!std::isfinite(dt)||dt<=0||dt>1)throw std::invalid_argument("invalid cohesive patch size/timestep");
