@@ -71,11 +71,11 @@ An elastic approximation uses the same declared bond law for each material's den
 | P03 Cache identity and reuse | Prototype serialization and scenario summaries | Full state/material/geometry/solver keys, invalidation and time-aligned validated reuse |
 | P04 Speculative precomputation | Planned | Likelihood/error bounds, cancellation and measured net benefit with live fallback |
 | P05 Units, extensible laws and capability checks | Prototype strict SI sphere/box schema; compiler-derived material requirements and placement/budget codes. Energy/tool accounting remains unsupported | General capability/error schemas; versioned energy/work/power and tool laws; preserve unsupported behavior |
-| P06 Human/AI creator APIs | Real starter LLM requests use inventory/XP/level/stamina; custom Build revalidates and replays; five live cases and 16 suites pass | Common versioned APIs, durable receipts, pending proposal persistence and bounded functional tests |
+| P06 Human/AI creator APIs | Real starter LLM and saved proposals; isolated test_recipe API returns sampled evidence and pass/fail/unsupported; nine three-material CLI cases and 16 suites pass | More functional fixtures/actions, test feedback to LLM, versioned common APIs and durable jobs |
 | P07 Persistence and material history | Starter save v3 retains completed recipes/clarifications and migrates v1/v2; saved-action failure/replay and three-material delayed readiness tested; native design restored after restart | Recovery UI, world/writer identity, player pose, blueprint history, full crash matrix and shared API durability |
 | P08 Publishing, distribution and remixing | Planned | World/object manifests, physics ABI, dependencies, validation, preview, permissions and migration |
 | P09 Multiplayer authority and compatibility | Undecided | Authority/snapshot/event model, stable IDs, version agreement and measured bandwidth/determinism |
-| P10 Usable shared laboratory and visualization | First-person clearing/table/designer captures; native inventory/pause/mouse look plus real prompt/paste and blocked-design display verified | Verify held walking and full gather/craft/cut/custom-build flow; improve text editing and functional-test feedback |
+| P10 Usable shared laboratory and visualization | Native saved-design restore and background ramp test verified; oak test reports travel/slip without spending resources | Full walking/gather/craft/cut/custom-build progression, test-result review/feedback and job cancellation |
 
 ## Current order of work
 

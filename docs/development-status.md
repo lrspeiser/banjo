@@ -1,5 +1,8 @@
 # Development status and handoff
 
+**Functional-test checkpoint:** [Isolated recipe tests](functional-test-checkpoint.md) measure travel/contact/slip on a declared incline without spending live resources. Three-material sphere/box comparisons, nine CLI cases, native saved-oak testing and all 16 suites pass. This is one bounded rigid fixture, not general functional or fracture certification. Local `cf73e5e`; full goal active.
+
+
 **Remembered-design checkpoint:** [Saved starter proposals](remembered-design-checkpoint.md) retain exact recipes across closing/reopening and update readiness after gathering. Three-material tests and 16 suites pass; one real native oak request survived restart without another model call. Save v3 migrates v1/v2. Local `8bde4da`; full goal remains active.
 
 

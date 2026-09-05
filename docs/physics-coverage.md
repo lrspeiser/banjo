@@ -1,5 +1,8 @@
 # Physical property and capability coverage
 
+**Functional-test checkpoint:** [Isolated recipe tests](functional-test-checkpoint.md) measure travel/contact/slip on a declared incline without spending live resources. Three-material sphere/box comparisons, nine CLI cases, native saved-oak testing and all 16 suites pass. This is one bounded rigid fixture, not general functional or fracture certification. Local `cf73e5e`; full goal active.
+
+
 **Starter support/release coverage:** [Willow Clearing](starter-checkpoint.md) tests glass/oak/iron fixed attachments, release without a launch impulse, gravity and crafted-sphere raw-volume collection. Its stamina costs, tool multipliers and whole-branch cut completion are game policies, not constitutive/energy validation. No calibrated wood grain, crack growth, tool efficiency or manufacturing law is added. Full physics gates remain open.
 
 **Inventory assessment at `fca0cb3`:** [Three-material requirements tests and real provider trials](requirements-checkpoint.md) verify homogeneous volume/density cost, inventory versus uncollected stock, selected recovery and no implicit transmutation/reclamation. All 15 suites pass (11.73 s); no physical law or conservation tolerance changes. Fabrication energy, functional success and normal new-control input remain unverified/unsupported as detailed there.
