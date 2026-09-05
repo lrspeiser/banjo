@@ -1,5 +1,7 @@
 # Physical property and capability coverage
 
+**Runtime joint precision evidence:** [Cohesive forces through live drift](runtime-cohesive-checkpoint.md) expose 11/12 finest accuracy failures in the current single-position build. A separate double-position build passes all 24 suites and all 12 checks. Precision identity/save compatibility must precede application integration. Local `f5d2226`; full goal active.
+
 **Audited live impulses:** [Pair transfer accounting](pair-impulse-checkpoint.md) now preflights float/speed limits and measures work, momentum and noncentral couples for glass/oak/iron. All 23 suites pass. Joint-law integration, surface response and physical source accounting remain open. Local `2fa2fe2`; full goal active.
 
 **Runtime contact ownership:** [Explicit body-pair routing](contact-ownership-checkpoint.md) suppresses duplicate Jolt responses, invalidates cached contacts and cleans up reused IDs. Glass/oak/iron routing/free-flight tests and all 22 suites pass. External joint/surface response and live assembly creation remain open. Local `5e7aa4e`; full goal active.
