@@ -2,13 +2,13 @@ cmake_minimum_required(VERSION 3.25)
 
 project(
     banjo
-    VERSION 0.5.0
+    VERSION 0.6.0
     DESCRIPTION "A matter-first runtime for editable-physics worlds"
     LANGUAGES C CXX)
 
 option(BANJO_BUILD_LAB "Build the interactive rolling-ball visual laboratory" ON)
 option(BANJO_BUILD_HEADLESS "Build the automated headless rolling-ball laboratory" ON)
-option(BANJO_BUILD_PRECOMPUTE "Build the deterministic scenario precomputation tool" ON)
+option(BANJO_BUILD_PRECOMPUTE "Build the deterministic scenario precomputation tools" ON)
 option(BANJO_BUILD_TESTS "Build Banjo unit tests" ON)
 
 set(CMAKE_CXX_STANDARD 23)
@@ -38,7 +38,8 @@ add_library(
     src/fracture/FragmentMassProperties.cpp
     src/fracture/FragmentGeometry.cpp
     src/prediction/BallScenarioProjection.cpp
-    src/prediction/ScenarioCache.cpp)
+    src/prediction/ScenarioCache.cpp
+    src/precompute/MaterialOutcome.cpp)
 
 target_include_directories(banjo_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_features(banjo_core PUBLIC cxx_std_23)
@@ -138,6 +139,12 @@ if(BANJO_BUILD_TESTS)
     target_compile_features(banjo_constitutive_tests PRIVATE cxx_std_23)
     banjo_enable_warnings(banjo_constitutive_tests)
     add_test(NAME banjo_constitutive_tests COMMAND banjo_constitutive_tests)
+
+    add_executable(banjo_outcome_tests tests/material_outcome_tests.cpp)
+    target_link_libraries(banjo_outcome_tests PRIVATE banjo_core)
+    target_compile_features(banjo_outcome_tests PRIVATE cxx_std_23)
+    banjo_enable_warnings(banjo_outcome_tests)
+    add_test(NAME banjo_outcome_tests COMMAND banjo_outcome_tests)
 
     if(TARGET banjo_runtime)
         add_executable(banjo_runtime_tests tests/runtime_dynamics_tests.cpp)
