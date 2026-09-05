@@ -1,5 +1,7 @@
 # Physical property and capability coverage
 
+**Interactive fracture microscope:** [Visual checkpoint](fracture-microscope-checkpoint.md) connects accepted solver trajectories to the native bowl app, with glass/oak/iron comparison, four impact speeds, playback, scrubbing and event stepping. Source `413852a`, local only. Both affected suites pass in promoted and legacy builds. This is the eight-region connector reference; whole-ball fracture and live bowl fragment contact remain open.
+
 **Local fracture cascades:** [Surviving-network propagation](rupture-cascade-checkpoint.md) now advances contact, local rupture and subsequent internal failure on one clock, with recursive time refinement and whole-interval rollback. An eight-region impact leaves a six-region core intact while a detached two-region piece breaks later. Four affected suites and the new legacy test pass. Local `334454d`; whole-ball/bowl integration remains open.
 
 

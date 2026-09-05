@@ -1,5 +1,7 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Interactive fracture microscope:** [Visual checkpoint](fracture-microscope-checkpoint.md) connects accepted solver trajectories to the native bowl app, with glass/oak/iron comparison, four impact speeds, playback, scrubbing and event stepping. Source `413852a`, local only. Both affected suites pass in promoted and legacy builds. This is the eight-region connector reference; whole-ball fracture and live bowl fragment contact remain open.
+
 **Owner fracture-propagation requirement:** impact loads a local region, forces and waves propagate through connected matter, and later damage follows the evolved state. A first break must not shatter every connection. Preserve surviving cores and internal state in detached fragments so later failures can arise physically. Numerical recursion may refine time/space; it must not prescribe a destruction tree. See [cascade evidence and remaining integration](rupture-cascade-checkpoint.md).
 
 

@@ -1,5 +1,7 @@
 # Banjo mechanics scorecard
 
+**Interactive fracture microscope:** [Visual checkpoint](fracture-microscope-checkpoint.md) connects accepted solver trajectories to the native bowl app, with glass/oak/iron comparison, four impact speeds, playback, scrubbing and event stepping. Source `413852a`, local only. Both affected suites pass in promoted and legacy builds. This is the eight-region connector reference; whole-ball fracture and live bowl fragment contact remain open.
+
 **Local fracture cascades:** [Surviving-network propagation](rupture-cascade-checkpoint.md) now advances contact, local rupture and subsequent internal failure on one clock, with recursive time refinement and whole-interval rollback. An eight-region impact leaves a six-region core intact while a detached two-region piece breaks later. Four affected suites and the new legacy test pass. Local `334454d`; whole-ball/bowl integration remains open.
 
 
@@ -69,7 +71,7 @@ An elastic approximation uses the same declared bond law for each material's den
 | M27 Thermal, moisture and phase state | Planned; declarations are not thermal evolution | Unit-bearing state, heat/expansion/transport and explicit mechanical coupling tests |
 | M28 Granular, fluid and further material families | Planned | Select and validate solver families; capability limits and consistent coupling to solids |
 | M29 Frame, timestep, resolution and orientation invariance | Double positions now default for new builds and run in native converted applications; bounded glass/oak/iron precision gate and all 25 suites pass. Single-position failures and nonmonotonic/global/spatial limits retained | Live joint/contact integration plus broader location/orientation/event/spatial accuracy gates |
-| M30 Determinism, reproducibility and experiment diagnostics | Prototype: full-node reference exports plus shared creator JSON fixtures, stable IDs and accepted-recipe/state persistence | Extend portable experiment/metric export to more geometries and topology; no bit-exact Jolt reload or cross-platform claim |
+| M30 Determinism, reproducibility and experiment diagnostics | Prototype: accepted-state fracture traces now drive native playback; recording leaves solver outcomes unchanged and capture overflow rolls back. Full-node exports, creator fixtures, stable IDs and recipe/state persistence retained | Extend portable experiment/metric export and fragment lineage to whole geometry; no bit-exact Jolt reload or cross-platform claim |
 
 ## Platform capabilities that must preserve those mechanics
 
@@ -84,7 +86,7 @@ An elastic approximation uses the same declared bond law for each material's den
 | P07 Persistence and material history | [Rotational checkpoint](assembly-spin-checkpoint.md): Existing graphical v2 saves remain untouched and require explicit runtime migration before promotion. [Double-position native promotion](double-application-checkpoint.md) preserves original saves, conversion packages, 64-bit identity and normal restart state. Three-material persistence/conversion tests retained | Recovery UI, crash-atomic package publication, writer identity, player pose and blueprint history |
 | P08 Publishing, distribution and remixing | Planned | World/object manifests, physics ABI, dependencies, validation, preview, permissions and migration |
 | P09 Multiplayer authority and compatibility | Undecided | Authority/snapshot/event model, stable IDs, version agreement and measured bandwidth/determinism |
-| P10 Usable shared laboratory and visualization | [Bowl prototype](bowl-checkpoint.md): separate native inventory/craft/release/pause/reset/surface/tilt/export loop verified. Fracture and first-person table integration remain open. Native double-position inventory navigation, glass/oak/iron crafting shortages, saved oak assembly test/export and restart verified. Crafting used an explicit table-layout fixture | Full walking/gather/craft/cut/custom-build progression; live joint creation, feedback and durable/cancellable jobs |
+| P10 Usable shared laboratory and visualization | [Fracture microscope](fracture-microscope-checkpoint.md): native three-material playback, scrub, event stepping and speed selection verified for the connector reference. [Bowl prototype](bowl-checkpoint.md): separate native inventory/craft/release/pause/reset/surface/tilt/export loop verified. Whole-ball fracture and first-person table integration remain open. Native double-position inventory navigation, glass/oak/iron crafting shortages, saved oak assembly test/export and restart verified. Crafting used an explicit table-layout fixture | Full walking/gather/craft/cut/custom-build progression; live joint creation, feedback and durable/cancellable jobs |
 
 ## Current order of work
 
