@@ -1,5 +1,7 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Owner inventory requirement:** collected resources belong in the user’s inventory. A natural-language creation request must explain what is possible with that inventory or precisely what else is needed. Preserve requested dimensions/material when short, distinguish held material from world pickups and selected recovery, and offer alternatives explicitly. Extend the requirements bill to energy sources, capable tools/processes and supported behavior as those models are implemented; missing capability is distinct from missing supplies. Queries must not spend resources. [Current implementation and acceptance evidence](requirements-checkpoint.md).
+
 **Start here.** This is the durable project brief for a new developer or coding agent. It consolidates the project owner's goals and the architecture discussed while building the prototype. The ball laboratory is the proving ground, not the final product.
 
 Read [development status](development-status.md) next for what actually exists, where it is committed, verification evidence, and known defects. Read the [roadmap](roadmap.md) for ordered work and acceptance gates. A design in this document is **not** an implementation claim. Current source and test evidence take precedence over older descriptions of completed work.

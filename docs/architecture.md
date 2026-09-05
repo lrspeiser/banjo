@@ -1,5 +1,7 @@
 # Banjo runtime architecture
 
+**Read-only creation assessment at `fca0cb3`:** `CreatorWorld::assess` compiles a requested design, compares it with collected inventory and explicitly selected recovery, and reports matching uncollected lots separately. Preview/build use this same material/placement/budget path. The assistant retains resource-short recipes; UI and probe independently assess them. No reservation, world mutation, simulation step or energy cost is implied. [Evidence and API semantics](requirements-checkpoint.md).
+
 **Selected revisions at `14bb0b7`:** `CreatorWorld` privately constructs a complete candidate and publishes allocation/state/history together for create/rebuild/reclaim. Stable IDs/revisions, exact request receipts and format-3 baseline migration preserve authoring lineage. `CodexAssistant` receives selected recovery context; the compiler remains authoritative. Contact/sleep caches are rebuilt, energy costs remain unsupported, and saves follow in-memory commits. [Evidence and limits](revision-checkpoint.md); [energy contract](energy-system.md).
 
 **Oriented primitives at `c10afc8`:** `RigidPrimitive` supplies homogeneous sphere/box occupied volume, local inertia, rotated support extents and shape-aware authoring overlap. Creator schema/world version 2 preserves authored orientation, matter allocation and rigid state; an explicit known-v1 reader migrates old sphere worlds. Jolt receives true box geometry/full inertia with gyroscopic force. [Evidence and diagnostic/UI limits](shape-checkpoint.md).

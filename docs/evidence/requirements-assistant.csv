@@ -1,0 +1,8 @@
+case,seconds,status,required_kg,inventory_kg,missing_kg,explanation
+short-glass,8.91639589999977,needs_resources,1.2000000000000002,0.1,1.1,"The requested block needs 1.2 kg of glass; collect 1.1 kg more beyond your 0.1 kg inventory. No uncollected glass lot is currently available, so this design remains unbuilt."
+short-oak,10.678555599995889,needs_resources,0.336,0.1,0.23600000000000002,"The requested solid oak block needs 0.336 kg; collect about 0.236 kg more oak. No uncollected oak is currently available, so this remains an unbuilt proposal with existing objects intact."
+short-iron,9.671983499996713,needs_resources,3.7776000000000005,0.1,3.6776000000000004,"The requested block needs 3.7776 kg of iron; collect 3.6776 kg more than your current stock. No uncollected iron lot is available, so the design remains unbuilt with existing objects intact."
+uncollected-glass,8.603300099995977,needs_resources,1.2000000000000002,0,1.2000000000000002,The requested solid glass block needs 1.2 kg of glass; none is collected. Collect at least 1.2 kg from the available glass pile to enable this design.
+uncollected-oak,9.241901000001235,needs_resources,0.336,0,0.336,"The requested solid oak block needs 0.336 kg of oak; none is collected. Collect at least that amount from the uncollected oak-pile, which contains 10 kg."
+uncollected-iron,8.404817900001945,needs_resources,3.7776000000000005,0,3.7776000000000005,No iron is collected yet. Collect iron from iron-pile to supply this block; the unchanged design needs 3.7776 kg.
+alternative-oak,8.308367799996631,buildable,0.336,10,0,"The proposed solid oak block uses collected wood, with sufficient stock available. Your iron sphere remains intact."

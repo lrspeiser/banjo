@@ -1,5 +1,7 @@
 # Physical property and capability coverage
 
+**Inventory assessment at `fca0cb3`:** [Three-material requirements tests and real provider trials](requirements-checkpoint.md) verify homogeneous volume/density cost, inventory versus uncollected stock, selected recovery and no implicit transmutation/reclamation. All 15 suites pass (11.73 s); no physical law or conservation tolerance changes. Fabrication energy, functional success and normal new-control input remain unverified/unsupported as detailed there.
+
 The [selected-revision checkpoint](revision-checkpoint.md) at `14bb0b7` adds material-reuse/return and before/after mechanical records through actual created objects. Glass/oak/iron lifecycle and real provider cases pass; all 15 suites pass (11.71 s). These are explicit authoring discontinuities, not manufacturing, conservation or fracture-work validation. Energy accounting remains unsupported and the normal new-control check remains pending.
 
 The [oriented box creator checkpoint](shape-checkpoint.md) adds full-dimension/orientation consumers, analytical homogeneous volume/inertia and actual solver tensors. Glass/oak/iron comparisons cover equal-volume sphere-versus-box ramp behavior, box free fall, asymmetric spin, finite shape collisions and persistence. Box top-support samples do not measure edge/side manifolds or support work; no constitutive/calibration/fracture claim changes. All 15 Windows suites pass; normal new-control verification remains pending.

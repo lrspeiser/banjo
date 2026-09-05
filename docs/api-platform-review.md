@@ -1,5 +1,7 @@
 # API and functional-platform review
 
+**Current update:** [Inventory requirements](requirements-checkpoint.md) at `fca0cb3` adds read-only `assess` / `assess_rebuild`, exact material shortfalls and retained assistant proposals. The [revision checkpoint](revision-checkpoint.md) completed the lifecycle implementation described as uncommitted below. Current full-suite and provider evidence is in the new checkpoint; the original review below is a historical snapshot. Command/receipt/durability, full resource lifecycle, functional-test and assembly gaps remain open.
+
 Reviewed September 4, 2026, Pacific time (September 5 UTC). This is a source review and proposed implementation order, not a new physics validation or a shipped API specification.
 
 The product remains: **collect materials → describe a useful object → inspect its specification and cost → build → use and measure → revise → save/share**. The next application milestone should close the build/test/revise loop through public interfaces. A valid shape and an affordable material bill do not establish that the object performs its intended function.

@@ -1,5 +1,7 @@
 # Energy for making, using and breaking objects
 
+**Owner inventory requirement:** collected resources belong in the user’s inventory. A natural-language creation request must explain what is possible with that inventory or precisely what else is needed. Preserve requested dimensions/material when short, distinguish held material from world pickups and selected recovery, and offer alternatives explicitly. Extend the requirements bill to energy sources, capable tools/processes and supported behavior as those models are implemented; missing capability is distinct from missing supplies. Queries must not spend resources. [Current implementation and acceptance evidence](requirements-checkpoint.md).
+
 Owner direction, September 4, 2026 Pacific: creation and destruction should require energy because material transformations and the bonds/interfaces involved have energetic consequences. This document proposes the world/API contract. It does not introduce calibrated fabrication, chemical, thermal or fracture laws, and no energy cost is implemented in the current creator runtime.
 
 The application becomes **collected materials + available energy + a capable tool/process → an inspectable construction plan → a working physical object**. The LLM can plan within those resources; it cannot assign a convenient energy cost, mint energy or choose the resulting fracture.

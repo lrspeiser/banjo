@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Inventory requirements checkpoint:** `fca0cb357d4dc4f154bb6efbb03efb9b69e8134f` now retains supported resource-short designs and reports collected, recoverable, uncollected and missing material through the shared compiler/API. [Evidence](requirements-checkpoint.md): seven real inventory/alternative cases plus five revision/unsupported-capability regressions pass; all 15 Windows suites pass (11.73 s). Automated capture passes; the normal workshop runs, but new-control input verification remains pending the native-helper error. Energy accounting remains unsupported, not zero-cost. Next: reliable API receipts/retries/durability, energy/tool contracts and bounded functional tests. Local only; all full-platform gates remain active.
+
 Application progress at `14bb0b7`: [selected-object rebuild/reclaim](revision-checkpoint.md) now has shared API/UI source, five real provider trials, format-3 history and 15 passing Windows suites. Capture passes; normal control verification remains pending. Continue the [API reliability/test loop](api-platform-review.md) and [energy contract](energy-system.md) without treating this as completion of the physics gates.
 
 This roadmap implements the [master plan](project-master-plan.md). See [development status](development-status.md) for pinned source/CI evidence. “Prototype implemented” does not mean physically validated. These are ordered engineering gates, not delivery dates. Later research can proceed in parallel, but should not conceal unfinished correctness work.
