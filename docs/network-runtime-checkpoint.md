@@ -129,6 +129,46 @@ so those sweeps are diagnostics, not fixed-mass continuum convergence tests.
 Do not treat matching regression counts as proof of convergence. Thousands
 of simultaneous interactions and a whole-world frame budget remain open.
 
+## Repeated performance and refinement evidence
+
+Source `61c5edc`, three repetitions of every package for three simulated
+seconds, on the machine described above. All 24 runs completed without a
+runtime fault. Per-object poses, velocities, connectivity, constitutive work
+and combined energy change matched across the three repetitions at identical
+settings. This is same-machine repeatability, not cross-platform determinism.
+
+| Experiment | Bodies | Physics wall time for 3 simulated seconds |
+|---|---:|---:|
+| Sharp / four materials | 328 | 3589.05–3605.07 ms |
+| Blunt / four materials | 328 | 3646.13–3677.63 ms |
+| Clamped oak panel | 217 | 2426.73–2431.58 ms |
+| Standalone soft cut | 121 | 1576.00–1609.57 ms |
+| Three cube drops | 84 | 598.45–616.60 ms |
+| Four supported objects | 324 | 735.93–746.67 ms |
+| Plastic indentation | 161 | 2293.34–2298.02 ms |
+| Four free-flight objects | 108 | 583.01–590.20 ms |
+
+The one-second soft-cut timestep sweep keeps geometry, mass and initial state
+fixed. It shows **nonconverged fracture**, even though the isolated spring
+oracle converges:
+
+| Step | Broken / 742 links | Connected components | Fracture work |
+|---|---:|---:|---:|
+| 1/480 s | 14 | 1 | 0.3715 J |
+| 1/960 s | 25 | 2 | 0.7085 J |
+| 1/1920 s | 47 | 1 | 0.9069 J |
+
+At fixed 1/480 s, coarse 5×5×5 occupancy gives zero broken links, the default
+7×6×6 gives 14, and 9×8×8 gives 13. Their occupied masses are respectively
+2.986, 2.194 and 2.656 kg, so this spatial sweep additionally changes the
+represented body. It identifies the need for better volume quadrature and
+surface/contact resolution; it does not establish grid-independent cutting.
+
+The exported raw reports include energy changes and response-resolution
+indicators. Typical `dt * isolated_pair_frequency` is about 0.29 for the soft
+cut but 152–212 for the stiff examples. Those large values help explain why
+the latter must not be treated as resolved impact/fracture simulations.
+
 ## API admission and running
 
 The existing backend capability lists remain queryable. `backend_packages`
