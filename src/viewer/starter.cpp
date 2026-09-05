@@ -59,11 +59,15 @@ int main(int argc,char **argv){try{
     const auto save=[&]{world.save(save_path);};
     if(capture.empty())DisableCursor();
     while(!WindowShouldClose()){
-        const float dt=std::min(GetFrameTime(),.05F);const bool modal=crafting||inventory||paused;
+        const float dt=std::min(GetFrameTime(),.05F);
         if(capture.empty()){
-            if(IsKeyPressed(KEY_ESCAPE)){crafting=false;inventory=false;paused=!paused;if(paused)EnableCursor();else DisableCursor();}
-            if(IsKeyPressed(KEY_TAB)&&!crafting&&!paused){inventory=!inventory;if(inventory)EnableCursor();else DisableCursor();}
-            if(!modal){
+            // Consume key-down events, including taps released between frames.
+            for(int key=GetKeyPressed();key;key=GetKeyPressed()) {
+                if(key==KEY_ESCAPE){crafting=false;inventory=false;paused=!paused;if(paused)EnableCursor();else DisableCursor();}
+                if(key==KEY_TAB&&!crafting&&!paused){inventory=!inventory;if(inventory)EnableCursor();else DisableCursor();}
+                if(key==KEY_HOME){yaw=0;pitch=-.15F;}
+            }
+            if(!crafting&&!inventory&&!paused){
                 const auto mouse=GetMouseDelta();yaw+=mouse.x*.0025F;pitch=std::clamp(pitch-mouse.y*.0025F,-1.35F,1.35F);
                 Vec3 move{};const Vec3 forward{std::sin(yaw),0,-std::cos(yaw)},right{std::cos(yaw),0,std::sin(yaw)};
                 if(IsKeyDown(KEY_W))move+=forward;if(IsKeyDown(KEY_S))move-=forward;if(IsKeyDown(KEY_D))move+=right;if(IsKeyDown(KEY_A))move-=right;
@@ -74,6 +78,7 @@ int main(int argc,char **argv){try{
                 if(IsKeyDown(KEY_R)){world.rest(dt);message="Resting: stamina recovers. No materials or experience are created.";}
             }
         }
+        const bool modal=crafting||inventory||paused;
         camera.target={camera.position.x+std::sin(yaw)*std::cos(pitch),camera.position.y+std::sin(pitch),camera.position.z-std::cos(yaw)*std::cos(pitch)};
         if(!paused){accumulator+=capture.empty()?dt:1.0/60;while(accumulator>=1.0/240){world.step();accumulator-=1.0/240;}}
         const Ray ray{camera.position,v((v(camera.target)-v(camera.position))/length(v(camera.target)-v(camera.position)))};
