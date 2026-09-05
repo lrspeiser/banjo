@@ -1,0 +1,204 @@
+{
+  "package_version": 1,
+  "physics_abi": "banjo-platform-1",
+  "name": "20-drop-sphere-onto-box",
+  "units": "SI",
+  "backend": "rigid-v1",
+  "required_capabilities": [
+    "finite-ground",
+    "contact",
+    "sphere",
+    "box",
+    "render-instances"
+  ],
+  "fixed_dt_s": 0.004166666666666667,
+  "max_steps_per_call": 240,
+  "gravity_m_s2": [
+    0,
+    -9.81,
+    0
+  ],
+  "bowl": null,
+  "ground": {
+    "half_length_m": 1.4,
+    "half_width_m": 0.7,
+    "thickness_m": 0.2,
+    "surface": "concrete"
+  },
+  "objects": [
+    {
+      "id": 1,
+      "material": "glass",
+      "shape": "box",
+      "position_m": [
+        -0.55,
+        0.09,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "dimensions_m": [
+        0.18,
+        0.18,
+        0.18
+      ]
+    },
+    {
+      "id": 2,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        -0.55,
+        1.25,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "radius_m": 0.09
+    },
+    {
+      "id": 3,
+      "material": "oak",
+      "shape": "box",
+      "position_m": [
+        0.0,
+        0.09,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "dimensions_m": [
+        0.18,
+        0.18,
+        0.18
+      ]
+    },
+    {
+      "id": 4,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        0.0,
+        1.25,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "radius_m": 0.09
+    },
+    {
+      "id": 5,
+      "material": "iron",
+      "shape": "box",
+      "position_m": [
+        0.55,
+        0.09,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "dimensions_m": [
+        0.18,
+        0.18,
+        0.18
+      ]
+    },
+    {
+      "id": 6,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        0.55,
+        1.25,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "radius_m": 0.09
+    }
+  ]
+}

@@ -31,6 +31,8 @@ struct PlatformWorld::Impl {
     unsigned max_steps{};
     std::uint64_t ticks{},contact_callbacks{};
     std::vector<Body> bodies;
+    std::vector<ImpactEvent> impacts;
+    std::uint64_t impacts_omitted{};
     std::vector<std::array<Vec3,3>> triangles;
     std::unique_ptr<JoltWorld> rigid;
     std::unique_ptr<BondedBowl> bonded;
@@ -43,7 +45,7 @@ PlatformWorld::PlatformWorld():impl_(std::make_unique<Impl>()){}
 PlatformWorld::~PlatformWorld()=default;
 std::string PlatformWorld::capabilitiesJson(){return json{
     {"package_version",1},{"physics_abi","banjo-platform-1"},{"units","SI"},
-    {"backends",{{"rigid-v1",{"sphere","box","finite-bowl","gravity","contact","render-instances"}},
+    {"backends",{{"rigid-v1",{"sphere","box","finite-bowl","finite-ground","gravity","contact","render-instances"}},
                  {"bonded-reference-v2",{"sphere","finite-bowl","gravity","contact","render-instances","experimental-glass-fracture"}}}},
     {"limits",{{"package_bytes",4194304},{"rigid_objects",4096},{"reference_objects",12},{"steps_per_call",240}}},
     {"unsupported",{"automatic-physical-LOD","plasticity","anisotropic-fracture","live-state-package-save","scripts","network-publishing"}},
@@ -51,7 +53,7 @@ std::string PlatformWorld::capabilitiesJson(){return json{
 std::unique_ptr<PlatformWorld> PlatformWorld::load(const std::string &text){
     require(text.size()<=4194304,"package byte budget exceeded");
     auto source=json::parse(text);
-    fields(source,{"package_version","physics_abi","name","units","backend","required_capabilities","fixed_dt_s","max_steps_per_call","gravity_m_s2","bowl","objects"});
+    fields(source,{"package_version","physics_abi","name","units","backend","required_capabilities","fixed_dt_s","max_steps_per_call","gravity_m_s2","bowl","ground","objects"});
     require(source.at("package_version")==1&&source.at("physics_abi")=="banjo-platform-1","incompatible package ABI");
     require(source.at("units")=="SI","package units must be SI");
     require(source.at("name").is_string()&&source.at("name").get<std::string>().size()<=120,"invalid package name");
@@ -67,6 +69,18 @@ std::unique_ptr<PlatformWorld> PlatformWorld::load(const std::string &text){
     w.gravity=vector(source.at("gravity_m_s2"),100);
     BowlSettings bowl;bool support=!source.at("bowl").is_null();
     if(support){auto &b=source["bowl"];fields(b,{"radius_m","depth_m","tilt_degrees","surface"});bowl.radius_m=number(b.at("radius_m"),.8,2);bowl.depth_m=number(b.at("depth_m"),.2,1);bowl.tilt_degrees=number(b.at("tilt_degrees"),-20,20);bowl.surface=material(b.at("surface"));w.triangles=compileBowl(bowl);}
+    const bool hasGround=source.contains("ground")&&!source["ground"].is_null();
+    RigidSurfaceDescription ground;
+    if(hasGround){
+        require(!support&&!w.reference,"finite ground requires rigid backend and no bowl");
+        auto &g=source["ground"];fields(g,{"half_length_m","half_width_m","thickness_m","surface"});
+        ground.half_length_tangent_m=number(g.at("half_length_m"),.2,10);
+        ground.half_length_bitangent_m=number(g.at("half_width_m"),.2,10);
+        ground.thickness_m=number(g.at("thickness_m"),.05,2);
+        ground.material=makeReferenceMaterial(material(g.at("surface")));
+        const double x=ground.half_length_tangent_m,z=ground.half_length_bitangent_m;
+        w.triangles={{{{-x,0,-z},{x,0,z},{x,0,-z}}},{{{-x,0,-z},{-x,0,z},{x,0,z}}}};
+    }
     require(source.at("objects").is_array()&&!source["objects"].empty()&&source["objects"].size()<=(w.reference?12:4096),"object budget exceeded or empty scene");
     std::set<unsigned> ids;
     for(auto &o:source["objects"]){
@@ -79,6 +93,7 @@ std::unique_ptr<PlatformWorld> PlatformWorld::load(const std::string &text){
         auto &q=o.at("orientation_wxyz");require(q.is_array()&&q.size()==4,"expected quaternion wxyz");b.state.orientation_world={number(q[0],-1,1),number(q[1],-1,1),number(q[2],-1,1),number(q[3],-1,1)};
         double norm=0;for(auto &v:q)norm+=v.get<double>()*v.get<double>();require(std::abs(norm-1)<1e-8,"orientation must be unit quaternion");
         for(auto &prior:w.bodies)require(!primitivesOverlap(b.geometry,b.state.center_of_mass_world_m,b.state.orientation_world,prior.geometry,prior.state.center_of_mass_world_m,prior.state.orientation_world,0),"initial objects overlap");
+        if(hasGround)require(b.state.center_of_mass_world_m.y-b.geometry.extent({0,1,0},b.state.orientation_world)>=-1e-8,"object begins below ground top");
         w.bodies.push_back(b);
     }
     // All declarations are validated before allocating a solver. No live world is mutated.
@@ -87,6 +102,7 @@ std::unique_ptr<PlatformWorld> PlatformWorld::load(const std::string &text){
         for(auto &o:w.bodies)b.add(o.id,o.material,o.geometry.radius_m,o.state);b.initialize();w.initial_energy=b.energy();
     }else {
         w.rigid=std::make_unique<JoltWorld>();w.rigid->setGravity(w.gravity);
+        if(hasGround)w.rigid->addSupportSurface(ground);
         if(support)w.rigid->addTriangleSupport(w.triangles,makeReferenceMaterial(bowl.surface));
         for(auto &o:w.bodies){auto m=makeReferenceMaterial(o.material);if(o.geometry.kind==PrimitiveKind::Sphere){w.rigid->addBall({.body_id=o.id,.radius_m=o.geometry.radius_m,.material=m,.position_world_m=o.state.center_of_mass_world_m,.linear_velocity_m_s=o.state.linear_velocity_m_s,.angular_velocity_rad_s=o.state.angular_velocity_rad_s});w.rigid->applyRigidState(o.id,o.state);}else w.rigid->addBox({.body_id=o.id,.dimensions_m=o.geometry.dimensions_m,.material=m,.state=o.state});}
         w.initial_energy=w.rigid->mechanicalTotals(w.gravity).mechanicalEnergy();
@@ -97,7 +113,8 @@ PlatformStep PlatformWorld::step(unsigned count){
     auto &w=*impl_;require(count>0&&count<=w.max_steps,"step call budget exceeded");
     PlatformStep result;auto start=Clock::now();
     for(unsigned i=0;i<count&&w.fault.empty();++i){
-        auto t=Clock::now();try {if(w.reference)w.bonded->advance(w.dt);else {w.rigid->step(w.dt);w.contact_callbacks+=w.rigid->drainImpacts().size();}++w.ticks;++result.completed_steps;}
+        auto t=Clock::now();try {if(w.reference)w.bonded->advance(w.dt);else {w.rigid->step(w.dt);auto events=w.rigid->drainImpacts();w.contact_callbacks+=events.size();
+            for(auto &event:events){if(w.impacts.size()<256)w.impacts.push_back(event);else ++w.impacts_omitted;}}++w.ticks;++result.completed_steps;}
         catch(const std::exception &e){w.fault=e.what();}
         double ms=std::chrono::duration<double,std::milli>(Clock::now()-t).count();w.total_ms+=ms;w.max_ms=std::max(w.max_ms,ms);if(w.timings.size()<4096)w.timings.push_back(ms);else {w.timings[w.timing_cursor]=ms;w.timing_cursor=(w.timing_cursor+1)%4096;}
     }
@@ -115,7 +132,9 @@ std::string PlatformWorld::reportJson() const{
         {"performance",{{"step_wall_total_ms",w.total_ms},{"step_p50_ms",percentile(.5)},{"step_p95_ms",percentile(.95)},{"step_max_ms",w.max_ms},{"sample_count",times.size()},{"sample_window","last 4096 steps"},{"realtime_ratio",w.total_ms>0?w.ticks*w.dt*1000/w.total_ms:0},{"includes_rendering",false},{"includes_package_load",false}}}};
     auto bodies=json::array();for(auto &o:w.bodies){auto s=w.reference?w.bonded->state(o.id):w.rigid->snapshot(o.id);bodies.push_back({{"id",o.id},{"material",materialPresetName(o.material)},{"mass_kg",o.geometry.volume()*makeReferenceMaterial(o.material).density_kg_m3},{"position_m",vec(s.center_of_mass_world_m)},{"velocity_m_s",vec(s.linear_velocity_m_s)},{"spin_rad_s",vec(s.angular_velocity_rad_s)}});}result["objects"]=bodies;
     if(w.reference){auto &b=*w.bonded;result["mechanical_energy_j"]=b.energy();result["energy_residual_j"]=b.energyResidual();result["fracture_work_j"]=b.ledger.fracture_work_j;result["elastic_release_j"]=b.ledger.elastic_release_j;result["fracture_events"]=json::array();for(auto &e:b.breaks)result["fracture_events"].push_back({{"time_s",e.time_s},{"object_id",b.objects[e.object].id},{"link",e.link},{"work_j",e.work_j}});auto c=b.components();result["connected_components"]=std::set<unsigned>(c.begin(),c.end()).size();result["limitations"]={"Coarse 19-cell geometry; uncalibrated continuum strength", "Oak/iron failure unsupported", "All material cells active; no adaptive physical LOD", "Fracture events do not identify causative contact"};}
-    else {result["mechanical_energy_j"]=w.rigid->mechanicalTotals(w.gravity).mechanicalEnergy();result["energy_residual_j"]=nullptr;result["ball_contact_callbacks"]=w.contact_callbacks;result["limitations"]={"Rigid only; no fracture or deformation", "Energy change includes unseparated contact losses and numerical error", "Contact callbacks may be speculative and exclude supports"};}
+    else {result["mechanical_energy_j"]=w.rigid->mechanicalTotals(w.gravity).mechanicalEnergy();result["energy_residual_j"]=nullptr;result["ball_contact_callbacks"]=w.contact_callbacks;
+        result["ball_contact_events"]=json::array();result["ball_contact_events_omitted"]=w.impacts_omitted;
+        for(auto &e:w.impacts)result["ball_contact_events"].push_back({{"tick",e.fixed_tick},{"body_a",e.body_a},{"body_b",e.body_b},{"closing_speed_m_s",e.closing_speed_m_s},{"point_m",vec(e.contact_point_world_m)}});result["limitations"]={"Rigid only; no fracture or deformation", "Energy change includes unseparated contact losses and numerical error", "Contact callbacks may be speculative and exclude supports"};}
     return result.dump(2);
 }
 std::string PlatformWorld::packageJson() const{return impl_->source.dump(2);}

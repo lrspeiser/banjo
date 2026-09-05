@@ -20,5 +20,37 @@ int main(){try{
     bad=s;bad["objects"][0]["shape"]="box";bad["objects"][0].erase("radius_m");bad["objects"][0]["dimensions_m"]={.1,.1,.1};rejects(bad);
     auto box=scene();for(auto &b:box["objects"]){b["shape"]="box";b.erase("radius_m");b["dimensions_m"]={.1,.08,.06};}auto boxes=PlatformWorld::load(box.dump());check(boxes->step(12).error.empty(),"box API advance");auto b=boxes->renderInstances();check(b[0].geometry.kind==PrimitiveKind::Box,"box render geometry preserved");
     auto boxReport=json::parse(boxes->reportJson());for(auto &o:boxReport["objects"]){auto mass=o["mass_kg"].get<double>();check(mass>0,"material-derived box mass");}
+
+    for(const char *lower:{"sphere","box"})for(const char *upper:{"sphere","box"}){
+        auto drop=scene();drop["gravity_m_s2"]={0,-9.81,0};drop["objects"]=json::array();
+        drop["ground"]={{"half_length_m",1.4},{"half_width_m",.7},{"thickness_m",.2},{"surface","concrete"}};
+        unsigned id=1;for(auto m:{"glass","oak","iron"}){const double x=-.55+.55*((id-1)/2);for(unsigned level=0;level<2;++level){
+            auto b=body(id++,m,x);b["position_m"]={x,level?1.25:.09,0};b["velocity_m_s"]={0,0,0};
+            b["shape"]=level?upper:lower;if(b["shape"]=="sphere")b["radius_m"]=.09;else {b.erase("radius_m");b["dimensions_m"]={.18,.18,.18};}drop["objects"].push_back(b);
+        }}
+        auto trial=PlatformWorld::load(drop.dump());check(trial->supportMesh().size()==2,"ground render surface");
+        check(trial->step(48).error.empty(),"drop free flight");
+        auto pre=trial->renderInstances();for(unsigned pair=0;pair<3;++pair){
+            check(std::abs(pre[2*pair].state.center_of_mass_world_m.y-.09)<.005,"target rests on ground");
+            check(std::abs(pre[2*pair+1].state.center_of_mass_world_m.y-(1.25-.5*9.81*.2*.2))<.005,"drop follows gravity before impact");
+        }
+        bool response[3]{};double previous[3]{};
+        for(unsigned pair=0;pair<3;++pair)previous[pair]=pre[2*pair+1].state.linear_velocity_m_s.y;
+        for(unsigned tick=0;tick<192;++tick){
+            check(trial->step().error.empty(),"drop impact step");auto frame=trial->renderInstances();
+            for(unsigned pair=0;pair<3;++pair){auto &a=frame[2*pair];auto &b=frame[2*pair+1];double vy=b.state.linear_velocity_m_s.y;
+                response[pair]|=vy-previous[pair]>.1;previous[pair]=vy;
+                check(a.state.center_of_mass_world_m.y>.06&&b.state.center_of_mass_world_m.y>.06,"objects retained above finite floor");
+            }
+        }
+        auto r=json::parse(trial->reportJson());for(unsigned pair=0;pair<3;++pair){
+            bool contact=false;for(auto &e:r["ball_contact_events"]){unsigned a=e["body_a"],b=e["body_b"];contact|=std::min(a,b)==pair*2+1&&std::max(a,b)==pair*2+2&&e["closing_speed_m_s"].get<double>()>1;}
+            check(contact&&response[pair],"falling body hits intended dynamic target and changes motion");
+        }
+        auto invalid=drop;invalid["backend"]="bonded-reference-v2";invalid["fixed_dt_s"]=1./2400;rejects(invalid);
+        invalid=drop;invalid["ground"]["thickness_m"]=0;rejects(invalid);
+        invalid=drop;invalid["objects"][0]["position_m"]={0,-.1,0};rejects(invalid);
+        std::cout<<"drop "<<upper<<" onto "<<lower<<": glass/oak/iron passed\n";
+    }
     std::cout<<"Platform package validation, three-material motion, box geometry, reference cells, clone and call budgets pass\n";return 0;
 }catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}

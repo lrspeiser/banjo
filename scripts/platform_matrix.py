@@ -15,6 +15,9 @@ for path in sorted(Path('assets/platform').glob('*.json')):
  ok=run.returncode==0
  if ref and 'strong-impact' in path.name:ok &= bool(r.get('fracture_events')) if 'glass' in path.name else not r.get('fracture_events')
  if ref and ('gentle-impact' in path.name or 'isolated' in path.name):ok &= not r.get('fracture_events')
+ if '-onto-' in path.name:
+  for pair in range(3):
+   ok &= any({e['body_a'],e['body_b']}=={2*pair+1,2*pair+2} and e['closing_speed_m_s']>1 for e in r.get('ball_contact_events',[]))
  if 'colliding-bodies' in path.name:ok &= r.get('ball_contact_callbacks',0)>0
  ok &= len(r.get('objects',[]))==len(s['objects'])
  if 'isolated' in path.name:
