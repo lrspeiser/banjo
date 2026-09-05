@@ -61,7 +61,7 @@ void runFractureView(const std::filesystem::path &workspace){
             std::string event="No fracture yet";for(const auto &e:runs[0].events)if(e.time_s<=time_ns*1e-9){event="Glass at "+fmt(e.time_s*1e9,3)+" ns: connection "+std::to_string(e.broken_bonds.front()+1)+" failed";}
             DrawText(event.c_str(),570,753,18,ink);
         }else DrawText(error.empty()?"Computing all three material trajectories...":error.c_str(),32,300,23,accent);
-        DrawText("Connector reference. Whole-ball geometry and bowl fracture are not connected yet.",32,814,17,muted);
+        DrawText("Connector reference. Back to bowl opens the experimental cell-fracture lab.",32,814,17,muted);
         const bool capture=button(1110,797,230,"Save image")||IsKeyPressed(KEY_F12);
         if(capture){rlDrawRenderBatchActive();Image shot=LoadImageFromScreen();ExportImage(shot,(workspace/"fracture-microscope.png").string().c_str());UnloadImage(shot);}
         EndDrawing();

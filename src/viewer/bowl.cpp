@@ -29,7 +29,7 @@ int main(int argc,char **argv){try{
     SetConfigFlags(FLAG_MSAA_4X_HINT);InitWindow(1380,850,"Banjo - Craft and Roll Bowl Lab");SetTargetFPS(60);
     RenderTexture2D scene=LoadRenderTexture(1000,560);
     Camera3D camera{{2.5F,2.8F,3.0F},{0,.15F,0},{0,1,0},28,CAMERA_PERSPECTIVE};
-    std::string message="Collect each material, then craft two balls of each.";double accumulator=0;int frames=0;
+    std::string message=lab.stock().objects().empty()?"Collect each material, then craft two balls of each.":"Release to test crafted balls. Experimental fracture runs slowly.";double accumulator=0;int frames=0;
     while(!WindowShouldClose()){
         bool open_fracture=false;
         const double frame=std::min(double(GetFrameTime()),.1);if(lab.running()){try{if(lab.bonded())lab.step();else{accumulator+=frame;while(accumulator>=1.0/240){lab.step();accumulator-=1.0/240;}}}catch(const std::exception &e){lab.pause();message=e.what();}}else accumulator=0;
