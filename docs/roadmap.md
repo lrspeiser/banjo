@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Compiled-joint loading:** [Box-face compilation through separation](compiled-load-checkpoint.md) passes nine material/axis cases with geometry-derived fracture work and bounded energy error; 21 suites pass. Creator assembly/contact ownership remains next. Local `3c5d007`; full goal active.
+
 **Box-face attachments:** [Material-backed geometry compiler](box-face-checkpoint.md) derives mass/inertia and validates interface rectangles on opposing box faces. Nine material/axis cases and 21 suites pass. Creator API/contact ownership and spatial convergence remain open. Local `a815321`; full goal active.
 
 **Combined joint loading:** [Compression with tensile damage](combined-bending-checkpoint.md) passes three-material bending and whole-system momentum/energy checks; 21 suites pass. Idealized joint only: geometry/contact ownership and spatial convergence remain open. Local `08267f8`; full goal active.
