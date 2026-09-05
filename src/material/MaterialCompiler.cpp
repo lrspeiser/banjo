@@ -40,6 +40,28 @@ void validateElasticProperties(const MaterialDefinition &material) {
 
 } // namespace
 
+CompiledBrittleMaterial compileElasticLatticeReference(
+    const MaterialDefinition &material, double voxel_size_m, unsigned neighbor_horizon_cells) {
+    validateElasticProperties(material);
+    if (!std::isfinite(material.density_kg_m3) || !std::isfinite(material.young_modulus_pa) ||
+        !std::isfinite(material.poisson_ratio) || !std::isfinite(voxel_size_m) || voxel_size_m <= 0 ||
+        neighbor_horizon_cells == 0) throw std::invalid_argument("invalid elastic reference parameters");
+    CompiledBrittleMaterial compiled;
+    compiled.density_kg_m3 = material.density_kg_m3;
+    compiled.poisson_ratio = material.poisson_ratio;
+    const double area = voxel_size_m*voxel_size_m;
+    const double length = voxel_size_m*static_cast<double>(neighbor_horizon_cells);
+    compiled.bond_compliance = 1.0/(material.young_modulus_pa*area/length);
+    const double disabled = std::numeric_limits<double>::infinity();
+    compiled.damage_start_stretch = compiled.damage_end_stretch = disabled;
+    compiled.compression_damage_start_strain = compiled.compression_damage_end_strain = disabled;
+    compiled.shear_damage_start_strain = compiled.shear_damage_end_strain = disabled;
+    compiled.bond_damping = 0;
+    compiled.strength_variation = 0;
+    compiled.seed = material.seed;
+    return compiled;
+}
+
 CompiledBrittleMaterial compileBrittleMaterial(
     const MaterialDefinition &material,
     double voxel_size_m,

@@ -274,39 +274,41 @@ void analyticalTimeStepConvergence() {
     }
 }
 
-void actualGlassAtPracticalStep() {
-    const auto compiled = compileBrittleMaterial(makeReferenceMaterial(MaterialPreset::Glass, 17), .04, 2);
-    const auto asset = generateSphereLattice({.25, .04, 2, 3}, compiled);
-    ActiveMatter matter;
-    matter.asset = &asset;
-    matter.material = compiled;
-    matter.bonds.resize(asset.bonds.size());
-    for (const auto &node : asset.nodes) matter.nodes.push_back({node.local_position_m, {},
-        Vec3{.3, -.1, .2} + cross(Vec3{1, -2, 3}, node.local_position_m),
-        node.represented_volume_m3 * compiled.density_kg_m3, {1, -2, 3}});
-    const auto before = totals(matter);
-    const auto original = matter.nodes;
-    const auto failed = tryConservativeStep(matter, .002, {}, nullptr,
-        {.maximum_iterations = 1, .maximum_linear_iterations = 1});
-    require(!failed.converged, "insufficient global solve budget is rejected");
-    for (std::size_t i = 0; i < original.size(); ++i) {
-        near(length(matter.nodes[i].position_world_m - original[i].position_world_m), 0, 0,
-             "limited global solve retains positions");
-        near(length(matter.nodes[i].velocity_m_s - original[i].velocity_m_s), 0, 0,
-             "limited global solve retains velocities");
+void comparativeMaterialsAtPracticalStep() {
+    for (const auto preset : {MaterialPreset::Glass, MaterialPreset::Oak, MaterialPreset::Iron}) {
+        const auto compiled = compileElasticLatticeReference(makeReferenceMaterial(preset, 17), .04, 2);
+        const auto asset = generateSphereLattice({.25, .04, 2, 3}, compiled);
+        ActiveMatter matter;
+        matter.asset = &asset;
+        matter.material = compiled;
+        matter.bonds.resize(asset.bonds.size());
+        for (const auto &node : asset.nodes) matter.nodes.push_back({node.local_position_m, {},
+            Vec3{.3, -.1, .2} + cross(Vec3{1, -2, 3}, node.local_position_m),
+            node.represented_volume_m3 * compiled.density_kg_m3, {1, -2, 3}});
+        const auto before = totals(matter);
+        const auto original = matter.nodes;
+        const auto failed = tryConservativeStep(matter, .002, {}, nullptr,
+            {.maximum_iterations = 1, .maximum_linear_iterations = 1});
+        require(!failed.converged, "insufficient global solve budget is rejected");
+        for (std::size_t i = 0; i < original.size(); ++i) {
+            near(length(matter.nodes[i].position_world_m - original[i].position_world_m), 0, 0,
+                 "limited global solve retains positions");
+            near(length(matter.nodes[i].velocity_m_s - original[i].velocity_m_s), 0, 0,
+                 "limited global solve retains velocities");
+        }
+        unsigned linear_iterations = 0;
+        for (unsigned step = 0; step < 5; ++step) {
+            const auto result = tryConservativeStep(matter, .002);
+            require(result.converged && result.balance_measured, "full comparative lattice passes unchanged acceptance checks");
+            require(result.constitutive_velocity_residual_m_s <= 1e-9, "comparative constitutive residual");
+            linear_iterations += result.linear_iterations;
+        }
+        // This is a numerical regression of the actual preset, not calibration or
+        // a claim that unresolved material vibration is accurate at this timestep.
+        momentumAndEnergy(before, totals(matter), 0, 1e-8);
+        std::cout << "elastic reference material=" << materialPresetName(preset) << " nodes=" << matter.nodes.size() << " bonds=" << matter.bonds.size()
+                  << " linear_iterations=" << linear_iterations << '\n';
     }
-    unsigned linear_iterations = 0;
-    for (unsigned step = 0; step < 5; ++step) {
-        const auto result = tryConservativeStep(matter, .002);
-        require(result.converged && result.balance_measured, "full glass lattice passes unchanged acceptance checks");
-        require(result.constitutive_velocity_residual_m_s <= 1e-9, "glass constitutive residual");
-        linear_iterations += result.linear_iterations;
-    }
-    // This is a numerical regression of the actual preset, not calibration or
-    // a claim that unresolved glass vibration is accurate at this timestep.
-    momentumAndEnergy(before, totals(matter), 0, 1e-8);
-    std::cout << "actual glass nodes=" << matter.nodes.size() << " bonds=" << matter.bonds.size()
-              << " linear_iterations=" << linear_iterations << '\n';
 }
 
 void supportSolversAndFramesAgree() {
@@ -394,35 +396,38 @@ void normalImpactPhaseLossIsExplicit() {
     }
 }
 
-void actualGlassSupportConserves() {
-    const auto compiled = compileBrittleMaterial(makeReferenceMaterial(MaterialPreset::Glass, 17), .04, 2);
-    const auto asset = generateSphereLattice({.25, .04, 2, 3}, compiled);
-    ActiveMatter matter;
-    matter.asset = &asset; matter.material = compiled; matter.bonds.resize(asset.bonds.size());
-    double minimum_y = 0;
-    for (const auto &node : asset.nodes) {
-        matter.nodes.push_back({node.local_position_m, {}, {.3, -1, .2},
-            node.represented_volume_m3 * compiled.density_kg_m3, {}});
-        minimum_y = std::min(minimum_y, node.local_position_m.y);
+void comparativeMaterialSupportConserves() {
+    for (const auto preset : {MaterialPreset::Glass, MaterialPreset::Oak, MaterialPreset::Iron}) {
+        const auto compiled = compileElasticLatticeReference(makeReferenceMaterial(preset, 17), .04, 2);
+        const auto asset = generateSphereLattice({.25, .04, 2, 3}, compiled);
+        ActiveMatter matter;
+        matter.asset = &asset; matter.material = compiled; matter.bonds.resize(asset.bonds.size());
+        double minimum_y = 0;
+        for (const auto &node : asset.nodes) {
+            matter.nodes.push_back({node.local_position_m, {}, {.3, -1, .2},
+                node.represented_volume_m3 * compiled.density_kg_m3, {}});
+            minimum_y = std::min(minimum_y, node.local_position_m.y);
+        }
+        const auto plane = makeSupportPlane({0, minimum_y - .001, 0}, {0, 1, 0});
+        const auto before = totals(matter);
+        Vec3 support_impulse, support_angular_impulse;
+        double loss = 0;
+        for (unsigned i = 0; i < 5; ++i) {
+            const auto result = tryConservativeStep(matter, .002, {}, nullptr, {.support = &plane});
+            require(result.converged && result.balance_measured, "full glass floor impact converges");
+            require(result.maximum_penetration_m <= 1e-10, "full glass support gap is bounded");
+            support_impulse += result.support_impulse_kg_m_s;
+            support_angular_impulse += result.support_angular_impulse_kg_m2_s;
+            loss += result.normal_contact_loss_j;
+        }
+        const auto after = totals(matter);
+        near(length(after.linear_momentum_kg_m_s - before.linear_momentum_kg_m_s - support_impulse), 0, 1e-8,
+             "comparative external support momentum balance");
+        near(length(after.angular_momentum_kg_m2_s - before.angular_momentum_kg_m2_s - support_angular_impulse), 0, 1e-8,
+             "comparative external support angular balance");
+        near(after.mechanicalEnergy() + loss, before.mechanicalEnergy(), 1e-8, "comparative support energy balance");
+        std::cout << "support reference material=" << materialPresetName(preset) << " loss_j=" << loss << '\n';
     }
-    const auto plane = makeSupportPlane({0, minimum_y - .001, 0}, {0, 1, 0});
-    const auto before = totals(matter);
-    Vec3 support_impulse, support_angular_impulse;
-    double loss = 0;
-    for (unsigned i = 0; i < 5; ++i) {
-        const auto result = tryConservativeStep(matter, .002, {}, nullptr, {.support = &plane});
-        require(result.converged && result.balance_measured, "full glass floor impact converges");
-        require(result.maximum_penetration_m <= 1e-10, "full glass support gap is bounded");
-        support_impulse += result.support_impulse_kg_m_s;
-        support_angular_impulse += result.support_angular_impulse_kg_m2_s;
-        loss += result.normal_contact_loss_j;
-    }
-    const auto after = totals(matter);
-    near(length(after.linear_momentum_kg_m_s - before.linear_momentum_kg_m_s - support_impulse), 0, 1e-8,
-         "full glass external support momentum balance");
-    near(length(after.angular_momentum_kg_m2_s - before.angular_momentum_kg_m2_s - support_angular_impulse), 0, 1e-8,
-         "full glass external support angular balance");
-    near(after.mechanicalEnergy() + loss, before.mechanicalEnergy(), 1e-8, "full glass support energy balance");
 }
 
 void sphereBetweenMaterialAndSupport() {
@@ -459,11 +464,11 @@ int main() {
         {"energy audit rejects unresolved solve", energyCheckRejectsUnresolvedNetwork},
         {"local and global elastic solutions agree", localAndGlobalSolveAgree},
         {"analytical timestep convergence", analyticalTimeStepConvergence},
-        {"actual glass at practical timestep", actualGlassAtPracticalStep},
+        {"glass/oak/iron at practical timestep", comparativeMaterialsAtPracticalStep},
         {"support methods and reference frames agree", supportSolversAndFramesAgree},
         {"unilateral support and finite footprint", unilateralSupportAndFootprint},
         {"normal impact phase loss is explicit", normalImpactPhaseLossIsExplicit},
-        {"actual glass support conservation", actualGlassSupportConserves},
+        {"glass/oak/iron support conservation", comparativeMaterialSupportConserves},
         {"material, sphere and support reactions", sphereBetweenMaterialAndSupport}};
     unsigned failures = 0;
     for (const auto &[name, test] : tests) {

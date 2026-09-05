@@ -33,6 +33,8 @@ add_library(
     src/matter/Lattice.cpp
     src/physics/ContactMechanics.cpp
     src/physics/ConservativeStep.cpp
+    src/physics/ConservativeAdvance.cpp
+    src/physics/NormalImpact.cpp
     src/physics/ElasticNewton.cpp
     src/physics/MechanicalAccounting.cpp
     src/physics/RollingKinematics.cpp
@@ -169,6 +171,11 @@ if(BANJO_BUILD_TESTS)
     target_link_libraries(banjo_conservative_step_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_conservative_step_tests)
     add_test(NAME banjo_conservative_step_tests COMMAND banjo_conservative_step_tests)
+
+    add_executable(banjo_conservative_advance_tests tests/conservative_advance_tests.cpp)
+    target_link_libraries(banjo_conservative_advance_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_conservative_advance_tests)
+    add_test(NAME banjo_conservative_advance_tests COMMAND banjo_conservative_advance_tests)
 
     add_executable(banjo_outcome_tests tests/material_outcome_tests.cpp)
     target_link_libraries(banjo_outcome_tests PRIVATE banjo_core)
