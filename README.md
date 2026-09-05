@@ -24,7 +24,7 @@ There are no precut chunks and no shatter animation. The pieces are the connecte
 
 [Development status](docs/development-status.md) records what is implemented, what remains experimental, exact commits/PRs, tests, known defects, and build instructions. [The roadmap](docs/roadmap.md) turns the remaining work into ordered acceptance gates. Coding agents should also read [AGENTS.md](AGENTS.md).
 
-At the September 4, 2026 audit, the material laboratory is on `main`; the contact-driven fracture/rolling-diagnostics implementation remains in draft PR #2 on `feature/conservative-material-contact`. Its Linux PR CI has passed, including graphical capture. **Publishing its description here does not merge that code.** This is a physically parameterized prototype, not a validated universal material simulator.
+The local `codex/physics-foundation` branch integrates main and PR #2's contact-driven fracture/rolling diagnostics. [Windows integration evidence](docs/windows-integration-checkpoint.md) records the exact tested source, all seven passing CTest executables, headless/capture results and normal window/input verification. This checkpoint is not pushed or merged into GitHub main; PR #2's earlier Linux CI belongs to its own head. This remains a physically parameterized prototype with known over-fragmentation and conservation-accounting gaps.
 
 ## Build and watch it
 
@@ -68,10 +68,11 @@ CMake fetches pinned copies of Jolt Physics `v5.6.0` and raylib `6.0`. The first
 | `M` / `T` / `S` | Cycle striker / target / support material, then reset |
 | `[` / `]` | Change support slope, then reset |
 | `G` / `V` | Cycle gravity magnitude / direction, then reset |
+| `L` | Cycle rolling spin, zero spin, backspin and overspin, then reset |
 | Right mouse drag | Orbit the camera |
 | Mouse wheel | Zoom |
 
-The conservative-contact development branch additionally exposes `L` launch-spin modes and measured rolling/slip diagnostics; those controls are not on the audited main baseline.
+The motion panel measures actual contact-point slip. The time/tick readout makes pause, single-step and reset observable. Short key taps are consumed from the event queue even when press/release occur between frames.
 
 The visual lab deliberately slows simulation to make the representation change visible. The overlay reports impact energy, active nodes, broken bonds, connected components, rigid fragments, debris, and handoff mass error.
 
@@ -100,7 +101,7 @@ ctest --preset core
 - Thread-safe Jolt contact translation into engine-neutral impact events
 - Energy-based activation rather than material-name interaction tables
 - Rigid-to-material transfer of position, linear velocity, and angular velocity
-- Contact-localized internal pulse with both net linear and angular momentum removed
+- Sensor-deferred activation and experimental two-way sphere/material contact; the runtime synthetic pulse is disabled
 - XPBD-style brittle bond deformation and progressive damage, including local tension/compression/shear screening
 - Connected-component discovery from surviving bonds
 - Exposed voxel-face surface generation with internal faces removed
@@ -116,8 +117,8 @@ ctest --preset core
 
 This is still a physics laboratory, not yet the publishing platform:
 
-- During the active-material phase, the iron ball is no longer coupled to the glass voxels after the initial rigid collision. An experimental implementation is saved in PR #2; review and conservation validation remain necessary before integration.
-- Active voxels in main use a support-plane approximation, including slope. Arbitrary Jolt-shape collision and robust contact/support detection remain work.
+- Active material exchanges impulses with the finite-mass striker through an experimental sphere/point contact solver. Full-system conservation, finite-cell spin and fracture-work accounting remain incomplete.
+- Active voxels use a support-plane approximation with footprint checks. Arbitrary Jolt-shape collision, self-contact and robust support-load detection remain work.
 - The fracture model is visually useful but not yet calibrated across multiple resolutions against laboratory glass data.
 - Surface meshes are block-style exposed voxel faces. Smoothing and crack-surface material treatment are future rendering work.
 - raylib is a quick visual shell. The simulation and fragment geometry layers do not depend on raylib, preserving the planned path to a production SDL3/Dawn/WebGPU renderer.

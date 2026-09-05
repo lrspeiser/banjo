@@ -1,5 +1,7 @@
 # Banjo runtime architecture
 
+**Local integration update:** `codex/physics-foundation` at tested code `29254bd` now contains PR #2's sphere/material coupling plus main's build fixes. In this branch activating contacts defer the Jolt response, the runtime pulse is disabled, and material impulses update the finite-mass striker between microsteps. The rigid-first pulse description below documents the historical main baseline, not this branch's authoritative path. See [Windows integration evidence and conservation gaps](windows-integration-checkpoint.md).
+
 > Scope note (September 4, 2026 audit): this is a focused design/model document, not a complete implementation-status ledger. Read the [master plan](project-master-plan.md) and [development status](development-status.md) first. Main's audited code is `62cf812`; conservative-contact work in PR #2 is not merged.
 
 ## Current executable pipeline
