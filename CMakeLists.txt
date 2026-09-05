@@ -289,6 +289,11 @@ if(BANJO_BUILD_TESTS)
         banjo_enable_warnings(banjo_transfer_tests)
         add_test(NAME banjo_transfer_tests COMMAND banjo_transfer_tests)
 
+        add_executable(banjo_contact_ownership_tests tests/contact_ownership_tests.cpp)
+        target_link_libraries(banjo_contact_ownership_tests PRIVATE banjo_runtime)
+        banjo_enable_warnings(banjo_contact_ownership_tests)
+        add_test(NAME banjo_contact_ownership_tests COMMAND banjo_contact_ownership_tests)
+
         add_executable(banjo_runtime_tests tests/runtime_dynamics_tests.cpp)
         target_link_libraries(banjo_runtime_tests PRIVATE banjo_runtime)
         target_compile_features(banjo_runtime_tests PRIVATE cxx_std_23)

@@ -44,6 +44,8 @@ struct RigidBoxDescription {
     bool fixed{};
 };
 
+enum class PairContactOwner { Jolt, External };
+
 class JoltWorld {
 public:
     JoltWorld();
@@ -59,6 +61,12 @@ public:
     void addSupportSurface(const RigidSurfaceDescription &description);
     void addBall(const RigidBallDescription &description);
     void addBox(const RigidBoxDescription &description);
+    // Host-thread only, between steps. External suppresses this pair's Jolt
+    // contact response/events over both entire bodies, not just a joint face;
+    // the caller must provide the physical response for all their contacts.
+    // Ownership is transient and must be restored when rebuilding a world.
+    void setPairContactOwner(MatterBodyId a,MatterBodyId b,PairContactOwner owner);
+    [[nodiscard]] PairContactOwner pairContactOwner(MatterBodyId a,MatterBodyId b) const;
     void pinToWorld(MatterBodyId body_id);
     void releaseFromWorld(MatterBodyId body_id);
     void applyRigidState(MatterBodyId body_id,const RigidSnapshot &state);

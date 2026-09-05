@@ -30,6 +30,7 @@
 #include <mutex>
 #include <numbers>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -199,8 +200,14 @@ class ImpactCollector final : public JPH::ContactListener {
 public:
     ImpactCollector(
         std::atomic<std::uint64_t> &tick,
-        const std::unordered_map<MatterBodyId, BodyContactState> &contact_states)
-        : tick_(tick), contact_states_(contact_states) {}
+        const std::unordered_map<MatterBodyId, BodyContactState> &contact_states,
+        const std::set<std::pair<MatterBodyId,MatterBodyId>> &external_pairs)
+        : tick_(tick), contact_states_(contact_states), external_pairs_(external_pairs) {}
+
+    JPH::ValidateResult OnContactValidate(const JPH::Body &a,const JPH::Body &b,JPH::RVec3Arg,const JPH::CollideShapeResult &) override {
+        const MatterBodyId first=a.GetUserData(),second=b.GetUserData();const auto key=std::minmax(first,second);
+        return external_pairs_.contains(key)?JPH::ValidateResult::RejectAllContactsForThisBodyPair:JPH::ValidateResult::AcceptAllContactsForThisBodyPair;
+    }
 
     void OnContactAdded(
         const JPH::Body &body1,
@@ -350,6 +357,7 @@ private:
 
     std::atomic<std::uint64_t> &tick_;
     const std::unordered_map<MatterBodyId, BodyContactState> &contact_states_;
+    const std::set<std::pair<MatterBodyId,MatterBodyId>> &external_pairs_;
     std::mutex mutex_;
     std::vector<ImpactEvent> events_;
 };
@@ -379,7 +387,7 @@ void ensureJoltRuntime() { static JoltRuntime runtime; }
 
 class JoltWorld::Impl {
 public:
-    Impl() : impact_collector_(tick_, contact_states_) {
+    Impl() : impact_collector_(tick_, contact_states_,external_pairs_) {
         ensureJoltRuntime();
 
         temp_allocator_ =
@@ -497,6 +505,7 @@ public:
     std::unique_ptr<JPH::JobSystemThreadPool> job_system_;
     std::unique_ptr<JPH::PhysicsSystem> physics_;
     std::unordered_map<MatterBodyId, BodyContactState> contact_states_;
+    std::set<std::pair<MatterBodyId,MatterBodyId>> external_pairs_;
     std::atomic<std::uint64_t> tick_{0};
     ImpactCollector impact_collector_;
     JPH::BodyID floor_id_;
@@ -705,6 +714,19 @@ void JoltWorld::addBox(const RigidBoxDescription &description) {
     }
 }
 
+PairContactOwner JoltWorld::pairContactOwner(MatterBodyId a,MatterBodyId b) const {
+    if(a==b||!contains(a)||!contains(b))throw std::invalid_argument("contact ownership requires two distinct registered bodies");
+    return impl_->external_pairs_.contains(std::minmax(a,b))?PairContactOwner::External:PairContactOwner::Jolt;
+}
+void JoltWorld::setPairContactOwner(MatterBodyId a,MatterBodyId b,PairContactOwner owner) {
+    if(owner!=PairContactOwner::External&&owner!=PairContactOwner::Jolt)throw std::invalid_argument("unknown pair contact owner");
+    if(pairContactOwner(a,b)==owner)return;
+    const std::pair<MatterBodyId,MatterBodyId> key=std::minmax(a,b);
+    if(owner==PairContactOwner::External){if(impl_->external_pairs_.size()>=4096)throw std::invalid_argument("external contact pair budget exceeded");impl_->external_pairs_.insert(key);}
+    else impl_->external_pairs_.erase(key);
+    auto &bodies=impl_->physics_->GetBodyInterface();
+    for(auto id:{a,b}){const auto body=impl_->bodies_.at(id);bodies.InvalidateContactCache(body);bodies.ActivateBody(body);}
+}
 void JoltWorld::pinToWorld(MatterBodyId body_id) {
     const auto found=impl_->bodies_.find(body_id);
     if(found==impl_->bodies_.end()||impl_->pins_.contains(body_id))throw std::invalid_argument("missing or already pinned body");
@@ -967,6 +989,7 @@ void JoltWorld::removeAndDestroy(MatterBodyId body_id) {
         return;
     }
     releaseFromWorld(body_id);
+    std::erase_if(impl_->external_pairs_,[&](const auto &pair){return pair.first==body_id||pair.second==body_id;});
     JPH::BodyInterface &body_interface = impl_->physics_->GetBodyInterface();
     body_interface.RemoveBody(found->second);
     body_interface.DestroyBody(found->second);
