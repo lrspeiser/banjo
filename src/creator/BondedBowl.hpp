@@ -44,5 +44,7 @@ private:
  double time_{},step_limit_{};
  unsigned evaluations_{};
  std::vector<double> damping_impulse_factors_;
+ std::vector<BowlCell> before_scratch_;
+ std::vector<Vec3> force_scratch_;
 };
 }

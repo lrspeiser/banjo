@@ -112,7 +112,7 @@ void BondedBowl::dissipate(double dt,const std::vector<Contact> &c){
 }
 bool BondedBowl::step(double dt,unsigned depth){
  if(++evaluations_>65536)throw std::runtime_error("bowl evaluation budget");
- auto before=cells;auto oldLedger=ledger;auto c=contacts();std::vector<Vec3> f;forces(f,c);
+ auto &before=before_scratch_;before=cells;auto oldLedger=ledger;auto c=contacts();auto &f=force_scratch_;forces(f,c);
  for(auto &p:c)if(p.fixed){Vec3 j=p.n*(p.stiffness*p.compression*dt*.5);ledger.support_impulse+=j;ledger.support_angular_impulse+=cross(p.point,j);}
  for(unsigned i=0;i<cells.size();++i){auto &p=cells[i];p.v+=f[i]*(dt*.5/p.mass);p.x+=p.v*dt;ledger.gravity_impulse+=gravity*(p.mass*dt);ledger.gravity_angular_impulse+=cross((before[i].x+p.x)*.5,gravity*(p.mass*dt));}
  std::vector<unsigned> broken;double work=0,overshoot=0;

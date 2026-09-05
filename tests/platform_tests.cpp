@@ -1,4 +1,6 @@
 #include "platform/PlatformWorld.hpp"
+#include "platform/PlatformPlayback.hpp"
+#include <thread>
 #include <nlohmann/json.hpp>
 #include <iostream>
 #include <stdexcept>
@@ -63,5 +65,20 @@ int main(){try{
         else check(x*offset>0&&std::abs(x)>.03,"off-center contact deflects without lateral launch");
         std::cout<<m<<" offset="<<offset<<" final_x="<<x<<'\n';
     }
+
+    PlatformPlayback playback;auto source=scene().dump();
+    auto finish=[&]{while(playback.computing()){playback.poll(0);std::this_thread::sleep_for(std::chrono::milliseconds(1));}};
+    playback.start(source,.05);finish();check(playback.ready()&&playback.error().empty(),"complete recording");
+    check(playback.frame()->time_s==0,"ready recording starts at initial state");
+    playback.play();playback.poll(.025);check(playback.frame()->time_s>.016&&playback.frame()->time_s<=.0251,"normal wall-clock playback");
+    playback.poll(.1);check(!playback.playing()&&playback.frame()->time_s>=.05,"playback terminates at recorded endpoint");
+    auto direct=PlatformWorld::load(source);direct->step(12);auto exact=direct->renderInstances();
+    for(unsigned i=0;i<exact.size();++i)check(length(exact[i].state.center_of_mass_world_m-playback.frame()->instances[i].state.center_of_mass_world_m)<1e-12,"recording uses actual solver frames");
+    playback.start(source,.05);check(playback.ready()&&!playback.computing(),"identical package recording reused");
+    auto changed=scene();changed["objects"][0]["velocity_m_s"]={-1,0,0};playback.start(changed.dump(),.05);check(!playback.ready(),"changed initial state invalidates recording");finish();
+    playback.play();playback.poll(.1);check(playback.frame()->instances[0].state.center_of_mass_world_m.x<0,"changed state computes new motion");
+    playback.start(source,.050000001);check(!playback.ready(),"duration uses exact key");playback.clear();
+    check(!playback.computing()&&!playback.ready(),"cancel discards partial work");
+    playback.start("{}",.05);finish();check(!playback.ready()&&!playback.error().empty(),"failed computation does not publish clip");
     std::cout<<"Platform package validation, three-material motion, box geometry, reference cells, clone and call budgets pass\n";return 0;
 }catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}
