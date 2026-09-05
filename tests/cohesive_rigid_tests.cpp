@@ -16,6 +16,19 @@ void boxFaceCompilation(MaterialPreset preset){
         require(std::abs(patch.a.principal_inertia_kg_m2.x-patch.a.mass_kg*.0008/12)<1e-14,"box inertia derives from dimensions");
         double area=0;for(const auto &site:patch.sites){area+=site.area_m2;require(std::abs(site.rest_distance_m-.001)<1e-14,"face gap derives from transformed geometry");}
         require(std::abs(area-.00012)<1e-16,"face geometry owns patch area");
+        auto moving=patch;
+        const double ma=patch.a.mass_kg,mb=patch.b.mass_kg,mu=ma*mb/(ma+mb),fracture_work=area*m.fracture_energy_j_m2;
+        const double speed=std::sqrt(12*fracture_work/mu);const auto normal=rotation.rotate(axes[axis]);
+        moving.a.velocity_m_s=-mb/(ma+mb)*speed*normal;moving.b.velocity_m_s=ma/(ma+mb)*speed*normal;
+        const CohesiveInterfaceLaw law{2*m.tensile_strength_pa*m.tensile_strength_pa/m.fracture_energy_j_m2,m.tensile_strength_pa,m.fracture_energy_j_m2,area};
+        const double duration=8*cohesiveSeparationOpening(law)/speed,e0=cohesiveRigidKineticEnergy({moving.a,moving.b,{}});
+        const auto loaded=advanceCohesivePatchAdaptive(law,moving,duration,{fracture_work*1e-6,1e-5,65536});
+        double work=0,energy=cohesiveRigidKineticEnergy({loaded.state.a,loaded.state.b,{}});
+        for(const auto &site:loaded.state.sites){auto local=law;local.area_m2=site.area_m2;const auto response=evaluateCohesiveInterface(local,site.history);require(response.separated,"compiled face joint separates under declared kinetic load");work+=response.dissipated_energy_j;energy+=response.stored_energy_j+response.dissipated_energy_j;}
+        require(std::abs(work-fracture_work)<fracture_work*1e-12,"compiled geometric area controls separation work");
+        require(std::abs(energy-e0)<=fracture_work*1e-6+1e-12,"compiled face load stays in numerical energy budget");
+        require(length(loaded.state.a.angular_momentum_kg_m2_s)>1e-10&&length(loaded.state.b.angular_momentum_kg_m2_s)>1e-10,"offset compiled faces transfer intrinsic spin");
+        std::cout<<materialPresetName(preset)<<" compiled_load axis="<<axis<<" area_m2="<<area<<" separation_work_j="<<work<<" final_energy_error_j="<<std::abs(energy-e0)<<" accumulated_energy_error_j="<<loaded.accumulated_absolute_energy_error_j<<" evaluations="<<loaded.evaluations<<'\n';
         auto invalid=fa;invalid.width_m=.03;bool rejected=false;try{(void)makeBoxFaceCohesivePatch(a,b,invalid,fb,4);}catch(const std::invalid_argument&){rejected=true;}require(rejected,"out-of-face patch rejected");
         invalid=fb;invalid.positive=true;rejected=false;try{(void)makeBoxFaceCohesivePatch(a,b,fa,invalid,4);}catch(const std::invalid_argument&){rejected=true;}require(rejected,"nonopposing faces rejected");
     }
