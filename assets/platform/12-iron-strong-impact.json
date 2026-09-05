@@ -1,0 +1,75 @@
+{
+  "package_version": 1,
+  "physics_abi": "banjo-platform-1",
+  "name": "12-iron-strong-impact",
+  "units": "SI",
+  "backend": "bonded-reference-v2",
+  "required_capabilities": [
+    "contact",
+    "render-instances"
+  ],
+  "fixed_dt_s": 0.0004166666666666667,
+  "max_steps_per_call": 240,
+  "gravity_m_s2": [
+    0,
+    0,
+    0
+  ],
+  "bowl": null,
+  "objects": [
+    {
+      "id": 1,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        -0.055,
+        0.15,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        10,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "radius_m": 0.045
+    },
+    {
+      "id": 2,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        0.055,
+        0.15,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        -10,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "radius_m": 0.045
+    }
+  ]
+}

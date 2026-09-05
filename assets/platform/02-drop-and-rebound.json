@@ -1,0 +1,107 @@
+{
+  "package_version": 1,
+  "physics_abi": "banjo-platform-1",
+  "name": "Comparative drop and rebound",
+  "units": "SI",
+  "backend": "rigid-v1",
+  "required_capabilities": [
+    "contact",
+    "render-instances"
+  ],
+  "fixed_dt_s": 0.004166666666666667,
+  "max_steps_per_call": 240,
+  "gravity_m_s2": [
+    0,
+    -9.81,
+    0
+  ],
+  "bowl": {
+    "radius_m": 1.2,
+    "depth_m": 0.55,
+    "tilt_degrees": 0,
+    "surface": "concrete"
+  },
+  "objects": [
+    {
+      "id": 1,
+      "material": "glass",
+      "shape": "sphere",
+      "position_m": [
+        -0.18,
+        0.8,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "radius_m": 0.045
+    },
+    {
+      "id": 2,
+      "material": "oak",
+      "shape": "sphere",
+      "position_m": [
+        0.0,
+        0.8,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "radius_m": 0.045
+    },
+    {
+      "id": 3,
+      "material": "iron",
+      "shape": "sphere",
+      "position_m": [
+        0.18,
+        0.8,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "radius_m": 0.045
+    }
+  ]
+}
