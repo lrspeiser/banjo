@@ -1,5 +1,6 @@
 #include "rigid/JoltWorld.hpp"
 #include "fracture/ActivationPolicy.hpp"
+#include "physics/RigidAttachment.hpp"
 
 #include "material/MaterialCompiler.hpp"
 
@@ -727,6 +728,80 @@ void JoltWorld::setPairContactOwner(MatterBodyId a,MatterBodyId b,PairContactOwn
     auto &bodies=impl_->physics_->GetBodyInterface();
     for(auto id:{a,b}){const auto body=impl_->bodies_.at(id);bodies.InvalidateContactCache(body);bodies.ActivateBody(body);}
 }
+PairImpulseAudit JoltWorld::applyPairImpulse(MatterBodyId a,MatterBodyId b,
+    Vec3 point_a_m,Vec3 point_b_m,Vec3 impulse_on_a_n_s,double maximum_roundoff_energy_j) {
+    if(!std::isfinite(maximum_roundoff_energy_j)||maximum_roundoff_energy_j<0)
+        throw std::invalid_argument("pair impulse requires a finite nonnegative roundoff budget");
+    if(pairContactOwner(a,b)!=PairContactOwner::External)
+        throw std::invalid_argument("pair impulse requires external contact ownership");
+    for(auto id:{a,b}) {
+        if(impl_->pins_.contains(id))throw std::invalid_argument("pair impulse cannot bypass a world attachment");
+        JPH::BodyLockRead lock(impl_->physics_->GetBodyLockInterface(),impl_->bodies_.at(id));
+        if(!lock.Succeeded())throw std::runtime_error("cannot lock impulse body");
+        const auto &body=lock.GetBody();
+        if(!body.IsDynamic()||body.GetMotionProperties()->GetAllowedDOFs()!=JPH::EAllowedDOFs::All)
+            throw std::invalid_argument("pair impulse requires unrestricted dynamic bodies");
+    }
+    const auto before_a=mechanicalState(a),before_b=mechanicalState(b);
+    const auto attachment=[](const RigidMechanicalState &s) {
+        auto inertia=s.inertia_world_kg_m2;
+        double scale=0;for(const auto &row:inertia.m)for(double x:row)scale=std::max(scale,std::abs(x));
+        // Jolt's float world-tensor rotation can introduce a small skew part.
+        // Solve with its symmetric part, but retain the raw read-back tensor
+        // in the measured ledger so this approximation is not hidden.
+        for(unsigned i=0;i<3;++i)for(unsigned k=i+1;k<3;++k) {
+            if(std::abs(inertia.m[i][k]-inertia.m[k][i])>1e-6*scale)
+                throw std::invalid_argument("runtime inertia skew exceeds float tolerance");
+            inertia.m[i][k]=inertia.m[k][i]=.5*(inertia.m[i][k]+inertia.m[k][i]);
+        }
+        return AttachmentBody{s.mass_kg,inertia,s.motion.center_of_mass_world_m,
+            s.motion.linear_velocity_m_s,s.motion.angular_velocity_rad_s};
+    };
+    const auto solved=applyAttachmentImpulse(attachment(before_a),attachment(before_b),point_a_m,point_b_m,impulse_on_a_n_s);
+    const auto candidate=[&](MatterBodyId id,RigidMechanicalState state,const AttachmentBody &target) {
+        const auto representable=[](Vec3 v) {
+            const double limit=std::numeric_limits<float>::max();
+            return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z)&&
+                std::abs(v.x)<=limit&&std::abs(v.y)<=limit&&std::abs(v.z)<=limit;
+        };
+        if(!representable(target.velocity_m_s)||!representable(target.angular_velocity_rad_s))
+            throw std::invalid_argument("pair impulse velocity is not representable");
+        const auto v=toJolt(target.velocity_m_s),w=toJolt(target.angular_velocity_rad_s);
+        JPH::BodyLockRead lock(impl_->physics_->GetBodyLockInterface(),impl_->bodies_.at(id));
+        if(!lock.Succeeded())throw std::runtime_error("cannot lock impulse candidate");
+        const auto *motion=lock.GetBody().GetMotionProperties();
+        const float max_v=motion->GetMaxLinearVelocity(),max_w=motion->GetMaxAngularVelocity();
+        // Match Jolt's float norm comparison, so an accepted candidate cannot
+        // be silently clamped by SetLinearAndAngularVelocity.
+        if(!std::isfinite(v.LengthSq())||!std::isfinite(w.LengthSq())||
+            v.LengthSq()>max_v*max_v||w.LengthSq()>max_w*max_w)
+            throw std::invalid_argument("pair impulse exceeds runtime velocity limits");
+        state.motion.linear_velocity_m_s=fromJoltVector(v);
+        state.motion.angular_velocity_rad_s=fromJoltVector(w);
+        return state;
+    };
+    const auto after_a=candidate(a,before_a,solved.a),after_b=candidate(b,before_b,solved.b);
+    const auto audit=[&](const RigidMechanicalState &sa,const RigidMechanicalState &sb) {
+        PairImpulseAudit out;
+        out.before=measureRigidMechanics(before_a);out.before+=measureRigidMechanics(before_b);
+        out.after=measureRigidMechanics(sa);out.after+=measureRigidMechanics(sb);
+        out.impulse_work_j=solved.impulse_work_j;
+        out.numerical_energy_change_j=out.after.kinetic_energy_j-out.before.kinetic_energy_j-out.impulse_work_j;
+        out.momentum_error_kg_m_s=out.after.linear_momentum_kg_m_s-out.before.linear_momentum_kg_m_s;
+        out.applied_couple_kg_m2_s=solved.angular_impulse_kg_m2_s;
+        out.angular_momentum_error_kg_m2_s=out.after.angular_momentum_kg_m2_s-out.before.angular_momentum_kg_m2_s-out.applied_couple_kg_m2_s;
+        return out;
+    };
+    const auto predicted=audit(after_a,after_b);
+    if(!std::isfinite(predicted.numerical_energy_change_j)||std::abs(predicted.numerical_energy_change_j)>maximum_roundoff_energy_j)
+        throw std::invalid_argument("pair impulse exceeds roundoff energy budget");
+    auto &bodies=impl_->physics_->GetBodyInterface();
+    bodies.SetLinearAndAngularVelocity(impl_->bodies_.at(a),toJolt(after_a.motion.linear_velocity_m_s),toJolt(after_a.motion.angular_velocity_rad_s));
+    bodies.SetLinearAndAngularVelocity(impl_->bodies_.at(b),toJolt(after_b.motion.linear_velocity_m_s),toJolt(after_b.motion.angular_velocity_rad_s));
+    // Report measured solver state, including actual float mass and inertia.
+    return audit(mechanicalState(a),mechanicalState(b));
+}
+
 void JoltWorld::pinToWorld(MatterBodyId body_id) {
     const auto found=impl_->bodies_.find(body_id);
     if(found==impl_->bodies_.end()||impl_->pins_.contains(body_id))throw std::invalid_argument("missing or already pinned body");

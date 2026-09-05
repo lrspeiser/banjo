@@ -46,6 +46,12 @@ struct RigidBoxDescription {
 
 enum class PairContactOwner { Jolt, External };
 
+struct PairImpulseAudit {
+    MechanicalTotals before{}, after{};
+    double impulse_work_j{}, numerical_energy_change_j{};
+    Vec3 momentum_error_kg_m_s{}, applied_couple_kg_m2_s{}, angular_momentum_error_kg_m2_s{};
+};
+
 class JoltWorld {
 public:
     JoltWorld();
@@ -67,6 +73,14 @@ public:
     // Ownership is transient and must be restored when rebuilding a world.
     void setPairContactOwner(MatterBodyId a,MatterBodyId b,PairContactOwner owner);
     [[nodiscard]] PairContactOwner pairContactOwner(MatterBodyId a,MatterBodyId b) const;
+    // Instantaneous equal/opposite transfer supplied by an external law, not a
+    // force law or a time advance. Requires External pair ownership and two
+    // unpinned, unrestricted dynamic bodies. Points/impulse are world-space SI.
+    // Preflights float rounding and speed limits before changing either body.
+    // Budget bounds transfer roundoff only; the caller accounts for the source
+    // of impulse work and any noncentral couple. Host thread, between steps.
+    [[nodiscard]] PairImpulseAudit applyPairImpulse(MatterBodyId a,MatterBodyId b,
+        Vec3 point_a_m,Vec3 point_b_m,Vec3 impulse_on_a_n_s,double maximum_roundoff_energy_j);
     void pinToWorld(MatterBodyId body_id);
     void releaseFromWorld(MatterBodyId body_id);
     void applyRigidState(MatterBodyId body_id,const RigidSnapshot &state);
