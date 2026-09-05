@@ -28,6 +28,13 @@ void writeAuditRow(std::ostream &out, const banjo::RollingBallExperiment &experi
         << stats.constraint_mechanical_energy_delta_j;
     vector(stats.contact_correction_angular_momentum_delta_kg_m2_s);
     vector(stats.constraint_angular_momentum_delta_kg_m2_s);
+    out << ',' << stats.audited_material_steps;
+    for (const auto &stage : stats.material_stage_changes) {
+        out << ',' << stage.kinetic_energy_j << ',' << stage.elastic_energy_j << ','
+            << stage.gravity_potential_energy_j;
+        vector(stage.linear_momentum_kg_m_s);
+        vector(stage.angular_momentum_kg_m2_s);
+    }
     out << '\n';
     if (!out) throw std::runtime_error("failed to write mechanical audit CSV");
 }
@@ -64,6 +71,7 @@ int main(int argc, char **argv) {
                 else settings.voxel_size_m = numericOption(argv[i]);
             } else throw std::invalid_argument("unknown headless option: " + std::string(option));
         }
+        settings.audit_material_stages = !audit_path.empty();
         banjo::RollingBallExperiment experiment(settings);
         const auto &lattice = experiment.glassLattice();
         std::ofstream audit;
@@ -76,7 +84,13 @@ int main(int argc, char **argv) {
                      "kinetic_j,elastic_j,gravity_potential_j,material_contact_loss_j,internal_damping_loss_j,"
                      "coarsening_kinetic_loss_j,coarsening_elastic_loss_j,unassigned_bond_removal_j,"
                      "constraint_mechanical_delta_j,correction_lx,correction_ly,correction_lz,"
-                     "constraint_lx,constraint_ly,constraint_lz\n";
+                     "constraint_lx,constraint_ly,constraint_lz,audited_material_steps";
+            for (const auto stage : banjo::kMaterialStageNames)
+                for (const auto suffix : {"_delta_kinetic_j", "_delta_elastic_j", "_delta_gravity_j",
+                                          "_delta_px", "_delta_py", "_delta_pz",
+                                          "_delta_lx", "_delta_ly", "_delta_lz"})
+                    audit << ',' << stage << suffix;
+            audit << '\n';
             writeAuditRow(audit, experiment);
         }
 
@@ -144,7 +158,16 @@ int main(int argc, char **argv) {
                   << banjo::length(stats.contact_correction_angular_momentum_delta_kg_m2_s)
                   << ", constraint solve=" << banjo::length(stats.constraint_angular_momentum_delta_kg_m2_s)
                   << " kg*m^2/s\n";
-        if (audit.is_open()) { audit.flush(); if (!audit) throw std::runtime_error("failed to flush audit CSV"); }
+        if (audit.is_open()) {
+            audit.flush();
+            if (!audit) throw std::runtime_error("failed to flush audit CSV");
+            std::cout << "Measured active stages (including sphere proxy; excluding Jolt advance):\n";
+            for (std::size_t i = 0; i < banjo::kMaterialStageNames.size(); ++i) {
+                const auto &stage = stats.material_stage_changes[i];
+                std::cout << "  " << banjo::kMaterialStageNames[i] << ": delta-E=" << stage.mechanicalEnergy()
+                          << " J; delta-L=" << banjo::length(stage.angular_momentum_kg_m2_s) << " kg*m^2/s\n";
+            }
+        }
         std::cout << "PASS: emergent components were meshed and returned to Jolt.\n"
                      "Full-step conservation remains unvalidated; these are measured state and transfer diagnostics.\n";
         return EXIT_SUCCESS;

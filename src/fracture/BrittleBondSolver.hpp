@@ -3,6 +3,7 @@
 #include "core/Plane.hpp"
 #include "fracture/ActiveMatter.hpp"
 #include "fracture/ImpactEvent.hpp"
+#include "fracture/MaterialStepAudit.hpp"
 #include "physics/SphereMaterialContact.hpp"
 #include <limits>
 
@@ -26,11 +27,13 @@ struct BrittleSolverSettings {
     double surface_static_friction{0.5};
     double support_half_tangent_m{std::numeric_limits<double>::infinity()};
     double support_half_bitangent_m{std::numeric_limits<double>::infinity()};
-    // Legacy experimental pulse remains opt-in for isolated calibration tests.
-    // The runtime uses zero: contact, not synthetic excitation, drives fracture.
+    // Deprecated compatibility fields. Nonzero pulse fraction is rejected.
+    // The old energy cap is ignored; no synthetic excitation exists.
     double impact_internal_energy_fraction{0.0};
     double maximum_internal_energy_j{350.0};
     bool support_enabled{true};
+    // Expensive full-state stage samples, enabled explicitly by audit runs.
+    bool audit_stages{};
 };
 
 struct MaterialStepStats {
@@ -51,6 +54,8 @@ struct MaterialStepStats {
     double constraint_mechanical_energy_delta_j{};
     double unassigned_bond_removal_energy_j{};
     SphereMaterialContactStats rigid_contact{};
+    bool stages_measured{};
+    MaterialStageChanges stage_changes{};
 };
 
 class BrittleBondSolver {
@@ -72,11 +77,6 @@ public:
         const SphereMaterialContactSettings &contact = {}) const;
 
 private:
-    void injectInternalImpactPulse(
-        ActiveMatter &matter,
-        const ImpactEvent &impact,
-        const Vec3 &normal_into_target) const;
-
     BrittleSolverSettings settings_;
 };
 

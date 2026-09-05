@@ -143,6 +143,7 @@ void RollingBallExperiment::reset(ExperimentSettings settings) {
         .impact_internal_energy_fraction = 0.0,
         .maximum_internal_energy_j = settings_.maximum_internal_energy_j,
         .support_enabled = settings_.support_enabled,
+        .audit_stages = settings_.audit_material_stages,
     });
 
     stats_ = {};
@@ -423,6 +424,11 @@ void RollingBallExperiment::stepFracturingPhase(double dt_s) {
         material_stats.constraint_angular_momentum_delta_kg_m2_s;
     stats_.constraint_mechanical_energy_delta_j += material_stats.constraint_mechanical_energy_delta_j;
     stats_.unassigned_bond_removal_energy_j += material_stats.unassigned_bond_removal_energy_j;
+    if (material_stats.stages_measured) {
+        ++stats_.audited_material_steps;
+        for (std::size_t i = 0; i < material_stats.stage_changes.size(); ++i)
+            stats_.material_stage_changes[i] += material_stats.stage_changes[i];
+    }
     stats_.maximum_contact_penetration_m = std::max(stats_.maximum_contact_penetration_m,
         material_stats.rigid_contact.maximum_penetration_m);
 

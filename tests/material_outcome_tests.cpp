@@ -203,6 +203,18 @@ void outcomeFileRoundTripsDeterministically() {
     try { banjo::applyMaterialOutcome(incompatible, rigid, target); }
     catch (const std::invalid_argument &) { rejected = true; }
     require(rejected, "old files without subcell spin must not be silently applied");
+    incompatible = loaded;
+    incompatible.key.solver_model_version = 4U;
+    rejected = false;
+    try { banjo::applyMaterialOutcome(incompatible, rigid, target); }
+    catch (const std::invalid_argument &) { rejected = true; }
+    require(rejected, "outcomes from predictor-driven damage must not be reused");
+    banjo::MaterialOutcomeKeyInput pulse_input;
+    pulse_input.impact_internal_energy_fraction = .12;
+    rejected = false;
+    try { (void)banjo::makeMaterialOutcomeKey(pulse_input); }
+    catch (const std::invalid_argument &) { rejected = true; }
+    require(rejected, "outcome keys must reject unsupported synthetic excitation");
     requireNear(
         loaded.nodes.front().position_from_activation_com_local_m.x,
         original.nodes.front().position_from_activation_com_local_m.x,

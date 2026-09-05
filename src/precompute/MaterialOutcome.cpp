@@ -150,7 +150,7 @@ MaterialOutcomeKey makeMaterialOutcomeKey(
         input.solver_substeps == 0U || input.constraint_iterations == 0U ||
         input.maximum_material_steps == 0U ||
         input.minimum_material_steps > input.maximum_material_steps ||
-        input.impact_internal_energy_fraction < 0.0 ||
+        input.impact_internal_energy_fraction != 0.0 ||
         input.maximum_internal_energy_j < 0.0) {
         throw std::invalid_argument("material outcome key input is invalid");
     }

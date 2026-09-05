@@ -12,7 +12,7 @@
 namespace banjo {
 
 inline constexpr std::uint32_t kMaterialOutcomeFormatVersion = 2U;
-inline constexpr std::uint32_t kMaterialSolverModelVersion = 4U;
+inline constexpr std::uint32_t kMaterialSolverModelVersion = 5U;
 
 struct MaterialOutcomeKeyInput {
     MaterialPreset striker{MaterialPreset::Iron};
@@ -34,7 +34,7 @@ struct MaterialOutcomeKeyInput {
     unsigned stable_material_steps{60};
     unsigned maximum_material_steps{480};
 
-    double impact_internal_energy_fraction{0.12};
+    double impact_internal_energy_fraction{0.0}; // nonzero synthetic excitation is rejected
     double maximum_internal_energy_j{1200.0};
     std::uint64_t material_seed{971};
 };

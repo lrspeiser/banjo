@@ -68,6 +68,7 @@ struct ExperimentSettings {
     std::size_t minimum_nodes_per_rigid_fragment{1};
     std::size_t maximum_collision_points{192};
     std::uint64_t realtime_constraint_budget{50'000'000ULL};
+    bool audit_material_stages{};
 };
 
 struct ExperimentStats {
@@ -127,6 +128,8 @@ struct ExperimentStats {
     Vec3 constraint_angular_momentum_delta_kg_m2_s{};
     double constraint_mechanical_energy_delta_j{};
     double unassigned_bond_removal_energy_j{};
+    std::uint64_t audited_material_steps{};
+    MaterialStageChanges material_stage_changes{};
 };
 
 struct DebrisParticleState {

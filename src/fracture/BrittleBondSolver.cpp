@@ -107,12 +107,6 @@ void solveBond(
     }
 
     const double constraint = current_length - rest.rest_length_m;
-    const double stretch = constraint / rest.rest_length_m;
-    state.peak_tensile_stretch =
-        std::max(state.peak_tensile_stretch, stretch);
-    state.peak_compressive_strain =
-        std::max(state.peak_compressive_strain, -stretch);
-
     const Vec3 direction = delta / current_length;
     const double inverse_mass_a = a.mass_kg > 0.0 ? 1.0 / a.mass_kg : 0.0;
     const double inverse_mass_b = b.mass_kg > 0.0 ? 1.0 / b.mass_kg : 0.0;
@@ -124,85 +118,6 @@ void solveBond(
     state.accumulated_lambda += delta_lambda;
     a.position_world_m -= inverse_mass_a * delta_lambda * direction;
     b.position_world_m += inverse_mass_b * delta_lambda * direction;
-}
-
-[[nodiscard]] Vec3 centerOfMass(const ActiveMatter &matter) {
-    double total_mass = 0.0;
-    Vec3 weighted{};
-    for (const ActiveNodeState &node : matter.nodes) {
-        total_mass += node.mass_kg;
-        weighted += node.mass_kg * node.position_world_m;
-    }
-    return total_mass > 0.0 ? weighted / total_mass : Vec3{};
-}
-
-[[nodiscard]] Mat3 pointMassInertia(
-    const ActiveMatter &matter,
-    const Vec3 &center_of_mass) {
-    Mat3 inertia{};
-    for (const ActiveNodeState &node : matter.nodes) {
-        const Vec3 r = node.position_world_m - center_of_mass;
-        inertia.m[0][0] += node.mass_kg * (r.y * r.y + r.z * r.z);
-        inertia.m[1][1] += node.mass_kg * (r.x * r.x + r.z * r.z);
-        inertia.m[2][2] += node.mass_kg * (r.x * r.x + r.y * r.y);
-        inertia.m[0][1] -= node.mass_kg * r.x * r.y;
-        inertia.m[1][0] = inertia.m[0][1];
-        inertia.m[0][2] -= node.mass_kg * r.x * r.z;
-        inertia.m[2][0] = inertia.m[0][2];
-        inertia.m[1][2] -= node.mass_kg * r.y * r.z;
-        inertia.m[2][1] = inertia.m[1][2];
-    }
-    return inertia;
-}
-
-void removeRigidMomentumComponents(
-    const ActiveMatter &matter,
-    std::vector<Vec3> &delta_velocity) {
-    if (matter.nodes.empty() || delta_velocity.size() != matter.nodes.size()) {
-        return;
-    }
-
-    double total_mass = 0.0;
-    Vec3 linear_momentum{};
-    for (std::size_t index = 0; index < matter.nodes.size(); ++index) {
-        total_mass += matter.nodes[index].mass_kg;
-        linear_momentum += matter.nodes[index].mass_kg * delta_velocity[index];
-    }
-    if (total_mass <= 0.0) {
-        return;
-    }
-
-    const Vec3 mean_delta = linear_momentum / total_mass;
-    for (Vec3 &velocity : delta_velocity) {
-        velocity -= mean_delta;
-    }
-
-    const Vec3 center = centerOfMass(matter);
-    Vec3 angular_momentum{};
-    for (std::size_t index = 0; index < matter.nodes.size(); ++index) {
-        const Vec3 r = matter.nodes[index].position_world_m - center;
-        angular_momentum +=
-            cross(r, matter.nodes[index].mass_kg * delta_velocity[index]);
-    }
-
-    const Mat3 inertia = pointMassInertia(matter, center);
-    if (const auto inverse = inertia.inverse(1.0e-18)) {
-        const Vec3 angular_velocity = *inverse * angular_momentum;
-        for (std::size_t index = 0; index < matter.nodes.size(); ++index) {
-            const Vec3 r = matter.nodes[index].position_world_m - center;
-            delta_velocity[index] -= cross(angular_velocity, r);
-        }
-    }
-
-    Vec3 residual_momentum{};
-    for (std::size_t index = 0; index < matter.nodes.size(); ++index) {
-        residual_momentum +=
-            matter.nodes[index].mass_kg * delta_velocity[index];
-    }
-    const Vec3 residual_mean = residual_momentum / total_mass;
-    for (Vec3 &velocity : delta_velocity) {
-        velocity -= residual_mean;
-    }
 }
 
 void addScaledOuterProduct(
@@ -385,6 +300,25 @@ void addScaledOuterProduct(
     return strains;
 }
 
+// Only accepted states carry physical strain history. Predictor positions and
+// Gauss-Seidel iterates are numerical guesses, not intermediate physical time.
+void accumulateResolvedStrains(ActiveMatter &matter) {
+    const auto strains = calculateNodeStrains(matter);
+    for (std::size_t i = 0; i < matter.bonds.size(); ++i) {
+        auto &state = matter.bonds[i];
+        if (!state.alive) continue;
+        const auto &rest = matter.asset->bonds[i];
+        const double stretch = length(matter.nodes[rest.node_b].position_world_m -
+            matter.nodes[rest.node_a].position_world_m) / rest.rest_length_m - 1.0;
+        state.peak_tensile_stretch = std::max({state.peak_tensile_stretch, stretch,
+            strains[rest.node_a].tensile, strains[rest.node_b].tensile});
+        state.peak_compressive_strain = std::max({state.peak_compressive_strain, -stretch,
+            strains[rest.node_a].compressive, strains[rest.node_b].compressive});
+        state.peak_shear_strain = std::max({state.peak_shear_strain,
+            strains[rest.node_a].shear, strains[rest.node_b].shear});
+    }
+}
+
 [[nodiscard]] double damageProgress(
     double value,
     double start,
@@ -425,6 +359,9 @@ void accumulateFailureCounts(
 
 BrittleBondSolver::BrittleBondSolver(BrittleSolverSettings settings)
     : settings_(settings) {
+    if (settings_.impact_internal_energy_fraction != 0.0) {
+        throw std::invalid_argument("synthetic impact energy is unsupported; use physical contact or authored initial state");
+    }
     if (settings_.substeps == 0U ||
         settings_.constraint_iterations == 0U) {
         throw std::invalid_argument(
@@ -475,61 +412,7 @@ ActiveMatter BrittleBondSolver::activate(
         matter.reference_positions_world_m.push_back(position);
     }
 
-    injectInternalImpactPulse(
-        matter,
-        impact,
-        normalized(impact.normalInto(body_id)));
     return matter;
-}
-
-void BrittleBondSolver::injectInternalImpactPulse(
-    ActiveMatter &matter,
-    const ImpactEvent &impact,
-    const Vec3 &normal_into_target) const {
-    if (matter.nodes.empty() || impact.available_normal_energy_j <= 0.0) {
-        return;
-    }
-
-    const double influence_radius = std::max(
-        2.5 * matter.asset->recipe.voxel_size_m,
-        0.30 * matter.asset->recipe.radius_m);
-    std::vector<Vec3> delta_velocity(matter.nodes.size());
-
-    for (std::size_t index = 0; index < matter.nodes.size(); ++index) {
-        const ActiveNodeState &node = matter.nodes[index];
-        const double distance =
-            length(node.position_world_m - impact.contact_point_world_m);
-        const double normalized_distance = distance / influence_radius;
-        const double weight = normalized_distance < 1.0
-                                  ? std::exp(
-                                        -4.0 * normalized_distance *
-                                        normalized_distance)
-                                  : 0.0;
-        delta_velocity[index] = weight * normal_into_target;
-    }
-
-    removeRigidMomentumComponents(matter, delta_velocity);
-
-    double raw_internal_energy = 0.0;
-    for (std::size_t index = 0; index < matter.nodes.size(); ++index) {
-        raw_internal_energy +=
-            0.5 * matter.nodes[index].mass_kg *
-            lengthSquared(delta_velocity[index]);
-    }
-    if (raw_internal_energy <= 1.0e-12) {
-        return;
-    }
-
-    const double requested_energy = std::min(
-        settings_.maximum_internal_energy_j,
-        settings_.impact_internal_energy_fraction *
-            impact.available_normal_energy_j);
-    const double scale =
-        std::sqrt(requested_energy / raw_internal_energy);
-    for (std::size_t index = 0; index < matter.nodes.size(); ++index) {
-        matter.nodes[index].velocity_m_s +=
-            scale * delta_velocity[index];
-    }
 }
 
 MaterialStepStats BrittleBondSolver::step(
@@ -544,6 +427,27 @@ MaterialStepStats BrittleBondSolver::step(
     }
 
     MaterialStepStats stats;
+    const auto measure_boundary = [&]() {
+        auto totals = measureMaterialMechanics(matter, gravity_m_s2);
+        if (sphere) {
+            Mat3 inertia;
+            for (unsigned i = 0; i < 3; ++i) inertia.m[i][i] = sphere->inertia_kg_m2;
+            totals += measureRigidMechanics({sphere->motion, sphere->mass_kg, inertia}, gravity_m_s2);
+        }
+        return totals;
+    };
+    MechanicalTotals previous_stage;
+    if (settings_.audit_stages) {
+        previous_stage = measure_boundary();
+        stats.stages_measured = true;
+    }
+    const auto record_stage = [&](MaterialStage stage) {
+        if (!settings_.audit_stages) return;
+        const auto current = measure_boundary();
+        stats.stage_changes[static_cast<std::size_t>(stage)] +=
+            MaterialStageChange::between(previous_stage, current);
+        previous_stage = current;
+    };
     const std::size_t broken_before = countBrokenBonds(matter);
     const double substep_dt =
         frame_dt_s / static_cast<double>(settings_.substeps);
@@ -555,18 +459,22 @@ MaterialStepStats BrittleBondSolver::step(
             bond.peak_shear_strain = 0.0;
             bond.accumulated_lambda = 0.0;
         }
+        accumulateResolvedStrains(matter);
 
         for (ActiveNodeState &node : matter.nodes) {
             node.previous_position_world_m = node.position_world_m;
             node.velocity_m_s += substep_dt * gravity_m_s2;
         }
+        record_stage(MaterialStage::Gravity);
         if (sphere) {
             accumulateContactStats(stats.rigid_contact, solveSphereMaterialContacts(
                 matter, *sphere, substep_dt, contact));
         }
+        record_stage(MaterialStage::PreContact);
         for (ActiveNodeState &node : matter.nodes) {
             node.position_world_m += substep_dt * node.velocity_m_s;
         }
+        record_stage(MaterialStage::Prediction);
 
         const auto before_constraints = measureMaterialMechanics(matter, gravity_m_s2);
         for (unsigned iteration = 0;
@@ -588,17 +496,20 @@ MaterialStepStats BrittleBondSolver::step(
             after_constraints.angular_momentum_kg_m2_s - before_constraints.angular_momentum_kg_m2_s;
         stats.constraint_mechanical_energy_delta_j +=
             after_constraints.mechanicalEnergy() - before_constraints.mechanicalEnergy();
+        record_stage(MaterialStage::Constraints);
         stats.internal_damping_loss_j += dampInternalBonds(matter, substep_dt);
+        record_stage(MaterialStage::Damping);
         if (sphere) {
             accumulateContactStats(stats.rigid_contact, solveSphereMaterialContacts(
                 matter, *sphere, substep_dt, contact, true));
         }
+        record_stage(MaterialStage::PostContact);
         for (ActiveNodeState &node : matter.nodes) {
             applySupportContact(node, settings_);
         }
+        record_stage(MaterialStage::Support);
 
-        const std::vector<NodeStrainState> node_strains =
-            calculateNodeStrains(matter);
+        accumulateResolvedStrains(matter);
         for (std::size_t bond_index = 0;
              bond_index < matter.bonds.size();
              ++bond_index) {
@@ -607,24 +518,6 @@ MaterialStepStats BrittleBondSolver::step(
                 continue;
             }
             const BondRest &rest = matter.asset->bonds[bond_index];
-            const NodeStrainState &strain_a = node_strains[rest.node_a];
-            const NodeStrainState &strain_b = node_strains[rest.node_b];
-            state.peak_tensile_stretch = std::max({
-                state.peak_tensile_stretch,
-                strain_a.tensile,
-                strain_b.tensile,
-            });
-            state.peak_compressive_strain = std::max({
-                state.peak_compressive_strain,
-                strain_a.compressive,
-                strain_b.compressive,
-            });
-            state.peak_shear_strain = std::max({
-                state.peak_shear_strain,
-                strain_a.shear,
-                strain_b.shear,
-            });
-
             stats.maximum_tensile_stretch = std::max(
                 stats.maximum_tensile_stretch,
                 state.peak_tensile_stretch);
@@ -673,6 +566,7 @@ MaterialStepStats BrittleBondSolver::step(
                 matter.connectivity_dirty = true;
             }
         }
+        record_stage(MaterialStage::Damage);
     }
 
     const std::size_t broken_after = countBrokenBonds(matter);

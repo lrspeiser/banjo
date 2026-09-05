@@ -219,7 +219,7 @@ void fragmentMassSumsToLatticeMass() {
             "component masses must exactly account for lattice mass");
 }
 
-void energeticImpactProducesEmergentDamage() {
+void impactMetadataDoesNotInjectEnergy() {
     const auto material = testGlass();
     const auto compiled = banjo::compileBrittleMaterial(material, 0.06, 2U);
     const auto lattice = banjo::generateSphereLattice({0.25, 0.06, 2U, 3U}, compiled);
@@ -237,17 +237,21 @@ void energeticImpactProducesEmergentDamage() {
         .constraint_iterations = 8,
         .floor_height_m = -10.0,
         .floor_friction = 0.0,
-        .impact_internal_energy_fraction = 0.35,
-        .maximum_internal_energy_j = 1000.0,
     });
     auto active = solver.activate(
         2, lattice, compiled, {{0.0, 1.0, 0.0}, {}, {}, {}}, impact);
 
-    std::size_t broken = 0U;
-    for (unsigned step = 0; step < 240U && broken == 0U; ++step) {
-        broken = solver.step(active, 1.0 / 240.0, {}).total_broken_bonds;
+    for (const auto &node : active.nodes) {
+        require(banjo::lengthSquared(node.velocity_m_s) == 0.0,
+                "impact metadata must not manufacture material velocities");
     }
-    require(broken > 0U, "an energetic localized impact should break emergent lattice bonds");
+    const auto stats = solver.step(active, 1.0 / 240.0, {});
+    require(stats.total_broken_bonds == 0 && stats.kinetic_energy_j < 1e-15,
+            "resting material with no actual contact remains unexcited");
+    bool rejected = false;
+    try { const banjo::BrittleBondSolver forbidden({.impact_internal_energy_fraction = .35}); }
+    catch (const std::invalid_argument &) { rejected = true; }
+    require(rejected, "legacy synthetic pulse settings must be rejected explicitly");
 }
 
 void exposedSurfaceSuppressesInternalFaces() {
@@ -336,7 +340,7 @@ int main() {
         {"activation preserves linear and angular momentum",
          activationPreservesBulkLinearAndAngularMomentum},
         {"fragment mass sums", fragmentMassSumsToLatticeMass},
-        {"energetic impact damages lattice", energeticImpactProducesEmergentDamage},
+        {"impact metadata cannot inject energy", impactMetadataDoesNotInjectEnergy},
         {"surface mesh removes internal faces", exposedSurfaceSuppressesInternalFaces},
         {"fragment builder produces geometry", fragmentBuilderCreatesRuntimeGeometryAndPreservesMass},
         {"solver reports energy metrics", solverReportsEnergyAndSpeedMetrics},

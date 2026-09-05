@@ -154,6 +154,11 @@ if(BANJO_BUILD_TESTS)
     banjo_enable_warnings(banjo_constitutive_tests)
     add_test(NAME banjo_constitutive_tests COMMAND banjo_constitutive_tests)
 
+    add_executable(banjo_material_stage_tests tests/material_stage_tests.cpp)
+    target_link_libraries(banjo_material_stage_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_material_stage_tests)
+    add_test(NAME banjo_material_stage_tests COMMAND banjo_material_stage_tests)
+
     add_executable(banjo_outcome_tests tests/material_outcome_tests.cpp)
     target_link_libraries(banjo_outcome_tests PRIVATE banjo_core)
     target_compile_features(banjo_outcome_tests PRIVATE cxx_std_23)
