@@ -8,6 +8,8 @@ Owner's comparative-testing requirement: material-dependent experiments always i
 
 ## 1. Product we are trying to build
 
+Owner application priority: users collect materials in a virtual world, ask an LLM to make an object from what they have, and use the resulting object under supported physics. Carry a small version of this experience through foundation work. The [first creator loop](creator-loop.md) specifies inventory, inspectable requests, material/capability validation, atomic creation, physical testing and revision. The next workbench should exercise this path before the complete authoring/publishing platform exists.
+
 Banjo is a publishing and creation platform for interactive worlds whose **materials and laws of physics are editable**. It combines Minecraft-like construction with a deeper material model and eventually an engine/platform alternative to authoring every interaction manually in a conventional game engine.
 
 A creator should describe matter, geometry, assemblies, fields, and laws. The engine determines movement, contact, deformation, damage, and failure from those declarations. AI should be able to author the same inspectable language and use the same APIs as a person. It should not need to invent special-purpose engine code for every object.

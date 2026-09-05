@@ -4,6 +4,8 @@ This roadmap implements the [master plan](project-master-plan.md). See [developm
 
 ## Existing foundation
 
+**Application slice to carry through the early gates:** [collected materials → LLM request → validated object → physical test → revision](creator-loop.md). Start with a visible inventory and one supported single-material object, preserving quantity/provenance and using the same specification/compiler as laboratory tests. This is planned, not a completed feature. It is the purpose of the next shared workbench; do not defer all user-facing creation until Gate 8 or use a small creator demo to claim the open physics gates are complete.
+
 **On main:** C++23/CMake/Jolt; procedural spheres; parameterized contact and brittle laws; rotation-invariant local strain with tension/compression/shear channels; target activation; generated components/meshes/collision proxies; Jolt fragments and overflow debris; raylib laboratory; material/surface/slope/gravity controls; analytical scenario cache; material-outcome serialization; tests and CI. Main also has interactive frame-control and MSVC build fixes.
 
 **Not merged at audit:** PR #2's measured rolling/sliding, rolling-resistance torque, damping separation, sensor-deferred activation, two-way sphere/material impulses, synchronized microsteps, footprint checks and diagnostics. Its PR CI now passes, including graphical capture. Full physical validation does not.
@@ -17,6 +19,8 @@ Inspect main and PR #2, preserve concurrent edits and the explicit raylib/MSVC o
 **Exit:** code is reviewable with no lost main fixes; normal input/frame presentation is verified; the CI result is tied to the tested commit; known physics defects remain documented. Documentation on main does not itself satisfy this gate.
 
 ## Gate 1 — conservation and physical bookkeeping
+
+**Adaptive progress at `8cf33bc`:** bounded transactional temporal error control and grazing-contact subdivision now pass analytical/regression checks; all 13 CTest executables pass. [Twelve material runs](adaptive-checkpoint.md) retain glass/oak/iron and expose cost and full-node differences. Next, build the shared experiment workbench with explicit reference-law selection and one owner of each clock/contact. Preserve work/reaction audits through activation before adding friction and shape comparisons. Local error control is not global convergence or calibrated material behavior. Gate 1 stays open.
 
 **Trajectory progress at `e5b883e`:** 30 glass/oak/iron runs at five timesteps now export and compare all nodes at common times. [The evidence](trajectory-checkpoint.md) separates shrinking bulk differences from unresolved internal motion; conservation remains bounded. Next, implement bounded temporal error control over node motion/elastic state, validate against those traces, and integrate one clock/contact owner per participant into the shared lab. Do not substitute the coupled step after the current Jolt advance and thereby advance the finite sphere twice.
 
