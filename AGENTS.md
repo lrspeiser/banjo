@@ -10,6 +10,10 @@
 
 These docs are a snapshot. Fetch current branch/PR state before integration. The contact-development branch is not automatically main. Preserve concurrent changes, especially main's raylib frame-control/busy-wait and MSVC runtime fixes. Do not reset or force-push over other work.
 
+## Owner-authorized publishing cadence
+
+Push verified, coherent checkpoints to GitHub main regularly during development; do not accumulate long local-only runs. The owner authorized this on September 5, 2026. Fetch first, preserve concurrent changes, run checks appropriate to the outgoing scope, and use ordinary fast-forward pushes or the repository's required PR workflow. Never force-push main. Keep credentials and local build artifacts out of commits. Record the published revision and distinguish measured behavior from experimental or unfinished capabilities. A failed check must be fixed or explicitly resolved before publishing its affected code. This authorization covers repository updates, not separate production deployments or messages to other people.
+
 ## Physics requirements
 
 Banjo is an editable-physics publishing platform; the balls are a validation laboratory. Material/geometry/state/law inputs drive behavior, not material display names. A declared property is not an implemented constitutive model.

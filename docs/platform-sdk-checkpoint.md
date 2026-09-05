@@ -1,5 +1,7 @@
 # Platform SDK and example laboratory checkpoint
 
+**Main publication checkpoint — September 5, 2026:** This checkpoint brings the accumulated physics, application and platform work through `60173e6` onto main. Full Windows MSVC Release build passes; all 34 tests pass in 69.08 s. Outgoing history was checked for API-key patterns with no matches. The owner now authorizes regular verified main updates (see AGENTS.md). Earlier “local only” notes describe historical checkpoint publication status; they do not indicate that code included here is absent from this main checkpoint. Experimental physics limitations and all unfinished platform gates remain in force. GitHub CI is a separate check and must be reported from its actual result.
+
 Source: `ecffdf5`, local `codex/physics-foundation`; not pushed or merged to main.
 
 ## Product and architecture
