@@ -104,6 +104,7 @@ class Playground:
             "csrf_token": self.csrf_token, "capabilities": [kind for kind in KINDS if kind != "unsupported"], "limitations": LIMITATIONS,
             "examples": ["Compare an iron ball hitting glass, wood and iron panels at 2 m/s for 1 second.",
                 "Drop an iron ball from 25 cm onto glass, wood and iron. Use a rigid control first.",
+                "Compare the fixed spatial quasistatic pressure response of glass, oak and iron.",
                 "Show the published 6 mm tempered-glass drop benchmark and what is missing.",
                 "Run the permanent deformation and compact save/reload reference test.",
                 "Show heat moving through glass, wood, iron and water/ice."]}
@@ -158,8 +159,15 @@ class Playground:
                     self.update(job_id, cases=[{"index":0,"name":"Published 6 mm tempered glass reference", "package":{},
                         "status":"reference_only","report":reference,"native_scene":False}])
                 self.update(job_id, status="blocked", message=plan["explanation"] + " No substitute simulation was presented as this capability.")
-            elif plan["experiment"] in ("thermal_frontier", "material_state_reference"):
+            elif plan["experiment"] in ("thermal_frontier", "material_state_reference", "continuum_pressure_reference"):
                 self.run_reference(job_id, directory, plan)
+                if auto_open and plan["experiment"] == "continuum_pressure_reference":
+                    try:
+                        self.open_case(job_id, 0)
+                        self.update(job_id, native_opened=True)
+                    except ValueError as exc:
+                        current = self.get(job_id)
+                        self.update(job_id, native_opened=False, warnings=current["warnings"]+[str(exc)])
             else:
                 cases = []
                 for index, package in enumerate(packages):
@@ -206,7 +214,7 @@ class Playground:
             executable = self.engine_path.with_name("banjo_object_state_probe" + self.engine_path.suffix)
             args = [str(executable)]
             package = {"reference":"J2 material-point and compact numeric state; no spatial dent or world repair"}
-        else:
+        elif plan["experiment"] == "thermal_frontier":
             executable = self.engine_path.with_name("banjo_world_cli" + self.engine_path.suffix)
             source = ROOT/"assets/world-v1/thermal-frontier.json"
             package = json.loads(source.read_text(encoding="utf-8"))
@@ -214,11 +222,60 @@ class Playground:
             with self.lock: self.paths[(job_id,0)] = (path,"thermal")
             args = [str(executable),"--package",str(path),"--frames",str(round(plan["duration_s"]*60)),
                     "--work","32768","--jobs","64","--output",str(directory/"reference-report.json")]
+        elif plan["experiment"] == "continuum_pressure_reference":
+            executable = self.engine_path.with_name("banjo_continuum_cli" + self.engine_path.suffix)
+            path = directory/"reference-report.json"
+            package = {
+                "reference":"fixed spatial quasistatic pressure load-unload; no collision, inertia or fracture",
+                "physics_abi":"banjo-quasistatic-tet-1", "units":"SI",
+                "fixture":{"dimensions_m":[.04,.02,.04],"resolution":[4,2,4],
+                    "bottom_boundary":"fully clamped","loaded_top_area_m2":.0004,
+                    "peak_pressure_pa":800000000,"increments_per_load_or_unload":32},
+                "laws":{"glass":"isotropic-linear-elastic","oak":"orthotropic-linear-elastic",
+                    "iron":"small-strain-isotropic-J2"},
+                "ignored_plan_fields":["duration_s","projectile","panel_dimensions_m","speeds_m_s","heights_m","objects"],
+                "native_view_mode":"solved_load_sequence_playback",
+            }
+            args = [str(executable),"--resolution","4","--increments","32",
+                    "--peak-pressure-pa","800000000","--output",str(path)]
+        else:
+            raise ValueError("Unsupported native reference experiment")
         result = subprocess.run(args,capture_output=True,text=True,encoding="utf-8",timeout=75,check=False)
         if result.returncode: raise ValueError("Native reference process failed; the experiment was not accepted")
-        report = strict_json(result.stdout) if plan["experiment"] == "material_state_reference" else strict_json((directory/"reference-report.json").read_text(encoding="utf-8"))
-        self.update(job_id,cases=[{"index":0,"name":plan["name"],"package":package,"report":report,"status":"reference_complete", "native_scene":plan["experiment"]=="thermal_frontier"}],
-            status="complete",message="Reference test completed; its supported scope and measurements are in the report.")
+        if plan["experiment"] == "material_state_reference":
+            report = strict_json(result.stdout)
+        else:
+            report = strict_json((directory/"reference-report.json").read_text(encoding="utf-8"))
+        if plan["experiment"] != "continuum_pressure_reference":
+            self.update(job_id,cases=[{"index":0,"name":plan["name"],"package":package,"report":report,"status":"reference_complete", "native_scene":plan["experiment"]=="thermal_frontier"}],
+                status="complete",message="Reference test completed; its supported scope and measurements are in the report.")
+            return
+        metadata = strict_json(result.stdout)
+        if not isinstance(metadata,dict) or metadata.get("cases") != 3 or metadata.get("physical_response_validated") is not False:
+            raise ValueError("Native continuum metadata did not match the fixed reference contract")
+        if not isinstance(report,dict) or report.get("schema") != "banjo.continuum-patch-trial.v1" or report.get("physical_response_validated") is not False:
+            raise ValueError("Native continuum report did not match the fixed reference contract")
+        source_cases = report.get("cases")
+        if not isinstance(source_cases,list) or len(source_cases) != 3:
+            raise ValueError("Native continuum report requires glass, oak and iron cases")
+        inner_cases = []
+        for expected, source_case in zip(("glass","oak","iron"),source_cases):
+            if not isinstance(source_case,dict) or source_case.get("material_id") != expected or source_case.get("status") not in ("complete","solver_limit"):
+                raise ValueError("Native continuum material case did not match the fixed reference contract")
+            frames = source_case.get("frames")
+            if not isinstance(frames,list) or not 1 <= len(frames) <= 256:
+                raise ValueError("Native continuum material case has an invalid computed frame count")
+            inner_cases.append({"material_id":expected,"status":source_case["status"],
+                "computed_frames":len(frames),"error":source_case.get("error","")})
+        limited = [case["material_id"] for case in inner_cases if case["status"] == "solver_limit"]
+        with self.lock: self.paths[(job_id,0)] = (path,"continuum")
+        case_status = "reference_limited" if limited else "reference_complete"
+        message = ("Continuum pressure reference completed; strict solver limits stopped: " +
+            ", ".join(limited) + ". " if limited else "Continuum pressure reference completed. ") + \
+            "The native view replays the computed load sequence; it does not run a fresh impact."
+        self.update(job_id,cases=[{"index":0,"name":plan["name"],"package":package,"report":report,
+            "native_cli_metadata":metadata,"inner_cases":inner_cases,"status":case_status,"native_scene":True}],
+            status="complete",message=message)
 
     def open_case(self, job_id, index):
         if type(index) is not int: raise ValueError("case_index must be an integer")
@@ -227,9 +284,18 @@ class Playground:
             path, kind = self.paths[(job_id,index)]
             self.studios = [p for p in self.studios if p.poll() is None]
             if len(self.studios) >= 4: raise ValueError("Four playground studio windows are open; close one before opening another")
-            executable = self.studio_path if kind == "network" else self.studio_path.with_name("banjo_world_lab"+self.studio_path.suffix)
+            if kind == "network":
+                executable = self.studio_path
+                args = [str(executable),str(path.parent),path.name,"--studio"]
+            elif kind == "thermal":
+                executable = self.studio_path.with_name("banjo_world_lab"+self.studio_path.suffix)
+                args = [str(executable),"--package",str(path)]
+            elif kind == "continuum":
+                executable = self.studio_path.with_name("banjo_continuum_lab"+self.studio_path.suffix)
+                args = [str(executable),str(path)]
+            else:
+                raise ValueError("This result has an unknown native view")
             if not executable.is_file(): raise ValueError("Native studio is not built")
-            args = [str(executable),str(path.parent),path.name,"--studio"] if kind == "network" else [str(executable),"--package",str(path)]
             if kind == "network":
                 duration = self.jobs[job_id]["plan"]["duration_s"]
                 package = self.jobs[job_id]["cases"][index]["package"]

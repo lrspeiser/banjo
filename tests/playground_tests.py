@@ -58,6 +58,44 @@ def plan_for(experiment="panel_impact", **changes):
     return plan
 
 
+def continuum_report(oak_status="complete"):
+    cases = []
+    for material, status, frames in (
+            ("glass", "complete", 65), ("oak", oak_status, 17),
+            ("iron", "complete", 65)):
+        case = {
+            "material_id": material,
+            "status": status,
+            "frames": [{"accepted": True}] * frames,
+            "physical_response_validated": False,
+        }
+        if status == "solver_limit":
+            case["error"] = "Patch Newton limit; state preserved"
+        cases.append(case)
+    return {
+        "schema": "banjo.continuum-patch-trial.v1",
+        "units": "SI",
+        "physics_abi": "banjo-quasistatic-tet-1",
+        "physical_response_validated": False,
+        "cases": cases,
+    }
+
+
+def continuum_process(report):
+    def run(args, **_kwargs):
+        output = Path(args[args.index("--output") + 1])
+        output.write_text(json.dumps(report, allow_nan=False), encoding="utf-8")
+        return mock.Mock(
+            returncode=0,
+            stdout=json.dumps({
+                "report": str(output),
+                "cases": 3,
+                "physical_response_validated": False,
+            }, allow_nan=False),
+        )
+    return run
+
+
 class InlineExecutor:
     """Small executor with deterministic, same-thread worker execution."""
 
@@ -202,7 +240,7 @@ class PlanValidationTests(unittest.TestCase):
     def test_template_experiments_reject_ignored_custom_objects(self):
         explicit_object = deepcopy(plan_for("custom_objects")["objects"])
         for experiment in ("panel_impact", "plate_drop", "rigid_drop", "knife_cut",
-                           "thermal_frontier", "material_state_reference",
+                           "thermal_frontier", "material_state_reference", "continuum_pressure_reference",
                            "glass_reference", "unsupported"):
             plan = plan_for(experiment, objects=deepcopy(explicit_object))
             with self.subTest(experiment=experiment), self.assertRaisesRegex(
@@ -220,6 +258,14 @@ class PlanValidationTests(unittest.TestCase):
         for dimensions in ([0.0, 0.36, 0.006], [1.001, 0.36, 0.006], [0.5, math.nan, 0.006]):
             with self.subTest(dimensions=dimensions), self.assertRaises(ValueError):
                 language.validate_plan(plan_for("glass_reference", panel_dimensions_m=dimensions))
+
+    def test_continuum_pressure_reference_is_fixed_and_has_no_compiled_package(self):
+        plan = plan_for("continuum_pressure_reference")
+        self.assertIs(language.validate_plan(plan), plan)
+        self.assertEqual(language.compile_plan(plan), [])
+        for changed in ({"speeds_m_s": [2.0]}, {"heights_m": [0.25]}):
+            with self.subTest(changed=changed), self.assertRaisesRegex(ValueError, "is fixed"):
+                language.validate_plan(plan_for("continuum_pressure_reference", **changed))
 
     def test_cell_admission_budget_rejects_three_dense_matter_balls(self):
         entries = []
@@ -461,6 +507,83 @@ class PlaygroundJobTests(PlaygroundTestCase):
         self.assertEqual(job["cases"][0]["report"]["banjo_validation_status"], "not_run")
         self.assertEqual(app.engine.call_order, [])
 
+    def test_continuum_reference_uses_fixed_args_and_exposes_inner_solver_limit(self):
+        plan = plan_for(
+            "continuum_pressure_reference", duration_s=3.0,
+            projectile="axe_head", panel_dimensions_m=[0.9, 0.8, 0.7])
+        planner = mock.Mock(return_value=(plan, {"model": "fake-model"}))
+        app = self.make_app(planner)
+        report = continuum_report(oak_status="solver_limit")
+        with mock.patch.object(
+                playground_server.subprocess, "run",
+                side_effect=continuum_process(report)) as process_run, \
+                mock.patch.object(playground_server.subprocess, "Popen") as process_open:
+            result = app.submit({
+                "message": "fixed continuum pressure reference",
+                "request_id": "request_continuum_01",
+                "auto_open": False,
+            })
+        job = app.get(result["job_id"])
+        case = job["cases"][0]
+        report_path = app.runs_path / result["job_id"] / "reference-report.json"
+        continuum_executable = self.engine_path.with_name("banjo_continuum_cli.fake")
+        self.assertEqual(process_run.call_args.args[0], [
+            str(continuum_executable.resolve()),
+            "--resolution", "4", "--increments", "32",
+            "--peak-pressure-pa", "800000000", "--output", str(report_path),
+        ])
+        self.assertEqual(process_run.call_args.kwargs, {
+            "capture_output": True, "text": True, "encoding": "utf-8",
+            "timeout": 75, "check": False,
+        })
+        process_open.assert_not_called()
+        self.assertEqual(job["status"], "complete")
+        self.assertEqual(case["status"], "reference_limited")
+        self.assertTrue(case["native_scene"])
+        self.assertEqual(case["report"], report)
+        self.assertEqual(case["native_cli_metadata"]["cases"], 3)
+        self.assertEqual(case["inner_cases"], [
+            {"material_id": "glass", "status": "complete", "computed_frames": 65, "error": ""},
+            {"material_id": "oak", "status": "solver_limit", "computed_frames": 17,
+             "error": "Patch Newton limit; state preserved"},
+            {"material_id": "iron", "status": "complete", "computed_frames": 65, "error": ""},
+        ])
+        self.assertIn("strict solver limits stopped: oak", job["message"])
+        self.assertIn("does not run a fresh impact", job["message"])
+        self.assertEqual(case["package"]["fixture"], {
+            "dimensions_m": [.04, .02, .04], "resolution": [4, 2, 4],
+            "bottom_boundary": "fully clamped", "loaded_top_area_m2": .0004,
+            "peak_pressure_pa": 800000000, "increments_per_load_or_unload": 32,
+        })
+        self.assertEqual(case["package"]["laws"], {
+            "glass": "isotropic-linear-elastic", "oak": "orthotropic-linear-elastic",
+            "iron": "small-strain-isotropic-J2",
+        })
+        self.assertIn("duration_s", case["package"]["ignored_plan_fields"])
+        self.assertIn("projectile", case["package"]["ignored_plan_fields"])
+        self.assertEqual(app.paths[(result["job_id"], 0)], (report_path, "continuum"))
+        self.assertTrue(report_path.is_file())
+        self.assertEqual(app.engine.call_order, [])
+
+    def test_continuum_reference_auto_open_runs_after_report_is_available(self):
+        planner = mock.Mock(return_value=(
+            plan_for("continuum_pressure_reference"), {"model": "fake-model"}))
+        app = self.make_app(planner)
+        app.open_case = mock.Mock(return_value={"opened": True})
+        with mock.patch.object(
+                playground_server.subprocess, "run",
+                side_effect=continuum_process(continuum_report())):
+            result = app.submit({
+                "message": "open fixed continuum reference",
+                "request_id": "request_continuum_02",
+                "auto_open": True,
+            })
+        job = app.get(result["job_id"])
+        self.assertEqual(job["status"], "complete")
+        self.assertEqual(job["cases"][0]["status"], "reference_complete")
+        self.assertTrue(job["native_opened"])
+        app.open_case.assert_called_once_with(result["job_id"], 0)
+
     def test_private_key_is_redacted_from_worker_errors(self):
         planner = mock.Mock(side_effect=ValueError("upstream echoed " + PRIVATE_KEY))
         app = self.make_app(planner)
@@ -509,6 +632,33 @@ class PlaygroundJobTests(PlaygroundTestCase):
         self.assertEqual(Path(popen.call_args.kwargs["cwd"]), scene_directory.resolve())
         self.assertEqual(len(app.studios), 1)
 
+    def test_continuum_studio_receives_only_the_computed_report_path(self):
+        planner = mock.Mock(return_value=(plan_for("unsupported"), {"model": "fake-model"}))
+        app = self.make_app(planner)
+        job_id = "b" * 32
+        report_path = self.base / "runs" / job_id / "reference-report.json"
+        report_path.parent.mkdir(parents=True)
+        report_path.write_text(json.dumps(continuum_report()), encoding="utf-8")
+        continuum_studio = self.studio_path.with_name("banjo_continuum_lab.fake")
+        continuum_studio.touch()
+        app.paths[(job_id, 0)] = (report_path, "continuum")
+        app.jobs[job_id] = {
+            "plan": plan_for("continuum_pressure_reference"),
+            "cases": [{"package": {"native_view_mode": "solved_load_sequence_playback"}}],
+        }
+
+        process = mock.Mock()
+        process.poll.return_value = None
+        process.wait.side_effect = playground_server.subprocess.TimeoutExpired(
+            cmd=str(continuum_studio), timeout=0.2)
+        with mock.patch.object(playground_server.subprocess, "Popen", return_value=process) as popen:
+            self.assertEqual(app.open_case(job_id, 0), {"opened": True})
+
+        self.assertEqual(popen.call_args.args[0], [
+            str(continuum_studio.resolve()), str(report_path.resolve())])
+        self.assertEqual(Path(popen.call_args.kwargs["cwd"]), report_path.parent.resolve())
+        self.assertEqual(len(app.studios), 1)
+
 
 class PlaygroundHttpTests(PlaygroundTestCase):
     def setUp(self):
@@ -549,6 +699,7 @@ class PlaygroundHttpTests(PlaygroundTestCase):
         self.assertIs(body["key_configured"], True)
         self.assertEqual(body["model"], "fake-model")
         self.assertEqual(body["csrf_token"], self.app.csrf_token)
+        self.assertIn("continuum_pressure_reference", body["capabilities"])
         self.assertNotIn(PRIVATE_KEY, json.dumps(body, allow_nan=False))
         self.assertEqual(headers["Cache-Control"], "no-store")
         self.assertEqual(headers["X-Content-Type-Options"], "nosniff")

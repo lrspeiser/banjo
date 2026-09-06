@@ -32,6 +32,8 @@ add_library(
     src/material/MaterialCatalog.cpp
     src/material/NetworkMaterial.cpp
     src/material/Plasticity.cpp
+    src/material/SmallStrainLaw.cpp
+    src/physics/SmallStrainPatch.cpp
     src/material/PropertyVariation.cpp
     src/persistence/NumericStateDelta.cpp
     src/physics/ResolutionBudget.cpp
@@ -161,6 +163,9 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
 endif()
 
 if(BANJO_BUILD_HEADLESS)
+    add_executable(banjo_continuum_cli tools/continuum_patch_probe.cpp)
+    target_link_libraries(banjo_continuum_cli PRIVATE banjo_core nlohmann_json::nlohmann_json)
+    banjo_enable_warnings(banjo_continuum_cli)
     add_executable(banjo_object_state_probe tools/object_state_probe.cpp)
     target_link_libraries(banjo_object_state_probe PRIVATE banjo_core nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_object_state_probe)
@@ -193,6 +198,9 @@ if(BANJO_BUILD_HEADLESS)
 endif()
 
 if(BANJO_BUILD_LAB)
+    add_executable(banjo_continuum_lab src/viewer/continuum.cpp)
+    target_link_libraries(banjo_continuum_lab PRIVATE raylib nlohmann_json::nlohmann_json)
+    banjo_enable_warnings(banjo_continuum_lab)
     set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
     set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
     set(CUSTOMIZE_BUILD ON CACHE BOOL "" FORCE)
@@ -235,6 +243,14 @@ if(BANJO_BUILD_LAB)
 endif()
 
 if(BANJO_BUILD_TESTS)
+    add_executable(banjo_small_strain_law_tests tests/small_strain_law_tests.cpp)
+    target_link_libraries(banjo_small_strain_law_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_small_strain_law_tests)
+    add_test(NAME banjo_small_strain_law_tests COMMAND banjo_small_strain_law_tests)
+    add_executable(banjo_small_strain_patch_tests tests/small_strain_patch_tests.cpp)
+    target_link_libraries(banjo_small_strain_patch_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_small_strain_patch_tests)
+    add_test(NAME banjo_small_strain_patch_tests COMMAND banjo_small_strain_patch_tests)
     add_executable(banjo_numeric_state_delta_tests tests/numeric_state_delta_tests.cpp)
     target_link_libraries(banjo_numeric_state_delta_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_numeric_state_delta_tests)

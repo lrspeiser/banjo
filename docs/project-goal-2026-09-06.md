@@ -25,6 +25,13 @@ deadlines with unrelated cached outcomes; count force as stored energy; or
 silently reset damage, plastic, phase, reaction or player history. Rendering
 derives from accepted matter and topology and cannot mutate them.
 
+The authoritative object must retain physical volume beneath its appearance:
+voxel cells, particles or volumetric elements with explicit material state and
+load transfer. A smooth skin is derived presentation. Current voxel-style
+networks and the new solid-tetrahedron pressure reference are separate
+implementations of that principle; replay may display computed states, but
+authored surface animation cannot substitute for physical deformation or damage.
+
 No full goal below is complete. G01, G02, G03, G04, G05, G07, G08 and G09 are
 active at different foundation stages. G06 remains queued. “Active” means work
 and bounded evidence exist or are underway; it does not mean validated material
@@ -57,12 +64,20 @@ Material-neutral analytical tests may stay neutral. New substances expand the
 matrix. A passing build establishes regression behavior only; physical claims
 also require calibration, convergence, conservation and stated uncertainty.
 
-The current integrated foundation checkpoint is a Windows MSVC 19.44 Release
+The preceding integrated foundation checkpoint is a Windows MSVC 19.44 Release
 build with all 55 CTest suites passing in 83.19 seconds. Focused J2,
 deterministic-variation and numeric-delta tests pass, and 29 mocked playground
 HTTP tests pass in 2.140 seconds. These results establish bounded regression
 and reference behavior for those slices. They do not complete any goal. See
 [the playground foundation checkpoint](playground-foundation-checkpoint.md).
+
+The next [spatial pressure checkpoint](continuum-pressure-checkpoint.md)
+connects those laws to a force-balanced tetrahedral mesh, residual plastic
+shape, full spatial state round-trip and a chat-selectable computed native
+sequence. Low-load glass/oak/iron controls recover; high-load iron response is
+strongly mesh-dependent and oak can reach declared validity limits. This
+extends the foundation without completing the material, persistence or
+real-time goals.
 
 ## Goals and dependencies
 
@@ -88,9 +103,14 @@ The current axial network and endpoint refinement are diagnostics with known
 time/contact/energy failures. The integrated small-strain isotropic J2
 material-point reference uses radial return, linear hardening, permanent strain
 and explicit nonnegative dissipation; its focused analytical, rejection and
-reload-continuation tests pass. It is a constitutive foundation, not a metal
-dent, contact solver, finite-strain model or calibrated iron result. Glass and
-oak reject that law rather than inherit it by name.
+reload-continuation tests pass. The new small-strain spatial patch assembles
+stress forces on a connected mesh and solves applied pressure and support
+equilibrium. J2 plastic history leaves a residual shape after unloading;
+glass uses isotropic elasticity and oak fixed-axis orthotropic elasticity.
+The 100 MPa controls recover on three meshes, but 800 MPa iron residual
+displacement changes from 34.4 to 162.2 to 348.4 micrometres on successively
+refined meshes. This is not a converged or calibrated dent, contact solver or
+finite-strain model. High-load elastic survival is not a strength prediction.
 
 Acceptance requires time, iteration, spatial and contact refinement for force,
 impulse, work, topology, momentum and energy; calibrated yield/hardening for
@@ -182,6 +202,13 @@ pass. This evidence covers numeric material-point state only. It does not cover
 geometry, a world dent, rendering, a save game, crash repair or full-world
 reactivation.
 
+Separately, the spatial pressure reference now round-trips complete nodal
+displacements, material history, applied loads, work ledgers and revision in
+JSON against the same immutable mesh/law/constraints. The next-load result
+agrees with uninterrupted execution, including consistent limit rejection.
+This full patch JSON has not been integrated with the compact codec and does
+not yet authenticate a mesh/law fingerprint or resume a dynamic contact world.
+
 Acceptance requires:
 
 1. Exact encode/decode and next-increment continuation for finite supported
@@ -232,6 +259,13 @@ gate verified. Build a GPT chat playground where a user can request a scene or
 test, inspect and edit the generated Banjo declaration, validate capabilities
 and inventory, run bounded physics through the public API, and open the
 accepted result in the native laboratory.
+
+The `continuum_pressure_reference` authoring route selects a fixed spatial
+pressure/load-unload experiment. It runs the native quasistatic solver, exposes
+glass/oak/iron statuses and opens the computed node sequence in the continuum
+lab. The viewer has play/pause/reset/frame controls and labeled displacement
+magnification. It is distinct from the network studio's fresh impact run;
+failed material cases retain their last accepted shapes and remain marked.
 
 The backend owns model calls and secrets. Local credentials live only in an
 ignored .env; a checked-in example may contain variable names and placeholders
@@ -305,9 +339,12 @@ cases are useful controls but are not the published probability experiment.
    live `.env`-backed calls, then extend the verified basic native path through
    edit/follow-up, unsupported cases, cancellation, inventory, save/reload and
    repair tests.
-5. Integrate J2 state and property variation into a candidate local continuum
-   path under G02; qualify coupons and persistence before metal-on-metal dent
-   geometry. Keep brittle glass and orthotropic wood on their own laws.
+5. Extend the integrated small-strain continuum path with crossed load/mesh
+   refinement, pressure-profile and element-orientation controls, and a
+   locking-resistant formulation comparison. Predeclare convergence bounds
+   for displacement, yielded volume/dissipation, reactions and work before
+   dynamic contact, calibrated dents or property-variation integration. Keep
+   brittle glass and orthotropic wood on their own laws.
 6. Run the physical glass staircase and identical-condition oak/iron controls,
    followed by time/space/contact/seed/calibration sweeps and complete ledgers.
 7. Continue G01/G03/G05 surface, thermal-boundary and mixed-load work, then

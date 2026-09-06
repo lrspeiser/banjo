@@ -33,6 +33,7 @@ the **Project goal** tab. The goal contains nine workstreams and preserves all
 - “Test a knife against the tomato proxy and keep the material controls.”
 - “Show the 6 mm tempered-glass reference and its missing validation gates.”
 - “Run the permanent deformation and compact save/reload reference.”
+- “Run the spatial pressure and springback test for glass, wood and iron.”
 - “Show the heat frontier through glass, wood, iron and water/ice.”
 
 **Open native studio when ready** opens a fresh native scene. Press **Release**
@@ -42,6 +43,9 @@ same duration rounded to whole physics steps. Native reports and screenshots
 are written beside each other in the job's `native` directory. The
 thermal reference has its own **Open studio** button. The J2 material-point and
 published glass references return reports rather than invented 3D outcomes.
+The spatial pressure reference opens a computed load/unload sequence in the
+continuum lab. Play, pause, frame steps, reset and labeled magnification inspect
+the actual solved mesh. This reference does not advance an impact simulation.
 
 ## Executed language and boundaries
 
@@ -65,12 +69,20 @@ multiuser deployment.
 
 All generated network damage trials use strict refinement-limit rejection.
 Unresolved high-energy trials can halt. The GUI/report says so rather than
-substituting a shatter animation. Live J2 dents, live-world compact persistence,
+substituting a shatter animation. Collision-driven J2 dents, live-world compact persistence,
 gameplay repair and stochastic material integration remain future adapters.
 The [glass reference](../docs/glass-drop-benchmark.md) records experimental
 first-fracture data and apparatus uncertainty; it is not a passed simulation.
 Thermal and state references run fixed fixtures; their names do not authorize
 arbitrary thermal geometry or new constitutive parameters.
+The `continuum_pressure_reference` route is likewise fixed: 40 × 20 × 40 mm
+glass/oak/iron coupons, a central 20 × 20 mm pressure patch, bottom clamp,
+4/2/4 cell mesh, 32 increments per loading/unloading branch and 800 MPa peak.
+It executes native small-strain equilibrium and preserves plastic history;
+it is not spatially converged or calibrated. Wood reaches a validity limit in
+this setup; Results reports that limit and its last accepted state. Speed and
+height arrays must be empty; generic duration, projectile and panel fields do
+not change this fixed reference. See the [API, refinement and limitations](../docs/continuum-pressure-checkpoint.md).
 
 ## Local HTTP contract
 

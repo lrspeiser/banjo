@@ -226,8 +226,6 @@ J2Update integrateJ2StrainIncrement(
 
     const SymmetricTensor3 old_stress =
         elasticStressUnchecked(material, state);
-    const J2EnergyDensity old_energy =
-        j2EnergyDensity(material, state);
     const double yield_before =
         material.initial_yield_stress_pa +
         material.isotropic_hardening_modulus_pa *
@@ -322,13 +320,25 @@ J2Update integrateJ2StrainIncrement(
         material.initial_yield_stress_pa +
         material.isotropic_hardening_modulus_pa *
             update.state.equivalent_plastic_strain;
-    const J2EnergyDensity new_energy =
-        j2EnergyDensity(material, update.state);
+    // Difference the quadratic elastic energy through its exact secant form.
+    // Subtracting two total free energies loses the increment when a restored
+    // prestrained state is queried at a nearby representable strain.
+    const SymmetricTensor3 accepted_total_strain_increment =
+        subtract(update.state.total_strain, state.total_strain);
+    const SymmetricTensor3 accepted_plastic_strain_increment =
+        subtract(update.state.plastic_strain, state.plastic_strain);
+    const SymmetricTensor3 elastic_strain_increment =
+        subtract(
+            accepted_total_strain_increment,
+            accepted_plastic_strain_increment);
     update.stored_free_energy_increment_j_m3 =
-        new_energy.storedFreeEnergyJPerM3() -
-        old_energy.storedFreeEnergyJPerM3();
+        0.5 * doubleContract(
+                  add(old_stress, update.stress_pa),
+                  elastic_strain_increment) +
+        update.hardening_free_energy_increment_j_m3;
     update.backward_euler_stress_work_j_m3 =
-        doubleContract(update.stress_pa, strain_increment);
+        doubleContract(
+            update.stress_pa, accepted_total_strain_increment);
     update.backward_euler_work_excess_j_m3 =
         update.backward_euler_stress_work_j_m3 -
         update.stored_free_energy_increment_j_m3 -

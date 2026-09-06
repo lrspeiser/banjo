@@ -18,6 +18,7 @@
   const activeStatuses = new Set(["planning", "validating", "running"]);
   const promptExamples = [
     "Compare glass, oak, and iron ball drops at 2 m/s.",
+    "Compare the fixed spatial quasistatic pressure response of glass, oak, and iron.",
     "Test a knife cutting a tomato proxy and report unresolved limits.",
     "Measure a ground-supported mixed-material contact scene.",
   ];
@@ -90,7 +91,7 @@
       capabilities.forEach((capability) => {
         const tag = document.createElement("span");
         tag.className = "tag";
-        tag.textContent = text(capability);
+        tag.textContent = capability === "continuum_pressure_reference" ? "Spatial pressure reference" : text(capability);
         capList.append(tag);
       });
     }
@@ -183,6 +184,7 @@
       custom_objects: "Custom objects",
       thermal_frontier: "Thermal frontier",
       material_state_reference: "Material-state reference",
+      continuum_pressure_reference: "Spatial pressure reference",
       glass_reference: "Published glass reference",
       unsupported: "Unsupported request",
     };
@@ -193,9 +195,12 @@
         : Array.isArray(plan.objects) && plan.objects.length
           ? `${plan.objects.length} authored object(s)`
           : "Fixed reference";
+    const continuum = plan.experiment === "continuum_pressure_reference";
     const values = [
       ["Experiment", experimentNames[plan.experiment] || plan.experiment],
-      ["Simulated time", plan.duration_s !== undefined ? `${plan.duration_s} s` : undefined],
+      ...(continuum
+        ? [["Loading", "32 up / 32 down"], ["Fixed setup", "40 × 20 × 40 mm · 800 MPa peak"]]
+        : [["Simulated time", plan.duration_s !== undefined ? `${plan.duration_s} s` : undefined]]),
       ["Sweeps / cases", sweep],
       ["Name", plan.name],
     ];
@@ -319,6 +324,9 @@
   function reportSummary(item) {
     if (!item || !item.report) return "Report pending";
     const report = item.report;
+    if (report.schema === "banjo.continuum-patch-trial.v1" && Array.isArray(item.inner_cases)) {
+      return item.inner_cases.map((entry) => `${text(entry.material_id)}: ${text(entry.status)} (${text(entry.computed_frames)} frames)`).join(" · ");
+    }
     const keys = ["fracture_count", "broken_bonds", "elapsed_s", "wall_ms", "mass_kg", "energy_j", "status"];
     const found = keys.find((key) => report[key] !== undefined);
     return found ? `${found}: ${text(report[found])}` : `${Object.keys(report).length} report field(s)`;
@@ -350,11 +358,11 @@
       const card = document.createElement("article"); card.className = "card case-card";
       const top = document.createElement("div"); top.className = "case-card-top";
       const heading = document.createElement("h2"); heading.textContent = text(item.name, `Case ${index + 1}`);
-      const status = document.createElement("span"); status.className = `case-status ${item.error ? "error" : ""}`; status.textContent = text(item.status, item.error ? "error" : "ready"); top.append(heading, status);
+      const status = document.createElement("span"); const limited = typeof item.status === "string" && item.status.includes("limit"); status.className = `case-status ${item.error || limited ? "error" : ""}`; status.textContent = text(item.status, item.error ? "error" : "ready"); top.append(heading, status);
       const details = document.createElement("div"); details.className = "case-details";
       [["Outcome", reportSummary(item)], ["Physical validation", physicalValidationLabel(item)], ["Package", item.package ? "Generated" : "Pending"], ["Report", item.report ? "Available" : "Pending"]].forEach(([label, value]) => { const row = document.createElement("div"); row.className = "case-detail"; const a = document.createElement("span"); a.textContent = label; const b = document.createElement("strong"); b.textContent = value; row.append(a, b); details.append(row); });
       const actions = document.createElement("div"); actions.className = "case-actions";
-      const open = document.createElement("button"); open.type = "button"; open.textContent = "Open native studio"; open.disabled = !(state.job && state.job.id && canOpenCase(item)); open.addEventListener("click", () => openStudio(index));
+      const open = document.createElement("button"); open.type = "button"; open.textContent = item.package && item.package.native_view_mode === "solved_load_sequence_playback" ? "Open solved sequence" : "Open native studio"; open.disabled = !(state.job && state.job.id && canOpenCase(item)); open.addEventListener("click", () => openStudio(index));
       const inspect = document.createElement("button"); inspect.type = "button"; inspect.textContent = "Inspect JSON"; inspect.addEventListener("click", () => { state.selectedCase = index; renderLanguage(); activateTab("language"); });
       actions.append(open, inspect); card.append(top, details, actions); grid.append(card);
     });

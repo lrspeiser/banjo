@@ -1,5 +1,6 @@
 #include "material/Plasticity.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <functional>
@@ -123,6 +124,55 @@ void hardeningEnergyAndDissipationAreExplicit(){
         1e-6,"backward-Euler work quadrature reports its algorithmic excess");
 }
 
+void prestrainedTinyElasticIncrementUsesStableEnergyDifference(){
+    const auto material=referenceJ2();
+    const auto loaded=integrateJ2StrainIncrement(
+        material,{},SymmetricTensor3{.xy=.003});
+    require(loaded.yielded,"tiny-increment regression requires a prestrained plastic state");
+    const double neighbor=std::nextafter(
+        loaded.state.total_strain.xy,0.0);
+    const SymmetricTensor3 increment{
+        .xy=neighbor-loaded.state.total_strain.xy};
+    const auto tiny=integrateJ2StrainIncrement(
+        material,loaded.state,increment);
+    require(!tiny.yielded,"one-ulp unloading query must stay on the elastic branch");
+    require(tiny.state.plastic_strain==loaded.state.plastic_strain&&
+        tiny.state.equivalent_plastic_strain==loaded.state.equivalent_plastic_strain&&
+        tiny.state.plastic_dissipation_j_m3==loaded.state.plastic_dissipation_j_m3,
+        "one-ulp elastic query cannot change plastic history");
+    const SymmetricTensor3 accepted{
+        .xx=tiny.state.total_strain.xx-loaded.state.total_strain.xx,
+        .yy=tiny.state.total_strain.yy-loaded.state.total_strain.yy,
+        .zz=tiny.state.total_strain.zz-loaded.state.total_strain.zz,
+        .xy=tiny.state.total_strain.xy-loaded.state.total_strain.xy,
+        .yz=tiny.state.total_strain.yz-loaded.state.total_strain.yz,
+        .zx=tiny.state.total_strain.zx-loaded.state.total_strain.zx};
+    const SymmetricTensor3 stress_sum{
+        .xx=loaded.stress_pa.xx+tiny.stress_pa.xx,
+        .yy=loaded.stress_pa.yy+tiny.stress_pa.yy,
+        .zz=loaded.stress_pa.zz+tiny.stress_pa.zz,
+        .xy=loaded.stress_pa.xy+tiny.stress_pa.xy,
+        .yz=loaded.stress_pa.yz+tiny.stress_pa.yz,
+        .zx=loaded.stress_pa.zx+tiny.stress_pa.zx};
+    const double expected_stored_increment=.5*doubleContract(stress_sum,accepted);
+    near(tiny.stored_free_energy_increment_j_m3,expected_stored_increment,
+        std::max(1e-24,std::abs(expected_stored_increment)*1e-12),
+        "prestrained one-ulp elastic free-energy increment uses exact secant form");
+    near(tiny.backward_euler_stress_work_j_m3,
+        tiny.stored_free_energy_increment_j_m3+
+            tiny.plastic_dissipation_increment_j_m3+
+            tiny.backward_euler_work_excess_j_m3,
+        1e-20,"tiny accepted increment retains backward-Euler accounting");
+    require(tiny.backward_euler_work_excess_j_m3>=0.,
+        "tiny prestrained query cannot create negative algorithmic dissipation");
+
+    const auto restored=integrateJ2StrainIncrement(
+        material,tiny.state,SymmetricTensor3{
+            .xy=loaded.state.total_strain.xy-tiny.state.total_strain.xy});
+    require(!restored.yielded&&restored.state.total_strain==loaded.state.total_strain,
+        "reverse one-ulp query restores the represented total strain");
+}
+
 void zeroIncrementPreservesCompactPersistentStateExactly(){
     const auto material=referenceJ2();
     const auto loaded=integrateJ2StrainIncrement(material,{},SymmetricTensor3{.xy=.003});
@@ -214,6 +264,7 @@ int main(){
         {"permanent strain under unloading",unloadingLeavesPermanentPlasticStrainAndReloadsElastically},
         {"hydrostatic elastic control",hydrostaticLoadingDoesNotYield},
         {"hardening energy and plastic dissipation",hardeningEnergyAndDissipationAreExplicit},
+        {"stable prestrained tiny-increment energy",prestrainedTinyElasticIncrementUsesStableEnergyDifference},
         {"zero increment compact state",zeroIncrementPreservesCompactPersistentStateExactly},
         {"step subdivision convergence",curvedLoadingConvergesUnderStepSubdivision},
         {"transactional input and reload rejection",invalidInputsRejectTransactionally},

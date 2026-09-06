@@ -1,12 +1,12 @@
 {
   "schema": "banjo.execution-goals.v2",
-  "recorded_against": "main:34ed3b4",
+  "recorded_against": "main:93535e7 plus spatial-pressure checkpoint changes",
   "recorded_date": "2026-09-06",
   "project_goal_ref": "docs/project-goal-2026-09-06.md",
   "baseline": {
-    "suite_count": 55,
+    "suite_count": 57,
     "suite_status": "passes",
-    "suite_duration_s": 83.19,
+    "suite_duration_s": 83.23,
     "toolchain": "Windows MSVC 19.44 Release",
     "physics_status": "unfinished"
   },
@@ -169,8 +169,8 @@
           "asymmetric/support/third-body cases pass"
         ]
       },
-      "next_action": "Integrate the verified J2 material-point reference into a candidate local continuum and persistence path, then compare time/contact/space refinement before claiming metal dents or calibrated iron behavior. Declare separate brittle glass and orthotropic wood laws.",
-      "evidence_status": "Spring cache and endpoint rollback tests pass. The small-strain isotropic J2 material-point analytical, unloading/reloading, dissipation, rejection, and exact reload-continuation tests pass. It is not dent geometry, contact, finite strain, or calibrated iron. Glass/oak/tissue refinement and the full mechanical work ledger remain open.",
+      "next_action": "Cross mesh/load increments and pressure-profile/element-orientation controls with predeclared error bounds; compare a locking-resistant formulation before dynamic contact and calibrated dent/fracture claims.",
+      "evidence_status": "Spring cache and endpoint rollback tests pass. The small-strain isotropic J2 material-point analytical, unloading/reloading, dissipation, rejection, and exact reload-continuation tests pass. It is not dent geometry, contact, finite strain, or calibrated iron. Glass/oak/tissue refinement and the full mechanical work ledger remain open. Connected small-strain isotropic/orthotropic/J2 tetrahedral equilibrium now passes analytical, reaction, rollback and state continuation checks. Low-load three-material controls recover; high-load plastic shape remains strongly spatially unconverged.",
       "retained_requirements": [
         "M01",
         "M02",
@@ -201,7 +201,7 @@
         "M29",
         "M30"
       ],
-      "evidence_ref": "docs/additional-physics-checkpoint.md"
+      "evidence_ref": "docs/continuum-pressure-checkpoint.md"
     },
     {
       "id": "G03",
@@ -430,7 +430,7 @@
         ]
       },
       "next_action": "Define the broader state IDs, scalar ordering, fingerprints, journal, and repair semantics; extend beyond numeric material points to geometry, world state, rendering, and bounded reactivation.",
-      "evidence_status": "NumericStateDelta and the fixed-size 14-double J2 history pass same-bit round-trip, old-revision retention, and exact next-material-increment continuation. Scope is numeric material-point state only; no geometry, world dent, render, save-game, crash-repair, or full-world-reactivation claim.",
+      "evidence_status": "NumericStateDelta and the fixed-size 14-double J2 history pass same-bit round-trip, old-revision retention, and exact next-material-increment continuation. Scope is numeric material-point state only; no geometry, world dent, render, save-game, crash-repair, or full-world-reactivation claim. Full spatial patch JSON round-trip and next-load state parity now pass against the same immutable definition; compact spatial codec and fingerprint-authenticated world continuation remain open.",
       "measurement": {
         "runs": 3,
         "timed_samples_per_case": 100,
@@ -555,7 +555,7 @@
         ]
       },
       "next_action": "Extend the verified basic native path through edit/follow-up, unsupported capability, cancellation, inventory, save/reload, and receipt-backed repair tests while retaining mock coverage, independent validation, bounded calls, and secret isolation.",
-      "evidence_status": "All 29 mocked HTTP tests pass in 2.140 seconds. Live gpt-5-mini job ff0c7d0f1eaa4c4a9f50f8ef7d486202 produced a validated iron-ball versus glass/oak/iron package at 2 and 6 m/s; both headless and native cases completed 480 steps/1 s and the studio was visible. The actual-native validator caught forbidden rigid_drop network fields, which were fixed. The basic gate passes; broader edit, persistence, cancellation, inventory, unsupported, and repair gates remain open.",
+      "evidence_status": "All 29 mocked HTTP tests pass in 2.140 seconds. Live gpt-5-mini job ff0c7d0f1eaa4c4a9f50f8ef7d486202 produced a validated iron-ball versus glass/oak/iron package at 2 and 6 m/s; both headless and native cases completed 480 steps/1 s and the studio was visible. The actual-native validator caught forbidden rigid_drop network fields, which were fixed. The basic gate passes; broader edit, persistence, cancellation, inventory, unsupported, and repair gates remain open. Live GPT spatial-pressure request opens the actual computed native sequence, with glass/iron complete and oak solver_limit. Direct CLI and chat-generated reports match except solve timing.",
       "basic_native_verification": {
         "job_id": "ff0c7d0f1eaa4c4a9f50f8ef7d486202",
         "model": "gpt-5-mini",
@@ -590,13 +590,22 @@
         "P07",
         "P08",
         "P10"
-      ]
+      ],
+      "continuum_native_verification": {
+        "job_id": "da66b2b4bd814676b1da0b890aa52a21",
+        "model": "gpt-5-mini",
+        "tokens": 1514,
+        "planning_wall_s": 6.8221612,
+        "total_wall_s": 7.369295,
+        "physical_report_parity": "exact except solve_wall_ms",
+        "scope": "fixed quasistatic reference, not dynamic contact or calibrated dents"
+      }
     }
   ],
   "latest_execution": {
     "date": "2026-09-06",
-    "full_suites_passed": 55,
-    "full_suite_duration_s": 83.19,
+    "full_suites_passed": 57,
+    "full_suite_duration_s": 83.23,
     "toolchain": "Windows MSVC 19.44 Release",
     "overall_complete": false,
     "active": [
@@ -614,7 +623,8 @@
     ],
     "evidence": [
       "docs/additional-physics-checkpoint.md",
-      "docs/playground-foundation-checkpoint.md"
+      "docs/playground-foundation-checkpoint.md",
+      "docs/continuum-pressure-checkpoint.md"
     ],
     "milestones_completed": [
       "blocky-live-skins",
@@ -632,21 +642,28 @@
       "deterministic-bounded-property-variation-reference",
       "lossless-numeric-material-point-delta-and-continuation",
       "mocked-chat-http-foundation",
-      "bounded-live-gpt-basic-native-request-to-visible-studio"
+      "bounded-live-gpt-basic-native-request-to-visible-studio",
+      "spatial-quasistatic-pressure-reference",
+      "spatial-patch-json-continuation-reference",
+      "live-gpt-to-computed-pressure-sequence"
     ],
     "verified_foundation_modules": [
       "Plasticity",
       "PropertyVariation",
-      "NumericStateDelta"
+      "NumericStateDelta",
+      "SmallStrainLaw",
+      "SmallStrainPatch"
     ],
     "focused_verification": {
-      "playground_mock_http_tests_passed": 29,
-      "playground_mock_http_duration_s": 2.14,
+      "playground_mock_http_tests_passed": 33,
+      "playground_mock_http_duration_s": 2.198,
       "j2_variation_codec": "passed",
-      "object_state_probe": "3 serial runs, 100 timed samples per case"
+      "object_state_probe": "3 serial runs, 100 timed samples per case",
+      "continuum_material_mesh_and_rollback": "passed",
+      "spatial_refinement": "not converged at high plastic load"
     },
     "chat_playground_stage": "Mock HTTP and the bounded live request-to-GPT-to-validation-to-headless-to-visible-studio one-second path pass. Edit/follow-up, unsupported capability, cancellation, inventory, save/reload, and repair gates remain open.",
-    "native_live_verification": "G09 basic request-to-GPT-to-validate-to-headless-to-visible-studio-to-1-second path passes for both 2 and 6 m/s cases with matching physical report fields under stated exclusions. Edit/follow-up, unsupported capability, cancellation, inventory, save/reload, and repair remain open. Earlier heat-lab pause/reset/release/save and 30.71 s evolution remain verified; fracture realism remains failed."
+    "native_live_verification": "G09 basic request-to-GPT-to-validate-to-headless-to-visible-studio-to-1-second path passes for both 2 and 6 m/s cases with matching physical report fields under stated exclusions. Edit/follow-up, unsupported capability, cancellation, inventory, save/reload, and repair remain open. Earlier heat-lab pause/reset/release/save and 30.71 s evolution remain verified; fracture realism remains failed. Spatial pressure job da66b2b4bd814676b1da0b890aa52a21 opens the computed continuum report, with matched native/direct CLI physical data and explicit oak limit."
   },
   "dependency_policy": "Dependencies name shared contracts and final acceptance gates; independent prototype slices may proceed in parallel, but the parent serially integrates and verifies them. Active means work or bounded evidence exists or is underway; it does not certify a prerequisite or goal complete.",
   "verification_notes": {

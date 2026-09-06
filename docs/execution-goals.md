@@ -1,5 +1,7 @@
 # Execution goals
 
+**Spatial pressure checkpoint:** The [connected continuum reference](continuum-pressure-checkpoint.md) solves isotropic glass, orthotropic oak and J2 iron under the same pressure footprint. It adds residual plastic geometry, full spatial state round-trip and a chat-to-computed-native-sequence route. Low-load controls recover, but high-load iron is not spatially converged and oak reaches declared validity limits. Dynamic contact, calibration, compact world state and real-time qualification remain open.
+
 **Full durable goal:** [Project goal and execution contract — September 6,
 2026](project-goal-2026-09-06.md) maps all 40 retained scorecard requirements
 to nine ordered goals, including persistence/history/repair, intrinsic
