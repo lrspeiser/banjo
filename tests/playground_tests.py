@@ -530,7 +530,7 @@ class PlaygroundJobTests(PlaygroundTestCase):
         self.assertEqual(process_run.call_args.args[0], [
             str(continuum_executable.resolve()),
             "--resolution", "4", "--increments", "32",
-            "--peak-pressure-pa", "800000000", "--output", str(report_path),
+            "--peak-pressure-pa", "800000000", "--pressure-profile", "uniform", "--output", str(report_path),
         ])
         self.assertEqual(process_run.call_args.kwargs, {
             "capture_output": True, "text": True, "encoding": "utf-8",
@@ -553,7 +553,7 @@ class PlaygroundJobTests(PlaygroundTestCase):
         self.assertEqual(case["package"]["fixture"], {
             "dimensions_m": [.04, .02, .04], "resolution": [4, 2, 4],
             "bottom_boundary": "fully clamped", "loaded_top_area_m2": .0004,
-            "peak_pressure_pa": 800000000, "increments_per_load_or_unload": 32,
+            "peak_pressure_pa": 800000000, "increments_per_load_or_unload": 32, "pressure_profile": "uniform",
         })
         self.assertEqual(case["package"]["laws"], {
             "glass": "isotropic-linear-elastic", "oak": "orthotropic-linear-elastic",

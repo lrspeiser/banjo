@@ -22,7 +22,8 @@ from urllib import error, request
 from urllib.parse import urlsplit
 import uuid
 
-from experiment_language import ROOT, KINDS, LIMITATIONS, SCHEMA, SYSTEM, compile_plan, validate_plan
+from experiment_language import ROOT, KINDS, LIMITATIONS, SCHEMA, SYSTEM, compile_plan, validate_plan, request_blockers
+from control_contract import default_ui, apply_control
 from banjo_authoring import EngineCLI, EngineError, write_package
 
 STATIC = Path(__file__).resolve().parent
@@ -93,7 +94,7 @@ class Playground:
         self.api_key, self.model = local_configuration()
         self.planner = planner
         self.csrf_token = secrets.token_urlsafe(32)
-        self.jobs, self.requests, self.paths = {}, {}, {}
+        self.jobs, self.requests, self.paths, self.playbacks = {}, {}, {}, {}
         self.lock = threading.RLock()
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="banjo-playground")
         self.studios = []
@@ -109,7 +110,7 @@ class Playground:
                 "Run the permanent deformation and compact save/reload reference test.",
                 "Show heat moving through glass, wood, iron and water/ice."]}
 
-    def submit(self, body):
+    def submit(self, body, *, prepared_plan=None):
         if not isinstance(body, dict) or set(body) - {"message", "previous_plan", "request_id", "auto_open"}:
             raise ValueError("Unknown chat request fields")
         message, request_id = body.get("message"), body.get("request_id")
@@ -131,7 +132,7 @@ class Playground:
             self.requests[request_id] = (fingerprint, job_id)
             self.jobs[job_id] = {"id": job_id, "status": "planning", "message": "GPT is creating a bounded experiment declaration.",
                 "plan": None, "cases": [], "warnings": list(LIMITATIONS), "timing": {}}
-            self.pool.submit(self.execute, job_id, message, previous, body.get("auto_open", True))
+            self.pool.submit(self.execute, job_id, message, previous, body.get("auto_open", True), prepared_plan)
             return {"job_id": job_id}
 
     def update(self, job_id, **fields):
@@ -142,16 +143,25 @@ class Playground:
             if job_id not in self.jobs: raise ValueError("Unknown experiment")
             return deepcopy(self.jobs[job_id])
 
-    def execute(self, job_id, message, previous, auto_open):
+    def execute(self, job_id, message, previous, auto_open, prepared_plan=None):
         start = time.perf_counter()
         try:
-            plan, timing = self.planner(self.api_key, self.model, message, previous)
+            if prepared_plan is None:
+                plan, timing = self.planner(self.api_key, self.model, message, previous)
+            else:
+                plan, timing = deepcopy(prepared_plan), {"planning_wall_s":0,"model":None,"source":"validated playground control; no model call"}
             validate_plan(plan)
+            plan.setdefault("ui", default_ui(plan["experiment"]))
             self.update(job_id, plan=plan, timing=timing, status="validating", message=plan["explanation"],
                 warnings=list(dict.fromkeys(LIMITATIONS + plan["limitations"])))
             directory = self.runs_path / job_id
             directory.mkdir(parents=True, exist_ok=False)
             (directory / "plan.json").write_text(json.dumps(plan, indent=2, allow_nan=False), encoding="utf-8")
+            blockers = request_blockers(message,plan)
+            if blockers:
+                self.update(job_id,status="blocked",message="Request not executed: "+" ".join(blockers))
+                (directory/"job.json").write_text(json.dumps(self.get(job_id),indent=2,allow_nan=False),encoding="utf-8")
+                return
             packages = compile_plan(plan)
             if plan["experiment"] in ("unsupported", "glass_reference"):
                 if plan["experiment"] == "glass_reference":
@@ -181,8 +191,26 @@ class Playground:
                     steps = max(1, round(plan["duration_s"]/case["package"]["fixed_dt_s"]))
                     case_start = time.perf_counter()
                     try:
-                        case["report"] = self.engine.run(path, steps)
-                        case["status"] = "complete"
+                        recorder = self.engine_path.with_name("banjo_playground_record"+self.engine_path.suffix)
+                        if recorder.is_file():
+                            playback = directory/f"playback-{index:02d}.json"
+                            result = subprocess.run([str(recorder),"--package",str(path),"--steps",str(steps),"--output",str(playback)],capture_output=True,text=True,encoding="utf-8",timeout=75,check=False)
+                            if result.returncode or not playback.is_file(): raise ValueError("Native browser recording failed; no substitute motion was generated")
+                            if playback.stat().st_size > 64*1024*1024: raise ValueError("Native recording exceeds browser byte budget")
+                            recording = strict_json(playback.read_text(encoding="utf-8"))
+                            if recording.get("schema") != "banjo.playback.v1" or recording.get("status") not in ("complete","solver_limit"):
+                                raise ValueError("Native recording does not match browser contract")
+                            case["report"],case["status"] = recording["report"],recording["status"]
+                            case["playback_available"] = True
+                            if recording.get("error"): case["error"] = recording["error"]
+                            with self.lock: self.playbacks[(job_id,index)] = playback
+                        else:
+                            case["report"] = self.engine.run(path, steps)
+                            case["status"] = "complete"
+                            case["playback_available"] = False
+                            case["view_warning"] = "Build banjo_playground_record to enable embedded 3D viewing."
+                        if case["report"].get("temporal_resolution",{}).get("resolved") is False:
+                            case["assessment"] = "Numerically unresolved — recorded motion is diagnostic, not a reliable material outcome."
                     except EngineError as exc:
                         case["report"], case["error"], case["status"] = exc.report, str(exc), "solver_limit"
                     case["requested_steps"] = steps
@@ -197,7 +225,8 @@ class Playground:
                     except ValueError as exc:
                         current = self.get(job_id)
                         self.update(job_id, native_opened=False, warnings=current["warnings"]+[str(exc)])
-                self.update(job_id, status="complete", message=("Experiment finished; a strict solver limit stopped one or more cases. Inspect the reports." if limited else "Experiment finished. Compare the reports and release the generated scene in the native studio."))
+                unresolved = any(case.get("assessment") for case in cases)
+                self.update(job_id, status="complete", message=("Computation finished with solver limits or unresolved physics; inspect the diagnostic 3D recording and reports." if limited or unresolved else "Computation finished. Open the 3D playground to inspect the actual recorded engine states; material calibration remains experimental."))
             snapshot = self.get(job_id)
             snapshot["timing"]["total_wall_s"] = time.perf_counter()-start
             self.update(job_id, timing=snapshot["timing"])
@@ -225,19 +254,21 @@ class Playground:
         elif plan["experiment"] == "continuum_pressure_reference":
             executable = self.engine_path.with_name("banjo_continuum_cli" + self.engine_path.suffix)
             path = directory/"reference-report.json"
+            pressure = plan.get("pressure") or {"peak_pressure_pa":800000000,"resolution":4,"increments":32,"profile":"uniform"}
             package = {
                 "reference":"fixed spatial quasistatic pressure load-unload; no collision, inertia or fracture",
                 "physics_abi":"banjo-quasistatic-tet-1", "units":"SI",
                 "fixture":{"dimensions_m":[.04,.02,.04],"resolution":[4,2,4],
                     "bottom_boundary":"fully clamped","loaded_top_area_m2":.0004,
-                    "peak_pressure_pa":800000000,"increments_per_load_or_unload":32},
+                    "peak_pressure_pa":pressure["peak_pressure_pa"],"increments_per_load_or_unload":pressure["increments"],"pressure_profile":pressure["profile"]},
                 "laws":{"glass":"isotropic-linear-elastic","oak":"orthotropic-linear-elastic",
                     "iron":"small-strain-isotropic-J2"},
                 "ignored_plan_fields":["duration_s","projectile","panel_dimensions_m","speeds_m_s","heights_m","objects"],
                 "native_view_mode":"solved_load_sequence_playback",
             }
-            args = [str(executable),"--resolution","4","--increments","32",
-                    "--peak-pressure-pa","800000000","--output",str(path)]
+            n=pressure["resolution"];package["fixture"]["resolution"]=[n,n//2,n]
+            args = [str(executable),"--resolution",str(n),"--increments",str(pressure["increments"]),
+                    "--peak-pressure-pa",str(pressure["peak_pressure_pa"]),"--pressure-profile",pressure["profile"],"--output",str(path)]
         else:
             raise ValueError("Unsupported native reference experiment")
         result = subprocess.run(args,capture_output=True,text=True,encoding="utf-8",timeout=75,check=False)
@@ -268,14 +299,33 @@ class Playground:
             inner_cases.append({"material_id":expected,"status":source_case["status"],
                 "computed_frames":len(frames),"error":source_case.get("error","")})
         limited = [case["material_id"] for case in inner_cases if case["status"] == "solver_limit"]
-        with self.lock: self.paths[(job_id,0)] = (path,"continuum")
+        with self.lock:
+            self.paths[(job_id,0)] = (path,"continuum")
+            self.playbacks[(job_id,0)] = path
         case_status = "reference_limited" if limited else "reference_complete"
         message = ("Continuum pressure reference completed; strict solver limits stopped: " +
             ", ".join(limited) + ". " if limited else "Continuum pressure reference completed. ") + \
             "The native view replays the computed load sequence; it does not run a fresh impact."
         self.update(job_id,cases=[{"index":0,"name":plan["name"],"package":package,"report":report,
-            "native_cli_metadata":metadata,"inner_cases":inner_cases,"status":case_status,"native_scene":True}],
+            "native_cli_metadata":metadata,"inner_cases":inner_cases,"status":case_status,"native_scene":True,"playback_available":True}],
             status="complete",message=message)
+
+    def playback(self, job_id, index):
+        with self.lock:
+            if (job_id,index) not in self.playbacks: raise ValueError("This case has no computed 3D recording")
+            path=self.playbacks[(job_id,index)]
+        if path.stat().st_size > 64*1024*1024: raise ValueError("Playback exceeds browser byte budget")
+        return path.read_bytes()
+
+    def rerun(self, job_id, body):
+        if not isinstance(body,dict) or set(body)!={"case_index","action","value","request_id"}:
+            raise ValueError("Expected case_index, action, value and request_id")
+        job=self.get(job_id); index=body["case_index"]
+        if job["status"] != "complete" or type(index) is not int or not 0<=index<len(job["cases"]): raise ValueError("Choose a completed experiment case")
+        plan=apply_control(job["plan"],body["action"],body["value"],index)
+        plan["explanation"]=f"New native run from {job['plan']['name']}: {body['action']} = {body['value']}. Other declared settings are retained."
+        validate_plan(plan)
+        return self.submit({"message":f"Playground control from {job_id} case {index}: {body['action']}={body['value']}","request_id":body["request_id"],"auto_open":False},prepared_plan=plan)
 
     def open_case(self, job_id, index):
         if type(index) is not int: raise ValueError("case_index must be an integer")
@@ -342,6 +392,8 @@ class Handler(BaseHTTPRequestHandler):
             app=self.server.app
             if path=="/api/status": return self.send(app.status())
             if path=="/api/goal": return self.send({"markdown":(ROOT/"docs/project-goal-2026-09-06.md").read_text(encoding="utf-8")})
+            match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/playback/(\d+)",path)
+            if match: return self.send(app.playback(match[1],int(match[2])))
             match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})(?:/package/(\d+))?",path)
             if match:
                 job=app.get(match[1])
@@ -350,7 +402,8 @@ class Handler(BaseHTTPRequestHandler):
                     if index>=len(job["cases"]): raise ValueError("Unknown experiment case")
                     return self.send(job["cases"][index]["package"])
                 return self.send(job)
-            allowed={"/":"index.html","/index.html":"index.html","/app.js":"app.js","/style.css":"style.css"}
+            allowed={"/":"index.html","/index.html":"index.html","/app.js":"app.js","/style.css":"style.css","/scene.js":"scene.js",
+                "/vendor/three.module.js":"vendor/three.module.js","/vendor/three.core.js":"vendor/three.core.js"}
             if path not in allowed: return self.send({"error":"Not found"},404)
             file=STATIC/allowed[path]
             mime="text/html" if file.suffix==".html" else "text/javascript" if file.suffix==".js" else "text/css"
@@ -367,6 +420,8 @@ class Handler(BaseHTTPRequestHandler):
             body=strict_json(self.rfile.read(length))
             path=urlsplit(self.path).path
             if path=="/api/chat": return self.send(self.server.app.submit(body),202)
+            match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/rerun",path)
+            if match: return self.send(self.server.app.rerun(match[1],body),202)
             match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/open",path)
             if match:
                 if not isinstance(body,dict) or set(body)!={"case_index"}: raise ValueError("Expected case_index")

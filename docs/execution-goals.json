@@ -678,5 +678,19 @@
     "live_followup": "Actual GPT revised an iron-cube plate drop at 0.25 m into a rigid drop at 0.5 m. Native and headless runs both completed 480 ticks / 1 second, with physical report fields equal outside the declared metadata and presentation exclusions.",
     "planner_scope": "Model proposals can misinterpret requests. UI separates proposed setup from authoritative engine status and physical validation.",
     "native_capture": "Screenshot export now checks success and saves beside job live report."
+  },
+  "embedded_playground_checkpoint": {
+    "evidence": "docs/embedded-playground-checkpoint.md",
+    "native_suites": 58,
+    "native_suite_s": 80.92,
+    "recorder_integration_tests": 3,
+    "mock_and_control_tests": 49,
+    "status": "experimental authoring and computed 3D inspection; no full goal completed",
+    "next": [
+      "contact/continuum/fracture integration",
+      "calibrated comparative fixtures",
+      "cancellation and durable restoration",
+      "capture/render performance qualification"
+    ]
   }
 }

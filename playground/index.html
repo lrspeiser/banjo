@@ -24,6 +24,7 @@
       <button class="tab is-active" id="tab-experiment" role="tab" aria-selected="true" aria-controls="panel-experiment" data-tab="experiment">Experiment</button>
       <button class="tab" id="tab-language" role="tab" aria-selected="false" aria-controls="panel-language" data-tab="language">Language</button>
       <button class="tab" id="tab-results" role="tab" aria-selected="false" aria-controls="panel-results" data-tab="results">Results</button>
+      <button class="tab" id="tab-viewer" role="tab" aria-selected="false" aria-controls="panel-viewer" data-tab="viewer">3D playback</button>
       <button class="tab" id="tab-goal" role="tab" aria-selected="false" aria-controls="panel-goal" data-tab="goal">Project goal</button>
     </nav>
 
@@ -37,7 +38,7 @@
           </div>
           <div class="hero-note">
             <span class="note-icon" aria-hidden="true">↗</span>
-            <span>Review your setup here.<br><strong>Run it in the native 3D studio.</strong></span>
+            <span>Review the computed evidence here.<br><strong>Inspect sampled states in embedded 3D.</strong></span>
           </div>
         </div>
 
@@ -55,7 +56,7 @@
               <label class="sr-only" for="prompt-input">Experiment prompt</label>
               <textarea id="prompt-input" rows="3" maxlength="4000" placeholder="e.g. Compare a glass, oak, and iron ball drop onto a finite ground..."></textarea>
               <div class="composer-footer">
-                <label class="check-label"><input id="auto-open" type="checkbox" checked><span>Open native studio when ready</span></label>
+                <label class="check-label"><input id="auto-open" type="checkbox" checked><span>Show 3D playback when ready</span></label>
                 <span id="composer-hint" class="composer-hint">Enter to send · Shift+Enter for a new line</span>
                 <button id="send-button" class="primary-button" type="submit"><span>Run experiment</span><span aria-hidden="true">↗</span></button>
               </div>
@@ -100,6 +101,22 @@
         <section class="card compare-card" aria-labelledby="compare-heading"><div class="card-heading compact"><div><p class="eyebrow">REPORT KEYS</p><h2 id="compare-heading">Cross-case comparison</h2></div><span class="muted">Unknown keys are kept</span></div><div class="table-wrap"><table id="compare-table"><caption class="sr-only">Report fields compared across cases</caption><thead><tr><th scope="col">Field</th><th scope="col">Values</th></tr></thead><tbody><tr><td colspan="2" class="muted">No report fields yet.</td></tr></tbody></table></div></section>
       </section>
 
+      <section class="tab-panel" id="panel-viewer" role="tabpanel" aria-labelledby="tab-viewer" hidden>
+        <div class="section-intro viewer-intro"><div><p class="eyebrow">RESULT / EMBEDDED VIEW</p><h1 id="viewer-title">Computed sequence.</h1><p class="lede">Sampled engine output for inspection. Playback does not run live physics or interpolate solver states.</p></div><label class="select-label">Case <select id="viewer-case-select" aria-label="Select case for 3D playback"></select></label></div>
+        <section class="viewer-shell card">
+          <div id="viewer-stage" class="viewer-stage"><div class="viewer-empty"><span class="empty-orb" aria-hidden="true">◇</span><p>Select a completed case with playback data.</p></div></div>
+          <aside class="viewer-sidebar">
+            <div id="viewer-validity" class="viewer-validity">No computed sequence loaded.</div>
+            <div class="viewer-toolbar" aria-label="Playback controls"><button id="viewer-reset" type="button">Reset</button><button id="viewer-back" type="button" aria-label="Previous sampled frame">−1</button><button id="viewer-play" class="accent" type="button">Play</button><button id="viewer-forward" type="button" aria-label="Next sampled frame">+1</button></div>
+            <label class="viewer-field"><span>Sampled frame <output id="viewer-frame-output">0 / 0</output></span><input id="viewer-frame" type="range" min="0" max="0" value="0" step="1"></label>
+            <div class="viewer-fields"><label class="viewer-field"><span>Playback speed</span><select id="viewer-speed"><option value="0.1">0.1×</option><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></label><label class="viewer-field"><span>Displacement display</span><select id="viewer-magnification"><option value="1" selected>1×</option><option value="5">5×</option><option value="10">10×</option><option value="25">25×</option><option value="50">50×</option><option value="100">100×</option></select></label></div>
+            <div class="viewer-toggles"><label><input id="viewer-components" type="checkbox" checked> Cell components</label><label><input id="viewer-reference" type="checkbox"> Reference shape</label><label><input id="viewer-bonds" type="checkbox" checked> Bonds</label><label><input id="viewer-xray" type="checkbox"> X-ray</label></div>
+            <div id="viewer-inspect" class="viewer-inspect">Click a cell, component, or bond to inspect it.</div><div id="viewer-custom" class="viewer-custom" aria-label="Authored experiment controls"></div>
+            <button id="viewer-native" class="viewer-native" type="button" disabled>Open native studio</button>
+          </aside>
+        </section>
+      </section>
+
       <section class="tab-panel" id="panel-goal" role="tabpanel" aria-labelledby="tab-goal" hidden>
         <div class="section-intro"><p class="eyebrow">PROJECT CONTEXT</p><h1>Build the physics platform.</h1><p class="lede">The current project goal and evidence boundaries, fetched from the local backend.</p></div>
         <section class="card goal-card"><div class="card-heading compact"><div><p class="eyebrow">CURRENT GOAL</p><h2>Banjo direction</h2></div><span id="goal-state" class="small-badge">Loading</span></div><pre id="goal-markdown" class="goal-pane">Loading project goal…</pre></section>
@@ -109,6 +126,7 @@
     <footer class="footer"><span>Banjo local playground</span><span id="footer-meta">Native packages · bounded experiments · reviewable reports</span></footer>
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <script type="module" src="scene.js"></script>
   <script src="app.js" defer></script>
 </body>
 </html>

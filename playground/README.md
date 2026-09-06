@@ -1,7 +1,7 @@
 # Banjo chat playground
 
 Describe a physical experiment, inspect the generated Banjo declaration, run the
-native engine, and open the same initial package in the 3D studio. GPT authors
+native engine, and inspect its computed states in the page's **3D Playback** tab. GPT authors
 bounded data; it does not execute code or advance the physics clock.
 
 Build the current Windows Release configuration, then run from the repository:
@@ -36,16 +36,23 @@ the **Project goal** tab. The goal contains nine workstreams and preserves all
 - “Run the spatial pressure and springback test for glass, wood and iron.”
 - “Show the heat frontier through glass, wood, iron and water/ice.”
 
-**Open native studio when ready** opens a fresh native scene. Press **Release**
-there to run it; use **Next/Previous** for a generated sweep. The headless report
-and the studio are separate executions of the same initial package, with the
-same duration rounded to whole physics steps. Native reports and screenshots
-are written beside each other in the job's `native` directory. The
-thermal reference has its own **Open studio** button. The J2 material-point and
-published glass references return reports rather than invented 3D outcomes.
-The spatial pressure reference opens a computed load/unload sequence in the
-continuum lab. Play, pause, frame steps, reset and labeled magnification inspect
-the actual solved mesh. This reference does not advance an impact simulation.
+Leave **Show 3D playback when ready** checked. The page automatically opens the
+computed experiment. Drag to orbit, scroll to zoom, play/pause, step or scrub
+to inspect an outcome. Components shows internal structure; reference shape
+and labeled displacement magnification aid the pressure experiment.
+
+Ask for controls as part of the prompt, for example: “Run the illustrative
+glass/oak/iron pressure reference at 200 MPa, resolution 4, 16 increments.
+Add a Watch response button and a pressure slider from 100 to 800 MPa.”
+GPT authors a bounded `ui` declaration. Physical sliders use **Apply and rerun**
+to create a fresh native calculation without another model call. Display controls
+only inspect already computed states. Arbitrary generated HTML or JavaScript is
+not executed. Network recordings and their reports come from the same run.
+
+**Open native studio** remains an optional separate execution for network scenes.
+Thermal has its own native view; material-point and published glass references
+return reports without invented 3D motion. Pressure replay is quasistatic load
+presentation, not elapsed physical time or an impact simulation.
 
 ## Executed language and boundaries
 
@@ -63,8 +70,9 @@ job and 100 jobs per server session. Each GPT request has a bounded input,
 output and timeout; there is no automatic paid retry. Each native process has
 a 75-second timeout. Reusing an identical request ID returns the same job;
 different content with that ID rejects. Jobs and packages are recorded under
-ignored `build/playground-runs/`; server/browser session indexes do not restore
-automatically after restart. This is a local development service, not a public
+ignored `build/playground-runs/`. Browser refresh restores the latest job while
+the server session remains active; `?job=<id>` opens a specific session result.
+Restarting the server clears its session index. This is a local development service, not a public
 multiuser deployment.
 
 All generated network damage trials use strict refinement-limit rejection.
@@ -75,9 +83,11 @@ The [glass reference](../docs/glass-drop-benchmark.md) records experimental
 first-fracture data and apparatus uncertainty; it is not a passed simulation.
 Thermal and state references run fixed fixtures; their names do not authorize
 arbitrary thermal geometry or new constitutive parameters.
-The `continuum_pressure_reference` route is likewise fixed: 40 × 20 × 40 mm
+The `continuum_pressure_reference` route has fixed geometry: 40 × 20 × 40 mm
 glass/oak/iron coupons, a central 20 × 20 mm pressure patch, bottom clamp,
-4/2/4 cell mesh, 32 increments per loading/unloading branch and 800 MPa peak.
+with default 4/2/4 cell mesh, 32 increments per loading/unloading branch and 800 MPa peak.
+The optional `pressure` declaration accepts `peak_pressure_pa` (1–1e9),
+even `resolution` (4–12), `increments` (2–64), and `profile` (`uniform` or `smooth`).
 It executes native small-strain equilibrium and preserves plastic history;
 it is not spatially converged or calibrated. Wood reaches a validity limit in
 this setup; Results reports that limit and its last accepted state. Speed and
@@ -93,6 +103,8 @@ not change this fixed reference. See the [API, refinement and limitations](../do
 | `POST /api/chat` | Submit `{message, previous_plan, request_id, auto_open}`; receive a job ID |
 | `GET /api/jobs/{id}` | Poll status, generated plan, cases, reports, limits and timing |
 | `GET /api/jobs/{id}/package/{case_index}` | Export the exact generated package |
+| `GET /api/jobs/{id}/playback/{case_index}` | Bounded server-owned native recording |
+| `POST /api/jobs/{id}/rerun` | Apply `{case_index, action, value, request_id}` from a declared physical control; no model call |
 | `POST /api/jobs/{id}/open` | Open `{case_index}` in the native studio |
 
 POSTs require `Content-Type: application/json` and `X-Banjo-Token` from status.

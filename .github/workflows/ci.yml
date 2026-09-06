@@ -41,7 +41,11 @@ jobs:
       - name: Test playground HTTP boundary without an API key
         env:
           OPENAI_API_KEY: ""
-        run: python3 tests/playground_tests.py -v
+        run: |
+          python3 tests/playground_tests.py -v
+          python3 tests/playground_control_tests.py -v
+          python3 tests/playground_browser_api_tests.py -v
+          python3 tests/playground_record_tests.py --recorder build/ci/banjo_playground_record --engine build/ci/banjo_platform_cli -v
 
       - name: Generate deterministic scenario projections
         run: |

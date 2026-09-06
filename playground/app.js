@@ -11,9 +11,21 @@
     followup: true,
     messages: [],
     history: [],
+    scene: null,
+    playbackCache: new (class extends Map { set(key,value){super.set(key,value);while(this.size>2)this.delete(this.keys().next().value);return this;} })(),
+    loadedPlaybackKey: null,
+    playbackRequest: 0,
   };
 
   const $ = (id) => document.getElementById(id);
+  const latestJobStorageKey = "banjo.playground.latestJobId";
+  const validJobId = (value) => typeof value === "string" && /^[0-9a-f]{32}$/i.test(value);
+  function rememberJob(jobId) {
+    if (!validJobId(jobId)) return;
+    localStorage.setItem(latestJobStorageKey, jobId);
+    const url = new URL(window.location.href); url.searchParams.set("job", jobId); history.replaceState(null, "", url);
+  }
+  function forgetJob() { localStorage.removeItem(latestJobStorageKey); const url=new URL(window.location.href);url.searchParams.delete("job");history.replaceState(null,"",url); }
   const terminalStatuses = new Set(["complete", "blocked", "error"]);
   const activeStatuses = new Set(["planning", "validating", "running"]);
   const promptExamples = [
@@ -333,10 +345,76 @@
   }
 
   function physicalValidationLabel(item) {
+    const limited = item && Array.isArray(item.inner_cases) && item.inner_cases.filter((entry) => entry.status === "solver_limit");
+    if (limited && limited.length) return `Solver limit: ${limited.map((entry) => entry.material_id).join(", ")}`;
     const value = item && item.report && item.report.physical_response_validated;
     if (value === false) return "Experimental / not validated";
     if (value === true) return "Validated for reported scope";
     return "See reference scope";
+  }
+
+  function playbackAvailable(item) { return Boolean(item && item.playback_available); }
+
+  function clearViewer(message = "Select a completed case with playback data.") {
+    state.playbackRequest += 1; state.scene?.dispose(); state.scene = null; state.loadedPlaybackKey = null;
+    const stage = $("viewer-stage"); stage.replaceChildren();
+    const empty = document.createElement("div"); empty.className = "viewer-empty"; empty.textContent = message; stage.append(empty);
+    $("viewer-play").textContent = "Play"; $("viewer-frame").max = "0"; $("viewer-frame").value = "0"; $("viewer-frame-output").textContent = "0 / 0";
+    $("viewer-validity").className = "viewer-validity"; $("viewer-validity").textContent = message; $("viewer-native").disabled = true; $("viewer-custom").replaceChildren();
+  }
+
+  function validityMessage(item, playback) {
+    const report = playback && playback.report || item && item.report || {};
+    const unresolved = report.temporal_resolution && report.temporal_resolution.resolved === false;
+    const invalid = report.physical_response_validated === false;
+    const limited = playback?.status === "solver_limit" || String(item?.status || "").includes("limit");
+    const limitedMaterials = (item?.inner_cases || playback?.cases || []).filter((entry) => entry.status === "solver_limit").map((entry) => entry.material_id);
+    const materialStatus = (item?.inner_cases || playback?.cases || []).map((entry) => `${text(entry.material_id)}: ${text(entry.status)}`).join(" · ");
+    if (limitedMaterials.length) return ["warning", `Solver limit: ${limitedMaterials.join(", ")}. Showing each material's last accepted sampled frame; response remains experimental.${materialStatus ? ` ${materialStatus}.` : ""}`];
+    if (unresolved) return ["warning", "Temporal resolution is unresolved. Inspect the sampled sequence as experimental evidence."];
+    if (invalid) return ["warning", "Material response is not validated for this scope. This is experimental engine output."];
+    if (limited) return ["warning", "Solver limit reached. Showing the last accepted sampled frame and preceding computed states."];
+    return ["ready", "Computed sampled sequence. No live physics and no interpolation are running in this view."];
+  }
+
+  function ensureScene() {
+    if (state.scene) return state.scene;
+    if (!window.BanjoScene) throw new Error("The local 3D renderer is still loading.");
+    state.scene = window.BanjoScene.create($("viewer-stage"), {
+      onFrame: ({index, count, frame, continuum}) => { $("viewer-frame").max = String(Math.max(0,count-1)); $("viewer-frame").value=String(index); const detail=continuum ? ` · ${text(frame?.phase,"load")} · load ${frame?.load_fraction !== undefined ? `${Math.round(frame.load_fraction*100)}%` : `frame ${index+1}`}` : frame?.time_s !== undefined ? ` · ${text(frame.time_s)} s` : ""; $("viewer-frame-output").textContent=`${index+1} / ${count || 0}${detail}`; $("viewer-magnification").disabled=!continuum;if(!continuum)$("viewer-magnification").value="1"; },
+      onPlayState: (playing) => { $("viewer-play").textContent=playing?"Pause":"Play"; },
+      onInspect: (data) => { $("viewer-inspect").textContent = data ? Object.entries(data).filter(([k,v]) => k !== "source" && typeof v !== "object").slice(0,8).map(([k,v])=>`${k}: ${text(v)}`).join(" · ") : "Nothing selected."; },
+    });
+    return state.scene;
+  }
+
+  function renderViewerCaseSelect() {
+    const select=$("viewer-case-select"), cases=state.job?.cases || []; select.replaceChildren();
+    cases.forEach((item,index)=>{const o=document.createElement("option");o.value=String(index);o.textContent=`${index+1}. ${text(item.name,`Case ${index+1}`)}`;o.disabled=!playbackAvailable(item);select.append(o);});
+    select.disabled=!cases.some(playbackAvailable); if(cases.length) select.value=String(state.selectedCase);
+  }
+
+  async function rerun(action, value) {
+    if (!state.jobId) return;
+    try { clearViewer("A new native run is being prepared."); const response=await api(`/api/jobs/${encodeURIComponent(state.jobId)}/rerun`,{method:"POST",headers:{"Content-Type":"application/json",...tokenHeaders()},body:JSON.stringify({case_index:state.selectedCase,action,value,request_id:crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`})}); state.jobId=response.job_id;localStorage.setItem(latestJobStorageKey,state.jobId);state.job={id:state.jobId,status:"planning",message:"Re-running the native engine with the updated validated plan…",cases:[]};activateTab("experiment");renderJob(state.job);pollJob(); }
+    catch(error){showToast(error.message,true);}
+  }
+
+  function renderCustomControls(ui) {
+    const root=$("viewer-custom");root.replaceChildren(); if(!ui || !Array.isArray(ui.controls) || !ui.controls.length)return;
+    const heading=document.createElement("h3");heading.textContent=text(ui.title,"Experiment controls");root.append(heading);
+    const formatValue=(action,value)=>{const n=Number(value);if(action==="pressure_pa")return `${(n/1e6).toLocaleString(undefined,{maximumFractionDigits:3})} MPa`;if(action==="height_m")return `${n.toLocaleString()} m`;if(action==="speed_m_s")return `${n.toLocaleString()} m/s`;if(action==="playback_speed"||action==="magnification")return `${n.toLocaleString()}×`;if(action==="frame")return `${Math.round(n*100)}%`;return text(value);};
+    const displayAction=(action,value)=>{if(action==="playback_speed"){$("viewer-speed").value=String(value);state.scene?.setSpeed(value);}if(action==="magnification"){$("viewer-magnification").value=String(value);state.scene?.setMagnification(value);}if(action==="frame"){$("viewer-frame").value=String(Math.round(value*Math.max(0,(state.scene?.frameCount||1)-1)));state.scene?.setFrame(value*Math.max(0,(state.scene?.frameCount||1)-1));}if(action==="components"){$("viewer-components").checked=Boolean(value);state.scene?.showComponents(value);}if(action==="reference"){$("viewer-reference").checked=Boolean(value);state.scene?.showReference(value);}};
+    ui.controls.forEach((control)=>{ const row=document.createElement("div");row.className="custom-control"; const label=document.createElement("label");label.textContent=text(control.label,control.id);row.append(label); const local={play_pause:()=>$("viewer-play").click(),reset:()=>$("viewer-reset").click(),step_forward:()=>$("viewer-forward").click(),step_back:()=>$("viewer-back").click(),components:()=>$("viewer-components").click(),reference:()=>$("viewer-reference").click()};
+      if(control.kind==="button"){const b=document.createElement("button");b.type="button";b.textContent=text(control.label,control.id);b.addEventListener("click",()=>{if(local[control.action])local[control.action]();else rerun(control.action,control.value);});row.append(b);} else {const input=document.createElement("input");input.type=control.kind==="toggle"?"checkbox":"range";if(input.type==="range"){input.min=control.min;input.max=control.max;input.step=control.step;input.value=control.value;}else input.checked=Boolean(control.value);const output=document.createElement("output");output.textContent=input.type==="checkbox"?(input.checked?"On":"Off"):formatValue(control.action,input.value);row.append(output,input);const update=()=>{const value=input.type==="checkbox"?input.checked:Number(input.value);output.textContent=input.type==="checkbox"?(value?"On":"Off"):formatValue(control.action,value);displayAction(control.action,value);};input.addEventListener("input",update);if(["height_m","speed_m_s","pressure_pa"].includes(control.action)){const apply=document.createElement("button");apply.type="button";apply.textContent="Apply and rerun";apply.title="Runs the native engine with a new validated plan.";apply.addEventListener("click",()=>rerun(control.action,Number(input.value)));row.append(apply);}else displayAction(control.action,input.type==="checkbox"?input.checked:Number(input.value));} root.append(row); });
+  }
+
+  async function loadPlayback(index=state.selectedCase, auto=false) {
+    const item=state.job?.cases?.[index]; if(!state.jobId || !playbackAvailable(item)){if(auto)return;showToast("This case has no embedded playback data.",true);return;}
+    state.selectedCase=index;renderLanguage();renderViewerCaseSelect();activateTab("viewer");$("viewer-title").textContent=text(state.job?.plan?.ui?.title,item.name || "Computed sequence.");
+    const key=`${state.jobId}:${index}`, request=++state.playbackRequest;
+    try { let playback=state.playbackCache.get(key);if(!playback){playback=await api(`/api/jobs/${encodeURIComponent(state.jobId)}/playback/${index}`);state.playbackCache.set(key,playback);}if(request!==state.playbackRequest||key!==`${state.jobId}:${state.selectedCase}`)return; if(state.loadedPlaybackKey!==key){ensureScene().load(playback);state.loadedPlaybackKey=key;} const [kind,message]=validityMessage(item,playback), validity=$("viewer-validity");validity.className=`viewer-validity ${kind}`;validity.textContent=message;renderCustomControls(state.job?.plan?.ui);$("viewer-native").disabled=!canOpenCase(item); }
+    catch(error){state.scene?.dispose();state.scene=null;$("viewer-stage").replaceChildren();const p=document.createElement("p");p.className="viewer-error";p.textContent=error.message;$("viewer-stage").append(p);state.loadedPlaybackKey=null;showToast(error.message,true);}
   }
 
   function needsMaterialValidationNote(job) {
@@ -362,7 +440,7 @@
       const details = document.createElement("div"); details.className = "case-details";
       [["Outcome", reportSummary(item)], ["Physical validation", physicalValidationLabel(item)], ["Package", item.package ? "Generated" : "Pending"], ["Report", item.report ? "Available" : "Pending"]].forEach(([label, value]) => { const row = document.createElement("div"); row.className = "case-detail"; const a = document.createElement("span"); a.textContent = label; const b = document.createElement("strong"); b.textContent = value; row.append(a, b); details.append(row); });
       const actions = document.createElement("div"); actions.className = "case-actions";
-      const open = document.createElement("button"); open.type = "button"; open.textContent = item.package && item.package.native_view_mode === "solved_load_sequence_playback" ? "Open solved sequence" : "Open native studio"; open.disabled = !(state.job && state.job.id && canOpenCase(item)); open.addEventListener("click", () => openStudio(index));
+      const open = document.createElement("button"); open.type = "button"; open.textContent = playbackAvailable(item) ? "View 3D playback" : "Open native studio"; open.disabled = !(state.job && state.job.id && (playbackAvailable(item) || canOpenCase(item))); open.addEventListener("click", () => playbackAvailable(item) ? loadPlayback(index) : openStudio(index));
       const inspect = document.createElement("button"); inspect.type = "button"; inspect.textContent = "Inspect JSON"; inspect.addEventListener("click", () => { state.selectedCase = index; renderLanguage(); activateTab("language"); });
       actions.append(open, inspect); card.append(top, details, actions); grid.append(card);
     });
@@ -409,7 +487,7 @@
     if (!state.history.length) { const p = document.createElement("p"); p.className = "muted"; p.textContent = "Your completed experiments will be collected here."; list.append(p); return; }
     state.history.forEach((item) => { const card = document.createElement("article"); card.className = "history-card"; const h = document.createElement("h3"); h.textContent = item.title; const p = document.createElement("p"); p.textContent = `${item.cases} case(s) · ${item.timestamp}`; const button = document.createElement("button"); button.type = "button"; button.textContent = "Inspect result →"; button.addEventListener("click", async () => {
       if (activeStatuses.has(state.job && state.job.status)) return showToast("Wait for the current experiment to finish.");
-      try { const job = await api(`/api/jobs/${encodeURIComponent(item.id)}`); state.job = job; state.jobId = job.id; state.selectedCase = 0; state.latestPlan = job.plan; renderJob(job); renderLanguage(); renderResults(); activateTab("results"); }
+      try { const job = await api(`/api/jobs/${encodeURIComponent(item.id)}`); state.job = job; state.jobId = job.id; localStorage.setItem(latestJobStorageKey,state.jobId); state.selectedCase = Math.max(0,job.cases?.findIndex(playbackAvailable) ?? 0); state.latestPlan = job.plan; renderJob(job); renderLanguage(); renderResults(); if(job.cases?.some(playbackAvailable))loadPlayback(state.selectedCase,true);else { clearViewer("This result has no embedded playback."); activateTab("results"); } }
       catch (error) { showToast(error.message, true); }
     }); card.append(h, p, button); list.append(card); });
   }
@@ -421,11 +499,12 @@
     try {
       const job = await api(`/api/jobs/${encodeURIComponent(state.jobId)}`);
       state.job = job;
+      rememberJob(job.id);
       if (job.status === "complete" && job.plan) state.latestPlan = job.plan;
       renderJob(job); renderLanguage(); renderResults();
-      if (terminalStatuses.has(job.status)) { stopPolling(); addHistory(job); const validationNote = needsMaterialValidationNote(job) ? " Material realism is not yet validated." : ""; addMessage("Banjo", text(job.message) + validationNote); if (job.status === "complete") showToast("Experiment complete. Results are ready to inspect."); else showToast(text(job.message, "Experiment did not complete."), true); return; }
+      if (terminalStatuses.has(job.status)) { stopPolling(); addHistory(job); const validationNote = needsMaterialValidationNote(job) ? " Material realism is not yet validated." : ""; addMessage("Banjo", text(job.message) + validationNote); const playable=job.cases?.findIndex(playbackAvailable) ?? -1;if(job.status==="complete" && playable>=0 && $("auto-open").checked)loadPlayback(playable,true);else if (job.status === "complete") { if(playable<0)clearViewer("This completed result has no embedded playback."); showToast("Experiment complete. Results are ready to inspect."); } else { clearViewer("The latest request did not produce playback geometry."); showToast(text(job.message, "Experiment did not complete."), true); } return; }
       state.pollTimer = window.setTimeout(pollJob, 1000);
-    } catch (error) { stopPolling(); renderJob({ id: state.jobId, status: "error", message: error.message, cases: [] }); showToast(error.message, true); }
+    } catch (error) { stopPolling(); clearViewer("The latest request did not produce playback geometry."); renderJob({ id: state.jobId, status: "error", message: error.message, cases: [] }); showToast(error.message, true); }
   }
 
   async function submitPrompt(event) {
@@ -433,10 +512,11 @@
     const input = $("prompt-input"); const message = input.value.trim();
     if (!message || activeStatuses.has(state.job && state.job.status)) return;
     addMessage("You", message); input.value = "";
+    clearViewer("A new experiment is being prepared.");
     const send = $("send-button"); send.disabled = true; send.classList.add("is-busy");
     try {
-      const response = await api("/api/chat", { method: "POST", headers: { "Content-Type": "application/json", ...tokenHeaders() }, body: JSON.stringify({ message, previous_plan: state.followup ? (state.latestPlan || null) : null, request_id: window.crypto && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`, auto_open: $("auto-open").checked }) });
-      state.jobId = response && response.job_id; state.job = { id: state.jobId, status: "planning", message: "Planning the experiment…", cases: [] }; state.followup = true;
+      const response = await api("/api/chat", { method: "POST", headers: { "Content-Type": "application/json", ...tokenHeaders() }, body: JSON.stringify({ message, previous_plan: state.followup ? (state.latestPlan || null) : null, request_id: window.crypto && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`, auto_open: false }) });
+      state.jobId = response && response.job_id; if(state.jobId)localStorage.setItem(latestJobStorageKey,state.jobId); state.job = { id: state.jobId, status: "planning", message: "Planning the experiment…", cases: [] }; state.followup = true;
       addMessage("Banjo", "I’m preparing a bounded experiment plan. I’ll keep the generated package and report visible for review."); renderJob(state.job); renderResults(); stopPolling(); pollJob();
     } catch (error) { send.disabled = false; send.classList.remove("is-busy"); addMessage("Banjo", `The request could not start: ${error.message}`); showToast(error.message, true); }
   }
@@ -444,7 +524,7 @@
   function activateTab(name) {
     document.querySelectorAll(".tab").forEach((tab) => { const active = tab.dataset.tab === name; tab.classList.toggle("is-active", active); tab.setAttribute("aria-selected", String(active)); });
     document.querySelectorAll(".tab-panel").forEach((panel) => { const active = panel.id === `panel-${name}`; panel.classList.toggle("is-visible", active); panel.hidden = !active; });
-    if (name === "language") renderLanguage(); if (name === "results") renderResults();
+    if (name === "language") renderLanguage(); if (name === "results") renderResults(); if(name === "viewer") renderViewerCaseSelect();
   }
 
   async function loadGoal() {
@@ -457,8 +537,21 @@
     catch (error) { state.status = {}; renderStatus(); showToast(`Status unavailable: ${error.message}`, true); }
   }
 
+  async function restoreLatestJob() {
+    const requested = new URLSearchParams(window.location.search).get("job"); const jobId = validJobId(requested) ? requested : localStorage.getItem(latestJobStorageKey); if (!validJobId(jobId)) return;
+    try {
+      const job = await api(`/api/jobs/${encodeURIComponent(jobId)}`); state.job = job; state.jobId = job.id; rememberJob(job.id); state.latestPlan = job.plan || null; state.followup = true;
+      const playable = job.cases?.findIndex(playbackAvailable) ?? -1; state.selectedCase = Math.max(0, playable);
+      renderJob(job); renderLanguage(); renderResults(); addHistory(job);
+      if (activeStatuses.has(job.status)) pollJob(); else if (job.status === "complete" && playable >= 0) loadPlayback(playable, true); else clearViewer("The restored result has no embedded playback.");
+    } catch {
+      if(localStorage.getItem(latestJobStorageKey)===jobId)localStorage.removeItem(latestJobStorageKey); const url=new URL(window.location.href);if(url.searchParams.get("job")===jobId){url.searchParams.delete("job");history.replaceState(null,"",url);} clearViewer();
+    }
+  }
+
   function resetExperiment() {
-    stopPolling(); state.job = null; state.jobId = null; state.latestPlan = null; state.followup = false; state.messages = []; $("prompt-input").value = ""; renderConversation(); renderJob(null); renderLanguage(); renderResults(); showToast("New experiment ready. Follow-up context cleared.");
+    forgetJob();
+    stopPolling(); clearViewer(); localStorage.removeItem(latestJobStorageKey); state.job = null; state.jobId = null; state.latestPlan = null; state.followup = false; state.messages = []; $("prompt-input").value = ""; renderConversation(); renderJob(null); renderLanguage(); renderResults(); renderViewerCaseSelect(); showToast("New experiment ready. Follow-up context cleared.");
   }
 
   document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click", () => activateTab(tab.dataset.tab)));
@@ -466,6 +559,12 @@
   $("new-experiment").addEventListener("click", resetExperiment);
   $("language-case-select").addEventListener("change", (event) => { state.selectedCase = Number(event.target.value); renderLanguage(); });
   $("download-package-language").addEventListener("click", downloadPackage);
+  $("viewer-case-select").addEventListener("change",(event)=>loadPlayback(Number(event.target.value)));
+  $("viewer-play").addEventListener("click",()=>{const playing=state.scene?.play();$("viewer-play").textContent=playing?"Pause":"Play";});
+  $("viewer-reset").addEventListener("click",()=>{state.scene?.reset();$("viewer-play").textContent="Play";});
+  $("viewer-back").addEventListener("click",()=>state.scene?.step(-1));$("viewer-forward").addEventListener("click",()=>state.scene?.step(1));
+  $("viewer-frame").addEventListener("input",e=>state.scene?.setFrame(Number(e.target.value)));$("viewer-speed").addEventListener("change",e=>state.scene?.setSpeed(e.target.value));$("viewer-magnification").addEventListener("change",e=>state.scene?.setMagnification(e.target.value));
+  $("viewer-components").addEventListener("change",e=>state.scene?.showComponents(e.target.checked));$("viewer-reference").addEventListener("change",e=>state.scene?.showReference(e.target.checked));$("viewer-bonds").addEventListener("change",e=>state.scene?.showBonds(e.target.checked));$("viewer-xray").addEventListener("change",e=>state.scene?.setXray(e.target.checked));$("viewer-native").addEventListener("click",()=>openStudio(state.selectedCase));
   $("prompt-input").addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); $("chat-form").requestSubmit(); } });
-  renderConversation(); renderHistory(); renderJob(null); renderStatus(); loadStatus(); loadGoal();
+  renderConversation(); renderHistory(); renderJob(null); renderStatus(); loadStatus(); loadGoal(); restoreLatestJob();
 })();

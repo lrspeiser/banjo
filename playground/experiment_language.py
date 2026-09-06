@@ -5,12 +5,14 @@ material-law code, credentials, or executable names.
 """
 from __future__ import annotations
 import math
+import re
 from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "examples" / "authoring"))
 from banjo_authoring import catalog, make_object, make_package
+from control_contract import UI_SCHEMA, validate_ui
 
 KINDS = ["panel_impact", "plate_drop", "rigid_drop", "knife_cut", "custom_objects",
          "thermal_frontier", "material_state_reference", "continuum_pressure_reference",
@@ -45,6 +47,18 @@ SCHEMA = obj({
         "dimensions_m": {"anyOf": [VECTOR, {"type": "null"}]},
     })},
 })
+LEGACY_FIELDS = set(SCHEMA["properties"])
+SCHEMA["properties"].update({
+    "ui": UI_SCHEMA,
+    "pressure": {"anyOf": [{"type": "null"}, obj({
+        "peak_pressure_pa": {"type": "number"}, "resolution": {"type": "integer"},
+        "increments": {"type": "integer"}, "profile": {"type": "string", "enum": ["uniform", "smooth"]}})]},
+    "requirements": {"type": "array", "maxItems": 12, "items": obj({
+        "description": {"type": "string"},
+        "status": {"type": "string", "enum": ["supported", "unsupported", "needs_clarification"]},
+        "reason": {"type": "string"}})},
+})
+SCHEMA["required"] = list(SCHEMA["properties"])
 
 SYSTEM = """You author experiments in Banjo's bounded SI playground language.
 Output ONLY the structured plan. Use the previous plan to understand revisions.
@@ -67,6 +81,15 @@ Use speeds [2] for a default panel test; heights [.25] for a default drop. Other
 For continuum_pressure_reference set speeds_m_s=[], heights_m=[] and objects=[]. duration_s, projectile and panel_dimensions_m remain required banjo-playground-1 fields but are explicitly ignored and cannot alter the fixed native fixture.
 Keep explanations concise and describe strict solver limits honestly. No fixture is calibrated. Do not invent supports, extra trials or scope. No material strength tuning or random forces.
 """
+SYSTEM += """
+The experiment appears inside the browser in an interactive 3D playground.
+The native engine computes a bounded recording; play/pause/scrubbing display recorded states, not live integration.
+When changing experiment type, regenerate ui controls for that type; do not copy incompatible controls from previous_plan. For unsupported or glass_reference requests always use ui.controls=[].
+Preserve every requested numerical setup and capability. Include requirements describing ONLY physics/setup explicitly requested by the user, with supported, unsupported or needs_clarification status and reasons. Never invent a requirement for calibration, realism, collision or fracture when the user did not request it. General model limitations belong in limitations, not unsupported requirements. Any unmet actual requirement blocks execution before a substitute is generated.
+Thin glass or a glass window impact is NOT supported by the network panel fixture (minimum thickness12mm). If thin thickness is unspecified, ask for clarification with unsupported/requirements instead of using40mm. Never call40mm thin. Do not substitute a pressure test for an impact.
+pressure must be null except continuum_pressure_reference. That reference accepts peak_pressure_pa1..1e9, even resolution4..12, increments2..64, profile uniform|smooth; geometry/supports remain fixed. No impact/fracture.
+ui contains title and up to12 custom controls with exact id,label,kind,action,min,max,step,value. Only declared actions run. Button actions play_pause/reset/step_forward/step_back use min0,max1,step1,value0. components/reference toggle use min0,max1,step1,value0or1. playback_speed slider bounds .1..4; magnification slider bounds1..100; frame slider bounds0..1. Physical actions height_m for drop (0..2), speed_m_s for panel/knife (0..20), pressure_pa for pressure reference(1..1e9) can be sliders or preset buttons; their values rerun the engine, never deform visuals alone. Choose labels meaningful to the user's experiment. Include play_pause/reset/components and a relevant parameter control when supported. All controls have numeric min,max,step,value with min<max and in-range value. Do not output HTML, scripts or event handlers. Empty controls are allowed for unsupported requests.
+"""
 
 def number(value, low, high, label):
     if type(value) not in (int, float) or not math.isfinite(value) or not low <= value <= high:
@@ -79,7 +102,7 @@ def vector(value, low, high, label):
     return [number(x, low, high, label) for x in value]
 
 def validate_plan(plan):
-    if not isinstance(plan, dict) or set(plan) != set(SCHEMA["properties"]):
+    if not isinstance(plan, dict) or not LEGACY_FIELDS <= set(plan) or set(plan) - set(SCHEMA["properties"]):
         raise ValueError("Unknown or missing playground language fields")
     if plan["language"] != "banjo-playground-1" or plan["experiment"] not in KINDS:
         raise ValueError("Unsupported playground language or experiment")
@@ -120,7 +143,29 @@ def validate_plan(plan):
         raise ValueError("Drop trials currently admit an iron ball or cube")
     if plan["experiment"] == "continuum_pressure_reference" and (plan["speeds_m_s"] or plan["heights_m"]):
         raise ValueError("continuum_pressure_reference is fixed; speed and height sweeps must be empty")
+    if "ui" in plan: validate_ui(plan["ui"], plan["experiment"])
+    pressure = plan.get("pressure")
+    if pressure is not None:
+        if plan["experiment"] != "continuum_pressure_reference" or not isinstance(pressure, dict) or set(pressure) != {"peak_pressure_pa", "resolution", "increments", "profile"}:
+            raise ValueError("Pressure parameters require the continuum pressure experiment")
+        number(pressure["peak_pressure_pa"], 1, 1e9, "peak_pressure_pa")
+        if type(pressure["resolution"]) is not int or pressure["resolution"] not in (4,6,8,10,12): raise ValueError("Pressure resolution must be even in [4,12]")
+        if type(pressure["increments"]) is not int or not 2 <= pressure["increments"] <= 64: raise ValueError("Pressure increments must be in [2,64]")
+        if pressure["profile"] not in ("uniform", "smooth"): raise ValueError("Unknown pressure profile")
+    requirements = plan.get("requirements", [])
+    if not isinstance(requirements, list) or len(requirements)>12: raise ValueError("Invalid requirement list")
+    for item in requirements:
+        if not isinstance(item,dict) or set(item)!={"description","status","reason"} or item["status"] not in ("supported","unsupported","needs_clarification"):
+            raise ValueError("Invalid requirement status")
+        if any(not isinstance(item[k],str) or len(item[k])>1000 for k in ("description","reason")): raise ValueError("Invalid requirement description")
     return plan
+
+def request_blockers(message, plan):
+    """Requirements are separate from schema admission; never silently run a fallback."""
+    blockers = [item["description"]+": "+item["reason"] for item in plan.get("requirements",[]) if item["status"] != "supported"]
+    if plan["experiment"] in ("panel_impact","plate_drop","rigid_drop","custom_objects") and re.search(r"\b(?:thin\s+(?:tempered\s+)?glass|glass\s+window|tempered\s+glass)\b", message, re.I):
+        blockers.append("Thin/window/tempered-glass impact is not supported by this network fixture. Specify a supported setup explicitly or request the published reference; no thicker panel was substituted.")
+    return blockers
 
 def compile_plan(plan):
     validate_plan(plan)

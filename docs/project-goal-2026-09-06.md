@@ -1,5 +1,7 @@
 # Banjo project goal and execution contract — September 6, 2026
 
+**Embedded 3D playground checkpoint:** [Chat-authored experiments and controls](embedded-playground-checkpoint.md) now connects GPT plans to native recordings and an in-page 3D viewer. Physical controls rerun the engine without another model call. All 58 native suites, 3 recorder tests and 49 mocked/control tests pass. This is bounded computed playback; integrated calibrated impact/deformation and realtime qualification remain open. All nine goals and 40 requirements are retained.
+
 **Pressure API and assembled-solver checkpoint:** The [bounded pressure and stiffness implementation](continuum-pressure-performance-checkpoint.md) integrates partial-face loads and provides an optional same-law block-CSR solve. All 58 native suites pass (83.49 s); added pressure-state cases pass a subsequent focused rerun, and 33 mocked playground tests pass (2.164 s). Crossed mesh/load studies still fail the high-load spatial-accuracy gate; the finest iron mesh hits the explicit work cap. Kernel benchmark execution is smoke-tested, but repeated isolated performance qualification remains pending. All nine goals and 40 requirements remain retained.
 
 ## Product outcome
