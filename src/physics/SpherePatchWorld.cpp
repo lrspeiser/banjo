@@ -116,17 +116,97 @@ SpherePatchReport SpherePatchWorld::step(double dt, const DynamicPatchLoad &load
         const Vec3 sphere_momentum_before = sphere_.mass_kg * sphere_.velocity_m_s;
         auto sphere = sphere_;
         const Vec3 external = sphere_force + sphere.mass_kg * gravity;
-        sphere.velocity_m_s += dt * external / sphere.mass_kg;
+        const bool verlet = patch_.integrator() == DynamicPatchIntegrator::VelocityVerlet;
+        sphere.velocity_m_s += (verlet ? .5 : 1.) * dt * external / sphere.mass_kg;
         require(finite(sphere.velocity_m_s) && length(sphere.velocity_m_s) <= 1.e6,
                 "Sphere velocity exceeds validity bound");
         auto charge = [&] {
-            require(++out.geometry_queries <= contact_.maximum_geometry_queries,
+            require(out.geometry_queries < contact_.maximum_geometry_queries,
                     "Contact geometry work budget exceeded");
+            ++out.geometry_queries;
+        };
+        auto impulse = [&](unsigned selected, const std::array<double, 3> &weights, Vec3 normal,
+                           const std::vector<Vec3> &positions, std::vector<Vec3> &velocity,
+                           double event_time, bool final_stage) {
+            require(out.impulse_contacts < contact_.maximum_contact_events,
+                    "Contact event work budget exceeded; refine timestep");
+            const auto &ids = faces[selected];
+            Vec3 point{};
+            for (unsigned i = 0; i < 3; ++i)
+                point += weights[i] * positions[ids[i]];
+            const Vec3 lever = point - sphere.center_m;
+            const Vec3 n = normalized(-lever, normal);
+            auto relative = [&] {
+                Vec3 v{};
+                for (unsigned i = 0; i < 3; ++i)
+                    v += weights[i] * velocity[ids[i]];
+                return sphere.velocity_m_s + cross(sphere.spin_rad_s, lever) - v;
+            };
+            auto inverse = [&](Vec3 direction) {
+                double value =
+                    1 / sphere.mass_kg + lengthSquared(cross(lever, direction)) / inertia(sphere);
+                for (unsigned i = 0; i < 3; ++i)
+                    for (unsigned a = 0; a < 3; ++a)
+                        if (!d.fixed_components[ids[i]][a])
+                            value += weights[i] * weights[i] * axis(direction, a) *
+                                     axis(direction, a) / mass[ids[i]];
+                return value;
+            };
+            const double normal_j = std::max(0., -dot(relative(), n) / inverse(n));
+            require(normal_j > 0 && std::isfinite(normal_j),
+                    "Unresolved zero-impulse contact event");
+            double energy_before = kinetic(sphere);
+            for (unsigned i = 0; i < 3; ++i)
+                energy_before += .5 * mass[ids[i]] * lengthSquared(velocity[ids[i]]);
+            Vec3 applied{};
+            auto apply = [&](Vec3 impulse) {
+                applied += impulse;
+                sphere.velocity_m_s += impulse / sphere.mass_kg;
+                sphere.spin_rad_s += cross(lever, impulse) / inertia(sphere);
+                Vec3 angular = cross(sphere.center_m, impulse) + cross(lever, impulse);
+                for (unsigned i = 0; i < 3; ++i) {
+                    Vec3 free_impulse{}, support{};
+                    for (unsigned a = 0; a < 3; ++a) {
+                        const double component = weights[i] * axis(impulse, a);
+                        if (d.fixed_components[ids[i]][a])
+                            set(support, a, component);
+                        else {
+                            set(free_impulse, a, -component);
+                            set(velocity[ids[i]], a,
+                                axis(velocity[ids[i]], a) - component / mass[ids[i]]);
+                        }
+                    }
+                    out.contact_support_impulse_n_s += support;
+                    angular += cross(positions[ids[i]], free_impulse - support);
+                }
+                out.contact_angular_momentum_residual_kg_m2_s += angular;
+            };
+            apply(normal_j * n);
+            const Vec3 rel = relative(), tangent = rel - dot(rel, n) * n;
+            const double speed = length(tangent);
+            if (speed > 1.e-12 && contact_.friction_coefficient > 0) {
+                const Vec3 direction = tangent / speed;
+                const double j =
+                    std::min(speed / inverse(direction), contact_.friction_coefficient * normal_j);
+                apply(-j * direction);
+            }
+            double energy_after = kinetic(sphere);
+            for (unsigned i = 0; i < 3; ++i)
+                energy_after += .5 * mass[ids[i]] * lengthSquared(velocity[ids[i]]);
+            const double loss = energy_before - energy_after;
+            require(loss >= -1.e-10 * std::max(1., energy_before),
+                    "Contact created kinetic energy");
+            out.contact_dissipation_j += loss;
+            ++out.impulse_contacts;
+            if (out.contacts.size() < 64)
+                out.contacts.push_back(
+                    {selected, event_time, weights, point, n, applied, final_stage});
+            if (final_stage)
+                ++out.velocity_constraint_contacts;
         };
         auto exchange = [&](std::vector<Vec3> &velocity, std::vector<Vec3> &drift) {
             auto positions = x;
             double elapsed = 0;
-            unsigned events = 0;
             auto advance = [&](double amount) {
                 for (std::size_t i = 0; i < positions.size(); ++i) {
                     const auto delta = amount * velocity[i];
@@ -151,10 +231,15 @@ SpherePatchReport SpherePatchWorld::step(double dt, const DynamicPatchLoad &load
                     if (!sweptBoxesOverlap(sphere, points, speeds, remaining,
                                            contact_.contact_margin_m))
                         continue;
+                    require(out.geometry_iterations < contact_.maximum_geometry_iterations,
+                            "Contact geometry iteration budget exceeded");
                     charge();
-                    const auto hit = sweepSphereTriangle(sphere.center_m, sphere.velocity_m_s,
-                                                         sphere.radius_m, points, speeds, remaining,
-                                                         {contact_.contact_margin_m, 128});
+                    const auto hit =
+                        sweepSphereTriangle(sphere.center_m, sphere.velocity_m_s, sphere.radius_m,
+                                            points, speeds, remaining,
+                                            {contact_.contact_margin_m,
+                                             std::min(128u, contact_.maximum_geometry_iterations -
+                                                                out.geometry_iterations)});
                     out.geometry_iterations += hit.iterations;
                     require(out.geometry_iterations <= contact_.maximum_geometry_iterations,
                             "Contact geometry iteration budget exceeded");
@@ -202,83 +287,49 @@ SpherePatchReport SpherePatchWorld::step(double dt, const DynamicPatchLoad &load
                     advance(remaining);
                     break;
                 }
-                require(++events <= contact_.maximum_contact_events,
-                        "Contact event work budget exceeded; refine timestep");
                 advance(earliest.time_s);
-                const auto &ids = faces[selected];
-                const auto weights = earliest.barycentric;
-                Vec3 point{};
-                for (unsigned i = 0; i < 3; ++i)
-                    point += weights[i] * positions[ids[i]];
-                const Vec3 lever = point - sphere.center_m;
-                const Vec3 n = normalized(-lever, earliest.normal_triangle_to_sphere);
-                auto relative = [&] {
-                    Vec3 v{};
-                    for (unsigned i = 0; i < 3; ++i)
-                        v += weights[i] * velocity[ids[i]];
-                    return sphere.velocity_m_s + cross(sphere.spin_rad_s, lever) - v;
-                };
-                auto inverse = [&](Vec3 direction) {
-                    double value = 1 / sphere.mass_kg +
-                                   lengthSquared(cross(lever, direction)) / inertia(sphere);
-                    for (unsigned i = 0; i < 3; ++i)
-                        for (unsigned a = 0; a < 3; ++a)
-                            if (!d.fixed_components[ids[i]][a])
-                                value += weights[i] * weights[i] * axis(direction, a) *
-                                         axis(direction, a) / mass[ids[i]];
-                    return value;
-                };
-                const double normal_j = std::max(0., -dot(relative(), n) / inverse(n));
-                require(normal_j > 0 && std::isfinite(normal_j),
-                        "Unresolved zero-impulse contact event");
-                double energy_before = kinetic(sphere);
-                for (unsigned i = 0; i < 3; ++i)
-                    energy_before += .5 * mass[ids[i]] * lengthSquared(velocity[ids[i]]);
-                Vec3 applied{};
-                auto apply = [&](Vec3 impulse) {
-                    applied += impulse;
-                    sphere.velocity_m_s += impulse / sphere.mass_kg;
-                    sphere.spin_rad_s += cross(lever, impulse) / inertia(sphere);
-                    Vec3 angular = cross(sphere.center_m, impulse) + cross(lever, impulse);
-                    for (unsigned i = 0; i < 3; ++i) {
-                        Vec3 free_impulse{}, support{};
-                        for (unsigned a = 0; a < 3; ++a) {
-                            const double component = weights[i] * axis(impulse, a);
-                            if (d.fixed_components[ids[i]][a])
-                                set(support, a, component);
-                            else {
-                                set(free_impulse, a, -component);
-                                set(velocity[ids[i]], a,
-                                    axis(velocity[ids[i]], a) - component / mass[ids[i]]);
-                            }
-                        }
-                        out.contact_support_impulse_n_s += support;
-                        angular += cross(positions[ids[i]], free_impulse - support);
-                    }
-                    out.contact_angular_momentum_residual_kg_m2_s += angular;
-                };
-                apply(normal_j * n);
-                const Vec3 rel = relative(), tangent = rel - dot(rel, n) * n;
-                const double speed = length(tangent);
-                if (speed > 1.e-12 && contact_.friction_coefficient > 0) {
-                    const Vec3 direction = tangent / speed;
-                    const double j = std::min(speed / inverse(direction),
-                                              contact_.friction_coefficient * normal_j);
-                    apply(-j * direction);
-                }
-                double energy_after = kinetic(sphere);
-                for (unsigned i = 0; i < 3; ++i)
-                    energy_after += .5 * mass[ids[i]] * lengthSquared(velocity[ids[i]]);
-                const double loss = energy_before - energy_after;
-                require(loss >= -1.e-10 * std::max(1., energy_before),
-                        "Contact created kinetic energy");
-                out.contact_dissipation_j += loss;
-                ++out.impulse_contacts;
-                if (out.contacts.size() < 64)
-                    out.contacts.push_back({selected, elapsed, weights, point, n, applied});
+                impulse(selected, earliest.barycentric, earliest.normal_triangle_to_sphere,
+                        positions, velocity, elapsed, false);
             }
         };
+        auto final_velocity = [&](std::vector<Vec3> &velocity, const std::vector<Vec3> &u) {
+            if (!verlet)
+                return;
+            sphere.velocity_m_s += .5 * dt * external / sphere.mass_kg;
+            std::vector<Vec3> positions(u.size());
+            for (std::size_t i = 0; i < u.size(); ++i)
+                positions[i] = d.reference_positions_m[i] + u[i];
+            // The second force kick must leave touching surfaces with no
+            // unresolved closing velocity. This only changes velocity through
+            // the same passive contact impulse, never by moving positions.
+            bool changed;
+            do {
+                changed = false;
+                for (unsigned f = 0; f < faces.size(); ++f) {
+                    const auto &ids = faces[f];
+                    charge();
+                    const auto c = closestPointOnTriangle(
+                        sphere.center_m, {positions[ids[0]], positions[ids[1]], positions[ids[2]]});
+                    require(c.resolved, "Invalid surface in final velocity constraint");
+                    const double roundoff =
+                        32 * std::numeric_limits<double>::epsilon() * std::max(1., sphere.radius_m);
+                    if (c.distance_m > sphere.radius_m + contact_.contact_margin_m + roundoff)
+                        continue;
+                    Vec3 material_velocity{};
+                    for (unsigned i = 0; i < 3; ++i)
+                        material_velocity += c.barycentric[i] * velocity[ids[i]];
+                    if (dot(sphere.velocity_m_s - material_velocity, c.normal_triangle_to_query) >=
+                        -1.e-10)
+                        continue;
+                    impulse(f, c.barycentric, c.normal_triangle_to_query, positions, velocity, dt,
+                            true);
+                    changed = true;
+                }
+            } while (changed);
+        };
         auto verify = [&](const std::vector<Vec3> &u, const DynamicPatchReport &material_report) {
+            require(finite(sphere.velocity_m_s) && length(sphere.velocity_m_s) <= 1.e6,
+                    "Sphere final velocity exceeds validity bound");
             require(finite(sphere.center_m) && length(sphere.center_m) <= 1000,
                     "Sphere position exceeds bounds");
             std::vector<Vec3> final_positions(u.size());
@@ -323,7 +374,7 @@ SpherePatchReport SpherePatchWorld::step(double dt, const DynamicPatchLoad &load
                         finite(out.linear_momentum_balance_residual_kg_m_s),
                     "Nonfinite combined contact report");
         };
-        out.material = patch_.stepImpl(dt, load, exchange, verify);
+        out.material = patch_.stepImpl(dt, load, exchange, verify, final_velocity);
         if (!out.material.accepted) {
             out.error = out.material.error;
             return out;

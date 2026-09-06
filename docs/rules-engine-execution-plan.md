@@ -70,7 +70,7 @@ Acceptance: Fresh randomized requests generate unseen parameter sets through the
 
 ## R09: Realtime execution and compiled behaviors
 
-Status: planned.
+Status: active; accepted evaluation reuse is implemented, world-scale qualification remains open.
 
 Implementation: Profile active islands, sleeping regions, compiled law kernels, conservative LOD and state-keyed offline models with applicability/invalidation checks. Keep LLM out of per-frame execution.
 
@@ -101,3 +101,7 @@ The previous failed thin-glass recording and unsupported dent/rubber requests re
 ## Coupled-contact checkpoint
 
 [Native sphere/mesh coupling](coupled-contact-checkpoint.md) now implements swept contact timing, moving material geometry, friction/spin, support reactions and atomic state commit. The full-duration elastic/J2 drop probe records actual mesh motion and constitutive history. It contains no material-name branches or prescribed rebound. Material contact, numerical energy and mesh refinement remain active acceptance gates. R04 finite-strain rubber and R06 fracture are still planned; no new browser capability is exposed by this checkpoint.
+
+## Adaptive dynamics checkpoint
+
+[Error-controlled contact](adaptive-material-contact-checkpoint.md) implements full-interval rollback, comparison of full/two-half trials, bounded consumable contact-error reserves, optional velocity Verlet with final contact-velocity constraints, and cached accepted material evaluations. Two complete 0.1 s elastic/J2 recordings pass a 3 microjoule accumulated absolute numerical-energy budget. The finer-mesh recordings exhaust the same work ceiling; R03 spatial accuracy and R09 realtime gates remain open. The next work is qualified spatial response and measured stiff-region integration cost, followed by unloaded dent/state retention and playground integration.

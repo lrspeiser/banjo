@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Adaptive material contact:** [Error-controlled advances](adaptive-material-contact-checkpoint.md) add transactional error/work budgets, optional velocity Verlet with final contact-velocity constraints, and cached constitutive state. Two full elastic/J2 reference drops pass a 3 microjoule accumulated numerical-energy budget; finer meshes exhaust the work cap. Spatial accuracy, unloaded dents, calibrated failure, playground integration and realtime remain open. All nine prior workstreams and 40 mechanics remain retained.
+
 **Coupled contact checkpoint:** [Sphere/mesh dynamics](coupled-contact-checkpoint.md) now connects moving tetrahedral material state, swept sphere contact, friction and plastic history with explicit energy/momentum diagnostics. R03 and impact-driven J2 integration are active; temporal/spatial accuracy, unloaded dents, fracture, rubber and playground integration remain open. All nine earlier workstreams and 40 mechanics remain retained.
 
 **General material rules execution:** [Ten implementation goals](rules-engine-execution-plan.md) are active. R01/R02 now have a property-based native material path and a bounded inertial tetrahedral foundation; coupled impact fracture, residual dents, finite-strain rubber, shared persistence and realtime qualification remain unfinished. All nine earlier workstreams and 40 mechanics remain retained.

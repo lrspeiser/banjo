@@ -765,7 +765,7 @@
       {
         "id": "R09",
         "title": "Realtime execution and compiled behaviors",
-        "status": "planned",
+        "status": "active",
         "implementation": "Profile active islands, sleeping regions, compiled law kernels, conservative LOD and state-keyed offline models with applicability/invalidation checks. Keep LLM out of per-frame execution.",
         "acceptance": "Publish hardware, active interaction counts, p50/p95/p99 cost, memory and overload policy; target 60 Hz total frame with physics budget <=4 ms on declared reference hardware, qualify before promising."
       },
@@ -778,6 +778,63 @@
       }
     ],
     "checkpoint": {
+      "status": "R02/R03 adaptive temporal budget checkpoint; no whole-platform goal complete",
+      "base_commit": "3b06ce1",
+      "evidence": "docs/adaptive-material-contact-checkpoint.md",
+      "implemented": [
+        "canonical-state rollback with immutable material evaluation cache",
+        "coarse/two-half adaptive advances with global interval indicator/work budgets",
+        "optional velocity Verlet and passive final contact velocity constraints"
+      ],
+      "measured": {
+        "full_duration_s": 0.1,
+        "material_sets": [
+          "fictional linear elastic E1MPa",
+          "fictional J2 E1MPa yield1.2kPa"
+        ],
+        "absolute_energy_budget_j": 3e-06,
+        "maximum_recording_step_calls": 200000,
+        "elastic_absolute_energy_residual_j": 2.0354075724990256e-06,
+        "j2_absolute_energy_residual_j": 2.2211279782233294e-06
+      },
+      "failed_gates": [
+        "fine mesh work budget",
+        "spatial accuracy qualification",
+        "world realtime qualification"
+      ],
+      "next": "Reduce and qualify spatial/contact work under unchanged error budgets; then validate unloaded impact geometry and integrate accepted state/experiments into playground.",
+      "validation": {
+        "native_suites_passed": 62,
+        "native_wall_s": 93.08,
+        "adaptive_cases": 8,
+        "dynamic_cases": 8,
+        "python_material_tests_passed": 12,
+        "default_reference_frames": "exactly_unchanged",
+        "fine_mesh_gate": "work_budget_exhausted",
+        "playground": "unchanged_not_integrated"
+      }
+    },
+    "foundation_checkpoint": {
+      "status": "R01/R02 partial implementation, no goal fully accepted",
+      "native_material_path": "3 supported small-strain laws; no material-name dispatch",
+      "generated_trials": {
+        "seeded_materials": 12,
+        "live_gpt_materials": 3,
+        "analytic_and_rename_checks": "pass"
+      },
+      "dynamic_patch": "inertia, transactional steps, J2 history, explicit stability bound; no contact",
+      "next": "R03 coupled surface contact with energy/impulse audit, then impact-driven deformation; stiff thin structures need timestep strategy",
+      "evidence": "docs/rules-engine-foundation-checkpoint.md",
+      "validation": {
+        "native_suites_passed": 59,
+        "native_wall_s": 86.07,
+        "new_python_tests_passed": 12,
+        "playground_passed": 61,
+        "playground_skipped": 1,
+        "live_llm_materials_passed": 3
+      }
+    },
+    "coupled_contact_checkpoint": {
       "status": "R01/R02/R03 and impact J2 partially implemented; no goal fully accepted",
       "base_commit": "77e1db3",
       "evidence": "docs/coupled-contact-checkpoint.md",
@@ -801,26 +858,6 @@
         "spatial_response_gate": "not_converged",
         "realtime_gate": "not_passed",
         "measurements": "docs/coupled-contact-results.json"
-      }
-    },
-    "foundation_checkpoint": {
-      "status": "R01/R02 partial implementation, no goal fully accepted",
-      "native_material_path": "3 supported small-strain laws; no material-name dispatch",
-      "generated_trials": {
-        "seeded_materials": 12,
-        "live_gpt_materials": 3,
-        "analytic_and_rename_checks": "pass"
-      },
-      "dynamic_patch": "inertia, transactional steps, J2 history, explicit stability bound; no contact",
-      "next": "R03 coupled surface contact with energy/impulse audit, then impact-driven deformation; stiff thin structures need timestep strategy",
-      "evidence": "docs/rules-engine-foundation-checkpoint.md",
-      "validation": {
-        "native_suites_passed": 59,
-        "native_wall_s": 86.07,
-        "new_python_tests_passed": 12,
-        "playground_passed": 61,
-        "playground_skipped": 1,
-        "live_llm_materials_passed": 3
       }
     }
   }
