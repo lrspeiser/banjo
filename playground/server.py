@@ -24,6 +24,8 @@ import uuid
 
 from experiment_language import ROOT, KINDS, LIMITATIONS, SCHEMA, PLANNER_SCHEMA, lower_proposal, SYSTEM, compile_plan, validate_plan, request_blockers
 from control_contract import default_ui, apply_control
+from experiment_diagnostics import build_diagnostics
+from experiment_review import review_evidence
 from banjo_authoring import EngineCLI, EngineError, write_package
 
 STATIC = Path(__file__).resolve().parent
@@ -98,6 +100,16 @@ class Playground:
         self.lock = threading.RLock()
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="banjo-playground")
         self.studios = []
+        self.reviewing = set()
+
+    def log_event(self, job_id, event, **fields):
+        directory = self.runs_path / job_id
+        if not directory.is_dir(): return
+        record = {"schema":"banjo.experiment-event.v1","time_unix_s":time.time(),"job_id":job_id,"event":event,**fields}
+        encoded=json.dumps(record,allow_nan=False)
+        if self.api_key: encoded=encoded.replace(self.api_key,"[redacted]")
+        with self.lock:
+            with (directory/"events.jsonl").open("a",encoding="utf-8") as stream: stream.write(encoded+"\n")
 
     def status(self):
         return {"key_configured": bool(self.api_key), "model": self.model,
@@ -137,6 +149,7 @@ class Playground:
 
     def update(self, job_id, **fields):
         with self.lock: self.jobs[job_id].update(fields)
+        if "status" in fields: self.log_event(job_id,"state",status=fields["status"],message=fields.get("message",""))
 
     def get(self, job_id):
         with self.lock:
@@ -165,6 +178,7 @@ class Playground:
         directory = self.runs_path / job_id
         try:
             directory.mkdir(parents=True, exist_ok=False)
+            self.log_event(job_id,"started",planning="model" if prepared_plan is None else "validated_control",engine_sha256=hashlib.sha256(self.engine_path.read_bytes()).hexdigest(),source_sha256={name:hashlib.sha256((STATIC/name).read_bytes()).hexdigest() for name in ("server.py","experiment_language.py","control_contract.py","experiment_diagnostics.py")})
             self.update(job_id,request_text=message)
             if prepared_plan is None:
                 plan, timing = self.planner(self.api_key, self.model, message, previous)
@@ -211,6 +225,7 @@ class Playground:
                     try:
                         recorder = self.engine_path.with_name("banjo_playground_record"+self.engine_path.suffix)
                         if recorder.is_file():
+                            self.log_event(job_id,"native_execution_started",case_index=index,recorder_sha256=hashlib.sha256(recorder.read_bytes()).hexdigest(),requested_steps=steps)
                             playback = directory/f"playback-{index:02d}.json"
                             result = subprocess.run([str(recorder),"--package",str(path),"--steps",str(steps),"--output",str(playback)],capture_output=True,text=True,encoding="utf-8",timeout=75,check=False)
                             if result.returncode or not playback.is_file(): raise ValueError("Native browser recording failed; no substitute motion was generated")
@@ -219,6 +234,9 @@ class Playground:
                             if recording.get("schema") != "banjo.playback.v1" or recording.get("status") not in ("complete","solver_limit"):
                                 raise ValueError("Native recording does not match browser contract")
                             case["report"],case["status"] = recording["report"],recording["status"]
+                            case["diagnostics"] = build_diagnostics(plan,case["package"],recording)
+                            (directory/f"diagnostics-{index:02d}.json").write_text(json.dumps(case["diagnostics"],indent=2,allow_nan=False),encoding="utf-8")
+                            self.log_event(job_id,"case_recorded",case_index=index,status=case["status"],completed_steps=recording.get("completed_steps"),requested_steps=steps,diagnostics_file=f"diagnostics-{index:02d}.json")
                             case["playback_available"] = True
                             if recording.get("error"): case["error"] = recording["error"]
                             with self.lock: self.playbacks[(job_id,index)] = playback
@@ -248,12 +266,14 @@ class Playground:
             snapshot = self.get(job_id)
             snapshot["timing"]["total_wall_s"] = time.perf_counter()-start
             self.update(job_id, timing=snapshot["timing"])
+            self.log_event(job_id,"finished",status=snapshot["status"],total_wall_s=snapshot["timing"]["total_wall_s"])
             (directory/"job.json").write_text(json.dumps(self.get(job_id),indent=2,allow_nan=False),encoding="utf-8")
         except Exception as exc:
             # Never expose arbitrary upstream HTTP bodies or secrets.
             public = str(exc) if isinstance(exc, (ValueError, EngineError)) else "The local experiment failed; inspect the bounded setup and build availability."
             if self.api_key: public = public.replace(self.api_key, "[redacted]")
             self.update(job_id, status="error", error=public, message=public)
+            self.log_event(job_id,"error",message=public)
             if directory.is_dir():
                 (directory/"job.json").write_text(json.dumps(self.get(job_id),indent=2,allow_nan=False),encoding="utf-8")
 
@@ -345,8 +365,55 @@ class Playground:
         if job["status"] != "complete" or type(index) is not int or not 0<=index<len(job["cases"]): raise ValueError("Choose a completed experiment case")
         plan=apply_control(job["plan"],body["action"],body["value"],index)
         plan["explanation"]=f"New native run from {job['plan']['name']}: {body['action']} = {body['value']}. Other declared settings are retained."
+        if plan["duration_s"] != job["plan"]["duration_s"]:
+            plan["explanation"] = f"New native run: {body['action']} = {body['value']}. Recording extended from {job['plan']['duration_s']:g} to {plan['duration_s']:g} seconds to include the estimated fall and 0.5 seconds of contact/rebound observation. Other physical settings are retained."
         validate_plan(plan)
         return self.submit({"message":f"Playground control from {job_id} case {index}: {body['action']}={body['value']}","request_id":body["request_id"],"auto_open":False},prepared_plan=plan)
+
+    def evidence(self, job_id, index):
+        job=self.get(job_id)
+        if type(index) is not int or not 0<=index<len(job["cases"]): raise ValueError("Choose an experiment case")
+        case=job["cases"][index]
+        diagnostics=case.get("diagnostics")
+        if diagnostics is None or case.get("playback_available"):
+            if case.get("playback_available"):
+                recording=strict_json(self.playback(job_id,index))
+                diagnostics=build_diagnostics(job["plan"],case.get("package",{}),recording)
+            else:
+                diagnostics=build_diagnostics(job["plan"],case.get("package",{}),{"status":case["status"],"report":case.get("report",{})})
+        path=self.runs_path/job_id/"events.jsonl"
+        events=[]
+        if path.is_file() and path.stat().st_size<=256*1024:
+            events=[strict_json(line) for line in path.read_text(encoding="utf-8").splitlines() if line][-64:]
+        bundle={"job_id":job_id,"case_index":index,"request":job.get("request_text","Original request was not retained by this older job"),"plan":{"name":job["plan"]["name"],"experiment":job["plan"]["experiment"],"duration_s":job["plan"]["duration_s"],"explanation":job["plan"]["explanation"]},"case_wall_s":case.get("wall_s"),"response_scope":("Rigid drop: fracture and deformation are disabled regardless of material damage parameters" if job["plan"].get("drop",{}).get("representation")=="rigid" else "Consult the authored representation and reported constitutive limits"),"requirements":job["plan"].get("requirements",[]),"diagnostics_source_sha256":hashlib.sha256((STATIC/"experiment_diagnostics.py").read_bytes()).hexdigest(),"diagnostics":diagnostics,"events":events,"llm_review":case.get("llm_review")}
+        return strict_json(json.dumps(bundle,allow_nan=False).replace(self.api_key,"[redacted]") if self.api_key else json.dumps(bundle,allow_nan=False))
+
+    def analyze(self, job_id, body):
+        if not isinstance(body,dict) or set(body)!={"case_index"}: raise ValueError("Expected case_index")
+        index=body["case_index"]
+        evidence=self.evidence(job_id,index)
+        if self.get(job_id)["status"] not in {"complete","error"}: raise ValueError("Wait for the experiment to finish before analysis")
+        if evidence["llm_review"] is not None: return evidence["llm_review"]
+        key=(job_id,index)
+        with self.lock:
+            cached=self.jobs[job_id]["cases"][index].get("llm_review")
+            if cached is not None: return cached
+            if key in self.reviewing: raise ValueError("Analysis already running; wait for it to finish")
+            self.reviewing.add(key)
+        try:
+            self.log_event(job_id,"review_started",case_index=index,model=self.model)
+            (self.runs_path/job_id/f"review-evidence-{index:02d}.json").write_text(json.dumps(evidence,indent=2,allow_nan=False),encoding="utf-8")
+            result=review_evidence(self.api_key,self.model,evidence)
+            with self.lock:
+                self.jobs[job_id]["cases"][index]["llm_review"]=result
+                (self.runs_path/job_id/"job.json").write_text(json.dumps(self.jobs[job_id],indent=2,allow_nan=False),encoding="utf-8")
+            self.log_event(job_id,"review_finished",case_index=index)
+            return result
+        except Exception:
+            self.log_event(job_id,"review_failed",case_index=index)
+            raise
+        finally:
+            with self.lock: self.reviewing.discard(key)
 
     def open_case(self, job_id, index):
         if type(index) is not int: raise ValueError("case_index must be an integer")
@@ -414,6 +481,8 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/status": return self.send(app.status())
             if path=="/api/goal": return self.send({"markdown":(ROOT/"docs/project-goal-2026-09-06.md").read_text(encoding="utf-8")})
             if path=="/api/schema": return self.send({"language":"banjo-playground-1","schema":SCHEMA,"material_validation":"experimental; no calibrated fracture claim","limits":{"network_cells":850,"objects":12,"sweep_cases":4,"duration_s":3,"recording_bytes":64*1024*1024}})
+            match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/diagnostics/(\d+)",path)
+            if match: return self.send(app.evidence(match[1],int(match[2])))
             match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/playback/(\d+)",path)
             if match: return self.send(app.playback(match[1],int(match[2])))
             match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})(?:/package/(\d+))?",path)
@@ -442,6 +511,8 @@ class Handler(BaseHTTPRequestHandler):
             body=strict_json(self.rfile.read(length))
             path=urlsplit(self.path).path
             if path=="/api/chat": return self.send(self.server.app.submit(body),202)
+            match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/analyze",path)
+            if match: return self.send(self.server.app.analyze(match[1],body))
             match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/rerun",path)
             if match: return self.send(self.server.app.rerun(match[1],body),202)
             match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/open",path)

@@ -9,6 +9,16 @@ from control_contract import UI_SCHEMA, apply_control, default_ui, validate_ui
 
 
 class PlaygroundControlTests(unittest.TestCase):
+    def test_height_change_extends_recording_through_fall_and_rebound(self):
+        for kind in ("drop_test", "plate_drop", "rigid_drop"):
+            plan = {"experiment":kind,"duration_s":.5,"heights_m":[],"drop":{"heights_m":[.201]},"ui":default_ui(kind)}
+            updated = apply_control(plan,"height_m",1.391)
+            self.assertGreaterEqual(updated["duration_s"], math.sqrt(2*1.391/9.81)+.5)
+            self.assertLessEqual(updated["duration_s"],3)
+            self.assertEqual(plan["duration_s"],.5)
+        plan["duration_s"]=2.5
+        self.assertEqual(apply_control(plan,"height_m",.1)["duration_s"],2.5)
+
     def test_schema_is_strict_and_default_is_valid(self):
         self.assertEqual(UI_SCHEMA["additionalProperties"], False)
         ui = default_ui("plate_drop")

@@ -1,5 +1,7 @@
 # Banjo mechanics scorecard
 
+**Experiment evidence checkpoint:** [Logging, GPT review and corrected drop duration](experiment-review-checkpoint.md) adds auditable saved evidence and on-demand analysis. Actual three-material rebound is recorded; solver contact-force telemetry and calibrated material response remain open. All nine goals and 40 mechanics are retained.
+
 **Composable experiment checkpoint:** [General experiment authoring](general-experiment-checkpoint.md) adds configurable comparative drops and freely composed initial scenes, typed GPT proposals, explicit fidelity and archived 3D results. Experimental6mm panels are admitted but fail the damage/refinement gate; no thin-shell, calibrated fracture or realtime claim is made. The [seven-stage execution plan](general-experiment-plan.md) retains all nine goals and40 requirements.
 
 **Embedded 3D playground checkpoint:** [Chat-authored experiments and controls](embedded-playground-checkpoint.md) now connects GPT plans to native recordings and an in-page 3D viewer. Physical controls rerun the engine without another model call. All 58 native suites, 3 recorder tests and 49 mocked/control tests pass. This is bounded computed playback; integrated calibrated impact/deformation and realtime qualification remain open. All nine goals and 40 requirements are retained.

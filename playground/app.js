@@ -364,6 +364,7 @@
 
   function clearViewer(message = "Select a completed case with playback data.") {
     setPlaybackEnabled(false);
+    $("viewer-review").replaceChildren();$("viewer-evidence").textContent="";
     state.playbackRequest += 1; state.scene?.dispose(); state.scene = null; state.loadedPlaybackKey = null;
     const stage = $("viewer-stage"); stage.replaceChildren();
     const empty = document.createElement("div"); empty.className = "viewer-empty"; empty.textContent = message; stage.append(empty);
@@ -438,9 +439,30 @@
       if(control.kind==="button"){const b=document.createElement("button");b.type="button";b.textContent=text(control.label,control.id);b.addEventListener("click",()=>{if(local[control.action])local[control.action]();else rerun(control.action,control.value);});row.append(b);} else {const input=document.createElement("input");input.type=control.kind==="toggle"?"checkbox":"range";if(input.type==="range"){input.min=control.min;input.max=control.max;input.step=control.step;input.value=control.value;}else input.checked=Boolean(control.value);const output=document.createElement("output");output.textContent=input.type==="checkbox"?(input.checked?"On":"Off"):formatValue(control.action,input.value);row.append(output,input);const update=()=>{const value=input.type==="checkbox"?input.checked:Number(input.value);output.textContent=input.type==="checkbox"?(value?"On":"Off"):formatValue(control.action,value);displayAction(control.action,value);};input.addEventListener("input",update);if(["height_m","speed_m_s","pressure_pa"].includes(control.action)){const apply=document.createElement("button");apply.type="button";apply.textContent="Apply and rerun";apply.title="Runs the native engine with a new validated plan.";apply.addEventListener("click",()=>rerun(control.action,Number(input.value)));row.append(apply);}else displayAction(control.action,input.type==="checkbox"?input.checked:Number(input.value));} root.append(row); });
   }
 
+  async function inspectEvidence(analyze=false) {
+    const jobId=state.jobId, index=state.selectedCase, key=`${jobId}:${index}`;
+    if(!jobId)return;
+    const button=$(analyze ? "viewer-analyze" : "viewer-evidence-button");button.disabled=true;const label=button.textContent;button.textContent=analyze ? "Analyzing…" : "Loading evidence…";
+    try {
+      const result=await api(`/api/jobs/${encodeURIComponent(jobId)}/${analyze ? "analyze" : `diagnostics/${index}`}`, analyze ? {method:"POST",headers:{"Content-Type":"application/json",...tokenHeaders()},body:JSON.stringify({case_index:index})} : {});
+      if(key!==`${state.jobId}:${state.selectedCase}`)return;
+      if(analyze){renderReview(result);}
+      else {$("viewer-evidence").textContent=JSON.stringify(result,null,2);$("viewer-evidence-details").open=true;if(result.llm_review)renderReview(result.llm_review);}
+    } catch(error){showToast(error.message,true);}
+    finally {if(key===`${state.jobId}:${state.selectedCase}`){button.disabled=false;button.textContent=label;}}
+  }
+
+  function renderReview(result) {
+    const root=$("viewer-review");root.replaceChildren();const review=result.review;
+    const title=document.createElement("strong");title.textContent=`GPT interpretation: ${review.verdict.replaceAll("_"," ")}`;root.append(title);
+    const summary=document.createElement("p");summary.textContent=review.summary;root.append(summary);
+    for(const [label,items] of [["Findings",review.findings],["Next steps",review.next_steps]]){const heading=document.createElement("strong");heading.textContent=label;root.append(heading);const list=document.createElement("ul");for(const item of items){const li=document.createElement("li");li.textContent=item;list.append(li);}root.append(list);}
+  }
+
   async function loadPlayback(index=state.selectedCase, auto=false) {
+    $("viewer-analyze").textContent="Analyze this run with GPT";$("viewer-evidence-button").textContent="View measured evidence";
     const item=state.job?.cases?.[index]; if(!state.jobId || !playbackAvailable(item)){if(auto)return;showToast("This case has no embedded playback data.",true);return;}
-    state.selectedCase=index;renderLanguage();renderViewerCaseSelect();activateTab("viewer");$("viewer-title").textContent=text(state.job?.plan?.ui?.title,item.name || "Computed sequence.");
+    $("viewer-review").replaceChildren();$("viewer-evidence").textContent="";$("viewer-evidence-details").open=false;state.selectedCase=index;renderLanguage();renderViewerCaseSelect();activateTab("viewer");$("viewer-title").textContent=text(state.job?.plan?.ui?.title,item.name || "Computed sequence.");
     const key=`${state.jobId}:${index}`, request=++state.playbackRequest;
     try { let playback=state.playbackCache.get(key);if(!playback){playback=await api(`/api/jobs/${encodeURIComponent(state.jobId)}/playback/${index}`);state.playbackCache.set(key,playback);}if(request!==state.playbackRequest||key!==`${state.jobId}:${state.selectedCase}`)return; setPlaybackEnabled(true); if(state.loadedPlaybackKey!==key){ensureScene().load(playback);state.loadedPlaybackKey=key;} const [kind,message]=validityMessage(item,playback), validity=$("viewer-validity");validity.className=`viewer-validity ${kind}`;validity.textContent=message;renderCustomControls(state.job?.plan?.ui);$("viewer-native").disabled=!canOpenCase(item); }
     catch(error){state.scene?.dispose();state.scene=null;$("viewer-stage").replaceChildren();const p=document.createElement("p");p.className="viewer-error";p.textContent=error.message;$("viewer-stage").append(p);state.loadedPlaybackKey=null;showToast(error.message,true);}
@@ -589,6 +611,8 @@
   $("new-experiment").addEventListener("click", resetExperiment);
   $("language-case-select").addEventListener("change", (event) => { state.selectedCase = Number(event.target.value); renderLanguage(); });
   $("download-package-language").addEventListener("click", downloadPackage);
+  $("viewer-evidence-button").addEventListener("click",()=>inspectEvidence());
+  $("viewer-analyze").addEventListener("click",()=>inspectEvidence(true));
   $("viewer-case-select").addEventListener("change",(event)=>loadPlayback(Number(event.target.value)));
   $("viewer-play").addEventListener("click",()=>{const playing=state.scene?.play();$("viewer-play").textContent=playing?"Pause":"Play";});
   $("viewer-reset").addEventListener("click",()=>{state.scene?.reset();$("viewer-play").textContent="Play";});

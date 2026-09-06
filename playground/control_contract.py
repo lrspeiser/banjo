@@ -165,6 +165,13 @@ def apply_control(plan: dict[str, Any], action: str, value: Any, case_index: int
     if action == "height_m":
         if experiment == "drop_test": updated["drop"]["heights_m"] = [value]
         else: updated["heights_m"] = [value]
+        if "duration_s" in plan:
+            # These drop routes use fixed -9.81 m/s² gravity. Allow the fall
+            # plus half a second to observe contact/rebound. Legacy rigid
+            # targets also fall from their initial elevated placement.
+            target_fall = .18 if experiment == "rigid_drop" else 0
+            observation_s = math.ceil((math.sqrt(2*(numeric+target_fall)/9.81)+.5)*100)/100
+            updated["duration_s"] = max(plan["duration_s"], observation_s)
     elif action == "speed_m_s":
         updated["speeds_m_s"] = [value]
     else:

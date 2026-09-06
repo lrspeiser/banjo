@@ -149,3 +149,7 @@ follow-up changes and strict solver failures separately.
 
 OpenAI integration follows the official [Structured Outputs guide](https://developers.openai.com/api/docs/guides/structured-outputs)
 and [GPT-5 mini model documentation](https://developers.openai.com/api/docs/models/gpt-5-mini).
+
+## Measured evidence and GPT review
+
+In 3D playback, scroll the sidebar below authored controls to **View measured evidence** or **Analyze this run with GPT**. Analysis uses the server-only configured key, saves the exact evidence and result, and reuses saved reviews. See [checkpoint and API details](../docs/experiment-review-checkpoint.md).
