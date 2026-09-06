@@ -71,6 +71,16 @@ SmallStrainLaw oakLikeOrthotropic() {
     };
 }
 
+SmallStrainLaw continuumOakOrthotropic() {
+    return {
+        .kind = SmallStrainLawKind::OrthotropicElastic,
+        .young_modulus_pa = {.7e9, 12.e9, 1.e9},
+        .poisson_xy_yz_zx = {.025, .30, .30},
+        .shear_xy_yz_zx_pa = {.6e9, .7e9, .1e9},
+        .maximum_total_strain_norm = .05,
+    };
+}
+
 SmallStrainLaw illustrativeMetalJ2() {
     SmallStrainLaw law;
     law.kind = SmallStrainLawKind::J2Plastic;
@@ -83,6 +93,12 @@ SmallStrainLaw illustrativeMetalJ2() {
         .maximum_total_strain_norm = .05,
     };
     law.maximum_total_strain_norm = .05;
+    return law;
+}
+
+SmallStrainLaw continuumIronJ2() {
+    SmallStrainLaw law = illustrativeMetalJ2();
+    law.j2.poisson_ratio = .30;
     return law;
 }
 
@@ -575,6 +591,369 @@ void matchedGlassOakIronControlsRemainStableBelowYield() {
             "declared oak, glass and iron axial moduli must order compliance without name tuning");
 }
 
+PatchSolveOptions backendOptions(PatchLinearBackend backend) {
+    auto options = tightSolveOptions();
+    options.linear_backend = backend;
+    options.maximum_element_visits = 12000000;
+    return options;
+}
+
+PatchDefinition pressurePatch(PatchMaterial material) {
+    PatchDefinition definition = makeTetrahedralBrick(
+        {.04, .02, .04}, {4, 2, 4}, std::move(material));
+    for (std::size_t i = 0; i < definition.reference_positions_m.size(); ++i)
+        if (std::abs(definition.reference_positions_m[i].y) < 1.e-14)
+            definition.fixed_components[i] = {true, true, true};
+    return definition;
+}
+
+PatchLoad centralPressure(const SmallStrainPatch &patch, double pressure_pa) {
+    const auto &positions = patch.definition().reference_positions_m;
+    PatchLoad load = emptyLoad(positions.size());
+    double loaded_area = 0.;
+    for (const auto &triangle : patch.boundaryTriangles()) {
+        const Vec3 &a = positions[triangle[0]];
+        const Vec3 &b = positions[triangle[1]];
+        const Vec3 &c = positions[triangle[2]];
+        const Vec3 center = (a + b + c) / 3.;
+        if (std::abs(a.y - .02) > 1.e-14 || std::abs(b.y - .02) > 1.e-14 ||
+            std::abs(c.y - .02) > 1.e-14 || std::abs(center.x) > .01000000000001 ||
+            std::abs(center.z) > .01000000000001)
+            continue;
+        const double area = triangleArea(a, b, c);
+        loaded_area += area;
+        for (unsigned node : triangle)
+            load.nodal_forces_n[node].y -= pressure_pa * area / 3.;
+    }
+    near(loaded_area, .0004, 1.e-16, 1.e-13,
+         "central pressure fixture must cover the fixed 20 by 20 millimetre area");
+    nearVec(sum(load.nodal_forces_n), {0., -pressure_pa * loaded_area, 0.},
+            1.e-8, 2.e-13,
+            "distributed pressure nodal forces must recover pressure times loaded area");
+    return load;
+}
+
+double maximumEquivalentPlasticStrain(const PatchState &state) {
+    double result = 0.;
+    for (const auto &point : state.material_points)
+        result = std::max(result, point.equivalent_plastic_strain);
+    return result;
+}
+
+void compareBackendStates(const PatchState &reference, const PatchState &assembled,
+                          std::string_view message) {
+    require(reference.revision == assembled.revision &&
+            reference.displacements_m.size() == assembled.displacements_m.size() &&
+            reference.material_points.size() == assembled.material_points.size() &&
+            reference.last_nodal_forces_n.size() == assembled.last_nodal_forces_n.size(),
+            std::string(message) + ": state layout/revision parity");
+    // Five nanometres in displacement corresponds to roughly 5e-7 strain on
+    // this fixture's 10 mm cells. The absolute strain/history tolerance follows
+    // that resolvable displacement difference; the 2e-7 relative allowance is
+    // small enough to expose a missing block or physical-shear factor.
+    for (std::size_t i = 0; i < reference.displacements_m.size(); ++i) {
+        nearVec(assembled.displacements_m[i], reference.displacements_m[i],
+                5.e-9, 2.e-7, message);
+        require(sameVecExactly(assembled.last_nodal_forces_n[i],
+                               reference.last_nodal_forces_n[i]),
+                std::string(message) + ": both backends must commit the identical declared load");
+    }
+    for (std::size_t i = 0; i < reference.material_points.size(); ++i) {
+        const auto &a = assembled.material_points[i];
+        const auto &r = reference.material_points[i];
+        nearTensor(a.total_strain, r.total_strain, 5.e-7, 2.e-7, message);
+        nearTensor(a.plastic_strain, r.plastic_strain, 5.e-7, 2.e-7, message);
+        near(a.equivalent_plastic_strain, r.equivalent_plastic_strain,
+             5.e-7, 2.e-7, message);
+        near(a.plastic_dissipation_j_m3, r.plastic_dissipation_j_m3,
+             1.e-2, 2.e-6, message);
+    }
+    near(assembled.accumulated_trapezoidal_external_work_j,
+         reference.accumulated_trapezoidal_external_work_j,
+         1.e-5, 2.e-6, message);
+    near(assembled.accumulated_backward_euler_external_work_j,
+         reference.accumulated_backward_euler_external_work_j,
+         1.e-5, 2.e-6, message);
+}
+
+void compareBackendResults(const PatchSolveResult &reference,
+                           const PatchSolveResult &assembled,
+                           double applied_force_scale, std::string_view message) {
+    require(reference.accepted && assembled.accepted,
+            std::string(message) + ": both backend solves must be accepted");
+    require(reference.linear_backend == PatchLinearBackend::MatrixFreeReference &&
+            assembled.linear_backend == PatchLinearBackend::AssembledBlockCsr,
+            std::string(message) + ": result must identify the selected backend");
+    require(reference.free_force_residual_n <= reference.force_tolerance_n &&
+            assembled.free_force_residual_n <= assembled.force_tolerance_n,
+            std::string(message) + ": each backend must independently satisfy equilibrium");
+    nearVec(assembled.applied_force_n, reference.applied_force_n,
+            1.e-8, 1.e-13, message);
+    const double reaction_tolerance = 8. * std::max(
+        reference.force_tolerance_n, assembled.force_tolerance_n);
+    nearVec(assembled.support_reaction_n, reference.support_reaction_n,
+            reaction_tolerance, 2.e-7, message);
+    nearVec(assembled.reference_moment_residual_n_m,
+            reference.reference_moment_residual_n_m,
+            reaction_tolerance * .05, 2.e-7, message);
+    require(reference.reactions_n.size() == assembled.reactions_n.size(),
+            std::string(message) + ": reaction vector layout parity");
+    for (std::size_t i = 0; i < reference.reactions_n.size(); ++i)
+        nearVec(assembled.reactions_n[i], reference.reactions_n[i],
+                reaction_tolerance, 2.e-7, message);
+    near(assembled.stored_free_energy_j, reference.stored_free_energy_j,
+         1.e-5, 2.e-6, message);
+    near(assembled.plastic_dissipation_j, reference.plastic_dissipation_j,
+         1.e-5, 2.e-6, message);
+    near(assembled.trapezoidal_external_work_increment_j,
+         reference.trapezoidal_external_work_increment_j,
+         1.e-5, 2.e-6, message);
+    near(assembled.backward_euler_external_work_increment_j,
+         reference.backward_euler_external_work_increment_j,
+         1.e-5, 2.e-6, message);
+    near(assembled.stored_free_energy_increment_j,
+         reference.stored_free_energy_increment_j,
+         1.e-5, 2.e-6, message);
+    near(assembled.plastic_dissipation_increment_j,
+         reference.plastic_dissipation_increment_j,
+         1.e-5, 2.e-6, message);
+    near(assembled.trapezoidal_work_residual_j,
+         reference.trapezoidal_work_residual_j,
+         1.e-5, 2.e-6, message);
+    near(assembled.backward_euler_balance_residual_j,
+         reference.backward_euler_balance_residual_j,
+         1.e-5, 2.e-6, message);
+    near(assembled.constitutive_backward_euler_excess_j,
+         reference.constitutive_backward_euler_excess_j,
+         1.e-5, 2.e-6, message);
+    nearVec(reference.applied_force_n + reference.support_reaction_n, {},
+            reaction_tolerance, 2.e-7, message);
+    nearVec(assembled.applied_force_n + assembled.support_reaction_n, {},
+            reaction_tolerance, 2.e-7, message);
+    require(length(reference.applied_force_n) <= applied_force_scale * 1.000001 &&
+            length(assembled.applied_force_n) <= applied_force_scale * 1.000001,
+            std::string(message) + ": applied resultant stays within fixture scale");
+}
+
+void matchedGlassOakIronPressureCyclesMatchAcrossLinearBackends() {
+    struct Case {
+        std::string_view name;
+        PatchMaterial material;
+    };
+    const std::vector<Case> cases{
+        {"glass", {isotropic(70.e9, .22), 2500.}},
+        {"oak", {continuumOakOrthotropic(), 700.}},
+        {"iron", {continuumIronJ2(), 7870.}},
+    };
+    constexpr double peak_pressure_pa = 100.e6;
+    constexpr unsigned increments = 8;
+    for (const auto &entry : cases) {
+        const PatchDefinition definition = pressurePatch(entry.material);
+        SmallStrainPatch reference(definition), assembled(definition);
+        bool saw_matrix_free_matvec = false;
+        bool saw_assembled_blocks = false;
+        for (unsigned step = 1; step <= 2 * increments; ++step) {
+            const double fraction = step <= increments ? double(step) / increments :
+                double(2 * increments - step) / increments;
+            const PatchLoad load = centralPressure(reference,
+                peak_pressure_pa * fraction);
+            const auto matrix_result = reference.solveLoad(
+                load, backendOptions(PatchLinearBackend::MatrixFreeReference));
+            const auto assembled_result = assembled.solveLoad(
+                load, backendOptions(PatchLinearBackend::AssembledBlockCsr));
+            compareBackendResults(matrix_result, assembled_result,
+                peak_pressure_pa * .0004,
+                std::string(entry.name) + " spatial pressure step");
+            compareBackendStates(reference.state(), assembled.state(),
+                std::string(entry.name) + " spatial pressure history");
+            saw_matrix_free_matvec = saw_matrix_free_matvec ||
+                matrix_result.matrix_free_matvec_element_visits > 0;
+            saw_assembled_blocks = saw_assembled_blocks ||
+                (assembled_result.tangent_block_count > 0 &&
+                 assembled_result.tangent_assembly_element_visits > 0 &&
+                 assembled_result.assembled_matvec_block_visits > 0);
+        }
+        require(saw_matrix_free_matvec && saw_assembled_blocks,
+                std::string(entry.name) +
+                    " cycle must exercise matrix-free products and assembled block products");
+        require(maximumEquivalentPlasticStrain(reference.state()) == 0. &&
+                maximumEquivalentPlasticStrain(assembled.state()) == 0.,
+                std::string(entry.name) +
+                    " matched 100 MPa pressure cycle must remain elastic");
+    }
+}
+
+void ironPlasticPressureCycleMatchesAcrossLinearBackends() {
+    const PatchDefinition definition = pressurePatch({continuumIronJ2(), 7870.});
+    SmallStrainPatch reference(definition), assembled(definition);
+    constexpr double peak_pressure_pa = 800.e6;
+    constexpr unsigned increments = 32;
+    for (unsigned step = 1; step <= 2 * increments; ++step) {
+        const double fraction = step <= increments ? double(step) / increments :
+            double(2 * increments - step) / increments;
+        const PatchLoad load = centralPressure(reference, peak_pressure_pa * fraction);
+        const auto matrix_result = reference.solveLoad(
+            load, backendOptions(PatchLinearBackend::MatrixFreeReference));
+        const auto assembled_result = assembled.solveLoad(
+            load, backendOptions(PatchLinearBackend::AssembledBlockCsr));
+        compareBackendResults(matrix_result, assembled_result,
+            peak_pressure_pa * .0004, "iron 800 MPa spatial pressure step");
+        compareBackendStates(reference.state(), assembled.state(),
+            "iron 800 MPa spatial pressure history");
+        if (step == increments / 2)
+            require(maximumEquivalentPlasticStrain(reference.state()) == 0. &&
+                    maximumEquivalentPlasticStrain(assembled.state()) == 0.,
+                    "documented coarse fixture must still be elastic at 400 MPa");
+    }
+    require(maximumEquivalentPlasticStrain(reference.state()) > 0. &&
+            maximumEquivalentPlasticStrain(assembled.state()) > 0.,
+            "the separate 800 MPa iron cycle must retain plastic history after unloading");
+}
+
+PatchDefinition mixedMaterialPatch() {
+    PatchDefinition definition = axialBrick({isotropic(70.e9, .22), 2500.});
+    definition.materials = {
+        {isotropic(70.e9, .22), 2500.},
+        {oakLikeOrthotropic(), 700.},
+        {illustrativeMetalJ2(), 7870.},
+    };
+    for (std::size_t i = 0; i < definition.elements.size(); ++i)
+        definition.elements[i].material = static_cast<unsigned>(i % definition.materials.size());
+    return definition;
+}
+
+PatchLoad mixedTractionAndBoundaryDisplacement(const SmallStrainPatch &patch) {
+    const auto &positions = patch.definition().reference_positions_m;
+    PatchLoad load = emptyLoad(positions.size());
+    constexpr Vec3 traction_pa{1.e5, 2.e5, -7.e4};
+    for (const auto &triangle : patch.boundaryTriangles()) {
+        if (std::abs(positions[triangle[0]].y - 1.) > 1.e-14 ||
+            std::abs(positions[triangle[1]].y - 1.) > 1.e-14 ||
+            std::abs(positions[triangle[2]].y - 1.) > 1.e-14)
+            continue;
+        const double area = triangleArea(positions[triangle[0]], positions[triangle[1]],
+                                         positions[triangle[2]]);
+        for (unsigned node : triangle)
+            load.nodal_forces_n[node] += traction_pa * (area / 3.);
+    }
+    for (std::size_t i = 0; i < positions.size(); ++i) {
+        const auto &fixed = patch.definition().fixed_components[i];
+        if (fixed[0]) load.prescribed_displacements_m[i].x = 2.e-6;
+        if (fixed[2]) load.prescribed_displacements_m[i].z = -1.e-6;
+    }
+    return load;
+}
+
+void mixedMaterialsAndPartialConstraintsMatchAcrossBackends() {
+    const PatchDefinition definition = mixedMaterialPatch();
+    SmallStrainPatch reference(definition), assembled(definition);
+    const PatchLoad load = mixedTractionAndBoundaryDisplacement(reference);
+    const auto matrix_result = reference.solveLoad(
+        load, backendOptions(PatchLinearBackend::MatrixFreeReference));
+    const auto assembled_result = assembled.solveLoad(
+        load, backendOptions(PatchLinearBackend::AssembledBlockCsr));
+    compareBackendResults(matrix_result, assembled_result, length(Vec3{1.e5, 2.e5, -7.e4}),
+                          "mixed per-element law and partial-component constraints");
+    compareBackendStates(reference.state(), assembled.state(),
+                         "mixed per-element law and partial-component constraints");
+    require(assembled_result.tangent_block_count > definition.reference_positions_m.size(),
+            "mixed assembled solve must contain off-diagonal node-coupling blocks");
+    const auto evaluation = assembled.evaluate(assembled.state().displacements_m);
+    bool has_shear = false;
+    for (const auto &response : evaluation.responses)
+        has_shear = has_shear || std::abs(response.state.total_strain.xy) > 1.e-10 ||
+            std::abs(response.state.total_strain.yz) > 1.e-10 ||
+            std::abs(response.state.total_strain.zx) > 1.e-10;
+    require(has_shear,
+            "mixed traction fixture must exercise physical tensor shear components");
+}
+
+void bothBackendBudgetFailuresPreserveExactPriorState() {
+    const PatchDefinition definition = mixedMaterialPatch();
+    const PatchLoad base_load = [&] {
+        SmallStrainPatch geometry(definition);
+        return mixedTractionAndBoundaryDisplacement(geometry);
+    }();
+    for (PatchLinearBackend backend : {PatchLinearBackend::MatrixFreeReference,
+                                       PatchLinearBackend::AssembledBlockCsr}) {
+        SmallStrainPatch patch(definition);
+        require(patch.solveLoad(base_load, backendOptions(backend)).accepted,
+                "backend rollback fixture needs a nontrivial accepted prior state");
+        const PatchState before = patch.state();
+        PatchLoad changed = base_load;
+        for (auto &force : changed.nodal_forces_n) force *= 1.5;
+        auto options = backendOptions(backend);
+        options.maximum_element_visits = 1;
+        const auto rejected = patch.solveLoad(changed, options);
+        require(!rejected.accepted && !rejected.error.empty(),
+                "both backends must report a bounded-work rejection");
+        require(sameStateExactly(patch.state(), before),
+                "both backend budget failures must preserve every prior state scalar exactly");
+    }
+}
+
+void assembledBlockBudgetFailurePreservesExactPriorState() {
+    const PatchDefinition definition = mixedMaterialPatch();
+    SmallStrainPatch patch(definition);
+    const PatchLoad base_load = mixedTractionAndBoundaryDisplacement(patch);
+    require(patch.solveLoad(
+                base_load,
+                backendOptions(PatchLinearBackend::AssembledBlockCsr)).accepted,
+            "assembled block-budget fixture needs a nontrivial accepted prior state");
+    const PatchState before = patch.state();
+    PatchLoad changed = base_load;
+    for (auto &force : changed.nodal_forces_n) force *= 1.5;
+    auto options = backendOptions(PatchLinearBackend::AssembledBlockCsr);
+    options.maximum_tangent_block_visits = 1;
+    const auto rejected = patch.solveLoad(changed, options);
+    require(!rejected.accepted && !rejected.error.empty(),
+            "assembled backend must report its independent block-work rejection");
+    require(sameStateExactly(patch.state(), before),
+            "assembled block-work rejection must preserve every prior state scalar exactly");
+}
+
+void assembledRestoreContinuationMatchesUninterruptedPlasticPath() {
+    const PatchDefinition definition = pressurePatch({continuumIronJ2(), 7870.});
+    SmallStrainPatch uninterrupted(definition);
+    const auto options = backendOptions(PatchLinearBackend::AssembledBlockCsr);
+    constexpr double peak_pressure_pa = 800.e6;
+    for (double fraction : {.125, .25, .375, .50, .625, .75})
+        require(uninterrupted.solveLoad(centralPressure(uninterrupted,
+                                                        peak_pressure_pa * fraction),
+                                        options).accepted,
+                "assembled restore fixture loading must converge");
+    const PatchState checkpoint = uninterrupted.state();
+
+    const std::vector<double> continuation{.875, 1., .875, .75, .625, .50};
+    PatchSolveResult direct_result;
+    for (double fraction : continuation) {
+        direct_result = uninterrupted.solveLoad(
+            centralPressure(uninterrupted, peak_pressure_pa * fraction), options);
+        require(direct_result.accepted,
+                "uninterrupted assembled plastic continuation must converge");
+    }
+
+    SmallStrainPatch restored(definition);
+    restored.restoreState(checkpoint, .01);
+    PatchSolveResult restored_result;
+    for (double fraction : continuation) {
+        restored_result = restored.solveLoad(
+            centralPressure(restored, peak_pressure_pa * fraction), options);
+        require(restored_result.accepted,
+                "restored assembled plastic continuation must converge");
+    }
+    compareBackendStates(uninterrupted.state(), restored.state(),
+                         "assembled restored continuation parity");
+    near(restored_result.stored_free_energy_j, direct_result.stored_free_energy_j,
+         1.e-8, 2.e-10, "assembled restore must replay stored energy");
+    near(restored_result.plastic_dissipation_j, direct_result.plastic_dissipation_j,
+         1.e-8, 2.e-10, "assembled restore must replay plastic dissipation");
+    nearVec(restored_result.support_reaction_n, direct_result.support_reaction_n,
+            1.e-5, 2.e-10, "assembled restore must replay support reactions");
+    require(maximumEquivalentPlasticStrain(restored.state()) > 0.,
+            "assembled restore continuation fixture must traverse a plastic iron state");
+}
+
 template <class Function>
 void requireInvalid(Function &&function, std::string_view message) {
     try {
@@ -672,6 +1051,18 @@ int main() {
          restoreChecksKinematicHistoryAndReplaysNextLoad},
         {"matched glass oak iron below-yield controls",
          matchedGlassOakIronControlsRemainStableBelowYield},
+        {"matched 100 MPa glass oak iron pressure-cycle backend parity",
+         matchedGlassOakIronPressureCyclesMatchAcrossLinearBackends},
+        {"800 MPa iron plastic pressure-cycle backend parity",
+         ironPlasticPressureCycleMatchesAcrossLinearBackends},
+        {"mixed-law partial-constraint backend parity",
+         mixedMaterialsAndPartialConstraintsMatchAcrossBackends},
+        {"both linear backends roll back bounded-work rejection",
+         bothBackendBudgetFailuresPreserveExactPriorState},
+        {"assembled block-work limit rolls back exactly",
+         assembledBlockBudgetFailurePreservesExactPriorState},
+        {"assembled backend restore continuation parity",
+         assembledRestoreContinuationMatchesUninterruptedPlasticPath},
         {"invalid reference mesh rejection", constructorRejectsInvalidReferenceMeshes},
         {"shared-face orientation and coincident-node rejection",
          constructorRejectsSameSideSharedFaceAndCoincidentNodes},

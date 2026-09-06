@@ -2,6 +2,7 @@
 #include "core/Math.hpp"
 #include "material/SmallStrainLaw.hpp"
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -26,13 +27,23 @@ struct PatchLoad {
     // Used only on fixed components; free entries must be zero.
     std::vector<Vec3> prescribed_displacements_m;
 };
+enum class PatchLinearBackend {
+    MatrixFreeReference,
+    AssembledBlockCsr
+};
 struct PatchSolveOptions {
     unsigned maximum_newton_iterations{30};
     unsigned maximum_cg_iterations{1024};
     unsigned maximum_line_search_steps{20};
+    // Actual constitutive/element passes. Assembled sparse matvec work has a
+    // separate block-visit budget so these counters retain distinct meanings.
     std::uint64_t maximum_element_visits{4000000};
+    std::uint64_t maximum_tangent_block_visits{64000000};
     double relative_force_tolerance{1e-8};
     double absolute_force_tolerance_n{1e-7};
+    // Both backends apply the same frozen-history algorithmic tangent. The
+    // assembled backend stores one dense 3x3 block for each coupled node pair.
+    PatchLinearBackend linear_backend{PatchLinearBackend::MatrixFreeReference};
     // Bounds rotations as well as strain: small strain is not a finite-rotation law.
     double maximum_displacement_gradient_norm{.1};
 };
@@ -57,6 +68,11 @@ struct PatchSolveResult {
     std::string error;
     unsigned newton_iterations{},cg_iterations{},line_search_trials{};
     std::uint64_t element_visits{};
+    PatchLinearBackend linear_backend{PatchLinearBackend::MatrixFreeReference};
+    std::uint64_t tangent_block_count{},tangent_assembly_element_visits{};
+    // Actual backend work: element visits for matrix-free products and stored
+    // 3x3 block visits for assembled products. Neither is converted into the other.
+    std::uint64_t matrix_free_matvec_element_visits{},assembled_matvec_block_visits{};
     double wall_ms{},free_force_residual_n{},force_tolerance_n{};
     double stored_free_energy_j{},plastic_dissipation_j{};
     double trapezoidal_external_work_increment_j{};
@@ -94,10 +110,18 @@ public:
     void restoreState(const PatchState &candidate,double force_tolerance_n=1e-5,
         double maximum_gradient_norm=.1);
 private:
-    struct TetData { std::array<Vec3,4> gradients; double volume{}; };
+    struct TetData {
+        std::array<Vec3,4> gradients;
+        std::array<std::size_t,16> tangent_block_indices{};
+        double volume{};
+    };
     PatchDefinition definition_;
     PatchState state_;
     std::vector<TetData> geometry_;
+    // Immutable nodal 3x3 block-CSR pattern compiled from element adjacency.
+    std::vector<std::size_t> tangent_block_row_offsets_;
+    std::vector<unsigned> tangent_block_columns_;
+    std::vector<std::size_t> tangent_diagonal_blocks_;
     std::vector<double> nodal_masses_;
     std::vector<std::array<unsigned,3>> boundary_;
     double volume_{},mass_{};

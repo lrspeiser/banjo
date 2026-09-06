@@ -98,6 +98,33 @@ SmallStrainPatch::SmallStrainPatch(PatchDefinition definition):definition_(std::
     }
     for(double m:nodal_masses_)require(m>0&&std::isfinite(m),"Unused node or nonfinite patch mass");
     for(const auto &[key,face]:faces) { (void)key;if(face.count==1)boundary_.push_back(face.outward); }
+
+    // Compile the immutable nodal block graph once. Every tetrahedron couples
+    // all four of its nodes, including each diagonal block.
+    std::vector<std::vector<unsigned>> rowColumns(nodes);
+    for(const auto &tet:d.elements)for(auto row:tet.nodes)for(auto column:tet.nodes)
+        rowColumns[row].push_back(column);
+    tangent_block_row_offsets_.reserve(nodes+1);tangent_block_row_offsets_.push_back(0);
+    tangent_diagonal_blocks_.resize(nodes);
+    for(std::size_t row=0;row<nodes;++row) {
+        auto &columns=rowColumns[row];std::sort(columns.begin(),columns.end());
+        columns.erase(std::unique(columns.begin(),columns.end()),columns.end());
+        require(!columns.empty(),"Unused node in patch tangent graph");
+        tangent_block_columns_.insert(tangent_block_columns_.end(),columns.begin(),columns.end());
+        tangent_block_row_offsets_.push_back(tangent_block_columns_.size());
+        const auto diagonal=std::lower_bound(columns.begin(),columns.end(),static_cast<unsigned>(row));
+        require(diagonal!=columns.end()&&*diagonal==row,"Missing patch tangent diagonal block");
+        tangent_diagonal_blocks_[row]=tangent_block_row_offsets_[row]+static_cast<std::size_t>(diagonal-columns.begin());
+    }
+    require(tangent_block_columns_.size()<=d.elements.size()*16,"Patch tangent graph exceeds element coupling bound");
+    for(std::size_t e=0;e<geometry_.size();++e)for(unsigned i=0;i<4;++i)for(unsigned j=0;j<4;++j) {
+        const unsigned row=d.elements[e].nodes[i],column=d.elements[e].nodes[j];
+        const auto begin=tangent_block_columns_.begin()+static_cast<std::ptrdiff_t>(tangent_block_row_offsets_[row]);
+        const auto end=tangent_block_columns_.begin()+static_cast<std::ptrdiff_t>(tangent_block_row_offsets_[row+1]);
+        const auto found=std::lower_bound(begin,end,column);
+        require(found!=end&&*found==column,"Missing patch element tangent block");
+        geometry_[e].tangent_block_indices[i*4+j]=static_cast<std::size_t>(found-tangent_block_columns_.begin());
+    }
 }
 
 std::vector<Vec3> SmallStrainPatch::positionsM() const {
@@ -134,11 +161,16 @@ PatchSolveResult SmallStrainPatch::solveLoad(const PatchLoad &load,const PatchSo
     PatchSolveResult result;const auto started=std::chrono::steady_clock::now();
     try {
         const auto n=state_.displacements_m.size();const auto &fixed=definition_.fixed_components;
+        result.linear_backend=options.linear_backend;result.tangent_block_count=tangent_block_columns_.size();
         require(load.nodal_forces_n.size()==n&&load.prescribed_displacements_m.size()==n,"Patch load arrays differ from nodes");
         require(options.maximum_newton_iterations>0&&options.maximum_newton_iterations<=100&&options.maximum_cg_iterations>0&&
             options.maximum_cg_iterations<=8192&&options.maximum_line_search_steps>0&&options.maximum_line_search_steps<=40,
             "Invalid bounded patch iteration budget");
         require(options.maximum_element_visits>0&&options.maximum_element_visits<=100000000,"Invalid patch work budget");
+        require(options.maximum_tangent_block_visits>0&&options.maximum_tangent_block_visits<=1600000000,
+            "Invalid patch tangent-block work budget");
+        require(options.linear_backend==PatchLinearBackend::MatrixFreeReference||
+            options.linear_backend==PatchLinearBackend::AssembledBlockCsr,"Invalid patch linear backend");
         require(std::isfinite(options.relative_force_tolerance)&&options.relative_force_tolerance>0&&options.relative_force_tolerance<=.01&&
             std::isfinite(options.absolute_force_tolerance_n)&&options.absolute_force_tolerance_n>0&&options.absolute_force_tolerance_n<=1,
             "Invalid patch force tolerance");
@@ -163,11 +195,36 @@ PatchSolveResult SmallStrainPatch::solveLoad(const PatchLoad &load,const PatchSo
         while((result.free_force_residual_n=norm(r))>result.force_tolerance_n) {
             if(result.newton_iterations>=options.maximum_newton_iterations)throw std::runtime_error("Patch Newton limit; state preserved");
             ++result.newton_iterations;
-            std::vector<Vec3> diagonal(n);
-            charge();for(std::size_t e=0;e<geometry_.size();++e)for(unsigned i=0;i<4;++i)for(unsigned a=0;a<3;++a) {
-                const auto col=strainColumn(geometry_[e].gradients[i],a);
-                const double entry=geometry_[e].volume*doubleContract(col,applySmallStrainTangent(evaluation.responses[e],col));
-                auto &d=diagonal[definition_.elements[e].nodes[i]];setComponent(d,a,component(d,a)+entry);
+            std::vector<Vec3> diagonal(n);std::vector<Mat3> assembledBlocks;
+            if(options.linear_backend==PatchLinearBackend::MatrixFreeReference) {
+                charge();for(std::size_t e=0;e<geometry_.size();++e)for(unsigned i=0;i<4;++i)for(unsigned a=0;a<3;++a) {
+                    const auto col=strainColumn(geometry_[e].gradients[i],a);
+                    const double entry=geometry_[e].volume*doubleContract(col,applySmallStrainTangent(evaluation.responses[e],col));
+                    auto &d=diagonal[definition_.elements[e].nodes[i]];setComponent(d,a,component(d,a)+entry);
+                }
+            } else {
+                charge();
+                const auto assemblyCost=static_cast<std::uint64_t>(geometry_.size());
+                require(assemblyCost<=std::numeric_limits<std::uint64_t>::max()-result.tangent_assembly_element_visits,
+                    "Patch tangent assembly counter overflow");
+                result.tangent_assembly_element_visits+=assemblyCost;
+                assembledBlocks.resize(tangent_block_columns_.size());
+                for(std::size_t e=0;e<geometry_.size();++e) {
+                    const auto &g=geometry_[e];
+                    std::array<std::array<SymmetricTensor3,3>,4> stressColumns;
+                    for(unsigned j=0;j<4;++j)for(unsigned b=0;b<3;++b)
+                        stressColumns[j][b]=applySmallStrainTangent(evaluation.responses[e],strainColumn(g.gradients[j],b));
+                    for(unsigned i=0;i<4;++i)for(unsigned j=0;j<4;++j) {
+                        auto &block=assembledBlocks[g.tangent_block_indices[i*4+j]];
+                        for(unsigned a=0;a<3;++a) {
+                            const auto rowStrain=strainColumn(g.gradients[i],a);
+                            for(unsigned b=0;b<3;++b)
+                                block.m[a][b]+=g.volume*doubleContract(rowStrain,stressColumns[j][b]);
+                        }
+                    }
+                }
+                for(std::size_t i=0;i<n;++i)for(unsigned a=0;a<3;++a)
+                    setComponent(diagonal[i],a,assembledBlocks[tangent_diagonal_blocks_[i]].m[a][a]);
             }
             for(std::size_t i=0;i<n;++i)for(unsigned a=0;a<3;++a) {
                 const double d=component(diagonal[i],a);
@@ -176,12 +233,30 @@ PatchSolveResult SmallStrainPatch::solveLoad(const PatchLoad &load,const PatchSo
             }
             auto precondition=[&](const std::vector<Vec3> &v) { auto z=v;for(std::size_t i=0;i<n;++i)
                 for(unsigned a=0;a<3;++a)setComponent(z[i],a,component(v[i],a)/component(diagonal[i],a));return z; };
-            auto multiply=[&](const std::vector<Vec3> &v) { charge();std::vector<Vec3> answer(n);
-                for(std::size_t e=0;e<geometry_.size();++e) {
-                    const auto strain=strainOf(geometry_[e].gradients,definition_.elements[e],v).first;
-                    const auto stress=applySmallStrainTangent(evaluation.responses[e],strain);
-                    for(unsigned i=0;i<4;++i)answer[definition_.elements[e].nodes[i]]+=geometry_[e].volume*stressTimes(stress,geometry_[e].gradients[i]);
-                }zeroFixed(answer,fixed);return answer; };
+            auto multiply=[&](const std::vector<Vec3> &v) { std::vector<Vec3> answer(n);
+                if(options.linear_backend==PatchLinearBackend::MatrixFreeReference) {
+                    charge();const auto cost=static_cast<std::uint64_t>(geometry_.size());
+                    require(cost<=std::numeric_limits<std::uint64_t>::max()-result.matrix_free_matvec_element_visits,
+                        "Patch matrix-free work counter overflow");
+                    result.matrix_free_matvec_element_visits+=cost;
+                    for(std::size_t e=0;e<geometry_.size();++e) {
+                        const auto strain=strainOf(geometry_[e].gradients,definition_.elements[e],v).first;
+                        const auto stress=applySmallStrainTangent(evaluation.responses[e],strain);
+                        for(unsigned i=0;i<4;++i)answer[definition_.elements[e].nodes[i]]+=geometry_[e].volume*stressTimes(stress,geometry_[e].gradients[i]);
+                    }
+                } else {
+                    const auto cost=static_cast<std::uint64_t>(tangent_block_columns_.size());
+                    if(cost>options.maximum_tangent_block_visits-result.assembled_matvec_block_visits)
+                        throw std::runtime_error("Patch tangent-block-work budget exhausted; state preserved");
+                    result.assembled_matvec_block_visits+=cost;
+                    for(std::size_t row=0;row<n;++row)for(std::size_t at=tangent_block_row_offsets_[row];at<tangent_block_row_offsets_[row+1];++at) {
+                        const auto &block=assembledBlocks[at];const auto &x=v[tangent_block_columns_[at]];
+                        answer[row]+=Vec3{block.m[0][0]*x.x+block.m[0][1]*x.y+block.m[0][2]*x.z,
+                            block.m[1][0]*x.x+block.m[1][1]*x.y+block.m[1][2]*x.z,
+                            block.m[2][0]*x.x+block.m[2][1]*x.y+block.m[2][2]*x.z};
+                    }
+                }
+                zeroFixed(answer,fixed);return answer; };
             std::vector<Vec3> delta(n),cgResidual=r;for(auto &v:cgResidual)v=-v;
             auto z=precondition(cgResidual),direction=z;double rz=vectorDot(cgResidual,z);
             const double linearTolerance=std::max(result.force_tolerance_n*.1,result.free_force_residual_n*1e-5);
