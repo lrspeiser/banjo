@@ -1,15 +1,15 @@
 {
   "schema": "banjo.execution-goals.v2",
-  "recorded_against": "main:b60ee35f7d22be826a25bef45b9e3034e2b3ff6f",
+  "recorded_against": "main:3a974d93d100c36011e241aed1a3d74ab9fdc4f4",
   "recorded_date": "2026-09-06",
   "project_goal_ref": "docs/project-goal-2026-09-06.md",
   "baseline": {
-    "suite_count": 57,
+    "suite_count": 58,
     "suite_status": "passes",
-    "suite_duration_s": 83.23,
+    "suite_duration_s": 83.49,
     "toolchain": "Windows MSVC 19.44 Release",
     "physics_status": "unfinished",
-    "code_commit": "b60ee35f7d22be826a25bef45b9e3034e2b3ff6f"
+    "code_commit": "3a974d93d100c36011e241aed1a3d74ab9fdc4f4"
   },
   "completion_policy": {
     "prototype": "Instrumented bounded implementation or experiment with explicit limitations; not a completion claim.",
@@ -171,7 +171,7 @@
         ]
       },
       "next_action": "Cross mesh/load increments and pressure-profile/element-orientation controls with predeclared error bounds; compare a locking-resistant formulation before dynamic contact and calibrated dent/fracture claims.",
-      "evidence_status": "Spring cache and endpoint rollback tests pass. The small-strain isotropic J2 material-point analytical, unloading/reloading, dissipation, rejection, and exact reload-continuation tests pass. It is not dent geometry, contact, finite strain, or calibrated iron. Glass/oak/tissue refinement and the full mechanical work ledger remain open. Connected small-strain isotropic/orthotropic/J2 tetrahedral equilibrium now passes analytical, reaction, rollback and state continuation checks. Low-load three-material controls recover; high-load plastic shape remains strongly spatially unconverged.",
+      "evidence_status": "Spring cache and endpoint rollback tests pass. The small-strain isotropic J2 material-point analytical, unloading/reloading, dissipation, rejection, and exact reload-continuation tests pass. It is not dent geometry, contact, finite strain, or calibrated iron. Glass/oak/tissue refinement and the full mechanical work ledger remain open. Connected small-strain isotropic/orthotropic/J2 tetrahedral equilibrium now passes analytical, reaction, rollback and state continuation checks. Low-load three-material controls recover; high-load plastic shape remains strongly spatially unconverged. Conservative partial-face pressure and optional assembled block-CSR tangent products now pass analytical, backend parity and transactional work-limit tests. Crossed high-load spatial refinement still fails; n=16 iron reaches the 64-million-block cap before unloading. The repeated kernel benchmark harness is smoke-tested; isolated p95/p99 qualification remains pending.",
       "retained_requirements": [
         "M01",
         "M02",
@@ -202,7 +202,7 @@
         "M29",
         "M30"
       ],
-      "evidence_ref": "docs/continuum-pressure-checkpoint.md"
+      "evidence_ref": "docs/continuum-pressure-performance-checkpoint.md"
     },
     {
       "id": "G03",
@@ -324,7 +324,7 @@
         ]
       },
       "next_action": "Run the named-hardware 1M/16M stored-voxel by 256/1024/4096/16384 active-cell matrix with growing contact and wake churn; report physics, full-frame, backlog, and residuals separately.",
-      "evidence_status": "4/256/4096 chunks retain identical 336-active-cell local physics at 10 s across 3 repeats; headless thermal p95 is about 0.36-0.37 ms and tight 1000-operation budgets report backlog. The 2 m/s native playground case measured 50 active frames and 31.25 ms p95 full-frame time, which does not qualify the 60 Hz target. The target is not a measured promise.",
+      "evidence_status": "4/256/4096 chunks retain identical 336-active-cell local physics at 10 s across 3 repeats; headless thermal p95 is about 0.36-0.37 ms and tight 1000-operation budgets report backlog. The 2 m/s native playground case measured 50 active frames and 31.25 ms p95 full-frame time, which does not qualify the 60 Hz target. The target is not a measured promise. Conservative partial-face pressure and optional assembled block-CSR tangent products now pass analytical, backend parity and transactional work-limit tests. Crossed high-load spatial refinement still fails; n=16 iron reaches the 64-million-block cap before unloading. The repeated kernel benchmark harness is smoke-tested; isolated p95/p99 qualification remains pending.",
       "engineering_target": {
         "full_frame_hz": 60,
         "full_frame_ms": 16.67,
@@ -354,7 +354,7 @@
         "P04",
         "P10"
       ],
-      "evidence_ref": "docs/additional-physics-checkpoint.md"
+      "evidence_ref": "docs/continuum-pressure-performance-checkpoint.md"
     },
     {
       "id": "G06",
@@ -625,7 +625,8 @@
     "evidence": [
       "docs/additional-physics-checkpoint.md",
       "docs/playground-foundation-checkpoint.md",
-      "docs/continuum-pressure-checkpoint.md"
+      "docs/continuum-pressure-checkpoint.md",
+      "docs/continuum-pressure-performance-checkpoint.md"
     ],
     "milestones_completed": [
       "blocky-live-skins",
@@ -646,22 +647,28 @@
       "bounded-live-gpt-basic-native-request-to-visible-studio",
       "spatial-quasistatic-pressure-reference",
       "spatial-patch-json-continuation-reference",
-      "live-gpt-to-computed-pressure-sequence"
+      "live-gpt-to-computed-pressure-sequence",
+      "conservative-partial-face-pressure-api",
+      "optional-same-law-assembled-tangent-and-work-budget"
     ],
     "verified_foundation_modules": [
       "Plasticity",
       "PropertyVariation",
       "NumericStateDelta",
       "SmallStrainLaw",
-      "SmallStrainPatch"
+      "SmallStrainPatch",
+      "PatchPressure"
     ],
     "focused_verification": {
       "playground_mock_http_tests_passed": 33,
-      "playground_mock_http_duration_s": 2.198,
+      "playground_mock_http_duration_s": 2.164,
       "j2_variation_codec": "passed",
       "object_state_probe": "3 serial runs, 100 timed samples per case",
       "continuum_material_mesh_and_rollback": "passed",
-      "spatial_refinement": "not converged at high plastic load"
+      "spatial_refinement": "not converged at high plastic load",
+      "pressure_api": "seven analytical/state/rejection groups pass",
+      "assembled_backend": "full 8/4/8 load-cycle field parity; budget rejection and preserved next-load history pass",
+      "kernel_benchmark": "four cases, ten samples per backend smoke-tested; fifteen accepted states checked per backend; timings not qualified"
     },
     "chat_playground_stage": "Mock HTTP and the bounded live request-to-GPT-to-validation-to-headless-to-visible-studio one-second path pass. Edit/follow-up, unsupported capability, cancellation, inventory, save/reload, and repair gates remain open.",
     "native_live_verification": "G09 basic request-to-GPT-to-validate-to-headless-to-visible-studio-to-1-second path passes for both 2 and 6 m/s cases with matching physical report fields under stated exclusions. Edit/follow-up, unsupported capability, cancellation, inventory, save/reload, and repair remain open. Earlier heat-lab pause/reset/release/save and 30.71 s evolution remain verified; fracture realism remains failed. Spatial pressure job da66b2b4bd814676b1da0b890aa52a21 opens the computed continuum report, with matched native/direct CLI physical data and explicit oak limit."

@@ -1,5 +1,7 @@
 # Bounded pressure loading and an assembled continuum solve
 
+Source checkpoint [`3a974d9`](https://github.com/lrspeiser/banjo/commit/3a974d93d100c36011e241aed1a3d74ab9fdc4f4) is published on main.
+
 Banjo still solves material volume beneath the visible skin. This checkpoint
 adds an optional assembled stiffness backend to the existing quasistatic
 tetrahedral reference and a public pressure-load builder. It changes how the
@@ -97,8 +99,8 @@ present a completed cycle. Glass completes these cycles. Oak reaches declared
 small-strain/displacement-gradient limits and does not complete unloading.
 
 Increasing load increments from 32 to 100 changes iron residual displacement
-from 34.409 to 34.277 micrometres on n=4, from 162.203 to 161.257 on n=8,
-and from 348.400 to 346.824 on n=12. That improves the load path but leaves the
+from 34.409 to 34.277 micrometres on n=4, from 162.203 to 161.256 on n=8,
+and from 348.400 to 346.823 on n=12. That improves the load path but leaves the
 strong spatial sensitivity unresolved. A small discrete energy-balance error
 does not resolve this problem.
 

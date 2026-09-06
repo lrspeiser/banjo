@@ -1,5 +1,7 @@
 # Execution goals
 
+**Current source checkpoint `3a974d9` on main:** All 58 native suites pass in 83.49 seconds, the added pressure-state cases pass the subsequent focused rerun, and 33 mocked playground tests pass in 2.164 seconds. [Pressure API and optional assembled solve](continuum-pressure-performance-checkpoint.md) add bounded implementation evidence. High-load spatial convergence and isolated kernel performance qualification remain open. All nine goals and 40 retained requirements remain in scope; earlier counts below are historical.
+
 **Spatial pressure checkpoint:** The [connected continuum reference](continuum-pressure-checkpoint.md) solves isotropic glass, orthotropic oak and J2 iron under the same pressure footprint. It adds residual plastic geometry, full spatial state round-trip and a chat-to-computed-native-sequence route. Low-load controls recover, but high-load iron is not spatially converged and oak reaches declared validity limits. Dynamic contact, calibration, compact world state and real-time qualification remain open.
 
 **Full durable goal:** [Project goal and execution contract — September 6,
