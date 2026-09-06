@@ -27,11 +27,17 @@ int main(int argc,char **argv){try{
     auto report=nlohmann::json::parse(world->reportJson());
     SetConfigFlags(FLAG_MSAA_4X_HINT);InitWindow(1280,800,"Banjo - Sparse World Thermal Lab");SetTargetFPS(60);
     while(!WindowShouldClose()){
-        if(IsKeyPressed(KEY_SPACE))running=!running;
-        if(IsKeyPressed(KEY_R)){world=createWorld();reportClock=1;pendingElapsed=0;}
+        bool save=false;
+        // Consume buffered key-down events so a press and release between
+        // frames is still handled (important for quick taps and UI automation).
+        for(int key=GetKeyPressed();key!=0;key=GetKeyPressed()){
+            if(key==KEY_SPACE)running=!running;
+            if(key==KEY_R){world=createWorld();reportClock=1;pendingElapsed=0;}
+            if(key==KEY_S)save=true;
+        }
         if(running){pendingElapsed+=capture?1./60:double(GetFrameTime());const double request=std::min(.25,pendingElapsed);auto receipt=world->advance(request);pendingElapsed-=request;if(!receipt.error.empty()){running=false;reportClock=1;}}
         reportClock+=GetFrameTime();if(reportClock>=.25||(capture&&frame==599)){report=nlohmann::json::parse(world->reportJson());reportClock=0;}
-        if(IsKeyPressed(KEY_S)){std::ofstream output("world-lab-report.json");output<<world->reportJson();TakeScreenshot("world-lab.png");}
+        if(save){std::ofstream output("world-lab-report.json");output<<world->reportJson();TakeScreenshot("world-lab.png");}
         BeginDrawing();ClearBackground(background);
         DrawText("BANJO  /  WORLD FOUNDATIONS",30,24,28,ink);
         DrawText(TextFormat("%llu stored voxels   |   %u active thermal cells   |   0 physics bodies",static_cast<unsigned long long>(world->representedVoxelCount()),unsigned(world->activeCellCount())),30,64,20,muted);
