@@ -69,3 +69,7 @@ law or accuracy claim is introduced by this renderer.
 Next: unify contact, constitutive state and fracture before expanding claims;
 add calibrated comparative fixtures, cancellation, durable job restoration,
 and measured capture/render budgets. Retain all goals and scorecard rows.
+
+## Blocked-request visibility follow-up
+
+The owner's thin-glass job `fe25f038cc7b451d9cb1fdbf143caae7` was blocked before native execution, but the 3D tab showed only generic empty-view text. It now shows the unmet requirements and reasons, disables playback controls, and offers Edit request. Fresh terminal failures and restored blocked links share this presentation. Verified using the actual blocked job in the browser, JavaScript syntax checks and browser error inspection; successful pressure playback still loads. This is a UI correction, not added thin-glass physics.

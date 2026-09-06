@@ -355,12 +355,37 @@
 
   function playbackAvailable(item) { return Boolean(item && item.playback_available); }
 
+  function setPlaybackEnabled(enabled) {
+    document.querySelectorAll(".viewer-toolbar button, .viewer-field input, .viewer-field select, .viewer-toggles input").forEach(node => { node.disabled = !enabled; });
+  }
+
   function clearViewer(message = "Select a completed case with playback data.") {
+    setPlaybackEnabled(false);
     state.playbackRequest += 1; state.scene?.dispose(); state.scene = null; state.loadedPlaybackKey = null;
     const stage = $("viewer-stage"); stage.replaceChildren();
     const empty = document.createElement("div"); empty.className = "viewer-empty"; empty.textContent = message; stage.append(empty);
     $("viewer-play").textContent = "Play"; $("viewer-frame").max = "0"; $("viewer-frame").value = "0"; $("viewer-frame-output").textContent = "0 / 0";
     $("viewer-validity").className = "viewer-validity"; $("viewer-validity").textContent = message; $("viewer-native").disabled = true; $("viewer-custom").replaceChildren();
+  }
+
+  function showUnavailablePlayback(job) {
+    const blocked = job?.status === "blocked";
+    const title = blocked ? "This request could not be simulated" : job?.status === "error" ? "The experiment failed" : "This result has no 3D recording";
+    clearViewer(title);
+    $("viewer-title").textContent = title;
+    const stage = $("viewer-stage"); stage.replaceChildren();
+    const panel = document.createElement("div"); panel.className = "viewer-unavailable";
+    const heading = document.createElement("h2"); heading.textContent = "No simulation was created"; panel.append(heading);
+    const requirements = (job?.plan?.requirements || []).filter(r => r.status !== "supported");
+    if (requirements.length) {
+      const list = document.createElement("ul");
+      requirements.forEach(r => { const li = document.createElement("li"); const name = document.createElement("strong"); name.textContent = r.description; const reason = document.createElement("p"); reason.textContent = r.reason; li.append(name, reason); list.append(li); });
+      panel.append(list);
+    } else { const reason = document.createElement("p"); reason.textContent = text(job?.message, "This experiment returns a report rather than 3D playback."); panel.append(reason); }
+    const edit = document.createElement("button"); edit.type = "button"; edit.textContent = "Edit request";
+    edit.addEventListener("click", () => { activateTab("experiment"); $("prompt-input").focus(); }); panel.append(edit); stage.append(panel);
+    $("viewer-validity").className = "viewer-validity warning";
+    $("viewer-validity").textContent = "No playback is available for this request. Its reason is shown here; no substitute experiment was run.";
   }
 
   function validityMessage(item, playback) {
@@ -413,7 +438,7 @@
     const item=state.job?.cases?.[index]; if(!state.jobId || !playbackAvailable(item)){if(auto)return;showToast("This case has no embedded playback data.",true);return;}
     state.selectedCase=index;renderLanguage();renderViewerCaseSelect();activateTab("viewer");$("viewer-title").textContent=text(state.job?.plan?.ui?.title,item.name || "Computed sequence.");
     const key=`${state.jobId}:${index}`, request=++state.playbackRequest;
-    try { let playback=state.playbackCache.get(key);if(!playback){playback=await api(`/api/jobs/${encodeURIComponent(state.jobId)}/playback/${index}`);state.playbackCache.set(key,playback);}if(request!==state.playbackRequest||key!==`${state.jobId}:${state.selectedCase}`)return; if(state.loadedPlaybackKey!==key){ensureScene().load(playback);state.loadedPlaybackKey=key;} const [kind,message]=validityMessage(item,playback), validity=$("viewer-validity");validity.className=`viewer-validity ${kind}`;validity.textContent=message;renderCustomControls(state.job?.plan?.ui);$("viewer-native").disabled=!canOpenCase(item); }
+    try { let playback=state.playbackCache.get(key);if(!playback){playback=await api(`/api/jobs/${encodeURIComponent(state.jobId)}/playback/${index}`);state.playbackCache.set(key,playback);}if(request!==state.playbackRequest||key!==`${state.jobId}:${state.selectedCase}`)return; setPlaybackEnabled(true); if(state.loadedPlaybackKey!==key){ensureScene().load(playback);state.loadedPlaybackKey=key;} const [kind,message]=validityMessage(item,playback), validity=$("viewer-validity");validity.className=`viewer-validity ${kind}`;validity.textContent=message;renderCustomControls(state.job?.plan?.ui);$("viewer-native").disabled=!canOpenCase(item); }
     catch(error){state.scene?.dispose();state.scene=null;$("viewer-stage").replaceChildren();const p=document.createElement("p");p.className="viewer-error";p.textContent=error.message;$("viewer-stage").append(p);state.loadedPlaybackKey=null;showToast(error.message,true);}
   }
 
@@ -502,7 +527,7 @@
       rememberJob(job.id);
       if (job.status === "complete" && job.plan) state.latestPlan = job.plan;
       renderJob(job); renderLanguage(); renderResults();
-      if (terminalStatuses.has(job.status)) { stopPolling(); addHistory(job); const validationNote = needsMaterialValidationNote(job) ? " Material realism is not yet validated." : ""; addMessage("Banjo", text(job.message) + validationNote); const playable=job.cases?.findIndex(playbackAvailable) ?? -1;if(job.status==="complete" && playable>=0 && $("auto-open").checked)loadPlayback(playable,true);else if (job.status === "complete") { if(playable<0)clearViewer("This completed result has no embedded playback."); showToast("Experiment complete. Results are ready to inspect."); } else { clearViewer("The latest request did not produce playback geometry."); showToast(text(job.message, "Experiment did not complete."), true); } return; }
+      if (terminalStatuses.has(job.status)) { stopPolling(); addHistory(job); const validationNote = needsMaterialValidationNote(job) ? " Material realism is not yet validated." : ""; addMessage("Banjo", text(job.message) + validationNote); const playable=job.cases?.findIndex(playbackAvailable) ?? -1;if(job.status==="complete" && playable>=0 && $("auto-open").checked)loadPlayback(playable,true);else if (job.status === "complete") { if(playable<0)clearViewer("This completed result has no embedded playback."); showToast("Experiment complete. Results are ready to inspect."); } else { showUnavailablePlayback(job); if ($("auto-open").checked) activateTab("viewer"); showToast(text(job.message, "Experiment did not complete."), true); } return; }
       state.pollTimer = window.setTimeout(pollJob, 1000);
     } catch (error) { stopPolling(); clearViewer("The latest request did not produce playback geometry."); renderJob({ id: state.jobId, status: "error", message: error.message, cases: [] }); showToast(error.message, true); }
   }
@@ -543,7 +568,7 @@
       const job = await api(`/api/jobs/${encodeURIComponent(jobId)}`); state.job = job; state.jobId = job.id; rememberJob(job.id); state.latestPlan = job.plan || null; state.followup = true;
       const playable = job.cases?.findIndex(playbackAvailable) ?? -1; state.selectedCase = Math.max(0, playable);
       renderJob(job); renderLanguage(); renderResults(); addHistory(job);
-      if (activeStatuses.has(job.status)) pollJob(); else if (job.status === "complete" && playable >= 0) loadPlayback(playable, true); else clearViewer("The restored result has no embedded playback.");
+      if (activeStatuses.has(job.status)) pollJob(); else if (job.status === "complete" && playable >= 0) loadPlayback(playable, true); else { showUnavailablePlayback(job); activateTab("viewer"); }
     } catch {
       if(localStorage.getItem(latestJobStorageKey)===jobId)localStorage.removeItem(latestJobStorageKey); const url=new URL(window.location.href);if(url.searchParams.get("job")===jobId){url.searchParams.delete("job");history.replaceState(null,"",url);} clearViewer();
     }
