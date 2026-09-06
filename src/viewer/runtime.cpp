@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <map>
 #include <set>
+#include <chrono>
 
 using namespace banjo;
 namespace {
@@ -45,6 +46,15 @@ void drawBody(const PlatformInstance &o,bool structure){
     rlPushMatrix();rlTranslatef(float(p.x),float(p.y),float(p.z));rlRotatef(float(angle*180/3.141592653589793),float(axis.x),float(axis.y),float(axis.z));
     if(!structure)DrawCubeV({0,0,0},v(o.geometry.dimensions_m),color);DrawCubeWiresV({0,0,0},v(o.geometry.dimensions_m),structure?color:Color{42,59,65,255});rlPopMatrix();
 }
+void drawSkin(const PlatformSkin &skin){
+    const Color color{static_cast<unsigned char>(skin.color_rgba>>24),static_cast<unsigned char>(skin.color_rgba>>16),static_cast<unsigned char>(skin.color_rgba>>8),255};
+    for(const auto &triangle:skin.mesh.triangles){const auto &t=triangle.positions_world_m;
+        const auto normal=normalized(cross(t[1]-t[0],t[2]-t[0]));const double light=.35+.65*std::clamp(std::abs(dot(normal,normalized(Vec3{-.4,1,.7}))),0.,1.);
+        const Color base=triangle.fracture_surface?Color{245,206,143,255}:color;
+        const Color shade{static_cast<unsigned char>(base.r*light),static_cast<unsigned char>(base.g*light),static_cast<unsigned char>(base.b*light),255};
+        DrawTriangle3D(v(t[0]),v(t[1]),v(t[2]),shade);DrawTriangle3D(v(t[2]),v(t[1]),v(t[0]),shade);
+    }
+}
 }
 int main(int argc,char **argv){try{
     using json=nlohmann::json;
@@ -53,13 +63,15 @@ int main(int argc,char **argv){try{
     std::sort(files.begin(),files.end());if(files.empty())throw std::runtime_error("No runtime v1 test packages");
     unsigned selected=networkLab?3:2;selected=std::min(selected,unsigned(files.size()-1));
     if(argc>2){auto it=std::find_if(files.begin(),files.end(),[&](auto &p){return p.filename()==argv[2];});if(it==files.end())throw std::runtime_error("Unknown v1 test");selected=unsigned(it-files.begin());}
+    std::string capture;if(argc>3){if(argc!=5||std::string(argv[3])!="--capture")throw std::runtime_error("Expected --capture image.png after directory and fixture");capture=argv[4];}
     std::unique_ptr<PlatformWorld> world;json report,package;std::vector<PlatformInstance> instances;
-    bool running=false,structure=false,slow=false;double accumulator=0,time=0,refresh=0,lastStep=0,lag=0;unsigned frames=0;std::string notice="Ready. Release to run live.";
+    bool running=false,slow=false;unsigned view=networkLab?0:1;double accumulator=0,time=0,refresh=0,lastStep=0,lag=0;unsigned frames=0;std::string notice="Ready. Release to run live.";
+    std::vector<double> skinTimes;
     Camera3D camera{{1.8F,1.5F,2.6F},{0,.45F,0},{0,1,0},42,CAMERA_PERSPECTIVE};
     auto load=[&]{std::ifstream f(files[selected]);if(!f||std::filesystem::file_size(files[selected])>4194304)throw std::runtime_error("Cannot read bounded package");
         std::string source((std::istreambuf_iterator<char>(f)),{});auto next=PlatformWorld::load(source);package=json::parse(next->packageJson());
         if(package["backend"]!=(networkLab?"material-network-v2":"compiled-impact-v1"))throw std::runtime_error("Package requires another lab backend");world=std::move(next);
-        report=json::parse(world->reportJson());instances=world->renderInstances();running=false;accumulator=0;time=0;refresh=0;lastStep=0;lag=0;frames=0;notice="Ready. Release to run live.";
+        report=json::parse(world->reportJson());instances=world->renderInstances();running=false;accumulator=0;time=0;refresh=0;lastStep=0;lag=0;frames=0;skinTimes.clear();notice="Ready. Release to run live.";
         double height=0;for(auto &o:package["objects"])height=std::max(height,o["position_m"][1].get<double>());
         camera={{1.8F,1.5F,2.6F},{0,.45F,0},{0,1,0},42,CAMERA_PERSPECTIVE};
         if(height>2)camera={{2.7F,2.2F,4.2F},{0,1.15F,0},{0,1,0},42,CAMERA_PERSPECTIVE};
@@ -69,19 +81,28 @@ int main(int argc,char **argv){try{
     };load();
     SetConfigFlags(FLAG_MSAA_4X_HINT);InitWindow(1360,850,networkLab?"Banjo - Local Material Runtime v2":"Banjo - Live Material Runtime v1");SetTargetFPS(60);
     RenderTexture2D viewport=LoadRenderTexture(980,600);
-    auto advance=[&](unsigned steps){for(unsigned i=0;i<steps&&time<3-1e-9;++i){auto s=world->step();lastStep=s.wall_ms;time=s.elapsed_s;if(!s.error.empty()){notice=s.error;running=false;break;}}
-        instances=world->renderInstances();};
+    auto advance=[&](unsigned steps){for(unsigned i=0;i<steps&&time<3-1e-9;++i){auto s=world->step();lastStep=s.wall_ms;time=s.elapsed_s;if(!s.error.empty()){if(!capture.empty())throw std::runtime_error(s.error);notice=s.error;running=false;break;}}
+    };
+    auto exportReport=[&](const std::string &path){auto r=json::parse(world->reportJson());auto times=skinTimes;std::sort(times.begin(),times.end());
+        auto percentile=[&](double p){return times.empty()?0.:times[std::min(times.size()-1,std::size_t(p*double(times.size()-1)))];};
+        r["presentation"]={{"mode",capture.empty()?"live":"offline-fixed-step-capture"},{"view",view==0?"skin":view==1?"cells":"structure"},{"time_scale",slow?.25:1.},{"backlog_s",lag},{"rendered_frames",frames},{"skin_query_p95_ms",percentile(.95)},{"skin_query_p99_ms",percentile(.99)}};
+        std::ofstream f(path);f<<r.dump(2);return bool(f);};
     while(!WindowShouldClose()){
         const double frame=GetFrameTime();refresh+=frame;++frames;
+        std::set<int> keys;for(int key=GetKeyPressed();key;key=GetKeyPressed())keys.insert(key);
+        if(!capture.empty()){advance(unsigned(std::round(1./60/world->fixedStep())));notice="Offline fixed-step capture; timing is not a realtime claim.";}
         if(running){accumulator+=frame*(slow?.25:1.);unsigned steps=0;while(accumulator>=world->fixedStep()&&steps<24){advance(1);accumulator-=world->fixedStep();++steps;if(!running)break;}
             lag=accumulator;if(lag>.25){running=false;notice="Frame budget exceeded. Paused; report retains the backlog.";}
             if(time>=3-1e-9){running=false;notice="3-second live trial complete. Reset for another run.";}}
-        if(refresh>.2){report=json::parse(world->reportJson());refresh=0;}
+        if(refresh>.2||(!capture.empty()&&time>=3-1e-9)){report=json::parse(world->reportJson());refresh=0;}
+        instances=world->renderInstances();const bool structure=view==2;std::vector<PlatformSkin> skins;
+        if(view==0){const auto start=std::chrono::steady_clock::now();skins=world->renderSkins();skinTimes.push_back(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count());if(skinTimes.size()>10000)skinTimes.erase(skinTimes.begin());}
         const float wheel=GetMouseWheelMove();if(wheel!=0){const float scale=std::clamp(1-wheel*.12F,.5F,2.F);Vector3 d{camera.position.x-camera.target.x,camera.position.y-camera.target.y,camera.position.z-camera.target.z};
             float length=std::sqrt(d.x*d.x+d.y*d.y+d.z*d.z);if(length*scale>.35&&length*scale<30)camera.position={camera.target.x+d.x*scale,camera.target.y+d.y*scale,camera.target.z+d.z*scale};}
         BeginTextureMode(viewport);ClearBackground({13,23,30,255});BeginMode3D(camera);DrawGrid(16,.25F);
         for(auto &t:world->supportMesh()){DrawTriangle3D(v(t[0]),v(t[1]),v(t[2]),{45,66,75,255});DrawTriangle3D(v(t[2]),v(t[1]),v(t[0]),{36,53,62,255});}
-        for(auto &o:instances)drawBody(o,structure);
+        for(auto &o:instances)if(view!=0||!o.deformable_cell)drawBody(o,structure);
+        for(const auto &skin:skins)drawSkin(skin);
         if(structure)for(auto &b:world->renderBonds())DrawLine3D(v(b.a),v(b.b),!b.live?Color{255,108,106,255}:b.damage>0?Color{255,195,87,255}:Color{150,219,204,255});
         EndMode3D();EndTextureMode();
         BeginDrawing();ClearBackground({13,23,30,255});DrawTextureRec(viewport.texture,{0,0,980,-600},{0,115},WHITE);DrawRectangle(980,0,380,850,{23,38,48,255});
@@ -91,11 +112,11 @@ int main(int argc,char **argv){try{
         DrawText(TextFormat(networkLab?"%.3f s   |   %u broken bonds   |   %u softened bonds":"%.3f s   |   %u broken bonds   |   %u visible elements",time,world->fractureCount(),networkLab?report.value("damaged_links",0u):unsigned(instances.size())),28,734,20,RAYWHITE);
         DrawText(notice.c_str(),28,770,17,{207,237,135,255});DrawText("Actual live physics. Space: release/pause. Wheel: zoom. Arrows: experiment.",28,805,16,{148,177,191,255});
         DrawText(TextFormat("V%u TEST %u / %u",networkLab?2:1,selected+1,unsigned(files.size())),1000,24,22,RAYWHITE);
-        if(button(65,running?"Pause":"Release / continue")||IsKeyPressed(KEY_SPACE)){if(time>=3-1e-9)load();running=!running;accumulator=0;notice=running?"Simulating live; no precomputed trajectory.":"Paused. Step a frame or continue.";}
-        if(button(107,"Reset initial state")||IsKeyPressed(KEY_R))load();
-        if(button(149,"Next experiment")||IsKeyPressed(KEY_RIGHT)){selected=(selected+1)%unsigned(files.size());load();}
-        if(button(191,"Previous experiment")||IsKeyPressed(KEY_LEFT)){selected=(selected+unsigned(files.size())-1)%unsigned(files.size());load();}
-        if(button(233,structure?"Structure: ON":"Structure: OFF"))structure=!structure;
+        if(button(65,running?"Pause":"Release / continue")||keys.contains(KEY_SPACE)){if(time>=3-1e-9)load();running=!running;notice=running?"Simulating live; backlog preserved.":"Paused. Step a frame or continue.";}
+        if(button(107,"Reset initial state")||keys.contains(KEY_R))load();
+        if(button(149,"Next experiment")||keys.contains(KEY_RIGHT)){selected=(selected+1)%unsigned(files.size());load();}
+        if(button(191,"Previous experiment")||keys.contains(KEY_LEFT)){selected=(selected+unsigned(files.size())-1)%unsigned(files.size());load();}
+        if(button(233,view==0?"View: skin (K to cycle)":view==1?"View: cells (K to cycle)":"View: structure (K to cycle)")||keys.contains(KEY_K))view=networkLab?(view+1)%3:view==1?2:1;
         if(button(275,slow?"Speed: 0.25x (inspection)":"Speed: 1x (live)"))slow=!slow;
         if(button(317,"Step one frame (paused)")){running=false;advance(unsigned(std::round(1./60/world->fixedStep())));report=json::parse(world->reportJson());}
         DrawText("MEASURED THIS RUN",1000,376,18,{207,237,135,255});
@@ -108,10 +129,11 @@ int main(int argc,char **argv){try{
         if(networkLab)DrawText(TextFormat("Plastic work: %.4f J",report.value("plastic_work_j",0.)),1000,549,17,RAYWHITE);
         else DrawText(TextFormat("Budget-limited impacts: %u",report.value("budget_limited_impacts",0u)),1000,549,17,RAYWHITE);
         DrawText(networkLab?"Experimental cohesive cell network":"Approximate brittle fracture model",1000,591,16,{230,179,114,255});DrawText(networkLab?"Continuous deformation and damage":"Wood / iron: rigid response only",1000,616,16,{164,183,197,255});
-        DrawText(networkLab?"Green intact / amber soft / red broken":"Green intact / red failed connections",1000,647,15,{164,183,197,255});DrawText(networkLab?"No calibrated tissue / wood law yet":"No grain, plasticity or live save yet",1000,671,15,{164,183,197,255});
-        if(button(710,"Export full report")){auto r=json::parse(world->reportJson());r["presentation"]={{"mode","live"},{"time_scale",slow?.25:1.},{"backlog_s",lag},{"rendered_frames",frames}};std::ofstream f(networkLab?"build/runtime-v2-report.json":"build/runtime-v1-report.json");f<<r.dump(2);notice=f?(networkLab?"Saved build/runtime-v2-report.json":"Saved build/runtime-v1-report.json"):"Report write failed";}
+        DrawText(networkLab?"Blocky skin; gold = exposed cut face":"Green intact / red failed connections",1000,647,15,{164,183,197,255});DrawText(networkLab?"Skin differs from sphere contacts":"No grain, plasticity or live save yet",1000,671,15,{164,183,197,255});
+        if(button(710,"Export full report")){const std::string path=networkLab?"build/runtime-v2-report.json":"build/runtime-v1-report.json";notice=exportReport(path)?"Saved "+path:"Report write failed";}
         if(button(752,"Save screenshot")){rlDrawRenderBatchActive();Image image=LoadImageFromScreen();ExportImage(image,networkLab?"build/runtime-v2-lab.png":"build/runtime-v1-lab.png");UnloadImage(image);notice=networkLab?"Saved build/runtime-v2-lab.png":"Saved build/runtime-v1-lab.png";}
         DrawFPS(1000,810);EndDrawing();
+        if(!capture.empty()&&time>=3-1e-9){Image screen=LoadImageFromScreen();const bool saved=ExportImage(screen,capture.c_str());UnloadImage(screen);if(!saved||!exportReport(capture+".json"))throw std::runtime_error("Capture export failed");break;}
     }
     UnloadRenderTexture(viewport);CloseWindow();return 0;
 }catch(const std::exception &e){TraceLog(LOG_ERROR,"%s",e.what());return 1;}}

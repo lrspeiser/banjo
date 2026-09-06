@@ -38,8 +38,9 @@ void validateEnthalpyLump(const EnthalpyLump &lump);
 [[nodiscard]] double enthalpyFromTemperaturePhase(
     const EnthalpyMaterial &material, double temperature_k, double liquid_fraction);
 
-// Backward-Euler conduction for two finite lumps. The solve is conservative,
-// bounded, and first-order in time; it is not an exact transient solution.
+// Backward-Euler conduction for two finite lumps. The piecewise-affine phase
+// solve is conservative, bounded, and first-order in time; it is not an exact
+// transient solution.
 [[nodiscard]] EnthalpyPairResult exchangePairBackwardEuler(
     const EnthalpyMaterial &first_material,
     const EnthalpyLump &first,

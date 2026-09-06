@@ -1,0 +1,372 @@
+{
+  "schema": "banjo.execution-goals.v1",
+  "recorded_against": "main:816cfaf",
+  "recorded_date": "2026-09-05",
+  "baseline": {
+    "suite_count": 44,
+    "suite_status": "passes",
+    "physics_status": "unfinished"
+  },
+  "completion_policy": {
+    "prototype": "Instrumented bounded implementation or experiment with explicit limitations; not a completion claim.",
+    "complete": "Acceptance evidence, comparative material coverage, conservation/work checks, refinement checks, and relevant scale/customer checks are recorded.",
+    "global_status": "no_goal_complete",
+    "deferred": [
+      "smoke",
+      "airflow",
+      "pressure_advection",
+      "full_fluid_dynamics"
+    ]
+  },
+  "retained_requirements_ref": {
+    "source": "docs/mechanics-scorecard.md",
+    "ids": [
+      "M01",
+      "M02",
+      "M03",
+      "M04",
+      "M05",
+      "M06",
+      "M07",
+      "M08",
+      "M09",
+      "M10",
+      "M11",
+      "M12",
+      "M13",
+      "M14",
+      "M15",
+      "M16",
+      "M17",
+      "M18",
+      "M19",
+      "M20",
+      "M21",
+      "M22",
+      "M23",
+      "M24",
+      "M25",
+      "M26",
+      "M27",
+      "M28",
+      "M29",
+      "M30",
+      "P01",
+      "P02",
+      "P03",
+      "P04",
+      "P05",
+      "P06",
+      "P07",
+      "P08",
+      "P09",
+      "P10"
+    ],
+    "count": 40
+  },
+  "execution_policy": {
+    "routine_docs_and_test_fixtures": "Luna",
+    "bounded_numerical_work": "Sol",
+    "complex_integration": "parent",
+    "no_invented_completion_dates_or_speeds": true
+  },
+  "goals": [
+    {
+      "id": "G01",
+      "title": "Live cell-derived object skins",
+      "status": "active",
+      "owner": "parent",
+      "objective": "Ship blocky v1 surfaces from accepted live matter, including partial cracks and fragment skins, while preserving physics; qualify smooth/deforming refinements separately.",
+      "dependencies": [
+        "object-skin-contract",
+        "stable-cell-component-identities",
+        "accepted-connectivity",
+        "local-patch-queue",
+        "stale-job-rejection"
+      ],
+      "acceptance": {
+        "prototype_gate": [
+          "blocky exposed-face skin follows live connectivity",
+          "partial cracks and repeated fracture update local patches",
+          "fragment state and lineage are preserved",
+          "no reskin reset or fabricated impulse",
+          "stale topology jobs reject"
+        ],
+        "complete_gate": [
+          "glass/oak/iron and tissue/layered cases are measured",
+          "cavity and exposed-interior behavior is verified",
+          "visual detail leaves trajectories and ledgers unchanged",
+          "surface p95/p99, memory/upload, fallback, and mesh backlog are reported",
+          "smooth/deforming work has separate convergence evidence"
+        ]
+      },
+      "next_action": "Add bounded local mesh patches, material coordinates/layers and measured skin/contact error.",
+      "evidence_status": "Blocky topology, partial-cut lips, live skins, geometry export and physics-isolation tests passed. Full surface gate remains open.",
+      "retained_requirements": [
+        "M21",
+        "M24",
+        "P10"
+      ],
+      "evidence_ref": "docs/execution-checkpoint.md"
+    },
+    {
+      "id": "G02",
+      "title": "Converged material/contact response and cutting",
+      "status": "queued",
+      "objective": "Converge glass, oak, iron, and soft-tissue contact/material response and cutting under force, work, time, and space gates without strength hacks.",
+      "dependencies": [
+        "authoritative-contact-owner",
+        "material-derived-mass-inertia",
+        "constitutive-history",
+        "local-solver-comparison",
+        "G01"
+      ],
+      "acceptance": {
+        "prototype_gate": [
+          "declared laws run for glass/oak/iron/soft tissue",
+          "reactions, work, damage, and history are observable",
+          "cutting changes accepted topology without prescribed launches",
+          "axial/network path remains experimental"
+        ],
+        "complete_gate": [
+          "time/iteration/space/contact refinement bounds force, work, area, topology, momentum, angular momentum, and energy residuals",
+          "oak has directional evidence",
+          "iron has calibrated plastic evidence",
+          "soft tissue has finite-strain/cohesive cut evidence",
+          "asymmetric/support/third-body cases pass"
+        ]
+      },
+      "next_action": "Define comparative coupons and soft-tissue cut fixtures; compare candidate local solvers with the CPU reference.",
+      "evidence_status": "queued; not complete",
+      "retained_requirements": [
+        "M01",
+        "M02",
+        "M03",
+        "M04",
+        "M05",
+        "M07",
+        "M08",
+        "M09",
+        "M10",
+        "M11",
+        "M12",
+        "M14",
+        "M15",
+        "M16",
+        "M17",
+        "M18",
+        "M19",
+        "M20",
+        "M21",
+        "M22",
+        "M23",
+        "M24",
+        "M25",
+        "M26",
+        "M29",
+        "M30"
+      ]
+    },
+    {
+      "id": "G03",
+      "title": "Conservative thermal frontier",
+      "status": "active",
+      "objective": "Add cross-region flux, cold-neighbor/frontier activation, and conservative accumulation while preserving phase, reaction, latent heat, and lag accounting.",
+      "dependencies": [
+        "SparseThermalWorld",
+        "ThermalKernel",
+        "two-lump-oracle",
+        "bounded-jobs",
+        "G04"
+      ],
+      "acceptance": {
+        "prototype_gate": [
+          "cross-region interface flux is equal and opposite",
+          "frontier activation reports cause and error bound",
+          "cold storage remains compact until wake",
+          "phase identity and latent energy remain explicit",
+          "lag/frontier age/residual are reported"
+        ],
+        "complete_gate": [
+          "timestep/space refinement closes heat, enthalpy, latent, fuel/oxygen, and interface residuals",
+          "activation/demotion are transactional",
+          "thermal-mechanical coupling is separately validated",
+          "law envelope limits fire/weakening claims"
+        ]
+      },
+      "next_action": "Add cold-neighbor activation and bounded boundary/frontier error accounting without resetting accepted state.",
+      "evidence_status": "Explicit conservative same-clock region joining and history/phase preservation tests passed. Frontier gate remains open.",
+      "retained_requirements": [
+        "M05",
+        "M27",
+        "M28",
+        "M29",
+        "P01",
+        "P02",
+        "P05",
+        "P10"
+      ],
+      "evidence_ref": "docs/execution-checkpoint.md"
+    },
+    {
+      "id": "G04",
+      "title": "Unified state/energy and bounded authoring API",
+      "status": "queued",
+      "objective": "Unify mechanical and thermal state in a versioned, unit-bearing runtime language with explicit stores and bounded creator/job APIs.",
+      "dependencies": [
+        "world-physics-language",
+        "law-capability-manifests",
+        "G02",
+        "G03",
+        "stable-history-identities",
+        "snapshot-receipts"
+      ],
+      "acceptance": {
+        "prototype_gate": [
+          "SI/version/capability/budget validation works",
+          "named energy stores and explicit transfers are exposed",
+          "bounded jobs report admission/progress/lag/cancellation/rejection",
+          "LLM authors declarations but never ticks physics"
+        ],
+        "complete_gate": [
+          "promotion/demotion/contact/fracture/plasticity/reaction/phase/work/snapshot preserve ledgers",
+          "no double counting or silent work reclassification",
+          "commands are durable and capability checked",
+          "creator integration is exercised"
+        ]
+      },
+      "next_action": "Consolidate mechanical and thermal ledgers into one versioned transition schema and exercise accepted/rejected bounded package flows.",
+      "evidence_status": "queued; not complete",
+      "retained_requirements": [
+        "M01",
+        "M02",
+        "M03",
+        "M04",
+        "M05",
+        "M17",
+        "M27",
+        "M29",
+        "M30",
+        "P03",
+        "P05",
+        "P06",
+        "P07"
+      ]
+    },
+    {
+      "id": "G05",
+      "title": "Measured world-load performance",
+      "status": "active",
+      "owner": "execution support; Sol phase-kernel optimization",
+      "objective": "Optimize measured active-world kernels and sparse-active scheduling without changing laws; keep cold storage out of full simulation.",
+      "dependencies": [
+        "G03",
+        "G04",
+        "CPU-reference",
+        "sparse-chunks",
+        "active-islands",
+        "bounded-scheduler",
+        "stale-job-rejection",
+        "p95-p99-instrumentation"
+      ],
+      "acceptance": {
+        "prototype_gate": [
+          "storage and allocator overhead are separated",
+          "p50/p95/p99, backlog, age, residual, lag, and memory are reported",
+          "fixed and growing active-count matrices exist",
+          "only measured kernels are optimized",
+          "cold storage is not fully simulated"
+        ],
+        "complete_gate": [
+          "declared scale/load matrices meet budgets or report bounded backlog",
+          "approximately 1M and 16M stored-voxel cases are measured with fixed active count",
+          "active-count growth and wake churn are measured when available",
+          "CPU-reference outputs and residuals remain within declared tolerances",
+          "no world-scale realtime claim comes from a small fixture"
+        ]
+      },
+      "next_action": "Use measured active-set budgets; validate wake churn, mechanical loads and p95/p99 latency together.",
+      "evidence_status": "Same-law phase solve optimized; 47-suite checkpoint and repeated phase-world/job-budget evidence recorded. Mixed-world gate remains open.",
+      "retained_requirements": [
+        "M27",
+        "M29",
+        "M30",
+        "P01",
+        "P02",
+        "P04",
+        "P10"
+      ],
+      "evidence_ref": "docs/execution-checkpoint.md"
+    },
+    {
+      "id": "G06",
+      "title": "Snapshot, publishing, and customer conformance",
+      "status": "queued",
+      "objective": "Make accepted worlds and objects recoverable, publishable, compatible, and testable through the ax/tree, door/panel, and tomato-bowl loop.",
+      "dependencies": [
+        "G01",
+        "G02",
+        "G03",
+        "G04",
+        "G05",
+        "stable-ids",
+        "manifests",
+        "permissions",
+        "migration",
+        "authority-events"
+      ],
+      "acceptance": {
+        "prototype_gate": [
+          "snapshots include authoritative state/history/energy/config fingerprints",
+          "publication is crash-atomic and dependency validated",
+          "incompatible versions reject",
+          "customer fixtures report unsupported behavior explicitly"
+        ],
+        "complete_gate": [
+          "save/recover/replay/publish/import/rollback preserve accepted state",
+          "manifests support validation/preview/permissions/migration",
+          "authority/bandwidth/determinism behavior is measured",
+          "ax/tree, door/panel, and tomato bowl pass customer conformance"
+        ]
+      },
+      "next_action": "Define snapshot manifest and compatibility matrix; run crash/restart, migration rejection, publish/import, and customer-loop fixtures.",
+      "evidence_status": "queued; not complete",
+      "retained_requirements": [
+        "M21",
+        "M25",
+        "M26",
+        "M30",
+        "P03",
+        "P06",
+        "P07",
+        "P08",
+        "P09",
+        "P10"
+      ]
+    }
+  ],
+  "latest_execution": {
+    "date": "2026-09-05",
+    "full_suites_passed": 47,
+    "overall_complete": false,
+    "active": [
+      "G01",
+      "G03",
+      "G05"
+    ],
+    "queued": [
+      "G02",
+      "G04",
+      "G06"
+    ],
+    "evidence": "docs/execution-checkpoint.md",
+    "milestones_completed": [
+      "blocky-live-skins",
+      "partial-cut-lips",
+      "same-clock-thermal-region-join",
+      "bounded-affine-phase-kernel",
+      "comparative-phase-world-budget-measurement"
+    ]
+  },
+  "dependency_policy": "Dependencies name shared contracts and final acceptance gates; independent prototype slices may proceed in parallel. An active dependent goal does not certify its prerequisite complete."
+}

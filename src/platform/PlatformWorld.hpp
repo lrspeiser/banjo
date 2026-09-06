@@ -1,6 +1,7 @@
 #pragma once
 #include "core/RigidPrimitive.hpp"
 #include "fracture/ActiveMatter.hpp"
+#include "fracture/CellSkin.hpp"
 #include "material/MaterialCatalog.hpp"
 #include <memory>
 #include <string>
@@ -16,6 +17,13 @@ struct PlatformInstance {
     std::uint32_t color_rgba{};
     std::vector<std::array<Vec3,3>> local_mesh;
     std::string material_id; // Property-defined v2 material; empty for legacy presets.
+    bool deformable_cell{};
+};
+struct PlatformSkin {
+    MatterBodyId object_id{};
+    std::string material_id;
+    std::uint32_t color_rgba{};
+    CellSkinMesh mesh;
 };
 struct PlatformStep {
     unsigned completed_steps{};
@@ -38,6 +46,7 @@ public:
     PlatformStep step(unsigned fixed_steps=1);
     std::vector<PlatformInstance> renderInstances() const;
     std::vector<PlatformBondLine> renderBonds() const;
+    std::vector<PlatformSkin> renderSkins() const;
     std::string reportJson() const;
     std::string packageJson() const;
     const std::vector<std::array<Vec3,3>> &supportMesh() const;

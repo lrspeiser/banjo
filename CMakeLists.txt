@@ -58,6 +58,7 @@ add_library(
     src/fracture/ConnectedComponents.cpp
     src/fracture/FragmentMassProperties.cpp
     src/fracture/FragmentGeometry.cpp
+    src/fracture/CellSkin.cpp
     src/prediction/BallScenarioProjection.cpp
     src/prediction/ScenarioCache.cpp
     src/precompute/MaterialOutcome.cpp)
@@ -67,6 +68,9 @@ target_compile_features(banjo_core PUBLIC cxx_std_23)
 banjo_enable_warnings(banjo_core)
 
 if(BANJO_BUILD_PRECOMPUTE)
+    add_executable(banjo_phase_pair_benchmark tools/phase_pair_benchmark.cpp)
+    target_link_libraries(banjo_phase_pair_benchmark PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_phase_pair_benchmark)
     add_executable(banjo_precompute src/app/precompute_main.cpp)
     target_link_libraries(banjo_precompute PRIVATE banjo_core)
     target_compile_features(banjo_precompute PRIVATE cxx_std_23)
@@ -225,6 +229,10 @@ if(BANJO_BUILD_LAB)
 endif()
 
 if(BANJO_BUILD_TESTS)
+    add_executable(banjo_cell_skin_tests tests/cell_skin_tests.cpp)
+    target_link_libraries(banjo_cell_skin_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_cell_skin_tests)
+    add_test(NAME banjo_cell_skin_tests COMMAND banjo_cell_skin_tests)
     add_executable(banjo_fracture_preview_tests tests/fracture_preview_tests.cpp)
     target_link_libraries(banjo_fracture_preview_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_fracture_preview_tests)
@@ -386,6 +394,13 @@ if(BANJO_BUILD_TESTS AND TARGET banjo_creator_runtime)
 endif()
 
 if(BANJO_BUILD_TESTS AND TARGET banjo_platform)
+ add_executable(banjo_thermal_region_join_tests tests/thermal_region_join_tests.cpp)
+ target_link_libraries(banjo_thermal_region_join_tests PRIVATE banjo_sparse_world nlohmann_json::nlohmann_json)
+ add_test(NAME banjo_thermal_region_join_tests COMMAND banjo_thermal_region_join_tests)
+ add_executable(banjo_network_skin_tests tests/network_skin_tests.cpp)
+ target_link_libraries(banjo_network_skin_tests PRIVATE banjo_platform nlohmann_json::nlohmann_json)
+ target_compile_definitions(banjo_network_skin_tests PRIVATE BANJO_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+ add_test(NAME banjo_network_skin_tests COMMAND banjo_network_skin_tests)
  add_executable(banjo_world_package_tests tests/world_package_tests.cpp)
  target_link_libraries(banjo_world_package_tests PRIVATE banjo_sparse_world nlohmann_json::nlohmann_json)
  target_compile_definitions(banjo_world_package_tests PRIVATE BANJO_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")

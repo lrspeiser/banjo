@@ -1,6 +1,6 @@
 # Physical cells and object skins
 
-Owner direction, September 5, 2026: objects may be represented by voxels or sphere/particle samples and wrapped in a separate visual skin. Fracture must produce surfaces for the surviving pieces, including newly exposed interiors. This is an architecture decision and implementation plan; it does not claim that the live material-network renderer already supports continuous skins.
+Owner direction, September 5, 2026: objects may be represented by voxels or sphere/particle samples and wrapped in a separate visual skin. Fracture must produce surfaces for the surviving pieces, including newly exposed interiors. The executed checkpoint is tracked in [execution-checkpoint.md](execution-checkpoint.md): the default live network path now has pure blocky `CellSkin` geometry and cached per-object topology keyed by accepted break revision. This supplies a tested slice of the blocky v1 contract; smooth/deforming surfaces remain separately qualified.
 
 ## Representation contract
 
@@ -30,9 +30,9 @@ Skin detail and physical resolution are independent settings with a declared geo
 
 `src/fracture/FragmentGeometry.cpp::buildExposedVoxelSurface` already emits exposed cube faces for a supplied legacy voxel component. Its neighboring-cell culling uses reference-grid membership; it is not a general deformed skin or partial-crack mesher. Existing tests in `tests/test_main.cpp` check the ten exposed faces of two joined voxels and that fragment surface data is produced. These tests do not certify smooth or crack-aware skins.
 
-`src/platform/NetworkWorld.cpp::renderInstances` currently exposes individual material cells, with explicit mesh data for rigid wedge tools. The live v2 network does not yet attach one skin to each deforming or separated component. `SparseThermalWorld` remains an independent field prototype; adding a skin does not couple its energy state to the mechanical backend.
+Historical implementation note: `src/platform/NetworkWorld.cpp::renderInstances` exposed individual material cells, with explicit mesh data for rigid wedge tools, before the executed blocky skin slice. The current default live v2 path attaches one derived skin per deformable object while retaining those cell instances. `SparseThermalWorld` remains an independent field prototype; adding a skin does not couple its energy state to the mechanical backend.
 
-The next implementation slice is a renderer-independent surface contract carrying stable component/cell IDs, exposed interface IDs, material coordinates and geometry revisions. First connect a simple blocky skin to accepted live connectivity, partial cuts and repeated fracture. Then add deforming/smoother surfaces, persistent buffers, local updates and bounded uploads. Preserve the cell/bond debug view alongside the skin view. This work can proceed alongside the unresolved glass/contact solver and thermal-frontier work; it must not conceal their accuracy limits.
+The executed slice supplies the renderer-independent blocky surface contract with stable object/material/component/cell IDs, accepted-break revisions, explicit failed-face pairs, live-neighbor least-squares half-axes, owner-local crack lips and a reported rank-deficient fallback. It rebuilds synchronously for the whole affected object and preserves the cell/bond debug view. Follow-up work is local patching, UV/layer bindings, smooth/deforming surfaces, skin/contact convergence and finite-strain calibration; diagonal-only breaks remain unexposed until a face break is accepted.
 
 ## Acceptance cases
 

@@ -27,11 +27,16 @@ struct WorldStepReceipt {
     bool count_budget_exhausted{},wall_budget_exhausted{};
     std::string error;
 };
+struct ThermalRegionJoinReceipt {
+    unsigned preserved_region_id{},retired_region_id{},cells{},edges{},joined_face_edges{};
+    double accepted_time_s{};
+};
 // First world-scale storage/scheduling slice: compact uniform 16^3 chunks and
 // explicitly activated, INSULATED thermal regions. No implicit heat sink at a
 // cold boundary: insulation is part of this experimental region contract.
-// No mechanics, airflow, cross-region flux, thermal weakening or automatic
-// activation/coarsening is claimed. Main-thread API; jobs publish atomically.
+// No mechanics, airflow, independent cross-clock flux, thermal weakening or
+// automatic activation/coarsening is claimed. The explicit join below makes
+// two regions one same-clock island. Main-thread API; jobs publish atomically.
 class SparseThermalWorld {
 public:
     explicit SparseThermalWorld(double voxel_size_m);
@@ -39,6 +44,10 @@ public:
     void addMaterial(WorldThermalMaterial material);
     void addUniformChunk(ChunkAddress address,unsigned material,double temperature_k,double liquid_fraction_at_melt=0);
     void activateInsulatedRegion(unsigned id,const std::vector<VoxelAddress>& cells,double fixed_step_s=.05);
+    // Atomically joins two caught-up, face-adjacent regions on the same clock.
+    // The first ID survives and the second ID remains permanently retired.
+    ThermalRegionJoinReceipt joinInsulatedRegions(
+        unsigned first_region_id,unsigned second_region_id,double expected_region_time_s);
     // Applies work at the explicitly acknowledged accepted region time.
     // A stale timestamp or a backlogged region rejects before mutation.
     double addHeat(VoxelAddress cell,double requested_j,double limit_j,double expected_region_time_s);

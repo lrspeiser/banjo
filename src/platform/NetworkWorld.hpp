@@ -12,6 +12,7 @@ public:
     void step(double dt);
     std::vector<PlatformInstance> renderInstances() const;
     std::vector<PlatformBondLine> renderBonds() const;
+    std::vector<PlatformSkin> renderSkins() const;
     std::string reportJson() const;
     const std::vector<std::array<Vec3,3>> &supportMesh() const;
     unsigned fractureCount() const;

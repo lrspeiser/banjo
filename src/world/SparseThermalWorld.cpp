@@ -31,6 +31,10 @@ struct SparseThermalWorld::Impl {
     std::map<ChunkAddress,Chunk> chunks;
     std::map<VoxelAddress,std::pair<unsigned,unsigned>> locations;
     std::vector<Region> regions;
+    // A join permanently adds cells to one active island, so these histories
+    // are bounded by the world's 32,768 permanent active-cell budget.
+    std::vector<unsigned> retired_region_ids;
+    std::vector<ThermalRegionJoinReceipt> joins;
     std::vector<double> timings;
     std::size_t cell_count{};
     WorldStepReceipt last;
@@ -94,7 +98,8 @@ void SparseThermalWorld::addUniformChunk(ChunkAddress a,unsigned material,double
     w.chunks.emplace(a,Impl::Chunk{material,temperature,fraction});
 }
 void SparseThermalWorld::activateInsulatedRegion(unsigned id,const std::vector<VoxelAddress>& cells,double dt){
-    auto &w=*impl_;require(id>0&&w.regions.size()<256&&std::none_of(w.regions.begin(),w.regions.end(),[&](auto &r){return r.id==id;}),"invalid region ID or budget");
+    auto &w=*impl_;require(id>0&&w.regions.size()<256&&std::none_of(w.regions.begin(),w.regions.end(),[&](auto &r){return r.id==id;})&&
+        std::find(w.retired_region_ids.begin(),w.retired_region_ids.end(),id)==w.retired_region_ids.end(),"invalid, active, or retired region ID, or region budget exceeded");
     require(!cells.empty()&&cells.size()<=512&&w.cell_count+cells.size()<=32768,"active thermal cell budget exceeded");
     require(std::isfinite(dt)&&dt>=.001&&dt<=1,"invalid thermal step");
     Impl::Region r{id,dt,w.requested_time,0,0};
@@ -120,6 +125,52 @@ void SparseThermalWorld::activateInsulatedRegion(unsigned id,const std::vector<V
     w.regions.push_back(std::move(r));
     for(unsigned i=0;i<cells.size();++i)w.locations.emplace(cells[i],std::pair{region,i});
     w.cell_count+=cells.size();
+}
+ThermalRegionJoinReceipt SparseThermalWorld::joinInsulatedRegions(unsigned firstId,unsigned secondId,double expected){
+    auto &w=*impl_;require(firstId!=secondId,"thermal region join requires distinct IDs");
+    const auto firstIt=std::find_if(w.regions.begin(),w.regions.end(),[&](const auto &r){return r.id==firstId;});
+    const auto secondIt=std::find_if(w.regions.begin(),w.regions.end(),[&](const auto &r){return r.id==secondId;});
+    require(firstIt!=w.regions.end()&&secondIt!=w.regions.end(),"thermal region join requires two active region IDs");
+    const auto firstIndex=std::size_t(firstIt-w.regions.begin()),secondIndex=std::size_t(secondIt-w.regions.begin());
+    const auto &first=*firstIt;const auto &second=*secondIt;
+    require(std::isfinite(expected)&&std::abs(expected-first.time)<1e-12&&std::abs(expected-second.time)<1e-12,
+        "thermal region join has stale or mismatched accepted time");
+    require(std::abs(first.time-second.time)<1e-12&&std::abs(first.dt-second.dt)<1e-12,
+        "thermal region join requires matching clocks and fixed steps");
+    require(first.time+first.dt>w.requested_time+1e-12&&second.time+second.dt>w.requested_time+1e-12,
+        "thermal region join requires both regions to be fully caught up");
+    require(first.cells.size()+second.cells.size()<=512,"joined thermal region exceeds the 512-cell region budget");
+
+    Impl::Region merged=first;const unsigned firstCellCount=unsigned(merged.cells.size());
+    merged.cells.insert(merged.cells.end(),second.cells.begin(),second.cells.end());
+    merged.initial_energy+=second.initial_energy;merged.initial_mass+=second.initial_mass;
+    merged.external_work+=second.external_work;merged.reaction_heat+=second.reaction_heat;
+    merged.jobs+=second.jobs;merged.maximum_step_energy_residual=std::max(merged.maximum_step_energy_residual,second.maximum_step_energy_residual);
+    std::map<std::tuple<int,int,int>,unsigned> indices;
+    for(unsigned i=0;i<merged.cells.size();++i)require(indices.emplace(global(merged.cells[i].address),i).second,"joined thermal regions contain duplicate cells");
+    merged.edges.clear();unsigned joinedFaces=0;
+    for(auto &[key,a]:indices){auto [x,y,z]=key;
+        for(auto other:std::vector<std::tuple<int,int,int>>{{x+1,y,z},{x,y+1,z},{x,y,z+1}}){auto it=indices.find(other);if(it==indices.end())continue;
+            const unsigned b=it->second;const double conductance=thermal::interfaceConductanceWPerK(w.materials.at(merged.cells[a].material).thermal,w.materials.at(merged.cells[b].material).thermal,w.size*w.size,w.size);
+            merged.edges.push_back({a,b,conductance});joinedFaces+=(a<firstCellCount)!=(b<firstCellCount);}
+    }
+    require(joinedFaces>0,"thermal region join requires at least one shared voxel face");
+    ThermalRegionJoinReceipt receipt{firstId,secondId,unsigned(merged.cells.size()),unsigned(merged.edges.size()),joinedFaces,first.time};
+
+    // Build all fallible state before publishing. Swaps below commit the joined
+    // region, location index, retirement record, and scheduler cursor together.
+    auto candidateRegions=w.regions;candidateRegions[firstIndex]=std::move(merged);candidateRegions.erase(candidateRegions.begin()+std::ptrdiff_t(secondIndex));
+    std::map<VoxelAddress,std::pair<unsigned,unsigned>> candidateLocations;
+    for(unsigned ri=0;ri<candidateRegions.size();++ri)for(unsigned ci=0;ci<candidateRegions[ri].cells.size();++ci)
+        require(candidateLocations.emplace(candidateRegions[ri].cells[ci].address,std::pair{ri,ci}).second,"thermal region location index is inconsistent");
+    auto candidateRetired=w.retired_region_ids;candidateRetired.push_back(secondId);
+    auto candidateJoins=w.joins;candidateJoins.push_back(receipt);
+    const unsigned oldNextId=w.regions[w.next_region].id;
+    const unsigned desiredNextId=oldNextId==secondId?firstId:oldNextId;unsigned candidateNext=0;bool foundNext=false;
+    for(unsigned i=0;i<candidateRegions.size();++i)if(candidateRegions[i].id==desiredNextId){candidateNext=i;foundNext=true;break;}
+    require(foundNext,"thermal region scheduler cursor is inconsistent");
+    w.regions.swap(candidateRegions);w.locations.swap(candidateLocations);w.retired_region_ids.swap(candidateRetired);w.joins.swap(candidateJoins);w.next_region=candidateNext;
+    return receipt;
 }
 double SparseThermalWorld::addHeat(VoxelAddress a,double requested,double limit,double expected){
     auto &w=*impl_;address(a);require(w.locations.contains(a),"heat requires an explicitly activated thermal region");
@@ -159,7 +210,7 @@ std::vector<ThermalCellView> SparseThermalWorld::activeCells() const{
 std::uint64_t SparseThermalWorld::representedVoxelCount() const{return std::uint64_t(impl_->chunks.size())*4096;}
 std::size_t SparseThermalWorld::activeCellCount() const{return impl_->cell_count;}
 std::string SparseThermalWorld::reportJson() const{
-    const auto &w=*impl_;json regions=json::array();double activeMass=0,energyResidual=0,work=0,heat=0;std::size_t edgeCount=0;
+    const auto &w=*impl_;json regions=json::array(),joins=json::array();double activeMass=0,energyResidual=0,work=0,heat=0;std::size_t edgeCount=0;
     for(auto &r:w.regions){double mass=0,fuel=0,oxygen=0,products=0,minT=1e30,maxT=0,liquidMass=0,enthalpy=0,chemical=0;
         for(auto &c:r.cells){mass+=c.state.mass_kg;fuel+=c.state.remaining_fuel_kg;oxygen+=c.state.available_oxygen_kg;products+=c.state.reaction_products_kg;minT=std::min(minT,w.temperature(c));maxT=std::max(maxT,w.temperature(c));liquidMass+=c.state.mass_kg*w.liquidFraction(c);enthalpy+=w.thermalEnergy(c);chemical+=thermal::totalChemicalEnergyJ(c.state,w.materials.at(c.material).thermal);}
         const double residual=w.energy(r)-r.initial_energy-r.external_work;energyResidual+=residual;activeMass+=mass;work+=r.external_work;heat+=r.reaction_heat;edgeCount+=r.edges.size();
@@ -169,12 +220,13 @@ std::string SparseThermalWorld::reportJson() const{
         regions.back()["material"]=std::all_of(r.cells.begin(),r.cells.end(),[&](auto &c){return c.material==material;})?w.materials.at(material).thermal.display_name:"Mixed materials";
     }
     auto times=w.timings;std::sort(times.begin(),times.end());
+    for(const auto &joined:w.joins)joins.push_back({{"preserved_region_id",joined.preserved_region_id},{"retired_region_id",joined.retired_region_id},{"accepted_time_s",joined.accepted_time_s},{"cells",joined.cells},{"edges",joined.edges},{"joined_face_edges",joined.joined_face_edges}});
     auto percentile=[&](double p){return times.empty()?0:times[std::min(times.size()-1,std::size_t(std::ceil(times.size()*p)-1))];};
     // Payload accounting deliberately excludes STL allocator/node overhead.
     const auto bytes=w.chunks.size()*(sizeof(ChunkAddress)+sizeof(Impl::Chunk))+w.cell_count*sizeof(Impl::Cell)+edgeCount*sizeof(Impl::Edge);
-    return json{{"backend","sparse-thermal-world-v1"},{"requested_time_s",w.requested_time},{"represented_voxels",representedVoxelCount()},{"uniform_chunks",w.chunks.size()},{"active_regions",w.regions.size()},{"active_cells",w.cell_count},{"cold_voxels",representedVoxelCount()-w.cell_count},{"physics_body_count",0},{"state_payload_bytes",bytes},{"payload_excludes_allocator_overhead",true},{"active_mass_kg",activeMass},{"external_work_j",work},{"reaction_heat_j",heat},{"combined_active_energy_residual_j",energyResidual},{"regions",regions},
+    return json{{"backend","sparse-thermal-world-v1"},{"requested_time_s",w.requested_time},{"represented_voxels",representedVoxelCount()},{"uniform_chunks",w.chunks.size()},{"active_regions",w.regions.size()},{"active_cells",w.cell_count},{"cold_voxels",representedVoxelCount()-w.cell_count},{"physics_body_count",0},{"state_payload_bytes",bytes},{"payload_excludes_allocator_overhead",true},{"active_mass_kg",activeMass},{"external_work_j",work},{"reaction_heat_j",heat},{"combined_active_energy_residual_j",energyResidual},{"regions",regions},{"region_joins",joins},{"retired_region_ids",w.retired_region_ids},
         {"performance",{{"advance_calls",w.calls},{"completed_jobs",w.total_jobs},{"total_wall_ms",w.total_wall},{"advance_p50_ms",percentile(.5)},{"advance_p95_ms",percentile(.95)},{"advance_p99_ms",percentile(.99)},{"advance_max_ms",w.maximum_wall},{"timing_sample_window",times.size()},{"cold_chunks_scanned_per_advance",0},{"includes_rendering",false},{"peak_lag_s",w.peak_lag},{"peak_late_regions",w.peak_late_regions},{"count_limited_calls",w.count_limited_calls},{"wall_limited_calls",w.wall_limited_calls}}},
         {"last_budget",{{"jobs",w.last.completed_jobs},{"cell_operations",w.last.cell_operations},{"regions_late",w.last.regions_late},{"maximum_lag_s",w.last.maximum_lag_s},{"count_exhausted",w.last.count_budget_exhausted},{"wall_exhausted",w.last.wall_budget_exhausted},{"error",w.last.error}}},
-        {"limitations",{"Explicit insulated thermal regions; no flux to neighboring cold matter or other regions", "No rigid/deformable physics, airflow, smoke, radiation, volume change, liquid flow or mechanical weakening in this backend", "Fuel and finite oxygen react into retained products with constant mixture heat capacity; not validated real combustion", "Constant-capacity pair conduction is exact; phase edges use first-order backward Euler, graph splitting requires timestep convergence", "Cold storage size is not evidence of a fully simulated world; deadlines checked between bounded region jobs", "Single isothermal melt/freeze law; phase + reaction coupling is rejected, phase conductivity is held constant"}}}.dump(2);
+        {"limitations",{"Explicit insulated thermal regions; only an explicit same-clock atomic join adds cross-region faces, with no cold-neighbor frontier or asynchronous exchange", "No rigid/deformable physics, airflow, smoke, radiation, volume change, liquid flow or mechanical weakening in this backend", "Fuel and finite oxygen react into retained products with constant mixture heat capacity; not validated real combustion", "Constant-capacity pair conduction is exact; phase edges use first-order backward Euler, graph splitting requires timestep convergence", "Cold storage size is not evidence of a fully simulated world; deadlines checked between bounded region jobs", "Single isothermal melt/freeze law; phase + reaction coupling is rejected, phase conductivity is held constant"}}}.dump(2);
 }
 }
