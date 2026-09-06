@@ -1,5 +1,7 @@
 # Generated objects: visual and numerical validation
 
+**Latest follow-up:** The [contact and reaction checkpoint](contact-fracture-checkpoint.md) removes the recorded 537-cell capacity fault and corrects spring reaction direction. Its new measurements supersede the historical outcomes below; dense networks and fracture convergence remain open.
+
 The authoring API is exercised through executable declarations, the native
 `banjo_network_lab`, and independent analytical controls. Passing package
 validation does not certify material realism. This checkpoint does not change

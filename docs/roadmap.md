@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Next G02/G05 gates:** The contact-capacity failure and rotating-spring stress reconstruction are corrected. Next localize damage threshold crossings with state/history rollback and work accounting; qualify contact-distance/space refinement and bounded active detail with conservative rigid-to-local transfers. Do not treat larger buffers or lower cell counts as a validated world-scale solution. See the [checkpoint and evidence](contact-fracture-checkpoint.md).
+
 **Generated-object gate:** Use the [API-generated scene suite and normal-speed studio](generated-physics-validation.md) to separate analytical motion, API admission, repeated outcomes, visual responsiveness and material realism. Next resolve glass stress transmission and knife separation under contact/time/space refinement, and extend measured active-load budgets before increasing material or world-scale claims.
 
 **Authoring API checkpoint:** [Field reference and starter client](object-authoring-api.md) now document the implemented package/load/step/query/export path and distinguish it from planned live spawning, forces, assemblies and coupled thermal state. The next platform gate remains transactional mutation and shared state/history, not a new client wrapper.

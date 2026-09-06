@@ -18,7 +18,7 @@ public:
     unsigned fractureCount() const;
     double energy() const;
 private:
-    NetworkWorld();
+    NetworkWorld(unsigned body_pairs,unsigned contact_constraints);
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };

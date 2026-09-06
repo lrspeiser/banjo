@@ -144,6 +144,7 @@ capabilities response is not the ABI to use for this backend; consult its
 | `max_steps_per_call` | Required; helper `240` | Integer 1–240; C++ batch admission, not total run duration |
 | `solver_iterations` | Optional, `24` | Integer 4–128; more constraint iterations do not replace temporal/spatial convergence |
 | `temporal_policy` | Optional, `"diagnose"` | Diagnose reports unresolved spring frequencies; `"require-resolved"` rejects such a package |
+| `contact_budget` | Optional, `{body_pairs:65536, constraints:32768}` | Integer resource capacities: pairs 128–262144, constraints 64–65536; pairs must be at least constraints |
 | `gravity_m_s2` | Required; helper `[0,-9.81,0]` | Each component in `[-30,30]` |
 | `ground` | Required, `null` for none | Otherwise `{half_length_m, half_width_m, friction}`; half extents 0.1–10 m, friction 0–2 |
 
@@ -158,6 +159,21 @@ counting every occupied network cell and each rigid object. The report lists a
 20,000-link limit, but there is no separate link-count admission check: the
 current nearest-neighbor construction and body cap already bound generated
 links below it. These counts are not realtime guarantees.
+The loader also checks an initial AABB envelope expanded by the actual Jolt
+speculative-contact distance against both contact capacities. This is a
+conservative initial-density check for the convex v2 bodies; it does not bound
+future collisions or swept motion. A later capacity failure faults the world
+and the failed tick is not accepted. Increasing capacity reserves resources;
+it does not improve material accuracy or guarantee frame time.
+`make_package(..., contact_budget={"body_pairs":65536, "constraints":32768})`
+sets an explicit budget. The runtime report returns the effective capacities,
+initial pair envelope, actual speculative distance and last/peak manifold and
+point callback counts. `temporary_arena_bytes` reports the capacity-derived scratch reservation
+(32 MiB plus per-constraint scratch; at most 256 MiB).
+These are contact-listener observations, not exact
+allocator occupancy or measured contact impulses. Optional estimated impact
+events are disabled in v2; Jolt still owns and solves all contacts. See the
+[contact and fracture checkpoint](contact-fracture-checkpoint.md).
 The loader rejects unknown fields and invalid values; do not rely on duplicate
 JSON keys being rejected in this mechanical parser—generate unique keys.
 Unlike the v1 parser, v2 does not comprehensively reject initial overlaps or

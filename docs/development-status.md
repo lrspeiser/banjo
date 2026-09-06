@@ -1,5 +1,7 @@
 # Development status and handoff
 
+**Contact and reaction correction:** V2 contact capacities are explicit, initial contact density is checked, unused impact estimates are skipped, and damping reconstruction follows Jolt's pre-step spring axis. Generated scenes now all complete headlessly, including the 537-cell drop; it still costs about 14.6 s for 3 s of simulation. Halved-timestep material fracture still differs. See the [checkpoint and evidence](contact-fracture-checkpoint.md).
+
 **Generated-object validation:** The [visual/numerical validation workflow](generated-physics-validation.md) generates scenes through the public Python API and adds normal-speed studio measurements of active frame time and simulation backlog. All 48 existing regression suites pass in one run (82.80 s). This is test infrastructure; material/contact laws are unchanged and realism gates remain open.
 
 **Programmatic authoring:** The [object API guide](object-authoring-api.md) and standard-library Python client expose the existing v2 package workflow, five unchanged material records and twelve item templates. 42 native-client checks pass. This adds authoring convenience and documentation; live object mutation, a shared thermal/mechanical ABI and physical calibration remain open.

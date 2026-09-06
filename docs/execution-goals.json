@@ -136,8 +136,8 @@
           "asymmetric/support/third-body cases pass"
         ]
       },
-      "next_action": "Use these fixtures to bound contact reactions, work and topology under time/iteration/space refinement; resolve stiff-glass stress transmission and knife separation without strength hacks.",
-      "evidence_status": "API-generated glass/oak/iron panels and knife/tomato repeat, but halving dt changes fracture counts; realistic fracture/cutting gate fails. Analytical rigid controls pass.",
+      "next_action": "Localize bond threshold crossings within the step with complete state/history rollback and work accounting; qualify time, iteration, contact and spatial refinement across glass/oak/iron and tissue.",
+      "evidence_status": "Pre-step reaction axis corrected and transverse oracle passes. At dt 1/480 versus 1/960, panel breaks are 24 versus 30 and tissue 18 versus 22; fracture convergence remains failed.",
       "retained_requirements": [
         "M01",
         "M02",
@@ -166,7 +166,7 @@
         "M29",
         "M30"
       ],
-      "evidence_ref": "docs/material-showcase.md"
+      "evidence_ref": "docs/contact-fracture-checkpoint.md"
     },
     {
       "id": "G03",
@@ -286,8 +286,8 @@
           "no world-scale realtime claim comes from a small fixture"
         ]
       },
-      "next_action": "Add explicit contact-demand admission/runtime budgets, investigate speculative-contact scale, and measure active contact/cell load growth before increasing scale.",
-      "evidence_status": "Small native scenes complete at 1x with active-frame p95 about 17 ms; generated 537-cell scene exceeds contact constraints on first update. No world-scale realtime claim.",
+      "next_action": "Qualify contact-distance refinement and bounded active detail/rigid condensation with conservative transfers, wake criteria, backlog and error gates; keep every comparison material.",
+      "evidence_status": "Explicit capacity admission, temporary arena reservation and callback diagnostics implemented; 537-cell scene completes 3 s in about 14.6 s headlessly. Dense-world realtime remains failed.",
       "retained_requirements": [
         "M27",
         "M29",
@@ -297,7 +297,7 @@
         "P04",
         "P10"
       ],
-      "evidence_ref": "docs/execution-checkpoint.md"
+      "evidence_ref": "docs/contact-fracture-checkpoint.md"
     },
     {
       "id": "G06",
@@ -348,7 +348,7 @@
   ],
   "latest_execution": {
     "date": "2026-09-06",
-    "full_suites_passed": 48,
+    "full_suites_passed": 49,
     "overall_complete": false,
     "active": [
       "G01",
@@ -360,14 +360,17 @@
       "G04",
       "G06"
     ],
-    "evidence": "docs/generated-physics-validation.md",
+    "evidence": "docs/contact-fracture-checkpoint.md",
     "milestones_completed": [
       "blocky-live-skins",
       "partial-cut-lips",
       "same-clock-thermal-region-join",
       "bounded-affine-phase-kernel",
-      "comparative-phase-world-budget-measurement"
-    ]
+      "comparative-phase-world-budget-measurement",
+      "explicit-contact-resource-admission",
+      "prestep-spring-reaction-axis-correction"
+    ],
+    "native_live_verification": "Blocked this session: Windows automation could not read foreground process. Studio launch and offline renders verified; no new live timing claim."
   },
   "dependency_policy": "Dependencies name shared contracts and final acceptance gates; independent prototype slices may proceed in parallel. An active dependent goal does not certify its prerequisite complete."
 }

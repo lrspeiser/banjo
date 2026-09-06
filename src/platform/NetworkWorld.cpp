@@ -38,12 +38,14 @@ MaterialDefinition contactMaterial(const NetworkMaterial &m){
 struct NetworkWorld::Impl {
     struct Material {NetworkMaterial law;std::uint32_t color;};
     struct Node {unsigned object;MatterBodyId body;Vec3 reference;double mass;RigidPrimitive proxy;std::array<int,3> grid{};};
-    struct Bond {unsigned object,a,b,spring;double rest,damping;DirectionalNetworkParameters parameters;NetworkBondHistory history;bool live{true};double current_stiffness{},current_damping{};};
+    struct Bond {unsigned object,a,b,spring;double rest,damping;DirectionalNetworkParameters parameters;NetworkBondHistory history;bool live{true};double current_stiffness{},current_damping{};Vec3 prestep_axis{1,0,0};};
     struct Object {unsigned id,material;std::string name;std::vector<unsigned> nodes;std::vector<std::array<Vec3,3>> mesh;double first_damage{-1},first_break{-1},max_pair_frequency{};
         Vec3 spacing;Quat authored_orientation;bool network{};std::vector<unsigned> face_bonds,all_bonds;std::uint64_t skin_revision{};
         mutable std::optional<CellSkinTopology> skin_topology;
     };
-    JoltWorld rigid{0}; // Small connected networks avoid thread-pool wakeup overhead.
+    explicit Impl(unsigned pairs,unsigned constraints):rigid(0,{pairs,constraints}){}
+    JoltWorld rigid; // Small connected networks avoid thread-pool wakeup overhead.
+    unsigned initial_pair_upper_bound{};
     std::vector<Material> materials;
     std::vector<Node> nodes;
     std::vector<Bond> bonds;
@@ -66,12 +68,12 @@ struct NetworkWorld::Impl {
     }
     void refresh(){states.clear();for(auto &n:nodes)states.push_back(rigid.snapshot(n.body));}
 };
-NetworkWorld::NetworkWorld():impl_(std::make_unique<Impl>()){}
+NetworkWorld::NetworkWorld(unsigned pairs,unsigned constraints):impl_(std::make_unique<Impl>(pairs,constraints)){}
 NetworkWorld::~NetworkWorld()=default;
 
 std::unique_ptr<NetworkWorld> NetworkWorld::load(const std::string &text){
     require(text.size()<=4194304,"network package byte budget");auto source=json::parse(text);
-    fields(source,{"package_version","physics_abi","name","units","backend","required_capabilities","fixed_dt_s","max_steps_per_call","gravity_m_s2","ground","materials","objects","solver_iterations","temporal_policy"});
+    fields(source,{"package_version","physics_abi","name","units","backend","required_capabilities","fixed_dt_s","max_steps_per_call","gravity_m_s2","ground","materials","objects","solver_iterations","temporal_policy","contact_budget"});
     const auto temporalPolicy=source.value("temporal_policy",std::string("diagnose"));
     require(temporalPolicy=="diagnose"||temporalPolicy=="require-resolved","unknown temporal policy");
     require(source.at("package_version")==2&&source.at("physics_abi")=="banjo-network-2"&&source.at("backend")=="material-network-v2"&&source.at("units")=="SI","unsupported network ABI or units");
@@ -80,7 +82,11 @@ std::unique_ptr<NetworkWorld> NetworkWorld::load(const std::string &text){
     const std::set<std::string> capabilities{"cell-deformation","cohesive-damage","axial-plasticity","directional-lattice","sphere","box","ellipsoid","wedge","finite-ground","gravity","contact","render-instances","blocky-cell-skins"};
     require(source.at("required_capabilities").is_array()&&source["required_capabilities"].size()<=16,"invalid network capabilities");
     for(auto &v:source["required_capabilities"])require(v.is_string()&&capabilities.contains(v.get<std::string>()),"unsupported network capability");
-    auto result=std::unique_ptr<NetworkWorld>(new NetworkWorld);auto &w=*result->impl_;
+    unsigned pairs=65536,constraints=32768;
+    if(source.contains("contact_budget")){const auto &budget=source["contact_budget"];fields(budget,{"body_pairs","constraints"});
+        pairs=integer(budget.at("body_pairs"),128,262144);constraints=integer(budget.at("constraints"),64,65536);require(pairs>=constraints,"body-pair budget must cover contact-constraint budget");}
+    auto result=std::unique_ptr<NetworkWorld>(new NetworkWorld(pairs,constraints));auto &w=*result->impl_;
+    w.rigid.setImpactObservationsEnabled(false);
     w.dt=source["fixed_dt_s"].get<double>();
     w.gravity=vector(source.at("gravity_m_s2"),-30,30);w.rigid.setGravity(w.gravity);
     w.rigid.setContactSolverIterations(integer(source.value("solver_iterations",json(24)),4,128),4);
@@ -197,16 +203,26 @@ std::unique_ptr<NetworkWorld> NetworkWorld::load(const std::string &text){
     w.resolution=assessSpringResolution(masses,links,w.dt);
     require(temporalPolicy!="require-resolved"||w.resolution.temporally_resolved,
         "unresolved material dynamics: requested timestep exceeds the spring-network temporal bound; use a resolved local solver");
+    w.initial_pair_upper_bound=w.rigid.contactPairUpperBound();
+    require(w.initial_pair_upper_bound<=constraints&&w.initial_pair_upper_bound<=pairs,
+        "initial contact envelope exceeds contact_budget; increase the explicit resource budget or reduce local density");
     w.refresh();w.initial_energy=w.rigid.mechanicalTotals(w.gravity).mechanicalEnergy();return result;
 }
 void NetworkWorld::step(double dt){
-    auto &w=*impl_;require(std::isfinite(dt)&&std::abs(dt-w.dt)<1e-15,"network step must match admitted fixed timestep");w.rigid.step(dt);w.time+=dt;w.refresh();w.elastic=0;w.damaged=0;
+    auto &w=*impl_;require(std::isfinite(dt)&&std::abs(dt-w.dt)<1e-15,"network step must match admitted fixed timestep");
+    // Jolt forms each DistanceConstraint axis from the positions at the start
+    // of the step. Keep that axis for reaction decomposition: using the
+    // rotated post-step axis would turn transverse velocity into fabricated
+    // axial damping, and therefore fabricated elastic compression.
+    for(auto &b:w.bonds)if(b.live)b.prestep_axis=normalized(
+        w.states[b.b].center_of_mass_world_m-w.states[b.a].center_of_mass_world_m);
+    w.rigid.step(dt);w.time+=dt;w.refresh();w.elastic=0;w.damaged=0;
     for(auto &b:w.bonds){
         if(!b.live)continue;
         auto &object=w.objects[b.object];const auto &law=w.materials[object.material].law;
         const Vec3 separation=w.states[b.b].center_of_mass_world_m-w.states[b.a].center_of_mass_world_m;
         const double geometricExtension=length(separation)-b.rest;
-        const double rate=dot(w.states[b.b].linear_velocity_m_s-w.states[b.a].linear_velocity_m_s,normalized(separation));
+        const double rate=dot(w.states[b.b].linear_velocity_m_s-w.states[b.a].linear_velocity_m_s,b.prestep_axis);
         const double impulse=w.rigid.distanceSpringImpulse(b.spring);
         // Reconstruct the spring's elastic opening from its actually applied
         // axial reaction, separating its damping term. Finite-iteration
@@ -312,7 +328,12 @@ std::string NetworkWorld::reportJson() const {
         std::map<unsigned,unsigned> sizes;for(auto node:o.nodes)++sizes[groups[node]];unsigned largest=0;for(auto &[key,count]:sizes){(void)key;largest=std::max(largest,count);}objects.back()["largest_component_cells"]=largest;
     }
     const auto mechanics=w.rigid.mechanicalTotals(w.gravity);
+    const auto contacts=w.rigid.contactDiagnostics();
     return json{{"model","material-network-v2"},{"physical_response_validated",false},
+        {"contact_budget",{{"body_pairs",contacts.capacity.body_pairs},{"constraints",contacts.capacity.constraints},{"initial_pair_upper_bound",w.initial_pair_upper_bound},{"initial_envelope_only",true},{"speculative_distance_m",contacts.speculative_distance_m},
+            {"temporary_arena_bytes",contacts.temporary_arena_bytes},{"observations_are_allocator_occupancy",false},
+            {"last_manifolds",contacts.last_manifolds},{"peak_manifolds",contacts.peak_manifolds},{"last_points",contacts.last_points},{"peak_points",contacts.peak_points},
+            {"last_speculative_manifolds",contacts.last_speculative_manifolds},{"peak_speculative_manifolds",contacts.peak_speculative_manifolds},{"impact_event_estimation",false}}},
         {"skin",{{"mode","blocky-cell-surface-v1"},{"queries",w.skin_queries},{"object_topology_rebuilds",w.skin_rebuilds},{"exposed_faces",w.skin_faces},{"fracture_faces",w.skin_fracture_faces},{"triangles",w.skin_triangles},{"rank_deficient_frame_fallbacks",w.skin_rank_fallbacks},{"last_query_ms",w.skin_last_ms},{"max_query_ms",w.skin_max_ms},{"physical_mutation",false},{"contact_surface_matches_skin",false},{"smooth_surface",false},{"asynchronous_patches",false}}},
         {"temporal_resolution",{{"resolved",w.resolution.temporally_resolved},{"maximum_frequency_bound_rad_s",w.resolution.maximum_frequency_bound_rad_s},{"maximum_step_s",w.resolution.maximum_step_s},{"required_substeps",w.resolution.required_substeps},{"fits_256_substep_budget",w.resolution.fits_substep_budget},{"includes_contact_stiffness",false},{"material_validation",false}}},
         {"objects",objects},{"material_results",objects},{"cells",w.nodes.size()},{"links",w.bonds.size()},{"broken_links",w.broken},{"damaged_links",w.damaged},

@@ -61,6 +61,7 @@ def make_package(
     temporal_policy: str = "diagnose",
     gravity_m_s2: tuple[float, float, float] = (0, -9.81, 0),
     ground: dict[str, Any] | None = None,
+    contact_budget: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     """Assemble a v2 initial-state package. No ground is added implicitly."""
     materials = deepcopy(catalog()["materials"] if materials is None else materials)
@@ -71,7 +72,7 @@ def make_package(
         capabilities |= {"cell-deformation", "cohesive-damage", "directional-lattice", "blocky-cell-skins"}
     if any(m.get("yield_strength_pa", 0) > 0 for m in materials):
         capabilities.add("axial-plasticity")
-    return {
+    package = {
         "package_version": 2, "physics_abi": "banjo-network-2",
         "backend": "material-network-v2", "units": "SI", "name": name,
         "required_capabilities": sorted(capabilities),
@@ -80,6 +81,9 @@ def make_package(
         "gravity_m_s2": list(gravity_m_s2), "ground": deepcopy(ground),
         "materials": materials, "objects": deepcopy(objects),
     }
+    if contact_budget is not None:
+        package["contact_budget"] = deepcopy(contact_budget)
+    return package
 
 
 def write_package(package: dict[str, Any], path: str | Path) -> Path:

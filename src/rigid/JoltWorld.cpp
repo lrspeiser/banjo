@@ -14,6 +14,8 @@
 #include <Jolt/Physics/StateRecorderImpl.h>
 #include <Jolt/Physics/Collision/ContactListener.h>
 #include <Jolt/Physics/Collision/EstimateCollisionResponse.h>
+#include <Jolt/Physics/Collision/TransformedShape.h>
+#include <Jolt/Physics/Constraints/ContactConstraintManager.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
@@ -204,6 +206,8 @@ bool assertFailedImpl(
 class ImpactCollector final : public JPH::ContactListener {
 public:
     bool detailed_observations{};
+    bool observations_enabled{true};
+    std::atomic<unsigned> manifolds{},points{},speculative_manifolds{};
     ImpactCollector(
         std::atomic<std::uint64_t> &tick,
         const std::unordered_map<MatterBodyId, BodyContactState> &contact_states,
@@ -259,6 +263,9 @@ private:
         if (contact_count == 0U) {
             return;
         }
+        manifolds.fetch_add(1,std::memory_order_relaxed);
+        points.fetch_add(contact_count,std::memory_order_relaxed);
+        if(manifold.mPenetrationDepth<0)speculative_manifolds.fetch_add(1,std::memory_order_relaxed);
 
         JPH::RVec3 contact_sum = JPH::RVec3::sZero();
         for (JPH::uint index = 0; index < contact_count; ++index) {
@@ -292,6 +299,10 @@ private:
         if (id1 == kInvalidMatterBodyId || id2 == kInvalidMatterBodyId) {
             return;
         }
+        // Network worlds consume spring reactions, not these optional impact
+        // estimates. Keep material contact settings above and retain activation
+        // estimates whenever a deferred-contact law needs them.
+        if(!observations_enabled&&!state1->second.activation_material&&!state2->second.activation_material)return;
 
         JPH::CollisionEstimationResult estimation;
         JPH::EstimateCollisionResponse(
@@ -358,6 +369,7 @@ private:
             event.response_deferred_to_material = true;
         }
         const bool surface_contact = id1 == kSupportSurfaceMatterId || id2 == kSupportSurfaceMatterId;
+        if(!observations_enabled&&!event.response_deferred_to_material)return;
         if (!event.response_deferred_to_material && (!record_impact || surface_contact) && !detailed_observations) return;
         if(detailed_observations && closing_speed<.01) return;
         std::scoped_lock lock(mutex_);
@@ -396,11 +408,22 @@ void ensureJoltRuntime() { static JoltRuntime runtime; }
 
 class JoltWorld::Impl {
 public:
-    explicit Impl(int requested_workers=-1) : impact_collector_(tick_, contact_states_,external_pairs_) {
+    explicit Impl(int requested_workers=-1,RigidContactCapacity capacity={}) : impact_collector_(tick_, contact_states_,external_pairs_) {
+        if(capacity.body_pairs<128||capacity.body_pairs>262144||capacity.constraints<64||capacity.constraints>65536)
+            throw std::invalid_argument("contact capacity bounds exceeded");
+        contact_diagnostics_.capacity=capacity;
         ensureJoltRuntime();
 
-        temp_allocator_ =
-            std::make_unique<JPH::TempAllocatorImpl>(32U * 1024U * 1024U);
+        // Jolt reserves the full declared contact buffer on every update.
+        // Size from this build's actual constraint layout, plus index/alignment
+        // space and 32 MiB for the bounded body's other update scratch. Never
+        // rely on malloc fallback during a step or a fixed 32 MiB at all caps.
+        const std::size_t scratch_bytes=32U*1024U*1024U+std::size_t(capacity.constraints)*
+            (JPH::ContactConstraintManager::cMaxConstraintSize+64U);
+        if(scratch_bytes>256U*1024U*1024U)
+            throw std::invalid_argument("contact capacity exceeds temporary arena budget on this build");
+        contact_diagnostics_.temporary_arena_bytes=scratch_bytes;
+        temp_allocator_=std::make_unique<JPH::TempAllocatorImpl>(scratch_bytes);
         const unsigned hardware_threads =
             std::max(1U, std::thread::hardware_concurrency());
         const unsigned worker_threads =
@@ -413,8 +436,8 @@ public:
         physics_->Init(
             8192,
             0,
-            16384,
-            8192,
+            capacity.body_pairs,
+            capacity.constraints,
             broad_phase_interface_,
             object_vs_broad_phase_filter_,
             object_pair_filter_);
@@ -529,6 +552,7 @@ public:
     std::unordered_map<unsigned,Spring> springs_;
     unsigned next_spring_{1};
     std::unordered_map<MatterBodyId, JPH::BodyID> bodies_;
+    RigidContactDiagnostics contact_diagnostics_;
     std::optional<RigidSurfaceDescription> support_surface_;
     Vec3 gravity_m_s2_{0.0, -9.81, 0.0};
 };
@@ -537,6 +561,10 @@ JoltWorld::JoltWorld() : impl_(std::make_unique<Impl>()) {}
 JoltWorld::JoltWorld(unsigned workers) {
     if(workers>64)throw std::invalid_argument("worker thread budget exceeded");
     impl_=std::make_unique<Impl>(int(workers));
+}
+JoltWorld::JoltWorld(unsigned workers,RigidContactCapacity capacity) {
+    if(workers>64)throw std::invalid_argument("worker thread budget exceeded");
+    impl_=std::make_unique<Impl>(int(workers),capacity);
 }
 JoltWorld::~JoltWorld() = default;
 JoltWorld::JoltWorld(JoltWorld &&) noexcept = default;
@@ -835,6 +863,28 @@ void JoltWorld::addCompound(const RigidCompoundDescription &d){
         bodies.SetLinearAndAngularVelocity(id,toJolt(d.state.linear_velocity_m_s),toJolt(d.state.angular_velocity_rad_s));
         impl_->bodies_.emplace(d.body_id,id);impl_->contact_states_.emplace(d.body_id,BodyContactState{contact,0,0,false,d.mass_kg,{}});
     }catch(...){impl_->bodies_.erase(d.body_id);impl_->contact_states_.erase(d.body_id);bodies.RemoveBody(id);bodies.DestroyBody(id);throw;}
+}
+
+void JoltWorld::setImpactObservationsEnabled(bool enabled) {
+    impl_->requireConfigurationMutable();impl_->impact_collector_.observations_enabled=enabled;
+}
+RigidContactDiagnostics JoltWorld::contactDiagnostics() const {
+    auto result=impl_->contact_diagnostics_;
+    result.speculative_distance_m=impl_->physics_->GetPhysicsSettings().mSpeculativeContactDistance;
+    return result;
+}
+unsigned JoltWorld::contactPairUpperBound() const {
+    if(impl_->bodies_.size()>1024)throw std::invalid_argument("contact admission query body budget exceeded");
+    std::vector<JPH::AABox> bounds;bounds.reserve(impl_->bodies_.size()+1);
+    const auto &bodies=impl_->physics_->GetBodyInterface();
+    const float halfMargin=impl_->physics_->GetPhysicsSettings().mSpeculativeContactDistance*.5f+1e-6f;
+    auto append=[&](JPH::BodyID id){auto box=bodies.GetTransformedShape(id).GetWorldSpaceBounds();box.ExpandBy(JPH::Vec3::sReplicate(halfMargin));bounds.push_back(box);};
+    for(const auto &[id,body]:impl_->bodies_){(void)id;append(body);}
+    if(!impl_->floor_id_.IsInvalid())append(impl_->floor_id_);
+    std::sort(bounds.begin(),bounds.end(),[](const auto &a,const auto &b){return a.mMin.GetX()<b.mMin.GetX();});
+    unsigned count=0;for(std::size_t i=0;i<bounds.size();++i)for(std::size_t j=i+1;j<bounds.size()&&bounds[j].mMin.GetX()<=bounds[i].mMax.GetX();++j)
+        count+=bounds[i].Overlaps(bounds[j]);
+    return count;
 }
 
 void JoltWorld::addConvex(const RigidConvexDescription &d) {
@@ -1174,11 +1224,13 @@ bool JoltWorld::runReversibleTrial(const std::function<bool()> &trial) {
     if(recorder.IsFailed()||recorder.GetDataSize()>16U*1024U*1024U)
         throw std::runtime_error("cannot capture bounded Jolt trial state");
     auto events=impl_->impact_collector_.capture();const auto tick=impl_->tick_.load(std::memory_order_relaxed);
+    const auto diagnostics=impl_->contact_diagnostics_;
     const auto restore=[&] {
         recorder.Rewind();
         if(!impl_->physics_->RestoreState(recorder)||recorder.IsFailed())
             throw std::runtime_error("Jolt trial restore failed; discard this world");
         impl_->tick_.store(tick,std::memory_order_relaxed);impl_->impact_collector_.restore(std::move(events));
+        impl_->contact_diagnostics_=diagnostics;
     };
     ++impl_->trial_depth_;bool accepted=false;
     try {accepted=trial();}catch(...) {--impl_->trial_depth_;restore();throw;}
@@ -1190,12 +1242,20 @@ void JoltWorld::step(double fixed_dt_s) {
         throw std::invalid_argument("Jolt step must be positive");
     }
     impl_->applyRollingResistance(fixed_dt_s);
+    auto &collector=impl_->impact_collector_;collector.manifolds=0;collector.points=0;collector.speculative_manifolds=0;
     impl_->tick_.fetch_add(1U, std::memory_order_relaxed);
     const JPH::EPhysicsUpdateError error = impl_->physics_->Update(
         static_cast<float>(fixed_dt_s),
         1,
         impl_->temp_allocator_.get(),
         impl_->job_system_.get());
+    auto &diagnostics=impl_->contact_diagnostics_;
+    diagnostics.last_manifolds=collector.manifolds.load(std::memory_order_relaxed);
+    diagnostics.last_points=collector.points.load(std::memory_order_relaxed);
+    diagnostics.last_speculative_manifolds=collector.speculative_manifolds.load(std::memory_order_relaxed);
+    diagnostics.peak_manifolds=std::max(diagnostics.peak_manifolds,diagnostics.last_manifolds);
+    diagnostics.peak_points=std::max(diagnostics.peak_points,diagnostics.last_points);
+    diagnostics.peak_speculative_manifolds=std::max(diagnostics.peak_speculative_manifolds,diagnostics.last_speculative_manifolds);
     if (error != JPH::EPhysicsUpdateError::None) {
         std::string reason="Jolt physics update exceeded capacity:";
         if((error & JPH::EPhysicsUpdateError::ManifoldCacheFull)!=JPH::EPhysicsUpdateError::None)reason+=" manifold-cache-full";

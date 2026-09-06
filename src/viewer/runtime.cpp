@@ -175,10 +175,11 @@ int main(int argc,char **argv){try{
             DrawText("MEASURED MATERIAL RESPONSE",1000,373,17,{207,237,135,255});int y=405;
             for(const auto &o:report["objects"])if(o.value("links",0u)>0&&y<570){DrawText(o["name"].get<std::string>().c_str(),1000,y,17,RAYWHITE);
                 DrawText(TextFormat("%u broken / %u softened",o.value("broken_links",0u),o.value("damaged_links",0u)-o.value("broken_links",0u)),1000,y+22,16,{207,237,135,255});
-                DrawText(TextFormat("%u groups | core %u / %u cells",o.value("components",0u),o.value("largest_component_cells",0u),o.value("cells",0u)),1000,y+43,15,{164,183,197,255});y+=65;}
+                DrawText(TextFormat("%u groups | core %u / %u cells",o.value("components",0u),o.value("largest_component_cells",0u),o.value("cells",0u)),1000,y+43,15,{164,183,197,255});y+=60;}
             if(y==405)for(const auto &o:report["objects"])if(y<570){DrawText(o["name"].get<std::string>().c_str(),1000,y,17,RAYWHITE);
                 DrawText(TextFormat("Mass %.4f kg | y %.3f m",o.value("mass_kg",0.),o["position_m"][1].get<double>()),1000,y+22,16,{207,237,135,255});
-                DrawText(TextFormat("Vertical velocity %.3f m/s",o["velocity_m_s"][1].get<double>()),1000,y+43,15,{164,183,197,255});y+=65;}
+                DrawText(TextFormat("Vertical velocity %.3f m/s",o["velocity_m_s"][1].get<double>()),1000,y+43,15,{164,183,197,255});y+=60;}
+            if(report.contains("contact_budget"))DrawText(TextFormat("Peak contact manifolds / step: %u",report["contact_budget"].value("peak_manifolds",0u)),1000,585,14,{164,183,197,255});
             DrawText(TextFormat("Step p95 %.3f ms | %u bodies",report["performance"].value("step_p95_ms",0.),unsigned(instances.size())),1000,610,15,RAYWHITE);
             DrawText(view==3?"X-ray bonds: red failed / gold soft":view==2?"Bonds: red failed / gold softened":view==1?"Spheres = actual cell contact proxies":"Gold = newly exposed failed faces",1000,635,15,{164,183,197,255});
             DrawText(TextFormat("Live frame p95 %.2f ms | lag %.1f ms",percentile(liveFrames,.95),peakLag*1000),1000,660,14,{230,179,114,255});

@@ -1,5 +1,7 @@
 # Banjo mechanics scorecard
 
+**Contact and reaction correction:** M07/M08/M09/M14/M15 and P01/P04/P05/P10 gain an analytical transverse-spring regression, explicit contact resources, diagnostic rollback, load measurements and offline render verification; current live input/timing verification was blocked by Windows automation. All 40 requirements remain retained. The 537-cell fault is fixed; dense-world speed, full work closure and fracture convergence remain open. See the [checkpoint and evidence](contact-fracture-checkpoint.md).
+
 **Generated-object validation:** [Code-to-studio acceptance workflow](generated-physics-validation.md) adds analytical controls, comparative generated scenes and active native frame/backlog reporting. All 48 existing regression suites pass together (82.80 s). M01/M02/M21 and P01/P04/P05/P06/P10 gain reproducible verification infrastructure; their realism, scaling and transaction limits remain. All 40 rows below are retained.
 
 **Material showcase:** [Iron-ball panel speeds and knife/tomato proxy](material-showcase.md) add genuine rigid spheres, matched glass/oak/iron clamped panels at 2/6/12 m/s, and explicit damage overlays. Wood has 0/0/11 broken links; glass has none at the authored step. All panels and the tomato retain a connected core containing all their cells. This demonstrates local damage, not validated glass shattering or a complete tomato slice. G02 is active; contact/time/space convergence and work closure remain open.

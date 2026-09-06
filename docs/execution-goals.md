@@ -1,5 +1,7 @@
 # Execution goals
 
+**Contact and reaction slice:** G02 now has the corrected pre-step reaction axis and a transverse oracle. G05 now has explicit contact budgets, initial-density admission, callback metrics and a 114/486/537-cell comparative matrix. Full G02/G05 gates remain active; no overall goal is complete. See the [checkpoint and evidence](contact-fracture-checkpoint.md).
+
 **Generated-scene verification:** [API-to-studio validation](generated-physics-validation.md) exercises G02 and G05 with analytical controls, repeated material comparisons and normal-speed frame/backlog measurements. It adds evidence to the existing goals without marking any full goal complete.
 
 **Executed checkpoint:** [Implementation, 47-suite validation and measured limits](execution-checkpoint.md). Completed slices: blocky live skins and partial-cut lips, conservative same-clock thermal joining, faster phase kernel and comparative world-budget measurements. Full G01/G03/G05 gates remain active; G02 now has the [material showcase](material-showcase.md) and is active; G04/G06 remain queued.

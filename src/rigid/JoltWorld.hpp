@@ -68,6 +68,19 @@ struct RigidConvexDescription {
 
 enum class PairContactOwner { Jolt, External };
 
+struct RigidContactCapacity {
+    unsigned body_pairs{16384};
+    unsigned constraints{8192};
+};
+struct RigidContactDiagnostics {
+    RigidContactCapacity capacity;
+    double speculative_distance_m{};
+    std::size_t temporary_arena_bytes{};
+    // Listener callbacks/geometry points, not constraint allocator occupancy.
+    unsigned last_manifolds{},peak_manifolds{},last_points{},peak_points{};
+    unsigned last_speculative_manifolds{},peak_speculative_manifolds{};
+};
+
 struct PairImpulseAudit {
     MechanicalTotals before{}, after{};
     double impulse_work_j{}, numerical_energy_change_j{};
@@ -87,6 +100,7 @@ class JoltWorld {
 public:
     JoltWorld();
     explicit JoltWorld(unsigned worker_threads);
+    JoltWorld(unsigned worker_threads,RigidContactCapacity capacity);
     ~JoltWorld();
 
     JoltWorld(const JoltWorld &) = delete;
@@ -99,6 +113,13 @@ public:
     // Disables only cached narrow-phase body-pair results, not contacts/forces.
     void setBodyPairContactCacheEnabled(bool enabled);
     void setContactSolverIterations(unsigned velocity,unsigned position);
+    // Resource capacity and observations do not alter contact laws/settings.
+    // Deferred material contacts still require their activation observations.
+    void setImpactObservationsEnabled(bool enabled);
+    [[nodiscard]] RigidContactDiagnostics contactDiagnostics() const;
+    // Initial/current AABB + speculative-margin pair envelope, no time sweep.
+    // Host-thread observation for bounded convex v2 admission, <=1024 bodies.
+    [[nodiscard]] unsigned contactPairUpperBound() const;
     void setGravity(const Vec3 &gravity_m_s2);
     void addFloor();
     void addSupportSurface(const RigidSurfaceDescription &description);
