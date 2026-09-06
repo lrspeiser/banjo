@@ -1,5 +1,7 @@
 # Development status and handoff
 
+**Generated-object validation:** The [visual/numerical validation workflow](generated-physics-validation.md) generates scenes through the public Python API and adds normal-speed studio measurements of active frame time and simulation backlog. All 48 existing regression suites pass in one run (82.80 s). This is test infrastructure; material/contact laws are unchanged and realism gates remain open.
+
 **Programmatic authoring:** The [object API guide](object-authoring-api.md) and standard-library Python client expose the existing v2 package workflow, five unchanged material records and twelve item templates. 42 native-client checks pass. This adds authoring convenience and documentation; live object mutation, a shared thermal/mechanical ABI and physical calibration remain open.
 
 **Material showcase:** [Iron-ball panel speeds and knife/tomato proxy](material-showcase.md) add genuine rigid spheres, matched glass/oak/iron clamped panels at 2/6/12 m/s, and explicit damage overlays. Wood has 0/0/11 broken links; glass has none at the authored step. All panels and the tomato retain a connected core containing all their cells. This demonstrates local damage, not validated glass shattering or a complete tomato slice. G02 is active; contact/time/space convergence and work closure remain open.

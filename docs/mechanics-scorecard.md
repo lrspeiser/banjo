@@ -1,5 +1,7 @@
 # Banjo mechanics scorecard
 
+**Generated-object validation:** [Code-to-studio acceptance workflow](generated-physics-validation.md) adds analytical controls, comparative generated scenes and active native frame/backlog reporting. All 48 existing regression suites pass together (82.80 s). M01/M02/M21 and P01/P04/P05/P06/P10 gain reproducible verification infrastructure; their realism, scaling and transaction limits remain. All 40 rows below are retained.
+
 **Material showcase:** [Iron-ball panel speeds and knife/tomato proxy](material-showcase.md) add genuine rigid spheres, matched glass/oak/iron clamped panels at 2/6/12 m/s, and explicit damage overlays. Wood has 0/0/11 broken links; glass has none at the authored step. All panels and the tomato retain a connected core containing all their cells. This demonstrates local damage, not validated glass shattering or a complete tomato slice. G02 is active; contact/time/space convergence and work closure remain open.
 
 **Current executed checkpoint:** [Execution checkpoint](execution-checkpoint.md) records the live blocky `CellSkin` default and measured same-law phase evidence. The older 44-suite result is historical; 47/47 suites now pass (83.33 s). The [plan](world-runtime-plan.md) and all 40 scorecard requirements remain in force.

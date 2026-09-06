@@ -1,5 +1,7 @@
 # Execution goals
 
+**Generated-scene verification:** [API-to-studio validation](generated-physics-validation.md) exercises G02 and G05 with analytical controls, repeated material comparisons and normal-speed frame/backlog measurements. It adds evidence to the existing goals without marking any full goal complete.
+
 **Executed checkpoint:** [Implementation, 47-suite validation and measured limits](execution-checkpoint.md). Completed slices: blocky live skins and partial-cut lips, conservative same-clock thermal joining, faster phase kernel and comparative world-budget measurements. Full G01/G03/G05 gates remain active; G02 now has the [material showcase](material-showcase.md) and is active; G04/G06 remain queued.
 
 Status: durable execution list, recorded against main `816cfaf` on 2026-09-05. The 44-suite baseline passes, but physics is unfinished. This list is an execution contract, not a completion claim; no goal has an invented completion date or speed target.

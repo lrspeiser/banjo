@@ -1197,7 +1197,11 @@ void JoltWorld::step(double fixed_dt_s) {
         impl_->temp_allocator_.get(),
         impl_->job_system_.get());
     if (error != JPH::EPhysicsUpdateError::None) {
-        throw std::runtime_error("Jolt physics update reported an error");
+        std::string reason="Jolt physics update exceeded capacity:";
+        if((error & JPH::EPhysicsUpdateError::ManifoldCacheFull)!=JPH::EPhysicsUpdateError::None)reason+=" manifold-cache-full";
+        if((error & JPH::EPhysicsUpdateError::BodyPairCacheFull)!=JPH::EPhysicsUpdateError::None)reason+=" body-pair-cache-full";
+        if((error & JPH::EPhysicsUpdateError::ContactConstraintsFull)!=JPH::EPhysicsUpdateError::None)reason+=" contact-constraints-full";
+        throw std::runtime_error(reason+" (flags="+std::to_string(static_cast<unsigned>(error))+"). Some contacts were omitted; the step is not validated.");
     }
 }
 

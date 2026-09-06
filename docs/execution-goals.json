@@ -137,7 +137,7 @@
         ]
       },
       "next_action": "Use these fixtures to bound contact reactions, work and topology under time/iteration/space refinement; resolve stiff-glass stress transmission and knife separation without strength hacks.",
-      "evidence_status": "Matched 2/6/12 m/s glass/oak/iron panel fixtures and tomato proxy run with unchanged material properties. Internal damage is visible; no panel/tomato fragment separates. Glass and timestep response remain unresolved.",
+      "evidence_status": "API-generated glass/oak/iron panels and knife/tomato repeat, but halving dt changes fracture counts; realistic fracture/cutting gate fails. Analytical rigid controls pass.",
       "retained_requirements": [
         "M01",
         "M02",
@@ -286,8 +286,8 @@
           "no world-scale realtime claim comes from a small fixture"
         ]
       },
-      "next_action": "Use measured active-set budgets; validate wake churn, mechanical loads and p95/p99 latency together.",
-      "evidence_status": "Same-law phase solve optimized; 47-suite checkpoint and repeated phase-world/job-budget evidence recorded. Mixed-world gate remains open.",
+      "next_action": "Add explicit contact-demand admission/runtime budgets, investigate speculative-contact scale, and measure active contact/cell load growth before increasing scale.",
+      "evidence_status": "Small native scenes complete at 1x with active-frame p95 about 17 ms; generated 537-cell scene exceeds contact constraints on first update. No world-scale realtime claim.",
       "retained_requirements": [
         "M27",
         "M29",
@@ -347,20 +347,20 @@
     }
   ],
   "latest_execution": {
-    "date": "2026-09-05",
-    "full_suites_passed": 47,
+    "date": "2026-09-06",
+    "full_suites_passed": 48,
     "overall_complete": false,
     "active": [
       "G01",
+      "G02",
       "G03",
       "G05"
     ],
     "queued": [
-      "G02",
       "G04",
       "G06"
     ],
-    "evidence": "docs/execution-checkpoint.md",
+    "evidence": "docs/generated-physics-validation.md",
     "milestones_completed": [
       "blocky-live-skins",
       "partial-cut-lips",

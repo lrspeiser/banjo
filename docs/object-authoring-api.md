@@ -394,6 +394,11 @@ accepted fields or callable methods in the current authoring format.
 
 ## Verification of this authoring kit
 
+For generated-object physics checks and normal-speed native studio trials, use
+the [visual/numerical validation workflow](generated-physics-validation.md).
+It separates API acceptance, analytical motion, interactive performance and
+the remaining material-realism gates.
+
 The Python client passed 42 checks against the existing native CLI: all twelve
 presets admitted and advanced eight steps with mass retained; the generated
 three-material 12 m/s scene matched the existing fixture's discrete outcomes,
