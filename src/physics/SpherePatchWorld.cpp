@@ -136,6 +136,18 @@ SpherePatchReport SpherePatchWorld::step(double dt, const DynamicPatchLoad &load
                 point += weights[i] * positions[ids[i]];
             const Vec3 lever = point - sphere.center_m;
             const Vec3 n = normalized(-lever, normal);
+            Vec3 initial_material_velocity{};
+            for (unsigned i = 0; i < 3; ++i)
+                initial_material_velocity += weights[i] * patch_.state().velocities_m_s[ids[i]];
+            // A force kick into an already-resting normal constraint is a
+            // reaction, not a fresh inelastic collision. In particular, two
+            // Verlet half-kick projections must not manufacture heat in a
+            // motionless, gravity-loaded contact. A swept arrival or an actual
+            // incoming velocity still carries its irreversible impact loss.
+            const bool normal_reaction =
+                final_stage ||
+                (event_time == 0 &&
+                 std::abs(dot(sphere_.velocity_m_s - initial_material_velocity, n)) <= 1.e-10);
             auto relative = [&] {
                 Vec3 v{};
                 for (unsigned i = 0; i < 3; ++i)
@@ -182,6 +194,9 @@ SpherePatchReport SpherePatchWorld::step(double dt, const DynamicPatchLoad &load
                 out.contact_angular_momentum_residual_kg_m2_s += angular;
             };
             apply(normal_j * n);
+            double energy_after_normal = kinetic(sphere);
+            for (unsigned i = 0; i < 3; ++i)
+                energy_after_normal += .5 * mass[ids[i]] * lengthSquared(velocity[ids[i]]);
             const Vec3 rel = relative(), tangent = rel - dot(rel, n) * n;
             const double speed = length(tangent);
             if (speed > 1.e-12 && contact_.friction_coefficient > 0) {
@@ -196,11 +211,15 @@ SpherePatchReport SpherePatchWorld::step(double dt, const DynamicPatchLoad &load
             const double loss = energy_before - energy_after;
             require(loss >= -1.e-10 * std::max(1., energy_before),
                     "Contact created kinetic energy");
-            out.contact_dissipation_j += loss;
+            const double normal_loss = energy_before - energy_after_normal;
+            const double friction_loss = energy_after_normal - energy_after;
+            out.contact_dissipation_j += (normal_reaction ? 0 : normal_loss) + friction_loss;
+            if (normal_reaction)
+                out.normal_constraint_projection_loss_j += normal_loss;
             ++out.impulse_contacts;
             if (out.contacts.size() < 64)
-                out.contacts.push_back(
-                    {selected, event_time, weights, point, n, applied, final_stage});
+                out.contacts.push_back({selected, event_time, weights, point, n, applied,
+                                        final_stage, normal_reaction});
             if (final_stage)
                 ++out.velocity_constraint_contacts;
         };
@@ -349,6 +368,7 @@ SpherePatchReport SpherePatchWorld::step(double dt, const DynamicPatchLoad &load
                         "Contact penetration tolerance exceeded; refine timestep");
             }
             require(std::isfinite(out.contact_dissipation_j) &&
+                        std::isfinite(out.normal_constraint_projection_loss_j) &&
                         finite(out.contact_support_impulse_n_s),
                     "Nonfinite contact ledger");
             out.sphere_kinetic_energy_j = kinetic(sphere);

@@ -248,6 +248,8 @@ SpherePatchAdvanceReport SpherePatchWorld::advance(double duration, const Dynami
             out.signed_energy_residual_j +=
                 a.numerical_energy_balance_residual_j + b.numerical_energy_balance_residual_j;
             out.contact_dissipation_j += a.contact_dissipation_j + b.contact_dissipation_j;
+            out.normal_constraint_projection_loss_j +=
+                a.normal_constraint_projection_loss_j + b.normal_constraint_projection_loss_j;
             out.external_work_j += a.external_work_j + b.external_work_j;
             out.contact_angular_residual_kg_m2_s += a.contact_angular_momentum_residual_kg_m2_s +
                                                     b.contact_angular_momentum_residual_kg_m2_s;

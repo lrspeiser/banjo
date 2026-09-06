@@ -396,6 +396,165 @@ void fullVelocityVerletImpactMeetsAbsoluteEnergyBudget() {
                   << " final_gap=" << minimum_gap << " final_vn=" << closing_at_min << '\n';
     }
 }
+
+// Regression fixture for the recording-shaped first-contact interval.
+void stiffCatalogContactOnsetDoesNotStarveReserve() {
+    SmallStrainLaw oak{.kind = SmallStrainLawKind::OrthotropicElastic,
+                       .young_modulus_pa = {12e9, 1.2e9, .8e9},
+                       .poisson_xy_yz_zx = {.10, .10, .005},
+                       .shear_xy_yz_zx_pa = {.8e9, .35e9, .55e9},
+                       .maximum_total_strain_norm = .05};
+    SmallStrainLaw iron;
+    iron.kind = SmallStrainLawKind::J2Plastic;
+    iron.j2 = {.young_modulus_pa = 211e9,
+               .poisson_ratio = .3,
+               .initial_yield_stress_pa = 250e6,
+               .isotropic_hardening_modulus_pa = 1e9,
+               .maximum_total_strain_norm = .05};
+    iron.maximum_total_strain_norm = .05;
+    auto glass = elastic(70e9);
+    glass.maximum_total_strain_norm = .1;
+    struct Case {
+        const char *name;
+        SmallStrainLaw law;
+        double density;
+    };
+    const std::vector<Case> cases{{"glass", glass, 2500}, {"oak", oak, 700}, {"iron", iron, 7870}};
+    constexpr double radius = .012, requested_duration = .0101, reference_time = .1,
+                     energy_budget = 6e-6;
+    const double mass = 4. / 3 * std::acos(-1.) * radius * radius * radius * 7870;
+    for (const auto &entry : cases) {
+        auto d = brick(entry.law, entry.density);
+        SpherePatchWorld world(
+            d, {{.007, .0325, .009}, {}, {}, radius, mass},
+            {.integrator = DynamicPatchIntegrator::VelocityVerlet},
+            {.friction_coefficient = .15, .contact_margin_m = 1e-6, .maximum_penetration_m = 1e-5});
+        auto load = zeroLoad(d.reference_positions_m.size());
+        load.gravity_m_s2 = {0, -9.81, 0};
+        SpherePatchAdvanceOptions o;
+        o.error = {.position_m = 1e-4,
+                   .velocity_m_s = 1,
+                   .strain = .1,
+                   .energy_disagreement_j = 1e-4,
+                   .absolute_energy_residual_j = energy_budget,
+                   .reference_time_s = reference_time};
+        o.initial_trial_dt_s = std::min(1e-4, world.material().stableTimeStepLimitS());
+        o.maximum_trial_dt_s = world.material().stableTimeStepLimitS();
+        o.minimum_trial_dt_s = 1e-11;
+        o.maximum_reserved_element_visits = 100000000;
+        o.maximum_geometry_queries = 100000000;
+        o.maximum_geometry_iterations = 100000000;
+        double elapsed = 0, absolute_residual = 0;
+        std::uint64_t calls = 0, contacts = 0;
+        // Ten pre-contact recording chunks followed by the 0.1 ms onset chunk.
+        for (unsigned chunk = 1; chunk <= 11; ++chunk) {
+            const double target = chunk <= 10 ? chunk * .001 : requested_duration;
+            o.maximum_step_calls = static_cast<unsigned>(200000 - calls);
+            const auto report = world.advance(target - elapsed, load, o, {}, load.gravity_m_s2);
+            require(report.accepted,
+                    "stiff catalog first-contact chunk must not starve its error reserve");
+            calls += report.step_calls;
+            contacts += report.impulse_contacts;
+            absolute_residual += report.absolute_energy_residual_j;
+            elapsed = target;
+            o.initial_trial_dt_s = report.suggested_trial_dt_s;
+        }
+        require(elapsed == requested_duration && calls <= 200000 && contacts > 0,
+                "stiff catalog onset must complete exact authored time and commit contact inside "
+                "work bound");
+        require(absolute_residual <= energy_budget * requested_duration / reference_time,
+                "stiff catalog onset absolute energy residual must fit the original reference-time "
+                "budget");
+        const auto positions = world.material().patch().positionsM();
+        double minimum_gap = 1e9;
+        for (const auto &face : world.material().patch().boundaryTriangles()) {
+            const std::array<Vec3, 3> triangle{positions[face[0]], positions[face[1]],
+                                               positions[face[2]]};
+            const auto closest = closestPointOnTriangle(world.sphere().center_m, triangle);
+            require(closest.resolved, "stiff catalog onset final geometry must remain queryable");
+            minimum_gap = std::min(minimum_gap, closest.distance_m - radius);
+        }
+        require(minimum_gap >= -1.0001e-5,
+                "accepted stiff catalog onset cannot tunnel beyond declared penetration tolerance");
+        std::cout << "[INFO] stiff onset " << entry.name << " calls=" << calls
+                  << " contacts=" << contacts << " abs_energy=" << absolute_residual
+                  << " minimum_gap=" << minimum_gap << '\n';
+    }
+}
+
+void restingSphereConstraintIsReversibleUnderGravity() {
+    auto d = brick(elastic(), 1000, false);
+    for (auto &fixed : d.fixed_components)
+        fixed = {true, true, true};
+    constexpr double radius = .012, dt = .001;
+    const double mass = 4. / 3 * std::acos(-1.) * radius * radius * radius * 7870;
+    const PatchSphere initial{{0, .02 + radius + 1e-6, 0}, {}, {}, radius, mass};
+    SpherePatchWorld world(d, initial, {.integrator = DynamicPatchIntegrator::VelocityVerlet},
+                           {.contact_margin_m = 1e-6, .maximum_penetration_m = 1e-5});
+    const Vec3 gravity{0, -9.81, 0};
+    const auto report = world.step(dt, zeroLoad(d.reference_positions_m.size()), {}, gravity);
+    require(report.accepted && report.impulse_contacts > 0,
+            "resting supported sphere must resolve its gravity constraint reaction");
+    require(sameSphere(world.sphere(), initial),
+            "reversible resting constraint must preserve exact sphere position and velocity");
+    require(report.contact_dissipation_j == 0,
+            "sustained normal reaction cannot be classified as irreversible impact dissipation");
+    require(
+        report.normal_constraint_projection_loss_j > 0,
+        "removed gravity half-kick energy must remain visible as reversible projection diagnostic");
+    near(report.numerical_energy_balance_residual_j, 0, 1e-16,
+         "resting supported sphere raw energy ledger");
+    Vec3 impulse{};
+    for (const auto &contact : report.contacts) {
+        require(contact.normal_constraint_reaction,
+                "resting support events must be classified as constraint reactions");
+        impulse += contact.impulse_to_sphere_n_s;
+    }
+    near(impulse.y, -mass * gravity.y * dt, 1e-14,
+         "normal constraint impulse must balance the exact sphere gravity impulse");
+    std::cout << "[INFO] resting VV reaction_y=" << impulse.y
+              << " gravity_impulse_y=" << mass * gravity.y * dt
+              << " dissipation=" << report.contact_dissipation_j << '\n';
+}
+
+void incomingNormalImpactRetainsPhysicalDissipation() {
+    auto d = brick(elastic(), 1000, false);
+    for (auto &fixed : d.fixed_components)
+        fixed = {true, true, true};
+    constexpr double radius = .012, dt = .001, speed = .1;
+    const double mass = 4. / 3 * std::acos(-1.) * radius * radius * radius * 7870;
+    const double incoming_energy = .5 * mass * speed * speed;
+    for (const auto integrator :
+         {DynamicPatchIntegrator::SymplecticEuler, DynamicPatchIntegrator::VelocityVerlet}) {
+        const PatchSphere initial{{0, .02 + radius + 1e-6, 0}, {0, -speed, 0}, {}, radius, mass};
+        SpherePatchWorld world(d, initial, {.integrator = integrator},
+                               {.contact_margin_m = 1e-6, .maximum_penetration_m = 1e-5});
+        const auto report = world.step(dt, zeroLoad(d.reference_positions_m.size()));
+        require(report.accepted && report.impulse_contacts > 0,
+                "incoming normal impact must resolve on a fully fixed plane");
+        near(world.sphere().velocity_m_s.y, 0, 1e-15,
+             "zero-restitution incoming normal impact final velocity");
+        near(report.contact_dissipation_j, incoming_energy, 1e-15,
+             "physical normal impact must dissipate exact incoming kinetic energy");
+        near(report.numerical_energy_balance_residual_j, 0, 1e-15,
+             "physical normal impact raw energy ledger");
+        require(report.normal_constraint_projection_loss_j == 0,
+                "initial incoming impact loss cannot be reclassified as sustained-constraint "
+                "projection");
+        Vec3 impulse{};
+        for (const auto &contact : report.contacts) {
+            require(!contact.normal_constraint_reaction,
+                    "initial inward velocity must be classified as physical impact");
+            impulse += contact.impulse_to_sphere_n_s;
+        }
+        near(impulse.y, mass * speed, 1e-15,
+             "physical normal impact impulse must remove incoming momentum");
+        std::cout << "[INFO] incoming plane "
+                  << (integrator == DynamicPatchIntegrator::VelocityVerlet ? "VV" : "Euler")
+                  << " dissipation=" << report.contact_dissipation_j << " impulse_y=" << impulse.y
+                  << '\n';
+    }
+}
 } // namespace
 
 int main() {
@@ -408,7 +567,12 @@ int main() {
         {"plastic history rollback", plasticHistorySurvivesRejectedContinuation},
         {"Velocity Verlet cached-force rollback", velocityVerletRollbackRestoresCachedForceState},
         {"glass oak iron common adaptive controls", realMaterialsUseCommonAdaptiveControls},
-        {"full Velocity Verlet impact budget", fullVelocityVerletImpactMeetsAbsoluteEnergyBudget}};
+        {"full Velocity Verlet impact budget", fullVelocityVerletImpactMeetsAbsoluteEnergyBudget},
+        {"stiff catalog onset reserve", stiffCatalogContactOnsetDoesNotStarveReserve},
+        {"resting sphere reversible gravity constraint",
+         restingSphereConstraintIsReversibleUnderGravity},
+        {"incoming normal impact physical dissipation",
+         incomingNormalImpactRetainsPhysicalDissipation}};
     unsigned failures = 0;
     for (const auto &[name, test] : tests) {
         try {

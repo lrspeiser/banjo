@@ -22,6 +22,7 @@ struct PatchContactEvent {
     std::array<double, 3> barycentric{};
     Vec3 point_m{}, normal{}, impulse_to_sphere_n_s{};
     bool final_velocity_constraint{};
+    bool normal_constraint_reaction{};
 };
 struct SpherePatchReport {
     // If false, fields describe a rejected trial; no state was committed.
@@ -31,6 +32,10 @@ struct SpherePatchReport {
     unsigned geometry_queries{}, geometry_iterations{}, impulse_contacts{};
     unsigned velocity_constraint_contacts{};
     double minimum_gap_m{}, sphere_kinetic_energy_j{}, contact_dissipation_j{};
+    // Stage kinetic energy removed by a resting normal constraint after a
+    // force kick. It is an integration diagnostic, not irreversible impact heat.
+    // The raw whole-step physical energy ledger still controls acceptance.
+    double normal_constraint_projection_loss_j{};
     double external_work_j{}, numerical_energy_balance_residual_j{};
     Vec3 contact_support_impulse_n_s{}, linear_momentum_balance_residual_kg_m_s{};
     Vec3 contact_angular_momentum_residual_kg_m2_s{};
@@ -78,6 +83,7 @@ struct SpherePatchAdvanceReport {
     double absolute_energy_residual_j{}, signed_energy_residual_j{}, external_work_j{};
     double contact_energy_reserve_spent_j{};
     double contact_dissipation_j{}, plastic_dissipation_increment_j{};
+    double normal_constraint_projection_loss_j{};
     Vec3 momentum_residual_kg_m_s{}, contact_angular_residual_kg_m2_s{};
     std::uint64_t impulse_contacts{};
     SpherePatchErrorEstimate last_error;

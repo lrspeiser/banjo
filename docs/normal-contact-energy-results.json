@@ -1,0 +1,1131 @@
+{
+  "base_commit": "ac324fa58a2f276feae4b053a1f942657bde6fef",
+  "native_cli_sha256": "b9912b35fcc3467d780a50cfd7c9d7c193295f6d84921a5242911dae514ceb08",
+  "verification": {
+    "native_suites_passed": 62,
+    "native_wall_s": 89.78,
+    "python_tests_run": 142,
+    "python_passed": 141,
+    "python_skipped": 1,
+    "python_wall_s": 6.871
+  },
+  "runs": [
+    {
+      "artifact": "catalog-reaction-final-0101.json",
+      "request": {
+        "dimensions_m": [
+          0.08,
+          0.02,
+          0.08
+        ],
+        "duration_s": 0.0101,
+        "energy_budget_j": 6e-06,
+        "materials": [
+          {
+            "density_kg_m3": 2500.0,
+            "material_id": "glass",
+            "mechanical_law": "isotropic_elastic",
+            "name": "Glass catalog coefficients",
+            "parameters": {
+              "maximum_total_strain_norm": 0.1,
+              "poisson_ratio": 0.25,
+              "young_modulus_pa": 70000000000.0
+            },
+            "physical_hash": "3355a48538fcf7973ef00928e611ded4b8d5adac992b346b148e1dec4fcb5e3c",
+            "required_capabilities": [
+              "small_strain_reference"
+            ],
+            "units": "SI"
+          },
+          {
+            "density_kg_m3": 700.0,
+            "material_id": "oak",
+            "mechanical_law": "orthotropic_elastic",
+            "name": "Oak catalog coefficients",
+            "parameters": {
+              "maximum_total_strain_norm": 0.05,
+              "poisson_xy_yz_zx": [
+                0.1,
+                0.1,
+                0.005
+              ],
+              "shear_xy_yz_zx_pa": [
+                800000000.0,
+                350000000.0,
+                550000000.0
+              ],
+              "young_modulus_pa": [
+                12000000000.0,
+                1200000000.0,
+                800000000.0
+              ]
+            },
+            "physical_hash": "32542d8eb8d9854ac11d242e4c4bf0c75a151d47615d89810bf86f41cd1dab87",
+            "required_capabilities": [
+              "small_strain_reference"
+            ],
+            "units": "SI"
+          },
+          {
+            "density_kg_m3": 7870.0,
+            "material_id": "iron",
+            "mechanical_law": "j2_plastic",
+            "name": "Iron catalog coefficients",
+            "parameters": {
+              "initial_yield_stress_pa": 250000000.0,
+              "isotropic_hardening_modulus_pa": 1000000000.0,
+              "maximum_total_strain_norm": 0.05,
+              "poisson_ratio": 0.3,
+              "young_modulus_pa": 211000000000.0
+            },
+            "physical_hash": "5f297a2cf8083164b71e0386ed14cd3e80545f5b150f85aa73470d42b9a961b5",
+            "required_capabilities": [
+              "small_strain_reference"
+            ],
+            "units": "SI"
+          }
+        ],
+        "max_step_calls": 200000,
+        "mesh_refinement": 1,
+        "schema": "banjo.dynamic-material-request.v1",
+        "sphere": {
+          "clearance_m": 0.0005,
+          "density_kg_m3": 7870,
+          "offset_xz_m": [
+            0.007,
+            0.009
+          ],
+          "radius_m": 0.012,
+          "speed_m_s": 0
+        }
+      },
+      "status": "complete",
+      "cases": [
+        {
+          "material_id": "glass",
+          "status": "complete",
+          "error": null,
+          "summary": {
+            "absolute_energy_residual_j": 5.819730255963034e-09,
+            "accepted_contacts": 6621,
+            "accepted_segments": 6463,
+            "completed_duration_s": 0.0101,
+            "contact_dissipation_j": 0.0001431416533320007,
+            "contact_energy_reserve_spent_j": 2.999989169157334e-09,
+            "energy_budget_j": 6e-06,
+            "external_work_j": 0.0002787149696040982,
+            "geometry_iterations": 158840,
+            "geometry_queries": 1499449,
+            "last_error": {
+              "absolute_energy_residual_j": 0.0,
+              "energy_disagreement_j": 0.0,
+              "normalized": 0.0,
+              "position_m": 0.0,
+              "strain": 0.0,
+              "velocity_m_s": 0.0
+            },
+            "maximum_accepted_error": 0.9997924933831873,
+            "minimum_accepted_step_s": 7.739841974217811e-10,
+            "minimum_step_error": {
+              "absolute_energy_residual_j": 0.0,
+              "energy_disagreement_j": 0.0,
+              "normalized": 0.0,
+              "position_m": 0.0,
+              "strain": 0.0,
+              "velocity_m_s": 0.0
+            },
+            "normal_constraint_projection_loss_j": 2.65128051225412e-07,
+            "plastic_dissipation_j": 0.0,
+            "rejected_segments": 55,
+            "requested_duration_s": 0.0101,
+            "reserved_element_visits": 469296,
+            "sampled_peak_displacement_m": 9.579702661706116e-08,
+            "sampled_peak_upward_speed_m_s": 0.042602885682998505,
+            "signed_energy_residual_j": 2.8877452518405974e-09,
+            "step_calls": 19554,
+            "suggested_trial_dt_s": 3.2113680324050986e-08,
+            "wall_ms": 329.8497
+          }
+        },
+        {
+          "material_id": "oak",
+          "status": "complete",
+          "error": null,
+          "summary": {
+            "absolute_energy_residual_j": 4.225318670084175e-09,
+            "accepted_contacts": 142,
+            "accepted_segments": 1836,
+            "completed_duration_s": 0.0101,
+            "contact_dissipation_j": 6.36682762647501e-05,
+            "contact_energy_reserve_spent_j": 2.99489925269534e-09,
+            "energy_budget_j": 6e-06,
+            "external_work_j": 0.00027957018229638007,
+            "geometry_iterations": 4734,
+            "geometry_queries": 363894,
+            "last_error": {
+              "absolute_energy_residual_j": 0.0,
+              "energy_disagreement_j": 0.0,
+              "normalized": 0.0,
+              "position_m": 0.0,
+              "strain": 0.0,
+              "velocity_m_s": 0.0
+            },
+            "maximum_accepted_error": 0.9982849497505528,
+            "minimum_accepted_step_s": 2.3994891146328762e-08,
+            "minimum_step_error": {
+              "absolute_energy_residual_j": 0.0,
+              "energy_disagreement_j": 0.0,
+              "normalized": 0.0,
+              "position_m": 0.0,
+              "strain": 0.0,
+              "velocity_m_s": 0.0
+            },
+            "normal_constraint_projection_loss_j": 3.323400675030706e-07,
+            "plastic_dissipation_j": 0.0,
+            "rejected_segments": 19,
+            "requested_duration_s": 0.0101,
+            "reserved_element_visits": 133560,
+            "sampled_peak_displacement_m": 1.1203236040840553e-06,
+            "sampled_peak_upward_speed_m_s": 0.0,
+            "signed_energy_residual_j": 3.029287877447203e-09,
+            "step_calls": 5565,
+            "suggested_trial_dt_s": 1.8548289822859457e-07,
+            "wall_ms": 88.8383
+          }
+        },
+        {
+          "material_id": "iron",
+          "status": "complete",
+          "error": null,
+          "summary": {
+            "absolute_energy_residual_j": 9.992150011656815e-09,
+            "accepted_contacts": 1645,
+            "accepted_segments": 5731,
+            "completed_duration_s": 0.0101,
+            "contact_dissipation_j": 0.00021435277111012802,
+            "contact_energy_reserve_spent_j": 2.999998848537108e-09,
+            "energy_budget_j": 6e-06,
+            "external_work_j": 0.0002787207718578997,
+            "geometry_iterations": 47969,
+            "geometry_queries": 1180471,
+            "last_error": {
+              "absolute_energy_residual_j": 0.0,
+              "energy_disagreement_j": 0.0,
+              "normalized": 0.0,
+              "position_m": 0.0,
+              "strain": 0.0,
+              "velocity_m_s": 0.0
+            },
+            "maximum_accepted_error": 0.9985662303647133,
+            "minimum_accepted_step_s": 3.904679655493169e-09,
+            "minimum_step_error": {
+              "absolute_energy_residual_j": 0.0,
+              "energy_disagreement_j": 0.0,
+              "normalized": 0.0,
+              "position_m": 0.0,
+              "strain": 0.0,
+              "velocity_m_s": 0.0
+            },
+            "normal_constraint_projection_loss_j": 7.35649152842917e-08,
+            "plastic_dissipation_j": 0.0,
+            "rejected_segments": 54,
+            "requested_duration_s": 0.0101,
+            "reserved_element_visits": 416520,
+            "sampled_peak_displacement_m": 3.841839130896582e-08,
+            "sampled_peak_upward_speed_m_s": 0.02026853967048682,
+            "signed_energy_residual_j": 2.6849642966691363e-09,
+            "step_calls": 17355,
+            "suggested_trial_dt_s": 2.003647531540034e-08,
+            "wall_ms": 337.085
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "catalog-reaction-0.02.json",
+      "request": {
+        "dimensions_m": [
+          0.08,
+          0.02,
+          0.08
+        ],
+        "duration_s": 0.02,
+        "energy_budget_j": 6e-06,
+        "materials": [
+          {
+            "density_kg_m3": 2500.0,
+            "material_id": "glass",
+            "mechanical_law": "isotropic_elastic",
+            "name": "Glass catalog coefficients",
+            "parameters": {
+              "maximum_total_strain_norm": 0.1,
+              "poisson_ratio": 0.25,
+              "young_modulus_pa": 70000000000.0
+            },
+            "physical_hash": "3355a48538fcf7973ef00928e611ded4b8d5adac992b346b148e1dec4fcb5e3c",
+            "required_capabilities": [
+              "small_strain_reference"
+            ],
+            "units": "SI"
+          },
+          {
+            "density_kg_m3": 700.0,
+            "material_id": "oak",
+            "mechanical_law": "orthotropic_elastic",
+            "name": "Oak catalog coefficients",
+            "parameters": {
+              "maximum_total_strain_norm": 0.05,
+              "poisson_xy_yz_zx": [
+                0.1,
+                0.1,
+                0.005
+              ],
+              "shear_xy_yz_zx_pa": [
+                800000000.0,
+                350000000.0,
+                550000000.0
+              ],
+              "young_modulus_pa": [
+                12000000000.0,
+                1200000000.0,
+                800000000.0
+              ]
+            },
+            "physical_hash": "32542d8eb8d9854ac11d242e4c4bf0c75a151d47615d89810bf86f41cd1dab87",
+            "required_capabilities": [
+              "small_strain_reference"
+            ],
+            "units": "SI"
+          },
+          {
+            "density_kg_m3": 7870.0,
+            "material_id": "iron",
+            "mechanical_law": "j2_plastic",
+            "name": "Iron catalog coefficients",
+            "parameters": {
+              "initial_yield_stress_pa": 250000000.0,
+              "isotropic_hardening_modulus_pa": 1000000000.0,
+              "maximum_total_strain_norm": 0.05,
+              "poisson_ratio": 0.3,
+              "young_modulus_pa": 211000000000.0
+            },
+            "physical_hash": "5f297a2cf8083164b71e0386ed14cd3e80545f5b150f85aa73470d42b9a961b5",
+            "required_capabilities": [
+              "small_strain_reference"
+            ],
+            "units": "SI"
+          }
+        ],
+        "max_step_calls": 200000,
+        "mesh_refinement": 1,
+        "schema": "banjo.dynamic-material-request.v1",
+        "sphere": {
+          "clearance_m": 0.0005,
+          "density_kg_m3": 7870,
+          "offset_xz_m": [
+            0.007,
+            0.009
+          ],
+          "radius_m": 0.012,
+          "speed_m_s": 0
+        }
+      },
+      "status": "solver_limit",
+      "cases": [
+        {
+          "material_id": "glass",
+          "status": "solver_limit",
+          "error": "Coupled advance step-call budget exhausted",
+          "summary": {
+            "absolute_energy_residual_j": 5.396944516471718e-08,
+            "accepted_contacts": 5195,
+            "accepted_segments": 65508,
+            "completed_duration_s": 0.011,
+            "contact_dissipation_j": 0.00014314384963080742,
+            "contact_energy_reserve_spent_j": 2.999999288319493e-08,
+            "energy_budget_j": 6e-06,
+            "external_work_j": 0.00025953080661980643,
+            "geometry_iterations": 129257,
+            "geometry_queries": 13000497,
+            "last_error": {
+              "absolute_energy_residual_j": 0.0,
+              "energy_disagreement_j": 0.0,
+              "normalized": null,
+              "position_m": 0.0,
+              "strain": 0.0,
+              "velocity_m_s": 0.0
+            },
+            "maximum_accepted_error": 0.9999920398391254,
+            "minimum_accepted_step_s": 7.294103049419141e-10,
+            "minimum_step_error": {
+              "absolute_energy_residual_j": 2.1481830869937885e-13,
+              "energy_disagreement_j": 4.2867194304874526e-13,
+              "normalized": 0.8099909064539352,
+              "position_m": 5.098964393980973e-16,
+              "strain": 2.7758155461879222e-14,
+              "velocity_m_s": 1.0795392379297576e-10
+            },
+            "plastic_dissipation_j": 0.0,
+            "rejected_segments": 1158,
+            "requested_duration_s": 0.02,
+            "reserved_element_visits": 4800000,
+            "sampled_peak_displacement_m": 1.094688441388711e-07,
+            "sampled_peak_upward_speed_m_s": 0.03377783510932465,
+            "signed_energy_residual_j": 2.21645079249338e-08,
+            "step_calls": 200000,
+            "stopped_advance": {
+              "accumulated_error": {
+                "absolute_energy_residual_j": 1.935198857861899e-09,
+                "energy_disagreement_j": 4.015909873791871e-09,
+                "normalized": 0.0,
+                "position_m": 2.967166743699255e-11,
+                "strain": 1.6791553611386501e-09,
+                "velocity_m_s": 6.432366757149425e-06
+              },
+              "contact_error_reserve_spent": {
+                "absolute_energy_residual_j": 0.0,
+                "energy_disagreement_j": 0.0,
+                "normalized": 0.0,
+                "position_m": 0.0,
+                "strain": 0.0,
+                "velocity_m_s": 0.0
+              },
+              "last_trial_error": "",
+              "minimum_accepted_step_s": 4.420179432215962e-09,
+              "remaining_time_s": 0.0009177570758382124,
+              "tentative_contacts": 0,
+              "tentative_time_s": 8.22429241617885e-05
+            },
+            "suggested_trial_dt_s": 1.0744177634092621e-07,
+            "wall_ms": 2776.7351
+          }
+        },
+        {
+          "material_id": "oak",
+          "status": "complete",
+          "error": null,
+          "summary": {
+            "absolute_energy_residual_j": 2.574224753401768e-07,
+            "accepted_contacts": 1779,
+            "accepted_segments": 52774,
+            "completed_duration_s": 0.02,
+            "contact_dissipation_j": 6.368611812154266e-05,
+            "contact_energy_reserve_spent_j": 2.999998807465049e-08,
+            "energy_budget_j": 6e-06,
+            "external_work_j": 0.00014725974165424635,
+            "geometry_iterations": 48190,
+            "geometry_queries": 10633129,
+            "last_error": {
+              "absolute_energy_residual_j": 0.0,
+              "energy_disagreement_j": 0.0,
+              "normalized": 0.0,
+              "position_m": 0.0,
+              "strain": 0.0,
+              "velocity_m_s": 0.0
+            },
+            "maximum_accepted_error": 0.9998023260230249,
+            "minimum_accepted_step_s": 4.76323854794215e-09,
+            "minimum_step_error": {
+              "absolute_energy_residual_j": 0.0,
+              "energy_disagreement_j": 0.0,
+              "normalized": 0.0,
+              "position_m": 0.0,
+              "strain": 0.0,
+              "velocity_m_s": 0.0
+            },
+            "plastic_dissipation_j": 0.0,
+            "rejected_segments": 2217,
+            "requested_duration_s": 0.02,
+            "reserved_element_visits": 3959352,
+            "sampled_peak_displacement_m": 1.1526458631870857e-06,
+            "sampled_peak_upward_speed_m_s": 0.06389955437334842,
+            "signed_energy_residual_j": 3.109568529478906e-08,
+            "step_calls": 164973,
+            "suggested_trial_dt_s": 1.4495945828368395e-07,
+            "wall_ms": 2626.1018
+          }
+        },
+        {
+          "material_id": "iron",
+          "status": "solver_limit",
+          "error": "Coupled advance step-call budget exhausted",
+          "summary": {
+            "absolute_energy_residual_j": 6.5916788012137574e-09,
+            "accepted_contacts": 0,
+            "accepted_segments": 65627,
+            "completed_duration_s": 0.01,
+            "contact_dissipation_j": 0.0,
+            "contact_energy_reserve_spent_j": 0.0,
+            "energy_budget_j": 6e-06,
+            "external_work_j": 0.000274104292329193,
+            "geometry_iterations": 19839,
+            "geometry_queries": 12824487,
+            "last_error": {
+              "absolute_energy_residual_j": 0.0,
+              "energy_disagreement_j": 0.0,
+              "normalized": null,
+              "position_m": 0.0,
+              "strain": 0.0,
+              "velocity_m_s": 0.0
+            },
+            "maximum_accepted_error": 0.31824147775783157,
+            "minimum_accepted_step_s": 5.816306999623825e-07,
+            "minimum_step_error": {
+              "absolute_energy_residual_j": 2.370539479534691e-13,
+              "energy_disagreement_j": 4.72555476601624e-13,
+              "normalized": 0.8099857452821607,
+              "position_m": 3.444152277898152e-16,
+              "strain": 2.1817340079969832e-14,
+              "velocity_m_s": 8.699324354886713e-11
+            },
+            "plastic_dissipation_j": 0.0,
+            "rejected_segments": 1039,
+            "requested_duration_s": 0.02,
+            "reserved_element_visits": 4800000,
+            "sampled_peak_displacement_m": 1.6820012589969771e-10,
+            "sampled_peak_upward_speed_m_s": 0.0,
+            "signed_energy_residual_j": -2.4213184837470884e-12,
+            "step_calls": 200000,
+            "stopped_advance": {
+              "accumulated_error": {
+                "absolute_energy_residual_j": 5.114543547361941e-08,
+                "energy_disagreement_j": 1.248047359142237e-07,
+                "normalized": 0.0,
+                "position_m": 3.804154691890562e-09,
+                "strain": 8.699953439838416e-08,
+                "velocity_m_s": 0.00013178045717273087
+              },
+              "contact_error_reserve_spent": {
+                "absolute_energy_residual_j": 2.999992229037474e-08,
+                "energy_disagreement_j": 7.840944552039441e-08,
+                "normalized": 0.0,
+                "position_m": 3.3215653434309566e-09,
+                "strain": 1.903104790524211e-08,
+                "velocity_m_s": 5.924742404742855e-06
+              },
+              "last_trial_error": "",
+              "minimum_accepted_step_s": 4.877739090558332e-09,
+              "remaining_time_s": 2.2088647376367607e-05,
+              "tentative_contacts": 367,
+              "tentative_time_s": 0.0009779113526236316
+            },
+            "suggested_trial_dt_s": 2.046796595491974e-06,
+            "wall_ms": 3569.8031
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "catalog-reaction-0.1.json",
+      "request": {
+        "dimensions_m": [
+          0.08,
+          0.02,
+          0.08
+        ],
+        "duration_s": 0.1,
+        "energy_budget_j": 6e-06,
+        "materials": [
+          {
+            "density_kg_m3": 2500.0,
+            "material_id": "glass",
+            "mechanical_law": "isotropic_elastic",
+            "name": "Glass catalog coefficients",
+            "parameters": {
+              "maximum_total_strain_norm": 0.1,
+              "poisson_ratio": 0.25,
+              "young_modulus_pa": 70000000000.0
+            },
+            "physical_hash": "3355a48538fcf7973ef00928e611ded4b8d5adac992b346b148e1dec4fcb5e3c",
+            "required_capabilities": [
+              "small_strain_reference"
+            ],
+            "units": "SI"
+          },
+          {
+            "density_kg_m3": 700.0,
+            "material_id": "oak",
+            "mechanical_law": "orthotropic_elastic",
+            "name": "Oak catalog coefficients",
+            "parameters": {
+              "maximum_total_strain_norm": 0.05,
+              "poisson_xy_yz_zx": [
+                0.1,
+                0.1,
+                0.005
+              ],
+              "shear_xy_yz_zx_pa": [
+                800000000.0,
+                350000000.0,
+                550000000.0
+              ],
+              "young_modulus_pa": [
+                12000000000.0,
+                1200000000.0,
+                800000000.0
+              ]
+            },
+            "physical_hash": "32542d8eb8d9854ac11d242e4c4bf0c75a151d47615d89810bf86f41cd1dab87",
+            "required_capabilities": [
+              "small_strain_reference"
+            ],
+            "units": "SI"
+          },
+          {
+            "density_kg_m3": 7870.0,
+            "material_id": "iron",
+            "mechanical_law": "j2_plastic",
+            "name": "Iron catalog coefficients",
+            "parameters": {
+              "initial_yield_stress_pa": 250000000.0,
+              "isotropic_hardening_modulus_pa": 1000000000.0,
+              "maximum_total_strain_norm": 0.05,
+              "poisson_ratio": 0.3,
+              "young_modulus_pa": 211000000000.0
+            },
+            "physical_hash": "5f297a2cf8083164b71e0386ed14cd3e80545f5b150f85aa73470d42b9a961b5",
+            "required_capabilities": [
+              "small_strain_reference"
+            ],
+            "units": "SI"
+          }
+        ],
+        "max_step_calls": 200000,
+        "mesh_refinement": 1,
+        "schema": "banjo.dynamic-material-request.v1",
+        "sphere": {
+          "clearance_m": 0.0005,
+          "density_kg_m3": 7870,
+          "offset_xz_m": [
+            0.007,
+            0.009
+          ],
+          "radius_m": 0.012,
+          "speed_m_s": 0
+        }
+      },
+      "status": "solver_limit",
+      "cases": [
+        {
+          "material_id": "glass",
+          "status": "solver_limit",
+          "error": "Coupled advance step-call budget exhausted",
+          "summary": {
+            "absolute_energy_residual_j": 5.396944516471718e-08,
+            "accepted_contacts": 5195,
+            "accepted_segments": 65508,
+            "completed_duration_s": 0.011,
+            "contact_dissipation_j": 0.00014314384963080742,
+            "contact_energy_reserve_spent_j": 2.999999288319493e-08,
+            "energy_budget_j": 6e-06,
+            "external_work_j": 0.00025953080661980643,
+            "geometry_iterations": 129257,
+            "geometry_queries": 13000497,
+            "last_error": {
+              "absolute_energy_residual_j": 0.0,
+              "energy_disagreement_j": 0.0,
+              "normalized": null,
+              "position_m": 0.0,
+              "strain": 0.0,
+              "velocity_m_s": 0.0
+            },
+            "maximum_accepted_error": 0.9999920398391254,
+            "minimum_accepted_step_s": 7.294103049419141e-10,
+            "minimum_step_error": {
+              "absolute_energy_residual_j": 2.1481830869937885e-13,
+              "energy_disagreement_j": 4.2867194304874526e-13,
+              "normalized": 0.8099909064539352,
+              "position_m": 5.098964393980973e-16,
+              "strain": 2.7758155461879222e-14,
+              "velocity_m_s": 1.0795392379297576e-10
+            },
+            "plastic_dissipation_j": 0.0,
+            "rejected_segments": 1158,
+            "requested_duration_s": 0.1,
+            "reserved_element_visits": 4800000,
+            "sampled_peak_displacement_m": 1.094688441388711e-07,
+            "sampled_peak_upward_speed_m_s": 0.03377783510932465,
+            "signed_energy_residual_j": 2.21645079249338e-08,
+            "step_calls": 200000,
+            "stopped_advance": {
+              "accumulated_error": {
+                "absolute_energy_residual_j": 1.935198857861899e-09,
+                "energy_disagreement_j": 4.015909873791871e-09,
+                "normalized": 0.0,
+                "position_m": 2.967166743699255e-11,
+                "strain": 1.6791553611386501e-09,
+                "velocity_m_s": 6.432366757149425e-06
+              },
+              "contact_error_reserve_spent": {
+                "absolute_energy_residual_j": 0.0,
+                "energy_disagreement_j": 0.0,
+                "normalized": 0.0,
+                "position_m": 0.0,
+                "strain": 0.0,
+                "velocity_m_s": 0.0
+              },
+              "last_trial_error": "",
+              "minimum_accepted_step_s": 4.420179432215962e-09,
+              "remaining_time_s": 0.0009177570758382124,
+              "tentative_contacts": 0,
+              "tentative_time_s": 8.22429241617885e-05
+            },
+            "suggested_trial_dt_s": 1.0744177634092621e-07,
+            "wall_ms": 2784.5592
+          }
+        },
+        {
+          "material_id": "oak",
+          "status": "solver_limit",
+          "error": "Coupled advance step-call budget exhausted",
+          "summary": {
+            "absolute_energy_residual_j": 3.0321813255976245e-07,
+            "accepted_contacts": 1779,
+            "accepted_segments": 63989,
+            "completed_duration_s": 0.022,
+            "contact_dissipation_j": 6.368611812154266e-05,
+            "contact_energy_reserve_spent_j": 2.999998807465049e-08,
+            "energy_budget_j": 6e-06,
+            "external_work_j": 0.00018564878105498516,
+            "geometry_iterations": 48190,
+            "geometry_queries": 12874857,
+            "last_error": {
+              "absolute_energy_residual_j": 0.0,
+              "energy_disagreement_j": 0.0,
+              "normalized": null,
+              "position_m": 0.0,
+              "strain": 0.0,
+              "velocity_m_s": 0.0
+            },
+            "maximum_accepted_error": 0.9998023260230249,
+            "minimum_accepted_step_s": 4.76323854794215e-09,
+            "minimum_step_error": {
+              "absolute_energy_residual_j": 2.847702874242459e-12,
+              "energy_disagreement_j": 5.61470642657276e-12,
+              "normalized": 0.8095508728275831,
+              "position_m": 9.19179950803256e-14,
+              "strain": 5.137446451055388e-12,
+              "velocity_m_s": 7.3466494292600735e-09
+            },
+            "plastic_dissipation_j": 0.0,
+            "rejected_segments": 2677,
+            "requested_duration_s": 0.1,
+            "reserved_element_visits": 4800000,
+            "sampled_peak_displacement_m": 1.1526458631870857e-06,
+            "sampled_peak_upward_speed_m_s": 0.06389955437334842,
+            "signed_energy_residual_j": 3.188395689853845e-08,
+            "step_calls": 200000,
+            "stopped_advance": {
+              "accumulated_error": {
+                "absolute_energy_residual_j": 2.7873670045074973e-09,
+                "energy_disagreement_j": 5.809528358919047e-09,
+                "normalized": 0.0,
+                "position_m": 4.79726596445986e-10,
+                "strain": 2.5586329376312125e-08,
+                "velocity_m_s": 3.309874662135342e-05
+              },
+              "contact_error_reserve_spent": {
+                "absolute_energy_residual_j": 0.0,
+                "energy_disagreement_j": 0.0,
+                "normalized": 0.0,
+                "position_m": 0.0,
+                "strain": 0.0,
+                "velocity_m_s": 0.0
+              },
+              "last_trial_error": "",
+              "minimum_accepted_step_s": 5.8627216847947216e-08,
+              "remaining_time_s": 0.0008791183453836234,
+              "tentative_contacts": 0,
+              "tentative_time_s": 0.00012088165461637747
+            },
+            "suggested_trial_dt_s": 1.382080450217388e-07,
+            "wall_ms": 3165.6068
+          }
+        },
+        {
+          "material_id": "iron",
+          "status": "solver_limit",
+          "error": "Coupled advance step-call budget exhausted",
+          "summary": {
+            "absolute_energy_residual_j": 6.5916788012137574e-09,
+            "accepted_contacts": 0,
+            "accepted_segments": 65627,
+            "completed_duration_s": 0.01,
+            "contact_dissipation_j": 0.0,
+            "contact_energy_reserve_spent_j": 0.0,
+            "energy_budget_j": 6e-06,
+            "external_work_j": 0.000274104292329193,
+            "geometry_iterations": 19839,
+            "geometry_queries": 12824487,
+            "last_error": {
+              "absolute_energy_residual_j": 0.0,
+              "energy_disagreement_j": 0.0,
+              "normalized": null,
+              "position_m": 0.0,
+              "strain": 0.0,
+              "velocity_m_s": 0.0
+            },
+            "maximum_accepted_error": 0.31824147775783157,
+            "minimum_accepted_step_s": 5.816306999623825e-07,
+            "minimum_step_error": {
+              "absolute_energy_residual_j": 2.370539479534691e-13,
+              "energy_disagreement_j": 4.72555476601624e-13,
+              "normalized": 0.8099857452821607,
+              "position_m": 3.444152277898152e-16,
+              "strain": 2.1817340079969832e-14,
+              "velocity_m_s": 8.699324354886713e-11
+            },
+            "plastic_dissipation_j": 0.0,
+            "rejected_segments": 1039,
+            "requested_duration_s": 0.1,
+            "reserved_element_visits": 4800000,
+            "sampled_peak_displacement_m": 1.6820012589969771e-10,
+            "sampled_peak_upward_speed_m_s": 0.0,
+            "signed_energy_residual_j": -2.4213184837470884e-12,
+            "step_calls": 200000,
+            "stopped_advance": {
+              "accumulated_error": {
+                "absolute_energy_residual_j": 5.114543547361941e-08,
+                "energy_disagreement_j": 1.248047359142237e-07,
+                "normalized": 0.0,
+                "position_m": 3.804154691890562e-09,
+                "strain": 8.699953439838416e-08,
+                "velocity_m_s": 0.00013178045717273087
+              },
+              "contact_error_reserve_spent": {
+                "absolute_energy_residual_j": 2.999992229037474e-08,
+                "energy_disagreement_j": 7.840944552039441e-08,
+                "normalized": 0.0,
+                "position_m": 3.3215653434309566e-09,
+                "strain": 1.903104790524211e-08,
+                "velocity_m_s": 5.924742404742855e-06
+              },
+              "last_trial_error": "",
+              "minimum_accepted_step_s": 4.877739090558332e-09,
+              "remaining_time_s": 2.2088647376367607e-05,
+              "tentative_contacts": 367,
+              "tentative_time_s": 0.0009779113526236316
+            },
+            "suggested_trial_dt_s": 2.046796595491974e-06,
+            "wall_ms": 3581.0744
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "fictional-baseline-reaction.json",
+      "request": {
+        "dimensions_m": [
+          0.08,
+          0.02,
+          0.08
+        ],
+        "duration_s": 0.1,
+        "energy_budget_j": 6e-06,
+        "materials": [
+          {
+            "density_kg_m3": 1000.0,
+            "material_id": "Cedar-X",
+            "mechanical_law": "isotropic_elastic",
+            "name": "Cedar-X",
+            "parameters": {
+              "maximum_total_strain_norm": 0.08,
+              "poisson_ratio": 0.25,
+              "young_modulus_pa": 1000000.0
+            },
+            "physical_hash": "bfc93218b790024fa8631edcc24c9f4245700afe2f50e82cc09fe7a373e844ea",
+            "required_capabilities": [
+              "small_strain_reference"
+            ],
+            "units": "SI"
+          },
+          {
+            "density_kg_m3": 1000.0,
+            "material_id": "Copper-Y",
+            "mechanical_law": "j2_plastic",
+            "name": "Copper-Y",
+            "parameters": {
+              "initial_yield_stress_pa": 1200.0,
+              "isotropic_hardening_modulus_pa": 20000.0,
+              "maximum_total_strain_norm": 0.08,
+              "poisson_ratio": 0.25,
+              "young_modulus_pa": 1000000.0
+            },
+            "physical_hash": "0d610b0e071215e26c732dbcd528edc1fd636ae184bde4f9a2124c848b3b1be6",
+            "required_capabilities": [
+              "small_strain_reference"
+            ],
+            "units": "SI"
+          }
+        ],
+        "max_step_calls": 200000,
+        "mesh_refinement": 1,
+        "schema": "banjo.dynamic-material-request.v1",
+        "sphere": {
+          "clearance_m": 0.0005,
+          "density_kg_m3": 7870,
+          "offset_xz_m": [
+            0.007,
+            0.009
+          ],
+          "radius_m": 0.012,
+          "speed_m_s": 0
+        }
+      },
+      "status": "complete",
+      "cases": [
+        {
+          "material_id": "Cedar-X",
+          "status": "complete",
+          "error": null,
+          "summary": {
+            "absolute_energy_residual_j": 2.7725105566726495e-06,
+            "accepted_contacts": 4347,
+            "accepted_segments": 2035,
+            "completed_duration_s": 0.1,
+            "contact_dissipation_j": 0.00021933425893575322,
+            "contact_energy_reserve_spent_j": 5.333724556269414e-07,
+            "energy_budget_j": 6e-06,
+            "external_work_j": 0.0002848921688249728,
+            "geometry_iterations": 145649,
+            "geometry_queries": 721667,
+            "last_error": {
+              "absolute_energy_residual_j": 0.0,
+              "energy_disagreement_j": 0.0,
+              "normalized": 0.0,
+              "position_m": 0.0,
+              "strain": 0.0,
+              "velocity_m_s": 0.0
+            },
+            "maximum_accepted_error": 0.9987907198644991,
+            "minimum_accepted_step_s": 5.945273787667695e-08,
+            "minimum_step_error": {
+              "absolute_energy_residual_j": 0.0,
+              "energy_disagreement_j": 0.0,
+              "normalized": 0.0,
+              "position_m": 0.0,
+              "strain": 0.0,
+              "velocity_m_s": 0.0
+            },
+            "normal_constraint_projection_loss_j": 3.956913101186585e-05,
+            "plastic_dissipation_j": 0.0,
+            "rejected_segments": 575,
+            "requested_duration_s": 0.1,
+            "reserved_element_visits": 187920,
+            "sampled_peak_displacement_m": 6.913584744544931e-05,
+            "sampled_peak_upward_speed_m_s": 0.05794820698978306,
+            "signed_energy_residual_j": 2.926311435927225e-07,
+            "step_calls": 7830,
+            "suggested_trial_dt_s": 6.601813371521954e-05,
+            "wall_ms": 167.2873
+          }
+        },
+        {
+          "material_id": "Copper-Y",
+          "status": "complete",
+          "error": null,
+          "summary": {
+            "absolute_energy_residual_j": 2.4064691711564765e-06,
+            "accepted_contacts": 3237,
+            "accepted_segments": 1197,
+            "completed_duration_s": 0.1,
+            "contact_dissipation_j": 0.00015043730311702246,
+            "contact_energy_reserve_spent_j": 2.707679815844433e-07,
+            "energy_budget_j": 6e-06,
+            "external_work_j": 0.0002927445473316079,
+            "geometry_iterations": 108799,
+            "geometry_queries": 460142,
+            "last_error": {
+              "absolute_energy_residual_j": 0.0,
+              "energy_disagreement_j": 0.0,
+              "normalized": 0.0,
+              "position_m": 0.0,
+              "strain": 0.0,
+              "velocity_m_s": 0.0
+            },
+            "maximum_accepted_error": 0.9993372681485249,
+            "minimum_accepted_step_s": 1.175835168755818e-07,
+            "minimum_step_error": {
+              "absolute_energy_residual_j": 0.0,
+              "energy_disagreement_j": 0.0,
+              "normalized": 0.0,
+              "position_m": 0.0,
+              "strain": 0.0,
+              "velocity_m_s": 0.0
+            },
+            "normal_constraint_projection_loss_j": 4.683758395574065e-05,
+            "plastic_dissipation_j": 0.00011655723363646043,
+            "rejected_segments": 358,
+            "requested_duration_s": 0.1,
+            "reserved_element_visits": 111960,
+            "sampled_peak_displacement_m": 6.201636946823538e-05,
+            "sampled_peak_upward_speed_m_s": 0.043310771438330384,
+            "signed_energy_residual_j": 3.10016152655637e-07,
+            "step_calls": 4665,
+            "suggested_trial_dt_s": 0.00011011108479530442,
+            "wall_ms": 120.956
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "fictional-unseen-reaction.json",
+      "request": {
+        "dimensions_m": [
+          0.07,
+          0.02,
+          0.06
+        ],
+        "duration_s": 0.05,
+        "energy_budget_j": 6e-06,
+        "materials": [
+          {
+            "density_kg_m3": 850.0,
+            "material_id": "Aster-37",
+            "mechanical_law": "isotropic_elastic",
+            "name": "Aster-37 (FICTIONAL)",
+            "parameters": {
+              "maximum_total_strain_norm": 0.08,
+              "poisson_ratio": 0.24,
+              "young_modulus_pa": 1200000.0
+            },
+            "physical_hash": "19f1509a33a421def6febd9237d32e80e4424af18b7009d0154db801a547d9a9",
+            "required_capabilities": [
+              "small_strain_reference"
+            ],
+            "units": "SI"
+          },
+          {
+            "density_kg_m3": 1100.0,
+            "material_id": "Birch-91",
+            "mechanical_law": "j2_plastic",
+            "name": "Birch-91 (FICTIONAL)",
+            "parameters": {
+              "initial_yield_stress_pa": 900.0,
+              "isotropic_hardening_modulus_pa": 30000.0,
+              "maximum_total_strain_norm": 0.08,
+              "poisson_ratio": 0.27,
+              "young_modulus_pa": 800000.0
+            },
+            "physical_hash": "da4f07ca5cb8173eaf8b7ada76c102c21cae94ca1be19b58490564dd3c253176",
+            "required_capabilities": [
+              "small_strain_reference"
+            ],
+            "units": "SI"
+          }
+        ],
+        "max_step_calls": 200000,
+        "mesh_refinement": 1,
+        "schema": "banjo.dynamic-material-request.v1",
+        "sphere": {
+          "clearance_m": 0.00035,
+          "density_kg_m3": 7870,
+          "offset_xz_m": [
+            0.005,
+            -0.006
+          ],
+          "radius_m": 0.01,
+          "speed_m_s": 0.01
+        }
+      },
+      "status": "complete",
+      "cases": [
+        {
+          "material_id": "Aster-37",
+          "status": "complete",
+          "error": null,
+          "summary": {
+            "absolute_energy_residual_j": 1.1030613264220665e-06,
+            "accepted_contacts": 1333,
+            "accepted_segments": 1134,
+            "completed_duration_s": 0.05,
+            "contact_dissipation_j": 7.75024974015224e-05,
+            "contact_energy_reserve_spent_j": 1.5643827237001308e-07,
+            "energy_budget_j": 6e-06,
+            "external_work_j": 0.00011460450214131009,
+            "geometry_iterations": 51349,
+            "geometry_queries": 341727,
+            "last_error": {
+              "absolute_energy_residual_j": 0.0,
+              "energy_disagreement_j": 0.0,
+              "normalized": 0.0,
+              "position_m": 0.0,
+              "strain": 0.0,
+              "velocity_m_s": 0.0
+            },
+            "maximum_accepted_error": 0.9973993250174896,
+            "minimum_accepted_step_s": 1.2042195577823996e-07,
+            "minimum_step_error": {
+              "absolute_energy_residual_j": 0.0,
+              "energy_disagreement_j": 0.0,
+              "normalized": 0.0,
+              "position_m": 0.0,
+              "strain": 0.0,
+              "velocity_m_s": 0.0
+            },
+            "normal_constraint_projection_loss_j": 1.5580316557992726e-05,
+            "plastic_dissipation_j": 0.0,
+            "rejected_segments": 276,
+            "requested_duration_s": 0.05,
+            "reserved_element_visits": 101520,
+            "sampled_peak_displacement_m": 3.402453989577812e-05,
+            "sampled_peak_upward_speed_m_s": 0.04410337740011304,
+            "signed_energy_residual_j": 1.206294571077184e-07,
+            "step_calls": 4230,
+            "suggested_trial_dt_s": 4.49760067523743e-05,
+            "wall_ms": 80.0887
+          }
+        },
+        {
+          "material_id": "Birch-91",
+          "status": "complete",
+          "error": null,
+          "summary": {
+            "absolute_energy_residual_j": 9.883167409906993e-07,
+            "accepted_contacts": 1269,
+            "accepted_segments": 505,
+            "completed_duration_s": 0.05,
+            "contact_dissipation_j": 6.490964233384219e-05,
+            "contact_energy_reserve_spent_j": 7.309614440487446e-08,
+            "energy_budget_j": 6e-06,
+            "external_work_j": 0.00012256652434022855,
+            "geometry_iterations": 42857,
+            "geometry_queries": 188040,
+            "last_error": {
+              "absolute_energy_residual_j": 0.0,
+              "energy_disagreement_j": 0.0,
+              "normalized": 0.0,
+              "position_m": 0.0,
+              "strain": 0.0,
+              "velocity_m_s": 0.0
+            },
+            "maximum_accepted_error": 0.9949070053909934,
+            "minimum_accepted_step_s": 1.3247208558838322e-07,
+            "minimum_step_error": {
+              "absolute_energy_residual_j": 0.0,
+              "energy_disagreement_j": 0.0,
+              "normalized": 0.0,
+              "position_m": 0.0,
+              "strain": 0.0,
+              "velocity_m_s": 0.0
+            },
+            "normal_constraint_projection_loss_j": 1.3962823406400224e-05,
+            "plastic_dissipation_j": 4.12025858214275e-05,
+            "rejected_segments": 143,
+            "requested_duration_s": 0.05,
+            "reserved_element_visits": 46656,
+            "sampled_peak_displacement_m": 5.398762275090037e-05,
+            "sampled_peak_upward_speed_m_s": 0.03230049612281131,
+            "signed_energy_residual_j": 1.2047638610306093e-07,
+            "step_calls": 1944,
+            "suggested_trial_dt_s": 0.00017224810158047286,
+            "wall_ms": 49.5355
+          }
+        }
+      ]
+    }
+  ],
+  "live_job": "bfe9916afdb64760aac815489cf29777",
+  "scope": "First contact and complete fictional-material runs; longer stiff runs, spatial convergence, fracture and realtime remain unaccepted.",
+  "binary_hash_scope": "Final checkpoint executable. The catalog 0.02/0.1 records were captured with the same normal-reaction physics before adding diagnostic-only aggregation; their individual executable hashes were not retained."
+}

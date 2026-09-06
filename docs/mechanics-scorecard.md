@@ -1,5 +1,7 @@
 # Banjo mechanics scorecard
 
+**Normal contact energy correction:** [Support reactions and real impacts](normal-contact-energy-checkpoint.md) now have separate energy accounting in the coupled tetrahedral solver. Glass/oak/iron complete the previously failing 10.1 ms onset under the same limits; four full fictional-material runs use 6.1–10.0 times fewer calls. The raw energy gate remains strict. Longer stiff runs, stable fracture and realtime remain open; next audit sticking friction and stiff integration cost.
+
 **Thin-plate admission correction:** [The reported first-test failure](plate-admission-checkpoint.md) now has matching Python/native geometry preflight and a visible numerical error. An identical live prompt produces 42 actual 3D frames with an explicitly assumed 6 mm plate, then stops at 0.342 s with zero broken bonds in glass/oak/iron. Stable fracture remains open; this is a setup/UI correction, not new physics validation.
 
 **Dynamic material playground:** [Property-authored coupled impacts](dynamic-material-playground-checkpoint.md) now execute explicit SI elastic/orthotropic/J2 descriptors through a bounded native API and render actual sphere and nodal states in the embedded 3D playground. Per-material contact/work/energy evidence and honest solver limits feed the GPT review. R08 is active; this is experimental computed playback, with spatial accuracy, unloaded dents, fracture, finite-strain rubber and realtime still open. All nine original workstreams and 40 mechanics are retained.

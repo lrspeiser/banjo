@@ -778,35 +778,35 @@
       }
     ],
     "checkpoint": {
-      "status": "R08 bounded dynamic material playground implementation; no whole-platform goal complete",
-      "base_commit": "88d88d342e77fac4844d52b9e0ca1d47d9d39fdf",
-      "evidence": "docs/dynamic-material-playground-checkpoint.md",
-      "implemented": [
-        "strict numeric material/geometry request through shared native parser",
-        "accepted sphere and tetrahedral playback with generated bounded controls",
-        "persistent per-material contact/work/energy evidence and live GPT review"
-      ],
+      "status": "R03 normal-reaction energy correction; R09 performance gate remains open",
+      "base_commit": "ac324fa58a2f276feae4b053a1f942657bde6fef",
+      "evidence": "docs/normal-contact-energy-checkpoint.md",
+      "results": "docs/normal-contact-energy-results.json",
       "validation": {
         "native_suites_passed": 62,
-        "native_wall_s": 93.83,
-        "python_tests_run": 131,
-        "python_passed": 130,
+        "native_wall_s": 89.78,
+        "python_tests_run": 142,
+        "python_passed": 141,
         "python_skipped": 1,
-        "python_wall_s": 13.46,
-        "browser": "actual prompt -> native -> auto 3D, 101-frame timeline, playback and steps, components/reference/X-ray, archived restoration, live GPT evidence review; no page errors",
-        "live_model": "gpt-5-mini",
-        "live_request_count": 4,
-        "live_complete_material_runs": 4,
-        "live_partial_material_runs": 2,
-        "unsupported_blocked_requests": 1
+        "python_wall_s": 6.871
       },
-      "failed_gates": [
-        "stiff glass/oak/iron work budget near contact",
-        "mesh accuracy and unloaded dent qualification",
-        "fracture and finite-strain rubber",
-        "shared world persistence and realtime release"
+      "implemented": [
+        "distinct normal reaction projection diagnostic and physical impact/friction dissipation",
+        "strict unchanged raw half-step and endpoint energy budgets",
+        "tentative failure telemetry and GPT evidence integration"
       ],
-      "next": "Reduce and qualify stiff/contact integration cost while preserving error budgets; extend spatial/unloading acceptance and expected-outcome instrumentation."
+      "measured": [
+        "matched glass/oak/iron 10.1 ms first contact completes below 200000 calls",
+        "four full fictional-material runs complete with 6.1 to 10.0 times fewer solver calls",
+        "fresh GPT request completes two 101-frame 3D recordings"
+      ],
+      "failed_gates": [
+        "longer stiff material responsiveness",
+        "spatial/unloading accuracy",
+        "stable fracture and finite-strain rebound",
+        "world persistence and realtime qualification"
+      ],
+      "next": "Audit sticking-friction projections and separating-contact reversal, then stiff energy-accounted integration and refinement."
     },
     "foundation_checkpoint": {
       "status": "R01/R02 partial implementation, no goal fully accepted",
@@ -918,6 +918,37 @@
         }
       },
       "next": "Resolve stiff contact and stable fracture under convergence and full work accounting; preserve all original goals."
+    },
+    "dynamic_material_playground_checkpoint": {
+      "status": "R08 bounded dynamic material playground implementation; no whole-platform goal complete",
+      "base_commit": "88d88d342e77fac4844d52b9e0ca1d47d9d39fdf",
+      "evidence": "docs/dynamic-material-playground-checkpoint.md",
+      "implemented": [
+        "strict numeric material/geometry request through shared native parser",
+        "accepted sphere and tetrahedral playback with generated bounded controls",
+        "persistent per-material contact/work/energy evidence and live GPT review"
+      ],
+      "validation": {
+        "native_suites_passed": 62,
+        "native_wall_s": 93.83,
+        "python_tests_run": 131,
+        "python_passed": 130,
+        "python_skipped": 1,
+        "python_wall_s": 13.46,
+        "browser": "actual prompt -> native -> auto 3D, 101-frame timeline, playback and steps, components/reference/X-ray, archived restoration, live GPT evidence review; no page errors",
+        "live_model": "gpt-5-mini",
+        "live_request_count": 4,
+        "live_complete_material_runs": 4,
+        "live_partial_material_runs": 2,
+        "unsupported_blocked_requests": 1
+      },
+      "failed_gates": [
+        "stiff glass/oak/iron work budget near contact",
+        "mesh accuracy and unloaded dent qualification",
+        "fracture and finite-strain rubber",
+        "shared world persistence and realtime release"
+      ],
+      "next": "Reduce and qualify stiff/contact integration cost while preserving error budgets; extend spatial/unloading acceptance and expected-outcome instrumentation."
     }
   }
 }

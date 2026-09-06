@@ -185,7 +185,7 @@ Json runCase(const Request &request, const material_json::Material &material) {
     frame();
     const double frame_interval = std::min(.001, request.duration);
     double elapsed = 0, absolute_residual = 0, signed_residual = 0, external_work = 0,
-           contact_dissipation = 0, contact_reserve = 0, peak_upward = 0,
+           contact_dissipation = 0, normal_projection_loss = 0, contact_reserve = 0, peak_upward = 0,
            peak_displacement = 0, minimum_step = 0, maximum_error = 0, suggested_dt =
                options.initial_trial_dt_s;
     std::uint64_t calls = 0, accepted_segments = 0, rejected_segments = 0,
@@ -225,6 +225,7 @@ Json runCase(const Request &request, const material_json::Material &material) {
         signed_residual += advance.signed_energy_residual_j;
         external_work += advance.external_work_j;
         contact_dissipation += advance.contact_dissipation_j;
+        normal_projection_loss += advance.normal_constraint_projection_loss_j;
         contact_reserve += advance.contact_energy_reserve_spent_j;
         if (minimum_step == 0 || advance.minimum_accepted_step_s < minimum_step)
             minimum_step = advance.minimum_accepted_step_s;
@@ -244,6 +245,7 @@ Json runCase(const Request &request, const material_json::Material &material) {
         {"absolute_energy_residual_j", absolute_residual},
         {"signed_energy_residual_j", signed_residual}, {"energy_budget_j", request.energy_budget},
         {"external_work_j", external_work}, {"contact_dissipation_j", contact_dissipation},
+        {"normal_constraint_projection_loss_j", normal_projection_loss},
         {"contact_energy_reserve_spent_j", contact_reserve},
         {"plastic_dissipation_j", final.plastic_dissipation_j},
         {"sampled_peak_upward_speed_m_s", peak_upward},
@@ -257,6 +259,17 @@ Json runCase(const Request &request, const material_json::Material &material) {
         {"minimum_step_error", errorEstimate(failure.minimum_step_error)},
         {"wall_ms", std::chrono::duration<double, std::milli>(
                         std::chrono::steady_clock::now() - started).count()}};
+    if (!complete) {
+        // These describe rolled-back work, never committed material/contact state.
+        result["summary"]["stopped_advance"] = {
+            {"tentative_time_s", failure.tentative_time_s},
+            {"remaining_time_s", failure.remaining_time_s},
+            {"minimum_accepted_step_s", failure.minimum_accepted_step_s},
+            {"accumulated_error", errorEstimate(failure.accumulated_error)},
+            {"contact_error_reserve_spent", errorEstimate(failure.contact_error_reserve_spent)},
+            {"tentative_contacts", failure.impulse_contacts},
+            {"last_trial_error", failure.last_trial.error}};
+    }
     return result;
 }
 } // namespace
@@ -279,6 +292,7 @@ int main() {
                     {"solver_options", {{"integrator", "velocity_verlet"},
                                         {"gravity_m_s2", vec({0, -9.81, 0})},
                                         {"friction_coefficient", .15},
+                                        {"normal_reaction_energy", "persistent force-kick projection is a numerical diagnostic; only incoming normal impacts add physical dissipation"},
                                         {"contact_margin_m", 1.e-6},
                                         {"maximum_penetration_m", 1.e-5},
                                         {"frame_interval_s", std::min(.001, request.duration)},
