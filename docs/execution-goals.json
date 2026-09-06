@@ -1,6 +1,6 @@
 {
   "schema": "banjo.execution-goals.v2",
-  "recorded_against": "main:93535e7 plus spatial-pressure checkpoint changes",
+  "recorded_against": "main:b60ee35f7d22be826a25bef45b9e3034e2b3ff6f",
   "recorded_date": "2026-09-06",
   "project_goal_ref": "docs/project-goal-2026-09-06.md",
   "baseline": {
@@ -8,7 +8,8 @@
     "suite_status": "passes",
     "suite_duration_s": 83.23,
     "toolchain": "Windows MSVC 19.44 Release",
-    "physics_status": "unfinished"
+    "physics_status": "unfinished",
+    "code_commit": "b60ee35f7d22be826a25bef45b9e3034e2b3ff6f"
   },
   "completion_policy": {
     "prototype": "Instrumented bounded implementation or experiment with explicit limitations; not a completion claim.",

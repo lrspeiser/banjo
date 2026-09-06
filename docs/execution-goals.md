@@ -6,7 +6,7 @@
 2026](project-goal-2026-09-06.md) maps all 40 retained scorecard requirements
 to nine ordered goals, including persistence/history/repair, intrinsic
 variation/uncertainty, and the GPT chat-to-language/API/native playground.
-The current Windows MSVC 19.44 Release checkpoint passes all 55 CTest suites in
+The preceding Windows MSVC 19.44 Release checkpoint passed all 55 CTest suites in
 83.19 seconds. Focused Plasticity, PropertyVariation and NumericStateDelta
 tests pass, as do 29 mocked playground HTTP tests in 2.140 seconds. The native
 basic request-to-visible-studio gate also passes; broader edit, persistence and
