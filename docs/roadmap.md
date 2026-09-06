@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**September 6 goal and playground checkpoint:** The [fully updated goal](project-goal-2026-09-06.md) groups all 40 retained requirements into nine workstreams. [New foundation evidence](playground-foundation-checkpoint.md) covers J2 permanent material state, bounded intrinsic variation, compact lossless numeric history, and a GPT-to-Banjo API playground. All 55 native suites and 29 mocked playground tests pass. Spatial dents, calibrated glass fracture, live-world persistence/repair and global realtime remain open.
+
 **Additional physics checkpoint — September 6, 2026:** Opt-in cold-neighbor thermal activation now preserves stored energy, phase and reactive history while bounding active work. Mechanical damage trials support complete tick rollback, spring-configuration cache reset and explicit unresolved-limit diagnostics. All 52 regression suites pass; thermal storage scaling passes, while fracture convergence and full work closure remain open. See the [implementation, experiments and next gates](additional-physics-checkpoint.md).
 
 **Next G02/G05 gates:** The contact-capacity failure and rotating-spring stress reconstruction are corrected. Endpoint damage trials and complete rollback now exist. Next add an embedded state/work estimator for missed peaks, qualify contact-distance/space refinement and bounded active detail with conservative rigid-to-local transfers. Do not treat larger buffers or lower cell counts as a validated world-scale solution. See the [checkpoint and evidence](contact-fracture-checkpoint.md).

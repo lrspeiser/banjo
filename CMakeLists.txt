@@ -31,6 +31,9 @@ add_library(
     src/material/MaterialCompiler.cpp
     src/material/MaterialCatalog.cpp
     src/material/NetworkMaterial.cpp
+    src/material/Plasticity.cpp
+    src/material/PropertyVariation.cpp
+    src/persistence/NumericStateDelta.cpp
     src/physics/ResolutionBudget.cpp
     src/thermal/ThermalKernel.cpp
     src/thermal/EnthalpyLaw.cpp
@@ -158,6 +161,9 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
 endif()
 
 if(BANJO_BUILD_HEADLESS)
+    add_executable(banjo_object_state_probe tools/object_state_probe.cpp)
+    target_link_libraries(banjo_object_state_probe PRIVATE banjo_core nlohmann_json::nlohmann_json)
+    banjo_enable_warnings(banjo_object_state_probe)
     add_executable(banjo_precision_convert src/app/precision_convert_main.cpp)
     target_link_libraries(banjo_precision_convert PRIVATE banjo_precision_conversion)
     banjo_enable_warnings(banjo_precision_convert)
@@ -229,6 +235,18 @@ if(BANJO_BUILD_LAB)
 endif()
 
 if(BANJO_BUILD_TESTS)
+    add_executable(banjo_numeric_state_delta_tests tests/numeric_state_delta_tests.cpp)
+    target_link_libraries(banjo_numeric_state_delta_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_numeric_state_delta_tests)
+    add_test(NAME banjo_numeric_state_delta_tests COMMAND banjo_numeric_state_delta_tests)
+    add_executable(banjo_property_variation_tests tests/property_variation_tests.cpp)
+    target_link_libraries(banjo_property_variation_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_property_variation_tests)
+    add_test(NAME banjo_property_variation_tests COMMAND banjo_property_variation_tests)
+    add_executable(banjo_plasticity_tests tests/plasticity_tests.cpp)
+    target_link_libraries(banjo_plasticity_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_plasticity_tests)
+    add_test(NAME banjo_plasticity_tests COMMAND banjo_plasticity_tests)
     add_executable(banjo_cell_skin_tests tests/cell_skin_tests.cpp)
     target_link_libraries(banjo_cell_skin_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_cell_skin_tests)

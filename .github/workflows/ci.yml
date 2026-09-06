@@ -38,6 +38,11 @@ jobs:
       - name: Test core and material laws
         run: ctest --test-dir build/ci --output-on-failure
 
+      - name: Test playground HTTP boundary without an API key
+        env:
+          OPENAI_API_KEY: ""
+        run: python3 tests/playground_tests.py -v
+
       - name: Generate deterministic scenario projections
         run: |
           ./build/ci/banjo_precompute build/ci/ball-scenarios.csv

@@ -1,0 +1,385 @@
+{
+  "schema_version": "banjo.physical-benchmark-reference.v1",
+  "id": "kozlowski-2021-ft-glass-4.11kg-steel-ball",
+  "title": "Repeated steel-ball drop to first fracture of monolithic fully tempered glass",
+  "reference_scope": "published_experiment",
+  "banjo_validation_status": "not_run",
+  "selected_case": "6_mm_series",
+  "primary_sources": [
+    {
+      "id": "kozlowski-zemla-kosmal-2021-iop-022145",
+      "authors": [
+        "Marcin Kozłowski",
+        "Kinga Zemła",
+        "Magda Kosmal"
+      ],
+      "title": "Exploratory Finite Element Analysis of Monolithic Toughened Glass Panes Subjected to Hard-Body Impact",
+      "publication": "IOP Conference Series: Materials Science and Engineering",
+      "year": 2021,
+      "volume": "1203",
+      "issue": "2",
+      "article_number": "022145",
+      "published_date": "2021-11-01",
+      "publisher": "IOP Publishing",
+      "issn": [
+        "1757-8981",
+        "1757-899X"
+      ],
+      "license": "CC BY 3.0",
+      "doi": "10.1088/1757-899X/1203/2/022145",
+      "doi_url": "https://doi.org/10.1088/1757-899X/1203/2/022145",
+      "publisher_url": "https://iopscience.iop.org/article/10.1088/1757-899X/1203/2/022145",
+      "pdf_url": "https://iopscience.iop.org/article/10.1088/1757-899X/1203/2/022145/pdf",
+      "evidence_locations": [
+        "abstract",
+        "section 2.1",
+        "section 2.2",
+        "Table 1",
+        "Figure 1",
+        "Figure 2",
+        "conclusions"
+      ],
+      "role": "direct published report and specimen-level plot for the selected 6, 8 and 10 mm campaign"
+    },
+    {
+      "id": "kozlowski-zemla-kosmal-kopylow-2021-materials-7658",
+      "authors": [
+        "Marcin Kozłowski",
+        "Kinga Zemła",
+        "Magda Kosmal",
+        "Ołeksij Kopyłow"
+      ],
+      "title": "Experimental and FE Study on Impact Strength of Toughened Glass–Retrospective Approach",
+      "publication": "Materials",
+      "year": 2021,
+      "volume": "14",
+      "issue": "24",
+      "article_number": "7658",
+      "published_date": "2021-12-12",
+      "publisher": "MDPI AG",
+      "issn": [
+        "1996-1944"
+      ],
+      "license": "CC BY 4.0",
+      "doi": "10.3390/ma14247658",
+      "doi_url": "https://doi.org/10.3390/ma14247658",
+      "publisher_url": "https://www.mdpi.com/1996-1944/14/24/7658",
+      "pdf_url": "https://www.mdpi.com/1996-1944/14/24/7658/pdf",
+      "pubmed_central_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8704005/",
+      "evidence_locations": [
+        "section 2.1",
+        "section 2.2",
+        "Table 2",
+        "data availability statement"
+      ],
+      "role": "expanded primary report of 185 specimens; confirms setup and selected-series summary"
+    }
+  ],
+  "provenance_note": {
+    "underlying_record": "The papers state that the experimental results originated in a 2009 Institute of Ceramics and Building Materials internal technical report by Ziemba et al.",
+    "public_url_reported": false,
+    "raw_data_availability": "The expanded paper says data are available on request. No downloadable raw table is linked."
+  },
+  "experiment": {
+    "protocol_type": "same-specimen increasing-height staircase until first observed fracture",
+    "environment": {
+      "temperature": "room temperature",
+      "relative_humidity_fraction": 0.5
+    },
+    "pane": {
+      "material_reported": "regular soda-lime silicate float glass",
+      "construction": "monolithic",
+      "temper": "fully tempered",
+      "edge_finish": "polished",
+      "length_m": 0.5,
+      "width_m": 0.36,
+      "nominal_thickness_m": 0.006,
+      "individual_measured_thicknesses_published": false
+    },
+    "impactor": {
+      "material_reported": "steel",
+      "steel_grade_reported": null,
+      "mass_kg": 4.11,
+      "diameter_m": null,
+      "diameter_status": "not unambiguously published for the physical experiment",
+      "release_mechanism": "electromechanical arm with magnet",
+      "initial_linear_velocity_m_s": null,
+      "release_condition": "released from the magnet; zero initial velocity is the ideal free-fall assumption, not a reported measurement",
+      "initial_angular_velocity_reported": null,
+      "impact_location": "nominal pane centre inferred from the apparatus schematic and the numerical reproduction",
+      "impact_location_tolerance_m": null
+    },
+    "supports": {
+      "reported_condition": "simply supported on two revolving steel cylinders covered with a thin elastic rubber layer",
+      "roller_count": 2,
+      "roller_diameter_m": 0.05,
+      "roller_length_m": 0.365,
+      "roller_axis_spacing_m": null,
+      "rubber_layer_thickness_m": null,
+      "rubber_material_properties": null
+    },
+    "drops": {
+      "first_height_m": 0.1,
+      "height_increment_m": 0.1,
+      "height_reference_datum": "above the sample; exact ball-height datum not further specified",
+      "same_specimen_reused_until_fracture": true,
+      "between_drop_wait_or_reset_procedure": null,
+      "terminal_condition": "first observed specimen fracture"
+    }
+  },
+  "measured_outcome": {
+    "outcome_name": "destructive height",
+    "outcome_definition": "the terminal staircase height at which fracture was first observed",
+    "whole_pane_shattering_measured": false,
+    "fragmentation_measured": false,
+    "selected_6_mm_series": {
+      "specimen_count": 35,
+      "reported_mean_terminal_height_m": 0.76,
+      "reported_sample_standard_deviation_m": 0.24,
+      "reported_coefficient_of_variation_fraction": 0.31,
+      "terminal_height_m_by_specimen_transcribed_from_iop_figure_2": [
+        0.9,
+        0.6,
+        0.5,
+        0.7,
+        0.5,
+        0.9,
+        0.5,
+        0.9,
+        0.6,
+        0.9,
+        0.6,
+        0.6,
+        1.2,
+        0.8,
+        0.6,
+        1.2,
+        0.6,
+        0.5,
+        0.6,
+        1.2,
+        0.5,
+        0.7,
+        0.7,
+        1.2,
+        1.1,
+        0.9,
+        1.2,
+        0.5,
+        0.8,
+        0.9,
+        0.7,
+        0.7,
+        0.5,
+        0.6,
+        0.7
+      ],
+      "transcription": {
+        "source": "IOP paper Figure 2",
+        "plot_resolution_m": 0.1,
+        "computed_mean_m": 0.76,
+        "computed_sample_standard_deviation_m": 0.2366431913,
+        "agrees_with_published_rounded_summary": true
+      },
+      "terminal_height_frequencies": [
+        {
+          "height_m": 0.5,
+          "first_fracture_count": 7,
+          "cumulative_fracture_count": 7,
+          "not_yet_fractured_count": 28
+        },
+        {
+          "height_m": 0.6,
+          "first_fracture_count": 8,
+          "cumulative_fracture_count": 15,
+          "not_yet_fractured_count": 20
+        },
+        {
+          "height_m": 0.7,
+          "first_fracture_count": 6,
+          "cumulative_fracture_count": 21,
+          "not_yet_fractured_count": 14
+        },
+        {
+          "height_m": 0.8,
+          "first_fracture_count": 2,
+          "cumulative_fracture_count": 23,
+          "not_yet_fractured_count": 12
+        },
+        {
+          "height_m": 0.9,
+          "first_fracture_count": 6,
+          "cumulative_fracture_count": 29,
+          "not_yet_fractured_count": 6
+        },
+        {
+          "height_m": 1.0,
+          "first_fracture_count": 0,
+          "cumulative_fracture_count": 29,
+          "not_yet_fractured_count": 6
+        },
+        {
+          "height_m": 1.1,
+          "first_fracture_count": 1,
+          "cumulative_fracture_count": 30,
+          "not_yet_fractured_count": 5
+        },
+        {
+          "height_m": 1.2,
+          "first_fracture_count": 5,
+          "cumulative_fracture_count": 35,
+          "not_yet_fractured_count": 0
+        }
+      ],
+      "selected_checkpoints": [
+        {
+          "height_m": 0.3,
+          "first_fracture_count_at_step": 0,
+          "cumulative_fracture_count": 0,
+          "not_yet_fractured_count": 35
+        },
+        {
+          "height_m": 0.5,
+          "first_fracture_count_at_step": 7,
+          "cumulative_fracture_count": 7,
+          "not_yet_fractured_count": 28
+        },
+        {
+          "height_m": 0.8,
+          "first_fracture_count_at_step": 2,
+          "cumulative_fracture_count": 23,
+          "not_yet_fractured_count": 12
+        },
+        {
+          "height_m": 1.2,
+          "first_fracture_count_at_step": 5,
+          "cumulative_fracture_count": 35,
+          "not_yet_fractured_count": 0
+        }
+      ]
+    },
+    "reported_thickness_series": [
+      {
+        "nominal_thickness_m": 0.006,
+        "specimen_count": 35,
+        "mean_terminal_height_m": 0.76,
+        "sample_standard_deviation_m": 0.24,
+        "coefficient_of_variation_fraction": 0.31
+      },
+      {
+        "nominal_thickness_m": 0.008,
+        "specimen_count": 35,
+        "mean_terminal_height_m": 0.91,
+        "sample_standard_deviation_m": 0.29,
+        "coefficient_of_variation_fraction": 0.32
+      },
+      {
+        "nominal_thickness_m": 0.01,
+        "specimen_count": 35,
+        "mean_terminal_height_m": 1.37,
+        "sample_standard_deviation_m": 0.39,
+        "coefficient_of_variation_fraction": 0.29
+      }
+    ]
+  },
+  "derived_ideal_free_fall": {
+    "status": "derived_not_measured",
+    "assumptions": [
+      "gravitational_acceleration_m_s2 = 9.81",
+      "zero release velocity",
+      "no aerodynamic or mechanism losses before contact",
+      "reported 4.11 kg impactor mass"
+    ],
+    "formulae": {
+      "impact_energy_j": "mass_kg * gravitational_acceleration_m_s2 * height_m",
+      "impact_speed_m_s": "sqrt(2 * gravitational_acceleration_m_s2 * height_m)"
+    },
+    "values": [
+      {
+        "height_m": 0.3,
+        "impact_energy_j": 12.09573,
+        "impact_speed_m_s": 2.4261079943
+      },
+      {
+        "height_m": 0.5,
+        "impact_energy_j": 20.15955,
+        "impact_speed_m_s": 3.1320919527
+      },
+      {
+        "height_m": 0.76,
+        "impact_energy_j": 30.642516,
+        "impact_speed_m_s": 3.8615022983
+      },
+      {
+        "height_m": 0.8,
+        "impact_energy_j": 32.25528,
+        "impact_speed_m_s": 3.9618177646
+      },
+      {
+        "height_m": 1.2,
+        "impact_energy_j": 48.38292,
+        "impact_speed_m_s": 4.8522159886
+      }
+    ]
+  },
+  "projectile_geometry_uncertainty": {
+    "experimental_diameter_is_validation_gate": true,
+    "numerical_text_conflict": "The IOP numerical section describes both ball and roller as 50 mm in diameter, but the experimental mass is 4.11 kg and the numerical point mass is 0.51375 kg, stated to be one eighth of 4.11 kg.",
+    "steel_density_used_by_expanded_numerical_model_kg_m3": 7850.0,
+    "solid_steel_sphere_mass_if_diameter_0.05_m_kg": 0.5137812986,
+    "solid_steel_sphere_diameter_for_mass_4.11_kg_m": 0.0999979694,
+    "inference_status": "A diameter near 0.100 m is dimensionally consistent but is not a published experimental measurement.",
+    "banjo_iron_comparison": {
+      "material_identity": "Banjo catalog iron is not the source's unspecified steel.",
+      "catalog_density_kg_m3": 7870.0,
+      "solid_sphere_mass_at_diameter_0.1_m_kg": 4.120722364,
+      "mass_difference_from_reported_impactor_fraction": 0.0026088477,
+      "recommended_mass_handling": "Use 4.11 kg as authoritative; treat 0.100 m as an explicit geometry sensitivity, not source truth."
+    }
+  },
+  "unreported_or_unmeasured": [
+    "unambiguous physical ball diameter and steel grade",
+    "roller axis spacing and boundary restraint details",
+    "rubber layer thickness and constitutive properties",
+    "individual measured pane thicknesses and residual surface compression",
+    "impact point tolerance and ball spin",
+    "time or reset procedure between staircase drops",
+    "force, impulse, strain, displacement and contact duration",
+    "fracture time, crack extent, fragment count, fragment size and residual connectivity"
+  ],
+  "comparison_contract": {
+    "primary_target": "terminal-height distribution from a retained-state 0.10 m staircase",
+    "minimum_ensemble_size": 35,
+    "requires_independent_material_derived_flaw_realizations": true,
+    "required_convergence_dimensions": [
+      "timestep",
+      "solver iterations",
+      "contact capacity",
+      "spatial network resolution"
+    ],
+    "geometry_sensitivities_required": [
+      "projectile diameter",
+      "roller axis spacing",
+      "rubber support layer"
+    ],
+    "fresh_pane_heights_m_for_unvalidated_control": [
+      0.3,
+      0.5,
+      0.8,
+      1.2
+    ],
+    "material_controls": [
+      "glass",
+      "oak",
+      "iron"
+    ],
+    "published_material_outcome_applies_to": "fully tempered soda-lime silicate float glass only",
+    "must_not_claim": [
+      "guaranteed fracture from a single fresh-pane drop at 0.76 or 0.80 m",
+      "complete shattering or a validated fragment distribution",
+      "validation of the current Banjo network",
+      "equivalence of the experimental steel ball and Banjo pure iron",
+      "calibration by material-name thresholds, forced shatter, preset fragments or unconverged fine-cell behavior"
+    ]
+  }
+}

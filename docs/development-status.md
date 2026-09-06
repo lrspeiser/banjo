@@ -1,5 +1,7 @@
 # Development status and handoff
 
+**September 6 goal and playground checkpoint:** The [fully updated goal](project-goal-2026-09-06.md) groups all 40 retained requirements into nine workstreams. [New foundation evidence](playground-foundation-checkpoint.md) covers J2 permanent material state, bounded intrinsic variation, compact lossless numeric history, and a GPT-to-Banjo API playground. All 55 native suites and 29 mocked playground tests pass. Spatial dents, calibrated glass fracture, live-world persistence/repair and global realtime remain open.
+
 **Additional physics checkpoint — September 6, 2026:** Opt-in cold-neighbor thermal activation now preserves stored energy, phase and reactive history while bounding active work. Mechanical damage trials support complete tick rollback, spring-configuration cache reset and explicit unresolved-limit diagnostics. All 52 regression suites pass; thermal storage scaling passes, while fracture convergence and full work closure remain open. See the [implementation, experiments and next gates](additional-physics-checkpoint.md).
 
 **Contact and reaction correction:** V2 contact capacities are explicit, initial contact density is checked, unused impact estimates are skipped, and damping reconstruction follows Jolt's pre-step spring axis. Generated scenes now all complete headlessly, including the 537-cell drop; it still costs about 14.6 s for 3 s of simulation. Halved-timestep material fracture still differs. See the [checkpoint and evidence](contact-fracture-checkpoint.md).

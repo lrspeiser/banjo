@@ -1,19 +1,29 @@
 # Execution goals
 
+**Full durable goal:** [Project goal and execution contract — September 6,
+2026](project-goal-2026-09-06.md) maps all 40 retained scorecard requirements
+to nine ordered goals, including persistence/history/repair, intrinsic
+variation/uncertainty, and the GPT chat-to-language/API/native playground.
+The current Windows MSVC 19.44 Release checkpoint passes all 55 CTest suites in
+83.19 seconds. Focused Plasticity, PropertyVariation and NumericStateDelta
+tests pass, as do 29 mocked playground HTTP tests in 2.140 seconds. The native
+basic request-to-visible-studio gate also passes; broader edit, persistence and
+repair paths remain open. See the [playground foundation checkpoint](playground-foundation-checkpoint.md).
+
 **Additional physics slice:** G03 now has opt-in bounded cold-neighbor activation,
 state/energy transfer ledgers and comparative phase/conduction oracles. G02 now
 has endpoint damage refinement, complete tick rollback and spring cache
 invalidation. G05 gains repeated frontier storage/load measurements. All 52
-regression suites pass; none of the six full goals is complete. See the
+regression suites pass; none of the nine full goals is complete. See the
 [checkpoint and next gates](additional-physics-checkpoint.md).
 
 **Contact and reaction slice:** G02 now has the corrected pre-step reaction axis and a transverse oracle. G05 now has explicit contact budgets, initial-density admission, callback metrics and a 114/486/537-cell comparative matrix. Full G02/G05 gates remain active; no overall goal is complete. See the [checkpoint and evidence](contact-fracture-checkpoint.md).
 
 **Generated-scene verification:** [API-to-studio validation](generated-physics-validation.md) exercises G02 and G05 with analytical controls, repeated material comparisons and normal-speed frame/backlog measurements. It adds evidence to the existing goals without marking any full goal complete.
 
-**Executed checkpoint:** [Implementation, 47-suite validation and measured limits](execution-checkpoint.md). Completed slices: blocky live skins and partial-cut lips, conservative same-clock thermal joining, faster phase kernel and comparative world-budget measurements. Full G01/G03/G05 gates remain active; G02 now has the [material showcase](material-showcase.md) and is active; G04/G06 remain queued.
+**Executed checkpoint:** [Implementation, 47-suite validation and measured limits](execution-checkpoint.md). Completed slices: blocky live skins and partial-cut lips, conservative same-clock thermal joining, faster phase kernel and comparative world-budget measurements. Full G01/G03/G05 gates remain active; G02 now has the [material showcase](material-showcase.md) and is active. G04 has entered its limited chat/API foundation while full unification remains open; G06 remains queued.
 
-Status: durable execution list, recorded against main `816cfaf` on 2026-09-05. The 44-suite baseline passes, but physics is unfinished. This list is an execution contract, not a completion claim; no goal has an invented completion date or speed target.
+Status: durable execution list, recorded against main `34ed3b4` on 2026-09-06. The integrated 55-suite checkpoint passes, but physics is unfinished. This list is an execution contract, not a completion claim; no goal has an invented completion date or speed target.
 
 The authoritative retained requirements are the 40 rows in [`docs/mechanics-scorecard.md`](mechanics-scorecard.md): M01–M30 and P01–P10. The goals below group that retained scope without deleting, weakening, or replacing any scorecard requirement.
 
@@ -45,6 +55,13 @@ The authoritative retained requirements are the 40 rows in [`docs/mechanics-scor
 
 **Current G02 evidence:** [The material showcase](material-showcase.md) measures matched panel impacts and the existing tomato proxy with unchanged material laws. No panel or tomato fragment separates; timestep sensitivity and absent glass fracture remain failed physical gates. Next compare contact reactions, work and topology under time/iteration/space refinement.
 
+The integrated small-strain isotropic J2 material-point reference passes its
+focused analytical, unloading/reloading, dissipation, rejection and exact
+reload-continuation tests. It establishes permanent plastic history for a
+material point only; it is not dent geometry, a contact solver, a finite-strain
+model or calibrated iron behavior. Brittle glass and orthotropic oak reject
+the J2 family.
+
 ## 3. G03 — Conservative thermal frontier
 
 **Status:** active, not complete. **Objective:** extend the thermal foundation to cross-region flux, cold-neighbor/frontier activation, and conservative coupling while preserving phase, fuel, oxygen, products, latent heat, and lag accounting.
@@ -62,7 +79,7 @@ The authoritative retained requirements are the 40 rows in [`docs/mechanics-scor
 
 ## 4. G04 — Unified state/energy and bounded authoring API
 
-**Status:** queued, not complete. **Objective:** make mechanical and thermal state one authoritative, versioned, unit-bearing runtime language with explicit named energy stores and bounded creator/job APIs.
+**Status:** active at the limited language/chat API foundation, not complete; full mechanical/thermal unification remains open. **Objective:** make mechanical and thermal state one authoritative, versioned, unit-bearing runtime language with explicit named energy stores and bounded creator/job APIs.
 
 **Dependencies:** world physics language; material/law/capability manifests; G02 constitutive/contact ledgers; G03 thermal stores and clocks; stable IDs/history; snapshots and command receipts; API validation and rejection semantics.
 
@@ -71,7 +88,7 @@ The authoritative retained requirements are the 40 rows in [`docs/mechanics-scor
 - **Prototype gate:** packages validate finite SI inputs, versions, capabilities, IDs, budgets, and unsupported combinations; state exposes chemical, sensible, latent, elastic, kinetic, and gravitational-reference stores where applicable; force is an interaction, not an energy store; bounded jobs report admission, progress, lag, cancellation, and rejection; an LLM may author declarations but never ticks physics.
 - **Complete gate:** promotion/demotion, contact, fracture, plasticity, reaction, phase change, external work, and snapshot/retry paths preserve mass, COM, full angular momentum, material/history state, and explicit transfer ledgers within declared tolerances; mechanical and thermal transitions cannot double-count or silently reclassify work; API commands are durable, idempotent or explicitly retryable, capability-checked, and connected to customer authoring flows.
 
-**Next action/evidence:** consolidate the mechanical and thermal ledgers into one versioned transition schema, then exercise bounded load/step/query/export/retry fixtures and rejected inputs. Preserve unsupported laws as explicit capability errors.
+**Next action/evidence:** 29 mocked playground HTTP tests now pass, and a bounded live call produced an independently validated package. Extend the shared declaration and load/validate/step/query/export command surface across chat, CLI and native tools while preserving unsupported laws as explicit capability errors. This limited language/chat foundation does not establish unified mechanical/thermal ledgers.
 
 ## 5. G05 — Measured world-load performance
 
@@ -82,9 +99,9 @@ The authoritative retained requirements are the 40 rows in [`docs/mechanics-scor
 **Acceptance:**
 
 - **Prototype gate:** benchmark payload storage separately from allocator overhead; report p50/p95/p99 physics time, active count, backlog, active-set age, residuals, lag, and memory for fixed stored volume/fixed active count and growing active count; optimize only measured kernels; rejected or superseded jobs cannot publish; cold storage is not fully simulated.
-- **Complete gate:** declared scale/load matrices meet the repository’s measured budgets or report bounded backlog and preserved last accepted state; results include at least approximately 1M and 16M stored voxels with fixed active count, then increasing active count, plus wake churn once activation exists; numerical outputs and conservation residuals match the CPU reference within declared tolerances; no world-scale realtime claim is made from a small fixture, and no speed is invented.
+- **Complete gate:** declared scale/load matrices meet the repository’s measured budgets or report bounded backlog and preserved last accepted state; results include 1M and 16M stored voxels with 256, 1,024, 4,096 and 16,384 active cells, plus growing-contact and wake-churn cases; numerical outputs and conservation residuals match the CPU reference within declared tolerances; the engineering target is a 60 Hz, 16.67-millisecond full frame on named hardware, and remains a target rather than a measured result or promise until the matrix passes.
 
-**Next action/evidence:** repeated frontier measurements hold identical local physics from 16384 to 16777216 stored voxels with 336 active cells and about 0.36-0.37 ms headless p95. Tight budgets report backlog. Next measure growth/churn, demotion error and mixed mechanical loads; qualify their error, active-set age and p95/p99 together. See the [checkpoint](additional-physics-checkpoint.md).
+**Next action/evidence:** repeated frontier measurements hold identical local physics from 16384 to 16777216 stored voxels with 336 active cells and about 0.36-0.37 ms headless p95. Tight budgets report backlog. The 2 m/s native playground case measured 50 active frames and 31.25 ms p95 full-frame time; it does not qualify 60 Hz. Next run the named-hardware 1M/16M by 256/1,024/4,096/16,384 matrix with growing contact and wake churn, reporting physics, full-frame, backlog and residuals separately. See the [checkpoint](additional-physics-checkpoint.md).
 
 ## 6. G06 — Snapshot, publishing, and customer conformance
 
@@ -99,10 +116,49 @@ The authoritative retained requirements are the 40 rows in [`docs/mechanics-scor
 
 **Next action/evidence:** define the snapshot manifest and compatibility matrix, then run crash/restart, migration rejection, publish/import, and customer-loop fixtures. Tie each result back to P03, P06–P10 and the relevant M rows without claiming product completion from a demo.
 
+## 7. G07 — Compact persistence, history, and repair
+
+**Status:** active foundation with a verified numeric material-point slice. **Objective:** persist an immutable base plus sparse versioned state deltas so cold worlds render quickly and accepted physical history resumes exactly without healing, resetting, or duplicating work.
+
+**Dependencies:** stable object/material/law IDs; topology revisions; complete damage, plastic, motion, thermal, phase, reaction, inventory and player state; solver/config fingerprints; schema/law versions; G04 command receipts; G06 manifests.
+
+**Acceptance:**
+
+- **Prototype gate:** lossless finite IEEE-754 numeric state round-trips with an explicit signed-zero policy; nonfinite, corrupt, stale, partial, wrong-version and wrong-base records reject transactionally; reloaded state produces the exact next accepted increment; compact/asleep rendering and reactivation cost are measured separately.
+- **Complete gate:** crash-atomic checkpoint/journal publication, checksums and monotonic revisions recover a verified prefix and report discarded records; save/reload preserves trajectories, topology, lineage, ledgers, clocks, damage, plastic strain/dissipation, phase/reaction reservoirs, variation identity, inventory and player history across compatibility and rollback tests; efficient gameplay repair is bounded, consumes explicit material and energy receipts, restores declared stress/geometry/topology, uses collision-safe placement, preserves the old revision and reports work/delay.
+
+**Next action/evidence:** the NumericStateDelta codec and fixed-size 14-double J2 history now pass same-bit round-trip, old-revision retention and exact next-increment continuation tests. For 16 changed points, the delta remains 732 bytes across 64/4,096/65,536-point bases; partial decode p95 is 6.1–6.6 microseconds, sparse encode p95 6.9–8.6 microseconds, and validate-plus-resume p95 4.4–5.7 microseconds across three 100-sample runs. Full-base validation is a one-time 0.057–65.57 milliseconds and full 65,536-point decode is 1.717–2.0013 milliseconds. This covers numeric material-point state only, not geometry, world dents, rendering, save games, crash repair or full-world reactivation. Next define the broader state, journal and repair contract.
+
+## 8. G08 — Intrinsic property variation and uncertainty
+
+**Status:** active foundation with the reference sampler verified. **Objective:** represent fixed intrinsic heterogeneity with deterministic, versioned samples keyed by persisted seed and stable object/element/property IDs, independently of name, visit order, tick, thread and reload.
+
+**Dependencies:** property/law IDs and versions; stable element identity; persisted material seed; G02 constitutive laws; G07 snapshot contract; M29–M30 convergence and reproducibility policy.
+
+**Acceptance:**
+
+- **Prototype gate:** exact same-key replay, portable golden values, finite nonnegative or strictly-positive range validation, version rejection, stable visit/prefix ordering and bounded distribution sanity pass; sampling alone changes no force, mass, energy or stochastic physical history.
+- **Complete gate:** law bounds/distributions have provenance and ensemble convergence; glass, oak and iron use their declared law families and property IDs rather than names; intrinsic heterogeneity, evolving stochastic physical state, calibration uncertainty and numerical error are reported separately; no calibrated glass flaw claim is made without matching population evidence.
+
+**Next action/evidence:** PropertyVariation now passes its portable golden-value, reordered-access and 100,000-seed bounds tests. Next persist its seed contract and connect it only through an explicit constitutive law after ensemble and calibration tests; the passing sampler does not calibrate glass scatter or change forces by itself.
+
+## 9. G09 — Chat-to-language/API/native playground
+
+**Status:** active foundation with the basic native request-to-visible-studio gate verified. **Objective:** let a user request, inspect, edit, validate and run a Banjo declaration through GPT chat and the bounded public physics API, then open the same accepted package in the native laboratory.
+
+**Dependencies:** G04 language and command/receipt API; G05 budgets and cancellation; G07 save/reload; G01 inspection; native and headless package parity; backend-owned secrets and an ignored local `.env`.
+
+**Acceptance:**
+
+- **Prototype gate:** mocked backend tests cover proposal, clarification, invalid schema, unsupported laws, shortages, retry/idempotency, cancellation, timeout and budget paths without a real key; the frontend receives structured proposals, validation errors and receipts; model output is independently validated before mutation.
+- **Complete gate:** an opt-in bounded live API test reads only the needed key from `.env` and records model/config provenance without secrets; chat, CLI and native tools accept the same package and result; native end-to-end tests cover inspect/edit/run/pause/resume/save/reload and visible errors; generated tests can call only the bounded public test API and the LLM never advances the physics clock.
+
+**Next action/evidence:** all 29 mocked HTTP tests pass in 2.140 seconds. Live job `ff0c7d0f1eaa4c4a9f50f8ef7d486202` used actual `gpt-5-mini` through the ignored `.env` for an iron ball against glass/oak/iron at 2 and 6 m/s over one second: 1,195 tokens, 4.433 seconds planning and 6.537 seconds total. Both headless and both native cases completed 480 steps/one second and the studio became visible. All physical report fields matched except excluded compiler/loader metadata, `load_wall_ms`, performance, skin and presentation fields. The actual-native validator caught forbidden `rigid_drop` network fields, which were fixed before the successful rerun. The basic gate passes. Next test edit/follow-up, unsupported capabilities, cancellation, inventory, save/reload and receipt-backed repair; these remain open.
+
 ## Retained requirements and gate policy
 
 The 40 retained requirements remain authoritative by reference:
 
 `M01 M02 M03 M04 M05 M06 M07 M08 M09 M10 M11 M12 M13 M14 M15 M16 M17 M18 M19 M20 M21 M22 M23 M24 M25 M26 M27 M28 M29 M30 P01 P02 P03 P04 P05 P06 P07 P08 P09 P10`
 
-The scorecard’s evidence/status and limitations apply to every goal. “Prototype” means an instrumented, bounded implementation or experiment with explicit limitations. “Complete” means the goal’s acceptance evidence, comparative material coverage, conservation/work checks, temporal and spatial/refinement checks, and relevant customer/scale checks are all recorded; passing the 44-suite baseline alone is insufficient. Smoke and full fluid remain deferred as stated in G03. No goal is complete; G01, G02, G03 and G05 are active, and G04/G06 are queued. Dependencies describe shared interfaces and final acceptance; independent prototype slices may proceed together.
+The scorecard’s evidence/status and limitations apply to every goal. “Prototype” means an instrumented, bounded implementation or experiment with explicit limitations. “Complete” means the goal’s acceptance evidence, comparative material coverage, conservation/work checks, temporal and spatial/refinement checks, and relevant customer/scale checks are all recorded; passing the 55-suite integrated checkpoint alone is insufficient. Smoke and full fluid remain deferred as stated in G03. No goal is complete; G01, G02, G03, G04, G05, G07, G08 and G09 are active at different foundation stages, and G06 is queued. Dependencies describe shared interfaces and final acceptance; independent prototype slices may proceed together, with the parent serially integrating and verifying shared changes before regular non-force publication to main.

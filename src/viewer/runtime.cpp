@@ -64,19 +64,21 @@ int main(int argc,char **argv){try{
     std::sort(files.begin(),files.end());if(files.empty())throw std::runtime_error("No runtime test packages");
     unsigned selected=networkLab?3:2;selected=std::min(selected,unsigned(files.size()-1));
     if(argc>2){auto it=std::find_if(files.begin(),files.end(),[&](auto &p){return p.filename()==argv[2];});if(it==files.end())throw std::runtime_error("Unknown runtime test");selected=unsigned(it-files.begin());}
-    std::string capture,liveReport;bool showcase=false,studio=false;double captureAt=3;
+    std::string capture,liveReport;bool showcase=false,studio=false;double captureAt=3,interactiveDuration=3;
     for(int i=3;i<argc;++i){const std::string option=argv[i];
         if(option=="--showcase")showcase=true;
         else if(option=="--studio"){studio=true;showcase=true;}
         else if(option=="--live-report"&&i+1<argc)liveReport=argv[++i];
         else if(option=="--capture"&&i+1<argc)capture=argv[++i];
         else if(option=="--capture-at"&&i+1<argc){std::size_t end{};const std::string value=argv[++i];captureAt=std::stod(value,&end);if(end!=value.size()||!std::isfinite(captureAt)||captureAt<=0||captureAt>3)throw std::runtime_error("Capture time must be in (0,3] seconds");}
-        else throw std::runtime_error("Expected --studio, --showcase, --live-report file.json, --capture image.png, or --capture-at seconds");
+        else if(option=="--duration-s"&&i+1<argc){std::size_t end{};const std::string value=argv[++i];interactiveDuration=std::stod(value,&end);if(end!=value.size()||!std::isfinite(interactiveDuration)||interactiveDuration<.05||interactiveDuration>3)throw std::runtime_error("Interactive duration must be in [.05,3] seconds");}
+        else throw std::runtime_error("Expected --studio, --showcase, --live-report file.json, --duration-s seconds, --capture image.png, or --capture-at seconds");
     }
     if(showcase&&!networkLab)throw std::runtime_error("Showcase requires the network lab");
     if(capture.empty()&&captureAt!=3)throw std::runtime_error("Capture time requires --capture");
     if(!capture.empty()&&!liveReport.empty())throw std::runtime_error("Live reports require normal interactive playback");
     std::unique_ptr<PlatformWorld> world;json report,package;std::vector<PlatformInstance> instances;
+    double trialEnd=capture.empty()?interactiveDuration:captureAt;
     bool running=false;double timeScale=showcase&&!studio?.25:1.;unsigned view=showcase?3:networkLab?0:1;double accumulator=0,time=0,refresh=0,lastStep=0,lag=0;unsigned frames=0;std::string notice="Ready. Release to run live.";
     std::vector<double> skinTimes;
     std::vector<double> liveFrames,liveWork;double liveWall=0,peakLag=0,loadMs=0;unsigned slowFrames=0,trialGeneration=0;
@@ -85,6 +87,7 @@ int main(int argc,char **argv){try{
     auto load=[&]{const auto started=std::chrono::steady_clock::now();std::ifstream f(files[selected]);if(!f||std::filesystem::file_size(files[selected])>4194304)throw std::runtime_error("Cannot read bounded package");
         std::string source((std::istreambuf_iterator<char>(f)),{});auto next=PlatformWorld::load(source);package=json::parse(next->packageJson());
         if(package["backend"]!=(networkLab?"material-network-v2":"compiled-impact-v1"))throw std::runtime_error("Package requires another lab backend");world=std::move(next);
+        if(capture.empty())trialEnd=std::max(1.,std::round(interactiveDuration/world->fixedStep()))*world->fixedStep();
         report=json::parse(world->reportJson());instances=world->renderInstances();running=false;accumulator=0;time=0;refresh=0;lastStep=0;lag=0;frames=0;skinTimes.clear();notice="Ready. Release to run live.";
         liveFrames.clear();liveWork.clear();liveWall=0;peakLag=0;slowFrames=0;overload=false;mixedSpeed=false;manualSteps=false;reportAttempted=false;simulationFault=false;++trialGeneration;
         double height=0;for(auto &o:package["objects"])height=std::max(height,o["position_m"][1].get<double>());
@@ -107,7 +110,6 @@ int main(int argc,char **argv){try{
     };load();
     SetConfigFlags(FLAG_MSAA_4X_HINT);InitWindow(1360,850,networkLab?"Banjo - Local Material Runtime v2":"Banjo - Live Material Runtime v1");SetTargetFPS(60);
     RenderTexture2D viewport=LoadRenderTexture(980,600);
-    const double trialEnd=capture.empty()?3:captureAt;
     auto advance=[&](unsigned steps){for(unsigned i=0;i<steps&&time<trialEnd-1e-9;++i){auto s=world->step();lastStep=s.wall_ms;time=s.elapsed_s;if(!s.error.empty()){if(!capture.empty())throw std::runtime_error(s.error);notice=s.error;running=false;simulationFault=true;break;}}
     };
     auto exportReport=[&](const std::string &path){auto r=json::parse(world->reportJson());
@@ -121,7 +123,7 @@ int main(int argc,char **argv){try{
         if(!capture.empty()){advance(unsigned(std::round(1./60/world->fixedStep())));notice="Offline fixed-step capture; timing is not a realtime claim.";}
         if(running){accumulator=std::min(trialEnd-time,accumulator+frame*timeScale);unsigned steps=0;while(accumulator+1e-12>=world->fixedStep()&&steps<24&&time<trialEnd-1e-9){const double before=time;advance(1);accumulator=std::max(0.,accumulator-(time-before));++steps;if(!running)break;}
             lag=accumulator;peakLag=std::max(peakLag,lag);if(lag>.25){running=false;overload=true;notice="Frame budget exceeded. Paused; report retains the backlog.";}
-            if(time>=3-1e-9){running=false;notice="3-second live trial complete. Reset for another run.";}}
+            if(time>=trialEnd-1e-9){running=false;notice="Live trial complete. Reset for another run.";}}
         if(refresh>.2||(!capture.empty()&&time>=trialEnd-1e-9)){report=json::parse(world->reportJson());refresh=0;}
         instances=world->renderInstances();const bool structure=view==2;std::vector<PlatformSkin> skins;
         if(view==0||view==3){const auto start=std::chrono::steady_clock::now();skins=world->renderSkins();skinTimes.push_back(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count());if(skinTimes.size()>10000)skinTimes.erase(skinTimes.begin());}
@@ -152,7 +154,7 @@ int main(int argc,char **argv){try{
         DrawText(TextFormat(networkLab?"%.3f s   |   %u broken bonds   |   %u softened bonds":"%.3f s   |   %u broken bonds   |   %u visible elements",time,world->fractureCount(),networkLab?softened:unsigned(instances.size())),28,734,20,RAYWHITE);
         DrawText(notice.c_str(),28,770,17,{207,237,135,255});DrawText("Space: release/pause. Arrows: experiment. Wheel: zoom. Right-drag: orbit.",28,805,16,{148,177,191,255});
         DrawText(TextFormat("V%u TEST %u / %u",networkLab?2:1,selected+1,unsigned(files.size())),1000,24,22,RAYWHITE);
-        if(button(65,running?"Pause":"Release / continue")||keys.contains(KEY_SPACE)){if(time>=3-1e-9)load();running=!running;notice=running?"Simulating live; backlog preserved.":"Paused. Step a frame or continue.";}
+        if(button(65,running?"Pause":"Release / continue")||keys.contains(KEY_SPACE)){if(time>=trialEnd-1e-9)load();running=!running;notice=running?"Simulating live; backlog preserved.":"Paused. Step a frame or continue.";}
         if(button(107,"Reset initial state")||keys.contains(KEY_R))load();
         if(button(149,"Next experiment")||keys.contains(KEY_RIGHT)){selected=(selected+1)%unsigned(files.size());load();}
         if(button(191,"Previous experiment")||keys.contains(KEY_LEFT)){selected=(selected+unsigned(files.size())-1)%unsigned(files.size());load();}
@@ -189,7 +191,7 @@ int main(int argc,char **argv){try{
             }else DrawText("Experimental; realism gates remain open",1000,682,14,{230,179,114,255});
         }
         if(button(710,"Export full report")){const std::string path=!liveReport.empty()?liveReport:networkLab?"build/runtime-v2-report.json":"build/runtime-v1-report.json";notice=exportReport(path)?"Saved "+path:"Report write failed; check path and retry";}
-        if(button(752,"Save screenshot")){rlDrawRenderBatchActive();Image image=LoadImageFromScreen();ExportImage(image,networkLab?"build/runtime-v2-lab.png":"build/runtime-v1-lab.png");UnloadImage(image);notice=networkLab?"Saved build/runtime-v2-lab.png":"Saved build/runtime-v1-lab.png";}
+        if(button(752,"Save screenshot")){const std::string path=!liveReport.empty()?liveReport+".png":networkLab?"build/runtime-v2-lab.png":"build/runtime-v1-lab.png";rlDrawRenderBatchActive();Image image=LoadImageFromScreen();const bool saved=ExportImage(image,path.c_str());UnloadImage(image);notice=saved?"Saved "+path:"Screenshot write failed; check the output directory";}
         DrawFPS(1000,810);const double workMs=(GetTime()-frameStarted)*1000;EndDrawing();
         if(sampleLive&&generation==trialGeneration){const double elapsed=GetTime()-frameStarted;liveFrames.push_back(elapsed*1000);liveWork.push_back(workMs);liveWall+=elapsed;if(elapsed>.020)++slowFrames;}
         if(!liveReport.empty()&&!reportAttempted&&(time>=trialEnd-1e-9||overload||simulationFault)){reportAttempted=true;const bool saved=exportReport(liveReport);if(!simulationFault)notice=saved?"Live trial saved: "+liveReport:"Live report write failed; use Export full report to retry";else notice=saved?"Simulation fault. Saved diagnostic report; reset before retrying.":"Simulation fault; report write failed. Use Export to retry.";}

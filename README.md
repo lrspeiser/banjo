@@ -1,5 +1,19 @@
 # Banjo
 
+## Chat playground and current goal
+
+The [September 6 project goal](docs/project-goal-2026-09-06.md) groups all 40
+requirements into nine workstreams. The [current checkpoint](docs/playground-foundation-checkpoint.md)
+records the tested chat/API path, material-point plasticity, bounded property
+variation and compact numeric history, with remaining physics gates explicit.
+
+After building, run `python playground/server.py --port 8765` and open
+`http://127.0.0.1:8765`. Ask for a test, inspect its generated Banjo package and
+report, then release it in the native studio. GPT uses the ignored local `.env`
+on the server. See [playground instructions](playground/README.md) for examples,
+supported experiments and limits. Earlier checkpoints below retain their
+original evidence and dates.
+
 Banjo is an experimental **matter-first runtime for editable-physics worlds**. Ordinary objects remain inexpensive rigid bodies until an interaction requires material detail. The object can then become an active voxel-and-bond simulation, fracture according to its material law, and return to inexpensive rigid fragments.
 
 The current visual proof performs this complete transition:
