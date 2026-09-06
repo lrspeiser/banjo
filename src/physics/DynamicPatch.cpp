@@ -9,8 +9,7 @@ namespace banjo {
 namespace {
 
 bool finite(Vec3 value) {
-    return std::isfinite(value.x) && std::isfinite(value.y) &&
-           std::isfinite(value.z);
+    return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
 }
 
 double component(const Vec3 &value, unsigned axis) {
@@ -18,14 +17,19 @@ double component(const Vec3 &value, unsigned axis) {
 }
 
 void setComponent(Vec3 &value, unsigned axis, double entry) {
-    if (axis == 0) value.x = entry;
-    else if (axis == 1) value.y = entry;
-    else value.z = entry;
+    if (axis == 0)
+        value.x = entry;
+    else if (axis == 1)
+        value.y = entry;
+    else
+        value.z = entry;
 }
 
 SymmetricTensor3 strainColumn(Vec3 gradient, unsigned axis) {
-    if (axis == 0) return {gradient.x, 0, 0, gradient.y * .5, 0, gradient.z * .5};
-    if (axis == 1) return {0, gradient.y, 0, gradient.x * .5, gradient.z * .5, 0};
+    if (axis == 0)
+        return {gradient.x, 0, 0, gradient.y * .5, 0, gradient.z * .5};
+    if (axis == 1)
+        return {0, gradient.y, 0, gradient.x * .5, gradient.z * .5, 0};
     return {0, 0, gradient.z, 0, gradient.y * .5, gradient.x * .5};
 }
 
@@ -36,7 +40,8 @@ Vec3 stressTimes(const SymmetricTensor3 &stress, Vec3 gradient) {
 }
 
 void require(bool condition, const char *message) {
-    if (!condition) throw std::invalid_argument(message);
+    if (!condition)
+        throw std::invalid_argument(message);
 }
 
 } // namespace
@@ -44,15 +49,13 @@ void require(bool condition, const char *message) {
 DynamicPatch::DynamicPatch(PatchDefinition definition, DynamicPatchOptions options)
     : patch_(std::move(definition)), options_(options) {
     require(std::isfinite(options_.stability_safety_factor) &&
-                options_.stability_safety_factor > 0 &&
-                options_.stability_safety_factor <= 1,
+                options_.stability_safety_factor > 0 && options_.stability_safety_factor <= 1,
             "Invalid dynamic stability safety factor");
     require(std::isfinite(options_.maximum_displacement_gradient_norm) &&
                 options_.maximum_displacement_gradient_norm > 0 &&
                 options_.maximum_displacement_gradient_norm <= .25,
             "Invalid dynamic displacement-gradient limit");
-    require(std::isfinite(options_.maximum_time_step_s) &&
-                options_.maximum_time_step_s > 0 &&
+    require(std::isfinite(options_.maximum_time_step_s) && options_.maximum_time_step_s > 0 &&
                 options_.maximum_time_step_s <= 1,
             "Invalid dynamic time-step bound");
     state_.velocities_m_s.resize(patch_.state_.displacements_m.size());
@@ -60,23 +63,24 @@ DynamicPatch::DynamicPatch(PatchDefinition definition, DynamicPatchOptions optio
 }
 
 void DynamicPatch::compileStabilityBound() {
-    std::vector<std::array<double, 9>> stiffness(
-        patch_.tangent_block_columns_.size());
+    std::vector<std::array<double, 9>> stiffness(patch_.tangent_block_columns_.size());
     for (std::size_t e = 0; e < patch_.geometry_.size(); ++e) {
         const auto &geometry = patch_.geometry_[e];
         const auto &tet = patch_.definition_.elements[e];
-        const auto response = evaluateSmallStrain(
-            patch_.definition_.materials[tet.material].law, J2State{}, {});
+        const auto response =
+            evaluateSmallStrain(patch_.definition_.materials[tet.material].law, J2State{}, {});
         for (unsigned i = 0; i < 4; ++i) {
             for (unsigned a = 0; a < 3; ++a) {
-                if (patch_.definition_.fixed_components[tet.nodes[i]][a]) continue;
+                if (patch_.definition_.fixed_components[tet.nodes[i]][a])
+                    continue;
                 for (unsigned j = 0; j < 4; ++j) {
                     for (unsigned b = 0; b < 3; ++b) {
-                        if (patch_.definition_.fixed_components[tet.nodes[j]][b]) continue;
+                        if (patch_.definition_.fixed_components[tet.nodes[j]][b])
+                            continue;
                         const auto stress = applySmallStrainTangent(
                             response, strainColumn(geometry.gradients[j], b));
-                        const Vec3 force = geometry.volume *
-                            stressTimes(stress, geometry.gradients[i]);
+                        const Vec3 force =
+                            geometry.volume * stressTimes(stress, geometry.gradients[i]);
                         const std::size_t block = geometry.tangent_block_indices[i * 4 + j];
                         stiffness[block][a * 3 + b] += component(force, a);
                     }
@@ -87,7 +91,8 @@ void DynamicPatch::compileStabilityBound() {
     eigenvalue_bound_s2_ = 0;
     for (std::size_t node = 0; node < patch_.nodal_masses_.size(); ++node) {
         for (unsigned axis = 0; axis < 3; ++axis) {
-            if (patch_.definition_.fixed_components[node][axis]) continue;
+            if (patch_.definition_.fixed_components[node][axis])
+                continue;
             double absolute_sum = 0;
             for (std::size_t block = patch_.tangent_block_row_offsets_[node];
                  block < patch_.tangent_block_row_offsets_[node + 1]; ++block) {
@@ -97,17 +102,16 @@ void DynamicPatch::compileStabilityBound() {
                         absolute_sum += std::abs(stiffness[block][axis * 3 + column_axis]);
                 }
             }
-            eigenvalue_bound_s2_ = std::max(
-                eigenvalue_bound_s2_, absolute_sum / patch_.nodal_masses_[node]);
+            eigenvalue_bound_s2_ =
+                std::max(eigenvalue_bound_s2_, absolute_sum / patch_.nodal_masses_[node]);
         }
     }
     require(std::isfinite(eigenvalue_bound_s2_) && eigenvalue_bound_s2_ >= 0,
             "Nonfinite dynamic stiffness bound");
-    stable_time_step_limit_s_ = eigenvalue_bound_s2_ > 0
-        ? options_.stability_safety_factor * 2 / std::sqrt(eigenvalue_bound_s2_)
-        : options_.maximum_time_step_s;
-    stable_time_step_limit_s_ = std::min(stable_time_step_limit_s_,
-                                         options_.maximum_time_step_s);
+    stable_time_step_limit_s_ = eigenvalue_bound_s2_ > 0 ? options_.stability_safety_factor * 2 /
+                                                               std::sqrt(eigenvalue_bound_s2_)
+                                                         : options_.maximum_time_step_s;
+    stable_time_step_limit_s_ = std::min(stable_time_step_limit_s_, options_.maximum_time_step_s);
 }
 
 void DynamicPatch::setVelocitiesMPerS(const std::vector<Vec3> &velocities) {
@@ -116,8 +120,7 @@ void DynamicPatch::setVelocitiesMPerS(const std::vector<Vec3> &velocities) {
     require(velocities.size() == state_.velocities_m_s.size(),
             "Dynamic velocity count differs from nodes");
     for (std::size_t i = 0; i < velocities.size(); ++i) {
-        require(finite(velocities[i]) && length(velocities[i]) <= 1.e6,
-                "Invalid dynamic velocity");
+        require(finite(velocities[i]) && length(velocities[i]) <= 1.e6, "Invalid dynamic velocity");
         for (unsigned axis = 0; axis < 3; ++axis)
             require(!patch_.definition_.fixed_components[i][axis] ||
                         component(velocities[i], axis) == 0,
@@ -146,20 +149,25 @@ DynamicPatchReport DynamicPatch::report() const {
     result.stable_time_step_limit_s = stable_time_step_limit_s_;
     result.stiffness_mass_eigenvalue_bound_s2 = eigenvalue_bound_s2_;
     result.kinetic_energy_j = kineticEnergyJ(state_.velocities_m_s);
-    const auto evaluation = patch_.evaluateFrom(
-        patch_.state_, patch_.state_.displacements_m,
-        options_.maximum_displacement_gradient_norm);
+    const auto evaluation = patch_.evaluateFrom(patch_.state_, patch_.state_.displacements_m,
+                                                options_.maximum_displacement_gradient_norm);
     result.stored_free_energy_j = evaluation.stored_free_energy_j;
     result.plastic_dissipation_j = evaluation.plastic_dissipation_j;
-    result.accumulated_external_force_work_j =
-        state_.accumulated_external_force_work_j;
+    result.accumulated_external_force_work_j = state_.accumulated_external_force_work_j;
     result.linear_momentum_kg_m_s = linearMomentum(state_.velocities_m_s);
-    result.maximum_displacement_gradient_norm =
-        evaluation.maximum_displacement_gradient_norm;
+    result.maximum_displacement_gradient_norm = evaluation.maximum_displacement_gradient_norm;
     return result;
 }
 
 DynamicPatchReport DynamicPatch::step(double dt, const DynamicPatchLoad &load) {
+    return stepImpl(dt, load, {}, {});
+}
+
+DynamicPatchReport DynamicPatch::stepImpl(
+    double dt, const DynamicPatchLoad &load,
+    const std::function<void(std::vector<Vec3> &, std::vector<Vec3> &)> &velocity_stage,
+    const std::function<void(const std::vector<Vec3> &, const DynamicPatchReport &)>
+        &before_commit) {
     DynamicPatchReport result;
     result.time_step_s = dt;
     result.stable_time_step_limit_s = stable_time_step_limit_s_;
@@ -175,12 +183,11 @@ DynamicPatchReport DynamicPatch::step(double dt, const DynamicPatchLoad &load) {
         require(finite(load.gravity_m_s2) && length(load.gravity_m_s2) <= 1.e6,
                 "Invalid dynamic gravity");
         for (Vec3 force : load.nodal_forces_n)
-            require(finite(force) && length(force) <= 1.e12,
-                    "Invalid dynamic nodal force");
+            require(finite(force) && length(force) <= 1.e12, "Invalid dynamic nodal force");
 
-        const auto old_evaluation = patch_.evaluateFrom(
-            patch_.state_, patch_.state_.displacements_m,
-            options_.maximum_displacement_gradient_norm);
+        const auto old_evaluation =
+            patch_.evaluateFrom(patch_.state_, patch_.state_.displacements_m,
+                                options_.maximum_displacement_gradient_norm);
         auto candidate_patch = patch_.state_;
         auto candidate_dynamic = state_;
         const double old_kinetic = kineticEnergyJ(state_.velocities_m_s);
@@ -189,8 +196,8 @@ DynamicPatchReport DynamicPatch::step(double dt, const DynamicPatchLoad &load) {
         Vec3 external_impulse;
         double external_work = 0;
         for (std::size_t i = 0; i < nodes; ++i) {
-            const Vec3 external = load.nodal_forces_n[i] +
-                patch_.nodal_masses_[i] * load.gravity_m_s2;
+            const Vec3 external =
+                load.nodal_forces_n[i] + patch_.nodal_masses_[i] * load.gravity_m_s2;
             external_impulse += dt * external;
             const Vec3 net = external - old_evaluation.internal_forces_n[i];
             for (unsigned axis = 0; axis < 3; ++axis) {
@@ -198,23 +205,51 @@ DynamicPatchReport DynamicPatch::step(double dt, const DynamicPatchLoad &load) {
                     setComponent(candidate_dynamic.velocities_m_s[i], axis, 0);
                     setComponent(candidate_patch.displacements_m[i], axis, 0);
                     setComponent(support_impulse, axis,
-                        component(support_impulse, axis) - dt * component(net, axis));
+                                 component(support_impulse, axis) - dt * component(net, axis));
                 } else {
                     const double velocity = component(candidate_dynamic.velocities_m_s[i], axis) +
-                        dt * component(net, axis) / patch_.nodal_masses_[i];
+                                            dt * component(net, axis) / patch_.nodal_masses_[i];
                     require(std::isfinite(velocity) && std::abs(velocity) <= 1.e6,
                             "Dynamic velocity exceeds finite validity bound");
                     setComponent(candidate_dynamic.velocities_m_s[i], axis, velocity);
-                    const double increment = dt * velocity;
+                }
+            }
+        }
+        std::vector<Vec3> drift(nodes);
+        if (velocity_stage) {
+            const auto momentum_before = linearMomentum(candidate_dynamic.velocities_m_s);
+            const double energy_before = kineticEnergyJ(candidate_dynamic.velocities_m_s);
+            velocity_stage(candidate_dynamic.velocities_m_s, drift);
+            require(candidate_dynamic.velocities_m_s.size() == nodes && drift.size() == nodes,
+                    "Contact changed velocity layout");
+            result.coupling_impulse_n_s =
+                linearMomentum(candidate_dynamic.velocities_m_s) - momentum_before;
+            result.coupling_kinetic_work_j =
+                kineticEnergyJ(candidate_dynamic.velocities_m_s) - energy_before;
+        }
+        for (std::size_t i = 0; i < nodes; ++i) {
+            const Vec3 external =
+                load.nodal_forces_n[i] + patch_.nodal_masses_[i] * load.gravity_m_s2;
+            if (!velocity_stage)
+                drift[i] = dt * candidate_dynamic.velocities_m_s[i];
+            require(finite(drift[i]), "Invalid coupled drift");
+            const auto velocity = candidate_dynamic.velocities_m_s[i];
+            require(finite(velocity) && length(velocity) <= 1.e6, "Invalid coupled velocity");
+            for (unsigned axis = 0; axis < 3; ++axis) {
+                if (patch_.definition_.fixed_components[i][axis])
+                    require(component(velocity, axis) == 0 && component(drift[i], axis) == 0,
+                            "Contact moved a fixed component");
+                else {
+                    const double increment = component(drift[i], axis);
                     setComponent(candidate_patch.displacements_m[i], axis,
-                        component(candidate_patch.displacements_m[i], axis) + increment);
+                                 component(candidate_patch.displacements_m[i], axis) + increment);
                     external_work += component(external, axis) * increment;
                 }
             }
         }
-        const auto candidate_evaluation = patch_.evaluateFrom(
-            patch_.state_, candidate_patch.displacements_m,
-            options_.maximum_displacement_gradient_norm);
+        const auto candidate_evaluation =
+            patch_.evaluateFrom(patch_.state_, candidate_patch.displacements_m,
+                                options_.maximum_displacement_gradient_norm);
         for (std::size_t e = 0; e < candidate_patch.material_points.size(); ++e)
             candidate_patch.material_points[e] = candidate_evaluation.responses[e].state;
         candidate_patch.last_nodal_forces_n = load.nodal_forces_n;
@@ -243,19 +278,21 @@ DynamicPatchReport DynamicPatch::step(double dt, const DynamicPatchLoad &load) {
         result.support_impulse_n_s = support_impulse;
         result.linear_momentum_kg_m_s = linearMomentum(candidate_dynamic.velocities_m_s);
         result.linear_momentum_balance_residual_kg_m_s =
-            result.linear_momentum_kg_m_s - old_momentum - external_impulse -
-            support_impulse;
+            result.linear_momentum_kg_m_s - old_momentum - external_impulse - support_impulse -
+            result.coupling_impulse_n_s;
         result.numerical_energy_balance_residual_j =
             (result.kinetic_energy_j - old_kinetic) +
             (result.stored_free_energy_j - old_evaluation.stored_free_energy_j) +
-            (result.plastic_dissipation_j - old_evaluation.plastic_dissipation_j) -
-            external_work;
+            (result.plastic_dissipation_j - old_evaluation.plastic_dissipation_j) - external_work -
+            result.coupling_kinetic_work_j;
         result.maximum_displacement_gradient_norm =
             candidate_evaluation.maximum_displacement_gradient_norm;
         require(std::isfinite(result.numerical_energy_balance_residual_j),
                 "Nonfinite dynamic energy balance");
         require(finite(result.linear_momentum_balance_residual_kg_m_s),
                 "Nonfinite dynamic momentum balance");
+        if (before_commit)
+            before_commit(candidate_patch.displacements_m, result);
         patch_.state_ = std::move(candidate_patch);
         state_ = std::move(candidate_dynamic);
         result.accepted = true;

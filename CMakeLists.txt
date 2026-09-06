@@ -35,6 +35,8 @@ add_library(
     src/material/SmallStrainLaw.cpp
     src/physics/SmallStrainPatch.cpp
     src/physics/DynamicPatch.cpp
+    src/physics/SweptSphereTriangle.cpp
+    src/physics/SpherePatchWorld.cpp
     src/physics/PatchPressure.cpp
     src/material/PropertyVariation.cpp
     src/persistence/NumericStateDelta.cpp
@@ -168,6 +170,9 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
 endif()
 
 if(BANJO_BUILD_HEADLESS)
+    add_executable(banjo_sphere_patch_probe tools/sphere_patch_probe.cpp)
+    target_link_libraries(banjo_sphere_patch_probe PRIVATE banjo_core nlohmann_json::nlohmann_json)
+    banjo_enable_warnings(banjo_sphere_patch_probe)
     add_executable(banjo_material_behavior_probe tools/material_behavior_probe.cpp)
     target_link_libraries(banjo_material_behavior_probe PRIVATE banjo_core nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_material_behavior_probe)
@@ -262,6 +267,14 @@ if(BANJO_BUILD_TESTS)
     target_link_libraries(banjo_small_strain_law_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_small_strain_law_tests)
     add_test(NAME banjo_small_strain_law_tests COMMAND banjo_small_strain_law_tests)
+    add_executable(banjo_swept_sphere_triangle_tests tests/swept_sphere_triangle_tests.cpp)
+    target_link_libraries(banjo_swept_sphere_triangle_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_swept_sphere_triangle_tests)
+    add_test(NAME banjo_swept_sphere_triangle_tests COMMAND banjo_swept_sphere_triangle_tests)
+    add_executable(banjo_sphere_patch_world_tests tests/sphere_patch_world_tests.cpp)
+    target_link_libraries(banjo_sphere_patch_world_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_sphere_patch_world_tests)
+    add_test(NAME banjo_sphere_patch_world_tests COMMAND banjo_sphere_patch_world_tests)
     add_executable(banjo_dynamic_patch_tests tests/dynamic_patch_tests.cpp)
     target_link_libraries(banjo_dynamic_patch_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_dynamic_patch_tests)

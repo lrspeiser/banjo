@@ -2,10 +2,12 @@
 
 #include "physics/SmallStrainPatch.hpp"
 
+#include <functional>
 #include <string>
 #include <vector>
 
 namespace banjo {
+class SpherePatchWorld;
 
 struct DynamicPatchOptions {
     // Fraction of the conservative central-difference limit. The stiffness
@@ -45,35 +47,53 @@ struct DynamicPatchReport {
     // cancellation is left visible as a raw numerical residual.
     Vec3 linear_momentum_balance_residual_kg_m_s{};
     // Raw ledger residual for this step:
-    // Delta(kinetic + stored) + Delta(plastic dissipation) - external work.
+    // Delta(kinetic + stored) + Delta(plastic dissipation) - external work
+    // - measured coupled velocity-stage work (zero for uncoupled steps).
     // Symplectic Euler does not make this zero and no conservation claim is made.
     double numerical_energy_balance_residual_j{};
+    // Measured free-node velocity exchange in the coupled contact stage.
+    double coupling_kinetic_work_j{};
+    Vec3 coupling_impulse_n_s{};
     double maximum_displacement_gradient_norm{};
 };
 
 // Bounded explicit dynamics for a reference-configuration P1 tetrahedral patch.
 // It uses lumped nodal mass, stationary component supports and symplectic Euler.
-// There is no collision, fracture, damping, finite rotation, prescribed support
-// motion, thermal coupling or adaptive stepping. Rejected steps commit nothing.
+// The public step is uncoupled. SpherePatchWorld supplies private contact/drift
+// stages. No fracture, damping, finite rotation, prescribed support motion,
+// thermal coupling or adaptive stepping is provided. Rejected steps commit nothing.
 class DynamicPatch {
-public:
-    explicit DynamicPatch(PatchDefinition definition,
-                          DynamicPatchOptions options = {});
+  public:
+    explicit DynamicPatch(PatchDefinition definition, DynamicPatchOptions options = {});
 
-    const SmallStrainPatch &patch() const { return patch_; }
-    const DynamicPatchState &state() const { return state_; }
+    const SmallStrainPatch &patch() const {
+        return patch_;
+    }
+    const DynamicPatchState &state() const {
+        return state_;
+    }
     const std::vector<Vec3> &velocitiesMPerS() const {
         return state_.velocities_m_s;
     }
-    double stableTimeStepLimitS() const { return stable_time_step_limit_s_; }
-    double stiffnessMassEigenvalueBoundS2() const { return eigenvalue_bound_s2_; }
+    double stableTimeStepLimitS() const {
+        return stable_time_step_limit_s_;
+    }
+    double stiffnessMassEigenvalueBoundS2() const {
+        return eigenvalue_bound_s2_;
+    }
     // Sets an initial condition before the first step. Fixed components must
     // be zero; later calls reject rather than injecting unaccounted momentum.
     void setVelocitiesMPerS(const std::vector<Vec3> &velocities_m_s);
     DynamicPatchReport report() const;
     DynamicPatchReport step(double time_step_s, const DynamicPatchLoad &load);
 
-private:
+  private:
+    friend class SpherePatchWorld;
+    DynamicPatchReport
+    stepImpl(double time_step_s, const DynamicPatchLoad &load,
+             const std::function<void(std::vector<Vec3> &, std::vector<Vec3> &)> &velocity_stage,
+             const std::function<void(const std::vector<Vec3> &, const DynamicPatchReport &)>
+                 &before_commit);
     double kineticEnergyJ(const std::vector<Vec3> &velocities) const;
     Vec3 linearMomentum(const std::vector<Vec3> &velocities) const;
     void compileStabilityBound();

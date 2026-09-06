@@ -22,7 +22,7 @@ Acceptance: Translation/free-fall oracles, support reactions, rollback, elastic 
 
 ## R03: Coupled dynamic contact
 
-Status: planned.
+Status: active.
 
 Implementation: Surface triangle/shape contact, consistent equal-and-opposite reactions, friction, continuous collision handling and coupled material updates.
 
@@ -38,7 +38,7 @@ Acceptance: Ball deforms target, releases stored energy and rebounds; shape reco
 
 ## R05: Permanent impact deformation
 
-Status: planned.
+Status: active; impact-driven J2 history exists, residual-dent acceptance remains open.
 
 Implementation: Connect J2 history to contact-driven spatial motion, unloading and rendered residual geometry.
 
@@ -90,10 +90,14 @@ R01/R02 can proceed in parallel. R03 depends on R02; R04/R05 depend on R03; R06 
 
 Each goal records implemented scope separately from acceptance passed, with measurements and next steps. Physics comparison always retains glass, oak and iron, expanding the suite as materials are added. Quasistatic pressure is not a substitute for impact; small-strain elasticity is not a complete rubber model.
 
-## First implementation checkpoint (in progress)
+## Foundation checkpoint
 
 R01 now has a property-only SI descriptor for three existing small-strain laws, a native JSON constitutive-path executable and a Python client. Display IDs/names cannot select a physical outcome. The native executable validates the declared coefficients independently, preserves plastic history along the requested path and returns stress and energy evidence. Material-point tests do not demonstrate spatial behavior.
 
-R02 adds a separate dynamic tetrahedral adapter reusing the existing patch geometry and constitutive history. Its explicit reference integrator is intended to establish a checked baseline. A cached elastic stiffness/mass bound limits timestep; stiff thin structures may require very small steps. Implicit/multirate integration and coupled surface contact still need implementation and comparison before realtime or impact claims. No new drop, dent or rubber capability is exposed to the playground by this checkpoint.
+R02 adds a separate dynamic tetrahedral adapter reusing the existing patch geometry and constitutive history. Its explicit reference integrator is intended to establish a checked baseline. A cached elastic stiffness/mass bound limits timestep; stiff thin structures may require very small steps. This foundation was extended by the coupled-contact checkpoint below; implicit/multirate integration and spatial accuracy still require implementation and comparison before realtime claims. No new drop, dent or rubber capability is exposed to the playground by this checkpoint.
 
 The previous failed thin-glass recording and unsupported dent/rubber requests remain valid evidence of missing capabilities. Do not relabel this foundation as completion of those requests.
+
+## Coupled-contact checkpoint
+
+[Native sphere/mesh coupling](coupled-contact-checkpoint.md) now implements swept contact timing, moving material geometry, friction/spin, support reactions and atomic state commit. The full-duration elastic/J2 drop probe records actual mesh motion and constitutive history. It contains no material-name branches or prescribed rebound. Material contact, numerical energy and mesh refinement remain active acceptance gates. R04 finite-strain rubber and R06 fracture are still planned; no new browser capability is exposed by this checkpoint.

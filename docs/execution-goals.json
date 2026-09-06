@@ -723,7 +723,7 @@
       {
         "id": "R03",
         "title": "Coupled dynamic contact",
-        "status": "planned",
+        "status": "active",
         "implementation": "Surface triangle/shape contact, consistent equal-and-opposite reactions, friction, continuous collision handling and coupled material updates.",
         "acceptance": "Sphere on deformable patches: no tunneling; contact impulse, external work, stored energy and numerical losses balance under timestep/mesh refinement."
       },
@@ -737,7 +737,7 @@
       {
         "id": "R05",
         "title": "Permanent impact deformation",
-        "status": "planned",
+        "status": "active",
         "implementation": "Connect J2 history to contact-driven spatial motion, unloading and rendered residual geometry.",
         "acceptance": "Impact leaves a measured residual dent, low-energy control recovers; glass/oak/iron comparisons plus new alloys; persistent reload reproduces geometry and subsequent response."
       },
@@ -778,6 +778,32 @@
       }
     ],
     "checkpoint": {
+      "status": "R01/R02/R03 and impact J2 partially implemented; no goal fully accepted",
+      "base_commit": "77e1db3",
+      "evidence": "docs/coupled-contact-checkpoint.md",
+      "next": "Qualify contact mesh convergence and cumulative energy accuracy, then unload/reload impact geometry; integrate only accepted capabilities into playground.",
+      "native_contact": "Swept sphere/moving triangle, barycentric impulse, spin/friction, explicit losses, atomic commit and bounded work",
+      "limitations": [
+        "small-strain only",
+        "single sphere and patch",
+        "not exposed in playground",
+        "no fracture or finite-strain rubber",
+        "not realtime qualified"
+      ],
+      "validation": {
+        "native_suites_passed": 61,
+        "native_wall_s": 85.94,
+        "affected_suites_after_final_geometry_fix": 3,
+        "geometry_cases": 9,
+        "coupled_cases": 8,
+        "python_material_tests_passed": 12,
+        "full_duration_probes": 10,
+        "spatial_response_gate": "not_converged",
+        "realtime_gate": "not_passed",
+        "measurements": "docs/coupled-contact-results.json"
+      }
+    },
+    "foundation_checkpoint": {
       "status": "R01/R02 partial implementation, no goal fully accepted",
       "native_material_path": "3 supported small-strain laws; no material-name dispatch",
       "generated_trials": {

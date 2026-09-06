@@ -1,0 +1,653 @@
+{
+  "schema": "banjo.coupled-contact-checkpoint.v1",
+  "base_commit": "77e1db3",
+  "physics_status": "experimental_not_spatially_converged",
+  "timing_scope": "one run per setting; wall time includes recording and concurrent checks, not isolated performance qualification",
+  "recordings": [
+    {
+      "schema": "banjo.sphere_patch_probe.v1",
+      "time_step_fraction": 0.05,
+      "mesh_refinement": 1,
+      "file": "corrected-owned-dt005.json",
+      "sha256": "8c408fc0dc7bfb808b5ba9a03161bd592ad4de985c561b9faae09e7c39aa98b7",
+      "cases": [
+        {
+          "name": "linear_elastic_E1MPa",
+          "scenario": "submillimeter_gravity_drop",
+          "material_scope": "fictional numerical constitutive comparison",
+          "material": {
+            "density_kg_m3": 1000,
+            "young_modulus_pa": 1000000,
+            "poisson_ratio": 0.25,
+            "kind": "IsotropicElastic"
+          },
+          "initial_clearance_m": 0.0005,
+          "gravity_m_s2": [
+            0,
+            -9.81,
+            0
+          ],
+          "sphere_mass_kg": 0.05696486595936385,
+          "sphere_radius_m": 0.012,
+          "dt_s": 1.8371173070873843e-05,
+          "summary": {
+            "accepted": true,
+            "error": "",
+            "requested_duration_s": 0.1,
+            "completed_duration_s": 0.1,
+            "completed_steps": 5444,
+            "contacts": 2968,
+            "geometry_queries": 225407,
+            "geometry_iterations": 96333,
+            "peak_rebound_velocity_m_s": 0.06304707786880291,
+            "peak_stored_energy_j": 0.00023517330226302432,
+            "plastic_dissipation_j": 0,
+            "maximum_displacement_m": 7.405460480863481e-05,
+            "final_displacement_m": 2.0812692735811805e-05,
+            "maximum_equivalent_plastic_strain": 0,
+            "contact_dissipation_j": 0.00028391546118392046,
+            "initial_mechanical_energy_j": 0,
+            "final_mechanical_energy_j": 4.888684385284528e-05,
+            "accumulated_external_work_j": 0.0002834178469318914,
+            "cumulative_energy_residual_j": 4.9384458104875425e-05,
+            "normalized_cumulative_energy_residual": 0.08014093331272176,
+            "accumulated_coupling_impulse_n_s": [
+              -1.2486729910396029e-05,
+              -0.05581124521174075,
+              7.680306234586064e-09
+            ],
+            "maximum_energy_residual_j": 6.446367194016697e-07,
+            "maximum_momentum_residual_kg_m_s": 1.572101593028252e-18,
+            "accumulated_contact_angular_residual_kg_m2_s": [
+              4.39738341700496e-21,
+              -1.7441976516257104e-22,
+              1.4344410420920547e-21
+            ],
+            "maximum_contact_angular_residual_kg_m2_s": 3.8029084176372555e-21,
+            "elapsed_wall_ms": 149.3696
+          },
+          "nodes": 18,
+          "tetrahedra": 24,
+          "recorded_frames": 184
+        },
+        {
+          "name": "J2_E1MPa_yield1.2kPa",
+          "scenario": "submillimeter_gravity_drop",
+          "material_scope": "fictional numerical constitutive comparison",
+          "material": {
+            "density_kg_m3": 1000,
+            "young_modulus_pa": 1000000,
+            "poisson_ratio": 0.25,
+            "kind": "J2Plastic",
+            "initial_yield_stress_pa": 1200,
+            "isotropic_hardening_modulus_pa": 20000
+          },
+          "initial_clearance_m": 0.0005,
+          "gravity_m_s2": [
+            0,
+            -9.81,
+            0
+          ],
+          "sphere_mass_kg": 0.05696486595936385,
+          "sphere_radius_m": 0.012,
+          "dt_s": 1.8371173070873843e-05,
+          "summary": {
+            "accepted": true,
+            "error": "",
+            "requested_duration_s": 0.1,
+            "completed_duration_s": 0.1,
+            "completed_steps": 5444,
+            "contacts": 3855,
+            "geometry_queries": 240012,
+            "geometry_iterations": 123817,
+            "peak_rebound_velocity_m_s": 0.046327938675405335,
+            "peak_stored_energy_j": 0.00017004751234014095,
+            "plastic_dissipation_j": 0.00011714765704015494,
+            "maximum_displacement_m": 7.010945035895749e-05,
+            "final_displacement_m": 2.0733697692971413e-05,
+            "maximum_equivalent_plastic_strain": 0.0026212924873141503,
+            "contact_dissipation_j": 0.00018640725155255296,
+            "initial_mechanical_energy_j": 0,
+            "final_mechanical_energy_j": 2.6267463295119392e-05,
+            "accumulated_external_work_j": 0.00029294008531953935,
+            "cumulative_energy_residual_j": 3.6882286568291514e-05,
+            "normalized_cumulative_energy_residual": 0.07294542516574709,
+            "accumulated_coupling_impulse_n_s": [
+              -6.0315878516838325e-05,
+              -0.05598767384893134,
+              -1.0454925566956203e-05
+            ],
+            "maximum_energy_residual_j": 1.5715646426432425e-07,
+            "maximum_momentum_residual_kg_m_s": 1.572101593028252e-18,
+            "accumulated_contact_angular_residual_kg_m2_s": [
+              5.937349360024696e-22,
+              1.6955008261843105e-22,
+              2.2600129337565088e-21
+            ],
+            "maximum_contact_angular_residual_kg_m2_s": 3.8029084176372555e-21,
+            "elapsed_wall_ms": 213.5664
+          },
+          "nodes": 18,
+          "tetrahedra": 24,
+          "recorded_frames": 184
+        }
+      ]
+    },
+    {
+      "schema": "banjo.sphere_patch_probe.v1",
+      "time_step_fraction": 0.0125,
+      "mesh_refinement": 1,
+      "file": "final-probe-dt00125.json",
+      "sha256": "c88feccb40b79e3ffa04bceacfe03c9628247a4cab55a83764683778f7d9e0c6",
+      "cases": [
+        {
+          "name": "linear_elastic_E1MPa",
+          "scenario": "submillimeter_gravity_drop",
+          "material_scope": "fictional numerical constitutive comparison",
+          "material": {
+            "density_kg_m3": 1000,
+            "young_modulus_pa": 1000000,
+            "poisson_ratio": 0.25,
+            "kind": "IsotropicElastic"
+          },
+          "initial_clearance_m": 0.0005,
+          "gravity_m_s2": [
+            0,
+            -9.81,
+            0
+          ],
+          "sphere_mass_kg": 0.05696486595936385,
+          "sphere_radius_m": 0.012,
+          "dt_s": 4.592793267718461e-06,
+          "summary": {
+            "accepted": true,
+            "error": "",
+            "requested_duration_s": 0.1,
+            "completed_duration_s": 0.1,
+            "completed_steps": 21774,
+            "contacts": 11953,
+            "geometry_queries": 901791,
+            "geometry_iterations": 385841,
+            "peak_rebound_velocity_m_s": 0.06302618600744854,
+            "peak_stored_energy_j": 0.00023501567682794898,
+            "plastic_dissipation_j": 0,
+            "maximum_displacement_m": 7.419110028810084e-05,
+            "final_displacement_m": 2.1698067287489702e-05,
+            "maximum_equivalent_plastic_strain": 0,
+            "contact_dissipation_j": 0.0002447746413068418,
+            "initial_mechanical_energy_j": 0,
+            "final_mechanical_energy_j": 5.150956107117671e-05,
+            "accumulated_external_work_j": 0.00028418639679745293,
+            "cumulative_energy_residual_j": 1.2097805580566509e-05,
+            "normalized_cumulative_energy_residual": 0.020841375252684317,
+            "accumulated_coupling_impulse_n_s": [
+              -6.79672714026727e-06,
+              -0.05573665458737972,
+              2.506992462213065e-06
+            ],
+            "maximum_energy_residual_j": 1.4701936401860661e-08,
+            "maximum_momentum_residual_kg_m_s": 1.450125556242394e-18,
+            "accumulated_contact_angular_residual_kg_m2_s": [
+              -4.479698591218748e-21,
+              3.3107695994814226e-22,
+              1.1420343616287912e-21
+            ],
+            "maximum_contact_angular_residual_kg_m2_s": 1.8528847567573025e-21,
+            "elapsed_wall_ms": 602.8345
+          },
+          "nodes": 18,
+          "tetrahedra": 24,
+          "recorded_frames": 184
+        },
+        {
+          "name": "J2_E1MPa_yield1.2kPa",
+          "scenario": "submillimeter_gravity_drop",
+          "material_scope": "fictional numerical constitutive comparison",
+          "material": {
+            "density_kg_m3": 1000,
+            "young_modulus_pa": 1000000,
+            "poisson_ratio": 0.25,
+            "kind": "J2Plastic",
+            "initial_yield_stress_pa": 1200,
+            "isotropic_hardening_modulus_pa": 20000
+          },
+          "initial_clearance_m": 0.0005,
+          "gravity_m_s2": [
+            0,
+            -9.81,
+            0
+          ],
+          "sphere_mass_kg": 0.05696486595936385,
+          "sphere_radius_m": 0.012,
+          "dt_s": 4.592793267718461e-06,
+          "summary": {
+            "accepted": true,
+            "error": "",
+            "requested_duration_s": 0.1,
+            "completed_duration_s": 0.1,
+            "completed_steps": 21774,
+            "contacts": 15296,
+            "geometry_queries": 958832,
+            "geometry_iterations": 493322,
+            "peak_rebound_velocity_m_s": 0.046321757182510276,
+            "peak_stored_energy_j": 0.0001699377156192885,
+            "plastic_dissipation_j": 0.00011765079955851494,
+            "maximum_displacement_m": 7.006987786296365e-05,
+            "final_displacement_m": 2.034207858049847e-05,
+            "maximum_equivalent_plastic_strain": 0.002619794690318873,
+            "contact_dissipation_j": 0.00015820344850916757,
+            "initial_mechanical_energy_j": 0,
+            "final_mechanical_energy_j": 2.627863159313267e-05,
+            "accumulated_external_work_j": 0.00029290084595515127,
+            "cumulative_energy_residual_j": 9.232033705663998e-06,
+            "normalized_cumulative_energy_residual": 0.019338843518992867,
+            "accumulated_coupling_impulse_n_s": [
+              -6.189405344123072e-05,
+              -0.055994898488411875,
+              -9.774530772833665e-06
+            ],
+            "maximum_energy_residual_j": 9.99743715942476e-09,
+            "maximum_momentum_residual_kg_m_s": 1.450125556242394e-18,
+            "accumulated_contact_angular_residual_kg_m2_s": [
+              -1.812277243892272e-21,
+              -5.647256940288696e-23,
+              -5.903924124401906e-22
+            ],
+            "maximum_contact_angular_residual_kg_m2_s": 1.707557255158334e-21,
+            "elapsed_wall_ms": 829.4584
+          },
+          "nodes": 18,
+          "tetrahedra": 24,
+          "recorded_frames": 184
+        }
+      ]
+    },
+    {
+      "schema": "banjo.sphere_patch_probe.v1",
+      "time_step_fraction": 0.00625,
+      "mesh_refinement": 1,
+      "file": "corrected-owned-dt000625.json",
+      "sha256": "0ead53acc9d6ac0e572dc8e916746e8f46c7b1d4df48609dfd446976f94b79fc",
+      "cases": [
+        {
+          "name": "linear_elastic_E1MPa",
+          "scenario": "submillimeter_gravity_drop",
+          "material_scope": "fictional numerical constitutive comparison",
+          "material": {
+            "density_kg_m3": 1000,
+            "young_modulus_pa": 1000000,
+            "poisson_ratio": 0.25,
+            "kind": "IsotropicElastic"
+          },
+          "initial_clearance_m": 0.0005,
+          "gravity_m_s2": [
+            0,
+            -9.81,
+            0
+          ],
+          "sphere_mass_kg": 0.05696486595936385,
+          "sphere_radius_m": 0.012,
+          "dt_s": 2.2963966338592303e-06,
+          "summary": {
+            "accepted": true,
+            "error": "",
+            "requested_duration_s": 0.1,
+            "completed_duration_s": 0.1,
+            "completed_steps": 43547,
+            "contacts": 23764,
+            "geometry_queries": 1801950,
+            "geometry_iterations": 768797,
+            "peak_rebound_velocity_m_s": 0.06302214212415402,
+            "peak_stored_energy_j": 0.00023498428261209715,
+            "plastic_dissipation_j": 0,
+            "maximum_displacement_m": 7.404862192089446e-05,
+            "final_displacement_m": 2.1423279791704994e-05,
+            "maximum_equivalent_plastic_strain": 0,
+            "contact_dissipation_j": 0.00023942407108830434,
+            "initial_mechanical_energy_j": 0,
+            "final_mechanical_energy_j": 5.0589429596822904e-05,
+            "accumulated_external_work_j": 0.0002839606239905422,
+            "cumulative_energy_residual_j": 6.052876694586872e-06,
+            "normalized_cumulative_energy_residual": 0.010545556732208299,
+            "accumulated_coupling_impulse_n_s": [
+              -6.1265918766701815e-06,
+              -0.05575536844866334,
+              3.337457880877967e-06
+            ],
+            "maximum_energy_residual_j": 3.6749525696929953e-09,
+            "maximum_momentum_residual_kg_m_s": 1.365447874613521e-18,
+            "accumulated_contact_angular_residual_kg_m2_s": [
+              1.0108090034977333e-21,
+              -1.5598382844168567e-22,
+              8.847204977444737e-22
+            ],
+            "maximum_contact_angular_residual_kg_m2_s": 2.377128131346175e-21,
+            "elapsed_wall_ms": 1176.1764
+          },
+          "nodes": 18,
+          "tetrahedra": 24,
+          "recorded_frames": 183
+        },
+        {
+          "name": "J2_E1MPa_yield1.2kPa",
+          "scenario": "submillimeter_gravity_drop",
+          "material_scope": "fictional numerical constitutive comparison",
+          "material": {
+            "density_kg_m3": 1000,
+            "young_modulus_pa": 1000000,
+            "poisson_ratio": 0.25,
+            "kind": "J2Plastic",
+            "initial_yield_stress_pa": 1200,
+            "isotropic_hardening_modulus_pa": 20000
+          },
+          "initial_clearance_m": 0.0005,
+          "gravity_m_s2": [
+            0,
+            -9.81,
+            0
+          ],
+          "sphere_mass_kg": 0.05696486595936385,
+          "sphere_radius_m": 0.012,
+          "dt_s": 2.2963966338592303e-06,
+          "summary": {
+            "accepted": true,
+            "error": "",
+            "requested_duration_s": 0.1,
+            "completed_duration_s": 0.1,
+            "completed_steps": 43547,
+            "contacts": 30556,
+            "geometry_queries": 1917344,
+            "geometry_iterations": 986232,
+            "peak_rebound_velocity_m_s": 0.046320171211138614,
+            "peak_stored_energy_j": 0.00016991735513995573,
+            "plastic_dissipation_j": 0.00011776482223026767,
+            "maximum_displacement_m": 7.006225892778948e-05,
+            "final_displacement_m": 2.0300821307818042e-05,
+            "maximum_equivalent_plastic_strain": 0.0026195176197438947,
+            "contact_dissipation_j": 0.0001534321705128845,
+            "initial_mechanical_energy_j": 0,
+            "final_mechanical_energy_j": 2.631080912427049e-05,
+            "accumulated_external_work_j": 0.00029288965770737707,
+            "cumulative_energy_residual_j": 4.61814416004914e-06,
+            "normalized_cumulative_energy_residual": 0.009771107188018165,
+            "accumulated_coupling_impulse_n_s": [
+              -6.237157424050106e-05,
+              -0.05599614966944928,
+              -9.866918018489189e-06
+            ],
+            "maximum_energy_residual_j": 2.5047340262595e-09,
+            "maximum_momentum_residual_kg_m_s": 1.365447874613521e-18,
+            "accumulated_contact_angular_residual_kg_m2_s": [
+              3.164283002964553e-21,
+              2.944945554656683e-24,
+              -1.841464643001568e-21
+            ],
+            "maximum_contact_angular_residual_kg_m2_s": 2.377128131346175e-21,
+            "elapsed_wall_ms": 1646.2785
+          },
+          "nodes": 18,
+          "tetrahedra": 24,
+          "recorded_frames": 183
+        }
+      ]
+    },
+    {
+      "schema": "banjo.sphere_patch_probe.v1",
+      "time_step_fraction": 0.0125,
+      "mesh_refinement": 2,
+      "file": "refinement-r2-dt00125.json",
+      "sha256": "59abf66f47e7790a96ad1b59130e222e716fc5ccf8378fce3cb909677fa21d71",
+      "cases": [
+        {
+          "name": "linear_elastic_E1MPa",
+          "scenario": "submillimeter_gravity_drop",
+          "material_scope": "fictional numerical constitutive comparison",
+          "material": {
+            "density_kg_m3": 1000,
+            "young_modulus_pa": 1000000,
+            "poisson_ratio": 0.25,
+            "kind": "IsotropicElastic"
+          },
+          "initial_clearance_m": 0.0005,
+          "gravity_m_s2": [
+            0,
+            -9.81,
+            0
+          ],
+          "sphere_mass_kg": 0.05696486595936385,
+          "sphere_radius_m": 0.012,
+          "dt_s": 1.8249909877210788e-06,
+          "summary": {
+            "accepted": true,
+            "error": "",
+            "requested_duration_s": 0.1,
+            "completed_duration_s": 0.1,
+            "completed_steps": 54795,
+            "contacts": 10269,
+            "geometry_queries": 7275539,
+            "geometry_iterations": 502787,
+            "peak_rebound_velocity_m_s": 0.08884749078445807,
+            "peak_stored_energy_j": 0.000318862727711579,
+            "plastic_dissipation_j": 0,
+            "maximum_displacement_m": 0.00011179923424076774,
+            "final_displacement_m": 2.5931096710189315e-05,
+            "maximum_equivalent_plastic_strain": 0,
+            "contact_dissipation_j": 0.0001356297546208122,
+            "initial_mechanical_energy_j": 0,
+            "final_mechanical_energy_j": 0.000175065593335667,
+            "accumulated_external_work_j": 0.0002669259523973638,
+            "cumulative_energy_residual_j": 4.3769395559116685e-05,
+            "normalized_cumulative_energy_residual": 0.07577524501313256,
+            "accumulated_coupling_impulse_n_s": [
+              -0.0001879115861182393,
+              -0.057980413876822574,
+              1.7169957790184903e-05
+            ],
+            "maximum_energy_residual_j": 1.3800026089916737e-08,
+            "maximum_momentum_residual_kg_m_s": 1.965503206337122e-18,
+            "accumulated_contact_angular_residual_kg_m2_s": [
+              1.807254333005902e-22,
+              2.842909828111283e-23,
+              -4.890007135155347e-22
+            ],
+            "maximum_contact_angular_residual_kg_m2_s": 8.503738802803847e-22,
+            "elapsed_wall_ms": 7244.5864
+          },
+          "nodes": 75,
+          "tetrahedra": 192,
+          "recorded_frames": 183
+        },
+        {
+          "name": "J2_E1MPa_yield1.2kPa",
+          "scenario": "submillimeter_gravity_drop",
+          "material_scope": "fictional numerical constitutive comparison",
+          "material": {
+            "density_kg_m3": 1000,
+            "young_modulus_pa": 1000000,
+            "poisson_ratio": 0.25,
+            "kind": "J2Plastic",
+            "initial_yield_stress_pa": 1200,
+            "isotropic_hardening_modulus_pa": 20000
+          },
+          "initial_clearance_m": 0.0005,
+          "gravity_m_s2": [
+            0,
+            -9.81,
+            0
+          ],
+          "sphere_mass_kg": 0.05696486595936385,
+          "sphere_radius_m": 0.012,
+          "dt_s": 1.8249909877210788e-06,
+          "summary": {
+            "accepted": true,
+            "error": "",
+            "requested_duration_s": 0.1,
+            "completed_duration_s": 0.1,
+            "completed_steps": 54795,
+            "contacts": 24134,
+            "geometry_queries": 7840249,
+            "geometry_iterations": 1604326,
+            "peak_rebound_velocity_m_s": 0.04547668368142299,
+            "peak_stored_energy_j": 0.00018561873425448357,
+            "plastic_dissipation_j": 0.0002077208792102337,
+            "maximum_displacement_m": 0.00016482881572272879,
+            "final_displacement_m": 6.9374024860271e-05,
+            "maximum_equivalent_plastic_strain": 0.01439208370230407,
+            "contact_dissipation_j": 6.229580942971791e-05,
+            "initial_mechanical_energy_j": 0,
+            "final_mechanical_energy_j": 6.055942377295241e-05,
+            "accumulated_external_work_j": 0.0003102267965338862,
+            "cumulative_energy_residual_j": 2.034931587901586e-05,
+            "normalized_cumulative_energy_residual": 0.04698720907767597,
+            "accumulated_coupling_impulse_n_s": [
+              -0.00012189644818611946,
+              -0.055823557703117435,
+              0.0001297302723064425
+            ],
+            "maximum_energy_residual_j": 5.007438036253758e-09,
+            "maximum_momentum_residual_kg_m_s": 2.2594805131706176e-18,
+            "accumulated_contact_angular_residual_kg_m2_s": [
+              -5.811639010523573e-22,
+              2.651136006558063e-23,
+              7.09979106102235e-23
+            ],
+            "maximum_contact_angular_residual_kg_m2_s": 8.503738802803847e-22,
+            "elapsed_wall_ms": 11951.5071
+          },
+          "nodes": 75,
+          "tetrahedra": 192,
+          "recorded_frames": 183
+        }
+      ]
+    },
+    {
+      "schema": "banjo.sphere_patch_probe.v1",
+      "time_step_fraction": 0.0125,
+      "mesh_refinement": 3,
+      "file": "refinement-r3-dt00125.json",
+      "sha256": "db69f9aaf30dd0e3b4d38c232e363f0738ae5280ce379babafc8075a10be02ef",
+      "cases": [
+        {
+          "name": "linear_elastic_E1MPa",
+          "scenario": "submillimeter_gravity_drop",
+          "material_scope": "fictional numerical constitutive comparison",
+          "material": {
+            "density_kg_m3": 1000,
+            "young_modulus_pa": 1000000,
+            "poisson_ratio": 0.25,
+            "kind": "IsotropicElastic"
+          },
+          "initial_clearance_m": 0.0005,
+          "gravity_m_s2": [
+            0,
+            -9.81,
+            0
+          ],
+          "sphere_mass_kg": 0.05696486595936385,
+          "sphere_radius_m": 0.012,
+          "dt_s": 1.216660658480719e-06,
+          "summary": {
+            "accepted": true,
+            "error": "",
+            "requested_duration_s": 0.1,
+            "completed_duration_s": 0.1,
+            "completed_steps": 82193,
+            "contacts": 16213,
+            "geometry_queries": 24262465,
+            "geometry_iterations": 1149190,
+            "peak_rebound_velocity_m_s": 0.09391239924899507,
+            "peak_stored_energy_j": 0.0003523423349749223,
+            "plastic_dissipation_j": 0,
+            "maximum_displacement_m": 0.00016348078306939196,
+            "final_displacement_m": 8.80789400294224e-05,
+            "maximum_equivalent_plastic_strain": 0,
+            "contact_dissipation_j": 0.00012495772035089913,
+            "initial_mechanical_energy_j": 0,
+            "final_mechanical_energy_j": 0.0002850639458905929,
+            "accumulated_external_work_j": 0.00032179981159759544,
+            "cumulative_energy_residual_j": 8.822185464389601e-05,
+            "normalized_cumulative_energy_residual": 0.12055105967154219,
+            "accumulated_coupling_impulse_n_s": [
+              -0.00026000926651789945,
+              -0.059162959202852854,
+              -2.4209695488091066e-05
+            ],
+            "maximum_energy_residual_j": 1.3583736916657038e-08,
+            "maximum_momentum_residual_kg_m_s": 3.155673754708123e-18,
+            "accumulated_contact_angular_residual_kg_m2_s": [
+              -4.416844325235949e-22,
+              -2.260863053063679e-23,
+              -1.687097690495279e-22
+            ],
+            "maximum_contact_angular_residual_kg_m2_s": 2.4424109713984985e-22,
+            "elapsed_wall_ms": 34659.0441
+          },
+          "nodes": 196,
+          "tetrahedra": 648,
+          "recorded_frames": 183
+        },
+        {
+          "name": "J2_E1MPa_yield1.2kPa",
+          "scenario": "submillimeter_gravity_drop",
+          "material_scope": "fictional numerical constitutive comparison",
+          "material": {
+            "density_kg_m3": 1000,
+            "young_modulus_pa": 1000000,
+            "poisson_ratio": 0.25,
+            "kind": "J2Plastic",
+            "initial_yield_stress_pa": 1200,
+            "isotropic_hardening_modulus_pa": 20000
+          },
+          "initial_clearance_m": 0.0005,
+          "gravity_m_s2": [
+            0,
+            -9.81,
+            0
+          ],
+          "sphere_mass_kg": 0.05696486595936385,
+          "sphere_radius_m": 0.012,
+          "dt_s": 1.216660658480719e-06,
+          "summary": {
+            "accepted": true,
+            "error": "",
+            "requested_duration_s": 0.1,
+            "completed_duration_s": 0.1,
+            "completed_steps": 82193,
+            "contacts": 40909,
+            "geometry_queries": 25734188,
+            "geometry_iterations": 4042957,
+            "peak_rebound_velocity_m_s": 0.045939728814836024,
+            "peak_stored_energy_j": 0.00022400543602374483,
+            "plastic_dissipation_j": 0.00023654148491434696,
+            "maximum_displacement_m": 0.0002803266449001654,
+            "final_displacement_m": 0.00018198914186437205,
+            "maximum_equivalent_plastic_strain": 0.04064600462925322,
+            "contact_dissipation_j": 4.5467631929368625e-05,
+            "initial_mechanical_energy_j": 0,
+            "final_mechanical_energy_j": 0.00011089341771184447,
+            "accumulated_external_work_j": 0.0003588325688002882,
+            "cumulative_energy_residual_j": 3.40699657552729e-05,
+            "normalized_cumulative_energy_residual": 0.0661304110449525,
+            "accumulated_coupling_impulse_n_s": [
+              -0.0003403284695940783,
+              -0.055011193203539956,
+              0.00013104891298806228
+            ],
+            "maximum_energy_residual_j": 3.6153275963122384e-09,
+            "maximum_momentum_residual_kg_m_s": 1.8754645364889574e-18,
+            "accumulated_contact_angular_residual_kg_m2_s": [
+              4.133303915966007e-22,
+              -2.6523931796700494e-23,
+              -3.412574915533626e-22
+            ],
+            "maximum_contact_angular_residual_kg_m2_s": 1.0954132703480923e-22,
+            "elapsed_wall_ms": 55970.1687
+          },
+          "nodes": 196,
+          "tetrahedra": 648,
+          "recorded_frames": 183
+        }
+      ]
+    }
+  ]
+}
