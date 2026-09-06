@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Authoring API checkpoint:** [Field reference and starter client](object-authoring-api.md) now document the implemented package/load/step/query/export path and distinguish it from planned live spawning, forces, assemblies and coupled thermal state. The next platform gate remains transactional mutation and shared state/history, not a new client wrapper.
+
 **Material showcase:** [Iron-ball panel speeds and knife/tomato proxy](material-showcase.md) add genuine rigid spheres, matched glass/oak/iron clamped panels at 2/6/12 m/s, and explicit damage overlays. Wood has 0/0/11 broken links; glass has none at the authored step. All panels and the tomato retain a connected core containing all their cells. This demonstrates local damage, not validated glass shattering or a complete tomato slice. G02 is active; contact/time/space convergence and work closure remain open.
 
 **Current executed checkpoint:** See [execution-checkpoint.md](execution-checkpoint.md) for the live blocky `CellSkin` default and measured same-law phase evidence. The older 44-suite result is historical; 47/47 suites now pass (83.33 s). No gate below is complete from this slice alone.

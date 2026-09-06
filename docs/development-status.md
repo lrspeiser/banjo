@@ -1,5 +1,7 @@
 # Development status and handoff
 
+**Programmatic authoring:** The [object API guide](object-authoring-api.md) and standard-library Python client expose the existing v2 package workflow, five unchanged material records and twelve item templates. 42 native-client checks pass. This adds authoring convenience and documentation; live object mutation, a shared thermal/mechanical ABI and physical calibration remain open.
+
 **Material showcase:** [Iron-ball panel speeds and knife/tomato proxy](material-showcase.md) add genuine rigid spheres, matched glass/oak/iron clamped panels at 2/6/12 m/s, and explicit damage overlays. Wood has 0/0/11 broken links; glass has none at the authored step. All panels and the tomato retain a connected core containing all their cells. This demonstrates local damage, not validated glass shattering or a complete tomato slice. G02 is active; contact/time/space convergence and work closure remain open.
 
 **Current executed checkpoint:** [Execution checkpoint](execution-checkpoint.md) records the live blocky `CellSkin` default, per-object accepted-break topology caching, conservative skin-query behavior, and the first bounded phase-kernel measurements. Two focused skin tests pass. The older 44-suite result is historical; 47/47 suites now pass (83.33 s). Smooth/deforming skins, skin/contact convergence, and full mechanics remain unfinished.

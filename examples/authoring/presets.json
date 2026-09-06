@@ -1,0 +1,586 @@
+{
+  "schema": "banjo-authoring-presets-1",
+  "source_revision": "b15f860c65d40ae381e1bd246b51789ecffdccec",
+  "status": "Experimental starter settings, not calibrated real-material standards.",
+  "materials": [
+    {
+      "id": "glass",
+      "density_kg_m3": 2500,
+      "young_modulus_pa": [
+        70000000000,
+        70000000000,
+        70000000000
+      ],
+      "tensile_strength_pa": [
+        45000000,
+        45000000,
+        45000000
+      ],
+      "fracture_energy_j_m2": [
+        8,
+        8,
+        8
+      ],
+      "damping_ratio": 0.025,
+      "friction": 0.4,
+      "yield_strength_pa": 0,
+      "fracture_enabled": true,
+      "failure_law": "brittle",
+      "color_rgb": 7461089,
+      "provenance": "Experimental directional axial lattice parameters. Not a calibrated continuum or prediction of real fruit/wood cutting."
+    },
+    {
+      "id": "oak",
+      "density_kg_m3": 700,
+      "young_modulus_pa": [
+        700000000,
+        12000000000,
+        1000000000
+      ],
+      "tensile_strength_pa": [
+        4000000,
+        90000000,
+        5000000
+      ],
+      "fracture_energy_j_m2": [
+        1500,
+        20000,
+        1500
+      ],
+      "damping_ratio": 0.15,
+      "friction": 0.4,
+      "yield_strength_pa": 0,
+      "fracture_enabled": true,
+      "failure_law": "cohesive",
+      "color_rgb": 13145170,
+      "provenance": "Experimental directional axial lattice parameters. Not a calibrated continuum or prediction of real fruit/wood cutting."
+    },
+    {
+      "id": "iron",
+      "density_kg_m3": 7870,
+      "young_modulus_pa": [
+        211000000000,
+        211000000000,
+        211000000000
+      ],
+      "tensile_strength_pa": [
+        250000000,
+        250000000,
+        250000000
+      ],
+      "fracture_energy_j_m2": [
+        100000,
+        100000,
+        100000
+      ],
+      "damping_ratio": 0.04,
+      "friction": 0.4,
+      "yield_strength_pa": 0,
+      "fracture_enabled": false,
+      "failure_law": "cohesive",
+      "color_rgb": 10991558,
+      "provenance": "Experimental directional axial lattice parameters. Not a calibrated continuum or prediction of real fruit/wood cutting."
+    },
+    {
+      "id": "soft-tissue",
+      "density_kg_m3": 1000,
+      "young_modulus_pa": [
+        40000,
+        40000,
+        40000
+      ],
+      "tensile_strength_pa": [
+        15000,
+        15000,
+        15000
+      ],
+      "fracture_energy_j_m2": [
+        150,
+        150,
+        150
+      ],
+      "damping_ratio": 0.4,
+      "friction": 0.4,
+      "yield_strength_pa": 0,
+      "fracture_enabled": true,
+      "failure_law": "cohesive",
+      "color_rgb": 15297622,
+      "provenance": "Experimental directional axial lattice parameters. Not a calibrated continuum or prediction of real fruit/wood cutting."
+    },
+    {
+      "id": "ductile-demo",
+      "density_kg_m3": 7870,
+      "young_modulus_pa": [
+        4000000,
+        4000000,
+        4000000
+      ],
+      "tensile_strength_pa": [
+        3000000,
+        3000000,
+        3000000
+      ],
+      "fracture_energy_j_m2": [
+        10000,
+        10000,
+        10000
+      ],
+      "damping_ratio": 0.2,
+      "friction": 0.4,
+      "yield_strength_pa": 100000,
+      "fracture_enabled": false,
+      "failure_law": "cohesive",
+      "color_rgb": 9607894,
+      "provenance": "Experimental directional axial lattice parameters. Not a calibrated continuum or prediction of real fruit/wood cutting."
+    }
+  ],
+  "object_presets": {
+    "glass_panel": {
+      "name": "Glass panel",
+      "material": "glass",
+      "shape": "box",
+      "dimensions_m": [
+        0.24,
+        0.36,
+        0.04
+      ],
+      "representation": "network",
+      "position_m": [
+        0,
+        0.2,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "resolution": [
+        6,
+        9,
+        2
+      ],
+      "pin_boundary": true
+    },
+    "iron_ball": {
+      "name": "Iron ball",
+      "material": "iron",
+      "shape": "sphere",
+      "dimensions_m": [
+        0.08,
+        0.08,
+        0.08
+      ],
+      "representation": "rigid",
+      "position_m": [
+        0,
+        0.21,
+        0.2
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ]
+    },
+    "wood_panel": {
+      "name": "Wood panel",
+      "material": "oak",
+      "shape": "box",
+      "dimensions_m": [
+        0.24,
+        0.36,
+        0.04
+      ],
+      "representation": "network",
+      "position_m": [
+        0,
+        0.2,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "resolution": [
+        6,
+        9,
+        2
+      ],
+      "pin_boundary": true,
+      "grain_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    "iron_panel": {
+      "name": "Iron control",
+      "material": "iron",
+      "shape": "box",
+      "dimensions_m": [
+        0.24,
+        0.36,
+        0.04
+      ],
+      "representation": "network",
+      "position_m": [
+        0,
+        0.2,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "resolution": [
+        6,
+        9,
+        2
+      ],
+      "pin_boundary": true
+    },
+    "tomato_proxy": {
+      "name": "Tomato proxy",
+      "material": "soft-tissue",
+      "shape": "ellipsoid",
+      "dimensions_m": [
+        0.18,
+        0.16,
+        0.16
+      ],
+      "representation": "network",
+      "position_m": [
+        0,
+        0.085,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "resolution": [
+        7,
+        6,
+        6
+      ],
+      "pin_boundary": false
+    },
+    "knife": {
+      "name": "Iron knife",
+      "material": "iron",
+      "shape": "wedge",
+      "dimensions_m": [
+        0.025,
+        0.1,
+        0.14
+      ],
+      "representation": "rigid",
+      "position_m": [
+        0.035,
+        0.26,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ]
+    },
+    "axe_head": {
+      "name": "Iron axe head",
+      "material": "iron",
+      "shape": "wedge",
+      "dimensions_m": [
+        0.07,
+        0.14,
+        0.09
+      ],
+      "representation": "rigid",
+      "position_m": [
+        0.035,
+        0.26,
+        0.22
+      ],
+      "orientation_wxyz": [
+        0.7071067811865476,
+        0.7071067811865476,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ]
+    },
+    "iron_cube": {
+      "name": "Iron cube",
+      "material": "iron",
+      "shape": "box",
+      "dimensions_m": [
+        0.09,
+        0.09,
+        0.09
+      ],
+      "representation": "rigid",
+      "position_m": [
+        -0.356,
+        0.55,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ]
+    },
+    "ductile_coupon": {
+      "name": "Ductile numerical coupon",
+      "material": "ductile-demo",
+      "shape": "box",
+      "dimensions_m": [
+        0.24,
+        0.3,
+        0.05
+      ],
+      "representation": "network",
+      "position_m": [
+        0,
+        0.17,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "resolution": [
+        8,
+        10,
+        2
+      ],
+      "pin_boundary": true
+    },
+    "glass_matter_ball": {
+      "name": "Glass matter ball",
+      "material": "glass",
+      "shape": "ellipsoid",
+      "representation": "network",
+      "dimensions_m": [
+        0.08,
+        0.08,
+        0.08
+      ],
+      "resolution": [
+        7,
+        7,
+        7
+      ],
+      "position_m": [
+        0,
+        0.1,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "pin_boundary": false
+    },
+    "wood_matter_ball": {
+      "name": "Wood matter ball",
+      "material": "oak",
+      "shape": "ellipsoid",
+      "representation": "network",
+      "dimensions_m": [
+        0.08,
+        0.08,
+        0.08
+      ],
+      "resolution": [
+        7,
+        7,
+        7
+      ],
+      "position_m": [
+        0,
+        0.1,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "pin_boundary": false
+    },
+    "iron_matter_ball": {
+      "name": "Iron matter ball",
+      "material": "iron",
+      "shape": "ellipsoid",
+      "representation": "network",
+      "dimensions_m": [
+        0.08,
+        0.08,
+        0.08
+      ],
+      "resolution": [
+        7,
+        7,
+        7
+      ],
+      "position_m": [
+        0,
+        0.1,
+        0
+      ],
+      "orientation_wxyz": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "velocity_m_s": [
+        0,
+        0,
+        0
+      ],
+      "spin_rad_s": [
+        0,
+        0,
+        0
+      ],
+      "pin_boundary": false
+    }
+  },
+  "notes": {
+    "scope": "This wrapper catalog is consumed by banjo_authoring.py. The engine accepts the extracted material and object records inside a v2 package.",
+    "motion": "Preset velocities and spin are zero. Override motion and placement explicitly for each experiment.",
+    "panels": "Model-scale fully clamped x/y perimeters; no hinges or frame joints.",
+    "matter_balls": "New authoring templates using existing laws; sampled ellipsoid cells, not smooth collision spheres. Admission and smoke checks only.",
+    "iron": "Fracture disabled; no calibrated iron plasticity.",
+    "tomato": "Uncalibrated soft tissue without peel, juice, seeds or pressure.",
+    "ductile_coupon": "Deliberately soft numerical plasticity demonstrator, not actual iron."
+  }
+}
