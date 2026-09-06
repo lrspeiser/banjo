@@ -26,6 +26,7 @@ from experiment_language import ROOT, KINDS, LIMITATIONS, SCHEMA, PLANNER_SCHEMA
 from control_contract import default_ui, apply_control
 from experiment_diagnostics import build_diagnostics
 from experiment_review import review_evidence
+from dynamic_material import native_request, execute_impact
 from banjo_authoring import EngineCLI, EngineError, write_package
 
 STATIC = Path(__file__).resolve().parent
@@ -115,7 +116,8 @@ class Playground:
         return {"key_configured": bool(self.api_key), "model": self.model,
             "engine_ready": self.engine_path.is_file(), "studio_ready": self.studio_path.is_file(),
             "csrf_token": self.csrf_token, "capabilities": [kind for kind in KINDS if kind != "unsupported"], "limitations": LIMITATIONS,
-            "examples": ["Compare an iron ball hitting glass, wood and iron panels at 2 m/s for 1 second.",
+            "examples": ["Use the new coupled material solver to compare two fictional elastic and plastic materials under a small iron-density sphere impact. Show their actual deformation and contact evidence in 3D.",
+                "Compare an iron ball hitting glass, wood and iron panels at 2 m/s for 1 second.",
                 "Drop an iron ball from 25 cm onto glass, wood and iron. Use a rigid control first.",
                 "Compare the fixed spatial quasistatic pressure response of glass, oak and iron.",
                 "Show the published 6 mm tempered-glass drop benchmark and what is missing.",
@@ -164,7 +166,10 @@ class Playground:
                     raise ValueError("Invalid archived experiment")
                 if len(self.jobs)>=100: raise ValueError("Session history budget reached")
                 for index,case in enumerate(saved["cases"]):
-                    recording = directory / ("reference-report.json" if saved.get("plan",{}).get("experiment")=="continuum_pressure_reference" else f"playback-{index:02d}.json")
+                    experiment = saved.get("plan",{}).get("experiment")
+                    filename = ("reference-report.json" if experiment == "continuum_pressure_reference" else
+                                "dynamic-playback.json" if experiment == "dynamic_material_impact" else f"playback-{index:02d}.json")
+                    recording = directory / filename
                     available = case.get("playback_available") and recording.is_file() and not recording.is_symlink() and recording.stat().st_size <= 64*1024*1024
                     case["playback_available"] = bool(available)
                     case["native_scene"] = False
@@ -178,7 +183,7 @@ class Playground:
         directory = self.runs_path / job_id
         try:
             directory.mkdir(parents=True, exist_ok=False)
-            self.log_event(job_id,"started",planning="model" if prepared_plan is None else "validated_control",engine_sha256=hashlib.sha256(self.engine_path.read_bytes()).hexdigest(),source_sha256={name:hashlib.sha256((STATIC/name).read_bytes()).hexdigest() for name in ("server.py","experiment_language.py","control_contract.py","experiment_diagnostics.py")})
+            self.log_event(job_id,"started",planning="model" if prepared_plan is None else "validated_control",engine_sha256=hashlib.sha256(self.engine_path.read_bytes()).hexdigest(),source_sha256={name:hashlib.sha256((STATIC/name).read_bytes()).hexdigest() for name in ("server.py","experiment_language.py","control_contract.py","experiment_diagnostics.py","dynamic_material.py")})
             self.update(job_id,request_text=message)
             if prepared_plan is None:
                 plan, timing = self.planner(self.api_key, self.model, message, previous)
@@ -201,6 +206,8 @@ class Playground:
                     self.update(job_id, cases=[{"index":0,"name":"Published 6 mm tempered glass reference", "package":{},
                         "status":"reference_only","report":reference,"native_scene":False}])
                 self.update(job_id, status="blocked", message=plan["explanation"] + " No substitute simulation was presented as this capability.")
+            elif plan["experiment"] == "dynamic_material_impact":
+                self.run_dynamic_impact(job_id, directory, plan)
             elif plan["experiment"] in ("thermal_frontier", "material_state_reference", "continuum_pressure_reference"):
                 self.run_reference(job_id, directory, plan)
                 if auto_open and plan["experiment"] == "continuum_pressure_reference":
@@ -276,6 +283,37 @@ class Playground:
             self.log_event(job_id,"error",message=public)
             if directory.is_dir():
                 (directory/"job.json").write_text(json.dumps(self.get(job_id),indent=2,allow_nan=False),encoding="utf-8")
+
+    def run_dynamic_impact(self, job_id, directory, plan):
+        self.update(job_id, status="running", message="Solving the authored materials and recording accepted sphere and mesh states.")
+        executable = self.engine_path.with_name("banjo_dynamic_material_cli" + self.engine_path.suffix)
+        package = native_request(plan["impact"], plan["duration_s"])
+        (directory / "dynamic-request.json").write_text(json.dumps(package, indent=2, allow_nan=False), encoding="utf-8")
+        start = time.perf_counter()
+        recording, provenance = execute_impact(executable, package)
+        wall_s = time.perf_counter() - start
+        path = directory / "dynamic-playback.json"
+        path.write_text(json.dumps(recording, separators=(",", ":"), allow_nan=False), encoding="utf-8")
+        provenance["saved_recording_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+        report = {key: value for key, value in recording.items() if key != "cases"}
+        report["cases"] = [{key: value for key, value in case.items() if key not in ("frames", "mesh")}
+                           for case in recording["cases"]]
+        inner = [{"material_id": case["material_id"], "status": case["status"],
+                  "computed_frames": len(case["frames"]), "error": case.get("error", "")}
+                 for case in recording["cases"]]
+        diagnostics = build_diagnostics(plan, package, recording)
+        self.log_event(job_id, "dynamic_material_recorded", provenance=provenance,
+                       wall_s=wall_s, cases=inner, diagnostics=diagnostics)
+        with self.lock:
+            self.playbacks[(job_id, 0)] = path
+        limited = [case["material_id"] for case in inner if case["status"] == "solver_limit"]
+        message = ("The requested interval completed for every material." if not limited else
+                   "Solver limits stopped: " + ", ".join(limited) + ". The recording retains their last accepted states.")
+        self.update(job_id, status="complete", message=message + " Open the 3D playground to inspect the computed sphere and material motion.",
+                    cases=[{"index": 0, "name": plan["name"], "package": package, "report": report,
+                            "status": recording["status"], "inner_cases": inner, "wall_s": wall_s,
+                            "provenance": provenance, "diagnostics": diagnostics,
+                            "native_scene": False, "playback_available": True}])
 
     def run_reference(self, job_id, directory, plan):
         self.update(job_id,status="running")
@@ -385,7 +423,7 @@ class Playground:
         events=[]
         if path.is_file() and path.stat().st_size<=256*1024:
             events=[strict_json(line) for line in path.read_text(encoding="utf-8").splitlines() if line][-64:]
-        bundle={"job_id":job_id,"case_index":index,"request":job.get("request_text","Original request was not retained by this older job"),"plan":{"name":job["plan"]["name"],"experiment":job["plan"]["experiment"],"duration_s":job["plan"]["duration_s"],"explanation":job["plan"]["explanation"]},"case_wall_s":case.get("wall_s"),"response_scope":("Rigid drop: fracture and deformation are disabled regardless of material damage parameters" if job["plan"].get("drop",{}).get("representation")=="rigid" else "Consult the authored representation and reported constitutive limits"),"requirements":job["plan"].get("requirements",[]),"diagnostics_source_sha256":hashlib.sha256((STATIC/"experiment_diagnostics.py").read_bytes()).hexdigest(),"diagnostics":diagnostics,"events":events,"llm_review":case.get("llm_review")}
+        bundle={"job_id":job_id,"case_index":index,"request":job.get("request_text","Original request was not retained by this older job"),"plan":{"name":job["plan"]["name"],"experiment":job["plan"]["experiment"],"duration_s":job["plan"]["duration_s"],"explanation":job["plan"]["explanation"]},"case_wall_s":case.get("wall_s"),"response_scope":("Rigid drop: fracture and deformation are disabled regardless of material damage parameters" if (job["plan"].get("drop") or {}).get("representation")=="rigid" else "Consult the authored representation and reported constitutive limits"),"requirements":job["plan"].get("requirements",[]),"diagnostics_source_sha256":hashlib.sha256((STATIC/"experiment_diagnostics.py").read_bytes()).hexdigest(),"diagnostics":diagnostics,"events":events,"llm_review":case.get("llm_review")}
         return strict_json(json.dumps(bundle,allow_nan=False).replace(self.api_key,"[redacted]") if self.api_key else json.dumps(bundle,allow_nan=False))
 
     def analyze(self, job_id, body):
@@ -479,8 +517,9 @@ class Handler(BaseHTTPRequestHandler):
             path=urlsplit(self.path).path
             app=self.server.app
             if path=="/api/status": return self.send(app.status())
-            if path=="/api/goal": return self.send({"markdown":(ROOT/"docs/project-goal-2026-09-06.md").read_text(encoding="utf-8")})
-            if path=="/api/schema": return self.send({"language":"banjo-playground-1","schema":SCHEMA,"material_validation":"experimental; no calibrated fracture claim","limits":{"network_cells":850,"objects":12,"sweep_cases":4,"duration_s":3,"recording_bytes":64*1024*1024}})
+            if path=="/api/goal": return self.send({"markdown":(ROOT/"docs/project-goal-2026-09-06.md").read_text(encoding="utf-8") + "\n\n" + (ROOT/"docs/rules-engine-execution-plan.md").read_text(encoding="utf-8")})
+            if path=="/api/goals": return self.send(strict_json((ROOT/"docs/execution-goals.json").read_text(encoding="utf-8")))
+            if path=="/api/schema": return self.send({"language":"banjo-playground-1","schema":SCHEMA,"material_validation":"experimental; no calibrated fracture claim","limits":{"network_cells":850,"objects":12,"sweep_cases":4,"duration_s":3,"dynamic_material_duration_s":.1,"dynamic_material_cases":3,"dynamic_material_step_calls_per_case":200000,"recording_bytes":64*1024*1024}})
             match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/diagnostics/(\d+)",path)
             if match: return self.send(app.evidence(match[1],int(match[2])))
             match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/playback/(\d+)",path)

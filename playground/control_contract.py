@@ -17,7 +17,7 @@ _BUTTON_ACTIONS = {"play_pause", "reset", "step_forward", "step_back"}
 _PHYSICAL = {"height_m", "speed_m_s", "pressure_pa"}
 _EXPERIMENTS = {
     "drop_test", "scene_test", "panel_impact", "plate_drop", "rigid_drop", "knife_cut", "custom_objects",
-    "thermal_frontier", "material_state_reference", "continuum_pressure_reference",
+    "thermal_frontier", "material_state_reference", "continuum_pressure_reference", "dynamic_material_impact",
     "glass_reference", "unsupported",
 }
 
@@ -72,7 +72,7 @@ def _validate_control(control: Any, experiment: str) -> dict[str, Any]:
         if kind != "slider" or lo < 0.1 or hi > 4:
             raise ValueError("Playback speed must be a 0.1..4 slider")
     elif action == "magnification":
-        if kind != "slider" or lo < 1 or hi > 100:
+        if experiment == "dynamic_material_impact" or kind != "slider" or lo < 1 or hi > 100:
             raise ValueError("Magnification must be a 1..100 slider")
     elif action == "frame":
         if kind != "slider" or lo < 0 or hi > 1:

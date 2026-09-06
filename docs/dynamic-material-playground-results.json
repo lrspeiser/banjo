@@ -1,0 +1,2239 @@
+{
+  "schema": "banjo.dynamic-material-checkpoint.v1",
+  "base_commit": "88d88d342e77fac4844d52b9e0ca1d47d9d39fdf",
+  "physics_status": "experimental; not a whole-platform acceptance",
+  "live_requests": [
+    {
+      "job_id": "305aec1de72c477daec4ead2f5257d02",
+      "url": "http://127.0.0.1:8765/?job=305aec1de72c477daec4ead2f5257d02",
+      "request": "Use the new coupled material solver to compare two fictional elastic and plastic materials under a small iron-density sphere impact. Show their actual deformation and contact evidence in 3D.",
+      "status": "complete",
+      "message": "Solver limits stopped: M1, M2. The recording retains their last accepted states. Open the 3D playground to inspect the computed sphere and material motion.",
+      "plan": {
+        "language": "banjo-playground-1",
+        "experiment": "dynamic_material_impact",
+        "projectile": "iron_ball",
+        "panel_dimensions_m": [
+          0.24,
+          0.36,
+          0.04
+        ],
+        "speeds_m_s": [],
+        "heights_m": [],
+        "objects": [],
+        "drop": null,
+        "scene": null,
+        "pressure": null,
+        "impact": {
+          "materials": [
+            {
+              "material_id": "M1",
+              "name": "FICTIONAL_ELASTIC",
+              "density_kg_m3": 1000,
+              "mechanical_law": "isotropic_elastic",
+              "parameters": {
+                "young_modulus_pa": 1.0,
+                "poisson_ratio": 0.25,
+                "maximum_total_strain_norm": 0.08
+              }
+            },
+            {
+              "material_id": "M2",
+              "name": "FICTIONAL_J2_PLASTIC",
+              "density_kg_m3": 7800,
+              "mechanical_law": "j2_plastic",
+              "parameters": {
+                "young_modulus_pa": 5.0,
+                "poisson_ratio": 0.3,
+                "maximum_total_strain_norm": 0.08,
+                "initial_yield_stress_pa": 1200,
+                "isotropic_hardening_modulus_pa": 20000
+              }
+            }
+          ],
+          "dimensions_m": [
+            0.08,
+            0.02,
+            0.08
+          ],
+          "mesh_refinement": 1,
+          "sphere": {
+            "radius_m": 0.012,
+            "density_kg_m3": 7870,
+            "clearance_m": 0.0005,
+            "offset_xz_m": [
+              0.007,
+              0.009
+            ],
+            "speed_m_s": 0.1
+          },
+          "energy_budget_j": 6e-06,
+          "max_step_calls": 200000
+        },
+        "name": "Coupled solver: elastic vs J2-plastic comparison with small iron-density sphere",
+        "explanation": "Compare two FICTIONAL materials (isotropic elastic vs J2 plastic) using the dynamic_material_impact route. A small iron-density sphere is dropped/impacted onto a clamped rectangular solid; the coupled material solver computes nodal deformations and contact responses. Results are experimental diagnostics (uncalibrated) showing displacement fields and contact forces/timestamps.",
+        "limitations": [
+          "Experimental (uncalibrated) solver diagnostics only \u2014 not validated for real materials or engineering design.",
+          "No fracture, cutting, large-strain rubber behavior, permanent unloaded dent modeling, or tempered glass shattering is performed.",
+          "Material definitions are FICTIONAL and illustrative; do not interpret reported stiffnesses, yields, or stresses as matching real-world materials.",
+          "Solver may stop early on work/error limits; simulation parameters (mesh refinement, step limits, energy budget) influence fidelity and runtime.",
+          "Total strain norms are bounded (maximum_total_strain_norm \u2264 0.1) as required by the coupled solver."
+        ],
+        "duration_s": 0.1,
+        "ui": {
+          "title": "Dynamic material impact replay",
+          "controls": [
+            {
+              "id": "play_pause",
+              "label": "Play / Pause",
+              "kind": "button",
+              "action": "play_pause",
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "value": 0
+            },
+            {
+              "id": "reset",
+              "label": "Reset",
+              "kind": "button",
+              "action": "reset",
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "value": 0
+            },
+            {
+              "id": "step_back",
+              "label": "Step back",
+              "kind": "button",
+              "action": "step_back",
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "value": 0
+            },
+            {
+              "id": "step_forward",
+              "label": "Step forward",
+              "kind": "button",
+              "action": "step_forward",
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "value": 0
+            },
+            {
+              "id": "components",
+              "label": "Show components",
+              "kind": "toggle",
+              "action": "components",
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "value": 1
+            },
+            {
+              "id": "reference",
+              "label": "Show reference markers",
+              "kind": "toggle",
+              "action": "reference",
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "value": 1
+            },
+            {
+              "id": "playback_speed",
+              "label": "Playback speed",
+              "kind": "slider",
+              "action": "playback_speed",
+              "min": 0.1,
+              "max": 4,
+              "step": 0.1,
+              "value": 1
+            },
+            {
+              "id": "frame",
+              "label": "Frame",
+              "kind": "slider",
+              "action": "frame",
+              "min": 0,
+              "max": 1,
+              "step": 0.01,
+              "value": 0
+            }
+          ]
+        },
+        "requirements": [
+          {
+            "description": "Run dynamic_material_impact with two materials (isotropic_elastic and j2_plastic) and an iron-density sphere; provide nodal deformation and contact history.",
+            "status": "supported",
+            "reason": "The dynamic_material_impact route supports coupled small-strain sphere/brick impacts and returns nodal positions and contact diagnostics."
+          }
+        ],
+        "fidelity": "experimental"
+      },
+      "timing": {
+        "planning_wall_s": 18.177103099995293,
+        "model": "gpt-5-mini",
+        "usage": {
+          "input_tokens": 3911,
+          "input_tokens_details": {
+            "cache_write_tokens": 0,
+            "cached_tokens": 0
+          },
+          "output_tokens": 1883,
+          "output_tokens_details": {
+            "reasoning_tokens": 576
+          },
+          "total_tokens": 5794
+        },
+        "response_id": "resp_03e45d66ad24ce12016a9df569a72087d0ae81783fe3c3519d",
+        "total_wall_s": 18.208657200011658
+      },
+      "cases": [
+        {
+          "index": 0,
+          "name": "Coupled solver: elastic vs J2-plastic comparison with small iron-density sphere",
+          "package": {
+            "materials": [
+              {
+                "material_id": "M1",
+                "name": "FICTIONAL_ELASTIC",
+                "units": "SI",
+                "density_kg_m3": 1000.0,
+                "mechanical_law": "isotropic_elastic",
+                "parameters": {
+                  "young_modulus_pa": 1.0,
+                  "poisson_ratio": 0.25,
+                  "maximum_total_strain_norm": 0.08
+                },
+                "required_capabilities": [
+                  "small_strain_reference"
+                ],
+                "physical_hash": "36e59e92887c313e4cd6bec7bfa671910e72d34438c841ae71f9ea1438a5e97e"
+              },
+              {
+                "material_id": "M2",
+                "name": "FICTIONAL_J2_PLASTIC",
+                "units": "SI",
+                "density_kg_m3": 7800.0,
+                "mechanical_law": "j2_plastic",
+                "parameters": {
+                  "young_modulus_pa": 5.0,
+                  "poisson_ratio": 0.3,
+                  "maximum_total_strain_norm": 0.08,
+                  "initial_yield_stress_pa": 1200.0,
+                  "isotropic_hardening_modulus_pa": 20000.0
+                },
+                "required_capabilities": [
+                  "small_strain_reference"
+                ],
+                "physical_hash": "37dd694a1bca4a4475601613a802e1c7a48a3fe7624c898fbb93b6c14fde81a9"
+              }
+            ],
+            "dimensions_m": [
+              0.08,
+              0.02,
+              0.08
+            ],
+            "mesh_refinement": 1,
+            "sphere": {
+              "radius_m": 0.012,
+              "density_kg_m3": 7870,
+              "clearance_m": 0.0005,
+              "offset_xz_m": [
+                0.007,
+                0.009
+              ],
+              "speed_m_s": 0.1
+            },
+            "energy_budget_j": 6e-06,
+            "max_step_calls": 200000,
+            "schema": "banjo.dynamic-material-request.v1",
+            "duration_s": 0.1
+          },
+          "report": {
+            "physical_response_validated": false,
+            "request": {
+              "dimensions_m": [
+                0.08,
+                0.02,
+                0.08
+              ],
+              "duration_s": 0.1,
+              "energy_budget_j": 6e-06,
+              "materials": [
+                {
+                  "density_kg_m3": 1000.0,
+                  "material_id": "M1",
+                  "mechanical_law": "isotropic_elastic",
+                  "name": "FICTIONAL_ELASTIC",
+                  "parameters": {
+                    "maximum_total_strain_norm": 0.08,
+                    "poisson_ratio": 0.25,
+                    "young_modulus_pa": 1.0
+                  },
+                  "physical_hash": "36e59e92887c313e4cd6bec7bfa671910e72d34438c841ae71f9ea1438a5e97e",
+                  "required_capabilities": [
+                    "small_strain_reference"
+                  ],
+                  "units": "SI"
+                },
+                {
+                  "density_kg_m3": 7800.0,
+                  "material_id": "M2",
+                  "mechanical_law": "j2_plastic",
+                  "name": "FICTIONAL_J2_PLASTIC",
+                  "parameters": {
+                    "initial_yield_stress_pa": 1200.0,
+                    "isotropic_hardening_modulus_pa": 20000.0,
+                    "maximum_total_strain_norm": 0.08,
+                    "poisson_ratio": 0.3,
+                    "young_modulus_pa": 5.0
+                  },
+                  "physical_hash": "37dd694a1bca4a4475601613a802e1c7a48a3fe7624c898fbb93b6c14fde81a9",
+                  "required_capabilities": [
+                    "small_strain_reference"
+                  ],
+                  "units": "SI"
+                }
+              ],
+              "max_step_calls": 200000,
+              "mesh_refinement": 1,
+              "schema": "banjo.dynamic-material-request.v1",
+              "sphere": {
+                "clearance_m": 0.0005,
+                "density_kg_m3": 7870,
+                "offset_xz_m": [
+                  0.007,
+                  0.009
+                ],
+                "radius_m": 0.012,
+                "speed_m_s": 0.1
+              }
+            },
+            "schema": "banjo.dynamic-material-playback.v1",
+            "scope": "CPU small-strain tetrahedral reference with sphere contact; no fracture, finite strain, spatial convergence or material calibration",
+            "solver_options": {
+              "contact_margin_m": 1e-06,
+              "error_limits": {
+                "absolute_energy_residual_j": 6e-06,
+                "energy_disagreement_j": 0.0001,
+                "position_m": 0.0001,
+                "reference_time_s": 0.1,
+                "strain": 0.1,
+                "velocity_m_s": 1.0
+              },
+              "frame_interval_s": 0.001,
+              "friction_coefficient": 0.15,
+              "gravity_m_s2": [
+                0.0,
+                -9.81,
+                0.0
+              ],
+              "integrator": "velocity_verlet",
+              "maximum_geometry_iterations": 100000000,
+              "maximum_geometry_queries": 100000000,
+              "maximum_penetration_m": 1e-05,
+              "maximum_reserved_element_visits": 100000000,
+              "maximum_step_calls": 200000,
+              "minimum_trial_dt_s": 1e-11
+            },
+            "status": "solver_limit",
+            "cases": [
+              {
+                "error": "Coupled advance minimum interval cannot meet geometry/error limits",
+                "material": {
+                  "density_kg_m3": 1000.0,
+                  "material_id": "M1",
+                  "mechanical_law": "isotropic_elastic",
+                  "name": "FICTIONAL_ELASTIC",
+                  "parameters": {
+                    "maximum_total_strain_norm": 0.08,
+                    "poisson_ratio": 0.25,
+                    "young_modulus_pa": 1.0
+                  },
+                  "physical_hash": "36e59e92887c313e4cd6bec7bfa671910e72d34438c841ae71f9ea1438a5e97e",
+                  "required_capabilities": [
+                    "small_strain_reference"
+                  ],
+                  "units": "SI"
+                },
+                "material_id": "M1",
+                "sphere_mass_kg": 0.05696486595936385,
+                "sphere_radius_m": 0.012,
+                "status": "solver_limit",
+                "summary": {
+                  "absolute_energy_residual_j": 5.229640914779826e-10,
+                  "accepted_contacts": 34,
+                  "accepted_segments": 33,
+                  "completed_duration_s": 0.013000000000000001,
+                  "contact_dissipation_j": 8.452365977915772e-05,
+                  "contact_energy_reserve_spent_j": 0.0,
+                  "energy_budget_j": 6e-06,
+                  "external_work_j": 0.0017101014711536967,
+                  "geometry_iterations": 2717,
+                  "geometry_queries": 9768,
+                  "last_error": {
+                    "absolute_energy_residual_j": 0.0,
+                    "energy_disagreement_j": 0.0,
+                    "normalized": null,
+                    "position_m": 0.0,
+                    "strain": 0.0,
+                    "velocity_m_s": 0.0
+                  },
+                  "maximum_accepted_error": 0.018305346160738326,
+                  "minimum_accepted_step_s": 5e-05,
+                  "minimum_step_error": {
+                    "absolute_energy_residual_j": 1.0611172385685944e-18,
+                    "energy_disagreement_j": 1.0587911840678754e-22,
+                    "normalized": 0.00019514418633944402,
+                    "position_m": 3.469446951953614e-18,
+                    "strain": 1.5899003276961254e-17,
+                    "velocity_m_s": 5.551115125710722e-17
+                  },
+                  "plastic_dissipation_j": 0.0,
+                  "rejected_segments": 35,
+                  "requested_duration_s": 0.1,
+                  "reserved_element_visits": 3216,
+                  "sampled_peak_displacement_m": 0.0014851239999465482,
+                  "sampled_peak_upward_speed_m_s": 0.0,
+                  "signed_energy_residual_j": -5.229640913975145e-10,
+                  "step_calls": 134,
+                  "suggested_trial_dt_s": 0.0011390624999999999,
+                  "wall_ms": 2.8849
+                }
+              },
+              {
+                "error": "Coupled advance minimum interval cannot meet geometry/error limits",
+                "material": {
+                  "density_kg_m3": 7800.0,
+                  "material_id": "M2",
+                  "mechanical_law": "j2_plastic",
+                  "name": "FICTIONAL_J2_PLASTIC",
+                  "parameters": {
+                    "initial_yield_stress_pa": 1200.0,
+                    "isotropic_hardening_modulus_pa": 20000.0,
+                    "maximum_total_strain_norm": 0.08,
+                    "poisson_ratio": 0.3,
+                    "young_modulus_pa": 5.0
+                  },
+                  "physical_hash": "37dd694a1bca4a4475601613a802e1c7a48a3fe7624c898fbb93b6c14fde81a9",
+                  "required_capabilities": [
+                    "small_strain_reference"
+                  ],
+                  "units": "SI"
+                },
+                "material_id": "M2",
+                "sphere_mass_kg": 0.05696486595936385,
+                "sphere_radius_m": 0.012,
+                "status": "solver_limit",
+                "summary": {
+                  "absolute_energy_residual_j": 2.2729205794082132e-09,
+                  "accepted_contacts": 46,
+                  "accepted_segments": 33,
+                  "completed_duration_s": 0.016,
+                  "contact_dissipation_j": 0.00021845610357058994,
+                  "contact_energy_reserve_spent_j": 0.0,
+                  "energy_budget_j": 6e-06,
+                  "external_work_j": 0.007744478798371372,
+                  "geometry_iterations": 2672,
+                  "geometry_queries": 9552,
+                  "last_error": {
+                    "absolute_energy_residual_j": 0.0,
+                    "energy_disagreement_j": 0.0,
+                    "normalized": null,
+                    "position_m": 0.0,
+                    "strain": 0.0,
+                    "velocity_m_s": 0.0
+                  },
+                  "maximum_accepted_error": 0.01867394607087506,
+                  "minimum_accepted_step_s": 5e-05,
+                  "minimum_step_error": {
+                    "absolute_energy_residual_j": 1.742954696937947e-18,
+                    "energy_disagreement_j": 8.673617379884035e-19,
+                    "normalized": 0.0021636256396891456,
+                    "position_m": 3.878959614448864e-18,
+                    "strain": 1.5515838460369408e-17,
+                    "velocity_m_s": 5.551115134111775e-17
+                  },
+                  "plastic_dissipation_j": 0.0,
+                  "rejected_segments": 34,
+                  "requested_duration_s": 0.1,
+                  "reserved_element_visits": 3192,
+                  "sampled_peak_displacement_m": 0.0015540996453224606,
+                  "sampled_peak_upward_speed_m_s": 0.0,
+                  "signed_energy_residual_j": -2.272920579694934e-09,
+                  "step_calls": 133,
+                  "suggested_trial_dt_s": 0.0011390624999999999,
+                  "wall_ms": 3.2337
+                }
+              }
+            ]
+          },
+          "status": "solver_limit",
+          "inner_cases": [
+            {
+              "material_id": "M1",
+              "status": "solver_limit",
+              "computed_frames": 14,
+              "error": "Coupled advance minimum interval cannot meet geometry/error limits"
+            },
+            {
+              "material_id": "M2",
+              "status": "solver_limit",
+              "computed_frames": 17,
+              "error": "Coupled advance minimum interval cannot meet geometry/error limits"
+            }
+          ],
+          "wall_s": 0.019714900001417845,
+          "provenance": {
+            "request_sha256": "52928410c8a9ea8fcd2e1dd5d938b78630f3cc839104986d12d99642da558185",
+            "executable_sha256": "e026cb476336dfdb3e12433ab847edadf3a533956f1888bf448d76f74f85563b",
+            "recording_sha256": "fe699334351c465afc927eda2e54a456147282b1aeb6d653a286b98c5dad8f8a",
+            "saved_recording_sha256": "1081fdebcb0cedb6b7e98ed7c6b3d501e0c894a0a58e767846360343818a7925"
+          },
+          "diagnostics": {
+            "schema": "banjo.experiment-diagnostics.v1",
+            "source_schema": "banjo.dynamic-material-playback.v1",
+            "native_facts": {
+              "status": "solver_limit",
+              "physical_response_validated": false,
+              "request": {
+                "duration_s": 0.1,
+                "energy_budget_j": 6e-06,
+                "max_step_calls": 200000,
+                "dimensions_m": [
+                  0.08,
+                  0.02,
+                  0.08
+                ],
+                "mesh_refinement": 1,
+                "sphere": {
+                  "clearance_m": 0.0005,
+                  "density_kg_m3": 7870,
+                  "offset_xz_m": [
+                    0.007,
+                    0.009
+                  ],
+                  "radius_m": 0.012,
+                  "speed_m_s": 0.1
+                }
+              },
+              "cases": [
+                {
+                  "material_id": "M1",
+                  "material": {
+                    "density_kg_m3": 1000.0,
+                    "material_id": "M1",
+                    "mechanical_law": "isotropic_elastic",
+                    "name": "FICTIONAL_ELASTIC",
+                    "parameters": {
+                      "maximum_total_strain_norm": 0.08,
+                      "poisson_ratio": 0.25,
+                      "young_modulus_pa": 1.0
+                    },
+                    "physical_hash": "36e59e92887c313e4cd6bec7bfa671910e72d34438c841ae71f9ea1438a5e97e",
+                    "required_capabilities": [
+                      "small_strain_reference"
+                    ],
+                    "units": "SI"
+                  },
+                  "material_numeric_sha256": "d36f8c697248cd080655d1adf043d0e91a737b1d4e509d4fda59d53a61b73357",
+                  "status": "solver_limit",
+                  "error": "Coupled advance minimum interval cannot meet geometry/error limits",
+                  "completed_duration_s": 0.013000000000000001,
+                  "requested_duration_s": 0.1,
+                  "accepted_contacts": 34,
+                  "contact_evidence": "native_solver_counter",
+                  "absolute_energy_residual_j": 5.229640914779826e-10,
+                  "scaled_energy_budget_j": 6e-06,
+                  "energy_budget_met": true,
+                  "step_calls": 134,
+                  "wall_ms": 2.8849,
+                  "plastic_dissipation_j": 0.0,
+                  "maximum_equivalent_plastic_strain": 0.0,
+                  "observed_plastic_response": false,
+                  "permanent_dent_supported": false,
+                  "sampled_peak_upward_speed_m_s": 0.0,
+                  "sampled_peak_displacement_m": 0.0014851239999465482
+                },
+                {
+                  "material_id": "M2",
+                  "material": {
+                    "density_kg_m3": 7800.0,
+                    "material_id": "M2",
+                    "mechanical_law": "j2_plastic",
+                    "name": "FICTIONAL_J2_PLASTIC",
+                    "parameters": {
+                      "initial_yield_stress_pa": 1200.0,
+                      "isotropic_hardening_modulus_pa": 20000.0,
+                      "maximum_total_strain_norm": 0.08,
+                      "poisson_ratio": 0.3,
+                      "young_modulus_pa": 5.0
+                    },
+                    "physical_hash": "37dd694a1bca4a4475601613a802e1c7a48a3fe7624c898fbb93b6c14fde81a9",
+                    "required_capabilities": [
+                      "small_strain_reference"
+                    ],
+                    "units": "SI"
+                  },
+                  "material_numeric_sha256": "8f644765faee75cdc466145682b167314ceb75d05bc3778f619e27edd0ff8aff",
+                  "status": "solver_limit",
+                  "error": "Coupled advance minimum interval cannot meet geometry/error limits",
+                  "completed_duration_s": 0.016,
+                  "requested_duration_s": 0.1,
+                  "accepted_contacts": 46,
+                  "contact_evidence": "native_solver_counter",
+                  "absolute_energy_residual_j": 2.2729205794082132e-09,
+                  "scaled_energy_budget_j": 6e-06,
+                  "energy_budget_met": true,
+                  "step_calls": 133,
+                  "wall_ms": 3.2337,
+                  "plastic_dissipation_j": 0.0,
+                  "maximum_equivalent_plastic_strain": 0.0,
+                  "observed_plastic_response": false,
+                  "permanent_dent_supported": false,
+                  "sampled_peak_upward_speed_m_s": 0.0,
+                  "sampled_peak_displacement_m": 0.0015540996453224606
+                }
+              ],
+              "cases_truncated": false
+            },
+            "package": {
+              "sha256": "52928410c8a9ea8fcd2e1dd5d938b78630f3cc839104986d12d99642da558185",
+              "input_materials": [
+                {
+                  "material_id": "M1",
+                  "numeric": {
+                    "mechanical_law": "isotropic_elastic",
+                    "density_kg_m3": 1000.0,
+                    "parameters": {
+                      "maximum_total_strain_norm": 0.08,
+                      "poisson_ratio": 0.25,
+                      "young_modulus_pa": 1.0
+                    }
+                  },
+                  "sha256": "d36f8c697248cd080655d1adf043d0e91a737b1d4e509d4fda59d53a61b73357"
+                },
+                {
+                  "material_id": "M2",
+                  "numeric": {
+                    "mechanical_law": "j2_plastic",
+                    "density_kg_m3": 7800.0,
+                    "parameters": {
+                      "initial_yield_stress_pa": 1200.0,
+                      "isotropic_hardening_modulus_pa": 20000.0,
+                      "maximum_total_strain_norm": 0.08,
+                      "poisson_ratio": 0.3,
+                      "young_modulus_pa": 5.0
+                    }
+                  },
+                  "sha256": "8f644765faee75cdc466145682b167314ceb75d05bc3778f619e27edd0ff8aff"
+                }
+              ],
+              "input_materials_truncated": false
+            },
+            "expectations": [
+              {
+                "kind": "flight_window",
+                "estimated_pre_contact_flight_s": 0.00415372087278434,
+                "requested_duration_s": 0.1,
+                "estimated_post_flight_observation_s": 0.09584627912721566,
+                "model": "constant gravity from authored clearance and downward speed"
+              }
+            ],
+            "checks": [
+              {
+                "check": "case_0_completion",
+                "status": "fail",
+                "observation": "solver_stopped_before_requested_duration",
+                "scope": "native adaptive solver status and duration counters",
+                "evidence": {
+                  "material_id": "M1",
+                  "completed_duration_s": 0.013000000000000001,
+                  "requested_duration_s": 0.1
+                }
+              },
+              {
+                "check": "case_0_contact",
+                "status": "pass",
+                "observation": "native_solver_reported_contact",
+                "scope": "native accepted-contact counter; sampled proximity is not used"
+              },
+              {
+                "check": "case_1_completion",
+                "status": "fail",
+                "observation": "solver_stopped_before_requested_duration",
+                "scope": "native adaptive solver status and duration counters",
+                "evidence": {
+                  "material_id": "M2",
+                  "completed_duration_s": 0.016,
+                  "requested_duration_s": 0.1
+                }
+              },
+              {
+                "check": "case_1_contact",
+                "status": "pass",
+                "observation": "native_solver_reported_contact",
+                "scope": "native accepted-contact counter; sampled proximity is not used"
+              }
+            ],
+            "validity": {
+              "physical_response_validated": false
+            },
+            "limitations": [
+              "Accepted-contact counts are native solver evidence; sampled proximity is not contact evidence.",
+              "Observed plastic strain or dissipation does not establish a permanent dent.",
+              "Wall time is diagnostic timing and is not a realtime-performance claim.",
+              "The dynamic patch does not model fracture, so fragment absence is not a failure criterion."
+            ]
+          },
+          "native_scene": false,
+          "playback_available": true
+        }
+      ]
+    },
+    {
+      "job_id": "46a69fb32b7f4c0aa4550eec318af39c",
+      "url": "http://127.0.0.1:8765/?job=46a69fb32b7f4c0aa4550eec318af39c",
+      "request": "Create a dynamic material impact experiment for 0.1 seconds. Compare fictional elastic material Cedar-X and fictional J2 material Copper-Y. Both have density 1000 kg/m3, Young modulus 1000000 Pa, Poisson ratio 0.25 and maximum total strain norm 0.08. Copper-Y has yield stress 1200 Pa and hardening modulus 20000 Pa. Use a bottom-clamped brick 0.08 x 0.02 x 0.08 m, refinement 1, an iron-density sphere radius 0.012 m and density 7870 kg/m3, clearance 0.0005 m, center offset x=0.007 z=0.009 m, initial speed 0. Energy budget 0.000006 J per 0.1 s and at most 200000 step calls per material. Include play, reset, components, reference, and slow playback at 0.1x. Preserve every SI number; this is an experimental diagnostic, not a calibrated material claim.",
+      "status": "complete",
+      "message": "The requested interval completed for every material. Open the 3D playground to inspect the computed sphere and material motion.",
+      "plan": {
+        "language": "banjo-playground-1",
+        "experiment": "dynamic_material_impact",
+        "projectile": "iron_ball",
+        "panel_dimensions_m": [
+          0.24,
+          0.36,
+          0.04
+        ],
+        "speeds_m_s": [],
+        "heights_m": [],
+        "objects": [],
+        "drop": null,
+        "scene": null,
+        "pressure": null,
+        "impact": {
+          "materials": [
+            {
+              "material_id": "Cedar-X",
+              "name": "Cedar-X",
+              "density_kg_m3": 1000,
+              "mechanical_law": "isotropic_elastic",
+              "parameters": {
+                "young_modulus_pa": 1000000,
+                "poisson_ratio": 0.25,
+                "maximum_total_strain_norm": 0.08
+              }
+            },
+            {
+              "material_id": "Copper-Y",
+              "name": "Copper-Y",
+              "density_kg_m3": 1000,
+              "mechanical_law": "j2_plastic",
+              "parameters": {
+                "young_modulus_pa": 1000000,
+                "poisson_ratio": 0.25,
+                "maximum_total_strain_norm": 0.08,
+                "initial_yield_stress_pa": 1200,
+                "isotropic_hardening_modulus_pa": 20000
+              }
+            }
+          ],
+          "dimensions_m": [
+            0.08,
+            0.02,
+            0.08
+          ],
+          "mesh_refinement": 1,
+          "sphere": {
+            "radius_m": 0.012,
+            "density_kg_m3": 7870,
+            "clearance_m": 0.0005,
+            "offset_xz_m": [
+              0.007,
+              0.009
+            ],
+            "speed_m_s": 0
+          },
+          "energy_budget_j": 6e-06,
+          "max_step_calls": 200000
+        },
+        "name": "Dynamic material impact diagnostic: Cedar-X vs Copper-Y",
+        "explanation": "Short experimental dynamic-impact diagnostic comparing two FICTIONAL materials (Cedar-X: isotropic elastic; Copper-Y: J2 plastic) for a bottom-clamped brick impacted by a dense sphere. Preserves all user-provided SI numbers. This is explicitly experimental (uncalibrated) and illustrative only.",
+        "limitations": [
+          "Experimental (uncalibrated) diagnostic \u2014 results are not validated or calibrated for real materials.",
+          "No fracture, cutting, finite-strain rubber behavior, or permanent unloaded dent modeling is provided by this diagnostic.",
+          "Solver may stop early if numerical limits are reached given the preserved user parameters and tight strain validity range.",
+          "Material coefficients are FICTIONAL and provided as requested; do not interpret them as literal properties of real cedar or copper."
+        ],
+        "duration_s": 0.1,
+        "ui": {
+          "title": "Dynamic Material Impact \u2014 Cedar-X vs Copper-Y",
+          "controls": [
+            {
+              "id": "play",
+              "label": "Play/Pause",
+              "kind": "button",
+              "action": "play_pause",
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "value": 0
+            },
+            {
+              "id": "reset",
+              "label": "Reset",
+              "kind": "button",
+              "action": "reset",
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "value": 0
+            },
+            {
+              "id": "components",
+              "label": "Components",
+              "kind": "toggle",
+              "action": "components",
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "value": 0
+            },
+            {
+              "id": "reference",
+              "label": "Reference overlay",
+              "kind": "toggle",
+              "action": "reference",
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "value": 0
+            },
+            {
+              "id": "playback_speed",
+              "label": "Playback speed",
+              "kind": "slider",
+              "action": "playback_speed",
+              "min": 0.1,
+              "max": 4,
+              "step": 0.1,
+              "value": 0.1
+            }
+          ]
+        },
+        "requirements": [
+          {
+            "description": "Run an experimental dynamic_material_impact diagnostic with the supplied FICTIONAL material parameters and solver limits.",
+            "status": "supported",
+            "reason": "All requested features (two FICTIONAL materials, clamped brick, sphere parameters, energy budget, step call limits, and duration) are within the dynamic_material_impact capability and preserved exactly."
+          }
+        ],
+        "fidelity": "experimental"
+      },
+      "timing": {
+        "planning_wall_s": 11.468762000004062,
+        "model": "gpt-5-mini",
+        "usage": {
+          "input_tokens": 4283,
+          "input_tokens_details": {
+            "cache_write_tokens": 0,
+            "cached_tokens": 0
+          },
+          "output_tokens": 1626,
+          "output_tokens_details": {
+            "reasoning_tokens": 576
+          },
+          "total_tokens": 5909
+        },
+        "response_id": "resp_0c967e4a57b37561016a9df613f96487d0a87d61ac2447e0dc",
+        "total_wall_s": 14.6029189999972
+      },
+      "cases": [
+        {
+          "index": 0,
+          "name": "Dynamic material impact diagnostic: Cedar-X vs Copper-Y",
+          "package": {
+            "materials": [
+              {
+                "material_id": "Cedar-X",
+                "name": "Cedar-X",
+                "units": "SI",
+                "density_kg_m3": 1000.0,
+                "mechanical_law": "isotropic_elastic",
+                "parameters": {
+                  "young_modulus_pa": 1000000.0,
+                  "poisson_ratio": 0.25,
+                  "maximum_total_strain_norm": 0.08
+                },
+                "required_capabilities": [
+                  "small_strain_reference"
+                ],
+                "physical_hash": "bfc93218b790024fa8631edcc24c9f4245700afe2f50e82cc09fe7a373e844ea"
+              },
+              {
+                "material_id": "Copper-Y",
+                "name": "Copper-Y",
+                "units": "SI",
+                "density_kg_m3": 1000.0,
+                "mechanical_law": "j2_plastic",
+                "parameters": {
+                  "young_modulus_pa": 1000000.0,
+                  "poisson_ratio": 0.25,
+                  "maximum_total_strain_norm": 0.08,
+                  "initial_yield_stress_pa": 1200.0,
+                  "isotropic_hardening_modulus_pa": 20000.0
+                },
+                "required_capabilities": [
+                  "small_strain_reference"
+                ],
+                "physical_hash": "0d610b0e071215e26c732dbcd528edc1fd636ae184bde4f9a2124c848b3b1be6"
+              }
+            ],
+            "dimensions_m": [
+              0.08,
+              0.02,
+              0.08
+            ],
+            "mesh_refinement": 1,
+            "sphere": {
+              "radius_m": 0.012,
+              "density_kg_m3": 7870,
+              "clearance_m": 0.0005,
+              "offset_xz_m": [
+                0.007,
+                0.009
+              ],
+              "speed_m_s": 0
+            },
+            "energy_budget_j": 6e-06,
+            "max_step_calls": 200000,
+            "schema": "banjo.dynamic-material-request.v1",
+            "duration_s": 0.1
+          },
+          "report": {
+            "physical_response_validated": false,
+            "request": {
+              "dimensions_m": [
+                0.08,
+                0.02,
+                0.08
+              ],
+              "duration_s": 0.1,
+              "energy_budget_j": 6e-06,
+              "materials": [
+                {
+                  "density_kg_m3": 1000.0,
+                  "material_id": "Cedar-X",
+                  "mechanical_law": "isotropic_elastic",
+                  "name": "Cedar-X",
+                  "parameters": {
+                    "maximum_total_strain_norm": 0.08,
+                    "poisson_ratio": 0.25,
+                    "young_modulus_pa": 1000000.0
+                  },
+                  "physical_hash": "bfc93218b790024fa8631edcc24c9f4245700afe2f50e82cc09fe7a373e844ea",
+                  "required_capabilities": [
+                    "small_strain_reference"
+                  ],
+                  "units": "SI"
+                },
+                {
+                  "density_kg_m3": 1000.0,
+                  "material_id": "Copper-Y",
+                  "mechanical_law": "j2_plastic",
+                  "name": "Copper-Y",
+                  "parameters": {
+                    "initial_yield_stress_pa": 1200.0,
+                    "isotropic_hardening_modulus_pa": 20000.0,
+                    "maximum_total_strain_norm": 0.08,
+                    "poisson_ratio": 0.25,
+                    "young_modulus_pa": 1000000.0
+                  },
+                  "physical_hash": "0d610b0e071215e26c732dbcd528edc1fd636ae184bde4f9a2124c848b3b1be6",
+                  "required_capabilities": [
+                    "small_strain_reference"
+                  ],
+                  "units": "SI"
+                }
+              ],
+              "max_step_calls": 200000,
+              "mesh_refinement": 1,
+              "schema": "banjo.dynamic-material-request.v1",
+              "sphere": {
+                "clearance_m": 0.0005,
+                "density_kg_m3": 7870,
+                "offset_xz_m": [
+                  0.007,
+                  0.009
+                ],
+                "radius_m": 0.012,
+                "speed_m_s": 0
+              }
+            },
+            "schema": "banjo.dynamic-material-playback.v1",
+            "scope": "CPU small-strain tetrahedral reference with sphere contact; no fracture, finite strain, spatial convergence or material calibration",
+            "solver_options": {
+              "contact_margin_m": 1e-06,
+              "error_limits": {
+                "absolute_energy_residual_j": 6e-06,
+                "energy_disagreement_j": 0.0001,
+                "position_m": 0.0001,
+                "reference_time_s": 0.1,
+                "strain": 0.1,
+                "velocity_m_s": 1.0
+              },
+              "frame_interval_s": 0.001,
+              "friction_coefficient": 0.15,
+              "gravity_m_s2": [
+                0.0,
+                -9.81,
+                0.0
+              ],
+              "integrator": "velocity_verlet",
+              "maximum_geometry_iterations": 100000000,
+              "maximum_geometry_queries": 100000000,
+              "maximum_penetration_m": 1e-05,
+              "maximum_reserved_element_visits": 100000000,
+              "maximum_step_calls": 200000,
+              "minimum_trial_dt_s": 1e-11
+            },
+            "status": "complete",
+            "cases": [
+              {
+                "material": {
+                  "density_kg_m3": 1000.0,
+                  "material_id": "Cedar-X",
+                  "mechanical_law": "isotropic_elastic",
+                  "name": "Cedar-X",
+                  "parameters": {
+                    "maximum_total_strain_norm": 0.08,
+                    "poisson_ratio": 0.25,
+                    "young_modulus_pa": 1000000.0
+                  },
+                  "physical_hash": "bfc93218b790024fa8631edcc24c9f4245700afe2f50e82cc09fe7a373e844ea",
+                  "required_capabilities": [
+                    "small_strain_reference"
+                  ],
+                  "units": "SI"
+                },
+                "material_id": "Cedar-X",
+                "sphere_mass_kg": 0.05696486595936385,
+                "sphere_radius_m": 0.012,
+                "status": "complete",
+                "summary": {
+                  "absolute_energy_residual_j": 3.866883845689267e-06,
+                  "accepted_contacts": 85572,
+                  "accepted_segments": 22329,
+                  "completed_duration_s": 0.1,
+                  "contact_dissipation_j": 0.00022465797306025652,
+                  "contact_energy_reserve_spent_j": 1.5597454359620884e-06,
+                  "energy_budget_j": 6e-06,
+                  "external_work_j": 0.0002849786641473766,
+                  "geometry_iterations": 1959521,
+                  "geometry_queries": 7505335,
+                  "last_error": {
+                    "absolute_energy_residual_j": 0.0,
+                    "energy_disagreement_j": 0.0,
+                    "normalized": 0.0,
+                    "position_m": 0.0,
+                    "strain": 0.0,
+                    "velocity_m_s": 0.0
+                  },
+                  "maximum_accepted_error": 0.9993003038704984,
+                  "minimum_accepted_step_s": 6.0047018104656156e-09,
+                  "minimum_step_error": {
+                    "absolute_energy_residual_j": 0.0,
+                    "energy_disagreement_j": 0.0,
+                    "normalized": 0.0,
+                    "position_m": 0.0,
+                    "strain": 0.0,
+                    "velocity_m_s": 0.0
+                  },
+                  "plastic_dissipation_j": 0.0,
+                  "rejected_segments": 469,
+                  "requested_duration_s": 0.1,
+                  "reserved_element_visits": 1641456,
+                  "sampled_peak_displacement_m": 6.875686540313495e-05,
+                  "sampled_peak_upward_speed_m_s": 0.057966785016326676,
+                  "signed_energy_residual_j": 2.8389422461088808e-06,
+                  "step_calls": 68394,
+                  "suggested_trial_dt_s": 2.5471219241775448e-05,
+                  "wall_ms": 1685.2698
+                }
+              },
+              {
+                "material": {
+                  "density_kg_m3": 1000.0,
+                  "material_id": "Copper-Y",
+                  "mechanical_law": "j2_plastic",
+                  "name": "Copper-Y",
+                  "parameters": {
+                    "initial_yield_stress_pa": 1200.0,
+                    "isotropic_hardening_modulus_pa": 20000.0,
+                    "maximum_total_strain_norm": 0.08,
+                    "poisson_ratio": 0.25,
+                    "young_modulus_pa": 1000000.0
+                  },
+                  "physical_hash": "0d610b0e071215e26c732dbcd528edc1fd636ae184bde4f9a2124c848b3b1be6",
+                  "required_capabilities": [
+                    "small_strain_reference"
+                  ],
+                  "units": "SI"
+                },
+                "material_id": "Copper-Y",
+                "sphere_mass_kg": 0.05696486595936385,
+                "sphere_radius_m": 0.012,
+                "status": "complete",
+                "summary": {
+                  "absolute_energy_residual_j": 4.2444398225940846e-06,
+                  "accepted_contacts": 59487,
+                  "accepted_segments": 15260,
+                  "completed_duration_s": 0.1,
+                  "contact_dissipation_j": 0.00015344421644030858,
+                  "contact_energy_reserve_spent_j": 1.83542730247313e-06,
+                  "energy_budget_j": 6e-06,
+                  "external_work_j": 0.0002928137752805483,
+                  "geometry_iterations": 1372414,
+                  "geometry_queries": 5179342,
+                  "last_error": {
+                    "absolute_energy_residual_j": 0.0,
+                    "energy_disagreement_j": 0.0,
+                    "normalized": 0.0,
+                    "position_m": 0.0,
+                    "strain": 0.0,
+                    "velocity_m_s": 0.0
+                  },
+                  "maximum_accepted_error": 0.9989279079473555,
+                  "minimum_accepted_step_s": 7.261059982634667e-11,
+                  "minimum_step_error": {
+                    "absolute_energy_residual_j": 0.0,
+                    "energy_disagreement_j": 0.0,
+                    "normalized": 0.0,
+                    "position_m": 0.0,
+                    "strain": 0.0,
+                    "velocity_m_s": 0.0
+                  },
+                  "plastic_dissipation_j": 0.00011689496464257488,
+                  "rejected_segments": 343,
+                  "requested_duration_s": 0.1,
+                  "reserved_element_visits": 1123416,
+                  "sampled_peak_displacement_m": 6.19966484525984e-05,
+                  "sampled_peak_upward_speed_m_s": 0.043341413802597734,
+                  "signed_energy_residual_j": 3.6333217572311863e-06,
+                  "step_calls": 46809,
+                  "suggested_trial_dt_s": 2.2867943012087874e-05,
+                  "wall_ms": 1382.3887
+                }
+              }
+            ]
+          },
+          "status": "complete",
+          "inner_cases": [
+            {
+              "material_id": "Cedar-X",
+              "status": "complete",
+              "computed_frames": 101,
+              "error": ""
+            },
+            {
+              "material_id": "Copper-Y",
+              "status": "complete",
+              "computed_frames": 101,
+              "error": ""
+            }
+          ],
+          "wall_s": 3.0882796000223607,
+          "provenance": {
+            "request_sha256": "7153d49428f24b6b8d2fec61e69933ec537acae0aa51ab9f5b54320ea860bcfe",
+            "executable_sha256": "e026cb476336dfdb3e12433ab847edadf3a533956f1888bf448d76f74f85563b",
+            "recording_sha256": "2e7918d044fbb4f23c8303d8b6f34ed2873a95afab2290ae66e8adf506008f2f",
+            "saved_recording_sha256": "4b6c779f4891f083bd5aece23665ea018755fb357bc871ef51f5cd4837e2f3d6"
+          },
+          "diagnostics": {
+            "schema": "banjo.experiment-diagnostics.v1",
+            "source_schema": "banjo.dynamic-material-playback.v1",
+            "native_facts": {
+              "status": "complete",
+              "physical_response_validated": false,
+              "request": {
+                "duration_s": 0.1,
+                "energy_budget_j": 6e-06,
+                "max_step_calls": 200000,
+                "dimensions_m": [
+                  0.08,
+                  0.02,
+                  0.08
+                ],
+                "mesh_refinement": 1,
+                "sphere": {
+                  "clearance_m": 0.0005,
+                  "density_kg_m3": 7870,
+                  "offset_xz_m": [
+                    0.007,
+                    0.009
+                  ],
+                  "radius_m": 0.012,
+                  "speed_m_s": 0
+                }
+              },
+              "cases": [
+                {
+                  "material_id": "Cedar-X",
+                  "material": {
+                    "density_kg_m3": 1000.0,
+                    "material_id": "Cedar-X",
+                    "mechanical_law": "isotropic_elastic",
+                    "name": "Cedar-X",
+                    "parameters": {
+                      "maximum_total_strain_norm": 0.08,
+                      "poisson_ratio": 0.25,
+                      "young_modulus_pa": 1000000.0
+                    },
+                    "physical_hash": "bfc93218b790024fa8631edcc24c9f4245700afe2f50e82cc09fe7a373e844ea",
+                    "required_capabilities": [
+                      "small_strain_reference"
+                    ],
+                    "units": "SI"
+                  },
+                  "material_numeric_sha256": "5f4b0afaa07afbb86b64f66b3dbc791d072c31573b7e5f62807aac99d2dcde8f",
+                  "status": "complete",
+                  "error": "",
+                  "completed_duration_s": 0.1,
+                  "requested_duration_s": 0.1,
+                  "accepted_contacts": 85572,
+                  "contact_evidence": "native_solver_counter",
+                  "absolute_energy_residual_j": 3.866883845689267e-06,
+                  "scaled_energy_budget_j": 6e-06,
+                  "energy_budget_met": true,
+                  "step_calls": 68394,
+                  "wall_ms": 1685.2698,
+                  "plastic_dissipation_j": 0.0,
+                  "maximum_equivalent_plastic_strain": 0.0,
+                  "observed_plastic_response": false,
+                  "permanent_dent_supported": false,
+                  "sampled_peak_upward_speed_m_s": 0.057966785016326676,
+                  "sampled_peak_displacement_m": 6.875686540313495e-05
+                },
+                {
+                  "material_id": "Copper-Y",
+                  "material": {
+                    "density_kg_m3": 1000.0,
+                    "material_id": "Copper-Y",
+                    "mechanical_law": "j2_plastic",
+                    "name": "Copper-Y",
+                    "parameters": {
+                      "initial_yield_stress_pa": 1200.0,
+                      "isotropic_hardening_modulus_pa": 20000.0,
+                      "maximum_total_strain_norm": 0.08,
+                      "poisson_ratio": 0.25,
+                      "young_modulus_pa": 1000000.0
+                    },
+                    "physical_hash": "0d610b0e071215e26c732dbcd528edc1fd636ae184bde4f9a2124c848b3b1be6",
+                    "required_capabilities": [
+                      "small_strain_reference"
+                    ],
+                    "units": "SI"
+                  },
+                  "material_numeric_sha256": "f4f47568cbc9b9b3245006d0a2933f036c6ed155d31d7e9a0f7fa3b7950bfc19",
+                  "status": "complete",
+                  "error": "",
+                  "completed_duration_s": 0.1,
+                  "requested_duration_s": 0.1,
+                  "accepted_contacts": 59487,
+                  "contact_evidence": "native_solver_counter",
+                  "absolute_energy_residual_j": 4.2444398225940846e-06,
+                  "scaled_energy_budget_j": 6e-06,
+                  "energy_budget_met": true,
+                  "step_calls": 46809,
+                  "wall_ms": 1382.3887,
+                  "plastic_dissipation_j": 0.00011689496464257488,
+                  "maximum_equivalent_plastic_strain": 0.0026120009476231876,
+                  "observed_plastic_response": true,
+                  "permanent_dent_supported": false,
+                  "sampled_peak_upward_speed_m_s": 0.043341413802597734,
+                  "sampled_peak_displacement_m": 6.19966484525984e-05
+                }
+              ],
+              "cases_truncated": false
+            },
+            "package": {
+              "sha256": "7153d49428f24b6b8d2fec61e69933ec537acae0aa51ab9f5b54320ea860bcfe",
+              "input_materials": [
+                {
+                  "material_id": "Cedar-X",
+                  "numeric": {
+                    "mechanical_law": "isotropic_elastic",
+                    "density_kg_m3": 1000.0,
+                    "parameters": {
+                      "maximum_total_strain_norm": 0.08,
+                      "poisson_ratio": 0.25,
+                      "young_modulus_pa": 1000000.0
+                    }
+                  },
+                  "sha256": "5f4b0afaa07afbb86b64f66b3dbc791d072c31573b7e5f62807aac99d2dcde8f"
+                },
+                {
+                  "material_id": "Copper-Y",
+                  "numeric": {
+                    "mechanical_law": "j2_plastic",
+                    "density_kg_m3": 1000.0,
+                    "parameters": {
+                      "initial_yield_stress_pa": 1200.0,
+                      "isotropic_hardening_modulus_pa": 20000.0,
+                      "maximum_total_strain_norm": 0.08,
+                      "poisson_ratio": 0.25,
+                      "young_modulus_pa": 1000000.0
+                    }
+                  },
+                  "sha256": "f4f47568cbc9b9b3245006d0a2933f036c6ed155d31d7e9a0f7fa3b7950bfc19"
+                }
+              ],
+              "input_materials_truncated": false
+            },
+            "expectations": [
+              {
+                "kind": "flight_window",
+                "estimated_pre_contact_flight_s": 0.010096375546923044,
+                "requested_duration_s": 0.1,
+                "estimated_post_flight_observation_s": 0.08990362445307697,
+                "model": "constant gravity from authored clearance and downward speed"
+              }
+            ],
+            "checks": [
+              {
+                "check": "case_0_completion",
+                "status": "pass",
+                "observation": "requested_duration_completed",
+                "scope": "native adaptive solver status and duration counters",
+                "evidence": {
+                  "material_id": "Cedar-X",
+                  "completed_duration_s": 0.1,
+                  "requested_duration_s": 0.1
+                }
+              },
+              {
+                "check": "case_0_contact",
+                "status": "pass",
+                "observation": "native_solver_reported_contact",
+                "scope": "native accepted-contact counter; sampled proximity is not used"
+              },
+              {
+                "check": "case_1_completion",
+                "status": "pass",
+                "observation": "requested_duration_completed",
+                "scope": "native adaptive solver status and duration counters",
+                "evidence": {
+                  "material_id": "Copper-Y",
+                  "completed_duration_s": 0.1,
+                  "requested_duration_s": 0.1
+                }
+              },
+              {
+                "check": "case_1_contact",
+                "status": "pass",
+                "observation": "native_solver_reported_contact",
+                "scope": "native accepted-contact counter; sampled proximity is not used"
+              }
+            ],
+            "validity": {
+              "physical_response_validated": false
+            },
+            "limitations": [
+              "Accepted-contact counts are native solver evidence; sampled proximity is not contact evidence.",
+              "Observed plastic strain or dissipation does not establish a permanent dent.",
+              "Wall time is diagnostic timing and is not a realtime-performance claim.",
+              "The dynamic patch does not model fracture, so fragment absence is not a failure criterion."
+            ]
+          },
+          "native_scene": false,
+          "playback_available": true,
+          "llm_review": {
+            "review": {
+              "verdict": "expected_behavior",
+              "summary": "The requested 0.1 s dynamic impact diagnostic comparing Cedar-X (isotropic elastic) and Copper-Y (J2 plastic) was executed to completion for both materials. The numerical solver ran within the supplied energy budget and step-call limit for each case and reported contact counts. Copper-Y showed a small plastic response; Cedar-X remained purely elastic according to the solver. Physical response is not validated by independent measurement; conclusions are limited to recorded solver evidence.",
+              "findings": [
+                "Experiment execution: both material cases completed the requested_duration_s = 0.1 and passed native solver completion checks.",
+                "Energy budget: absolute_energy_residual_j for Cedar-X = 3.866883845689267e-06 J and for Copper-Y = 4.2444398225940846e-06 J; scaled_energy_budget_j = 6e-06 J for both, so energy_budget_met = true for both cases.",
+                "Step calls: Cedar-X step_calls = 68394, Copper-Y step_calls = 46809; both are below the requested max_step_calls = 200000.",
+                "Contact evidence: native solver reported accepted_contacts: Cedar-X = 85572, Copper-Y = 59487. The bundle notes accepted-contact counts are native solver evidence; sampled proximity is not evidence of contact.",
+                "Elastic vs plastic response: Cedar-X (isotropic_elastic) shows plastic_dissipation_j = 0.0, maximum_equivalent_plastic_strain = 0.0, observed_plastic_response = false. Copper-Y (j2_plastic) shows plastic_dissipation_j = 0.00011689496464257488 J, maximum_equivalent_plastic_strain = 0.0026120009476231876, observed_plastic_response = true.",
+                "Kinematics sampled by the solver: Cedar-X sampled_peak_upward_speed_m_s = 0.057966785016326676 and sampled_peak_displacement_m = 6.875686540313495e-05. Copper-Y sampled_peak_upward_speed_m_s = 0.043341413802597734 and sampled_peak_displacement_m = 6.19966484525984e-05.",
+                "Validation flag: diagnostics.native_facts.physical_response_validated = false. The report explicitly states physical_response_validated=false and lists limitations (e.g., solver contact counters vs proximity, plastic indicators do not prove a permanent dent, no fracture modeling).",
+                "Recorded timing: wall_ms (diagnostic timing) Cedar-X = 1685.2698 ms, Copper-Y = 1382.3887 ms; wall time is diagnostic only, not a realtime-performance claim."
+              ],
+              "next_steps": [
+                "If you require physical validation (to support claims about real-world behavior or contact forces), instrument and run physical tests or provide independent measurement data; the numerical results here are solver outputs only and physical_response_validated=false.",
+                "To support contact-force conclusions, add solver instrumentation that records contact forces explicitly or run experiments that log contact impulses/moments \u2014 accepted-contact counters alone are insufficient evidence of contact force magnitudes.",
+                "If you want higher-fidelity permanent-deformation assessment, note the bundle limitation: observed plastic strain or dissipation does not by itself establish a permanent dent; consider post-impact quasi-static relaxation runs or higher-fidelity material calibration against experiments.",
+                "If you need additional diagnostic outputs (per-frame contact forces, node-wise strains, or exported motion traces), request those specific solver-output measurements; missing measurements require instrumentation work rather than toggling validation flags."
+              ]
+            },
+            "review_metadata": {
+              "model": "gpt-5-mini",
+              "evidence_sha256": "568413dc8ee628b27c45fd6f683eb0594e8ce2d68d0cf000019f9fede1cc7f3a",
+              "review_prompt_sha256": "84d28debe9d2727b935e4edeee56293a699171fd02a5a8e6738d8f19ba57a2ae",
+              "usage": {
+                "input_tokens": 4609,
+                "input_tokens_details": {
+                  "cache_write_tokens": 0,
+                  "cached_tokens": 0
+                },
+                "output_tokens": 922,
+                "output_tokens_details": {
+                  "reasoning_tokens": 128
+                },
+                "total_tokens": 5531
+              },
+              "review_wall_s": 8.461629400000675
+            }
+          }
+        }
+      ]
+    },
+    {
+      "job_id": "e803a2df70d0447eafeca420a7409d1b",
+      "url": "http://127.0.0.1:8765/?job=e803a2df70d0447eafeca420a7409d1b",
+      "request": "Create an experimental dynamic material impact for 0.05 seconds with two fictional materials. Aster-37 is isotropic elastic: density 850 kg/m3, E 1.2 MPa, Poisson 0.24, maximum strain 0.08. Birch-91 is J2 plastic: density 1100, E 0.8 MPa, Poisson 0.27, yield 900 Pa, hardening 30000 Pa, maximum strain 0.08. Convert MPa correctly to Pa. Brick dimensions x 0.07 y 0.02 z 0.06 m, bottom clamped; refinement1. Sphere radius0.01m density7870kg/m3, clearance0.00035m, offset x0.005 z-0.006m, initial downward speed0.01m/s. Energy budget6e-6J per0.1s, max200000 step calls. Give play/reset, components/reference toggles and playback speed0.1. Preserve requested values; do not replace materials with named presets.",
+      "status": "complete",
+      "message": "The requested interval completed for every material. Open the 3D playground to inspect the computed sphere and material motion.",
+      "plan": {
+        "language": "banjo-playground-1",
+        "experiment": "dynamic_material_impact",
+        "projectile": "iron_ball",
+        "panel_dimensions_m": [
+          0.24,
+          0.36,
+          0.04
+        ],
+        "speeds_m_s": [],
+        "heights_m": [],
+        "objects": [],
+        "drop": null,
+        "scene": null,
+        "pressure": null,
+        "impact": {
+          "materials": [
+            {
+              "material_id": "Aster-37",
+              "name": "Aster-37 (FICTIONAL)",
+              "density_kg_m3": 850,
+              "mechanical_law": "isotropic_elastic",
+              "parameters": {
+                "young_modulus_pa": 1200000,
+                "poisson_ratio": 0.24,
+                "maximum_total_strain_norm": 0.08
+              }
+            },
+            {
+              "material_id": "Birch-91",
+              "name": "Birch-91 (FICTIONAL)",
+              "density_kg_m3": 1100,
+              "mechanical_law": "j2_plastic",
+              "parameters": {
+                "young_modulus_pa": 800000,
+                "poisson_ratio": 0.27,
+                "maximum_total_strain_norm": 0.08,
+                "initial_yield_stress_pa": 900,
+                "isotropic_hardening_modulus_pa": 30000
+              }
+            }
+          ],
+          "dimensions_m": [
+            0.07,
+            0.02,
+            0.06
+          ],
+          "mesh_refinement": 1,
+          "sphere": {
+            "radius_m": 0.01,
+            "density_kg_m3": 7870,
+            "clearance_m": 0.00035,
+            "offset_xz_m": [
+              0.005,
+              -0.006
+            ],
+            "speed_m_s": 0.01
+          },
+          "energy_budget_j": 6e-06,
+          "max_step_calls": 200000
+        },
+        "name": "Dynamic material impact: Aster-37 vs Birch-91",
+        "explanation": "Experimental dynamic_material_impact: a 0.01 m radius iron sphere impacts a clamped rectangular brick (0.07 x 0.02 x 0.06 m) containing two fictional materials (Aster-37 isotropic_elastic and Birch-91 j2_plastic). Duration 0.05 s, refinement 1. All user-provided values preserved and SI units applied (MPa converted to Pa). This is an uncalibrated diagnostic run (experimental).",
+        "limitations": [
+          "Experimental (uncalibrated) simulation only \u2014 results are diagnostic and not validated for certification or exact real-world fidelity.",
+          "No fracture, cutting, or permanent unloaded dent modeling is performed by this route.",
+          "Material laws are small-strain formulations and require maximum_total_strain_norm <= 0.08 (as requested). Exceeding strain or solver limits may terminate the run early.",
+          "Energy budget and max_step_calls are enforced; if the solver hits these limits the run may stop and report partial results.",
+          "Contact and nodal data recorded are limited to solver-reported states (energies, impulses, nodal positions) and not per-contact continuous force histories."
+        ],
+        "duration_s": 0.05,
+        "ui": {
+          "title": "Aster-37 vs Birch-91 impact",
+          "controls": [
+            {
+              "id": "play",
+              "label": "Play/Pause",
+              "kind": "button",
+              "action": "play_pause",
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "value": 0
+            },
+            {
+              "id": "reset",
+              "label": "Reset",
+              "kind": "button",
+              "action": "reset",
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "value": 0
+            },
+            {
+              "id": "components_toggle",
+              "label": "Show components",
+              "kind": "toggle",
+              "action": "components",
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "value": 0
+            },
+            {
+              "id": "reference_toggle",
+              "label": "Show reference",
+              "kind": "toggle",
+              "action": "reference",
+              "min": 0,
+              "max": 1,
+              "step": 1,
+              "value": 0
+            },
+            {
+              "id": "playback_speed",
+              "label": "Playback speed",
+              "kind": "slider",
+              "action": "playback_speed",
+              "min": 0.1,
+              "max": 4,
+              "step": 0.1,
+              "value": 0.1
+            }
+          ]
+        },
+        "requirements": [
+          {
+            "description": "Run a dynamic_material_impact with two fictional materials (Aster-37 isotropic_elastic and Birch-91 j2_plastic) and the specified solver/mesh settings.",
+            "status": "supported",
+            "reason": "The dynamic_material_impact route supports multiple explicit materials, the requested mechanical laws, and the specified mesh/refinement and solver budgets."
+          },
+          {
+            "description": "Use provided numeric values exactly (including converted MPa -> Pa) and preserve the requested duration and sphere/brick geometry/offset/clearance.",
+            "status": "supported",
+            "reason": "The requested parameters are within allowed ranges for this route and will be used verbatim."
+          }
+        ],
+        "fidelity": "experimental"
+      },
+      "timing": {
+        "planning_wall_s": 14.988979700021446,
+        "model": "gpt-5-mini",
+        "usage": {
+          "input_tokens": 4292,
+          "input_tokens_details": {
+            "cache_write_tokens": 0,
+            "cached_tokens": 3840
+          },
+          "output_tokens": 1618,
+          "output_tokens_details": {
+            "reasoning_tokens": 384
+          },
+          "total_tokens": 5910
+        },
+        "response_id": "resp_02f8f7b84da57f06016a9df6740b0487d0abc1fca5658b88d7",
+        "total_wall_s": 16.03293190000113
+      },
+      "cases": [
+        {
+          "index": 0,
+          "name": "Dynamic material impact: Aster-37 vs Birch-91",
+          "package": {
+            "materials": [
+              {
+                "material_id": "Aster-37",
+                "name": "Aster-37 (FICTIONAL)",
+                "units": "SI",
+                "density_kg_m3": 850.0,
+                "mechanical_law": "isotropic_elastic",
+                "parameters": {
+                  "young_modulus_pa": 1200000.0,
+                  "poisson_ratio": 0.24,
+                  "maximum_total_strain_norm": 0.08
+                },
+                "required_capabilities": [
+                  "small_strain_reference"
+                ],
+                "physical_hash": "19f1509a33a421def6febd9237d32e80e4424af18b7009d0154db801a547d9a9"
+              },
+              {
+                "material_id": "Birch-91",
+                "name": "Birch-91 (FICTIONAL)",
+                "units": "SI",
+                "density_kg_m3": 1100.0,
+                "mechanical_law": "j2_plastic",
+                "parameters": {
+                  "young_modulus_pa": 800000.0,
+                  "poisson_ratio": 0.27,
+                  "maximum_total_strain_norm": 0.08,
+                  "initial_yield_stress_pa": 900.0,
+                  "isotropic_hardening_modulus_pa": 30000.0
+                },
+                "required_capabilities": [
+                  "small_strain_reference"
+                ],
+                "physical_hash": "da4f07ca5cb8173eaf8b7ada76c102c21cae94ca1be19b58490564dd3c253176"
+              }
+            ],
+            "dimensions_m": [
+              0.07,
+              0.02,
+              0.06
+            ],
+            "mesh_refinement": 1,
+            "sphere": {
+              "radius_m": 0.01,
+              "density_kg_m3": 7870,
+              "clearance_m": 0.00035,
+              "offset_xz_m": [
+                0.005,
+                -0.006
+              ],
+              "speed_m_s": 0.01
+            },
+            "energy_budget_j": 6e-06,
+            "max_step_calls": 200000,
+            "schema": "banjo.dynamic-material-request.v1",
+            "duration_s": 0.05
+          },
+          "report": {
+            "physical_response_validated": false,
+            "request": {
+              "dimensions_m": [
+                0.07,
+                0.02,
+                0.06
+              ],
+              "duration_s": 0.05,
+              "energy_budget_j": 6e-06,
+              "materials": [
+                {
+                  "density_kg_m3": 850.0,
+                  "material_id": "Aster-37",
+                  "mechanical_law": "isotropic_elastic",
+                  "name": "Aster-37 (FICTIONAL)",
+                  "parameters": {
+                    "maximum_total_strain_norm": 0.08,
+                    "poisson_ratio": 0.24,
+                    "young_modulus_pa": 1200000.0
+                  },
+                  "physical_hash": "19f1509a33a421def6febd9237d32e80e4424af18b7009d0154db801a547d9a9",
+                  "required_capabilities": [
+                    "small_strain_reference"
+                  ],
+                  "units": "SI"
+                },
+                {
+                  "density_kg_m3": 1100.0,
+                  "material_id": "Birch-91",
+                  "mechanical_law": "j2_plastic",
+                  "name": "Birch-91 (FICTIONAL)",
+                  "parameters": {
+                    "initial_yield_stress_pa": 900.0,
+                    "isotropic_hardening_modulus_pa": 30000.0,
+                    "maximum_total_strain_norm": 0.08,
+                    "poisson_ratio": 0.27,
+                    "young_modulus_pa": 800000.0
+                  },
+                  "physical_hash": "da4f07ca5cb8173eaf8b7ada76c102c21cae94ca1be19b58490564dd3c253176",
+                  "required_capabilities": [
+                    "small_strain_reference"
+                  ],
+                  "units": "SI"
+                }
+              ],
+              "max_step_calls": 200000,
+              "mesh_refinement": 1,
+              "schema": "banjo.dynamic-material-request.v1",
+              "sphere": {
+                "clearance_m": 0.00035,
+                "density_kg_m3": 7870,
+                "offset_xz_m": [
+                  0.005,
+                  -0.006
+                ],
+                "radius_m": 0.01,
+                "speed_m_s": 0.01
+              }
+            },
+            "schema": "banjo.dynamic-material-playback.v1",
+            "scope": "CPU small-strain tetrahedral reference with sphere contact; no fracture, finite strain, spatial convergence or material calibration",
+            "solver_options": {
+              "contact_margin_m": 1e-06,
+              "error_limits": {
+                "absolute_energy_residual_j": 6e-06,
+                "energy_disagreement_j": 0.0001,
+                "position_m": 0.0001,
+                "reference_time_s": 0.1,
+                "strain": 0.1,
+                "velocity_m_s": 1.0
+              },
+              "frame_interval_s": 0.001,
+              "friction_coefficient": 0.15,
+              "gravity_m_s2": [
+                0.0,
+                -9.81,
+                0.0
+              ],
+              "integrator": "velocity_verlet",
+              "maximum_geometry_iterations": 100000000,
+              "maximum_geometry_queries": 100000000,
+              "maximum_penetration_m": 1e-05,
+              "maximum_reserved_element_visits": 100000000,
+              "maximum_step_calls": 200000,
+              "minimum_trial_dt_s": 1e-11
+            },
+            "status": "complete",
+            "cases": [
+              {
+                "material": {
+                  "density_kg_m3": 850.0,
+                  "material_id": "Aster-37",
+                  "mechanical_law": "isotropic_elastic",
+                  "name": "Aster-37 (FICTIONAL)",
+                  "parameters": {
+                    "maximum_total_strain_norm": 0.08,
+                    "poisson_ratio": 0.24,
+                    "young_modulus_pa": 1200000.0
+                  },
+                  "physical_hash": "19f1509a33a421def6febd9237d32e80e4424af18b7009d0154db801a547d9a9",
+                  "required_capabilities": [
+                    "small_strain_reference"
+                  ],
+                  "units": "SI"
+                },
+                "material_id": "Aster-37",
+                "sphere_mass_kg": 0.032965778911668894,
+                "sphere_radius_m": 0.01,
+                "status": "complete",
+                "summary": {
+                  "absolute_energy_residual_j": 1.4411744651661494e-06,
+                  "accepted_contacts": 32576,
+                  "accepted_segments": 8994,
+                  "completed_duration_s": 0.05,
+                  "contact_dissipation_j": 7.815582078849753e-05,
+                  "contact_energy_reserve_spent_j": 4.858557895121344e-07,
+                  "energy_budget_j": 6e-06,
+                  "external_work_j": 0.00011381836649884413,
+                  "geometry_iterations": 737495,
+                  "geometry_queries": 2960494,
+                  "last_error": {
+                    "absolute_energy_residual_j": 0.0,
+                    "energy_disagreement_j": 0.0,
+                    "normalized": 0.0,
+                    "position_m": 0.0,
+                    "strain": 0.0,
+                    "velocity_m_s": 0.0
+                  },
+                  "maximum_accepted_error": 0.9976319269314967,
+                  "minimum_accepted_step_s": 1.9892152585250903e-08,
+                  "minimum_step_error": {
+                    "absolute_energy_residual_j": 0.0,
+                    "energy_disagreement_j": 0.0,
+                    "normalized": 0.0,
+                    "position_m": 0.0,
+                    "strain": 0.0,
+                    "velocity_m_s": 0.0
+                  },
+                  "plastic_dissipation_j": 0.0,
+                  "rejected_segments": 256,
+                  "requested_duration_s": 0.05,
+                  "reserved_element_visits": 666000,
+                  "sampled_peak_displacement_m": 3.4105382562728884e-05,
+                  "sampled_peak_upward_speed_m_s": 0.044127814723959456,
+                  "signed_energy_residual_j": 7.827046463973807e-07,
+                  "step_calls": 27750,
+                  "suggested_trial_dt_s": 3.1981238977166524e-05,
+                  "wall_ms": 657.749
+                }
+              },
+              {
+                "material": {
+                  "density_kg_m3": 1100.0,
+                  "material_id": "Birch-91",
+                  "mechanical_law": "j2_plastic",
+                  "name": "Birch-91 (FICTIONAL)",
+                  "parameters": {
+                    "initial_yield_stress_pa": 900.0,
+                    "isotropic_hardening_modulus_pa": 30000.0,
+                    "maximum_total_strain_norm": 0.08,
+                    "poisson_ratio": 0.27,
+                    "young_modulus_pa": 800000.0
+                  },
+                  "physical_hash": "da4f07ca5cb8173eaf8b7ada76c102c21cae94ca1be19b58490564dd3c253176",
+                  "required_capabilities": [
+                    "small_strain_reference"
+                  ],
+                  "units": "SI"
+                },
+                "material_id": "Birch-91",
+                "sphere_mass_kg": 0.032965778911668894,
+                "sphere_radius_m": 0.01,
+                "status": "complete",
+                "summary": {
+                  "absolute_energy_residual_j": 1.7782536802907598e-06,
+                  "accepted_contacts": 14413,
+                  "accepted_segments": 3797,
+                  "completed_duration_s": 0.05,
+                  "contact_dissipation_j": 6.624566259214777e-05,
+                  "contact_energy_reserve_spent_j": 7.069510419699786e-07,
+                  "energy_budget_j": 6e-06,
+                  "external_work_j": 0.00012252117720376645,
+                  "geometry_iterations": 339143,
+                  "geometry_queries": 1294938,
+                  "last_error": {
+                    "absolute_energy_residual_j": 0.0,
+                    "energy_disagreement_j": 0.0,
+                    "normalized": 0.0,
+                    "position_m": 0.0,
+                    "strain": 0.0,
+                    "velocity_m_s": 0.0
+                  },
+                  "maximum_accepted_error": 0.9994716793256944,
+                  "minimum_accepted_step_s": 1.08305953925066e-07,
+                  "minimum_step_error": {
+                    "absolute_energy_residual_j": 0.0,
+                    "energy_disagreement_j": 0.0,
+                    "normalized": 0.0,
+                    "position_m": 0.0,
+                    "strain": 0.0,
+                    "velocity_m_s": 0.0
+                  },
+                  "plastic_dissipation_j": 4.116770644822327e-05,
+                  "rejected_segments": 149,
+                  "requested_duration_s": 0.05,
+                  "reserved_element_visits": 284112,
+                  "sampled_peak_displacement_m": 5.396577017965185e-05,
+                  "sampled_peak_upward_speed_m_s": 0.032329765474424114,
+                  "signed_energy_residual_j": 1.402771861094602e-06,
+                  "step_calls": 11838,
+                  "suggested_trial_dt_s": 5.624392336825986e-05,
+                  "wall_ms": 341.9959
+                }
+              }
+            ]
+          },
+          "status": "complete",
+          "inner_cases": [
+            {
+              "material_id": "Aster-37",
+              "status": "complete",
+              "computed_frames": 51,
+              "error": ""
+            },
+            {
+              "material_id": "Birch-91",
+              "status": "complete",
+              "computed_frames": 51,
+              "error": ""
+            }
+          ],
+          "wall_s": 1.0135043000045698,
+          "provenance": {
+            "request_sha256": "2742984f290494fbf88612b99c920eb437fc049951b5e3de84f897c7288dc3de",
+            "executable_sha256": "e026cb476336dfdb3e12433ab847edadf3a533956f1888bf448d76f74f85563b",
+            "recording_sha256": "3f471d711b3f6932aa27e160c0acb8bfb1df187c0e1954dcf68ef9ac6ac40698",
+            "saved_recording_sha256": "3d7245620ecfa68653d77dbab16019ae2fff641a54e8326f4fe30651386896d5"
+          },
+          "diagnostics": {
+            "schema": "banjo.experiment-diagnostics.v1",
+            "source_schema": "banjo.dynamic-material-playback.v1",
+            "native_facts": {
+              "status": "complete",
+              "physical_response_validated": false,
+              "request": {
+                "duration_s": 0.05,
+                "energy_budget_j": 6e-06,
+                "max_step_calls": 200000,
+                "dimensions_m": [
+                  0.07,
+                  0.02,
+                  0.06
+                ],
+                "mesh_refinement": 1,
+                "sphere": {
+                  "clearance_m": 0.00035,
+                  "density_kg_m3": 7870,
+                  "offset_xz_m": [
+                    0.005,
+                    -0.006
+                  ],
+                  "radius_m": 0.01,
+                  "speed_m_s": 0.01
+                }
+              },
+              "cases": [
+                {
+                  "material_id": "Aster-37",
+                  "material": {
+                    "density_kg_m3": 850.0,
+                    "material_id": "Aster-37",
+                    "mechanical_law": "isotropic_elastic",
+                    "name": "Aster-37 (FICTIONAL)",
+                    "parameters": {
+                      "maximum_total_strain_norm": 0.08,
+                      "poisson_ratio": 0.24,
+                      "young_modulus_pa": 1200000.0
+                    },
+                    "physical_hash": "19f1509a33a421def6febd9237d32e80e4424af18b7009d0154db801a547d9a9",
+                    "required_capabilities": [
+                      "small_strain_reference"
+                    ],
+                    "units": "SI"
+                  },
+                  "material_numeric_sha256": "99e8fb6caa15d76c65a406faaaba1ce41712f8361f1622c31d7c0d468417a659",
+                  "status": "complete",
+                  "error": "",
+                  "completed_duration_s": 0.05,
+                  "requested_duration_s": 0.05,
+                  "accepted_contacts": 32576,
+                  "contact_evidence": "native_solver_counter",
+                  "absolute_energy_residual_j": 1.4411744651661494e-06,
+                  "scaled_energy_budget_j": 3e-06,
+                  "energy_budget_met": true,
+                  "step_calls": 27750,
+                  "wall_ms": 657.749,
+                  "plastic_dissipation_j": 0.0,
+                  "maximum_equivalent_plastic_strain": 0.0,
+                  "observed_plastic_response": false,
+                  "permanent_dent_supported": false,
+                  "sampled_peak_upward_speed_m_s": 0.044127814723959456,
+                  "sampled_peak_displacement_m": 3.4105382562728884e-05
+                },
+                {
+                  "material_id": "Birch-91",
+                  "material": {
+                    "density_kg_m3": 1100.0,
+                    "material_id": "Birch-91",
+                    "mechanical_law": "j2_plastic",
+                    "name": "Birch-91 (FICTIONAL)",
+                    "parameters": {
+                      "initial_yield_stress_pa": 900.0,
+                      "isotropic_hardening_modulus_pa": 30000.0,
+                      "maximum_total_strain_norm": 0.08,
+                      "poisson_ratio": 0.27,
+                      "young_modulus_pa": 800000.0
+                    },
+                    "physical_hash": "da4f07ca5cb8173eaf8b7ada76c102c21cae94ca1be19b58490564dd3c253176",
+                    "required_capabilities": [
+                      "small_strain_reference"
+                    ],
+                    "units": "SI"
+                  },
+                  "material_numeric_sha256": "92ced28b757b151b5925336f4b326ff028b97f595b8bf83981951d6f72ffca61",
+                  "status": "complete",
+                  "error": "",
+                  "completed_duration_s": 0.05,
+                  "requested_duration_s": 0.05,
+                  "accepted_contacts": 14413,
+                  "contact_evidence": "native_solver_counter",
+                  "absolute_energy_residual_j": 1.7782536802907598e-06,
+                  "scaled_energy_budget_j": 3e-06,
+                  "energy_budget_met": true,
+                  "step_calls": 11838,
+                  "wall_ms": 341.9959,
+                  "plastic_dissipation_j": 4.116770644822327e-05,
+                  "maximum_equivalent_plastic_strain": 0.001739628230725628,
+                  "observed_plastic_response": true,
+                  "permanent_dent_supported": false,
+                  "sampled_peak_upward_speed_m_s": 0.032329765474424114,
+                  "sampled_peak_displacement_m": 5.396577017965185e-05
+                }
+              ],
+              "cases_truncated": false
+            },
+            "package": {
+              "sha256": "2742984f290494fbf88612b99c920eb437fc049951b5e3de84f897c7288dc3de",
+              "input_materials": [
+                {
+                  "material_id": "Aster-37",
+                  "numeric": {
+                    "mechanical_law": "isotropic_elastic",
+                    "density_kg_m3": 850.0,
+                    "parameters": {
+                      "maximum_total_strain_norm": 0.08,
+                      "poisson_ratio": 0.24,
+                      "young_modulus_pa": 1200000.0
+                    }
+                  },
+                  "sha256": "99e8fb6caa15d76c65a406faaaba1ce41712f8361f1622c31d7c0d468417a659"
+                },
+                {
+                  "material_id": "Birch-91",
+                  "numeric": {
+                    "mechanical_law": "j2_plastic",
+                    "density_kg_m3": 1100.0,
+                    "parameters": {
+                      "initial_yield_stress_pa": 900.0,
+                      "isotropic_hardening_modulus_pa": 30000.0,
+                      "maximum_total_strain_norm": 0.08,
+                      "poisson_ratio": 0.27,
+                      "young_modulus_pa": 800000.0
+                    }
+                  },
+                  "sha256": "92ced28b757b151b5925336f4b326ff028b97f595b8bf83981951d6f72ffca61"
+                }
+              ],
+              "input_materials_truncated": false
+            },
+            "expectations": [
+              {
+                "kind": "flight_window",
+                "estimated_pre_contact_flight_s": 0.007489149536605606,
+                "requested_duration_s": 0.05,
+                "estimated_post_flight_observation_s": 0.042510850463394395,
+                "model": "constant gravity from authored clearance and downward speed"
+              }
+            ],
+            "checks": [
+              {
+                "check": "case_0_completion",
+                "status": "pass",
+                "observation": "requested_duration_completed",
+                "scope": "native adaptive solver status and duration counters",
+                "evidence": {
+                  "material_id": "Aster-37",
+                  "completed_duration_s": 0.05,
+                  "requested_duration_s": 0.05
+                }
+              },
+              {
+                "check": "case_0_contact",
+                "status": "pass",
+                "observation": "native_solver_reported_contact",
+                "scope": "native accepted-contact counter; sampled proximity is not used"
+              },
+              {
+                "check": "case_1_completion",
+                "status": "pass",
+                "observation": "requested_duration_completed",
+                "scope": "native adaptive solver status and duration counters",
+                "evidence": {
+                  "material_id": "Birch-91",
+                  "completed_duration_s": 0.05,
+                  "requested_duration_s": 0.05
+                }
+              },
+              {
+                "check": "case_1_contact",
+                "status": "pass",
+                "observation": "native_solver_reported_contact",
+                "scope": "native accepted-contact counter; sampled proximity is not used"
+              }
+            ],
+            "validity": {
+              "physical_response_validated": false
+            },
+            "limitations": [
+              "Accepted-contact counts are native solver evidence; sampled proximity is not contact evidence.",
+              "Observed plastic strain or dissipation does not establish a permanent dent.",
+              "Wall time is diagnostic timing and is not a realtime-performance claim.",
+              "The dynamic patch does not model fracture, so fragment absence is not a failure criterion."
+            ]
+          },
+          "native_scene": false,
+          "playback_available": true
+        }
+      ]
+    },
+    {
+      "job_id": "b5ba3a0e253e4380b05aae5fb9b935e5",
+      "url": "http://127.0.0.1:8765/?job=b5ba3a0e253e4380b05aae5fb9b935e5",
+      "request": "Using the new dynamic_material_impact solver, shatter a thin glass sheet into free fragments and then set the fragments on fire. This requires actual fracture and combustion in that same coupled dynamic solver. Do not substitute a thick solid, old network fixture, quasistatic test or animation. If unsupported, report it explicitly and do not run a substitute.",
+      "status": "blocked",
+      "message": "Request not executed: Dynamic fracture (shattering) of a thin glass sheet within the dynamic_material_impact solver: The dynamic_material_impact route explicitly does not model fracture or generate free fragments from thin sheets. Combustion/ignition of fragments (coupled thermal-chemical burning) in the same dynamic run: The simulation suite does not include coupled combustion/thermal-chemical processes; combustion cannot be executed in this solver.",
+      "plan": {
+        "language": "banjo-playground-1",
+        "experiment": "unsupported",
+        "projectile": "iron_ball",
+        "panel_dimensions_m": [
+          0.24,
+          0.36,
+          0.04
+        ],
+        "speeds_m_s": [],
+        "heights_m": [],
+        "objects": [],
+        "drop": null,
+        "scene": null,
+        "pressure": null,
+        "impact": null,
+        "name": "Request: fracture + combustion in dynamic_material_impact (unsupported)",
+        "explanation": "The user requested using the dynamic_material_impact solver to produce actual fracture (shattering) of a thin glass sheet and then ignite/combust the resulting fragments within the same coupled dynamic simulation. The dynamic_material_impact route explicitly does not support fracture or combustion/thermal-chemical processes. Per the experiment schema and available solver capabilities, this exact request is unsupported. No substitute run will be executed.",
+        "limitations": [
+          "The dynamic_material_impact solver does not model fracture or generate free fragments from thin sheets. It supports small-strain nodal deformation and elastic/plastic responses only, without shattering.",
+          "Combustion, ignition, or coupled thermal-chemical burning of fragments is not available in the solver suite and cannot be simulated in the same run.",
+          "I will not substitute a thick solid, quasistatic test, an animation, or any other simulation to emulate fracture-and-fire behavior; you requested these specific physics and they are unavailable."
+        ],
+        "duration_s": 1,
+        "ui": {
+          "title": "Unsupported experiment \u2014 no controls",
+          "controls": []
+        },
+        "requirements": [
+          {
+            "description": "Dynamic fracture (shattering) of a thin glass sheet within the dynamic_material_impact solver",
+            "status": "unsupported",
+            "reason": "The dynamic_material_impact route explicitly does not model fracture or generate free fragments from thin sheets."
+          },
+          {
+            "description": "Combustion/ignition of fragments (coupled thermal-chemical burning) in the same dynamic run",
+            "status": "unsupported",
+            "reason": "The simulation suite does not include coupled combustion/thermal-chemical processes; combustion cannot be executed in this solver."
+          }
+        ],
+        "fidelity": "experimental"
+      },
+      "timing": {
+        "planning_wall_s": 4.597423200000776,
+        "model": "gpt-5-mini",
+        "usage": {
+          "input_tokens": 4140,
+          "input_tokens_details": {
+            "cache_write_tokens": 0,
+            "cached_tokens": 3840
+          },
+          "output_tokens": 679,
+          "output_tokens_details": {
+            "reasoning_tokens": 256
+          },
+          "total_tokens": 4819
+        },
+        "response_id": "resp_0c55ea209d5cd9f9016a9df684425c87d080c1de5da113b4b5"
+      },
+      "cases": []
+    }
+  ],
+  "known_materials": [
+    {
+      "duration_s": 0.001,
+      "aggregate_status": "complete",
+      "process_returncode": 0,
+      "wall_s": 0.06400139999459498,
+      "timing_scope": "contention-affected diagnostic timing; not a realtime or benchmark claim",
+      "cases": [
+        {
+          "material_id": "glass",
+          "status": "complete",
+          "error": "",
+          "completed_duration_s": 0.001,
+          "absolute_energy_residual_j": 2.4610362312308286e-10,
+          "accepted_contacts": 0,
+          "step_calls": 1368,
+          "plastic_dissipation_j": 0.0,
+          "sampled_peak_upward_speed_m_s": 0.0,
+          "sampled_peak_displacement_m": 1.31539454148561e-10
+        },
+        {
+          "material_id": "oak",
+          "status": "complete",
+          "error": "",
+          "completed_duration_s": 0.001,
+          "absolute_energy_residual_j": 8.698804881943545e-11,
+          "accepted_contacts": 0,
+          "step_calls": 534,
+          "plastic_dissipation_j": 0.0,
+          "sampled_peak_upward_speed_m_s": 0.0,
+          "sampled_peak_displacement_m": 2.7264325557485116e-09
+        },
+        {
+          "material_id": "iron",
+          "status": "complete",
+          "error": "",
+          "completed_duration_s": 0.001,
+          "absolute_energy_residual_j": 6.505921910049209e-10,
+          "accepted_contacts": 0,
+          "step_calls": 1467,
+          "plastic_dissipation_j": 0.0,
+          "sampled_peak_upward_speed_m_s": 0.0,
+          "sampled_peak_displacement_m": 1.3730398279384143e-10
+        }
+      ]
+    },
+    {
+      "duration_s": 0.02,
+      "aggregate_status": "solver_limit",
+      "process_returncode": 0,
+      "wall_s": 15.93271399999503,
+      "timing_scope": "contention-affected diagnostic timing; not a realtime or benchmark claim",
+      "cases": [
+        {
+          "material_id": "glass",
+          "status": "solver_limit",
+          "error": "Coupled advance step-call budget exhausted",
+          "completed_duration_s": 0.01,
+          "absolute_energy_residual_j": 2.4400345019909825e-09,
+          "accepted_contacts": 0,
+          "step_calls": 200000,
+          "plastic_dissipation_j": 0.0,
+          "sampled_peak_upward_speed_m_s": 0.0,
+          "sampled_peak_displacement_m": 2.3951618769548433e-10
+        },
+        {
+          "material_id": "oak",
+          "status": "solver_limit",
+          "error": "Coupled advance step-call budget exhausted",
+          "completed_duration_s": 0.01,
+          "absolute_energy_residual_j": 8.286512397912813e-10,
+          "accepted_contacts": 0,
+          "step_calls": 200000,
+          "plastic_dissipation_j": 0.0,
+          "sampled_peak_upward_speed_m_s": 0.0,
+          "sampled_peak_displacement_m": 3.624487943734433e-09
+        },
+        {
+          "material_id": "iron",
+          "status": "solver_limit",
+          "error": "Coupled advance step-call budget exhausted",
+          "completed_duration_s": 0.01,
+          "absolute_energy_residual_j": 6.5916788012137574e-09,
+          "accepted_contacts": 0,
+          "step_calls": 200000,
+          "plastic_dissipation_j": 0.0,
+          "sampled_peak_upward_speed_m_s": 0.0,
+          "sampled_peak_displacement_m": 1.6820012589969771e-10
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "native_suites_passed": 62,
+    "native_wall_s": 93.83,
+    "python_tests_run": 131,
+    "python_passed": 130,
+    "python_skipped": 1,
+    "python_wall_s": 13.46,
+    "browser": "actual prompt -> native -> auto 3D, 101-frame timeline, playback and steps, components/reference/X-ray, archived restoration, live GPT evidence review; no page errors",
+    "live_model": "gpt-5-mini",
+    "live_request_count": 4,
+    "live_complete_material_runs": 4,
+    "live_partial_material_runs": 2,
+    "unsupported_blocked_requests": 1
+  }
+}

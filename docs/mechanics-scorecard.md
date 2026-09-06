@@ -1,5 +1,7 @@
 # Banjo mechanics scorecard
 
+**Dynamic material playground:** [Property-authored coupled impacts](dynamic-material-playground-checkpoint.md) now execute explicit SI elastic/orthotropic/J2 descriptors through a bounded native API and render actual sphere and nodal states in the embedded 3D playground. Per-material contact/work/energy evidence and honest solver limits feed the GPT review. R08 is active; this is experimental computed playback, with spatial accuracy, unloaded dents, fracture, finite-strain rubber and realtime still open. All nine original workstreams and 40 mechanics are retained.
+
 **Adaptive material contact:** [Error-controlled advances](adaptive-material-contact-checkpoint.md) add transactional error/work budgets, optional velocity Verlet with final contact-velocity constraints, and cached constitutive state. Two full elastic/J2 reference drops pass a 3 microjoule accumulated numerical-energy budget; finer meshes exhaust the work cap. Spatial accuracy, unloaded dents, calibrated failure, playground integration and realtime remain open. All nine prior workstreams and 40 mechanics remain retained.
 
 **Coupled contact checkpoint:** [Sphere/mesh dynamics](coupled-contact-checkpoint.md) now connects moving tetrahedral material state, swept sphere contact, friction and plastic history with explicit energy/momentum diagnostics. R03 and impact-driven J2 integration are active; temporal/spatial accuracy, unloaded dents, fracture, rubber and playground integration remain open. All nine earlier workstreams and 40 mechanics remain retained.

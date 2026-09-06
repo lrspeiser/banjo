@@ -103,7 +103,7 @@
       capabilities.forEach((capability) => {
         const tag = document.createElement("span");
         tag.className = "tag";
-        tag.textContent = capability === "continuum_pressure_reference" ? "Spatial pressure reference" : text(capability);
+        tag.textContent = capability === "continuum_pressure_reference" ? "Spatial pressure reference" : capability === "dynamic_material_impact" ? "Dynamic material impact" : text(capability);
         capList.append(tag);
       });
     }
@@ -199,10 +199,11 @@
       thermal_frontier: "Thermal frontier",
       material_state_reference: "Material-state reference",
       continuum_pressure_reference: "Spatial pressure reference",
+      dynamic_material_impact: "Dynamic material impact",
       glass_reference: "Published glass reference",
       unsupported: "Unsupported request",
     };
-    const sweep = plan.drop ? `${plan.drop.heights_m.length} height case(s)` : plan.scene ? `${plan.scene.objects.length} authored object(s)` : Array.isArray(plan.speeds_m_s) && plan.speeds_m_s.length
+    const sweep = plan.experiment === "dynamic_material_impact" && plan.impact ? `${plan.impact.materials.length} material case(s): ${plan.impact.materials.map(material => material.name || material.material_id).join(", ")}` : plan.drop ? `${plan.drop.heights_m.length} height case(s)` : plan.scene ? `${plan.scene.objects.length} authored object(s)` : Array.isArray(plan.speeds_m_s) && plan.speeds_m_s.length
       ? `${plan.speeds_m_s.length} speed case(s)`
       : Array.isArray(plan.heights_m) && plan.heights_m.length
         ? `${plan.heights_m.length} height case(s)`
@@ -217,6 +218,7 @@
         : [["Simulated time", plan.duration_s !== undefined ? `${plan.duration_s} s` : undefined]]),
       ["Sweeps / cases", sweep],
       ...(plan.drop ? [["Target dimensions (m)",plan.drop.target_dimensions_m.join(" × ")],["Support",plan.drop.support],["Impact offset (m)",plan.drop.impact_offset_m.join(", ")],["Representation",plan.drop.representation]] : []),
+      ...(plan.experiment === "dynamic_material_impact" && plan.impact ? [["Target dimensions (m)", plan.impact.dimensions_m.join(" × ")], ["Sphere radius (m)", plan.impact.sphere.radius_m], ["Impact offset (m)", plan.impact.sphere.offset_xz_m.join(", ")], ["Initial speed (m/s)", plan.impact.sphere.speed_m_s]] : []),
       ["Name", plan.name],
     ];
     values.forEach(([label, value]) => {
@@ -283,6 +285,7 @@
 
   function canOpenCase(item) {
     if (!item || !item.package) return false;
+    if (item.report?.schema === "banjo.dynamic-material-playback.v1") return false;
     if (item.native_scene === true) return true;
     if (item.native_scene === false) return false;
     return (item.status === "validated" || item.status === "complete") &&
@@ -342,6 +345,9 @@
     if (report.schema === "banjo.continuum-patch-trial.v1" && Array.isArray(item.inner_cases)) {
       return item.inner_cases.map((entry) => `${text(entry.material_id)}: ${text(entry.status)} (${text(entry.computed_frames)} frames)`).join(" · ");
     }
+    if (report.schema === "banjo.dynamic-material-playback.v1" && Array.isArray(report.cases)) {
+      return report.cases.map((entry) => `${text(entry.material_id)}: ${text(entry.status)} (${entry.frames?.length || 0} frames)`).join(" · ");
+    }
     const keys = ["fracture_count", "broken_bonds", "elapsed_s", "wall_ms", "mass_kg", "energy_j", "status"];
     const found = keys.find((key) => report[key] !== undefined);
     return found ? `${found}: ${text(report[found])}` : `${Object.keys(report).length} report field(s)`;
@@ -393,12 +399,13 @@
   }
 
   function validityMessage(item, playback) {
-    const report = playback && playback.report || item && item.report || {};
+    const report = playback?.schema === "banjo.dynamic-material-playback.v1" ? playback : playback && playback.report || item && item.report || {};
     const unresolved = report.temporal_resolution && report.temporal_resolution.resolved === false;
     const invalid = report.physical_response_validated === false;
     const limited = playback?.status === "solver_limit" || String(item?.status || "").includes("limit");
     const limitedMaterials = (item?.inner_cases || playback?.cases || []).filter((entry) => entry.status === "solver_limit").map((entry) => entry.material_id);
     const materialStatus = (item?.inner_cases || playback?.cases || []).map((entry) => `${text(entry.material_id)}: ${text(entry.status)}`).join(" · ");
+    if (playback?.schema === "banjo.dynamic-material-playback.v1" && invalid) return ["warning", `Dynamic material impact is experimental and not physically validated.${materialStatus ? ` ${materialStatus}.` : ""}`];
     if (limitedMaterials.length) return ["warning", `Solver limit: ${limitedMaterials.join(", ")}. Showing each material's last accepted sampled frame; response remains experimental.${materialStatus ? ` ${materialStatus}.` : ""}`];
     if (limited) return ["warning", `Solver stopped after ${playback?.completed_steps ?? "some"} of ${playback?.requested_steps ?? "requested"} steps. ${text(playback?.error,item?.error || "Last accepted states only.")}${unresolved ? " Temporal resolution is also unresolved." : ""}`];
     if (unresolved) return ["warning", "Temporal resolution is unresolved. Inspect the sampled sequence as experimental evidence."];
@@ -411,7 +418,7 @@
     if (state.scene) return state.scene;
     if (!window.BanjoScene) throw new Error("The local 3D renderer is still loading.");
     state.scene = window.BanjoScene.create($("viewer-stage"), {
-      onFrame: ({index, count, frame, continuum}) => { $("viewer-frame").max = String(Math.max(0,count-1)); $("viewer-frame").value=String(index); const detail=continuum ? ` · ${text(frame?.phase,"load")} · load ${frame?.load_fraction !== undefined ? `${Math.round(frame.load_fraction*100)}%` : `frame ${index+1}`}` : frame?.time_s !== undefined ? ` · ${text(frame.time_s)} s` : ""; $("viewer-frame-output").textContent=`${index+1} / ${count || 0}${detail}`; $("viewer-magnification").disabled=!continuum;if(!continuum)$("viewer-magnification").value="1"; },
+      onFrame: ({index, count, frame, continuum, dynamic}) => { $("viewer-frame").max = String(Math.max(0,count-1)); $("viewer-frame").value=String(index); const stopped=dynamic ? frame?.material_states?.filter(x=>x.stopped).map(x=>x.material_id) || [] : []; const shownTime=dynamic && Number.isFinite(frame?.time_s) ? Number(frame.time_s.toPrecision(9)) : frame?.time_s; const detail=continuum ? ` · ${text(frame?.phase,"load")} · load ${frame?.load_fraction !== undefined ? `${Math.round(frame.load_fraction*100)}%` : `frame ${index+1}`}` : shownTime !== undefined ? ` · ${text(shownTime)} s${stopped.length ? ` · stopped: ${stopped.join(", ")}` : ""}` : ""; $("viewer-frame-output").textContent=`${index+1} / ${count || 0}${detail}`; $("viewer-magnification").disabled=!continuum;if(!continuum)$("viewer-magnification").value="1"; $("viewer-bonds").closest("label").hidden=!!dynamic; },
       onPlayState: (playing) => { $("viewer-play").textContent=playing?"Pause":"Play"; },
       onInspect: (data) => { $("viewer-inspect").textContent = data ? Object.entries(data).filter(([k,v]) => k !== "source" && typeof v !== "object").slice(0,8).map(([k,v])=>`${k}: ${text(v)}`).join(" · ") : "Nothing selected."; },
     });

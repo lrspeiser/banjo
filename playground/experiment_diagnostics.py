@@ -13,6 +13,7 @@ from typing import Any
 
 
 SCHEMA = "banjo.experiment-diagnostics.v1"
+_DYNAMIC_MATERIAL_SCHEMA = "banjo.dynamic-material-playback.v1"
 _MAX_ITEMS = 64
 _MAX_DEPTH = 8
 _MAX_STRING = 4096
@@ -35,6 +36,29 @@ def _package_sha256(package: Any) -> str:
     encoded = json.dumps(package, sort_keys=True, separators=(",", ":"),
                          ensure_ascii=False, allow_nan=False).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _numeric_descriptor(value: Any) -> Any:
+    """Keep numeric material inputs while excluding labels from identity."""
+    if type(value) in (int, float) and math.isfinite(value):
+        return value
+    if isinstance(value, list):
+        return [_numeric_descriptor(item) for item in value
+                if _numeric_descriptor(item) is not None]
+    if isinstance(value, dict):
+        return {str(key): numeric for key, item in value.items()
+                if (numeric := _numeric_descriptor(item)) is not None}
+    return None
+
+
+def _material_evidence_descriptor(material: dict[str, Any]) -> dict[str, Any]:
+    """Law plus numeric SI inputs; excludes names, IDs and supplied hashes."""
+    result = {"mechanical_law": material.get("mechanical_law")}
+    for key in ("density_kg_m3", "parameters"):
+        numeric = _numeric_descriptor(material.get(key))
+        if numeric is not None:
+            result[key] = numeric
+    return result
 
 
 def _bounded_json(value: Any, depth: int = 0) -> Any:
@@ -105,6 +129,123 @@ def _scene_summary(package: dict[str, Any]) -> dict[str, Any]:
         "material_ids": material_ids,
         "objects": summary,
         "objects_truncated": len(objects) > 12,
+    }
+
+
+def _dynamic_material_diagnostics(package: dict[str, Any],
+                                  recording: dict[str, Any]) -> dict[str, Any]:
+    """Compact native evidence for the bounded dynamic-material experiment."""
+    request = recording.get("request") if isinstance(recording.get("request"), dict) else {}
+    requested_duration = _finite_number(request.get("duration_s"))
+    budget = _finite_number(request.get("energy_budget_j"))
+    sphere = request.get("sphere") if isinstance(request.get("sphere"), dict) else {}
+    clearance = _finite_number(sphere.get("clearance_m"))
+    speed = _finite_number(sphere.get("speed_m_s"))
+    flight = None
+    if clearance is not None and clearance >= 0 and speed is not None and speed >= 0:
+        flight = (math.sqrt(speed * speed + 2 * 9.81 * clearance) - speed) / 9.81
+
+    input_materials = request.get("materials") if isinstance(request.get("materials"), list) else []
+    material_inputs = []
+    for material in input_materials[:3]:
+        if isinstance(material, dict):
+            numeric = _material_evidence_descriptor(material)
+            material_inputs.append({"material_id": _bounded_json(material.get("material_id")),
+                                    "numeric": _bounded_json(numeric),
+                                    "sha256": _package_sha256(numeric)})
+
+    cases = recording.get("cases") if isinstance(recording.get("cases"), list) else []
+    compact_cases = []
+    checks = []
+    for index, case in enumerate(cases[:3]):
+        if not isinstance(case, dict):
+            continue
+        summary = case.get("summary") if isinstance(case.get("summary"), dict) else {}
+        status = case.get("status") if case.get("status") in ("complete", "solver_limit") else "solver_limit"
+        completed = _finite_number(summary.get("completed_duration_s"))
+        requested = _finite_number(summary.get("requested_duration_s"))
+        if requested is None:
+            requested = requested_duration
+        contacts = summary.get("accepted_contacts") if type(summary.get("accepted_contacts")) is int else None
+        absolute_residual = _finite_number(summary.get("absolute_energy_residual_j"))
+        case_budget = _finite_number(summary.get("energy_budget_j"))
+        if case_budget is None:
+            case_budget = budget
+        scaled_budget = (case_budget * requested / .1
+                         if case_budget is not None and requested is not None else None)
+        plastic_dissipation = _finite_number(summary.get("plastic_dissipation_j"))
+        frames = case.get("frames") if isinstance(case.get("frames"), list) else []
+        maximum_plastic = 0.0
+        for frame in frames:
+            if isinstance(frame, dict):
+                value = _finite_number(frame.get("maximum_equivalent_plastic_strain"))
+                if value is not None:
+                    maximum_plastic = max(maximum_plastic, value)
+        material = case.get("material") if isinstance(case.get("material"), dict) else {}
+        evidence = {
+            "material_id": _bounded_json(case.get("material_id")),
+            "material": _bounded_json(material),
+            "material_numeric_sha256": _package_sha256(_material_evidence_descriptor(material)),
+            "status": status,
+            "error": _bounded_json(case.get("error", "")),
+            "completed_duration_s": completed,
+            "requested_duration_s": requested,
+            "accepted_contacts": contacts,
+            "contact_evidence": "native_solver_counter" if contacts is not None else "unavailable",
+            "absolute_energy_residual_j": absolute_residual,
+            "scaled_energy_budget_j": scaled_budget,
+            "energy_budget_met": (absolute_residual <= scaled_budget
+                                  if absolute_residual is not None and scaled_budget is not None else None),
+            "step_calls": summary.get("step_calls") if type(summary.get("step_calls")) is int else None,
+            "wall_ms": _finite_number(summary.get("wall_ms")),
+            "plastic_dissipation_j": plastic_dissipation,
+            "maximum_equivalent_plastic_strain": maximum_plastic,
+            "observed_plastic_response": maximum_plastic > 0 or (plastic_dissipation or 0) > 0,
+            "permanent_dent_supported": False,
+            "sampled_peak_upward_speed_m_s": _finite_number(summary.get("sampled_peak_upward_speed_m_s")),
+            "sampled_peak_displacement_m": _finite_number(summary.get("sampled_peak_displacement_m")),
+        }
+        compact_cases.append(evidence)
+        complete = status == "complete" and completed is not None and requested is not None and completed >= requested - 1e-12
+        checks.append(_result(f"case_{index}_completion", "pass" if complete else "fail",
+                              "requested_duration_completed" if complete else "solver_stopped_before_requested_duration",
+                              "native adaptive solver status and duration counters",
+                              {"material_id": evidence["material_id"], "completed_duration_s": completed,
+                               "requested_duration_s": requested}))
+        contact_status = "pass" if contacts is not None and contacts > 0 else ("fail" if contacts == 0 else "unknown")
+        checks.append(_result(f"case_{index}_contact", contact_status,
+                              "native_solver_reported_contact" if contact_status == "pass" else
+                              "native_solver_reported_zero_contacts" if contact_status == "fail" else
+                              "native_contact_counter_unavailable",
+                              "native accepted-contact counter; sampled proximity is not used"))
+
+    timing = {"estimated_pre_contact_flight_s": flight,
+              "requested_duration_s": requested_duration,
+              "estimated_post_flight_observation_s": (requested_duration - flight
+                                                       if requested_duration is not None and flight is not None else None),
+              "model": "constant gravity from authored clearance and downward speed"}
+    return {
+        "schema": SCHEMA,
+        "source_schema": _DYNAMIC_MATERIAL_SCHEMA,
+        "native_facts": {"status": _bounded_json(recording.get("status")),
+                         "physical_response_validated": recording.get("physical_response_validated"),
+                         "request": _bounded_json({key: request.get(key) for key in
+                            ("duration_s", "energy_budget_j", "max_step_calls", "dimensions_m",
+                             "mesh_refinement", "sphere")}),
+                         "cases": compact_cases,
+                         "cases_truncated": len(cases) > 3},
+        "package": {"sha256": _package_sha256(package),
+                    "input_materials": material_inputs,
+                    "input_materials_truncated": len(input_materials) > 3},
+        "expectations": [{"kind": "flight_window", **timing}],
+        "checks": checks,
+        "validity": {"physical_response_validated": False},
+        "limitations": [
+            "Accepted-contact counts are native solver evidence; sampled proximity is not contact evidence.",
+            "Observed plastic strain or dissipation does not establish a permanent dent.",
+            "Wall time is diagnostic timing and is not a realtime-performance claim.",
+            "The dynamic patch does not model fracture, so fragment absence is not a failure criterion.",
+        ],
     }
 
 
@@ -196,6 +337,8 @@ def _rigid_lane_checks(plan: dict[str, Any], package: dict[str, Any],
 def build_diagnostics(plan: dict[str, Any], package: dict[str, Any],
                       recording: dict[str, Any]) -> dict[str, Any]:
     """Return a bounded JSON-compatible diagnostics dictionary."""
+    if recording.get("schema") == _DYNAMIC_MATERIAL_SCHEMA:
+        return _dynamic_material_diagnostics(package, recording)
     requested = recording.get("requested_steps") if type(recording.get("requested_steps")) is int else None
     completed = recording.get("completed_steps") if type(recording.get("completed_steps")) is int else None
     frames = recording.get("frames") if isinstance(recording.get("frames"), list) else []

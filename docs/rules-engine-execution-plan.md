@@ -2,7 +2,7 @@
 
 Status: active implementation; no universal material/behavior or realtime completion claim. This plan extends, and does not replace, all nine existing workstreams and 40 mechanics. Smoke and full fluid dynamics remain deferred. LLMs compose supported laws; genuinely new physics laws require implementation and tests.
 
-The three requested demonstrations currently fail: thin glass reaches the damage limit, impact dents are disconnected from J2 plasticity, and rubber is rigid-only. Generated names and scenes do not satisfy behavior acceptance.
+The three requested demonstrations remain unaccepted: thin glass reaches the damage limit, impact-driven J2 history now exists but permanent unloaded dents are unqualified, and finite-strain rubber is missing. Generated names and scenes do not satisfy behavior acceptance.
 
 ## R01: Property-based material contracts
 
@@ -62,7 +62,7 @@ Acceptance: Reload damaged objects exactly within declared tolerance, contact im
 
 ## R08: LLM authoring and experiment contracts
 
-Status: planned.
+Status: active; property-authored sphere/brick experiments now connect to native dynamics and embedded 3D.
 
 Implementation: LLM emits validated unit-bearing materials, geometries, initial/boundary conditions, supported law compositions, controls and machine-checkable expectations.
 
@@ -105,3 +105,7 @@ The previous failed thin-glass recording and unsupported dent/rubber requests re
 ## Adaptive dynamics checkpoint
 
 [Error-controlled contact](adaptive-material-contact-checkpoint.md) implements full-interval rollback, comparison of full/two-half trials, bounded consumable contact-error reserves, optional velocity Verlet with final contact-velocity constraints, and cached accepted material evaluations. Two complete 0.1 s elastic/J2 recordings pass a 3 microjoule accumulated absolute numerical-energy budget. The finer-mesh recordings exhaust the same work ceiling; R03 spatial accuracy and R09 realtime gates remain open. The next work is qualified spatial response and measured stiff-region integration cost, followed by unloaded dent/state retention and playground integration.
+
+## Dynamic material playground checkpoint
+
+[Property-authored impact experiments](dynamic-material-playground-checkpoint.md) connect explicit SI material descriptors to the native sphere/brick solver and actual nodal/sphere recordings. The LLM chooses supported laws and numeric properties, while the server and native CLI independently validate bounded input. The browser renders accepted physical states, shows solver stops, and provides generated playback/inspection controls. New materials require data changes within existing laws; new physics laws still require implementation. R08 is active, while arbitrary scenes, expected-outcome validation, R04 finite-strain recovery, R05 permanent unloaded dents, R06 stable fracture, R07 shared persistence and R09 realtime qualification remain open.

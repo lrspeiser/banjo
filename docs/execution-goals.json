@@ -758,7 +758,7 @@
       {
         "id": "R08",
         "title": "LLM authoring and experiment contracts",
-        "status": "planned",
+        "status": "active",
         "implementation": "LLM emits validated unit-bearing materials, geometries, initial/boundary conditions, supported law compositions, controls and machine-checkable expectations.",
         "acceptance": "Fresh randomized requests generate unseen parameter sets through the public API and render actual native trajectories; unsupported requirements never silently substitute."
       },
@@ -778,41 +778,35 @@
       }
     ],
     "checkpoint": {
-      "status": "R02/R03 adaptive temporal budget checkpoint; no whole-platform goal complete",
-      "base_commit": "3b06ce1",
-      "evidence": "docs/adaptive-material-contact-checkpoint.md",
+      "status": "R08 bounded dynamic material playground implementation; no whole-platform goal complete",
+      "base_commit": "88d88d342e77fac4844d52b9e0ca1d47d9d39fdf",
+      "evidence": "docs/dynamic-material-playground-checkpoint.md",
       "implemented": [
-        "canonical-state rollback with immutable material evaluation cache",
-        "coarse/two-half adaptive advances with global interval indicator/work budgets",
-        "optional velocity Verlet and passive final contact velocity constraints"
+        "strict numeric material/geometry request through shared native parser",
+        "accepted sphere and tetrahedral playback with generated bounded controls",
+        "persistent per-material contact/work/energy evidence and live GPT review"
       ],
-      "measured": {
-        "full_duration_s": 0.1,
-        "material_sets": [
-          "fictional linear elastic E1MPa",
-          "fictional J2 E1MPa yield1.2kPa"
-        ],
-        "absolute_energy_budget_j": 3e-06,
-        "maximum_recording_step_calls": 200000,
-        "elastic_absolute_energy_residual_j": 2.0354075724990256e-06,
-        "j2_absolute_energy_residual_j": 2.2211279782233294e-06
-      },
-      "failed_gates": [
-        "fine mesh work budget",
-        "spatial accuracy qualification",
-        "world realtime qualification"
-      ],
-      "next": "Reduce and qualify spatial/contact work under unchanged error budgets; then validate unloaded impact geometry and integrate accepted state/experiments into playground.",
       "validation": {
         "native_suites_passed": 62,
-        "native_wall_s": 93.08,
-        "adaptive_cases": 8,
-        "dynamic_cases": 8,
-        "python_material_tests_passed": 12,
-        "default_reference_frames": "exactly_unchanged",
-        "fine_mesh_gate": "work_budget_exhausted",
-        "playground": "unchanged_not_integrated"
-      }
+        "native_wall_s": 93.83,
+        "python_tests_run": 131,
+        "python_passed": 130,
+        "python_skipped": 1,
+        "python_wall_s": 13.46,
+        "browser": "actual prompt -> native -> auto 3D, 101-frame timeline, playback and steps, components/reference/X-ray, archived restoration, live GPT evidence review; no page errors",
+        "live_model": "gpt-5-mini",
+        "live_request_count": 4,
+        "live_complete_material_runs": 4,
+        "live_partial_material_runs": 2,
+        "unsupported_blocked_requests": 1
+      },
+      "failed_gates": [
+        "stiff glass/oak/iron work budget near contact",
+        "mesh accuracy and unloaded dent qualification",
+        "fracture and finite-strain rubber",
+        "shared world persistence and realtime release"
+      ],
+      "next": "Reduce and qualify stiff/contact integration cost while preserving error budgets; extend spatial/unloading acceptance and expected-outcome instrumentation."
     },
     "foundation_checkpoint": {
       "status": "R01/R02 partial implementation, no goal fully accepted",
@@ -858,6 +852,43 @@
         "spatial_response_gate": "not_converged",
         "realtime_gate": "not_passed",
         "measurements": "docs/coupled-contact-results.json"
+      }
+    },
+    "adaptive_contact_checkpoint": {
+      "status": "R02/R03 adaptive temporal budget checkpoint; no whole-platform goal complete",
+      "base_commit": "3b06ce1",
+      "evidence": "docs/adaptive-material-contact-checkpoint.md",
+      "implemented": [
+        "canonical-state rollback with immutable material evaluation cache",
+        "coarse/two-half adaptive advances with global interval indicator/work budgets",
+        "optional velocity Verlet and passive final contact velocity constraints"
+      ],
+      "measured": {
+        "full_duration_s": 0.1,
+        "material_sets": [
+          "fictional linear elastic E1MPa",
+          "fictional J2 E1MPa yield1.2kPa"
+        ],
+        "absolute_energy_budget_j": 3e-06,
+        "maximum_recording_step_calls": 200000,
+        "elastic_absolute_energy_residual_j": 2.0354075724990256e-06,
+        "j2_absolute_energy_residual_j": 2.2211279782233294e-06
+      },
+      "failed_gates": [
+        "fine mesh work budget",
+        "spatial accuracy qualification",
+        "world realtime qualification"
+      ],
+      "next": "Reduce and qualify spatial/contact work under unchanged error budgets; then validate unloaded impact geometry and integrate accepted state/experiments into playground.",
+      "validation": {
+        "native_suites_passed": 62,
+        "native_wall_s": 93.08,
+        "adaptive_cases": 8,
+        "dynamic_cases": 8,
+        "python_material_tests_passed": 12,
+        "default_reference_frames": "exactly_unchanged",
+        "fine_mesh_gate": "work_budget_exhausted",
+        "playground": "unchanged_not_integrated"
       }
     }
   }

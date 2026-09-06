@@ -16,9 +16,10 @@ from banjo_authoring import catalog, make_object, make_package
 from control_contract import UI_SCHEMA, validate_ui, default_ui
 from drop_builder import DROP_SCHEMA, validate_drop, compile_drop
 from scene_composer import SCENE_SCHEMA, validate_scene, compile_scene
+from dynamic_material import IMPACT_SCHEMA, validate_impact, native_request
 
 KINDS = ["drop_test", "scene_test", "panel_impact", "plate_drop", "rigid_drop", "knife_cut", "custom_objects",
-         "thermal_frontier", "material_state_reference", "continuum_pressure_reference",
+         "thermal_frontier", "material_state_reference", "continuum_pressure_reference", "dynamic_material_impact",
          "glass_reference", "unsupported"]
 PRESETS = list(catalog()["object_presets"])
 LIMITATIONS = [
@@ -55,6 +56,7 @@ SCHEMA["properties"].update({
     "fidelity": {"type":"string","enum":["experimental","calibrated"]},
     "drop": {"anyOf": [DROP_SCHEMA, {"type": "null"}]},
     "scene": {"anyOf": [SCENE_SCHEMA, {"type": "null"}]},
+    "impact": {"anyOf": [IMPACT_SCHEMA, {"type": "null"}]},
     "ui": UI_SCHEMA,
     "pressure": {"anyOf": [{"type": "null"}, obj({
         "peak_pressure_pa": {"type": "number"}, "resolution": {"type": "integer"},
@@ -68,6 +70,7 @@ SCHEMA["required"] = list(SCHEMA["properties"])
 
 # The model selects one typed setup. It never fills irrelevant legacy fields.
 _SETUPS = [
+    obj({"kind":{"type":"string","enum":["dynamic_material_impact"]},"impact":IMPACT_SCHEMA}),
     obj({"kind":{"type":"string","enum":["drop_test"]},"drop":DROP_SCHEMA}),
     obj({"kind":{"type":"string","enum":["scene_test"]},"scene":SCENE_SCHEMA}),
     obj({"kind":{"type":"string","enum":["continuum_pressure_reference"]},"pressure":SCHEMA["properties"]["pressure"]["anyOf"][1]}),
@@ -88,11 +91,11 @@ def lower_proposal(proposal, *, repair_ui=False):
     kind=setup.get("kind")
     candidates=[s for s in _SETUPS if kind in s["properties"]["kind"]["enum"]]
     if not candidates or set(setup)!=set(candidates[0]["properties"]): raise ValueError("Invalid typed experiment setup")
-    plan={"language":"banjo-playground-1","experiment":kind,"projectile":"iron_ball","panel_dimensions_m":[.24,.36,.04],"speeds_m_s":[],"heights_m":[],"objects":[],"drop":None,"scene":None,"pressure":None}
+    plan={"language":"banjo-playground-1","experiment":kind,"projectile":"iron_ball","panel_dimensions_m":[.24,.36,.04],"speeds_m_s":[],"heights_m":[],"objects":[],"drop":None,"scene":None,"pressure":None,"impact":None}
     plan.update({k:v for k,v in proposal.items() if k!="setup"})
     plan.update({k:v for k,v in setup.items() if k!="kind"})
     if proposal["fidelity"] == "calibrated" and kind != "glass_reference":
-        plan.update(experiment="unsupported",drop=None,scene=None,pressure=None,objects=[],heights_m=[],speeds_m_s=[],ui={"title":"Calibration unavailable","controls":[]})
+        plan.update(experiment="unsupported",drop=None,scene=None,pressure=None,impact=None,objects=[],heights_m=[],speeds_m_s=[],ui={"title":"Calibration unavailable","controls":[]})
         plan["requirements"] = [{"description":"Calibrated physical response","status":"unsupported","reason":"The current experiment models are experimental. No calibrated simulation is available; an uncalibrated substitute was not executed."}]
     if repair_ui:
         try: validate_ui(plan["ui"],plan["experiment"])
@@ -127,6 +130,48 @@ The browser shows sampled native states and actual solver reports. Play/pause is
 
 SYSTEM += "\nAuthoritative preset catalog (do not infer representation from a name):\n" + json.dumps({name:{key:preset.get(key) for key in ("material","shape","representation","dimensions_m","resolution","pin_boundary")} for name,preset in catalog()["object_presets"].items()},separators=(",",":"))
 SYSTEM += "\nFor scene_test explicitly choose representation rigid or network. Use iron_ball for a smooth rigid sphere, never iron_matter_ball. wood_panel defaults to a pinned network; a requested free rigid wood panel MUST specify representation=rigid and pin_boundary=null,resolution=null. Do not call a network preset rigid."
+SYSTEM += """
+
+New route dynamic_material_impact supersedes the fixed-fixture restriction ONLY for
+coupled small-strain sphere/brick impacts and property-authored materials. Prefer
+this route for requests to demonstrate generated material laws, elastic response or
+impact plasticity using the new material solver. It does not fracture, cut, model
+finite-strain rubber, or establish a permanent unloaded dent. Do not substitute it
+for a shattering, knife, thin sheet, arbitrary scene, or calibrated-realism request.
+The user supplies a sphere above a rectangular solid clamped across its entire
+bottom, with gravity 9.81 m/s2, passive contact, friction .15, and physical nodal
+deformation. Dimensions are x width, y thickness, z depth in meters, each .01.. .2.
+Sphere radius .002.. .03 m, density 1..30000 kg/m3, bottom clearance 0.. .005 m,
+downward initial speed 0.. .2 m/s. offset_xz_m is measured from the center of the
+brick; abs(offset)+radius must fit within half the respective side.
+duration_s .001.. .1 (default .1), mesh_refinement1 or2 (default1), max_step_calls
+3..200000 per material (default200000); energy_budget_j1e-9..1e-3 per .1 s
+(default6e-6). Work/error limits can stop a run; never loosen requested tolerances
+or change coefficients to force an outcome. Refinement is experimental and slow.
+Materials are 1..3 explicit SI descriptors with one supported law and coefficients.
+Choose at least two distinct materials by default; glass/oak/iron comparisons must
+retain all three. When creating fictional materials, call them fictional and give
+the coefficients explicitly; the laws are isotropic_elastic, orthotropic_elastic
+and j2_plastic. No new equations or material-name special cases can be generated.
+maximum_total_strain_norm <=.1; there is also a .1 displacement-gradient limit.
+A known inexpensive diagnostic uses .08x.02x.08 m, sphere radius .012m and
+density7870, clearance .0005m, offset [.007,.009], speed0, .1s, with two FICTIONAL
+materials rho1000 E1e6 Pa nu.25 limit.08: isotropic_elastic and j2_plastic
+yield1200Pa hardening20000Pa. Use it only when compatible with the request, and
+change requested properties faithfully. Never call these coefficients rubber,
+glass, or iron. Real glass/oak/iron stiffnesses can exhaust this CPU budget.
+All pressure/stiffness/yield values are PASCALS, not MPa: 1 MPa is 1000000 Pa,
+1.2 MPa is 1200000 Pa. For the diagnostic above write young_modulus_pa=1000000,
+not 1. Before returning, check unit conversions and that the strain validity
+range is compatible with the chosen load. Preserve explicit user numbers even
+if they lead to a solver limit, and report that possibility. Native contact
+evidence includes accepted impulse counts and energy totals, not full per-contact
+force histories; do not promise fields which the recorder does not provide.
+Dynamic controls: play_pause/reset/step_forward/step_back, components/reference,
+playback_speed .1..4 and frame. No magnification or physical parameter controls
+for this route yet; change physics via chat. The 3D view replays actual nodal and
+sphere positions at computed timestamps, including partial failure records.
+"""
 
 def number(value, low, high, label):
     if type(value) not in (int, float) or not math.isfinite(value) or not low <= value <= high:
@@ -152,7 +197,7 @@ def validate_plan(plan):
         raise ValueError("Invalid limitations")
     if plan["projectile"] not in ("iron_ball", "iron_cube", "knife", "axe_head"):
         raise ValueError("Unsupported projectile")
-    number(plan["duration_s"], .05, 3, "duration_s")
+    number(plan["duration_s"], .001 if plan["experiment"] in ("dynamic_material_impact", "unsupported") else .05, 3, "duration_s")
     for field, upper in [("speeds_m_s", 20), ("heights_m", 2)]:
         if not isinstance(plan[field], list) or len(plan[field]) > 4:
             raise ValueError("At most four sweep cases are admitted")
@@ -190,7 +235,7 @@ def validate_plan(plan):
         if type(pressure["resolution"]) is not int or pressure["resolution"] not in (4,6,8,10,12): raise ValueError("Pressure resolution must be even in [4,12]")
         if type(pressure["increments"]) is not int or not 2 <= pressure["increments"] <= 64: raise ValueError("Pressure increments must be in [2,64]")
         if pressure["profile"] not in ("uniform", "smooth"): raise ValueError("Unknown pressure profile")
-    for field, kind, validator in (("drop", "drop_test", validate_drop), ("scene", "scene_test", validate_scene)):
+    for field, kind, validator in (("drop", "drop_test", validate_drop), ("scene", "scene_test", validate_scene), ("impact", "dynamic_material_impact", validate_impact)):
         value = plan.get(field)
         if plan["experiment"] == kind:
             if value is None: raise ValueError(f"{kind} requires {field}")
@@ -198,6 +243,8 @@ def validate_plan(plan):
             if plan["speeds_m_s"] or plan["heights_m"] or plan["objects"]:
                 raise ValueError("Composable experiments require empty legacy arrays; use their dedicated specification")
         elif value is not None: raise ValueError(f"{field} is only used by {kind}")
+    if plan["experiment"] == "dynamic_material_impact":
+        native_request(plan["impact"], plan["duration_s"])
     requirements = plan.get("requirements", [])
     if not isinstance(requirements, list) or len(requirements)>12: raise ValueError("Invalid requirement list")
     for item in requirements:
@@ -221,7 +268,7 @@ def compile_plan(plan):
     if kind == "drop_test": return compile_drop(plan)
     if kind == "scene_test": return compile_scene(plan)
     if kind in ("unsupported", "glass_reference", "thermal_frontier", "material_state_reference",
-                "continuum_pressure_reference"):
+                "continuum_pressure_reference", "dynamic_material_impact"):
         return []
     parameters = plan["speeds_m_s"] if kind in ("panel_impact", "knife_cut") else plan["heights_m"]
     if kind == "custom_objects": parameters = [None]
