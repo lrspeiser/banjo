@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <numbers>
 #include <stdexcept>
 #include <string_view>
 
@@ -61,6 +62,95 @@ void rejects(json source, std::string_view message) {
         return;
     }
     throw TestFailure(std::string(message));
+}
+
+json rigidSphereFixture() {
+    auto source = fixture("08-free-flight.json");
+    source["name"] = "rigid sphere contact test";
+    source["required_capabilities"] =
+        json::array({"sphere", "finite-ground", "gravity", "contact", "render-instances"});
+    const auto ironMaterial = source.at("materials").at(2);
+    source["materials"] = json::array({ironMaterial});
+    source["objects"] = json::array();
+    source["objects"].push_back({
+        {"id", 1},
+        {"name", "iron sphere"},
+        {"material", "iron"},
+        {"shape", "sphere"},
+        {"representation", "rigid"},
+        {"dimensions_m", {0.1, 0.1, 0.1}},
+        {"position_m", {0.0, 0.3, 0.0}},
+        {"orientation_wxyz", {0.9238795325112867, 0.0, 0.3826834323650898, 0.0}},
+        {"velocity_m_s", {0.0, 0.0, 0.0}},
+        {"spin_rad_s", {0.0, 0.0, 4.0}}
+    });
+    return source;
+}
+
+void rigidSphereHasMaterialMassInertiaAndRenderGeometry() {
+    auto source = rigidSphereFixture();
+    source["gravity_m_s2"] = {0.0, 0.0, 0.0};
+    source["ground"] = nullptr;
+    auto world = load(source);
+    const auto initial = report(*world);
+    const double radius = 0.05;
+    const double mass = 7870.0 * (4.0 / 3.0) * std::numbers::pi * radius * radius * radius;
+    const double rotationalEnergy = 0.5 * (0.4 * mass * radius * radius) * 16.0;
+    const auto &object = objectResult(initial, 1);
+    require(std::abs(object.at("mass_kg").get<double>() - mass) < 1.0e-12,
+            "rigid sphere mass must come from material density and sphere volume");
+    require(std::abs(initial.at("mechanical_energy_j").get<double>() - rotationalEnergy) /
+                rotationalEnergy < 1.0e-5,
+            "rigid sphere report must retain solid-sphere inertia");
+    const auto instances = world->renderInstances();
+    require(instances.size() == 1 && instances.front().geometry.kind == banjo::PrimitiveKind::Sphere,
+            "rigid sphere must expose a sphere render primitive");
+    require(std::abs(instances.front().geometry.radius_m - radius) < 1.0e-12 &&
+                !instances.front().deformable_cell,
+            "rigid sphere render primitive must retain its diameter and rigid representation");
+    require(std::abs(instances.front().state.orientation_world.w - 0.9238795325112867) < 1.0e-6 &&
+                std::abs(instances.front().state.orientation_world.y - 0.3826834323650898) < 1.0e-6,
+            "rigid sphere must preserve its authored orientation state");
+}
+
+void rigidSphereRejectsAnisotropyAndNetworkRepresentation() {
+    auto source = rigidSphereFixture();
+    source["objects"][0]["dimensions_m"] = {0.1, 0.101, 0.1};
+    rejects(source, "anisotropic sphere dimensions must be rejected");
+    source = rigidSphereFixture();
+    source["objects"][0]["representation"] = "network";
+    source["objects"][0]["resolution"] = {2, 2, 2};
+    rejects(source, "network sphere representation must be rejected");
+}
+
+void rigidSphereMovesThroughGroundContact() {
+    auto source = rigidSphereFixture();
+    source["gravity_m_s2"] = {0.0, -9.81, 0.0};
+    source["ground"] = {{"half_length_m", 2.0}, {"half_width_m", 2.0}, {"friction", 0.4}};
+    source["objects"][0]["spin_rad_s"] = {0.0, 0.0, 0.0};
+    source["objects"][0]["velocity_m_s"] = {0.0, -1.0, 0.0};
+    auto world = load(source);
+    const auto initial = world->renderInstances().front().state.center_of_mass_world_m;
+    double minimum_height = initial.y;
+    double maximum_upward_velocity = 0.0;
+    for (unsigned i = 0; i < 80; ++i) {
+        const auto step = world->step(1);
+        require(step.completed_steps == 1U && step.error.empty(),
+                "rigid sphere contact step must complete without a fault");
+        const auto state = world->renderInstances().front().state;
+        minimum_height = std::min(minimum_height, state.center_of_mass_world_m.y);
+        maximum_upward_velocity = std::max(maximum_upward_velocity,
+                                           state.linear_velocity_m_s.y);
+        if (i == 47) {
+            require(state.center_of_mass_world_m.y < initial.y - 0.08 &&
+                        state.linear_velocity_m_s.y < 0.0,
+                    "rigid sphere must show free-fall motion before contact");
+        }
+    }
+    require(minimum_height >= 0.045 && minimum_height < 0.06,
+            "rigid sphere must reach the support without tunneling through it");
+    require(maximum_upward_velocity > 0.5,
+            "rigid sphere ground contact must produce an upward contact response");
 }
 
 void freeFlightPreservesMomentum() {
@@ -202,6 +292,9 @@ void temporalAdmissionIsSeparateFromValidation() {
 
 int main() {
     try {
+        rigidSphereHasMaterialMassInertiaAndRenderGeometry();
+        rigidSphereRejectsAnisotropyAndNetworkRepresentation();
+        rigidSphereMovesThroughGroundContact();
         freeFlightPreservesMomentum();
         restingFourMaterialControl();
         sharpLocalDamageAndBluntControl();

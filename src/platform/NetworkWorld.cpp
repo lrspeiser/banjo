@@ -77,7 +77,7 @@ std::unique_ptr<NetworkWorld> NetworkWorld::load(const std::string &text){
     require(source.at("package_version")==2&&source.at("physics_abi")=="banjo-network-2"&&source.at("backend")=="material-network-v2"&&source.at("units")=="SI","unsupported network ABI or units");
     require(source.at("name").is_string()&&source["name"].get<std::string>().size()<=120,"invalid network name");
     scalar(source.at("fixed_dt_s"),1./4800,1./240);integer(source.at("max_steps_per_call"),1,240);
-    const std::set<std::string> capabilities{"cell-deformation","cohesive-damage","axial-plasticity","directional-lattice","box","ellipsoid","wedge","finite-ground","gravity","contact","render-instances","blocky-cell-skins"};
+    const std::set<std::string> capabilities{"cell-deformation","cohesive-damage","axial-plasticity","directional-lattice","sphere","box","ellipsoid","wedge","finite-ground","gravity","contact","render-instances","blocky-cell-skins"};
     require(source.at("required_capabilities").is_array()&&source["required_capabilities"].size()<=16,"invalid network capabilities");
     for(auto &v:source["required_capabilities"])require(v.is_string()&&capabilities.contains(v.get<std::string>()),"unsupported network capability");
     auto result=std::unique_ptr<NetworkWorld>(new NetworkWorld);auto &w=*result->impl_;
@@ -119,8 +119,9 @@ std::unique_ptr<NetworkWorld> NetworkWorld::load(const std::string &text){
         const auto d=vector(o.at("dimensions_m"),.004,2);const auto p=vector(o.at("position_m"),-10,10);const auto q=quaternion(o.at("orientation_wxyz"));
         const auto velocity=vector(o.at("velocity_m_s"),-30,30),spin=vector(o.at("spin_rad_s"),-100,100);
         const auto shape=o.at("shape").get<std::string>(),representation=o.at("representation").get<std::string>();
-        require(shape=="box"||shape=="ellipsoid"||shape=="wedge","unsupported network shape");
+        require(shape=="sphere"||shape=="box"||shape=="ellipsoid"||shape=="wedge","unsupported network shape");
         require(representation=="rigid"||representation=="network","unsupported representation");
+        require(shape!="sphere"||representation=="rigid","sphere currently requires rigid representation");
         require(shape!="wedge"||representation=="rigid","wedge currently requires rigid representation");
         require(shape!="ellipsoid"||representation=="network","ellipsoid currently requires network representation");
         w.objects.push_back({id,material,o["name"].get<std::string>(),{}, {}});auto &object=w.objects.back();const unsigned objectIndex=unsigned(w.objects.size()-1);
@@ -129,7 +130,21 @@ std::unique_ptr<NetworkWorld> NetworkWorld::load(const std::string &text){
             require(!o.contains("resolution")&&!o.contains("pin_boundary")&&!o.contains("grain_wxyz"),"network-only rigid object fields");
             const MatterBodyId body=1000001+w.nodes.size();RigidSnapshot state{p,q,velocity,spin};double mass;
             RigidPrimitive proxy;proxy.kind=PrimitiveKind::Box;proxy.dimensions_m=d;
-            if(shape=="wedge"){
+            if(shape=="sphere"){
+                const double tolerance=1e-12*std::max({1.0,d.x,d.y,d.z});
+                require(std::abs(d.x-d.y)<=tolerance&&std::abs(d.x-d.z)<=tolerance,
+                    "sphere dimensions must specify equal diameters");
+                proxy.kind=PrimitiveKind::Sphere;proxy.radius_m=d.x/2;
+                mass=law.density_kg_m3*proxy.volume();
+                RigidBallDescription sphere;
+                sphere.body_id=body;sphere.radius_m=proxy.radius_m;sphere.material=contactMaterial(law);
+                sphere.position_world_m=p;sphere.linear_velocity_m_s=velocity;sphere.angular_velocity_rad_s=spin;
+                w.rigid.addBall(sphere);
+                // addBall's legacy sphere descriptor has no orientation field;
+                // preserve the package's rigid state after creation even though
+                // a homogeneous sphere has orientation-independent mechanics.
+                w.rigid.applyRigidState(body,state);
+            }else if(shape=="wedge"){
                 std::vector<Vec3> points;
                 for(double z:{-d.z/2,d.z/2}){points.push_back({-d.x/2,d.y/3,z});points.push_back({d.x/2,d.y/3,z});points.push_back({0,-2*d.y/3,z});}
                 mass=law.density_kg_m3*d.x*d.y*d.z/2;Mat3 inertia;

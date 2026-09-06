@@ -52,7 +52,7 @@ std::string PlatformWorld::capabilitiesJson(){return json{
     {"backend_packages",{{"material-network-v2",{{"package_version",2},{"physics_abi","banjo-network-2"}}}}},
     {"backends",{{"rigid-v1",{"sphere","box","finite-bowl","finite-ground","gravity","contact","render-instances"}},
                  {"bonded-reference-v2",{"sphere","finite-bowl","finite-ground","gravity","contact","render-instances","experimental-glass-fracture"}},
-                 {"material-network-v2",{"cell-deformation","cohesive-damage","axial-plasticity","directional-lattice","box","ellipsoid","wedge","finite-ground","gravity","contact","render-instances","blocky-cell-skins"}},
+                 {"material-network-v2",{"cell-deformation","cohesive-damage","axial-plasticity","directional-lattice","sphere","box","ellipsoid","wedge","finite-ground","gravity","contact","render-instances","blocky-cell-skins"}},
                  {"compiled-impact-v1",{"sphere","box","finite-bowl","finite-ground","gravity","contact","render-instances","experimental-glass-fracture","persistent-damage","compiled-response"}}}},
     {"limits",{{"package_bytes",4194304},{"rigid_objects",4096},{"reference_objects",9},{"compiled_objects",128},{"network_cells",1024},{"steps_per_call",240}}},
     {"unsupported",{"automatic-physical-LOD","full-continuum-plasticity","anisotropic-continuum-fracture","live-state-package-save","scripts","network-publishing"}},

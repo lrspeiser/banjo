@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Material showcase:** [Iron-ball panel speeds and knife/tomato proxy](material-showcase.md) add genuine rigid spheres, matched glass/oak/iron clamped panels at 2/6/12 m/s, and explicit damage overlays. Wood has 0/0/11 broken links; glass has none at the authored step. All panels and the tomato retain a connected core containing all their cells. This demonstrates local damage, not validated glass shattering or a complete tomato slice. G02 is active; contact/time/space convergence and work closure remain open.
+
 **Current executed checkpoint:** See [execution-checkpoint.md](execution-checkpoint.md) for the live blocky `CellSkin` default and measured same-law phase evidence. The older 44-suite result is historical; 47/47 suites now pass (83.33 s). No gate below is complete from this slice alone.
 
 **Owner representation decision:** Voxel or sphere/particle matter may carry a separate appearance skin, with new surfaces generated from surviving matter and exposed interfaces after damage. The [skin contract](object-skin-contract.md) covers partial cracks, physical layers, material interiors, bounded remeshing and rendering/physics separation. Legacy blocky fragment surfaces exist; the earlier statement that continuous live v2 skins remained planned is historical and is superseded by the executed blocky v1 slice. Smooth/deforming skins, skin/contact convergence, and finite-strain calibration remain open.
