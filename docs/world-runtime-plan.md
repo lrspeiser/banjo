@@ -16,6 +16,8 @@ The [first implementation](world-foundation-checkpoint.md) adds `SparseThermalWo
 
 ## Authoritative state and law families
 
+The owner accepts voxel or sphere/particle samples wrapped in a separate visual skin. Follow the [object skin contract](object-skin-contract.md): render surfaces derive from accepted matter and interfaces, remain attached during deformation, and expose new interiors on partial cuts and fragmentation. Rigid motion reuses a skin; topology changes update affected patches with bounded work. Appearance-only skins add no physical properties. Physical layers such as tomato peel require declared matter/laws. Compact inactive storage remains valid; this decision does not require an active rigid body per cell or replace the pending continuum/contact correction.
+
 Every occupied chunk/cell or active particle carries stable identity, mass/volume, material ID, position and velocity, orientation, inertia/tensor state, temperature or enthalpy, phase/fuel/oxygen/products, damage/plastic history, provenance, and named energy stores `{chemical, sensible, latent, elastic, kinetic, gravitational_reference}`. Transfers are explicit and auditable: reaction, heat, phase change, contact/work, plasticity, fracture, gravity, and external boundaries may move energy between stores or across the system boundary. Water keeps one material identity while its phase state changes between ice and liquid; an ID swap may not create or destroy energy. Aggregate cold chunks additionally carry COM, full inertia, thermal totals, material bounds, contact envelope, and a conservative error budget.
 
 Material dispatch selects a family-specific law from declared properties and units:

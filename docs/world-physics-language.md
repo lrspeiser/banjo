@@ -74,4 +74,6 @@ A heater experiment may add `heaters: [{"cell": {"chunk": [0,0,0], "local": [0,0
 
 ## Capability boundary
 
+The owner-approved [physical-cell and skin contract](object-skin-contract.md) adds a planned derived render surface, with new material interiors after damage. Skin topology, material-coordinate bindings and mesh revisions are not currently accepted fields of `banjo-thermal-world-1`; unknown fields continue to reject. A future shared authoring ABI must distinguish cosmetic appearance from physical material layers and preserve physical state when rebuilding a skin.
+
 This document describes the current loader and thermal foundation, not all-world implementation or measured performance. Unsupported declarations must reject with a capability error or remain outside the package schema. Consult [`world-runtime-plan.md`](world-runtime-plan.md) for staged solver selection, conservation gates, bounded sparse execution, and deferred smoke/full-fluid work. No declaration, material name, cache, or LLM-generated text may claim calibrated glass, wood grain, tissue, fire, fluid flow, or realtime behavior without the corresponding reference test and convergence evidence.
