@@ -1,5 +1,7 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**General material rules execution:** [Ten implementation goals](rules-engine-execution-plan.md) are active. R01/R02 now have a property-based native material path and a bounded inertial tetrahedral foundation; coupled impact fracture, residual dents, finite-strain rubber, shared persistence and realtime qualification remain unfinished. All nine earlier workstreams and 40 mechanics remain retained.
+
 **Composable experiment checkpoint:** [General experiment authoring](general-experiment-checkpoint.md) adds configurable comparative drops and freely composed initial scenes, typed GPT proposals, explicit fidelity and archived 3D results. Experimental6mm panels are admitted but fail the damage/refinement gate; no thin-shell, calibrated fracture or realtime claim is made. The [seven-stage execution plan](general-experiment-plan.md) retains all nine goals and40 requirements.
 
 **Embedded 3D playground checkpoint:** [Chat-authored experiments and controls](embedded-playground-checkpoint.md) now connects GPT plans to native recordings and an in-page 3D viewer. Physical controls rerun the engine without another model call. All 58 native suites, 3 recorder tests and 49 mocked/control tests pass. This is bounded computed playback; integrated calibrated impact/deformation and realtime qualification remain open. All nine goals and 40 requirements are retained.

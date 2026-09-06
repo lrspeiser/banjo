@@ -700,5 +700,102 @@
     "thin_panel": "admitted6mm but failed all3 timestep completion checks",
     "physics_integration": "thin structure / unified impact and material response / realtime qualification remain open",
     "all_goals_retained": true
+  },
+  "rules_engine_execution": {
+    "plan": "docs/rules-engine-execution-plan.md",
+    "baseline_commit": "5c78ae9",
+    "status": "active",
+    "goals": [
+      {
+        "id": "R01",
+        "title": "Property-based material contracts",
+        "status": "active",
+        "implementation": "Validate SI density and elastic/orthotropic/J2 parameters, units, state layout and supported combinations. Physical identity excludes display names.",
+        "acceptance": "Unseen names and numeric parameter sets execute the same native material law; invalid values and unsupported models fail explicitly."
+      },
+      {
+        "id": "R02",
+        "title": "Shared inertial deformable state",
+        "status": "active",
+        "implementation": "Reuse tetrahedral geometry and constitutive state for nodal mass, velocity, internal force and irreversible history. Transactional steps and explicit stability/work limits.",
+        "acceptance": "Translation/free-fall oracles, support reactions, rollback, elastic refinement and persistent plastic history pass without name-based branches."
+      },
+      {
+        "id": "R03",
+        "title": "Coupled dynamic contact",
+        "status": "planned",
+        "implementation": "Surface triangle/shape contact, consistent equal-and-opposite reactions, friction, continuous collision handling and coupled material updates.",
+        "acceptance": "Sphere on deformable patches: no tunneling; contact impulse, external work, stored energy and numerical losses balance under timestep/mesh refinement."
+      },
+      {
+        "id": "R04",
+        "title": "Recoverable flexible materials",
+        "status": "planned",
+        "implementation": "Finite-strain elasticity for large rubber-like deformation, then explicit viscoelastic internal state and relaxation. Small-strain elasticity alone is not rubber.",
+        "acceptance": "Ball deforms target, releases stored energy and rebounds; shape recovery, frequency dependence and refinement compared against references; no restitution-only substitute."
+      },
+      {
+        "id": "R05",
+        "title": "Permanent impact deformation",
+        "status": "planned",
+        "implementation": "Connect J2 history to contact-driven spatial motion, unloading and rendered residual geometry.",
+        "acceptance": "Impact leaves a measured residual dent, low-energy control recovers; glass/oak/iron comparisons plus new alloys; persistent reload reproduces geometry and subsequent response."
+      },
+      {
+        "id": "R06",
+        "title": "Stable progressive fracture",
+        "status": "planned",
+        "implementation": "Resolve localized stress/energy release with length-scale-aware fracture, transactional topology changes and connected fragments. Include thin-plate/shell representation where needed.",
+        "acceptance": "Thin glass impact completes and propagates cracks from loading; fracture energy, fragment mass and momentum audited; timestep/mesh refinement; wood does not become glass by naming."
+      },
+      {
+        "id": "R07",
+        "title": "Compact state and repair",
+        "status": "planned",
+        "implementation": "Serialize only supported canonical deformation, damage, plastic/thermal history and topology deltas; render skins from physical state; budget history and reference repair.",
+        "acceptance": "Reload damaged objects exactly within declared tolerance, contact immediately, repair explicitly with resource/energy accounting and bounded state size."
+      },
+      {
+        "id": "R08",
+        "title": "LLM authoring and experiment contracts",
+        "status": "planned",
+        "implementation": "LLM emits validated unit-bearing materials, geometries, initial/boundary conditions, supported law compositions, controls and machine-checkable expectations.",
+        "acceptance": "Fresh randomized requests generate unseen parameter sets through the public API and render actual native trajectories; unsupported requirements never silently substitute."
+      },
+      {
+        "id": "R09",
+        "title": "Realtime execution and compiled behaviors",
+        "status": "planned",
+        "implementation": "Profile active islands, sleeping regions, compiled law kernels, conservative LOD and state-keyed offline models with applicability/invalidation checks. Keep LLM out of per-frame execution.",
+        "acceptance": "Publish hardware, active interaction counts, p50/p95/p99 cost, memory and overload policy; target 60 Hz total frame with physics budget <=4 ms on declared reference hardware, qualify before promising."
+      },
+      {
+        "id": "R10",
+        "title": "Cross-material release gate",
+        "status": "planned",
+        "implementation": "Run a held-out matrix of known/novel materials, shapes, speeds, thicknesses, temperature/state and histories; preserve energy/phase/fire and other existing goals.",
+        "acceptance": "Required shatter/dent/flex cases plus unseen supported compositions pass without engine edits per material. Evidence includes source/material hashes, direct contact and energy telemetry, refinement and LLM assessment separated from facts."
+      }
+    ],
+    "checkpoint": {
+      "status": "R01/R02 partial implementation, no goal fully accepted",
+      "native_material_path": "3 supported small-strain laws; no material-name dispatch",
+      "generated_trials": {
+        "seeded_materials": 12,
+        "live_gpt_materials": 3,
+        "analytic_and_rename_checks": "pass"
+      },
+      "dynamic_patch": "inertia, transactional steps, J2 history, explicit stability bound; no contact",
+      "next": "R03 coupled surface contact with energy/impulse audit, then impact-driven deformation; stiff thin structures need timestep strategy",
+      "evidence": "docs/rules-engine-foundation-checkpoint.md",
+      "validation": {
+        "native_suites_passed": 59,
+        "native_wall_s": 86.07,
+        "new_python_tests_passed": 12,
+        "playground_passed": 61,
+        "playground_skipped": 1,
+        "live_llm_materials_passed": 3
+      }
+    }
   }
 }

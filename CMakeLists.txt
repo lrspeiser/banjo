@@ -34,6 +34,7 @@ add_library(
     src/material/Plasticity.cpp
     src/material/SmallStrainLaw.cpp
     src/physics/SmallStrainPatch.cpp
+    src/physics/DynamicPatch.cpp
     src/physics/PatchPressure.cpp
     src/material/PropertyVariation.cpp
     src/persistence/NumericStateDelta.cpp
@@ -167,6 +168,9 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
 endif()
 
 if(BANJO_BUILD_HEADLESS)
+    add_executable(banjo_material_behavior_probe tools/material_behavior_probe.cpp)
+    target_link_libraries(banjo_material_behavior_probe PRIVATE banjo_core nlohmann_json::nlohmann_json)
+    banjo_enable_warnings(banjo_material_behavior_probe)
     add_executable(banjo_continuum_cli tools/continuum_patch_probe.cpp)
     target_link_libraries(banjo_continuum_cli PRIVATE banjo_core nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_continuum_cli)
@@ -258,6 +262,10 @@ if(BANJO_BUILD_TESTS)
     target_link_libraries(banjo_small_strain_law_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_small_strain_law_tests)
     add_test(NAME banjo_small_strain_law_tests COMMAND banjo_small_strain_law_tests)
+    add_executable(banjo_dynamic_patch_tests tests/dynamic_patch_tests.cpp)
+    target_link_libraries(banjo_dynamic_patch_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_dynamic_patch_tests)
+    add_test(NAME banjo_dynamic_patch_tests COMMAND banjo_dynamic_patch_tests)
     add_executable(banjo_small_strain_patch_tests tests/small_strain_patch_tests.cpp)
     target_link_libraries(banjo_small_strain_patch_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_small_strain_patch_tests)

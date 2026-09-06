@@ -8,6 +8,7 @@
 #include <vector>
 
 namespace banjo {
+class DynamicPatch;
 struct PatchMaterial {
     SmallStrainLaw law;
     double density_kg_m3{};
@@ -110,6 +111,7 @@ public:
     void restoreState(const PatchState &candidate,double force_tolerance_n=1e-5,
         double maximum_gradient_norm=.1);
 private:
+    friend class DynamicPatch;
     struct TetData {
         std::array<Vec3,4> gradients;
         std::array<std::size_t,16> tangent_block_indices{};

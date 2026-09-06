@@ -1,0 +1,88 @@
+#pragma once
+
+#include "physics/SmallStrainPatch.hpp"
+
+#include <string>
+#include <vector>
+
+namespace banjo {
+
+struct DynamicPatchOptions {
+    // Fraction of the conservative central-difference limit. The stiffness
+    // estimate is cached because reference geometry and materials are immutable.
+    double stability_safety_factor{0.9};
+    double maximum_displacement_gradient_norm{0.1};
+    double maximum_time_step_s{1.0};
+};
+
+struct DynamicPatchLoad {
+    std::vector<Vec3> nodal_forces_n;
+    Vec3 gravity_m_s2{};
+};
+
+struct DynamicPatchState {
+    std::vector<Vec3> velocities_m_s;
+    double time_s{};
+    double accumulated_external_force_work_j{};
+    Vec3 accumulated_support_impulse_n_s{};
+    std::uint64_t revision{};
+};
+
+struct DynamicPatchReport {
+    bool accepted{};
+    std::string error;
+    double time_step_s{};
+    double stable_time_step_limit_s{};
+    double stiffness_mass_eigenvalue_bound_s2{};
+    double kinetic_energy_j{};
+    double stored_free_energy_j{};
+    double plastic_dissipation_j{};
+    double external_force_work_increment_j{};
+    double accumulated_external_force_work_j{};
+    Vec3 support_impulse_n_s{};
+    Vec3 linear_momentum_kg_m_s{};
+    // P(n+1)-P(n)-external impulse-support impulse. Internal-force
+    // cancellation is left visible as a raw numerical residual.
+    Vec3 linear_momentum_balance_residual_kg_m_s{};
+    // Raw ledger residual for this step:
+    // Delta(kinetic + stored) + Delta(plastic dissipation) - external work.
+    // Symplectic Euler does not make this zero and no conservation claim is made.
+    double numerical_energy_balance_residual_j{};
+    double maximum_displacement_gradient_norm{};
+};
+
+// Bounded explicit dynamics for a reference-configuration P1 tetrahedral patch.
+// It uses lumped nodal mass, stationary component supports and symplectic Euler.
+// There is no collision, fracture, damping, finite rotation, prescribed support
+// motion, thermal coupling or adaptive stepping. Rejected steps commit nothing.
+class DynamicPatch {
+public:
+    explicit DynamicPatch(PatchDefinition definition,
+                          DynamicPatchOptions options = {});
+
+    const SmallStrainPatch &patch() const { return patch_; }
+    const DynamicPatchState &state() const { return state_; }
+    const std::vector<Vec3> &velocitiesMPerS() const {
+        return state_.velocities_m_s;
+    }
+    double stableTimeStepLimitS() const { return stable_time_step_limit_s_; }
+    double stiffnessMassEigenvalueBoundS2() const { return eigenvalue_bound_s2_; }
+    // Sets an initial condition before the first step. Fixed components must
+    // be zero; later calls reject rather than injecting unaccounted momentum.
+    void setVelocitiesMPerS(const std::vector<Vec3> &velocities_m_s);
+    DynamicPatchReport report() const;
+    DynamicPatchReport step(double time_step_s, const DynamicPatchLoad &load);
+
+private:
+    double kineticEnergyJ(const std::vector<Vec3> &velocities) const;
+    Vec3 linearMomentum(const std::vector<Vec3> &velocities) const;
+    void compileStabilityBound();
+
+    SmallStrainPatch patch_;
+    DynamicPatchOptions options_;
+    DynamicPatchState state_;
+    double eigenvalue_bound_s2_{};
+    double stable_time_step_limit_s_{};
+};
+
+} // namespace banjo
