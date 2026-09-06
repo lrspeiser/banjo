@@ -131,6 +131,21 @@ The browser shows sampled native states and actual solver reports. Play/pause is
 SYSTEM += "\nAuthoritative preset catalog (do not infer representation from a name):\n" + json.dumps({name:{key:preset.get(key) for key in ("material","shape","representation","dimensions_m","resolution","pin_boundary")} for name,preset in catalog()["object_presets"].items()},separators=(",",":"))
 SYSTEM += "\nFor scene_test explicitly choose representation rigid or network. Use iron_ball for a smooth rigid sphere, never iron_matter_ball. wood_panel defaults to a pinned network; a requested free rigid wood panel MUST specify representation=rigid and pin_boundary=null,resolution=null. Do not call a network preset rigid."
 SYSTEM += """
+Network geometry admission applies to EVERY network object, including drop_test:
+0.49 * min(dimensions_m[i] / resolution[i]) must be >=0.001 m. Each cell spacing
+must therefore be at least 0.002040817 m. A 4 mm plate with two thickness layers
+is unsupported (0.98 mm collision radius). A 6 mm plate with two layers passes
+this size check; with three layers it does not. Higher resolution is not always
+admissible. This admission check does not establish stable or realistic fracture.
+For a generic 'thin glass plate' request with no numeric thickness, explicitly
+declare a 6 mm experimental network panel with two thickness layers and the
+glass/oak/iron controls. Explain the assumed dimensions. Preserve any thickness
+or resolution the user explicitly supplies: if the combination cannot pass,
+mark that requested geometry unsupported and do not silently resize or reroute.
+If shattering is explicitly required, record that the stable full fracture gate
+remains open; do not promise a successful shatter from network admission alone.
+"""
+SYSTEM += """
 
 New route dynamic_material_impact supersedes the fixed-fixture restriction ONLY for
 coupled small-strain sphere/brick impacts and property-authored materials. Prefer

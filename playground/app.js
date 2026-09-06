@@ -379,23 +379,28 @@
   }
 
   function showUnavailablePlayback(job) {
-    const blocked = job?.status === "blocked";
-    const title = blocked ? "This request could not be simulated" : job?.status === "error" ? "The experiment failed" : "This result has no 3D recording";
-    clearViewer(title);
-    $("viewer-title").textContent = title;
+    const failure = job?.failure_detail && typeof job.failure_detail === "object" ? job.failure_detail : {};
+    const requirements = (job?.plan?.requirements || []).filter(r => r.status !== "supported");
+    const fallback = text(job?.error, text(job?.message, requirements[0]?.reason || "No failure detail was returned."));
+    const summary = text(failure.summary, fallback);
+    const detail = text(failure.detail, "");
+    clearViewer(summary);
+    $("viewer-title").textContent = "No recording generated";
     const stage = $("viewer-stage"); stage.replaceChildren();
     const panel = document.createElement("div"); panel.className = "viewer-unavailable";
-    const heading = document.createElement("h2"); heading.textContent = "No simulation was created"; panel.append(heading);
-    const requirements = (job?.plan?.requirements || []).filter(r => r.status !== "supported");
+    const label = document.createElement("strong"); label.textContent = "No recording generated";
+    const heading = document.createElement("h2"); heading.textContent = summary; panel.append(label, heading);
+    if (detail) { const explanation = document.createElement("p"); explanation.textContent = detail; panel.append(explanation); }
+    if (failure.code || failure.scope) { const context = document.createElement("p"); context.className = "muted"; context.textContent = [failure.scope, failure.code].filter(Boolean).join(" · "); panel.append(context); }
     if (requirements.length) {
       const list = document.createElement("ul");
       requirements.forEach(r => { const li = document.createElement("li"); const name = document.createElement("strong"); name.textContent = r.description; const reason = document.createElement("p"); reason.textContent = r.reason; li.append(name, reason); list.append(li); });
       panel.append(list);
-    } else { const reason = document.createElement("p"); reason.textContent = text(job?.message, "This experiment returns a report rather than 3D playback."); panel.append(reason); }
+    }
     const edit = document.createElement("button"); edit.type = "button"; edit.textContent = "Edit request";
-    edit.addEventListener("click", () => { activateTab("experiment"); $("prompt-input").focus(); }); panel.append(edit); stage.append(panel);
+    edit.addEventListener("click", () => { const input = $("prompt-input"); if (!input.value.trim() && job?.request_text) input.value = job.request_text; if (job?.status === "error") state.followup = false; activateTab("experiment"); input.focus(); }); panel.append(edit); stage.append(panel);
     $("viewer-validity").className = "viewer-validity warning";
-    $("viewer-validity").textContent = "No playback is available for this request. Its reason is shown here; no substitute experiment was run.";
+    $("viewer-validity").textContent = `No recording generated · ${summary}${detail ? ` · ${detail}` : ""}`;
   }
 
   function validityMessage(item, playback) {

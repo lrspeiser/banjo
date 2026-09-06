@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 import json
+import math
 from pathlib import Path
 import subprocess
 from typing import Any
@@ -17,6 +18,29 @@ OBJECT_FIELDS = {
     "resolution", "position_m", "orientation_wxyz", "velocity_m_s",
     "spin_rad_s", "pin_boundary", "grain_wxyz",
 }
+
+
+def validate_network_geometry(dimensions_m, resolution) -> float:
+    """Mirror the native network collision-cell floor before model execution.
+
+    This is admission, not a thin-shell accuracy or material-validity check.
+    NetworkWorld uses spherical collision proxies with radius 0.49 times the
+    smallest cell spacing and requires radius >= 0.001 m.
+    """
+    if not isinstance(dimensions_m, (list, tuple)) or len(dimensions_m) != 3 or any(
+            type(v) not in (int, float) or not math.isfinite(v) or v <= 0 for v in dimensions_m):
+        raise ValueError("Network dimensions require three positive finite SI values")
+    if not isinstance(resolution, (list, tuple)) or len(resolution) != 3 or any(
+            type(v) is not int or not 2 <= v <= 16 for v in resolution):
+        raise ValueError("Network resolution requires three integers in [2, 16]")
+    radius = .49 * min(d / n for d, n in zip(dimensions_m, resolution))
+    if radius < .001:
+        raise ValueError(
+            f"Network collision cells are too small: {radius * 1000:.6g} mm radius; "
+            "the engine requires at least 1 mm. "
+            f"Dimensions {list(dimensions_m)} m with resolution {list(resolution)} cannot run. "
+            "Each cell spacing must be at least 2.04082 mm; no dimensions or resolution were changed.")
+    return radius
 
 
 def catalog() -> dict[str, Any]:
@@ -64,7 +88,10 @@ def make_package(
     contact_budget: dict[str, int] | None = None,
     damage_integration: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Assemble a v2 initial-state package. No ground is added implicitly."""
+    """Assemble a v2 package with collision-cell preflight; native validation remains required."""
+    for obj in objects:
+        if obj.get("representation") == "network":
+            validate_network_geometry(obj.get("dimensions_m"), obj.get("resolution"))
     materials = deepcopy(catalog()["materials"] if materials is None else materials)
     capabilities = {o["shape"] for o in objects} | {"gravity", "contact", "render-instances"}
     if ground is not None:

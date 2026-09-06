@@ -890,6 +890,34 @@
         "fine_mesh_gate": "work_budget_exhausted",
         "playground": "unchanged_not_integrated"
       }
+    },
+    "plate_admission_checkpoint": {
+      "status": "R08 setup and error-reporting correction; full fracture gate remains open",
+      "base_commit": "b4b5c9e7f0b302aa39d19bcf414ff1b784674aa0",
+      "evidence": "docs/plate-admission-checkpoint.md",
+      "reported_job": "f4dc878d9c084365b4444ed557c46080",
+      "repeated_prompt_job": "96ff6a24a4a74a349f0efa6846af9125",
+      "validation": {
+        "python_tests_run": 141,
+        "python_passed": 140,
+        "python_skipped": 1,
+        "python_wall_s": 13.628,
+        "native_changed": false,
+        "native_admission_parity": "passed",
+        "browser": "archived numerical error, prefilled fresh retry, live identical prompt, actual 42-frame playback and solver-limit message"
+      },
+      "result": {
+        "recording_status": "solver_limit",
+        "final_time_s": 0.3416666666666667,
+        "completed_steps": 164,
+        "requested_steps": 480,
+        "broken_links": {
+          "glass": 0,
+          "oak": 0,
+          "iron": 0
+        }
+      },
+      "next": "Resolve stiff contact and stable fracture under convergence and full work accounting; preserve all original goals."
     }
   }
 }

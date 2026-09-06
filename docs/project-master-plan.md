@@ -1,5 +1,7 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Thin-plate admission correction:** [The reported first-test failure](plate-admission-checkpoint.md) now has matching Python/native geometry preflight and a visible numerical error. An identical live prompt produces 42 actual 3D frames with an explicitly assumed 6 mm plate, then stops at 0.342 s with zero broken bonds in glass/oak/iron. Stable fracture remains open; this is a setup/UI correction, not new physics validation.
+
 **Dynamic material playground:** [Property-authored coupled impacts](dynamic-material-playground-checkpoint.md) now execute explicit SI elastic/orthotropic/J2 descriptors through a bounded native API and render actual sphere and nodal states in the embedded 3D playground. Per-material contact/work/energy evidence and honest solver limits feed the GPT review. R08 is active; this is experimental computed playback, with spatial accuracy, unloaded dents, fracture, finite-strain rubber and realtime still open. All nine original workstreams and 40 mechanics are retained.
 
 **General material rules execution:** [Ten implementation goals](rules-engine-execution-plan.md) are active. R01/R02 now have a property-based native material path and a bounded inertial tetrahedral foundation; coupled impact fracture, residual dents, finite-strain rubber, shared persistence and realtime qualification remain unfinished. All nine earlier workstreams and 40 mechanics remain retained.

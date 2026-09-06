@@ -4,6 +4,8 @@ Status: active implementation; no universal material/behavior or realtime comple
 
 The three requested demonstrations remain unaccepted: thin glass reaches the damage limit, impact-driven J2 history now exists but permanent unloaded dents are unqualified, and finite-strain rubber is missing. Generated names and scenes do not satisfy behavior acceptance.
 
+**Thin-plate admission correction:** [The reported first-test failure](plate-admission-checkpoint.md) now has matching Python/native geometry preflight and a visible numerical error. An identical live prompt produces 42 actual 3D frames with an explicitly assumed 6 mm plate, then stops at 0.342 s with zero broken bonds in glass/oak/iron. Stable fracture remains open; this is a setup/UI correction, not new physics validation.
+
 ## R01: Property-based material contracts
 
 Status: active.

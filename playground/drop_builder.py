@@ -12,7 +12,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "examples" / "authoring"))
-from banjo_authoring import catalog, make_object, make_package
+from banjo_authoring import catalog, make_object, make_package, validate_network_geometry
 
 
 def _object(properties: dict[str, Any]) -> dict[str, Any]:
@@ -34,7 +34,8 @@ DROP_SCHEMA = _object({
             "impact_offset_m": _VECTOR2,
             "heights_m": {"type": "array", "items": {"type": "number"}, "minItems": 1, "maxItems": 4},
             "representation": {"type": "string", "enum": ["network", "rigid"]},
-            "resolution": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3},
+            "resolution": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3,
+                           "description": "For network targets: 0.49 * min(target_dimensions_m[i]/resolution[i]) >= 0.001 m. A 6 mm plate admits two layers; a 4 mm plate cannot admit two layers."},
         })
 
 _FIELDS = set(DROP_SCHEMA["properties"])
@@ -98,6 +99,8 @@ def validate_drop(spec: Any) -> Any:
     cell_count = 3 * math.prod(resolution)
     if spec["representation"] == "network" and cell_count > 850:
         raise ValueError(f"drop exceeds the 850-cell admission budget ({cell_count} target cells)")
+    if spec["representation"] == "network":
+        validate_network_geometry(dimensions, resolution)
     return spec
 
 

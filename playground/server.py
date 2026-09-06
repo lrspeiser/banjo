@@ -27,10 +27,30 @@ from control_contract import default_ui, apply_control
 from experiment_diagnostics import build_diagnostics
 from experiment_review import review_evidence
 from dynamic_material import native_request, execute_impact
-from banjo_authoring import EngineCLI, EngineError, write_package
+from banjo_authoring import EngineCLI, EngineError, write_package, validate_network_geometry
 
 STATIC = Path(__file__).resolve().parent
 ACTIVE = {"planning", "validating", "running"}
+
+
+def describe_failure(plan, error):
+    """Explain current and archived admission failures without rewriting the run."""
+    message = str(error)
+    if "network cells below collision resolution" not in message and "Network collision cells are too small" not in message:
+        return {"code": "experiment_error", "summary": message,
+                "detail": "The experiment did not produce a recording. Edit the request to review its setup.",
+                "scope": "Execution failure; no computed playback is available."}
+    detail = message
+    drop = (plan or {}).get("drop")
+    if isinstance(drop, dict):
+        try:
+            validate_network_geometry(drop.get("target_dimensions_m"), drop.get("resolution"))
+        except ValueError as exc:
+            detail = str(exc)
+    return {"code": "network_collision_resolution",
+            "summary": "The generated plate cells are too small for the collision engine.",
+            "detail": detail,
+            "scope": "Setup rejected before simulation. Collision-cell admission does not validate thin-glass fracture."}
 
 def strict_json(text):
     def pairs(items):
@@ -176,14 +196,17 @@ class Playground:
                     if available: self.playbacks[(job_id,index)] = recording
                 saved["restored_from_disk"] = True
                 self.jobs[job_id] = saved
-            return deepcopy(self.jobs[job_id])
+            result = deepcopy(self.jobs[job_id])
+            if result.get("status") == "error":
+                result["failure_detail"] = describe_failure(result.get("plan"), result.get("error", result.get("message", "Experiment failed")))
+            return result
 
     def execute(self, job_id, message, previous, auto_open, prepared_plan=None):
         start = time.perf_counter()
         directory = self.runs_path / job_id
         try:
             directory.mkdir(parents=True, exist_ok=False)
-            self.log_event(job_id,"started",planning="model" if prepared_plan is None else "validated_control",engine_sha256=hashlib.sha256(self.engine_path.read_bytes()).hexdigest(),source_sha256={name:hashlib.sha256((STATIC/name).read_bytes()).hexdigest() for name in ("server.py","experiment_language.py","control_contract.py","experiment_diagnostics.py","dynamic_material.py")})
+            self.log_event(job_id,"started",planning="model" if prepared_plan is None else "validated_control",engine_sha256=hashlib.sha256(self.engine_path.read_bytes()).hexdigest(),source_sha256={name:hashlib.sha256((STATIC/name).read_bytes()).hexdigest() for name in ("server.py","experiment_language.py","control_contract.py","experiment_diagnostics.py","dynamic_material.py","drop_builder.py","scene_composer.py")},authoring_api_sha256=hashlib.sha256((ROOT/"examples/authoring/banjo_authoring.py").read_bytes()).hexdigest())
             self.update(job_id,request_text=message)
             if prepared_plan is None:
                 plan, timing = self.planner(self.api_key, self.model, message, previous)

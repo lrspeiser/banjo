@@ -9,7 +9,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "examples" / "authoring"))
-from banjo_authoring import catalog, make_object, make_package
+from banjo_authoring import catalog, make_object, make_package, validate_network_geometry
 
 
 PRESETS = list(catalog()["object_presets"])
@@ -125,6 +125,7 @@ def validate_scene(spec: Any) -> Any:
             actual_resolution = resolution if resolution is not None else preset.get("resolution")
             if actual_resolution is None:
                 raise ValueError("Network objects require a resolution")
+            validate_network_geometry(entry["dimensions_m"] or preset["dimensions_m"], actual_resolution)
             cells = math.prod(actual_resolution)
             if cells > 800:
                 raise ValueError("Network object exceeds the native 800-cell budget")
