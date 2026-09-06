@@ -22,7 +22,7 @@ from urllib import error, request
 from urllib.parse import urlsplit
 import uuid
 
-from experiment_language import ROOT, KINDS, LIMITATIONS, SCHEMA, SYSTEM, compile_plan, validate_plan, request_blockers
+from experiment_language import ROOT, KINDS, LIMITATIONS, SCHEMA, PLANNER_SCHEMA, lower_proposal, SYSTEM, compile_plan, validate_plan, request_blockers
 from control_contract import default_ui, apply_control
 from banjo_authoring import EngineCLI, EngineError, write_package
 
@@ -61,7 +61,7 @@ def request_plan(api_key, model, message, previous_plan=None):
         "reasoning": {"effort": "low"},
         "input": [{"role": "system", "content": SYSTEM},
                   {"role": "user", "content": json.dumps(context, allow_nan=False)}],
-        "text": {"format": {"type": "json_schema", "name": "banjo_experiment", "strict": True, "schema": SCHEMA}}}
+        "text": {"format": {"type": "json_schema", "name": "banjo_experiment", "strict": True, "schema": PLANNER_SCHEMA}}}
     req = request.Request("https://api.openai.com/v1/responses",
         data=json.dumps(payload).encode(), method="POST",
         headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json"})
@@ -82,7 +82,7 @@ def request_plan(api_key, model, message, previous_plan=None):
         for content in output.get("content", []):
             if content.get("type") == "refusal": raise ValueError("GPT declined this request")
             if content.get("type") == "output_text": texts.append(content.get("text", ""))
-    plan = validate_plan(strict_json("".join(texts)))
+    plan = lower_proposal(strict_json("".join(texts)), repair_ui=True)
     return plan, {"planning_wall_s": time.perf_counter()-start,
                   "model": model, "usage": result.get("usage", {}), "response_id": result.get("id")}
 
@@ -140,12 +140,32 @@ class Playground:
 
     def get(self, job_id):
         with self.lock:
-            if job_id not in self.jobs: raise ValueError("Unknown experiment")
+            if job_id not in self.jobs:
+                if not isinstance(job_id,str) or not re.fullmatch(r"[0-9a-f]{32}",job_id): raise ValueError("Unknown experiment")
+                directory = self.runs_path / job_id
+                path = directory / "job.json"
+                if directory.resolve().parent != self.runs_path or not path.is_file() or path.is_symlink() or path.stat().st_size > 16*1024*1024:
+                    raise ValueError("Unknown experiment or archived report exceeds budget")
+                saved = strict_json(path.read_text(encoding="utf-8"))
+                if saved.get("id") != job_id or saved.get("status") not in ("complete","blocked","error") or not isinstance(saved.get("cases"),list) or len(saved["cases"])>4:
+                    raise ValueError("Invalid archived experiment")
+                if len(self.jobs)>=100: raise ValueError("Session history budget reached")
+                for index,case in enumerate(saved["cases"]):
+                    recording = directory / ("reference-report.json" if saved.get("plan",{}).get("experiment")=="continuum_pressure_reference" else f"playback-{index:02d}.json")
+                    available = case.get("playback_available") and recording.is_file() and not recording.is_symlink() and recording.stat().st_size <= 64*1024*1024
+                    case["playback_available"] = bool(available)
+                    case["native_scene"] = False
+                    if available: self.playbacks[(job_id,index)] = recording
+                saved["restored_from_disk"] = True
+                self.jobs[job_id] = saved
             return deepcopy(self.jobs[job_id])
 
     def execute(self, job_id, message, previous, auto_open, prepared_plan=None):
         start = time.perf_counter()
+        directory = self.runs_path / job_id
         try:
+            directory.mkdir(parents=True, exist_ok=False)
+            self.update(job_id,request_text=message)
             if prepared_plan is None:
                 plan, timing = self.planner(self.api_key, self.model, message, previous)
             else:
@@ -154,8 +174,6 @@ class Playground:
             plan.setdefault("ui", default_ui(plan["experiment"]))
             self.update(job_id, plan=plan, timing=timing, status="validating", message=plan["explanation"],
                 warnings=list(dict.fromkeys(LIMITATIONS + plan["limitations"])))
-            directory = self.runs_path / job_id
-            directory.mkdir(parents=True, exist_ok=False)
             (directory / "plan.json").write_text(json.dumps(plan, indent=2, allow_nan=False), encoding="utf-8")
             blockers = request_blockers(message,plan)
             if blockers:
@@ -236,6 +254,8 @@ class Playground:
             public = str(exc) if isinstance(exc, (ValueError, EngineError)) else "The local experiment failed; inspect the bounded setup and build availability."
             if self.api_key: public = public.replace(self.api_key, "[redacted]")
             self.update(job_id, status="error", error=public, message=public)
+            if directory.is_dir():
+                (directory/"job.json").write_text(json.dumps(self.get(job_id),indent=2,allow_nan=False),encoding="utf-8")
 
     def run_reference(self, job_id, directory, plan):
         self.update(job_id,status="running")
@@ -311,6 +331,7 @@ class Playground:
             status="complete",message=message)
 
     def playback(self, job_id, index):
+        if (job_id,index) not in self.playbacks: self.get(job_id)
         with self.lock:
             if (job_id,index) not in self.playbacks: raise ValueError("This case has no computed 3D recording")
             path=self.playbacks[(job_id,index)]
@@ -392,6 +413,7 @@ class Handler(BaseHTTPRequestHandler):
             app=self.server.app
             if path=="/api/status": return self.send(app.status())
             if path=="/api/goal": return self.send({"markdown":(ROOT/"docs/project-goal-2026-09-06.md").read_text(encoding="utf-8")})
+            if path=="/api/schema": return self.send({"language":"banjo-playground-1","schema":SCHEMA,"material_validation":"experimental; no calibrated fracture claim","limits":{"network_cells":850,"objects":12,"sweep_cases":4,"duration_s":3,"recording_bytes":64*1024*1024}})
             match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/playback/(\d+)",path)
             if match: return self.send(app.playback(match[1],int(match[2])))
             match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})(?:/package/(\d+))?",path)

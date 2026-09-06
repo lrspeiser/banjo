@@ -361,10 +361,13 @@ class PlaygroundTestCase(unittest.TestCase):
 class PlannerTransportTests(unittest.TestCase):
     def test_mocked_upstream_response_produces_valid_plan_without_network(self):
         plan = plan_for("glass_reference")
+        proposal = {key:plan[key] for key in ("name","explanation","limitations","duration_s")}
+        proposal.update(fidelity="experimental",setup={"kind":"glass_reference"},ui={"title":"Reference","controls":[]},requirements=[])
+        plan = language.lower_proposal(proposal)
         upstream = FakeHTTPResponse({
             "id": "response-test",
             "status": "completed",
-            "output": [{"content": [{"type": "output_text", "text": json.dumps(plan)}]}],
+            "output": [{"content": [{"type": "output_text", "text": json.dumps(proposal)}]}],
             "usage": {"input_tokens": 10, "output_tokens": 20},
         })
         with mock.patch.object(playground_server.request, "urlopen", return_value=upstream) as urlopen:
@@ -469,7 +472,8 @@ class PlaygroundJobTests(PlaygroundTestCase):
         self.assertEqual(job["status"], "error")
         self.assertIn("Unknown or missing", job["error"])
         self.assertEqual(app.engine.call_order, [])
-        self.assertFalse((app.runs_path / result["job_id"]).exists())
+        self.assertTrue((app.runs_path / result["job_id"] / "job.json").is_file())
+        self.assertFalse((app.runs_path / result["job_id"] / "scenes").exists())
 
     def test_custom_object_native_capability_error_is_reported_without_running(self):
         planner = mock.Mock(return_value=(plan_for("custom_objects"), {"model": "fake-model"}))

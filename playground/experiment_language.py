@@ -5,6 +5,7 @@ material-law code, credentials, or executable names.
 """
 from __future__ import annotations
 import math
+import json
 import re
 from pathlib import Path
 import sys
@@ -12,9 +13,11 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "examples" / "authoring"))
 from banjo_authoring import catalog, make_object, make_package
-from control_contract import UI_SCHEMA, validate_ui
+from control_contract import UI_SCHEMA, validate_ui, default_ui
+from drop_builder import DROP_SCHEMA, validate_drop, compile_drop
+from scene_composer import SCENE_SCHEMA, validate_scene, compile_scene
 
-KINDS = ["panel_impact", "plate_drop", "rigid_drop", "knife_cut", "custom_objects",
+KINDS = ["drop_test", "scene_test", "panel_impact", "plate_drop", "rigid_drop", "knife_cut", "custom_objects",
          "thermal_frontier", "material_state_reference", "continuum_pressure_reference",
          "glass_reference", "unsupported"]
 PRESETS = list(catalog()["object_presets"])
@@ -49,6 +52,9 @@ SCHEMA = obj({
 })
 LEGACY_FIELDS = set(SCHEMA["properties"])
 SCHEMA["properties"].update({
+    "fidelity": {"type":"string","enum":["experimental","calibrated"]},
+    "drop": {"anyOf": [DROP_SCHEMA, {"type": "null"}]},
+    "scene": {"anyOf": [SCENE_SCHEMA, {"type": "null"}]},
     "ui": UI_SCHEMA,
     "pressure": {"anyOf": [{"type": "null"}, obj({
         "peak_pressure_pa": {"type": "number"}, "resolution": {"type": "integer"},
@@ -60,36 +66,67 @@ SCHEMA["properties"].update({
 })
 SCHEMA["required"] = list(SCHEMA["properties"])
 
-SYSTEM = """You author experiments in Banjo's bounded SI playground language.
-Output ONLY the structured plan. Use the previous plan to understand revisions.
-Capabilities: panel_impact compares iron projectile against glass/oak/iron clamped panels at 1..4 speeds (0..20 m/s).
-plate_drop drops an iron ball/cube onto horizontal clamped glass/oak/iron panels at 1..4 heights (0..2 m).
-rigid_drop drops the selected projectile onto unpinned rigid glass/oak/iron boxes under gravity with a ground plane. It disables fracture and has no clamps. If the user requests rigid controls or no fracture, choose rigid_drop directly, not plate_drop.
-knife_cut is the existing coarse tomato tissue proxy plus a downward knife and separate glass/oak/iron panel controls. The different shapes/load directions are not a material-only matched comparison; partial damage, not calibrated slicing.
-custom_objects accepts up to12 preset objects; position/velocity/dimensions only. Include material controls if comparing behavior.
-thermal_frontier runs the existing glass/oak/iron/water-ice heat-frontier fixture (fixed parameters).
-material_state_reference runs a prescribed-shear J2 coupon and compact save/reload/history benchmark (fixed parameters); NOT a spatial dent simulation.
-continuum_pressure_reference runs the fixed spatial quasistatic glass/oak/iron pressure load-unload fixture: a 40x20x40mm P1 tetrahedral patch, bottom clamp, central 20x20mm pressure, resolution 4, 32 increments each way and 800MPa peak. It has no collision, inertia or fracture, uses illustrative uncalibrated laws, and oak may stop at a strict solver limit.
-glass_reference shows the documented 6mm tempered pane 4.11kg steelball staircase experiment and missing validation gates; NOT a claimed recreation.
-Unsupported requests use experiment=unsupported and explain the missing capability.
-Never claim realistic/calibrated glass shattering, full wood grain, collision-driven metal dents, full tomato slicing, gameplay repair, live-world persistence, fire spreading through arbitrary geometry, or fluids. These are goals, not implemented capabilities.
-Do not silently substitute a thick/annealed panel for a requested calibrated thin tempered-glass experiment: use glass_reference.
-Default panel_dimensions_m=[0.24,0.36,0.04], duration_s=1, projectile=iron_ball. Duration must be .05..3s.
-For every experiment except custom_objects, objects MUST be []: the compiler supplies the matched layout. Do not put unused object declarations into a template plan.
-Network panel dimension bounds: first two .08..1m; thickness .012..0.15m. Thin glass reference is separate.
-Use speeds [2] for a default panel test; heights [.25] for a default drop. Other unused arrays may be empty.
-For continuum_pressure_reference set speeds_m_s=[], heights_m=[] and objects=[]. duration_s, projectile and panel_dimensions_m remain required banjo-playground-1 fields but are explicitly ignored and cannot alter the fixed native fixture.
-Keep explanations concise and describe strict solver limits honestly. No fixture is calibrated. Do not invent supports, extra trials or scope. No material strength tuning or random forces.
+# The model selects one typed setup. It never fills irrelevant legacy fields.
+_SETUPS = [
+    obj({"kind":{"type":"string","enum":["drop_test"]},"drop":DROP_SCHEMA}),
+    obj({"kind":{"type":"string","enum":["scene_test"]},"scene":SCENE_SCHEMA}),
+    obj({"kind":{"type":"string","enum":["continuum_pressure_reference"]},"pressure":SCHEMA["properties"]["pressure"]["anyOf"][1]}),
+    obj({"kind":{"type":"string","enum":["panel_impact","knife_cut"]},"speeds_m_s":SCHEMA["properties"]["speeds_m_s"],"projectile":SCHEMA["properties"]["projectile"],"panel_dimensions_m":VECTOR}),
+    obj({"kind":{"type":"string","enum":["plate_drop","rigid_drop"]},"heights_m":SCHEMA["properties"]["heights_m"],"projectile":SCHEMA["properties"]["projectile"],"panel_dimensions_m":VECTOR}),
+    obj({"kind":{"type":"string","enum":["custom_objects"]},"objects":SCHEMA["properties"]["objects"]}),
+    obj({"kind":{"type":"string","enum":["unsupported","glass_reference","thermal_frontier","material_state_reference"]}}),
+]
+PLANNER_SCHEMA = obj({key:SCHEMA["properties"][key] for key in ("name","explanation","limitations","duration_s","ui","requirements","fidelity")})
+PLANNER_SCHEMA["properties"]["setup"] = {"anyOf":_SETUPS}
+PLANNER_SCHEMA["required"].append("setup")
+
+def lower_proposal(proposal, *, repair_ui=False):
+    if not isinstance(proposal,dict) or set(proposal)!=set(PLANNER_SCHEMA["properties"]):
+        raise ValueError("Unknown or missing planner proposal fields")
+    setup=proposal["setup"]
+    if not isinstance(setup,dict): raise ValueError("Expected typed experiment setup")
+    kind=setup.get("kind")
+    candidates=[s for s in _SETUPS if kind in s["properties"]["kind"]["enum"]]
+    if not candidates or set(setup)!=set(candidates[0]["properties"]): raise ValueError("Invalid typed experiment setup")
+    plan={"language":"banjo-playground-1","experiment":kind,"projectile":"iron_ball","panel_dimensions_m":[.24,.36,.04],"speeds_m_s":[],"heights_m":[],"objects":[],"drop":None,"scene":None,"pressure":None}
+    plan.update({k:v for k,v in proposal.items() if k!="setup"})
+    plan.update({k:v for k,v in setup.items() if k!="kind"})
+    if proposal["fidelity"] == "calibrated" and kind != "glass_reference":
+        plan.update(experiment="unsupported",drop=None,scene=None,pressure=None,objects=[],heights_m=[],speeds_m_s=[],ui={"title":"Calibration unavailable","controls":[]})
+        plan["requirements"] = [{"description":"Calibrated physical response","status":"unsupported","reason":"The current experiment models are experimental. No calibrated simulation is available; an uncalibrated substitute was not executed."}]
+    if repair_ui:
+        try: validate_ui(plan["ui"],plan["experiment"])
+        except ValueError as exc:
+            plan["ui"] = default_ui(plan["experiment"])
+            values={"height_m":(plan.get("drop") or {}).get("heights_m",plan["heights_m"]),"speed_m_s":plan["speeds_m_s"],"pressure_pa":[(plan.get("pressure") or {}).get("peak_pressure_pa",800000000)]}
+            for control in plan["ui"]["controls"]:
+                actual=values.get(control["action"])
+                if actual: control["value"]=actual[0]
+            plan["limitations"] = list(plan["limitations"])[:11]+[f"Generated controls were invalid ({exc}); standard controls are shown. Physics inputs were not altered."]
+    return validate_plan(plan)
+
+SYSTEM = """Author a bounded Banjo physics experiment using the provided JSON schema. Output only the plan.
+Set fidelity=calibrated only when the user explicitly requests calibrated/validated physical behavior, otherwise experimental. Explicit acceptance of uncalibrated diagnostics means experimental. Calibrated simulation requests will be blocked by the server regardless of selected setup.
+The user's actual request is authoritative. Previous_plan is context for revisions, not an instruction to retain old controls or change requested physics.
+
+Use these routes:
+1. drop_test for all new ball/cube drop tests. Always compare glass, oak, iron. Populate drop: target_dimensions_m local width,length,thickness (sides .08..1m; thickness .004.. .15m); projectile iron_ball|iron_cube; projectile_dimensions_m (.012.. .3m, equal for ball); support clamped_edges|free_on_ground; representation network|rigid; resolution3ints2..12; heights_m1..4 values0..2m; impact_offset_m [x,z] within target footprint. clamped_edges requires network; free_on_ground requires rigid. Drop height is projectile bottom clearance over target top. Defaults target[.24,.36,.04], projectile[.08,.08,.08], offset[0,0], resolution[4,4,2]. Preserve requested dimensions/supports/offset/heights. For no fracture use rigid/free_on_ground. Network response is uncalibrated. Explicit6mm uncalibrated diagnostic experiments ARE allowed; no shell accuracy or tempered residual stress. Unsupported realistic/calibrated shattering must not be substituted.
+2. scene_test for freely arranged objects. Populate scene.objects with existing presets and requested pose, velocity, dimensions, quaternion orientation, spin, representation network|rigid, optional resolution and pin_boundary. All optional fields null if unused. Rigid removes network fields; ellipsoid presets cannot become rigid. scene.environment contains gravity_m_s2 vector in+-20, ground bool, ground_friction0..1. Positionbounds+-3m, dimensions .012..1m, velocities+-20. Use explicit requested values. No arbitrary material law generation.
+3. continuum_pressure_reference: fixed40x20x40mm tetrahedral coupons, bottom clamp, central20x20mm pressure. Populate pressure: peak_pressure_pa1..1e9, evenresolution4..12,increments2..64,profile uniform|smooth. Defaults800MPa,4,32,uniform. Quasistatic noimpact/nofracture, illustrativelaws. Cancomplete withoaksolverlimit.
+4. panel_impact: matched glass/oak/iron verticalclampedpanels, speeds_m_s1..4 entries0..20. panel_dimensions_m sides .08..1,thickness.012.. .15. projectileiron_ball|iron_cube. knife_cut is a coarsetomatoproxy downwardknife pluspanelcontrols, not calibratedslicing. custom_objects is a legacy presetlayout. plate_drop and rigid_drop are legacy fixed-layout drop routes: preferdrop_test for newrequests.
+5. thermal_frontier fixedglass/oak/iron/watericeheatfixture; material_state_reference fixedJ2materialpoint/savebenchmark; glass_reference published6mmtemperedpanedata withoutsimulation. unsupported for unavailablephysics includingfluids, calibratedtomatoslicing, dynamicJ2dents, realistictemperedshatter, gameplayrepair orworldpersistence. Do not substitute another experiment.
+
+Output the schema's typed setup object: setup.kind selects exactly one route and only that route's fields. Do not output legacy fields. duration_s .05..3 (default1) is shared. No more850networkcells total. The server deterministically lowers setup into the executable language; never duplicate objects/heights outside setup.scene/setup.drop.
+
+requirements describes ONLY things actually requested. Do NOT invent requirements for calibration, realism, certification, woodgrain, shattering, stressaccuracy, or dents. Do NOT list unavailable capabilities as unmet requirements if the user did not ask for them. Such general limitations belong in limitations. A simple rigid drop with 'no fracture' is supported and MUST NOT be blocked for lacking fracture. Experimental6mmnetworkdiagnostics are supported withwarnings. Only an actual unmet requested capability receives unsupported or needs_clarification; any such entry blocks execution.
+
+ui: up to12 declarative controls, noHTML/scripts. Buttons play_pause/reset/step_forward/step_back use min0,max1,step1,value0. components/reference toggles use min0,max1,step1,value0or1. playback_speed slider .1..4, magnification1..100,frame0..1. Physicalcontrols height_m(0..2) fordrop routes; speed_m_s(0..20) panel/knife; pressure_pa(1..1e9) pressure. Physicalcontrols maybepresetbuttons orsliders; valueinsidebounds,min<max. They rerun nativeengine withoutGPT. No physicalcontrols forscene_test; changesviachat. Include play/reset and relevantphysicalcontrol unlessuserasksotherwise. unsupported/glass_reference must use ui.controls=[]. Don't inherit incompatiblecontrols afterchangingtype.
+
+The browser shows sampled native states and actual solver reports. Play/pause is recorded playback; pressure frames are loadincrements, not elapsedphysicaltime. No fixture is calibrated. Preserve requested setup and report unsupported scope honestly.
 """
-SYSTEM += """
-The experiment appears inside the browser in an interactive 3D playground.
-The native engine computes a bounded recording; play/pause/scrubbing display recorded states, not live integration.
-When changing experiment type, regenerate ui controls for that type; do not copy incompatible controls from previous_plan. For unsupported or glass_reference requests always use ui.controls=[].
-Preserve every requested numerical setup and capability. Include requirements describing ONLY physics/setup explicitly requested by the user, with supported, unsupported or needs_clarification status and reasons. Never invent a requirement for calibration, realism, collision or fracture when the user did not request it. General model limitations belong in limitations, not unsupported requirements. Any unmet actual requirement blocks execution before a substitute is generated.
-Thin glass or a glass window impact is NOT supported by the network panel fixture (minimum thickness12mm). If thin thickness is unspecified, ask for clarification with unsupported/requirements instead of using40mm. Never call40mm thin. Do not substitute a pressure test for an impact.
-pressure must be null except continuum_pressure_reference. That reference accepts peak_pressure_pa1..1e9, even resolution4..12, increments2..64, profile uniform|smooth; geometry/supports remain fixed. No impact/fracture.
-ui contains title and up to12 custom controls with exact id,label,kind,action,min,max,step,value. Only declared actions run. Button actions play_pause/reset/step_forward/step_back use min0,max1,step1,value0. components/reference toggle use min0,max1,step1,value0or1. playback_speed slider bounds .1..4; magnification slider bounds1..100; frame slider bounds0..1. Physical actions height_m for drop (0..2), speed_m_s for panel/knife (0..20), pressure_pa for pressure reference(1..1e9) can be sliders or preset buttons; their values rerun the engine, never deform visuals alone. Choose labels meaningful to the user's experiment. Include play_pause/reset/components and a relevant parameter control when supported. All controls have numeric min,max,step,value with min<max and in-range value. Do not output HTML, scripts or event handlers. Empty controls are allowed for unsupported requests.
-"""
+
+SYSTEM += "\nAuthoritative preset catalog (do not infer representation from a name):\n" + json.dumps({name:{key:preset.get(key) for key in ("material","shape","representation","dimensions_m","resolution","pin_boundary")} for name,preset in catalog()["object_presets"].items()},separators=(",",":"))
+SYSTEM += "\nFor scene_test explicitly choose representation rigid or network. Use iron_ball for a smooth rigid sphere, never iron_matter_ball. wood_panel defaults to a pinned network; a requested free rigid wood panel MUST specify representation=rigid and pin_boundary=null,resolution=null. Do not call a network preset rigid."
 
 def number(value, low, high, label):
     if type(value) not in (int, float) or not math.isfinite(value) or not low <= value <= high:
@@ -106,6 +143,7 @@ def validate_plan(plan):
         raise ValueError("Unknown or missing playground language fields")
     if plan["language"] != "banjo-playground-1" or plan["experiment"] not in KINDS:
         raise ValueError("Unsupported playground language or experiment")
+    if plan.get("fidelity","experimental") not in ("experimental","calibrated"): raise ValueError("Unknown fidelity")
     for field, limit in [("name", 120), ("explanation", 2500)]:
         if not isinstance(plan[field], str) or not 1 <= len(plan[field]) <= limit:
             raise ValueError(f"Invalid {field}")
@@ -152,6 +190,14 @@ def validate_plan(plan):
         if type(pressure["resolution"]) is not int or pressure["resolution"] not in (4,6,8,10,12): raise ValueError("Pressure resolution must be even in [4,12]")
         if type(pressure["increments"]) is not int or not 2 <= pressure["increments"] <= 64: raise ValueError("Pressure increments must be in [2,64]")
         if pressure["profile"] not in ("uniform", "smooth"): raise ValueError("Unknown pressure profile")
+    for field, kind, validator in (("drop", "drop_test", validate_drop), ("scene", "scene_test", validate_scene)):
+        value = plan.get(field)
+        if plan["experiment"] == kind:
+            if value is None: raise ValueError(f"{kind} requires {field}")
+            validator(value)
+            if plan["speeds_m_s"] or plan["heights_m"] or plan["objects"]:
+                raise ValueError("Composable experiments require empty legacy arrays; use their dedicated specification")
+        elif value is not None: raise ValueError(f"{field} is only used by {kind}")
     requirements = plan.get("requirements", [])
     if not isinstance(requirements, list) or len(requirements)>12: raise ValueError("Invalid requirement list")
     for item in requirements:
@@ -163,13 +209,17 @@ def validate_plan(plan):
 def request_blockers(message, plan):
     """Requirements are separate from schema admission; never silently run a fallback."""
     blockers = [item["description"]+": "+item["reason"] for item in plan.get("requirements",[]) if item["status"] != "supported"]
-    if plan["experiment"] in ("panel_impact","plate_drop","rigid_drop","custom_objects") and re.search(r"\b(?:thin\s+(?:tempered\s+)?glass|glass\s+window|tempered\s+glass)\b", message, re.I):
+    if plan.get("fidelity") == "calibrated" and plan["experiment"] != "glass_reference":
+        blockers.append("Calibrated simulation is unavailable; no experimental substitute was executed.")
+    if plan["experiment"] in ("scene_test","panel_impact","plate_drop","rigid_drop","custom_objects") and re.search(r"\b(?:thin\s+(?:tempered\s+)?glass|glass\s+window|tempered\s+glass)\b", message, re.I):
         blockers.append("Thin/window/tempered-glass impact is not supported by this network fixture. Specify a supported setup explicitly or request the published reference; no thicker panel was substituted.")
     return blockers
 
 def compile_plan(plan):
     validate_plan(plan)
     kind = plan["experiment"]
+    if kind == "drop_test": return compile_drop(plan)
+    if kind == "scene_test": return compile_scene(plan)
     if kind in ("unsupported", "glass_reference", "thermal_frontier", "material_state_reference",
                 "continuum_pressure_reference"):
         return []

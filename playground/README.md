@@ -27,6 +27,16 @@ the **Project goal** tab. The goal contains nine workstreams and preserves all
 
 ## Try it
 
+New composable routes are available. Try:
+
+- “Drop an 80 mm iron ball from 0.2 m onto free rigid glass, oak and iron targets, 0.24 by 0.36 by 0.04 m, with an x offset of 0.02 m. Add a height slider.”
+- “Try an uncalibrated volumetric 6 mm panel drop: glass, oak and iron, width 0.12 m, length 0.16 m, clamped edges, resolution 4 by 4 by 2, 80 mm iron ball from 0.05 m, duration 0.3 s. Show diagnostic limits.”
+- “Create two 80 mm iron cubes moving toward each other at 1 m/s in zero gravity, with spin 4 rad/s about y. Run 0.4 s.”
+
+The 6 mm case is now admitted by the new builder, but currently stops at a
+numerical damage limit. It is not a shell solver or validated shatter result.
+See [the executed plan and failure evidence](../docs/general-experiment-checkpoint.md).
+
 - “Compare an iron ball hitting glass, wood and iron panels at 2 m/s for 1 second.”
 - “Now compare speeds of 2 and 6 m/s.”
 - “Drop an iron cube from 25 cm onto glass, wood and iron; use rigid controls.”
@@ -72,7 +82,9 @@ a 75-second timeout. Reusing an identical request ID returns the same job;
 different content with that ID rejects. Jobs and packages are recorded under
 ignored `build/playground-runs/`. Browser refresh restores the latest job while
 the server session remains active; `?job=<id>` opens a specific session result.
-Restarting the server clears its session index. This is a local development service, not a public
+Known terminal jobs and their recordings now reload from disk after server restart.
+Restored native-window launching is disabled; embedded playback remains available.
+This is a local development service, not a public
 multiuser deployment.
 
 All generated network damage trials use strict refinement-limit rejection.
@@ -100,6 +112,7 @@ not change this fixed reference. See the [API, refinement and limitations](../do
 |---|---|
 | `GET /api/status` | Engine/model availability, capabilities and a local session token; never the GPT key |
 | `GET /api/goal` | The full current goal as Markdown |
+| `GET /api/schema` | Executable language schema and admission budgets |
 | `POST /api/chat` | Submit `{message, previous_plan, request_id, auto_open}`; receive a job ID |
 | `GET /api/jobs/{id}` | Poll status, generated plan, cases, reports, limits and timing |
 | `GET /api/jobs/{id}/package/{case_index}` | Export the exact generated package |

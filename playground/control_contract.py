@@ -16,7 +16,7 @@ _KINDS = {"button", "slider", "toggle"}
 _BUTTON_ACTIONS = {"play_pause", "reset", "step_forward", "step_back"}
 _PHYSICAL = {"height_m", "speed_m_s", "pressure_pa"}
 _EXPERIMENTS = {
-    "panel_impact", "plate_drop", "rigid_drop", "knife_cut", "custom_objects",
+    "drop_test", "scene_test", "panel_impact", "plate_drop", "rigid_drop", "knife_cut", "custom_objects",
     "thermal_frontier", "material_state_reference", "continuum_pressure_reference",
     "glass_reference", "unsupported",
 }
@@ -39,7 +39,7 @@ def _text(value: Any, name: str, limit: int) -> str:
 
 
 def _action_capability(action: str, experiment: str) -> tuple[float, float] | None:
-    if action == "height_m" and experiment in {"plate_drop", "rigid_drop"}:
+    if action == "height_m" and experiment in {"plate_drop", "rigid_drop", "drop_test"}:
         return 0.0, 2.0
     if action == "speed_m_s" and experiment in {"panel_impact", "knife_cut"}:
         return 0.0, 20.0
@@ -131,7 +131,7 @@ def default_ui(experiment: str) -> dict[str, Any]:
         {"id": "step-forward", "label": "Step forward", "kind": "button", "action": "step_forward", "min": 0, "max": 1, "step": 1, "value": 0},
         {"id": "components", "label": "Components", "kind": "toggle", "action": "components", "min": 0, "max": 1, "step": 1, "value": 0},
     ]
-    if experiment in {"plate_drop", "rigid_drop"}:
+    if experiment in {"plate_drop", "rigid_drop", "drop_test"}:
         controls.append({"id": "height-m", "label": "Height (m)", "kind": "slider", "action": "height_m", "min": 0, "max": 2, "step": 0.01, "value": 0.25})
     elif experiment in {"panel_impact", "knife_cut"}:
         controls.append({"id": "speed-m-s", "label": "Speed (m/s)", "kind": "slider", "action": "speed_m_s", "min": 0, "max": 20, "step": 0.1, "value": 2})
@@ -163,7 +163,8 @@ def apply_control(plan: dict[str, Any], action: str, value: Any, case_index: int
         raise ValueError("case_index must be an integer from 0 through 3")
     updated = deepcopy(plan)
     if action == "height_m":
-        updated["heights_m"] = [value]
+        if experiment == "drop_test": updated["drop"]["heights_m"] = [value]
+        else: updated["heights_m"] = [value]
     elif action == "speed_m_s":
         updated["speeds_m_s"] = [value]
     else:

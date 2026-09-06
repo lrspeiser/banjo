@@ -692,5 +692,13 @@
       "cancellation and durable restoration",
       "capture/render performance qualification"
     ]
+  },
+  "general_experiment_checkpoint": {
+    "plan": "docs/general-experiment-plan.md",
+    "evidence": "docs/general-experiment-checkpoint.md",
+    "authoring": "drop_test and scene_test implemented; bounded experimental scope",
+    "thin_panel": "admitted6mm but failed all3 timestep completion checks",
+    "physics_integration": "thin structure / unified impact and material response / realtime qualification remain open",
+    "all_goals_retained": true
   }
 }

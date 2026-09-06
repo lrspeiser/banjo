@@ -189,6 +189,8 @@
     const stats = document.createElement("div");
     stats.className = "plan-summary";
     const experimentNames = {
+      drop_test: "Configurable comparative drop",
+      scene_test: "Composed scene",
       panel_impact: "Panel impact",
       plate_drop: "Plate drop",
       rigid_drop: "Rigid drop control",
@@ -200,7 +202,7 @@
       glass_reference: "Published glass reference",
       unsupported: "Unsupported request",
     };
-    const sweep = Array.isArray(plan.speeds_m_s) && plan.speeds_m_s.length
+    const sweep = plan.drop ? `${plan.drop.heights_m.length} height case(s)` : plan.scene ? `${plan.scene.objects.length} authored object(s)` : Array.isArray(plan.speeds_m_s) && plan.speeds_m_s.length
       ? `${plan.speeds_m_s.length} speed case(s)`
       : Array.isArray(plan.heights_m) && plan.heights_m.length
         ? `${plan.heights_m.length} height case(s)`
@@ -211,9 +213,10 @@
     const values = [
       ["Experiment", experimentNames[plan.experiment] || plan.experiment],
       ...(continuum
-        ? [["Loading", "32 up / 32 down"], ["Fixed setup", "40 × 20 × 40 mm · 800 MPa peak"]]
+        ? [["Loading", `${plan.pressure?.increments ?? 32} up / down`], ["Setup", `40 × 20 × 40 mm · ${(plan.pressure?.peak_pressure_pa ?? 800000000)/1e6} MPa peak`]]
         : [["Simulated time", plan.duration_s !== undefined ? `${plan.duration_s} s` : undefined]]),
       ["Sweeps / cases", sweep],
+      ...(plan.drop ? [["Target dimensions (m)",plan.drop.target_dimensions_m.join(" × ")],["Support",plan.drop.support],["Impact offset (m)",plan.drop.impact_offset_m.join(", ")],["Representation",plan.drop.representation]] : []),
       ["Name", plan.name],
     ];
     values.forEach(([label, value]) => {
@@ -396,6 +399,7 @@
     const limitedMaterials = (item?.inner_cases || playback?.cases || []).filter((entry) => entry.status === "solver_limit").map((entry) => entry.material_id);
     const materialStatus = (item?.inner_cases || playback?.cases || []).map((entry) => `${text(entry.material_id)}: ${text(entry.status)}`).join(" · ");
     if (limitedMaterials.length) return ["warning", `Solver limit: ${limitedMaterials.join(", ")}. Showing each material's last accepted sampled frame; response remains experimental.${materialStatus ? ` ${materialStatus}.` : ""}`];
+    if (limited) return ["warning", `Solver stopped after ${playback?.completed_steps ?? "some"} of ${playback?.requested_steps ?? "requested"} steps. ${text(playback?.error,item?.error || "Last accepted states only.")}${unresolved ? " Temporal resolution is also unresolved." : ""}`];
     if (unresolved) return ["warning", "Temporal resolution is unresolved. Inspect the sampled sequence as experimental evidence."];
     if (invalid) return ["warning", "Material response is not validated for this scope. This is experimental engine output."];
     if (limited) return ["warning", "Solver limit reached. Showing the last accepted sampled frame and preceding computed states."];
@@ -568,6 +572,7 @@
       const job = await api(`/api/jobs/${encodeURIComponent(jobId)}`); state.job = job; state.jobId = job.id; rememberJob(job.id); state.latestPlan = job.plan || null; state.followup = true;
       const playable = job.cases?.findIndex(playbackAvailable) ?? -1; state.selectedCase = Math.max(0, playable);
       renderJob(job); renderLanguage(); renderResults(); addHistory(job);
+      if (!state.messages.length && job.request_text) { addMessage("You", job.request_text); addMessage("Banjo",job.message); }
       if (activeStatuses.has(job.status)) pollJob(); else if (job.status === "complete" && playable >= 0) loadPlayback(playable, true); else { showUnavailablePlayback(job); activateTab("viewer"); }
     } catch {
       if(localStorage.getItem(latestJobStorageKey)===jobId)localStorage.removeItem(latestJobStorageKey); const url=new URL(window.location.href);if(url.searchParams.get("job")===jobId){url.searchParams.delete("job");history.replaceState(null,"",url);} clearViewer();
