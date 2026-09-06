@@ -21,9 +21,21 @@ struct ThermalCellView {
     bool phase_change{};
 };
 struct WorldStepBudget {unsigned maximum_jobs{64},maximum_cell_operations{32768};double maximum_wall_ms{4};};
+struct ThermalFrontierPolicy {
+    // A compact cold neighbor becomes a candidate when the absolute face
+    // temperature difference reaches this SI threshold. Deferred faces are
+    // treated as insulated until admission.
+    double activation_temperature_difference_k{};
+    unsigned maximum_face_probes_per_step{64};
+    unsigned maximum_cells_added_per_step{8};
+    unsigned maximum_pending_cells{128};
+};
 struct WorldStepReceipt {
     unsigned completed_jobs{},cell_operations{},regions_late{};
+    unsigned frontier_face_probes{},frontier_cells_added{},frontier_candidates_pending{};
+    unsigned frontier_regions_budget_blocked{};
     double wall_ms{},requested_time_s{},maximum_lag_s{};
+    double oldest_frontier_candidate_age_s{};
     bool count_budget_exhausted{},wall_budget_exhausted{};
     std::string error;
 };
@@ -32,10 +44,11 @@ struct ThermalRegionJoinReceipt {
     double accepted_time_s{};
 };
 // First world-scale storage/scheduling slice: compact uniform 16^3 chunks and
-// explicitly activated, INSULATED thermal regions. No implicit heat sink at a
-// cold boundary: insulation is part of this experimental region contract.
+// explicitly activated thermal regions, insulated by default. Opt-in bounded
+// cold-neighbor activation carries stored state into the same-clock region;
+// deferred faces remain insulated approximations, with no global error bound.
 // No mechanics, airflow, independent cross-clock flux, thermal weakening or
-// automatic activation/coarsening is claimed. The explicit join below makes
+// automatic coarsening is claimed. The explicit join below makes
 // two regions one same-clock island. Main-thread API; jobs publish atomically.
 class SparseThermalWorld {
 public:
@@ -44,6 +57,12 @@ public:
     void addMaterial(WorldThermalMaterial material);
     void addUniformChunk(ChunkAddress address,unsigned material,double temperature_k,double liquid_fraction_at_melt=0);
     void activateInsulatedRegion(unsigned id,const std::vector<VoxelAddress>& cells,double fixed_step_s=.05);
+    // Opts an existing caught-up region into bounded cold-neighbor growth.
+    // The expected time makes the policy command transactional and rejects
+    // stale/backlogged callers before mutation. Growth keeps this region's
+    // clock and never joins or exchanges with another active region.
+    void enableThermalFrontier(
+        unsigned region_id,ThermalFrontierPolicy policy,double expected_region_time_s);
     // Atomically joins two caught-up, face-adjacent regions on the same clock.
     // The first ID survives and the second ID remains permanently retired.
     ThermalRegionJoinReceipt joinInsulatedRegions(

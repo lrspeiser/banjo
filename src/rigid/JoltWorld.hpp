@@ -185,6 +185,15 @@ public:
     // Caller owns external histories and must keep this world alive/unmoved.
     // At most 256 bodies and 16 nested trials; no persistence/portable snapshot.
     [[nodiscard]] bool runReversibleTrial(const std::function<bool()> &trial);
+    // Trusted host callback for adaptive spring integration. Existing distance
+    // springs may be updated or removed; additions and every other topology or
+    // configuration mutation remain forbidden. True accepts. False or an
+    // exception restores the complete Jolt state, constraint order, spring map
+    // and settings, ticks, impacts and contact diagnostics. Caller-owned
+    // material history is outside this transaction. The caller must keep the
+    // world alive/unmoved. Host thread, between steps; at most 1024 bodies,
+    // 20000 springs, 16 MiB recorded Jolt state and 16 nested spring trials.
+    [[nodiscard]] bool runSpringTrial(const std::function<bool()> &trial);
     void step(double fixed_dt_s);
     [[nodiscard]] CoupledSphereState sphereContactState(MatterBodyId body_id) const;
     void applySphereContactState(MatterBodyId body_id, const CoupledSphereState &state);

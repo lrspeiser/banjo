@@ -533,9 +533,17 @@ public:
     }
 
     void requireConfigurationMutable() const {
-        if(trial_depth_!=0)throw std::logic_error("configuration/topology changes are forbidden during a reversible trial");
+        if(trial_depth_!=0||spring_trial_depth_!=0)
+            throw std::logic_error("configuration/topology changes are forbidden during a trial");
+    }
+    void requireSpringMutable() const {
+        // A general reversible trial nested in a spring trial retains its
+        // original no-configuration-mutation contract.
+        if(trial_depth_!=0)
+            throw std::logic_error("spring changes are forbidden during a reversible trial");
     }
     unsigned trial_depth_{};
+    unsigned spring_trial_depth_{};
     BroadPhaseLayerInterface broad_phase_interface_;
     ObjectVsBroadPhaseLayerFilter object_vs_broad_phase_filter_;
     ObjectLayerPairFilter object_pair_filter_;
@@ -923,12 +931,22 @@ unsigned JoltWorld::addDistanceSpring(MatterBodyId a,MatterBodyId b,double rest,
     impl_->physics_->AddConstraint(raw);return id;
 }
 void JoltWorld::updateDistanceSpring(unsigned id,double rest,double stiffness,double damping) {
-    impl_->requireConfigurationMutable();validateSpring(rest,stiffness,damping);
-    auto &spring=impl_->springs_.at(id);spring.constraint->SetDistance(float(rest),float(rest));
-    spring.constraint->SetLimitsSpringSettings({JPH::ESpringMode::StiffnessAndDamping,float(stiffness),float(damping)});
+    impl_->requireSpringMutable();validateSpring(rest,stiffness,damping);
+    auto &spring=impl_->springs_.at(id);auto *constraint=spring.constraint.GetPtr();
+    const float rest_f=float(rest),stiffness_f=float(stiffness),damping_f=float(damping);
+    const auto &current=constraint->GetLimitsSpringSettings();
+    if(constraint->GetMinDistance()==rest_f&&constraint->GetMaxDistance()==rest_f&&
+       current.mMode==JPH::ESpringMode::StiffnessAndDamping&&
+       current.mStiffness==stiffness_f&&current.mDamping==damping_f)return;
+    constraint->SetDistance(rest_f,rest_f);
+    constraint->SetLimitsSpringSettings({JPH::ESpringMode::StiffnessAndDamping,stiffness_f,damping_f});
+    // Rest/stiffness changes can make the previous force impulse a poor initial
+    // iterate. Jolt only scales it for dt changes; configuration invalidation is
+    // explicitly the constraint owner's responsibility.
+    constraint->ResetWarmStart();
 }
 void JoltWorld::removeDistanceSpring(unsigned id) {
-    impl_->requireConfigurationMutable();auto it=impl_->springs_.find(id);if(it==impl_->springs_.end())throw std::invalid_argument("unknown spring");
+    impl_->requireSpringMutable();auto it=impl_->springs_.find(id);if(it==impl_->springs_.end())throw std::invalid_argument("unknown spring");
     impl_->physics_->RemoveConstraint(it->second.constraint);impl_->springs_.erase(it);
 }
 double JoltWorld::distanceSpringImpulse(unsigned id) const {return impl_->springs_.at(id).constraint->GetTotalLambdaPosition();}
@@ -1235,6 +1253,67 @@ bool JoltWorld::runReversibleTrial(const std::function<bool()> &trial) {
     ++impl_->trial_depth_;bool accepted=false;
     try {accepted=trial();}catch(...) {--impl_->trial_depth_;restore();throw;}
     --impl_->trial_depth_;if(!accepted)restore();return accepted;
+}
+
+bool JoltWorld::runSpringTrial(const std::function<bool()> &trial) {
+    constexpr std::size_t kMaximumStateBytes=16U*1024U*1024U;
+    constexpr unsigned kMaximumDepth=16;
+    if(!trial||impl_->trial_depth_!=0||impl_->bodies_.size()>1024||
+       impl_->springs_.size()>20000||impl_->spring_trial_depth_>=kMaximumDepth)
+        throw std::invalid_argument("invalid spring trial or body/spring/depth budget exceeded");
+
+    JPH::StateRecorderImpl recorder;impl_->physics_->SaveState(recorder);
+    if(recorder.IsFailed()||recorder.GetDataSize()>kMaximumStateBytes)
+        throw std::runtime_error("cannot capture bounded Jolt spring trial state");
+
+    // PhysicsSystem::RestoreState addresses constraints by their current
+    // indices and DistanceConstraint::SaveState omits configuration. Hold refs
+    // to the exact list so removals cannot destroy constraints before rollback.
+    const JPH::Constraints constraint_order=impl_->physics_->GetConstraints();
+    const auto springs=impl_->springs_;
+    struct SpringConfiguration {
+        float minimum_distance;
+        float maximum_distance;
+        JPH::SpringSettings settings;
+    };
+    std::unordered_map<unsigned,SpringConfiguration> spring_configuration;
+    spring_configuration.reserve(springs.size());
+    for(const auto &[id,spring]:springs) {
+        spring_configuration.emplace(id,SpringConfiguration{
+            spring.constraint->GetMinDistance(),spring.constraint->GetMaxDistance(),
+            spring.constraint->GetLimitsSpringSettings()});
+    }
+    auto events=impl_->impact_collector_.capture();
+    const auto tick=impl_->tick_.load(std::memory_order_relaxed);
+    const auto diagnostics=impl_->contact_diagnostics_;
+    const auto next_spring=impl_->next_spring_;
+
+    const auto restore=[&] {
+        // Remove/add is intentionally done for the whole list: Jolt removes by
+        // swap-with-last, so selectively re-adding removed springs cannot
+        // recover the solver order required by the saved state.
+        JPH::Constraints current=impl_->physics_->GetConstraints();
+        for(const JPH::Ref<JPH::Constraint> &constraint:current)
+            impl_->physics_->RemoveConstraint(constraint.GetPtr());
+        for(const JPH::Ref<JPH::Constraint> &constraint:constraint_order)
+            impl_->physics_->AddConstraint(constraint.GetPtr());
+        impl_->springs_=springs;impl_->next_spring_=next_spring;
+        for(const auto &[id,configuration]:spring_configuration) {
+            auto *constraint=impl_->springs_.at(id).constraint.GetPtr();
+            constraint->SetDistance(configuration.minimum_distance,configuration.maximum_distance);
+            constraint->SetLimitsSpringSettings(configuration.settings);
+        }
+        recorder.Rewind();
+        if(!impl_->physics_->RestoreState(recorder)||recorder.IsFailed())
+            throw std::runtime_error("Jolt spring trial restore failed; discard this world");
+        impl_->tick_.store(tick,std::memory_order_relaxed);
+        impl_->impact_collector_.restore(std::move(events));
+        impl_->contact_diagnostics_=diagnostics;
+    };
+
+    ++impl_->spring_trial_depth_;bool accepted=false;
+    try {accepted=trial();}catch(...) {--impl_->spring_trial_depth_;restore();throw;}
+    --impl_->spring_trial_depth_;if(!accepted)restore();return accepted;
 }
 
 void JoltWorld::step(double fixed_dt_s) {

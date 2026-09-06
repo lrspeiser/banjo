@@ -1,0 +1,586 @@
+{
+  "physics_abi": "banjo-thermal-world-1",
+  "units": "SI",
+  "voxel_size_m": 0.01,
+  "materials": [
+    {
+      "id": 1,
+      "name": "glass",
+      "density_kg_m3": 2500,
+      "heat_capacity_j_kg_k": 840,
+      "conductivity_w_m_k": 1
+    },
+    {
+      "id": 2,
+      "name": "oak / finite oxygen",
+      "density_kg_m3": 700,
+      "heat_capacity_j_kg_k": 1700,
+      "conductivity_w_m_k": 0.12,
+      "fuel_fraction": 0.1,
+      "oxygen_per_kg_solid": 0.15,
+      "reaction": {
+        "activation_temperature_k": 600,
+        "rate_per_s": 2,
+        "heat_of_combustion_j_kg": 16000000,
+        "oxygen_per_kg_fuel": 1.5
+      }
+    },
+    {
+      "id": 3,
+      "name": "iron",
+      "density_kg_m3": 7870,
+      "heat_capacity_j_kg_k": 450,
+      "conductivity_w_m_k": 80
+    },
+    {
+      "id": 4,
+      "name": "water / ice",
+      "density_kg_m3": 1000,
+      "heat_capacity_j_kg_k": 2100,
+      "conductivity_w_m_k": 2.2,
+      "phase_change": {
+        "liquid_heat_capacity_j_kg_k": 4180,
+        "melting_temperature_k": 273.15,
+        "latent_heat_j_kg": 334000
+      }
+    }
+  ],
+  "chunks": [
+    {
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "material": 1,
+      "temperature_k": 293.15
+    },
+    {
+      "position": [
+        2,
+        0,
+        0
+      ],
+      "material": 2,
+      "temperature_k": 293.15
+    },
+    {
+      "position": [
+        4,
+        0,
+        0
+      ],
+      "material": 3,
+      "temperature_k": 293.15
+    },
+    {
+      "position": [
+        6,
+        0,
+        0
+      ],
+      "material": 4,
+      "temperature_k": 273.15
+    }
+  ],
+  "regions": [
+    {
+      "id": 1,
+      "step_s": 0.05,
+      "cells": [
+        {
+          "chunk": [
+            0,
+            0,
+            0
+          ],
+          "local": [
+            7,
+            7,
+            0
+          ]
+        },
+        {
+          "chunk": [
+            0,
+            0,
+            0
+          ],
+          "local": [
+            7,
+            8,
+            0
+          ]
+        },
+        {
+          "chunk": [
+            0,
+            0,
+            0
+          ],
+          "local": [
+            8,
+            7,
+            0
+          ]
+        },
+        {
+          "chunk": [
+            0,
+            0,
+            0
+          ],
+          "local": [
+            8,
+            8,
+            0
+          ]
+        }
+      ],
+      "frontier": {
+        "activation_temperature_difference_k": 5,
+        "maximum_face_probes_per_step": 256,
+        "maximum_cells_added_per_step": 8,
+        "maximum_pending_cells": 128
+      }
+    },
+    {
+      "id": 2,
+      "step_s": 0.05,
+      "cells": [
+        {
+          "chunk": [
+            2,
+            0,
+            0
+          ],
+          "local": [
+            7,
+            7,
+            0
+          ]
+        },
+        {
+          "chunk": [
+            2,
+            0,
+            0
+          ],
+          "local": [
+            7,
+            8,
+            0
+          ]
+        },
+        {
+          "chunk": [
+            2,
+            0,
+            0
+          ],
+          "local": [
+            8,
+            7,
+            0
+          ]
+        },
+        {
+          "chunk": [
+            2,
+            0,
+            0
+          ],
+          "local": [
+            8,
+            8,
+            0
+          ]
+        }
+      ],
+      "frontier": {
+        "activation_temperature_difference_k": 5,
+        "maximum_face_probes_per_step": 256,
+        "maximum_cells_added_per_step": 8,
+        "maximum_pending_cells": 128
+      }
+    },
+    {
+      "id": 3,
+      "step_s": 0.05,
+      "cells": [
+        {
+          "chunk": [
+            4,
+            0,
+            0
+          ],
+          "local": [
+            7,
+            7,
+            0
+          ]
+        },
+        {
+          "chunk": [
+            4,
+            0,
+            0
+          ],
+          "local": [
+            7,
+            8,
+            0
+          ]
+        },
+        {
+          "chunk": [
+            4,
+            0,
+            0
+          ],
+          "local": [
+            8,
+            7,
+            0
+          ]
+        },
+        {
+          "chunk": [
+            4,
+            0,
+            0
+          ],
+          "local": [
+            8,
+            8,
+            0
+          ]
+        }
+      ],
+      "frontier": {
+        "activation_temperature_difference_k": 5,
+        "maximum_face_probes_per_step": 256,
+        "maximum_cells_added_per_step": 8,
+        "maximum_pending_cells": 128
+      }
+    },
+    {
+      "id": 4,
+      "step_s": 0.05,
+      "cells": [
+        {
+          "chunk": [
+            6,
+            0,
+            0
+          ],
+          "local": [
+            7,
+            7,
+            0
+          ]
+        },
+        {
+          "chunk": [
+            6,
+            0,
+            0
+          ],
+          "local": [
+            7,
+            8,
+            0
+          ]
+        },
+        {
+          "chunk": [
+            6,
+            0,
+            0
+          ],
+          "local": [
+            8,
+            7,
+            0
+          ]
+        },
+        {
+          "chunk": [
+            6,
+            0,
+            0
+          ],
+          "local": [
+            8,
+            8,
+            0
+          ]
+        }
+      ],
+      "frontier": {
+        "activation_temperature_difference_k": 5,
+        "maximum_face_probes_per_step": 256,
+        "maximum_cells_added_per_step": 8,
+        "maximum_pending_cells": 128
+      }
+    }
+  ],
+  "heaters": [
+    {
+      "cell": {
+        "chunk": [
+          0,
+          0,
+          0
+        ],
+        "local": [
+          7,
+          7,
+          0
+        ]
+      },
+      "energy_j": 749.3850000000002,
+      "maximum_energy_j": 749.3850000000002
+    },
+    {
+      "cell": {
+        "chunk": [
+          0,
+          0,
+          0
+        ],
+        "local": [
+          7,
+          8,
+          0
+        ]
+      },
+      "energy_j": 749.3850000000002,
+      "maximum_energy_j": 749.3850000000002
+    },
+    {
+      "cell": {
+        "chunk": [
+          0,
+          0,
+          0
+        ],
+        "local": [
+          8,
+          7,
+          0
+        ]
+      },
+      "energy_j": 749.3850000000002,
+      "maximum_energy_j": 749.3850000000002
+    },
+    {
+      "cell": {
+        "chunk": [
+          0,
+          0,
+          0
+        ],
+        "local": [
+          8,
+          8,
+          0
+        ]
+      },
+      "energy_j": 749.3850000000002,
+      "maximum_energy_j": 749.3850000000002
+    },
+    {
+      "cell": {
+        "chunk": [
+          2,
+          0,
+          0
+        ],
+        "local": [
+          7,
+          7,
+          0
+        ]
+      },
+      "energy_j": 424.6515,
+      "maximum_energy_j": 424.6515
+    },
+    {
+      "cell": {
+        "chunk": [
+          2,
+          0,
+          0
+        ],
+        "local": [
+          7,
+          8,
+          0
+        ]
+      },
+      "energy_j": 424.6515,
+      "maximum_energy_j": 424.6515
+    },
+    {
+      "cell": {
+        "chunk": [
+          2,
+          0,
+          0
+        ],
+        "local": [
+          8,
+          7,
+          0
+        ]
+      },
+      "energy_j": 424.6515,
+      "maximum_energy_j": 424.6515
+    },
+    {
+      "cell": {
+        "chunk": [
+          2,
+          0,
+          0
+        ],
+        "local": [
+          8,
+          8,
+          0
+        ]
+      },
+      "energy_j": 424.6515,
+      "maximum_energy_j": 424.6515
+    },
+    {
+      "cell": {
+        "chunk": [
+          4,
+          0,
+          0
+        ],
+        "local": [
+          7,
+          7,
+          0
+        ]
+      },
+      "energy_j": 1263.7842750000004,
+      "maximum_energy_j": 1263.7842750000004
+    },
+    {
+      "cell": {
+        "chunk": [
+          4,
+          0,
+          0
+        ],
+        "local": [
+          7,
+          8,
+          0
+        ]
+      },
+      "energy_j": 1263.7842750000004,
+      "maximum_energy_j": 1263.7842750000004
+    },
+    {
+      "cell": {
+        "chunk": [
+          4,
+          0,
+          0
+        ],
+        "local": [
+          8,
+          7,
+          0
+        ]
+      },
+      "energy_j": 1263.7842750000004,
+      "maximum_energy_j": 1263.7842750000004
+    },
+    {
+      "cell": {
+        "chunk": [
+          4,
+          0,
+          0
+        ],
+        "local": [
+          8,
+          8,
+          0
+        ]
+      },
+      "energy_j": 1263.7842750000004,
+      "maximum_energy_j": 1263.7842750000004
+    },
+    {
+      "cell": {
+        "chunk": [
+          6,
+          0,
+          0
+        ],
+        "local": [
+          7,
+          7,
+          0
+        ]
+      },
+      "energy_j": 710.2,
+      "maximum_energy_j": 710.2
+    },
+    {
+      "cell": {
+        "chunk": [
+          6,
+          0,
+          0
+        ],
+        "local": [
+          7,
+          8,
+          0
+        ]
+      },
+      "energy_j": 710.2,
+      "maximum_energy_j": 710.2
+    },
+    {
+      "cell": {
+        "chunk": [
+          6,
+          0,
+          0
+        ],
+        "local": [
+          8,
+          7,
+          0
+        ]
+      },
+      "energy_j": 710.2,
+      "maximum_energy_j": 710.2
+    },
+    {
+      "cell": {
+        "chunk": [
+          6,
+          0,
+          0
+        ],
+        "local": [
+          8,
+          8,
+          0
+        ]
+      },
+      "energy_j": 710.2,
+      "maximum_energy_j": 710.2
+    }
+  ]
+}

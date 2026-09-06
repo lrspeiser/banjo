@@ -160,6 +160,28 @@ thermal::EnthalpyMaterial phaseChange(const Json &value) {
     };
 }
 
+ThermalFrontierPolicy frontierPolicy(const Json &value) {
+    fields(value,
+           {"activation_temperature_difference_k", "maximum_face_probes_per_step",
+            "maximum_cells_added_per_step", "maximum_pending_cells"},
+           {"activation_temperature_difference_k", "maximum_face_probes_per_step",
+            "maximum_cells_added_per_step", "maximum_pending_cells"});
+    ThermalFrontierPolicy policy;
+    policy.activation_temperature_difference_k = number(
+        value.at("activation_temperature_difference_k"), 0.0, 10'000.0);
+    policy.maximum_face_probes_per_step = static_cast<unsigned>(
+        unsignedInteger(value.at("maximum_face_probes_per_step"), 3'072));
+    policy.maximum_cells_added_per_step = static_cast<unsigned>(
+        unsignedInteger(value.at("maximum_cells_added_per_step"), 512));
+    policy.maximum_pending_cells = static_cast<unsigned>(
+        unsignedInteger(value.at("maximum_pending_cells"), 512));
+    require(policy.maximum_face_probes_per_step > 0 &&
+                policy.maximum_cells_added_per_step > 0 &&
+                policy.maximum_pending_cells > 0,
+            "thermal frontier work bounds must be positive");
+    return policy;
+}
+
 } // namespace
 
 std::unique_ptr<SparseThermalWorld> loadWorldPackage(const std::string &document) {
@@ -252,6 +274,7 @@ std::unique_ptr<SparseThermalWorld> loadWorldPackage(const std::string &document
         unsigned id{};
         double step_s{};
         std::vector<VoxelAddress> cells;
+        std::optional<ThermalFrontierPolicy> frontier;
     };
     std::vector<ParsedRegion> parsed_regions;
     parsed_regions.reserve(regions.size());
@@ -259,7 +282,8 @@ std::unique_ptr<SparseThermalWorld> loadWorldPackage(const std::string &document
     std::set<unsigned> region_ids;
     std::set<VoxelAddress> active_addresses;
     for (const auto &declaration : regions) {
-        fields(declaration, {"id", "step_s", "cells"}, {"id", "step_s", "cells"});
+        fields(declaration, {"id", "step_s", "cells", "frontier"},
+               {"id", "step_s", "cells"});
         ParsedRegion region;
         region.id = static_cast<unsigned>(unsignedInteger(declaration.at("id"), 1'000'000));
         require(region.id > 0 && region_ids.insert(region.id).second,
@@ -277,6 +301,9 @@ std::unique_ptr<SparseThermalWorld> loadWorldPackage(const std::string &document
             require(active_addresses.insert(address).second,
                     "region cells must be globally unique");
             region.cells.push_back(address);
+        }
+        if (declaration.contains("frontier")) {
+            region.frontier = frontierPolicy(declaration.at("frontier"));
         }
         parsed_regions.push_back(std::move(region));
     }
@@ -318,6 +345,9 @@ std::unique_ptr<SparseThermalWorld> loadWorldPackage(const std::string &document
     }
     for (const auto &region : parsed_regions) {
         candidate->activateInsulatedRegion(region.id, region.cells, region.step_s);
+        if (region.frontier) {
+            candidate->enableThermalFrontier(region.id, *region.frontier, 0.0);
+        }
     }
     for (const auto &heater : parsed_heaters) {
         (void)candidate->addHeat(heater.cell, heater.energy_j, heater.maximum_energy_j, 0.0);

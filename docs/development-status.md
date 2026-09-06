@@ -1,5 +1,7 @@
 # Development status and handoff
 
+**Additional physics checkpoint — September 6, 2026:** Opt-in cold-neighbor thermal activation now preserves stored energy, phase and reactive history while bounding active work. Mechanical damage trials support complete tick rollback, spring-configuration cache reset and explicit unresolved-limit diagnostics. All 52 regression suites pass; thermal storage scaling passes, while fracture convergence and full work closure remain open. See the [implementation, experiments and next gates](additional-physics-checkpoint.md).
+
 **Contact and reaction correction:** V2 contact capacities are explicit, initial contact density is checked, unused impact estimates are skipped, and damping reconstruction follows Jolt's pre-step spring axis. Generated scenes now all complete headlessly, including the 537-cell drop; it still costs about 14.6 s for 3 s of simulation. Halved-timestep material fracture still differs. See the [checkpoint and evidence](contact-fracture-checkpoint.md).
 
 **Generated-object validation:** The [visual/numerical validation workflow](generated-physics-validation.md) generates scenes through the public Python API and adds normal-speed studio measurements of active frame time and simulation backlog. All 48 existing regression suites pass in one run (82.80 s). This is test infrastructure; material/contact laws are unchanged and realism gates remain open.
@@ -16,7 +18,7 @@
 
 **G05 kernel evidence:** The same backward-Euler kernel now covers up to five affine intervals and matches 432 independent oracle cases. The repeated pair microbenchmark measures 4.37–4.77x; the checkpoint separately records field-load budgets and unresolved mixed-world limits.
 
-**G03 thermal status:** Explicit atomic same-clock neighboring-region joining passes mixed-material, phase, history and rejection checks. Automatic frontier activation and cross-clock exchange remain open. Smoke and full fluid flow remain deferred.
+**G03 thermal status:** Explicit atomic same-clock neighboring-region joining passes mixed-material, phase, history and rejection checks. Opt-in automatic cold-neighbor activation is implemented in the newer checkpoint; boundary-error control, demotion and cross-clock exchange remain open. Smoke and full fluid flow remain deferred.
 
 **Historical 44-suite baseline:** All 44 regression suites passed for that baseline. The [world checkpoint](world-foundation-checkpoint.md) includes strict [SI language packages](world-physics-language.md), bounded thermal/reaction jobs, and ice/water enthalpy with latent heat. Repeated sparse-world tests separate stored volume from active cost and expose overload backlog. Glass/contact accuracy remains an open mechanical gate; smoke and full fluid flow are deferred. The [plan](world-runtime-plan.md) and all 40 scorecard requirements remain in force.
 

@@ -136,8 +136,8 @@
           "asymmetric/support/third-body cases pass"
         ]
       },
-      "next_action": "Localize bond threshold crossings within the step with complete state/history rollback and work accounting; qualify time, iteration, contact and spatial refinement across glass/oak/iron and tissue.",
-      "evidence_status": "Pre-step reaction axis corrected and transverse oracle passes. At dt 1/480 versus 1/960, panel breaks are 24 versus 30 and tissue 18 versus 22; fracture convergence remains failed.",
+      "next_action": "Add an embedded state/work estimator for peaks missed by endpoint criteria; compare time/contact/space refinement before adopting adaptive damage as a production path. Declare manufacturing/residual-stress state for tempered glass and richer wood bending/shear/grain laws after core accuracy gates.",
+      "evidence_status": "Spring edits reset cached impulses; bounded endpoint damage trials and complete outer rollback pass. Glass/oak/tissue refinement remains unconverged; the full mechanical work ledger is open.",
       "retained_requirements": [
         "M01",
         "M02",
@@ -166,7 +166,7 @@
         "M29",
         "M30"
       ],
-      "evidence_ref": "docs/contact-fracture-checkpoint.md"
+      "evidence_ref": "docs/additional-physics-checkpoint.md"
     },
     {
       "id": "G03",
@@ -195,8 +195,8 @@
           "law envelope limits fire/weakening claims"
         ]
       },
-      "next_action": "Add cold-neighbor activation and bounded boundary/frontier error accounting without resetting accepted state.",
-      "evidence_status": "Explicit conservative same-clock region joining and history/phase preservation tests passed. Frontier gate remains open.",
+      "next_action": "Bound omitted boundary heat error, refine frontier/time/space thresholds, then add conservative cooling/demotion and cross-clock transfers.",
+      "evidence_status": "Opt-in bounded cold-neighbor frontier, transfer ledgers, reactive/phase history, strict commands and grow-first versus fully preactivated oracles pass; global omitted-flux error is not bounded.",
       "retained_requirements": [
         "M05",
         "M27",
@@ -207,7 +207,7 @@
         "P05",
         "P10"
       ],
-      "evidence_ref": "docs/execution-checkpoint.md"
+      "evidence_ref": "docs/additional-physics-checkpoint.md"
     },
     {
       "id": "G04",
@@ -286,8 +286,8 @@
           "no world-scale realtime claim comes from a small fixture"
         ]
       },
-      "next_action": "Qualify contact-distance refinement and bounded active detail/rigid condensation with conservative transfers, wake criteria, backlog and error gates; keep every comparison material.",
-      "evidence_status": "Explicit capacity admission, temporary arena reservation and callback diagnostics implemented; 537-cell scene completes 3 s in about 14.6 s headlessly. Dense-world realtime remains failed.",
+      "next_action": "Measure active-frontier growth/churn and demotion error; retain mixed mechanical-load and conservative rigid-to-local transition gates.",
+      "evidence_status": "4/256/4096 chunks retain identical 336-active-cell local physics at 10 s across 3 repeats; headless thermal p95 about 0.36-0.37 ms. Tight 1000-operation budget reports backlog. No full game-world mechanical realtime claim.",
       "retained_requirements": [
         "M27",
         "M29",
@@ -297,7 +297,7 @@
         "P04",
         "P10"
       ],
-      "evidence_ref": "docs/contact-fracture-checkpoint.md"
+      "evidence_ref": "docs/additional-physics-checkpoint.md"
     },
     {
       "id": "G06",
@@ -348,7 +348,7 @@
   ],
   "latest_execution": {
     "date": "2026-09-06",
-    "full_suites_passed": 49,
+    "full_suites_passed": 52,
     "overall_complete": false,
     "active": [
       "G01",
@@ -360,7 +360,7 @@
       "G04",
       "G06"
     ],
-    "evidence": "docs/contact-fracture-checkpoint.md",
+    "evidence": "docs/additional-physics-checkpoint.md",
     "milestones_completed": [
       "blocky-live-skins",
       "partial-cut-lips",
@@ -368,9 +368,13 @@
       "bounded-affine-phase-kernel",
       "comparative-phase-world-budget-measurement",
       "explicit-contact-resource-admission",
-      "prestep-spring-reaction-axis-correction"
+      "prestep-spring-reaction-axis-correction",
+      "bounded-cold-neighbor-thermal-frontier",
+      "cold-to-active-energy-transfer-ledger",
+      "spring-configuration-cache-invalidation",
+      "transactional-endpoint-damage-trials"
     ],
-    "native_live_verification": "Blocked this session: Windows automation could not read foreground process. Studio launch and offline renders verified; no new live timing claim."
+    "native_live_verification": "Verified native heat-lab pause/reset/release/save, matched initial temperatures, 30.71 s evolution and further ice melting; mechanical Release observed. Fracture realism remains failed."
   },
   "dependency_policy": "Dependencies name shared contracts and final acceptance gates; independent prototype slices may proceed in parallel. An active dependent goal does not certify its prerequisite complete."
 }

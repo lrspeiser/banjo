@@ -1,5 +1,12 @@
 # Execution goals
 
+**Additional physics slice:** G03 now has opt-in bounded cold-neighbor activation,
+state/energy transfer ledgers and comparative phase/conduction oracles. G02 now
+has endpoint damage refinement, complete tick rollback and spring cache
+invalidation. G05 gains repeated frontier storage/load measurements. All 52
+regression suites pass; none of the six full goals is complete. See the
+[checkpoint and next gates](additional-physics-checkpoint.md).
+
 **Contact and reaction slice:** G02 now has the corrected pre-step reaction axis and a transverse oracle. G05 now has explicit contact budgets, initial-density admission, callback metrics and a 114/486/537-cell comparative matrix. Full G02/G05 gates remain active; no overall goal is complete. See the [checkpoint and evidence](contact-fracture-checkpoint.md).
 
 **Generated-scene verification:** [API-to-studio validation](generated-physics-validation.md) exercises G02 and G05 with analytical controls, repeated material comparisons and normal-speed frame/backlog measurements. It adds evidence to the existing goals without marking any full goal complete.
@@ -34,7 +41,7 @@ The authoritative retained requirements are the 40 rows in [`docs/mechanics-scor
 - **Prototype gate:** a declared material law runs for glass, oak, iron, and soft tissue with explicit unsupported behavior; equal-and-opposite reactions, contact work, damage/fracture work, and material history are observable; cutting changes accepted matter/topology and produces no prescribed debris motion; the current axial/network path remains labeled experimental.
 - **Complete gate:** refinement in timestep, iterations, spatial resolution, and contact geometry bounds force, reaction, newly created area, dissipated work, topology envelope, momentum, angular momentum, and named energy residuals for glass/oak/iron under matched experiments; oak has directional/orthotropic evidence rather than a brittle preset; iron has calibrated plastic/yield evidence; soft-tissue cutting has finite-strain/cohesive evidence; mass-ratio, asymmetric, support, and third-body cases pass declared tolerances. A visually plausible crack alone never passes.
 
-**Next action/evidence:** define paired glass/oak/iron coupons and a soft-tissue cut fixture, then compare the candidate local solvers with the CPU reference across time and space refinement. Record per-material results, units, timestep/resolution, tolerances, residuals, and unsupported laws in the scorecard. No strength adjustment is accepted solely to make a fixture pass.
+**Next action/evidence:** transactional endpoint damage trials and a neutral spring-update oracle now pass. Comparative panel and tissue runs still differ under temporal refinement. Add an embedded state/work estimator for missed peaks and compare candidate local solvers across time, space and contact refinement. Record per-material results, units, tolerances, residuals and unsupported laws. No strength adjustment is accepted solely to make a fixture pass.
 
 **Current G02 evidence:** [The material showcase](material-showcase.md) measures matched panel impacts and the existing tomato proxy with unchanged material laws. No panel or tomato fragment separates; timestep sensitivity and absent glass fracture remain failed physical gates. Next compare contact reactions, work and topology under time/iteration/space refinement.
 
@@ -51,7 +58,7 @@ The authoritative retained requirements are the 40 rows in [`docs/mechanics-scor
 
 **Deferred boundary:** smoke, airflow, pressure/advection, and full fluid dynamics are deferred. They are not required for this goal’s initial thermal frontier and cannot be implied by a heat/reaction demo.
 
-**Next action/evidence:** explicit same-clock neighboring-region joins now pass comparative, phase/history and rejection tests. Next add cold-neighbor activation, boundary error accounting, bounded wake/demotion and cross-clock interface work. The explicit join does not pass the automatic frontier gate.
+**Next action/evidence:** opt-in bounded cold-neighbor activation now passes comparative, phase/history, strict-command and grow-first/preactivated oracle tests. Next bound omitted boundary error, refine frontier/time/space decisions and add conservative cooling/demotion and cross-clock work. Instantaneous omitted-flux estimates are not the required global error bound.
 
 ## 4. G04 — Unified state/energy and bounded authoring API
 
@@ -77,7 +84,7 @@ The authoritative retained requirements are the 40 rows in [`docs/mechanics-scor
 - **Prototype gate:** benchmark payload storage separately from allocator overhead; report p50/p95/p99 physics time, active count, backlog, active-set age, residuals, lag, and memory for fixed stored volume/fixed active count and growing active count; optimize only measured kernels; rejected or superseded jobs cannot publish; cold storage is not fully simulated.
 - **Complete gate:** declared scale/load matrices meet the repository’s measured budgets or report bounded backlog and preserved last accepted state; results include at least approximately 1M and 16M stored voxels with fixed active count, then increasing active count, plus wake churn once activation exists; numerical outputs and conservation residuals match the CPU reference within declared tolerances; no world-scale realtime claim is made from a small fixture, and no speed is invented.
 
-**Next action/evidence:** the phase kernel and repeated thermal/phase load matrix are measured in the checkpoint, including the 64-versus-128 job allowance with the same wall/work budget. Next measure wake churn, stale-result handling and mixed mechanical loads; qualify their error, active-set age and p95/p99 together. Keep optimization separate from law changes.
+**Next action/evidence:** repeated frontier measurements hold identical local physics from 16384 to 16777216 stored voxels with 336 active cells and about 0.36-0.37 ms headless p95. Tight budgets report backlog. Next measure growth/churn, demotion error and mixed mechanical loads; qualify their error, active-set age and p95/p99 together. See the [checkpoint](additional-physics-checkpoint.md).
 
 ## 6. G06 — Snapshot, publishing, and customer conformance
 

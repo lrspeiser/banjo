@@ -183,7 +183,10 @@ int main(int argc,char **argv){try{
             DrawText(TextFormat("Step p95 %.3f ms | %u bodies",report["performance"].value("step_p95_ms",0.),unsigned(instances.size())),1000,610,15,RAYWHITE);
             DrawText(view==3?"X-ray bonds: red failed / gold soft":view==2?"Bonds: red failed / gold softened":view==1?"Spheres = actual cell contact proxies":"Gold = newly exposed failed faces",1000,635,15,{164,183,197,255});
             DrawText(TextFormat("Live frame p95 %.2f ms | lag %.1f ms",percentile(liveFrames,.95),peakLag*1000),1000,660,14,{230,179,114,255});
-            DrawText("Experimental; realism gates remain open",1000,682,14,{230,179,114,255});
+            if(report.contains("damage_integration")&&report["damage_integration"].value("mode",std::string())=="adaptive-damage-trials"){
+                const auto &integration=report["damage_integration"];
+                DrawText(TextFormat("Damage trials: depth %u | limited %llu",integration.value("deepest_trial",0u),static_cast<unsigned long long>(integration.value("unresolved_substeps",std::uint64_t{}))),1000,682,14,{230,179,114,255});
+            }else DrawText("Experimental; realism gates remain open",1000,682,14,{230,179,114,255});
         }
         if(button(710,"Export full report")){const std::string path=!liveReport.empty()?liveReport:networkLab?"build/runtime-v2-report.json":"build/runtime-v1-report.json";notice=exportReport(path)?"Saved "+path:"Report write failed; check path and retry";}
         if(button(752,"Save screenshot")){rlDrawRenderBatchActive();Image image=LoadImageFromScreen();ExportImage(image,networkLab?"build/runtime-v2-lab.png":"build/runtime-v1-lab.png");UnloadImage(image);notice=networkLab?"Saved build/runtime-v2-lab.png":"Saved build/runtime-v1-lab.png";}

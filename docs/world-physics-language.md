@@ -74,6 +74,50 @@ A heater experiment may add `heaters: [{"cell": {"chunk": [0,0,0], "local": [0,0
 
 ## Capability boundary
 
+### Bounded heat-frontier activation
+
+A region may now opt into cold-neighbor activation with this additional field:
+
+```json
+"frontier": {
+  "activation_temperature_difference_k": 5,
+  "maximum_face_probes_per_step": 256,
+  "maximum_cells_added_per_step": 8,
+  "maximum_pending_cells": 128
+}
+```
+
+All four fields are required when `frontier` is present. The temperature
+difference is finite and in [0, 10000] K; probe, addition and pending limits
+are integers in [1, 3072], [1, 512], and [1, 512]. Omission preserves the
+original insulated-region behavior. The native equivalent is
+`enableThermalFrontier(region_id, policy, expected_region_time_s)`; stale or
+backlogged commands, duplicate policy declarations and unknown fields reject.
+
+Each scheduled job inspects a bounded rotating subset of six-neighbor faces,
+including chunk boundaries, and queues cold cells whose absolute temperature
+difference meets the declared threshold. A successful job moves stored mass,
+enthalpy, fuel, oxygen and chemical energy into the same-clock active region,
+adds physical face conductances and advances the enlarged island atomically.
+This is a transfer from cold storage, not external heat. The reported
+`frontier.cold_to_active` ledger records it separately from heater work.
+Existing 512-cell per-region and 32768-cell global active limits still apply.
+
+`region.frontier` reports inspected/uninspected faces, additions, pending
+candidates, oldest candidate age, blocked reasons and instantaneous omitted
+heat-rate estimates. Uninspected, below-threshold, deferred and other-region
+faces remain insulated approximations. Those estimates are **not a global
+heat-error bound**. Other active regions are never implicitly joined or
+exchanged with; explicit joins currently reject frontier-enabled regions.
+There is no automatic demotion. Work counts are bounded logical cell/face
+operations, not CPU instruction counts; wall deadlines are checked between
+atomic jobs and can overshoot by one job. The next gates are boundary-error
+control, graph/timestep refinement and conservative demotion/cross-clock work.
+
+Run `assets/world-v1/thermal-frontier.json` in `banjo_world_lab` for matched
+glass, oak and iron hot seeds plus water/ice enthalpy. See the
+[implementation and measurements](additional-physics-checkpoint.md).
+
 The owner-approved [physical-cell and skin contract](object-skin-contract.md) adds a planned derived render surface, with new material interiors after damage. Skin topology, material-coordinate bindings and mesh revisions are not currently accepted fields of `banjo-thermal-world-1`; unknown fields continue to reject. A future shared authoring ABI must distinguish cosmetic appearance from physical material layers and preserve physical state when rebuilding a skin.
 
 This document describes the current loader and thermal foundation, not all-world implementation or measured performance. Unsupported declarations must reject with a capability error or remain outside the package schema. Consult [`world-runtime-plan.md`](world-runtime-plan.md) for staged solver selection, conservation gates, bounded sparse execution, and deferred smoke/full-fluid work. No declaration, material name, cache, or LLM-generated text may claim calibrated glass, wood grain, tissue, fire, fluid flow, or realtime behavior without the corresponding reference test and convergence evidence.

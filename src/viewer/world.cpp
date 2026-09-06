@@ -41,17 +41,21 @@ int main(int argc,char **argv){try{
         BeginDrawing();ClearBackground(background);
         DrawText("BANJO  /  WORLD FOUNDATIONS",30,24,28,ink);
         DrawText(TextFormat("%llu stored voxels   |   %u active thermal cells   |   0 physics bodies",static_cast<unsigned long long>(world->representedVoxelCount()),unsigned(world->activeCellCount())),30,64,20,muted);
-        DrawText(packagePath.empty()?"8 x 8 x 1 cm coupons; center 650 K. Equal temperatures require material-dependent heater work.":"Declared energy/phase coupons. Water retains its identity through melting and freezing; cyan bars show liquid.",30,99,18,ink);
+        const bool frontier=std::any_of(report["regions"].begin(),report["regions"].end(),[](const auto &r){return r.contains("frontier")&&r["frontier"].value("enabled",false);});
+        DrawText(frontier?"HEAT FRONTIER  /  cold neighbors wake as heat reaches them  /  z = 0 slice of the 3D active volume":packagePath.empty()?"8 x 8 x 1 cm coupons; center 650 K. Equal temperatures require material-dependent heater work.":"Declared energy/phase coupons. Water retains its identity through melting and freezing; cyan bars show liquid.",30,99,18,ink);
         const auto cells=world->activeCells();
         for(unsigned coupon=0;coupon<std::min(4U,unsigned(report["regions"].size()));++coupon){
             const int x=30+int(coupon)*310,y=143;DrawRectangleRounded({float(x),float(y),290,470},.03f,4,panel);
             const auto &r=report["regions"][coupon];
             auto name=r["material"].get<std::string>();if(name.size()>24)name=name.substr(0,21)+"...";
             DrawText(name.c_str(),x+14,y+16,20,ink);
-            for(auto &cell:cells)if(cell.region==r["id"].get<unsigned>()&&cell.address.x<8&&cell.address.y<8&&cell.address.z==0){const int cx=x+17+int(cell.address.x)*32,cy=y+59+int(cell.address.y)*32;
+            const int width=frontier?16:8,pixel=256/width;
+            for(int cy=0;cy<width;++cy)for(int cx=0;cx<width;++cx)DrawRectangle(x+17+cx*pixel,y+59+cy*pixel,pixel-2,pixel-2,{31,43,54,255});
+            for(auto &cell:cells)if(cell.region==r["id"].get<unsigned>()&&cell.address.x<unsigned(width)&&cell.address.y<unsigned(width)&&cell.address.z==0){const int cx=x+17+int(cell.address.x)*pixel,cy=y+59+int(cell.address.y)*pixel;
                 const Color color=cell.phase_change?Color{static_cast<unsigned char>(210-160*cell.liquid_fraction),static_cast<unsigned char>(235-65*cell.liquid_fraction),255,255}:heatColor(cell.temperature_k);
-                DrawRectangle(cx,cy,30,30,color);if(cell.phase_change){DrawRectangle(cx,cy+24,30,5,{90,100,120,255});DrawRectangle(cx,cy+24,int(30*cell.liquid_fraction),5,SKYBLUE);}}
-            DrawText(TextFormat("Peak %.1f K",r["temperature_max_k"].get<double>()),x+16,y+334,20,ink);
+                DrawRectangle(cx,cy,pixel-2,pixel-2,color);if(cell.phase_change){DrawRectangle(cx,cy+pixel-7,pixel-2,5,{90,100,120,255});DrawRectangle(cx,cy+pixel-7,int((pixel-2)*cell.liquid_fraction),5,SKYBLUE);}}
+            DrawText(TextFormat("Peak %.1f K",r["temperature_max_k"].get<double>()),x+16,y+322,20,ink);
+            if(frontier)DrawText(TextFormat("Active %u / 512 | queued %u",r["cells"].get<unsigned>(),r["frontier"].value("pending_candidates",0u)),x+16,y+347,16,ink);
             DrawText(TextFormat("Fuel %.3f g / liquid %.3f g",r["fuel_kg"].get<double>()*1000,r["liquid_mass_kg"].get<double>()*1000),x+16,y+367,16,muted);
             DrawText(TextFormat("Reaction heat %.1f J",r["reaction_heat_j"].get<double>()),x+16,y+397,18,muted);
             DrawText(TextFormat("Heater work %.1f J",r["external_work_j"].get<double>()),x+16,y+427,18,muted);
@@ -61,8 +65,8 @@ int main(int argc,char **argv){try{
             running?"RUNNING":"PAUSED",report["requested_time_s"].get<double>(),p["advance_p95_ms"].get<double>(),b["regions_late"].get<unsigned>(),pendingElapsed),30,637,20,ink);
         DrawText(TextFormat("Heat + chemical energy residual: %.3g J  |  SPACE pause   R reset   S save evidence",report["combined_active_energy_residual_j"].get<double>()),30,672,18,muted);
         const std::string error=b["error"].get<std::string>();
-        DrawText(error.empty()?"Insulated regions; illustrative constants. Named chemical + thermal/latent energy. No flow or mechanical coupling.":error.c_str(),30,715,18,error.empty()?ink:RED);
-        DrawText("Cold voxels are stored, not fully simulated. Glass impact/contact correction is the next mechanical milestone.",30,745,18,muted);
+        DrawText(error.empty()?(frontier?"Dark cells remain stored. Queued or uninspected boundaries are insulated approximations, not an error bound.":"Insulated regions; illustrative constants. Named chemical + thermal/latent energy. No flow or mechanical coupling."):error.c_str(),30,715,18,error.empty()?ink:RED);
+        DrawText(frontier?"Bounded 3D activation; finite fuel and oxygen. No airflow, fluid motion, thermal weakening or automatic cooling demotion.":"Cold voxels are stored, not fully simulated. Contact, fracture and thermal coupling remain separate accuracy gates.",30,745,17,muted);
         EndDrawing();++frame;
         if(capture&&frame==600){
             Image screenshot=LoadImageFromScreen();const bool saved=ExportImage(screenshot,capturePath.c_str());UnloadImage(screenshot);

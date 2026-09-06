@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <chrono>
+#include <functional>
 #include <map>
 #include <numeric>
 #include <set>
@@ -58,6 +59,17 @@ struct NetworkWorld::Impl {
     double time{},elastic{},fracture{},plastic{},initial_energy{},maximum_strain{};
     double total_spring_impulse{},unreleased{},maximum_extension_discrepancy{},dt{};
     ResolutionBudget resolution;
+    struct DamageIntegration {
+        bool enabled{},reject_on_limit{true};
+        unsigned maximum_depth{4};
+        double maximum_damage_increment{.05},maximum_plastic_strain_increment{.002},maximum_brittle_opening_overshoot{.05};
+        std::uint64_t solver_trials{},rejected_trials{},terminal_limit_rejections{},accepted_substeps{},unresolved_substeps{},rolled_back_ticks{},discarded_substeps{};
+        unsigned deepest_trial{};
+        double smallest_accepted_step{},accepted_brittle_overshoot_j{};
+        double accepted_maximum_damage_increment{},accepted_maximum_plastic_strain_increment{},accepted_maximum_brittle_opening_overshoot{};
+    } integration;
+    void singleStep(double step);
+    void adaptiveStep(double step);
     mutable unsigned skin_rebuilds{},skin_queries{},skin_faces{},skin_fracture_faces{},skin_triangles{},skin_rank_fallbacks{};
     mutable double skin_last_ms{},skin_max_ms{};
     std::vector<unsigned> components() const {
@@ -73,13 +85,13 @@ NetworkWorld::~NetworkWorld()=default;
 
 std::unique_ptr<NetworkWorld> NetworkWorld::load(const std::string &text){
     require(text.size()<=4194304,"network package byte budget");auto source=json::parse(text);
-    fields(source,{"package_version","physics_abi","name","units","backend","required_capabilities","fixed_dt_s","max_steps_per_call","gravity_m_s2","ground","materials","objects","solver_iterations","temporal_policy","contact_budget"});
+    fields(source,{"package_version","physics_abi","name","units","backend","required_capabilities","fixed_dt_s","max_steps_per_call","gravity_m_s2","ground","materials","objects","solver_iterations","temporal_policy","contact_budget","damage_integration"});
     const auto temporalPolicy=source.value("temporal_policy",std::string("diagnose"));
     require(temporalPolicy=="diagnose"||temporalPolicy=="require-resolved","unknown temporal policy");
     require(source.at("package_version")==2&&source.at("physics_abi")=="banjo-network-2"&&source.at("backend")=="material-network-v2"&&source.at("units")=="SI","unsupported network ABI or units");
     require(source.at("name").is_string()&&source["name"].get<std::string>().size()<=120,"invalid network name");
     scalar(source.at("fixed_dt_s"),1./4800,1./240);integer(source.at("max_steps_per_call"),1,240);
-    const std::set<std::string> capabilities{"cell-deformation","cohesive-damage","axial-plasticity","directional-lattice","sphere","box","ellipsoid","wedge","finite-ground","gravity","contact","render-instances","blocky-cell-skins"};
+    const std::set<std::string> capabilities{"cell-deformation","cohesive-damage","axial-plasticity","directional-lattice","sphere","box","ellipsoid","wedge","finite-ground","gravity","contact","render-instances","blocky-cell-skins","adaptive-damage-integration"};
     require(source.at("required_capabilities").is_array()&&source["required_capabilities"].size()<=16,"invalid network capabilities");
     for(auto &v:source["required_capabilities"])require(v.is_string()&&capabilities.contains(v.get<std::string>()),"unsupported network capability");
     unsigned pairs=65536,constraints=32768;
@@ -87,6 +99,18 @@ std::unique_ptr<NetworkWorld> NetworkWorld::load(const std::string &text){
         pairs=integer(budget.at("body_pairs"),128,262144);constraints=integer(budget.at("constraints"),64,65536);require(pairs>=constraints,"body-pair budget must cover contact-constraint budget");}
     auto result=std::unique_ptr<NetworkWorld>(new NetworkWorld(pairs,constraints));auto &w=*result->impl_;
     w.rigid.setImpactObservationsEnabled(false);
+    if(source.contains("damage_integration")){
+        const auto &policy=source["damage_integration"];
+        fields(policy,{"maximum_depth","maximum_damage_increment","maximum_plastic_strain_increment","maximum_brittle_opening_overshoot","on_limit"});
+        w.integration.enabled=true;
+        w.integration.maximum_depth=integer(policy.value("maximum_depth",json(4)),0,8);
+        w.integration.maximum_damage_increment=scalar(policy.value("maximum_damage_increment",json(.05)),1e-6,1);
+        w.integration.maximum_plastic_strain_increment=scalar(policy.value("maximum_plastic_strain_increment",json(.002)),1e-8,.1);
+        w.integration.maximum_brittle_opening_overshoot=scalar(policy.value("maximum_brittle_opening_overshoot",json(.05)),1e-8,1);
+        const auto limit=policy.value("on_limit",std::string("reject"));
+        require(limit=="report"||limit=="reject","unknown damage integration limit policy");
+        w.integration.reject_on_limit=limit=="reject";
+    }
     w.dt=source["fixed_dt_s"].get<double>();
     w.gravity=vector(source.at("gravity_m_s2"),-30,30);w.rigid.setGravity(w.gravity);
     w.rigid.setContactSolverIterations(integer(source.value("solver_iterations",json(24)),4,128),4);
@@ -210,13 +234,17 @@ std::unique_ptr<NetworkWorld> NetworkWorld::load(const std::string &text){
 }
 void NetworkWorld::step(double dt){
     auto &w=*impl_;require(std::isfinite(dt)&&std::abs(dt-w.dt)<1e-15,"network step must match admitted fixed timestep");
+    if(w.integration.enabled)w.adaptiveStep(dt);else w.singleStep(dt);
+}
+void NetworkWorld::Impl::singleStep(double step_dt){
+    auto &w=*this;
     // Jolt forms each DistanceConstraint axis from the positions at the start
     // of the step. Keep that axis for reaction decomposition: using the
     // rotated post-step axis would turn transverse velocity into fabricated
     // axial damping, and therefore fabricated elastic compression.
     for(auto &b:w.bonds)if(b.live)b.prestep_axis=normalized(
         w.states[b.b].center_of_mass_world_m-w.states[b.a].center_of_mass_world_m);
-    w.rigid.step(dt);w.time+=dt;w.refresh();w.elastic=0;w.damaged=0;
+    w.rigid.step(step_dt);w.time+=step_dt;w.refresh();w.elastic=0;w.damaged=0;
     for(auto &b:w.bonds){
         if(!b.live)continue;
         auto &object=w.objects[b.object];const auto &law=w.materials[object.material].law;
@@ -229,7 +257,7 @@ void NetworkWorld::step(double dt){
         // positional residuals must not masquerade as enormous elastic energy
         // in very stiff glass/metal networks. This remains an averaged-step
         // reaction model; unresolved wave peaks require temporal refinement.
-        const double elasticForce=-impulse/dt-b.current_damping*rate;
+        const double elasticForce=-impulse/step_dt-b.current_damping*rate;
         const double extension=elasticForce/b.current_stiffness+b.history.plastic_extension_m;
         w.maximum_extension_discrepancy=std::max(w.maximum_extension_discrepancy,std::abs(extension-geometricExtension));
         w.maximum_strain=std::max(w.maximum_strain,std::abs(extension/b.rest));
@@ -254,6 +282,115 @@ void NetworkWorld::step(double dt){
         }
     }
     (void)w.rigid.drainImpacts();
+}
+void NetworkWorld::Impl::adaptiveStep(double step){
+    auto &w=*this;
+    // The outer Jolt transaction covers contacts, spring settings/removals and
+    // constraint ordering. Keep the corresponding authoritative material state
+    // here; no trial may publish damage, work, lineage, timestamps or events.
+    const auto savedBonds=w.bonds;const auto savedStates=w.states;
+    struct ObjectProgress {double damage,fracture;std::uint64_t revision;};
+    std::vector<ObjectProgress> savedObjects;for(const auto &o:w.objects)savedObjects.push_back({o.first_damage,o.first_break,o.skin_revision});
+    const auto savedEvents=w.events.size();
+    const auto savedTime=w.time,savedElastic=w.elastic,savedFracture=w.fracture,savedPlastic=w.plastic;
+    const auto savedStrain=w.maximum_strain,savedImpulse=w.total_spring_impulse,savedUnreleased=w.unreleased,savedDiscrepancy=w.maximum_extension_discrepancy;
+    const auto savedBroken=w.broken,savedDamaged=w.damaged;
+    auto restore=[&]{
+        w.bonds=savedBonds;w.states=savedStates;
+        for(unsigned i=0;i<w.objects.size();++i){w.objects[i].first_damage=savedObjects[i].damage;w.objects[i].first_break=savedObjects[i].fracture;w.objects[i].skin_revision=savedObjects[i].revision;}
+        w.events.erase(w.events.begin()+std::ptrdiff_t(savedEvents),w.events.end());
+        w.time=savedTime;w.elastic=savedElastic;w.fracture=savedFracture;w.plastic=savedPlastic;
+        w.maximum_strain=savedStrain;w.total_spring_impulse=savedImpulse;w.unreleased=savedUnreleased;w.maximum_extension_discrepancy=savedDiscrepancy;
+        w.broken=savedBroken;w.damaged=savedDamaged;
+    };
+    struct PendingBond {unsigned index;NetworkBondUpdate update;double extension,discrepancy,impulse,brittle_overshoot_j;};
+    struct Candidate {std::vector<RigidSnapshot> states;std::vector<PendingBond> bonds;bool exceeds{};double damage_increment{},plastic_increment{},brittle_overshoot{};};
+    struct TrialStatistics {unsigned trials{},rejected{},terminal_rejections{},accepted{},unresolved{},depth{};double minimum_step{},brittle_overshoot_j{},damage_increment{},plastic_increment{},brittle_overshoot{};} stats;
+    auto preview=[&](double dt){
+        std::vector<Vec3> axes;axes.reserve(w.bonds.size());
+        for(const auto &b:w.bonds)axes.push_back(b.live?normalized(w.states[b.b].center_of_mass_world_m-w.states[b.a].center_of_mass_world_m):Vec3{});
+        w.rigid.step(dt);Candidate candidate;candidate.states.reserve(w.nodes.size());candidate.bonds.reserve(w.bonds.size());
+        for(const auto &n:w.nodes)candidate.states.push_back(w.rigid.snapshot(n.body));
+        for(unsigned i=0;i<w.bonds.size();++i){
+            const auto &b=w.bonds[i];if(!b.live)continue;
+            const auto &law=w.materials[w.objects[b.object].material].law;
+            const auto &a=candidate.states[b.a],&c=candidate.states[b.b];
+            const double rate=dot(c.linear_velocity_m_s-a.linear_velocity_m_s,axes[i]);
+            const double impulse=w.rigid.distanceSpringImpulse(b.spring);
+            const double extension=(-impulse/dt-b.current_damping*rate)/b.current_stiffness+b.history.plastic_extension_m;
+            const auto update=advanceNetworkBond(law,b.parameters,b.history,extension,b.rest);
+            double overshoot=0,overshootWork=0;
+            if(update.failed&&law.failure_law==NetworkFailureLaw::Brittle){
+                // The brittle law requires BOTH strength and fracture work.
+                // Threshold energy above Gc is not integration overshoot.
+                const double threshold=std::max(b.parameters.strength_n/b.parameters.stiffness_n_m,
+                    std::sqrt(2*b.parameters.fracture_work_j/b.parameters.stiffness_n_m));
+                const double opening=std::max(0.,extension-update.history.plastic_extension_m);
+                overshoot=std::max(0.,opening/threshold-1.);
+                overshootWork=std::max(0.,.5*b.parameters.stiffness_n_m*(opening*opening-threshold*threshold));
+            }
+            candidate.exceeds|=(law.failure_law==NetworkFailureLaw::Cohesive&&update.history.damage-b.history.damage>w.integration.maximum_damage_increment)||
+                std::abs(update.history.plastic_extension_m-b.history.plastic_extension_m)/b.rest>w.integration.maximum_plastic_strain_increment||
+                overshoot>w.integration.maximum_brittle_opening_overshoot;
+            if(law.failure_law==NetworkFailureLaw::Cohesive)candidate.damage_increment=std::max(candidate.damage_increment,update.history.damage-b.history.damage);
+            candidate.plastic_increment=std::max(candidate.plastic_increment,std::abs(update.history.plastic_extension_m-b.history.plastic_extension_m)/b.rest);
+            candidate.brittle_overshoot=std::max(candidate.brittle_overshoot,overshoot);
+            candidate.bonds.push_back({i,update,extension,std::abs(extension-(length(c.center_of_mass_world_m-a.center_of_mass_world_m)-b.rest)),std::abs(impulse),overshootWork});
+        }
+        return candidate;
+    };
+    auto commit=[&](Candidate &&candidate,double dt){
+        stats.damage_increment=std::max(stats.damage_increment,candidate.damage_increment);
+        stats.plastic_increment=std::max(stats.plastic_increment,candidate.plastic_increment);
+        stats.brittle_overshoot=std::max(stats.brittle_overshoot,candidate.brittle_overshoot);
+        w.states=std::move(candidate.states);w.time+=dt;w.elastic=0;w.damaged=0;
+        for(const auto &pending:candidate.bonds){
+            auto &b=w.bonds[pending.index];auto &object=w.objects[b.object];const auto &update=pending.update;
+            const bool changed=update.history.damage!=b.history.damage||update.history.plastic_extension_m!=b.history.plastic_extension_m;
+            w.maximum_extension_discrepancy=std::max(w.maximum_extension_discrepancy,pending.discrepancy);
+            w.maximum_strain=std::max(w.maximum_strain,std::abs(pending.extension/b.rest));w.total_spring_impulse+=pending.impulse;
+            w.fracture+=update.fracture_increment_j;w.plastic+=update.plastic_increment_j;w.elastic+=update.elastic_energy_j;w.unreleased+=update.unreleased_energy_j;
+            stats.brittle_overshoot_j+=pending.brittle_overshoot_j;
+            if(update.history.damage>0&&object.first_damage<0)object.first_damage=w.time;
+            b.history=update.history;if(b.history.damage>0)++w.damaged;
+            if(update.failed){
+                b.live=false;++w.broken;++object.skin_revision;w.rigid.removeDistanceSpring(b.spring);if(object.first_break<0)object.first_break=w.time;
+                if(w.events.size()<20000)w.events.push_back({{"time_s",w.time},{"object_id",object.id},{"a",b.a},{"b",b.b},{"position_m",vec((w.states[b.a].center_of_mass_world_m+w.states[b.b].center_of_mass_world_m)/2)},{"fracture_work_j",b.history.fracture_dissipation_j}});
+            }else{
+                const double stiffness=std::max(update.stiffness_n_m,1e-8),rest=b.rest+b.history.plastic_extension_m;
+                require(rest>=1e-6,"plastic cell collapse exceeded model validity");
+                const double damping=b.damping*std::sqrt(stiffness/b.parameters.stiffness_n_m);
+                if(changed||stiffness!=b.current_stiffness)w.rigid.updateDistanceSpring(b.spring,rest,stiffness,damping);
+                b.current_stiffness=stiffness;b.current_damping=damping;
+            }
+        }
+        (void)w.rigid.drainImpacts();++stats.accepted;
+        stats.minimum_step=stats.minimum_step==0?dt:std::min(stats.minimum_step,dt);
+    };
+    std::function<void(double,unsigned)> advance=[&](double dt,unsigned depth){
+        ++stats.trials;stats.depth=std::max(stats.depth,depth);std::optional<Candidate> candidate;
+        const bool accepted=w.rigid.runSpringTrial([&]{
+            candidate=preview(dt);
+            if(candidate->exceeds){
+                if(depth<w.integration.maximum_depth)return false;
+                if(w.integration.reject_on_limit){++stats.terminal_rejections;throw std::runtime_error("damage integration limit exceeded; complete outer tick rolled back");}
+                ++stats.unresolved;
+            }
+            return true;
+        });
+        if(accepted)commit(std::move(*candidate),dt);
+        else{++stats.rejected;candidate.reset();advance(dt/2,depth+1);advance(dt/2,depth+1);}
+    };
+    auto recordAttempts=[&]{w.integration.solver_trials+=stats.trials;w.integration.rejected_trials+=stats.rejected;w.integration.terminal_limit_rejections+=stats.terminal_rejections;w.integration.deepest_trial=std::max(w.integration.deepest_trial,stats.depth);};
+    try{(void)w.rigid.runSpringTrial([&]{advance(step,0);return true;});}
+    catch(...){restore();recordAttempts();++w.integration.rolled_back_ticks;w.integration.discarded_substeps+=stats.accepted;throw;}
+    // Public time stays on its authored clock; substeps share that interval.
+    w.time=savedTime+step;recordAttempts();w.integration.accepted_substeps+=stats.accepted;
+    w.integration.unresolved_substeps+=stats.unresolved;w.integration.accepted_brittle_overshoot_j+=stats.brittle_overshoot_j;
+    w.integration.accepted_maximum_damage_increment=std::max(w.integration.accepted_maximum_damage_increment,stats.damage_increment);
+    w.integration.accepted_maximum_plastic_strain_increment=std::max(w.integration.accepted_maximum_plastic_strain_increment,stats.plastic_increment);
+    w.integration.accepted_maximum_brittle_opening_overshoot=std::max(w.integration.accepted_maximum_brittle_opening_overshoot,stats.brittle_overshoot);
+    if(stats.minimum_step>0)w.integration.smallest_accepted_step=w.integration.smallest_accepted_step==0?stats.minimum_step:std::min(w.integration.smallest_accepted_step,stats.minimum_step);
 }
 std::vector<PlatformInstance> NetworkWorld::renderInstances() const {
     const auto &w=*impl_;auto groups=w.components();std::vector<PlatformInstance> result;result.reserve(w.nodes.size());
@@ -330,6 +467,15 @@ std::string NetworkWorld::reportJson() const {
     const auto mechanics=w.rigid.mechanicalTotals(w.gravity);
     const auto contacts=w.rigid.contactDiagnostics();
     return json{{"model","material-network-v2"},{"physical_response_validated",false},
+        {"damage_integration",{{"mode",w.integration.enabled?"adaptive-damage-trials":"single-step"},{"maximum_depth",w.integration.maximum_depth},
+            {"maximum_damage_increment",w.integration.maximum_damage_increment},{"maximum_plastic_strain_increment",w.integration.maximum_plastic_strain_increment},{"maximum_brittle_opening_overshoot",w.integration.maximum_brittle_opening_overshoot},
+            {"on_limit",w.integration.reject_on_limit?"reject":"report"},{"maximum_solver_trials_per_tick",w.integration.enabled?((1u<<(w.integration.maximum_depth+1))-1):1u},
+            {"solver_trials",w.integration.solver_trials},{"rejected_trials",w.integration.rejected_trials},{"accepted_substeps",w.integration.accepted_substeps},{"unresolved_substeps",w.integration.unresolved_substeps},
+            {"rejected_trials_meaning","bisected coarse trials"},{"terminal_limit_rejections",w.integration.terminal_limit_rejections},
+            {"rolled_back_ticks",w.integration.rolled_back_ticks},{"discarded_substeps",w.integration.discarded_substeps},{"deepest_trial",w.integration.deepest_trial},{"smallest_accepted_step_s",w.integration.smallest_accepted_step},
+            {"accepted_brittle_threshold_overshoot_j",w.integration.accepted_brittle_overshoot_j},{"overshoot_is_not_an_additional_energy_store",true},
+            {"accepted_maximum_damage_increment",w.integration.accepted_maximum_damage_increment},{"accepted_maximum_plastic_strain_increment",w.integration.accepted_maximum_plastic_strain_increment},{"accepted_maximum_brittle_opening_overshoot",w.integration.accepted_maximum_brittle_opening_overshoot},
+            {"configured_limits_are_targets_in_report_mode",true},{"endpoint_acceptance_criteria",true},{"detects_intra_substep_peaks",false},{"resolves_contact_or_elastic_wave_error",false},{"world_tick_transactional",w.integration.enabled}}},
         {"contact_budget",{{"body_pairs",contacts.capacity.body_pairs},{"constraints",contacts.capacity.constraints},{"initial_pair_upper_bound",w.initial_pair_upper_bound},{"initial_envelope_only",true},{"speculative_distance_m",contacts.speculative_distance_m},
             {"temporary_arena_bytes",contacts.temporary_arena_bytes},{"observations_are_allocator_occupancy",false},
             {"last_manifolds",contacts.last_manifolds},{"peak_manifolds",contacts.peak_manifolds},{"last_points",contacts.last_points},{"peak_points",contacts.peak_points},
