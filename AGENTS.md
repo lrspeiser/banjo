@@ -30,6 +30,14 @@ Keep simulation independent of rendering. Start with the CPU reference; optimize
 
 Material-dependent physics work must compare at least glass and oak (wood) under the same declared experiment conditions. Retain iron in the growing regression set now that it is part of the catalog and comparison work; adding a substance must expand coverage rather than replace earlier cases. Analytical point/spring oracles may remain material-neutral, but general material claims need the comparative scenarios. Record per-material results, timestep/resolution, conserved quantities, expected density/stiffness differences, and unsupported laws. Do not turn oak into a brittle preset or claim grain/plasticity by changing a display name. Maintain `docs/mechanics-scorecard.md` with evidence, limitations and concrete next steps at every physics checkpoint.
 
+Adding a source file is not finished until a CMake target compiles it. A `.cpp` that no target lists is built by nobody, so it never fails and its tests never run; the tetrahedron contact modules and their tests sat committed and uncompiled for days that way, and `TetrahedronContact` failed its own test the day it was finally wired in. Run the guard before claiming a source change is done, and again before publishing:
+
+```sh
+python scripts/check-source-registration.py
+```
+
+It reads every `CMakeLists.txt` and `.cmake` file, compares the `add_library`/`add_executable`/`target_sources` argument lists against the sources on disk under `src/` and `tests/`, and exits non-zero on any file that no target builds. It needs no build, no dependencies and no arguments, and runs from any directory. CI runs it as the `source-registration` job in `.github/workflows/ci.yml`. A file that is meant to stay out of the build goes in the `INTENTIONALLY_UNBUILT` allowlist at the top of the script with a reason citing the `docs/*.md` note that justifies and bounds the exclusion; the script prints that allowlist on every run and fails if an entry becomes stale or its file is registered, so a deliberate omission stays visible instead of becoming permanent. Do not silence the check by deleting the file's test.
+
 Use a separate build directory. Typical commands:
 
 ```sh

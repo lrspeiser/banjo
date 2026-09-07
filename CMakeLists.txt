@@ -135,6 +135,7 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
 
     add_library(
         banjo_runtime
+        src/physics/TetrahedronContact.cpp
         src/rigid/JoltWorld.cpp
         src/sim/RollingBallExperiment.cpp)
     target_include_directories(banjo_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -568,6 +569,11 @@ if(BANJO_BUILD_TESTS)
         target_link_libraries(banjo_pair_impulse_tests PRIVATE banjo_runtime)
         banjo_enable_warnings(banjo_pair_impulse_tests)
         add_test(NAME banjo_pair_impulse_tests COMMAND banjo_pair_impulse_tests)
+
+        add_executable(banjo_tetrahedron_contact_tests tests/tetrahedron_contact_tests.cpp)
+        target_link_libraries(banjo_tetrahedron_contact_tests PRIVATE banjo_runtime)
+        banjo_enable_warnings(banjo_tetrahedron_contact_tests)
+        add_test(NAME banjo_tetrahedron_contact_tests COMMAND banjo_tetrahedron_contact_tests)
 
         add_executable(banjo_runtime_tests tests/runtime_dynamics_tests.cpp)
         target_link_libraries(banjo_runtime_tests PRIVATE banjo_runtime)

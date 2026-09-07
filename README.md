@@ -121,6 +121,18 @@ cmake --build --preset core
 ctest --preset core
 ```
 
+### Source registration check
+
+A source file that no CMake target lists is never compiled, so it never fails and its tests never run. This guard catches that before it reaches a build:
+
+```bash
+python scripts/check-source-registration.py
+```
+
+It compares the sources on disk under `src/` and `tests/` against the `add_library`, `add_executable` and `target_sources` argument lists in every `CMakeLists.txt` and `.cmake` file, and exits non-zero on any file that no target builds. It needs no compiler, no configured build directory and no third-party packages. CI runs the same command as the `source-registration` job in `.github/workflows/ci.yml`.
+
+Sources that are deliberately committed without being built are listed in the `INTENTIONALLY_UNBUILT` allowlist at the top of the script, each with a reason citing the `docs/` note that justifies it. The script prints that list on every run, and fails if an entry becomes stale or its file is added to a target, so an intentional exclusion stays visible rather than silently permanent.
+
 ## What is implemented
 
 - Procedural solid-sphere material sampling with partial boundary-cell volume

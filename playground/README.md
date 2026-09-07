@@ -25,6 +25,55 @@ The [full project goal](../docs/project-goal-2026-09-06.md) is also available in
 the **Project goal** tab. The goal contains nine workstreams and preserves all
 40 mechanics/platform requirements.
 
+## Can this result be believed?
+
+Every computed case now carries a trust panel, because a scene that runs cleanly
+is not the same as a scene that means anything.
+
+- **Timestep vs. required.** The engine computes the largest step its own spring
+  network can represent. The panel reports the authored step against that bound
+  as a ratio, so a run that is 669x too coarse no longer reads the same as one
+  that is 1.2x too coarse. Where the required step is below the schema floor of
+  1/4800 s, the panel says so: no admissible package can resolve that material.
+- **Unexplained energy change**, as a fraction of the energy the scene started with.
+- **Run at-rest control.** Re-runs that exact scene with gravity, the ground,
+  every striker and every initial velocity removed. The correct answer is that
+  nothing happens. If the control breaks bonds or creates energy, the paired
+  experiment is measuring that instability at least as much as the impact, and
+  the panel marks it CONTAMINATED. See
+  [the convergence study](../docs/convergence-study-checkpoint.md) for the
+  measurements this check exists to catch.
+
+## Predict-then-measure suite
+
+`playground/physics_suite.py` runs a battery of physics tasks in four sealed
+stages: the scene is authored from a checked-in specification, the model states
+what should happen **before** the engine runs (the prediction is hashed and
+written to disk at that point, so it cannot be revised once the answer is
+known), the engine and its at-rest control run, and only then is the sealed
+prediction graded against the measurement.
+
+Two verdicts are reported and never merged:
+
+- **INVARIANTS** are deterministic and consult no model. Energy appearing in a
+  scene that started at rest is wrong whatever any model believes. This is the
+  real oracle.
+- **PREDICTION** is the model's expectation. This catches "runs cleanly but
+  behaves nothing like glass", which no invariant encodes.
+
+Keeping them apart is the point: a model that predicts wrongly, or grades its
+own wrong prediction generously, shows up as a disagreement between the columns.
+
+```sh
+python playground/physics_suite.py                      # full battery
+python playground/physics_suite.py --filter rest        # one group
+python playground/physics_suite.py --no-model           # invariants only, no API key needed
+```
+
+The suite exits non-zero while any invariant fails. It is not a readiness
+certificate on its own: it bounds the at-rest instability and the reported
+ledger, and says nothing about spatial convergence or material calibration.
+
 ## Try it
 
 New composable routes are available. Try:
