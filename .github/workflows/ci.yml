@@ -5,6 +5,14 @@ on:
   pull_request:
 
 jobs:
+  source-registration:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check every source under src/ and tests/ is in a CMake target
+        run: python3 scripts/check-source-registration.py
+
   build-test-and-capture:
     runs-on: ubuntu-24.04
     steps:
