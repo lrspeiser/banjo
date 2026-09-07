@@ -658,12 +658,14 @@ if(BANJO_BUILD_TESTS AND TARGET banjo_platform)
  # The adaptive suite's tomato fixture is fully resolved under the 8,192-substep
  # cap and takes about 18 minutes, past ctest's default.
  set_tests_properties(banjo_network_skin_tests banjo_network_runtime_tests
-     banjo_network_adaptive_tests banjo_material_showcase_tests
+     banjo_network_adaptive_tests
      PROPERTIES TIMEOUT 7200)
  add_executable(banjo_material_showcase_tests tests/material_showcase_tests.cpp)
  target_link_libraries(banjo_material_showcase_tests PRIVATE banjo_platform nlohmann_json::nlohmann_json)
  target_compile_definitions(banjo_material_showcase_tests PRIVATE BANJO_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
  add_test(NAME banjo_material_showcase_tests COMMAND banjo_material_showcase_tests)
+ # Same stability clock as the skin and runtime suites: about an hour.
+ set_tests_properties(banjo_material_showcase_tests PROPERTIES TIMEOUT 7200)
  add_executable(banjo_contact_capacity_tests tests/contact_capacity_tests.cpp)
  target_link_libraries(banjo_contact_capacity_tests PRIVATE banjo_platform nlohmann_json::nlohmann_json)
  target_compile_definitions(banjo_contact_capacity_tests PRIVATE BANJO_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
