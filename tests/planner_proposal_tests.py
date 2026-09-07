@@ -14,7 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "playground"))
 
 from control_contract import default_ui  # noqa: E402
-from experiment_language import lower_proposal  # noqa: E402
+from experiment_language import lower_proposal, lower_and_admit  # noqa: E402
+from network_admission import Inadmissible  # noqa: E402
 
 
 def proposal(setup, *, experiment_ui=None, duration_s=1.0):
@@ -35,14 +36,14 @@ def drop_setup(**changes):
     value = {
         "kind": "drop_test",
         "drop": {
-            "target_dimensions_m": [.24, .36, .006],
+            "target_dimensions_m": [.24, .36, .04],
             "projectile": "iron_ball",
             "projectile_dimensions_m": [.08, .08, .08],
             "support": "clamped_edges",
             "impact_offset_m": [.01, -.02],
             "heights_m": [.05, .25],
             "representation": "network",
-            "resolution": [4, 4, 2],
+            "resolution": [6, 9, 2],
         },
     }
     value["drop"].update(changes)
@@ -50,10 +51,10 @@ def drop_setup(**changes):
 
 
 class PlannerProposalTests(unittest.TestCase):
-    def test_drop_preserves_explicit_6mm_setup_and_clears_legacy_arrays(self):
+    def test_drop_preserves_explicit_setup_and_clears_legacy_arrays(self):
         plan = lower_proposal(proposal(drop_setup()))
         self.assertEqual(plan["experiment"], "drop_test")
-        self.assertEqual(plan["drop"]["target_dimensions_m"], [.24, .36, .006])
+        self.assertEqual(plan["drop"]["target_dimensions_m"], [.24, .36, .04])
         self.assertEqual(plan["drop"]["impact_offset_m"], [.01, -.02])
         self.assertEqual(plan["drop"]["heights_m"], [.05, .25])
         self.assertEqual(plan["speeds_m_s"], [])
@@ -61,6 +62,25 @@ class PlannerProposalTests(unittest.TestCase):
         self.assertEqual(plan["objects"], [])
         self.assertEqual(plan["panel_dimensions_m"], [.24, .36, .04])
         self.assertEqual(plan["pressure"], None)
+
+    def test_non_cubic_resolution_is_repaired_and_reported_not_run_as_asked(self):
+        plan = lower_and_admit(proposal(drop_setup(resolution=[4, 4, 2])))
+        self.assertEqual(plan["drop"]["resolution"], [6, 9, 2])
+        self.assertEqual(plan["drop"]["target_dimensions_m"], [.24, .36, .04])
+        note = plan["admission_notes"][0]
+        self.assertEqual(note["limit"], "cell_aspect_ratio")
+        self.assertEqual(note["action"], "snapped")
+        self.assertIn("4.50:1", note["message"])
+        self.assertIn("[6, 9, 2]", note["message"])
+
+    def test_unbuildable_thin_plate_is_refused_by_name_with_a_workable_alternative(self):
+        with self.assertRaises(Inadmissible) as caught:
+            lower_and_admit(proposal(drop_setup(target_dimensions_m=[.24, .36, .006])))
+        self.assertEqual(caught.exception.limit, "slenderness_face_over_thickness")
+        message = str(caught.exception)
+        self.assertIn("60.0:1", message)
+        self.assertIn("0.03 m thick", message)
+        self.assertIn("No substitute geometry was run.", message)
 
     def test_scene_preserves_gravity_orientation_and_spin(self):
         setup = {

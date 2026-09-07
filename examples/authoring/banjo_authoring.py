@@ -20,6 +20,28 @@ OBJECT_FIELDS = {
 }
 
 
+def suggest_cubic_resolution(dimensions_m, maximum_cells: int = 800):
+    """The resolution in [2,16]^3 giving the most cubic cells within the budget.
+
+    Returns None when no admissible resolution gets under 2:1, which is the
+    honest answer for a slender object: face:thickness above 8:1 cannot be built
+    from uniform cells at all, because the axis ratio is bounded by 16/2.
+    """
+    best, best_aspect = None, float("inf")
+    for nx in range(2, 17):
+        for ny in range(2, 17):
+            for nz in range(2, 17):
+                if nx * ny * nz > maximum_cells:
+                    continue
+                spacing = [dimensions_m[0] / nx, dimensions_m[1] / ny, dimensions_m[2] / nz]
+                if .49 * min(spacing) < .001:
+                    continue
+                aspect = max(spacing) / min(spacing)
+                if aspect < best_aspect:
+                    best, best_aspect = [nx, ny, nz], aspect
+    return best if best_aspect <= 2.0 else None
+
+
 def validate_network_geometry(dimensions_m, resolution) -> float:
     """Mirror the native network collision-cell floor before model execution.
 
@@ -33,7 +55,29 @@ def validate_network_geometry(dimensions_m, resolution) -> float:
     if not isinstance(resolution, (list, tuple)) or len(resolution) != 3 or any(
             type(v) is not int or not 2 <= v <= 16 for v in resolution):
         raise ValueError("Network resolution requires three integers in [2, 16]")
-    radius = .49 * min(d / n for d, n in zip(dimensions_m, resolution))
+    spacing = [d / n for d, n in zip(dimensions_m, resolution)]
+    aspect = max(spacing) / min(spacing)
+    # The engine gives every cell a spherical collision proxy of radius
+    # 0.49 * min(spacing), so with cubic cells the proxy spans 98% of the cell
+    # and neighbours just touch. As cells get less cubic that proxy stops
+    # representing the cell it carries the mass of: coverage across the widest
+    # axis is 0.98 / aspect. At 2:1 a cell already collides over half its width;
+    # past that, fragments carry their full mass through each other and the
+    # result is not a contact simulation. Shipped presets run 1.0 to 2.0.
+    coverage = 0.98 / aspect
+    if aspect > 2.0:
+        best = suggest_cubic_resolution(dimensions_m)
+        hint = (f" Try resolution {best} for near-cubic cells."
+                if best else
+                " No resolution in [2,16] per axis makes these dimensions near-cubic;"
+                " change the dimensions, or accept that this object cannot be built"
+                " from uniform cells.")
+        raise ValueError(
+            f"Network cells are {aspect:.2f}:1, not cubic: spacing "
+            f"{[round(v * 1000, 2) for v in spacing]} mm. Each cell collides as a sphere "
+            f"spanning only {coverage * 100:.0f}% of its widest side, so its mass passes "
+            f"through neighbours. The limit is 2:1." + hint)
+    radius = .49 * min(spacing)
     if radius < .001:
         raise ValueError(
             f"Network collision cells are too small: {radius * 1000:.6g} mm radius; "

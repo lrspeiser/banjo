@@ -103,7 +103,12 @@ class DropBuilderTests(unittest.TestCase):
         if executable is None:
             self.skipTest("native platform CLI is not built")
         cases = [
-            spec(target_dimensions_m=[.24, .36, .006], heights_m=[.05]),
+            # 40 x 40 x 20 mm cells: near-cubic, so the collision proxies
+            # actually represent the cells whose mass they carry, and small
+            # enough that three matched lanes stay inside the CLI timeout.
+            spec(target_dimensions_m=[.08, .08, .04], resolution=[2, 2, 2],
+                 projectile_dimensions_m=[.03, .03, .03], impact_offset_m=[0, 0],
+                 heights_m=[.05]),
             spec(support="free_on_ground", representation="rigid", heights_m=[.25]),
         ]
         with tempfile.TemporaryDirectory() as directory:
@@ -114,8 +119,8 @@ class DropBuilderTests(unittest.TestCase):
                 self.assertEqual(len(report["objects"]), 6)
                 self.assertTrue(all(item["mass_kg"] > 0 for item in report["objects"]))
                 if index == 0:
-                    # This checks executable network diagnostics only. A 6 mm
-                    # volume network is not a shell or a calibrated thin plate.
+                    # This checks executable network diagnostics only. Passing
+                    # geometric admission is not a calibrated material response.
                     result = EngineCLI(executable).run(path, 24)
                     self.assertEqual(result["ticks"], 24)
                     self.assertAlmostEqual(result["elapsed_s"], .05)

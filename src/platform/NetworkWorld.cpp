@@ -20,7 +20,7 @@ using json=nlohmann::json;
 // coarsest admissible step asks for several hundred; this bounds the cost of a
 // single tick while still covering the materials in the catalogue. A run whose
 // requirement exceeds it is reported as under-resolved rather than accepted.
-constexpr unsigned kMaximumStabilitySubsteps=4096;
+constexpr unsigned kMaximumStabilitySubsteps=8192;
 
 // Phase advance allowed per internal solve, in radians of the network's fastest
 // mode. This sets the substep count and therefore the cost, so it is measured
