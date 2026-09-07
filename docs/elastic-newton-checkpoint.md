@@ -1,6 +1,6 @@
 # Global elastic solve checkpoint
 
-Later checkpoint: [coupled support and impact-timing evidence at `1deb025`](coupled-support-checkpoint.md). The free-elastic measurements below remain historical evidence; the support solver and probe now have additional capabilities.
+Later checkpoint: [coupled support and impact-timing evidence at `1deb025`](coupled-support-checkpoint.md). The wall times and the 1/60 s rejection recorded below were independently reproduced, and the timestep acceptance boundary located, in the [realtime envelope checkpoint](realtime-envelope-checkpoint.md): the boundary for the full 1,285-node glass lattice is 7.046 ms (1/142 s), not a cliff at 1/60 s. The free-elastic measurements below remain historical evidence; the support solver and probe now have additional capabilities.
 
 Tested code: **`dc7bcfb6b9d9392bdf19e82e0baa48e53e0b16cc`**, September 4, 2026, America/Los_Angeles. Local branch `codex/physics-foundation`, worktree `C:/Users/henry/dev/banjo-integration`. Main remains `3a38d7d`; this work has not been pushed or merged.
 
