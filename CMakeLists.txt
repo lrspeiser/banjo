@@ -67,6 +67,7 @@ add_library(
     src/physics/CohesiveSpatialPair.cpp
     src/physics/CohesiveRigidPair.cpp
     src/physics/ConservativeStep.cpp
+    src/physics/FractureStep.cpp
     src/physics/ConservativeAdvance.cpp
     src/physics/NormalImpact.cpp
     src/physics/NormalCompliance.cpp
@@ -80,6 +81,7 @@ add_library(
     src/fracture/FracturePreview.cpp
     src/fracture/RuptureCascade.cpp
     src/fracture/EnergyRupture.cpp
+    src/fracture/BondFailure.cpp
     src/fracture/BrittleBondSolver.cpp
     src/fracture/ConnectedComponents.cpp
     src/fracture/FragmentMassProperties.cpp
@@ -490,6 +492,10 @@ if(BANJO_BUILD_TESTS)
     banjo_enable_warnings(banjo_material_stage_tests)
     add_test(NAME banjo_material_stage_tests COMMAND banjo_material_stage_tests)
 
+    add_executable(banjo_implicit_fracture_tests tests/implicit_fracture_tests.cpp)
+    target_link_libraries(banjo_implicit_fracture_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_implicit_fracture_tests)
+    add_test(NAME banjo_implicit_fracture_tests COMMAND banjo_implicit_fracture_tests)
     add_executable(banjo_conservative_step_tests tests/conservative_step_tests.cpp)
     target_link_libraries(banjo_conservative_step_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_conservative_step_tests)
