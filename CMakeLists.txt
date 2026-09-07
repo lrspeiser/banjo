@@ -10,6 +10,7 @@ option(BANJO_BUILD_LAB "Build the interactive rolling-ball visual laboratory" ON
 option(BANJO_BUILD_HEADLESS "Build the automated headless rolling-ball laboratory" ON)
 option(BANJO_BUILD_PRECOMPUTE "Build the deterministic scenario precomputation tools" ON)
 option(BANJO_BUILD_TESTS "Build Banjo unit tests" ON)
+option(BANJO_BUILD_CUDA "Build the CUDA backend of the fast explicit lattice fracture lane" OFF)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -94,6 +95,37 @@ add_library(
 target_include_directories(banjo_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_features(banjo_core PUBLIC cxx_std_23)
 banjo_enable_warnings(banjo_core)
+
+# The fast explicit lattice lane (docs/fast-gpu-checkpoint.md): the CPU
+# lane's physics on a colour-parallel schedule. The C++ library always builds
+# and carries the CPU backend; the CUDA backend is a separate target behind
+# BANJO_BUILD_CUDA so the rest of the repository builds without a CUDA
+# toolchain. Without it the GPU factory throws a clear error, never a no-op.
+add_library(
+    banjo_fastlattice
+    src/matter/BoxLattice.cpp
+    src/fastlattice/LatticeSchedule.cpp
+    src/fastlattice/FastLattice.cpp
+    src/fastlattice/CpuLatticeBackend.cpp)
+target_link_libraries(banjo_fastlattice PUBLIC banjo_core)
+target_compile_features(banjo_fastlattice PUBLIC cxx_std_23)
+banjo_enable_warnings(banjo_fastlattice)
+if(BANJO_BUILD_CUDA)
+    if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES OR "${CMAKE_CUDA_ARCHITECTURES}" STREQUAL "")
+        set(CMAKE_CUDA_ARCHITECTURES 120)
+    endif()
+    enable_language(CUDA)
+    find_package(CUDAToolkit REQUIRED)
+    add_library(banjo_fastlattice_cuda STATIC src/fastlattice/CudaLatticeBackend.cu)
+    target_include_directories(banjo_fastlattice_cuda PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    set_target_properties(banjo_fastlattice_cuda PROPERTIES
+        CUDA_STANDARD 20 CUDA_STANDARD_REQUIRED ON CUDA_SEPARABLE_COMPILATION OFF)
+    target_link_libraries(banjo_fastlattice_cuda PUBLIC CUDA::cudart_static)
+    target_link_libraries(banjo_fastlattice PUBLIC banjo_fastlattice_cuda)
+    target_compile_definitions(banjo_fastlattice PUBLIC BANJO_HAS_CUDA=1)
+else()
+    target_sources(banjo_fastlattice PRIVATE src/fastlattice/CudaLatticeUnavailable.cpp)
+endif()
 
 if(BANJO_BUILD_PRECOMPUTE)
     add_executable(banjo_phase_pair_benchmark tools/phase_pair_benchmark.cpp)
@@ -237,6 +269,13 @@ if(BANJO_BUILD_HEADLESS)
     target_link_libraries(banjo_glass_diagnostic PRIVATE banjo_runtime)
     target_compile_features(banjo_glass_diagnostic PRIVATE cxx_std_23)
     banjo_enable_warnings(banjo_glass_diagnostic)
+
+    add_library(banjo_fastlattice_scene src/fastlattice/TileImpactScene.cpp)
+    target_link_libraries(banjo_fastlattice_scene PUBLIC banjo_fastlattice banjo_runtime PRIVATE nlohmann_json::nlohmann_json)
+    banjo_enable_warnings(banjo_fastlattice_scene)
+    add_executable(banjo_fast_lattice_run tools/fast_lattice_run.cpp)
+    target_link_libraries(banjo_fast_lattice_run PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
+    banjo_enable_warnings(banjo_fast_lattice_run)
 
     add_executable(banjo_headless src/app/headless_main.cpp)
     target_link_libraries(banjo_headless PRIVATE banjo_runtime)
@@ -580,6 +619,13 @@ if(BANJO_BUILD_TESTS)
         target_link_libraries(banjo_tetrahedron_contact_tests PRIVATE banjo_runtime)
         banjo_enable_warnings(banjo_tetrahedron_contact_tests)
         add_test(NAME banjo_tetrahedron_contact_tests COMMAND banjo_tetrahedron_contact_tests)
+
+        if(TARGET banjo_fastlattice_scene)
+            add_executable(banjo_fast_lattice_tests tests/fast_lattice_tests.cpp)
+            target_link_libraries(banjo_fast_lattice_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_fast_lattice_tests)
+            add_test(NAME banjo_fast_lattice_tests COMMAND banjo_fast_lattice_tests)
+        endif()
 
         add_executable(banjo_runtime_tests tests/runtime_dynamics_tests.cpp)
         target_link_libraries(banjo_runtime_tests PRIVATE banjo_runtime)
