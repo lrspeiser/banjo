@@ -110,84 +110,14 @@ struct GridCoordHash {
     return inertia;
 }
 
-} // namespace
-
-LatticeAsset generateSphereLattice(
-    const SphereRecipe &recipe,
+// Bonds and adjacency for any grid-indexed node set. Every rule here (horizon
+// radius, rest length, horizon-weighted compliance, seeded strength variation)
+// is the sphere lattice's; the box lattice calls the same function.
+void buildBonds(
+    LatticeAsset &asset,
+    const std::unordered_map<GridCoord, std::uint32_t, GridCoordHash> &node_by_grid,
     const CompiledBrittleMaterial &material) {
-    if (recipe.radius_m <= 0.0 || recipe.voxel_size_m <= 0.0 ||
-        recipe.neighbor_horizon_cells == 0U ||
-        recipe.occupancy_samples_per_axis == 0U) {
-        throw std::invalid_argument(
-            "sphere recipe values must be positive");
-    }
-
-    LatticeAsset asset;
-    asset.recipe = recipe;
-
-    const int extent =
-        static_cast<int>(std::ceil(recipe.radius_m / recipe.voxel_size_m));
-    const double voxel_volume = recipe.voxel_size_m * recipe.voxel_size_m *
-                                recipe.voxel_size_m;
-    std::unordered_map<GridCoord, std::uint32_t, GridCoordHash> node_by_grid;
-
-    for (int z = -extent; z <= extent; ++z) {
-        for (int y = -extent; y <= extent; ++y) {
-            for (int x = -extent; x <= extent; ++x) {
-                const Vec3 center{
-                    static_cast<double>(x) * recipe.voxel_size_m,
-                    static_cast<double>(y) * recipe.voxel_size_m,
-                    static_cast<double>(z) * recipe.voxel_size_m,
-                };
-                const double occupied = occupancyFraction(
-                    center,
-                    recipe.voxel_size_m,
-                    recipe.radius_m,
-                    recipe.occupancy_samples_per_axis);
-                if (occupied <= 0.0) {
-                    continue;
-                }
-
-                const bool surface = occupied < 0.999999 ||
-                                     length(center) +
-                                             0.5 * std::sqrt(3.0) *
-                                                 recipe.voxel_size_m >=
-                                         recipe.radius_m;
-                const std::uint32_t index =
-                    static_cast<std::uint32_t>(asset.nodes.size());
-                const GridCoord grid{x, y, z};
-                asset.nodes.push_back({
-                    center,
-                    grid,
-                    occupied * voxel_volume,
-                    surface,
-                });
-                node_by_grid.emplace(grid, index);
-                asset.represented_volume_m3 += occupied * voxel_volume;
-            }
-        }
-    }
-
-    asset.total_mass_kg =
-        asset.represented_volume_m3 * material.density_kg_m3;
-    if (asset.total_mass_kg <= 0.0) {
-        throw std::runtime_error("sphere lattice contains no material");
-    }
-
-    Vec3 weighted_center{};
-    for (const LatticeNodeRest &node : asset.nodes) {
-        const double node_mass =
-            node.represented_volume_m3 * material.density_kg_m3;
-        weighted_center += node_mass * node.local_position_m;
-    }
-    asset.rest_center_of_mass_m =
-        weighted_center / asset.total_mass_kg;
-    asset.rest_inertia_kg_m2 = calculateRestInertia(
-        asset.nodes,
-        material.density_kg_m3,
-        asset.rest_center_of_mass_m,
-        recipe.voxel_size_m);
-
+    const SphereRecipe &recipe = asset.recipe;
     const int horizon =
         static_cast<int>(recipe.neighbor_horizon_cells);
     for (std::uint32_t node_index = 0;
@@ -266,6 +196,133 @@ LatticeAsset generateSphereLattice(
         asset.adjacent_bond_indices[cursor[bond.node_b]++] = bond_index;
     }
 
+}
+
+} // namespace
+
+LatticeAsset generateSphereLattice(
+    const SphereRecipe &recipe,
+    const CompiledBrittleMaterial &material) {
+    if (recipe.radius_m <= 0.0 || recipe.voxel_size_m <= 0.0 ||
+        recipe.neighbor_horizon_cells == 0U ||
+        recipe.occupancy_samples_per_axis == 0U) {
+        throw std::invalid_argument(
+            "sphere recipe values must be positive");
+    }
+
+    LatticeAsset asset;
+    asset.recipe = recipe;
+
+    const int extent =
+        static_cast<int>(std::ceil(recipe.radius_m / recipe.voxel_size_m));
+    const double voxel_volume = recipe.voxel_size_m * recipe.voxel_size_m *
+                                recipe.voxel_size_m;
+    std::unordered_map<GridCoord, std::uint32_t, GridCoordHash> node_by_grid;
+
+    for (int z = -extent; z <= extent; ++z) {
+        for (int y = -extent; y <= extent; ++y) {
+            for (int x = -extent; x <= extent; ++x) {
+                const Vec3 center{
+                    static_cast<double>(x) * recipe.voxel_size_m,
+                    static_cast<double>(y) * recipe.voxel_size_m,
+                    static_cast<double>(z) * recipe.voxel_size_m,
+                };
+                const double occupied = occupancyFraction(
+                    center,
+                    recipe.voxel_size_m,
+                    recipe.radius_m,
+                    recipe.occupancy_samples_per_axis);
+                if (occupied <= 0.0) {
+                    continue;
+                }
+
+                const bool surface = occupied < 0.999999 ||
+                                     length(center) +
+                                             0.5 * std::sqrt(3.0) *
+                                                 recipe.voxel_size_m >=
+                                         recipe.radius_m;
+                const std::uint32_t index =
+                    static_cast<std::uint32_t>(asset.nodes.size());
+                const GridCoord grid{x, y, z};
+                asset.nodes.push_back({
+                    center,
+                    grid,
+                    occupied * voxel_volume,
+                    surface,
+                });
+                node_by_grid.emplace(grid, index);
+                asset.represented_volume_m3 += occupied * voxel_volume;
+            }
+        }
+    }
+
+    asset.total_mass_kg =
+        asset.represented_volume_m3 * material.density_kg_m3;
+    if (asset.total_mass_kg <= 0.0) {
+        throw std::runtime_error("sphere lattice contains no material");
+    }
+
+    Vec3 weighted_center{};
+    for (const LatticeNodeRest &node : asset.nodes) {
+        const double node_mass =
+            node.represented_volume_m3 * material.density_kg_m3;
+        weighted_center += node_mass * node.local_position_m;
+    }
+    asset.rest_center_of_mass_m =
+        weighted_center / asset.total_mass_kg;
+    asset.rest_inertia_kg_m2 = calculateRestInertia(
+        asset.nodes,
+        material.density_kg_m3,
+        asset.rest_center_of_mass_m,
+        recipe.voxel_size_m);
+
+    buildBonds(asset, node_by_grid, material);
+    return asset;
+}
+
+LatticeAsset generateBoxLattice(
+    const BoxRecipe &recipe,
+    const CompiledBrittleMaterial &material) {
+    if (recipe.cells_x == 0U || recipe.cells_y == 0U || recipe.cells_z == 0U ||
+        !(recipe.voxel_size_m > 0.0) || recipe.neighbor_horizon_cells == 0U ||
+        !(material.density_kg_m3 > 0.0)) {
+        throw std::invalid_argument("box recipe needs positive cell counts, size and density");
+    }
+    if (static_cast<std::uint64_t>(recipe.cells_x) * recipe.cells_y * recipe.cells_z > 1000000ULL) {
+        throw std::invalid_argument("box lattice cell budget exceeded");
+    }
+    LatticeAsset asset;
+    const double h = recipe.voxel_size_m;
+    const Vec3 half_extent{0.5 * recipe.cells_x * h, 0.5 * recipe.cells_y * h, 0.5 * recipe.cells_z * h};
+    asset.recipe = SphereRecipe{length(half_extent), h, recipe.neighbor_horizon_cells, 1U};
+    const double voxel_volume = h * h * h;
+    std::unordered_map<GridCoord, std::uint32_t, GridCoordHash> node_by_grid;
+    for (unsigned z = 0; z < recipe.cells_z; ++z) {
+        for (unsigned y = 0; y < recipe.cells_y; ++y) {
+            for (unsigned x = 0; x < recipe.cells_x; ++x) {
+                const Vec3 center{
+                    (static_cast<double>(x) + 0.5) * h - half_extent.x,
+                    (static_cast<double>(y) + 0.5) * h - half_extent.y,
+                    (static_cast<double>(z) + 0.5) * h - half_extent.z,
+                };
+                const bool surface = x == 0U || y == 0U || z == 0U ||
+                    x + 1U == recipe.cells_x || y + 1U == recipe.cells_y || z + 1U == recipe.cells_z;
+                const GridCoord grid{static_cast<int>(x), static_cast<int>(y), static_cast<int>(z)};
+                node_by_grid.emplace(grid, static_cast<std::uint32_t>(asset.nodes.size()));
+                asset.nodes.push_back({center, grid, voxel_volume, surface});
+                asset.represented_volume_m3 += voxel_volume;
+            }
+        }
+    }
+    asset.total_mass_kg = asset.represented_volume_m3 * material.density_kg_m3;
+    Vec3 weighted_center{};
+    for (const LatticeNodeRest &node : asset.nodes) {
+        weighted_center += node.represented_volume_m3 * material.density_kg_m3 * node.local_position_m;
+    }
+    asset.rest_center_of_mass_m = weighted_center / asset.total_mass_kg;
+    asset.rest_inertia_kg_m2 = calculateRestInertia(
+        asset.nodes, material.density_kg_m3, asset.rest_center_of_mass_m, h);
+    buildBonds(asset, node_by_grid, material);
     return asset;
 }
 

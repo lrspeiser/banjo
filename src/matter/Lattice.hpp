@@ -60,6 +60,24 @@ struct LatticeAsset {
     const SphereRecipe &recipe,
     const CompiledBrittleMaterial &material);
 
+// A uniform-cube box lattice: every cell fully occupied, so every node carries
+// the same mass and the surface-node mass spread of the sampled sphere cannot
+// occur. Bond rules (horizon, rest lengths, compliance per horizon weight,
+// strength variation seed) are exactly those of generateSphereLattice, so a
+// material compiled for one applies unchanged to the other. Cells are indexed
+// (x, y, z) with the box centred on the origin; node index = x + nx*(y + ny*z).
+struct BoxRecipe {
+    unsigned cells_x{};
+    unsigned cells_y{};
+    unsigned cells_z{};
+    double voxel_size_m{};
+    unsigned neighbor_horizon_cells{2};
+};
+
+[[nodiscard]] LatticeAsset generateBoxLattice(
+    const BoxRecipe &recipe,
+    const CompiledBrittleMaterial &material);
+
 // Period of the fastest bond mode carried by this lattice and the corresponding
 // explicit-integration substep limit.
 //
