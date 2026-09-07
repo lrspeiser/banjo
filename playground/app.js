@@ -592,6 +592,17 @@
     } else {
       row("Timestep vs. required", "not reported for this case");
     }
+    const stepping = item.trust && item.trust.substepping;
+    if (stepping && Number.isFinite(stepping.substeps)) {
+      const limited = stepping.limited_by_budget === true;
+      row("Solver substeps / tick", limited
+        ? `${stepping.substeps} of ${stepping.required_substeps} needed`
+        : `${stepping.substeps} (fully resolved)`, limited ? "bad" : "ok");
+      if (limited) row("Under-resolved", "material state is not trustworthy", "bad");
+    }
+    if (stepping && stepping.refused_bond_updates > 0) {
+      row("Refused bond updates", `${stepping.refused_bond_updates} (solver residual too large)`, "bad");
+    }
     const energy = (item.trust && item.trust.energy) || {};
     if (Number.isFinite(energy.change_fraction_of_initial)) {
       const pct = energy.change_fraction_of_initial * 100;

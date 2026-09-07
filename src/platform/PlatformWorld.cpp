@@ -151,7 +151,13 @@ std::string PlatformWorld::reportJson() const{
     json result{{"package",w.source},{"position_bits",JoltWorld::positionPrecisionBits()},{"state_valid",w.reference||w.fault.empty()},{"ticks",w.ticks},{"elapsed_s",w.ticks*w.dt},{"fault",w.fault},{"initial_energy_j",w.initial_energy},
         {"performance",{{"step_wall_total_ms",w.total_ms},{"step_p50_ms",percentile(.5)},{"step_p95_ms",percentile(.95)},{"step_max_ms",w.max_ms},{"sample_count",times.size()},{"sample_window","last 4096 steps"},{"realtime_ratio",w.total_ms>0?w.ticks*w.dt*1000/w.total_ms:0},{"includes_rendering",false},{"includes_package_load",false}}}};
     auto bodies=json::array();for(auto &o:w.bodies){auto s=w.compiled?w.compiled->state(o.id):w.reference?w.bonded->state(o.id):w.rigid->snapshot(o.id);bodies.push_back({{"id",o.id},{"material",materialPresetName(o.material)},{"mass_kg",o.geometry.volume()*makeReferenceMaterial(o.material).density_kg_m3},{"position_m",vec(s.center_of_mass_world_m)},{"velocity_m_s",vec(s.linear_velocity_m_s)},{"spin_rad_s",vec(s.angular_velocity_rad_s)}});}result["objects"]=bodies;
-    if(w.network)result.update(json::parse(w.network->reportJson()));
+    if(w.network){
+        result.update(json::parse(w.network->reportJson()));
+        // A run that refused bond updates has not measured its own material
+        // state, so it cannot report a valid state whatever else went right.
+        const auto &reconstruction=result.value("reaction_reconstruction",json::object());
+        if(!reconstruction.value("admissible",true))result["state_valid"]=false;
+    }
     else if(w.compiled){result.update(json::parse(w.compiled->reportJson()));for(auto &o:result["objects"])if(w.compiled->componentCount(o["id"].get<unsigned>())>1)o["spin_rad_s"]=nullptr;}
     else if(w.reference){auto &b=*w.bonded;result["reference_internal_step_s"]=b.stepLimit();result["regular_internal_steps_per_simulated_second"]=1/b.stepLimit();result["mechanical_energy_j"]=b.energy();result["energy_residual_j"]=b.energyResidual();result["fracture_work_j"]=b.ledger.fracture_work_j;result["elastic_release_j"]=b.ledger.elastic_release_j;result["fracture_events"]=json::array();for(auto &e:b.breaks)result["fracture_events"].push_back({{"time_s",e.time_s},{"object_id",b.objects[e.object].id},{"link",e.link},{"work_j",e.work_j}});auto c=b.components();result["connected_components"]=std::set<unsigned>(c.begin(),c.end()).size();result["limitations"]={"Coarse 19-cell geometry; uncalibrated continuum strength", "Oak/iron failure unsupported", "All material cells active; no adaptive physical LOD", "Fracture events do not identify causative contact"};}
     else {result["mechanical_energy_j"]=w.rigid->mechanicalTotals(w.gravity).mechanicalEnergy();result["energy_residual_j"]=nullptr;result["ball_contact_callbacks"]=w.contact_callbacks;

@@ -53,6 +53,32 @@ def resolution_verdict(package: dict[str, Any], report: dict[str, Any]) -> dict[
     return verdict
 
 
+def substepping_verdict(report: dict[str, Any]) -> dict[str, Any] | None:
+    """Whether the network ran on its own stability clock, and whether that was enough.
+
+    The constraint solver subdivides each host tick onto the lattice's own
+    stability bound. When the requirement exceeds the internal budget the run is
+    still under-resolved, and its material state is not trustworthy however
+    clean the rest of the report looks.
+    """
+    stepping = (report or {}).get("network_substepping")
+    reconstruction = (report or {}).get("reaction_reconstruction")
+    if not isinstance(stepping, dict) and not isinstance(reconstruction, dict):
+        return None
+    out: dict[str, Any] = {}
+    if isinstance(stepping, dict):
+        out["substeps"] = stepping.get("substeps_per_host_tick")
+        out["required_substeps"] = stepping.get("required_substeps")
+        out["limited_by_budget"] = stepping.get("limited_by_budget")
+        out["internal_step_s"] = stepping.get("internal_step_s")
+    if isinstance(reconstruction, dict):
+        out["refused_bond_updates"] = reconstruction.get("inadmissible_bond_updates")
+        out["reconstruction_admissible"] = reconstruction.get("admissible")
+        out["worst_residual_ratio"] = reconstruction.get(
+            "maximum_residual_over_irreversible_extension")
+    return out
+
+
 def energy_verdict(report: dict[str, Any]) -> dict[str, Any]:
     """Energy the run reports against the energy it started with."""
     report = report or {}

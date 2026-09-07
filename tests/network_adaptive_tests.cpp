@@ -251,9 +251,15 @@ void policyValidationRejectsMalformedBounds() {
     valid["damage_integration"] = damagePolicy(8, 1.0, 0.1, 1.0);
     auto world = load(valid);
     const auto configured = report(*world).at("damage_integration");
+    // Each stability substep of a tick may bisect to the configured depth, so
+    // the per-tick trial bound is the depth bound times the substep count
+    // rather than a constant. Asserted as that product, so the relationship is
+    // checked rather than a number that silently tracks the substep clock.
+    const auto substeps = configured.at("stability_substeps_per_tick").get<unsigned>();
+    require(substeps >= 1, "adaptive policy must report its stability substep count");
     require(configured.at("mode") == "adaptive-damage-trials" &&
                 configured.at("maximum_depth") == 8 &&
-                configured.at("maximum_solver_trials_per_tick") == 511,
+                configured.at("maximum_solver_trials_per_tick") == substeps * 511,
             "maximum adaptive policy bounds must be admitted and reported");
 }
 

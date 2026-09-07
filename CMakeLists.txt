@@ -642,6 +642,12 @@ if(BANJO_BUILD_TESTS AND TARGET banjo_platform)
  target_link_libraries(banjo_network_runtime_tests PRIVATE banjo_platform nlohmann_json::nlohmann_json)
  target_compile_definitions(banjo_network_runtime_tests PRIVATE BANJO_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
  add_test(NAME banjo_network_runtime_tests COMMAND banjo_network_runtime_tests)
+ # The network lane now runs on its own stability clock, several hundred
+ # internal solves per host tick, so these multi-scenario 720-step runs cost
+ # roughly an hour each rather than seconds. Coverage is unchanged; only the
+ # price is. See docs/network-at-rest-stability-checkpoint.md.
+ set_tests_properties(banjo_network_skin_tests banjo_network_runtime_tests
+     PROPERTIES TIMEOUT 7200)
  add_executable(banjo_material_showcase_tests tests/material_showcase_tests.cpp)
  target_link_libraries(banjo_material_showcase_tests PRIVATE banjo_platform nlohmann_json::nlohmann_json)
  target_compile_definitions(banjo_material_showcase_tests PRIVATE BANJO_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")

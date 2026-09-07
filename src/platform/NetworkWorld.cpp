@@ -7,6 +7,7 @@
 #include <cmath>
 #include <chrono>
 #include <functional>
+#include <limits>
 #include <map>
 #include <numeric>
 #include <set>
@@ -15,6 +16,36 @@
 namespace banjo {
 namespace {
 using json=nlohmann::json;
+// Ceiling on internal solves per host tick. A stiff lattice at the schema's
+// coarsest admissible step asks for several hundred; this bounds the cost of a
+// single tick while still covering the materials in the catalogue. A run whose
+// requirement exceeds it is reported as under-resolved rather than accepted.
+constexpr unsigned kMaximumStabilitySubsteps=4096;
+
+// Phase advance allowed per internal solve, in radians of the network's fastest
+// mode. This sets the substep count and therefore the cost, so it is measured
+// rather than assumed: on the unpinned 6x9x2 glass panel at rest with no
+// gravity, ground or contact, where the exact answer is that nothing happens,
+// 0.2 rad leaves 0 broken bonds and 7.8e-8 J, and the value below is the
+// loosest that still holds that. See docs/network-at-rest-stability-checkpoint.md.
+constexpr double kStabilityPhaseRadians=.2;
+
+// The smallest extension that changes a bond irreversibly: the failure opening,
+// or the yield opening where the material has one. A reconstruction whose
+// residual reaches this cannot distinguish a bond that is changing from a
+// solver that has not converged. Shared by both integration paths so a
+// depth-zero adaptive trial keeps reproducing the single-step result exactly.
+double irreversibleExtensionScale(const DirectionalNetworkParameters &parameters){
+    const double failure=parameters.strength_n/parameters.stiffness_n_m;
+    const double yield=parameters.yield_force_n>0.
+        ?parameters.yield_force_n/parameters.stiffness_n_m:failure;
+    return std::min(failure,yield);
+}
+double reconstructionResidualRatio(const DirectionalNetworkParameters &parameters,double residual){
+    const double scale=irreversibleExtensionScale(parameters);
+    return scale>0.?residual/scale:std::numeric_limits<double>::infinity();
+}
+
 void require(bool ok,const char *message){if(!ok)throw std::invalid_argument(message);}
 void fields(const json &j,std::initializer_list<const char*> allowed){
     require(j.is_object(),"network declaration must be an object");
@@ -58,6 +89,19 @@ struct NetworkWorld::Impl {
     unsigned broken{},damaged{},pinned{};
     double time{},elastic{},fracture{},plastic{},initial_energy{},maximum_strain{};
     double total_spring_impulse{},unreleased{},maximum_extension_discrepancy{},dt{};
+    // A bond's extension is reconstructed from the constraint solver's applied
+    // reaction. That reconstruction carries the solver's finite-iteration
+    // residual, and the residual is what these two record: the worst residual
+    // seen as a multiple of the smallest extension that can change the bond's
+    // material state irreversibly, and how many updates were refused because of
+    // it. Measured at rest with no gravity, ground or contact, an unpinned
+    // 6x9x2 glass panel puts the residual at 24x that extension at the default
+    // 24 solver iterations and 6.1e-4x at 96, so the two regimes are four
+    // orders of magnitude apart and the gate below sits in the gap.
+    double maximum_reconstruction_residual_ratio{};
+    unsigned inadmissible_bond_updates{};
+    // Internal solves per host tick, from the network's own stability bound.
+    unsigned stability_substeps{1},required_stability_substeps{1};
     ResolutionBudget resolution;
     struct DamageIntegration {
         bool enabled{},reject_on_limit{true};
@@ -225,6 +269,16 @@ std::unique_ptr<NetworkWorld> NetworkWorld::load(const std::string &text){
     std::vector<double> masses;for(auto &node:w.nodes)masses.push_back(node.mass);
     std::vector<ResolutionLink> links;for(auto &bond:w.bonds)links.push_back({bond.a,bond.b,bond.parameters.stiffness_n_m});
     w.resolution=assessSpringResolution(masses,links,w.dt);
+    // Ask for the true requirement rather than the reporting cap, then take as
+    // much of it as the internal budget allows. Where the cap binds, the run is
+    // still under-resolved and says so in the report; it is not silently
+    // treated as resolved.
+    {
+        const auto uncapped=assessSpringResolution(masses,links,w.dt,kMaximumStabilitySubsteps,
+                                                   kStabilityPhaseRadians);
+        w.required_stability_substeps=std::max(1u,uncapped.required_substeps);
+        w.stability_substeps=std::min(w.required_stability_substeps,kMaximumStabilitySubsteps);
+    }
     require(temporalPolicy!="require-resolved"||w.resolution.temporally_resolved,
         "unresolved material dynamics: requested timestep exceeds the spring-network temporal bound; use a resolved local solver");
     w.initial_pair_upper_bound=w.rigid.contactPairUpperBound();
@@ -234,7 +288,27 @@ std::unique_ptr<NetworkWorld> NetworkWorld::load(const std::string &text){
 }
 void NetworkWorld::step(double dt){
     auto &w=*impl_;require(std::isfinite(dt)&&std::abs(dt-w.dt)<1e-15,"network step must match admitted fixed timestep");
-    if(w.integration.enabled)w.adaptiveStep(dt);else w.singleStep(dt);
+    // The package's fixed_dt_s is a host cadence, not a claim about what the
+    // material can be integrated at. A central-spring lattice is only stable
+    // below its own bound, and the schema floor of 1/4800 s is hundreds of
+    // times above that bound for stiff materials, so stepping the constraint
+    // solver once per host tick integrates the springs far outside their
+    // stability limit and the lattice tears itself apart with nothing acting
+    // on it. Subdivide the host tick onto the network's own clock instead.
+    // The outer cadence, the reported time and the authored package are all
+    // unchanged; only the number of internal solves differs.
+    // Both paths run on this clock. The adaptive path bisects for damage
+    // accuracy, which is a different concern from stability: leaving it on the
+    // host tick would mean enabling damage_integration silently reverted to the
+    // unstable integration, and depth-zero adaptive trials would stop matching
+    // the single-step path they are defined to reproduce.
+    // The adaptive path runs its own substeps inside its transaction, so that a
+    // rejection still rolls back the complete outer tick rather than leaving
+    // the earlier substeps of that tick applied.
+    if(w.integration.enabled){w.adaptiveStep(dt);return;}
+    const unsigned substeps=std::max(1u,w.stability_substeps);
+    const double sub=dt/substeps;
+    for(unsigned i=0;i<substeps;++i)w.singleStep(sub);
 }
 void NetworkWorld::Impl::singleStep(double step_dt){
     auto &w=*this;
@@ -259,9 +333,22 @@ void NetworkWorld::Impl::singleStep(double step_dt){
         // reaction model; unresolved wave peaks require temporal refinement.
         const double elasticForce=-impulse/step_dt-b.current_damping*rate;
         const double extension=elasticForce/b.current_stiffness+b.history.plastic_extension_m;
-        w.maximum_extension_discrepancy=std::max(w.maximum_extension_discrepancy,std::abs(extension-geometricExtension));
-        w.maximum_strain=std::max(w.maximum_strain,std::abs(extension/b.rest));
+        const double residual=std::abs(extension-geometricExtension);
+        w.maximum_extension_discrepancy=std::max(w.maximum_extension_discrepancy,residual);
         w.total_spring_impulse+=std::abs(impulse);
+        // The reconstruction is only a measurement of the material while its
+        // residual is small next to the extension that would change the bond
+        // irreversibly: the failure opening, or the yield opening where the
+        // material has one. Beyond that the engine cannot tell a bond that is
+        // breaking from a solver that has not converged, so it must not write
+        // damage, fracture or plastic state from this reaction. Refusing keeps
+        // the bond's history untouched and records the refusal; it does not
+        // invent a value, and it does not stop the motion, which stays visible
+        // as ordinary diagnostic output.
+        const double ratio=reconstructionResidualRatio(b.parameters,residual);
+        w.maximum_reconstruction_residual_ratio=std::max(w.maximum_reconstruction_residual_ratio,ratio);
+        if(!(ratio<=1.)){++w.inadmissible_bond_updates;continue;}
+        w.maximum_strain=std::max(w.maximum_strain,std::abs(extension/b.rest));
         auto update=advanceNetworkBond(law,b.parameters,b.history,extension,b.rest);
         const bool changed=update.history.damage!=b.history.damage||update.history.plastic_extension_m!=b.history.plastic_extension_m;
         if(update.history.damage>0&&object.first_damage<0)object.first_damage=w.time;
@@ -348,7 +435,13 @@ void NetworkWorld::Impl::adaptiveStep(double step){
             auto &b=w.bonds[pending.index];auto &object=w.objects[b.object];const auto &update=pending.update;
             const bool changed=update.history.damage!=b.history.damage||update.history.plastic_extension_m!=b.history.plastic_extension_m;
             w.maximum_extension_discrepancy=std::max(w.maximum_extension_discrepancy,pending.discrepancy);
-            w.maximum_strain=std::max(w.maximum_strain,std::abs(pending.extension/b.rest));w.total_spring_impulse+=pending.impulse;
+            w.total_spring_impulse+=pending.impulse;
+            // Same refusal as the single-step path, applied where the state
+            // would actually be written so rejected trials cannot inflate it.
+            const double ratio=reconstructionResidualRatio(b.parameters,pending.discrepancy);
+            w.maximum_reconstruction_residual_ratio=std::max(w.maximum_reconstruction_residual_ratio,ratio);
+            if(!(ratio<=1.)){++w.inadmissible_bond_updates;continue;}
+            w.maximum_strain=std::max(w.maximum_strain,std::abs(pending.extension/b.rest));
             w.fracture+=update.fracture_increment_j;w.plastic+=update.plastic_increment_j;w.elastic+=update.elastic_energy_j;w.unreleased+=update.unreleased_energy_j;
             stats.brittle_overshoot_j+=pending.brittle_overshoot_j;
             if(update.history.damage>0&&object.first_damage<0)object.first_damage=w.time;
@@ -382,7 +475,14 @@ void NetworkWorld::Impl::adaptiveStep(double step){
         else{++stats.rejected;candidate.reset();advance(dt/2,depth+1);advance(dt/2,depth+1);}
     };
     auto recordAttempts=[&]{w.integration.solver_trials+=stats.trials;w.integration.rejected_trials+=stats.rejected;w.integration.terminal_limit_rejections+=stats.terminal_rejections;w.integration.deepest_trial=std::max(w.integration.deepest_trial,stats.depth);};
-    try{(void)w.rigid.runSpringTrial([&]{advance(step,0);return true;});}
+    // Stability substeps run inside the tick's transaction, so the network is
+    // integrated on its own clock here too and a terminal rejection anywhere in
+    // the tick still discards the whole tick. Each substep may then bisect
+    // further for damage accuracy, which is a separate concern from stability.
+    const unsigned substeps=std::max(1u,w.stability_substeps);
+    try{(void)w.rigid.runSpringTrial([&]{
+        for(unsigned i=0;i<substeps;++i)advance(step/substeps,0);
+        return true;});}
     catch(...){restore();recordAttempts();++w.integration.rolled_back_ticks;w.integration.discarded_substeps+=stats.accepted;throw;}
     // Public time stays on its authored clock; substeps share that interval.
     w.time=savedTime+step;recordAttempts();w.integration.accepted_substeps+=stats.accepted;
@@ -467,9 +567,31 @@ std::string NetworkWorld::reportJson() const {
     const auto mechanics=w.rigid.mechanicalTotals(w.gravity);
     const auto contacts=w.rigid.contactDiagnostics();
     return json{{"model","material-network-v2"},{"physical_response_validated",false},
+        {"network_substepping",{
+            {"substeps_per_host_tick",w.stability_substeps},
+            {"required_substeps",w.required_stability_substeps},
+            {"limited_by_budget",w.required_stability_substeps>w.stability_substeps},
+            {"internal_step_s",w.dt/std::max(1u,w.stability_substeps)},
+            {"meaning","The constraint solver runs on the network's own stability clock, not the "
+                       "package's host cadence. When required_substeps exceeds the budget the run "
+                       "is still under-resolved and its material state is not trustworthy."}}},
+        {"reaction_reconstruction",{
+            {"maximum_residual_over_irreversible_extension",w.maximum_reconstruction_residual_ratio},
+            {"inadmissible_bond_updates",w.inadmissible_bond_updates},
+            {"admissible",w.inadmissible_bond_updates==0},
+            {"meaning","Bond extensions are reconstructed from the solver's applied reaction. An "
+                       "update is refused when that reconstruction's residual exceeds the smallest "
+                       "extension that changes the bond irreversibly, because breakage and solver "
+                       "non-convergence are then indistinguishable. A nonzero count means reported "
+                       "damage, fracture and plastic state are incomplete for this run."}}},
         {"damage_integration",{{"mode",w.integration.enabled?"adaptive-damage-trials":"single-step"},{"maximum_depth",w.integration.maximum_depth},
             {"maximum_damage_increment",w.integration.maximum_damage_increment},{"maximum_plastic_strain_increment",w.integration.maximum_plastic_strain_increment},{"maximum_brittle_opening_overshoot",w.integration.maximum_brittle_opening_overshoot},
-            {"on_limit",w.integration.reject_on_limit?"reject":"report"},{"maximum_solver_trials_per_tick",w.integration.enabled?((1u<<(w.integration.maximum_depth+1))-1):1u},
+            {"on_limit",w.integration.reject_on_limit?"reject":"report"},
+            // Each stability substep of the tick may bisect to the configured
+            // depth, so the per-tick bound scales with the substep count.
+            {"maximum_solver_trials_per_tick",w.integration.enabled
+                ?std::max(1u,w.stability_substeps)*((1u<<(w.integration.maximum_depth+1))-1):1u},
+            {"stability_substeps_per_tick",w.stability_substeps},
             {"solver_trials",w.integration.solver_trials},{"rejected_trials",w.integration.rejected_trials},{"accepted_substeps",w.integration.accepted_substeps},{"unresolved_substeps",w.integration.unresolved_substeps},
             {"rejected_trials_meaning","bisected coarse trials"},{"terminal_limit_rejections",w.integration.terminal_limit_rejections},
             {"rolled_back_ticks",w.integration.rolled_back_ticks},{"discarded_substeps",w.integration.discarded_substeps},{"deepest_trial",w.integration.deepest_trial},{"smallest_accepted_step_s",w.integration.smallest_accepted_step},
