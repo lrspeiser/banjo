@@ -618,6 +618,11 @@
         ? `${Math.round(cost.estimated_wall_s)} s predicted, ${Math.round(cost.measured_wall_s)} s measured (${cost.wall_error >= 0 ? "+" : ""}${Math.round(cost.wall_error * 100)}%)`
         : `${Math.round(cost.estimated_wall_s)} s predicted`,
         Number.isFinite(cost.wall_error) && Math.abs(cost.wall_error) <= .35 ? "ok" : Number.isFinite(cost.wall_error) ? "warn" : "");
+      if (Number.isFinite(cost.realtime_ratio)) {
+        // The owner's rule: wall time within 1.1x of the simulated interaction.
+        row("Realtime", `${cost.realtime_ratio.toFixed(2)}x of ${cost.simulated_s.toFixed(3)} s simulated (limit ${cost.realtime_limit}x)`,
+          cost.realtime_ratio <= cost.realtime_limit ? "ok" : "bad");
+      }
       if (Number.isFinite(cost.measured_substeps_per_tick)) {
         row("Substeps predicted / used", `${cost.substeps_per_host_tick} / ${cost.measured_substeps_per_tick}`,
           cost.substeps_per_host_tick === cost.measured_substeps_per_tick ? "ok" : "bad");

@@ -127,6 +127,30 @@ def request_plan(api_key, model, message, previous_plan=None):
     return plan, {"planning_wall_s": time.perf_counter()-start,
                   "model": model, "usage": result.get("usage", {}), "response_id": result.get("id")}
 
+# Owner's rule, 2026-09-07: no job may take more than 10% longer than the
+# simulated duration of the whole interaction, through to rest. Enforced before
+# a job exists, so a 90-minute scene is refused rather than announced.
+REALTIME_LIMIT = 1.1
+
+def realtime_refusal(estimated_wall_s, simulated_s, duration_s):
+    """None if the run fits the rule; otherwise the refusal text with a fix.
+
+    The fix is the longest duration that would pass at this scene's cost rate,
+    because duration is the one lever that costs nothing to see: an impact is
+    over in milliseconds and the rest of a long window is aftermath.
+    """
+    if not simulated_s or simulated_s <= 0:
+        return None
+    ratio = estimated_wall_s / simulated_s
+    if ratio <= REALTIME_LIMIT:
+        return None
+    longest = duration_s * REALTIME_LIMIT / ratio
+    return (f"Refused: projected {ratio:,.0f}x realtime ({estimated_wall_s:,.0f} s of computing "
+            f"for {simulated_s:.3g} s of simulated interaction); the limit is {REALTIME_LIMIT}x. "
+            f"At this scene's cost the longest run that passes is {longest:.4g} s, "
+            f"and cost falls roughly as the fourth power of cell size, so coarser cells "
+            f"buy far more than a shorter window. No substitute scene was run.")
+
 class Playground:
     def __init__(self, engine_path, studio_path, runs_path, *, planner=request_plan):
         self.engine_path, self.studio_path = Path(engine_path).resolve(), Path(studio_path).resolve()
@@ -226,6 +250,11 @@ class Playground:
         if not admission["admissible"]:
             first = admission["problems"][0]
             raise Inadmissible(first["message"], limit=first["limit"])
+        refusal = realtime_refusal(admission["cost"]["estimated_wall_s"],
+                                   admission["cost"].get("simulated_s") or steps * package.get("fixed_dt_s", 0),
+                                   steps * package.get("fixed_dt_s", 0))
+        if refusal:
+            raise Inadmissible(refusal, limit="realtime")
         if admission["cost"]["recording_over_budget"]:
             raise Inadmissible(
                 f"This run would record about {admission['cost']['estimated_recording_mb']:.0f} MB "
@@ -290,11 +319,15 @@ class Playground:
                              "substepping": substepping_verdict(case["report"])}
             with self.lock: self.playbacks[(job_id, 0)] = playback
             with self.lock: self.paths[(job_id, 0)] = (path, "network")
-            case["wall_s"] = round(time.perf_counter() - started, 1)
+            case["wall_s"] = round(time.perf_counter() - started, 3)
             # The estimate is only worth showing if it is checked against the
             # thing it predicted, so record both next to each other.
             if estimate:
+                simulated = estimate.get("simulated_s") or steps * package.get("fixed_dt_s", 0)
                 case["cost"] = {**estimate, "measured_wall_s": case["wall_s"],
+                                "simulated_s": simulated,
+                                "realtime_ratio": case["wall_s"] / simulated if simulated else None,
+                                "realtime_limit": REALTIME_LIMIT,
                                 "measured_substeps_per_tick": network_admission.measured_substeps(case["report"]),
                                 "wall_error": (case["wall_s"] - estimate["estimated_wall_s"]) / max(1e-9, estimate["estimated_wall_s"])}
                 self.log_event(job_id, "cost_measured", estimated_wall_s=estimate["estimated_wall_s"],
@@ -308,7 +341,7 @@ class Playground:
                            components=case["report"].get("connected_components"))
         except (ValueError, EngineError, subprocess.TimeoutExpired) as exc:
             case["status"], case["error"] = "error", str(exc)
-            case["wall_s"] = round(time.perf_counter() - started, 1)
+            case["wall_s"] = round(time.perf_counter() - started, 3)
             self.update(job_id, status="error", error=str(exc)[:300], cases=[case], message=str(exc)[:300])
         (directory / "job.json").write_text(json.dumps(self.get(job_id), indent=2, allow_nan=False),
                                             encoding="utf-8")
@@ -392,6 +425,16 @@ class Playground:
                                                "cost": cost})
                 self.log_event(job_id, "cost_estimated", estimated_wall_s=cost["estimated_wall_s"],
                                worst_substeps_per_tick=cost["worst_substeps_per_tick"])
+                # Every case is its own interaction and they run one after
+                # another, so the budget is the sum of their simulated windows.
+                refusal = realtime_refusal(cost["estimated_wall_s"],
+                                           plan["duration_s"] * len(packages), plan["duration_s"])
+                if refusal:
+                    self.log_event(job_id, "realtime_refused", estimated_wall_s=cost["estimated_wall_s"],
+                                   simulated_s=plan["duration_s"] * len(packages))
+                    self.update(job_id, status="blocked", message="Request not executed: " + refusal)
+                    (directory/"job.json").write_text(json.dumps(self.get(job_id),indent=2,allow_nan=False),encoding="utf-8")
+                    return
             if plan["experiment"] in ("unsupported", "glass_reference"):
                 if plan["experiment"] == "glass_reference":
                     reference = json.loads((ROOT/"assets/benchmarks/glass-drop-reference.json").read_text(encoding="utf-8"))

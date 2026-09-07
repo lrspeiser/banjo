@@ -59,7 +59,8 @@ Two changes in `src/platform/NetworkWorld.cpp`, one in
 **1. The network runs on its own clock.** `fixed_dt_s` is a host cadence, not a
 claim about what the material can be integrated at. Each host tick is now
 subdivided into `assessSpringResolution`'s required substeps, capped at
-`kMaximumStabilitySubsteps` (1024), at `kStabilityPhaseRadians` (0.2 rad of the
+`kMaximumStabilitySubsteps` (4,096 at this checkpoint; 8,192 since e75fdfd), at
+`kStabilityPhaseRadians` (0.2 rad of the
 fastest mode per solve). The authored package, the reported time and the outer
 cadence are unchanged; only the number of internal solves differs. The adaptive
 path substeps *inside* its existing transaction, so a terminal rejection still

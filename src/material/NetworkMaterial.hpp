@@ -26,6 +26,14 @@ struct NetworkMaterial {
     double hardening_ratio{};
     bool fracture_enabled{true};
     NetworkFailureLaw failure_law{NetworkFailureLaw::Cohesive};
+    // Contact loss is declared separately from internal (bond) damping; the
+    // rigid lane derives restitution from it. Defaults to the engine's general
+    // MaterialDefinition value and records that it did, because a silent zero
+    // here previously made every contact perfectly elastic.
+    // Declared last so positional aggregate initialisers of the fields above
+    // keep their meaning.
+    double contact_damping_ratio{0.05};
+    bool contact_damping_defaulted{true};
 };
 
 struct DirectionalNetworkParameters {

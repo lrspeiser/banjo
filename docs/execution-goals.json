@@ -1,7 +1,7 @@
 {
   "schema": "banjo.execution-goals.v2",
   "recorded_against": "main:3a974d93d100c36011e241aed1a3d74ab9fdc4f4",
-  "recorded_date": "2026-09-06",
+  "recorded_date": "2026-09-07",
   "project_goal_ref": "docs/project-goal-2026-09-06.md",
   "baseline": {
     "suite_count": 58,
@@ -601,6 +601,134 @@
         "physical_report_parity": "exact except solve_wall_ms",
         "scope": "fixed quasistatic reference, not dynamic contact or calibrated dents"
       }
+    },
+    {
+      "id": "G10",
+      "title": "Interactions at realtime, watched in 3D",
+      "status": "active",
+      "owner": "primary",
+      "objective": "Every interaction runs on the real engine within 1.1x its simulated duration through to rest, and every stage is done only when it can be loaded into the playground and watched in 3D. Route: wire the fast implicit lane to the viewer, then move the elastic response to a basis computed once per object, then carry fracture on basis updates.",
+      "rule": "No job may take more than 1.1x the simulated duration of the whole interaction including settling to rest; the playground refuses anything projected over that before it runs (REALTIME_LIMIT in playground/server.py).",
+      "definition_of_done": "Loaded in the playground, run on the real engine, watched in the 3D playback tab, wall time on the case card within 1.1x. Measurements, validations and scratch experiments do not count.",
+      "dependencies": [
+        "G09",
+        "implicit-fracture-lane",
+        "shared-bond-failure-criterion",
+        "cubic-cell-admission",
+        "cost-estimate-before-run"
+      ],
+      "stages": [
+        {
+          "id": "A",
+          "title": "Rule enforced; rigid ball onto rigid plate to rest",
+          "scene": "rigid iron ball dropped onto a rigid glass plate on the ground, 1.5 s",
+          "visual_confirmation": "ball falls, strikes, bounces, comes to rest; nothing passes through anything",
+          "realtime_gate": "<=1.1x, shown on the case card; over-budget requests refused before starting",
+          "status": "ready_for_owner_review",
+          "evidence": {
+            "job_id": "bcfc001ce3fd4ac998af5858d882e3c0",
+            "url": "http://127.0.0.1:8765/?job=bcfc001ce3fd4ac998af5858d882e3c0",
+            "package": "stage A rigid iron ball, 80 mm, dropped 0.39 m onto a rigid 0.24 x 0.02 x 0.36 m glass plate lying on the ground; 1/480 s; 3.0 s",
+            "measured": {
+              "wall_s": 0.053,
+              "simulated_s": 3.0,
+              "realtime_ratio": 0.0177,
+              "realtime_limit": 1.1,
+              "first_rebound_over_drop": 0.523,
+              "effective_restitution": 0.723,
+              "bounces": 7,
+              "at_rest_from_s": 1.35,
+              "movement_final_0_25_s_mm": 0.0,
+              "plate_displacement_mm": 0.0,
+              "plate_tilt_deg": 0.0,
+              "ball_penetration_into_plate_mm": 0.0,
+              "energy_in_j": 9.738,
+              "energy_at_rest_j": 1.666
+            },
+            "viewer_check": "the playground's own scene.js, instantiated against this playback, places the sphere (r 0.040) at (0,0.45,0) at frame 0 and at (0,0.06,0) -- plate top plus radius -- at frames 54 (1.35 s) and 120 (3.0 s); one live capture showed the ball rendered at frame 1. No live capture of the resting ball was obtained because the browser pane was hidden.",
+            "gate_proof": "a 200-cell tile at one tick was refused before any job existed: projected 11,154x realtime against the 1.1x limit."
+          }
+        },
+        {
+          "id": "B",
+          "title": "Glass tile flexes elastically at realtime",
+          "scene": "same ball onto an edge-clamped uniform-cube tile, fracture off, implicit lane, <=365 nodes",
+          "visual_confirmation": "tile deflects under the ball and springs back; max at strike point, zero at clamps",
+          "realtime_gate": "<=1.1x (implicit lane measured 1.00-1.03x at 365 nodes, 1/120 s)",
+          "status": "queued"
+        },
+        {
+          "id": "C",
+          "title": "Same flex from a basis computed once",
+          "scene": "identical to B, response evaluated from the object's eigenbasis built at creation",
+          "visual_confirmation": "B and C visually identical; difference view empty; card shows both wall times",
+          "realtime_gate": "faster than B and <=1.1x",
+          "status": "queued"
+        },
+        {
+          "id": "D",
+          "title": "First crack from the basis",
+          "scene": "as C with the shared failure criterion on, to the first failure set",
+          "visual_confirmation": "first crack set at the strike point matches the stepped solver's, side by side",
+          "realtime_gate": "<=1.1x to first failure",
+          "status": "queued"
+        },
+        {
+          "id": "E",
+          "title": "Full shatter from basis updates (research gate)",
+          "scene": "as D through the cascade; basis updated per round, not recomputed",
+          "visual_confirmation": "tile shatters into pieces; pattern matches the stepped solver within its own refinement spread",
+          "realtime_gate": "<=1.1x impact through end of fracture",
+          "status": "queued",
+          "risk": "low-rank updates may lose accuracy across the ~61-round cascade; if so, report where and stop, do not widen a tolerance"
+        },
+        {
+          "id": "F",
+          "title": "Pieces fall and come to rest",
+          "scene": "as E run to rest; fragment-fragment and ground contact",
+          "visual_confirmation": "pieces separate, fall, collide, stop; no interpenetration; recording ends at rest",
+          "realtime_gate": "<=1.1x for the entire interaction",
+          "status": "queued"
+        },
+        {
+          "id": "G",
+          "title": "Owner varies the request; result tracks it",
+          "scene": "Builder varies thickness, cube size, speed, material",
+          "visual_confirmation": "thicker cracks less, faster breaks more, oak/iron differ from glass, all in 3D; every run passes the gate or is refused first",
+          "realtime_gate": "<=1.1x or refused",
+          "status": "queued"
+        }
+      ],
+      "acceptance": {
+        "prototype_gate": [
+          "the realtime gate refuses over-budget jobs on both the chat and direct routes before they start",
+          "stage A is watchable in 3D with the measured ratio on the case card",
+          "stage B is watchable in 3D from the implicit lane"
+        ],
+        "complete_gate": [
+          "stages A through G each have a recording the owner has watched in the playground",
+          "every recording's measured wall time is within 1.1x its simulated interaction through rest",
+          "glass, oak and iron are each shown, with different outcomes from identical scenes",
+          "no stage was passed by widening a tolerance, precutting shards, or substituting a scene",
+          "the cubic-cell and slenderness limits are stated on every case that they bound"
+        ]
+      },
+      "next_action": "Owner opens http://127.0.0.1:8765/?job=bcfc001ce3fd4ac998af5858d882e3c0, 3D playback tab, and watches the ball come to rest. Then stage B: emit the implicit lane's trajectory in the banjo.playback.v1 format so the fast lane reaches the viewer.",
+      "evidence_status": "Stage A ran on the real engine and is loadable in the 3D tab; measured 0.053 s wall for 3.0 s simulated (0.018x), ball at rest on the plate from 1.35 s, zero penetration, zero plate motion. Reaching it exposed and fixed a defect that made every network-lane contact perfectly elastic (docs/rigid-contact-restitution-checkpoint.md): restitution was derived from a hard-coded zero contact damping; per-material contact damping is now declared and reported. The owner has not yet watched it; the viewer check was done through the viewer's scene graph. Not built: stages B-G. Under the rule, only rigid bodies and the implicit lane without fracture (<=365 nodes) are runnable today.",
+      "retained_requirements": [
+        "R-realtime-interaction",
+        "R-visual-confirmation-per-stage",
+        "R-no-authored-fracture",
+        "R-uniform-cells"
+      ],
+      "evidence_ref": [
+        "docs/goal-realtime-fracture.md",
+        "docs/two-day-evaluation-2026-09-07.md",
+        "docs/realtime-envelope-checkpoint.md",
+        "docs/implicit-fracture-checkpoint.md",
+        "docs/network-at-rest-stability-checkpoint.md",
+        "docs/rigid-contact-restitution-checkpoint.md"
+      ]
     }
   ],
   "latest_execution": {

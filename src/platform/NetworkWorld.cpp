@@ -1,5 +1,6 @@
 #include "platform/NetworkWorld.hpp"
 #include "material/NetworkMaterial.hpp"
+#include "material/MaterialCompiler.hpp"
 #include "physics/ResolutionBudget.hpp"
 #include "rigid/JoltWorld.hpp"
 #include <nlohmann/json.hpp>
@@ -61,10 +62,18 @@ Quat leastTwist(Vec3 from,Vec3 to){
     if(cosine<-1.+1e-10){auto axis=cross(from,Vec3{1,0,0});if(lengthSquared(axis)<1e-10)axis=cross(from,Vec3{0,1,0});axis=normalized(axis);return {0,axis.x,axis.y,axis.z};}
     const auto axis=cross(from,to);const double scale=std::sqrt(2*(1+cosine));return {(1+cosine)/scale,axis.x/scale,axis.y/scale,axis.z/scale};
 }
+// combineContactMaterials derives restitution from the combined contact damping
+// and reads nothing else, so damping is the only channel that reaches Jolt. This
+// used to set contact_damping_ratio=0 alongside restitution=0, and zero damping
+// under that model is a perfectly elastic contact: measured, an iron ball on a
+// rigid glass plate rebounded to 1.000x its drop height at both 1/480 s and
+// 1/4800 s. The declared per-material contact damping now flows through.
 MaterialDefinition contactMaterial(const NetworkMaterial &m){
     MaterialDefinition c;c.name=m.name;c.model=MaterialModel::RigidOnly;c.density_kg_m3=m.density_kg_m3;
     c.young_modulus_pa=std::min({m.young_modulus_pa.x,m.young_modulus_pa.y,m.young_modulus_pa.z});c.poisson_ratio=.25;
-    c.static_friction=c.dynamic_friction=c.friction=m.friction;c.restitution=0;c.contact_damping_ratio=0;c.derive_restitution_from_damping=false;return c;
+    c.static_friction=c.dynamic_friction=c.friction=m.friction;
+    c.contact_damping_ratio=m.contact_damping_ratio;c.derive_restitution_from_damping=true;
+    c.restitution=coefficientOfRestitutionFromDamping(m.contact_damping_ratio);return c;
 }
 }
 struct NetworkWorld::Impl {
@@ -161,12 +170,12 @@ std::unique_ptr<NetworkWorld> NetworkWorld::load(const std::string &text){
     require(source.at("materials").is_array()&&!source["materials"].empty()&&source["materials"].size()<=16,"network material budget");
     std::map<std::string,unsigned> materialIds;
     for(auto &m:source["materials"]){
-        fields(m,{"id","density_kg_m3","young_modulus_pa","tensile_strength_pa","fracture_energy_j_m2","damping_ratio","friction","yield_strength_pa","fracture_enabled","failure_law","color_rgb","provenance"});
+        fields(m,{"id","density_kg_m3","young_modulus_pa","tensile_strength_pa","fracture_energy_j_m2","damping_ratio","friction","contact_damping_ratio","yield_strength_pa","fracture_enabled","failure_law","color_rgb","provenance"});
         require(m.at("id").is_string()&&m["id"].get<std::string>().size()<=80,"invalid network material ID");
         NetworkMaterial law;law.name=m["id"].get<std::string>();law.density_kg_m3=scalar(m.at("density_kg_m3"),10,25000);
         law.young_modulus_pa=vector(m.at("young_modulus_pa"),100,1e12);law.tensile_strength_pa=vector(m.at("tensile_strength_pa"),1,1e10);
         law.fracture_energy_j_m2=vector(m.at("fracture_energy_j_m2"),.001,1e7);law.damping_ratio=scalar(m.at("damping_ratio"),0,2);
-        law.friction=scalar(m.at("friction"),0,2);law.yield_strength_pa=scalar(m.value("yield_strength_pa",json(0)),0,1e10);
+        law.friction=scalar(m.at("friction"),0,2);law.contact_damping_defaulted=!m.contains("contact_damping_ratio");law.contact_damping_ratio=scalar(m.value("contact_damping_ratio",json(.05)),0,.999);law.yield_strength_pa=scalar(m.value("yield_strength_pa",json(0)),0,1e10);
         require(m.at("fracture_enabled").is_boolean(),"fracture_enabled must be boolean");law.fracture_enabled=m["fracture_enabled"].get<bool>();
         const auto failure=m.value("failure_law",std::string("cohesive"));require(failure=="cohesive"||failure=="brittle","unknown failure law");
         law.failure_law=failure=="brittle"?NetworkFailureLaw::Brittle:NetworkFailureLaw::Cohesive;
@@ -564,9 +573,13 @@ std::string NetworkWorld::reportJson() const {
             {"max_isolated_pair_frequency_rad_s",o.max_pair_frequency},{"step_times_pair_frequency",w.dt*o.max_pair_frequency}});
         std::map<unsigned,unsigned> sizes;for(auto node:o.nodes)++sizes[groups[node]];unsigned largest=0;for(auto &[key,count]:sizes){(void)key;largest=std::max(largest,count);}objects.back()["largest_component_cells"]=largest;
     }
+    json contact_materials=json::array();
+    for(const auto &m:w.materials)contact_materials.push_back({{"id",m.law.name},{"contact_damping_ratio",m.law.contact_damping_ratio},
+        {"self_contact_restitution",coefficientOfRestitutionFromDamping(m.law.contact_damping_ratio)},{"defaulted",m.law.contact_damping_defaulted}});
     const auto mechanics=w.rigid.mechanicalTotals(w.gravity);
     const auto contacts=w.rigid.contactDiagnostics();
     return json{{"model","material-network-v2"},{"physical_response_validated",false},
+        {"contact_materials",contact_materials},
         {"network_substepping",{
             {"substeps_per_host_tick",w.stability_substeps},
             {"required_substeps",w.required_stability_substeps},

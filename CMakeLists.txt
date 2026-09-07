@@ -646,7 +646,10 @@ if(BANJO_BUILD_TESTS AND TARGET banjo_platform)
  # internal solves per host tick, so these multi-scenario 720-step runs cost
  # roughly an hour each rather than seconds. Coverage is unchanged; only the
  # price is. See docs/network-at-rest-stability-checkpoint.md.
+ # The adaptive suite's tomato fixture is fully resolved under the 8,192-substep
+ # cap and takes about 18 minutes, past ctest's default.
  set_tests_properties(banjo_network_skin_tests banjo_network_runtime_tests
+     banjo_network_adaptive_tests
      PROPERTIES TIMEOUT 7200)
  add_executable(banjo_material_showcase_tests tests/material_showcase_tests.cpp)
  target_link_libraries(banjo_material_showcase_tests PRIVATE banjo_platform nlohmann_json::nlohmann_json)
@@ -656,6 +659,9 @@ if(BANJO_BUILD_TESTS AND TARGET banjo_platform)
  target_link_libraries(banjo_contact_capacity_tests PRIVATE banjo_platform nlohmann_json::nlohmann_json)
  target_compile_definitions(banjo_contact_capacity_tests PRIVATE BANJO_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
  add_test(NAME banjo_contact_capacity_tests COMMAND banjo_contact_capacity_tests)
+ # Three 7^3 matter balls and a twice-stepped panel, fully resolved under the
+ # substep cap: about 34 minutes (2,039 s measured).
+ set_tests_properties(banjo_contact_capacity_tests PROPERTIES TIMEOUT 7200)
  add_executable(banjo_network_spring_tests tests/network_spring_tests.cpp)
  target_link_libraries(banjo_network_spring_tests PRIVATE banjo_platform nlohmann_json::nlohmann_json)
  add_test(NAME banjo_network_spring_tests COMMAND banjo_network_spring_tests)

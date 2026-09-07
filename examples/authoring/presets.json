@@ -27,7 +27,8 @@
       "fracture_enabled": true,
       "failure_law": "brittle",
       "color_rgb": 7461089,
-      "provenance": "Experimental directional axial lattice parameters. Not a calibrated continuum or prediction of real fruit/wood cutting."
+      "provenance": "Experimental directional axial lattice parameters. Not a calibrated continuum or prediction of real fruit/wood cutting.",
+      "contact_damping_ratio": 0.08
     },
     {
       "id": "oak",
@@ -53,7 +54,8 @@
       "fracture_enabled": true,
       "failure_law": "cohesive",
       "color_rgb": 13145170,
-      "provenance": "Experimental directional axial lattice parameters. Not a calibrated continuum or prediction of real fruit/wood cutting."
+      "provenance": "Experimental directional axial lattice parameters. Not a calibrated continuum or prediction of real fruit/wood cutting.",
+      "contact_damping_ratio": 0.24
     },
     {
       "id": "iron",
@@ -79,7 +81,8 @@
       "fracture_enabled": false,
       "failure_law": "cohesive",
       "color_rgb": 10991558,
-      "provenance": "Experimental directional axial lattice parameters. Not a calibrated continuum or prediction of real fruit/wood cutting."
+      "provenance": "Experimental directional axial lattice parameters. Not a calibrated continuum or prediction of real fruit/wood cutting.",
+      "contact_damping_ratio": 0.18
     },
     {
       "id": "soft-tissue",
