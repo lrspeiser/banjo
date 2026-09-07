@@ -82,6 +82,8 @@ add_library(
     src/fracture/RuptureCascade.cpp
     src/fracture/EnergyRupture.cpp
     src/fracture/BondFailure.cpp
+    src/fracture/QuasiStaticFracture.cpp
+    src/fracture/PieceGeometry.cpp
     src/fracture/BrittleBondSolver.cpp
     src/fracture/ConnectedComponents.cpp
     src/fracture/FragmentMassProperties.cpp
@@ -237,6 +239,10 @@ if(BANJO_BUILD_HEADLESS)
     target_link_libraries(banjo_glass_diagnostic PRIVATE banjo_runtime)
     target_compile_features(banjo_glass_diagnostic PRIVATE cxx_std_23)
     banjo_enable_warnings(banjo_glass_diagnostic)
+
+    add_executable(banjo_quasistatic_probe src/app/quasistatic_probe_main.cpp)
+    target_link_libraries(banjo_quasistatic_probe PRIVATE banjo_runtime nlohmann_json::nlohmann_json)
+    banjo_enable_warnings(banjo_quasistatic_probe)
 
     add_executable(banjo_headless src/app/headless_main.cpp)
     target_link_libraries(banjo_headless PRIVATE banjo_runtime)
@@ -496,6 +502,10 @@ if(BANJO_BUILD_TESTS)
     target_link_libraries(banjo_implicit_fracture_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_implicit_fracture_tests)
     add_test(NAME banjo_implicit_fracture_tests COMMAND banjo_implicit_fracture_tests)
+    add_executable(banjo_quasistatic_fracture_tests tests/quasistatic_fracture_tests.cpp)
+    target_link_libraries(banjo_quasistatic_fracture_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_quasistatic_fracture_tests)
+    add_test(NAME banjo_quasistatic_fracture_tests COMMAND banjo_quasistatic_fracture_tests)
     add_executable(banjo_conservative_step_tests tests/conservative_step_tests.cpp)
     target_link_libraries(banjo_conservative_step_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_conservative_step_tests)

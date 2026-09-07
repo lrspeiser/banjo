@@ -110,6 +110,95 @@ struct GridCoordHash {
     return inertia;
 }
 
+void buildBonds(
+    LatticeAsset &asset,
+    const std::unordered_map<GridCoord, std::uint32_t, GridCoordHash> &node_by_grid,
+    const CompiledBrittleMaterial &material,
+    unsigned neighbor_horizon_cells) {
+    const double voxel_size_m = asset.recipe.voxel_size_m;
+    const int horizon =
+        static_cast<int>(neighbor_horizon_cells);
+    for (std::uint32_t node_index = 0;
+         node_index < asset.nodes.size();
+         ++node_index) {
+        const GridCoord origin = asset.nodes[node_index].grid;
+        for (int dz = -horizon; dz <= horizon; ++dz) {
+            for (int dy = -horizon; dy <= horizon; ++dy) {
+                for (int dx = -horizon; dx <= horizon; ++dx) {
+                    if (!positiveHalfOffset(dx, dy, dz)) {
+                        continue;
+                    }
+                    const double grid_distance = std::sqrt(
+                        static_cast<double>(
+                            dx * dx + dy * dy + dz * dz));
+                    if (grid_distance >
+                        static_cast<double>(horizon) + 1.0e-9) {
+                        continue;
+                    }
+
+                    const GridCoord neighbor{
+                        origin.x + dx,
+                        origin.y + dy,
+                        origin.z + dz,
+                    };
+                    const auto found = node_by_grid.find(neighbor);
+                    if (found == node_by_grid.end()) {
+                        continue;
+                    }
+
+                    const std::uint32_t other_index = found->second;
+                    const double rest_length =
+                        grid_distance * voxel_size_m;
+                    const double horizon_weight =
+                        1.0 / std::max(1.0, grid_distance * grid_distance);
+                    const double variation = signedVariation(
+                        material.seed,
+                        node_index,
+                        other_index,
+                        material.strength_variation);
+                    asset.bonds.push_back({
+                        node_index,
+                        other_index,
+                        rest_length,
+                        material.bond_compliance / horizon_weight,
+                        material.damage_start_stretch * variation,
+                        material.damage_end_stretch * variation,
+                        material.compression_damage_start_strain * variation,
+                        material.compression_damage_end_strain * variation,
+                        material.shear_damage_start_strain * variation,
+                        material.shear_damage_end_strain * variation,
+                    });
+                }
+            }
+        }
+    }
+
+}
+
+void buildAdjacency(LatticeAsset &asset) {
+    std::vector<std::uint32_t> degree(asset.nodes.size(), 0U);
+    for (const BondRest &bond : asset.bonds) {
+        ++degree[bond.node_a];
+        ++degree[bond.node_b];
+    }
+
+    asset.adjacency_offsets.resize(asset.nodes.size() + 1U, 0U);
+    for (std::size_t node = 0; node < asset.nodes.size(); ++node) {
+        asset.adjacency_offsets[node + 1U] =
+            asset.adjacency_offsets[node] + degree[node];
+    }
+    asset.adjacent_bond_indices.resize(asset.adjacency_offsets.back());
+    std::vector<std::uint32_t> cursor = asset.adjacency_offsets;
+    for (std::uint32_t bond_index = 0;
+         bond_index < asset.bonds.size();
+         ++bond_index) {
+        const BondRest &bond = asset.bonds[bond_index];
+        asset.adjacent_bond_indices[cursor[bond.node_a]++] = bond_index;
+        asset.adjacent_bond_indices[cursor[bond.node_b]++] = bond_index;
+    }
+
+}
+
 } // namespace
 
 LatticeAsset generateSphereLattice(
@@ -188,84 +277,66 @@ LatticeAsset generateSphereLattice(
         asset.rest_center_of_mass_m,
         recipe.voxel_size_m);
 
-    const int horizon =
-        static_cast<int>(recipe.neighbor_horizon_cells);
-    for (std::uint32_t node_index = 0;
-         node_index < asset.nodes.size();
-         ++node_index) {
-        const GridCoord origin = asset.nodes[node_index].grid;
-        for (int dz = -horizon; dz <= horizon; ++dz) {
-            for (int dy = -horizon; dy <= horizon; ++dy) {
-                for (int dx = -horizon; dx <= horizon; ++dx) {
-                    if (!positiveHalfOffset(dx, dy, dz)) {
-                        continue;
-                    }
-                    const double grid_distance = std::sqrt(
-                        static_cast<double>(
-                            dx * dx + dy * dy + dz * dz));
-                    if (grid_distance >
-                        static_cast<double>(horizon) + 1.0e-9) {
-                        continue;
-                    }
+    buildBonds(asset, node_by_grid, material, recipe.neighbor_horizon_cells);
+    buildAdjacency(asset);
+    return asset;
+}
 
-                    const GridCoord neighbor{
-                        origin.x + dx,
-                        origin.y + dy,
-                        origin.z + dz,
-                    };
-                    const auto found = node_by_grid.find(neighbor);
-                    if (found == node_by_grid.end()) {
-                        continue;
-                    }
+LatticeAsset generateBoxLattice(
+    const BoxRecipe &recipe,
+    const CompiledBrittleMaterial &material) {
+    if (recipe.cells_x == 0U || recipe.cells_y == 0U || recipe.cells_z == 0U ||
+        !std::isfinite(recipe.voxel_size_m) || recipe.voxel_size_m <= 0.0 ||
+        recipe.neighbor_horizon_cells == 0U) {
+        throw std::invalid_argument("box recipe needs positive cell counts, cell size and horizon");
+    }
+    if (static_cast<std::uint64_t>(recipe.cells_x) * recipe.cells_y * recipe.cells_z > 4000000ULL) {
+        throw std::invalid_argument("box recipe exceeds the lattice node budget");
+    }
+    if (!(material.density_kg_m3 > 0.0)) {
+        throw std::invalid_argument("box lattice needs a positive density");
+    }
 
-                    const std::uint32_t other_index = found->second;
-                    const double rest_length =
-                        grid_distance * recipe.voxel_size_m;
-                    const double horizon_weight =
-                        1.0 / std::max(1.0, grid_distance * grid_distance);
-                    const double variation = signedVariation(
-                        material.seed,
-                        node_index,
-                        other_index,
-                        material.strength_variation);
-                    asset.bonds.push_back({
-                        node_index,
-                        other_index,
-                        rest_length,
-                        material.bond_compliance / horizon_weight,
-                        material.damage_start_stretch * variation,
-                        material.damage_end_stretch * variation,
-                        material.compression_damage_start_strain * variation,
-                        material.compression_damage_end_strain * variation,
-                        material.shear_damage_start_strain * variation,
-                        material.shear_damage_end_strain * variation,
-                    });
-                }
+    LatticeAsset asset;
+    const Vec3 half_extent{
+        0.5 * recipe.cells_x * recipe.voxel_size_m,
+        0.5 * recipe.cells_y * recipe.voxel_size_m,
+        0.5 * recipe.cells_z * recipe.voxel_size_m,
+    };
+    asset.recipe = {length(half_extent), recipe.voxel_size_m, recipe.neighbor_horizon_cells, 1U};
+    const double voxel_volume = recipe.voxel_size_m * recipe.voxel_size_m * recipe.voxel_size_m;
+    std::unordered_map<GridCoord, std::uint32_t, GridCoordHash> node_by_grid;
+    node_by_grid.reserve(static_cast<std::size_t>(recipe.cells_x) * recipe.cells_y * recipe.cells_z);
+
+    for (int z = 0; z < static_cast<int>(recipe.cells_z); ++z) {
+        for (int y = 0; y < static_cast<int>(recipe.cells_y); ++y) {
+            for (int x = 0; x < static_cast<int>(recipe.cells_x); ++x) {
+                const Vec3 center{
+                    (static_cast<double>(x) + 0.5) * recipe.voxel_size_m - half_extent.x,
+                    (static_cast<double>(y) + 0.5) * recipe.voxel_size_m - half_extent.y,
+                    (static_cast<double>(z) + 0.5) * recipe.voxel_size_m - half_extent.z,
+                };
+                const bool surface = x == 0 || y == 0 || z == 0 ||
+                    x + 1 == static_cast<int>(recipe.cells_x) ||
+                    y + 1 == static_cast<int>(recipe.cells_y) ||
+                    z + 1 == static_cast<int>(recipe.cells_z);
+                const GridCoord grid{x, y, z};
+                node_by_grid.emplace(grid, static_cast<std::uint32_t>(asset.nodes.size()));
+                asset.nodes.push_back({center, grid, voxel_volume, surface});
+                asset.represented_volume_m3 += voxel_volume;
             }
         }
     }
-
-    std::vector<std::uint32_t> degree(asset.nodes.size(), 0U);
-    for (const BondRest &bond : asset.bonds) {
-        ++degree[bond.node_a];
-        ++degree[bond.node_b];
+    asset.total_mass_kg = asset.represented_volume_m3 * material.density_kg_m3;
+    Vec3 weighted_center{};
+    for (const LatticeNodeRest &node : asset.nodes) {
+        weighted_center += node.represented_volume_m3 * material.density_kg_m3 * node.local_position_m;
     }
-
-    asset.adjacency_offsets.resize(asset.nodes.size() + 1U, 0U);
-    for (std::size_t node = 0; node < asset.nodes.size(); ++node) {
-        asset.adjacency_offsets[node + 1U] =
-            asset.adjacency_offsets[node] + degree[node];
-    }
-    asset.adjacent_bond_indices.resize(asset.adjacency_offsets.back());
-    std::vector<std::uint32_t> cursor = asset.adjacency_offsets;
-    for (std::uint32_t bond_index = 0;
-         bond_index < asset.bonds.size();
-         ++bond_index) {
-        const BondRest &bond = asset.bonds[bond_index];
-        asset.adjacent_bond_indices[cursor[bond.node_a]++] = bond_index;
-        asset.adjacent_bond_indices[cursor[bond.node_b]++] = bond_index;
-    }
-
+    asset.rest_center_of_mass_m = weighted_center / asset.total_mass_kg;
+    asset.rest_inertia_kg_m2 = calculateRestInertia(
+        asset.nodes, material.density_kg_m3, asset.rest_center_of_mass_m, recipe.voxel_size_m);
+    buildBonds(asset, node_by_grid, material, recipe.neighbor_horizon_cells);
+    buildAdjacency(asset);
     return asset;
 }
 
