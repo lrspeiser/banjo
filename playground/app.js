@@ -433,7 +433,7 @@
     if (state.scene) return state.scene;
     if (!window.BanjoScene) throw new Error("The local 3D renderer is still loading.");
     state.scene = window.BanjoScene.create($("viewer-stage"), {
-      onFrame: ({index, count, frame, continuum, dynamic, thermal}) => { $("viewer-frame").max = String(Math.max(0,count-1)); $("viewer-frame").value=String(index); syncCustomDisplay("frame",count>1?index/(count-1):0); const stopped=dynamic ? frame?.material_states?.filter(x=>x.stopped).map(x=>x.material_id) || [] : []; const shownTime=(dynamic||thermal)&&Number.isFinite(frame?.time_s) ? Number(frame.time_s.toPrecision(9)) : frame?.time_s; const thermalDetail=thermal&&frame?.ledger ? ` · ${thermalTemperature(frame.ledger.temperature_min_k)}–${thermalTemperature(frame.ledger.temperature_max_k)} · fuel ${thermalMass(frame.ledger.fuel_kg)} · products ${thermalMass(frame.ledger.products_kg)}` : ""; const detail=continuum ? ` · ${text(frame?.phase,"load")} · load ${frame?.load_fraction !== undefined ? `${Math.round(frame.load_fraction*100)}%` : `frame ${index+1}`}` : shownTime !== undefined ? ` · ${text(shownTime)} s${stopped.length ? ` · stopped: ${stopped.join(", ")}` : ""}${thermalDetail}` : ""; $("viewer-frame-output").textContent=`${index+1} / ${count || 0}${detail}`; $("viewer-magnification").disabled=!continuum;if(!continuum)$("viewer-magnification").value="1"; $("viewer-bonds").closest("label").hidden=!!dynamic||!!thermal; },
+      onFrame: ({index, count, frame, continuum, dynamic, thermal}) => { $("viewer-frame").max = String(Math.max(0,count-1)); $("viewer-frame").value=String(index); syncCustomDisplay("frame",count>1?index/(count-1):0); const stopped=dynamic ? frame?.material_states?.filter(x=>x.stopped).map(x=>x.material_id) || [] : []; const shownTime=(dynamic||thermal)&&Number.isFinite(frame?.time_s) ? Number(frame.time_s.toPrecision(9)) : frame?.time_s; const thermalPhase=thermal&&frame?.cells?.some(cell=>cell.phase_change); const thermalDetail=thermal&&frame?.ledger ? thermalPhase ? ` · ${thermalTemperature(frame.ledger.temperature_min_k)}–${thermalTemperature(frame.ledger.temperature_max_k)} · liquid ${thermalMass(frame.ledger.liquid_mass_kg)} · enthalpy ${thermalEnergy(frame.ledger.thermal_enthalpy_j)}` : ` · ${thermalTemperature(frame.ledger.temperature_min_k)}–${thermalTemperature(frame.ledger.temperature_max_k)} · fuel ${thermalMass(frame.ledger.fuel_kg)} · products ${thermalMass(frame.ledger.products_kg)}` : ""; const detail=continuum ? ` · ${text(frame?.phase,"load")} · load ${frame?.load_fraction !== undefined ? `${Math.round(frame.load_fraction*100)}%` : `frame ${index+1}`}` : shownTime !== undefined ? ` · ${text(shownTime)} s${stopped.length ? ` · stopped: ${stopped.join(", ")}` : ""}${thermalDetail}` : ""; $("viewer-frame-output").textContent=`${index+1} / ${count || 0}${detail}`; $("viewer-magnification").disabled=!continuum;if(!continuum)$("viewer-magnification").value="1"; $("viewer-bonds").closest("label").hidden=!!dynamic||!!thermal; },
       onPlayState: (playing) => { $("viewer-play").textContent=playing?"Pause":"Play"; },
       onInspect: (data) => { $("viewer-inspect").textContent = data ? Object.entries(data).filter(([k,v]) => k !== "source" && typeof v !== "object").slice(0,16).map(([k,v])=>`${k}: ${text(v)}`).join(" · ") : "Nothing selected."; },
     });
@@ -482,6 +482,10 @@
     if (!Number.isFinite(value)) return "—";
     if (Math.abs(value) < .01) return `${Number((value * 1e6).toPrecision(3))} mg`;
     return `${Number(value.toPrecision(3))} kg`;
+  }
+
+  function thermalEnergy(value) {
+    return Number.isFinite(value) ? `${Number(value.toPrecision(4))} J` : "—";
   }
 
   function renderThermalLegend(metadata) {

@@ -26,7 +26,7 @@ def frame(time, positions=None, exposed=None, components=None):
     }
 
 
-def case(status="complete"):
+def case(status="complete", version=1):
     completed = 0.008 if status == "complete" else 0.003
     frames = [frame(0.0), frame(completed,
                                 [[0.0, 0.0, 0.0], [1.0 + completed, 0.0, 0.0],
@@ -34,7 +34,10 @@ def case(status="complete"):
     return {
         "name": "higher_impact",
         "scope": "fictional explicit SI cohesive impact",
-        "bulk": {"law": "isotropic_elastic", "young_modulus_pa": 1e6,
+        "finite_facet_closure_contact": version == 3,
+        "maximum_closure_compression_fraction": .02,
+        "bulk": {"law": "isotropic_elastic" if version == 1 else "corotated_isotropic",
+                 "young_modulus_pa": 1e6,
                  "poisson_ratio": .25, "density_kg_m3": 1000.0},
         "interface": {"stiffness_pa_per_m": 1e9,
                       "tangential_stiffness_pa_per_m": 2e8,
@@ -54,7 +57,12 @@ def case(status="complete"):
                     "accepted_contacts": 4, "maximum_damage": .5,
                     "maximum_fully_separated_facets": 1, "maximum_components": 1,
                     "newly_exposed_faces_final": 1, "geometry_queries": 20,
-                    "geometry_iterations": 30, "cumulative_energy_residual_j": 1e-8,
+                    "geometry_iterations": 30,
+                    "maximum_compressed_separated_facets": 2 if version == 3 else 0,
+                    "maximum_closure_compression_m": 2e-5 if version == 3 else 0.0,
+                    "closure_projection_queries": 18 if version == 3 else 0,
+                    "interface_contact_stored_energy_final_j": 3e-8 if version == 3 else 0.0,
+                    "cumulative_energy_residual_j": 1e-8,
                     "cumulative_absolute_energy_residual_j": 2e-8, "wall_ms": 3.0},
     }
 
@@ -77,6 +85,52 @@ class CohesivePlaybackTests(unittest.TestCase):
                          source["cases"][0]["frames"][-1]["newly_exposed_faces"])
         self.assertEqual(source, original)
 
+    def test_strictly_accepts_and_preserves_each_declared_native_mode(self):
+        expectations = {
+            1: ("isotropic_elastic", False),
+            2: ("corotated_isotropic", False),
+            3: ("corotated_isotropic", True),
+        }
+        for version, (law, closure) in expectations.items():
+            schema = f"banjo.cohesive-sphere-probe.v{version}"
+            result = adapt_cohesive_playback(
+                {"schema": schema, "cases": [case(version=version)]})
+            adapted = result["cases"][0]
+            self.assertEqual(result["native_schema"], schema)
+            self.assertEqual(adapted["declared_bulk_mode"], law)
+            self.assertEqual(adapted["finite_facet_closure_contact"], closure)
+            self.assertEqual(adapted["maximum_closure_compression_fraction"], .02)
+            self.assertEqual(adapted["summary"]["interface_contact_stored_energy_final_j"],
+                             3e-8 if version == 3 else 0.0)
+
+    def test_v3_preserves_optional_per_frame_energy_evidence(self):
+        source_case = case(version=3)
+        evidence = {"bulk_stored_energy_j": 4e-7,
+                    "cohesive_stored_energy_j": 2e-7,
+                    "interface_contact_stored_energy_j": 3e-8,
+                    "compressed_separated_facets": 1}
+        source_case["frames"][-1].update(evidence)
+        adapted = adapt_cohesive_playback(
+            {"schema": "banjo.cohesive-sphere-probe.v3",
+             "cases": [source_case]})["cases"][0]
+        for field, value in evidence.items():
+            self.assertEqual(adapted["frames"][-1][field], value)
+
+    def test_rejects_schema_law_and_closure_mode_mismatches(self):
+        bad = case(version=2)
+        bad["bulk"]["law"] = "isotropic_elastic"
+        with self.assertRaisesRegex(ValueError, "bulk law"):
+            adapt_cohesive_playback(
+                {"schema": "banjo.cohesive-sphere-probe.v2", "cases": [bad]})
+        bad = case(version=3)
+        bad["finite_facet_closure_contact"] = False
+        with self.assertRaisesRegex(ValueError, "closure mode"):
+            adapt_cohesive_playback(
+                {"schema": "banjo.cohesive-sphere-probe.v3", "cases": [bad]})
+        with self.assertRaisesRegex(ValueError, "native schema"):
+            adapt_cohesive_playback(
+                {"schema": "banjo.cohesive-sphere-probe.v4", "cases": [case()]})
+
     def test_partial_high_case_remains_solver_limit(self):
         source = {"schema": "banjo.cohesive-sphere-probe.v1",
                   "cases": [case("solver_limit")]}
@@ -87,6 +141,19 @@ class CohesivePlaybackTests(unittest.TestCase):
         self.assertEqual(adapted["completed_duration_s"], .003)
         self.assertEqual(adapted["error"], "step limit")
         self.assertEqual(adapted["summary"]["accepted_contacts"], 4)
+
+    def test_legacy_v1_without_closure_ledger_remains_readable(self):
+        legacy = case()
+        legacy.pop("finite_facet_closure_contact")
+        legacy.pop("maximum_closure_compression_fraction")
+        for field in ("maximum_compressed_separated_facets",
+                      "maximum_closure_compression_m", "closure_projection_queries",
+                      "interface_contact_stored_energy_final_j"):
+            legacy["summary"].pop(field)
+        adapted = adapt_cohesive_playback(
+            {"schema": "banjo.cohesive-sphere-probe.v1", "cases": [legacy]})["cases"][0]
+        self.assertFalse(adapted["finite_facet_closure_contact"])
+        self.assertEqual(adapted["maximum_closure_compression_fraction"], 0.0)
 
     def test_rejects_nonmonotonic_time_and_bad_topology(self):
         bad = case()

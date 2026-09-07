@@ -24,6 +24,8 @@ struct CorotatedCohesiveFacetEvaluation {
     Vec3 current_moment_n_m{};
     double reference_area_m2{};
     double stored_energy_j{};
+    double cohesive_stored_energy_j{};
+    double compression_stored_energy_j{};
     double fracture_dissipation_j{};
     double fracture_dissipation_increment_j{};
     unsigned separated_integration_points{};

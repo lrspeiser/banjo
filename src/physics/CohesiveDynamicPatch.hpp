@@ -35,6 +35,13 @@ struct CohesiveDynamicPatchOptions {
     double minimum_deformation_jacobian{0.1};
     double maximum_deformation_gradient_norm{4.0};
     CorotatedCohesiveFacetOptions objective_facets{};
+    // Opt-in closure potential for matching finite fracture faces. The same
+    // compression potential is retained through damage; it is not a general
+    // fragment contact solver. Footprint loss rejects the complete trial.
+    bool finite_facet_closure_contact{false};
+    // Numerical overlap bound, relative to the shortest reference facet edge.
+    // This does not alter the authored compression stiffness or fracture law.
+    double maximum_closure_compression_fraction{0.01};
 };
 
 struct CohesiveDynamicPatchState {
@@ -64,6 +71,10 @@ struct CohesiveDynamicPatchReport {
     double kinetic_energy_j{};
     double bulk_stored_energy_j{};
     double cohesive_stored_energy_j{};
+    double interface_contact_stored_energy_j{};
+    unsigned compressed_separated_facets{};
+    std::vector<unsigned> closure_contact_facets;
+    double maximum_closure_compression_m{};
     double plastic_dissipation_j{};
     double fracture_dissipation_j{};
     double fracture_dissipation_increment_j{};
@@ -80,6 +91,7 @@ struct CohesiveDynamicPatchReport {
     std::uint64_t nodal_scatters{};
     std::uint64_t polar_iterations{};
     std::uint64_t facet_derivative_evaluations{};
+    std::uint64_t closure_projection_queries{};
     double maximum_elastic_stretch_norm{};
     unsigned fully_separated_facets{};
 };

@@ -57,6 +57,10 @@ add_library(
     src/physics/SpherePatchSnapshot.cpp
     src/physics/FractureOverlap.cpp
     src/physics/SegmentTriangleContact.cpp
+    src/physics/SweptSegmentTriangle.cpp
+    src/physics/PairedFacetContact.cpp
+    src/physics/SpherePatchSnapshotCodec.cpp
+    src/physics/TetrahedronContactImpulse.cpp
     src/physics/FractureComponentState.cpp
     src/physics/FractureTopology.cpp
     src/physics/CohesivePair.cpp
@@ -330,6 +334,26 @@ if(BANJO_BUILD_TESTS)
     target_link_libraries(banjo_sphere_patch_snapshot_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_sphere_patch_snapshot_tests)
     add_test(NAME banjo_sphere_patch_snapshot_tests COMMAND banjo_sphere_patch_snapshot_tests)
+    add_executable(banjo_sphere_patch_snapshot_codec_tests tests/sphere_patch_snapshot_codec_tests.cpp)
+    target_link_libraries(banjo_sphere_patch_snapshot_codec_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_sphere_patch_snapshot_codec_tests)
+    add_test(NAME banjo_sphere_patch_snapshot_codec_tests COMMAND banjo_sphere_patch_snapshot_codec_tests)
+    add_executable(banjo_swept_segment_triangle_tests tests/swept_segment_triangle_tests.cpp)
+    target_link_libraries(banjo_swept_segment_triangle_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_swept_segment_triangle_tests)
+    add_test(NAME banjo_swept_segment_triangle_tests COMMAND banjo_swept_segment_triangle_tests)
+    add_executable(banjo_paired_facet_contact_tests tests/paired_facet_contact_tests.cpp)
+    target_link_libraries(banjo_paired_facet_contact_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_paired_facet_contact_tests)
+    add_test(NAME banjo_paired_facet_contact_tests COMMAND banjo_paired_facet_contact_tests)
+    add_executable(banjo_facet_closure_energy_tests tests/facet_closure_energy_tests.cpp)
+    target_link_libraries(banjo_facet_closure_energy_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_facet_closure_energy_tests)
+    add_test(NAME banjo_facet_closure_energy_tests COMMAND banjo_facet_closure_energy_tests)
+    add_executable(banjo_tetrahedron_contact_impulse_tests tests/tetrahedron_contact_impulse_tests.cpp)
+    target_link_libraries(banjo_tetrahedron_contact_impulse_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_tetrahedron_contact_impulse_tests)
+    add_test(NAME banjo_tetrahedron_contact_impulse_tests COMMAND banjo_tetrahedron_contact_impulse_tests)
     add_executable(banjo_corotated_cohesive_dynamic_tests tests/corotated_cohesive_dynamic_tests.cpp)
     target_link_libraries(banjo_corotated_cohesive_dynamic_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_corotated_cohesive_dynamic_tests)

@@ -18,6 +18,7 @@ struct FractureOverlapLimits {
 struct FractureOverlapResult {
     bool resolved{true};
     bool interpenetrating{false};
+    bool unowned_interpenetrating{false};
     // Minimum over tested cross-component pairs. Positive is separated, zero is
     // touching, and negative is the SAT penetration-depth estimate.
     double minimum_signed_separation_m{std::numeric_limits<double>::infinity()};
@@ -26,6 +27,7 @@ struct FractureOverlapResult {
     std::uint64_t tetrahedron_pairs{};
     std::uint64_t broad_phase_candidates{};
     std::uint64_t sat_axes{};
+    std::uint64_t owned_overlap_pairs{};
 };
 
 // Audits current tet-local positions for overlap between already disconnected
@@ -35,6 +37,7 @@ struct FractureOverlapResult {
 detectFractureOverlap(const FractureTopology &topology,
                       const std::vector<Vec3> &current_positions_m,
                       const FractureSeparation &separation,
-                      const FractureOverlapLimits &limits = {});
+                      const FractureOverlapLimits &limits = {},
+                      const std::vector<unsigned> &contact_owned_internal_facets = {});
 
 } // namespace banjo

@@ -117,7 +117,8 @@ Dual dotD(const DualVec&a,const DualVec&b){return a.x*b.x+a.y*b.y+a.z*b.z;}
 DualVec crossD(const DualVec&a,const DualVec&b){return {a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};}
 Dual normD(const DualVec&a){return root(dotD(a,a));}
 
-Dual differentiatedPotential(const CohesiveFacetLaw &law,double area,
+struct PotentialParts { Dual cohesion; Dual compression; };
+PotentialParts differentiatedPotential(const CohesiveFacetLaw &law,double area,
     const CorotatedCohesiveFacetState &state,const std::array<Vec3,3>&a,
     const std::array<Vec3,3>&b) {
     std::array<DualVec,3> da,db;
@@ -130,7 +131,7 @@ Dual differentiatedPotential(const CohesiveFacetLaw &law,double area,
     const DualVec e1=middle[1]-middle[0],e2=middle[2]-middle[0];
     const DualVec normal=crossD(e1,e2);const DualVec n=(Dual{1.}/normD(normal))*normal;
     const double ratio=law.tangential_stiffness_pa_per_m/law.stiffness_pa_per_m;
-    Dual energy;
+    PotentialParts energy;
     for(unsigned point=0;point<3;++point){
         DualVec gap;
         for(unsigned i=0;i<3;++i)gap=gap+Dual{quadrature[point][i]}*(db[i]-da[i]);
@@ -142,9 +143,9 @@ Dual differentiatedPotential(const CohesiveFacetLaw &law,double area,
         auto peak=state.integration_points[point];peak.opening_m=peak.maximum_opening_m;
         const auto response=evaluateCohesiveInterface(point_law,peak);
         const double secant=peak.maximum_opening_m>0?response.traction_pa/peak.maximum_opening_m:law.stiffness_pa_per_m;
-        energy=energy+(.5*area/3.*secant)*q2;
+        energy.cohesion=energy.cohesion+(.5*area/3.*secant)*q2;
         const Dual compression=gn.value<0?gn:Dual{};
-        energy=energy+(.5*area/3.*law.compression_stiffness_pa_per_m)*compression*compression;
+        energy.compression=energy.compression+(.5*area/3.*law.compression_stiffness_pa_per_m)*compression*compression;
     }
     return energy;
 }
@@ -184,7 +185,10 @@ CorotatedCohesiveFacetEvaluation advanceCorotatedCohesiveFacet(
     }
     require(options.maximum_derivative_evaluations >= 1,
             "Corotated cohesive derivative-evaluation budget exhausted");
-    const Dual potential=differentiatedPotential(law,area,result.state,current_a,current_b);
+    const auto parts=differentiatedPotential(law,area,result.state,current_a,current_b);
+    const Dual potential=parts.cohesion+parts.compression;
+    result.cohesive_stored_energy_j=parts.cohesion.value;
+    result.compression_stored_energy_j=parts.compression.value;
     require(std::isfinite(potential.value),
             "Corotated cohesive potential exceeds numeric range");
     for (const double derivative : potential.derivative)

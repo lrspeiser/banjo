@@ -56,6 +56,22 @@ def proposal(material_value=None, limits=None):
             "setup": {"kind": "thermal_material_experiment", "thermal": specification}}
 
 
+def phase_proposal():
+    phase = {"id": 1, "name": "fictional phase plateau demonstrator",
+             "density_kg_m3": 1000.0, "heat_capacity_j_kg_k": 2100.0,
+             "conductivity_w_m_k": 2.2,
+             "phase_change": {"liquid_heat_capacity_j_kg_k": 4180.0,
+                              "melting_temperature_k": 273.15,
+                              "latent_heat_j_kg": 334000.0}}
+    value = proposal(phase)
+    value["explanation"] = "Illustrative uncalibrated numeric phase-change plateau."
+    for cell in value["setup"]["thermal"]["cells"]:
+        cell["temperature_k"] = 270.0
+    value["setup"]["thermal"]["heater"] = {
+        "cell_index": 0, "energy_j": 1000.0, "maximum_energy_j": 1000.0}
+    return value
+
+
 def recording(request, limited=False):
     completed = 0.01 if limited else 0.1
     ledger = {"external_work_j": 3000.0, "reaction_heat_j": 100.0,
@@ -199,6 +215,39 @@ class ThermalMaterialRouteTests(unittest.TestCase):
             self.assertEqual(accepted, authored)
             self.assertTrue(all(cell["temperature_k"] >= 0 for cell in frame["cells"]))
         self.assertEqual(playback["final_ledger"], playback["frames"][-1]["ledger"])
+
+    def test_actual_phase_route_archives_plateau_fraction_and_energy_for_3d(self):
+        engine = ROOT / "build/win-joint-double/Release/banjo_platform_cli.exe"
+        thermal_cli = engine.with_name("banjo_thermal_experiment_cli.exe")
+        if not engine.is_file() or not thermal_cli.is_file():
+            self.skipTest("native playground and thermal executables are not built")
+        plan = language.lower_proposal(phase_proposal())
+        with tempfile.TemporaryDirectory() as temp, mock.patch.object(
+                server, "local_configuration", return_value=("", "fake")):
+            app = server.Playground(engine, Path(temp) / "studio.exe", Path(temp) / "runs",
+                                    planner=lambda *args: (deepcopy(plan), {"model": "mock"}))
+            app.pool.shutdown(); app.pool = InlineExecutor()
+            job_id = app.submit({"message": "Run explicit fictional phase plateau",
+                                 "request_id": "thermal-phase-route",
+                                 "auto_open": False})["job_id"]
+            job = app.get(job_id)
+            playback = json.loads(app.playback(job_id, 0))
+        heated = [frame["cells"][0] for frame in playback["frames"]]
+        self.assertTrue(all(cell["phase_change"] for cell in heated))
+        self.assertTrue(any(0 < cell["liquid_fraction"] < 1 for cell in heated))
+        self.assertGreater(max(cell["liquid_fraction"] for cell in heated) -
+                           min(cell["liquid_fraction"] for cell in heated), 0)
+        plateau = [cell["temperature_k"] for cell in heated if 0 < cell["liquid_fraction"] < 1]
+        self.assertTrue(all(abs(value - 273.15) < 1e-9 for value in plateau))
+        self.assertEqual(playback["final_ledger"]["external_work_j"], 1000.0)
+        self.assertEqual(playback["final_ledger"]["reaction_heat_j"], 0.0)
+        self.assertEqual(playback["final_ledger"]["mass_residual_kg"], 0.0)
+        self.assertLess(abs(playback["final_ledger"]["combined_energy_residual_j"]), 1e-9)
+        self.assertEqual(job["cases"][0]["diagnostics"]["native_facts"]["final_ledger"],
+                         playback["final_ledger"])
+        scene_source = (ROOT / "playground/scene.js").read_text(encoding="utf-8")
+        self.assertIn("liquid_fraction: state.liquid_fraction", scene_source)
+        self.assertIn("thermal_enthalpy_j_region", scene_source)
 
 
 if __name__ == "__main__":

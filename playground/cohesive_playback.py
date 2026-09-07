@@ -9,7 +9,11 @@ import math
 from pathlib import Path
 from typing import Any
 
-NATIVE_SCHEMA = "banjo.cohesive-sphere-probe.v1"
+NATIVE_SCHEMAS = {
+    "banjo.cohesive-sphere-probe.v1": ("isotropic_elastic", False),
+    "banjo.cohesive-sphere-probe.v2": ("corotated_isotropic", False),
+    "banjo.cohesive-sphere-probe.v3": ("corotated_isotropic", True),
+}
 VIEWER_SCHEMA = "banjo.dynamic-material-playback.v1"
 MAX_BYTES = 64 * 1024 * 1024
 MAX_CASES = 8
@@ -68,11 +72,15 @@ def _nonnegative_summary(summary: dict, field: str, integer: bool = False) -> An
     return _integer(value, 1_000_000_000) if integer else _number(value, 0)
 
 
-def _adapt_case(case: Any) -> dict:
+def _adapt_case(case: Any, native_schema: str) -> dict:
     allowed = {"name", "scope", "bulk", "interface", "sphere", "requested_duration_s",
                "stable_time_step_s", "time_step_s", "limitations", "mesh", "frames",
-               "summary"}
-    case = _object(case, allowed)
+               "summary", "finite_facet_closure_contact",
+               "maximum_closure_compression_fraction"}
+    legacy_optional = ({"finite_facet_closure_contact",
+                        "maximum_closure_compression_fraction"}
+                       if native_schema.endswith(".v1") else set())
+    case = _object(case, allowed, allowed - legacy_optional)
     if not isinstance(case["name"], str) or not case["name"]:
         raise ValueError("invalid cohesive case name")
     bulk = _object(case["bulk"], {"law", "young_modulus_pa", "poisson_ratio",
@@ -85,8 +93,13 @@ def _adapt_case(case: Any) -> dict:
     for field in ("young_modulus_pa", "density_kg_m3"):
         _number(bulk[field], 0)
     _number(bulk["poisson_ratio"], -1, .5)
-    if bulk["law"] != "isotropic_elastic":
-        raise ValueError("unsupported cohesive bulk law")
+    expected_law, expected_closure = NATIVE_SCHEMAS[native_schema]
+    if bulk["law"] != expected_law:
+        raise ValueError("cohesive bulk law does not match native schema")
+    declared_closure = case.get("finite_facet_closure_contact", False)
+    if not isinstance(declared_closure, bool) or declared_closure != expected_closure:
+        raise ValueError("facet closure mode does not match native schema")
+    overlap_fraction = _number(case.get("maximum_closure_compression_fraction", 0.), 0, 1)
     for value in interface.values():
         _number(value, 0)
     radius = _number(sphere["radius_m"], 1e-9, 10)
@@ -121,8 +134,14 @@ def _adapt_case(case: Any) -> dict:
         frame_fields = {"time_s", "sphere_center_m", "sphere_velocity_m_s", "positions_m",
                         "contacts", "maximum_damage", "fully_separated_facets", "components",
                         "component_by_tetrahedron", "newly_exposed_faces",
-                        "fracture_dissipation_j", "energy_residual_j"}
-        native = _object(native, frame_fields, frame_fields - {"energy_residual_j"})
+                        "fracture_dissipation_j", "energy_residual_j",
+                        "bulk_stored_energy_j", "cohesive_stored_energy_j",
+                        "interface_contact_stored_energy_j", "compressed_separated_facets"}
+        optional_frame_fields = {"energy_residual_j", "bulk_stored_energy_j",
+                                 "cohesive_stored_energy_j",
+                                 "interface_contact_stored_energy_j",
+                                 "compressed_separated_facets"}
+        native = _object(native, frame_fields, frame_fields - optional_frame_fields)
         time = _number(native["time_s"], 0, requested)
         if time <= previous_time:
             raise ValueError("cohesive frame times must increase strictly")
@@ -156,6 +175,12 @@ def _adapt_case(case: Any) -> dict:
         _number(native["fracture_dissipation_j"], 0, 1e12)
         if "energy_residual_j" in native:
             _number(native["energy_residual_j"], -1e12, 1e12)
+        for field in ("bulk_stored_energy_j", "cohesive_stored_energy_j",
+                      "interface_contact_stored_energy_j"):
+            if field in native:
+                _number(native[field], 0, 1e12)
+        if "compressed_separated_facets" in native:
+            _integer(native["compressed_separated_facets"], MAX_TRIANGLES)
         frames.append(frame)
 
     summary_fields = {"status", "error", "completed_duration_s", "steps",
@@ -163,8 +188,19 @@ def _adapt_case(case: Any) -> dict:
                       "maximum_fully_separated_facets", "maximum_components",
                       "newly_exposed_faces_final", "geometry_queries",
                       "geometry_iterations", "cumulative_energy_residual_j",
-                      "cumulative_absolute_energy_residual_j", "wall_ms"}
-    summary = _object(case["summary"], summary_fields)
+                      "cumulative_absolute_energy_residual_j", "wall_ms",
+                      "maximum_compressed_separated_facets",
+                      "maximum_closure_compression_m", "closure_projection_queries",
+                      "interface_contact_stored_energy_final_j",
+                      "rejected_contact_handoff"}
+    closure_summary_fields = {"maximum_compressed_separated_facets",
+                              "maximum_closure_compression_m",
+                              "closure_projection_queries",
+                              "interface_contact_stored_energy_final_j"}
+    required_summary = summary_fields - {"rejected_contact_handoff"}
+    if native_schema != "banjo.cohesive-sphere-probe.v3":
+        required_summary -= closure_summary_fields
+    summary = _object(case["summary"], summary_fields, required_summary)
     status = summary["status"]
     if status not in {"complete", "solver_limit"} or not isinstance(summary["error"], str):
         raise ValueError("invalid cohesive completion status")
@@ -177,9 +213,21 @@ def _adapt_case(case: Any) -> dict:
                   "maximum_components", "newly_exposed_faces_final", "geometry_queries",
                   "geometry_iterations"):
         _nonnegative_summary(summary, field, True)
+    for field in ("maximum_compressed_separated_facets", "closure_projection_queries"):
+        if field in summary:
+            _nonnegative_summary(summary, field, True)
     for field in ("maximum_damage", "cumulative_absolute_energy_residual_j", "wall_ms"):
         _nonnegative_summary(summary, field)
+    for field in ("maximum_closure_compression_m",
+                  "interface_contact_stored_energy_final_j"):
+        if field in summary:
+            _nonnegative_summary(summary, field)
     _number(summary["cumulative_energy_residual_j"], -1e12, 1e12)
+    if "rejected_contact_handoff" in summary:
+        handoff = _object(summary["rejected_contact_handoff"],
+                          {"facet_index", "retained_compression_energy_j"})
+        _integer(handoff["facet_index"], MAX_TRIANGLES)
+        _number(handoff["retained_compression_energy_j"], 0, 1e12)
 
     return {"material_id": f"fictional-cohesive-{case['name']}",
             "material": {"material_id": f"fictional-cohesive-{case['name']}",
@@ -194,22 +242,26 @@ def _adapt_case(case: Any) -> dict:
             "frames": frames, "summary": copy.deepcopy(summary),
             "requested_duration_s": requested, "completed_duration_s": completed,
             "error": summary["error"] if status == "solver_limit" else "",
-            "native_scope": case["scope"], "limitations": copy.deepcopy(case["limitations"])}
+            "native_scope": case["scope"], "limitations": copy.deepcopy(case["limitations"]),
+            "declared_bulk_mode": bulk["law"],
+            "finite_facet_closure_contact": expected_closure,
+            "maximum_closure_compression_fraction": overlap_fraction}
 
 
 def adapt_cohesive_playback(recording: Any) -> dict:
     recording = _object(recording, {"schema", "cases"})
-    if recording["schema"] != NATIVE_SCHEMA:
+    if recording["schema"] not in NATIVE_SCHEMAS:
         raise ValueError("unsupported cohesive native schema")
     if not isinstance(recording["cases"], list) or not 1 <= len(recording["cases"]) <= MAX_CASES:
         raise ValueError("cohesive case count outside bounds")
-    cases = [_adapt_case(case) for case in recording["cases"]]
+    native_schema = recording["schema"]
+    cases = [_adapt_case(case, native_schema) for case in recording["cases"]]
     status = "complete" if all(case["status"] == "complete" for case in cases) else "solver_limit"
-    return {"schema": VIEWER_SCHEMA, "native_schema": NATIVE_SCHEMA,
-            "origin": "native cohesive sphere reference recording",
+    return {"schema": VIEWER_SCHEMA, "native_schema": native_schema,
+            "origin": "native launched-sphere cohesive development reference recording",
             "physical_response_validated": False, "status": status,
-            "scope": "Fictional SI cohesive reference playback; no calibrated material, cutting, "
-                     "finite-rotation fragment, fragment-contact or general fracture claim",
+            "scope": "Fictional SI launched-sphere cohesive development reference playback; "
+                     "no calibrated glass, GPT-authored material, cutting, or general fracture claim",
             "cases": cases}
 
 

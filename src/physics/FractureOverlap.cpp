@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <map>
 #include <stdexcept>
 
 namespace banjo {
@@ -98,7 +99,8 @@ bool sat(const Tet &a, const Tet &b, FractureOverlapResult &result,
 FractureOverlapResult detectFractureOverlap(const FractureTopology &topology,
                                             const std::vector<Vec3> &positions,
                                             const FractureSeparation &separation,
-                                            const FractureOverlapLimits &limits) {
+                                            const FractureOverlapLimits &limits,
+                                            const std::vector<unsigned> &owned_facets) {
     require(std::isfinite(limits.penetration_tolerance_m) &&
                 limits.penetration_tolerance_m >= 0. && limits.penetration_tolerance_m <= 1.,
             "Invalid fracture overlap tolerance");
@@ -114,6 +116,10 @@ FractureOverlapResult detectFractureOverlap(const FractureTopology &topology,
             "Fracture overlap geometry size mismatch");
     require(!separation.components.empty() && separation.components.size() <= 16384,
             "Fracture separation component count exceeds bound");
+    require(topology.internal_facets.size() <= 65536 &&
+                owned_facets.size() <= topology.internal_facets.size() &&
+                separation.newly_exposed_faces.size() <= 2 * topology.internal_facets.size(),
+            "Fracture overlap ownership count exceeds bound");
     require(separation.component_by_tetrahedron.size() == count,
             "Fracture separation component map size mismatch");
 
@@ -129,6 +135,45 @@ FractureOverlapResult detectFractureOverlap(const FractureTopology &topology,
         require(membership[i] != std::numeric_limits<unsigned>::max() &&
                     membership[i] == separation.component_by_tetrahedron[i],
                 "Inconsistent fracture separation component map");
+
+    auto sideKey = [](const FractureFacetSide &side) {
+        return (std::uint64_t(side.tetrahedron) << 32) | side.opposite_local_vertex;
+    };
+    std::map<std::uint64_t, const FractureFacetSide *> exposed_sides;
+    for (const auto &side : separation.newly_exposed_faces) {
+        require(side.tetrahedron < count && side.opposite_local_vertex < 4,
+                "Invalid exposed fracture facet side");
+        require(exposed_sides.emplace(sideKey(side), &side).second,
+                "Duplicate exposed fracture facet side");
+    }
+    std::vector<std::uint64_t> owned_pairs;
+    owned_pairs.reserve(owned_facets.size());
+    std::vector<bool> owned_indices(topology.internal_facets.size(), false);
+    for (unsigned index : owned_facets) {
+        require(index < topology.internal_facets.size() && !owned_indices[index],
+                "Invalid or duplicate contact-owned facet index");
+        owned_indices[index] = true;
+        const auto &facet = topology.internal_facets[index];
+        const auto exposed_a = exposed_sides.find(sideKey(facet.side_a));
+        const auto exposed_b = exposed_sides.find(sideKey(facet.side_b));
+        const auto matches = [](const FractureFacetSide &a, const FractureFacetSide &b) {
+            return a.tetrahedron == b.tetrahedron &&
+                   a.opposite_local_vertex == b.opposite_local_vertex &&
+                   a.original_nodes == b.original_nodes && a.local_nodes == b.local_nodes;
+        };
+        require(exposed_a != exposed_sides.end() && exposed_b != exposed_sides.end() &&
+                    matches(*exposed_a->second, facet.side_a) &&
+                    matches(*exposed_b->second, facet.side_b),
+                "Contact-owned facet is not exposed by accepted separation");
+        const unsigned a = std::min(facet.side_a.tetrahedron, facet.side_b.tetrahedron);
+        const unsigned b = std::max(facet.side_a.tetrahedron, facet.side_b.tetrahedron);
+        require(a < count && b < count && membership[a] != membership[b],
+                "Contact-owned facet does not join separated components");
+        owned_pairs.push_back((std::uint64_t(a) << 32) | b);
+    }
+    std::sort(owned_pairs.begin(), owned_pairs.end());
+    require(std::adjacent_find(owned_pairs.begin(), owned_pairs.end()) == owned_pairs.end(),
+            "Multiple contact-owned facets name one tetrahedron pair");
 
     std::vector<Tet> tets;
     tets.reserve(count);
@@ -166,8 +211,14 @@ FractureOverlapResult detectFractureOverlap(const FractureTopology &topology,
             out.tetrahedron_a = a;
             out.tetrahedron_b = b;
         }
-        if (measure < -limits.penetration_tolerance_m)
+        if (measure < -limits.penetration_tolerance_m) {
             out.interpenetrating = true;
+            const std::uint64_t key = (std::uint64_t(a) << 32) | b;
+            if (std::binary_search(owned_pairs.begin(), owned_pairs.end(), key))
+                ++out.owned_overlap_pairs;
+            else
+                out.unowned_interpenetrating = true;
+        }
     };
     for (std::size_t component_a = 0; component_a < separation.components.size(); ++component_a) {
         for (std::size_t component_b = component_a + 1;

@@ -48,6 +48,29 @@ FractureSeparation separate(unsigned count) {
     return out;
 }
 
+SmallStrainLaw elasticLaw() {
+    return {.kind = SmallStrainLawKind::IsotropicElastic,
+            .young_modulus_pa = {1.e6, 0., 0.},
+            .poisson_xy_yz_zx = {.25, 0., 0.},
+            .maximum_total_strain_norm = .1};
+}
+
+FractureTopology facetTopology(bool third_tet = false) {
+    PatchDefinition definition;
+    definition.reference_positions_m = {{0., 0., 0.}, {1., 0., 0.}, {0., 1., 0.},
+                                        {0., 0., 1.}, {0., 0., -1.}};
+    definition.elements = {{{0, 1, 2, 3}, 0}, {{0, 2, 1, 4}, 0}};
+    if (third_tet) {
+        definition.reference_positions_m.insert(
+            definition.reference_positions_m.end(),
+            {{3., 0., 0.}, {4., 0., 0.}, {3., 1., 0.}, {3., 0., 1.}});
+        definition.elements.push_back({{5, 6, 7, 8}, 0});
+    }
+    definition.materials = {{elasticLaw(), 1000.}};
+    definition.fixed_components.resize(definition.reference_positions_m.size());
+    return compileFractureTopology(definition);
+}
+
 void moveTet(std::vector<Vec3> &p, unsigned tet, const Vec3 &offset) {
     for (unsigned i = 0; i < 4; ++i) p[tet * 4 + i] = p[i] + offset;
 }
@@ -164,6 +187,59 @@ void invalid_geometry_is_rejected() {
                                               invalid); }, "invalid partition rejected");
 }
 
+void contact_ownership_classifies_without_hiding_overlap() {
+    const auto top = facetTopology();
+    auto positions = top.duplicated_definition.reference_positions_m;
+    for (unsigned i = 4; i < 8; ++i) positions[i].z += .2;
+    const auto separated = evaluateAcceptedSeparations(top, {true});
+    const auto unowned = detectFractureOverlap(top, positions, separated);
+    check(unowned.interpenetrating && unowned.unowned_interpenetrating &&
+              unowned.owned_overlap_pairs == 0,
+          "empty ownership reports actual overlap as unowned");
+    const auto owned = detectFractureOverlap(top, positions, separated, {}, {0});
+    check(owned.interpenetrating && !owned.unowned_interpenetrating &&
+              owned.owned_overlap_pairs == 1,
+          "ownership changes classification but retains overlap");
+    near(owned.minimum_signed_separation_m, unowned.minimum_signed_separation_m, 1.e-14,
+         "ownership cannot change SAT penetration measure");
+    check(owned.tetrahedron_pairs == unowned.tetrahedron_pairs &&
+              owned.sat_axes == unowned.sat_axes,
+          "ownership cannot skip geometry work");
+
+    const auto three = facetTopology(true);
+    positions = three.duplicated_definition.reference_positions_m;
+    for (unsigned i = 4; i < 8; ++i) positions[i].z += .2;
+    for (unsigned i = 0; i < 4; ++i) positions[8 + i] = positions[i] + Vec3{.1, 0., 0.};
+    const auto three_separated = evaluateAcceptedSeparations(three, {true});
+    const auto mixed = detectFractureOverlap(three, positions, three_separated, {}, {0});
+    check(mixed.interpenetrating && mixed.unowned_interpenetrating &&
+              mixed.owned_overlap_pairs == 1,
+          "owned adjacent overlap cannot hide another component overlap");
+}
+
+void contact_ownership_validation_and_work_caps() {
+    const auto top = facetTopology();
+    const auto positions = top.duplicated_definition.reference_positions_m;
+    const auto bonded = evaluateAcceptedSeparations(top, {false});
+    rejects([&] { (void)detectFractureOverlap(top, positions, bonded, {}, {0}); },
+            "unexposed facet ownership rejected");
+    const auto separated = evaluateAcceptedSeparations(top, {true});
+    rejects([&] { (void)detectFractureOverlap(top, positions, separated, {}, {1}); },
+            "invalid facet ownership rejected");
+    rejects([&] { (void)detectFractureOverlap(top, positions, separated, {}, {0, 0}); },
+            "duplicate facet ownership rejected");
+
+    auto overlapping = positions;
+    for (unsigned i = 4; i < 8; ++i) overlapping[i].z += .2;
+    auto limits = FractureOverlapLimits{};
+    limits.maximum_sat_axes = 1;
+    const auto owned = detectFractureOverlap(top, overlapping, separated, limits, {0});
+    const auto unowned = detectFractureOverlap(top, overlapping, separated, limits);
+    check(!owned.resolved && !unowned.resolved && owned.tetrahedron_pairs == 1 &&
+              owned.sat_axes == 1 && owned.sat_axes == unowned.sat_axes,
+          "ownership leaves work-cap exhaustion unchanged");
+}
+
 } // namespace
 
 int main() {
@@ -174,6 +250,8 @@ int main() {
         {"bounded work", work_caps_are_explicitly_unresolved},
         {"same component work exclusion", same_component_work_is_not_enumerated},
         {"invalid geometry", invalid_geometry_is_rejected},
+        {"contact ownership classification", contact_ownership_classifies_without_hiding_overlap},
+        {"contact ownership validation", contact_ownership_validation_and_work_caps},
     };
     for (const auto &[name, test] : tests) {
         try { test(); }

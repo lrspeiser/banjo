@@ -1,4 +1,5 @@
 #include "physics/CohesiveDynamicPatch.hpp"
+#include "physics/PairedFacetContact.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -10,8 +11,9 @@ namespace {
 
 class ContactHandoffRequired : public std::runtime_error {
   public:
-    ContactHandoffRequired(std::size_t facet, double energy)
-        : std::runtime_error("Severed interface retains compression energy; contact handoff required"),
+    ContactHandoffRequired(std::size_t facet, double energy,
+        const char *message = "Severed interface retains compression energy; contact handoff required")
+        : std::runtime_error(message),
           evidence{facet, energy} {}
     CohesiveContactHandoff evidence;
 };
@@ -47,6 +49,10 @@ struct CohesiveDynamicPatch::CombinedEvaluation {
     FractureSeparation separation;
     double bulk_stored_energy_j{};
     double cohesive_stored_energy_j{};
+    double interface_contact_stored_energy_j{};
+    unsigned compressed_separated_facets{};
+    std::vector<unsigned> closure_contact_facets;
+    double maximum_closure_compression_m{};
     double plastic_dissipation_j{};
     double fracture_dissipation_j{};
     double fracture_dissipation_increment_j{};
@@ -56,6 +62,7 @@ struct CohesiveDynamicPatch::CombinedEvaluation {
     std::uint64_t nodal_scatters{};
     std::uint64_t polar_iterations{};
     std::uint64_t facet_derivative_evaluations{};
+    std::uint64_t closure_projection_queries{};
     double maximum_elastic_stretch_norm{};
 };
 
@@ -81,6 +88,13 @@ CohesiveDynamicPatch::CohesiveDynamicPatch(
     require(options_.kinematics == CohesiveKinematics::SmallDisplacement ||
                 options_.kinematics == CohesiveKinematics::Corotated,
             "Unknown cohesive kinematics");
+    require(!options_.finite_facet_closure_contact ||
+                options_.kinematics == CohesiveKinematics::Corotated,
+            "Finite facet closure contact requires corotated kinematics");
+    require(std::isfinite(options_.maximum_closure_compression_fraction) &&
+                options_.maximum_closure_compression_fraction > 0 &&
+                options_.maximum_closure_compression_fraction <= .05,
+            "Invalid finite-face closure overlap bound");
     if (options_.kinematics == CohesiveKinematics::Corotated)
         require(std::isfinite(options_.minimum_deformation_jacobian) &&
                     options_.minimum_deformation_jacobian > 0 &&
@@ -262,7 +276,7 @@ CohesiveDynamicPatch::CombinedEvaluation CohesiveDynamicPatch::evaluate(
                 already_detached = already_detached && response.separated;
                 retained_dissipation += response.dissipated_energy_j;
             }
-            if (already_detached) {
+            if (already_detached && !options_.finite_facet_closure_contact) {
                 // A severed material interface is no longer a spring between
                 // paired material vertices. Later closure belongs to contact.
                 out.corotated_facet_states.push_back(objective_states[index]);
@@ -282,11 +296,39 @@ CohesiveDynamicPatch::CombinedEvaluation CohesiveDynamicPatch::evaluate(
             }
             const auto evaluation = advanceCorotatedCohesiveFacet(facet_laws_[index], reference, a, b,
                                                                  objective_states[index], options_.objective_facets);
-            if (evaluation.separated_integration_points == 3 && evaluation.stored_energy_j > 0)
+            if (!options_.finite_facet_closure_contact &&
+                evaluation.separated_integration_points == 3 && evaluation.stored_energy_j > 0)
                 throw ContactHandoffRequired(index, evaluation.stored_energy_j);
             out.corotated_facet_states.push_back(evaluation.state);
             out.fully_separated_facets.push_back(evaluation.separated_integration_points == 3);
-            out.cohesive_stored_energy_j += evaluation.stored_energy_j;
+            if (options_.finite_facet_closure_contact) {
+                out.cohesive_stored_energy_j += evaluation.cohesive_stored_energy_j;
+                out.interface_contact_stored_energy_j += evaluation.compression_stored_energy_j;
+                if (evaluation.separated_integration_points == 3 &&
+                    evaluation.compression_stored_energy_j > 0) {
+                    const auto footprint = pairedFacetCompressionFootprint(a, b);
+                    out.closure_projection_queries += footprint.projection_work;
+                    if (!footprint.resolved ||
+                        footprint.valid_footprint_points != footprint.compressed_points)
+                        throw ContactHandoffRequired(index, evaluation.compression_stored_energy_j,
+                            "Finite fracture-face compression contact footprint exceeded");
+                    const double edge = std::min({length(reference[1] - reference[0]),
+                        length(reference[2] - reference[0]), length(reference[2] - reference[1])});
+                    double penetration = 0;
+                    for (unsigned vertex = 0; vertex < 3; ++vertex)
+                        penetration = std::max(penetration,
+                            -dot(b[vertex] - a[vertex], footprint.midsurface_winding_normal));
+                    if (penetration > options_.maximum_closure_compression_fraction * edge)
+                        throw ContactHandoffRequired(index, evaluation.compression_stored_energy_j,
+                            "Finite fracture-face compression exceeds spatial tolerance");
+                    out.maximum_closure_compression_m =
+                        std::max(out.maximum_closure_compression_m, penetration);
+                    out.closure_contact_facets.push_back(static_cast<unsigned>(index));
+                    ++out.compressed_separated_facets;
+                }
+            } else {
+                out.cohesive_stored_energy_j += evaluation.stored_energy_j;
+            }
             out.fracture_dissipation_j += evaluation.fracture_dissipation_j;
             out.fracture_dissipation_increment_j += evaluation.fracture_dissipation_increment_j;
             ++out.facet_evaluations;
@@ -359,6 +401,10 @@ CohesiveDynamicPatchReport CohesiveDynamicPatch::report() const {
     result.kinetic_energy_j = kineticEnergyJ(state_.velocities_m_s);
     result.bulk_stored_energy_j = accepted_evaluation_->bulk_stored_energy_j;
     result.cohesive_stored_energy_j = accepted_evaluation_->cohesive_stored_energy_j;
+    result.interface_contact_stored_energy_j = accepted_evaluation_->interface_contact_stored_energy_j;
+    result.compressed_separated_facets = accepted_evaluation_->compressed_separated_facets;
+    result.closure_contact_facets = accepted_evaluation_->closure_contact_facets;
+    result.maximum_closure_compression_m = accepted_evaluation_->maximum_closure_compression_m;
     result.plastic_dissipation_j = accepted_evaluation_->plastic_dissipation_j;
     result.fracture_dissipation_j = accepted_evaluation_->fracture_dissipation_j;
     result.accumulated_external_work_j = state_.accumulated_external_work_j;
@@ -398,7 +444,8 @@ CohesiveDynamicPatchReport CohesiveDynamicPatch::stepImpl(
         auto candidate = state_;
         const double old_kinetic = kineticEnergyJ(state_.velocities_m_s);
         const double old_stored = accepted_evaluation_->bulk_stored_energy_j +
-                                  accepted_evaluation_->cohesive_stored_energy_j;
+                                  accepted_evaluation_->cohesive_stored_energy_j +
+                                  accepted_evaluation_->interface_contact_stored_energy_j;
         const double old_dissipation = accepted_evaluation_->plastic_dissipation_j +
                                        accepted_evaluation_->fracture_dissipation_j;
         const Vec3 old_momentum = momentum(state_.velocities_m_s);
@@ -524,6 +571,10 @@ CohesiveDynamicPatchReport CohesiveDynamicPatch::stepImpl(
         result.kinetic_energy_j = kineticEnergyJ(candidate.velocities_m_s);
         result.bulk_stored_energy_j = evaluation.bulk_stored_energy_j;
         result.cohesive_stored_energy_j = evaluation.cohesive_stored_energy_j;
+        result.interface_contact_stored_energy_j = evaluation.interface_contact_stored_energy_j;
+        result.compressed_separated_facets = evaluation.compressed_separated_facets;
+        result.closure_contact_facets = evaluation.closure_contact_facets;
+        result.maximum_closure_compression_m = evaluation.maximum_closure_compression_m;
         result.plastic_dissipation_j = evaluation.plastic_dissipation_j;
         result.fracture_dissipation_j = evaluation.fracture_dissipation_j;
         result.fracture_dissipation_increment_j =
@@ -537,7 +588,8 @@ CohesiveDynamicPatchReport CohesiveDynamicPatch::stepImpl(
         result.support_impulse_n_s = support_impulse;
         result.numerical_energy_residual_j =
             result.kinetic_energy_j - old_kinetic +
-            result.bulk_stored_energy_j + result.cohesive_stored_energy_j - old_stored +
+            result.bulk_stored_energy_j + result.cohesive_stored_energy_j +
+            result.interface_contact_stored_energy_j - old_stored +
             result.plastic_dissipation_j + result.fracture_dissipation_j - old_dissipation -
             external_work - result.coupling_kinetic_work_j;
         result.tet_evaluations = evaluation.tet_evaluations;
@@ -545,6 +597,7 @@ CohesiveDynamicPatchReport CohesiveDynamicPatch::stepImpl(
         result.nodal_scatters = evaluation.nodal_scatters;
         result.polar_iterations = evaluation.polar_iterations;
         result.facet_derivative_evaluations = evaluation.facet_derivative_evaluations;
+        result.closure_projection_queries = evaluation.closure_projection_queries;
         result.maximum_elastic_stretch_norm = evaluation.maximum_elastic_stretch_norm;
         result.fully_separated_facets = static_cast<unsigned>(std::count(
             evaluation.fully_separated_facets.begin(),

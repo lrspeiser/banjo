@@ -136,12 +136,19 @@ CohesiveSphereReport CohesiveSphereWorld::step(double dt, const std::vector<Vec3
                 const FractureOverlapLimits limits{contact_.maximum_penetration_m,
                     contact_.maximum_geometry_queries - out.geometry_queries,
                     contact_.maximum_geometry_iterations - out.geometry_iterations};
+                std::vector<unsigned> owned_facets;
+                for (unsigned id : material.closure_contact_facets) {
+                    const auto &facet = patch_.topology().internal_facets.at(id);
+                    if (candidate.separation.component_by_tetrahedron[facet.side_a.tetrahedron] !=
+                        candidate.separation.component_by_tetrahedron[facet.side_b.tetrahedron])
+                        owned_facets.push_back(id);
+                }
                 result.fragment_overlap = detectFractureOverlap(patch_.topology(), positions,
-                                                                 candidate.separation, limits);
+                    candidate.separation, limits, owned_facets);
                 out.geometry_queries += result.fragment_overlap.tetrahedron_pairs;
                 out.geometry_iterations += result.fragment_overlap.sat_axes;
                 require(result.fragment_overlap.resolved, "Fragment overlap audit budget exhausted");
-                require(!result.fragment_overlap.interpenetrating,
+                require(!result.fragment_overlap.unowned_interpenetrating,
                         "Fragment contact required: disconnected material interpenetrates");
             }
             require(!centerInside(sphere.center_m, positions, d), "Sphere entered cohesive matter");
@@ -164,7 +171,8 @@ CohesiveSphereReport CohesiveSphereWorld::step(double dt, const std::vector<Vec3
                 kinetic(sphere) - kinetic(sphere_) + material.kinetic_energy_j -
                 before.kinetic_energy_j + material.bulk_stored_energy_j -
                 before.bulk_stored_energy_j + material.cohesive_stored_energy_j -
-                before.cohesive_stored_energy_j + material.fracture_dissipation_j -
+                before.cohesive_stored_energy_j + material.interface_contact_stored_energy_j -
+                before.interface_contact_stored_energy_j + material.fracture_dissipation_j -
                 before.fracture_dissipation_j + material.plastic_dissipation_j -
                 before.plastic_dissipation_j + out.contact_dissipation_j - out.external_work_j;
             Vec3 patch_external{};

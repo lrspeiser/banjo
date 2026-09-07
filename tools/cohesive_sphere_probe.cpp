@@ -42,7 +42,7 @@ std::string escape(const std::string &value) {
     return out;
 }
 
-void writeCase(std::ostream &out, const char *name, double speed, bool corotated,
+void writeCase(std::ostream &out, const char *name, double speed, bool corotated, bool closure,
                double step_fraction) {
     const auto definition = makeTetrahedralBrick(
         {.08, .02, .08}, {1, 1, 1}, {bulkLaw(), 1000.});
@@ -55,6 +55,7 @@ void writeCase(std::ostream &out, const char *name, double speed, bool corotated
                        radius, sphere_mass};
     CohesiveDynamicPatchOptions dynamics;
     if (corotated) dynamics.kinematics = CohesiveKinematics::Corotated;
+    dynamics.finite_facet_closure_contact = closure;
     dynamics.maximum_displacement_gradient_norm = .12;
     dynamics.maximum_absolute_energy_residual_j = 2.e-4;
     dynamics.maximum_time_step_s = 2.e-4;
@@ -78,9 +79,14 @@ void writeCase(std::ostream &out, const char *name, double speed, bool corotated
     double cumulative_absolute_energy_residual = 0., maximum_damage = 0.;
     unsigned steps = 0, contacts = 0, last_step_contacts = 0;
     unsigned maximum_components = 1, maximum_separated = 0;
+    unsigned maximum_compressed_separated = 0;
+    double maximum_closure_compression = 0;
+    std::uint64_t closure_queries = 0;
     std::uint64_t geometry_queries = 0, geometry_iterations = 0;
 
     out << "{\"name\":\"" << name << "\",\"scope\":\"fictional explicit SI cohesive impact\""
+        << ",\"finite_facet_closure_contact\":" << (closure ? "true" : "false")
+        << ",\"maximum_closure_compression_fraction\":" << dynamics.maximum_closure_compression_fraction
         << ",\"bulk\":{\"law\":\"" << (corotated ? "corotated_isotropic" : "isotropic_elastic")
         << "\",\"young_modulus_pa\":1000000,"
         << "\"poisson_ratio\":0.25,\"density_kg_m3\":1000}"
@@ -150,6 +156,11 @@ void writeCase(std::ostream &out, const char *name, double speed, bool corotated
         elapsed += dt;
         ++steps;
         contacts += report.contact.impulse_contacts;
+        maximum_compressed_separated = std::max(maximum_compressed_separated,
+                                                report.material.compressed_separated_facets);
+        maximum_closure_compression = std::max(maximum_closure_compression,
+                                               report.material.maximum_closure_compression_m);
+        closure_queries += report.material.closure_projection_queries;
         last_step_contacts = report.contact.impulse_contacts;
         geometry_queries += report.contact.geometry_queries;
         geometry_iterations += report.contact.geometry_iterations;
@@ -260,6 +271,11 @@ void writeCase(std::ostream &out, const char *name, double speed, bool corotated
         << ",\"maximum_damage\":" << maximum_damage
         << ",\"maximum_fully_separated_facets\":" << maximum_separated
         << ",\"maximum_components\":" << maximum_components
+        << ",\"maximum_compressed_separated_facets\":" << maximum_compressed_separated
+        << ",\"maximum_closure_compression_m\":" << maximum_closure_compression
+        << ",\"closure_projection_queries\":" << closure_queries
+        << ",\"interface_contact_stored_energy_final_j\":"
+        << world.material().report().interface_contact_stored_energy_j
         << ",\"newly_exposed_faces_final\":"
         << world.material().state().separation.newly_exposed_faces.size()
         << ",\"geometry_queries\":" << geometry_queries
@@ -281,8 +297,9 @@ int main(int argc, char **argv) {
     try {
         if (argc > 4) throw std::invalid_argument("Usage: probe [output [--corotated [step_fraction]]]");
         const std::string path = argc > 1 ? argv[1] : "cohesive-sphere-probe.json";
-        const bool corotated = argc > 2 && std::string(argv[2]) == "--corotated";
-        if (argc > 2 && !corotated) throw std::invalid_argument("Expected --corotated");
+        const bool closure = argc > 2 && std::string(argv[2]) == "--corotated-contact";
+        const bool corotated = closure || (argc > 2 && std::string(argv[2]) == "--corotated");
+        if (argc > 2 && !corotated) throw std::invalid_argument("Expected --corotated or --corotated-contact");
         std::size_t consumed = 0;
         const double step_fraction = argc > 3 ? std::stod(argv[3], &consumed) : .2;
         if (argc > 3 && consumed != std::string(argv[3]).size())
@@ -292,10 +309,10 @@ int main(int argc, char **argv) {
         std::ofstream output(path);
         if (!output) throw std::runtime_error("cannot open probe output");
         output << std::setprecision(17)
-               << "{\"schema\":\"banjo.cohesive-sphere-probe." << (corotated ? "v2" : "v1") << "\",\"cases\":[";
-        writeCase(output, "low_impact_control", .03, corotated, step_fraction);
+               << "{\"schema\":\"banjo.cohesive-sphere-probe." << (closure ? "v3" : corotated ? "v2" : "v1") << "\",\"cases\":[";
+        writeCase(output, "low_impact_control", .03, corotated, closure, step_fraction);
         output << ',';
-        writeCase(output, "higher_impact", 1.0, corotated, step_fraction);
+        writeCase(output, "higher_impact", 1.0, corotated, closure, step_fraction);
         output << "]}";
         std::cout << path << '\n';
         return 0;
