@@ -190,3 +190,49 @@ h2 { margin-bottom: 0; font-size: 1.02rem; font-weight: 550; letter-spacing: -.0
   opacity: 0.9;
 }
 .trust-note.muted { opacity: 0.6; }
+
+/* Builder: the admissible parameter space, priced before it is run. */
+.builder-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(320px, .85fr); gap: 1.1rem; align-items: start; }
+.builder-fields { display: grid; gap: .8rem; }
+.builder-field { display: grid; gap: .3rem; font-size: .85rem; color: var(--muted); }
+.builder-field > span { display: flex; justify-content: space-between; gap: 1rem; }
+.builder-field output { color: var(--text); font-variant-numeric: tabular-nums; }
+.builder-field input, .builder-field select,
+.builder-group input { width: 100%; padding: .45rem .6rem; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); }
+.builder-field input[type="range"] { padding: 0; background: none; border: none; }
+.builder-group { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; margin: 0; padding: .6rem .7rem .7rem; border: 1px solid var(--line-soft); border-radius: 10px; }
+.builder-group legend { padding: 0 .35rem; font-size: .78rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted-2); }
+.builder-group .legend-note { text-transform: none; letter-spacing: 0; opacity: .8; }
+.builder-group label { display: grid; gap: .25rem; font-size: .8rem; color: var(--muted); }
+.builder-verdict { margin: .2rem 0 0; padding: .65rem .75rem; border-radius: 10px; border: 1px solid var(--line); background: rgba(127, 127, 127, .06); font-size: .87rem; line-height: 1.45; }
+.builder-verdict p { margin: 0 0 .45rem; }
+.builder-verdict p:last-child { margin-bottom: 0; }
+.builder-verdict.ok { border-color: rgba(80, 210, 151, .45); }
+.builder-verdict.bad { border-color: rgba(241, 139, 136, .55); }
+.builder-verdict.bad strong { color: var(--red); }
+.builder-verdict .verdict-note { color: var(--amber); }
+.builder-repair { margin-top: .6rem; font-size: .85rem; color: var(--muted); }
+.builder-repair p { margin: 0 0 .45rem; }
+.builder-metrics { margin: .2rem 0 .6rem; font-size: .86rem; }
+.metric-row { display: flex; justify-content: space-between; gap: 1rem; padding: .18rem 0; border-bottom: 1px solid var(--line-soft); }
+.metric-row:last-child { border-bottom: none; }
+.metric-row span { color: var(--muted); }
+.metric-row strong { text-align: right; font-variant-numeric: tabular-nums; }
+.metric-ok strong { color: var(--mint-strong); }
+.metric-warn strong { color: var(--amber); }
+.metric-bad strong { color: var(--red); }
+.builder-cost-card .primary-button { width: 100%; justify-content: center; margin: .5rem 0 .6rem; }
+.builder-limits { font-size: .84rem; }
+.limit-row { padding: .45rem 0; border-bottom: 1px solid var(--line-soft); }
+.limit-row:last-child { border-bottom: none; }
+.limit-head { display: flex; justify-content: space-between; gap: 1rem; }
+.limit-head span { color: var(--muted); }
+.limit-row p { margin: .25rem 0 0; color: var(--muted-2); line-height: 1.45; }
+.builder-package-card { margin-top: 1.1rem; }
+.admission-panel { margin-top: .7rem; padding: .55rem .7rem; border: 1px solid var(--line); border-radius: 9px; background: rgba(127, 127, 127, .06); font-size: .84rem; }
+.admission-cost { display: flex; justify-content: space-between; gap: 1rem; }
+.admission-cost span { color: var(--muted); }
+.admission-cost strong { text-align: right; font-variant-numeric: tabular-nums; }
+.admission-note { margin: .45rem 0 0; line-height: 1.45; color: var(--amber); }
+.admission-note strong { color: var(--amber); }
+@media(max-width:980px) { .builder-grid { grid-template-columns: minmax(0, 1fr); } }

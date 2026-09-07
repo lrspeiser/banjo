@@ -4,6 +4,7 @@ Model output is data. It cannot supply Python, shell commands, file paths,
 material-law code, credentials, or executable names.
 """
 from __future__ import annotations
+from copy import deepcopy
 import math
 import json
 import re
@@ -18,6 +19,10 @@ from drop_builder import DROP_SCHEMA, validate_drop, compile_drop
 from scene_composer import SCENE_SCHEMA, validate_scene, compile_scene
 from dynamic_material import IMPACT_SCHEMA, validate_impact, native_request
 from thermal_material import THERMAL_EXPERIMENT_SCHEMA, validate_experiment
+import network_admission
+from network_admission import (Inadmissible, LIMITS, MAX_CELL_ASPECT, PLAYGROUND_CELL_BUDGET,
+                               buildable_dimensions, cell_metrics, cost_estimate,
+                               nearest_admissible_resolution)
 
 KINDS = ["drop_test", "scene_test", "panel_impact", "plate_drop", "rigid_drop", "knife_cut", "custom_objects",
          "thermal_frontier", "material_state_reference", "continuum_pressure_reference", "dynamic_material_impact",
@@ -52,6 +57,8 @@ SCHEMA = obj({
         "dimensions_m": {"anyOf": [VECTOR, {"type": "null"}]},
     })},
 })
+RESOLUTION3 = {"anyOf": [{"type": "array", "items": {"type": "integer", "minimum": 2, "maximum": 12},
+                          "minItems": 3, "maxItems": 3}, {"type": "null"}]}
 LEGACY_FIELDS = set(SCHEMA["properties"])
 SCHEMA["properties"].update({
     "fidelity": {"type":"string","enum":["experimental","calibrated"]},
@@ -69,6 +76,15 @@ SCHEMA["properties"].update({
         "reason": {"type": "string"}})},
 })
 SCHEMA["required"] = list(SCHEMA["properties"])
+# Written by the server's admission pass, never by the model: the resolution the
+# three matched panels of a legacy fixed-layout route actually run at once the
+# requested panel dimensions have been checked against the engine's cubic-cell
+# rule. Optional, so plans authored before this field still validate.
+SCHEMA["properties"]["panel_resolution"] = RESOLUTION3
+# Also server-authored: what the admission pass changed and why, kept on the
+# plan so a repair survives being saved, re-read and re-run.
+SCHEMA["properties"]["admission_notes"] = {"type": "array", "maxItems": 12, "items": obj({
+    "limit": {"type": "string"}, "action": {"type": "string"}, "message": {"type": "string"}})}
 
 # The model selects one typed setup. It never fills irrelevant legacy fields.
 _SETUPS = [
@@ -88,6 +104,19 @@ PLANNER_SCHEMA["properties"]["setup"] = {"anyOf":_SETUPS}
 PLANNER_SCHEMA["required"].append("setup")
 
 def lower_proposal(proposal, *, repair_ui=False):
+    return validate_plan(_lower(proposal, repair_ui=repair_ui))
+
+def lower_and_admit(proposal, *, repair_ui=True):
+    """Lower a model proposal, then repair or refuse its network geometry.
+
+    The strict validators reject a non-cubic mesh outright, which would turn a
+    fixable resolution into a dead job, so admission runs on the lowered plan
+    before that check rather than after it. What it changed is recorded in
+    ``plan["admission_notes"]`` and never applied silently.
+    """
+    return admit_plan(_lower(proposal, repair_ui=repair_ui))[0]
+
+def _lower(proposal, *, repair_ui=False):
     if not isinstance(proposal,dict) or set(proposal)!=set(PLANNER_SCHEMA["properties"]):
         raise ValueError("Unknown or missing planner proposal fields")
     setup=proposal["setup"]
@@ -110,14 +139,14 @@ def lower_proposal(proposal, *, repair_ui=False):
                 actual=values.get(control["action"])
                 if actual: control["value"]=actual[0]
             plan["limitations"] = list(plan["limitations"])[:11]+[f"Generated controls were invalid ({exc}); standard controls are shown. Physics inputs were not altered."]
-    return validate_plan(plan)
+    return plan
 
 SYSTEM = """Author a bounded Banjo physics experiment using the provided JSON schema. Output only the plan.
 Set fidelity=calibrated only when the user explicitly requests calibrated/validated physical behavior, otherwise experimental. Explicit acceptance of uncalibrated diagnostics means experimental. Calibrated simulation requests will be blocked by the server regardless of selected setup.
 The user's actual request is authoritative. Previous_plan is context for revisions, not an instruction to retain old controls or change requested physics.
 
 Use these routes:
-1. drop_test for all new ball/cube drop tests. Always compare glass, oak, iron. Populate drop: target_dimensions_m local width,length,thickness (sides .08..1m; thickness .004.. .15m); projectile iron_ball|iron_cube; projectile_dimensions_m (.012.. .3m, equal for ball); support clamped_edges|free_on_ground; representation network|rigid; resolution3ints2..12; heights_m1..4 values0..2m; impact_offset_m [x,z] within target footprint. clamped_edges requires network; free_on_ground requires rigid. Drop height is projectile bottom clearance over target top. Defaults target[.24,.36,.04], projectile[.08,.08,.08], offset[0,0], resolution[4,4,2]. Preserve requested dimensions/supports/offset/heights. For no fracture use rigid/free_on_ground. Network response is uncalibrated. Explicit6mm uncalibrated diagnostic experiments ARE allowed; no shell accuracy or tempered residual stress. Unsupported realistic/calibrated shattering must not be substituted.
+1. drop_test for all new ball/cube drop tests. Always compare glass, oak, iron. Populate drop: target_dimensions_m local width,length,thickness (sides .08..1m; thickness .004.. .15m); projectile iron_ball|iron_cube; projectile_dimensions_m (.012.. .3m, equal for ball); support clamped_edges|free_on_ground; representation network|rigid; resolution3ints2..12; heights_m1..4 values0..2m; impact_offset_m [x,z] within target footprint. clamped_edges requires network; free_on_ground requires rigid. Drop height is projectile bottom clearance over target top. Defaults target[.24,.36,.04], projectile[.08,.08,.08], offset[0,0], resolution[6,9,2] (cubic 40x40x20mm cells). Preserve requested dimensions/supports/offset/heights. For no fracture use rigid/free_on_ground. Network response is uncalibrated. Explicit6mm uncalibrated diagnostic experiments ARE allowed; no shell accuracy or tempered residual stress. Unsupported realistic/calibrated shattering must not be substituted.
 2. scene_test for freely arranged objects. Populate scene.objects with existing presets and requested pose, velocity, dimensions, quaternion orientation, spin, representation network|rigid, optional resolution and pin_boundary. All optional fields null if unused. Rigid removes network fields; ellipsoid presets cannot become rigid. scene.environment contains gravity_m_s2 vector in+-20, ground bool, ground_friction0..1. Positionbounds+-3m, dimensions .012..1m, velocities+-20. Use explicit requested values. No arbitrary material law generation.
 3. continuum_pressure_reference: fixed40x20x40mm tetrahedral coupons, bottom clamp, central20x20mm pressure. Populate pressure: peak_pressure_pa1..1e9, evenresolution4..12,increments2..64,profile uniform|smooth. Defaults800MPa,4,32,uniform. Quasistatic noimpact/nofracture, illustrativelaws. Cancomplete withoaksolverlimit.
 4. panel_impact: matched glass/oak/iron verticalclampedpanels, speeds_m_s1..4 entries0..20. panel_dimensions_m sides .08..1,thickness.012.. .15. projectileiron_ball|iron_cube. knife_cut is a coarsetomatoproxy downwardknife pluspanelcontrols, not calibratedslicing. custom_objects is a legacy presetlayout. plate_drop and rigid_drop are legacy fixed-layout drop routes: preferdrop_test for newrequests.
@@ -135,19 +164,50 @@ The browser shows sampled native states and actual solver reports. Play/pause is
 SYSTEM += "\nAuthoritative preset catalog (do not infer representation from a name):\n" + json.dumps({name:{key:preset.get(key) for key in ("material","shape","representation","dimensions_m","resolution","pin_boundary")} for name,preset in catalog()["object_presets"].items()},separators=(",",":"))
 SYSTEM += "\nFor scene_test explicitly choose representation rigid or network. Use iron_ball for a smooth rigid sphere, never iron_matter_ball. wood_panel defaults to a pinned network; a requested free rigid wood panel MUST specify representation=rigid and pin_boundary=null,resolution=null. Do not call a network preset rigid."
 SYSTEM += """
-Network geometry admission applies to EVERY network object, including drop_test:
-0.49 * min(dimensions_m[i] / resolution[i]) must be >=0.001 m. Each cell spacing
-must therefore be at least 0.002040817 m. A 4 mm plate with two thickness layers
-is unsupported (0.98 mm collision radius). A 6 mm plate with two layers passes
-this size check; with three layers it does not. Higher resolution is not always
-admissible. This admission check does not establish stable or realistic fracture.
-For a generic 'thin glass plate' request with no numeric thickness, explicitly
-declare a 6 mm experimental network panel with two thickness layers and the
-glass/oak/iron controls. Explain the assumed dimensions. Preserve any thickness
-or resolution the user explicitly supplies: if the combination cannot pass,
-mark that requested geometry unsupported and do not silently resize or reroute.
-If shattering is explicitly required, record that the stable full fracture gate
-remains open; do not promise a successful shatter from network admission alone.
+NETWORK GEOMETRY: five hard limits, with the reason for each. They apply to
+EVERY network object, drop_test and scene_test included. Author inside them; a
+scene outside them is refused before it runs, and no substitute is executed.
+
+1. CELLS MUST BE NEAR-CUBIC. max(spacing)/min(spacing) <= 2.0, where
+spacing[i] = dimensions_m[i]/resolution[i]. Reason: the engine gives each cell a
+SPHERICAL collision proxy of radius 0.49*min(spacing) while that cell carries the
+mass and inertia of the whole box. With cubic cells the sphere spans 98% of the
+cell and neighbours just touch. At 4:1 it spans 25% of the widest side, so cells
+overlap without ever contacting and fragments carry their full mass straight
+through each other. That is not a contact simulation, so it is refused.
+
+2. RESOLUTION IS 2..16 PER AXIS (2..12 through these routes). Combined with rule
+1 this bounds face:thickness for a uniform-cell object: Dmax/Dmin <= 2 * nmax/nmin,
+so 16:1 through the engine and 12:1 through the drop and scene routes (8:1 and
+6:1 respectively if you want strictly cubic cells). A real 6 mm windowpane 0.5 m
+across is 83:1 and CANNOT BE EXPRESSED. Say so; do not quietly build a thick slab
+and call it a pane. A drop target's sides are >= .08 m and its three matched
+lanes share a 283-cell budget, so the thinnest buildable target is .008 m at
+.08 x .08 m sides, and .03 m at the default .24 x .36 m face.
+
+3. CELL BUDGETS: 800 cells per object, 1024 in the world, 850 for the playground.
+drop_test builds three matched lanes, so its target is capped near 283 cells.
+
+4. COLLISION RADIUS: 0.49*min(spacing) >= 0.001 m, so every cell spacing must be
+at least 0.00205 m. Raising resolution is therefore not always admissible.
+
+5. COST IS SET BY THE SMALLEST CELL. The constraint solver subdivides each host
+tick onto the lattice's own stability clock: substeps per tick =
+ceil(omega*dt/0.2) with omega ~ 2.2*sqrt(E/rho)/spacing, capped at 8192. Halving
+the smallest spacing roughly doubles the run time; a 192-cell glass plate with
+4 mm cells needs 1587 internal solves per tick and takes about four minutes to
+record 120 ticks. Prefer the coarsest resolution that answers the question, and
+keep duration_s only as long as the event needs. The server shows the estimated
+cost before the run, but a scene you author at 12x12x12 will simply be slow.
+
+Rules 1 and 3 are enforced by snapping resolution to the nearest admissible
+value, which is reported to the user; dimensions are never changed for you.
+Rule 2 has no repair: it is refused. Preserve any thickness or resolution the
+user explicitly supplies. Where the requested geometry cannot pass, mark it
+unsupported with the numbers, and say what the nearest buildable object is.
+None of this establishes stable or realistic fracture. If shattering is
+explicitly required, record that the stable full-fracture gate remains open; do
+not promise a successful shatter from geometric admission alone.
 """
 SYSTEM += """
 
@@ -223,6 +283,14 @@ def vector(value, low, high, label):
         raise ValueError(f"{label} requires three SI components")
     return [number(x, low, high, label) for x in value]
 
+def resolution(value, label):
+    """Optional three-integer mesh resolution inside the routes' [2,12] bound."""
+    if value is None: return None
+    if not isinstance(value, list) or len(value) != 3 or any(
+            type(v) is not int or not 2 <= v <= 12 for v in value):
+        raise ValueError(f"{label} requires three integers in [2, 12]")
+    return list(value)
+
 def validate_plan(plan):
     if not isinstance(plan, dict) or not LEGACY_FIELDS <= set(plan) or set(plan) - set(SCHEMA["properties"]):
         raise ValueError("Unknown or missing playground language fields")
@@ -251,12 +319,25 @@ def validate_plan(plan):
     if not isinstance(plan["objects"], list) or len(plan["objects"]) > 12:
         raise ValueError("At most twelve custom objects are admitted")
     for entry in plan["objects"]:
-        if not isinstance(entry, dict) or set(entry) != {"preset", "position_m", "velocity_m_s", "dimensions_m"}:
+        # ``resolution`` is optional and server-authored: the admission pass adds
+        # it when a preset's own resolution would make non-cubic cells at the
+        # requested dimensions. The model never emits it.
+        if not isinstance(entry, dict) or set(entry) - {"resolution"} != {"preset", "position_m", "velocity_m_s", "dimensions_m"}:
             raise ValueError("Unknown or missing object fields")
         if entry["preset"] not in PRESETS: raise ValueError("Unknown object preset")
         vector(entry["position_m"], -3, 3, "position_m")
         vector(entry["velocity_m_s"], -20, 20, "velocity_m_s")
         if entry["dimensions_m"] is not None: vector(entry["dimensions_m"], .012, 1, "dimensions_m")
+        resolution(entry.get("resolution"), "object resolution")
+    resolution(plan.get("panel_resolution"), "panel_resolution")
+    admission_notes = plan.get("admission_notes")
+    if admission_notes is not None:
+        if not isinstance(admission_notes, list) or len(admission_notes) > 12:
+            raise ValueError("Invalid admission notes")
+        for item in admission_notes:
+            if not isinstance(item, dict) or set(item) != {"limit", "action", "message"} or any(
+                    not isinstance(item[k], str) or not 1 <= len(item[k]) <= 1000 for k in item):
+                raise ValueError("Invalid admission note")
     required = "speeds_m_s" if plan["experiment"] in ("panel_impact", "knife_cut") else "heights_m"
     if plan["experiment"] in ("panel_impact", "plate_drop", "rigid_drop", "knife_cut") and not plan[required]:
         raise ValueError(f"{plan['experiment']} requires at least one {required} value")
@@ -298,6 +379,192 @@ def validate_plan(plan):
         if any(not isinstance(item[k],str) or len(item[k])>1000 for k in ("description","reason")): raise ValueError("Invalid requirement description")
     return plan
 
+# ---------------------------------------------------------------------------
+# Admission: repair what can be repaired, refuse the rest by name.
+# ---------------------------------------------------------------------------
+# The drop and scene specifications cap resolution at 12 rather than the
+# engine's 16, so admission searches inside their bound, not the engine's.
+ROUTE_RESOLUTION_MIN, ROUTE_RESOLUTION_MAX = 2, 12
+
+
+def _repair_note(label, before, after, metrics_before, metrics_after):
+    return {"limit": "cell_aspect_ratio", "action": "snapped",
+            "message": (
+                f"{label}: resolution {list(before)} would have made "
+                f"{metrics_before['aspect_ratio']:.2f}:1 cells, and the engine gives every cell "
+                f"a spherical collision proxy of radius 0.49 x the smallest spacing while it "
+                f"carries the mass of the whole box, so those cells would have collided over "
+                f"only {metrics_before['collision_coverage'] * 100:.0f}% of their widest side. "
+                f"Snapped to {list(after)} ({metrics_after['aspect_ratio']:.2f}:1, "
+                f"{metrics_after['cells']} cells). The requested dimensions were not changed.")}
+
+
+def _refusal(label, dimensions, *, budget):
+    """No resolution in range works: name the limit and the nearest thing that does."""
+    repair = buildable_dimensions(dimensions, low=ROUTE_RESOLUTION_MIN, high=ROUTE_RESOLUTION_MAX)
+    if repair["slenderness"] > repair["maximum_slenderness"]:
+        raise Inadmissible(
+            f"{label}: {list(dimensions)} m is {repair['slenderness']:.1f}:1 "
+            f"face-to-thickness. Cells have to stay within {MAX_CELL_ASPECT:g}:1 of cubic to "
+            f"collide correctly, and each axis takes {ROUTE_RESOLUTION_MIN}..{ROUTE_RESOLUTION_MAX} "
+            f"cells, so a uniform-cell object cannot exceed {repair['maximum_slenderness']:g}:1 "
+            f"({repair['cubic_slenderness']:g}:1 with strictly cubic cells). "
+            f"The nearest buildable versions are {repair['thicken_to_m']:g} m thick at this face "
+            f"size, or a {repair['shrink_face_to_m']:g} m face at this thickness. "
+            f"No substitute geometry was run.",
+            limit="slenderness_face_over_thickness", repair=repair)
+    raise Inadmissible(
+        f"{label}: no resolution in {ROUTE_RESOLUTION_MIN}..{ROUTE_RESOLUTION_MAX} per axis "
+        f"gives near-cubic cells for {list(dimensions)} m within the {budget}-cell budget "
+        f"(smallest admissible cell spacing is {LIMITS['minimum_cell_spacing_m'] * 1000:.4g} mm). "
+        f"Change the dimensions or the cell budget; no substitute geometry was run.",
+        limit="cell_aspect_ratio", repair=repair)
+
+
+def _admit_box(label, dimensions, requested, *, budget, notes):
+    """Return an admissible resolution for one network box, repairing if needed."""
+    metrics = cell_metrics(dimensions, requested)
+    if metrics["aspect_ratio"] <= MAX_CELL_ASPECT and metrics["radius_ok"] and metrics["cells"] <= budget:
+        return list(requested)
+    snapped = nearest_admissible_resolution(dimensions, requested, max_cells=budget,
+                                            low=ROUTE_RESOLUTION_MIN, high=ROUTE_RESOLUTION_MAX)
+    if snapped is None:
+        _refusal(label, dimensions, budget=budget)
+    notes.append(_repair_note(label, requested, snapped, metrics,
+                              cell_metrics(dimensions, snapped)))
+    return snapped
+
+
+def _shrink_to_world_budget(entries, notes):
+    """Bring the total cell count under the playground budget, largest object first.
+
+    Each pass asks the same search for the nearest admissible resolution the
+    object can have with strictly fewer cells than it has now, so the total
+    decreases every iteration and the loop terminates.
+    """
+    while sum(cell_metrics(d, r)["cells"] for _, d, r in entries) > PLAYGROUND_CELL_BUDGET:
+        index = max(range(len(entries)), key=lambda i: cell_metrics(entries[i][1], entries[i][2])["cells"])
+        label, dimensions, current = entries[index]
+        cells = cell_metrics(dimensions, current)["cells"]
+        smaller = nearest_admissible_resolution(dimensions, current, max_cells=cells - 1,
+                                                low=ROUTE_RESOLUTION_MIN, high=ROUTE_RESOLUTION_MAX)
+        if smaller is None:
+            raise Inadmissible(
+                f"This scene needs more than the playground's {PLAYGROUND_CELL_BUDGET}-cell "
+                f"budget and {label} cannot be coarsened further without leaving near-cubic "
+                f"cells. Remove an object or shrink one; nothing was run.",
+                limit="playground_cells")
+        notes.append({"limit": "playground_cells", "action": "snapped",
+                      "message": (f"{label}: coarsened to {smaller} to fit the playground's "
+                                  f"{PLAYGROUND_CELL_BUDGET}-cell budget.")})
+        entries[index] = (label, dimensions, smaller)
+    return entries
+
+
+def admit_plan(plan):
+    """Make a plan admissible, or refuse it by name.
+
+    Returns ``(plan, notes)``. The plan is a copy whose declared fields fully
+    determine the packages `compile_plan` will build, so what the UI shows is
+    what the engine runs. Notes describe every change and are also kept on the
+    plan itself, so a repair survives being saved, re-read and re-run; nothing
+    is snapped silently. This runs BEFORE the strict validators, because those
+    reject a non-cubic mesh outright and a fixable mesh deserves a repair rather
+    than a dead job. This is admission, not calibration: an admitted scene is
+    one the engine will accept, not one whose material response has been
+    validated.
+    """
+    if not isinstance(plan, dict):
+        raise ValueError("Unknown or missing playground language fields")
+    plan = deepcopy(plan)
+    notes = list(plan.get("admission_notes") or [])
+    kind = plan.get("experiment")
+    presets = catalog()["object_presets"]
+    try:
+        _admit_geometry(plan, kind, presets, notes)
+    except Inadmissible:
+        raise
+    except (ValueError, TypeError, KeyError, IndexError):
+        # Structurally broken input: let the strict validator name the problem
+        # instead of reporting it as a geometry refusal.
+        pass
+    # Absent rather than empty when nothing was repaired, so an untouched plan
+    # is byte-identical to what the model authored.
+    notes = notes[:12]
+    if notes: plan["admission_notes"] = notes
+    else: plan.pop("admission_notes", None)
+    return validate_plan(plan), notes
+
+
+def _admit_geometry(plan, kind, presets, notes):
+    if kind == "drop_test" and plan["drop"]["representation"] == "network":
+        spec = plan["drop"]
+        budget = PLAYGROUND_CELL_BUDGET // 3  # three matched material lanes
+        spec["resolution"] = _admit_box("Drop target", spec["target_dimensions_m"],
+                                        spec["resolution"], budget=budget, notes=notes)
+    elif kind == "scene_test":
+        entries = []
+        for index, entry in enumerate(plan["scene"]["objects"], 1):
+            preset = presets[entry["preset"]]
+            representation = (preset["representation"] if entry["representation"] == "preset"
+                              else entry["representation"])
+            if representation != "network":
+                continue
+            dimensions = entry["dimensions_m"] or preset["dimensions_m"]
+            requested = entry["resolution"] or preset.get("resolution")
+            if requested is None:
+                raise Inadmissible(f"Scene object {index} ({entry['preset']}) is a network object "
+                                   "with no resolution.", limit="resolution_per_axis")
+            label = f"Scene object {index} ({entry['preset']})"
+            entries.append([label, dimensions,
+                            _admit_box(label, dimensions, requested,
+                                       budget=min(LIMITS["object_cells"], PLAYGROUND_CELL_BUDGET),
+                                       notes=notes), entry])
+        packed = _shrink_to_world_budget([(a, b, c) for a, b, c, _ in entries], notes)
+        for (_, _, chosen), original in zip(packed, entries):
+            original[3]["resolution"] = list(chosen)
+    elif kind in ("panel_impact", "plate_drop", "knife_cut"):
+        # These fixed-layout routes build three matched panels from presets that
+        # carry their own resolution, then override the dimensions, so the
+        # authored resolution can stop matching the authored panel.
+        requested = plan.get("panel_resolution") or presets["glass_panel"]["resolution"]
+        plan["panel_resolution"] = _admit_box("Panel", plan["panel_dimensions_m"], requested,
+                                              budget=PLAYGROUND_CELL_BUDGET // 3, notes=notes)
+    elif kind == "custom_objects":
+        entries = []
+        for index, entry in enumerate(plan["objects"], 1):
+            preset = presets[entry["preset"]]
+            if preset["representation"] != "network":
+                continue
+            dimensions = entry["dimensions_m"] or preset["dimensions_m"]
+            label = f"Object {index} ({entry['preset']})"
+            entries.append([label, dimensions,
+                            _admit_box(label, dimensions,
+                                       entry.get("resolution") or preset["resolution"],
+                                       budget=min(LIMITS["object_cells"], PLAYGROUND_CELL_BUDGET),
+                                       notes=notes), entry])
+        packed = _shrink_to_world_budget([(a, b, c) for a, b, c, _ in entries], notes)
+        for (_, _, chosen), original in zip(packed, entries):
+            original[3]["resolution"] = list(chosen)
+    return validate_plan(plan), notes
+
+
+def plan_cost(plan, packages):
+    """Substeps per tick and estimated wall time for every compiled case."""
+    cases = []
+    for package in packages:
+        steps = max(1, round(plan["duration_s"] / package["fixed_dt_s"]))
+        estimate = cost_estimate(package, steps)
+        estimate["name"] = package["name"]
+        cases.append(estimate)
+    total = sum(case["estimated_wall_s"] for case in cases)
+    return {"cases": cases, "estimated_wall_s": total,
+            "estimated_wall_text": network_admission.format_duration(total),
+            "worst_substeps_per_tick": max((case["substeps_per_host_tick"] for case in cases),
+                                           default=0),
+            "basis": cases[0]["basis"] if cases else "No network case to cost."}
+
+
 def request_blockers(message, plan):
     """Requirements are separate from schema admission; never silently run a fallback."""
     blockers = [item["description"]+": "+item["reason"] for item in plan.get("requirements",[]) if item["status"] != "supported"]
@@ -324,6 +591,9 @@ def compile_plan(plan):
             for index, entry in enumerate(plan["objects"]):
                 args = {k: entry[k] for k in ("position_m", "velocity_m_s")}
                 if entry["dimensions_m"] is not None: args["dimensions_m"] = entry["dimensions_m"]
+                if entry.get("resolution") is not None and catalog()["object_presets"][
+                        entry["preset"]]["representation"] == "network":
+                    args["resolution"] = entry["resolution"]
                 objects.append(make_object(entry["preset"], index+1, **args))
         else:
             dims = plan["panel_dimensions_m"]
@@ -331,6 +601,8 @@ def compile_plan(plan):
             for lane, preset in enumerate(("glass_panel", "wood_panel", "iron_panel")):
                 x = (lane-1)*lane_spacing
                 panel = make_object(preset, lane*2+1, dimensions_m=dims)
+                if plan.get("panel_resolution") is not None and kind != "rigid_drop":
+                    panel["resolution"] = list(plan["panel_resolution"])
                 projectile = make_object(plan["projectile"], lane*2+2)
                 if kind in ("plate_drop", "rigid_drop"):
                     panel.update(position_m=[x,.18,0], orientation_wxyz=[math.sqrt(.5),math.sqrt(.5),0,0])
