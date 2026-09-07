@@ -12,6 +12,7 @@
     messages: [],
     history: [],
     scene: null,
+    sceneMetadata: null,
     playbackCache: new (class extends Map { set(key,value){super.set(key,value);while(this.size>2)this.delete(this.keys().next().value);return this;} })(),
     loadedPlaybackKey: null,
     playbackRequest: 0,
@@ -201,11 +202,12 @@
       material_state_reference: "Material-state reference",
       continuum_pressure_reference: "Spatial pressure reference",
       dynamic_material_impact: "Dynamic material impact",
+      thermal_material_experiment: "Thermal material experiment",
       cohesive_sphere_reference: "Cohesive impact development reference",
       glass_reference: "Published glass reference",
       unsupported: "Unsupported request",
     };
-    const sweep = plan.experiment === "dynamic_material_impact" && plan.impact ? `${plan.impact.materials.length} material case(s): ${plan.impact.materials.map(material => material.name || material.material_id).join(", ")}` : plan.drop ? `${plan.drop.heights_m.length} height case(s)` : plan.scene ? `${plan.scene.objects.length} authored object(s)` : Array.isArray(plan.speeds_m_s) && plan.speeds_m_s.length
+    const sweep = plan.experiment === "thermal_material_experiment" && plan.thermal ? `${plan.thermal.cells.length} cell(s), ${plan.thermal.materials.length} material(s)` : plan.experiment === "dynamic_material_impact" && plan.impact ? `${plan.impact.materials.length} material case(s): ${plan.impact.materials.map(material => material.name || material.material_id).join(", ")}` : plan.drop ? `${plan.drop.heights_m.length} height case(s)` : plan.scene ? `${plan.scene.objects.length} authored object(s)` : Array.isArray(plan.speeds_m_s) && plan.speeds_m_s.length
       ? `${plan.speeds_m_s.length} speed case(s)`
       : Array.isArray(plan.heights_m) && plan.heights_m.length
         ? `${plan.heights_m.length} height case(s)`
@@ -350,6 +352,8 @@
     if (report.schema === "banjo.dynamic-material-playback.v1" && Array.isArray(report.cases)) {
       return report.cases.map((entry, index) => `${text(entry.material_id)}: ${text(entry.status)} (${entry.frames?.length ?? item.inner_cases?.[index]?.computed_frames ?? "unavailable"} frames)`).join(" · ");
     }
+    if (report.schema === "banjo.thermal-experiment-response.v1")
+      return `${report.frames?.length ?? 0} accepted frame(s) · ${Number(report.completed_time_s?.toPrecision?.(6) ?? report.completed_time_s)} s · ${thermalTemperature(report.final_ledger?.temperature_min_k)}–${thermalTemperature(report.final_ledger?.temperature_max_k)}`;
     const keys = ["fracture_count", "broken_bonds", "elapsed_s", "wall_ms", "mass_kg", "energy_j", "status"];
     const found = keys.find((key) => report[key] !== undefined);
     return found ? `${found}: ${text(report[found])}` : `${Object.keys(report).length} report field(s)`;
@@ -358,6 +362,8 @@
   function physicalValidationLabel(item) {
     const limited = item && Array.isArray(item.inner_cases) && item.inner_cases.filter((entry) => entry.status === "solver_limit");
     if (limited && limited.length) return `Solver limit: ${limited.map((entry) => entry.material_id).join(", ")}`;
+    if (item?.report?.schema === "banjo.thermal-experiment-response.v1")
+      return "Experimental / not physically validated";
     const value = item && item.report && item.report.physical_response_validated;
     if (value === false) return "Experimental / not validated";
     if (value === true) return "Validated for reported scope";
@@ -373,7 +379,7 @@
   function clearViewer(message = "Select a completed case with playback data.") {
     setPlaybackEnabled(false);
     $("viewer-review").replaceChildren();$("viewer-evidence").textContent="";
-    state.playbackRequest += 1; state.scene?.dispose(); state.scene = null; state.loadedPlaybackKey = null;
+    state.playbackRequest += 1; state.scene?.dispose(); state.scene = null; state.sceneMetadata = null; state.loadedPlaybackKey = null;
     const stage = $("viewer-stage"); stage.replaceChildren();
     const empty = document.createElement("div"); empty.className = "viewer-empty"; empty.textContent = message; stage.append(empty);
     $("viewer-play").textContent = "Play"; $("viewer-frame").max = "0"; $("viewer-frame").value = "0"; $("viewer-frame-output").textContent = "0 / 0";
@@ -413,6 +419,7 @@
     const limitedMaterials = (item?.inner_cases || playback?.cases || []).filter((entry) => entry.status === "solver_limit").map((entry) => entry.material_id);
     const materialStatus = (item?.inner_cases || playback?.cases || []).map((entry) => `${text(entry.material_id)}: ${text(entry.status)}`).join(" · ");
     if (playback?.native_schema === "banjo.cohesive-sphere-probe.v1") return ["warning", "Development reference: a launched sphere hits a fictional material. Colors show actual connected components; surfaces follow solved interface separation. The high-speed case stops at the small-rotation model limit. This is not the calibrated glass-drop experiment."];
+    if (playback?.schema === "banjo.thermal-experiment-response.v1") return [limited ? "warning" : "ready", limited ? `Thermal solver limit: showing ${text(playback.completed_time_s)} s of ${text(playback.requested_horizon_s)} s and the last accepted cell states. No flame, smoke, airflow, radiation, or mechanical motion is rendered.` : "Accepted fixed-grid thermal states. Color shows temperature; cells do not move. No flame, smoke, airflow, radiation, or mechanical motion is rendered."];
     if (playback?.schema === "banjo.dynamic-material-playback.v1" && invalid) return ["warning", `Dynamic material impact is experimental and not physically validated.${materialStatus ? ` ${materialStatus}.` : ""}`];
     if (limitedMaterials.length) return ["warning", `Solver limit: ${limitedMaterials.join(", ")}. Showing each material's last accepted sampled frame; response remains experimental.${materialStatus ? ` ${materialStatus}.` : ""}`];
     if (limited) return ["warning", `Solver stopped after ${playback?.completed_steps ?? "some"} of ${playback?.requested_steps ?? "requested"} steps. ${text(playback?.error,item?.error || "Last accepted states only.")}${unresolved ? " Temporal resolution is also unresolved." : ""}`];
@@ -426,7 +433,7 @@
     if (state.scene) return state.scene;
     if (!window.BanjoScene) throw new Error("The local 3D renderer is still loading.");
     state.scene = window.BanjoScene.create($("viewer-stage"), {
-      onFrame: ({index, count, frame, continuum, dynamic}) => { $("viewer-frame").max = String(Math.max(0,count-1)); $("viewer-frame").value=String(index); const stopped=dynamic ? frame?.material_states?.filter(x=>x.stopped).map(x=>x.material_id) || [] : []; const shownTime=dynamic && Number.isFinite(frame?.time_s) ? Number(frame.time_s.toPrecision(9)) : frame?.time_s; const detail=continuum ? ` · ${text(frame?.phase,"load")} · load ${frame?.load_fraction !== undefined ? `${Math.round(frame.load_fraction*100)}%` : `frame ${index+1}`}` : shownTime !== undefined ? ` · ${text(shownTime)} s${stopped.length ? ` · stopped: ${stopped.join(", ")}` : ""}` : ""; $("viewer-frame-output").textContent=`${index+1} / ${count || 0}${detail}`; $("viewer-magnification").disabled=!continuum;if(!continuum)$("viewer-magnification").value="1"; $("viewer-bonds").closest("label").hidden=!!dynamic; },
+      onFrame: ({index, count, frame, continuum, dynamic, thermal}) => { $("viewer-frame").max = String(Math.max(0,count-1)); $("viewer-frame").value=String(index); syncCustomDisplay("frame",count>1?index/(count-1):0); const stopped=dynamic ? frame?.material_states?.filter(x=>x.stopped).map(x=>x.material_id) || [] : []; const shownTime=(dynamic||thermal)&&Number.isFinite(frame?.time_s) ? Number(frame.time_s.toPrecision(9)) : frame?.time_s; const thermalDetail=thermal&&frame?.ledger ? ` · ${thermalTemperature(frame.ledger.temperature_min_k)}–${thermalTemperature(frame.ledger.temperature_max_k)} · fuel ${thermalMass(frame.ledger.fuel_kg)} · products ${thermalMass(frame.ledger.products_kg)}` : ""; const detail=continuum ? ` · ${text(frame?.phase,"load")} · load ${frame?.load_fraction !== undefined ? `${Math.round(frame.load_fraction*100)}%` : `frame ${index+1}`}` : shownTime !== undefined ? ` · ${text(shownTime)} s${stopped.length ? ` · stopped: ${stopped.join(", ")}` : ""}${thermalDetail}` : ""; $("viewer-frame-output").textContent=`${index+1} / ${count || 0}${detail}`; $("viewer-magnification").disabled=!continuum;if(!continuum)$("viewer-magnification").value="1"; $("viewer-bonds").closest("label").hidden=!!dynamic||!!thermal; },
       onPlayState: (playing) => { $("viewer-play").textContent=playing?"Pause":"Play"; },
       onInspect: (data) => { $("viewer-inspect").textContent = data ? Object.entries(data).filter(([k,v]) => k !== "source" && typeof v !== "object").slice(0,16).map(([k,v])=>`${k}: ${text(v)}`).join(" · ") : "Nothing selected."; },
     });
@@ -450,8 +457,44 @@
     const heading=document.createElement("h3");heading.textContent=text(ui.title,"Experiment controls");root.append(heading);
     const formatValue=(action,value)=>{const n=Number(value);if(action==="pressure_pa")return `${(n/1e6).toLocaleString(undefined,{maximumFractionDigits:3})} MPa`;if(action==="height_m")return `${n.toLocaleString()} m`;if(action==="speed_m_s")return `${n.toLocaleString()} m/s`;if(action==="playback_speed"||action==="magnification")return `${n.toLocaleString()}×`;if(action==="frame")return `${Math.round(n*100)}%`;return text(value);};
     const displayAction=(action,value)=>{if(action==="playback_speed"){$("viewer-speed").value=String(value);state.scene?.setSpeed(value);}if(action==="magnification"){$("viewer-magnification").value=String(value);state.scene?.setMagnification(value);}if(action==="frame"){$("viewer-frame").value=String(Math.round(value*Math.max(0,(state.scene?.frameCount||1)-1)));state.scene?.setFrame(value*Math.max(0,(state.scene?.frameCount||1)-1));}if(action==="components"){$("viewer-components").checked=Boolean(value);state.scene?.showComponents(value);}if(action==="reference"){$("viewer-reference").checked=Boolean(value);state.scene?.showReference(value);}};
-    ui.controls.forEach((control)=>{ const row=document.createElement("div");row.className="custom-control"; const label=document.createElement("label");label.textContent=text(control.label,control.id);row.append(label); const local={play_pause:()=>$("viewer-play").click(),reset:()=>$("viewer-reset").click(),step_forward:()=>$("viewer-forward").click(),step_back:()=>$("viewer-back").click(),components:()=>$("viewer-components").click(),reference:()=>$("viewer-reference").click()};
+    ui.controls.forEach((control)=>{ const row=document.createElement("div");row.className="custom-control";row.dataset.action=control.action; const label=document.createElement("label");label.textContent=text(control.label,control.id);row.append(label); const local={play_pause:()=>$("viewer-play").click(),reset:()=>$("viewer-reset").click(),step_forward:()=>$("viewer-forward").click(),step_back:()=>$("viewer-back").click(),components:()=>$("viewer-components").click(),reference:()=>$("viewer-reference").click()};
       if(control.kind==="button"){const b=document.createElement("button");b.type="button";b.textContent=text(control.label,control.id);b.addEventListener("click",()=>{if(local[control.action])local[control.action]();else rerun(control.action,control.value);});row.append(b);} else {const input=document.createElement("input");input.type=control.kind==="toggle"?"checkbox":"range";if(input.type==="range"){input.min=control.min;input.max=control.max;input.step=control.step;input.value=control.value;}else input.checked=Boolean(control.value);const output=document.createElement("output");output.textContent=input.type==="checkbox"?(input.checked?"On":"Off"):formatValue(control.action,input.value);row.append(output,input);const update=()=>{const value=input.type==="checkbox"?input.checked:Number(input.value);output.textContent=input.type==="checkbox"?(value?"On":"Off"):formatValue(control.action,value);displayAction(control.action,value);};input.addEventListener("input",update);if(["height_m","speed_m_s","pressure_pa"].includes(control.action)){const apply=document.createElement("button");apply.type="button";apply.textContent="Apply and rerun";apply.title="Runs the native engine with a new validated plan.";apply.addEventListener("click",()=>rerun(control.action,Number(input.value)));row.append(apply);}else displayAction(control.action,input.type==="checkbox"?input.checked:Number(input.value));} root.append(row); });
+  }
+
+  function syncCustomDisplay(action, value) {
+    const row=[...document.querySelectorAll("#viewer-custom .custom-control")].find(
+      (item)=>item.dataset.action===action);
+    if(!row)return;
+    const input=row.querySelector("input"), output=row.querySelector("output");
+    if(!input||!output)return;
+    if(input.type==="checkbox"){input.checked=Boolean(value);output.textContent=input.checked?"On":"Off";return;}
+    input.value=String(value);
+    const numeric=Number(value);
+    output.textContent=action==="frame"?`${Math.round(numeric*100)}%`:
+      action==="playback_speed"?`${numeric.toLocaleString()}×`:text(value);
+  }
+
+  function thermalTemperature(value) {
+    return Number.isFinite(value) ? `${value.toFixed(1)} K` : "—";
+  }
+
+  function thermalMass(value) {
+    if (!Number.isFinite(value)) return "—";
+    if (Math.abs(value) < .01) return `${Number((value * 1e6).toPrecision(3))} mg`;
+    return `${Number(value.toPrecision(3))} kg`;
+  }
+
+  function renderThermalLegend(metadata) {
+    if (!metadata?.thermal || !metadata.thermalRange) return;
+    const root=$("viewer-custom"), heading=document.createElement("h3");
+    heading.textContent="Temperature color legend"; root.append(heading);
+    const row=document.createElement("div"); row.className="custom-control";
+    const low=document.createElement("span"), scale=document.createElement("span"), high=document.createElement("span");
+    low.textContent=`Cool · ${thermalTemperature(metadata.thermalRange.minimum_temperature_k)}`;
+    high.textContent=`Hot · ${thermalTemperature(metadata.thermalRange.maximum_temperature_k)}`;
+    scale.textContent="blue → cyan → yellow → red";
+    scale.setAttribute("aria-label","Temperature increases from blue through cyan and yellow to red");
+    row.append(low,scale,high); root.append(row);
   }
 
   async function inspectEvidence(analyze=false) {
@@ -479,8 +522,8 @@
     const item=state.job?.cases?.[index]; if(!state.jobId || !playbackAvailable(item)){if(auto)return;showToast("This case has no embedded playback data.",true);return;}
     $("viewer-review").replaceChildren();$("viewer-evidence").textContent="";$("viewer-evidence-details").open=false;state.selectedCase=index;renderLanguage();renderViewerCaseSelect();activateTab("viewer");$("viewer-title").textContent=text(state.job?.plan?.ui?.title,item.name || "Computed sequence.");
     const key=`${state.jobId}:${index}`, request=++state.playbackRequest;
-    try { let playback=state.playbackCache.get(key);if(!playback){playback=await api(`/api/jobs/${encodeURIComponent(state.jobId)}/playback/${index}`);state.playbackCache.set(key,playback);}if(request!==state.playbackRequest||key!==`${state.jobId}:${state.selectedCase}`)return; setPlaybackEnabled(true); if(state.loadedPlaybackKey!==key){ensureScene().load(playback);if(playback.native_schema === "banjo.cohesive-sphere-probe.v1"){$("viewer-speed").value="0.001";state.scene.setSpeed(0.001);}state.loadedPlaybackKey=key;} const [kind,message]=validityMessage(item,playback), validity=$("viewer-validity");validity.className=`viewer-validity ${kind}`;validity.textContent=message;renderCustomControls(state.job?.plan?.ui);$("viewer-native").disabled=!canOpenCase(item); }
-    catch(error){state.scene?.dispose();state.scene=null;$("viewer-stage").replaceChildren();const p=document.createElement("p");p.className="viewer-error";p.textContent=error.message;$("viewer-stage").append(p);state.loadedPlaybackKey=null;showToast(error.message,true);}
+    try { let playback=state.playbackCache.get(key);if(!playback){playback=await api(`/api/jobs/${encodeURIComponent(state.jobId)}/playback/${index}`);state.playbackCache.set(key,playback);}if(request!==state.playbackRequest||key!==`${state.jobId}:${state.selectedCase}`)return; setPlaybackEnabled(true); if(state.loadedPlaybackKey!==key){state.sceneMetadata=ensureScene().load(playback);if(playback.native_schema === "banjo.cohesive-sphere-probe.v1"){$("viewer-speed").value="0.001";state.scene.setSpeed(0.001);}state.loadedPlaybackKey=key;} const [kind,message]=validityMessage(item,playback), validity=$("viewer-validity");validity.className=`viewer-validity ${kind}`;validity.textContent=message;renderCustomControls(state.job?.plan?.ui);renderThermalLegend(state.sceneMetadata);$("viewer-native").disabled=!canOpenCase(item); }
+    catch(error){state.scene?.dispose();state.scene=null;state.sceneMetadata=null;$("viewer-stage").replaceChildren();const p=document.createElement("p");p.className="viewer-error";p.textContent=error.message;$("viewer-stage").append(p);state.loadedPlaybackKey=null;showToast(error.message,true);}
   }
 
   function needsMaterialValidationNote(job) {
@@ -632,7 +675,7 @@
   $("viewer-play").addEventListener("click",()=>{const playing=state.scene?.play();$("viewer-play").textContent=playing?"Pause":"Play";});
   $("viewer-reset").addEventListener("click",()=>{state.scene?.reset();$("viewer-play").textContent="Play";});
   $("viewer-back").addEventListener("click",()=>state.scene?.step(-1));$("viewer-forward").addEventListener("click",()=>state.scene?.step(1));
-  $("viewer-frame").addEventListener("input",e=>state.scene?.setFrame(Number(e.target.value)));$("viewer-speed").addEventListener("change",e=>state.scene?.setSpeed(e.target.value));$("viewer-magnification").addEventListener("change",e=>state.scene?.setMagnification(e.target.value));
+  $("viewer-frame").addEventListener("input",e=>state.scene?.setFrame(Number(e.target.value)));$("viewer-speed").addEventListener("change",e=>{state.scene?.setSpeed(e.target.value);syncCustomDisplay("playback_speed",Number(e.target.value));});$("viewer-magnification").addEventListener("change",e=>state.scene?.setMagnification(e.target.value));
   $("viewer-components").addEventListener("change",e=>state.scene?.showComponents(e.target.checked));$("viewer-reference").addEventListener("change",e=>state.scene?.showReference(e.target.checked));$("viewer-bonds").addEventListener("change",e=>state.scene?.showBonds(e.target.checked));$("viewer-xray").addEventListener("change",e=>state.scene?.setXray(e.target.checked));$("viewer-native").addEventListener("click",()=>openStudio(state.selectedCase));
   $("prompt-input").addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); $("chat-form").requestSubmit(); } });
   renderConversation(); renderHistory(); renderJob(null); renderStatus(); loadStatus(); loadGoal(); restoreLatestJob();

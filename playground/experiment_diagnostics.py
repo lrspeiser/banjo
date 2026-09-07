@@ -14,6 +14,7 @@ from typing import Any
 
 SCHEMA = "banjo.experiment-diagnostics.v1"
 _DYNAMIC_MATERIAL_SCHEMA = "banjo.dynamic-material-playback.v1"
+_THERMAL_MATERIAL_SCHEMA = "banjo.thermal-experiment-response.v1"
 _MAX_ITEMS = 64
 _MAX_DEPTH = 8
 _MAX_STRING = 4096
@@ -257,6 +258,52 @@ def _dynamic_material_diagnostics(package: dict[str, Any],
     }
 
 
+def _thermal_material_diagnostics(package: dict[str, Any],
+                                  recording: dict[str, Any]) -> dict[str, Any]:
+    request = recording.get("request") if isinstance(recording.get("request"), dict) else {}
+    ledger = recording.get("final_ledger") if isinstance(recording.get("final_ledger"), dict) else {}
+    status = recording.get("status")
+    completed = _finite_number(recording.get("completed_time_s"))
+    requested = _finite_number(recording.get("requested_horizon_s"))
+    remaining = _finite_number(recording.get("remaining_duration_s"))
+    frames = recording.get("frames") if isinstance(recording.get("frames"), list) else []
+    material_inputs = []
+    for material in request.get("materials", [])[:16] if isinstance(request.get("materials"), list) else []:
+        if isinstance(material, dict):
+            numeric = _numeric_descriptor(material)
+            material_inputs.append({"id": _bounded_json(material.get("id")),
+                                    "numeric": _bounded_json(numeric),
+                                    "numeric_sha256": _package_sha256(numeric)})
+    complete = (status == "complete" and completed is not None and requested is not None and
+                remaining == 0 and completed >= requested - 1e-12)
+    reaction_heat = _finite_number(ledger.get("reaction_heat_j"))
+    checks = [_result("execution_completion", "pass" if complete else "fail",
+                      "requested_horizon_completed" if complete else "solver_stopped_before_requested_horizon",
+                      "native accepted thermal clock and status",
+                      {"completed_time_s": completed, "requested_horizon_s": requested,
+                       "remaining_duration_s": remaining}),
+              _result("ledger_available", "pass" if ledger else "fail",
+                      "full_native_region_ledger_retained" if ledger else "native_ledger_missing",
+                      "native final region report")]
+    return {"schema": SCHEMA, "source_schema": _THERMAL_MATERIAL_SCHEMA,
+            "native_facts": {"status": status, "error": _bounded_json(recording.get("error", "")),
+                             "completed_time_s": completed, "requested_horizon_s": requested,
+                             "remaining_duration_s": remaining,
+                             "scheduler_backlog_s": _finite_number(recording.get("scheduler_backlog_s")),
+                             "computed_frames": len(frames), "work": _bounded_json(recording.get("work")),
+                             "final_ledger": _bounded_json(ledger),
+                             "observed_reaction_heat_j": reaction_heat},
+            "package": {"sha256": _package_sha256(package),
+                        "numeric_materials": material_inputs,
+                        "cell_count": len(request.get("cells", [])) if isinstance(request.get("cells"), list) else None},
+            "expectations": [], "checks": checks,
+            "validity": {"physical_response_validated": False},
+            "limitations": ["Fixed-grid insulated solid thermal experiment; material labels do not select laws.",
+                            "No airflow, smoke, flame, radiation or moisture transport is modeled.",
+                            "No mechanical motion, contact, fracture or thermal expansion coupling is modeled.",
+                            "A small energy or mass residual is reported as a raw numerical ledger value, not a conservation certification."]}
+
+
 def _cohesive_reference_diagnostics(package: dict[str, Any], recording: dict[str, Any]) -> dict[str, Any]:
     """Keep measured separation and incomplete duration visible to GPT analysis."""
     cases = recording.get("cases", [])
@@ -379,6 +426,8 @@ def build_diagnostics(plan: dict[str, Any], package: dict[str, Any],
     """Return a bounded JSON-compatible diagnostics dictionary."""
     if recording.get("schema") == _DYNAMIC_MATERIAL_SCHEMA:
         return _dynamic_material_diagnostics(package, recording)
+    if recording.get("schema") == _THERMAL_MATERIAL_SCHEMA:
+        return _thermal_material_diagnostics(package, recording)
     requested = recording.get("requested_steps") if type(recording.get("requested_steps")) is int else None
     completed = recording.get("completed_steps") if type(recording.get("completed_steps")) is int else None
     frames = recording.get("frames") if isinstance(recording.get("frames"), list) else []

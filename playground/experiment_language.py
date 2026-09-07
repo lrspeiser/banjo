@@ -17,10 +17,11 @@ from control_contract import UI_SCHEMA, validate_ui, default_ui
 from drop_builder import DROP_SCHEMA, validate_drop, compile_drop
 from scene_composer import SCENE_SCHEMA, validate_scene, compile_scene
 from dynamic_material import IMPACT_SCHEMA, validate_impact, native_request
+from thermal_material import THERMAL_EXPERIMENT_SCHEMA, validate_experiment
 
 KINDS = ["drop_test", "scene_test", "panel_impact", "plate_drop", "rigid_drop", "knife_cut", "custom_objects",
          "thermal_frontier", "material_state_reference", "continuum_pressure_reference", "dynamic_material_impact",
-         "glass_reference", "unsupported"]
+         "thermal_material_experiment", "glass_reference", "unsupported"]
 PRESETS = list(catalog()["object_presets"])
 LIMITATIONS = [
     "Network fracture is experimental: glass/oak/iron realism and timestep/contact convergence remain open.",
@@ -57,6 +58,7 @@ SCHEMA["properties"].update({
     "drop": {"anyOf": [DROP_SCHEMA, {"type": "null"}]},
     "scene": {"anyOf": [SCENE_SCHEMA, {"type": "null"}]},
     "impact": {"anyOf": [IMPACT_SCHEMA, {"type": "null"}]},
+    "thermal": {"anyOf": [THERMAL_EXPERIMENT_SCHEMA, {"type": "null"}]},
     "ui": UI_SCHEMA,
     "pressure": {"anyOf": [{"type": "null"}, obj({
         "peak_pressure_pa": {"type": "number"}, "resolution": {"type": "integer"},
@@ -70,6 +72,8 @@ SCHEMA["required"] = list(SCHEMA["properties"])
 
 # The model selects one typed setup. It never fills irrelevant legacy fields.
 _SETUPS = [
+    obj({"kind":{"type":"string","enum":["thermal_material_experiment"]},
+         "thermal":THERMAL_EXPERIMENT_SCHEMA}),
     obj({"kind":{"type":"string","enum":["dynamic_material_impact"]},"impact":IMPACT_SCHEMA}),
     obj({"kind":{"type":"string","enum":["drop_test"]},"drop":DROP_SCHEMA}),
     obj({"kind":{"type":"string","enum":["scene_test"]},"scene":SCENE_SCHEMA}),
@@ -91,11 +95,11 @@ def lower_proposal(proposal, *, repair_ui=False):
     kind=setup.get("kind")
     candidates=[s for s in _SETUPS if kind in s["properties"]["kind"]["enum"]]
     if not candidates or set(setup)!=set(candidates[0]["properties"]): raise ValueError("Invalid typed experiment setup")
-    plan={"language":"banjo-playground-1","experiment":kind,"projectile":"iron_ball","panel_dimensions_m":[.24,.36,.04],"speeds_m_s":[],"heights_m":[],"objects":[],"drop":None,"scene":None,"pressure":None,"impact":None}
+    plan={"language":"banjo-playground-1","experiment":kind,"projectile":"iron_ball","panel_dimensions_m":[.24,.36,.04],"speeds_m_s":[],"heights_m":[],"objects":[],"drop":None,"scene":None,"pressure":None,"impact":None,"thermal":None}
     plan.update({k:v for k,v in proposal.items() if k!="setup"})
     plan.update({k:v for k,v in setup.items() if k!="kind"})
     if proposal["fidelity"] == "calibrated" and kind != "glass_reference":
-        plan.update(experiment="unsupported",drop=None,scene=None,pressure=None,impact=None,objects=[],heights_m=[],speeds_m_s=[],ui={"title":"Calibration unavailable","controls":[]})
+        plan.update(experiment="unsupported",drop=None,scene=None,pressure=None,impact=None,thermal=None,objects=[],heights_m=[],speeds_m_s=[],ui={"title":"Calibration unavailable","controls":[]})
         plan["requirements"] = [{"description":"Calibrated physical response","status":"unsupported","reason":"The current experiment models are experimental. No calibrated simulation is available; an uncalibrated substitute was not executed."}]
     if repair_ui:
         try: validate_ui(plan["ui"],plan["experiment"])
@@ -187,6 +191,27 @@ playback_speed .1..4 and frame. No magnification or physical parameter controls
 for this route yet; change physics via chat. The 3D view replays actual nodal and
 sphere positions at computed timestamps, including partial failure records.
 """
+SYSTEM += """
+
+Use thermal_material_experiment for explicit bounded fixed-grid solid heat,
+conduction, reaction, or phase-change requests. Populate thermal with 1..16 numeric
+SI material descriptors and 1..16 explicit cells, one finite heater, fixed step and
+horizon, and all four work limits. Set duration_s equal to thermal.horizon_s.
+Material names are labels only. Reaction requires explicit fuel_fraction,
+oxygen_per_kg_solid, activation_temperature_k, rate_per_s,
+heat_of_combustion_j_kg and oxygen_per_kg_fuel. Inert materials omit reaction.
+Do not infer glass, oak or iron coefficients from names. Cells in one compact chunk
+must share their initial material, temperature and liquid fraction. This route is
+insulated solid conduction: no airflow, smoke, radiation, moisture, mechanical
+deformation, contact, fracture or thermal expansion coupling. Reaction and phase
+change cannot be combined. Results are numeric frames and full ledgers; there is no
+fixed-cell 3D playback renders accepted frames with a labeled temperature color
+legend and cell inspection for fuel, oxygen, products, phase and energy values.
+Cells remain at their authored positions; no flame, smoke or fake motion is added.
+Work limits may return solver_limit. Use only display controls: play_pause, reset,
+step_forward, step_back, playback_speed and frame. Change heater, material, cell or
+time inputs through a newly authored typed request; no physical rerun controls exist.
+"""
 
 def number(value, low, high, label):
     if type(value) not in (int, float) or not math.isfinite(value) or not low <= value <= high:
@@ -212,7 +237,9 @@ def validate_plan(plan):
         raise ValueError("Invalid limitations")
     if plan["projectile"] not in ("iron_ball", "iron_cube", "knife", "axe_head"):
         raise ValueError("Unsupported projectile")
-    number(plan["duration_s"], .001 if plan["experiment"] in ("dynamic_material_impact", "unsupported") else .05, 3, "duration_s")
+    short = plan["experiment"] in ("dynamic_material_impact", "thermal_material_experiment", "unsupported")
+    duration_max = 10 if plan["experiment"] == "thermal_material_experiment" else 3
+    number(plan["duration_s"], .001 if short else .05, duration_max, "duration_s")
     for field, upper in [("speeds_m_s", 20), ("heights_m", 2)]:
         if not isinstance(plan[field], list) or len(plan[field]) > 4:
             raise ValueError("At most four sweep cases are admitted")
@@ -250,7 +277,7 @@ def validate_plan(plan):
         if type(pressure["resolution"]) is not int or pressure["resolution"] not in (4,6,8,10,12): raise ValueError("Pressure resolution must be even in [4,12]")
         if type(pressure["increments"]) is not int or not 2 <= pressure["increments"] <= 64: raise ValueError("Pressure increments must be in [2,64]")
         if pressure["profile"] not in ("uniform", "smooth"): raise ValueError("Unknown pressure profile")
-    for field, kind, validator in (("drop", "drop_test", validate_drop), ("scene", "scene_test", validate_scene), ("impact", "dynamic_material_impact", validate_impact)):
+    for field, kind, validator in (("drop", "drop_test", validate_drop), ("scene", "scene_test", validate_scene), ("impact", "dynamic_material_impact", validate_impact), ("thermal", "thermal_material_experiment", validate_experiment)):
         value = plan.get(field)
         if plan["experiment"] == kind:
             if value is None: raise ValueError(f"{kind} requires {field}")
@@ -260,6 +287,9 @@ def validate_plan(plan):
         elif value is not None: raise ValueError(f"{field} is only used by {kind}")
     if plan["experiment"] == "dynamic_material_impact":
         native_request(plan["impact"], plan["duration_s"])
+    if plan["experiment"] == "thermal_material_experiment" and abs(
+            plan["duration_s"] - plan["thermal"]["horizon_s"]) > 1e-12:
+        raise ValueError("Thermal duration_s must equal thermal.horizon_s")
     requirements = plan.get("requirements", [])
     if not isinstance(requirements, list) or len(requirements)>12: raise ValueError("Invalid requirement list")
     for item in requirements:
@@ -283,7 +313,7 @@ def compile_plan(plan):
     if kind == "drop_test": return compile_drop(plan)
     if kind == "scene_test": return compile_scene(plan)
     if kind in ("unsupported", "glass_reference", "thermal_frontier", "material_state_reference",
-                "continuum_pressure_reference", "dynamic_material_impact"):
+                "continuum_pressure_reference", "dynamic_material_impact", "thermal_material_experiment"):
         return []
     parameters = plan["speeds_m_s"] if kind in ("panel_impact", "knife_cut") else plan["heights_m"]
     if kind == "custom_objects": parameters = [None]

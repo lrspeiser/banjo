@@ -26,6 +26,8 @@ function create(container, hooks = {}) {
     bodies = [],
     continuum = false,
     dynamic = false,
+    thermal = false,
+    thermalRange = null,
     xray = false,
     fitBounds = null,
     groundY = 0,
@@ -93,6 +95,8 @@ function create(container, hooks = {}) {
     box.getCenter(target);
     const d = box.getSize(new THREE.Vector3()).length();
     radius = Math.max(d * 1.35, 0.03);
+    camera.far = Math.max(1e4, radius * 20);
+    camera.updateProjectionMatrix();
     grid.scale.setScalar(Math.max(d / 12, 0.005));
     grid.position.y = continuum || dynamic ? box.min.y : groundY;
     cameraUpdate();
@@ -580,6 +584,93 @@ function create(container, hooks = {}) {
       }),
     }));
   }
+  function validateThermal(d) {
+    const finite = (v) => typeof v === "number" && Number.isFinite(v);
+    const triple = (v, integer = false) => Array.isArray(v) && v.length === 3 &&
+      v.every((x) => finite(x) && (!integer || Number.isInteger(x)));
+    if (d?.schema !== "banjo.thermal-experiment-response.v1" ||
+        !["complete", "solver_limit"].includes(d.status) || !d.request ||
+        d.request.schema !== "banjo.thermal-experiment-request.v1" ||
+        !finite(d.request.voxel_size_m) || d.request.voxel_size_m <= 0 ||
+        !Array.isArray(d.request.cells) || !d.request.cells.length ||
+        d.request.cells.length > 16 || !Array.isArray(d.frames) || !d.frames.length ||
+        d.frames.length > 1024)
+      throw new Error("Thermal playback metadata is invalid.");
+    const addresses = new Set();
+    for (const cell of d.request.cells) {
+      if (!triple(cell?.chunk, true) || !triple(cell?.local, true) ||
+          cell.local.some((x) => x < 0 || x > 15) ||
+          !Number.isInteger(cell.material) || !finite(cell.temperature_k))
+        throw new Error("Thermal authored cell geometry is invalid.");
+      const key = `${cell.chunk.join(":")}/${cell.local.join(":")}`;
+      if (addresses.has(key)) throw new Error("Thermal authored cells are duplicated.");
+      addresses.add(key);
+    }
+    let previous = -Infinity;
+    const requiredLedger = ["products_kg", "chemical_energy_j", "thermal_enthalpy_j",
+      "external_work_j", "reaction_heat_j", "combined_energy_residual_j",
+      "mass_kg", "mass_residual_kg"];
+    for (const sample of d.frames) {
+      if (!finite(sample?.time_s) || sample.time_s <= previous ||
+          !Array.isArray(sample.cells) || sample.cells.length !== addresses.size ||
+          !sample.ledger || requiredLedger.some((key) => !finite(sample.ledger[key])))
+        throw new Error("Thermal playback frames or ledgers are invalid.");
+      previous = sample.time_s;
+      const seen = new Set();
+      for (const cell of sample.cells) {
+        const key = triple(cell?.chunk, true) && triple(cell?.local, true)
+          ? `${cell.chunk.join(":")}/${cell.local.join(":")}` : "";
+        if (!addresses.has(key) || seen.has(key) || !Number.isInteger(cell.material) ||
+            !finite(cell.temperature_k) || cell.temperature_k < 0 ||
+            !finite(cell.fuel_kg) || cell.fuel_kg < 0 ||
+            !finite(cell.oxygen_kg) || cell.oxygen_kg < 0 ||
+            !finite(cell.liquid_fraction) || cell.liquid_fraction < 0 ||
+            cell.liquid_fraction > 1 || typeof cell.phase_change !== "boolean")
+          throw new Error("Thermal playback cell state is invalid.");
+        seen.add(key);
+      }
+    }
+    if (!finite(d.completed_time_s) || Math.abs(previous - d.completed_time_s) > 1e-9 ||
+        !finite(d.requested_horizon_s) || !finite(d.remaining_duration_s) ||
+        Math.abs(d.completed_time_s + d.remaining_duration_s - d.requested_horizon_s) > 1e-9 ||
+        d.final_ledger !== d.frames.at(-1).ledger &&
+          JSON.stringify(d.final_ledger) !== JSON.stringify(d.frames.at(-1).ledger))
+      throw new Error("Thermal playback completion accounting is invalid.");
+  }
+  function thermalColor(value, low, high) {
+    const fraction = high > low ? clamp((value - low) / (high - low), 0, 1) : 0.5;
+    return new THREE.Color().setHSL(0.64 - fraction * 0.62, 0.86, 0.54);
+  }
+  function buildThermal(d) {
+    validateThermal(d);
+    thermal = true;
+    continuum = false;
+    dynamic = false;
+    magnification = 1;
+    frames = d.frames;
+    const size = d.request.voxel_size_m;
+    const temperatures = frames.flatMap((sample) => sample.cells.map((cell) => cell.temperature_k));
+    thermalRange = {minimum_temperature_k: Math.min(...temperatures),
+                    maximum_temperature_k: Math.max(...temperatures)};
+    const centers = d.request.cells.map((cell) => cell.chunk.map(
+      (chunk, axis) => (chunk * 16 + cell.local[axis] + 0.5) * size));
+    const origin = centers.reduce((sum, p) => sum.map((x, i) => x + p[i]), [0, 0, 0])
+      .map((x) => x / centers.length);
+    for (const [index, authored] of d.request.cells.entries()) {
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(size * 0.94, size * 0.94, size * 0.94),
+        new THREE.MeshStandardMaterial({roughness: 0.72, metalness: 0,
+          color: thermalColor(authored.temperature_k,
+            thermalRange.minimum_temperature_k, thermalRange.maximum_temperature_k)}));
+      mesh.position.fromArray(centers[index].map((x, axis) => x - origin[axis]));
+      solids.add(mesh);
+      const edge = wire(mesh, {id: index, material_id: authored.material});
+      edge.position.copy(mesh.position);
+      bodies.push({thermal: true, mesh, edge, key: `${authored.chunk.join(":")}/${authored.local.join(":")}`,
+                   authored, worldCenter: centers[index]});
+    }
+    fitBounds = new THREE.Box3().setFromObject(solids);
+  }
   function bondLines(list) {
     dispose(bonds);
     if (!list?.length) return;
@@ -620,7 +711,30 @@ function create(container, hooks = {}) {
   function update(i) {
     frame = clamp(Math.round(i), 0, Math.max(0, frames.length - 1));
     const f = frames[frame] || {};
-    if (dynamic)
+    if (thermal)
+      bodies.forEach((b) => {
+        const states = new Map(f.cells.map((cell) =>
+          [`${cell.chunk.join(":")}/${cell.local.join(":")}`, cell]));
+        const state = states.get(b.key);
+        b.mesh.material.color.copy(thermalColor(state.temperature_k,
+          thermalRange.minimum_temperature_k, thermalRange.maximum_temperature_k));
+        b.mesh.material.opacity = xray ? 0.32 : 1;
+        b.mesh.material.transparent = xray;
+        const evidence = {kind: "thermal cell", chunk: b.authored.chunk.join(","),
+          local: b.authored.local.join(","), material_id: state.material,
+          center_m: b.worldCenter.join(","), temperature_k: state.temperature_k,
+          fuel_kg: state.fuel_kg, oxygen_kg: state.oxygen_kg,
+          products_kg_region: f.ledger.products_kg,
+          liquid_fraction: state.liquid_fraction, phase_change: state.phase_change,
+          thermal_enthalpy_j_region: f.ledger.thermal_enthalpy_j,
+          chemical_energy_j_region: f.ledger.chemical_energy_j,
+          external_work_j_region: f.ledger.external_work_j,
+          reaction_heat_j_region: f.ledger.reaction_heat_j,
+          energy_residual_j_region: f.ledger.combined_energy_residual_j};
+        b.mesh.userData = evidence;
+        b.edge.userData = evidence;
+      });
+    else if (dynamic)
       bodies.forEach((b) => {
         let k = 0;
         while (
@@ -750,6 +864,7 @@ function create(container, hooks = {}) {
       frame: f,
       continuum,
       dynamic,
+      thermal,
     });
   }
   function load(d) {
@@ -761,6 +876,8 @@ function create(container, hooks = {}) {
     frame = 0;
     continuum = false;
     dynamic = false;
+    thermal = false;
+    thermalRange = null;
     groundY = 0;
     if (d?.schema === "banjo.playback.v1") {
       magnification = 1;
@@ -769,13 +886,15 @@ function create(container, hooks = {}) {
       buildContinuum(d);
     else if (d?.schema === "banjo.dynamic-material-playback.v1")
       buildDynamic(d);
+    else if (d?.schema === "banjo.thermal-experiment-response.v1")
+      buildThermal(d);
     else throw new Error("This result has no supported playback geometry.");
     references.visible = false;
     edges.visible = true;
     bonds.visible = true;
     update(0);
     fit();
-    return { continuum, dynamic, magnification };
+    return { continuum, dynamic, thermal, magnification, thermalRange };
   }
   const delay = () =>
     continuum

@@ -8,6 +8,14 @@
 namespace banjo {
 namespace {
 
+class ContactHandoffRequired : public std::runtime_error {
+  public:
+    ContactHandoffRequired(std::size_t facet, double energy)
+        : std::runtime_error("Severed interface retains compression energy; contact handoff required"),
+          evidence{facet, energy} {}
+    CohesiveContactHandoff evidence;
+};
+
 void require(bool condition, const char *message) {
     if (!condition) throw std::invalid_argument(message);
 }
@@ -34,6 +42,7 @@ void setComponent(Vec3 &value, unsigned axis, double component_value) {
 struct CohesiveDynamicPatch::CombinedEvaluation {
     std::vector<Vec3> internal_forces_n;
     std::vector<CohesiveFacetState> facet_states;
+    std::vector<CorotatedCohesiveFacetState> corotated_facet_states;
     std::vector<bool> fully_separated_facets;
     FractureSeparation separation;
     double bulk_stored_energy_j{};
@@ -45,6 +54,9 @@ struct CohesiveDynamicPatch::CombinedEvaluation {
     std::uint64_t tet_evaluations{};
     std::uint64_t facet_evaluations{};
     std::uint64_t nodal_scatters{};
+    std::uint64_t polar_iterations{};
+    std::uint64_t facet_derivative_evaluations{};
+    double maximum_elastic_stretch_norm{};
 };
 
 CohesiveDynamicPatch::CohesiveDynamicPatch(
@@ -66,6 +78,17 @@ CohesiveDynamicPatch::CohesiveDynamicPatch(
                 options_.maximum_tet_evaluations > 0 &&
                 options_.maximum_tet_evaluations <= 100000000,
             "Invalid cohesive dynamic patch options");
+    require(options_.kinematics == CohesiveKinematics::SmallDisplacement ||
+                options_.kinematics == CohesiveKinematics::Corotated,
+            "Unknown cohesive kinematics");
+    if (options_.kinematics == CohesiveKinematics::Corotated)
+        require(std::isfinite(options_.minimum_deformation_jacobian) &&
+                    options_.minimum_deformation_jacobian > 0 &&
+                    options_.minimum_deformation_jacobian <= 1 &&
+                    std::isfinite(options_.maximum_deformation_gradient_norm) &&
+                    options_.maximum_deformation_gradient_norm >= std::sqrt(3.) &&
+                    options_.maximum_deformation_gradient_norm <= 100,
+                "Invalid corotated cohesive deformation domain");
     require(topology_.tetrahedra.size() <= options_.maximum_tet_evaluations,
             "Cohesive dynamic patch tet-evaluation budget exhausted");
 
@@ -77,6 +100,19 @@ CohesiveDynamicPatch::CohesiveDynamicPatch(
         require(law.kind == SmallStrainLawKind::IsotropicElastic ||
                     law.kind == SmallStrainLawKind::OrthotropicElastic,
                 "Cohesive dynamic patch currently supports elastic bulk laws only");
+        if (options_.kinematics == CohesiveKinematics::Corotated) {
+            require(law.kind == SmallStrainLawKind::IsotropicElastic,
+                    "Corotated cohesive bulk requires an isotropic elastic descriptor");
+            const double e = law.young_modulus_pa[0], nu = law.poisson_xy_yz_zx[0];
+            require(nu >= 0, "Corotated cohesive bulk requires nonnegative Lame lambda");
+            CorotatedTetLaw objective;
+            objective.shear_modulus_pa = e / (2 * (1 + nu));
+            objective.lame_lambda_pa = e * nu / ((1 + nu) * (1 - 2 * nu));
+            objective.density_kg_m3 = topology_.duplicated_definition.materials[source_tet.material].density_kg_m3;
+            objective.minimum_deformation_jacobian = options_.minimum_deformation_jacobian;
+            objective.maximum_deformation_gradient_norm = options_.maximum_deformation_gradient_norm;
+            corotated_laws_.push_back(objective);
+        }
         PatchDefinition local;
         local.materials = topology_.duplicated_definition.materials;
         local.fixed_components.resize(4);
@@ -147,17 +183,26 @@ CohesiveDynamicPatch::CohesiveDynamicPatch(
     const std::size_t nodes = topology_.duplicated_definition.reference_positions_m.size();
     state_.displacements_m.resize(nodes);
     state_.velocities_m_s.resize(nodes);
-    state_.facet_states.resize(facet_laws_.size());
+    if (options_.kinematics == CohesiveKinematics::SmallDisplacement)
+        state_.facet_states.resize(facet_laws_.size());
+    else {
+        state_.corotated_facet_states.resize(facet_laws_.size());
+        // Validate immutable compiled topology, law and assembly budgets once.
+        (void)evaluateCohesiveAssembly(topology_, state_.displacements_m,
+            std::vector<CohesiveFacetState>(facet_laws_.size()), facet_laws_, options_.cohesive);
+    }
     accepted_evaluation_ = std::make_shared<const CombinedEvaluation>(
-        evaluate(state_.displacements_m, state_.facet_states));
+        evaluate(state_.displacements_m, state_.facet_states, state_.corotated_facet_states));
     state_.facet_states = accepted_evaluation_->facet_states;
+    state_.corotated_facet_states = accepted_evaluation_->corotated_facet_states;
     state_.fully_separated_facets = accepted_evaluation_->fully_separated_facets;
     state_.separation = accepted_evaluation_->separation;
 }
 
 CohesiveDynamicPatch::CombinedEvaluation CohesiveDynamicPatch::evaluate(
     const std::vector<Vec3> &displacements,
-    const std::vector<CohesiveFacetState> &facet_states) const {
+    const std::vector<CohesiveFacetState> &facet_states,
+    const std::vector<CorotatedCohesiveFacetState> &objective_states) const {
     require(displacements.size() == topology_.duplicated_definition.reference_positions_m.size(),
             "Cohesive dynamic displacement count differs from local nodes");
     CombinedEvaluation out;
@@ -166,6 +211,30 @@ CohesiveDynamicPatch::CombinedEvaluation CohesiveDynamicPatch::evaluate(
         require(out.tet_evaluations < options_.maximum_tet_evaluations,
                 "Cohesive dynamic tet-evaluation budget exhausted");
         const auto &tet = topology_.duplicated_definition.elements[tet_id];
+        if (options_.kinematics == CohesiveKinematics::Corotated) {
+            std::array<Vec3, 4> reference, current;
+            for (unsigned i = 0; i < 4; ++i) {
+                reference[i] = topology_.duplicated_definition.reference_positions_m[tet.nodes[i]];
+                current[i] = reference[i] + displacements[tet.nodes[i]];
+            }
+            const auto evaluation = evaluateCorotatedTet(corotated_laws_[tet_id], reference, current);
+            double stretch2 = 0;
+            for (unsigned row = 0; row < 3; ++row)
+                for (unsigned col = 0; col < 3; ++col) {
+                    const double value = evaluation.deformation_gradient.m[row][col] - evaluation.rotation.m[row][col];
+                    stretch2 += value * value;
+                }
+            const double stretch = std::sqrt(stretch2);
+            require(stretch <= topology_.duplicated_definition.materials[tet.material].law.maximum_total_strain_norm,
+                    "Corotated elastic stretch exceeds declared material domain");
+            out.maximum_elastic_stretch_norm = std::max(out.maximum_elastic_stretch_norm, stretch);
+            ++out.tet_evaluations;
+            out.polar_iterations += evaluation.polar_iterations;
+            out.bulk_stored_energy_j += evaluation.stored_energy_j;
+            for (unsigned i = 0; i < 4; ++i)
+                out.internal_forces_n[tet.nodes[i]] += evaluation.internal_forces_n[i];
+            continue;
+        }
         std::vector<Vec3> local_displacements(4);
         for (unsigned i = 0; i < 4; ++i)
             local_displacements[i] = displacements[tet.nodes[i]];
@@ -178,6 +247,58 @@ CohesiveDynamicPatch::CombinedEvaluation CohesiveDynamicPatch::evaluate(
             std::max(out.maximum_gradient, evaluation.maximum_displacement_gradient_norm);
         for (unsigned i = 0; i < 4; ++i)
             out.internal_forces_n[tet.nodes[i]] += evaluation.internal_forces_n[i];
+    }
+    if (options_.kinematics == CohesiveKinematics::Corotated) {
+        require(objective_states.size() == facet_laws_.size(), "Objective cohesive history count mismatch");
+        for (std::size_t index = 0; index < facet_laws_.size(); ++index) {
+            const auto &facet = topology_.internal_facets[index];
+            bool already_detached = true;
+            double retained_dissipation = 0;
+            const auto &law = facet_laws_[index];
+            const CohesiveInterfaceLaw point_law{law.stiffness_pa_per_m, law.strength_pa,
+                law.fracture_energy_j_m2, facet.reference_area_m2 / 3, 0};
+            for (const auto &point : objective_states[index].integration_points) {
+                const auto response = evaluateCohesiveInterface(point_law, point);
+                already_detached = already_detached && response.separated;
+                retained_dissipation += response.dissipated_energy_j;
+            }
+            if (already_detached) {
+                // A severed material interface is no longer a spring between
+                // paired material vertices. Later closure belongs to contact.
+                out.corotated_facet_states.push_back(objective_states[index]);
+                out.fully_separated_facets.push_back(true);
+                out.fracture_dissipation_j += retained_dissipation;
+                ++out.facet_evaluations;
+                continue;
+            }
+            std::array<Vec3, 3> reference, a, b;
+            std::array<unsigned, 3> b_nodes;
+            for (unsigned i = 0; i < 3; ++i) {
+                const auto ai = facet.side_a.local_nodes[i];
+                b_nodes[i] = facet.side_b.local_nodes[facet.side_b_index_for_side_a[i]];
+                reference[i] = topology_.duplicated_definition.reference_positions_m[ai];
+                a[i] = reference[i] + displacements[ai];
+                b[i] = reference[i] + displacements[b_nodes[i]];
+            }
+            const auto evaluation = advanceCorotatedCohesiveFacet(facet_laws_[index], reference, a, b,
+                                                                 objective_states[index], options_.objective_facets);
+            if (evaluation.separated_integration_points == 3 && evaluation.stored_energy_j > 0)
+                throw ContactHandoffRequired(index, evaluation.stored_energy_j);
+            out.corotated_facet_states.push_back(evaluation.state);
+            out.fully_separated_facets.push_back(evaluation.separated_integration_points == 3);
+            out.cohesive_stored_energy_j += evaluation.stored_energy_j;
+            out.fracture_dissipation_j += evaluation.fracture_dissipation_j;
+            out.fracture_dissipation_increment_j += evaluation.fracture_dissipation_increment_j;
+            ++out.facet_evaluations;
+            out.facet_derivative_evaluations += evaluation.derivative_evaluations;
+            for (unsigned i = 0; i < 3; ++i) {
+                out.internal_forces_n[facet.side_a.local_nodes[i]] -= evaluation.forces_on_a_n[i];
+                out.internal_forces_n[b_nodes[i]] -= evaluation.forces_on_b_n[i];
+                out.nodal_scatters += 2;
+            }
+        }
+        out.separation = evaluateAcceptedSeparations(topology_, out.fully_separated_facets, options_.cohesive.separation);
+        return out;
     }
     const auto cohesive = evaluateCohesiveAssembly(
         topology_, displacements, facet_states, facet_laws_, options_.cohesive);
@@ -241,6 +362,7 @@ CohesiveDynamicPatchReport CohesiveDynamicPatch::report() const {
     result.plastic_dissipation_j = accepted_evaluation_->plastic_dissipation_j;
     result.fracture_dissipation_j = accepted_evaluation_->fracture_dissipation_j;
     result.accumulated_external_work_j = state_.accumulated_external_work_j;
+    result.maximum_elastic_stretch_norm = accepted_evaluation_->maximum_elastic_stretch_norm;
     result.linear_momentum_kg_m_s = momentum(state_.velocities_m_s);
     result.fully_separated_facets = static_cast<unsigned>(std::count(
         state_.fully_separated_facets.begin(), state_.fully_separated_facets.end(), true));
@@ -343,7 +465,7 @@ CohesiveDynamicPatchReport CohesiveDynamicPatch::stepImpl(
                 }
             }
         }
-        auto evaluation = evaluate(candidate.displacements_m, state_.facet_states);
+        auto evaluation = evaluate(candidate.displacements_m, state_.facet_states, state_.corotated_facet_states);
         for (std::size_t i = 0; i < candidate.velocities_m_s.size(); ++i) {
             const Vec3 external = nodal_forces[i] +
                                   topology_.local_nodal_masses_kg[i] * gravity;
@@ -370,6 +492,7 @@ CohesiveDynamicPatchReport CohesiveDynamicPatch::stepImpl(
             // Publish the candidate fracture topology to the hook before its
             // velocity projection, while facet histories remain immutable.
             candidate.facet_states = evaluation.facet_states;
+            candidate.corotated_facet_states = evaluation.corotated_facet_states;
             candidate.fully_separated_facets = evaluation.fully_separated_facets;
             candidate.separation = evaluation.separation;
             final_velocity_stage(candidate.velocities_m_s, candidate);
@@ -389,6 +512,7 @@ CohesiveDynamicPatchReport CohesiveDynamicPatch::stepImpl(
             result.coupling_impulse_n_s += momentum(candidate.velocities_m_s) - momentum_before;
         }
         candidate.facet_states = evaluation.facet_states;
+        candidate.corotated_facet_states = evaluation.corotated_facet_states;
         candidate.fully_separated_facets = evaluation.fully_separated_facets;
         candidate.separation = evaluation.separation;
         candidate.time_s += dt;
@@ -419,6 +543,9 @@ CohesiveDynamicPatchReport CohesiveDynamicPatch::stepImpl(
         result.tet_evaluations = evaluation.tet_evaluations;
         result.facet_evaluations = evaluation.facet_evaluations;
         result.nodal_scatters = evaluation.nodal_scatters;
+        result.polar_iterations = evaluation.polar_iterations;
+        result.facet_derivative_evaluations = evaluation.facet_derivative_evaluations;
+        result.maximum_elastic_stretch_norm = evaluation.maximum_elastic_stretch_norm;
         result.fully_separated_facets = static_cast<unsigned>(std::count(
             evaluation.fully_separated_facets.begin(),
             evaluation.fully_separated_facets.end(), true));
@@ -438,6 +565,9 @@ CohesiveDynamicPatchReport CohesiveDynamicPatch::stepImpl(
         state_ = std::move(candidate);
         accepted_evaluation_ = std::move(candidate_evaluation);
         result.accepted = true;
+    } catch (const ContactHandoffRequired &error) {
+        result.error = error.what();
+        result.contact_handoff_required = error.evidence;
     } catch (const std::exception &error) {
         result.error = error.what();
     }

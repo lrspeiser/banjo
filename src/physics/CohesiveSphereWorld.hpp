@@ -1,6 +1,7 @@
 #pragma once
 #include "physics/CohesiveDynamicPatch.hpp"
 #include "physics/SpherePatchWorld.hpp"
+#include "physics/FractureOverlap.hpp"
 namespace banjo {
 struct CohesiveSphereReport {
     bool accepted{};
@@ -8,11 +9,13 @@ struct CohesiveSphereReport {
     CohesiveDynamicPatchReport material;
     // Contact counters and combined ledgers only; legacy contact.material is unused.
     SpherePatchReport contact;
+    FractureOverlapResult fragment_overlap;
 };
 // Sphere and cohesive material share Verlet force/contact/drift stages and one
 // atomic commit. Accepted damage exposes actual faces before final constraints.
-// Small-displacement elastic bulk only; no fragment/fragment or support contact,
-// finite rotations, continuum calibration, or realtime claim.
+// Explicit small-displacement or corotated elastic bulk. The corotated path
+// rejects unsupported fragment overlap; neither path supplies fragment/fragment
+// or support contacts, continuum calibration, or a realtime guarantee.
 class CohesiveSphereWorld {
   public:
     CohesiveSphereWorld(PatchDefinition definition, PatchSphere sphere,

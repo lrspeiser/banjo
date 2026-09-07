@@ -53,6 +53,10 @@ add_library(
     src/physics/CohesiveDynamicPatch.cpp
     src/physics/CohesiveSphereWorld.cpp
     src/physics/CorotatedTet.cpp
+    src/physics/CorotatedCohesiveFacet.cpp
+    src/physics/SpherePatchSnapshot.cpp
+    src/physics/FractureOverlap.cpp
+    src/physics/SegmentTriangleContact.cpp
     src/physics/FractureComponentState.cpp
     src/physics/FractureTopology.cpp
     src/physics/CohesivePair.cpp
@@ -318,6 +322,34 @@ if(BANJO_BUILD_TESTS)
     target_link_libraries(banjo_corotated_tet_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_corotated_tet_tests)
     add_test(NAME banjo_corotated_tet_tests COMMAND banjo_corotated_tet_tests)
+    add_executable(banjo_corotated_cohesive_facet_tests tests/corotated_cohesive_facet_tests.cpp)
+    target_link_libraries(banjo_corotated_cohesive_facet_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_corotated_cohesive_facet_tests)
+    add_test(NAME banjo_corotated_cohesive_facet_tests COMMAND banjo_corotated_cohesive_facet_tests)
+    add_executable(banjo_sphere_patch_snapshot_tests tests/sphere_patch_snapshot_tests.cpp)
+    target_link_libraries(banjo_sphere_patch_snapshot_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_sphere_patch_snapshot_tests)
+    add_test(NAME banjo_sphere_patch_snapshot_tests COMMAND banjo_sphere_patch_snapshot_tests)
+    add_executable(banjo_corotated_cohesive_dynamic_tests tests/corotated_cohesive_dynamic_tests.cpp)
+    target_link_libraries(banjo_corotated_cohesive_dynamic_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_corotated_cohesive_dynamic_tests)
+    add_test(NAME banjo_corotated_cohesive_dynamic_tests COMMAND banjo_corotated_cohesive_dynamic_tests)
+    add_executable(banjo_cutting_tearing_coupon_tests tests/cutting_tearing_coupon_tests.cpp)
+    target_link_libraries(banjo_cutting_tearing_coupon_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_cutting_tearing_coupon_tests)
+    add_test(NAME banjo_cutting_tearing_coupon_tests COMMAND banjo_cutting_tearing_coupon_tests)
+    add_executable(banjo_segment_triangle_contact_tests tests/segment_triangle_contact_tests.cpp)
+    target_link_libraries(banjo_segment_triangle_contact_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_segment_triangle_contact_tests)
+    add_test(NAME banjo_segment_triangle_contact_tests COMMAND banjo_segment_triangle_contact_tests)
+    add_executable(banjo_metal_unload_equilibrium_tests tests/metal_unload_equilibrium_tests.cpp)
+    target_link_libraries(banjo_metal_unload_equilibrium_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_metal_unload_equilibrium_tests)
+    add_test(NAME banjo_metal_unload_equilibrium_tests COMMAND banjo_metal_unload_equilibrium_tests)
+    add_executable(banjo_fracture_overlap_tests tests/fracture_overlap_tests.cpp)
+    target_link_libraries(banjo_fracture_overlap_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_fracture_overlap_tests)
+    add_test(NAME banjo_fracture_overlap_tests COMMAND banjo_fracture_overlap_tests)
     add_executable(banjo_metal_dent_acceptance_tests tests/metal_dent_acceptance_tests.cpp)
     target_link_libraries(banjo_metal_dent_acceptance_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_metal_dent_acceptance_tests)

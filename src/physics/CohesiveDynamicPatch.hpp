@@ -2,10 +2,13 @@
 
 #include "physics/CohesiveAssembly.hpp"
 #include "physics/DynamicPatch.hpp"
+#include "physics/CorotatedTet.hpp"
+#include "physics/CorotatedCohesiveFacet.hpp"
 
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -13,22 +16,32 @@ namespace banjo {
 class CohesiveSphereWorld;
 class CohesiveDynamicPatchTestAccess;
 
+enum class CohesiveKinematics { SmallDisplacement, Corotated };
+
 struct CohesiveDynamicPatchOptions {
     // Central-difference bound includes the largest elastic, compression, and
-    // descending cohesive tangent. It prevents linearized instability; damage
-    // event timing and endpoint-force work still require timestep refinement.
+    // descending cohesive tangent at the reference configuration. For the
+    // corotated model this is only an initial trial cap, not a certified bound
+    // on the evolving geometric Hessian. Both paths require work/refinement.
     double stability_safety_factor{0.9};
     double maximum_time_step_s{1.e-3};
     double maximum_displacement_gradient_norm{0.1};
     double maximum_absolute_energy_residual_j{1.e-6};
     std::uint64_t maximum_tet_evaluations{65536};
     CohesiveAssemblyLimits cohesive{};
+    // Explicit alternative potential and objective facet history. The legacy
+    // model and its displacement-gradient gate are unchanged by default.
+    CohesiveKinematics kinematics{CohesiveKinematics::SmallDisplacement};
+    double minimum_deformation_jacobian{0.1};
+    double maximum_deformation_gradient_norm{4.0};
+    CorotatedCohesiveFacetOptions objective_facets{};
 };
 
 struct CohesiveDynamicPatchState {
     std::vector<Vec3> displacements_m;
     std::vector<Vec3> velocities_m_s;
     std::vector<CohesiveFacetState> facet_states;
+    std::vector<CorotatedCohesiveFacetState> corotated_facet_states;
     std::vector<bool> fully_separated_facets;
     FractureSeparation separation;
     double time_s{};
@@ -36,9 +49,16 @@ struct CohesiveDynamicPatchState {
     std::uint64_t revision{};
 };
 
+struct CohesiveContactHandoff {
+    std::size_t facet_index{};
+    // Energy in the rejected candidate, never committed or silently discarded.
+    double retained_compression_energy_j{};
+};
+
 struct CohesiveDynamicPatchReport {
     bool accepted{};
     std::string error;
+    std::optional<CohesiveContactHandoff> contact_handoff_required;
     double time_step_s{};
     double stable_time_step_limit_s{};
     double kinetic_energy_j{};
@@ -58,13 +78,17 @@ struct CohesiveDynamicPatchReport {
     std::uint64_t tet_evaluations{};
     std::uint64_t facet_evaluations{};
     std::uint64_t nodal_scatters{};
+    std::uint64_t polar_iterations{};
+    std::uint64_t facet_derivative_evaluations{};
+    double maximum_elastic_stretch_norm{};
     unsigned fully_separated_facets{};
 };
 
 // Bounded transactional velocity-Verlet reference for an intrinsic cohesive
 // tetrahedral patch. Bulk and facets advance on the same clock. This first
-// adapter accepts only isotropic/orthotropic elastic bulk laws. It has no
-// contact, finite-rotation, damping, or rigid-fragment handoff claim.
+// adapter accepts isotropic/orthotropic small-displacement elastic bulk, or an
+// explicitly selected isotropic corotated potential with objective facets.
+// No fragment self-contact, damping, or rigid-fragment handoff is implied.
 class CohesiveDynamicPatch {
   public:
     CohesiveDynamicPatch(PatchDefinition definition,
@@ -75,6 +99,7 @@ class CohesiveDynamicPatch {
     const CohesiveDynamicPatchState &state() const { return state_; }
     double stableTimeStepLimitS() const { return stable_time_step_limit_s_; }
     double massKg() const { return topology_.mass_kg; }
+    CohesiveKinematics kinematics() const { return options_.kinematics; }
     const std::vector<double> &nodalMassesKg() const {
         return topology_.local_nodal_masses_kg;
     }
@@ -98,7 +123,8 @@ class CohesiveDynamicPatch {
     struct CombinedEvaluation;
     [[nodiscard]] CombinedEvaluation evaluate(
         const std::vector<Vec3> &displacements_m,
-        const std::vector<CohesiveFacetState> &facet_states) const;
+        const std::vector<CohesiveFacetState> &facet_states,
+        const std::vector<CorotatedCohesiveFacetState> &objective_states) const;
     [[nodiscard]] double kineticEnergyJ(const std::vector<Vec3> &velocities) const;
     [[nodiscard]] Vec3 momentum(const std::vector<Vec3> &velocities) const;
     [[nodiscard]] CohesiveDynamicPatchReport stepImpl(
@@ -113,6 +139,7 @@ class CohesiveDynamicPatch {
     std::vector<CohesiveFacetLaw> facet_laws_;
     CohesiveDynamicPatchOptions options_;
     std::vector<std::unique_ptr<SmallStrainPatch>> tet_patches_;
+    std::vector<CorotatedTetLaw> corotated_laws_;
     CohesiveDynamicPatchState state_;
     std::shared_ptr<const CombinedEvaluation> accepted_evaluation_;
     double stable_time_step_limit_s_{};

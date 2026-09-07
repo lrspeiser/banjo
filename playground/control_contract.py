@@ -18,7 +18,7 @@ _PHYSICAL = {"height_m", "speed_m_s", "pressure_pa"}
 _EXPERIMENTS = {
     "drop_test", "scene_test", "panel_impact", "plate_drop", "rigid_drop", "knife_cut", "custom_objects",
     "thermal_frontier", "material_state_reference", "continuum_pressure_reference", "dynamic_material_impact",
-    "glass_reference", "unsupported",
+    "thermal_material_experiment", "glass_reference", "unsupported",
 }
 
 
@@ -125,6 +125,15 @@ def validate_ui(ui: Any, experiment: str) -> dict[str, Any]:
 def default_ui(experiment: str) -> dict[str, Any]:
     if not isinstance(experiment, str):
         raise ValueError("Unsupported experiment for UI controls")
+    if experiment == "thermal_material_experiment":
+        return validate_ui({"title": "Thermal cell playback", "controls": [
+            {"id": "play-pause", "label": "Play / pause", "kind": "button", "action": "play_pause", "min": 0, "max": 1, "step": 1, "value": 0},
+            {"id": "reset", "label": "Reset", "kind": "button", "action": "reset", "min": 0, "max": 1, "step": 1, "value": 0},
+            {"id": "step-forward", "label": "Step forward", "kind": "button", "action": "step_forward", "min": 0, "max": 1, "step": 1, "value": 0},
+            {"id": "step-back", "label": "Step back", "kind": "button", "action": "step_back", "min": 0, "max": 1, "step": 1, "value": 0},
+            {"id": "playback-speed", "label": "Playback speed", "kind": "slider", "action": "playback_speed", "min": .1, "max": 4, "step": .1, "value": 1},
+            {"id": "frame", "label": "Recorded frame", "kind": "slider", "action": "frame", "min": 0, "max": 1, "step": .01, "value": 0},
+        ]}, experiment)
     controls = [
         {"id": "play-pause", "label": "Play / pause", "kind": "button", "action": "play_pause", "min": 0, "max": 1, "step": 1, "value": 0},
         {"id": "reset", "label": "Reset", "kind": "button", "action": "reset", "min": 0, "max": 1, "step": 1, "value": 0},

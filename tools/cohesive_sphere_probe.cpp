@@ -42,7 +42,8 @@ std::string escape(const std::string &value) {
     return out;
 }
 
-void writeCase(std::ostream &out, const char *name, double speed) {
+void writeCase(std::ostream &out, const char *name, double speed, bool corotated,
+               double step_fraction) {
     const auto definition = makeTetrahedralBrick(
         {.08, .02, .08}, {1, 1, 1}, {bulkLaw(), 1000.});
     const auto topology = compileFractureTopology(definition);
@@ -53,6 +54,7 @@ void writeCase(std::ostream &out, const char *name, double speed) {
     PatchSphere sphere{{.007, .02 + radius + 2.e-5, .009}, {0, -speed, 0}, {},
                        radius, sphere_mass};
     CohesiveDynamicPatchOptions dynamics;
+    if (corotated) dynamics.kinematics = CohesiveKinematics::Corotated;
     dynamics.maximum_displacement_gradient_norm = .12;
     dynamics.maximum_absolute_energy_residual_j = 2.e-4;
     dynamics.maximum_time_step_s = 2.e-4;
@@ -65,12 +67,13 @@ void writeCase(std::ostream &out, const char *name, double speed) {
     contact.maximum_geometry_iterations = 100000;
     CohesiveSphereWorld world(definition, sphere, laws, dynamics, contact);
     constexpr double duration = .008;
-    const double base_dt = .2 * world.material().stableTimeStepLimitS();
+    const double base_dt = step_fraction * world.material().stableTimeStepLimitS();
     const unsigned expected_steps = static_cast<unsigned>(std::ceil(duration / base_dt));
     const unsigned stride = std::max(1U, expected_steps / 100U);
     const auto started = std::chrono::steady_clock::now();
     bool accepted = true, first_frame = true, fracture_frame_written = false;
     std::string error;
+    std::optional<CohesiveContactHandoff> contact_handoff;
     double elapsed = 0., cumulative_energy_residual = 0.;
     double cumulative_absolute_energy_residual = 0., maximum_damage = 0.;
     unsigned steps = 0, contacts = 0, last_step_contacts = 0;
@@ -78,7 +81,8 @@ void writeCase(std::ostream &out, const char *name, double speed) {
     std::uint64_t geometry_queries = 0, geometry_iterations = 0;
 
     out << "{\"name\":\"" << name << "\",\"scope\":\"fictional explicit SI cohesive impact\""
-        << ",\"bulk\":{\"law\":\"isotropic_elastic\",\"young_modulus_pa\":1000000,"
+        << ",\"bulk\":{\"law\":\"" << (corotated ? "corotated_isotropic" : "isotropic_elastic")
+        << "\",\"young_modulus_pa\":1000000,"
         << "\"poisson_ratio\":0.25,\"density_kg_m3\":1000}"
         << ",\"interface\":{\"stiffness_pa_per_m\":1000000000,"
         << "\"tangential_stiffness_pa_per_m\":200000000,\"strength_pa\":10000,"
@@ -88,7 +92,7 @@ void writeCase(std::ostream &out, const char *name, double speed) {
         << ",\"initial_speed_m_s\":" << speed << "},\"requested_duration_s\":"
         << duration << ",\"stable_time_step_s\":" << world.material().stableTimeStepLimitS()
         << ",\"time_step_s\":" << base_dt
-        << ",\"limitations\":[\"small-displacement bulk\",\"no finite-rotation fragment evolution\","
+        << ",\"limitations\":[\"" << (corotated ? "Corotated bulk and objective facets; reference timestep cap is not a nonlinear stability certificate" : "Small-displacement bulk; no finite-rotation fragment evolution") << "\","
         << "\"no fragment self-contact\",\"no calibrated cutting or material fracture claim\"]"
         << ",\"mesh\":{\"reference_positions_m\":[";
     const auto &local_reference = world.material().topology().duplicated_definition.reference_positions_m;
@@ -137,7 +141,12 @@ void writeCase(std::ostream &out, const char *name, double speed) {
         const double dt = std::min(base_dt, duration - elapsed);
         const auto report = world.step(dt,
             std::vector<Vec3>(world.material().state().velocities_m_s.size()));
-        if (!report.accepted) { accepted = false; error = report.error; break; }
+        if (!report.accepted) {
+            accepted = false;
+            error = report.error;
+            contact_handoff = report.material.contact_handoff_required;
+            break;
+        }
         elapsed += dt;
         ++steps;
         contacts += report.contact.impulse_contacts;
@@ -151,6 +160,11 @@ void writeCase(std::ostream &out, const char *name, double speed) {
             static_cast<unsigned>(world.material().state().separation.components.size()));
         maximum_separated = std::max(maximum_separated,
                                      report.material.fully_separated_facets);
+        for (const auto &facet : world.material().state().corotated_facet_states)
+            for (const auto &point : facet.integration_points)
+                maximum_damage = std::max(maximum_damage,
+                    evaluateCohesiveInterface({cohesive.stiffness_pa_per_m, cohesive.strength_pa,
+                        cohesive.fracture_energy_j_m2, 1., 0.}, point).damage);
         for (const auto &facet : world.material().state().facet_states)
             for (const auto &point : facet.integration_points)
                 maximum_damage = std::max(maximum_damage,
@@ -253,21 +267,35 @@ void writeCase(std::ostream &out, const char *name, double speed) {
         << ",\"cumulative_energy_residual_j\":" << cumulative_energy_residual
         << ",\"cumulative_absolute_energy_residual_j\":"
         << cumulative_absolute_energy_residual
-        << ",\"wall_ms\":" << wall_ms << "}}";
+        << ",\"wall_ms\":" << wall_ms;
+    if (contact_handoff)
+        out << ",\"rejected_contact_handoff\":{\"facet_index\":"
+            << contact_handoff->facet_index << ",\"retained_compression_energy_j\":"
+            << contact_handoff->retained_compression_energy_j << '}';
+    out << "}}";
 }
 
 } // namespace
 
 int main(int argc, char **argv) {
     try {
+        if (argc > 4) throw std::invalid_argument("Usage: probe [output [--corotated [step_fraction]]]");
         const std::string path = argc > 1 ? argv[1] : "cohesive-sphere-probe.json";
+        const bool corotated = argc > 2 && std::string(argv[2]) == "--corotated";
+        if (argc > 2 && !corotated) throw std::invalid_argument("Expected --corotated");
+        std::size_t consumed = 0;
+        const double step_fraction = argc > 3 ? std::stod(argv[3], &consumed) : .2;
+        if (argc > 3 && consumed != std::string(argv[3]).size())
+            throw std::invalid_argument("Invalid step fraction");
+        if (!std::isfinite(step_fraction) || step_fraction <= 0 || step_fraction > .2)
+            throw std::invalid_argument("Step fraction must be in (0, 0.2]");
         std::ofstream output(path);
         if (!output) throw std::runtime_error("cannot open probe output");
         output << std::setprecision(17)
-               << "{\"schema\":\"banjo.cohesive-sphere-probe.v1\",\"cases\":[";
-        writeCase(output, "low_impact_control", .03);
+               << "{\"schema\":\"banjo.cohesive-sphere-probe." << (corotated ? "v2" : "v1") << "\",\"cases\":[";
+        writeCase(output, "low_impact_control", .03, corotated, step_fraction);
         output << ',';
-        writeCase(output, "higher_impact", 1.0);
+        writeCase(output, "higher_impact", 1.0, corotated, step_fraction);
         output << "]}";
         std::cout << path << '\n';
         return 0;

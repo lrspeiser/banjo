@@ -128,6 +128,22 @@ CohesiveSphereReport CohesiveSphereWorld::step(double dt, const std::vector<Vec3
             auto positions = d.reference_positions_m;
             for (std::size_t i = 0; i < positions.size(); ++i)
                 positions[i] += candidate.displacements_m[i];
+            if (patch_.kinematics() == CohesiveKinematics::Corotated &&
+                candidate.separation.components.size() > 1) {
+                require(out.geometry_queries < contact_.maximum_geometry_queries &&
+                            out.geometry_iterations < contact_.maximum_geometry_iterations,
+                        "Fragment overlap audit budget exhausted");
+                const FractureOverlapLimits limits{contact_.maximum_penetration_m,
+                    contact_.maximum_geometry_queries - out.geometry_queries,
+                    contact_.maximum_geometry_iterations - out.geometry_iterations};
+                result.fragment_overlap = detectFractureOverlap(patch_.topology(), positions,
+                                                                 candidate.separation, limits);
+                out.geometry_queries += result.fragment_overlap.tetrahedron_pairs;
+                out.geometry_iterations += result.fragment_overlap.sat_axes;
+                require(result.fragment_overlap.resolved, "Fragment overlap audit budget exhausted");
+                require(!result.fragment_overlap.interpenetrating,
+                        "Fragment contact required: disconnected material interpenetrates");
+            }
             require(!centerInside(sphere.center_m, positions, d), "Sphere entered cohesive matter");
             for (const auto &face : faces) {
                 require(out.geometry_queries < contact_.maximum_geometry_queries,

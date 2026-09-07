@@ -103,6 +103,11 @@ class DynamicPatch {
 
   private:
     friend class SpherePatchWorld;
+    struct PreparedRestore {
+        PatchState patch;
+        DynamicPatchState dynamic;
+        std::shared_ptr<const PatchEvaluation> evaluation;
+    };
     struct Checkpoint {
         PatchState patch;
         DynamicPatchState dynamic;
@@ -110,6 +115,10 @@ class DynamicPatch {
     };
     Checkpoint checkpoint() const;
     void restoreCheckpoint(Checkpoint saved) noexcept;
+    [[nodiscard]] PreparedRestore prepareRestore(const PatchState &patch,
+                                                 const DynamicPatchState &dynamic,
+                                                 const PatchEvaluation &evaluation) const;
+    void commitRestore(PreparedRestore prepared) noexcept;
     DynamicPatchReport
     stepImpl(double time_step_s, const DynamicPatchLoad &load,
              const std::function<void(std::vector<Vec3> &, std::vector<Vec3> &)> &velocity_stage,

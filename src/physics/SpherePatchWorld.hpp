@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <vector>
 namespace banjo {
+struct SpherePatchSnapshot;
 struct PatchSphere {
     Vec3 center_m{}, velocity_m_s{}, spin_rad_s{};
     double radius_m{}, mass_kg{};
@@ -120,6 +121,8 @@ class SpherePatchWorld {
     SpherePatchAdvanceReport advance(double duration_s, const DynamicPatchLoad &load,
                                      const SpherePatchAdvanceOptions &options = {},
                                      Vec3 sphere_force_n = {}, Vec3 sphere_gravity_m_s2 = {});
+    [[nodiscard]] SpherePatchSnapshot snapshot() const;
+    void restoreSnapshot(const SpherePatchSnapshot &snapshot);
 
   private:
     DynamicPatch patch_;

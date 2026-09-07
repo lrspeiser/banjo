@@ -955,10 +955,15 @@
       "evidence": "docs/parallel-physics-checkpoint.md",
       "results": "docs/parallel-physics-results.json",
       "next": "Integrate cohesive forces and accepted topology with dynamics/contact before new 3D fracture playback."
+    },
+    "finite_rotation_parallel_checkpoint": {
+      "status": "bounded_dependencies_verified_no_full_goal_complete",
+      "evidence": "docs/finite-rotation-parallel-checkpoint.md",
+      "next": "Energy-consistent compressed fracture handoff, continued fragment and blade contact, coupled dent unloading and thermal/mechanical state."
     }
   },
   "parallel_execution": {
-    "status": "second_batch_integrated_full_physics_acceptance_open",
+    "status": "parallel_batches_verified_full_physics_acceptance_open",
     "assignment_date": "2026-09-06",
     "workstream_contract": "docs/parallel-physics-workstreams.md",
     "worker_limit": 4,
@@ -967,30 +972,30 @@
       {
         "owner": "primary",
         "category": "glass_fracture_integration",
-        "assignment": "cohesive_dynamics_sphere_component_playback",
-        "status": "verified_partial_fracture_with_explicit_solver_limit",
-        "next": "finite_rotation_and_damage_event_subdivision_then_fragment_contact"
+        "assignment": "objective_dynamics_compressed_fracture_handoff_evidence",
+        "status": "rotation_coupons_pass_actual_impact_contact_handoff_open",
+        "next": "conservative_fragment_contact_then_damage_event_refinement"
       },
       {
         "owner": "surface_contact_geometry",
         "category": "metal_deformation",
-        "assignment": "full_j2_rejection_continuation_and_dent_audit",
-        "status": "verified_reference_unloaded_dent_open",
-        "next": "complete_state_restart_and_unload_residual_equilibrium"
+        "assignment": "complete_snapshot_restore_and_unloaded_equilibrium_coupon",
+        "status": "300_step_bitwise_restart_and_zero_load_J2_elastic_comparison_pass",
+        "next": "coupled_sphere_dent_unload_and_bounded_binary_codec"
       },
       {
         "owner": "sphere_patch_acceptance",
         "category": "cutting",
-        "assignment": "native_wedge_tomato_causal_and_timestep_controls",
-        "status": "tested_timestep_sensitivity_unresolved",
-        "next": "blade_contact_soft_tissue_and_convergence"
+        "assignment": "rotated_confined_tearing_and_segment_triangle_geometry",
+        "status": "constitutive_and_static_geometry_pass_full_blade_tissue_open",
+        "next": "continuous_blade_contact_and_finite_strain_tissue"
       },
       {
         "owner": "dynamic_patch",
         "category": "fire_thermal",
-        "assignment": "bounded_thermal_api_matched_finite_heater",
-        "status": "verified_reference_general_playground_open",
-        "next": "thermal_language_archive_and_viewer_integration"
+        "assignment": "actual_GPT_thermal_archive_and_3D_cell_inspection",
+        "status": "reactive_and_matched_inert_live_jobs_pass",
+        "next": "thermal_mechanical_coupling_and_broader_validated_materials"
       }
     ],
     "handoff_policy": "On assignment completion, review and assign the next independent bounded dependency. File owners do not edit shared build/docs; primary integrates and publishes verified changes.",
@@ -1017,15 +1022,24 @@
       "python_wall_s": 6.697,
       "interactive_3d": "unchanged; no new shatter playback"
     },
-    "latest_checkpoint": "docs/cohesive-dynamics-checkpoint.md",
+    "latest_checkpoint": "docs/finite-rotation-parallel-checkpoint.md",
     "latest_verification": {
-      "native_suites": 72,
-      "native_passed": 72,
-      "native_duration_s": 92.82,
-      "physical_acceptance": "unfinished",
-      "python_discovered": 154,
-      "python_passed": 153,
-      "python_skipped": 1
-    }
+      "native_full_suite_passed": 77,
+      "native_full_suite_duration_s": 95.65,
+      "additional_native_suites_passed": 2,
+      "additional_native_duration_s": 0.12,
+      "total_native_suites_covered": 79,
+      "python_discovered": 165,
+      "python_passed": 164,
+      "python_skipped": 1,
+      "python_duration_s": 10.966,
+      "javascript_syntax": "passed",
+      "interactive_3d": "thermal play/reset/scrub/controls/current-cell inspection verified",
+      "physical_acceptance": "unfinished"
+    },
+    "latest_thermal_jobs": [
+      "bd17a88380a147d78cbef4041d89d31f",
+      "6ef80b0441dd46059bf7ef7c6c7efb53"
+    ]
   }
 }

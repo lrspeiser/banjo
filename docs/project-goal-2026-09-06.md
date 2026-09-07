@@ -1,5 +1,7 @@
 # Banjo project goal and execution contract — September 6, 2026
 
+**Parallel rotation/thermal checkpoint:** [Current category evidence](finite-rotation-parallel-checkpoint.md) adds objective finite-rotation dynamics, mixed-mode tearing and blade-edge geometry, restartable plastic state, a zero-load plastic/elastic coupon comparison, and actual GPT-authored thermal 3D playback. Glass remains stopped at the energy-preserving fracture/contact handoff; calibrated shattering, tomato cutting and world-scale realtime remain open. All nine workstreams and 40 mechanics are retained.
+
 **General material rules execution:** [Ten implementation goals](rules-engine-execution-plan.md) are active. R01/R02 now have a property-based native material path and a bounded inertial tetrahedral foundation; coupled impact fracture, residual dents, finite-strain rubber, shared persistence and realtime qualification remain unfinished. All nine earlier workstreams and 40 mechanics remain retained.
 
 **Composable experiment checkpoint:** [General experiment authoring](general-experiment-checkpoint.md) adds configurable comparative drops and freely composed initial scenes, typed GPT proposals, explicit fidelity and archived 3D results. Experimental6mm panels are admitted but fail the damage/refinement gate; no thin-shell, calibrated fracture or realtime claim is made. The [seven-stage execution plan](general-experiment-plan.md) retains all nine goals and40 requirements.

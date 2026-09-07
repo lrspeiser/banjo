@@ -77,6 +77,126 @@ void DynamicPatch::restoreCheckpoint(Checkpoint saved) noexcept {
     accepted_evaluation_ = std::move(saved.evaluation);
 }
 
+bool finiteTensor(const SymmetricTensor3 &value) {
+    return std::isfinite(value.xx) && std::isfinite(value.yy) &&
+           std::isfinite(value.zz) && std::isfinite(value.xy) &&
+           std::isfinite(value.yz) && std::isfinite(value.zx);
+}
+
+double tensorNorm(const SymmetricTensor3 &value) {
+    return std::sqrt(value.xx * value.xx + value.yy * value.yy + value.zz * value.zz +
+                     2. * (value.xy * value.xy + value.yz * value.yz + value.zx * value.zx));
+}
+
+bool close(double captured, double recomputed, double relative_tolerance) {
+    return std::isfinite(captured) && std::isfinite(recomputed) &&
+           std::abs(captured - recomputed) <=
+               relative_tolerance * std::max({1., std::abs(captured), std::abs(recomputed)});
+}
+
+bool close(const SymmetricTensor3 &captured, const SymmetricTensor3 &recomputed,
+           double relative_tolerance) {
+    if (!finiteTensor(captured) || !finiteTensor(recomputed)) return false;
+    const SymmetricTensor3 difference{
+        captured.xx - recomputed.xx, captured.yy - recomputed.yy,
+        captured.zz - recomputed.zz, captured.xy - recomputed.xy,
+        captured.yz - recomputed.yz, captured.zx - recomputed.zx};
+    return tensorNorm(difference) <=
+           relative_tolerance * std::max({1., tensorNorm(captured), tensorNorm(recomputed)});
+}
+
+DynamicPatch::PreparedRestore DynamicPatch::prepareRestore(
+    const PatchState &patch, const DynamicPatchState &dynamic,
+    const PatchEvaluation &captured_evaluation) const {
+    const std::size_t nodes = patch_.definition_.reference_positions_m.size();
+    require(patch.displacements_m.size() == nodes &&
+                patch.last_nodal_forces_n.size() == nodes &&
+                patch.material_points.size() == patch_.definition_.elements.size() &&
+                dynamic.velocities_m_s.size() == nodes,
+            "Dynamic snapshot layout differs from patch");
+    require(patch.revision == dynamic.revision,
+            "Dynamic snapshot revisions disagree");
+    require(std::isfinite(dynamic.time_s) && dynamic.time_s >= 0 &&
+                std::isfinite(dynamic.accumulated_external_force_work_j) &&
+                finite(dynamic.accumulated_support_impulse_n_s) &&
+                std::isfinite(patch.accumulated_trapezoidal_external_work_j) &&
+                std::isfinite(patch.accumulated_backward_euler_external_work_j),
+            "Dynamic snapshot clock or work ledger is invalid");
+    for (std::size_t i = 0; i < nodes; ++i) {
+        require(finite(patch.displacements_m[i]) && length(patch.displacements_m[i]) <= 1000 &&
+                    finite(patch.last_nodal_forces_n[i]) &&
+                    length(patch.last_nodal_forces_n[i]) <= 1.e12 &&
+                    finite(dynamic.velocities_m_s[i]) &&
+                    length(dynamic.velocities_m_s[i]) <= 1.e6,
+                "Dynamic snapshot nodal state is invalid");
+        for (unsigned axis = 0; axis < 3; ++axis)
+            require(!patch_.definition_.fixed_components[i][axis] ||
+                        (component(patch.displacements_m[i], axis) == 0 &&
+                         component(dynamic.velocities_m_s[i], axis) == 0),
+                    "Dynamic snapshot moves a fixed component");
+    }
+    auto evaluation = patch_.evaluateFrom(
+        patch, patch.displacements_m, options_.maximum_displacement_gradient_norm);
+    require(evaluation.responses.size() == patch.material_points.size(),
+            "Dynamic snapshot response layout differs from material history");
+    for (std::size_t i = 0; i < evaluation.responses.size(); ++i)
+        require(evaluation.responses[i].state == patch.material_points[i],
+                "Dynamic snapshot material history disagrees with deformation");
+    require(captured_evaluation.internal_forces_n.size() == nodes &&
+                captured_evaluation.responses.size() == patch.material_points.size(),
+            "Dynamic snapshot accepted cache layout differs from patch");
+    require(std::isfinite(captured_evaluation.stored_free_energy_j) &&
+                std::isfinite(captured_evaluation.plastic_dissipation_j) &&
+                std::isfinite(captured_evaluation.backward_euler_work_excess_j) &&
+                std::isfinite(captured_evaluation.maximum_displacement_gradient_norm) &&
+                close(captured_evaluation.stored_free_energy_j,
+                      evaluation.stored_free_energy_j, 1.e-12) &&
+                close(captured_evaluation.plastic_dissipation_j,
+                      evaluation.plastic_dissipation_j, 1.e-12) &&
+                close(captured_evaluation.maximum_displacement_gradient_norm,
+                      evaluation.maximum_displacement_gradient_norm, 1.e-12),
+            "Dynamic snapshot accepted energy cache disagrees with state");
+    for (std::size_t i = 0; i < nodes; ++i) {
+        require(finite(captured_evaluation.internal_forces_n[i]),
+                "Dynamic snapshot accepted force cache is nonfinite");
+        const double scale = std::max(1.0, length(evaluation.internal_forces_n[i]));
+        require(length(captured_evaluation.internal_forces_n[i] -
+                       evaluation.internal_forces_n[i]) <= 1.e-11 * scale,
+                "Dynamic snapshot accepted force cache disagrees with state");
+    }
+    for (std::size_t i = 0; i < captured_evaluation.responses.size(); ++i) {
+        require(captured_evaluation.responses[i].state == patch.material_points[i],
+                "Dynamic snapshot accepted response cache disagrees with history");
+        require(close(captured_evaluation.responses[i].stress_pa,
+                      evaluation.responses[i].stress_pa, 1.e-11) &&
+                    close(captured_evaluation.responses[i].stored_free_energy_j_m3,
+                          evaluation.responses[i].stored_free_energy_j_m3, 1.e-12) &&
+                    close(captured_evaluation.responses[i].plastic_dissipation_j_m3,
+                          evaluation.responses[i].plastic_dissipation_j_m3, 1.e-12) &&
+                    std::isfinite(
+                        captured_evaluation.responses[i].backward_euler_work_excess_j_m3),
+                "Dynamic snapshot accepted response cache disagrees with state");
+        // Tangent columns, yielded, and backward-Euler excess describe the accepted
+        // radial-return path and can legitimately differ from a zero-increment
+        // reevaluation. They are retained for exact snapshots but are not consumed
+        // by continuation; bound their numeric representation rather than claiming
+        // they are reconstructible from persistent J2 history.
+        for (const auto &column : captured_evaluation.responses[i].tangent_columns)
+            require(finiteTensor(column) && tensorNorm(column) <= 1.e18,
+                    "Dynamic snapshot accepted tangent cache is nonfinite");
+    }
+    // All caller-controlled layouts and values have been checked before these
+    // allocations. Construction failure therefore leaves the live patch untouched.
+    auto cache = std::make_shared<const PatchEvaluation>(captured_evaluation);
+    return {patch, dynamic, std::move(cache)};
+}
+
+void DynamicPatch::commitRestore(PreparedRestore prepared) noexcept {
+    patch_.state_ = std::move(prepared.patch);
+    state_ = std::move(prepared.dynamic);
+    accepted_evaluation_ = std::move(prepared.evaluation);
+}
+
 void DynamicPatch::compileStabilityBound() {
     std::vector<std::array<double, 9>> stiffness(patch_.tangent_block_columns_.size());
     for (std::size_t e = 0; e < patch_.geometry_.size(); ++e) {

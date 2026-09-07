@@ -27,6 +27,7 @@ from control_contract import default_ui, apply_control
 from experiment_diagnostics import build_diagnostics
 from experiment_review import review_evidence
 from dynamic_material import native_request, execute_impact
+from thermal_material import native_request as thermal_native_request, execute_experiment
 from banjo_authoring import EngineCLI, EngineError, write_package, validate_network_geometry
 
 STATIC = Path(__file__).resolve().parent
@@ -189,6 +190,7 @@ class Playground:
                     experiment = saved.get("plan",{}).get("experiment")
                     filename = ("reference-report.json" if experiment == "continuum_pressure_reference" else
                                 "dynamic-playback.json" if experiment == "dynamic_material_impact" else f"playback-{index:02d}.json")
+                    if experiment == "thermal_material_experiment": filename = "thermal-response.json"
                     recording = directory / filename
                     available = case.get("playback_available") and recording.is_file() and not recording.is_symlink() and recording.stat().st_size <= 64*1024*1024
                     case["playback_available"] = bool(available)
@@ -206,7 +208,7 @@ class Playground:
         directory = self.runs_path / job_id
         try:
             directory.mkdir(parents=True, exist_ok=False)
-            self.log_event(job_id,"started",planning="model" if prepared_plan is None else "validated_control",engine_sha256=hashlib.sha256(self.engine_path.read_bytes()).hexdigest(),source_sha256={name:hashlib.sha256((STATIC/name).read_bytes()).hexdigest() for name in ("server.py","experiment_language.py","control_contract.py","experiment_diagnostics.py","dynamic_material.py","drop_builder.py","scene_composer.py")},authoring_api_sha256=hashlib.sha256((ROOT/"examples/authoring/banjo_authoring.py").read_bytes()).hexdigest())
+            self.log_event(job_id,"started",planning="model" if prepared_plan is None else "validated_control",engine_sha256=hashlib.sha256(self.engine_path.read_bytes()).hexdigest(),source_sha256={name:hashlib.sha256((STATIC/name).read_bytes()).hexdigest() for name in ("server.py","experiment_language.py","control_contract.py","experiment_diagnostics.py","dynamic_material.py","thermal_material.py","drop_builder.py","scene_composer.py")},authoring_api_sha256=hashlib.sha256((ROOT/"examples/authoring/banjo_authoring.py").read_bytes()).hexdigest())
             self.update(job_id,request_text=message)
             if prepared_plan is None:
                 plan, timing = self.planner(self.api_key, self.model, message, previous)
@@ -231,6 +233,8 @@ class Playground:
                 self.update(job_id, status="blocked", message=plan["explanation"] + " No substitute simulation was presented as this capability.")
             elif plan["experiment"] == "dynamic_material_impact":
                 self.run_dynamic_impact(job_id, directory, plan)
+            elif plan["experiment"] == "thermal_material_experiment":
+                self.run_thermal_material(job_id, directory, plan)
             elif plan["experiment"] in ("thermal_frontier", "material_state_reference", "continuum_pressure_reference"):
                 self.run_reference(job_id, directory, plan)
                 if auto_open and plan["experiment"] == "continuum_pressure_reference":
@@ -337,6 +341,50 @@ class Playground:
                             "status": recording["status"], "inner_cases": inner, "wall_s": wall_s,
                             "provenance": provenance, "diagnostics": diagnostics,
                             "native_scene": False, "playback_available": True}])
+
+    def run_thermal_material(self, job_id, directory, plan):
+        self.update(job_id, status="running",
+                    message="Running the authored fixed-grid solid thermal experiment.")
+        executable = self.engine_path.with_name("banjo_thermal_experiment_cli" +
+                                                self.engine_path.suffix)
+        request_document = thermal_native_request(plan["thermal"])
+        (directory / "thermal-request.json").write_text(
+            json.dumps(request_document, indent=2, allow_nan=False), encoding="utf-8")
+        start = time.perf_counter()
+        recording, provenance = execute_experiment(executable, plan["thermal"])
+        wall_s = time.perf_counter() - start
+        path = directory / "thermal-response.json"
+        path.write_text(json.dumps(recording, separators=(",", ":"), allow_nan=False),
+                        encoding="utf-8")
+        provenance["saved_response_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+        evidence = {"status": recording["status"],
+                    "completed_time_s": recording["completed_time_s"],
+                    "requested_horizon_s": recording["requested_horizon_s"],
+                    "remaining_duration_s": recording["remaining_duration_s"],
+                    "scheduler_backlog_s": recording["scheduler_backlog_s"],
+                    "computed_frames": len(recording["frames"]),
+                    "work": deepcopy(recording["work"]),
+                    "final_ledger": deepcopy(recording["final_ledger"]),
+                    "error": recording.get("error", "")}
+        diagnostics = build_diagnostics(plan, request_document, recording)
+        (directory / "diagnostics-00.json").write_text(
+            json.dumps(diagnostics, indent=2, allow_nan=False), encoding="utf-8")
+        self.log_event(job_id, "thermal_material_recorded", provenance=provenance,
+                       wall_s=wall_s, measured_evidence=evidence,
+                       response_file="thermal-response.json", diagnostics=diagnostics)
+        with self.lock:
+            self.playbacks[(job_id, 0)] = path
+        message = ("The requested thermal interval completed." if recording["status"] == "complete"
+                   else "Solver limits stopped the thermal run; the full last accepted state and ledgers were retained.")
+        self.update(job_id, status="complete", message=message +
+                    " View the accepted fixed-grid cell states and temperature legend in the 3D playground.",
+                    cases=[{"index": 0, "name": plan["name"], "package": request_document,
+                            "report": recording, "status": recording["status"],
+                            "measured_evidence": evidence, "wall_s": wall_s,
+                            "provenance": provenance, "diagnostics": diagnostics,
+                            "native_scene": False,
+                            "playback_available": True,
+                            "view_warning": "Thermal cells retain authored positions; color shows temperature. No flame, smoke or mechanical motion is generated."}])
 
     def run_reference(self, job_id, directory, plan):
         self.update(job_id,status="running")
@@ -519,6 +567,7 @@ class Playground:
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "BanjoPlayground/1"
+    timeout = 5
     def log_message(self, *_): pass # No prompts, credentials or response bodies in access logs.
     def send(self, value, status=200, content_type="application/json; charset=utf-8"):
         data = json.dumps(value,allow_nan=False).encode() if isinstance(value,(dict,list)) else value
@@ -564,13 +613,19 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError,FileNotFoundError) as exc: self.send({"error":str(exc)},400)
     def do_POST(self):
         try:
+            length=int(self.headers.get("Content-Length","0"))
+            if not 1<=length<=32768: raise ValueError("Request body exceeds bounds")
+            # Consume the bounded body before rejecting headers. Closing with
+            # unread POST bytes can reset the TCP connection on Windows and
+            # discard the intended 400/403 response. No JSON is interpreted or
+            # application action invoked until origin/session checks pass.
+            raw_body=self.rfile.read(length)
+            if len(raw_body)!=length: raise ValueError("Incomplete request body")
             self.trusted_host()
             if not secrets.compare_digest(self.headers.get("X-Banjo-Token",""),self.server.app.csrf_token):
                 return self.send({"error":"Missing or invalid local session token"},403)
             if self.headers.get("Content-Type","").split(";")[0]!="application/json": raise ValueError("Expected application/json")
-            length=int(self.headers.get("Content-Length","0"))
-            if not 1<=length<=32768: raise ValueError("Request body exceeds bounds")
-            body=strict_json(self.rfile.read(length))
+            body=strict_json(raw_body)
             path=urlsplit(self.path).path
             if path=="/api/chat": return self.send(self.server.app.submit(body),202)
             match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/analyze",path)

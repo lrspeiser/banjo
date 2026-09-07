@@ -153,6 +153,8 @@ h2 { margin-bottom: 0; font-size: 1.02rem; font-weight: 550; letter-spacing: -.0
 .viewer-shell { height: min(82vh, 850px); }
 .viewer-stage { min-height: 0; overflow: hidden; }
 .viewer-sidebar { min-height: 0; overflow-y: auto; }
+.viewer-sidebar > * { flex-shrink: 0; }
+.viewer-inspect { max-height: 220px; overflow-y: auto; }
 .review-toolbar { grid-template-columns: 1fr 1fr; }
 #viewer-review { font-size: .75rem; line-height: 1.55; overflow-wrap: anywhere; }
 #viewer-review ul { padding-left: 18px; }
