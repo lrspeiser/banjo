@@ -25,6 +25,12 @@ are committed as source only. They are not referenced by `CMakeLists.txt`, so th
 do not compile in any target and `banjo_tetrahedron_contact_tests` does not exist as
 a ctest entry. This is intentional: the module does not pass its own test.
 
+Both files are recorded in the `INTENTIONALLY_UNBUILT` allowlist in
+`scripts/check-source-registration.py`, which is the guard that stops any other
+source from going unbuilt without being noticed. The allowlist entries cite this
+note, and the check fails if either file is deleted or added to a target while the
+entry remains, so the exclusion cannot outlive its justification.
+
 The code is Jolt-dependent (`JPH::EPAPenetrationDepth`), so when it is wired in it
 belongs in `banjo_runtime`, not the Jolt-free `banjo_core`; its test must link
 `banjo_runtime` inside the existing `if(TARGET banjo_runtime)` block.
@@ -61,7 +67,9 @@ decide and document the intended behaviour for exact face-touching (resolve as
 separation of zero, or reject as degenerate), and preserve `narrow_phase_calls`
 across failure returns. Do not relax the barycentric or normal tolerances in
 `tests/tetrahedron_contact_tests.cpp` to make the existing test pass. Then move
-`src/physics/TetrahedronContact.cpp` into `banjo_runtime` and register the test.
+`src/physics/TetrahedronContact.cpp` into `banjo_runtime`, register the test, and
+delete both entries from `INTENTIONALLY_UNBUILT` in
+`scripts/check-source-registration.py`.
 
 No contact query, fracture, cutting or impulse claim is made for tetrahedron pairs
 in this checkpoint.
