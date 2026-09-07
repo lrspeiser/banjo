@@ -8,20 +8,24 @@ America/Los_Angeles. Not pushed, not merged, not on main.
 Predecessors: the [implicit-lane fracture checkpoint](implicit-fracture-checkpoint.md),
 whose transactional Newton/GMRES solver is the dynamic reference here and whose
 shared criterion (`fracture/BondFailure.hpp`) this lane calls unchanged; the
-[realtime envelope](../../envelope/docs/realtime-envelope-checkpoint.md) that
-measured every stepped lane at 3,000-10,000x off realtime for any fracture; and
+realtime envelope checkpoint (`docs/realtime-envelope-checkpoint.md` on
+branch `agent/realtime-envelope`, not on this branch) that measured every
+stepped lane at 3,000-10,000x off realtime for any fracture; and
 the [playground admission and cost checkpoint](playground-admission-and-cost-checkpoint.md)
 whose 1.1x rule this lane was built against.
 
 ## Result
 
-**The rule is met, on the real engine, with a recording the owner can watch:**
+**The rule is met, on the real engine, with recordings the owner can watch:**
 a uniform-cube glass tile struck by an iron ball, computed through impact,
-fracture, and settling to rest, in **0.014x to 0.03x** of its simulated
-duration for tiles of 128 to 512 cells, and **1.34x** (not met) at 1,152 cells
-when the run is cut short of settling. The fracture itself costs 5-140 ms of
-wall time for the whole cascade, against 0.26-2.7 s for the dynamic reference
-on the same lattice (160x-1,354x realtime).
+fracture, and settling to rest, in **0.010x to 0.37x** of its simulated
+duration for tiles of 128 to 2,048 cells. It **fails at 3,200 cells (1.56x)**
+and at 4,608 cells (9.5x, where the lane's own active-set iteration also fails
+to converge). The fracture itself costs 13 ms to 2.8 s of wall time for the
+whole cascade on the tiles that meet the rule, against 0.16-2.9 s for the
+dynamic reference on the 128-512-cell lattices where it was run (166x-1,468x
+realtime). Four recordings are installed as jobs in the owner's playground;
+their ids and what each shows are under Verification.
 
 **The physics is the obstacle, not the cost.** On every glass scene tried, the
 quasi-static lane craters the tile and stops the ball; the dynamic reference
@@ -30,12 +34,23 @@ bonds in one piece with the ball rebounding, the dynamic answer is 400-912
 broken bonds in 2-30 pieces depending on the reference's own removal timing and
 step. The static count lies outside the reference's whole spread by a factor of
 2.6-5.8, the piece count by a factor of 2-30, while the *removed energies*
-agree within 11-25%. The difference is not a matter of tolerance: it is that
+agree within 11-29%. The difference is not a matter of tolerance: it is that
 the static load path spreads the impact to the rim while inertia confines the
 dynamic one, and the ball-to-tile mass ratio of 0.4-1.0 puts these scenes in
 the wave-controlled regime. That is the research answer, and it is negative for
 this class of scene: **a quasi-static solve does not produce the shatter, and
-the difference is the whole visual outcome.**
+the difference is the whole visual outcome.** At 1,152-3,200 cells with heavier
+balls the static lane does make 2-26 pieces, but every piece except the tile
+itself is a 20-160 g crater chip (0.05-0.35% of the tile) frozen loose with no
+velocity: a crater, not a shatter.
+
+The dynamic reference is not the far side of the rule at these sizes either.
+Stopped 0.5 ms after its last failure and handed to Jolt exactly as the static
+pieces are, its whole pipeline is 0.05x at 128 cells (0.33 s of wall for 6.6 s
+simulated) and 0.15x at 288 cells (1.6 s for 10.8 s); its recordings are cut at
+the settle cap because its ball rolls off the frame and Jolt gives it no rolling
+resistance. The static lane is 13-27x cheaper per cascade at 128-512 cells;
+what separates the two lanes there is the answer, not the rule.
 
 Three things are **implemented and measured**:
 
@@ -43,7 +58,9 @@ Three things are **implemented and measured**:
   live bond lattice with unilateral support and ball contact, and an
   event-driven loading loop that spends one linear solve per event, applies the
   shared criterion, and freezes pieces that lose their static answer. Its
-  energy ledger closes to `1e-9`-`1e-11 J` on every run with every term named.
+  energy ledger closes to `4e-11`-`1e-5 J`, at most `2e-8` of the ball's work,
+  on every completed run with every term named; an aborted run's ledger does
+  not close and is reported as such.
 - `src/app/quasistatic_probe_main.cpp`: the scene (tile on a frame, iron ball
   dropped onto it), the fall in Jolt, the lane, the optional dynamic reference on
   the identical lattice and impact, the pieces into Jolt, settling to rest, and
@@ -85,7 +102,7 @@ What statics cannot answer, the lane pins and reports, never regularises:
   nodes, never the ball), are projected into the constrained subspace and
   deflated from the iteration. The load they would have carried is the friction
   the frame needs, and it is reported (`required_friction_coefficient`:
-  `1e-11` to `1e-7` on every centred scene, i.e. nothing). Leaving the ball out
+  `1e-11` to `4e-7` on every centred scene, i.e. nothing). Leaving the ball out
   of the anchors is deliberate: a single tilted ball contact otherwise makes the
   whole tile slide away at zero force, which is what the first version did.
 - **Mechanisms.** A node whose live bonds no longer span three directions
@@ -93,7 +110,8 @@ What statics cannot answer, the lane pins and reports, never regularises:
   value and counted. A zero-stiffness direction the per-node check cannot see (a
   flap on a hinge) is caught when conjugate gradients meet negligible curvature:
   the direction is pinned, its load charged, the iteration restarted. Runs report
-  4-24 pinned directions after cratering and 0 flap modes.
+  4-96 pinned directions after cratering and 0-1 flap modes (one at 3,200
+  cells; four in the aborted 4,608-cell run).
 - **Pieces without a static answer.** A component with fewer than three
   non-collinear active support nodes is frozen: snapped to its rest shape about
   its mass-weighted mean displacement, its stored energy charged as *released*.
@@ -133,13 +151,17 @@ energy budget is the load; nothing precuts, animates, or launches.
 Ledger, per run: `kinetic_in = work + kinetic_out`, and
 `work = (potential_end - potential_start) + removed + released + relaxation`,
 where `removed` is the linear-model stored energy of removed bonds (the shared
-criterion's own figure from actual positions is reported alongside and agrees
-to strain order), `released` is the energy of frozen pieces, and `relaxation`
-is what re-equilibration at fixed travel sheds, energy the dynamic lane would
-carry as motion. The independent check is `segment_work_mismatch`, the largest
-disagreement between the integrated reaction work and the potential change over
-any segment: `4e-10` to `5e-7 J` on runs of 40-100 J, i.e. the solver's own
-`1e-10` residual tolerance.
+criterion's own figure from actual positions is reported alongside; it agrees
+to 0.6-3% on the 40 mm-ball scenes, whose craters are shallower than a cell,
+and exceeds the linear figure by 1.4x, 3.7x and 5.8x on the 60, 80 and 90
+mm-ball scenes, whose craters are deeper than a cell and outside the
+linearisation, see section 4), `released` is the energy of frozen pieces, and
+`relaxation` is what re-equilibration at fixed travel sheds, energy the dynamic
+lane would carry as motion. The independent check is `segment_work_mismatch`,
+the largest disagreement between the integrated reaction work and the potential
+change over any segment: `5e-9` to `5e-7 J` on runs of 40-100 J and `5e-8` to
+`9e-4 J` on runs of 200-700 J (`1e-10` to `2e-6` of the work), the solver's
+`1e-10` residual tolerance amplified by the cratered lattice's conditioning.
 
 ### Handoff to Jolt and the recording
 
@@ -153,7 +175,7 @@ quasi-static lane, the fragment velocities for the reference. The ball is
 given the energy-balance velocity (rebound when stopped, the remaining kinetic
 energy when through) and lifted along its path until it clears every cell box,
 because lattice contact is against node points half a cell below the cell
-surface; the lift is reported (12-25 mm). The frame is four static iron bars,
+surface; the lift is reported (12-42 mm). The frame is four static iron bars,
 the floor is the engine's concrete floor; contact restitution comes from each
 catalog material's declared contact damping through `combineContactMaterials`,
 so the network lane's restitution defect never applied here.
@@ -162,8 +184,12 @@ The recording is written directly in the `banjo.playback.v1` schema the 3D tab
 plays: the fall at 60 fps with the intact tile as one mesh body, the contact
 frame with every bond, the fracture frame with the pieces and the dead bonds
 red, then settling at 60 fps. `scripts/install_quasistatic_playback.py`
-registers a recording as a playground job; both recordings below were opened
-in the 3D tab and play (frame 153/153 at 2.49 s for the 8x8 scene).
+registers a recording as a job in any playground job store (`--runs`). The four
+recordings listed under Verification were installed in the owner's store,
+opened in the owner's playground (`127.0.0.1:8765`, the `?job=` URL lands on
+the 3D tab), and play to their last frame (153/153 at 2.49 s for the 8x8
+scene, 649/649 at 10.78 s for 24x24, 488/488 at 8.09 s for 32x32, 401/401 at
+6.64 s for the reference) with no console errors.
 
 ### Literature actually used
 
@@ -211,12 +237,18 @@ budget 1024, run for 2 ms or until 0.5 ms pass with no failure.
 | 12x12x2, 3 m | 288 | 2,648 | 5.76 kg | 61.4 J |
 | 16x16x2, 5 m | 512 | 4,872 | 10.24 kg | 102.6 J |
 | 24x24x2, 3 m, ball 60 mm (7.12 kg) | 1,152 | 11,336 | 23.0 kg | 207.3 J |
+| 32x32x2, 5 m (no fracture) | 2,048 | 20,488 | 40.96 kg | 102.6 J |
+| 32x32x2, 3 m, ball 80 mm (16.88 kg) | 2,048 | 20,488 | 40.96 kg | 491.5 J |
+| 40x40x2, 3 m, ball 90 mm (24.03 kg) | 3,200 | 32,328 | 64.0 kg | 699.8 J |
+| 48x48x2, 4 m, ball 100 mm (32.97 kg) | 4,608 | 46,856 | 92.2 kg | 1,281.7 J |
 
 A 0.39 m drop (the playground's Stage A height, 7.8 J) breaks nothing in the
 static picture on any tile from 8x8 to 32x32: the tile stores the energy
 elastically (failure would need ~35 J on 8x8x2) and the ball rebounds
 elastically. The 2-5 m drops above were chosen because they are the smallest
-that make the static lane break anything.
+that make the static lane break anything, and the heavier balls on the larger
+tiles for the same reason: the 40 mm ball breaks nothing statically on a 32x32
+tile even from 5 m.
 
 ## 1. Accuracy against the dynamic reference
 
@@ -267,6 +299,16 @@ first-failure sets are disjoint (Jaccard 0) at every step and timing.
 | 8x8x2, 2 m, **iron** | quasi-static | 0 | 1 | 100% | 0 | 6.2 m/s up | | |
 | | reference 1.25e-6 | 0 | 1 | 100% | 0 | 4.4 m/s up | - | 1 |
 
+On the tiles too large for the reference to be run (its 2 ms would cost tens
+of seconds from 1,152 cells up), the static lane alone: 24x24 with the 60 mm
+ball breaks 350 bonds into the tile plus one 80 g chip and rebounds the ball at
+5.3 m/s; 32x32 with the 80 mm ball breaks 398 bonds into the tile plus nine
+20-80 g chips and rebounds it at 6.3 m/s; 40x40 with the 90 mm ball breaks
+1,392 bonds into the tile plus 25 chips of 60-160 g and the ball goes through
+with 308 J of its 700 J left, the first static scene where the crater reaches
+the bottom layer under the ball. Every chip is crater debris frozen without
+velocity; the largest piece is 98.4-99.7% of the tile on all three.
+
 Glass: the reference breaks 8-12x more bonds than the static lane and makes
 14-30 pieces where the static lane makes one. Oak: the reference chips a 3%
 corner (38 compression-first bonds under the contact) that the static lane does
@@ -281,40 +323,56 @@ Yes, and it is the entire outcome: one piece with a crater and a ball that
 bounces back up, against 3-30 pieces of which the small ones fall through the
 frame while the ball goes on through (16x16) or dribbles off. Both were settled
 in Jolt and recorded; in the 8x8 reference recording a 0.08 kg chip falls to the
-floor and the ball rolls off the frame, while in the quasi-static recording the
-tile stays whole and the ball comes to rest on top of it after 1.86 s. The
+floor and the ball rolls off the frame and keeps rolling (0.12 m/s when the 6 s
+cap cuts the recording; Jolt gives it no rolling resistance), while in the
+quasi-static recording the tile stays whole and the ball comes to rest on top of
+it after 1.86 s. The
 reference's own refinement spread (bond count +-30%, pieces 2-30) is wide, but
 the static answer is not inside it on any count.
 
 ## 2. Cost, measured
 
 Windows 11, MSVC 19.44, VS 2022 x64 Release, serial code, Jolt with zero
-worker threads, other agents' work running on the machine; single runs, not
+worker threads, other agents' servers idle on the machine; single runs, not
 repeated benchmarks. Simulated duration is fall plus settling to rest (all
-bodies below 1 mm/s and 0.01 rad/s for 0.5 s). Jolt runs at 1/120 s, frames at
-60 fps. The reference and its recording are excluded from the pipeline time.
+bodies below 1 mm/s and 0.01 rad/s for 0.5 s), or the 10 s settle cap where
+that criterion never fires (section 4 says why). Jolt runs at 1/120 s, frames
+at 60 fps. The reference and its recording are excluded from the pipeline time.
 
-| Scene | Simulated | Fall | Fracture (solves, PCG iterations) | Settle | Recording | Total wall | Ratio | Rule |
+| Scene | Simulated (to rest) | Fall | Fracture (solves, PCG iterations) | Settle | Recording | Total wall | Ratio | Rule |
 |---|---|---|---|---|---|---|---|---|
-| 8x8x2, 2 m, glass | 2.49 s | 2.2 ms | 12.7 ms (63, 1,671) | 4.7 ms | 16 ms | 0.036 s | **0.014x** | met |
-| 12x12x2, 3 m | 4.09 s | 4.1 ms | 56 ms (92, 3,861) | 9.8 ms | 11 ms | 0.082 s | **0.020x** | met |
-| 16x16x2, 5 m | 6.01 s | 6.9 ms | 136 ms (97, 5,902) | 17 ms | 24 ms | 0.184 s | **0.031x** | met |
-| 24x24x2, 3 m, 60 mm ball | 0.79 s (cut at 0.01 s settle) | 26 ms | 1,008 ms (182, 25,308) | 28 ms | - | 1.06 s | **1.34x** | not met |
-| 32x32x2, 5 m (no fracture) | 1.02 s (cut) | 48 ms | 1,251 ms (82, 14,189) | 50 ms | - | 1.35 s | 1.32x | not met |
+| 8x8x2, 2 m, glass | 2.49 s | 2.2 ms | 12.8 ms (63, 1,671) | 4.8 ms | 5.5 ms | 0.025 s | **0.010x** | met |
+| 12x12x2, 3 m | 4.09 s | 4.2 ms | 57 ms (92, 3,861) | 10.6 ms | 15 ms | 0.087 s | **0.021x** | met |
+| 16x16x2, 5 m | 6.01 s | 6.6 ms | 139 ms (97, 5,902) | 17 ms | 21 ms | 0.183 s | **0.030x** | met |
+| 24x24x2, 3 m, 60 mm ball | 10.78 s (cap; every translation at rest by 6.76 s) | 16 ms | 1,235 ms (220, 28,313) | 38 ms | 58 ms | 1.35 s | **0.125x** (0.20x against 6.76 s) | met |
+| 32x32x2, 5 m (no fracture) | 9.01 s | 28 ms | 1,285 ms (82, 14,189) | 57 ms | - | 1.37 s | **0.15x** | met |
+| 32x32x2, 3 m, 80 mm ball | 8.09 s | 28 ms | 2,805 ms (193, 36,936) | 77 ms | 90 ms | 3.00 s | **0.37x** | met |
+| 40x40x2, 3 m, 90 mm ball | 10.78 s (cap; ball rolls off, 0.055 m/s at 10 s) | 45 ms | 16,545 ms (525, 139,016) | 190 ms | - | 16.8 s | **1.56x** | not met |
+| 48x48x2, 4 m, 100 mm ball | 10.90 s (cap) | 61 ms | 103,464 ms (759, 642,295; active set failed) | 174 ms | - | 103.7 s | **9.5x** | not met, not converged |
 
-The cascade is the cost, and inside it the linear solves are 95% of the
-fracture stage. The static solves are not slow per iteration (60-90 us per
-PCG iteration at 11-20k bonds); the iteration count is: 20-30 iterations on an
-intact tile, 100-300 once the crater has made the local stiffness ratio large,
-with the block-Jacobi preconditioner. At 1,152 nodes that is 25,308 iterations
-over 182 solves, one second. The number of solves, two per event plus one per
-round, is not the problem: 40-180 events per scene.
+The cascade is the cost, and inside it the linear solves are 92-99% of the
+fracture stage (the criterion evaluations are the rest). Three factors
+multiply. The cost per PCG iteration is proportional to the live bond count:
+5.6 us at 1.1k bonds, 39 us at 11k, 70 us at 20k, 110 us at 32k, 159 us at
+47k, i.e. 3.4-5 us per thousand bonds. The iterations per solve grow with the
+tile and with the crater under the block-Jacobi preconditioner: 27 at 128
+cells, then 42, 61, 129, 191, 265 at 3,200 cells and 846 in the failing
+4,608-cell run (an intact tile takes 20-30; a cratered one 100-300 and more,
+because the crater's loose and pinned nodes make the local stiffness ratio
+large). And the solves per run grow with the events, two per event plus one
+per round: 63 solves at 128 cells, 220 at 1,152, 525 at 3,200. The product
+grows as roughly the 2.3rd power of the cell count (12.8 ms at 128 cells to
+16.5 s at 3,200) while the interaction it buys stays at 2.5-11 s, so the ratio
+crosses 1.1 between 2,048 and 3,200 cells at these impact energies. Fall,
+settle and recording are 0.01-0.3 s on every tile and never the problem.
 
-The dynamic reference on the same scenes: 8x8x2 0.26-0.53 s for 1.3-1.7 ms
-simulated (160x-316x realtime); 12x12x2 1.4-2.7 s for 2 ms (700x-1,354x);
-16x16x2 2.65 s for 2 ms (1,324x). Per fracture event the static lane is
-10-100x cheaper; per second of simulated interaction it is 4-5 orders of
-magnitude cheaper, because it charges nothing for the wave.
+The dynamic reference on the same scenes: 8x8x2 0.16-0.65 s for 0.6-1.7 ms
+simulated (166x-408x realtime); 12x12x2 1.5-2.6 s for 2 ms (760x-1,291x);
+16x16x2 2.9 s for 2 ms (1,468x). Per cascade the static lane is 13-27x cheaper
+at these sizes; per second of fracture-lane simulated time it is 4-5 orders of
+magnitude cheaper, because it charges nothing for the wave. The reference then
+hands its pieces to Jolt exactly as the static lane does, and that whole
+pipeline is itself 0.05x at 128 cells and 0.15x at 288 cells (see Result).
 
 ## 3. The research question, answered
 
@@ -343,8 +401,10 @@ The removed energy is the one thing the two agree on within ~25%, which is
 also the one thing the reference converges. The count and the topology of what
 that energy removes are different, and in the direction that matters: the
 quasi-static lane under-fragments, so the pieces the owner wants to watch fall
-do not exist in its answer. This is not fixable by a tolerance, a finer lattice
-or a better preconditioner; it is what the approximation is.
+do not exist in its answer; the chips it does make from 1,152 cells up are
+crater debris of 20-160 g, and the tile stays 98-99.7% whole. This is not
+fixable by a tolerance, a finer lattice or a better preconditioner; it is what
+the approximation is.
 
 What the quasi-static lane *is* good for, from these measurements: iron and
 the no-fracture regime (both lanes agree), the first bending failure of a plate
@@ -356,8 +416,9 @@ failure. It is not a route to the shatter.
 ## 4. What does not work
 
 - **No fragmentation, on any glass scene tried.** The static lane ends with
-  one piece (plus a chip on the 24x24 tile) where the reference ends with
-  3-30. Section 3 says why; it is not a bug.
+  one piece at 128-512 cells where the reference ends with 3-30, and with the
+  tile plus 1-25 crater chips of 20-160 g at 1,152-3,200 cells. Section 3 says
+  why; it is not a bug.
 - **The ball's rebound is the elastic upper bound.** All stored energy is
   returned to the ball; the dynamic tile keeps some as vibration and fragment
   motion. The static ball comes back 1.4x-2.7x faster than the reference's
@@ -365,12 +426,44 @@ failure. It is not a route to the shatter.
 - **Pieces start from rest.** A frozen piece has no static velocity. The
   reference's pieces carry 6-16 J of kinetic energy into Jolt; the static
   lane's carry zero.
-- **1.1x fails above ~1,000 cells with fracture** (1.34x at 1,152 cells with
-  the run cut short of settling; a full settle of ~3 s would put the same
-  work at ~0.4x). The block-Jacobi preconditioner is the reason; an
-  incomplete-Cholesky or a factorisation updated by Woodbury for the few bonds
-  each round removes would cut the 100-300 iterations per cratered solve by an
-  estimated 3-10x. Not done.
+- **1.1x fails at 3,200 cells and above with fracture** (1.56x at 3,200
+  cells, 9.5x at 4,608), computed through to rest; it holds to 2,048 cells
+  (0.37x). Section 2 gives the three factors. The block-Jacobi preconditioner
+  is the one that can be changed: an incomplete Cholesky or a factorisation
+  updated by Woodbury for the few bonds each round removes would cut the
+  130-850 iterations per cratered solve by an estimated 3-10x, which by the
+  measured counts brings 3,200 cells inside the rule and 4,608 not. Not done.
+- **The active-set iteration does not converge at 4,608 cells.** With the
+  100 mm ball, after 88 events and 41 rounds (600 bonds removed), four
+  mirror-symmetric ball contacts (nodes 2182, 2185, 2470, 2473) are released
+  because they pull 0.435 N against a 31 kN contact force, re-activated as
+  knife-edge contacts because without them they penetrate, released again, and
+  so on until the 500-iteration budget stops the lane with `active_set_failed`
+  103 s in (`--trace` shows the cycle verbatim). The ledger of the aborted run
+  does not close (31.5 J open) and is reported so. The knife-edge threshold
+  that decides this (`strong_pull`, `1e-6` of the force scale) was not
+  widened, because that is the tolerance change the rules forbid; the fix is a
+  contact algorithm with a convergence argument (Next).
+- **The linearisation fails in a crater deeper than a cell.** The solve is
+  linear about the rest configuration; the shared criterion reads actual
+  positions. With the 40 mm ball the crater is 13 mm deep (0.65 cells) and the
+  two removed-energy figures agree to 0.6-3%. With the 60-90 mm balls the
+  travel is 15-34 mm, the crater nodes move more than a cell, and the
+  criterion's figure is 1.4x (24x24), 3.7x (32x32) and 5.8x (40x40) the linear
+  one: the transverse displacement of the crater's bonds stretches them
+  geometrically in a way the linear model cannot see. The ledger still closes
+  because it is the linear model's ledger; the removed energy it states is then
+  not the lattice's. A corotational or Newton re-linearisation per round would
+  fix it; not done.
+- **"To rest" is a cap, not an event, whenever the ball leaves the frame.**
+  Jolt gives the sphere no rolling resistance and no twist friction on the
+  floor, so a ball that rolls off keeps rolling (the reference's, at 0.12 m/s
+  when the 6 s cap cuts it; the 40x40 ball at 0.055 m/s at 10 s) or spins in
+  place (the 24x24 ball, at 2.25 rad/s with `9e-7 m/s` of translation), and the
+  1 mm/s / 0.01 rad/s rest criterion never fires. Those runs are cut at the
+  settle cap and the cap is the simulated duration in the table; the ratio
+  against the last translation (6.76 s at 24x24) is given alongside and
+  changes no verdict.
 - **Point contact.** Both lanes contact node points, so neither sees Hertzian
   stresses; the lattice's own contact stiffness (`8.7e8 N/m`) sets first
   failure. Real glass under this ball would fail at the contact at ~3 GPa long
@@ -379,21 +472,29 @@ failure. It is not a route to the shatter.
   answer by 2.3x in bond count. The comparison above is against the spread,
   not a number.
 - **Mechanism pins and freezes are approximations the lane reports**, not
-  physics: 4-24 pinned directions per cratered run, 0-61 frozen pieces. A
+  physics: 4-96 pinned directions per cratered run, 0-25 frozen pieces. A
   frozen piece's stored energy is charged as released and it is handed to Jolt
   at rest.
-- **The recording lifts the ball by up to 25 mm** at handoff to clear the
+- **The recording lifts the ball by up to 42 mm** at handoff to clear the
   cell boxes the lattice's point contact ignores.
 - The fall stage is Jolt free flight; the landing on the contact node is
   exact to `3e-10 m` by solving Jolt's own update for the last partial step.
 
 ## Verification
 
-Windows Release, `-DBANJO_BUILD_LAB=OFF`. `python scripts/check-source-registration.py`
-reports every source registered. CTest: see the commit message for the count;
-`banjo_network_skin_tests`, `banjo_network_runtime_tests` and
-`banjo_material_showcase_tests` excluded by instruction. **No existing test's
-tolerance was changed and no existing test file was edited.** Existing lanes
+Windows Release, `-DBANJO_BUILD_LAB=OFF`, MSVC 19.44.
+`python scripts/check-source-registration.py` reports every source registered
+(193 files). CTest: **83 of the 88 registered suites run and pass** (94 s);
+the five excluded by instruction, `banjo_network_skin_tests`,
+`banjo_network_runtime_tests`, `banjo_material_showcase_tests`,
+`banjo_network_adaptive_tests` and `banjo_contact_capacity_tests`, take 18
+minutes to an hour each and none touches this lane (the previous session ran
+the first four to a pass and the fifth timed out at 1,500 s). Every number in
+this document was re-measured from a rebuild of the committed sources after
+the last source edit; the previous session's 24x24 figures (182 solves,
+1.34x with the settle cut at 0.01 s) predate that edit and are superseded.
+**No existing test's tolerance was changed and no existing test file was
+edited.** Existing lanes
 are untouched except for the additive support mask on `ConservativeStepSettings`
 (null keeps the old behaviour) and the sphere generator's bond loop moving into
 a shared helper (byte-identical output; `banjo_implicit_fracture_tests` and every
@@ -430,7 +531,7 @@ Reproduction (from the worktree root):
 ```powershell
 cmake -S . -B build/agent -G "Visual Studio 17 2022" -A x64 -DBANJO_BUILD_LAB=OFF
 cmake --build build/agent --config Release --parallel 4
-ctest --test-dir build/agent -C Release -E "banjo_network_skin_tests|banjo_network_runtime_tests|banjo_material_showcase_tests"
+ctest --test-dir build/agent -C Release -E "banjo_network_skin_tests|banjo_network_runtime_tests|banjo_material_showcase_tests|banjo_network_adaptive_tests|banjo_contact_capacity_tests"
 
 # Section 1: the 8x8x2 comparison, both recordings, the report
 ./build/agent/Release/banjo_quasistatic_probe.exe --cells 8 2 8 --drop 2.0 --reference-dt 1.25e-6 --reference-duration 2e-3 --reference-quiet 5e-4 --record qs.json --record-reference ref.json --report report.json
@@ -441,15 +542,42 @@ ctest --test-dir build/agent -C Release -E "banjo_network_skin_tests|banjo_netwo
 ./build/agent/Release/banjo_quasistatic_probe.exe --cells 8 2 8 --drop 2.0 --settle-max 0.01 --material oak  --reference-dt 1.25e-6 --reference-duration 2e-3 --reference-quiet 5e-4
 ./build/agent/Release/banjo_quasistatic_probe.exe --cells 8 2 8 --drop 2.0 --settle-max 0.01 --material iron --reference-dt 1.25e-6 --reference-duration 2e-3 --reference-quiet 5e-4
 
-# Larger tiles
-./build/agent/Release/banjo_quasistatic_probe.exe --cells 12 2 12 --drop 3.0 --reference-dt 1.25e-6 --reference-duration 2e-3 --reference-quiet 5e-4 --settle-max 10 --record qs12.json --record-reference ref12.json
-./build/agent/Release/banjo_quasistatic_probe.exe --cells 16 2 16 --drop 5.0 --settle-max 10 --record qs16.json
-./build/agent/Release/banjo_quasistatic_probe.exe --cells 24 2 24 --drop 3.0 --ball-radius 0.06 --settle-max 0.01
+# Larger tiles with the reference
+./build/agent/Release/banjo_quasistatic_probe.exe --cells 12 2 12 --drop 3.0 --reference-dt 1.25e-6 --reference-duration 2e-3 --reference-quiet 5e-4 --settle-max 10 --record qs12.json --record-reference ref12.json --report report12.json
+./build/agent/Release/banjo_quasistatic_probe.exe --cells 12 2 12 --drop 3.0 --settle-max 0.01 --reference-dt 6.25e-7 --reference-duration 2e-3 --reference-quiet 5e-4
+./build/agent/Release/banjo_quasistatic_probe.exe --cells 16 2 16 --drop 5.0 --settle-max 0.01 --reference-dt 1.25e-6 --reference-duration 2e-3 --reference-quiet 5e-4
 
-# Watch it: register a recording as a playground job, then open the printed URL
-python scripts/install_quasistatic_playback.py qs.json --report report.json --name "Quasi-static lane"
+# Section 2: the cost table, every scene through to rest (or the 10 s settle cap)
+./build/agent/Release/banjo_quasistatic_probe.exe --cells 8 2 8   --drop 2.0 --record qs8.json --report rep8.json
+./build/agent/Release/banjo_quasistatic_probe.exe --cells 12 2 12 --drop 3.0 --settle-max 10 --record qs12.json --report rep12.json
+./build/agent/Release/banjo_quasistatic_probe.exe --cells 16 2 16 --drop 5.0 --settle-max 10 --record qs16.json --report rep16.json
+./build/agent/Release/banjo_quasistatic_probe.exe --cells 24 2 24 --drop 3.0 --ball-radius 0.06 --settle-max 10 --record qs24.json --report rep24.json
+./build/agent/Release/banjo_quasistatic_probe.exe --cells 32 2 32 --drop 5.0 --settle-max 10
+./build/agent/Release/banjo_quasistatic_probe.exe --cells 32 2 32 --drop 3.0 --ball-radius 0.08 --settle-max 10 --record qs32.json --report rep32.json
+./build/agent/Release/banjo_quasistatic_probe.exe --cells 40 2 40 --drop 3.0 --ball-radius 0.09 --settle-max 10 --report rep40.json
+./build/agent/Release/banjo_quasistatic_probe.exe --cells 48 2 48 --drop 4.0 --ball-radius 0.10 --settle-max 10 --report rep48.json   # exits 2: active_set_failed
+./build/agent/Release/banjo_quasistatic_probe.exe --cells 48 2 48 --drop 4.0 --ball-radius 0.10 --settle-max 0.01 --trace 2> trace48.txt   # the chattering contacts, verbatim
+
+# Watch it: register a recording as a job in the owner's playground store
+# (the server at 127.0.0.1:8765 runs from C:/Users/henry/dev/banjo and reads that
+# store lazily, so no restart is needed), then open the printed URL.
+python scripts/install_quasistatic_playback.py qs8.json  --report rep8.json  --runs C:/Users/henry/dev/banjo/build/playground-runs --name "Quasi-static lane: 8x8x2 glass tile (128 cells), iron ball 40 mm from 2 m, to rest"
+python scripts/install_quasistatic_playback.py ref.json  --report report.json --runs C:/Users/henry/dev/banjo/build/playground-runs --name "Dynamic implicit reference (dt 1.25e-6 s, restart): same 8x8x2 scene, its own pieces settled in Jolt"
+python scripts/install_quasistatic_playback.py qs24.json --report rep24.json --runs C:/Users/henry/dev/banjo/build/playground-runs --name "Quasi-static lane: 24x24x2 glass tile (1,152 cells), iron ball 60 mm from 3 m, to rest"
+python scripts/install_quasistatic_playback.py qs32.json --report rep32.json --runs C:/Users/henry/dev/banjo/build/playground-runs --name "Quasi-static lane: 32x32x2 glass tile (2,048 cells), iron ball 80 mm from 3 m, 10 pieces, to rest"
+# Or serve this worktree's own store on another port:
 python playground/server.py --port 8790 --engine build/agent/Release/banjo_platform_cli.exe --studio build/agent/Release/banjo_network_lab.exe --runs build/playground-runs
 ```
+
+The jobs installed in the owner's store on September 7, 2026, each opened in
+the owner's playground and played to its last frame with no console errors:
+
+| URL | Scene | Cells | Simulated | Wall | Ratio | What it shows |
+|---|---|---|---|---|---|---|
+| `http://127.0.0.1:8765/?job=73f331b1b4e34d8aa88578b3bdfcafbc` | quasi-static, 8x8x2 glass, 40 mm ball from 2 m | 128 | 2.49 s | 0.025 s | 0.010x | 156 bonds fail (red), the tile stays one piece, the ball rebounds and comes to rest on it |
+| `http://127.0.0.1:8765/?job=a74cf2a71c8749e0a685eab6f82ac3fb` | dynamic reference, same scene, dt 1.25e-6 s | 128 | 6.64 s (cap) | 0.33 s | 0.050x | 704 bonds fail, 3 pieces, an 80 g chip falls through the frame, the ball rolls off and keeps rolling |
+| `http://127.0.0.1:8765/?job=62a1c74327624f658b9e0920c939d63d` | quasi-static, 24x24x2 glass, 60 mm ball from 3 m | 1,152 | 10.78 s (cap; at rest by 6.76 s) | 1.35 s | 0.125x | 350 bonds fail, one 80 g chip, the ball rebounds 1.4 m, falls off the frame and spins in place on the floor |
+| `http://127.0.0.1:8765/?job=5b132ccb059c468ea9ec41e0a4f9ff1d` | quasi-static, 32x32x2 glass, 80 mm ball from 3 m | 2,048 | 8.09 s | 3.00 s | 0.37x | 398 bonds fail, the tile plus nine 20-80 g chips, the ball rebounds at 6.3 m/s and ends on the floor |
 
 `--trace` prints every solve, event, round, release, activation and freeze to
 stderr; it is how every defect in this lane's history was found.
@@ -463,13 +591,20 @@ Ordered by what the measurements say:
    tolerance or preconditioner changes that. Its static solver, ledger, freeze
    rule and Jolt handoff are reusable: the modal lane could take the first
    bending failure and the piece-to-Jolt path from here.
-2. **If the static picture is kept for anything, precondition it.** An
-   incomplete Cholesky or a Woodbury update of one factorisation per cascade
-   would bring 1,152 cells with fracture inside 1.1x by the measured iteration
-   counts.
+2. **If the static picture is kept for anything, precondition it and give it
+   a convergent contact solve.** An incomplete Cholesky or a Woodbury update
+   of one factorisation per cascade would bring 3,200 cells with fracture
+   inside 1.1x by the measured iteration counts (16.5 s of solves cut 3-10x
+   against a 10.8 s interaction); 4,608 cells also needs the active-set
+   chatter fixed, by a semi-smooth Newton or projected contact solve rather
+   than by a wider knife-edge threshold, and a corotational re-linearisation
+   per round so that a crater deeper than a cell is inside the model.
 3. **The reference needs its own convergence before it can be a yardstick:**
    400-912 bonds across removal timings on one scene is not a spread, it is a
    choice. The removed energy is the only converged quantity to compare on.
 4. **Contact.** Both lanes contact node points; a cell-face or Hertz-type
    contact on the lattice would change first failure in both and is the next
    physics both lanes share.
+5. **Rolling and twist friction in Jolt**, or a rest criterion that ignores a
+   sphere's spin about its contact normal, so that "to rest" is an event
+   rather than a cap whenever the ball leaves the frame.
