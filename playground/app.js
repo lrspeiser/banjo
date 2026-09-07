@@ -555,7 +555,11 @@
       const actions = document.createElement("div"); actions.className = "case-actions";
       const open = document.createElement("button"); open.type = "button"; open.textContent = playbackAvailable(item) ? "View 3D playback" : "Open native studio"; open.disabled = !(state.job && state.job.id && (playbackAvailable(item) || canOpenCase(item))); open.addEventListener("click", () => playbackAvailable(item) ? loadPlayback(index) : openStudio(index));
       const inspect = document.createElement("button"); inspect.type = "button"; inspect.textContent = "Inspect JSON"; inspect.addEventListener("click", () => { state.selectedCase = index; renderLanguage(); activateTab("language"); });
-      actions.append(open, inspect); card.append(top, details, actions); grid.append(card);
+      const control = document.createElement("button"); control.type = "button"; control.textContent = "Run at-rest control";
+      control.title = "Re-run this exact scene with no gravity, no ground, no striker and zero velocity. Anything it reports was manufactured by the solver.";
+      control.disabled = !(state.job && state.job.id && item.package);
+      control.addEventListener("click", () => runAtRestControl(index, control));
+      actions.append(open, inspect, control); card.append(top, details, trustPanel(item), actions); grid.append(card);
     });
 
     const table = $("compare-table"); const body = table.querySelector("tbody"); body.replaceChildren();
@@ -564,6 +568,64 @@
     const keys = Object.keys(rows).sort().slice(0, 120);
     if (!keys.length) { const row = document.createElement("tr"); const cell = document.createElement("td"); cell.colSpan = 2; cell.className = "muted"; cell.textContent = "No report fields yet."; row.append(cell); body.append(row); return; }
     keys.forEach((key) => { const row = document.createElement("tr"); const field = document.createElement("td"); field.textContent = key; const values = document.createElement("td"); values.textContent = reports.map((report, index) => `${index + 1}: ${text(flatten(report)[key])}`).join("  ·  "); row.append(field, values); body.append(row); });
+  }
+
+  function trustPanel(item) {
+    const box = document.createElement("div"); box.className = "trust-panel";
+    const resolution = item.trust && item.trust.resolution;
+    const row = (label, value, kind) => {
+      const line = document.createElement("div"); line.className = `trust-row${kind ? ` trust-${kind}` : ""}`;
+      const a = document.createElement("span"); a.textContent = label;
+      const b = document.createElement("strong"); b.textContent = value;
+      line.append(a, b); box.append(line); return line;
+    };
+    if (resolution && Number.isFinite(resolution.shortfall)) {
+      const factor = resolution.shortfall;
+      const kind = factor <= 1 ? "ok" : factor < 10 ? "warn" : "bad";
+      row("Timestep vs. required", factor <= 1
+        ? `resolved (${factor.toFixed(2)}x)`
+        : `${factor >= 100 ? Math.round(factor) : factor.toFixed(1)}x too coarse`, kind);
+      row("Step used / needed", `${resolution.used_dt_s.toExponential(3)} s / ${resolution.required_dt_s.toExponential(3)} s`);
+      if (resolution.reachable_in_schema === false) {
+        row("Schema floor", "1/4800 s is still too coarse for this material", "bad");
+      }
+    } else {
+      row("Timestep vs. required", "not reported for this case");
+    }
+    const energy = (item.trust && item.trust.energy) || {};
+    if (Number.isFinite(energy.change_fraction_of_initial)) {
+      const pct = energy.change_fraction_of_initial * 100;
+      row("Unexplained energy change", `${pct.toFixed(1)}% of initial`, pct > 5 ? "bad" : pct > 1 ? "warn" : "ok");
+    }
+    const control = item.at_rest_control;
+    if (control) {
+      row("At-rest control", control.clean ? "clean" : "CONTAMINATED", control.clean ? "ok" : "bad");
+      const note = document.createElement("p"); note.className = "trust-note"; note.textContent = control.summary; box.append(note);
+    } else {
+      const note = document.createElement("p"); note.className = "trust-note muted";
+      note.textContent = "Run the at-rest control to find out whether this result comes from the impact or from the lattice shaking itself apart.";
+      box.append(note);
+    }
+    return box;
+  }
+
+  async function runAtRestControl(index, button) {
+    if (!state.jobId) return;
+    const label = button.textContent;
+    button.disabled = true; button.textContent = "Running control...";
+    try {
+      const verdict = await api(`/api/jobs/${encodeURIComponent(state.jobId)}/control`, {
+        method: "POST", headers: { "Content-Type": "application/json", ...tokenHeaders() },
+        body: JSON.stringify({ case_index: index }),
+      });
+      const item = state.job && Array.isArray(state.job.cases) ? state.job.cases[index] : null;
+      if (item) item.at_rest_control = verdict;
+      renderResults();
+      showToast(verdict.clean ? "At-rest control is clean." : "At-rest control is CONTAMINATED - see the case card.", !verdict.clean);
+    } catch (error) {
+      showToast(error.message, true);
+      button.disabled = false; button.textContent = label;
+    }
   }
 
   async function openStudio(index) {

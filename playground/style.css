@@ -162,3 +162,31 @@ h2 { margin-bottom: 0; font-size: 1.02rem; font-weight: 550; letter-spacing: -.0
 #viewer-evidence { max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .65rem; }
 @media(max-width:980px) { .viewer-shell { height: auto; } .viewer-stage { height: 520px; } .viewer-sidebar { max-height: 720px; } }
 @media(max-width:620px) { .viewer-stage { height: 390px; } }
+
+/* Trust panel: can this case's answer be believed at all? */
+.trust-panel {
+  margin: 0.75rem 0 0;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  background: rgba(127, 127, 127, 0.06);
+  font-size: 0.86rem;
+}
+.trust-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.15rem 0;
+}
+.trust-row span { opacity: 0.75; }
+.trust-row strong { text-align: right; font-variant-numeric: tabular-nums; }
+.trust-ok strong { color: #3fb950; }
+.trust-warn strong { color: #d29922; }
+.trust-bad strong { color: #f85149; }
+.trust-note {
+  margin: 0.45rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  opacity: 0.9;
+}
+.trust-note.muted { opacity: 0.6; }

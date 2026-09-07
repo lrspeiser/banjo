@@ -24,6 +24,7 @@ import uuid
 
 from experiment_language import ROOT, KINDS, LIMITATIONS, SCHEMA, PLANNER_SCHEMA, lower_proposal, SYSTEM, compile_plan, validate_plan, request_blockers
 from control_contract import default_ui, apply_control
+from trust import resolution_verdict, energy_verdict, at_rest_control_package, control_verdict
 from experiment_diagnostics import build_diagnostics
 from experiment_review import review_evidence
 from dynamic_material import native_request, execute_impact
@@ -281,6 +282,8 @@ class Playground:
                             case["view_warning"] = "Build banjo_playground_record to enable embedded 3D viewing."
                         if case["report"].get("temporal_resolution",{}).get("resolved") is False:
                             case["assessment"] = "Numerically unresolved — recorded motion is diagnostic, not a reliable material outcome."
+                        case["trust"] = {"resolution": resolution_verdict(case.get("package",{}),case["report"]),
+                                         "energy": energy_verdict(case["report"])}
                     except EngineError as exc:
                         case["report"], case["error"], case["status"] = exc.report, str(exc), "solver_limit"
                     case["requested_steps"] = steps
@@ -524,6 +527,40 @@ class Playground:
         finally:
             with self.lock: self.reviewing.discard(key)
 
+    def at_rest_control(self, job_id, index):
+        """Re-run this case's own scene with nothing acting on it.
+
+        Same materials, mesh, pinning, timestep and solver iterations; no
+        gravity, no ground, no striker, zero velocity. The exact answer is that
+        nothing happens, so anything this reports was manufactured by the
+        solver rather than by the experiment.
+        """
+        job=self.get(job_id)
+        if type(index) is not int or not 0<=index<len(job["cases"]): raise ValueError("Choose an experiment case")
+        case=job["cases"][index]
+        package=case.get("package")
+        if not package: raise ValueError("This case has no package to control")
+        control=at_rest_control_package(package)
+        directory=self.runs_path/job_id
+        directory.mkdir(parents=True,exist_ok=True)
+        path=directory/f"at-rest-control-{index:02d}.json"
+        path.write_text(json.dumps(control,indent=1,allow_nan=False),encoding="utf-8")
+        steps=case.get("requested_steps") or 240
+        self.log_event(job_id,"at_rest_control_started",case_index=index,steps=steps)
+        try:
+            report=self.engine.run(path,steps)
+        except EngineError as exc:
+            report=exc.report
+        verdict=control_verdict(report)
+        verdict["steps"]=steps
+        verdict["package_file"]=path.name
+        self.log_event(job_id,"at_rest_control_finished",case_index=index,clean=verdict["clean"],
+                       broken_links=verdict["broken_links"],created_energy_j=verdict["created_energy_j"])
+        with self.lock:
+            stored=self.jobs[job_id]["cases"]
+            if index<len(stored): stored[index]["at_rest_control"]=verdict
+        return verdict
+
     def open_case(self, job_id, index):
         if type(index) is not int: raise ValueError("case_index must be an integer")
         with self.lock:
@@ -632,6 +669,10 @@ class Handler(BaseHTTPRequestHandler):
             if match: return self.send(self.server.app.analyze(match[1],body))
             match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/rerun",path)
             if match: return self.send(self.server.app.rerun(match[1],body),202)
+            match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/control",path)
+            if match:
+                if not isinstance(body,dict) or set(body)!={"case_index"}: raise ValueError("Expected case_index")
+                return self.send(self.server.app.at_rest_control(match[1],body["case_index"]))
             match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/open",path)
             if match:
                 if not isinstance(body,dict) or set(body)!={"case_index"}: raise ValueError("Expected case_index")
