@@ -223,12 +223,44 @@ def build_cases():
 # Model prediction and grading
 # --------------------------------------------------------------------------
 
+# What the engine actually reports. Without this the model predicts quantities
+# that are never measured, and predicts them in the wrong units: initial_energy_j
+# is total mechanical energy including gravitational potential from the world
+# origin, not the projectile's kinetic energy, and grading a 4.22 J kinetic
+# prediction against a 56.95 J total is a mismatch of definitions rather than a
+# finding about the engine.
+FIELD_GLOSSARY = """
+
+The engine reports only the fields below. Make every claim against these, in
+these units and definitions. Anything else you assert cannot be graded.
+
+  initial_energy_j   Total mechanical energy at t=0: kinetic PLUS gravitational
+                     potential of every body, measured from the world origin
+                     y=0, not from the point of impact. For a scene under
+                     gravity this is dominated by potential energy and is much
+                     larger than the projectile's kinetic energy.
+  mechanical_energy_j / elastic_energy_j   Same convention, at the end of the run.
+  unseparated_energy_change_j   Energy change not attributed to fracture.
+  fracture_work_j / plastic_work_j   Work booked to those mechanisms.
+  broken_links / damaged_links / links   Bond counts in the lattice.
+  connected_components   Separate pieces remaining, so 1 means intact.
+  cells   Lattice nodes. maximum_observed_axial_strain is dimensionless.
+  summed_spring_impulse_n_s   N s.  ticks   Steps executed.
+  state_valid   Engine's own validity flag.
+  temporal_resolution   The engine's own bound: maximum_step_s is the largest
+                     step its spring network can represent.
+
+There is NO position, velocity, orientation, mass, stress or per-node output.
+Do not predict trajectories, rebound heights, contact durations or masses: they
+cannot be checked. Predict what these fields will show."""
+
 PREDICT_SYSTEM = (
     "You are a physicist reviewing a rigid-body and lattice-fracture simulation before it runs. "
     "You are given a scene description and the exact package the engine will execute. State what "
     "physics says should happen. Be decisive and quantitative where you can, and say plainly when "
     "a quantity is not determined by the setup. You will be graded on whether the engine matched "
     "you, so do not hedge into unfalsifiability."
+    + FIELD_GLOSSARY
 )
 
 PREDICT_SCHEMA = {
@@ -259,6 +291,7 @@ GRADE_SYSTEM = (
     "whether the measurement supports it, contradicts it, or does not determine it. Judge only "
     "what the numbers show. Do not excuse a contradiction because the engine is experimental, and "
     "do not credit an expectation the report does not actually address."
+    + FIELD_GLOSSARY
 )
 
 GRADE_SCHEMA = {
