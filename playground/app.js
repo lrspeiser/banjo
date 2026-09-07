@@ -260,12 +260,15 @@
     const left = document.createElement("span"); left.textContent = `Job ${text(job.id, "unknown")}`;
     const right = document.createElement("span"); right.textContent = `${Array.isArray(job.cases) ? job.cases.length : 0} case(s)`;
     meta.append(left, right); $("job-content").append(track, message, meta);
+    const admission = renderAdmission(job);
+    if (admission) $("job-content").append(admission);
     renderPlan(job.plan);
     const send = $("send-button");
     const active = activeStatuses.has(status);
     send.disabled = active;
     send.classList.toggle("is-busy", active);
     setText($("composer-hint"), active ? "A job is running; follow-ups unlock when it finishes." : "Enter to send · Shift+Enter for a new line");
+    $("builder-run").disabled = active || builder.busy || !(builder.preview && builder.preview.admissible);
     if (job.error) showToast(text(job.error), true);
   }
 
@@ -608,6 +611,18 @@
       const pct = energy.change_fraction_of_initial * 100;
       row("Unexplained energy change", `${pct.toFixed(1)}% of initial`, pct > 5 ? "bad" : pct > 1 ? "warn" : "ok");
     }
+    const cost = item.cost;
+    if (cost && Number.isFinite(cost.estimated_wall_s)) {
+      // An estimate nobody checks is a guess. Show it against what it predicted.
+      row("Cost estimate", Number.isFinite(cost.measured_wall_s)
+        ? `${Math.round(cost.estimated_wall_s)} s predicted, ${Math.round(cost.measured_wall_s)} s measured (${cost.wall_error >= 0 ? "+" : ""}${Math.round(cost.wall_error * 100)}%)`
+        : `${Math.round(cost.estimated_wall_s)} s predicted`,
+        Number.isFinite(cost.wall_error) && Math.abs(cost.wall_error) <= .35 ? "ok" : Number.isFinite(cost.wall_error) ? "warn" : "");
+      if (Number.isFinite(cost.measured_substeps_per_tick)) {
+        row("Substeps predicted / used", `${cost.substeps_per_host_tick} / ${cost.measured_substeps_per_tick}`,
+          cost.substeps_per_host_tick === cost.measured_substeps_per_tick ? "ok" : "bad");
+      }
+    }
     const control = item.at_rest_control;
     if (control) {
       row("At-rest control", control.clean ? "clean" : "CONTAMINATED", control.clean ? "ok" : "bad");
@@ -707,10 +722,233 @@
     } catch (error) { send.disabled = false; send.classList.remove("is-busy"); addMessage("Banjo", `The request could not start: ${error.message}`); showToast(error.message, true); }
   }
 
+  // ---------------------------------------------------------------------
+  // Builder panel: the admissible parameter space, checked by the server.
+  //
+  // Every number shown here comes from /api/builder/preview rather than from a
+  // copy of the rules in this file, so the panel cannot drift away from what
+  // the engine enforces, and the Run button is enabled only for a setup the
+  // same code path has already accepted.
+  // ---------------------------------------------------------------------
+  const builder = { meta: null, spec: null, preview: null, timer: null, pending: 0, busy: false };
+  const mm = (metres) => Math.round(metres * 1000 * 1000) / 1000;
+
+  function builderInputs() {
+    return {
+      material: $("b-material").value,
+      dimensions_m: [Number($("b-dx").value) / 1000, Number($("b-dy").value) / 1000, Number($("b-dz").value) / 1000],
+      resolution: [Number($("b-rx").value), Number($("b-ry").value), Number($("b-rz").value)],
+      support: $("b-support").value,
+      projectile: $("b-projectile").value,
+      projectile_size_m: Number($("b-psize").value) / 1000,
+      impact_speed_m_s: Number($("b-speed").value),
+      impact_offset_m: [Number($("b-ox").value) / 1000, Number($("b-oz").value) / 1000],
+      duration_s: Number($("b-duration").value) / 1000,
+      tick_rate_hz: Number($("b-tick").value),
+    };
+  }
+
+  function writeBuilder(spec) {
+    $("b-material").value = spec.material;
+    $("b-support").value = spec.support;
+    ["b-dx", "b-dy", "b-dz"].forEach((id, i) => { $(id).value = String(mm(spec.dimensions_m[i])); });
+    ["b-rx", "b-ry", "b-rz"].forEach((id, i) => { $(id).value = String(spec.resolution[i]); });
+    $("b-projectile").value = spec.projectile;
+    $("b-psize").value = String(mm(spec.projectile_size_m));
+    $("b-speed").value = String(spec.impact_speed_m_s);
+    $("b-ox").value = String(mm(spec.impact_offset_m[0]));
+    $("b-oz").value = String(mm(spec.impact_offset_m[1]));
+    $("b-duration").value = String(Math.round(spec.duration_s * 1000));
+    $("b-tick").value = String(spec.tick_rate_hz);
+    $("b-speed-out").textContent = `${Number(spec.impact_speed_m_s).toLocaleString()} m/s`;
+    $("b-duration-out").textContent = `${Math.round(spec.duration_s * 1000)} ms`;
+  }
+
+  async function initBuilder() {
+    try { builder.meta = await api("/api/builder"); }
+    catch (error) { setText($("builder-verdict"), `Builder unavailable: ${error.message}`); return; }
+    const materials = $("b-material"); materials.replaceChildren();
+    builder.meta.materials.forEach((id) => { const o = document.createElement("option"); o.value = id; o.textContent = id; materials.append(o); });
+    const ticks = $("b-tick"); ticks.replaceChildren();
+    builder.meta.tick_rates_hz.forEach((hz) => { const o = document.createElement("option"); o.value = String(hz); o.textContent = `${hz} Hz`; ticks.append(o); });
+    const limits = builder.meta.limits || {};
+    const rows = [
+      ["Cells per axis", `${limits.resolution_per_axis?.[0]} to ${limits.resolution_per_axis?.[1]}`,
+        "Bounded by the engine's own resolution check."],
+      ["Cell aspect ratio", `${limits.cell_aspect_ratio}:1 at most`,
+        "Each cell collides as a sphere of radius 0.49 x the smallest spacing while carrying the whole box's mass. Cubic cells cover 98% of the cell and neighbours just touch; stretched cells let fragments pass through each other."],
+      ["Face : thickness", `${limits.slenderness_face_over_thickness}:1 at most`,
+        `A consequence of the two rules above: 16 cells on the long axis, 2 on the short one, times the ${limits.cell_aspect_ratio}:1 cell tolerance (${limits.slenderness_with_strictly_cubic_cells}:1 if you want strictly cubic cells). A real windowpane is 30:1 or more and cannot be expressed here.`],
+      ["Cells", `${limits.object_cells} per object, ${limits.world_cells} per world, ${limits.playground_cells} here`,
+        "Hard engine budgets; the playground keeps a tighter one."],
+      ["Smallest cell", `${(limits.minimum_cell_spacing_m * 1000).toFixed(2)} mm spacing`,
+        "Below this the collision proxy drops under the engine's 1 mm floor."],
+      ["Substeps per tick", `${limits.maximum_substeps_per_tick} at most`,
+        "The solver runs the lattice on its own stability clock. Cost is set by the smallest cell: halving a spacing roughly doubles the run."],
+    ];
+    const root = $("builder-limits"); root.replaceChildren();
+    rows.forEach(([label, value, why]) => {
+      const row = document.createElement("div"); row.className = "limit-row";
+      const head = document.createElement("div"); head.className = "limit-head";
+      const a = document.createElement("span"); a.textContent = label;
+      const b = document.createElement("strong"); b.textContent = value;
+      head.append(a, b);
+      const p = document.createElement("p"); p.textContent = why;
+      row.append(head, p); root.append(row);
+    });
+    writeBuilder(builder.meta.default);
+    document.querySelectorAll("#builder-controls input, #builder-controls select")
+      .forEach((node) => node.addEventListener("input", scheduleBuilderPreview));
+    $("builder-reset").addEventListener("click", () => { writeBuilder(builder.meta.default); scheduleBuilderPreview(); });
+    $("builder-run").addEventListener("click", runBuilder);
+    scheduleBuilderPreview();
+  }
+
+  function scheduleBuilderPreview() {
+    $("b-speed-out").textContent = `${Number($("b-speed").value).toLocaleString()} m/s`;
+    $("b-duration-out").textContent = `${$("b-duration").value} ms`;
+    setText($("builder-badge"), "Checking");
+    $("builder-run").disabled = true;
+    window.clearTimeout(builder.timer);
+    builder.timer = window.setTimeout(previewBuilder, 180);
+  }
+
+  async function previewBuilder() {
+    const request = ++builder.pending;
+    let spec;
+    try { spec = builderInputs(); } catch { return; }
+    try {
+      const preview = await api("/api/builder/preview", { method: "POST", headers: { "Content-Type": "application/json", ...tokenHeaders() }, body: JSON.stringify(spec) });
+      if (request !== builder.pending) return;
+      builder.spec = preview.spec; builder.preview = preview;
+      renderBuilderPreview(preview);
+    } catch (error) {
+      if (request !== builder.pending) return;
+      builder.preview = null;
+      setText($("builder-badge"), "Out of bounds");
+      $("builder-verdict").className = "builder-verdict bad";
+      setText($("builder-verdict"), error.message);
+      $("builder-repair").replaceChildren();
+      $("builder-metrics").replaceChildren();
+      setText($("builder-package"), "No admissible package yet.");
+    }
+  }
+
+  function metricRow(root, label, value, kind) {
+    const row = document.createElement("div"); row.className = `metric-row${kind ? ` metric-${kind}` : ""}`;
+    const a = document.createElement("span"); a.textContent = label;
+    const b = document.createElement("strong"); b.textContent = value;
+    row.append(a, b); root.append(row); return row;
+  }
+
+  function renderBuilderPreview(preview) {
+    const geometry = preview.geometry, cost = preview.cost;
+    const verdict = $("builder-verdict"); verdict.replaceChildren();
+    setText($("builder-badge"), preview.admissible ? "Admissible" : "Refused");
+    verdict.className = `builder-verdict ${preview.admissible ? "ok" : "bad"}`;
+    if (preview.admissible) {
+      const line = document.createElement("p");
+      line.textContent = `The engine will accept this scene: ${geometry.cells} cells of ${geometry.spacing_mm.map((v) => `${v}`).join(" x ")} mm at ${geometry.aspect_ratio.toFixed(2)}:1, collision proxies ${(geometry.collision_radius_m * 1000).toFixed(2)} mm across.`;
+      verdict.append(line);
+      (preview.notes || []).forEach((note) => { const p = document.createElement("p"); p.className = "verdict-note"; p.textContent = note.message; verdict.append(p); });
+    } else {
+      preview.problems.forEach((problem) => {
+        const p = document.createElement("p"); const tag = document.createElement("strong");
+        tag.textContent = `${problem.limit}: `; p.append(tag, document.createTextNode(problem.message)); verdict.append(p);
+      });
+    }
+    const repair = $("builder-repair"); repair.replaceChildren();
+    if (!preview.admissible && preview.repair && preview.repair.resolution) {
+      const p = document.createElement("p");
+      p.textContent = `Nearest admissible mesh: ${JSON.stringify(preview.repair.resolution)} (${preview.repair.cost.network_cells} cells, about ${preview.repair.cost.estimated_wall_text}).`;
+      const apply = document.createElement("button"); apply.type = "button"; apply.className = "quiet-button";
+      apply.textContent = "Use this resolution";
+      apply.addEventListener("click", () => {
+        ["b-rx", "b-ry", "b-rz"].forEach((id, i) => { $(id).value = String(preview.repair.resolution[i]); });
+        scheduleBuilderPreview();
+      });
+      repair.append(p, apply);
+    } else if (!preview.admissible && preview.repair && preview.repair.dimensions) {
+      const d = preview.repair.dimensions;
+      const p = document.createElement("p");
+      p.textContent = `This object is ${d.slenderness.toFixed(1)}:1 face to thickness and no mesh in range can build it. The nearest buildable versions keep this face at ${(d.thicken_to_m * 1000).toFixed(0)} mm thick, or keep this thickness with a ${(d.shrink_face_to_m * 1000).toFixed(0)} mm face.`;
+      const thicken = document.createElement("button"); thicken.type = "button"; thicken.className = "quiet-button";
+      thicken.textContent = `Thicken to ${(d.thicken_to_m * 1000).toFixed(0)} mm`;
+      thicken.addEventListener("click", () => { $("b-dz").value = String(Math.ceil(d.thicken_to_m * 1000)); scheduleBuilderPreview(); });
+      repair.append(p, thicken);
+    }
+    const metrics = $("builder-metrics"); metrics.replaceChildren();
+    metricRow(metrics, "Cells", `${geometry.cells}`, geometry.cells_ok ? "ok" : "bad");
+    metricRow(metrics, "Cell size", `${geometry.spacing_mm.join(" x ")} mm`);
+    metricRow(metrics, "Cell aspect", `${geometry.aspect_ratio.toFixed(2)}:1`, geometry.cubic ? "ok" : "bad");
+    metricRow(metrics, "Collision coverage", `${Math.round(geometry.collision_coverage * 100)}% of the widest side`, geometry.cubic ? "ok" : "bad");
+    metricRow(metrics, "Face : thickness", `${geometry.slenderness.toFixed(1)}:1`,
+      geometry.slenderness <= (builder.meta?.limits?.slenderness_face_over_thickness ?? 16) ? "ok" : "bad");
+    if (cost) {
+      metricRow(metrics, "Substeps per tick", `${cost.substeps_per_host_tick}${cost.limited_by_budget ? ` of ${cost.required_substeps} needed` : ""}`, cost.limited_by_budget ? "bad" : "ok");
+      metricRow(metrics, "Host ticks", `${cost.steps} (${(cost.simulated_s * 1000).toFixed(0)} ms simulated)`);
+      metricRow(metrics, "Internal solves", cost.total_substeps.toLocaleString());
+      metricRow(metrics, "Estimated wall time", `${cost.estimated_wall_text} (${Math.round(cost.estimated_wall_low_s)}–${Math.round(cost.estimated_wall_high_s)} s)`,
+        cost.estimated_wall_s > 900 ? "bad" : cost.estimated_wall_s > 240 ? "warn" : "ok");
+      metricRow(metrics, "Recording size", `${cost.estimated_recording_mb.toFixed(1)} MB`, cost.recording_over_budget ? "bad" : "ok");
+      setText($("builder-cost-badge"), cost.estimated_wall_text);
+      setText($("builder-cost-basis"), cost.basis);
+    } else {
+      setText($("builder-cost-badge"), "—");
+      setText($("builder-cost-basis"), "Cost is computed once the setup is admissible.");
+    }
+    setText($("builder-package"), preview.package ? pretty(preview.package) : "No admissible package yet.");
+    $("builder-run").disabled = !preview.admissible || builder.busy || activeStatuses.has(state.job && state.job.status);
+  }
+
+  async function runBuilder() {
+    if (!builder.preview || !builder.preview.admissible) return;
+    const button = $("builder-run"); button.disabled = true; builder.busy = true;
+    const cost = builder.preview.cost;
+    if (cost && cost.estimated_wall_s > 240 &&
+        !window.confirm(`This scene is estimated at ${cost.estimated_wall_text} of computation (${cost.total_substeps.toLocaleString()} internal solves). Run it?`)) {
+      builder.busy = false; button.disabled = false; return;
+    }
+    try {
+      clearViewer("The authored package is being recorded.");
+      const response = await api("/api/packages/run", { method: "POST", headers: { "Content-Type": "application/json", ...tokenHeaders() }, body: JSON.stringify({ builder: builder.spec, steps: builder.preview.steps, request_id: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}` }) });
+      state.jobId = response.job_id; rememberJob(state.jobId);
+      state.job = { id: state.jobId, status: "running", message: `Recording the authored package; estimated ${cost ? cost.estimated_wall_text : "unknown"}.`, cases: [] };
+      state.selectedCase = 0; state.followup = false;
+      addMessage("You", `Builder: ${builder.preview.package.name}`);
+      activateTab("experiment"); renderJob(state.job); stopPolling(); pollJob();
+    } catch (error) {
+      showToast(error.message, true);
+      setText($("builder-verdict"), error.message);
+      $("builder-verdict").className = "builder-verdict bad";
+    } finally { builder.busy = false; button.disabled = !(builder.preview && builder.preview.admissible); }
+  }
+
+  function renderAdmission(job) {
+    const notes = job?.admission?.notes || [];
+    const cost = job?.admission?.cost;
+    if (!notes.length && !cost) return null;
+    const box = document.createElement("div"); box.className = "admission-panel";
+    if (cost) {
+      const line = document.createElement("div"); line.className = "admission-cost";
+      const a = document.createElement("span"); a.textContent = "Estimated computation";
+      const b = document.createElement("strong");
+      b.textContent = `${cost.estimated_wall_text} · up to ${cost.worst_substeps_per_tick} internal solves per tick`;
+      line.append(a, b); box.append(line);
+    }
+    notes.forEach((note) => {
+      const p = document.createElement("p"); p.className = "admission-note";
+      const tag = document.createElement("strong"); tag.textContent = `${note.action} · ${note.limit}: `;
+      p.append(tag, document.createTextNode(note.message)); box.append(p);
+    });
+    return box;
+  }
+
   function activateTab(name) {
     document.querySelectorAll(".tab").forEach((tab) => { const active = tab.dataset.tab === name; tab.classList.toggle("is-active", active); tab.setAttribute("aria-selected", String(active)); });
     document.querySelectorAll(".tab-panel").forEach((panel) => { const active = panel.id === `panel-${name}`; panel.classList.toggle("is-visible", active); panel.hidden = !active; });
     if (name === "language") renderLanguage(); if (name === "results") renderResults(); if(name === "viewer") renderViewerCaseSelect();
+    if (name === "builder" && !builder.meta) initBuilder();
   }
 
   async function loadGoal() {
@@ -755,5 +993,8 @@
   $("viewer-frame").addEventListener("input",e=>state.scene?.setFrame(Number(e.target.value)));$("viewer-speed").addEventListener("change",e=>{state.scene?.setSpeed(e.target.value);syncCustomDisplay("playback_speed",Number(e.target.value));});$("viewer-magnification").addEventListener("change",e=>state.scene?.setMagnification(e.target.value));
   $("viewer-components").addEventListener("change",e=>state.scene?.showComponents(e.target.checked));$("viewer-reference").addEventListener("change",e=>state.scene?.showReference(e.target.checked));$("viewer-bonds").addEventListener("change",e=>state.scene?.showBonds(e.target.checked));$("viewer-xray").addEventListener("change",e=>state.scene?.setXray(e.target.checked));$("viewer-native").addEventListener("click",()=>openStudio(state.selectedCase));
   $("prompt-input").addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); $("chat-form").requestSubmit(); } });
-  renderConversation(); renderHistory(); renderJob(null); renderStatus(); loadStatus(); loadGoal(); restoreLatestJob();
+  renderConversation(); renderHistory(); renderJob(null); renderStatus(); loadGoal(); restoreLatestJob();
+  // The builder posts to the server for every check, so it needs the session
+  // token that /api/status hands out before it can preview anything.
+  loadStatus().then(initBuilder);
 })();

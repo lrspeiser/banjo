@@ -30,16 +30,29 @@ def scene_entry(thickness,resolution):
 
 
 class NetworkGeometryAdmissionTests(unittest.TestCase):
-    def test_exact_thickness_resolution_boundary_cases(self):
+    def test_exact_cell_size_boundary_cases(self):
+        # Cubic cells, so the only thing under test is the 1 mm collision-radius
+        # floor. 2.00 mm spacing gives a 0.98 mm proxy and 2.05 mm gives 1.0045.
         with self.assertRaisesRegex(ValueError,r"0\.98 mm radius.*at least 1 mm"):
-            validate_network_geometry([.08,.08,.004],[2,2,2])
-        self.assertAlmostEqual(validate_network_geometry([.08,.08,.0041],[2,2,2]),.0010045)
+            validate_network_geometry([.008,.008,.008],[4,4,4])
+        self.assertAlmostEqual(validate_network_geometry([.0082,.0082,.0082],[4,4,4]),.0010045)
         with self.assertRaisesRegex(ValueError,r"0\.98 mm radius"):
-            validate_network_geometry([.08,.08,.006],[2,2,3])
-        self.assertAlmostEqual(validate_network_geometry([.08,.08,.006],[2,2,2]),.00147)
+            validate_network_geometry([.008,.008,.012],[4,4,6])
+        self.assertAlmostEqual(validate_network_geometry([.012,.012,.012],[4,4,4]),.00147)
+
+    def test_slender_plates_are_refused_for_cell_shape_before_cell_size(self):
+        # A 4 mm plate 80 mm across is 20:1. No resolution in range makes it
+        # cubic, so it is refused on cell shape and the message says so.
+        with self.assertRaisesRegex(ValueError,r"20\.00:1, not cubic.*No resolution in \[2,16\]"):
+            validate_network_geometry([.08,.08,.004],[2,2,2])
+        with self.assertRaisesRegex(ValueError,r"not cubic.*Try resolution \[4, 4, 2\]"):
+            validate_network_geometry([.08,.08,.04],[2,2,4])
+        self.assertAlmostEqual(validate_network_geometry([.08,.08,.04],[4,4,2]),.0098)
 
     def test_lateral_overresolution_rejects_even_with_fine_thickness(self):
         with self.assertRaisesRegex(ValueError,"collision cells are too small"):
+            validate_network_geometry([.02,.02,.02],[12,12,12])
+        with self.assertRaisesRegex(ValueError,"not cubic"):
             validate_network_geometry([.02,.08,.02],[16,2,2])
 
     def test_bool_nonfinite_and_noninteger_inputs_reject(self):
@@ -49,12 +62,22 @@ class NetworkGeometryAdmissionTests(unittest.TestCase):
             with self.assertRaises(ValueError):validate_network_geometry(dimensions,resolution)
 
     def test_drop_and_scene_surface_specific_geometry_reason(self):
-        with self.assertRaisesRegex(ValueError,r"0\.98 mm radius.*Dimensions.*resolution"):
+        # A drop target's sides start at 80 mm, so its cells can never be both
+        # cubic and below the size floor: the shape limit is what it hits.
+        with self.assertRaisesRegex(ValueError,r"20\.00:1, not cubic.*spacing \[40\.0, 40\.0, 2\.0\] mm"):
             validate_drop(drop(.004,[2,2,2]))
-        spec={"objects":[scene_entry(.006,[2,2,3])],
+        self.assertIsNot(validate_drop(drop(.04,[4,4,2])),None)
+        # A scene may author a small enough object to hit the size floor with
+        # cubic cells, and that message still echoes the exact inputs.
+        entry=scene_entry(.02,[12,12,12]); entry["dimensions_m"]=[.02,.02,.02]
+        spec={"objects":[entry],
               "environment":{"gravity_m_s2":[0,-9.81,0],"ground":True,"ground_friction":.3}}
-        with self.assertRaisesRegex(ValueError,r"0\.98 mm radius.*Dimensions.*resolution"):
+        with self.assertRaisesRegex(ValueError,r"0\.816667 mm radius.*Dimensions.*resolution"):
             scene_composer.validate_scene(spec)
+        thin={"objects":[scene_entry(.006,[2,2,3])],
+              "environment":{"gravity_m_s2":[0,-9.81,0],"ground":True,"ground_friction":.3}}
+        with self.assertRaisesRegex(ValueError,r"not cubic.*spacing \[40\.0, 40\.0, 2\.0\] mm"):
+            scene_composer.validate_scene(thin)
 
     def test_rigid_four_millimeter_path_is_unaffected(self):
         value=drop(.004,[12,12,12],"rigid")
@@ -64,7 +87,7 @@ class NetworkGeometryAdmissionTests(unittest.TestCase):
         objects=[]
         for index,material in enumerate(("glass","oak","iron"),1):
             objects.append(make_object("glass_panel",index,material=material,
-                dimensions_m=[.08,.08,.006],resolution=[2,2,2],
+                dimensions_m=[.08,.08,.04],resolution=[4,4,2],
                 position_m=[(index-2)*.1,.04,0]))
         package=make_package(objects)
         candidates=[ROOT/"build/win-joint-double/Release/banjo_platform_cli.exe",

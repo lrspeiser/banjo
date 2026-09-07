@@ -22,6 +22,7 @@
 
     <nav class="tabs" aria-label="Playground sections" role="tablist">
       <button class="tab is-active" id="tab-experiment" role="tab" aria-selected="true" aria-controls="panel-experiment" data-tab="experiment">Experiment</button>
+      <button class="tab" id="tab-builder" role="tab" aria-selected="false" aria-controls="panel-builder" data-tab="builder">Builder</button>
       <button class="tab" id="tab-language" role="tab" aria-selected="false" aria-controls="panel-language" data-tab="language">Language</button>
       <button class="tab" id="tab-results" role="tab" aria-selected="false" aria-controls="panel-results" data-tab="results">Results</button>
       <button class="tab" id="tab-viewer" role="tab" aria-selected="false" aria-controls="panel-viewer" data-tab="viewer">3D playback</button>
@@ -83,6 +84,72 @@
         <section class="card history-section" aria-labelledby="history-heading">
           <div class="card-heading compact"><div><p class="eyebrow">SESSION MEMORY</p><h2 id="history-heading">Latest experiments</h2></div><span class="muted">Successful jobs in this browser session</span></div>
           <div id="history-list" class="history-list"><p class="muted">Your completed experiments will be collected here.</p></div>
+        </section>
+      </section>
+
+      <section class="tab-panel" id="panel-builder" role="tabpanel" aria-labelledby="tab-builder" hidden>
+        <div class="section-intro">
+          <p class="eyebrow">BUILDER / DIRECT PARAMETERS</p>
+          <h1>Build it yourself.</h1>
+          <p class="lede">The engine's admissible parameter space, with no model in the path. Every field is checked against the limits the solver actually enforces, the cost is computed before you commit to it, and a setup the engine would refuse cannot be run from here.</p>
+        </div>
+        <div class="builder-grid">
+          <section class="card builder-form" aria-labelledby="builder-heading">
+            <div class="card-heading compact"><div><p class="eyebrow">01 / SETUP</p><h2 id="builder-heading">Target and striker</h2></div><button class="quiet-button" id="builder-reset" type="button">Reset</button></div>
+            <form id="builder-controls" class="builder-fields">
+              <label class="builder-field"><span>Material</span><select id="b-material"></select></label>
+              <label class="builder-field"><span>Support</span><select id="b-support">
+                <option value="clamped_edges">Clamped edges (pinned perimeter)</option>
+                <option value="free_on_ground">Free on the ground</option>
+              </select></label>
+              <fieldset class="builder-group"><legend>Target size (mm)</legend>
+                <label><span>Width</span><input id="b-dx" type="number" min="2" max="1000" step="1"></label>
+                <label><span>Length</span><input id="b-dy" type="number" min="2" max="1000" step="1"></label>
+                <label><span>Thickness</span><input id="b-dz" type="number" min="2" max="1000" step="1"></label>
+              </fieldset>
+              <fieldset class="builder-group"><legend>Cells per axis <span class="legend-note">2 to 16</span></legend>
+                <label><span>X</span><input id="b-rx" type="number" min="2" max="16" step="1"></label>
+                <label><span>Y</span><input id="b-ry" type="number" min="2" max="16" step="1"></label>
+                <label><span>Z</span><input id="b-rz" type="number" min="2" max="16" step="1"></label>
+              </fieldset>
+              <label class="builder-field"><span>Striker</span><select id="b-projectile">
+                <option value="iron_ball">Iron ball</option>
+                <option value="iron_cube">Iron cube</option>
+                <option value="none">None</option>
+              </select></label>
+              <label class="builder-field"><span>Striker size (mm)</span><input id="b-psize" type="number" min="12" max="300" step="1"></label>
+              <label class="builder-field"><span>Impact speed (m/s) <output id="b-speed-out"></output></span><input id="b-speed" type="range" min="0" max="20" step="0.1"></label>
+              <fieldset class="builder-group"><legend>Impact offset from centre (mm)</legend>
+                <label><span>X</span><input id="b-ox" type="number" step="1"></label>
+                <label><span>Z</span><input id="b-oz" type="number" step="1"></label>
+              </fieldset>
+              <label class="builder-field"><span>Simulated time (ms) <output id="b-duration-out"></output></span><input id="b-duration" type="range" min="5" max="1000" step="5"></label>
+              <label class="builder-field"><span>Host tick rate</span><select id="b-tick"></select></label>
+            </form>
+          </section>
+
+          <aside class="stack">
+            <section class="card builder-verdict-card" aria-labelledby="builder-verdict-heading">
+              <div class="card-heading compact"><div><p class="eyebrow">02 / ADMISSION</p><h2 id="builder-verdict-heading">Will the engine take it?</h2></div><span id="builder-badge" class="small-badge">Checking</span></div>
+              <div id="builder-verdict" class="builder-verdict" aria-live="polite">Adjust a value to check this setup.</div>
+              <div id="builder-repair" class="builder-repair"></div>
+            </section>
+            <section class="card builder-cost-card" aria-labelledby="builder-cost-heading">
+              <div class="card-heading compact"><div><p class="eyebrow">03 / COST</p><h2 id="builder-cost-heading">What it will cost</h2></div><span id="builder-cost-badge" class="small-badge">—</span></div>
+              <div id="builder-metrics" class="builder-metrics"></div>
+              <p id="builder-cost-basis" class="muted"></p>
+              <button id="builder-run" class="primary-button" type="button" disabled><span>Run this scene</span><span aria-hidden="true">↗</span></button>
+              <p class="muted">Admission is not calibration. A scene the engine accepts is not a scene whose material response has been validated; the report still says <code>physical_response_validated: false</code>.</p>
+            </section>
+            <section class="card builder-limits-card" aria-labelledby="builder-limits-heading">
+              <div class="card-heading compact"><div><p class="eyebrow">WHY THESE LIMITS</p><h2 id="builder-limits-heading">Engine constraints</h2></div></div>
+              <div id="builder-limits" class="builder-limits"></div>
+            </section>
+          </aside>
+        </div>
+        <section class="card builder-package-card">
+          <div class="card-heading compact"><div><p class="eyebrow">COMPILED PACKAGE</p><h2>What would be sent</h2></div><span class="muted">Authored through the public Python API</span></div>
+          <pre id="builder-package" class="code-pane" tabindex="0">No admissible package yet.</pre>
         </section>
       </section>
 
