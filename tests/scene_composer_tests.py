@@ -31,8 +31,9 @@ def scene(objects=None, **environment):
 class SceneComposerTests(unittest.TestCase):
     def test_geometry_orientation_motion_and_environment_compile(self):
         quaternion = [math.sqrt(.5), 0, math.sqrt(.5), 0]
+        # 25 x 25 x 20 mm cells: three distinct axis counts, near-cubic.
         spec = scene([entry(dimensions_m=[.3, .2, .04], orientation_wxyz=quaternion,
-                            spin_rad_s=[1, 2, 3], resolution=[3, 4, 5])],
+                            spin_rad_s=[1, 2, 3], resolution=[12, 8, 2])],
                      gravity_m_s2=[1, -2, 3], ground_friction=.7)
         package = composer.compile_scene({"name": "Free composition", "scene": spec})[0]
         obj = package["objects"][0]
@@ -42,7 +43,7 @@ class SceneComposerTests(unittest.TestCase):
         self.assertEqual(obj["dimensions_m"], [.3, .2, .04])
         self.assertEqual(obj["orientation_wxyz"], quaternion)
         self.assertEqual(obj["spin_rad_s"], [1, 2, 3])
-        self.assertEqual(obj["resolution"], [3, 4, 5])
+        self.assertEqual(obj["resolution"], [12, 8, 2])
         self.assertEqual(package["damage_integration"], {
             "maximum_depth": 2,
             "maximum_damage_increment": .05,

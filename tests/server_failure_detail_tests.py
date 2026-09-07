@@ -13,8 +13,16 @@ import server
 
 
 def thin_plan():
+    """A 4 mm plate 240 mm across: 20:1 cells, refused on cell shape."""
     return {"experiment":"drop_test","name":"Saved thin network request",
             "drop":{"target_dimensions_m":[.24,.36,.004],"resolution":[6,9,2],
+                    "representation":"network"}}
+
+
+def small_cell_plan():
+    """Cubic cells at 2.00 mm: the only failure left is the size floor."""
+    return {"experiment":"drop_test","name":"Saved small-cell request",
+            "drop":{"target_dimensions_m":[.024,.024,.024],"resolution":[12,12,12],
                     "representation":"network"}}
 
 
@@ -40,13 +48,23 @@ class FailureDetailTests(unittest.TestCase):
                                "request_text":request,"error":error,"cases":[]}
         result=self.app.get(job_id);detail=result["failure_detail"]
         self.assertEqual(detail["code"],"network_collision_resolution")
-        self.assertIn("0.98 mm radius",detail["detail"])
-        self.assertIn("at least 1 mm",detail["detail"])
+        self.assertIn("20.00:1, not cubic",detail["detail"])
+        self.assertIn("spacing [40.0, 40.0, 2.0] mm",detail["detail"])
         self.assertEqual((result["plan"],result["request_text"],result["error"]),(plan,request,error))
         detail["detail"]="caller mutation";result["plan"]["drop"]["resolution"][2]=99
         again=self.app.get(job_id)
-        self.assertIn("0.98 mm radius",again["failure_detail"]["detail"])
+        self.assertIn("20.00:1, not cubic",again["failure_detail"]["detail"])
         self.assertEqual(again["plan"],plan)
+
+    def test_small_cell_failure_still_reports_the_collision_radius_floor(self):
+        job_id="3"*32
+        self.app.jobs[job_id]={"id":job_id,"status":"error","plan":small_cell_plan(),
+                               "request_text":"r","error":"network cells below collision resolution",
+                               "cases":[]}
+        detail=self.app.get(job_id)["failure_detail"]
+        self.assertEqual(detail["code"],"network_collision_resolution")
+        self.assertIn("0.98 mm radius",detail["detail"])
+        self.assertIn("at least 1 mm",detail["detail"])
 
     def test_archived_failure_has_same_detail_and_preserves_saved_fields(self):
         job_id="a"*32;directory=self.base/"runs"/job_id;directory.mkdir(parents=True)
@@ -57,7 +75,7 @@ class FailureDetailTests(unittest.TestCase):
         restored=self.app.get(job_id)
         self.assertTrue(restored["restored_from_disk"])
         self.assertEqual(restored["failure_detail"]["code"],"network_collision_resolution")
-        self.assertIn("0.98 mm radius",restored["failure_detail"]["detail"])
+        self.assertIn("20.00:1, not cubic",restored["failure_detail"]["detail"])
         self.assertEqual((restored["plan"],restored["request_text"],restored["error"]),
                          (plan,request,error))
         restored["failure_detail"]["summary"]="changed"

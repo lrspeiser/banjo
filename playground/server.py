@@ -22,7 +22,10 @@ from urllib import error, request
 from urllib.parse import urlsplit
 import uuid
 
-from experiment_language import ROOT, KINDS, LIMITATIONS, SCHEMA, PLANNER_SCHEMA, lower_proposal, SYSTEM, compile_plan, validate_plan, request_blockers
+from experiment_language import ROOT, KINDS, LIMITATIONS, SCHEMA, PLANNER_SCHEMA, lower_proposal, lower_and_admit, SYSTEM, compile_plan, validate_plan, request_blockers, admit_plan, plan_cost
+import builder
+import network_admission
+from network_admission import Inadmissible, LIMITS, describe_package
 from control_contract import default_ui, apply_control
 from trust import resolution_verdict, energy_verdict, substepping_verdict, at_rest_control_package, control_verdict
 from experiment_diagnostics import build_diagnostics
@@ -35,9 +38,20 @@ STATIC = Path(__file__).resolve().parent
 ACTIVE = {"planning", "validating", "running"}
 
 
-def describe_failure(plan, error):
-    """Explain current and archived admission failures without rewriting the run."""
+def describe_failure(plan, error, limit=None):
+    """Explain current and archived admission failures without rewriting the run.
+
+    ``limit`` is the named engine limit an `Inadmissible` refusal carried; a job
+    restored from disk has only the message, so both paths are accepted.
+    """
     message = str(error)
+    limit = limit or getattr(error, "limit", None)
+    if limit or "not cubic" in message or "face-to-thickness" in message:
+        return {"code": f"network_{limit}" if limit else "network_geometry",
+                "summary": "This geometry cannot be built from the engine's cells.",
+                "detail": message,
+                "scope": ("Setup refused before simulation. No substitute geometry was run, and "
+                          "geometric admission does not validate fracture.")}
     if "network cells below collision resolution" not in message and "Network collision cells are too small" not in message:
         return {"code": "experiment_error", "summary": message,
                 "detail": "The experiment did not produce a recording. Edit the request to review its setup.",
@@ -107,7 +121,9 @@ def request_plan(api_key, model, message, previous_plan=None):
         for content in output.get("content", []):
             if content.get("type") == "refusal": raise ValueError("GPT declined this request")
             if content.get("type") == "output_text": texts.append(content.get("text", ""))
-    plan = lower_proposal(strict_json("".join(texts)), repair_ui=True)
+    # The strict validators refuse a non-cubic mesh outright, so geometry is
+    # admitted (repaired, or refused by name) while lowering rather than after.
+    plan = lower_and_admit(strict_json("".join(texts)), repair_ui=True)
     return plan, {"planning_wall_s": time.perf_counter()-start,
                   "model": model, "usage": result.get("usage", {}), "response_id": result.get("id")}
 
@@ -171,6 +187,132 @@ class Playground:
             self.pool.submit(self.execute, job_id, message, previous, body.get("auto_open", True), prepared_plan)
             return {"job_id": job_id}
 
+    def run_package(self, body):
+        """Run an authored package directly, with no model in the path.
+
+        The chat route asks a model to author a declaration, and the model does
+        not know this engine's substep budget, so it can produce scenes the
+        solver correctly refuses. An experiment that has already been authored
+        against the engine's own limits needs a way in. The package is validated
+        by the engine exactly as a generated one is; nothing here bypasses an
+        audit, only the authoring step.
+        """
+        if not isinstance(body, dict) or set(body) - {"package", "builder", "name", "steps", "request_id"}:
+            raise ValueError("Expected package or builder, plus name, steps and request_id")
+        if ("package" in body) == ("builder" in body):
+            raise ValueError("Supply exactly one of package or builder")
+        steps = body.get("steps", 120)
+        if "builder" in body:
+            # The builder panel sends parameters, not a package, so the package
+            # is compiled here from the same authoring API the model route uses
+            # and checked against the same limits. An inadmissible setup raises
+            # before a job exists.
+            spec = builder.validate_builder(body["builder"])
+            package = builder.compile_builder(spec)
+            if steps is None: steps = builder.steps_for(spec)
+        else:
+            package = body.get("package")
+            if not isinstance(package, dict): raise ValueError("package must be an object")
+        request_id = body.get("request_id")
+        if not isinstance(request_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{8,80}", request_id):
+            raise ValueError("Invalid request identity")
+        if type(steps) is not int or not 1 <= steps <= 1440: raise ValueError("steps must be 1..1440")
+        name = body.get("name") or package.get("name") or "Authored package"
+        if not isinstance(name, str) or len(name) > 200: raise ValueError("name must be a short string")
+        # Refuse the whole class of scenes the engine would reject, before the
+        # job is created: a run that fails four minutes in is worse than one
+        # that never starts.
+        admission = describe_package(package, steps)
+        if not admission["admissible"]:
+            first = admission["problems"][0]
+            raise Inadmissible(first["message"], limit=first["limit"])
+        if admission["cost"]["recording_over_budget"]:
+            raise Inadmissible(
+                f"This run would record about {admission['cost']['estimated_recording_mb']:.0f} MB "
+                f"and the recorder refuses anything over 64 MB, after doing all the work. "
+                f"Reduce the cell count or shorten the run.", limit="recording_bytes")
+        fingerprint = hashlib.sha256(json.dumps(body, sort_keys=True, allow_nan=False).encode()).hexdigest()
+        with self.lock:
+            if request_id in self.requests:
+                old, job_id = self.requests[request_id]
+                if old != fingerprint: raise ValueError("Request identity was already used for different content")
+                return {"job_id": job_id}
+            if any(j["status"] in ACTIVE for j in self.jobs.values()):
+                raise ValueError("One experiment is already running; wait for its result")
+            if not self.engine_path.is_file(): raise ValueError("Build banjo_platform_cli before running packages")
+            job_id = uuid.uuid4().hex
+            self.requests[request_id] = (fingerprint, job_id)
+            self.jobs[job_id] = {"id": job_id, "status": "running",
+                "message": (f"Running authored package: {name}. "
+                            f"{admission['cost']['substeps_per_host_tick']} internal solves per "
+                            f"tick; estimated {admission['cost']['estimated_wall_text']}."),
+                "plan": None, "request_text": name,
+                "admission": {"notes": [], "limits": LIMITS, "cost": {
+                    "cases": [admission["cost"]],
+                    "estimated_wall_s": admission["cost"]["estimated_wall_s"],
+                    "estimated_wall_text": admission["cost"]["estimated_wall_text"],
+                    "worst_substeps_per_tick": admission["cost"]["substeps_per_host_tick"],
+                    "basis": admission["cost"]["basis"]}},
+                "cases": [], "warnings": list(LIMITATIONS), "timing": {}}
+        self.pool.submit(self.execute_package, job_id, name, package, steps, admission["cost"])
+        return {"job_id": job_id}
+
+    def execute_package(self, job_id, name, package, steps, estimate=None):
+        directory = self.runs_path / job_id
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / "package-00.json"
+        path.write_text(json.dumps(package, indent=1, allow_nan=False), encoding="utf-8")
+        case = {"index": 0, "name": name, "package": package, "status": "pending",
+                "requested_steps": steps, "native_scene": True, "cost": estimate}
+        started = time.perf_counter()
+        try:
+            self.engine.validate(path)
+            recorder = self.engine_path.with_name("banjo_playground_record" + self.engine_path.suffix)
+            if not recorder.is_file():
+                raise ValueError("Build banjo_playground_record to record an authored package")
+            playback = directory / "playback-00.json"
+            self.log_event(job_id, "authored_package_started", steps=steps, name=name)
+            result = subprocess.run(
+                [str(recorder), "--package", str(path), "--steps", str(steps), "--output", str(playback)],
+                capture_output=True, text=True, encoding="utf-8", timeout=7200, check=False)
+            if result.returncode or not playback.is_file():
+                raise ValueError(f"Recording failed: {result.stdout.strip()[:200]}")
+            if playback.stat().st_size > 64*1024*1024:
+                raise ValueError("Native recording exceeds browser byte budget")
+            recording = strict_json(playback.read_text(encoding="utf-8"))
+            if recording.get("schema") != "banjo.playback.v1" or recording.get("status") not in ("complete", "solver_limit"):
+                raise ValueError("Native recording does not match browser contract")
+            case["report"], case["status"] = recording.get("report", {}), recording.get("status", "complete")
+            case["playback_available"] = True
+            if recording.get("error"): case["error"] = recording["error"]
+            case["trust"] = {"resolution": resolution_verdict(package, case["report"]),
+                             "energy": energy_verdict(case["report"]),
+                             "substepping": substepping_verdict(case["report"])}
+            with self.lock: self.playbacks[(job_id, 0)] = playback
+            with self.lock: self.paths[(job_id, 0)] = (path, "network")
+            case["wall_s"] = round(time.perf_counter() - started, 1)
+            # The estimate is only worth showing if it is checked against the
+            # thing it predicted, so record both next to each other.
+            if estimate:
+                case["cost"] = {**estimate, "measured_wall_s": case["wall_s"],
+                                "measured_substeps_per_tick": network_admission.measured_substeps(case["report"]),
+                                "wall_error": (case["wall_s"] - estimate["estimated_wall_s"]) / max(1e-9, estimate["estimated_wall_s"])}
+                self.log_event(job_id, "cost_measured", estimated_wall_s=estimate["estimated_wall_s"],
+                               measured_wall_s=case["wall_s"],
+                               estimated_substeps=estimate["substeps_per_host_tick"],
+                               measured_substeps=case["cost"]["measured_substeps_per_tick"])
+            self.update(job_id, status="complete", cases=[case],
+                        message="Authored package finished. Open the 3D playback tab.")
+            self.log_event(job_id, "authored_package_finished", status=case["status"],
+                           broken_links=case["report"].get("broken_links"),
+                           components=case["report"].get("connected_components"))
+        except (ValueError, EngineError, subprocess.TimeoutExpired) as exc:
+            case["status"], case["error"] = "error", str(exc)
+            case["wall_s"] = round(time.perf_counter() - started, 1)
+            self.update(job_id, status="error", error=str(exc)[:300], cases=[case], message=str(exc)[:300])
+        (directory / "job.json").write_text(json.dumps(self.get(job_id), indent=2, allow_nan=False),
+                                            encoding="utf-8")
+
     def update(self, job_id, **fields):
         with self.lock: self.jobs[job_id].update(fields)
         if "status" in fields: self.log_event(job_id,"state",status=fields["status"],message=fields.get("message",""))
@@ -188,7 +330,8 @@ class Playground:
                     raise ValueError("Invalid archived experiment")
                 if len(self.jobs)>=100: raise ValueError("Session history budget reached")
                 for index,case in enumerate(saved["cases"]):
-                    experiment = saved.get("plan",{}).get("experiment")
+                    # A package job authored outside the chat route has no plan.
+                    experiment = (saved.get("plan") or {}).get("experiment")
                     filename = ("reference-report.json" if experiment == "continuum_pressure_reference" else
                                 "dynamic-playback.json" if experiment == "dynamic_material_impact" else f"playback-{index:02d}.json")
                     if experiment == "thermal_material_experiment": filename = "thermal-response.json"
@@ -197,11 +340,17 @@ class Playground:
                     case["playback_available"] = bool(available)
                     case["native_scene"] = False
                     if available: self.playbacks[(job_id,index)] = recording
+                    package_file = directory / f"package-{index:02d}.json"
+                    if saved.get("plan") is None and package_file.is_file() and not package_file.is_symlink():
+                        self.paths[(job_id, index)] = (package_file, "network")
+                        case["native_scene"] = True
                 saved["restored_from_disk"] = True
                 self.jobs[job_id] = saved
             result = deepcopy(self.jobs[job_id])
             if result.get("status") == "error":
-                result["failure_detail"] = describe_failure(result.get("plan"), result.get("error", result.get("message", "Experiment failed")))
+                result["failure_detail"] = describe_failure(
+                    result.get("plan"), result.get("error", result.get("message", "Experiment failed")),
+                    result.get("admission_limit"))
             return result
 
     def execute(self, job_id, message, previous, auto_open, prepared_plan=None):
@@ -217,15 +366,32 @@ class Playground:
                 plan, timing = deepcopy(prepared_plan), {"planning_wall_s":0,"model":None,"source":"validated playground control; no model call"}
             validate_plan(plan)
             plan.setdefault("ui", default_ui(plan["experiment"]))
+            # The model does not know the engine's cubic-cell rule, its cell
+            # budgets or its stability clock, so an authored plan is checked
+            # against them before anything is compiled. A repairable plan is
+            # snapped to the nearest admissible mesh and the change is reported;
+            # an unrepairable one is refused by name. Nothing is changed quietly
+            # and no substitute geometry is ever run.
+            plan, admission_notes = admit_plan(plan)
             self.update(job_id, plan=plan, timing=timing, status="validating", message=plan["explanation"],
-                warnings=list(dict.fromkeys(LIMITATIONS + plan["limitations"])))
+                warnings=list(dict.fromkeys(LIMITATIONS + plan["limitations"] +
+                                            [note["message"] for note in admission_notes])),
+                admission={"notes": admission_notes, "limits": LIMITS})
             (directory / "plan.json").write_text(json.dumps(plan, indent=2, allow_nan=False), encoding="utf-8")
+            if admission_notes:
+                self.log_event(job_id, "admission_repaired", notes=admission_notes)
             blockers = request_blockers(message,plan)
             if blockers:
                 self.update(job_id,status="blocked",message="Request not executed: "+" ".join(blockers))
                 (directory/"job.json").write_text(json.dumps(self.get(job_id),indent=2,allow_nan=False),encoding="utf-8")
                 return
             packages = compile_plan(plan)
+            if packages:
+                cost = plan_cost(plan, packages)
+                self.update(job_id, admission={"notes": admission_notes, "limits": LIMITS,
+                                               "cost": cost})
+                self.log_event(job_id, "cost_estimated", estimated_wall_s=cost["estimated_wall_s"],
+                               worst_substeps_per_tick=cost["worst_substeps_per_tick"])
             if plan["experiment"] in ("unsupported", "glass_reference"):
                 if plan["experiment"] == "glass_reference":
                     reference = json.loads((ROOT/"assets/benchmarks/glass-drop-reference.json").read_text(encoding="utf-8"))
@@ -251,8 +417,12 @@ class Playground:
                     path = write_package(package, directory/"scenes"/f"case-{index:02d}.json")
                     self.engine.validate(path)
                     with self.lock: self.paths[(job_id,index)] = (path,"network")
-                    cases.append({"index":index,"name":package["name"],"package":package,"report":None,"status":"validated","native_scene":True})
-                self.update(job_id, cases=deepcopy(cases), status="running", message="Validated Banjo packages are running in the native engine.")
+                    cases.append({"index":index,"name":package["name"],"package":package,"report":None,"status":"validated","native_scene":True,
+                                  "cost": cost["cases"][index]})
+                self.update(job_id, cases=deepcopy(cases), status="running",
+                    message=(f"Validated Banjo packages are running in the native engine. "
+                             f"{len(cases)} case(s) at up to {cost['worst_substeps_per_tick']} internal "
+                             f"solves per tick; estimated {cost['estimated_wall_text']} of computation."))
                 for index, case in enumerate(cases):
                     path, _ = self.paths[(job_id,index)]
                     steps = max(1, round(plan["duration_s"]/case["package"]["fixed_dt_s"]))
@@ -313,7 +483,10 @@ class Playground:
             # Never expose arbitrary upstream HTTP bodies or secrets.
             public = str(exc) if isinstance(exc, (ValueError, EngineError)) else "The local experiment failed; inspect the bounded setup and build availability."
             if self.api_key: public = public.replace(self.api_key, "[redacted]")
-            self.update(job_id, status="error", error=public, message=public)
+            # Keep the named limit so the browser reports which rule refused it
+            # rather than guessing from the message text.
+            self.update(job_id, status="error", error=public, message=public,
+                        admission_limit=getattr(exc, "limit", None))
             self.log_event(job_id,"error",message=public)
             if directory.is_dir():
                 (directory/"job.json").write_text(json.dumps(self.get(job_id),indent=2,allow_nan=False),encoding="utf-8")
@@ -490,18 +663,24 @@ class Playground:
         job=self.get(job_id)
         if type(index) is not int or not 0<=index<len(job["cases"]): raise ValueError("Choose an experiment case")
         case=job["cases"][index]
+        # A package job has no authored plan; describe it from the package.
+        plan=job.get("plan") or {"name":case.get("name","Authored package"),
+            "experiment":"authored_package","duration_s":(case.get("requested_steps") or 0)*
+                float(case.get("package",{}).get("fixed_dt_s") or 0),
+            "explanation":"Authored package run directly, with no model in the path.",
+            "requirements":[]}
         diagnostics=case.get("diagnostics")
         if diagnostics is None or case.get("playback_available"):
             if case.get("playback_available"):
                 recording=strict_json(self.playback(job_id,index))
-                diagnostics=build_diagnostics(job["plan"],case.get("package",{}),recording)
+                diagnostics=build_diagnostics(plan,case.get("package",{}),recording)
             else:
-                diagnostics=build_diagnostics(job["plan"],case.get("package",{}),{"status":case["status"],"report":case.get("report",{})})
+                diagnostics=build_diagnostics(plan,case.get("package",{}),{"status":case["status"],"report":case.get("report",{})})
         path=self.runs_path/job_id/"events.jsonl"
         events=[]
         if path.is_file() and path.stat().st_size<=256*1024:
             events=[strict_json(line) for line in path.read_text(encoding="utf-8").splitlines() if line][-64:]
-        bundle={"job_id":job_id,"case_index":index,"request":job.get("request_text","Original request was not retained by this older job"),"plan":{"name":job["plan"]["name"],"experiment":job["plan"]["experiment"],"duration_s":job["plan"]["duration_s"],"explanation":job["plan"]["explanation"]},"case_wall_s":case.get("wall_s"),"response_scope":("Rigid drop: fracture and deformation are disabled regardless of material damage parameters" if (job["plan"].get("drop") or {}).get("representation")=="rigid" else "Consult the authored representation and reported constitutive limits"),"requirements":job["plan"].get("requirements",[]),"diagnostics_source_sha256":hashlib.sha256((STATIC/"experiment_diagnostics.py").read_bytes()).hexdigest(),"diagnostics":diagnostics,"events":events,"llm_review":case.get("llm_review")}
+        bundle={"job_id":job_id,"case_index":index,"request":job.get("request_text","Original request was not retained by this older job"),"plan":{"name":plan["name"],"experiment":plan["experiment"],"duration_s":plan["duration_s"],"explanation":plan["explanation"]},"case_wall_s":case.get("wall_s"),"cost":case.get("cost"),"admission":job.get("admission"),"response_scope":("Rigid drop: fracture and deformation are disabled regardless of material damage parameters" if (plan.get("drop") or {}).get("representation")=="rigid" else "Consult the authored representation and reported constitutive limits"),"requirements":plan.get("requirements",[]),"diagnostics_source_sha256":hashlib.sha256((STATIC/"experiment_diagnostics.py").read_bytes()).hexdigest(),"diagnostics":diagnostics,"events":events,"llm_review":case.get("llm_review")}
         return strict_json(json.dumps(bundle,allow_nan=False).replace(self.api_key,"[redacted]") if self.api_key else json.dumps(bundle,allow_nan=False))
 
     def analyze(self, job_id, body):
@@ -585,9 +764,13 @@ class Playground:
                 raise ValueError("This result has an unknown native view")
             if not executable.is_file(): raise ValueError("Native studio is not built")
             if kind == "network":
-                duration = self.jobs[job_id]["plan"]["duration_s"]
-                package = self.jobs[job_id]["cases"][index]["package"]
-                actual_duration = max(1,round(duration/package["fixed_dt_s"]))*package["fixed_dt_s"]
+                case = self.jobs[job_id]["cases"][index]
+                package = case["package"]
+                plan = self.jobs[job_id].get("plan")
+                # A package job carries its own step count instead of a plan.
+                steps = (max(1, round(plan["duration_s"]/package["fixed_dt_s"])) if plan
+                         else int(case.get("requested_steps") or 120))
+                actual_duration = steps*package["fixed_dt_s"]
                 native_reports = path.parent.parent/"native"
                 native_reports.mkdir(exist_ok=True)
                 args += ["--duration-s",str(actual_duration),"--live-report",str(native_reports/(uuid.uuid4().hex+".json"))]
@@ -632,7 +815,14 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/status": return self.send(app.status())
             if path=="/api/goal": return self.send({"markdown":(ROOT/"docs/project-goal-2026-09-06.md").read_text(encoding="utf-8") + "\n\n" + (ROOT/"docs/rules-engine-execution-plan.md").read_text(encoding="utf-8")})
             if path=="/api/goals": return self.send(strict_json((ROOT/"docs/execution-goals.json").read_text(encoding="utf-8")))
-            if path=="/api/schema": return self.send({"language":"banjo-playground-1","schema":SCHEMA,"material_validation":"experimental; no calibrated fracture claim","limits":{"network_cells":850,"objects":12,"sweep_cases":4,"duration_s":3,"dynamic_material_duration_s":.1,"dynamic_material_cases":3,"dynamic_material_step_calls_per_case":200000,"recording_bytes":64*1024*1024}})
+            if path=="/api/schema": return self.send({"language":"banjo-playground-1","schema":SCHEMA,"material_validation":"experimental; no calibrated fracture claim","limits":{"network_cells":850,"objects":12,"sweep_cases":4,"duration_s":3,"dynamic_material_duration_s":.1,"dynamic_material_cases":3,"dynamic_material_step_calls_per_case":200000,"recording_bytes":64*1024*1024,**LIMITS}})
+            if path=="/api/builder": return self.send({
+                "schema":builder.BUILDER_SCHEMA,"default":builder.DEFAULT,
+                "materials":builder.MATERIALS,"projectiles":sorted(builder.PROJECTILES),
+                "supports":list(builder.SUPPORTS),"tick_rates_hz":list(builder.TICK_RATES_HZ),
+                "limits":LIMITS,
+                "notes":["Cost is set by the smallest cell: halving a spacing roughly doubles the run.",
+                         "Admission is not calibration. The engine reports physical_response_validated: false."]})
             match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/diagnostics/(\d+)",path)
             if match: return self.send(app.evidence(match[1],int(match[2])))
             match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/playback/(\d+)",path)
@@ -669,6 +859,11 @@ class Handler(BaseHTTPRequestHandler):
             body=strict_json(raw_body)
             path=urlsplit(self.path).path
             if path=="/api/chat": return self.send(self.server.app.submit(body),202)
+            if path=="/api/packages/run": return self.send(self.server.app.run_package(body),202)
+            # Pure computation: admission verdict, repair and cost for a builder
+            # setup. Nothing is executed, so the panel can show what a run would
+            # cost before anyone commits to waiting for it.
+            if path=="/api/builder/preview": return self.send(builder.describe(body))
             match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/analyze",path)
             if match: return self.send(self.server.app.analyze(match[1],body))
             match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/rerun",path)
