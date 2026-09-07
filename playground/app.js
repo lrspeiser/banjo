@@ -628,6 +628,24 @@
           cost.substeps_per_host_tick === cost.measured_substeps_per_tick ? "ok" : "bad");
       }
     }
+    // Imported recordings (the fracture lanes run outside the playground) carry
+    // their timing in the case report rather than in a cost estimate. Show the
+    // same rule against the same limit, and the fracture window on its own,
+    // because a short window inside seconds of settling can pass the rule
+    // while being hundreds of times slower than realtime itself.
+    const realtime = item.report && item.report.realtime;
+    if (!(cost && Number.isFinite(cost.realtime_ratio)) && realtime && Number.isFinite(realtime.ratio)) {
+      const limit = Number.isFinite(realtime.limit) ? realtime.limit : 1.1;
+      const simulated = Number.isFinite(realtime.simulated_s) ? `${realtime.simulated_s.toFixed(3)} s simulated` : "simulated time";
+      const wall = Number.isFinite(realtime.compute_wall_s) ? `${realtime.compute_wall_s.toFixed(3)} s wall, ` : "";
+      row("Realtime", `${wall}${realtime.ratio.toFixed(2)}x of ${simulated} (limit ${limit}x)`,
+        realtime.ratio <= limit ? "ok" : "bad");
+      if (Number.isFinite(realtime.fracture_window_ratio)) {
+        const window = Number.isFinite(realtime.window_simulated_s) ? ` of the ${(realtime.window_simulated_s * 1000).toFixed(1)} ms fracture window` : " over the fracture window";
+        row("Fracture window", `${realtime.fracture_window_ratio.toFixed(0)}x realtime${window}`,
+          realtime.fracture_window_ratio <= limit ? "ok" : "warn");
+      }
+    }
     const control = item.at_rest_control;
     if (control) {
       row("At-rest control", control.clean ? "clean" : "CONTAMINATED", control.clean ? "ok" : "bad");
