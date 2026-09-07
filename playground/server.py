@@ -24,7 +24,7 @@ import uuid
 
 from experiment_language import ROOT, KINDS, LIMITATIONS, SCHEMA, PLANNER_SCHEMA, lower_proposal, SYSTEM, compile_plan, validate_plan, request_blockers
 from control_contract import default_ui, apply_control
-from trust import resolution_verdict, energy_verdict, at_rest_control_package, control_verdict
+from trust import resolution_verdict, energy_verdict, substepping_verdict, at_rest_control_package, control_verdict
 from experiment_diagnostics import build_diagnostics
 from experiment_review import review_evidence
 from dynamic_material import native_request, execute_impact
@@ -262,7 +262,10 @@ class Playground:
                         if recorder.is_file():
                             self.log_event(job_id,"native_execution_started",case_index=index,recorder_sha256=hashlib.sha256(recorder.read_bytes()).hexdigest(),requested_steps=steps)
                             playback = directory/f"playback-{index:02d}.json"
-                            result = subprocess.run([str(recorder),"--package",str(path),"--steps",str(steps),"--output",str(playback)],capture_output=True,text=True,encoding="utf-8",timeout=75,check=False)
+                            # The network runs on its own stability clock now, several hundred internal
+                            # solves per host tick, so a recording that used to take seconds
+                            # takes minutes. See docs/network-at-rest-stability-checkpoint.md.
+                            result = subprocess.run([str(recorder),"--package",str(path),"--steps",str(steps),"--output",str(playback)],capture_output=True,text=True,encoding="utf-8",timeout=1800,check=False)
                             if result.returncode or not playback.is_file(): raise ValueError("Native browser recording failed; no substitute motion was generated")
                             if playback.stat().st_size > 64*1024*1024: raise ValueError("Native recording exceeds browser byte budget")
                             recording = strict_json(playback.read_text(encoding="utf-8"))
@@ -283,7 +286,8 @@ class Playground:
                         if case["report"].get("temporal_resolution",{}).get("resolved") is False:
                             case["assessment"] = "Numerically unresolved — recorded motion is diagnostic, not a reliable material outcome."
                         case["trust"] = {"resolution": resolution_verdict(case.get("package",{}),case["report"]),
-                                         "energy": energy_verdict(case["report"])}
+                                         "energy": energy_verdict(case["report"]),
+                                         "substepping": substepping_verdict(case["report"])}
                     except EngineError as exc:
                         case["report"], case["error"], case["status"] = exc.report, str(exc), "solver_limit"
                     case["requested_steps"] = steps
