@@ -62,24 +62,11 @@ CompiledBrittleMaterial compileElasticLatticeReference(
     return compiled;
 }
 
-CompiledBrittleMaterial compileBrittleMaterial(
-    const MaterialDefinition &material,
-    double voxel_size_m,
-    unsigned neighbor_horizon_cells) {
-    if (material.model != MaterialModel::BrittleBond) {
-        throw std::invalid_argument("compileBrittleMaterial requires a brittle-bond material");
-    }
-    validateElasticProperties(material);
-    if (material.tensile_strength_pa <= 0.0 || material.fracture_energy_j_m2 <= 0.0 ||
-        voxel_size_m <= 0.0 || neighbor_horizon_cells == 0U) {
-        throw std::invalid_argument("brittle material and lattice parameters must be positive");
-    }
-
-    const double representative_area_m2 = voxel_size_m * voxel_size_m;
-    const double representative_length_m =
-        voxel_size_m * static_cast<double>(neighbor_horizon_cells);
-    const double spring_stiffness_n_m =
-        material.young_modulus_pa * representative_area_m2 / representative_length_m;
+CompiledBrittleMaterial withStrengthDerivedFailure(
+    CompiledBrittleMaterial compiled, const MaterialDefinition &material) {
+    if (!std::isfinite(material.young_modulus_pa) || material.young_modulus_pa <= 0.0 ||
+        !std::isfinite(material.poisson_ratio) || material.poisson_ratio <= -1.0)
+        throw std::invalid_argument("strength-derived failure needs a valid elastic material");
     const double physical_tensile_strain =
         material.tensile_strength_pa / material.young_modulus_pa;
     const double physical_compressive_strain =
@@ -92,11 +79,6 @@ CompiledBrittleMaterial compileBrittleMaterial(
                                              ? material.shear_strength_pa /
                                                    shear_modulus_pa
                                              : 0.0;
-
-    CompiledBrittleMaterial compiled;
-    compiled.density_kg_m3 = material.density_kg_m3;
-    compiled.poisson_ratio = material.poisson_ratio;
-    compiled.bond_compliance = 1.0 / spring_stiffness_n_m;
     compiled.damage_start_stretch = compiledFailureStrain(
         physical_tensile_strain,
         material.calibration.damage_strain_multiplier);
@@ -121,6 +103,33 @@ CompiledBrittleMaterial compileBrittleMaterial(
         compiledFailureStrain(
             physical_shear_strain,
             material.calibration.break_strain_multiplier));
+    return compiled;
+}
+
+CompiledBrittleMaterial compileBrittleMaterial(
+    const MaterialDefinition &material,
+    double voxel_size_m,
+    unsigned neighbor_horizon_cells) {
+    if (material.model != MaterialModel::BrittleBond) {
+        throw std::invalid_argument("compileBrittleMaterial requires a brittle-bond material");
+    }
+    validateElasticProperties(material);
+    if (material.tensile_strength_pa <= 0.0 || material.fracture_energy_j_m2 <= 0.0 ||
+        voxel_size_m <= 0.0 || neighbor_horizon_cells == 0U) {
+        throw std::invalid_argument("brittle material and lattice parameters must be positive");
+    }
+
+    const double representative_area_m2 = voxel_size_m * voxel_size_m;
+    const double representative_length_m =
+        voxel_size_m * static_cast<double>(neighbor_horizon_cells);
+    const double spring_stiffness_n_m =
+        material.young_modulus_pa * representative_area_m2 / representative_length_m;
+
+    CompiledBrittleMaterial compiled;
+    compiled.density_kg_m3 = material.density_kg_m3;
+    compiled.poisson_ratio = material.poisson_ratio;
+    compiled.bond_compliance = 1.0 / spring_stiffness_n_m;
+    compiled = withStrengthDerivedFailure(compiled, material);
     compiled.bond_damping = std::clamp(material.damping_ratio, 0.0, 1.0);
     compiled.fracture_energy_j_m2 = material.fracture_energy_j_m2;
     compiled.activation_energy_scale =

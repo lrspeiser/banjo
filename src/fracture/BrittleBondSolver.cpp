@@ -1,8 +1,8 @@
 #include "fracture/BrittleBondSolver.hpp"
+#include "fracture/BondFailure.hpp"
 #include "physics/MechanicalAccounting.hpp"
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -13,34 +13,8 @@
 namespace banjo {
 namespace {
 
-// The full nonlocal Green-Lagrange strain at a node. A scalar principal value
-// is not enough: a bond must be judged by the strain resolved along its own
-// axis, otherwise a bond perpendicular to the loading direction fails on strain
-// it does not carry, and every bond at a highly strained node fails at once.
-struct NodeStrainState {
-    Mat3 green_lagrange{};
-    bool valid{};
-};
-
-// Strain resolved onto one bond direction: the normal component along the bond
-// and the transverse (shear) component on the plane whose normal is the bond.
-struct ResolvedBondStrain {
-    double normal{};
-    double shear{};
-};
-
-[[nodiscard]] ResolvedBondStrain resolveAlongBond(const Mat3 &strain, const Vec3 &direction) {
-    const Vec3 traction = strain * direction;
-    const double normal = dot(direction, traction);
-    return {normal, length(traction - normal * direction)};
-}
-
-[[nodiscard]] std::size_t countBrokenBonds(const ActiveMatter &matter) {
-    return static_cast<std::size_t>(std::count_if(
-        matter.bonds.begin(), matter.bonds.end(), [](const ActiveBondState &bond) {
-            return !bond.alive;
-        }));
-}
+// The nonlocal strain measure, the damage ramp and the removal rule now live in
+// fracture/BondFailure.hpp so the implicit solver applies the same criterion.
 
 void applySupportContact(
     ActiveNodeState &node, const BrittleSolverSettings &settings) {
@@ -181,193 +155,6 @@ void solveBond(
     b.position_world_m += inverse_mass_b * delta_lambda * direction;
 }
 
-void addScaledOuterProduct(
-    Mat3 &matrix,
-    const Vec3 &left,
-    const Vec3 &right,
-    double scale) {
-    const std::array<double, 3> a{left.x, left.y, left.z};
-    const std::array<double, 3> b{right.x, right.y, right.z};
-    for (std::size_t row = 0; row < 3U; ++row) {
-        for (std::size_t column = 0; column < 3U; ++column) {
-            matrix.m[row][column] += scale * a[row] * b[column];
-        }
-    }
-}
-
-[[nodiscard]] Mat3 transpose(const Mat3 &matrix) {
-    Mat3 result{};
-    for (std::size_t row = 0; row < 3U; ++row) {
-        for (std::size_t column = 0; column < 3U; ++column) {
-            result.m[row][column] = matrix.m[column][row];
-        }
-    }
-    return result;
-}
-
-[[nodiscard]] Mat3 multiply(const Mat3 &left, const Mat3 &right) {
-    Mat3 result{};
-    for (std::size_t row = 0; row < 3U; ++row) {
-        for (std::size_t column = 0; column < 3U; ++column) {
-            for (std::size_t index = 0; index < 3U; ++index) {
-                result.m[row][column] +=
-                    left.m[row][index] * right.m[index][column];
-            }
-        }
-    }
-    return result;
-}
-
-[[nodiscard]] std::vector<NodeStrainState> calculateNodeStrains(
-    const ActiveMatter &matter) {
-    std::vector<NodeStrainState> strains(matter.nodes.size());
-    if (matter.asset == nullptr ||
-        matter.reference_positions_world_m.size() != matter.nodes.size()) {
-        return strains;
-    }
-
-    for (std::size_t node_index = 0;
-         node_index < matter.nodes.size();
-         ++node_index) {
-        Mat3 current_rest_covariance{};
-        Mat3 rest_covariance{};
-        std::size_t live_neighbors = 0U;
-        const std::uint32_t begin =
-            matter.asset->adjacency_offsets[node_index];
-        const std::uint32_t end =
-            matter.asset->adjacency_offsets[node_index + 1U];
-        for (std::uint32_t adjacency = begin; adjacency < end; ++adjacency) {
-            const std::uint32_t bond_index =
-                matter.asset->adjacent_bond_indices[adjacency];
-            if (!matter.bonds[bond_index].alive) {
-                continue;
-            }
-            const BondRest &bond = matter.asset->bonds[bond_index];
-            const std::uint32_t other =
-                bond.node_a == node_index ? bond.node_b : bond.node_a;
-            const Vec3 rest_edge =
-                matter.reference_positions_world_m[other] -
-                matter.reference_positions_world_m[node_index];
-            const Vec3 current_edge =
-                matter.nodes[other].position_world_m -
-                matter.nodes[node_index].position_world_m;
-            const double rest_length_squared = lengthSquared(rest_edge);
-            if (rest_length_squared <= 1.0e-18) {
-                continue;
-            }
-            const double weight = 1.0 / rest_length_squared;
-            addScaledOuterProduct(
-                current_rest_covariance,
-                current_edge,
-                rest_edge,
-                weight);
-            addScaledOuterProduct(
-                rest_covariance,
-                rest_edge,
-                rest_edge,
-                weight);
-            ++live_neighbors;
-        }
-        if (live_neighbors < 3U) {
-            continue;
-        }
-
-        const auto inverse_rest = rest_covariance.inverse(1.0e-16);
-        if (!inverse_rest) {
-            continue;
-        }
-        const Mat3 deformation_gradient =
-            multiply(current_rest_covariance, *inverse_rest);
-        const Mat3 right_cauchy_green = multiply(
-            transpose(deformation_gradient),
-            deformation_gradient);
-        Mat3 green_lagrange_strain{};
-        for (std::size_t row = 0; row < 3U; ++row) {
-            for (std::size_t column = 0; column < 3U; ++column) {
-                const double identity = row == column ? 1.0 : 0.0;
-                green_lagrange_strain.m[row][column] =
-                    0.5 * (right_cauchy_green.m[row][column] - identity);
-            }
-        }
-
-        strains[node_index].green_lagrange = green_lagrange_strain;
-        strains[node_index].valid = true;
-    }
-    return strains;
-}
-
-// Only accepted states carry physical strain history. Predictor positions and
-// Gauss-Seidel iterates are numerical guesses, not intermediate physical time.
-void accumulateResolvedStrains(ActiveMatter &matter) {
-    const auto strains = calculateNodeStrains(matter);
-    const bool has_reference =
-        matter.reference_positions_world_m.size() == matter.nodes.size();
-    for (std::size_t i = 0; i < matter.bonds.size(); ++i) {
-        auto &state = matter.bonds[i];
-        if (!state.alive) continue;
-        const auto &rest = matter.asset->bonds[i];
-        const double stretch = length(matter.nodes[rest.node_b].position_world_m -
-            matter.nodes[rest.node_a].position_world_m) / rest.rest_length_m - 1.0;
-        double tensile = stretch;
-        double compressive = -stretch;
-        double shear = 0.0;
-        if (has_reference) {
-            const Vec3 rest_edge = matter.reference_positions_world_m[rest.node_b] -
-                                   matter.reference_positions_world_m[rest.node_a];
-            const double rest_length = length(rest_edge);
-            if (rest_length > 1.0e-9) {
-                const Vec3 direction = rest_edge * (1.0 / rest_length);
-                for (const std::uint32_t node : {rest.node_a, rest.node_b}) {
-                    if (!strains[node].valid) continue;
-                    const auto resolved = resolveAlongBond(strains[node].green_lagrange, direction);
-                    tensile = std::max(tensile, resolved.normal);
-                    compressive = std::max(compressive, -resolved.normal);
-                    shear = std::max(shear, resolved.shear);
-                }
-            }
-        }
-        state.peak_tensile_stretch = std::max(state.peak_tensile_stretch, tensile);
-        state.peak_compressive_strain = std::max(state.peak_compressive_strain, compressive);
-        state.peak_shear_strain = std::max(state.peak_shear_strain, shear);
-    }
-}
-
-[[nodiscard]] double damageProgress(
-    double value,
-    double start,
-    double end) {
-    if (!std::isfinite(start) || value <= start) {
-        return 0.0;
-    }
-    if (!std::isfinite(end) || end <= start) {
-        return value > start ? 1.0 : 0.0;
-    }
-    return std::clamp((value - start) / (end - start), 0.0, 1.0);
-}
-
-void accumulateFailureCounts(
-    const ActiveMatter &matter,
-    MaterialStepStats &stats) {
-    for (const ActiveBondState &bond : matter.bonds) {
-        if (bond.alive) {
-            continue;
-        }
-        switch (bond.failure_mode) {
-        case BondFailureMode::Tension:
-            ++stats.tensile_failures;
-            break;
-        case BondFailureMode::Compression:
-            ++stats.compressive_failures;
-            break;
-        case BondFailureMode::Shear:
-            ++stats.shear_failures;
-            break;
-        case BondFailureMode::None:
-            break;
-        }
-    }
-}
-
 } // namespace
 
 BrittleBondSolver::BrittleBondSolver(BrittleSolverSettings settings)
@@ -468,13 +255,9 @@ MaterialStepStats BrittleBondSolver::step(
     std::vector<std::uint8_t> support_engaged;
 
     for (unsigned substep = 0; substep < settings_.substeps; ++substep) {
-        for (ActiveBondState &bond : matter.bonds) {
-            bond.peak_tensile_stretch = 0.0;
-            bond.peak_compressive_strain = 0.0;
-            bond.peak_shear_strain = 0.0;
-            bond.accumulated_lambda = 0.0;
-        }
-        accumulateResolvedStrains(matter);
+        resetBondStrainPeaks(matter);
+        for (ActiveBondState &bond : matter.bonds) bond.accumulated_lambda = 0.0;
+        accumulateBondStrainPeaks(matter);
 
         for (ActiveNodeState &node : matter.nodes) {
             node.previous_position_world_m = node.position_world_m;
@@ -550,63 +333,16 @@ MaterialStepStats BrittleBondSolver::step(
         }
         record_stage(MaterialStage::Support);
 
-        accumulateResolvedStrains(matter);
-        for (std::size_t bond_index = 0;
-             bond_index < matter.bonds.size();
-             ++bond_index) {
-            ActiveBondState &state = matter.bonds[bond_index];
-            if (!state.alive) {
-                continue;
-            }
-            const BondRest &rest = matter.asset->bonds[bond_index];
-            stats.maximum_tensile_stretch = std::max(
-                stats.maximum_tensile_stretch,
-                state.peak_tensile_stretch);
-            stats.maximum_compressive_strain = std::max(
-                stats.maximum_compressive_strain,
-                state.peak_compressive_strain);
-            stats.maximum_shear_strain = std::max(
-                stats.maximum_shear_strain,
-                state.peak_shear_strain);
-
-            const double tensile_damage = damageProgress(
-                state.peak_tensile_stretch,
-                rest.damage_start_stretch,
-                rest.damage_end_stretch);
-            const double compressive_damage = damageProgress(
-                state.peak_compressive_strain,
-                rest.compression_damage_start_strain,
-                rest.compression_damage_end_strain);
-            const double shear_damage = damageProgress(
-                state.peak_shear_strain,
-                rest.shear_damage_start_strain,
-                rest.shear_damage_end_strain);
-
-            double driving_damage = tensile_damage;
-            BondFailureMode driving_mode = BondFailureMode::Tension;
-            if (compressive_damage > driving_damage) {
-                driving_damage = compressive_damage;
-                driving_mode = BondFailureMode::Compression;
-            }
-            if (shear_damage > driving_damage) {
-                driving_damage = shear_damage;
-                driving_mode = BondFailureMode::Shear;
-            }
-            if (driving_damage > state.damage) {
-                state.damage = driving_damage;
-                state.failure_mode = driving_mode;
-            }
-            if (state.damage >= 1.0) {
-                // This is removed stored energy, not a calibrated crack-work law.
-                // Name it explicitly so damage cannot silently erase the ledger.
-                const double extension = length(matter.nodes[rest.node_b].position_world_m -
-                    matter.nodes[rest.node_a].position_world_m) - rest.rest_length_m;
-                if (rest.compliance > 0.0)
-                    stats.unassigned_bond_removal_energy_j += .5 * extension * extension / rest.compliance;
-                state.alive = false;
-                matter.connectivity_dirty = true;
-            }
-        }
+        accumulateBondStrainPeaks(matter);
+        // One criterion, shared with the implicit lane: see fracture/BondFailure.hpp.
+        const auto failure = applyBondFailure(matter);
+        stats.maximum_tensile_stretch = std::max(
+            stats.maximum_tensile_stretch, failure.maximum_tensile_stretch);
+        stats.maximum_compressive_strain = std::max(
+            stats.maximum_compressive_strain, failure.maximum_compressive_strain);
+        stats.maximum_shear_strain = std::max(
+            stats.maximum_shear_strain, failure.maximum_shear_strain);
+        stats.unassigned_bond_removal_energy_j += failure.removed_elastic_energy_j;
         record_stage(MaterialStage::Damage);
     }
 
@@ -614,7 +350,10 @@ MaterialStepStats BrittleBondSolver::step(
     stats.broken_bonds_this_step = broken_after - broken_before;
     stats.total_broken_bonds = broken_after;
     stats.live_bonds = matter.bonds.size() - broken_after;
-    accumulateFailureCounts(matter, stats);
+    const auto mode_counts = countBondFailureModes(matter);
+    stats.tensile_failures += mode_counts.tensile;
+    stats.compressive_failures += mode_counts.compressive;
+    stats.shear_failures += mode_counts.shear;
 
     for (const ActiveNodeState &node : matter.nodes) {
         const double speed = length(node.velocity_m_s);
