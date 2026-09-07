@@ -1,3 +1,41 @@
+# Parallel physics implementation
+
+Owner steering, September 6, 2026: keep independent physics categories moving concurrently. Glass shattering is the first visual delivery priority. This plan retains all nine original workstreams, 40 mechanics and R01–R10.
+
+Four workers are available in this session: three implementation agents and the primary integrator. Routine bounded implementation/testing uses the existing lower-model agents. An agent finishing its assignment frees a worker; that does not complete its physics category.
+
+| Lane | Owner | Current concrete assignment | Acceptance before integration | Next connected milestone |
+|---|---|---|---|---|
+| Glass fracture | `surface_contact_geometry` | Triangular cohesive interface with local irreversible history, distributed forces and explicit fracture work | Opening/unloading/compression, area-scaled fracture work, force and reference-moment balance | Couple accepted facet state to material dynamics; drive localized cracks from sphere impact |
+| Cutting and material separation | `sphere_patch_acceptance` | Tet-local topology, matching internal facets, connected components and newly exposed surfaces | Preserve mass/volume/constraints; local failure does not disconnect surviving paths; bounded deterministic traversal | Share separation state with fracture, then add blade contact and soft-material response for tomato cutting |
+| Fire and thermal reactions | `dynamic_patch` | Native finite-heater experiment through the existing sparse thermal runtime, including oak fuel/oxygen and glass/iron controls | Heat/chemical energy and mass ledgers, local propagation, finite-reactant extinction, timestep and work-budget checks | Archive thermal recordings in the playground, then qualify thermal/mechanical coupling |
+| Metal/contact and integration | Primary | Finish static-friction accounting; review all interfaces, register builds, run combined checks and publish coherent checkpoints | Pure rolling/work oracle versus dissipative sliding; shared regression and scope review | Connect cohesive dynamics/topology/contact and actual 3D fragment playback before more dent showcases |
+
+## Shared contract and merge order
+
+Agents own separate files; the integrator owns shared build registration, API composition, diagnostics, goal/scorecard updates and publishing. No agent changes another lane's files without coordination. Bounded functions report rejected work instead of publishing partial state.
+
+1. Review law, topology and thermal APIs with units, state identity and supported domain explicit.
+2. Compile and run each lane's analytical and regression tests; inspect energy, mass, support work and limits.
+3. Combine changes and run the native and Python regression suites. Preserve existing concurrent work and push ordinary verified checkpoints to main.
+4. Integrate the accepted fracture state with the coupled solver. Topology alone never breaks material; only solved local forces and the fracture law can advance separation.
+5. Update collision geometry from actual exposed surfaces; continue sphere, support and fragment contacts. Preserve fragment mass, momentum and irreversible history.
+6. Run the full iron-ball/glass sequence with glass/oak/iron controls, then expose the accepted recording in 3D with timeline, component inspection and evidence. Do not call a partial crack, solver stop or animation a completed shatter.
+
+## Gates that remain open
+
+The current coupled tetrahedral solver has small-strain elastic/J2 response but no connected fracture law. Its conforming mesh shares nodes across internal faces; separating components requires different topology and force assembly. Large fragment rotations, fragment self-contact, calibrated fracture and realtime cost remain separate implementation/acceptance gates. The older cell-lattice glass run stops at its damage limit and has zero broken links in the latest reported job (`8b113b80050e441686561e685f3b72a0`).
+
+Fire currently uses a lumped thermal/reactive approximation with finite local oxygen; smoke, airflow and full fluids remain deferred. Topology for separation is a dependency for cutting, not a knife/tomato simulation. No completion date or whole-platform acceptance is implied by running several agents.
+
+Keep this assignment table and `execution-goals.json` current at each merged checkpoint. Completed assignments move to the next bounded dependency instead of leaving the remaining physics categories silently idle.
+
+---
+
+## Retained workstream contracts
+
+The following original contract remains in force. The assignment table above sets the current execution order; older baseline descriptions below are historical.
+
 # Parallel physics workstreams and shared acceptance contract
 
 This is an integration plan for the next physics work. It keeps the current

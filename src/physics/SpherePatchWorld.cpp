@@ -125,6 +125,8 @@ SpherePatchReport SpherePatchWorld::step(double dt, const DynamicPatchLoad &load
                     "Contact geometry work budget exceeded");
             ++out.geometry_queries;
         };
+        std::vector<Vec3> before_final_velocity;
+        PatchSphere before_final_sphere;
         auto impulse = [&](unsigned selected, const std::array<double, 3> &weights, Vec3 normal,
                            const std::vector<Vec3> &positions, std::vector<Vec3> &velocity,
                            double event_time, bool final_stage) {
@@ -136,18 +138,26 @@ SpherePatchReport SpherePatchWorld::step(double dt, const DynamicPatchLoad &load
                 point += weights[i] * positions[ids[i]];
             const Vec3 lever = point - sphere.center_m;
             const Vec3 n = normalized(-lever, normal);
+            const auto &physical_sphere = final_stage ? before_final_sphere : sphere_;
+            const auto &physical_velocity =
+                final_stage ? before_final_velocity : patch_.state().velocities_m_s;
             Vec3 initial_material_velocity{};
             for (unsigned i = 0; i < 3; ++i)
-                initial_material_velocity += weights[i] * patch_.state().velocities_m_s[ids[i]];
+                initial_material_velocity += weights[i] * physical_velocity[ids[i]];
+            const Vec3 physical_relative = physical_sphere.velocity_m_s +
+                                           cross(physical_sphere.spin_rad_s, lever) -
+                                           initial_material_velocity;
             // A force kick into an already-resting normal constraint is a
             // reaction, not a fresh inelastic collision. In particular, two
             // Verlet half-kick projections must not manufacture heat in a
             // motionless, gravity-loaded contact. A swept arrival or an actual
             // incoming velocity still carries its irreversible impact loss.
+            const double physical_normal_speed = dot(physical_relative, n);
+            // A preceding contact can leave another face closing before the
+            // second kick. That residual is incoming motion, not support work.
             const bool normal_reaction =
-                final_stage ||
-                (event_time == 0 &&
-                 std::abs(dot(sphere_.velocity_m_s - initial_material_velocity, n)) <= 1.e-10);
+                (final_stage && physical_normal_speed >= -1.e-10) ||
+                (event_time == 0 && std::abs(physical_normal_speed) <= 1.e-10);
             auto relative = [&] {
                 Vec3 v{};
                 for (unsigned i = 0; i < 3; ++i)
@@ -199,10 +209,20 @@ SpherePatchReport SpherePatchWorld::step(double dt, const DynamicPatchLoad &load
                 energy_after_normal += .5 * mass[ids[i]] * lengthSquared(velocity[ids[i]]);
             const Vec3 rel = relative(), tangent = rel - dot(rel, n) * n;
             const double speed = length(tangent);
+            bool static_reaction = false;
             if (speed > 1.e-12 && contact_.friction_coefficient > 0) {
                 const Vec3 direction = tangent / speed;
-                const double j =
-                    std::min(speed / inverse(direction), contact_.friction_coefficient * normal_j);
+                const double stopping_j = speed / inverse(direction);
+                const double friction_limit = contact_.friction_coefficient * normal_j;
+                const double j = std::min(stopping_j, friction_limit);
+                const Vec3 physical_tangent = physical_relative - dot(physical_relative, n) * n;
+                // Static friction can remove slip introduced solely by a force
+                // kick. Retain this stage loss as numerical projection, not
+                // sliding heat. Incoming/sliding motion or a saturated Coulomb
+                // impulse keeps its physical dissipative work.
+                static_reaction = normal_reaction && (final_stage || event_time == 0) &&
+                                  length(physical_tangent) <= 1.e-10 &&
+                                  stopping_j <= friction_limit;
                 apply(-j * direction);
             }
             double energy_after = kinetic(sphere);
@@ -213,13 +233,16 @@ SpherePatchReport SpherePatchWorld::step(double dt, const DynamicPatchLoad &load
                     "Contact created kinetic energy");
             const double normal_loss = energy_before - energy_after_normal;
             const double friction_loss = energy_after_normal - energy_after;
-            out.contact_dissipation_j += (normal_reaction ? 0 : normal_loss) + friction_loss;
+            out.contact_dissipation_j +=
+                (normal_reaction ? 0 : normal_loss) + (static_reaction ? 0 : friction_loss);
             if (normal_reaction)
                 out.normal_constraint_projection_loss_j += normal_loss;
+            if (static_reaction)
+                out.tangential_constraint_projection_loss_j += friction_loss;
             ++out.impulse_contacts;
             if (out.contacts.size() < 64)
                 out.contacts.push_back({selected, event_time, weights, point, n, applied,
-                                        final_stage, normal_reaction});
+                                        final_stage, normal_reaction, static_reaction});
             if (final_stage)
                 ++out.velocity_constraint_contacts;
         };
@@ -310,6 +333,12 @@ SpherePatchReport SpherePatchWorld::step(double dt, const DynamicPatchLoad &load
                 impulse(selected, earliest.barycentric, earliest.normal_triangle_to_sphere,
                         positions, velocity, elapsed, false);
             }
+            // Preserve the actual end-of-drift contact velocity, before the
+            // material and sphere receive their second Verlet force half-kick.
+            if (verlet) {
+                before_final_velocity = velocity;
+                before_final_sphere = sphere;
+            }
         };
         auto final_velocity = [&](std::vector<Vec3> &velocity, const std::vector<Vec3> &u) {
             if (!verlet)
@@ -369,6 +398,7 @@ SpherePatchReport SpherePatchWorld::step(double dt, const DynamicPatchLoad &load
             }
             require(std::isfinite(out.contact_dissipation_j) &&
                         std::isfinite(out.normal_constraint_projection_loss_j) &&
+                        std::isfinite(out.tangential_constraint_projection_loss_j) &&
                         finite(out.contact_support_impulse_n_s),
                     "Nonfinite contact ledger");
             out.sphere_kinetic_energy_j = kinetic(sphere);

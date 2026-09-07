@@ -42,12 +42,15 @@ class DynamicMaterialDiagnosticsTests(unittest.TestCase):
     def test_normal_projection_is_distinct_from_physical_dissipation(self):
         args = fixture()
         args[2]["cases"][0]["summary"].update(contact_dissipation_j=2e-5,
-            normal_constraint_projection_loss_j=9e-5)
+            normal_constraint_projection_loss_j=9e-5,
+            tangential_constraint_projection_loss_j=3e-5)
         evidence = build_diagnostics(*args)["native_facts"]["cases"][0]
         self.assertEqual(evidence["contact_dissipation_j"], 2e-5)
         self.assertEqual(evidence["normal_constraint_projection_loss_j"], 9e-5)
+        self.assertEqual(evidence["tangential_constraint_projection_loss_j"], 3e-5)
         self.assertEqual(evidence["absolute_energy_residual_j"], 2e-6)
         self.assertIn("not irreversible heat", evidence["normal_projection_scope"])
+        self.assertIn("not sliding heat", evidence["tangential_projection_scope"])
 
     def test_complete_case_uses_native_contact_and_compact_evidence(self):
         result = build_diagnostics(*fixture())

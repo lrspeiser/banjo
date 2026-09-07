@@ -949,6 +949,66 @@
         "shared world persistence and realtime release"
       ],
       "next": "Reduce and qualify stiff/contact integration cost while preserving error budgets; extend spatial/unloading acceptance and expected-outcome instrumentation."
+    },
+    "parallel_physics_checkpoint": {
+      "status": "R03/R06 dependencies advanced; no full goal complete",
+      "evidence": "docs/parallel-physics-checkpoint.md",
+      "results": "docs/parallel-physics-results.json",
+      "next": "Integrate cohesive forces and accepted topology with dynamics/contact before new 3D fracture playback."
+    }
+  },
+  "parallel_execution": {
+    "status": "first_batch_verified_next_dependencies_open",
+    "assignment_date": "2026-09-06",
+    "workstream_contract": "docs/parallel-physics-workstreams.md",
+    "worker_limit": 4,
+    "first_visual_milestone": "Complete iron-ball/glass fracture and continued fragment contacts in actual 3D; retain oak and iron controls.",
+    "lanes": [
+      {
+        "owner": "surface_contact_geometry",
+        "category": "glass_fracture",
+        "assignment": "cohesive_facet_law_and_tests",
+        "status": "implemented_and_tested_dependency"
+      },
+      {
+        "owner": "sphere_patch_acceptance",
+        "category": "cutting_and_shared_separation",
+        "assignment": "tet_topology_components_and_exposed_faces",
+        "status": "implemented_and_tested_dependency"
+      },
+      {
+        "owner": "dynamic_patch",
+        "category": "fire_thermal",
+        "assignment": "finite_heat_burn_acceptance_and_controls",
+        "status": "implemented_and_tested_dependency"
+      },
+      {
+        "owner": "primary",
+        "category": "metal_contact_integration",
+        "assignment": "static_friction_ledger_build_integration_and_combined_validation",
+        "status": "implemented_and_tested_dependency"
+      }
+    ],
+    "handoff_policy": "On assignment completion, review and assign the next independent bounded dependency. File owners do not edit shared build/docs; primary integrates and publishes verified changes.",
+    "open_gates": [
+      "coupled_fracture_dynamics",
+      "mixed_mode_fracture",
+      "finite_rotation_fragments",
+      "fragment_contact",
+      "blade_and_soft_tissue",
+      "thermal_mechanical_coupling",
+      "realtime_qualification"
+    ],
+    "checkpoint": "docs/parallel-physics-checkpoint.md",
+    "verification": {
+      "full_build": "passed",
+      "native_suites_passed": 67,
+      "native_wall_s": 92.54,
+      "python_tests_run": 142,
+      "python_passed": 141,
+      "python_skipped": 1,
+      "python_wall_s": 6.697,
+      "interactive_3d": "unchanged; no new shatter playback"
     }
   }
 }

@@ -50,7 +50,7 @@ Acceptance: Impact leaves a measured residual dent, low-energy control recovers;
 
 ## R06: Stable progressive fracture
 
-Status: planned.
+Status: active; cohesive facets, bounded topology and their assembly are implemented in the [parallel checkpoint](parallel-physics-checkpoint.md). Coupled dynamics and shatter acceptance remain open.
 
 Implementation: Resolve localized stress/energy release with length-scale-aware fracture, transactional topology changes and connected fragments. Include thin-plate/shell representation where needed.
 

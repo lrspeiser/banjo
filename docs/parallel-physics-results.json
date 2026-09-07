@@ -1,0 +1,405 @@
+{
+  "schema": "banjo.parallel-physics-checkpoint.v1",
+  "base_commit": "7598081f84f75b4be42e2c5eceb1b848a4aa0339",
+  "date": "2026-09-06",
+  "scope": "cohesive facets/topology/assembly and thermal acceptance; coupled shatter is not implemented",
+  "environment": "Windows MSVC 19.44 Release, double Jolt positions",
+  "verification": {
+    "full_build": "passed",
+    "native_suites_passed": 67,
+    "native_wall_s": 92.54,
+    "python_tests_run": 142,
+    "python_passed": 141,
+    "python_skipped": 1,
+    "python_wall_s": 6.697,
+    "interactive_3d": "unchanged; no new shatter playback"
+  },
+  "thermal": {
+    "schema": "banjo.thermal-burn-acceptance.v1",
+    "status": "complete",
+    "physical_response_validated": false,
+    "same_horizon_s": 0.1,
+    "cases": [
+      {
+        "material": "glass",
+        "material_descriptor": {
+          "display_name": "glass",
+          "fuel_mass_fraction": 0.0,
+          "id": 1,
+          "oxygen_kg_per_kg_solid": 0.0,
+          "provenance": "explicit thermal burn acceptance demonstration parameters; not a calibrated catalog material",
+          "reaction": {
+            "activation_temperature_k": 0.0,
+            "enabled": false,
+            "heat_of_combustion_j_kg": 0.0,
+            "maximum_rate_per_s": 0.0,
+            "oxygen_required_kg_per_kg_fuel": 0.0
+          },
+          "solid_density_kg_m3": 2500.0,
+          "specific_heat_capacity_j_kg_k": 840.0,
+          "thermal_conductivity_w_m_k": 1.0
+        },
+        "status": "complete",
+        "fixed_step_s": 0.01,
+        "requested_horizon_s": 0.1,
+        "heater_applied_j": 3000.0,
+        "reaction_heat_j": 0.0,
+        "mass_residual_kg": 0.0,
+        "combined_energy_residual_j": 0.0,
+        "final": {
+          "heated": {
+            "fuel_kg": 0.0,
+            "oxygen_kg": 0.0,
+            "temperature_k": 478.55017259855015
+          },
+          "neighbor": {
+            "fuel_kg": 0.0,
+            "oxygen_kg": 0.0,
+            "temperature_k": 300.02125470769244
+          },
+          "nonneighbor": {
+            "fuel_kg": 0.0,
+            "oxygen_kg": 0.0,
+            "temperature_k": 300.0000012651859
+          },
+          "unheated_control": {
+            "fuel_kg": 0.0,
+            "oxygen_kg": 0.0,
+            "temperature_k": 300.0
+          }
+        },
+        "work": {
+          "cell_operations": 120,
+          "completed_jobs": 10,
+          "count_budget_exhausted": false,
+          "maximum_lag_s": 0.0,
+          "wall_budget_exhausted": false
+        }
+      },
+      {
+        "material": "oak",
+        "material_descriptor": {
+          "display_name": "oak",
+          "fuel_mass_fraction": 0.1,
+          "id": 2,
+          "oxygen_kg_per_kg_solid": 0.001,
+          "provenance": "explicit thermal burn acceptance demonstration parameters; not a calibrated catalog material",
+          "reaction": {
+            "activation_temperature_k": 600.0,
+            "enabled": true,
+            "heat_of_combustion_j_kg": 16000000.0,
+            "maximum_rate_per_s": 20.0,
+            "oxygen_required_kg_per_kg_fuel": 1.0
+          },
+          "solid_density_kg_m3": 700.0,
+          "specific_heat_capacity_j_kg_k": 1700.0,
+          "thermal_conductivity_w_m_k": 0.12
+        },
+        "status": "complete",
+        "fixed_step_s": 0.01,
+        "requested_horizon_s": 0.1,
+        "heater_applied_j": 3000.0,
+        "reaction_heat_j": 89.60000000000001,
+        "mass_residual_kg": 0.0,
+        "combined_energy_residual_j": -7.275957614183426e-12,
+        "final": {
+          "heated": {
+            "fuel_kg": 0.0005544,
+            "oxygen_kg": 0.0,
+            "temperature_k": 624.5296337067142
+          },
+          "neighbor": {
+            "fuel_kg": 0.0005600000000000001,
+            "oxygen_kg": 5.600000000000001e-06,
+            "temperature_k": 300.00818131621
+          },
+          "nonneighbor": {
+            "fuel_kg": 0.0005600000000000001,
+            "oxygen_kg": 5.600000000000001e-06,
+            "temperature_k": 300.00000010312624
+          },
+          "unheated_control": {
+            "fuel_kg": 0.0005600000000000001,
+            "oxygen_kg": 5.600000000000001e-06,
+            "temperature_k": 300.0
+          }
+        },
+        "work": {
+          "cell_operations": 120,
+          "completed_jobs": 10,
+          "count_budget_exhausted": false,
+          "maximum_lag_s": 0.0,
+          "wall_budget_exhausted": false
+        }
+      },
+      {
+        "material": "iron",
+        "material_descriptor": {
+          "display_name": "iron",
+          "fuel_mass_fraction": 0.0,
+          "id": 3,
+          "oxygen_kg_per_kg_solid": 0.0,
+          "provenance": "explicit thermal burn acceptance demonstration parameters; not a calibrated catalog material",
+          "reaction": {
+            "activation_temperature_k": 0.0,
+            "enabled": false,
+            "heat_of_combustion_j_kg": 0.0,
+            "maximum_rate_per_s": 0.0,
+            "oxygen_required_kg_per_kg_fuel": 0.0
+          },
+          "solid_density_kg_m3": 7870.0,
+          "specific_heat_capacity_j_kg_k": 450.0,
+          "thermal_conductivity_w_m_k": 80.0
+        },
+        "status": "complete",
+        "fixed_step_s": 0.01,
+        "requested_horizon_s": 0.1,
+        "heater_applied_j": 3000.0,
+        "reaction_heat_j": 0.0,
+        "mass_residual_kg": 0.0,
+        "combined_energy_residual_j": 0.0,
+        "final": {
+          "heated": {
+            "fuel_kg": 0.0,
+            "oxygen_kg": 0.0,
+            "temperature_k": 405.2927168625976
+          },
+          "neighbor": {
+            "fuel_kg": 0.0,
+            "oxygen_kg": 0.0,
+            "temperature_k": 300.59294318960747
+          },
+          "nonneighbor": {
+            "fuel_kg": 0.0,
+            "oxygen_kg": 0.0,
+            "temperature_k": 300.0016758224243
+          },
+          "unheated_control": {
+            "fuel_kg": 0.0,
+            "oxygen_kg": 0.0,
+            "temperature_k": 300.0
+          }
+        },
+        "work": {
+          "cell_operations": 120,
+          "completed_jobs": 10,
+          "count_budget_exhausted": false,
+          "maximum_lag_s": 0.0,
+          "wall_budget_exhausted": false
+        }
+      },
+      {
+        "material": "glass",
+        "material_descriptor": {
+          "display_name": "glass",
+          "fuel_mass_fraction": 0.0,
+          "id": 1,
+          "oxygen_kg_per_kg_solid": 0.0,
+          "provenance": "explicit thermal burn acceptance demonstration parameters; not a calibrated catalog material",
+          "reaction": {
+            "activation_temperature_k": 0.0,
+            "enabled": false,
+            "heat_of_combustion_j_kg": 0.0,
+            "maximum_rate_per_s": 0.0,
+            "oxygen_required_kg_per_kg_fuel": 0.0
+          },
+          "solid_density_kg_m3": 2500.0,
+          "specific_heat_capacity_j_kg_k": 840.0,
+          "thermal_conductivity_w_m_k": 1.0
+        },
+        "status": "complete",
+        "fixed_step_s": 0.05,
+        "requested_horizon_s": 0.1,
+        "heater_applied_j": 3000.0,
+        "reaction_heat_j": 0.0,
+        "mass_residual_kg": 0.0,
+        "combined_energy_residual_j": 0.0,
+        "final": {
+          "heated": {
+            "fuel_kg": 0.0,
+            "oxygen_kg": 0.0,
+            "temperature_k": 478.5501725985441
+          },
+          "neighbor": {
+            "fuel_kg": 0.0,
+            "oxygen_kg": 0.0,
+            "temperature_k": 300.0212547077044
+          },
+          "nonneighbor": {
+            "fuel_kg": 0.0,
+            "oxygen_kg": 0.0,
+            "temperature_k": 300.00000126518006
+          },
+          "unheated_control": {
+            "fuel_kg": 0.0,
+            "oxygen_kg": 0.0,
+            "temperature_k": 300.0
+          }
+        },
+        "work": {
+          "cell_operations": 24,
+          "completed_jobs": 2,
+          "count_budget_exhausted": false,
+          "maximum_lag_s": 0.0,
+          "wall_budget_exhausted": false
+        }
+      },
+      {
+        "material": "oak",
+        "material_descriptor": {
+          "display_name": "oak",
+          "fuel_mass_fraction": 0.1,
+          "id": 2,
+          "oxygen_kg_per_kg_solid": 0.001,
+          "provenance": "explicit thermal burn acceptance demonstration parameters; not a calibrated catalog material",
+          "reaction": {
+            "activation_temperature_k": 600.0,
+            "enabled": true,
+            "heat_of_combustion_j_kg": 16000000.0,
+            "maximum_rate_per_s": 20.0,
+            "oxygen_required_kg_per_kg_fuel": 1.0
+          },
+          "solid_density_kg_m3": 700.0,
+          "specific_heat_capacity_j_kg_k": 1700.0,
+          "thermal_conductivity_w_m_k": 0.12
+        },
+        "status": "complete",
+        "fixed_step_s": 0.05,
+        "requested_horizon_s": 0.1,
+        "heater_applied_j": 3000.0,
+        "reaction_heat_j": 89.60000000000001,
+        "mass_residual_kg": 0.0,
+        "combined_energy_residual_j": -7.275957614183426e-12,
+        "final": {
+          "heated": {
+            "fuel_kg": 0.0005544,
+            "oxygen_kg": 0.0,
+            "temperature_k": 624.529633706714
+          },
+          "neighbor": {
+            "fuel_kg": 0.0005600000000000001,
+            "oxygen_kg": 5.600000000000001e-06,
+            "temperature_k": 300.0081813162102
+          },
+          "nonneighbor": {
+            "fuel_kg": 0.0005600000000000001,
+            "oxygen_kg": 5.600000000000001e-06,
+            "temperature_k": 300.0000001031261
+          },
+          "unheated_control": {
+            "fuel_kg": 0.0005600000000000001,
+            "oxygen_kg": 5.600000000000001e-06,
+            "temperature_k": 300.0
+          }
+        },
+        "work": {
+          "cell_operations": 24,
+          "completed_jobs": 2,
+          "count_budget_exhausted": false,
+          "maximum_lag_s": 0.0,
+          "wall_budget_exhausted": false
+        }
+      },
+      {
+        "material": "iron",
+        "material_descriptor": {
+          "display_name": "iron",
+          "fuel_mass_fraction": 0.0,
+          "id": 3,
+          "oxygen_kg_per_kg_solid": 0.0,
+          "provenance": "explicit thermal burn acceptance demonstration parameters; not a calibrated catalog material",
+          "reaction": {
+            "activation_temperature_k": 0.0,
+            "enabled": false,
+            "heat_of_combustion_j_kg": 0.0,
+            "maximum_rate_per_s": 0.0,
+            "oxygen_required_kg_per_kg_fuel": 0.0
+          },
+          "solid_density_kg_m3": 7870.0,
+          "specific_heat_capacity_j_kg_k": 450.0,
+          "thermal_conductivity_w_m_k": 80.0
+        },
+        "status": "complete",
+        "fixed_step_s": 0.05,
+        "requested_horizon_s": 0.1,
+        "heater_applied_j": 3000.0,
+        "reaction_heat_j": 0.0,
+        "mass_residual_kg": 0.0,
+        "combined_energy_residual_j": 0.0,
+        "final": {
+          "heated": {
+            "fuel_kg": 0.0,
+            "oxygen_kg": 0.0,
+            "temperature_k": 405.29271648759135
+          },
+          "neighbor": {
+            "fuel_kg": 0.0,
+            "oxygen_kg": 0.0,
+            "temperature_k": 300.592943942819
+          },
+          "nonneighbor": {
+            "fuel_kg": 0.0,
+            "oxygen_kg": 0.0,
+            "temperature_k": 300.0016754442191
+          },
+          "unheated_control": {
+            "fuel_kg": 0.0,
+            "oxygen_kg": 0.0,
+            "temperature_k": 300.0
+          }
+        },
+        "work": {
+          "cell_operations": 24,
+          "completed_jobs": 2,
+          "count_budget_exhausted": false,
+          "maximum_lag_s": 0.0,
+          "wall_budget_exhausted": false
+        }
+      }
+    ],
+    "bounded_lag_control": {
+      "cell_operations": 2,
+      "completed_jobs": 1,
+      "count_budget_exhausted": true,
+      "maximum_lag_s": 0.24,
+      "regions_late": 1
+    },
+    "fuel_extinction_control": {
+      "extinguished_by": "finite fuel",
+      "fuel_after_first_kg": 0.0,
+      "fuel_after_second_kg": 0.0,
+      "material_descriptor": {
+        "display_name": "oak",
+        "fuel_mass_fraction": 0.001,
+        "id": 4,
+        "oxygen_kg_per_kg_solid": 0.1,
+        "provenance": "explicit thermal burn acceptance demonstration parameters; not a calibrated catalog material",
+        "reaction": {
+          "activation_temperature_k": 600.0,
+          "enabled": true,
+          "heat_of_combustion_j_kg": 16000000.0,
+          "maximum_rate_per_s": 1000000.0,
+          "oxygen_required_kg_per_kg_fuel": 1.0
+        },
+        "solid_density_kg_m3": 700.0,
+        "specific_heat_capacity_j_kg_k": 1700.0,
+        "thermal_conductivity_w_m_k": 0.12
+      },
+      "oxygen_after_first_kg": 0.0005544,
+      "reaction_heat_after_first_j": 89.60000000000001,
+      "reaction_heat_after_second_j": 89.60000000000001
+    }
+  },
+  "remaining": [
+    "dynamic cohesive/bulk force integration",
+    "transactional fracture contact surfaces",
+    "finite-rotation fragments and continued collisions",
+    "blade/soft-material cutting",
+    "thermal/mechanical coupling",
+    "real-material calibration and realtime qualification"
+  ],
+  "binary_sha256": {
+    "banjo_thermal_burn_acceptance.exe": "a40185ac41a4de0e281319bf3f2beaf7bbfadf51a1e4d1691805686f695b05b2",
+    "banjo_dynamic_material_cli.exe": "619f1e697d56fa98072886af6a798e9f622a0a9e190f5ef4aa9f93bb80d41289"
+  }
+}

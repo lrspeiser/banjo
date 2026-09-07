@@ -47,6 +47,9 @@ add_library(
     src/matter/Lattice.cpp
     src/physics/ContactMechanics.cpp
     src/physics/CohesiveInterface.cpp
+    src/physics/CohesiveFacet.cpp
+    src/physics/CohesiveAssembly.cpp
+    src/physics/FractureTopology.cpp
     src/physics/CohesivePair.cpp
     src/physics/CohesiveSpatialPair.cpp
     src/physics/CohesiveRigidPair.cpp
@@ -286,6 +289,22 @@ if(BANJO_BUILD_TESTS)
     target_link_libraries(banjo_sphere_patch_advance_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_sphere_patch_advance_tests)
     add_test(NAME banjo_sphere_patch_advance_tests COMMAND banjo_sphere_patch_advance_tests)
+    add_executable(banjo_sphere_patch_friction_tests tests/sphere_patch_friction_tests.cpp)
+    target_link_libraries(banjo_sphere_patch_friction_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_sphere_patch_friction_tests)
+    add_test(NAME banjo_sphere_patch_friction_tests COMMAND banjo_sphere_patch_friction_tests)
+    add_executable(banjo_cohesive_facet_tests tests/cohesive_facet_tests.cpp)
+    target_link_libraries(banjo_cohesive_facet_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_cohesive_facet_tests)
+    add_test(NAME banjo_cohesive_facet_tests COMMAND banjo_cohesive_facet_tests)
+    add_executable(banjo_cohesive_assembly_tests tests/cohesive_assembly_tests.cpp)
+    target_link_libraries(banjo_cohesive_assembly_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_cohesive_assembly_tests)
+    add_test(NAME banjo_cohesive_assembly_tests COMMAND banjo_cohesive_assembly_tests)
+    add_executable(banjo_fracture_topology_tests tests/fracture_topology_tests.cpp)
+    target_link_libraries(banjo_fracture_topology_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_fracture_topology_tests)
+    add_test(NAME banjo_fracture_topology_tests COMMAND banjo_fracture_topology_tests)
     add_executable(banjo_dynamic_patch_tests tests/dynamic_patch_tests.cpp)
     target_link_libraries(banjo_dynamic_patch_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_dynamic_patch_tests)
@@ -475,6 +494,13 @@ if(BANJO_BUILD_TESTS AND TARGET banjo_creator_runtime)
 endif()
 
 if(BANJO_BUILD_TESTS AND TARGET banjo_platform)
+ add_executable(banjo_thermal_burn_acceptance tools/thermal_burn_acceptance.cpp)
+ target_link_libraries(banjo_thermal_burn_acceptance PRIVATE banjo_sparse_world nlohmann_json::nlohmann_json)
+ banjo_enable_warnings(banjo_thermal_burn_acceptance)
+ add_executable(banjo_thermal_burn_acceptance_tests tests/thermal_burn_acceptance_tests.cpp)
+ target_link_libraries(banjo_thermal_burn_acceptance_tests PRIVATE banjo_sparse_world nlohmann_json::nlohmann_json)
+ banjo_enable_warnings(banjo_thermal_burn_acceptance_tests)
+ add_test(NAME banjo_thermal_burn_acceptance_tests COMMAND banjo_thermal_burn_acceptance_tests)
  add_executable(banjo_thermal_frontier_tests tests/thermal_frontier_tests.cpp)
  target_link_libraries(banjo_thermal_frontier_tests PRIVATE banjo_sparse_world nlohmann_json::nlohmann_json)
  banjo_enable_warnings(banjo_thermal_frontier_tests)
