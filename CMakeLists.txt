@@ -99,6 +99,9 @@ if(BANJO_BUILD_PRECOMPUTE)
     add_executable(banjo_phase_pair_benchmark tools/phase_pair_benchmark.cpp)
     target_link_libraries(banjo_phase_pair_benchmark PRIVATE banjo_core)
     banjo_enable_warnings(banjo_phase_pair_benchmark)
+    add_executable(banjo_lattice_dump tools/lattice_dump.cpp)
+    target_link_libraries(banjo_lattice_dump PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_lattice_dump)
     add_executable(banjo_precompute src/app/precompute_main.cpp)
     target_link_libraries(banjo_precompute PRIVATE banjo_core)
     target_compile_features(banjo_precompute PRIVATE cxx_std_23)
@@ -653,6 +656,7 @@ if(BANJO_BUILD_TESTS AND TARGET banjo_platform)
  # roughly an hour each rather than seconds. Coverage is unchanged; only the
  # price is. See docs/network-at-rest-stability-checkpoint.md.
  set_tests_properties(banjo_network_skin_tests banjo_network_runtime_tests
+     banjo_material_showcase_tests
      PROPERTIES TIMEOUT 7200)
  add_executable(banjo_material_showcase_tests tests/material_showcase_tests.cpp)
  target_link_libraries(banjo_material_showcase_tests PRIVATE banjo_platform nlohmann_json::nlohmann_json)
