@@ -269,4 +269,34 @@ LatticeAsset generateSphereLattice(
     return asset;
 }
 
+LatticeResolutionLimit measureLatticeResolutionLimit(
+    const LatticeAsset &asset, const CompiledBrittleMaterial &material) {
+    LatticeResolutionLimit limit;
+    if (asset.nodes.empty() || asset.adjacency_offsets.size() != asset.nodes.size() + 1U) {
+        return limit;
+    }
+    for (std::uint32_t node = 0; node < asset.nodes.size(); ++node) {
+        const double mass_kg = asset.nodes[node].represented_volume_m3 * material.density_kg_m3;
+        if (!(mass_kg > 0.0)) continue;
+        double stiffness_n_m = 0.0;
+        for (std::uint32_t adjacency = asset.adjacency_offsets[node];
+             adjacency < asset.adjacency_offsets[node + 1U]; ++adjacency) {
+            const double compliance = asset.bonds[asset.adjacent_bond_indices[adjacency]].compliance;
+            if (compliance > 0.0) stiffness_n_m += 1.0 / compliance;
+        }
+        if (!(stiffness_n_m > 0.0)) continue;
+        const double omega = std::sqrt(stiffness_n_m / mass_kg);
+        if (omega > limit.fastest_mode_angular_frequency_rad_s) {
+            limit.fastest_mode_angular_frequency_rad_s = omega;
+            limit.governing_node = node;
+        }
+    }
+    if (limit.fastest_mode_angular_frequency_rad_s > 0.0) {
+        limit.fastest_mode_period_s =
+            2.0 * std::acos(-1.0) / limit.fastest_mode_angular_frequency_rad_s;
+        limit.explicit_substep_limit_s = 2.0 / limit.fastest_mode_angular_frequency_rad_s;
+    }
+    return limit;
+}
+
 } // namespace banjo

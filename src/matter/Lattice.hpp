@@ -60,4 +60,23 @@ struct LatticeAsset {
     const SphereRecipe &recipe,
     const CompiledBrittleMaterial &material);
 
+// Period of the fastest bond mode carried by this lattice and the corresponding
+// explicit-integration substep limit.
+//
+// For each node, omega = sqrt(sum of incident bond stiffness / node mass); the
+// reported values use the largest omega in the lattice. XPBD's position solve is
+// not conditionally stable, so exceeding this limit does not blow the solver up.
+// It bounds *accuracy*: above it the lattice cannot carry its own elastic wave,
+// so any strain the damage law then reads is a discretization result. Report it
+// alongside a chosen material step rather than assuming the step is resolved.
+struct LatticeResolutionLimit {
+    double fastest_mode_angular_frequency_rad_s{};
+    double fastest_mode_period_s{};
+    double explicit_substep_limit_s{}; // 2 / omega_max
+    std::uint32_t governing_node{};
+};
+
+[[nodiscard]] LatticeResolutionLimit measureLatticeResolutionLimit(
+    const LatticeAsset &asset, const CompiledBrittleMaterial &material);
+
 } // namespace banjo

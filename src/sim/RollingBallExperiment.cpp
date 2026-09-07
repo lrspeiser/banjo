@@ -131,8 +131,8 @@ void RollingBallExperiment::reset(ExperimentSettings settings) {
         compileContactMaterial(surface_material_));
 
     solver_ = BrittleBondSolver({
-        .substeps = 1,
-        .constraint_iterations = 8,
+        .substeps = std::max(1U, settings_.material_substeps),
+        .constraint_iterations = std::max(1U, settings_.material_constraint_iterations),
         .use_support_plane = true,
         .support_plane = support_plane_,
         .surface_dynamic_friction = target_surface_contact_.dynamic_friction,
@@ -155,6 +155,10 @@ void RollingBallExperiment::reset(ExperimentSettings settings) {
                                                   target_material_);
     // Kept as a compatibility alias for the original glass-only headless test.
     stats_.represented_glass_mass_kg = stats_.represented_target_mass_kg;
+    stats_.target_resolution_limit =
+        target_lattice_ && compiled_target_
+            ? measureLatticeResolutionLimit(*target_lattice_, *compiled_target_)
+            : LatticeResolutionLimit{};
     stats_.active_nodes = target_lattice_ ? target_lattice_->nodes.size() : 0U;
     stats_.total_bonds = target_lattice_ ? target_lattice_->bonds.size() : 0U;
     stats_.connected_components = 1U;

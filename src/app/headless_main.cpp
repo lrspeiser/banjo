@@ -1,5 +1,6 @@
 #include "sim/RollingBallExperiment.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <iomanip>
@@ -99,6 +100,22 @@ int main(int argc, char **argv) {
         std::cout << "  glass nodes: " << lattice.nodes.size() << '\n';
         std::cout << "  intact bonds: " << lattice.bonds.size() << '\n';
         std::cout << "  represented mass: " << lattice.total_mass_kg << " kg\n";
+        // Resolution, not stability: XPBD does not diverge above this limit, it
+        // simply stops carrying the lattice's own elastic wave, so any strain the
+        // damage law reads above it is a discretization result.
+        {
+            const auto &limit = experiment.stats().target_resolution_limit;
+            const double substep =
+                settings.material_step_s / std::max(1U, settings.material_substeps);
+            std::cout << std::scientific << std::setprecision(4)
+                      << "  fastest lattice mode: " << limit.fastest_mode_period_s
+                      << " s; explicit substep limit: " << limit.explicit_substep_limit_s
+                      << " s; configured material substep: " << substep << " s (ratio "
+                      << (limit.explicit_substep_limit_s > 0
+                              ? substep / limit.explicit_substep_limit_s : 0.0)
+                      << ")" << std::endl;
+            std::cout << std::fixed << std::setprecision(4);
+        }
 
         constexpr unsigned kMaximumTicks = 2000U;
         unsigned ticks = 0U;

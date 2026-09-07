@@ -5,6 +5,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <stdexcept>
 #include <vector>
@@ -12,11 +13,27 @@
 namespace banjo {
 namespace {
 
+// The full nonlocal Green-Lagrange strain at a node. A scalar principal value
+// is not enough: a bond must be judged by the strain resolved along its own
+// axis, otherwise a bond perpendicular to the loading direction fails on strain
+// it does not carry, and every bond at a highly strained node fails at once.
 struct NodeStrainState {
-    double tensile{};
-    double compressive{};
+    Mat3 green_lagrange{};
+    bool valid{};
+};
+
+// Strain resolved onto one bond direction: the normal component along the bond
+// and the transverse (shear) component on the plane whose normal is the bond.
+struct ResolvedBondStrain {
+    double normal{};
     double shear{};
 };
+
+[[nodiscard]] ResolvedBondStrain resolveAlongBond(const Mat3 &strain, const Vec3 &direction) {
+    const Vec3 traction = strain * direction;
+    const double normal = dot(direction, traction);
+    return {normal, length(traction - normal * direction)};
+}
 
 [[nodiscard]] std::size_t countBrokenBonds(const ActiveMatter &matter) {
     return static_cast<std::size_t>(std::count_if(
@@ -50,6 +67,50 @@ void applySupportContact(
     // Split position correction, after reconstructing velocities. A penetrating
     // point is not given artificial rebound energy by moving it out of the floor.
     node.position_world_m -= distance * plane.normal_world;
+}
+
+// Position-level non-penetration for one node, intended to run inside the
+// constraint sweep so that the correction is redistributed through the bonds by
+// the following iterations instead of displacing a node relative to neighbours
+// that were never solved against it. Returns the depth removed this call.
+[[nodiscard]] double projectSupportPosition(
+    ActiveNodeState &node, const BrittleSolverSettings &settings) {
+    if (!settings.support_enabled) return 0.0;
+    const auto &plane = settings.support_plane;
+    if (!insideSupportFootprint(plane, node.position_world_m,
+            settings.support_half_tangent_m, settings.support_half_bitangent_m)) return 0.0;
+    const double distance = signedDistanceToPlane(plane, node.position_world_m);
+    if (distance > 1.0e-8) return 0.0;
+    node.position_world_m -= distance * plane.normal_world;
+    return -distance;
+}
+
+// Velocity-level support response for a node whose position was constrained in
+// this substep. The normal velocity implied by the position solve is replaced by
+// the restitution target measured from the approach velocity, so the projection
+// cannot act as an energy source, and Coulomb friction is charged against the
+// actual normal velocity change.
+void applySupportVelocity(
+    ActiveNodeState &node, double approach_normal_speed,
+    const BrittleSolverSettings &settings) {
+    const auto &plane = settings.support_plane;
+    const double restitution = -approach_normal_speed > 0.5
+        ? std::clamp(settings.surface_restitution, 0.0, 1.0) : 0.0;
+    const double target = approach_normal_speed < 0.0
+        ? -restitution * approach_normal_speed : 0.0;
+    const double normal_speed = dot(node.velocity_m_s, plane.normal_world);
+    double corrected = normal_speed;
+    if (normal_speed > target) corrected = target;
+    else if (normal_speed < 0.0) corrected = 0.0;
+    node.velocity_m_s += (corrected - normal_speed) * plane.normal_world;
+    const double normal_delta = corrected - std::min(0.0, approach_normal_speed);
+    if (normal_delta <= 0.0) return;
+    const Vec3 tangent = projectVectorOntoPlane(plane, node.velocity_m_s);
+    const double speed = length(tangent);
+    if (speed <= 1.0e-12) return;
+    const double friction_delta = speed <= settings.surface_static_friction * normal_delta
+        ? speed : std::min(speed, settings.surface_dynamic_friction * normal_delta);
+    node.velocity_m_s -= (friction_delta / speed) * tangent;
 }
 
 void accumulateContactStats(SphereMaterialContactStats &out,
@@ -157,67 +218,6 @@ void addScaledOuterProduct(
     return result;
 }
 
-[[nodiscard]] std::array<double, 3> symmetricEigenvalues(Mat3 matrix) {
-    for (unsigned iteration = 0; iteration < 12U; ++iteration) {
-        std::size_t p = 0U;
-        std::size_t q = 1U;
-        double maximum = std::abs(matrix.m[p][q]);
-        for (const auto pair :
-             std::array<std::array<std::size_t, 2>, 3>{
-                 std::array<std::size_t, 2>{0U, 1U},
-                 std::array<std::size_t, 2>{0U, 2U},
-                 std::array<std::size_t, 2>{1U, 2U},
-             }) {
-            const double magnitude =
-                std::abs(matrix.m[pair[0]][pair[1]]);
-            if (magnitude > maximum) {
-                maximum = magnitude;
-                p = pair[0];
-                q = pair[1];
-            }
-        }
-        if (maximum <= 1.0e-12) {
-            break;
-        }
-
-        const double app = matrix.m[p][p];
-        const double aqq = matrix.m[q][q];
-        const double apq = matrix.m[p][q];
-        const double angle = 0.5 * std::atan2(2.0 * apq, aqq - app);
-        const double cosine = std::cos(angle);
-        const double sine = std::sin(angle);
-
-        for (std::size_t index = 0; index < 3U; ++index) {
-            if (index == p || index == q) {
-                continue;
-            }
-            const double aip = matrix.m[index][p];
-            const double aiq = matrix.m[index][q];
-            matrix.m[index][p] = cosine * aip - sine * aiq;
-            matrix.m[p][index] = matrix.m[index][p];
-            matrix.m[index][q] = sine * aip + cosine * aiq;
-            matrix.m[q][index] = matrix.m[index][q];
-        }
-
-        matrix.m[p][p] = cosine * cosine * app -
-                         2.0 * sine * cosine * apq +
-                         sine * sine * aqq;
-        matrix.m[q][q] = sine * sine * app +
-                         2.0 * sine * cosine * apq +
-                         cosine * cosine * aqq;
-        matrix.m[p][q] = 0.0;
-        matrix.m[q][p] = 0.0;
-    }
-
-    std::array<double, 3> values{
-        matrix.m[0][0],
-        matrix.m[1][1],
-        matrix.m[2][2],
-    };
-    std::sort(values.begin(), values.end());
-    return values;
-}
-
 [[nodiscard]] std::vector<NodeStrainState> calculateNodeStrains(
     const ActiveMatter &matter) {
     std::vector<NodeStrainState> strains(matter.nodes.size());
@@ -290,12 +290,8 @@ void addScaledOuterProduct(
             }
         }
 
-        const std::array<double, 3> principal =
-            symmetricEigenvalues(green_lagrange_strain);
-        strains[node_index].tensile = std::max(0.0, principal[2]);
-        strains[node_index].compressive = std::max(0.0, -principal[0]);
-        strains[node_index].shear =
-            std::max(0.0, 0.5 * (principal[2] - principal[0]));
+        strains[node_index].green_lagrange = green_lagrange_strain;
+        strains[node_index].valid = true;
     }
     return strains;
 }
@@ -304,18 +300,35 @@ void addScaledOuterProduct(
 // Gauss-Seidel iterates are numerical guesses, not intermediate physical time.
 void accumulateResolvedStrains(ActiveMatter &matter) {
     const auto strains = calculateNodeStrains(matter);
+    const bool has_reference =
+        matter.reference_positions_world_m.size() == matter.nodes.size();
     for (std::size_t i = 0; i < matter.bonds.size(); ++i) {
         auto &state = matter.bonds[i];
         if (!state.alive) continue;
         const auto &rest = matter.asset->bonds[i];
         const double stretch = length(matter.nodes[rest.node_b].position_world_m -
             matter.nodes[rest.node_a].position_world_m) / rest.rest_length_m - 1.0;
-        state.peak_tensile_stretch = std::max({state.peak_tensile_stretch, stretch,
-            strains[rest.node_a].tensile, strains[rest.node_b].tensile});
-        state.peak_compressive_strain = std::max({state.peak_compressive_strain, -stretch,
-            strains[rest.node_a].compressive, strains[rest.node_b].compressive});
-        state.peak_shear_strain = std::max({state.peak_shear_strain,
-            strains[rest.node_a].shear, strains[rest.node_b].shear});
+        double tensile = stretch;
+        double compressive = -stretch;
+        double shear = 0.0;
+        if (has_reference) {
+            const Vec3 rest_edge = matter.reference_positions_world_m[rest.node_b] -
+                                   matter.reference_positions_world_m[rest.node_a];
+            const double rest_length = length(rest_edge);
+            if (rest_length > 1.0e-9) {
+                const Vec3 direction = rest_edge * (1.0 / rest_length);
+                for (const std::uint32_t node : {rest.node_a, rest.node_b}) {
+                    if (!strains[node].valid) continue;
+                    const auto resolved = resolveAlongBond(strains[node].green_lagrange, direction);
+                    tensile = std::max(tensile, resolved.normal);
+                    compressive = std::max(compressive, -resolved.normal);
+                    shear = std::max(shear, resolved.shear);
+                }
+            }
+        }
+        state.peak_tensile_stretch = std::max(state.peak_tensile_stretch, tensile);
+        state.peak_compressive_strain = std::max(state.peak_compressive_strain, compressive);
+        state.peak_shear_strain = std::max(state.peak_shear_strain, shear);
     }
 }
 
@@ -451,6 +464,8 @@ MaterialStepStats BrittleBondSolver::step(
     const std::size_t broken_before = countBrokenBonds(matter);
     const double substep_dt =
         frame_dt_s / static_cast<double>(settings_.substeps);
+    std::vector<double> approach_normal_speed;
+    std::vector<std::uint8_t> support_engaged;
 
     for (unsigned substep = 0; substep < settings_.substeps; ++substep) {
         for (ActiveBondState &bond : matter.bonds) {
@@ -471,6 +486,16 @@ MaterialStepStats BrittleBondSolver::step(
                 matter, *sphere, substep_dt, contact));
         }
         record_stage(MaterialStage::PreContact);
+        const bool constrained_support =
+            settings_.support_in_constraint_solve && settings_.support_enabled;
+        if (constrained_support) {
+            approach_normal_speed.assign(matter.nodes.size(),
+                                         std::numeric_limits<double>::quiet_NaN());
+            for (std::size_t i = 0; i < matter.nodes.size(); ++i)
+                approach_normal_speed[i] =
+                    dot(matter.nodes[i].velocity_m_s, settings_.support_plane.normal_world);
+            support_engaged.assign(matter.nodes.size(), 0);
+        }
         for (ActiveNodeState &node : matter.nodes) {
             node.position_world_m += substep_dt * node.velocity_m_s;
         }
@@ -484,6 +509,15 @@ MaterialStepStats BrittleBondSolver::step(
                  bond_index < matter.bonds.size();
                  ++bond_index) {
                 solveBond(matter, bond_index, substep_dt);
+            }
+            if (!constrained_support) continue;
+            for (std::size_t i = 0; i < matter.nodes.size(); ++i) {
+                const double depth = projectSupportPosition(matter.nodes[i], settings_);
+                if (depth > 0.0) {
+                    support_engaged[i] = 1;
+                    stats.maximum_support_projection_m =
+                        std::max(stats.maximum_support_projection_m, depth);
+                }
             }
         }
 
@@ -504,8 +538,15 @@ MaterialStepStats BrittleBondSolver::step(
                 matter, *sphere, substep_dt, contact, true));
         }
         record_stage(MaterialStage::PostContact);
-        for (ActiveNodeState &node : matter.nodes) {
-            applySupportContact(node, settings_);
+        if (constrained_support) {
+            for (std::size_t i = 0; i < matter.nodes.size(); ++i) {
+                if (support_engaged[i] == 0) continue;
+                applySupportVelocity(matter.nodes[i], approach_normal_speed[i], settings_);
+            }
+        } else {
+            for (ActiveNodeState &node : matter.nodes) {
+                applySupportContact(node, settings_);
+            }
         }
         record_stage(MaterialStage::Support);
 

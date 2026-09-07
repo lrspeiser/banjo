@@ -88,7 +88,15 @@ void resolvedFailureStillBreaks() {
          -stats.unassigned_bond_removal_energy_j, 1e-12, "damage stage must expose removed energy");
 }
 
+// The legacy path applied support as an unbounded post-solve position
+// projection; the current path projects inside the constraint sweep and then
+// applies restitution/friction at the velocity level. Both are exercised here:
+// the legacy stage references are kept exactly, and the constrained path must
+// reach the same final position and velocity for this unbonded reference node,
+// so the change is an attribution and redistribution change, not a new law.
 void gravityAndSupportHaveDistinctBudgets() {
+    Vec3 legacy_position{}, legacy_velocity{};
+    for (const bool constrained : {false, true}) {
     Pair pair;
     pair.asset.nodes.resize(1);
     pair.asset.bonds.clear();
@@ -100,7 +108,8 @@ void gravityAndSupportHaveDistinctBudgets() {
     BrittleBondSolver solver({.substeps = 1, .constraint_iterations = 1,
         .use_support_plane = true, .support_plane = makeSupportPlane({}, {0, 1, 0}),
         .surface_dynamic_friction = .2, .surface_restitution = .5,
-        .surface_static_friction = .3, .support_enabled = true, .audit_stages = true});
+        .surface_static_friction = .3, .support_enabled = true,
+        .support_in_constraint_solve = constrained, .audit_stages = true});
     const Vec3 gravity{0, -10, 0};
     const auto before = measureMaterialMechanics(pair.matter, gravity);
     const auto stats = solver.step(pair.matter, .001, gravity);
@@ -113,15 +122,36 @@ void gravityAndSupportHaveDistinctBudgets() {
     near(drift.gravity_potential_energy_j, -.0101, 1e-12, "gravity potential during drift");
     near(kick.mechanicalEnergy() + drift.mechanicalEnergy(), -.00005, 1e-12,
          "semi-implicit gravity integration loss");
-    near(support.linear_momentum_kg_m_s.x, -.303, 1e-12, "support friction impulse");
-    near(support.linear_momentum_kg_m_s.y, 1.515, 1e-12, "support normal impulse");
-    near(support.gravity_potential_energy_j, .1101, 1e-12, "support correction changes potential");
+    if (!constrained) {
+        near(support.linear_momentum_kg_m_s.x, -.303, 1e-12, "support friction impulse");
+        near(support.linear_momentum_kg_m_s.y, 1.515, 1e-12, "support normal impulse");
+        near(support.gravity_potential_energy_j, .1101, 1e-12,
+             "support correction changes potential");
+        legacy_position = pair.matter.nodes[0].position_world_m;
+        legacy_velocity = pair.matter.nodes[0].velocity_m_s;
+    } else {
+        near(support.linear_momentum_kg_m_s.x, -.303, 1e-12,
+             "constrained support charges the same friction impulse");
+        // The projection now happens inside the constraint sweep, so the
+        // velocity it implies is removed by the support stage rather than added.
+        near(support.linear_momentum_kg_m_s.y, .505 - .01 / .001, 1e-12,
+             "constrained support removes the projection velocity to the restitution target");
+        near(support.gravity_potential_energy_j, 0, 1e-12,
+             "constrained support no longer moves the node");
+        near(length(pair.matter.nodes[0].position_world_m - legacy_position), 0, 1e-15,
+             "constrained support reaches the same final position");
+        near(length(pair.matter.nodes[0].velocity_m_s - legacy_velocity), 0, 1e-15,
+             "constrained support reaches the same final velocity");
+        near(stats.maximum_support_projection_m, .01101, 1e-12,
+             "constrained support reports the projected depth");
+    }
     MaterialStageChange sum;
     for (const auto &stage : stats.stage_changes) sum += stage;
     const auto actual = MaterialStageChange::between(before, after);
     near(sum.mechanicalEnergy(), actual.mechanicalEnergy(), 1e-12, "supported step energy closure");
     near(length(sum.angular_momentum_kg_m2_s - actual.angular_momentum_kg_m2_s), 0, 1e-12,
          "supported step angular ledger closure");
+    }
 }
 
 void auditDoesNotChangePhysics() {

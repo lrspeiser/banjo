@@ -97,8 +97,16 @@ MaterialDefinition makeReferenceMaterial(MaterialPreset preset, std::uint64_t se
         material.damping_ratio = 0.015;
         material.strength_variation = 0.12;
         material.calibration.activation_energy_scale = 1.0;
-        material.calibration.damage_strain_multiplier = 8.0;
-        material.calibration.break_strain_multiplier = 16.0;
+        // Failure follows the declared 45 MPa tensile / 35 MPa shear strengths
+        // through the shared SolverCalibration defaults. The previous 8x/16x
+        // strain multipliers put bond failure at 360-720 MPa, so a resolved
+        // impact that exceeds glass strength five-fold produced no damage at
+        // all; the fragmentation seen in earlier runs came from the unbounded
+        // support projection instead. This is a strength-based lattice
+        // criterion, not a Gc-calibrated one, and remains uncalibrated against
+        // laboratory glass data.
+        material.calibration.damage_strain_multiplier = 1.0;
+        material.calibration.break_strain_multiplier = 2.0;
         setContact(material, 0.45, 0.35, 0.001, 0.08);
         break;
     case MaterialPreset::Ceramic:

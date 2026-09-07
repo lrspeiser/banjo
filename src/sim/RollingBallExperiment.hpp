@@ -57,6 +57,10 @@ struct ExperimentSettings {
 
     double rigid_step_s{1.0 / 120.0};
     double material_step_s{1.0 / 240.0};
+    // Numerical resolution of the active material solver. These select how the
+    // same constitutive law is integrated; they are not material properties.
+    unsigned material_substeps{1};
+    unsigned material_constraint_iterations{8};
     unsigned minimum_material_steps{180};
     unsigned stable_material_steps_before_handoff{60};
     unsigned maximum_material_steps{480};
@@ -109,6 +113,10 @@ struct ExperimentStats {
     bool projection_cache_hit{};
 
     double maximum_tensile_stretch{};
+    // Resolution limit of the compiled target lattice, reported next to the
+    // configured material step so an unresolved run is visible rather than
+    // assumed. See matter/Lattice.hpp.
+    LatticeResolutionLimit target_resolution_limit{};
     double active_kinetic_energy_j{};
     double active_elastic_energy_j{};
     double maximum_node_speed_m_s{};

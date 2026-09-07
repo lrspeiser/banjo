@@ -32,6 +32,13 @@ struct BrittleSolverSettings {
     double impact_internal_energy_fraction{0.0};
     double maximum_internal_energy_j{350.0};
     bool support_enabled{true};
+    // Solve support non-penetration as a position constraint inside the
+    // constraint sweep, then apply restitution/friction at the velocity level.
+    // The legacy path applied an unbounded post-solve position projection whose
+    // displacement was read back as physical strain by the damage law; see
+    // docs/glass-shatter-diagnosis.md for the measured effect. Set false only to
+    // reproduce that legacy behaviour.
+    bool support_in_constraint_solve{true};
     // Expensive full-state stage samples, enabled explicitly by audit runs.
     bool audit_stages{};
 };
@@ -53,6 +60,7 @@ struct MaterialStepStats {
     Vec3 constraint_angular_momentum_delta_kg_m2_s{};
     double constraint_mechanical_energy_delta_j{};
     double unassigned_bond_removal_energy_j{};
+    double maximum_support_projection_m{};
     SphereMaterialContactStats rigid_contact{};
     bool stages_measured{};
     MaterialStageChanges stage_changes{};
