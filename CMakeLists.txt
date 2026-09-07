@@ -37,6 +37,7 @@ add_library(
     src/physics/DynamicPatch.cpp
     src/physics/SweptSphereTriangle.cpp
     src/physics/SpherePatchWorld.cpp
+    src/physics/SphereSurfaceContactStep.cpp
     src/physics/SpherePatchAdvance.cpp
     src/physics/PatchPressure.cpp
     src/material/PropertyVariation.cpp
@@ -49,6 +50,10 @@ add_library(
     src/physics/CohesiveInterface.cpp
     src/physics/CohesiveFacet.cpp
     src/physics/CohesiveAssembly.cpp
+    src/physics/CohesiveDynamicPatch.cpp
+    src/physics/CohesiveSphereWorld.cpp
+    src/physics/CorotatedTet.cpp
+    src/physics/FractureComponentState.cpp
     src/physics/FractureTopology.cpp
     src/physics/CohesivePair.cpp
     src/physics/CohesiveSpatialPair.cpp
@@ -301,6 +306,26 @@ if(BANJO_BUILD_TESTS)
     target_link_libraries(banjo_cohesive_assembly_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_cohesive_assembly_tests)
     add_test(NAME banjo_cohesive_assembly_tests COMMAND banjo_cohesive_assembly_tests)
+    add_executable(banjo_cohesive_dynamic_patch_tests tests/cohesive_dynamic_patch_tests.cpp)
+    target_link_libraries(banjo_cohesive_dynamic_patch_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_cohesive_dynamic_patch_tests)
+    add_test(NAME banjo_cohesive_dynamic_patch_tests COMMAND banjo_cohesive_dynamic_patch_tests)
+    add_executable(banjo_cohesive_sphere_world_tests tests/cohesive_sphere_world_tests.cpp)
+    target_link_libraries(banjo_cohesive_sphere_world_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_cohesive_sphere_world_tests)
+    add_test(NAME banjo_cohesive_sphere_world_tests COMMAND banjo_cohesive_sphere_world_tests)
+    add_executable(banjo_corotated_tet_tests tests/corotated_tet_tests.cpp)
+    target_link_libraries(banjo_corotated_tet_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_corotated_tet_tests)
+    add_test(NAME banjo_corotated_tet_tests COMMAND banjo_corotated_tet_tests)
+    add_executable(banjo_metal_dent_acceptance_tests tests/metal_dent_acceptance_tests.cpp)
+    target_link_libraries(banjo_metal_dent_acceptance_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_metal_dent_acceptance_tests)
+    add_test(NAME banjo_metal_dent_acceptance_tests COMMAND banjo_metal_dent_acceptance_tests)
+    add_executable(banjo_fracture_component_state_tests tests/fracture_component_state_tests.cpp)
+    target_link_libraries(banjo_fracture_component_state_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_fracture_component_state_tests)
+    add_test(NAME banjo_fracture_component_state_tests COMMAND banjo_fracture_component_state_tests)
     add_executable(banjo_fracture_topology_tests tests/fracture_topology_tests.cpp)
     target_link_libraries(banjo_fracture_topology_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_fracture_topology_tests)
@@ -495,6 +520,12 @@ endif()
 
 if(BANJO_BUILD_TESTS AND TARGET banjo_platform)
  add_executable(banjo_thermal_burn_acceptance tools/thermal_burn_acceptance.cpp)
+ add_executable(banjo_thermal_experiment_cli tools/thermal_experiment_cli.cpp)
+ add_executable(banjo_cohesive_sphere_probe tools/cohesive_sphere_probe.cpp)
+ target_link_libraries(banjo_cohesive_sphere_probe PRIVATE banjo_core nlohmann_json::nlohmann_json)
+ banjo_enable_warnings(banjo_cohesive_sphere_probe)
+ target_link_libraries(banjo_thermal_experiment_cli PRIVATE banjo_sparse_world nlohmann_json::nlohmann_json)
+ banjo_enable_warnings(banjo_thermal_experiment_cli)
  target_link_libraries(banjo_thermal_burn_acceptance PRIVATE banjo_sparse_world nlohmann_json::nlohmann_json)
  banjo_enable_warnings(banjo_thermal_burn_acceptance)
  add_executable(banjo_thermal_burn_acceptance_tests tests/thermal_burn_acceptance_tests.cpp)

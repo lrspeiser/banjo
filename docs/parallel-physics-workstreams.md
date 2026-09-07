@@ -6,10 +6,12 @@ Four workers are available in this session: three implementation agents and the 
 
 | Lane | Owner | Current concrete assignment | Acceptance before integration | Next connected milestone |
 |---|---|---|---|---|
-| Glass fracture | `surface_contact_geometry` | Triangular cohesive interface with local irreversible history, distributed forces and explicit fracture work | Opening/unloading/compression, area-scaled fracture work, force and reference-moment balance | Couple accepted facet state to material dynamics; drive localized cracks from sphere impact |
-| Cutting and material separation | `sphere_patch_acceptance` | Tet-local topology, matching internal facets, connected components and newly exposed surfaces | Preserve mass/volume/constraints; local failure does not disconnect surviving paths; bounded deterministic traversal | Share separation state with fracture, then add blade contact and soft-material response for tomato cutting |
-| Fire and thermal reactions | `dynamic_patch` | Native finite-heater experiment through the existing sparse thermal runtime, including oak fuel/oxygen and glass/iron controls | Heat/chemical energy and mass ledgers, local propagation, finite-reactant extinction, timestep and work-budget checks | Archive thermal recordings in the playground, then qualify thermal/mechanical coupling |
-| Metal/contact and integration | Primary | Finish static-friction accounting; review all interfaces, register builds, run combined checks and publish coherent checkpoints | Pure rolling/work oracle versus dissipative sliding; shared regression and scope review | Connect cohesive dynamics/topology/contact and actual 3D fragment playback before more dent showcases |
+| Glass fracture and integration | Primary | Coupled cohesive dynamics, sphere contact, component surfaces and 3D archive verified | Actual low/high impact; transactional rejection; raw work/momentum; incomplete duration explicit | Finite-rotation cohesive dynamics, crack event subdivision and continued fragment contacts |
+| Metal deformation | `surface_contact_geometry` | Post-yield J2 rollback/continuation regression and contact integration audit complete | Full tensor/history and sphere state unchanged on rejection; control continuation identical | Full-state restart and unloaded residual-equilibrium dent acceptance |
+| Cutting | `sphere_patch_acceptance` | Public wedge/tomato route, blade-absent control and timestep comparison complete | Native causal contrast, retained mass/core, sensitivity reported | Resolved blade contact and soft-tissue law; convergence remains open |
+| Fire and thermal reactions | `dynamic_patch` | Bounded thermal experiment API, finite-heater oak/glass/iron comparisons complete | Combined energy/mass ledger, finite reactants, bounded work, explicit incomplete duration | General playground authoring/viewing for thermal cells; thermal/mechanical coupling |
+
+This is the latest completed assignment batch, not a claim that all four workers are continuously running. The primary reviews and integrates completed patches; subsequent useful independent assignments refill the available slots. See [measured results](cohesive-dynamics-checkpoint.md).
 
 ## Shared contract and merge order
 
@@ -24,7 +26,7 @@ Agents own separate files; the integrator owns shared build registration, API co
 
 ## Gates that remain open
 
-The current coupled tetrahedral solver has small-strain elastic/J2 response but no connected fracture law. Its conforming mesh shares nodes across internal faces; separating components requires different topology and force assembly. Large fragment rotations, fragment self-contact, calibrated fracture and realtime cost remain separate implementation/acceptance gates. The older cell-lattice glass run stops at its damage limit and has zero broken links in the latest reported job (`8b113b80050e441686561e685f3b72a0`).
+The original coupled tetrahedral solver retains small-strain elastic/J2 response. A separate cohesive adapter now advances tet-local topology and elastic bulk under actual sphere contact, while retaining its explicit small-rotation limit. Its finite-rotation continuation and coupled J2 support are not yet implemented. Large fragment rotations, fragment self-contact, calibrated fracture and realtime cost remain separate implementation/acceptance gates. The older cell-lattice glass run stops at its damage limit and has zero broken links in the latest reported job (`8b113b80050e441686561e685f3b72a0`).
 
 Fire currently uses a lumped thermal/reactive approximation with finite local oxygen; smoke, airflow and full fluids remain deferred. Topology for separation is a dependency for cutting, not a knife/tomato simulation. No completion date or whole-platform acceptance is implied by running several agents.
 

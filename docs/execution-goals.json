@@ -958,46 +958,53 @@
     }
   },
   "parallel_execution": {
-    "status": "first_batch_verified_next_dependencies_open",
+    "status": "second_batch_integrated_full_physics_acceptance_open",
     "assignment_date": "2026-09-06",
     "workstream_contract": "docs/parallel-physics-workstreams.md",
     "worker_limit": 4,
     "first_visual_milestone": "Complete iron-ball/glass fracture and continued fragment contacts in actual 3D; retain oak and iron controls.",
     "lanes": [
       {
+        "owner": "primary",
+        "category": "glass_fracture_integration",
+        "assignment": "cohesive_dynamics_sphere_component_playback",
+        "status": "verified_partial_fracture_with_explicit_solver_limit",
+        "next": "finite_rotation_and_damage_event_subdivision_then_fragment_contact"
+      },
+      {
         "owner": "surface_contact_geometry",
-        "category": "glass_fracture",
-        "assignment": "cohesive_facet_law_and_tests",
-        "status": "implemented_and_tested_dependency"
+        "category": "metal_deformation",
+        "assignment": "full_j2_rejection_continuation_and_dent_audit",
+        "status": "verified_reference_unloaded_dent_open",
+        "next": "complete_state_restart_and_unload_residual_equilibrium"
       },
       {
         "owner": "sphere_patch_acceptance",
-        "category": "cutting_and_shared_separation",
-        "assignment": "tet_topology_components_and_exposed_faces",
-        "status": "implemented_and_tested_dependency"
+        "category": "cutting",
+        "assignment": "native_wedge_tomato_causal_and_timestep_controls",
+        "status": "tested_timestep_sensitivity_unresolved",
+        "next": "blade_contact_soft_tissue_and_convergence"
       },
       {
         "owner": "dynamic_patch",
         "category": "fire_thermal",
-        "assignment": "finite_heat_burn_acceptance_and_controls",
-        "status": "implemented_and_tested_dependency"
-      },
-      {
-        "owner": "primary",
-        "category": "metal_contact_integration",
-        "assignment": "static_friction_ledger_build_integration_and_combined_validation",
-        "status": "implemented_and_tested_dependency"
+        "assignment": "bounded_thermal_api_matched_finite_heater",
+        "status": "verified_reference_general_playground_open",
+        "next": "thermal_language_archive_and_viewer_integration"
       }
     ],
     "handoff_policy": "On assignment completion, review and assign the next independent bounded dependency. File owners do not edit shared build/docs; primary integrates and publishes verified changes.",
     "open_gates": [
-      "coupled_fracture_dynamics",
       "mixed_mode_fracture",
       "finite_rotation_fragments",
       "fragment_contact",
       "blade_and_soft_tissue",
       "thermal_mechanical_coupling",
-      "realtime_qualification"
+      "realtime_qualification",
+      "full_duration_coupled_fracture",
+      "damage_event_contact_timing",
+      "unloaded_dent_equilibrium",
+      "restartable_coupled_material_state"
     ],
     "checkpoint": "docs/parallel-physics-checkpoint.md",
     "verification": {
@@ -1009,6 +1016,16 @@
       "python_skipped": 1,
       "python_wall_s": 6.697,
       "interactive_3d": "unchanged; no new shatter playback"
+    },
+    "latest_checkpoint": "docs/cohesive-dynamics-checkpoint.md",
+    "latest_verification": {
+      "native_suites": 72,
+      "native_passed": 72,
+      "native_duration_s": 92.82,
+      "physical_acceptance": "unfinished",
+      "python_discovered": 154,
+      "python_passed": 153,
+      "python_skipped": 1
     }
   }
 }

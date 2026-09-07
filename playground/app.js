@@ -182,10 +182,11 @@
       setText($("plan-badge"), "Awaiting prompt");
       return;
     }
-    setText($("plan-badge"), "Generated proposal");
+    const nativeReference = state.job?.authoring_source === "native_development_reference";
+    setText($("plan-badge"), nativeReference ? "Engine development reference" : "Generated proposal");
     const provenance = document.createElement("p");
     provenance.className = "muted";
-    provenance.textContent = "Generated proposal; engine evidence appears in Results.";
+    provenance.textContent = nativeReference ? "Native solver reference, not an LLM-generated experiment. Accepted states and limits appear in Results." : "Generated proposal; engine evidence appears in Results.";
     const stats = document.createElement("div");
     stats.className = "plan-summary";
     const experimentNames = {
@@ -200,6 +201,7 @@
       material_state_reference: "Material-state reference",
       continuum_pressure_reference: "Spatial pressure reference",
       dynamic_material_impact: "Dynamic material impact",
+      cohesive_sphere_reference: "Cohesive impact development reference",
       glass_reference: "Published glass reference",
       unsupported: "Unsupported request",
     };
@@ -346,7 +348,7 @@
       return item.inner_cases.map((entry) => `${text(entry.material_id)}: ${text(entry.status)} (${text(entry.computed_frames)} frames)`).join(" · ");
     }
     if (report.schema === "banjo.dynamic-material-playback.v1" && Array.isArray(report.cases)) {
-      return report.cases.map((entry) => `${text(entry.material_id)}: ${text(entry.status)} (${entry.frames?.length || 0} frames)`).join(" · ");
+      return report.cases.map((entry, index) => `${text(entry.material_id)}: ${text(entry.status)} (${entry.frames?.length ?? item.inner_cases?.[index]?.computed_frames ?? "unavailable"} frames)`).join(" · ");
     }
     const keys = ["fracture_count", "broken_bonds", "elapsed_s", "wall_ms", "mass_kg", "energy_j", "status"];
     const found = keys.find((key) => report[key] !== undefined);
@@ -410,6 +412,7 @@
     const limited = playback?.status === "solver_limit" || String(item?.status || "").includes("limit");
     const limitedMaterials = (item?.inner_cases || playback?.cases || []).filter((entry) => entry.status === "solver_limit").map((entry) => entry.material_id);
     const materialStatus = (item?.inner_cases || playback?.cases || []).map((entry) => `${text(entry.material_id)}: ${text(entry.status)}`).join(" · ");
+    if (playback?.native_schema === "banjo.cohesive-sphere-probe.v1") return ["warning", "Development reference: a launched sphere hits a fictional material. Colors show actual connected components; surfaces follow solved interface separation. The high-speed case stops at the small-rotation model limit. This is not the calibrated glass-drop experiment."];
     if (playback?.schema === "banjo.dynamic-material-playback.v1" && invalid) return ["warning", `Dynamic material impact is experimental and not physically validated.${materialStatus ? ` ${materialStatus}.` : ""}`];
     if (limitedMaterials.length) return ["warning", `Solver limit: ${limitedMaterials.join(", ")}. Showing each material's last accepted sampled frame; response remains experimental.${materialStatus ? ` ${materialStatus}.` : ""}`];
     if (limited) return ["warning", `Solver stopped after ${playback?.completed_steps ?? "some"} of ${playback?.requested_steps ?? "requested"} steps. ${text(playback?.error,item?.error || "Last accepted states only.")}${unresolved ? " Temporal resolution is also unresolved." : ""}`];
@@ -425,7 +428,7 @@
     state.scene = window.BanjoScene.create($("viewer-stage"), {
       onFrame: ({index, count, frame, continuum, dynamic}) => { $("viewer-frame").max = String(Math.max(0,count-1)); $("viewer-frame").value=String(index); const stopped=dynamic ? frame?.material_states?.filter(x=>x.stopped).map(x=>x.material_id) || [] : []; const shownTime=dynamic && Number.isFinite(frame?.time_s) ? Number(frame.time_s.toPrecision(9)) : frame?.time_s; const detail=continuum ? ` · ${text(frame?.phase,"load")} · load ${frame?.load_fraction !== undefined ? `${Math.round(frame.load_fraction*100)}%` : `frame ${index+1}`}` : shownTime !== undefined ? ` · ${text(shownTime)} s${stopped.length ? ` · stopped: ${stopped.join(", ")}` : ""}` : ""; $("viewer-frame-output").textContent=`${index+1} / ${count || 0}${detail}`; $("viewer-magnification").disabled=!continuum;if(!continuum)$("viewer-magnification").value="1"; $("viewer-bonds").closest("label").hidden=!!dynamic; },
       onPlayState: (playing) => { $("viewer-play").textContent=playing?"Pause":"Play"; },
-      onInspect: (data) => { $("viewer-inspect").textContent = data ? Object.entries(data).filter(([k,v]) => k !== "source" && typeof v !== "object").slice(0,8).map(([k,v])=>`${k}: ${text(v)}`).join(" · ") : "Nothing selected."; },
+      onInspect: (data) => { $("viewer-inspect").textContent = data ? Object.entries(data).filter(([k,v]) => k !== "source" && typeof v !== "object").slice(0,16).map(([k,v])=>`${k}: ${text(v)}`).join(" · ") : "Nothing selected."; },
     });
     return state.scene;
   }
@@ -476,7 +479,7 @@
     const item=state.job?.cases?.[index]; if(!state.jobId || !playbackAvailable(item)){if(auto)return;showToast("This case has no embedded playback data.",true);return;}
     $("viewer-review").replaceChildren();$("viewer-evidence").textContent="";$("viewer-evidence-details").open=false;state.selectedCase=index;renderLanguage();renderViewerCaseSelect();activateTab("viewer");$("viewer-title").textContent=text(state.job?.plan?.ui?.title,item.name || "Computed sequence.");
     const key=`${state.jobId}:${index}`, request=++state.playbackRequest;
-    try { let playback=state.playbackCache.get(key);if(!playback){playback=await api(`/api/jobs/${encodeURIComponent(state.jobId)}/playback/${index}`);state.playbackCache.set(key,playback);}if(request!==state.playbackRequest||key!==`${state.jobId}:${state.selectedCase}`)return; setPlaybackEnabled(true); if(state.loadedPlaybackKey!==key){ensureScene().load(playback);state.loadedPlaybackKey=key;} const [kind,message]=validityMessage(item,playback), validity=$("viewer-validity");validity.className=`viewer-validity ${kind}`;validity.textContent=message;renderCustomControls(state.job?.plan?.ui);$("viewer-native").disabled=!canOpenCase(item); }
+    try { let playback=state.playbackCache.get(key);if(!playback){playback=await api(`/api/jobs/${encodeURIComponent(state.jobId)}/playback/${index}`);state.playbackCache.set(key,playback);}if(request!==state.playbackRequest||key!==`${state.jobId}:${state.selectedCase}`)return; setPlaybackEnabled(true); if(state.loadedPlaybackKey!==key){ensureScene().load(playback);if(playback.native_schema === "banjo.cohesive-sphere-probe.v1"){$("viewer-speed").value="0.001";state.scene.setSpeed(0.001);}state.loadedPlaybackKey=key;} const [kind,message]=validityMessage(item,playback), validity=$("viewer-validity");validity.className=`viewer-validity ${kind}`;validity.textContent=message;renderCustomControls(state.job?.plan?.ui);$("viewer-native").disabled=!canOpenCase(item); }
     catch(error){state.scene?.dispose();state.scene=null;$("viewer-stage").replaceChildren();const p=document.createElement("p");p.className="viewer-error";p.textContent=error.message;$("viewer-stage").append(p);state.loadedPlaybackKey=null;showToast(error.message,true);}
   }
 

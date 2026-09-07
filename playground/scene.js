@@ -406,6 +406,23 @@ function create(container, hooks = {}) {
             "Dynamic playback frames must contain finite monotonic accepted states.",
           );
         time = x.time_s;
+        if (x.boundary_triangles !== undefined) {
+          if (!Array.isArray(x.boundary_triangles) || x.boundary_triangles.length > 65536)
+            throw new Error("Dynamic fracture surface count is invalid.");
+          for (const face of x.boundary_triangles)
+            if (!Array.isArray(face) || face.length !== 3 || new Set(face).size !== 3 ||
+                face.some(index => !Number.isInteger(index) || index < 0 || index >= m.reference_positions_m.length))
+              throw new Error("Dynamic fracture surface topology is invalid.");
+        }
+        if (x.component_by_tetrahedron !== undefined &&
+            (!Array.isArray(x.component_by_tetrahedron) ||
+             x.component_by_tetrahedron.length !== m.tetrahedra.length ||
+             x.component_by_tetrahedron.some(id => !Number.isInteger(id) || id < 0 || id >= m.tetrahedra.length) ||
+             new Set(x.component_by_tetrahedron).size !== x.components))
+          throw new Error("Dynamic fracture components are invalid.");
+        for (const field of ["maximum_damage", "fracture_dissipation_j", "fully_separated_facets", "components"])
+          if (x[field] !== undefined && (!Number.isFinite(x[field]) || x[field] < 0))
+            throw new Error("Dynamic fracture evidence is invalid.");
       }
       for (const [list, size] of [
         [m.tetrahedra, 4],
@@ -454,9 +471,13 @@ function create(container, hooks = {}) {
         new THREE.Float32BufferAttribute(ps.flat(), 3),
       );
       g.setIndex(tris.flat());
+      const componentColors = c.frames.some(f => f.component_by_tetrahedron);
+      if (componentColors)
+        g.setAttribute("color", new THREE.Float32BufferAttribute(new Float32Array(ps.length * 3).fill(1), 3));
       g.computeVertexNormals();
       const mat = new THREE.MeshStandardMaterial({
-        color: palette[i % palette.length],
+        color: componentColors ? 0xffffff : palette[i % palette.length],
+        vertexColors: componentColors,
         side: THREE.DoubleSide,
         roughness: 0.68,
         transparent: true,
@@ -505,6 +526,8 @@ function create(container, hooks = {}) {
         material_id: c.material_id,
         name: c.material?.name || c.material_id,
         reference: ps,
+        tetrahedra: c.mesh.tetrahedra,
+        boundaryTriangles: tris,
         summary: c.summary,
         error: c.error,
       });
@@ -550,6 +573,9 @@ function create(container, hooks = {}) {
           maximum_equivalent_plastic_strain:
             f.maximum_equivalent_plastic_strain,
           plastic_dissipation_j: f.plastic_dissipation_j,
+          ...(f.components !== undefined ? {components: f.components,
+            fully_separated_facets: f.fully_separated_facets,
+            fracture_dissipation_j: f.fracture_dissipation_j} : {}),
         };
       }),
     }));
@@ -607,6 +633,20 @@ function create(container, hooks = {}) {
         for (let n = 0; n < s.positions_m.length; n++)
           a.setXYZ(n, ...s.positions_m[n]);
         a.needsUpdate = true;
+        const surface = s.boundary_triangles || b.boundaryTriangles;
+        if (surface !== b.displayedSurface) {
+          b.mesh.geometry.setIndex(surface.flat());
+          b.displayedSurface = surface;
+        }
+        if (s.component_by_tetrahedron && s.component_by_tetrahedron !== b.displayedComponents) {
+          const colors = b.mesh.geometry.attributes.color;
+          for (const [tet, id] of s.component_by_tetrahedron.entries()) {
+            const color = new THREE.Color().setHSL((0.43 + id * 0.61803398875) % 1, 0.58, 0.61);
+            for (const node of b.tetrahedra[tet]) colors.setXYZ(node, color.r, color.g, color.b);
+          }
+          colors.needsUpdate = true;
+          b.displayedComponents = s.component_by_tetrahedron;
+        }
         b.mesh.geometry.computeVertexNormals();
         for (const [j, l] of b.structure.pairs.entries()) {
           const q = s.positions_m[l[0]],
@@ -639,6 +679,10 @@ function create(container, hooks = {}) {
           status: b.status,
           stopped,
           current_time_s: s.time_s,
+          ...(s.components !== undefined ? {components: s.components,
+            fully_separated_facets: s.fully_separated_facets,
+            maximum_damage: s.maximum_damage,
+            fracture_dissipation_j: s.fracture_dissipation_j} : {}),
           deformation: "actual positions",
           maximum_deformation_m: deformation,
           sphere_speed_m_s: new THREE.Vector3(
@@ -757,6 +801,7 @@ function create(container, hooks = {}) {
           break;
         }
         update(frame + 1);
+        if (frame >= frames.length - 1) setPlaying(false);
         d = delay();
       }
     }
@@ -836,7 +881,7 @@ function create(container, hooks = {}) {
       update(i);
     },
     setSpeed(v) {
-      speed = clamp(Number(v) || 1, 0.1, 4);
+      speed = clamp(Number(v) || 1, 0.001, 4);
     },
     setMagnification(v) {
       magnification = dynamic ? 1 : clamp(Number(v) || 1, 1, 100);

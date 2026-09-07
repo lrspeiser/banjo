@@ -135,6 +135,8 @@ def _scene_summary(package: dict[str, Any]) -> dict[str, Any]:
 def _dynamic_material_diagnostics(package: dict[str, Any],
                                   recording: dict[str, Any]) -> dict[str, Any]:
     """Compact native evidence for the bounded dynamic-material experiment."""
+    if recording.get("native_schema") == "banjo.cohesive-sphere-probe.v1":
+        return _cohesive_reference_diagnostics(package, recording)
     request = recording.get("request") if isinstance(recording.get("request"), dict) else {}
     requested_duration = _finite_number(request.get("duration_s"))
     budget = _finite_number(request.get("energy_budget_j"))
@@ -253,6 +255,38 @@ def _dynamic_material_diagnostics(package: dict[str, Any],
             "The dynamic patch does not model fracture, so fragment absence is not a failure criterion.",
         ],
     }
+
+
+def _cohesive_reference_diagnostics(package: dict[str, Any], recording: dict[str, Any]) -> dict[str, Any]:
+    """Keep measured separation and incomplete duration visible to GPT analysis."""
+    cases = recording.get("cases", [])
+    facts, checks = [], []
+    for index, case in enumerate(cases[:8]):
+        summary = case.get("summary", {})
+        completed = _finite_number(case.get("completed_duration_s"))
+        requested = _finite_number(case.get("requested_duration_s"))
+        complete = case.get("status") == "complete" and completed is not None and requested is not None and abs(completed - requested) <= 1e-12
+        facts.append(_bounded_json({"material_id": case.get("material_id"),
+            "material": case.get("material"), "status": case.get("status"),
+            "requested_duration_s": requested, "completed_duration_s": completed,
+            "summary": summary, "limitations": case.get("limitations", [])}))
+        checks.append(_result(f"case_{index}_completion", "pass" if complete else "fail",
+            "requested_duration_completed" if complete else "solver_stopped_before_requested_duration",
+            "native accepted state and duration", {"requested_duration_s": requested, "completed_duration_s": completed}))
+        contacts = summary.get("accepted_contacts")
+        observed = type(contacts) is int and contacts > 0
+        checks.append(_result(f"case_{index}_contact", "pass" if observed else "unknown",
+            "native_solver_reported_contact" if observed else "contact_not_established", "native accepted-contact counter"))
+    return {"schema": SCHEMA, "source_schema": recording["native_schema"],
+        "native_facts": {"status": recording.get("status"), "cases": facts,
+                         "cases_truncated": len(cases) > 8},
+        "package": {"sha256": _package_sha256(package)}, "expectations": [], "checks": checks,
+        "validity": {"physical_response_validated": False},
+        "limitations": ["Native development reference; not LLM-authored and not calibrated glass.",
+            "Launched sphere and fictional material; no gravity drop or ground contact.",
+            "Separated components are computed from failed cohesive facets. This is not a completed shatter benchmark.",
+            "Large fragment rotations and fragment self-contact remain unsupported.",
+            "Signed and absolute accumulated numerical energy residuals are distinct diagnostics; wall time is not realtime qualification."]}
 
 
 def _poses_by_frame(recording: dict[str, Any]) -> list[tuple[float, dict[str, list[float]]]]:
