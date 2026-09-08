@@ -61,12 +61,24 @@
     showToast.timer = window.setTimeout(() => { node.hidden = true; }, 4200);
   }
 
-  async function api(path, options = {}) {
+  async function api(path, options = {}, retried = false) {
     const response = await fetch(path, options);
     let data = null;
     try { data = await response.json(); } catch { data = null; }
     if (!response.ok) {
       const detail = data && (data.error || data.message);
+      // The session token is minted when the server starts, so a restart
+      // invalidates the one this page is holding and every write fails with a
+      // 403 that reads like the user did something wrong. Fetch the current
+      // token and retry once before surfacing it.
+      if (response.status === 403 && !retried && /session token/i.test(String(detail || ""))) {
+        try { state.status = await api("/api/status"); } catch { /* fall through to the original error */ }
+        const token = state.status && state.status.csrf_token;
+        if (token) {
+          const headers = { ...(options.headers || {}), "X-Banjo-Token": token };
+          return api(path, { ...options, headers }, true);
+        }
+      }
       throw new Error(detail ? text(detail) : `Request failed (${response.status})`);
     }
     return data;
