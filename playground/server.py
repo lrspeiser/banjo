@@ -4,6 +4,8 @@ Run: python playground/server.py --port 8765
 Credentials are read only on the server. Static serving is an explicit allowlist.
 """
 from __future__ import annotations
+import base64
+import binascii
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
@@ -683,6 +685,39 @@ class Playground:
             "native_cli_metadata":metadata,"inner_cases":inner_cases,"status":case_status,"native_scene":True,"playback_available":True}],
             status="complete",message=message)
 
+    def capture(self, body):
+        """Write a viewer frame to disk and return where it went.
+
+        The image is produced by the viewer's own renderer, so what is written
+        is the rendering the owner is looking at rather than a redraw by some
+        other code path.
+        """
+        if not isinstance(body, dict) or set(body) - {"job_id","case_index","frame","data_url","label"}:
+            raise ValueError("Expected job_id, case_index, frame, data_url and an optional label")
+        job_id = body.get("job_id","")
+        if not re.fullmatch(r"[0-9a-f]{32}", str(job_id)): raise ValueError("Invalid job identity")
+        case_index = body.get("case_index",0)
+        if type(case_index) is not int or not 0 <= case_index <= 15: raise ValueError("case_index must be 0..15")
+        frame = body.get("frame",0)
+        if type(frame) is not int or not 0 <= frame <= 100000: raise ValueError("frame must be 0..100000")
+        label = str(body.get("label",""))[:60]
+        if label and not re.fullmatch(r"[A-Za-z0-9 _.-]*", label): raise ValueError("label must be plain text")
+        data_url = body.get("data_url","")
+        prefix = "data:image/png;base64,"
+        if not isinstance(data_url,str) or not data_url.startswith(prefix):
+            raise ValueError("data_url must be a base64 PNG")
+        try: image = base64.b64decode(data_url[len(prefix):], validate=True)
+        except (ValueError, binascii.Error) as exc: raise ValueError(f"Undecodable image: {exc}") from exc
+        if not image.startswith(b"\x89PNG\r\n\x1a\n"): raise ValueError("Not a PNG")
+        if len(image) > 32*1024*1024: raise ValueError("Frame exceeds 32 MB")
+        directory = self.runs_path.parent / "playground-captures" / job_id
+        directory.mkdir(parents=True, exist_ok=True)
+        stem = f"case{case_index:02d}-frame{frame:05d}" + (f"-{label.replace(' ','_')}" if label else "")
+        path = directory / f"{stem}.png"
+        path.write_bytes(image)
+        self.log_event(job_id, "frame_captured", case_index=case_index, frame=frame, bytes=len(image), path=str(path))
+        return {"path": str(path), "bytes": len(image)}
+
     def playback(self, job_id, index):
         if (job_id,index) not in self.playbacks: self.get(job_id)
         with self.lock:
@@ -890,7 +925,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             length=int(self.headers.get("Content-Length","0"))
-            if not 1<=length<=32768: raise ValueError("Request body exceeds bounds")
+            capture = urlsplit(self.path).path == "/api/capture"
+            # A rendered frame is a PNG data URL, far past the bound the
+            # small JSON routes share, so it gets its own.
+            if not 1<=length<=(48*1024*1024 if capture else 32768):
+                raise ValueError("Request body exceeds bounds")
             # Consume the bounded body before rejecting headers. Closing with
             # unread POST bytes can reset the TCP connection on Windows and
             # discard the intended 400/403 response. No JSON is interpreted or
@@ -913,6 +952,10 @@ class Handler(BaseHTTPRequestHandler):
             # timeout and registers the recording as a job, so a changed plate
             # or drop height is watchable as soon as the lane returns.
             if path=="/api/fracture/run": return self.send(fracture_lab.run(self.server.app,body))
+            # Save the frame the 3D viewer is showing. The page cannot write
+            # a file and cannot reach any other origin, so the one way a
+            # result leaves the tab it was rendered in is through here.
+            if path=="/api/capture": return self.send(self.server.app.capture(body))
             match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/analyze",path)
             if match: return self.send(self.server.app.analyze(match[1],body))
             match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/rerun",path)
