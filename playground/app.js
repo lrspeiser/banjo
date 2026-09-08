@@ -855,8 +855,18 @@
     const snapNote = moved ? ` — plate runs as ${snapped.map((v) => Math.round(v * 1000)).join("x")} mm` : "";
     $("fracture-cells").textContent = `${n[0]}x${n[1]}x${n[2]} = ${cells} cells` + snapNote + (over ? ` (over this lane's ${lane.max_cells})` : "");
     $("fracture-cells").classList.toggle("bad", Boolean(over));
+    // Only one of the two can decide the impact, and the server takes the speed
+    // when both are filled in, so say which one is deciding rather than letting
+    // a typed drop height quietly do nothing.
     const v = spec.speed_m_s ?? Math.sqrt(2 * 9.81 * spec.drop_m);
-    $("fracture-note").textContent = `Impact at ${v.toFixed(2)} m/s` + (spec.speed_m_s == null ? ` from a ${spec.drop_m.toFixed(2)} m drop.` : ` (given speed).`);
+    const from = spec.speed_m_s == null
+      ? `a ${spec.drop_m.toFixed(2)} m drop (v = sqrt(2 g h))`
+      : `the impact speed you set; clear it to use the drop height instead`;
+    // The ball is placed 2 mm above the target already moving: the fall itself
+    // is not simulated, so a larger drop height is a faster strike, not a
+    // longer descent to watch.
+    $("fracture-note").textContent =
+      `Strikes at ${v.toFixed(2)} m/s, from ${from}. The ball starts 2 mm above the target already at that speed — the fall is not simulated.`;
     $("fracture-run").disabled = fracture.busy || Boolean(over) || !(lane && lane.available);
   }
 
@@ -992,6 +1002,11 @@
     renderFractureScenarios();
     renderFractureLanes();
     $("fracture-controls").addEventListener("input", fractureCells);
+    // Typing in either impact field clears the other, so the one being edited
+    // is the one that decides. Without this a drop height typed while a speed
+    // is present is silently ignored.
+    $("f-drop").addEventListener("input", () => { if ($("f-drop").value.trim() !== "") $("f-speed").value = ""; fractureCells(); });
+    $("f-speed").addEventListener("input", () => { if ($("f-speed").value.trim() !== "") $("f-drop").value = ""; fractureCells(); });
     $("fracture-controls").addEventListener("submit", (event) => { event.preventDefault(); runFractureLab(); });
     $("fracture-run").addEventListener("click", runFractureLab);
     $("fracture-open").addEventListener("click", () => { if (fracture.lastJob) openFractureJob(fracture.lastJob).catch((e) => showToast(e.message, true)); });
