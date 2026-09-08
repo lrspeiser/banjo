@@ -1,9 +1,11 @@
 #include "fastlattice/TileImpactScene.hpp"
 
+#include "fastlattice/Refracture.hpp"
 #include "fracture/BondFailure.hpp"
 #include "fracture/BrittleBondSolver.hpp"
 #include "fracture/ConnectedComponents.hpp"
 #include "fracture/FragmentGeometry.hpp"
+#include "fracture/ImpactEvent.hpp"
 #include "material/MaterialCompiler.hpp"
 #include "rigid/JoltWorld.hpp"
 
@@ -136,6 +138,25 @@ std::unique_ptr<LatticeBackend> makeBackend(const TileImpactRequest &r, const La
 Vec3 nodePosition(const LatticeState &state, std::uint32_t i) {
     return state.origin + Vec3{state.x0[3 * i] + state.u[3 * i], state.x0[3 * i + 1] + state.u[3 * i + 1],
                                state.x0[3 * i + 2] + state.u[3 * i + 2]};
+}
+
+// Jolt's impact collector is filled from its worker threads under a mutex, so
+// the order events arrive in is a thread-completion order. Every re-entry
+// decision is taken on this total order instead, which is a function of the
+// contacts themselves: same scene, same choice, on every backend and every run.
+bool impactOrder(const ImpactEvent &a, const ImpactEvent &b) {
+    if (a.body_a != b.body_a) return a.body_a < b.body_a;
+    if (a.body_b != b.body_b) return a.body_b < b.body_b;
+    const Vec3 &pa = a.contact_point_world_m, &pb = b.contact_point_world_m;
+    if (pa.x != pb.x) return pa.x < pb.x;
+    if (pa.y != pb.y) return pa.y < pb.y;
+    if (pa.z != pb.z) return pa.z < pb.z;
+    if (a.closing_speed_m_s != b.closing_speed_m_s) return a.closing_speed_m_s > b.closing_speed_m_s;
+    const Vec3 &na = a.normal_a_to_b, &nb = b.normal_a_to_b;
+    if (na.x != nb.x) return na.x < nb.x;
+    if (na.y != nb.y) return na.y < nb.y;
+    if (na.z != nb.z) return na.z < nb.z;
+    return a.available_normal_energy_j > b.available_normal_energy_j;
 }
 
 std::vector<std::uint32_t> componentIds(const ActiveMatter &matter, std::size_t *count,
@@ -519,6 +540,15 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
     // Handoff: connected components -> rigid fragments -> Jolt.
     const auto handoff_begin = Clock::now();
     writeBackLatticeState(state, setup.schedule, setup.matter);
+    // The permanent extension a bond carries is state, not a derived quantity,
+    // and ActiveBondState has nowhere to put it, so it is kept here in the
+    // asset's own bond order. A re-entry reads it back, which is what stops a
+    // plate that has already flowed from coming back unyielded.
+    std::vector<double> plastic_extension_m(B, 0.0), plastic_strain_m(B, 0.0);
+    for (std::size_t k = 0; k < B; ++k) {
+        plastic_extension_m[setup.schedule.bond_order[k]] = state.plastic_extension[k];
+        plastic_strain_m[setup.schedule.bond_order[k]] = state.plastic_strain[k];
+    }
     const auto components = findConnectedComponents(setup.matter);
     m.components = components.size();
     if (!components.empty()) {
@@ -564,6 +594,16 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
         clampCapacity(128U * components.size(), 8192U, 65536U)};
     JoltWorld world(std::clamp(std::thread::hardware_concurrency(), 1U, 64U), capacity);
     world.setGravity(r.gravity_m_s2);
+    if (r.refracture) {
+        // Observation only: the collector reads the manifolds Jolt has already
+        // solved and changes no contact law, setting or response. It is turned
+        // on ONLY here, so a run without re-fracture does not even build the
+        // events. The detailed mode is what makes the ground's persisted
+        // contacts visible -- a fragment landing on a corner is a persisted
+        // support contact, not a fresh one.
+        world.setImpactObservationsEnabled(true);
+        world.setDetailedImpactObservations(true);
+    }
     world.addSupportSurface({
         .frame = makeSupportPlane({0.0, setup.ground_y, 0.0}, {0.0, 1.0, 0.0}),
         .material = setup.ground_material,
@@ -584,10 +624,24 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
                    .angular_velocity_rad_s = toVec3(sphere.angular_velocity),
                    .mass_override_kg = setup.sphere_world.mass, .sphere_inertia_factor = 0.4});
     world.addFragments(build.rigid_fragments);
-    // Cell -> fragment mapping and the cells' offsets in the fragment frame at handoff.
+    // Cell -> piece mapping and the cells' offsets in the piece's frame. A
+    // "piece" is a rigid body that owns a set of the tile's cells; the handoff
+    // makes one per component and a re-entry replaces one by the pieces it
+    // became, so the recording and the trigger keep working across both.
+    struct RigidPiece {
+        MatterBodyId body_id{};
+        std::uint32_t component_id{};
+        std::vector<std::uint32_t> nodes;
+        std::vector<Vec3> offsets;
+        // The trigger's per-fragment constants, computed once here so that a
+        // contact costs four multiplies and a compare.
+        FragmentFractureLimits limits{};
+    };
+    std::vector<RigidPiece> pieces;
     std::vector<std::int32_t> cell_fragment(N, -1);
     std::vector<Vec3> cell_offset(N);
     std::vector<std::uint32_t> handoff_component = componentIds(setup.matter, nullptr, nullptr, nullptr);
+    std::vector<std::uint32_t> live_component = handoff_component;
     {
         std::size_t fragment_index = 0;
         // buildFragmentRepresentations visits components sorted the same way
@@ -596,14 +650,26 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
             if (fragment_index >= build.rigid_fragments.size()) break;
             const RigidFragmentDescription &fragment = build.rigid_fragments[fragment_index];
             if (fragment.source_node_count != component.node_indices.size()) continue;
+            RigidPiece piece;
+            piece.body_id = fragment.body_id;
+            piece.component_id = component.id;
             for (const std::uint32_t node : component.node_indices) {
                 cell_fragment[node] = static_cast<std::int32_t>(fragment_index);
                 cell_offset[node] = setup.matter.nodes[node].position_world_m -
                                     fragment.mass_properties.center_of_mass_world_m;
+                piece.nodes.push_back(node);
+                piece.offsets.push_back(cell_offset[node]);
             }
+            if (r.refracture)
+                piece.limits = fragmentFractureLimits(setup.matter, piece.nodes,
+                                                      setup.tile_material.density_kg_m3,
+                                                      setup.tile_material.young_modulus_pa);
+            pieces.push_back(std::move(piece));
             ++fragment_index;
         }
     }
+    std::unordered_map<MatterBodyId, std::size_t> piece_of_body;
+    for (std::size_t p = 0; p < pieces.size(); ++p) piece_of_body[pieces[p].body_id] = p;
     // Debris (components beyond the rigid budget) is integrated ballistically
     // against the ground only; with the budget equal to the component count
     // there is none.
@@ -650,54 +716,599 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
         result.frames.push_back(std::move(frame));
     }
 
-    // Rigid phase: step Jolt until everything is at rest or the limit.
+    // Rigid phase: step Jolt until everything is at rest or the limit, with two
+    // things the phase could not do before -- a second striker, and a fragment
+    // that goes back into the lattice when a contact could break it.
     const auto rigid_begin = Clock::now();
     const double rigid_dt = r.rigid_step_s;
-    const std::uint64_t rigid_limit_steps = static_cast<std::uint64_t>(std::ceil(r.settle_limit_s / rigid_dt));
+    constexpr MatterBodyId kSecondBallId = 2;
+    const bool second_strike = r.second_ball_radius_m > 0.0 && r.second_ball_speed_m_s > 0.0;
+    const std::uint64_t settle_steps = static_cast<std::uint64_t>(std::ceil(r.settle_limit_s / rigid_dt));
+    // Without a second strike this is the settle limit exactly, so every
+    // earlier scene keeps its step count, its frame stride and its frames.
+    const std::uint64_t rigid_limit_steps = second_strike ? 2U * settle_steps : settle_steps;
     const std::uint64_t rigid_stride = std::max<std::uint64_t>(1, rigid_limit_steps / std::max(1U, r.rigid_frames));
     double still_since = -1.0;
     double rigid_time = 0.0;
-    // Rest is judged on the pieces. The ball is reported separately: under
-    // Jolt's rolling resistance a ball that rolled off keeps rolling for tens
-    // of seconds, which is physical and not the pieces' settling.
-    std::vector<MatterBodyId> dynamic_ids;
-    for (const auto &fragment : build.rigid_fragments) dynamic_ids.push_back(fragment.body_id);
-    const auto capture_rigid = [&](double time_offset) {
-        RecordedFrame frame;
-        frame.time_s = m.lattice_simulated_s + time_offset;
-        frame.phase = "rigid";
-        frame.cell_positions.resize(N);
-        frame.cell_orientations.assign(N, Quat{});
-        for (std::size_t f = 0; f < build.rigid_fragments.size(); ++f) {
-            const RigidSnapshot snap = world.snapshot(build.rigid_fragments[f].body_id);
-            for (std::size_t i = 0; i < N; ++i) {
-                if (cell_fragment[i] != static_cast<std::int32_t>(f)) continue;
-                frame.cell_positions[i] = snap.center_of_mass_world_m + snap.orientation_world.rotate(cell_offset[i]);
+    std::uint32_t broken_total = status.broken_bonds;
+    RefractureReport &report = m.refracture;
+    report.enabled = r.refracture;
+    MatterBodyId next_body_id = 1000U + static_cast<MatterBodyId>(build.rigid_fragments.size());
+    const MaterialDefinition second_material = makeReferenceMaterial(r.second_ball_material, r.material_seed);
+    const double second_mass = 4.0 / 3.0 * std::numbers::pi * std::pow(r.second_ball_radius_m, 3.0) *
+                               second_material.density_kg_m3;
+    bool second_inserted = false;
+    if (second_strike) {
+        m.second_ball_mass_kg = second_mass;
+        m.second_ball_speed_m_s = r.second_ball_speed_m_s;
+    }
+    // Acoustic impedances, z = sqrt(rho E): the only property of the OTHER body
+    // the trigger needs (Refracture.hpp).
+    const double ball_impedance =
+        acousticImpedance(setup.ball_material.density_kg_m3, setup.ball_material.young_modulus_pa);
+    const double second_impedance =
+        acousticImpedance(second_material.density_kg_m3, second_material.young_modulus_pa);
+    const double ground_impedance =
+        acousticImpedance(setup.ground_material.density_kg_m3, setup.ground_material.young_modulus_pa);
+
+    const auto fill_rigid_cells = [&](RecordedFrame &frame, std::int64_t skip_piece) {
+        for (std::size_t f = 0; f < pieces.size(); ++f) {
+            if (static_cast<std::int64_t>(f) == skip_piece) continue;
+            const RigidSnapshot snap = world.snapshot(pieces[f].body_id);
+            for (std::size_t k = 0; k < pieces[f].nodes.size(); ++k) {
+                const std::uint32_t i = pieces[f].nodes[k];
+                frame.cell_positions[i] =
+                    snap.center_of_mass_world_m + snap.orientation_world.rotate(pieces[f].offsets[k]);
                 frame.cell_orientations[i] = snap.orientation_world;
             }
         }
         for (const Debris &d : debris)
             for (std::size_t k = 0; k < d.nodes.size(); ++k)
                 frame.cell_positions[d.nodes[k]] = d.position + d.offsets[k];
-        const RigidSnapshot ball = world.snapshot(kBallId);
-        frame.ball_center = ball.center_of_mass_world_m;
-        frame.ball_orientation = ball.orientation_world;
-        frame.component_ids = handoff_component;
-        frame.fracture_count = status.broken_bonds;
+    };
+    const auto capture_rigid = [&](double time_offset) {
+        RecordedFrame frame;
+        frame.time_s = m.lattice_simulated_s + time_offset;
+        frame.phase = "rigid";
+        frame.cell_positions.resize(N);
+        frame.cell_orientations.assign(N, Quat{});
+        fill_rigid_cells(frame, -1);
+        if (world.contains(kBallId)) {
+            const RigidSnapshot ball = world.snapshot(kBallId);
+            frame.ball_center = ball.center_of_mass_world_m;
+            frame.ball_orientation = ball.orientation_world;
+        }
+        frame.component_ids = live_component;
+        frame.fracture_count = broken_total;
         result.frames.push_back(std::move(frame));
     };
-    for (std::uint64_t step = 0; step < rigid_limit_steps; ++step) {
-        world.step(rigid_dt);
-        for (Debris &d : debris) {
-            d.velocity += rigid_dt * r.gravity_m_s2;
-            d.position += rigid_dt * d.velocity;
-            if (d.position.y < setup.ground_y) { d.position.y = setup.ground_y; d.velocity = {}; }
+    // The second ball is placed directly above the highest cell under its axis
+    // and dropped, exactly as the first ball is placed above the tile. Nothing
+    // is done to the fragments: no velocity, no impulse, no repositioning.
+    const auto insert_second_ball = [&]() {
+        RecordedFrame probe;
+        probe.cell_positions.assign(N, Vec3{});
+        probe.cell_orientations.assign(N, Quat{});
+        fill_rigid_cells(probe, -1);
+        double top = setup.ground_y;
+        const double reach = r.second_ball_radius_m + r.cell_size_m;
+        for (std::size_t i = 0; i < N; ++i) {
+            if (cell_fragment[i] < 0) continue;
+            const Vec3 &p = probe.cell_positions[i];
+            if (std::hypot(p.x - r.second_ball_offset_x_m, p.z - r.second_ball_offset_z_m) > reach) continue;
+            top = std::max(top, p.y + 0.5 * r.cell_size_m);
         }
-        rigid_time += rigid_dt;
-        ++m.rigid_steps;
+        world.addBall({.body_id = kSecondBallId, .radius_m = r.second_ball_radius_m,
+                       .material = second_material,
+                       .position_world_m = {r.second_ball_offset_x_m,
+                                            top + r.second_ball_radius_m + r.second_ball_gap_m,
+                                            r.second_ball_offset_z_m},
+                       .linear_velocity_m_s = {0.0, -r.second_ball_speed_m_s, 0.0},
+                       .angular_velocity_rad_s = {},
+                       .mass_override_kg = second_mass, .sphere_inertia_factor = 0.4});
+        second_inserted = true;
+        m.second_strike_time_s = m.lattice_simulated_s + rigid_time;
+        still_since = -1.0;
+    };
+
+    // ---- The trigger, over one rigid step's contacts ----------------------
+    struct Candidate {
+        bool have{};
+        std::size_t piece{};
+        MatterBodyId partner{kInvalidMatterBodyId};
+        RefractureAdmission admission{};
+        double speed{}, energy{}, margin{};
+    };
+    // The cheap pre-gate: the largest closing speed the world could produce this
+    // step against the lowest admission threshold any live-bonded piece has. It
+    // uses the same bound as the trigger, so it can only skip steps in which no
+    // contact could have been admitted -- and it is what keeps a settled pile
+    // from paying for a rollback it does not need.
+    const double stiffest_partner =
+        std::max(std::max(ball_impedance, second_impedance), ground_impedance);
+    const double piece_reach_m = 0.5 * length(r.tile_dimensions_m);
+    const auto refracture_possible = [&]() {
+        double lowest_threshold = std::numeric_limits<double>::infinity();
+        double fastest = 0.0;
+        for (const RigidPiece &piece : pieces) {
+            const RigidSnapshot snap = world.snapshot(piece.body_id);
+            fastest = std::max(fastest, length(snap.linear_velocity_m_s) +
+                                            length(snap.angular_velocity_rad_s) * piece_reach_m);
+            if (piece.limits.live_bonds == 0) continue;
+            lowest_threshold = std::min(lowest_threshold,
+                admitRefracture(piece.limits, stiffest_partner, 0.0, 0.0).threshold_speed_m_s);
+        }
+        for (const MatterBodyId id : {kBallId, kSecondBallId})
+            if (world.contains(id)) fastest = std::max(fastest, length(world.snapshot(id).linear_velocity_m_s));
+        return 2.0 * fastest >= lowest_threshold;
+    };
+    const auto evaluate_impacts = [&](std::vector<ImpactEvent> impacts) {
+        Candidate chosen{};
+        if (impacts.empty()) return chosen;
+        std::sort(impacts.begin(), impacts.end(), impactOrder);
+        for (const ImpactEvent &ev : impacts) {
+            const auto a = piece_of_body.find(ev.body_a);
+            const auto b = piece_of_body.find(ev.body_b);
+            const bool a_piece = a != piece_of_body.end();
+            const bool b_piece = b != piece_of_body.end();
+            if (!a_piece && !b_piece) continue; // a striker on the ground: not a fragment's contact
+            ++report.contacts_tested;
+            if (a_piece && b_piece) { ++report.refused_unsupported; continue; }
+            const std::size_t index = a_piece ? a->second : b->second;
+            const MatterBodyId other = a_piece ? ev.body_b : ev.body_a;
+            const double other_impedance = other == kBallId ? ball_impedance
+                : (other == kSecondBallId ? second_impedance : ground_impedance);
+            const RefractureAdmission admission = admitRefracture(
+                pieces[index].limits, other_impedance, ev.closing_speed_m_s, ev.available_normal_energy_j);
+            if (admission.verdict != RefractureVerdict::NoLiveBond) {
+                report.max_closing_speed_m_s = std::max(report.max_closing_speed_m_s, ev.closing_speed_m_s);
+                report.max_margin = std::max(report.max_margin,
+                    admission.estimated_peak_stretch / pieces[index].limits.minimum_removal_stretch);
+            }
+            switch (admission.verdict) {
+            case RefractureVerdict::NoLiveBond: ++report.rejected_no_bond; continue;
+            case RefractureVerdict::BelowStressBound: ++report.rejected_stress; continue;
+            case RefractureVerdict::BelowEnergyBound: ++report.rejected_energy; continue;
+            case RefractureVerdict::Admitted: break;
+            }
+            const double margin = admission.estimated_peak_stretch /
+                                  pieces[index].limits.minimum_removal_stretch;
+            if (!chosen.have || margin > chosen.margin) {
+                chosen.have = true;
+                chosen.margin = margin;
+                chosen.piece = index;
+                chosen.partner = other;
+                chosen.admission = admission;
+                chosen.speed = ev.closing_speed_m_s;
+                chosen.energy = ev.available_normal_energy_j;
+            }
+        }
+        return chosen;
+    };
+
+    // ---- One re-entry ----------------------------------------------------
+    // Runs from the state BEFORE the rigid step in which the contact was seen
+    // (the caller rolls that step back), so the lattice, not Jolt, resolves the
+    // impact. Returns the rigid steps it consumed; 0 when nothing ran.
+    const auto run_refracture = [&](const Candidate &candidate) -> unsigned {
+        const std::size_t chosen_piece = candidate.piece;
+        const MatterBodyId chosen_partner = candidate.partner;
+        ++report.admitted;
+
+        // The budget, refused visibly.
+        const std::uint64_t chunk_steps =
+            std::max<std::uint64_t>(1, static_cast<std::uint64_t>(std::llround(rigid_dt / setup.dt_s)));
+        if (report.events.size() >= r.refracture_max_events) { ++report.refused_budget_events; return 0U; }
+        if (report.substeps + chunk_steps > r.refracture_max_steps) { ++report.refused_budget_steps; return 0U; }
+        if (pieces[chosen_piece].nodes.size() > r.refracture_max_cells) { ++report.refused_too_large; return 0U; }
+
+        const auto event_begin = Clock::now();
+        RefractureEventReport event{};
+        event.time_s = m.lattice_simulated_s + rigid_time;
+        event.body_id = pieces[chosen_piece].body_id;
+        event.cells = pieces[chosen_piece].nodes.size();
+        event.live_bonds_in = pieces[chosen_piece].limits.live_bonds;
+        event.closing_speed_m_s = candidate.speed;
+        event.threshold_speed_m_s = candidate.admission.threshold_speed_m_s;
+        event.peak_stretch = candidate.admission.estimated_peak_stretch;
+        event.minimum_removal_stretch = pieces[chosen_piece].limits.minimum_removal_stretch;
+        event.available_energy_j = candidate.energy;
+        event.minimum_removal_energy_j = pieces[chosen_piece].limits.minimum_removal_energy_j;
+        const bool striker_partner = chosen_partner == kBallId || chosen_partner == kSecondBallId;
+        event.partner = chosen_partner == kBallId ? "striker"
+            : (chosen_partner == kSecondBallId ? "second-striker" : "support");
+        event.striker_in_island = striker_partner;
+
+        // 1. Rebuild the lattice for this fragment, at its rigid pose, with its
+        //    damage, its broken bonds and its permanent extension.
+        const RigidSnapshot snap = world.snapshot(pieces[chosen_piece].body_id);
+        // The rigid solver tolerates a penetration the lattice's support
+        // projection does not: a cell centre below the floor is projected back
+        // up THROUGH its bonds, which is the mechanism that injected kilojoules
+        // before the finite-footprint rule (docs/fast-gpu-checkpoint.md 2.8).
+        // The conversion therefore lifts the island out of the floor first --
+        // a rigid translation, so no momentum, no kinetic energy and no
+        // internal state changes, only gravitational potential, which is
+        // reported. A lift larger than half a cell is refused instead.
+        double lift = 0.0;
+        for (std::size_t k = 0; k < pieces[chosen_piece].nodes.size(); ++k) {
+            const Vec3 position = snap.center_of_mass_world_m +
+                                  snap.orientation_world.rotate(pieces[chosen_piece].offsets[k]);
+            lift = std::max(lift, setup.ground_y + 0.5 * r.cell_size_m - position.y);
+        }
+        event.entry_support_penetration_m = lift;
+        if (lift > 0.5 * r.cell_size_m) { ++report.refused_support_penetration; return 0U; }
+        const FragmentPose pose{snap.center_of_mass_world_m + Vec3{0.0, lift, 0.0}, snap.orientation_world,
+                                snap.linear_velocity_m_s, snap.angular_velocity_rad_s};
+        FragmentLattice island = buildFragmentLattice(
+            setup.matter, pieces[chosen_piece].nodes, cell_offset, pose, plastic_extension_m, plastic_strain_m);
+        LatticeState island_state = buildLatticeState(island.matter, island.schedule, island.origin);
+        for (std::size_t k = 0; k < island_state.bond_count; ++k) {
+            const std::uint32_t o = island.schedule.bond_order[k];
+            island_state.plastic_extension[k] = island.plastic_extension_m[o];
+            island_state.plastic_strain[k] = island.plastic_strain_m[o];
+        }
+        const double cell = r.cell_size_m;
+        event.elastic_in_j = latticeStateElasticEnergy(island_state);
+        for (std::size_t i = 0; i < island_state.node_count; ++i)
+            event.entry_max_displacement_m = std::max(event.entry_max_displacement_m,
+                length(Vec3{island_state.u[3 * i], island_state.u[3 * i + 1], island_state.u[3 * i + 2]}));
+
+        // 2. The entry ledger: the lattice against the engine's own reading of
+        //    the same cells as one rigid body.
+        {
+            std::vector<std::uint32_t> all(island.matter.nodes.size());
+            for (std::size_t i = 0; i < all.size(); ++i) all[i] = static_cast<std::uint32_t>(i);
+            const FragmentMassProperties props = calculateFragmentMassProperties(island.matter, all);
+            const MechanicalLedger lattice_in =
+                latticeLedger(island_state, island.origin, island.carried_spin_rad_s, cell);
+            const MechanicalLedger rigid_in = rigidLedger(
+                props.mass_kg, props.center_of_mass_world_m, props.linear_velocity_m_s,
+                props.inertia_world_kg_m2, props.angular_velocity_rad_s, island.origin);
+            event.entry_momentum_residual_kg_m_s =
+                length(lattice_in.linear_momentum_kg_m_s - rigid_in.linear_momentum_kg_m_s);
+            event.entry_angular_residual_kg_m2_s =
+                length(lattice_in.angular_momentum_kg_m2_s - rigid_in.angular_momentum_kg_m2_s);
+            event.entry_energy_residual_j = lattice_in.kinetic_energy_j - rigid_in.kinetic_energy_j;
+        }
+
+        // 3. The island: this fragment, the striker that hit it if it was a
+        //    striker, and the same support planes the first phase used.
+        StepSettings<double> island_settings = buildSettings(setup, island.origin);
+        island_settings.node_contact.bucket_mask =
+            latticeContactBucketMask(static_cast<std::uint32_t>(island.matter.nodes.size()));
+        island_settings.sphere_enabled = striker_partner ? 1U : 0U;
+        SphereState<double> island_sphere = setup.sphere_world;
+        double striker_mass = 0.0;
+        Vec3 striker_position_in{};
+        if (striker_partner) {
+            const RigidSnapshot ball = world.snapshot(chosen_partner);
+            const double radius = chosen_partner == kBallId ? r.ball_radius_m : r.second_ball_radius_m;
+            striker_mass = chosen_partner == kBallId ? setup.sphere_world.mass : second_mass;
+            island_sphere.center = toV3(ball.center_of_mass_world_m - island.origin);
+            island_sphere.velocity = toV3(ball.linear_velocity_m_s);
+            island_sphere.angular_velocity = toV3(ball.angular_velocity_rad_s);
+            island_sphere.radius = radius;
+            island_sphere.mass = striker_mass;
+            island_sphere.inertia = 0.4 * striker_mass * radius * radius;
+            striker_position_in = ball.center_of_mass_world_m;
+            world.removeAndDestroy(chosen_partner);
+        }
+        world.removeAndDestroy(pieces[chosen_piece].body_id);
+
+        // Mass-weighted position now, for the gravity work over the window.
+        const auto weighted_position = [&](const LatticeState &s) {
+            Vec3 total{};
+            for (std::size_t i = 0; i < s.node_count; ++i)
+                total += s.mass[i] * (s.origin + Vec3{s.x0[3 * i], s.x0[3 * i + 1], s.x0[3 * i + 2]} +
+                                      Vec3{s.u[3 * i], s.u[3 * i + 1], s.u[3 * i + 2]});
+            return total;
+        };
+        const Vec3 weighted_in = weighted_position(island_state);
+        const MechanicalLedger lattice_in_window =
+            latticeLedger(island_state, island.origin, island.carried_spin_rad_s, cell);
+        const Vec3 striker_velocity_in = toVec3(island_sphere.velocity);
+        const Vec3 striker_angular_in = toVec3(island_sphere.angular_velocity);
+        const double striker_inertia = island_sphere.inertia;
+
+        // 4. Run the window: one rigid step's worth of substeps, then one rigid
+        //    step of the rest of the world, so the two clocks stay together.
+        std::unique_ptr<LatticeBackend> island_backend = makeBackend(r, island.schedule);
+        island_backend->upload(island_state, island_settings, island_sphere);
+        RunControl chunk{};
+        chunk.max_steps = chunk_steps;
+        chunk.steps_per_launch = r.steps_per_launch;
+        std::uint32_t last_broken = 0;
+        unsigned quiet = 0, used = 0;
+        for (unsigned w = 0; w < std::max(1U, r.refracture_window_steps); ++w) {
+            if (report.substeps + chunk_steps > r.refracture_max_steps) { ++report.refused_budget_steps; break; }
+            const RunStatus chunk_status = island_backend->run(chunk);
+            report.substeps += chunk_steps;
+            world.step(rigid_dt);
+            for (Debris &d : debris) {
+                d.velocity += rigid_dt * r.gravity_m_s2;
+                d.position += rigid_dt * d.velocity;
+                if (d.position.y < setup.ground_y) { d.position.y = setup.ground_y; d.velocity = {}; }
+            }
+            rigid_time += rigid_dt;
+            ++m.rigid_steps;
+            ++used;
+            island_backend->download(island_state, island_sphere);
+            // A frame per rigid step of the window, so the second break is
+            // watchable rather than a jump between two rest poses.
+            {
+                RecordedFrame frame;
+                frame.time_s = m.lattice_simulated_s + rigid_time;
+                frame.phase = "rigid";
+                frame.cell_positions.resize(N);
+                frame.cell_orientations.assign(N, Quat{});
+                // The island's body is out of the world for the window; its
+                // cells come from the lattice below.
+                fill_rigid_cells(frame, static_cast<std::int64_t>(chosen_piece));
+                for (std::size_t i = 0; i < island.parent_node.size(); ++i) {
+                    const std::uint32_t p = island.parent_node[i];
+                    frame.cell_positions[p] =
+                        island_state.origin +
+                        Vec3{island_state.x0[3 * i] + island_state.u[3 * i],
+                             island_state.x0[3 * i + 1] + island_state.u[3 * i + 1],
+                             island_state.x0[3 * i + 2] + island_state.u[3 * i + 2]};
+                    frame.cell_orientations[p] = snap.orientation_world;
+                }
+                if (striker_partner) {
+                    frame.ball_center = island.origin + toVec3(island_sphere.center);
+                } else if (world.contains(kBallId)) {
+                    frame.ball_center = world.snapshot(kBallId).center_of_mass_world_m;
+                }
+                frame.component_ids = live_component;
+                frame.fracture_count = broken_total + chunk_status.broken_bonds;
+                result.frames.push_back(std::move(frame));
+            }
+            if (chunk_status.broken_bonds == last_broken) ++quiet; else quiet = 0;
+            last_broken = chunk_status.broken_bonds;
+            if (r.refracture_quiet_steps > 0 && quiet >= r.refracture_quiet_steps) break;
+        }
+        const RunStatus &island_status = island_backend->status();
+        event.substeps = island_status.total_steps;
+        event.rigid_steps = used;
+        event.window_s = static_cast<double>(island_status.total_steps) * setup.dt_s;
+        event.clock_residual_s = event.window_s - static_cast<double>(used) * rigid_dt;
+        event.broken_bonds = island_status.broken_bonds;
+        event.removed_energy_j = island_status.removed_energy_j;
+        event.plastic_work_j = island_status.plastic_work_j;
+        event.contact_dissipated_j = island_status.contact.dissipated_kinetic_energy_j;
+        event.node_contact_dissipated_j = island_status.node_contact.dissipated_kinetic_energy_j;
+        event.damping_dissipated_j = island_status.damping_dissipated_j;
+        event.elastic_out_j = latticeStateElasticEnergy(island_state);
+
+        // 5. Back to the rigid world: the fragment's own connected components.
+        writeBackLatticeState(island_state, island.schedule, island.matter);
+        for (std::size_t k = 0; k < island_state.bond_count; ++k) {
+            const std::uint32_t local = island.schedule.bond_order[k];
+            const std::uint32_t parent = island.parent_bond[local];
+            island.plastic_extension_m[local] = island_state.plastic_extension[k];
+            island.plastic_strain_m[local] = island_state.plastic_strain[k];
+            plastic_extension_m[parent] = island_state.plastic_extension[k];
+            plastic_strain_m[parent] = island_state.plastic_strain[k];
+        }
+        for (std::size_t local = 0; local < island.matter.bonds.size(); ++local)
+            setup.matter.bonds[island.parent_bond[local]] = island.matter.bonds[local];
+        for (std::size_t i = 0; i < island.parent_node.size(); ++i)
+            setup.matter.nodes[island.parent_node[i]] = island.matter.nodes[i];
+        const auto island_components = findConnectedComponents(island.matter);
+        const FragmentBuildResult rebuilt = buildFragmentRepresentations(island.matter, island_components, {
+            .first_body_id = next_body_id,
+            .maximum_rigid_fragments = std::max<std::size_t>(1, island_components.size()),
+            .minimum_nodes_per_rigid_fragment = 1,
+            .maximum_collision_points = 192,
+            .friction = setup.tile_ground.dynamic_friction,
+            .restitution = setup.tile_ground.restitution,
+        });
+        next_body_id += static_cast<MatterBodyId>(rebuilt.rigid_fragments.size()) + 1U;
+
+        // 6. The exit ledger, before the world is touched.
+        MechanicalLedger rigid_out{};
+        rigid_out.about_m = island.origin;
+        double coarsening = 0.0;
+        {
+            std::size_t fragment_index = 0;
+            for (const auto &component : island_components) {
+                if (fragment_index >= rebuilt.rigid_fragments.size()) break;
+                const RigidFragmentDescription &fragment = rebuilt.rigid_fragments[fragment_index];
+                if (fragment.source_node_count != component.node_indices.size()) continue;
+                const FragmentMassProperties &props = fragment.mass_properties;
+                const MechanicalLedger piece_ledger = rigidLedger(
+                    props.mass_kg, props.center_of_mass_world_m, props.linear_velocity_m_s,
+                    props.inertia_world_kg_m2, props.angular_velocity_rad_s, island.origin);
+                rigid_out.mass_kg += piece_ledger.mass_kg;
+                rigid_out.linear_momentum_kg_m_s += piece_ledger.linear_momentum_kg_m_s;
+                rigid_out.angular_momentum_kg_m2_s += piece_ledger.angular_momentum_kg_m2_s;
+                rigid_out.kinetic_energy_j += piece_ledger.kinetic_energy_j;
+                coarsening += props.coarsening_kinetic_loss_j;
+                ++fragment_index;
+            }
+        }
+        const MechanicalLedger lattice_out =
+            latticeLedger(island_state, island.origin, island.carried_spin_rad_s, cell);
+        event.exit_momentum_residual_kg_m_s =
+            length(lattice_out.linear_momentum_kg_m_s - rigid_out.linear_momentum_kg_m_s);
+        event.exit_angular_residual_kg_m2_s =
+            length(lattice_out.angular_momentum_kg_m2_s - rigid_out.angular_momentum_kg_m2_s);
+        event.exit_coarsening_loss_j = coarsening;
+        event.exit_energy_residual_j = lattice_out.kinetic_energy_j - rigid_out.kinetic_energy_j - coarsening;
+
+        // The window ledger. What is left over is the supports' impulse and
+        // work: the support projection and its velocity response are external
+        // to this island and are the one term nothing here measures directly.
+        {
+            const Vec3 striker_velocity_out = toVec3(island_sphere.velocity);
+            const Vec3 striker_position_out = island.origin + toVec3(island_sphere.center);
+            const Vec3 momentum_in = lattice_in_window.linear_momentum_kg_m_s + striker_mass * striker_velocity_in;
+            const Vec3 momentum_out = lattice_out.linear_momentum_kg_m_s + striker_mass * striker_velocity_out;
+            const double total_mass = lattice_out.mass_kg + striker_mass;
+            const Vec3 gravity_impulse = total_mass * event.window_s * r.gravity_m_s2;
+            event.window_external_impulse_n_s = length(momentum_out - momentum_in - gravity_impulse);
+            const double striker_energy_in =
+                0.5 * striker_mass * lengthSquared(striker_velocity_in) +
+                0.5 * striker_inertia * lengthSquared(striker_angular_in);
+            const double striker_energy_out =
+                0.5 * striker_mass * lengthSquared(striker_velocity_out) +
+                0.5 * striker_inertia * lengthSquared(toVec3(island_sphere.angular_velocity));
+            const Vec3 weighted_out = weighted_position(island_state);
+            const double gravity_work =
+                dot(r.gravity_m_s2, (weighted_out - weighted_in) +
+                                        striker_mass * (striker_position_out - striker_position_in));
+            const double energy_in =
+                lattice_in_window.kinetic_energy_j + event.elastic_in_j + striker_energy_in;
+            const double energy_out =
+                lattice_out.kinetic_energy_j + event.elastic_out_j + striker_energy_out;
+            event.window_energy_residual_j =
+                energy_in + gravity_work - energy_out - event.removed_energy_j - event.plastic_work_j -
+                event.contact_dissipated_j - event.node_contact_dissipated_j - event.damping_dissipated_j;
+        }
+
+        // 7. Publish the new pieces, and put the striker back where the lattice
+        //    left it.
+        std::vector<RigidPiece> kept;
+        kept.reserve(pieces.size() + island_components.size());
+        for (std::size_t p = 0; p < pieces.size(); ++p)
+            if (p != chosen_piece) kept.push_back(std::move(pieces[p]));
+        std::uint32_t next_component = 0;
+        for (const RigidPiece &piece : kept) next_component = std::max(next_component, piece.component_id + 1U);
+        {
+            std::size_t fragment_index = 0;
+            for (const auto &component : island_components) {
+                if (fragment_index >= rebuilt.rigid_fragments.size()) break;
+                const RigidFragmentDescription &fragment = rebuilt.rigid_fragments[fragment_index];
+                if (fragment.source_node_count != component.node_indices.size()) continue;
+                RigidPiece piece;
+                piece.body_id = fragment.body_id;
+                piece.component_id = next_component++;
+                for (const std::uint32_t local : component.node_indices) {
+                    const std::uint32_t parent = island.parent_node[local];
+                    piece.nodes.push_back(parent);
+                    piece.offsets.push_back(island.matter.nodes[local].position_world_m -
+                                            fragment.mass_properties.center_of_mass_world_m);
+                }
+                piece.limits = fragmentFractureLimits(setup.matter, piece.nodes,
+                                                      setup.tile_material.density_kg_m3,
+                                                      setup.tile_material.young_modulus_pa);
+                kept.push_back(std::move(piece));
+                ++fragment_index;
+            }
+        }
+        pieces = std::move(kept);
+        piece_of_body.clear();
+        // A cell whose component did not become a rigid body belongs to nothing
+        // now; say so rather than leave it pointing at a piece it is not in.
+        for (const std::uint32_t node : island.parent_node) cell_fragment[node] = -1;
+        for (std::size_t p = 0; p < pieces.size(); ++p) {
+            piece_of_body[pieces[p].body_id] = p;
+            for (std::size_t k = 0; k < pieces[p].nodes.size(); ++k) {
+                const std::uint32_t node = pieces[p].nodes[k];
+                cell_fragment[node] = static_cast<std::int32_t>(p);
+                cell_offset[node] = pieces[p].offsets[k];
+                live_component[node] = pieces[p].component_id;
+            }
+        }
+        world.addFragments(rebuilt.rigid_fragments);
+        if (striker_partner) {
+            const double radius = chosen_partner == kBallId ? r.ball_radius_m : r.second_ball_radius_m;
+            world.addBall({.body_id = chosen_partner, .radius_m = radius,
+                           .material = chosen_partner == kBallId ? setup.ball_material : second_material,
+                           .position_world_m = island.origin + toVec3(island_sphere.center),
+                           .linear_velocity_m_s = toVec3(island_sphere.velocity),
+                           .angular_velocity_rad_s = toVec3(island_sphere.angular_velocity),
+                           .mass_override_kg = striker_mass, .sphere_inertia_factor = 0.4});
+        }
+        broken_total += island_status.broken_bonds;
+        event.pieces_out = island_components.size();
+        event.wall_s = seconds(event_begin, Clock::now());
+        report.broken_bonds += island_status.broken_bonds;
+        report.pieces_created += island_components.size();
+        report.removed_energy_j += island_status.removed_energy_j;
+        report.plastic_work_j += island_status.plastic_work_j;
+        report.simulated_s += event.window_s;
+        report.wall_s += event.wall_s;
+        report.worst_entry_momentum_residual_kg_m_s =
+            std::max(report.worst_entry_momentum_residual_kg_m_s, event.entry_momentum_residual_kg_m_s);
+        report.worst_entry_energy_residual_j =
+            std::max(report.worst_entry_energy_residual_j, std::abs(event.entry_energy_residual_j));
+        report.worst_exit_momentum_residual_kg_m_s =
+            std::max(report.worst_exit_momentum_residual_kg_m_s, event.exit_momentum_residual_kg_m_s);
+        report.worst_exit_energy_residual_j =
+            std::max(report.worst_exit_energy_residual_j, std::abs(event.exit_energy_residual_j));
+        report.events.push_back(std::move(event));
+        still_since = -1.0;
+        // Contacts observed during the window belong to a world the island was
+        // not in; drop them rather than judge a fragment on them.
+        (void)world.drainImpacts();
+        return used;
+    };
+
+    // The bodies a reversible trial has to record: the pieces, the strikers,
+    // the ledges and the ground. JoltWorld caps a trial at 256.
+    const auto rollback_available = [&]() {
+        return pieces.size() + setup.ledges.size() + 4U <= 250U;
+    };
+    for (std::uint64_t step = 0; step < rigid_limit_steps; ++step) {
+        // A rigid step that ends in a contact hard enough to break the piece is
+        // rolled back and replayed in the lattice, because Jolt has already
+        // resolved the impact by the time the contact is reported: acting on
+        // the state after the step would hand the lattice a ball that has
+        // already bounced. The rollback is entered only when the trigger's own
+        // bound says an admission is possible at all this step.
+        Candidate candidate{};
+        bool rolled_back = false;
+        if (r.refracture && refracture_possible()) {
+            if (!rollback_available()) {
+                world.step(rigid_dt);
+                candidate = evaluate_impacts(world.drainImpacts());
+                if (candidate.have) { ++report.refused_no_rollback; candidate.have = false; }
+            } else {
+                ++report.trial_steps;
+                const bool committed = world.runReversibleTrial([&]() {
+                    world.step(rigid_dt);
+                    candidate = evaluate_impacts(world.drainImpacts());
+                    return !candidate.have;
+                });
+                rolled_back = !committed;
+                if (rolled_back) ++report.rollbacks;
+            }
+        } else {
+            world.step(rigid_dt);
+            if (r.refracture) (void)evaluate_impacts(world.drainImpacts());
+        }
+        if (!rolled_back) {
+            for (Debris &d : debris) {
+                d.velocity += rigid_dt * r.gravity_m_s2;
+                d.position += rigid_dt * d.velocity;
+                if (d.position.y < setup.ground_y) { d.position.y = setup.ground_y; d.velocity = {}; }
+            }
+            rigid_time += rigid_dt;
+            ++m.rigid_steps;
+        }
+        unsigned consumed = 0;
+        if (candidate.have) consumed = run_refracture(candidate);
+        if (rolled_back && consumed == 0U) {
+            // The re-entry was refused after the rollback; take the step the
+            // trial threw away so the world still advances.
+            world.step(rigid_dt);
+            (void)world.drainImpacts();
+            for (Debris &d : debris) {
+                d.velocity += rigid_dt * r.gravity_m_s2;
+                d.position += rigid_dt * d.velocity;
+                if (d.position.y < setup.ground_y) { d.position.y = setup.ground_y; d.velocity = {}; }
+            }
+            rigid_time += rigid_dt;
+            ++m.rigid_steps;
+        }
+        if (consumed > 0U) {
+            step += consumed - (rolled_back ? 1U : 0U);
+            capture_rigid(rigid_time);
+        }
         bool still = true;
-        for (const MatterBodyId id : dynamic_ids) {
-            const RigidSnapshot snap = world.snapshot(id);
+        for (const RigidPiece &piece : pieces) {
+            const RigidSnapshot snap = world.snapshot(piece.body_id);
             if (length(snap.linear_velocity_m_s) > r.rest_speed_m_s ||
                 length(snap.angular_velocity_rad_s) > r.rest_angular_rad_s) { still = false; break; }
         }
@@ -707,17 +1318,27 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
             still_since = -1.0;
         }
         if ((step + 1) % rigid_stride == 0) capture_rigid(rigid_time);
-        if (still && rigid_time - still_since >= r.rest_hold_s) {
+        const bool settled = still && rigid_time - still_since >= r.rest_hold_s;
+        if (second_strike && !second_inserted &&
+            (settled || (r.second_strike_at_s >= 0.0 ? rigid_time >= r.second_strike_at_s
+                                                     : rigid_time >= r.second_strike_wait_s))) {
+            insert_second_ball();
+            capture_rigid(rigid_time);
+            continue;
+        }
+        if (settled) {
             m.came_to_rest = true;
             m.rest_time_s = m.lattice_simulated_s + still_since;
             break;
         }
     }
-    {
+    if (world.contains(kBallId)) {
         const RigidSnapshot ball = world.snapshot(kBallId);
         m.ball_speed_at_end_m_s = length(ball.linear_velocity_m_s);
         m.ball_height_at_end_m = ball.center_of_mass_world_m.y;
     }
+    m.pieces_at_end = pieces.size() + debris.size();
+    m.broken_bonds_total = broken_total;
     if (result.frames.back().phase != "rigid" || result.frames.back().time_s < m.lattice_simulated_s + rigid_time)
         capture_rigid(rigid_time);
     const auto rigid_end = Clock::now();
@@ -742,6 +1363,74 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
     if (log) *log += notes.str();
     return result;
 }
+
+namespace {
+
+Json refractureJson(const RefractureReport &f) {
+    Json events = Json::array();
+    for (const RefractureEventReport &e : f.events) {
+        events.push_back({
+            {"time_s", e.time_s}, {"body_id", e.body_id}, {"partner", e.partner},
+            {"cells", e.cells}, {"live_bonds_in", e.live_bonds_in},
+            {"trigger", {
+                {"closing_speed_m_s", e.closing_speed_m_s},
+                {"threshold_speed_m_s", e.threshold_speed_m_s},
+                {"peak_stretch", e.peak_stretch},
+                {"minimum_removal_stretch", e.minimum_removal_stretch},
+                {"available_energy_j", e.available_energy_j},
+                {"minimum_removal_energy_j", e.minimum_removal_energy_j}}},
+            {"window", {
+                {"substeps", e.substeps}, {"rigid_steps", e.rigid_steps},
+                {"simulated_s", e.window_s}, {"wall_s", e.wall_s},
+                {"clock_residual_s", e.clock_residual_s},
+                {"entry_support_penetration_m", e.entry_support_penetration_m},
+                {"entry_max_displacement_m", e.entry_max_displacement_m},
+                {"striker_in_island", e.striker_in_island}}},
+            {"result", {
+                {"broken_bonds", e.broken_bonds}, {"pieces_out", e.pieces_out},
+                {"removed_energy_j", e.removed_energy_j}, {"plastic_work_j", e.plastic_work_j},
+                {"contact_dissipated_j", e.contact_dissipated_j},
+                {"node_contact_dissipated_j", e.node_contact_dissipated_j},
+                {"damping_dissipated_j", e.damping_dissipated_j},
+                {"elastic_in_j", e.elastic_in_j}, {"elastic_out_j", e.elastic_out_j}}},
+            {"ledger", {
+                {"entry_momentum_residual_kg_m_s", e.entry_momentum_residual_kg_m_s},
+                {"entry_angular_residual_kg_m2_s", e.entry_angular_residual_kg_m2_s},
+                {"entry_energy_residual_j", e.entry_energy_residual_j},
+                {"exit_momentum_residual_kg_m_s", e.exit_momentum_residual_kg_m_s},
+                {"exit_angular_residual_kg_m2_s", e.exit_angular_residual_kg_m2_s},
+                {"exit_coarsening_loss_j", e.exit_coarsening_loss_j},
+                {"exit_energy_residual_j", e.exit_energy_residual_j},
+                {"window_external_impulse_n_s", e.window_external_impulse_n_s},
+                {"window_energy_residual_j", e.window_energy_residual_j}}},
+        });
+    }
+    return Json{
+        {"enabled", f.enabled},
+        {"contacts_tested", f.contacts_tested}, {"admitted", f.admitted},
+        {"rejected", {
+            {"no_live_bond", f.rejected_no_bond}, {"below_stress_bound", f.rejected_stress},
+            {"below_energy_bound", f.rejected_energy},
+            {"max_closing_speed_m_s", f.max_closing_speed_m_s}, {"max_margin", f.max_margin}}},
+        {"refused", {
+            {"budget_events", f.refused_budget_events}, {"budget_steps", f.refused_budget_steps},
+            {"unsupported_partner", f.refused_unsupported}, {"too_many_cells", f.refused_too_large},
+            {"support_penetration", f.refused_support_penetration},
+            {"no_rollback", f.refused_no_rollback}}},
+        {"rollbacks", f.rollbacks}, {"trial_steps", f.trial_steps},
+        {"substeps", f.substeps}, {"simulated_s", f.simulated_s}, {"wall_s", f.wall_s},
+        {"broken_bonds", f.broken_bonds}, {"pieces_created", f.pieces_created},
+        {"removed_energy_j", f.removed_energy_j}, {"plastic_work_j", f.plastic_work_j},
+        {"worst_residual", {
+            {"entry_momentum_kg_m_s", f.worst_entry_momentum_residual_kg_m_s},
+            {"entry_energy_j", f.worst_entry_energy_residual_j},
+            {"exit_momentum_kg_m_s", f.worst_exit_momentum_residual_kg_m_s},
+            {"exit_energy_j", f.worst_exit_energy_residual_j}}},
+        {"events", events},
+    };
+}
+
+} // namespace
 
 std::string measurementsJson(const TileImpactMeasurements &m) {
     Json phases = Json::object();
@@ -845,7 +1534,12 @@ std::string measurementsJson(const TileImpactMeasurements &m) {
             {"simulated_s", m.rigid_simulated_s}, {"wall_s", m.rigid_wall_s}, {"steps", m.rigid_steps},
             {"came_to_rest", m.came_to_rest}, {"rest_time_s", m.rest_time_s},
             {"ball_speed_at_end_m_s", m.ball_speed_at_end_m_s},
-            {"ball_height_at_end_m", m.ball_height_at_end_m}}},
+            {"ball_height_at_end_m", m.ball_height_at_end_m},
+            {"pieces_at_end", m.pieces_at_end}, {"broken_bonds_total", m.broken_bonds_total},
+            {"second_strike_time_s", m.second_strike_time_s},
+            {"second_ball_mass_kg", m.second_ball_mass_kg},
+            {"second_ball_speed_m_s", m.second_ball_speed_m_s}}},
+        {"refracture", refractureJson(m.refracture)},
         {"simulated_total_s", m.simulated_total_s}, {"wall_total_s", m.wall_total_s},
         {"realtime_ratio", m.realtime_ratio}, {"rule_met", m.rule_met},
         {"recording_wall_s", m.recording_wall_s},

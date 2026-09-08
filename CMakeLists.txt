@@ -138,6 +138,7 @@ add_library(
     src/fastlattice/FastLattice.cpp
     src/fastlattice/CpuLatticeBackend.cpp
     src/fastlattice/ParallelCpuLatticeBackend.cpp
+    src/fastlattice/Refracture.cpp
     src/fastlattice/Propagator.cpp)
 target_link_libraries(banjo_fastlattice PUBLIC banjo_core)
 target_compile_features(banjo_fastlattice PUBLIC cxx_std_23)

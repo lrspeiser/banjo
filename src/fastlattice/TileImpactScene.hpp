@@ -5,6 +5,7 @@
 // fall and settle, the whole thing recorded as banjo.playback.v1.
 
 #include "fastlattice/FastLattice.hpp"
+#include "fastlattice/Refracture.hpp"
 #include "fracture/ActiveMatter.hpp"
 #include "material/Material.hpp"
 #include "material/MaterialCatalog.hpp"
@@ -107,6 +108,45 @@ struct TileImpactRequest {
     double max_ms{200.0};
     double no_failure_ms{20.0};
     double settle_limit_s{6.0};
+    // ---- Re-fracture after the handoff (fastlattice/Refracture.hpp) --------
+    //
+    // OFF BY DEFAULT, deliberately, exactly as the plastic law is. With it off
+    // not one line of the re-entry path runs: no impact observation is turned
+    // on in the rigid world, no trigger is evaluated and no lattice is rebuilt,
+    // so every scene reproduces 078ae24 bit for bit. Turning it on changes what
+    // the rigid phase is allowed to do, so it is asked for.
+    bool refracture{false};
+    // The budget. A re-entry is refused -- and counted, never silently dropped
+    // -- when either cap is spent, when the fragment is larger than the lattice
+    // budget allows, or when the contact partner is one the lattice phase
+    // cannot express (another fragment; the lattice has bonds and one striker,
+    // not piece-piece collision).
+    unsigned refracture_max_events{8};
+    std::uint64_t refracture_max_steps{600000};
+    // The window a re-entry may occupy, counted in RIGID steps so the lattice
+    // clock and the rigid clock stay aligned: the lattice runs one rigid step's
+    // worth of substeps, the rigid world (with the island removed) takes one
+    // step, and both advance together.
+    unsigned refracture_window_steps{6};
+    // End a window early once no bond has failed for this many rigid steps.
+    // 0 runs the whole window.
+    unsigned refracture_quiet_steps{2};
+    std::size_t refracture_max_cells{4000};
+    // ---- The second striker ----------------------------------------------
+    // A second ball, dropped on the debris of the first strike. Radius 0 (the
+    // default) means there is no second strike and nothing about the scene
+    // changes. It is placed directly above the highest cell under its axis and
+    // given a downward speed, exactly as the first ball is placed above the
+    // tile: no fragment is ever given a velocity and no impulse is authored.
+    double second_ball_radius_m{0.0};
+    MaterialPreset second_ball_material{MaterialPreset::Iron};
+    double second_ball_speed_m_s{0.0};
+    double second_ball_offset_x_m{}, second_ball_offset_z_m{};
+    double second_ball_gap_m{0.002};
+    // Rigid-phase time at which the second ball appears. Negative: as soon as
+    // the pieces of the first strike are at rest, or at second_strike_wait_s.
+    double second_strike_at_s{-1.0};
+    double second_strike_wait_s{1.0};
     double rest_speed_m_s{0.01};
     double rest_angular_rad_s{0.1};
     double rest_hold_s{0.3};
@@ -174,6 +214,74 @@ struct RecordedFrame {
     std::vector<std::uint8_t> bond_alive; // asset bond order
     std::vector<float> bond_damage;
     std::size_t fracture_count{};
+};
+
+// One admitted re-entry: what triggered it, what the lattice did with it, and
+// whether the round trip closed.
+struct RefractureEventReport {
+    double time_s{};                 // scene time at which the window opened
+    std::uint64_t body_id{};
+    std::string partner;             // "striker", "second-striker", "support"
+    std::size_t cells{}, live_bonds_in{};
+    // The trigger, as evaluated (Refracture.hpp).
+    double closing_speed_m_s{}, threshold_speed_m_s{};
+    double peak_stretch{}, minimum_removal_stretch{};
+    double available_energy_j{}, minimum_removal_energy_j{};
+    // The window.
+    std::uint64_t substeps{};
+    unsigned rigid_steps{};
+    double window_s{}, wall_s{}, clock_residual_s{};
+    std::uint32_t broken_bonds{};
+    std::size_t pieces_out{};
+    double removed_energy_j{}, plastic_work_j{};
+    double contact_dissipated_j{}, node_contact_dissipated_j{}, damping_dissipated_j{};
+    double elastic_in_j{}, elastic_out_j{};
+    // The ledger. Entry: the lattice built from the rigid pose against the same
+    // cell set read back through the engine's own fragment mass properties.
+    // Exit: the lattice against the pieces it becomes. Window: what is left
+    // after gravity, the removals, the plastic work and the dissipation, which
+    // is the supports' contribution and is zero when no support engaged.
+    double entry_momentum_residual_kg_m_s{}, entry_angular_residual_kg_m2_s{}, entry_energy_residual_j{};
+    double exit_momentum_residual_kg_m_s{}, exit_angular_residual_kg_m2_s{};
+    double exit_coarsening_loss_j{}, exit_energy_residual_j{};
+    double window_external_impulse_n_s{}, window_energy_residual_j{};
+    // How far the rigid representation had let this piece sink into a support
+    // plane when the window opened; the conversion lifts it out by exactly this
+    // much before building the lattice. The lattice's support projection is
+    // unconditional on an infinite plane, so a cell that starts below the floor
+    // is teleported up through its bonds; this says by how much.
+    double entry_support_penetration_m{}, entry_max_displacement_m{};
+    bool striker_in_island{};
+};
+
+struct RefractureReport {
+    bool enabled{};
+    // Every contact the trigger saw, and where each went.
+    std::size_t contacts_tested{}, admitted{};
+    std::size_t rejected_no_bond{}, rejected_stress{}, rejected_energy{};
+    // The hardest contact the trigger ever saw on a fragment that still has
+    // bonds, and how close it came to the bound: a refusal is then a number,
+    // not a silence. `max_margin` is the estimated peak stretch over the
+    // smallest removal threshold, so 1.0 is the admission line.
+    double max_closing_speed_m_s{}, max_margin{};
+    std::size_t refused_budget_events{}, refused_budget_steps{}, refused_unsupported{}, refused_too_large{};
+    // A re-entry the lane declines for a reason of its own, counted so that a
+    // refusal is visible: the rigid world had sunk the piece too far into the
+    // floor to convert without teleporting it, or the world holds too many
+    // bodies for the reversible step the re-entry needs.
+    std::size_t refused_support_penetration{}, refused_no_rollback{};
+    // Rigid steps replayed in the lattice instead of in Jolt, and steps that
+    // paid for a rollback that was then committed anyway.
+    std::size_t rollbacks{}, trial_steps{};
+    std::uint64_t substeps{};
+    double wall_s{}, simulated_s{};
+    std::uint32_t broken_bonds{};
+    std::size_t pieces_created{};
+    double removed_energy_j{}, plastic_work_j{};
+    // Worst residual over every event, so one number says whether it closed.
+    double worst_entry_momentum_residual_kg_m_s{}, worst_entry_energy_residual_j{};
+    double worst_exit_momentum_residual_kg_m_s{}, worst_exit_energy_residual_j{};
+    std::vector<RefractureEventReport> events;
 };
 
 struct TileImpactMeasurements {
@@ -255,6 +363,13 @@ struct TileImpactMeasurements {
     std::size_t components{}, rigid_fragments{}, debris_particles{};
     double largest_piece_mass_kg{};
     std::size_t largest_piece_cells{};
+    // Re-fracture. `pieces_at_end` and `broken_bonds_total` count the whole run
+    // (first strike plus every re-entry); `components` above stays the first
+    // strike's answer so every earlier measurement keeps its meaning.
+    RefractureReport refracture{};
+    std::size_t pieces_at_end{};
+    std::uint32_t broken_bonds_total{};
+    double second_strike_time_s{-1.0}, second_ball_mass_kg{}, second_ball_speed_m_s{};
     double handoff_wall_s{};
     double rigid_simulated_s{}, rigid_wall_s{};
     std::uint64_t rigid_steps{};

@@ -78,6 +78,20 @@ void usage() {
         "  --energy-audit                measure the damping and striker dissipation too\n"
         "  --quiet-ms --min-ms --max-ms --no-failure-ms   lattice phase exit rules\n"
         "  --settle-s S                  rigid settling limit (default 6)\n"
+        "  --refracture on|off           let a fragment that is struck hard enough go back\n"
+        "                                into the lattice phase and break again (default off:\n"
+        "                                 the lane before this existed, bit for bit)\n"
+        "  --refracture-events N         re-entries allowed in one run (default 8)\n"
+        "  --refracture-steps N          total re-entry substeps allowed (default 600000)\n"
+        "  --refracture-window N         longest re-entry window, in rigid steps (default 6)\n"
+        "  --refracture-quiet N          end a window after N rigid steps with no failure\n"
+        "                                (default 2; 0 always runs the whole window)\n"
+        "  --refracture-max-cells N      refuse to re-enter a fragment larger than this\n"
+        "  --second-ball R --second-speed V   a second striker of radius R dropped on the\n"
+        "                                debris of the first strike at speed V\n"
+        "  --second-material NAME --second-offset X Z --second-gap G\n"
+        "  --second-at rest|SECONDS      when it appears: at rest (default) or at a time\n"
+        "  --second-wait S               give up waiting for rest after S seconds (default 1)\n"
         "  --backend cpu|parallel|gpu --precision float|double --blocks N --threads N\n"
         "  --steps-per-launch N          GPU substeps per kernel launch (0 = one launch)\n"
         "  --frames N                    lattice-phase frames (default 50); --rigid-frames N\n"
@@ -143,11 +157,29 @@ int main(int argc, char **argv) {
             else if (option == "--max-ms") request.max_ms = number(value());
             else if (option == "--no-failure-ms") request.no_failure_ms = number(value());
             else if (option == "--settle-s") request.settle_limit_s = number(value());
+            else if (option == "--refracture") { const auto v = value();
+                if (v == "on") request.refracture = true;
+                else if (v == "off") request.refracture = false;
+                else throw std::invalid_argument("--refracture takes on or off"); }
+            else if (option == "--refracture-events") request.refracture_max_events = static_cast<unsigned>(number(value()));
+            else if (option == "--refracture-steps") request.refracture_max_steps = static_cast<std::uint64_t>(number(value()));
+            else if (option == "--refracture-window") request.refracture_window_steps = static_cast<unsigned>(number(value()));
+            else if (option == "--refracture-quiet") request.refracture_quiet_steps = static_cast<unsigned>(number(value()));
+            else if (option == "--refracture-max-cells") request.refracture_max_cells = static_cast<std::size_t>(number(value()));
+            else if (option == "--second-ball") request.second_ball_radius_m = number(value());
+            else if (option == "--second-speed") request.second_ball_speed_m_s = number(value());
+            else if (option == "--second-material") request.second_ball_material = presetFromName(value());
+            else if (option == "--second-offset") { request.second_ball_offset_x_m = number(value()); request.second_ball_offset_z_m = number(value()); }
+            else if (option == "--second-gap") request.second_ball_gap_m = number(value());
+            else if (option == "--second-at") { const auto v = value();
+                request.second_strike_at_s = v == "rest" ? -1.0 : number(v); }
+            else if (option == "--second-wait") request.second_strike_wait_s = number(value());
             else if (option == "--backend") { const auto v = value(); request.backend = v == "cpu" ? BackendKind::Cpu
                 : v == "parallel" ? BackendKind::CpuParallel : BackendKind::Cuda; }
             else if (option == "--precision") { const auto v = value(); request.precision = v == "double" ? Precision::Double : Precision::Float; }
             else if (option == "--blocks") request.blocks = static_cast<unsigned>(number(value()));
             else if (option == "--threads") request.threads_per_block = static_cast<unsigned>(number(value()));
+            else if (option == "--cpu-threads") request.cpu_threads = static_cast<unsigned>(number(value()));
             else if (option == "--steps-per-launch") request.steps_per_launch = static_cast<std::uint64_t>(number(value()));
             else if (option == "--frames") request.lattice_frames = static_cast<unsigned>(number(value()));
             else if (option == "--rigid-frames") request.rigid_frames = static_cast<unsigned>(number(value()));
