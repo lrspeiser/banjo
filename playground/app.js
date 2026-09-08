@@ -883,6 +883,25 @@
           : spec.clearance_m < 2 * spec.ball_m
             ? ` Note: only ${Math.round(spec.clearance_m * 1000)} mm under the target, so the ball meets the floor almost at once.`
             : "");
+    // Cells through the thickness. Bending strain varies linearly across a
+    // plate, so one layer of nodes samples only the mid-plane, where that
+    // strain is zero: the plate has no bending stiffness to resist with and no
+    // bending strain to fail on. Measured on a 250x200x10 mm glass plate hit at
+    // 0.5 m/s, against simply-supported beam theory (e = 6 d t / L^2):
+    //   1 layer   4.42 mm deflection, reads 259 of 4242 microstrain   16x low
+    //   2 layers  0.885 mm            reads 249 of 849                3.4x low
+    //   4 layers  0.674 mm            reads 350 of 647                1.9x low
+    // and every node is rank-deficient at one layer, none at two. The residual
+    // factor is the horizon-2 nonlocal average across the thickness; horizon 1
+    // is not the way out, it reads 761x low and shatters the plate unloaded.
+    const layers = n[2];
+    const thicknessNote = layers >= 4
+      ? ""
+      : layers === 1
+        ? " This plate is one cell thick, so it has no bending stiffness: it will flex about 6.6x too far and read bending strain about 16x low. Halve the cell size for two layers, quarter it for four."
+        : ` This plate is ${layers} cells thick, so bending strain reads about ${layers === 2 ? "3.4" : "2"}x low. Four layers brings it inside 2x.`;
+    $("fracture-note").textContent += thicknessNote;
+    $("fracture-cells").classList.toggle("warn", layers < 2 && !over);
     $("fracture-run").disabled = fracture.busy || Boolean(over) || !(lane && lane.available);
   }
 

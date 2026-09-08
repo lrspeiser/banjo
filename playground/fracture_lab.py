@@ -39,7 +39,7 @@ ALGORITHMS: dict[str, dict[str, Any]] = {
     "algo3": {"exe": "banjo_fracture_algo3", "title": "Algorithm 3: precomputed propagators + causal cones (exact)",
               "max_cells": 4000, "timeout_s": 60, "contract": "lane"},
     "lattice": {"exe": "banjo_fast_lattice_run", "title": "Explicit lattice, parallel: every substep, the shared criterion",
-                "max_cells": 2400, "timeout_s": 240, "contract": "fast_lattice"},
+                "max_cells": 8000, "timeout_s": 240, "contract": "fast_lattice"},
 }
 
 MATERIALS = ("glass", "oak", "iron")
@@ -108,6 +108,22 @@ SCENARIOS = [
      "spec": {"material": "glass", "striker": "iron", "failure_law": "strain-threshold", "plasticity": "off",
               "plate_m": [0.25, 0.20, 0.01], "cell_m": 0.01, "ball_m": 0.06, "drop_m": 2.0,
               "offset_m": [0.0, 0.0], "support": "ledges", "duration_s": 2.0, "clearance_m": 0.5}},
+    # The pair that shows what a cell through the thickness is worth. Same pane,
+    # same tap, only the cell size differs. Measured 2026-09-08: 5.10 mm of
+    # centre deflection at one layer against 0.91 mm at two, neither breaking a
+    # bond. Beam theory puts the surface strain at one layer 16x above what the
+    # criterion reads there, because one layer of nodes sits on the mid-plane
+    # where bending strain is zero. See docs/one-cell-is-not-a-plate.md.
+    {"id": "bend-one-cell", "title": "A gentle tap on a pane one cell thick",
+     "expect": "it bows 5.1 mm and springs back unbroken: five times too far, because one layer has no bending stiffness",
+     "spec": {"material": "glass", "striker": "iron", "failure_law": "strain-threshold", "plasticity": "off",
+              "plate_m": [0.25, 0.20, 0.01], "cell_m": 0.01, "ball_m": 0.06, "speed_m_s": 0.5,
+              "offset_m": [0.0, 0.0], "support": "ledges", "duration_s": 0.4, "clearance_m": 0.5}},
+    {"id": "bend-two-cells", "title": "The same tap on the same pane, two cells thick",
+     "expect": "0.91 mm, eight times stiffer for eight times the cells and sixteen times the wall clock",
+     "spec": {"material": "glass", "striker": "iron", "failure_law": "strain-threshold", "plasticity": "off",
+              "plate_m": [0.25, 0.20, 0.01], "cell_m": 0.005, "ball_m": 0.06, "speed_m_s": 0.5,
+              "offset_m": [0.0, 0.0], "support": "ledges", "duration_s": 0.4, "clearance_m": 0.5}},
     {"id": "glass-punch", "title": "The same plate hit three times as fast",
      "expect": "a local hole instead of a shatter: most of the plate survives",
      "spec": {"material": "glass", "striker": "iron", "failure_law": "strain-threshold", "plasticity": "off",
@@ -389,6 +405,10 @@ def summary(report: dict[str, Any], wall_s: float, spec: dict[str, Any]) -> dict
         "ball_mm": round(spec["ball_m"] * 1000, 1),
         "speed_m_s": round(spec["speed_m_s"], 3),
         "cell_mm": round(spec["cell_m"] * 1000, 3),
+        # Cells through the thickness. One layer samples only the mid-plane,
+        # where bending strain is zero, so the plate has neither the stiffness
+        # to resist bending nor the strain to fail on it.
+        "thickness_cells": spec["cells_per_axis"][2],
         "snapped_from_mm": ([round(v * 1000, 1) for v in spec["requested_plate_m"]] if spec.get("snapped") else None),
         "cells": _pick(report, "cells") or spec["cells"],
         "bonds": _pick(report, "bonds", "lattice.bonds"),

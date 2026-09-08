@@ -300,3 +300,5 @@ h2 { margin-bottom: 0; font-size: 1.02rem; font-weight: 550; letter-spacing: -.0
   color: var(--muted); background: rgba(10,16,19,.6); font-size: .72rem; line-height: 1.5; }
 .fracture-stage-caption strong { color: var(--text); font-weight: 600; }
 .fracture-stage-caption.is-new { border-color: var(--mint-strong); color: var(--mint); }
+
+.small-badge.warn { border-color: rgba(246,197,114,.55); color: var(--amber); }

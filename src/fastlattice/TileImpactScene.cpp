@@ -1666,17 +1666,72 @@ void writePlayback(const TileImpactResult &result, const std::filesystem::path &
     const auto quat = [](const Quat &q) { return Json{q.w, q.x, q.y, q.z}; };
     const std::size_t N = result.frames.empty() ? 0 : result.frames.front().cell_positions.size();
     const std::size_t B = result.bond_nodes.size();
-    // The playground accepts 64 MiB per recording. A cell pose costs about
-    // 130 bytes and a bond line about 130 bytes, so the frames are thinned to a
-    // budget and bond lines are kept only for the lattice phase (a rigid frame
-    // carries no bond state of its own) and only while they fit. Thinning
+    // The playground accepts 64 MiB per recording, so the frames are thinned to
+    // a budget and bond lines are kept only for the lattice phase (a rigid
+    // frame carries no bond state of its own) and only while they fit. Thinning
     // happens here, after the simulation: it never changes what was computed.
+    //
+    // The cost per frame is measured, not guessed. A flat 130 bytes an item was
+    // the estimate before, and it is roughly 1.7x low once doubles serialize at
+    // full precision: a 4,000-cell recording budgeted at 26 MB came out over 64
+    // and the run was thrown away at the last step, after the physics had
+    // already been paid for. One frame is built and dumped here to price the
+    // rest.
     constexpr std::size_t kBudgetBytes = 48U * 1024U * 1024U;
-    constexpr std::size_t kBytesPerItem = 130;
+    const auto posesFor = [&](const RecordedFrame &frame) {
+        Json poses = Json::array();
+        for (std::size_t i = 0; i < N; ++i)
+            poses.push_back({{"id", "cell:" + std::to_string(i)}, {"position_m", vec(frame.cell_positions[i])},
+                             {"orientation_wxyz", quat(frame.cell_orientations[i])},
+                             {"component_id", frame.component_ids.empty() ? 0U : frame.component_ids[i]}});
+        poses.push_back({{"id", "ball"}, {"position_m", vec(frame.ball_center)},
+                         {"orientation_wxyz", quat(frame.ball_orientation)}, {"component_id", 0}});
+        for (std::size_t k = 0; k < result.ledges.size(); ++k)
+            poses.push_back({{"id", "ledge:" + std::to_string(k)}, {"position_m", vec(result.ledges[k].center_m)},
+                             {"orientation_wxyz", Json{1, 0, 0, 0}}, {"component_id", 0}});
+        return poses;
+    };
+    const auto bondsFor = [&](const RecordedFrame &frame) {
+        Json bonds = Json::array();
+        if (frame.phase == "lattice" && frame.bond_alive.size() == B)
+            for (std::size_t o = 0; o < B; ++o) {
+                const auto [a, b] = result.bond_nodes[o];
+                bonds.push_back({{"a_m", vec(frame.cell_positions[a])}, {"b_m", vec(frame.cell_positions[b])},
+                                 {"live", frame.bond_alive[o] != 0},
+                                 {"damage", static_cast<double>(frame.bond_damage[o])}});
+            }
+        return bonds;
+    };
+    std::size_t pose_bytes = 1;
+    std::size_t bond_bytes = 0;
+    if (!result.frames.empty()) {
+        // Not the first frame. At rest every coordinate is a round multiple of
+        // the cell size and serializes in a few characters; once the plate has
+        // moved they are full-precision doubles and cost twice as much. Sample
+        // across the run and price the widest frame, or the budget is set by
+        // the cheapest one and the recording overruns after it is too late.
+        const std::size_t last = result.frames.size() - 1;
+        for (const std::size_t f : {std::size_t(0), last / 3, (2 * last) / 3, last}) {
+            const std::size_t bytes = posesFor(result.frames[f]).dump().size();
+            pose_bytes = std::max(pose_bytes, bytes);
+            if (result.frames[f].phase == "lattice" && result.frames[f].bond_alive.size() == B)
+                bond_bytes = std::max(bond_bytes, bondsFor(result.frames[f]).dump().size());
+        }
+        if (bond_bytes == 0)
+            for (const RecordedFrame &frame : result.frames)
+                if (frame.phase == "lattice" && frame.bond_alive.size() == B) {
+                    bond_bytes = bondsFor(frame).dump().size();
+                    break;
+                }
+    }
+    // Leave room for each frame's envelope, and take the bodies table off the
+    // top: it is one entry per cell and is not free at four thousand of them.
+    const std::size_t frame_bytes = pose_bytes + 96;
+    const std::size_t fixed_bytes = 160 * (N + 1 + result.ledges.size()) + 64 * 1024;
     std::vector<std::size_t> kept;
     {
-        const std::size_t per_frame = kBytesPerItem * std::max<std::size_t>(1, N + 1 + result.ledges.size());
-        const std::size_t budget_frames = std::max<std::size_t>(8, kBudgetBytes / per_frame);
+        const std::size_t spare = kBudgetBytes > fixed_bytes ? kBudgetBytes - fixed_bytes : frame_bytes * 8;
+        const std::size_t budget_frames = std::max<std::size_t>(8, spare / frame_bytes);
         const std::size_t total = result.frames.size();
         const std::size_t stride = total <= budget_frames ? 1 : (total + budget_frames - 1) / budget_frames;
         std::size_t last_lattice = total;
@@ -1688,7 +1743,7 @@ void writePlayback(const TileImpactResult &result, const std::filesystem::path &
     std::size_t lattice_frames_kept = 0;
     for (const std::size_t f : kept) lattice_frames_kept += result.frames[f].phase == "lattice" ? 1 : 0;
     const bool record_bonds =
-        B * lattice_frames_kept * kBytesPerItem + kept.size() * (N + 1) * kBytesPerItem <= kBudgetBytes;
+        bond_bytes * lattice_frames_kept + kept.size() * frame_bytes + fixed_bytes <= kBudgetBytes;
     Json bodies = Json::array();
     const double h = result.cell_size_m;
     for (std::size_t i = 0; i < N; ++i) {
@@ -1713,26 +1768,8 @@ void writePlayback(const TileImpactResult &result, const std::filesystem::path &
     Json frames = Json::array();
     for (const std::size_t kept_index : kept) {
         const RecordedFrame &frame = result.frames[kept_index];
-        Json poses = Json::array();
-        for (std::size_t i = 0; i < N; ++i) {
-            poses.push_back({{"id", "cell:" + std::to_string(i)}, {"position_m", vec(frame.cell_positions[i])},
-                             {"orientation_wxyz", quat(frame.cell_orientations[i])},
-                             {"component_id", frame.component_ids.empty() ? 0U : frame.component_ids[i]}});
-        }
-        poses.push_back({{"id", "ball"}, {"position_m", vec(frame.ball_center)},
-                         {"orientation_wxyz", quat(frame.ball_orientation)}, {"component_id", 0}});
-        for (std::size_t k = 0; k < result.ledges.size(); ++k)
-            poses.push_back({{"id", "ledge:" + std::to_string(k)}, {"position_m", vec(result.ledges[k].center_m)},
-                             {"orientation_wxyz", Json{1, 0, 0, 0}}, {"component_id", 0}});
-        Json bonds = Json::array();
-        if (record_bonds && frame.phase == "lattice" && frame.bond_alive.size() == B) {
-            for (std::size_t o = 0; o < B; ++o) {
-                const auto [a, b] = result.bond_nodes[o];
-                bonds.push_back({{"a_m", vec(frame.cell_positions[a])}, {"b_m", vec(frame.cell_positions[b])},
-                                 {"live", frame.bond_alive[o] != 0},
-                                 {"damage", static_cast<double>(frame.bond_damage[o])}});
-            }
-        }
+        Json poses = posesFor(frame);
+        Json bonds = record_bonds ? bondsFor(frame) : Json::array();
         frames.push_back({{"time_s", frame.time_s}, {"phase", frame.phase}, {"poses", std::move(poses)},
                           {"bonds", std::move(bonds)}, {"fracture_count", frame.fracture_count}});
     }
