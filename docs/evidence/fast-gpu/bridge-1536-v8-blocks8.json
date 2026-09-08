@@ -1,0 +1,90 @@
+{
+  "cuda": "NVIDIA GeForce RTX 5090 sm_120, 170 SMs, runtime 12090, driver 13000",
+  "frames": 123,
+  "measurements": {
+    "backend": "cuda-float-8x512",
+    "ball_mass_kg": 2.1098098503468097,
+    "blocks": 8,
+    "bonds": 18852,
+    "boundary_bonds": 6244,
+    "cell_size_m": 0.01,
+    "cells": 1536,
+    "colors": 31,
+    "degenerate_disagreements": 13,
+    "dt_s": 6.698999132647144e-07,
+    "fastest_period_s": 4.2091052923057325e-06,
+    "handoff": {
+      "components": 672,
+      "debris_particles": 0,
+      "largest_piece_cells": 336,
+      "largest_piece_mass_kg": 0.8399999999999931,
+      "rigid_fragments": 672,
+      "wall_s": 0.0140068
+    },
+    "lattice": {
+      "bond_updates_per_s": 129588428.46339142,
+      "broken_bonds": 15334,
+      "contact": {
+        "ball_support_events": 0,
+        "dissipated_kinetic_energy_j": 13.993321657180786,
+        "impulse_contacts": 23263,
+        "impulse_to_material_n_s": [
+          -0.16645777381195873,
+          -18.617989688893854,
+          0.39717099378499315
+        ],
+        "maximum_center_shift_m": 1.4904626866041326e-08,
+        "maximum_penetration_m": 1.5046447515487671e-05,
+        "maximum_position_correction_m": 4.48392893304117e-06
+      },
+      "exit_reason": 3,
+      "failure_rounds": 6902,
+      "first_failure_s": 0.0003342800567190925,
+      "kernel_s": 43.42200537109374,
+      "last_failure_s": 0.19866685807761023,
+      "launches": 30,
+      "removed_energy_j": 28.766579823274498,
+      "simulated_s": 0.20000062880492026,
+      "steps": 298553,
+      "wall_s": 43.4322819
+    },
+    "max_compressive_strain": 0.010455922223627567,
+    "max_shear_strain": 0.014987554401159286,
+    "max_tensile_stretch": 0.005581292789429426,
+    "phase_seconds": {
+      "capture": 0.18867308944399677,
+      "contact_pass_1": 1.89316,
+      "contact_pass_2": 2.427084535455278,
+      "damping": 0.0,
+      "end_sample_bonds": 3.6002476494762288,
+      "end_sample_nodes": 7.828515034246576,
+      "kick_classify": 0.8160155628525383,
+      "sphere_exit": 0.5991003489121676,
+      "start_sample_bonds": 0.08525074617244158,
+      "start_sample_nodes": 0.21655302739726026,
+      "support_project": 0.7126469411764705,
+      "sweep_boundary": 21.125392783642223,
+      "sweep_interior": 10.843699843674456,
+      "velocity_update": 0.8126274911361805
+    },
+    "realtime_ratio": 7.33414077229941,
+    "recording_wall_s": 0.4931055,
+    "rigid": {
+      "ball_height_at_end_m": 0.038085135099325144,
+      "ball_speed_at_end_m_s": 0.24041680420202072,
+      "came_to_rest": false,
+      "rest_time_s": -1.0,
+      "simulated_s": 5.99999999999998,
+      "steps": 1440,
+      "wall_s": 1.9341431
+    },
+    "rule_met": false,
+    "shared_memory_bytes": 0,
+    "shared_memory_positions": false,
+    "simulated_total_s": 6.2000006288049,
+    "substep_limit_s": 1.3397998265294287e-06,
+    "tile_mass_kg": 3.8399999999999253,
+    "wall_total_s": 45.4716774
+  },
+  "recording": "C:\\Users\\henry\\dev\\banjo-agents\\fast-gpu\\docs\\evidence\\fast-gpu\\bridge-1536-v8-blocks8.playback.json"
+}

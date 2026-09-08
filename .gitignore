@@ -37,3 +37,6 @@ __pycache__/
 .env
 .env.*
 !.env.example
+
+# Fast-gpu lane recordings are runtime artifacts (up to 64 MiB each); the reports next to them are kept.
+docs/evidence/fast-gpu/*.playback.json
