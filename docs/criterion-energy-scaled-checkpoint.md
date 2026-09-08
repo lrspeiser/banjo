@@ -451,9 +451,68 @@ nothing. Fragments also do not collide with each other during the lattice phase
 free rings for ever at whatever amplitude it separated with, and the criterion
 keeps reading that ringing.
 
-### 6.6 What the ladder shows
+### 6.6 What the ladder shows: does the answer converge?
 
-*Filled in below.*
+**The criterion converges. The answer does not.** Both halves of that sentence
+are measured, and they are different claims about different things.
+
+**What converges (validated).** The energy it costs to open a unit of crack area
+is now the material's own `fracture_energy_j_m2` at every cell size and every
+horizon, to 1e-12 relative, measured on lattices the production generator built
+(tests 3a, 3b, 4). Before, the same tile was made of a material 795 times
+tougher than glass at 20 mm cells and 199 times tougher at 5 mm - a different
+material at each rung of the ladder. That is the length scale the criterion was
+missing, and it is there now. The independent LEFM check (section 2.5) says the
+constant is right and not merely self-consistent: the criterion breaks a
+cell-sized ligament at 1.32x (horizon 2) or 0.92x (horizon 3) the Griffith
+stress, for every material and every cell size.
+
+**What improved but is not a limit.** Removed energy under timestep refinement:
++0.55% for dt against dt/2, where the old law moves -9.8% (section 6.4). That is
+the one item on the brief's gate list that the new law measurably fixes.
+
+**What still does not converge (experimental result).** Piece count, largest
+piece and removed energy under *cell* refinement, for both laws and both
+materials:
+
+| | 20 -> 10 mm | 10 -> 5 mm | | 20 -> 10 mm | 10 -> 5 mm |
+|---|---:|---:|---|---:|---:|
+| **glass, pieces** | | | **oak, pieces** | | |
+| old | +800% | +614% | old | +833% | +1389% |
+| new | +302% | +269% | new | +546% | +559% |
+| **largest piece** | | | | | |
+| old | -8% | +110% | old | -1% | -1% |
+| new | +176% | +251% | new | +71% | -2% |
+| **removed energy** | | | | | |
+| old | -7% | +20% | old | +73% | +35% |
+| new | +408% | -51% | new | +12% | +173% |
+
+The new law halves the piece-count divergence rate (roughly 3-6x per level
+against 6-15x) and that is all. **The gate the brief sets - removed energy,
+largest piece and piece count approaching a limit - is not met.**
+
+**Why, and it is not the criterion's fault.** The pulverisation number
+R = (v/c_L)/s_c (section 8.2) is 25 to 13 for glass over the ladder and 1.2 to
+0.6 for oak. Where R exceeds 1, the strain the impact puts into the bulk exceeds
+the stretch at which a bond leaves, so the wave breaks essentially every bond it
+reaches: 93% of the 20 mm glass tile's bonds, 88% at 10 mm, 60% at 5 mm. The
+fragment size is then the cell size at every level, the piece count is a count of
+cells, and no failure criterion can make that converge. R falls as h^1/2, so
+refinement does move towards localisation - glass would need about 31 um cells
+(4.6e11 of them) and oak about 14 mm.
+
+Oak sits at R ~ 1 and still does not localise, and that is the honest limit of
+this branch: a threshold that snaps rather than softens gives no mechanism for a
+damaged bond to shed load onto its neighbours, which is what makes damage
+localise into a crack in the first place. Section 8.3 sets out what a softening
+ramp would cost and what the energy-consistent condition on it is
+(`s_0 s_f = s_c^2`, with the stretch derived here as the geometric mean).
+
+**What the sibling lanes should take from this.** The law is worth adopting for
+the energy ledger and its resolution independence, and it is a strictly better
+input to any fast fracture algorithm than a threshold that changes the material
+with the mesh. It does not by itself make a piece count reproducible, and no
+lane should claim it does. The next change that would is softening, not speed.
 
 ---
 
