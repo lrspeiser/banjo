@@ -174,6 +174,9 @@ def validate(spec: Any) -> dict[str, Any]:
     offset = result["offset_m"]
     if not isinstance(offset, list) or len(offset) != 2:
         raise ValueError("offset_m requires two values")
+    # Bound the offset by the requested plate; the snap below moves the edges by
+    # less than one cell, and clamping after it would reject a strike the caller
+    # placed legitimately near the rim.
     half = [result["plate_m"][0] / 2, result["plate_m"][1] / 2]
     result["offset_m"] = [_number(offset[0], -half[0], half[0], "offset x"), _number(offset[1], -half[1], half[1], "offset z")]
     if result["support"] not in SUPPORTS:
@@ -187,12 +190,32 @@ def validate(spec: Any) -> dict[str, Any]:
     if result["plasticity"] not in PLASTICITY:
         raise ValueError(f"plasticity must be one of {list(PLASTICITY)}")
     result["duration_s"] = _number(result["duration_s"], LIMITS["duration_s"]["min"], LIMITS["duration_s"]["max"], "duration")
+    # `generateBoxTileLattice` refuses an extent that is not a whole number of
+    # cells (BoxLattice.cpp cellCount, tolerance 1e-6 relative), so the plate is
+    # snapped here rather than accepted and refused four layers down. What was
+    # asked for is kept alongside what will run, and the panel shows both.
     nx, ny, nz = cell_counts(result["plate_m"], result["cell_m"])
+    result["requested_plate_m"] = list(result["plate_m"])
+    result["plate_m"] = [nx * result["cell_m"], ny * result["cell_m"], nz * result["cell_m"]]
+    result["snapped"] = any(abs(a - b) > 1e-9 for a, b in zip(result["plate_m"], result["requested_plate_m"]))
+    # Rounding moves an extent by at most half a cell, which is nothing on a
+    # 250 mm plate and everything on a 4 mm one: asking for a 4 mm plate with
+    # 10 mm cells would otherwise hand back a 10 mm plate. Refuse rather than
+    # deliver a different object than the one described.
+    for axis, (want, got) in enumerate(zip(result["requested_plate_m"], result["plate_m"])):
+        if abs(got - want) > 0.2 * want:
+            name = ("length", "width", "thickness")[axis]
+            raise ValueError(
+                f"A {want * 1000:.0f} mm {name} is not a whole number of {result['cell_m'] * 1000:g} mm cells, "
+                f"and the nearest whole number is {got * 1000:.0f} mm - too far to substitute. "
+                f"Use a cell size that divides it, such as {want / max(1, round(want / result['cell_m'])) * 1000:.3g} mm.")
     result["cells_per_axis"] = [nx, ny, nz]
     result["cells"] = nx * ny * nz
     aspect = max(result["plate_m"][i] / result["cells_per_axis"][i] for i in range(3)) / min(
         result["plate_m"][i] / result["cells_per_axis"][i] for i in range(3))
     result["cell_aspect"] = aspect
+    result["offset_m"] = [max(-result["plate_m"][0] / 2, min(result["plate_m"][0] / 2, result["offset_m"][0])),
+                          max(-result["plate_m"][1] / 2, min(result["plate_m"][1] / 2, result["offset_m"][1]))]
     if aspect > 2.0:
         raise ValueError(f"Cells would be {aspect:.1f}:1; the engine assumes cubic cells (aspect <= 2:1). "
                          f"Choose a cell size that divides the thickness.")
@@ -278,6 +301,8 @@ def summary(report: dict[str, Any], wall_s: float, spec: dict[str, Any]) -> dict
     if window_ratio is None and lattice_wall is not None and lattice_sim:
         window_ratio = lattice_wall / lattice_sim
     return {
+        "plate_mm": [round(v * 1000, 1) for v in spec["plate_m"]],
+        "snapped_from_mm": ([round(v * 1000, 1) for v in spec["requested_plate_m"]] if spec.get("snapped") else None),
         "cells": _pick(report, "cells") or spec["cells"],
         "bonds": _pick(report, "bonds", "lattice.bonds"),
         "precompute_s": _pick(report, "precompute_s"),

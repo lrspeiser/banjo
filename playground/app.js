@@ -834,9 +834,14 @@
     const spec = readFracture();
     const n = spec.plate_m.map((d) => Math.max(1, Math.round(d / spec.cell_m)));
     const cells = n[0] * n[1] * n[2];
+    // The engine needs a whole number of cells on every axis, so the server
+    // snaps the plate. Show what will actually run before it is run.
+    const snapped = n.map((c) => c * spec.cell_m);
+    const moved = snapped.some((v, i) => Math.abs(v - spec.plate_m[i]) > 1e-9);
     const lane = fracture.meta && fracture.meta.algorithms.find((a) => a.id === spec.algorithm);
     const over = lane && cells > lane.max_cells;
-    $("fracture-cells").textContent = `${n[0]}x${n[1]}x${n[2]} = ${cells} cells` + (over ? ` (over this lane's ${lane.max_cells})` : "");
+    const snapNote = moved ? ` — plate runs as ${snapped.map((v) => Math.round(v * 1000)).join("x")} mm` : "";
+    $("fracture-cells").textContent = `${n[0]}x${n[1]}x${n[2]} = ${cells} cells` + snapNote + (over ? ` (over this lane's ${lane.max_cells})` : "");
     $("fracture-cells").classList.toggle("bad", Boolean(over));
     const v = spec.speed_m_s ?? Math.sqrt(2 * 9.81 * spec.drop_m);
     $("fracture-note").textContent = `Impact at ${v.toFixed(2)} m/s` + (spec.speed_m_s == null ? ` from a ${spec.drop_m.toFixed(2)} m drop.` : ` (given speed).`);
@@ -893,6 +898,9 @@
     row("Simulated interaction", s3(sum.simulated_s, " s"));
     if (Number.isFinite(sum.realtime_ratio)) row("Realtime", `${sum.realtime_ratio.toFixed(3)}x (limit ${sum.realtime_limit}x)`, sum.realtime_ratio <= sum.realtime_limit ? "ok" : "bad");
     if (Number.isFinite(sum.fracture_window_ratio)) row("Fracture window alone", `${sum.fracture_window_ratio.toFixed(0)}x realtime`);
+    if (Array.isArray(sum.plate_mm)) {
+      row("Plate", `${sum.plate_mm.join(" x ")} mm` + (sum.snapped_from_mm ? ` (snapped from ${sum.snapped_from_mm.join(" x ")})` : ""));
+    }
     row("Cells / bonds", `${sum.cells ?? "-"} / ${sum.bonds ?? "-"}`);
     if (Number.isFinite(sum.peak_tensile_stretch)) row("Peak tensile strain", sum.peak_tensile_stretch.toFixed(5));
     if (Number.isFinite(sum.rank_deficient_nodes)) row("Rank-deficient node reads", String(sum.rank_deficient_nodes));
@@ -926,7 +934,12 @@
       renderFractureResult(result);
       setText($("fracture-state"), result.status === "complete" ? `Done in ${roundTrip.toFixed(2)} s` : "Failed");
       fracture.lastJob = result.job_id;
-      if (result.status === "complete") { $("fracture-open").hidden = false; await openFractureJob(result.job_id); }
+      if (result.status === "complete") {
+        $("fracture-open").hidden = false;
+        // Go straight to the 3D tab: the point of a run is to watch it.
+        await openFractureJob(result.job_id);
+        showToast("Playing in the 3D playback tab.");
+      }
     } catch (error) {
       setText($("fracture-state"), "Failed"); $("fracture-result").textContent = error.message; showToast(error.message, true);
     } finally {

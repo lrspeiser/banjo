@@ -35,7 +35,15 @@ def main() -> int:
     rejects({"algorithm": "nope"}, "algorithm must be one of")
     rejects({"algorithm": "lattice", "material": "cheese"}, "material must be one of")
     rejects({"algorithm": "lattice", "striker": "cheese"}, "striker must be one of")
-    rejects({"algorithm": "lattice", "plate_m": [0.25, 0.20, 0.004], "cell_m": 0.01}, "cubic cells")  # 4 mm thick, 10 mm cells: 2.5:1
+    # A 4 mm plate cannot be built from 10 mm cells: the nearest whole number
+    # of cells is one, a 10 mm plate, which is not the object that was asked for.
+    rejects({"algorithm": "lattice", "plate_m": [0.25, 0.20, 0.004], "cell_m": 0.01}, "too far to substitute")
+    # A plate that is a whole number of cells on every axis is untouched, and
+    # one that is close is snapped rather than refused.
+    exact = lab.validate({"algorithm": "lattice", "plate_m": [0.25, 0.20, 0.01], "cell_m": 0.01})
+    assert exact["snapped"] is False and exact["cells"] == 500, exact
+    near = lab.validate({"algorithm": "lattice", "plate_m": [0.25, 0.20, 0.01], "cell_m": 0.011})
+    assert near["snapped"] is True and near["plate_m"][2] == 0.011, near
     rejects({"algorithm": "lattice", "plate_m": [0.5, 0.5, 0.01], "cell_m": 0.01}, "instant-run cap")
     rejects({"algorithm": "algo3", "offset_m": [0.2, 0.0]}, "offset x")
     rejects({"algorithm": "algo3", "bogus": 1}, "Unknown fracture lab fields")
