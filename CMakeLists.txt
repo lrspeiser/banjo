@@ -337,6 +337,15 @@ if(BANJO_BUILD_HEADLESS)
     target_link_libraries(banjo_fast_lattice_run PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_fast_lattice_run)
 
+    # Algorithm 2's driver. It links the explicit-lattice scene as well so
+    # `--reference` runs the reference lane from the same command line on a
+    # scene built from the same numbers.
+    add_executable(banjo_fracture_algo2 tools/fracture_algo2.cpp)
+    target_link_libraries(banjo_fracture_algo2 PRIVATE banjo_griffith banjo_fastlattice_scene
+        banjo_runtime nlohmann_json::nlohmann_json)
+    target_compile_features(banjo_fracture_algo2 PRIVATE cxx_std_23)
+    banjo_enable_warnings(banjo_fracture_algo2)
+
     add_executable(banjo_headless src/app/headless_main.cpp)
     target_link_libraries(banjo_headless PRIVATE banjo_runtime)
     target_compile_features(banjo_headless PRIVATE cxx_std_23)

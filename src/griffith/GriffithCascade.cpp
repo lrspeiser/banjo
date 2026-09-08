@@ -15,6 +15,7 @@
 #include <numbers>
 #include <numeric>
 #include <stdexcept>
+#include <type_traits>
 #include <string>
 #include <vector>
 
@@ -59,6 +60,11 @@ CacheKey keyOf(const PlateModel &plate, std::size_t modes, double sample_dt_s, d
                std::size_t samples) {
     const PlateRequest &r = plate.request;
     CacheKey key;
+    // keyDigest hashes the raw bytes, and the struct has alignment padding that
+    // member initialisers never touch. Without this the digest is whatever the
+    // stack held and a warm cache is never found.
+    static_assert(std::is_trivially_copyable_v<CacheKey>);
+    std::memset(&key, 0, sizeof key);
     key.length_m = r.length_m;
     key.width_m = r.width_m;
     key.thickness_m = r.thickness_m;
@@ -122,6 +128,10 @@ template <typename T> bool readArray(std::istream &in, std::vector<T> &values, s
 }
 
 } // namespace
+
+const char *contactMassName(ContactMassKind kind) {
+    return kind == ContactMassKind::Footprint ? "footprint" : "plate";
+}
 
 const char *supportName(SupportKind support) {
     return support == SupportKind::Ledges ? "ledges" : "clamped";
@@ -253,6 +263,50 @@ std::unique_ptr<PlateModel> buildPlate(const PlateRequest &request) {
         plate->bond_length_m[b] = rest.rest_length_m;
         const double raw_area = plate->bond_stiffness_n_m[b] * rest.rest_length_m / plate->young_modulus_pa;
         plate->bond_area_m2[b] = raw_area / plate->area_normalisation;
+    }
+
+    // A linearised lane needs K to be positive definite. The cheap sufficient
+    // test for singularity is per node: sum_b k_b d_b d_b^T over the incident
+    // bonds must have rank 3. A plate one cell thick fails it outright, because
+    // every bond then lies in the plate's own plane and a central-force lattice
+    // has exactly zero transverse stiffness. That is not a solver detail: it is
+    // the reason this lane cannot carry a single-layer membrane, whose load is
+    // carried by geometric stiffening that is second order in the displacement
+    // and therefore identically zero in any linearisation about the undeformed
+    // plate. The explicit lattice keeps that term because it uses real
+    // distances; this lane cannot.
+    for (const std::uint32_t node : plate->free_nodes) {
+        double n[9] = {};
+        for (std::uint32_t a = plate->asset.adjacency_offsets[node];
+             a < plate->asset.adjacency_offsets[node + 1U]; ++a) {
+            const std::uint32_t b = plate->asset.adjacent_bond_indices[a];
+            const BondRest &rest = plate->asset.bonds[b];
+            const Vec3 edge = plate->asset.nodes[rest.node_b].local_position_m -
+                              plate->asset.nodes[rest.node_a].local_position_m;
+            const Vec3 direction = edge * (1.0 / length(edge));
+            const double d[3] = {direction.x, direction.y, direction.z};
+            const double k = plate->bond_stiffness_n_m.empty() ? 1.0 / rest.compliance
+                                                              : plate->bond_stiffness_n_m[b];
+            for (int i = 0; i < 3; ++i)
+                for (int j = 0; j < 3; ++j) n[3 * i + j] += k * d[i] * d[j];
+        }
+        // Smallest diagonal against the trace: a direction with no stiffness at
+        // all shows up as a zero row and column.
+        const double trace = n[0] + n[4] + n[8];
+        for (int axis = 0; axis < 3; ++axis) {
+            if (n[4 * axis] > 1.0e-9 * trace) continue;
+            const char *name = axis == 0 ? "x" : axis == 1 ? "y (the impact direction)" : "z";
+            if (plate->layout.ny == 1)
+                throw std::runtime_error(
+                    "a plate one cell thick has no bond out of its own plane, so this central-force "
+                    "lattice has exactly zero transverse stiffness and the whole impact direction is a "
+                    "rigid motion. This lane linearises about the undeformed plate and cannot represent "
+                    "the membrane stiffening that carries the load there; give the plate at least two "
+                    "cells through the thickness (thickness >= 2 x cell)");
+            throw std::runtime_error(std::string("free cell ") + std::to_string(node) +
+                                     " has no stiffness along " + name +
+                                     "; K is singular and no compliance column exists");
+        }
     }
 
     const double radius = 0.5 * request.ball_diameter_m;
@@ -646,8 +700,10 @@ InfluenceTables precompute(const PlateModel &plate, const PrecomputeOptions &opt
 // Contact
 // ---------------------------------------------------------------------------
 
-ContactModel buildContact(const PlateModel &plate, double offset_x_m, double offset_z_m, double speed_m_s) {
+ContactModel buildContact(const PlateModel &plate, double offset_x_m, double offset_z_m, double speed_m_s,
+                          ContactMassKind mass_kind) {
     ContactModel contact;
+    contact.mass_kind = mass_kind;
     contact.ball_mass_kg = plate.ball_mass_kg;
     contact.speed_m_s = speed_m_s;
     contact.free_mass_kg = plate.free_mass_kg;
@@ -701,7 +757,9 @@ ContactModel buildContact(const PlateModel &plate, double offset_x_m, double off
     const double m_ball = contact.ball_mass_kg;
     contact.reduced_mass_patch_kg = m_ball * contact.patch_mass_kg / (m_ball + contact.patch_mass_kg);
     contact.reduced_mass_plate_kg = m_ball * contact.free_mass_kg / (m_ball + contact.free_mass_kg);
-    contact.impulse_n_s = contact.reduced_mass_patch_kg * speed_m_s;
+    contact.impulse_n_s = (mass_kind == ContactMassKind::Footprint ? contact.reduced_mass_patch_kg
+                                                                   : contact.reduced_mass_plate_kg) *
+                          speed_m_s;
     contact.energy_budget_j = 0.5 * contact.reduced_mass_plate_kg * speed_m_s * speed_m_s;
     contact.ball_speed_after_m_s = speed_m_s - contact.impulse_n_s / std::max(1.0e-12, m_ball);
     contact.model =
@@ -711,6 +769,12 @@ ContactModel buildContact(const PlateModel &plate, double offset_x_m, double off
         "footprint's modal effective mass, since phi phi^T = M^-1). Budget E_in = 0.5 mu_plate v^2 with "
         "mu_plate the ball/unsupported-plate reduced mass: the kinetic energy that leaves the rigid "
         "ledger over the whole contact, not just the first capture.";
+    if (mass_kind == ContactMassKind::Plate)
+        contact.model +=
+            " This run uses the unsupported plate's reduced mass for the impulse as well "
+            "(--contact-mass plate): the whole momentum the ball can deliver before it separates, "
+            "applied as one delta impulse. The impulse response is exact only in the delta limit, so "
+            "this over-idealises a contact that in truth lasts milliseconds.";
     return contact;
 }
 

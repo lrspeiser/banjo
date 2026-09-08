@@ -59,6 +59,15 @@ enum class CriterionKind : std::uint8_t {
     Strain,
 };
 
+// Which effective mass sets the delivered impulse. Both are stated physical
+// models, not tuning: `Footprint` is the inertia a delta-function contact
+// actually meets (the loaded cells), `Plate` is the inertia the ball meets
+// before it separates. The impulse response this lane uses is exact for the
+// first and an over-idealisation for the second, so the pair measures how much
+// of the lane's answer is the contact model rather than the cascade.
+enum class ContactMassKind : std::uint8_t { Footprint, Plate };
+
+[[nodiscard]] const char *contactMassName(ContactMassKind kind);
 [[nodiscard]] const char *supportName(SupportKind support);
 [[nodiscard]] const char *criterionName(CriterionKind criterion);
 
@@ -198,6 +207,7 @@ struct ContactModel {
     double reduced_mass_patch_kg{}, reduced_mass_plate_kg{};
     double contact_radius_m{};
     double impulse_n_s{}, energy_budget_j{};
+    ContactMassKind mass_kind{ContactMassKind::Footprint};
     double ball_speed_after_m_s{};
     double strike_snap_m{};   // distance from the requested offset to the patch centre
     std::uint32_t strike_node{PlateModel::kNoIndex};
@@ -208,7 +218,8 @@ struct ContactModel {
 };
 
 [[nodiscard]] ContactModel buildContact(const PlateModel &plate, double offset_x_m, double offset_z_m,
-                                        double speed_m_s);
+                                        double speed_m_s,
+                                        ContactMassKind mass_kind = ContactMassKind::Footprint);
 
 struct CascadeEvent {
     std::uint32_t bond{};
