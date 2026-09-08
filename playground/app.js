@@ -634,12 +634,22 @@
     // because a short window inside seconds of settling can pass the rule
     // while being hundreds of times slower than realtime itself.
     const realtime = item.report && item.report.realtime;
-    if (!(cost && Number.isFinite(cost.realtime_ratio)) && realtime && Number.isFinite(realtime.ratio)) {
+    // Lanes name their totals differently; the most inclusive figure wins
+    // (recording time counts: the owner waits for it too).
+    const pick = (...values) => values.find(Number.isFinite);
+    const ratio = realtime && pick(realtime.ratio, realtime.ratio_with_recording, realtime.ratio_pipeline);
+    if (!(cost && Number.isFinite(cost.realtime_ratio)) && Number.isFinite(ratio)) {
       const limit = Number.isFinite(realtime.limit) ? realtime.limit : 1.1;
       const simulated = Number.isFinite(realtime.simulated_s) ? `${realtime.simulated_s.toFixed(3)} s simulated` : "simulated time";
-      const wall = Number.isFinite(realtime.compute_wall_s) ? `${realtime.compute_wall_s.toFixed(3)} s wall, ` : "";
-      row("Realtime", `${wall}${realtime.ratio.toFixed(2)}x of ${simulated} (limit ${limit}x)`,
-        realtime.ratio <= limit ? "ok" : "bad");
+      const wallS = pick(realtime.compute_wall_s, realtime.wall_with_recording_s, realtime.wall_pipeline_s);
+      const wall = Number.isFinite(wallS) ? `${wallS.toFixed(3)} s wall, ` : "";
+      row("Realtime", `${wall}${ratio.toFixed(2)}x of ${simulated} (limit ${limit}x)`,
+        ratio <= limit ? "ok" : "bad");
+      if (realtime.stages_s && typeof realtime.stages_s === "object") {
+        const stages = Object.entries(realtime.stages_s).filter(([, v]) => Number.isFinite(v))
+          .map(([k, v]) => `${k} ${v.toFixed(3)} s`).join(", ");
+        if (stages) row("Wall by stage", stages, "");
+      }
       if (Number.isFinite(realtime.fracture_window_ratio)) {
         const window = Number.isFinite(realtime.window_simulated_s) ? ` of the ${(realtime.window_simulated_s * 1000).toFixed(1)} ms fracture window` : " over the fracture window";
         row("Fracture window", `${realtime.fracture_window_ratio.toFixed(0)}x realtime${window}`,
