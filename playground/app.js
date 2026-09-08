@@ -875,7 +875,14 @@
       + (spec.second_speed_m_s > 0
           ? ` A second ${Math.round(spec.second_ball_m * 1000)} mm ball follows at ${spec.second_speed_m_s} m/s after ${spec.second_wait_s} s`
             + (spec.refracture === "on" ? ", and the pieces it hits can break again." : "; with \u201cbreak it again\u201d off the pieces are rigid and cannot break.")
-          : "");
+          : "")
+      // A striker wider than the gap beneath the target cannot pass through
+      // it, so whatever happens next is the floor`s doing, not the target`s.
+      + (spec.clearance_m < spec.ball_m
+          ? ` Warning: the target sits ${Math.round(spec.clearance_m * 1000)} mm above the floor and the ball is ${Math.round(spec.ball_m * 1000)} mm across, so it cannot pass through — any rebound is the floor.`
+          : spec.clearance_m < 2 * spec.ball_m
+            ? ` Note: only ${Math.round(spec.clearance_m * 1000)} mm under the target, so the ball meets the floor almost at once.`
+            : "");
     $("fracture-run").disabled = fracture.busy || Boolean(over) || !(lane && lane.available);
   }
 
