@@ -313,6 +313,23 @@ tensile one (4.95e-3 against 2.46e-3, where glass's is 28x), so oak's crack tip
 sheds part of its driving energy into shear failure off the plane instead of
 advancing.
 
+**And on this problem the answer converges.** The strip is a well-posed,
+localised fracture problem - one crack, driven at a known energy release rate,
+with no pulverisation anywhere - and it is the one place in this branch where an
+outcome converges under cell refinement. The same strip, same loading, same
+300 us window, only the cell size changing:
+
+| cells | lattice | crack advance in 300 us | change | new crack-plane bonds |
+|---|---:|---:|---:|---:|
+| 10 mm | 1,600 cells, 4 thick | 25.0 mm | | 96 |
+| 5 mm | 12,800 cells, 8 thick | 42.5 mm | +70% | 674 |
+| 2.5 mm | 102,400 cells, 16 thick | 47.5 mm | **+12%** | 2,750 |
+
+That is what convergence looks like, on the same criterion and the same solver
+that will not converge on the tile in section 6. The difference is the problem,
+not the law: here the fracture is localised and the fragment scale is many cells,
+there it is not.
+
 **Dissipation.** The criterion removes 1.26 to 1.50 Gc per unit of crack area,
 where the area is counted by the crack-plane bonds it broke. The spread is not
 calibration error, it is where one draws the crack: counting the off-plane
@@ -330,6 +347,21 @@ strain is 3.8% of that law's removal stretch, and **nothing happens at all** -
 0 bonds break, the tip does not move. The old law charges 1,591 J/m^2 per unit
 crack area at 5 mm cells against glass's 8, so a strip loaded to 1.6x glass's
 fracture energy is 199 times too weak to crack it.
+
+Drive the old law at the same fraction of *its own* removal stretch instead
+(G/Gc = 318.4, giving the identical 0.538 ratio) and its crack does run - and
+what it costs is the whole point:
+
+| law | driving G | tip speed | v / c_R | dissipated per crack area | as a multiple of glass's Gc |
+|---|---:|---:|---:|---:|---:|
+| energy-scaled | 12.8 J/m^2 | 1,297 m/s | 0.391 | 10.2 J/m^2 | **1.28** |
+| strain-threshold | 2,547 J/m^2 | 242 m/s | 0.073 | 1,993 J/m^2 | **249** |
+
+The old law's crack consumes 249 times the material's fracture energy for every
+square metre it opens, and crawls at a fifth of the speed because it is dragging
+that cost. 249 / 199 = 1.25 is the same discrete overshoot the energy-scaled law
+shows at 1.28, so the two laws differ by exactly the factor the derivation says
+they should and by nothing else.
 
 ### 5.5 The lane's own energy leak
 
@@ -566,8 +598,15 @@ keeps reading that ringing.
 
 ### 6.7 What the ladder shows: does the answer converge?
 
-**The criterion converges. The answer does not.** Both halves of that sentence
-are measured, and they are different claims about different things.
+**The criterion converges. On a well-posed fracture problem the answer converges
+too. On this tile it does not.** All three are measured, and they are different
+claims about different things.
+
+The middle one is section 5.3: the pre-cracked strip, driven at a known energy
+release rate, gives a crack advance of 25.0 / 42.5 / 47.5 mm at 10 / 5 / 2.5 mm
+cells - +70% then **+12%**. Same criterion, same solver, same lane. So what
+follows is not "the law does not converge"; it is that this scene is not a
+convergence test.
 
 **What converges (validated).** The energy it costs to open a unit of crack area
 is now the material's own `fracture_energy_j_m2` at every cell size and every
