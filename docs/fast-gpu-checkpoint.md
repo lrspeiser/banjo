@@ -29,8 +29,10 @@ cascade, double and float, one block and four slabs), and that CPU backend is
 is **no faster than one CPU thread at the headline size**: 55 M bond-updates/s
 on the GPU against 57-68 M for this lane's single-threaded CPU backend (and
 19-21 M for `BrittleBondSolver` itself, 0.85 M for the network lane the brief
-quotes). The GPU only overtakes one core above ~800 cells and reaches 616 M
-bond-updates/s at 173k bonds, five times short of the ~3e9 the brief estimated.
+quotes). The GPU overtakes one core from 384 cells on (1.9x there, 2.5x at
+800 cells, 3.3x at 1,536: it is what extends the rule from 192 to 384 cells)
+and reaches 616 M bond-updates/s at 173k bonds, five times short of the ~3e9
+the brief estimated.
 The obstacle is structural: one Gauss-Seidel substep is a chain of 22-32
 node-disjoint colour stages, each a barrier, so a substep costs 25-35 us on
 one block and about 110 us of sweep alone with slabs, almost independently of
@@ -511,14 +513,34 @@ With FMA on, neither precision reproduces its CPU counterpart (1,536 vs
 FMA-off rows here are from the interim build with the reach cap on every
 plane; the final-build values are in section 6.2.)
 
-### 6.8 CPU scaling rows
+### 6.8 CPU backend against the GPU at scale
 
-`cpu-384-float`, `cpu-800-float`, `cpu-1536-float`, `cpu-1536-double`,
-`cpu-3072-float` (`docs/evidence/fast-gpu/cpu-*.json`) run the CPU backend on
-the 384-, 800-, 1,536- and 3,072-cell scenes; their per-substep costs are
-quoted in section 7 below. They were measured while the GPU sweep ran on the
-same machine (the sweep's host thread is idle in the kernel) and while other
-worktrees were building; treat them as +-10%.
+The same scenes on this lane's CPU backend, one thread, float, measured in
+isolation (`docs/evidence/fast-gpu/cpu-*.json`; the GPU columns repeat
+section 6.2). The outcomes are identical to the GPU float rows by
+construction (bit-equal backends).
+
+| scene | cells | bonds | CPU us/step | CPU M bu/s | CPU ratio | GPU us/step (blocks) | GPU M bu/s | GPU ratio | GPU / CPU speed |
+|---|---|---|---|---|---|---|---|---|---|
+| bridge-192 | 192 | 1,704 | 29.7 | 57 | 0.512 met | 30.7 (1) | 55 | 0.574 met | 0.97x |
+| bridge-384 | 384 | 3,592 | 98.6 | 36 | 1.288 not met | 52.0 (1) | 69 | 0.709 met | 1.9x |
+| bridge-800 | 800 | 7,768 | 174.3 | 45 | 3.588 not met | 71.1 (1) | 109 | 1.503 not met | 2.5x |
+| bridge-1536 | 1,536 | 18,852 | 465.4 | 41 | 22.86 not met | 142.2 (8) | 133 | 7.045 not met | 3.3x |
+| bridge-3072 (30 ms) | 3,072 | 38,596 | 2,666 | 14 | 19.93 not met | 181.7 (8) | 212 | 1.563 not met | 14.7x |
+| bridge-1536, double (30 ms) | 1,536 | 18,852 | 937.3 | 20 | 7.19 not met | 153.4-class | | | |
+
+On the CPU the per-substep cost is the work (25 us of sweep, 25 of strain and
+35 of criterion at 384 cells; 47, 34 and 63 at 800; 120, 117 and 164 at
+1,536), so it grows with the bond count from the start, and at 3,072 cells it
+jumps 3-4x per bond (663, 733 and 1,047 us): the backend's data layout is the
+kernel's (padded k-major neighbour lists strided by the node count, bond
+arrays in schedule order), which coalesces on a GPU and spills a single
+core's cache once the lattice passes ~20k bonds. On one GPU block the same
+phases are latency chains that grow more slowly until the per-thread
+iteration count bites (section 6.3). The GPU's advantage therefore grows with
+the scene (1.0x, 1.9x, 2.5x, 3.3x, 15x) and is what carries the rule from 192
+to 384 cells; above that neither backend meets it, for the reason in
+section 6.2.
 
 ## 7. Verdict on the rule
 
@@ -533,9 +555,11 @@ worktrees were building; treat them as +-10%.
   double).
 - **Throughput**: 55 M bond-updates/s at the headline size (64x the network
   lane's 0.85 M, 2.7x `BrittleBondSolver`, 1.0x this lane's own CPU thread),
-  616 M at 173k bonds (five times short of the ~3e9 the brief estimated as
-  needed for a whole-step-on-GPU plate, and that estimate assumed 190,440
-  substeps where this scene needs 7,288-21,898).
+  69-109 M at 384-800 cells (1.9-2.5x the CPU thread), 133 M at 1,536 cells
+  (3.3x), 212 M at 3,072 (15x, the CPU having spilled its cache), 616 M at 173k bonds
+  (five times short of the ~3e9 the brief estimated as needed for a
+  whole-step-on-GPU plate, and that estimate assumed 190,440 substeps where
+  this scene needs 7,288-21,898).
 - **The single biggest obstacle** is the barrier chain of the Gauss-Seidel
   sweep: >= max-degree (22-32) node-disjoint colour stages per sweep, each a
   barrier, three sweeps per iteration with slabs. It puts a floor of ~30 us

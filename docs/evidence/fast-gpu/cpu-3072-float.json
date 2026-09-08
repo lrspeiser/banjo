@@ -19,10 +19,10 @@
       "largest_piece_cells": 2611,
       "largest_piece_mass_kg": 6.5275000000003205,
       "rigid_fragments": 212,
-      "wall_s": 0.0063961
+      "wall_s": 0.0064062
     },
     "lattice": {
-      "bond_updates_per_s": 14572564.231773272,
+      "bond_updates_per_s": 14475885.29832058,
       "broken_bonds": 8744,
       "contact": {
         "ball_support_events": 0,
@@ -46,28 +46,28 @@
       "removed_energy_j": 49.32842226364463,
       "simulated_s": 0.030000127815733704,
       "steps": 44783,
-      "wall_s": 118.6095076
+      "wall_s": 119.4016554
     },
     "max_compressive_strain": 0.014250440523028374,
     "max_shear_strain": 0.018214251846075058,
     "max_tensile_stretch": 0.008193008601665497,
     "phase_seconds": {
       "capture": 0.0,
-      "contact_pass_1": 0.021982699999999893,
-      "contact_pass_2": 0.02210519999999906,
+      "contact_pass_1": 0.02176959999999935,
+      "contact_pass_2": 0.021964400000000116,
       "damping": 0.0,
-      "end_sample_bonds": 46.97291719999959,
-      "end_sample_nodes": 31.7559600999999,
-      "kick_classify": 1.1233516000001251,
-      "sphere_exit": 0.007258100000001205,
-      "start_sample_bonds": 2.7814123000000035,
-      "start_sample_nodes": 2.628868400000003,
-      "support_project": 2.6941643000000934,
-      "sweep_boundary": 0.0034783999999982666,
-      "sweep_interior": 29.915729499999962,
-      "velocity_update": 0.6673184999999983
+      "end_sample_bonds": 46.881637999999796,
+      "end_sample_nodes": 32.821894800000116,
+      "kick_classify": 1.1181792000000803,
+      "sphere_exit": 0.007861800000000288,
+      "start_sample_bonds": 2.7905366000000087,
+      "start_sample_nodes": 2.6949305999999953,
+      "support_project": 2.677525499999981,
+      "sweep_boundary": 0.003837199999998331,
+      "sweep_interior": 29.67670399999976,
+      "velocity_update": 0.6699832999999253
     },
-    "realtime_ratio": 19.79862372627277,
+    "realtime_ratio": 19.93435514959804,
     "recording_wall_s": 0.0,
     "rigid": {
       "ball_height_at_end_m": 0.03989810870470572,
@@ -76,7 +76,7 @@
       "rest_time_s": -1.0,
       "simulated_s": 5.99999999999998,
       "steps": 1440,
-      "wall_s": 0.7185546
+      "wall_s": 0.7348652
     },
     "rule_met": false,
     "shared_memory_bytes": 0,
@@ -84,6 +84,6 @@
     "simulated_total_s": 6.030000127815713,
     "substep_limit_s": 1.3397998265294287e-06,
     "tile_mass_kg": 7.680000000000208,
-    "wall_total_s": 119.3857036
+    "wall_total_s": 120.2041641
   }
 }
