@@ -666,7 +666,7 @@ cell-sized ligament at 1.32x (horizon 2) or 0.92x (horizon 3) the Griffith
 stress, for every material and every cell size.
 
 **What improved but is not a limit.** Removed energy under timestep refinement:
-+0.55% for dt against dt/2, where the old law moves -9.8% (section 6.4). That is
++0.55% for dt against dt/2, where the old law moves -9.8% (section 6.5). That is
 the one item on the brief's gate list that the new law measurably fixes.
 
 **What still does not converge (experimental result).** Piece count, largest
