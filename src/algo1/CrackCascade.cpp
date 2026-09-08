@@ -196,24 +196,20 @@ struct Envelope {
     }
 };
 
-struct BondBoundWorkspace {
-    std::vector<double> axial;       // |extension| bound, metres
-    std::vector<double> relative;    // |Delta u| bound, metres
-    std::vector<double> node_bound;  // nonlocal strain bound per node
-    std::vector<double> criterion;   // strain bound the criterion could read
-};
-
 // Upper bound on every quantity the shared criterion reads, from a bound on the
 // modal amplitudes. Rigorous for the intact field: the bond's own stretch from
 // its axial and transverse relative displacement, and the nonlocal
 // Green-Lagrange strain from the node's rest covariance.
+} // namespace
+
 void boundCriterionStrain(const ActiveMatter &matter, const ImpulseLibrary &library,
-                          const std::vector<double> &amplitude_bound, BondBoundWorkspace &work) {
+                          const std::vector<double> &amplitude_bound, StrainBounds &work) {
     const std::size_t bonds = library.bondCount();
     const std::size_t m = library.modes();
     const std::size_t nodes = matter.nodes.size();
     work.axial.assign(bonds, 0.0);
     work.relative.assign(bonds, 0.0);
+    work.node_gradient.assign(nodes, 0.0);
     work.node_bound.assign(nodes, 0.0);
     work.criterion.assign(bonds, 0.0);
 
@@ -288,6 +284,7 @@ void boundCriterionStrain(const ActiveMatter &matter, const ImpulseLibrary &libr
             for (unsigned column = 0; column < 3U; ++column)
                 frobenius += inverse->m[row][column] * inverse->m[row][column];
         const double gradient_bound = accumulated * std::sqrt(frobenius);
+        work.node_gradient[node] = gradient_bound;
         work.node_bound[node] = gradient_bound + 0.5 * gradient_bound * gradient_bound;
     }
 
@@ -307,6 +304,8 @@ void boundCriterionStrain(const ActiveMatter &matter, const ImpulseLibrary &libr
         work.criterion[bond] = std::max({own, work.node_bound[rest.node_a], work.node_bound[rest.node_b]});
     }
 }
+
+namespace {
 
 struct ContactCandidate {
     std::uint32_t node{};
@@ -537,7 +536,7 @@ CascadeResult runCrackCascade(ActiveMatter &matter, const ImpulseLibrary &librar
 
     // ---- stage 2: the screen ------------------------------------------------
     const auto screen_start = Clock::now();
-    BondBoundWorkspace work;
+    StrainBounds work;
     std::vector<double> amplitude_bound;
     double earliest = -1.0;
     const unsigned grid = std::max(1U, settings.screen_grid);

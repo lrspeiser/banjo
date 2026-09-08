@@ -158,6 +158,22 @@ struct CascadeResult {
     Ball ball{};
 };
 
+// Upper bounds on everything the shared criterion reads, given a bound on each
+// modal amplitude. Rigorous for the modal (intact) field: `criterion[b]` is a
+// value no peak tensile, compressive or shear strain of bond b can exceed while
+// every |q_i(t)| stays under `amplitude_bound[i]`. Exposed so the screen can be
+// checked against sampling.
+struct StrainBounds {
+    std::vector<double> axial;        // |extension| in metres
+    std::vector<double> relative;     // |Delta u| across the bond, metres
+    std::vector<double> node_gradient;// ||grad u|| at the node
+    std::vector<double> node_bound;   // nonlocal Green-Lagrange strain at the node
+    std::vector<double> criterion;    // what the criterion could read for the bond
+};
+
+void boundCriterionStrain(const ActiveMatter &matter, const ImpulseLibrary &library,
+                          const std::vector<double> &amplitude_bound, StrainBounds &out);
+
 // Runs the window on `matter`. On return the lattice's positions, velocities,
 // bond aliveness and damage describe the end of the window and `ball` has been
 // advanced. `matter` and `library` must describe the same lattice.

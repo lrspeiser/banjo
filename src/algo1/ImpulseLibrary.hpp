@@ -113,6 +113,9 @@ public:
     // g_b . x for a vector over the free dofs.
     [[nodiscard]] double bondExtension(std::uint32_t bond, const std::vector<double> &field) const;
 
+    // u = K^+ f over the free dofs: the static response to a force, with the
+    // null space (mechanisms and rigid-body motion) dropped.
+    void staticResponse(const std::vector<double> &force, std::vector<double> &out) const;
     // u = phi q over the free dofs (out is resized).
     void displacement(const std::vector<double> &q, std::vector<double> &out) const;
     // The three components of free node dofs for one node, from q.

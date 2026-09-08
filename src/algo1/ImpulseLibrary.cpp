@@ -321,6 +321,18 @@ double ImpulseLibrary::bondExtension(std::uint32_t bond, const std::vector<doubl
     return sum;
 }
 
+void ImpulseLibrary::staticResponse(const std::vector<double> &force, std::vector<double> &out) const {
+    const std::size_t m = modes();
+    std::vector<double> amplitude(m, 0.0);
+    for (std::size_t mode = 0; mode < m; ++mode) {
+        if (rigid_[mode] != 0U) continue;
+        double sum = 0.0;
+        for (std::size_t dof = 0; dof < dofs(); ++dof) sum += phi_(dof, mode) * force[dof];
+        amplitude[mode] = sum / omega2_[mode];
+    }
+    displacement(amplitude, out);
+}
+
 void ImpulseLibrary::displacement(const std::vector<double> &q, std::vector<double> &out) const {
     const std::size_t n = dofs();
     const std::size_t m = modes();
