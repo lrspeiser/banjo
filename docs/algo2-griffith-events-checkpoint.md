@@ -23,11 +23,12 @@ Every number below is measured on this machine unless it is marked *estimate*.
 The lane works, it is by a wide margin the cheapest thing in this repository
 that breaks a plate, and it is wrong in ways that are now measured rather than
 suspected. **The fracture answer costs 4.0 ms at 240 cells, 65 ms at 1,000 and
-218 ms at 1,500 — about 12 microseconds per broken bond, and no time stepping
-anywhere** — against the explicit lattice's 98.5 s on the same 1,000-cell scene
+445 ms at 2,000 — 1.15 nanoseconds per bond per event, flat across an 11x range,
+and no time stepping anywhere** — against the explicit lattice's 98.5 s on the same 1,000-cell scene
 run from the same binary. The precompute behind that is cached, keyed by the
-whole scene, and costs 0.44 s / 19 MiB at 240 cells rising to 167 s / 1.17 GiB
-at 1,500. On the base scene it reproduces the reference's broken-bond count to
+whole scene, and costs 0.44 s / 19 MiB at 240 cells rising to 463 s / 2.34 GiB
+at 2,000, where the influence matrix rather than the eigen decomposition is what
+sets the wall. On the base scene it reproduces the reference's broken-bond count to
 +2.4% and its removed energy to +79%, while getting the piece count wrong by
 4.3x. **Three findings are the substance, and two of them are negative.**
 (1) **The shared 500-cell contract scene cannot be expressed by this lane at
@@ -271,6 +272,7 @@ The precompute is three costs with three different scalings, and the influence m
 | 500 | 4698 | 1260 | 250/250 | 5.62 | 1.37 / 0.99 / 3.21 | 89 | 0.422 | 0.0167 | 3271 |
 | 1000 | 9788 | 2520 | 500/500 | 61.96 | 19.72 / 14.53 / 27.48 | 384 | 0.748 | 0.0647 | 5553 |
 | 1500 | 17299 | 4020 | 1/500 | 166.43 | 86.94 / 78.62 / 0.22 | 1175 | 1.916 | 0.2184 | 11022 |
+| 2000 | 24810 | 5520 | 1/500 | 462.78 | 216.85 / 244.18 / 0.36 | 2396 | 3.589 | 0.4448 | 15346 |
 
 A rerun with the cache warm - a different drop height, a different strike
 offset, a different speed - is the `warm process s` column: the tables are
@@ -278,10 +280,13 @@ read back from disk, the cascade runs, the pieces settle in Jolt and the
 recording is written. `cascade s` is the fracture answer alone.
 
 So the fracture answer costs **4.0 ms at 240 cells, 16.7 ms at 500, 65 ms at
-1,000 and 218 ms at 1,500**, and the process around it costs a few times that.
-The cascade is `events x bonds` work: one event is two passes over the bond
-list, about **12 microseconds at 1,000 cells and 20 at 1,500**, and the
-thousands of events these scenes produce are what make it milliseconds. On a
+1,000, 218 ms at 1,500 and 445 ms at 2,000**, and the process around it costs a
+few times that.
+The cascade is `events x bonds` work and it measures as exactly that: one event
+costs 2.4, 5.1, 11.6, 19.8 and 29.0 microseconds at 2,176, 4,698, 9,788, 17,299
+and 24,810 bonds — **1.12 to 1.18 nanoseconds per bond per event, flat across an
+11x range** — and the thousands of events these scenes produce are what make the
+total milliseconds rather than microseconds. On a
 scene where few bonds break - the same plate under the shared strain criterion -
 the cascade is **0.1 ms**. **"Microseconds per event" is the honest claim;
 "microseconds per impact" holds only when the impact breaks a handful of
@@ -469,8 +474,10 @@ striker several times the plate's mass, loaded slowly relative to the wave
 transit). It is not this lane's regime either, and the numbers say why: the reference removes 849 bonds and 5.273 J into 14 pieces, and Algorithm 2 with the footprint impulse removes 204 bonds and 0.085 J and makes one piece. A slow heavy striker is exactly where a delta impulse is worst - the contact lasts far longer than the plate's response, the loading is quasi-static rather than impulsive, and the footprint capture of a 32.9 kg ball at 1.0 m/s is only 0.065 N s. The right tool for that regime already exists and is the quasi-static lane; **this lane is a dynamic impulse-response lane and should not be aimed at slow loading.**
 
 **The 500-cell contract scene** is in the table for completeness: the reference
-breaks 73 bonds and removes 2.148 J there, and this lane refuses it for the
-reason in section 2.1.
+breaks 73-74 bonds and removes 2.15-2.18 J there (two runs of the same scene at
+different settle caps differed by one bond, which bounds the reference's own
+run-to-run spread on this scene), and this lane refuses it for the reason in
+section 2.1.
 
 
 ### 5.1 Glass, oak and iron under identical conditions
@@ -586,12 +593,18 @@ reference lane's lattice.
 lane reproduces neither the reference's piece count nor its crack topology, and
 section 4 says by how much.
 
-**Where the lane is right.** Removed energy to within a factor of two and
-broken-bond count to a few percent, on scenes in the wave-controlled regime,
-at 1/240 of the reference's cost. First failure with 91% recall. The energy
-budget of the contact model within 13% of what the reference's resolved contact
-dissipates. And the refusals are right: on the scenes where the reference breaks
-nothing, the lane under the *same* criterion also breaks nothing (section 5).
+**Where the lane is right.** Removed energy, to within a factor of two on all
+four fracture scenes and within 10% on two of them, at 1/240 of the reference's
+cost - the one quantity every lane in this repository converges on, and this
+lane converges on it too. First failure with **91% recall** (it contains 170 of
+the reference's 186 first-failure bonds). The contact model's **energy budget**
+within 13% of what the reference's resolved contact dissipates. And the verdict
+under the *shared* criterion tracks the reference's on the scenes that do not
+fracture: 0 against 13 on the 30 mm plate, 0 against 0 on the 40 mm plate at
+6.26 m/s, and glass shatters where glass shatters (1,830 bonds against 1,960,
+83 pieces against 68). Broken-bond count is right to 2.4% on one scene and
+wrong by three orders of magnitude on another, so it is **not** something this
+lane can be trusted for.
 
 **Where the lane is wrong, in one sentence each.** It has no wave arrival order,
 so it loads every bond to its lifetime peak simultaneously and its damage is
@@ -602,14 +615,19 @@ linearised about the *intact* plate and superposed one bond at a time, so it
 cannot build a crack-tip concentration. Its contact is a single delta impulse,
 so it delivers a fraction of the momentum a millisecond-long contact delivers.
 Its criterion is a Gc energy criterion where the rest of the engine uses a strain
-threshold, and the two differ by 259x in crack energy at 10 mm cells.
+threshold; the two differ by 259x in crack energy for glass at 10 mm cells, by
+96x for oak at 20 mm, and in the other direction for iron.
 
-**What it should be used for, on this evidence:** an instant answer to "will this
-strike break the plate, roughly how much energy does it take out, and where does
-the damage start" — the predictor role the engine options analysis already
-assigns to the modal basis (section 4, phase 3), now with a cascade and an
-energy budget attached. It should not be used to decide how many pieces there
-are or what shape they have.
+**What it should be used for, on this evidence:** an instant answer to "roughly
+how much energy does this strike take out of the plate, and where does the
+damage start" - the predictor role the engine options analysis already assigns
+to the modal basis (section 4, phase 3), now with a cascade and an energy budget
+attached. It should **not** be used to decide how many pieces there are or what
+shape they have, and its "does it break at all" verdict is only as good as the
+criterion it is run with: under Griffith at 10-20 mm cells it says yes far too
+often (section 5), under the engine's shared criterion it says no too often
+because its impulse is too small. Neither is safe on its own; the pair brackets
+the answer.
 
 ## 8. Limits, defects and the next tests
 
@@ -628,14 +646,16 @@ are or what shape they have.
    stepping. Algorithm 3's causal cones are the principled version of the same
    idea.
 3. **The influence matrix is O(bonds²) in memory**: 384 MiB at 1,000 cells,
-   1.15 GiB at 1,500, and it is the wall that stops this lane well before the
-   eigen decomposition does. A distance cut-off would make it sparse, at the cost
-   of the far-field redistribution; whether that matters is measurable against
+   1.15 GiB at 1,500, 2.34 GiB at 2,000, and building it is 244 s of the 465 s
+   precompute at 2,000 cells. It, not the eigen decomposition, is what stops
+   this lane. A distance cut-off would make it sparse at the cost of the
+   far-field redistribution; whether that costs anything is measurable against
    the dense answer on a small plate.
-4. **The peak table is filled on demand above about 1,000 cells.** The report
-   says which columns exist (`precompute.strike_cells_ready`) and the estimate
-   that made the decision. A new strike offset then costs one column
-   (0.05 s at 1,000 cells, 0.21 s at 1,500) rather than nothing.
+4. **The peak table is filled on demand above about 1,000 cells.** Below that
+   every strikeable cell gets a column, so a new strike offset is free; above it
+   the report says which columns exist (`precompute.strike_cells_ready`) and the
+   estimate that made the decision, and a new offset costs one column (0.22 s at
+   1,500 cells, 0.36 s at 2,000).
 5. **The support is bilateral.** The plate cannot lift off its ledges, where the
    reference's is a unilateral contact. Not measured here.
 6. **Pieces start from rest**, so the momentum the contact model put into the
@@ -651,7 +671,7 @@ are or what shape they have.
 
 ## 9. What the owner can watch
 
-Four jobs are installed in the owner's playground store
+Five jobs are installed in the owner's playground store
 (`C:/Users/henry/dev/banjo/build/playground-runs`) and play in the running
 server's 3D tab. Nothing in the owner's checkout was modified and its server was
 not restarted; the store is runtime data and the server discovers archived jobs
