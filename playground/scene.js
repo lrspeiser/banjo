@@ -1006,6 +1006,12 @@ function create(container, hooks = {}) {
       camera.updateProjectionMatrix();
       return url;
     },
+    // Re-frame for the container's current shape without disturbing playback.
+    // The stage moves between tabs, and a camera framed for one aspect ratio
+    // shows a corner of the scene in the other.
+    refit() {
+      fit();
+    },
     play: (v) => setPlaying(v ?? !playing),
     reset() {
       setPlaying(false);

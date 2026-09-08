@@ -269,3 +269,29 @@ h2 { margin-bottom: 0; font-size: 1.02rem; font-weight: 550; letter-spacing: -.0
 .scenario-button:hover { border-color: var(--mint-strong); }
 .scenario-button strong { font-size: .78rem; font-weight: 600; }
 .scenario-button span { color: var(--muted); font-size: .71rem; line-height: 1.35; }
+
+/* Fracture lab workbench: the scene on the left, the controls that change it on
+   the right, so a parameter and its consequence sit on one screen. */
+.fracture-workbench { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(360px, 1fr); gap: 16px; align-items: start; }
+.fracture-stage-slot { position: sticky; top: 12px; display: grid; gap: 8px; align-content: start; }
+.fracture-stage-slot .viewer-stage { height: min(70vh, 660px); min-height: 380px; border: 1px solid var(--line); border-radius: 13px; }
+.fracture-stage-slot .viewer-toolbar { justify-content: flex-start; }
+.fracture-controls-column { display: grid; gap: 14px; min-width: 0; }
+.fracture-controls-column .builder-layout { grid-template-columns: minmax(0, 1fr); }
+@media (max-width: 1200px) {
+  .fracture-workbench { grid-template-columns: minmax(0, 1fr); }
+  .fracture-stage-slot { position: static; }
+}
+
+.fracture-scenario-drawer { border: 1px solid var(--line); border-radius: 9px; padding: 9px 11px; }
+.fracture-scenario-drawer > summary { cursor: pointer; color: var(--mint); font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; }
+.fracture-scenario-drawer[open] > summary { margin-bottom: 10px; }
+
+/* The fracture panel is a workbench, not an article: the scene starts near the
+   top of the screen and the prose stands beside it, not in front of it. */
+#panel-fracture .section-intro { margin-bottom: 14px; }
+#panel-fracture .section-intro h1 { font-size: clamp(1.5rem, 2.4vw, 2.1rem); margin: 2px 0 6px; }
+#panel-fracture .section-intro .lede { max-width: 62ch; margin: 0; }
+.intro-more { margin-top: 7px; }
+.intro-more > summary { cursor: pointer; color: var(--muted); font-size: .72rem; }
+.intro-more p { max-width: 74ch; margin: 8px 0 0; color: var(--muted); font-size: .78rem; line-height: 1.6; }

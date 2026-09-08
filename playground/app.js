@@ -968,14 +968,19 @@
     if (Number.isFinite(sum.contact_impulse_n_s)) row("Contact impulse", s3(sum.contact_impulse_n_s, " N s"));
   }
 
-  async function openFractureJob(jobId) {
+  async function openFractureJob(jobId, stayOn) {
     const job = await api(`/api/jobs/${encodeURIComponent(jobId)}`);
     state.job = job; state.jobId = job.id; localStorage.setItem(latestJobStorageKey, state.jobId);
     const url = new URL(window.location.href); url.searchParams.set("job", job.id); history.replaceState(null, "", url);
     state.selectedCase = Math.max(0, job.cases?.findIndex(playbackAvailable) ?? 0); state.latestPlan = job.plan;
     renderJob(job); renderLanguage(); renderResults();
-    if (job.cases?.some(playbackAvailable)) { loadPlayback(state.selectedCase, true); activateTab("viewer"); }
-    else { clearViewer("This run has no playback."); activateTab("results"); }
+    if (job.cases?.some(playbackAvailable)) {
+      loadPlayback(state.selectedCase, true);
+      // loadPlayback switches to the 3D tab on its own; on the lab the stage
+      // is already here, so come straight back rather than leaving the user
+      // on a tab whose stage has been lent away.
+      if (stayOn === "fracture") activateTab("fracture"); else activateTab("viewer");
+    } else { clearViewer("This run has no playback."); activateTab("results"); }
   }
 
   async function runFractureLab() {
@@ -992,9 +997,9 @@
       fracture.lastJob = result.job_id;
       if (result.status === "complete") {
         $("fracture-open").hidden = false;
-        // Go straight to the 3D tab: the point of a run is to watch it.
-        await openFractureJob(result.job_id);
-        showToast("Playing in the 3D playback tab.");
+        // The stage is on this tab, so the recording loads without leaving the
+        // controls that produced it.
+        await openFractureJob(result.job_id, "fracture");
       }
     } catch (error) {
       setText($("fracture-state"), "Failed"); $("fracture-result").textContent = error.message; showToast(error.message, true);
@@ -1225,12 +1230,38 @@
     return box;
   }
 
+  // The 3D stage and its playback controls are live DOM nodes with a WebGL
+  // context inside, so they are lent between the two tabs that show them rather
+  // than duplicated. Reparenting keeps the scene, the camera and the loaded
+  // recording exactly as they were.
+  const stageHome = [];
+  function lendStageTo(where) {
+    const nodes = [$("viewer-stage"),
+                   document.querySelector('#panel-viewer [aria-label="Playback controls"]'),
+                   $("viewer-frame") && $("viewer-frame").closest("label")].filter(Boolean);
+    if (!nodes.length) return;
+    if (!stageHome.length) {
+      nodes.forEach((n) => stageHome.push({ node: n, parent: n.parentElement, next: n.nextSibling }));
+    }
+    const slot = $("fracture-stage-slot");
+    if (where === "fracture" && slot) {
+      stageHome.forEach(({ node }) => { if (node.parentElement !== slot) slot.append(node); });
+    } else if (where === "viewer") {
+      stageHome.forEach(({ node, parent, next }) => {
+        if (parent && node.parentElement !== parent) parent.insertBefore(node, next);
+      });
+    }
+    // Layout settles on the next frame; the camera is framed after it does.
+    requestAnimationFrame(() => state.scene?.refit());
+  }
+
   function activateTab(name) {
     document.querySelectorAll(".tab").forEach((tab) => { const active = tab.dataset.tab === name; tab.classList.toggle("is-active", active); tab.setAttribute("aria-selected", String(active)); });
     document.querySelectorAll(".tab-panel").forEach((panel) => { const active = panel.id === `panel-${name}`; panel.classList.toggle("is-visible", active); panel.hidden = !active; });
     if (name === "language") renderLanguage(); if (name === "results") renderResults(); if(name === "viewer") renderViewerCaseSelect();
     if (name === "builder" && !builder.meta) initBuilder();
     if (name === "fracture" && !fracture.meta) initFractureLab();
+    if (name === "fracture" || name === "viewer") lendStageTo(name);
   }
 
   async function loadGoal() {

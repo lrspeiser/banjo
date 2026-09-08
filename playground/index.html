@@ -158,12 +158,15 @@
         <div class="section-intro">
           <p class="eyebrow">FRACTURE LAB / INSTANT RERUN</p>
           <h1>Drop a ball on a plate.</h1>
-          <p class="lede">Change the plate, the cell size, the ball or the drop, and run again. Each lane precomputes what it can when the plate is created and answers the strike from that; the reference lane steps every substep and is the yardstick, not the product. Every run states its wall time against the simulated interaction and the 1.1x rule.</p>
+          <p class="lede">Change anything on the right and run again; the scene on the left is the answer.</p><details class="intro-more"><summary>How this lab works</summary><p>Each lane precomputes what it can when the plate is created and answers the strike from that; the reference lane steps every substep and is the yardstick, not the product. Every run states its wall time against the simulated interaction and the 1.1x rule.</p></details>
         </div>
-        <div class="builder-layout">
+        <div class="fracture-workbench">
+          <div id="fracture-stage-slot" class="fracture-stage-slot"></div>
+          <div class="fracture-controls-column">
+          <div class="builder-layout">
           <section class="card builder-card">
             <div class="card-heading compact"><div><p class="eyebrow">01 / SCENE</p><h2>Plate, ball, drop</h2></div><span id="fracture-cells" class="small-badge">500 cells</span></div>
-            <div id="fracture-scenarios" class="fracture-scenarios"></div>
+            <details id="fracture-scenario-drawer" class="fracture-scenario-drawer"><summary>Start from a scenario</summary><div id="fracture-scenarios" class="fracture-scenarios"></div></details>
             <form id="fracture-controls" class="builder-fields">
               <label class="builder-field"><span>Algorithm</span><select id="f-algorithm"></select></label>
               <label class="builder-field"><span>Target material</span><select id="f-material"></select></label>
@@ -192,7 +195,7 @@
                 <label><span>Ball diameter (mm)</span><input id="f-second-ball" type="number" min="10" max="500" step="5" value="100"></label>
                 <label><span>Wait after the first (s)</span><input id="f-second-wait" type="number" min="0" max="5" step="0.05" value="0.3"></label>
               </fieldset>
-              <label class="builder-field"><span>Clearance under the target (m)</span><input id="f-clearance" type="number" min="0.05" max="5" step="0.05" value="0.12"></label>
+              <label class="builder-field"><span>Clearance under the target (m)</span><input id="f-clearance" type="number" min="0.05" max="5" step="0.05" value="0.5"></label>
               <label class="builder-field"><span>Simulated duration (s)</span><input id="f-duration" type="number" min="0.2" max="6" step="0.1" value="2"></label>
             </form>
             <p id="fracture-note" class="muted"></p>
@@ -208,6 +211,8 @@
               <div class="card-heading compact"><div><p class="eyebrow">LANES</p><h2>What is built</h2></div></div>
               <div id="fracture-lanes" class="builder-limits"></div>
             </section>
+          </div>
+        </div>
           </div>
         </div>
       </section>
