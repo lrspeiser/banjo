@@ -126,6 +126,23 @@ if(BANJO_MODAL_OPENMP)
     endif()
 endif()
 
+# Algorithm 1: the precomputed impulse-response library with Woodbury crack
+# updates (docs/algo1-impulse-woodbury-checkpoint.md). It reuses the modal
+# lane's dense eigensolver and keeps the same threading and vector flags.
+add_library(
+    banjo_algo1
+    src/algo1/ImpulseLibrary.cpp
+    src/algo1/CrackCascade.cpp)
+target_link_libraries(banjo_algo1 PUBLIC banjo_modal banjo_core)
+target_compile_features(banjo_algo1 PUBLIC cxx_std_23)
+banjo_enable_warnings(banjo_algo1)
+if(MSVC)
+    target_compile_options(banjo_algo1 PRIVATE /arch:AVX2)
+endif()
+if(BANJO_MODAL_OPENMP AND OpenMP_CXX_FOUND)
+    target_link_libraries(banjo_algo1 PUBLIC OpenMP::OpenMP_CXX)
+endif()
+
 # The fast explicit lattice lane (docs/fast-gpu-checkpoint.md): the CPU
 # lane's physics on a colour-parallel schedule. The C++ library always builds
 # and carries the CPU backend; the CUDA backend is a separate target behind
@@ -320,6 +337,14 @@ if(BANJO_BUILD_HEADLESS)
     add_executable(banjo_fast_lattice_run tools/fast_lattice_run.cpp)
     target_link_libraries(banjo_fast_lattice_run PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_fast_lattice_run)
+
+    # Algorithm 1's driver. It links the fast-lattice scene as well so that
+    # --reference runs the explicit lane on the identical scene from one command.
+    add_executable(banjo_fracture_algo1 tools/fracture_algo1.cpp)
+    target_link_libraries(banjo_fracture_algo1
+        PRIVATE banjo_algo1 banjo_fastlattice_scene banjo_runtime nlohmann_json::nlohmann_json)
+    target_compile_features(banjo_fracture_algo1 PRIVATE cxx_std_23)
+    banjo_enable_warnings(banjo_fracture_algo1)
 
     add_executable(banjo_headless src/app/headless_main.cpp)
     target_link_libraries(banjo_headless PRIVATE banjo_runtime)
