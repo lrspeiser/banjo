@@ -126,6 +126,22 @@ if(BANJO_MODAL_OPENMP)
     endif()
 endif()
 
+# Algorithm 2: the event-driven Griffith cascade on a precomputed
+# crack-influence matrix (docs/algo2-griffith-events-checkpoint.md). It reuses
+# the modal lane's eigen-solver for the intact plate and then never steps time.
+add_library(
+    banjo_griffith
+    src/griffith/GriffithCascade.cpp)
+target_link_libraries(banjo_griffith PUBLIC banjo_modal)
+target_compile_features(banjo_griffith PUBLIC cxx_std_23)
+banjo_enable_warnings(banjo_griffith)
+if(MSVC)
+    target_compile_options(banjo_griffith PRIVATE /arch:AVX2)
+endif()
+if(BANJO_MODAL_OPENMP AND OpenMP_CXX_FOUND)
+    target_link_libraries(banjo_griffith PUBLIC OpenMP::OpenMP_CXX)
+endif()
+
 # The fast explicit lattice lane (docs/fast-gpu-checkpoint.md): the CPU
 # lane's physics on a colour-parallel schedule. The C++ library always builds
 # and carries the CPU backend; the CUDA backend is a separate target behind
