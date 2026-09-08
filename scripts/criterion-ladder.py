@@ -55,7 +55,7 @@ FIELDS = [
 
 def run(name, *, material="glass", cell=0.02, horizon=2, speed=8.0, law="strain-threshold",
         dt_factor=0.5, tile=(0.24, 0.04, 0.16), window_ms=None, settle_s=None,
-        record=False, extra=(), force=False):
+        record=False, extra=(), force=False, allow_failure=False):
     """One ladder row.
 
     window_ms fixes the lattice phase to exactly that many milliseconds of
@@ -94,7 +94,12 @@ def run(name, *, material="glass", cell=0.02, horizon=2, speed=8.0, law="strain-
         t0 = time.time()
         proc = subprocess.run(args, capture_output=True, text=True)
         if proc.returncode != 0:
-            print(proc.stdout[-4000:]); print(proc.stderr[-4000:])
+            print(proc.stdout[-1500:]); print(proc.stderr[-1500:])
+            if allow_failure:
+                # A recording row that the rigid world cannot take is a
+                # measurement, not a stop: report it and carry on.
+                print(f"[failed] {name} (continuing)", flush=True)
+                return None
             raise SystemExit(f"{name} failed with {proc.returncode}")
         print(f"[done] {name} in {time.time() - t0:.1f} s", flush=True)
     return summarise(name, report)
@@ -353,13 +358,13 @@ STAGES = {
     # Only resolutions whose piece count the rigid world can take are here; the
     # 5 mm energy-scaled row overflows Jolt's contact capacity on handoff
     # (section 6.4), which is itself a measurement.
-    "record": lambda f: [
+    "record": lambda f: [r for r in [
         run(f"rec-{material}-{short}-{mm}mm-v8", material=material, cell=c, speed=8.0,
             law=law, force=f, window_ms=WINDOW_MS, settle_s=6.0, record=True,
-            extra=("--frames", "40", "--rigid-frames", "60"))
+            allow_failure=True, extra=("--frames", "40", "--rigid-frames", "60"))
         for material, c, mm in (("glass", 0.02, 20), ("glass", 0.01, 10),
                                 ("oak", 0.02, 20), ("oak", 0.01, 10))
-        for law, short in (("strain-threshold", "old"), ("energy-scaled", "new"))],
+        for law, short in (("strain-threshold", "old"), ("energy-scaled", "new"))] if r],
     # Physics check (a). One geometry in metres, three discretisations, plus a
     # Griffith threshold sweep at the middle one and an oak control.
     "strip": lambda f: [r for r in [
