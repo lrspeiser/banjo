@@ -302,6 +302,7 @@ void criterionMatchesBondFailure() {
                 using Real = decltype(real_tag);
                 WorkingLattice<Real> w = WorkingLattice<Real>::fromState(state, schedule);
                 LatticeArrays<Real> L = w.arrays();
+                const StepSettings<Real> settings_r = convertSettings<Real>(settings);
                 const bool direct = settings.direct_arithmetic != 0;
                 for (std::uint32_t i = 0; i < L.node_count; ++i) nodeStrain(L, i, direct);
                 for (std::uint32_t j = 0; j < L.bond_count; ++j) if (L.alive[j]) bondStartSample(L, j, direct);
@@ -335,7 +336,7 @@ void criterionMatchesBondFailure() {
                 double max_damage_error = 0.0;
                 for (std::uint32_t j = 0; j < L.bond_count; ++j) {
                     if (!L.alive[j]) continue;
-                    const FailureOutcome out = bondEndSampleAndFailure(L, j, direct);
+                    const FailureOutcome out = bondEndSampleAndFailure(L, settings_r, j, direct);
                     if (out.broke) { removed_energy += out.removed_energy_j; ++broken; }
                     const std::uint32_t o = schedule.bond_order[j];
                     const ActiveBondState &ref = cpu.matter.bonds[o];

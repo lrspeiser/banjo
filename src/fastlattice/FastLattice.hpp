@@ -42,7 +42,17 @@ struct LatticeState {
     std::vector<double> rest_edge, rest_length, rest_length_sq_minus, weight, compliance, threshold;
     std::vector<std::uint8_t> alive, failure_mode;
     std::vector<double> damage, prev_tensile, prev_compressive, prev_shear;
+    // Axial plastic state per bond, schedule order; zero everywhere unless the
+    // material declares a yield strength (LatticePhysics.hpp bondPlasticReturn).
+    std::vector<double> plastic_extension, plastic_strain;
 };
+
+// Elastic energy stored in the live bonds of a state, and the lattice's kinetic
+// energy. Both are plain sums over the state, so they can be taken outside a
+// backend; storedBondEnergy's rule holds -- the elastic extension is measured
+// from the bond's plastic rest length, so plastic work is never counted here.
+[[nodiscard]] double latticeStateElasticEnergy(const LatticeState &state);
+[[nodiscard]] double latticeStateKineticEnergy(const LatticeState &state);
 
 [[nodiscard]] LatticeState buildLatticeState(
     const ActiveMatter &matter, const LatticeSchedule &schedule, const Vec3 &origin);
@@ -108,6 +118,14 @@ struct RunStatus {
     // Rest-covariance recomputations on which the CPU's absolute determinant
     // rule and the relative rule disagreed (see LatticePhysics.hpp).
     std::uint32_t rank_deficient_nodes{};
+    // Plastic work dissipated by the bonds over the run, and the largest
+    // permanent bond extension as a fraction of a rest length. Both are exactly
+    // zero when the material declares no yield strength. The CUDA backend sums
+    // the work with atomics, as it already does the removed fracture energy, so
+    // its last bits depend on the order the failing threads arrive in; the
+    // addends are identical.
+    double plastic_work_j{};
+    float max_plastic_stretch{};
 };
 
 struct FrameCapture {

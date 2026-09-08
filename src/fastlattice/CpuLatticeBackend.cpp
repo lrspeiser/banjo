@@ -195,10 +195,12 @@ private:
         const bool first_failure_round = status_.broken_bonds == 0;
         for (std::uint32_t j = 0; j < B; ++j) {
             if (!L_.alive[j]) continue;
-            const FailureOutcome out = bondEndSampleAndFailure(L_, j, direct);
+            const FailureOutcome out = bondEndSampleAndFailure(L_, S_, j, direct);
             status_.max_tensile_stretch = std::max(status_.max_tensile_stretch, out.peak_tensile);
             status_.max_compressive_strain = std::max(status_.max_compressive_strain, out.peak_compressive);
             status_.max_shear_strain = std::max(status_.max_shear_strain, out.peak_shear);
+            status_.plastic_work_j += out.plastic_increment_j;
+            status_.max_plastic_stretch = std::max(status_.max_plastic_stretch, out.plastic_stretch);
             if (!out.broke) continue;
             any_failed = true;
             if (first_failure_round) first_failure_bonds_.push_back(j);

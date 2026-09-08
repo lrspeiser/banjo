@@ -150,13 +150,14 @@ struct DeviceStatus {
     unsigned node_pair_overflow;
     unsigned padding;
     double removed_energy_j;
+    double plastic_work_j;
     double damping_dissipated_j, striker_dissipated_j;
     ContactAccumulators contact;
     NodeContactAccumulators node_contact;
     long long phase_cycles[kPhaseCount];
     // Peak substep strains over the run, as non-negative float bit patterns
     // so atomicMax on int orders them correctly.
-    int max_tensile_bits, max_compressive_bits, max_shear_bits;
+    int max_tensile_bits, max_compressive_bits, max_shear_bits, max_plastic_bits;
 };
 
 template <typename Real>
@@ -242,7 +243,7 @@ latticeKernel(LatticeArrays<Real> L, StepSettings<Real> S, DeviceControl C, Devi
         L.bond_a = reinterpret_cast<const std::uint32_t *>(shared_raw + lay.bond_a);
         L.bond_b = reinterpret_cast<const std::uint32_t *>(shared_raw + lay.bond_b);
     }
-    float max_tensile = 0.0F, max_compressive = 0.0F, max_shear = 0.0F;
+    float max_tensile = 0.0F, max_compressive = 0.0F, max_shear = 0.0F, max_plastic = 0.0F;
     long long phase_clock = clock64();
     auto mark = [&](unsigned phase) {
         if (leader) {
@@ -420,10 +421,15 @@ latticeKernel(LatticeArrays<Real> L, StepSettings<Real> S, DeviceControl C, Devi
         mark(11);
         for (unsigned j = bb + tid; j < be; j += nthreads) {
             if (!L.alive[j]) continue;
-            const FailureOutcome out = bondEndSampleAndFailure(L, j, direct);
+            const FailureOutcome out = bondEndSampleAndFailure(L, S, j, direct);
             max_tensile = fmaxf(max_tensile, out.peak_tensile);
             max_compressive = fmaxf(max_compressive, out.peak_compressive);
             max_shear = fmaxf(max_shear, out.peak_shear);
+            max_plastic = fmaxf(max_plastic, out.plastic_stretch);
+            // Summed with atomics in whatever order the threads arrive, as the
+            // removed fracture energy below already is; the addends are the
+            // serial backend's, bond for bond.
+            if (out.plastic_increment_j != 0.0) atomicAdd(&st->plastic_work_j, out.plastic_increment_j);
             if (!out.broke) continue;
             atomicAdd(&st->removed_energy_j, out.removed_energy_j);
             atomicAdd(&st->broken_bonds, 1U);
@@ -468,6 +474,7 @@ latticeKernel(LatticeArrays<Real> L, StepSettings<Real> S, DeviceControl C, Devi
     atomicMax(&st->max_tensile_bits, __float_as_int(max_tensile));
     atomicMax(&st->max_compressive_bits, __float_as_int(max_compressive));
     atomicMax(&st->max_shear_bits, __float_as_int(max_shear));
+    atomicMax(&st->max_plastic_bits, __float_as_int(max_plastic));
 }
 
 template <typename Real>
@@ -526,6 +533,7 @@ public:
         compliance_.upload(w.compliance); threshold_.upload(w.threshold);
         alive_.upload(w.alive); damage_.upload(w.damage); failure_mode_.upload(w.failure_mode);
         accumulated_lambda_.upload(w.accumulated_lambda);
+        plastic_extension_.upload(w.plastic_extension); plastic_strain_.upload(w.plastic_strain);
         prev_tensile_.upload(w.prev_tensile); prev_compressive_.upload(w.prev_compressive);
         prev_shear_.upload(w.prev_shear);
         range_begin_.upload(w.range_begin); range_end_.upload(w.range_end);
@@ -554,7 +562,9 @@ public:
         L_.rest_length = rest_length_.data(); L_.rest_length_sq_minus = rest_length_sq_minus_.data();
         L_.weight = weight_.data(); L_.compliance = compliance_.data(); L_.threshold = threshold_.data();
         L_.alive = alive_.data(); L_.damage = damage_.data(); L_.failure_mode = failure_mode_.data();
-        L_.accumulated_lambda = accumulated_lambda_.data(); L_.prev_tensile = prev_tensile_.data();
+        L_.accumulated_lambda = accumulated_lambda_.data();
+        L_.plastic_extension = plastic_extension_.data(); L_.plastic_strain = plastic_strain_.data();
+        L_.prev_tensile = prev_tensile_.data();
         L_.prev_compressive = prev_compressive_.data(); L_.prev_shear = prev_shear_.data();
         L_.range_begin = range_begin_.data(); L_.range_end = range_end_.data();
         L_.bond_block_begin = bond_block_begin_.data(); L_.candidate_list = candidate_list_.data();
@@ -646,12 +656,15 @@ public:
             host_status_.max_compressive_strain = peak;
             std::memcpy(&peak, &d.max_shear_bits, sizeof(float));
             host_status_.max_shear_strain = peak;
+            std::memcpy(&peak, &d.max_plastic_bits, sizeof(float));
+            host_status_.max_plastic_stretch = peak;
             std::vector<std::uint32_t> degenerate;
             degenerate_.download(degenerate);
             host_status_.rank_deficient_nodes = degenerate.empty() ? 0U : degenerate.front();
             host_status_.failure_rounds = d.failure_rounds;
             host_status_.broken_bonds = d.broken_bonds;
             host_status_.removed_energy_j = d.removed_energy_j;
+            host_status_.plastic_work_j = d.plastic_work_j;
             host_status_.contact = d.contact;
             host_status_.contact.candidate_overflow = d.candidate_overflow;
             host_status_.node_contact = d.node_contact;
@@ -677,6 +690,7 @@ public:
         alive_.download(w.alive); failure_mode_.download(w.failure_mode); damage_.download(w.damage);
         prev_tensile_.download(w.prev_tensile); prev_compressive_.download(w.prev_compressive);
         prev_shear_.download(w.prev_shear);
+        plastic_extension_.download(w.plastic_extension); plastic_strain_.download(w.plastic_strain);
         w.toState(state);
         std::vector<SphereState<Real>> s;
         sphere_.download(s);
@@ -754,6 +768,7 @@ private:
     DeviceVector<Real> rest_edge_, rest_length_, rest_length_sq_minus_, weight_, compliance_, threshold_;
     DeviceVector<std::uint8_t> alive_, failure_mode_;
     DeviceVector<Real> damage_, accumulated_lambda_, prev_tensile_, prev_compressive_, prev_shear_;
+    DeviceVector<Real> plastic_extension_, plastic_strain_;
     DeviceVector<std::uint32_t> range_begin_, range_end_, bond_block_begin_;
     DeviceVector<std::uint32_t> candidate_list_, candidate_count_;
     DeviceVector<std::uint32_t> degenerate_;
