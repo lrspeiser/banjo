@@ -633,20 +633,24 @@
     // same rule against the same limit, and the fracture window on its own,
     // because a short window inside seconds of settling can pass the rule
     // while being hundreds of times slower than realtime itself.
-    const realtime = item.report && item.report.realtime;
-    // Lanes name their totals differently; the most inclusive figure wins
-    // (recording time counts: the owner waits for it too).
+    const report = item.report || {};
+    const realtime = report.realtime || {};
+    // Lanes name their totals differently (the GPU lane writes them at the top
+    // of its report); the most inclusive figure wins, because recording time
+    // is time the owner waits too.
     const pick = (...values) => values.find(Number.isFinite);
-    const ratio = realtime && pick(realtime.ratio, realtime.ratio_with_recording, realtime.ratio_pipeline);
+    const ratio = pick(realtime.ratio, realtime.ratio_with_recording, realtime.ratio_pipeline, report.realtime_ratio);
     if (!(cost && Number.isFinite(cost.realtime_ratio)) && Number.isFinite(ratio)) {
       const limit = Number.isFinite(realtime.limit) ? realtime.limit : 1.1;
-      const simulated = Number.isFinite(realtime.simulated_s) ? `${realtime.simulated_s.toFixed(3)} s simulated` : "simulated time";
-      const wallS = pick(realtime.compute_wall_s, realtime.wall_with_recording_s, realtime.wall_pipeline_s);
+      const simulatedS = pick(realtime.simulated_s, report.simulated_total_s);
+      const simulated = Number.isFinite(simulatedS) ? `${simulatedS.toFixed(3)} s simulated` : "simulated time";
+      const wallS = pick(realtime.compute_wall_s, realtime.wall_with_recording_s, realtime.wall_pipeline_s, report.wall_total_s);
       const wall = Number.isFinite(wallS) ? `${wallS.toFixed(3)} s wall, ` : "";
       row("Realtime", `${wall}${ratio.toFixed(2)}x of ${simulated} (limit ${limit}x)`,
         ratio <= limit ? "ok" : "bad");
-      if (realtime.stages_s && typeof realtime.stages_s === "object") {
-        const stages = Object.entries(realtime.stages_s).filter(([, v]) => Number.isFinite(v))
+      const stageTimes = realtime.stages_s || report.phase_seconds;
+      if (stageTimes && typeof stageTimes === "object") {
+        const stages = Object.entries(stageTimes).filter(([, v]) => Number.isFinite(v))
           .map(([k, v]) => `${k} ${v.toFixed(3)} s`).join(", ");
         if (stages) row("Wall by stage", stages, "");
       }
