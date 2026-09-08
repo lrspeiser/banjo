@@ -302,3 +302,25 @@ h2 { margin-bottom: 0; font-size: 1.02rem; font-weight: 550; letter-spacing: -.0
 .fracture-stage-caption.is-new { border-color: var(--mint-strong); color: var(--mint); }
 
 .small-badge.warn { border-color: rgba(246,197,114,.55); color: var(--amber); }
+
+/* The object list: one row per body, compact enough that five fit beside the
+   scene they describe. */
+.scene-editor { display: grid; gap: 9px; padding: 11px; border: 1px solid var(--line); border-radius: 9px; }
+.scene-head { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  color: var(--muted); font-size: .68rem; letter-spacing: .05em; text-transform: uppercase; }
+.scene-rows { display: grid; gap: 7px; }
+.scene-row { display: grid; gap: 5px; padding: 8px; border: 1px solid var(--line-soft); border-radius: 7px;
+  background: rgba(10, 16, 19, .5); }
+.scene-row.is-falling { border-color: var(--mint-strong); }
+.scene-row .scene-line { display: grid; grid-template-columns: 1fr auto auto; gap: 5px; align-items: center; }
+.scene-row .scene-line input[type="text"] { min-width: 0; }
+.scene-row .scene-numbers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+.scene-row label { display: grid; gap: 2px; color: var(--muted); font-size: .6rem; }
+.scene-row input, .scene-row select { width: 100%; padding: 5px 6px; border: 1px solid var(--line);
+  border-radius: 5px; color: var(--text); background: var(--panel); font-size: .72rem; }
+.scene-row .scene-remove { padding: 5px 8px; border: 1px solid var(--line); border-radius: 5px;
+  background: transparent; color: var(--muted); font-size: .68rem; }
+.scene-row .scene-remove:hover { border-color: var(--amber); color: var(--amber); }
+.scene-actions { display: flex; gap: 7px; flex-wrap: wrap; }
+.scene-hint { margin: 0; font-size: .68rem; line-height: 1.5; }
+.scene-swatch { width: 11px; height: 11px; border-radius: 3px; border: 1px solid rgba(255,255,255,.25); }

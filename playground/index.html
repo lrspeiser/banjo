@@ -168,7 +168,7 @@
             <div class="card-heading compact"><div><p class="eyebrow">01 / SCENE</p><h2>Plate, ball, drop</h2></div><span id="fracture-cells" class="small-badge">500 cells</span></div>
             <details id="fracture-scenario-drawer" class="fracture-scenario-drawer"><summary>Start from a scenario</summary><div id="fracture-scenarios" class="fracture-scenarios"></div></details>
             <form id="fracture-controls" class="builder-fields">
-              <label class="builder-field"><span>Algorithm</span><select id="f-algorithm"></select></label>
+              <label class="builder-field"><span>Scene</span><select id="f-mode"><option value="plate">One plate and a ball</option><option value="objects">Many objects</option></select></label><div id="f-scene" class="scene-editor" hidden><div class="scene-head"><span>Objects</span><span id="scene-cells" class="small-badge">0 cells</span></div><div id="scene-rows" class="scene-rows"></div><div class="scene-actions"><button id="scene-add" type="button" class="quiet-button">Add an object</button><button id="scene-drop" type="button" class="quiet-button">Raise the falling one</button></div><p class="muted scene-hint">Give one object a downward speed and it is the one that falls. Everything else is lattice too, so what it lands on can break and so can it.</p></div><label class="builder-field"><span>Algorithm</span><select id="f-algorithm"></select></label>
               <label class="builder-field"><span>Target material</span><select id="f-material"></select></label>
               <label class="builder-field"><span>Striker material</span><select id="f-striker"></select></label>
               <label class="builder-field"><span>Failure law</span><select id="f-failure-law"></select></label>

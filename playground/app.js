@@ -822,6 +822,143 @@
   // number shown comes from the lane's own report or the server's clock.
   const fracture = { meta: null, busy: false, lastJob: null };
 
+  // A many-object scene is a list, not a form. The rows below are drawn from
+  // this array and every edit writes back into it, so what the panel shows and
+  // what the run gets are the same thing.
+  const scene = { bodies: [] };
+
+  function defaultBody(index) {
+    return { name: `object ${index + 1}`, shape: "box", material: "glass",
+             size_mm: [80, 40, 80], center_mm: [0, 40 + index * 60, 0], velocity_m_s: [0, 0, 0] };
+  }
+
+  function sceneCellCount() {
+    const cell = Number($("f-cell").value) / 1000;
+    if (!(cell > 0)) return 0;
+    return scene.bodies.reduce((total, body) => {
+      const [x, y, z] = body.size_mm.map((v) => v / 1000);
+      if (body.shape === "sphere") {
+        const r = x / 2;
+        return total + Math.max(1, Math.round((4 / 3) * Math.PI * r ** 3 / cell ** 3));
+      }
+      return total + Math.max(1, Math.round(x / cell)) * Math.max(1, Math.round(y / cell))
+                   * Math.max(1, Math.round(z / cell));
+    }, 0);
+  }
+
+  function renderScene() {
+    const rows = $("scene-rows");
+    if (!rows) return;
+    rows.replaceChildren();
+    const colors = (fracture.meta && fracture.meta.material_colors) || {};
+    scene.bodies.forEach((body, index) => {
+      const row = document.createElement("div");
+      row.className = "scene-row" + (body.velocity_m_s.some((v) => v !== 0) ? " is-falling" : "");
+
+      const line = document.createElement("div");
+      line.className = "scene-line";
+      const name = document.createElement("input");
+      name.type = "text"; name.value = body.name; name.maxLength = 40; name.setAttribute("aria-label", "Object name");
+      name.addEventListener("input", () => { body.name = name.value; fractureCells(); });
+      const shape = document.createElement("select");
+      shape.setAttribute("aria-label", "Shape");
+      for (const [id, title] of Object.entries((fracture.meta && fracture.meta.shapes) || { box: "box", sphere: "ball" })) {
+        const option = document.createElement("option");
+        option.value = id; option.textContent = title; shape.append(option);
+      }
+      shape.value = body.shape;
+      shape.addEventListener("change", () => { body.shape = shape.value; renderScene(); fractureCells(); });
+      const material = document.createElement("select");
+      material.setAttribute("aria-label", "Material");
+      ((fracture.meta && fracture.meta.materials) || []).forEach((id) => {
+        const option = document.createElement("option");
+        option.value = id; option.textContent = id; material.append(option);
+      });
+      material.value = body.material;
+      material.addEventListener("change", () => { body.material = material.value; renderScene(); fractureCells(); });
+      line.append(name, shape, material);
+
+      // The size row: a ball has one number, a block has three.
+      const sizes = document.createElement("div");
+      sizes.className = "scene-numbers";
+      const sizeLabels = body.shape === "sphere" ? ["Diameter (mm)"] : ["Width (mm)", "Height (mm)", "Depth (mm)"];
+      sizeLabels.forEach((title, axis) => {
+        sizes.append(numberField(title, body.size_mm[axis], (value) => {
+          body.size_mm[axis] = value;
+          if (body.shape === "sphere") body.size_mm = [value, value, value];
+          fractureCells();
+        }));
+      });
+
+      const places = document.createElement("div");
+      places.className = "scene-numbers";
+      ["Across (mm)", "Height (mm)", "Depth (mm)"].forEach((title, axis) => {
+        places.append(numberField(title, body.center_mm[axis], (value) => {
+          body.center_mm[axis] = value; fractureCells();
+        }));
+      });
+
+      const motion = document.createElement("div");
+      motion.className = "scene-numbers";
+      ["Speed across (m/s)", "Speed down (m/s)", "Speed depth (m/s)"].forEach((title, axis) => {
+        // Down is negative in the scene, but nobody types a falling speed as a
+        // negative number, so the middle field is shown the way it is spoken.
+        const shown = axis === 1 ? -body.velocity_m_s[1] : body.velocity_m_s[axis];
+        motion.append(numberField(title, shown, (value) => {
+          body.velocity_m_s[axis] = axis === 1 ? -value : value;
+          renderScene(); fractureCells();
+        }, 0.1));
+      });
+
+      const remove = document.createElement("button");
+      remove.type = "button"; remove.className = "scene-remove"; remove.textContent = "Remove";
+      remove.addEventListener("click", () => { scene.bodies.splice(index, 1); renderScene(); fractureCells(); });
+
+      const swatch = document.createElement("span");
+      swatch.className = "scene-swatch";
+      const rgba = colors[body.material] || "9fd3ffff";
+      swatch.style.background = `#${rgba.slice(0, 6)}`;
+      // What this one object costs, next to its material colour: the cell count
+      // is the only number that decides whether the scene will run at all.
+      const cost = document.createElement("span");
+      cost.className = "muted";
+      cost.style.fontSize = ".62rem";
+      const cell = Number($("f-cell").value) / 1000;
+      const [sx, sy, sz] = body.size_mm.map((v) => v / 1000);
+      cost.textContent = cell > 0
+        ? `${body.shape === "sphere"
+              ? Math.max(1, Math.round((4 / 3) * Math.PI * (sx / 2) ** 3 / cell ** 3))
+              : Math.max(1, Math.round(sx / cell)) * Math.max(1, Math.round(sy / cell)) * Math.max(1, Math.round(sz / cell))} cells`
+        : "";
+      const footer = document.createElement("div");
+      footer.className = "scene-line";
+      footer.append(swatch, cost, remove);
+
+      row.append(line, sizes, places, motion, footer);
+      rows.append(row);
+    });
+    const badge = $("scene-cells");
+    if (badge) badge.textContent = `${sceneCellCount()} cells in ${scene.bodies.length} objects`;
+  }
+
+  function numberField(title, value, onChange, step) {
+    const label = document.createElement("label");
+    const span = document.createElement("span");
+    span.textContent = title;
+    const input = document.createElement("input");
+    input.type = "number"; input.step = String(step || 1); input.value = String(value);
+    input.addEventListener("input", () => {
+      const parsed = Number(input.value);
+      if (Number.isFinite(parsed)) onChange(parsed);
+    });
+    label.append(span, input);
+    return label;
+  }
+
+  function sceneMode() {
+    return $("f-mode") && $("f-mode").value === "objects";
+  }
+
   function readFracture() {
     const mm = (id) => Number($(id).value) / 1000;
     const speed = $("f-speed").value.trim();
@@ -844,11 +981,43 @@
       second_ball_m: Number($("f-second-ball").value) / 1000,
       second_wait_s: Number($("f-second-wait").value),
       duration_s: Number($("f-duration").value),
+      // An empty list is the plate-and-ball scene; a non-empty one is read
+      // instead of every plate and ball field above.
+      bodies: sceneMode() ? scene.bodies.map((b) => ({
+        name: b.name, shape: b.shape, material: b.material,
+        size_mm: b.size_mm.slice(), center_mm: b.center_mm.slice(),
+        velocity_m_s: b.velocity_m_s.slice(),
+      })) : [],
     };
   }
 
   function fractureCells() {
     const spec = readFracture();
+    // Scene mode counts objects, not a plate. Everything below this point
+    // describes a plate that is not being built.
+    if (spec.bodies.length) {
+      const editor = $("f-scene");
+      if (editor) editor.hidden = false;
+      const cells = sceneCellCount();
+      const lane = fracture.meta && fracture.meta.algorithms.find((a) => a.id === spec.algorithm);
+      const tooMany = lane && cells > lane.max_cells;
+      $("fracture-cells").textContent =
+        `${scene.bodies.length} objects = ${cells} cells` + (tooMany ? ` (over this lane's ${lane.max_cells})` : "");
+      $("fracture-cells").classList.toggle("bad", Boolean(tooMany));
+      $("fracture-cells").classList.remove("warn");
+      const falling = scene.bodies.filter((b) => b.velocity_m_s.some((v) => v !== 0));
+      $("fracture-note").textContent = falling.length
+        ? `${falling.map((b) => b.name).join(", ")} start${falling.length === 1 ? "s" : ""} moving; `
+          + "everything else starts at rest. Every object is lattice, so what falls can break too."
+        : "Nothing is moving yet. Give an object a downward speed and it becomes the one that falls.";
+      const badge = $("scene-cells");
+      if (badge) badge.textContent = `${cells} cells in ${scene.bodies.length} objects`;
+      $("fracture-run").disabled = fracture.busy || Boolean(tooMany) || !scene.bodies.length
+        || !(lane && lane.available);
+      return;
+    }
+    const editor = $("f-scene");
+    if (editor) editor.hidden = !sceneMode();
     const n = spec.plate_m.map((d) => Math.max(1, Math.round(d / spec.cell_m)));
     const cells = n[0] * n[1] * n[2];
     // The engine needs a whole number of cells on every axis, so the server
@@ -911,13 +1080,36 @@
     // Keep a fraction of a millimetre: a 62.5 mm cell rounded to 63 turns a
     // 1000 mm pane into 1008 and stops a scenario round-tripping exactly.
     const mm = (id, metres) => { $(id).value = String(Number((metres * 1000).toFixed(3))); };
+    // A scenario is either a scene or a plate, and a scene carries none of the
+    // plate fields, so it is loaded and returned from before any of them are
+    // read.
+    scene.bodies = Array.isArray(spec.bodies)
+      ? spec.bodies.map((b) => ({
+          name: b.name, shape: b.shape, material: b.material,
+          size_mm: b.size_mm.slice(), center_mm: b.center_mm.slice(),
+          velocity_m_s: b.velocity_m_s.slice(),
+        }))
+      : [];
+    if ($("f-mode")) $("f-mode").value = scene.bodies.length ? "objects" : "plate";
+    if ($("f-scene")) $("f-scene").hidden = !scene.bodies.length;
+    if (scene.bodies.length) {
+      if (spec.algorithm) $("f-algorithm").value = spec.algorithm;
+      if (spec.failure_law) $("f-failure-law").value = spec.failure_law;
+      if (spec.plasticity) $("f-plasticity").value = spec.plasticity;
+      if (spec.cell_m) mm("f-cell", spec.cell_m);
+      if (spec.duration_s) $("f-duration").value = String(spec.duration_s);
+      renderScene();
+      fractureCells();
+      return;
+    }
+    renderScene();
     $("f-material").value = spec.material; $("f-striker").value = spec.striker;
     $("f-failure-law").value = spec.failure_law; $("f-plasticity").value = spec.plasticity;
     mm("f-length", spec.plate_m[0]); mm("f-width", spec.plate_m[1]); mm("f-thickness", spec.plate_m[2]);
     mm("f-cell", spec.cell_m); mm("f-ball", spec.ball_m);
     mm("f-offset-x", spec.offset_m[0]); mm("f-offset-z", spec.offset_m[1]);
     $("f-support").value = spec.support; $("f-duration").value = String(spec.duration_s);
-    $("f-clearance").value = String(spec.clearance_m ?? 0.12);
+    $("f-clearance").value = String(spec.clearance_m ?? 0.5);
     $("f-refracture").value = spec.refracture ?? "off";
     $("f-second-speed").value = String(spec.second_speed_m_s ?? 0);
     mm("f-second-ball", spec.second_ball_m ?? 0.1);
@@ -955,6 +1147,24 @@
   function captionStage(sum) {
     const box = $("fracture-stage-caption");
     if (!box) return;
+    if (Array.isArray(sum.bodies) && sum.bodies.length) {
+      // A scene is named by what is in it, not by a plate it does not have.
+      const moving = sum.bodies.filter((b) => b.speed_m_s > 0);
+      box.replaceChildren();
+      const strong = document.createElement("strong");
+      strong.textContent = `${sum.bodies.length} objects, ${sum.cells ?? "?"} cells at ${sum.cell_mm} mm`;
+      const list = sum.bodies.map((b) => `${b.name} (${b.material})`).join(", ");
+      const broke = Number.isFinite(sum.broken_bonds)
+        ? `${sum.broken_bonds} bonds broken, ${sum.components ?? "?"} pieces`
+        : "no failure";
+      box.append(strong, document.createTextNode(
+        ` — ${list}. ${moving.length ? `${moving[0].name} at ${moving[0].speed_m_s} m/s. ` : ""}${broke}.`));
+      box.classList.remove("is-new");
+      void box.offsetWidth;
+      box.classList.add("is-new");
+      setTimeout(() => box.classList.remove("is-new"), 1400);
+      return;
+    }
     if (!Array.isArray(sum.plate_mm)) { box.textContent = "Run something to put it on this stage."; return; }
     const plate = `${sum.plate_mm.join(" x ")} mm ${sum.material || "plate"}`;
     const ball = Number.isFinite(sum.ball_mm) ? `${Math.round(sum.ball_mm)} mm ${sum.striker || "ball"}` : "striker";
@@ -988,7 +1198,13 @@
     row("Simulated interaction", s3(sum.simulated_s, " s"));
     if (Number.isFinite(sum.realtime_ratio)) row("Realtime", `${sum.realtime_ratio.toFixed(3)}x (limit ${sum.realtime_limit}x)`, sum.realtime_ratio <= sum.realtime_limit ? "ok" : "bad");
     if (Number.isFinite(sum.fracture_window_ratio)) row("Fracture window alone", `${sum.fracture_window_ratio.toFixed(0)}x realtime`);
-    if (Array.isArray(sum.plate_mm)) {
+    if (Array.isArray(sum.bodies) && sum.bodies.length) {
+      row("Objects", String(sum.bodies.length));
+      sum.bodies.forEach((b) => row(
+        `  ${b.name}`,
+        `${b.material}, ${b.shape}, ${b.size_mm.map((v) => Math.round(v)).join(" x ")} mm, ${b.cells} cells`
+        + (b.speed_m_s > 0 ? `, moving at ${b.speed_m_s} m/s` : "")));
+    } else if (Array.isArray(sum.plate_mm)) {
       row("Plate", `${sum.plate_mm.join(" x ")} mm` + (sum.snapped_from_mm ? ` (snapped from ${sum.snapped_from_mm.join(" x ")})` : ""));
     }
     row("Cells / bonds", `${sum.cells ?? "-"} / ${sum.bonds ?? "-"}`);
@@ -1104,6 +1320,40 @@
       fractureCells();
     }
     extents.concat(["f-cell"]).forEach((id) => $(id).addEventListener("change", snapExtents));
+    $("f-mode").addEventListener("change", () => {
+      const on = sceneMode();
+      $("f-scene").hidden = !on;
+      // Switching into an empty scene gives something to look at rather than a
+      // blank list and a disabled run button.
+      if (on && !scene.bodies.length) {
+        scene.bodies = [
+          { name: "oak floor", shape: "box", material: "oak",
+            size_mm: [300, 40, 200], center_mm: [0, 20, 0], velocity_m_s: [0, 0, 0] },
+          { name: "glass block", shape: "box", material: "glass",
+            size_mm: [100, 60, 100], center_mm: [0, 70, 0], velocity_m_s: [0, 0, 0] },
+          { name: "iron ball", shape: "sphere", material: "iron",
+            size_mm: [80, 80, 80], center_mm: [0, 260, 0], velocity_m_s: [0, -4, 0] },
+        ];
+      }
+      renderScene();
+      fractureCells();
+    });
+    $("scene-add").addEventListener("click", () => {
+      const limit = (fracture.meta && fracture.meta.body_limits && fracture.meta.body_limits.bodies) || 10;
+      if (scene.bodies.length >= limit) return showToast(`A scene holds at most ${limit} objects.`, true);
+      scene.bodies.push(defaultBody(scene.bodies.length));
+      renderScene();
+      fractureCells();
+    });
+    // The commonest edit by far: lift whatever is falling so it has room to
+    // pick up speed before it arrives.
+    $("scene-drop").addEventListener("click", () => {
+      const falling = scene.bodies.filter((b) => b.velocity_m_s[1] < 0);
+      if (!falling.length) return showToast("Give an object a downward speed first.", true);
+      falling.forEach((b) => { b.center_mm[1] += 100; });
+      renderScene();
+      fractureCells();
+    });
     // Typing in either impact field clears the other, so the one being edited
     // is the one that decides. Without this a drop height typed while a speed
     // is present is silently ignored.

@@ -64,6 +64,9 @@ DEFAULT: dict[str, Any] = {
     "failure_law": "strain-threshold",
     "plasticity": "off",
     "clearance_m": 0.5,
+    # Empty means the plate-and-ball scene. A non-empty list is a many-object
+    # scene and the plate and ball fields below are not read at all.
+    "bodies": [],
     "striker": "iron",
     "plate_m": [0.25, 0.20, 0.01],
     "cell_m": 0.01,
@@ -114,6 +117,35 @@ SCENARIOS = [
     # bond. Beam theory puts the surface strain at one layer 16x above what the
     # criterion reads there, because one layer of nodes sits on the mid-plane
     # where bending strain is zero. See docs/one-cell-is-not-a-plate.md.
+    # Many-object scenes. Every object here is lattice: the ball that falls can
+    # dent and break like the thing it lands on, which the rigid striker never
+    # could. Cell size is shared, because the solver's contact radius is one
+    # number for the whole lattice. Only the three materials this lane has
+    # measured appear: glass, oak and iron.
+    {"id": "scene-shelf", "title": "A ball dropped on a glass shelf between two piers",
+     "expect": "five objects, three materials: the ball lands on the shelf and the oak block rides it",
+     "spec": {"algorithm": "lattice", "failure_law": "strain-threshold", "plasticity": "off",
+              "cell_m": 0.02, "duration_s": 1.0, "bodies": [{"name": "left pier", "shape": "box", "material": "iron", "size_mm": [60, 80, 160], "center_mm": [-90, 40, 0], "velocity_m_s": [0.0, 0.0, 0.0]},
+              {"name": "right pier", "shape": "box", "material": "iron", "size_mm": [60, 80, 160], "center_mm": [90, 40, 0], "velocity_m_s": [0.0, 0.0, 0.0]},
+              {"name": "glass shelf", "shape": "box", "material": "glass", "size_mm": [240, 20, 160], "center_mm": [0, 90, 0], "velocity_m_s": [0.0, 0.0, 0.0]},
+              {"name": "oak block", "shape": "box", "material": "oak", "size_mm": [60, 60, 60], "center_mm": [-80, 130, 40], "velocity_m_s": [0.0, 0.0, 0.0]},
+              {"name": "iron ball", "shape": "sphere", "material": "iron", "size_mm": [60, 60, 60], "center_mm": [20, 260, 0], "velocity_m_s": [0.0, -3.0, 0.0]}]}},
+    {"id": "scene-stack", "title": "A tower of oak and glass struck from above",
+     "expect": "one drop meets three blocks of two materials in a column",
+     "spec": {"algorithm": "lattice", "failure_law": "strain-threshold", "plasticity": "off",
+              "cell_m": 0.02, "duration_s": 1.2, "bodies": [{"name": "iron base", "shape": "box", "material": "iron", "size_mm": [200, 40, 160], "center_mm": [0, 20, 0], "velocity_m_s": [0.0, 0.0, 0.0]},
+              {"name": "oak block", "shape": "box", "material": "oak", "size_mm": [80, 60, 80], "center_mm": [0, 70, 0], "velocity_m_s": [0.0, 0.0, 0.0]},
+              {"name": "glass block", "shape": "box", "material": "glass", "size_mm": [80, 60, 80], "center_mm": [0, 130, 0], "velocity_m_s": [0.0, 0.0, 0.0]},
+              {"name": "oak cap", "shape": "box", "material": "oak", "size_mm": [80, 60, 80], "center_mm": [0, 190, 0], "velocity_m_s": [0.0, 0.0, 0.0]},
+              {"name": "iron ball", "shape": "sphere", "material": "iron", "size_mm": [80, 80, 80], "center_mm": [10, 340, 0], "velocity_m_s": [0.0, -6.0, 0.0]}]}},
+    {"id": "scene-skittles", "title": "A ball rolled sideways into three glass pins",
+     "expect": "a horizontal strike: what falls is whatever the ball reaches",
+     "spec": {"algorithm": "lattice", "failure_law": "strain-threshold", "plasticity": "off",
+              "cell_m": 0.02, "duration_s": 1.2, "bodies": [{"name": "oak floor", "shape": "box", "material": "oak", "size_mm": [400, 40, 240], "center_mm": [0, 20, 0], "velocity_m_s": [0.0, 0.0, 0.0]},
+              {"name": "glass pin", "shape": "box", "material": "glass", "size_mm": [40, 120, 40], "center_mm": [-80, 100, 0], "velocity_m_s": [0.0, 0.0, 0.0]},
+              {"name": "glass pin", "shape": "box", "material": "glass", "size_mm": [40, 120, 40], "center_mm": [0, 100, 0], "velocity_m_s": [0.0, 0.0, 0.0]},
+              {"name": "glass pin", "shape": "box", "material": "glass", "size_mm": [40, 120, 40], "center_mm": [80, 100, 0], "velocity_m_s": [0.0, 0.0, 0.0]},
+              {"name": "iron ball", "shape": "sphere", "material": "iron", "size_mm": [80, 80, 80], "center_mm": [-260, 100, 0], "velocity_m_s": [7.0, 0.0, 0.0]}]}},
     {"id": "bend-one-cell", "title": "A gentle tap on a pane one cell thick",
      "expect": "it bows 5.1 mm and springs back unbroken: five times too far, because one layer has no bending stiffness",
      "spec": {"material": "glass", "striker": "iron", "failure_law": "strain-threshold", "plasticity": "off",
@@ -200,7 +232,7 @@ LIMITS = {
     "second_wait_s": {"min": 0.05, "max": 5.0},
 }
 
-FIELDS = {"algorithm", "ball_m", "cell_m", "clearance_m", "drop_m", "duration_s",
+FIELDS = {"algorithm", "ball_m", "bodies", "cell_m", "clearance_m", "drop_m", "duration_s",
           "failure_law", "material", "offset_m", "plasticity", "plate_m", "refracture",
           "request_id", "second_ball_m", "second_offset_m", "second_speed_m_s",
           "second_wait_s", "speed_m_s", "striker", "support"}
@@ -210,6 +242,86 @@ def _number(value: Any, low: float, high: float, label: str) -> float:
     if type(value) not in (int, float) or not math.isfinite(value) or not low <= value <= high:
         raise ValueError(f"{label} must be a finite number in [{low}, {high}]")
     return float(value)
+
+
+# What a body of each material looks like in the 3D tab. Colour follows the
+# material rather than being chosen per object, so two oak blocks always read as
+# the same stuff and the panel has one fewer control.
+MATERIAL_COLORS = {"glass": "9fd3ffff", "oak": "c9a06aff", "iron": "d0d4dcff",
+                   "concrete": "8a8f99ff", "ceramic": "efe6d8ff", "ice": "bfe9f5ff"}
+SHAPES = {"box": "a rectangular block", "sphere": "a ball"}
+# A scene is capped by objects and by total cells: the cells are what costs, the
+# object count is what keeps a scene readable and the Jolt handoff inside its
+# contact caches.
+BODY_LIMITS = {"bodies": 10, "size_mm": (5.0, 2000.0), "center_mm": (-3000.0, 3000.0),
+               "velocity_m_s": (-600.0, 600.0), "name": 40}
+
+
+def body_cells(body: dict[str, Any], cell_m: float) -> int:
+    """Cells this body will occupy, the same way the generators count them."""
+    sx, sy, sz = (v / 1000.0 for v in body["size_mm"])
+    if body["shape"] == "sphere":
+        radius = 0.5 * sx
+        # The sphere generator samples occupancy in a cell-sized grid; the ball
+        # volume over the cell volume is that count to within the surface layer.
+        return max(1, round(4.0 / 3.0 * math.pi * radius ** 3 / cell_m ** 3))
+    return max(1, round(sx / cell_m)) * max(1, round(sy / cell_m)) * max(1, round(sz / cell_m))
+
+
+def normalise_bodies(bodies: Any, cell_m: float) -> list[dict[str, Any]]:
+    """Check every object against its bound; return the list the engine will get."""
+    if not isinstance(bodies, list):
+        raise ValueError("bodies must be a list of objects")
+    if len(bodies) > BODY_LIMITS["bodies"]:
+        raise ValueError(f"a scene holds at most {BODY_LIMITS['bodies']} objects; this one has {len(bodies)}")
+    out: list[dict[str, Any]] = []
+    for index, body in enumerate(bodies):
+        if not isinstance(body, dict):
+            raise ValueError(f"object {index + 1} is not an object")
+        name = str(body.get("name", f"object {index + 1}"))[:BODY_LIMITS["name"]].strip() or f"object {index + 1}"
+        shape = body.get("shape", "box")
+        if shape not in SHAPES:
+            raise ValueError(f"{name}: shape must be one of {list(SHAPES)}")
+        material = body.get("material", "glass")
+        if material not in MATERIALS:
+            raise ValueError(f"{name}: material must be one of {list(MATERIALS)}")
+        def triple(key: str, low: float, high: float) -> list[float]:
+            value = body.get(key)
+            if not isinstance(value, list) or len(value) != 3:
+                raise ValueError(f"{name}: {key} needs three numbers")
+            return [_number(v, low, high, f"{name} {key}") for v in value]
+        size = triple("size_mm", *BODY_LIMITS["size_mm"])
+        if shape == "sphere":
+            size = [size[0], size[0], size[0]]
+        center = triple("center_mm", *BODY_LIMITS["center_mm"])
+        velocity = triple("velocity_m_s", *BODY_LIMITS["velocity_m_s"])
+        # An extent that is not a whole number of cells is refused by the
+        # generator, so it is snapped here and the panel is told what will run.
+        built = [max(1, round(v / 1000.0 / cell_m)) * cell_m * 1000.0 for v in size]
+        if shape == "sphere":
+            built = [size[0], size[0], size[0]]
+        for axis, (want, got) in enumerate(zip(size, built)):
+            if abs(got - want) > 0.2 * want:
+                raise ValueError(
+                    f"{name}: a {want:.0f} mm side is not a whole number of {cell_m * 1000:g} mm cells, "
+                    f"and the nearest whole number is {got:.0f} mm - too far to substitute.")
+        out.append({"name": name, "shape": shape, "material": material,
+                    "size_mm": [round(v, 3) for v in built],
+                    "requested_size_mm": [round(v, 3) for v in size],
+                    "center_mm": center, "velocity_m_s": velocity,
+                    "color_rgba": MATERIAL_COLORS.get(material, "9fd3ffff"),
+                    "cells": body_cells({"shape": shape, "size_mm": built}, cell_m)})
+    return out
+
+
+def scene_document(spec: dict[str, Any]) -> dict[str, Any]:
+    """The --scene file: metres, the engine's units, nothing the panel added."""
+    return {"bodies": [{"name": b["name"], "shape": b["shape"], "material": b["material"],
+                        "dimensions_m": [v / 1000.0 for v in b["size_mm"]],
+                        "center_m": [v / 1000.0 for v in b["center_mm"]],
+                        "velocity_m_s": b["velocity_m_s"],
+                        "color_rgba": b["color_rgba"]}
+                       for b in spec["bodies"]]}
 
 
 def cell_counts(plate_m: list[float], cell_m: float) -> tuple[int, int, int]:
@@ -228,13 +340,34 @@ def validate(spec: Any) -> dict[str, Any]:
     result.update({k: v for k, v in spec.items() if k != "request_id"})
     if result["algorithm"] not in ALGORITHMS:
         raise ValueError(f"algorithm must be one of {list(ALGORITHMS)}")
+    result["cell_m"] = _number(result["cell_m"], LIMITS["cell_m"]["min"], LIMITS["cell_m"]["max"], "cell size")
+    if result.get("bodies"):
+        # A many-object scene: every object is lattice, there is no rigid
+        # striker, and what falls is whatever object was given a velocity. The
+        # plate and ball fields are not read.
+        result["bodies"] = normalise_bodies(result["bodies"], result["cell_m"])
+        result["duration_s"] = _number(result["duration_s"], LIMITS["duration_s"]["min"],
+                                       LIMITS["duration_s"]["max"], "duration")
+        result["cells"] = sum(b["cells"] for b in result["bodies"])
+        result["cells_per_axis"] = [0, 0, 0]
+        result["plate_m"] = [0.0, 0.0, 0.0]
+        result["requested_plate_m"] = [0.0, 0.0, 0.0]
+        result["snapped"] = any(
+            abs(a - b) > 1e-6 for body in result["bodies"]
+            for a, b in zip(body["size_mm"], body["requested_size_mm"]))
+        if result["algorithm"] != "lattice":
+            raise ValueError("only the explicit lattice lane runs a many-object scene")
+        lane = ALGORITHMS[result["algorithm"]]
+        if result["cells"] > lane["max_cells"]:
+            raise ValueError(f"{result['cells']} cells exceeds this lane's cap of {lane['max_cells']}; "
+                             f"use larger cells or smaller objects.")
+        return result
     plate = result["plate_m"]
     if not isinstance(plate, list) or len(plate) != 3:
         raise ValueError("plate_m requires length, width and thickness in metres")
     result["plate_m"] = [_number(plate[0], LIMITS["plate_m"]["min"], LIMITS["plate_m"]["max"], "plate length"),
                          _number(plate[1], LIMITS["plate_m"]["min"], LIMITS["plate_m"]["max"], "plate width"),
                          _number(plate[2], LIMITS["thickness_m"]["min"], LIMITS["thickness_m"]["max"], "plate thickness")]
-    result["cell_m"] = _number(result["cell_m"], LIMITS["cell_m"]["min"], LIMITS["cell_m"]["max"], "cell size")
     result["ball_m"] = _number(result["ball_m"], LIMITS["ball_m"]["min"], LIMITS["ball_m"]["max"], "ball diameter")
     if result.get("speed_m_s") is not None:
         result["speed_m_s"] = _number(result["speed_m_s"], LIMITS["speed_m_s"]["min"], LIMITS["speed_m_s"]["max"], "impact speed")
@@ -327,6 +460,7 @@ def describe(engine_path: Path) -> dict[str, Any]:
             "scenarios": SCENARIOS,
             "materials": list(MATERIALS), "failure_laws": list(FAILURE_LAWS),
             "plasticity": list(PLASTICITY), "refracture": list(REFRACTURE),
+            "shapes": SHAPES, "material_colors": MATERIAL_COLORS, "body_limits": BODY_LIMITS,
             "realtime_limit": REALTIME_LIMIT}
 
 
@@ -347,6 +481,16 @@ def command(algorithm: str, spec: dict[str, Any], engine_path: Path, output: Pat
     # run as something else.
     if spec["support"] == "clamped":
         raise ValueError("This lane supports the target on two ledges or on the ground, not clamped edges")
+    if spec.get("bodies"):
+        # Many objects: the geometry is a file, not a tile, and the ground is
+        # the only support. The lane keeps its own failure law and plasticity.
+        scene_path = report_path.with_name("scene.json")
+        scene_path.write_text(json.dumps(scene_document(spec), indent=1), encoding="utf-8")
+        return [str(exe), "--scene", str(scene_path), "--cell", f"{spec['cell_m']:.6g}",
+                "--layout", "flat", "--settle-s", f"{spec['duration_s']:.6g}",
+                "--failure-law", spec["failure_law"], "--plasticity", spec["plasticity"],
+                "--backend", "parallel", "--precision", "double",
+                "--record", str(output), "--report", str(report_path)]
     argv = [str(exe), "--material", spec["material"], "--ball-material", spec["striker"],
             "--tile", f"{L:.6g}", f"{T:.6g}", f"{W:.6g}", "--cell", f"{spec['cell_m']:.6g}",
             "--ball-radius", f"{spec['ball_m'] / 2:.6g}", "--speed", f"{spec['speed_m_s']:.6g}",
@@ -400,15 +544,21 @@ def summary(report: dict[str, Any], wall_s: float, spec: dict[str, Any]) -> dict
         window_ratio = lattice_wall / lattice_sim
     return {
         "plate_mm": [round(v * 1000, 1) for v in spec["plate_m"]],
-        "material": spec["material"],
-        "striker": spec["striker"],
-        "ball_mm": round(spec["ball_m"] * 1000, 1),
-        "speed_m_s": round(spec["speed_m_s"], 3),
+        # A many-object scene has no single target material and no striker; the
+        # bodies list below is what it had instead.
+        "material": None if spec.get("bodies") else spec["material"],
+        "striker": None if spec.get("bodies") else spec["striker"],
+        "ball_mm": None if spec.get("bodies") else round(spec["ball_m"] * 1000, 1),
+        "speed_m_s": None if spec.get("bodies") else round(spec["speed_m_s"], 3),
         "cell_mm": round(spec["cell_m"] * 1000, 3),
         # Cells through the thickness. One layer samples only the mid-plane,
         # where bending strain is zero, so the plate has neither the stiffness
         # to resist bending nor the strain to fail on it.
         "thickness_cells": spec["cells_per_axis"][2],
+        "bodies": [{"name": b["name"], "shape": b["shape"], "material": b["material"],
+                    "size_mm": b["size_mm"], "cells": b["cells"],
+                    "speed_m_s": round(max(abs(v) for v in b["velocity_m_s"]), 3)}
+                   for b in spec.get("bodies", [])],
         "snapped_from_mm": ([round(v * 1000, 1) for v in spec["requested_plate_m"]] if spec.get("snapped") else None),
         "cells": _pick(report, "cells") or spec["cells"],
         "bonds": _pick(report, "bonds", "lattice.bonds"),
@@ -468,11 +618,19 @@ def run(app: Any, body: Any) -> dict[str, Any]:
     report_path = directory / "lane-report.json"
     argv = command(algorithm, spec, app.engine_path, playback, cache_dir, report_path)
     (directory / "fracture-request.json").write_text(json.dumps({"spec": spec, "argv": argv}, indent=1), encoding="utf-8")
-    nx, ny, nz = spec["cells_per_axis"]
-    name = (f"{spec['material']} {spec['plate_m'][0]*1000:.0f}x{spec['plate_m'][1]*1000:.0f}x"
-            f"{spec['plate_m'][2]*1000:.0f} mm, {nx}x{ny}x{nz} = {spec['cells']} cells, "
-            f"{spec['ball_m']*1000:.0f} mm {spec['striker']} ball at {spec['speed_m_s']:.2f} m/s, "
-            f"{spec['support']}, {spec['failure_law']}")
+    if spec.get("bodies"):
+        # A many-object scene has no plate and no striker to name it by; what
+        # identifies it is what is in it and what is moving.
+        moving = [b for b in spec["bodies"] if any(v for v in b["velocity_m_s"])]
+        name = (f"{len(spec['bodies'])} objects, {spec['cells']} cells at {spec['cell_m']*1000:g} mm: "
+                + ", ".join(f"{b['name']} ({b['material']})" for b in spec["bodies"])
+                + (f"; {moving[0]['name']} starts moving" if moving else "; nothing is moving"))
+    else:
+        nx, ny, nz = spec["cells_per_axis"]
+        name = (f"{spec['material']} {spec['plate_m'][0]*1000:.0f}x{spec['plate_m'][1]*1000:.0f}x"
+                f"{spec['plate_m'][2]*1000:.0f} mm, {nx}x{ny}x{nz} = {spec['cells']} cells, "
+                f"{spec['ball_m']*1000:.0f} mm {spec['striker']} ball at {spec['speed_m_s']:.2f} m/s, "
+                f"{spec['support']}, {spec['failure_law']}")
     started = time.perf_counter()
     case: dict[str, Any] = {"index": 0, "name": name, "package": {}, "status": "pending", "native_scene": False,
                             "playback_available": False, "warnings": [], "error": ""}
