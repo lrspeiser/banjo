@@ -759,7 +759,7 @@ reaches: 93% of the 20 mm glass tile's bonds, 88% at 10 mm, 60% at 5 mm. The
 fragment size is then the cell size at every level, the piece count is a count of
 cells, and no failure criterion can make that converge. R falls as h^1/2, so
 refinement does move towards localisation - glass would need about 31 um cells
-(4.6e11 of them) and oak about 14 mm.
+(5.0e10 of them) and oak about 14 mm.
 
 Oak sits at R ~ 1 and still does not localise, and that is the honest limit of
 this branch: a threshold that snaps rather than softens gives no mechanism for a
@@ -940,7 +940,7 @@ given material:
 
 *Experimental result, from the constants in section 2.1 at horizon 2.* For the
 4 cm iron ball at 8 m/s: glass needs about 31 um cells (the tile would be
-4.6e11 cells, which is not a resolution any lane can reach), oak needs about
+5.0e10 cells, which is not a resolution any lane can reach), oak needs about
 14 mm, and iron does not break at all. That is the honest bound on what this
 engine can be asked for: a converged *piece count* for glass under a 2 kg
 strike is out of reach at any cell size the engine can run, and the useful
