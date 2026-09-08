@@ -1040,6 +1040,7 @@
     if (spec.bodies.length) {
       const editor = $("f-scene");
       if (editor) editor.hidden = false;
+      setText($("fracture-scene-title"), "Objects that fall on each other");
       const cells = sceneCellCount();
       const lane = fracture.meta && fracture.meta.algorithms.find((a) => a.id === spec.algorithm);
       const tooMany = lane && cells > lane.max_cells;
@@ -1061,6 +1062,7 @@
     }
     const editor = $("f-scene");
     if (editor) editor.hidden = !sceneMode();
+    setText($("fracture-scene-title"), sceneMode() ? "Objects that fall on each other" : "Plate, ball, drop");
     const n = spec.plate_m.map((d) => Math.max(1, Math.round(d / spec.cell_m)));
     const cells = n[0] * n[1] * n[2];
     // The engine needs a whole number of cells on every axis, so the server
@@ -1280,10 +1282,8 @@
     renderJob(job); renderLanguage(); renderResults();
     if (job.cases?.some(playbackAvailable)) {
       loadPlayback(state.selectedCase, true);
-      // loadPlayback switches to the 3D tab on its own; on the lab the stage
-      // is already here, so come straight back rather than leaving the user
-      // on a tab whose stage has been lent away.
-      if (stayOn === "fracture") activateTab("fracture"); else activateTab("viewer");
+      // There is one stage and it is on this page.
+      activateTab("fracture");
     } else { clearViewer("This run has no playback."); activateTab("results"); }
   }
 
@@ -1369,6 +1369,10 @@
       // Switching into an empty scene gives something to look at rather than a
       // blank list and a disabled run button.
       if (on && !scene.bodies.length) {
+        // The starter scene is sized for 20 mm cells. Inheriting the plate
+        // lane's cell size would open it at 3,268 cells and about a minute of
+        // wall for what is meant to be the first thing anyone runs.
+        $("f-cell").value = "20";
         scene.bodies = [
           { name: "oak floor", shape: "box", material: "oak",
             size_mm: [300, 40, 200], center_mm: [0, 20, 0], velocity_m_s: [0, 0, 0] },
@@ -1592,34 +1596,59 @@
   // context inside, so they are lent between the two tabs that show them rather
   // than duplicated. Reparenting keeps the scene, the camera and the loaded
   // recording exactly as they were.
-  const stageHome = [];
+  let stageAdopted = false;
   function lendStageTo(where) {
-    const nodes = [$("viewer-stage"),
-                   document.querySelector('#panel-viewer [aria-label="Playback controls"]'),
-                   $("viewer-frame") && $("viewer-frame").closest("label")].filter(Boolean);
-    if (!nodes.length) return;
-    if (!stageHome.length) {
-      nodes.forEach((n) => stageHome.push({ node: n, parent: n.parentElement, next: n.nextSibling }));
-    }
+    // The 3D playback tab is gone, so the stage has one home and moves once.
+    // These are live DOM nodes with a WebGL context and a loaded recording in
+    // them; reparenting keeps all of that, where rebuilding would not.
+    if (stageAdopted || where !== "fracture") return;
     const slot = $("fracture-stage-slot");
-    if (where === "fracture" && slot) {
-      stageHome.forEach(({ node }) => { if (node.parentElement !== slot) slot.append(node); });
-    } else if (where === "viewer") {
-      stageHome.forEach(({ node, parent, next }) => {
-        if (parent && node.parentElement !== parent) parent.insertBefore(node, next);
-      });
-    }
+    const controls = $("fracture-stage-controls");
+    if (!slot || !controls) return;
+    const frameLabel = $("viewer-frame") && $("viewer-frame").closest("label");
+    [$("viewer-stage"),
+     document.querySelector('#panel-viewer [aria-label="Playback controls"]'),
+     frameLabel].filter(Boolean).forEach((node) => slot.insertBefore(node, controls));
+
+    // What reads the scene sits under it: how fast it plays, what is drawn, and
+    // what the last click landed on.
+    [document.querySelector("#panel-viewer .viewer-fields"),
+     document.querySelector("#panel-viewer .viewer-toggles"),
+     $("viewer-validity"),
+     $("viewer-inspect"),
+     $("viewer-custom"),
+     $("viewer-capture")].filter(Boolean).forEach((node) => controls.append(node));
+
+    // The measured evidence and the GPT review are read once a run raises a
+    // question, not on every run, so they fold away.
+    const more = document.createElement("details");
+    more.className = "stage-more";
+    const summary = document.createElement("summary");
+    summary.textContent = "Measured evidence and review";
+    more.append(summary);
+    [document.querySelector("#panel-viewer .review-toolbar"),
+     $("viewer-review"),
+     $("viewer-evidence-details"),
+     $("viewer-native")].filter(Boolean).forEach((node) => more.append(node));
+    controls.append(more);
+
+    stageAdopted = true;
     // Layout settles on the next frame; the camera is framed after it does.
     requestAnimationFrame(() => state.scene?.refit());
   }
 
   function activateTab(name) {
+    // Only the playground and the project goal have a way in now. Anything else
+    // asked for by name -- the viewer and the results comparison still are,
+    // from code that predates the change -- lands on the playground instead of
+    // hiding every panel and leaving a blank page.
+    if (!document.querySelector(`.tab[data-tab="${name}"]`)) name = "fracture";
     document.querySelectorAll(".tab").forEach((tab) => { const active = tab.dataset.tab === name; tab.classList.toggle("is-active", active); tab.setAttribute("aria-selected", String(active)); });
     document.querySelectorAll(".tab-panel").forEach((panel) => { const active = panel.id === `panel-${name}`; panel.classList.toggle("is-visible", active); panel.hidden = !active; });
     if (name === "language") renderLanguage(); if (name === "results") renderResults(); if(name === "viewer") renderViewerCaseSelect();
     if (name === "builder" && !builder.meta) initBuilder();
     if (name === "fracture" && !fracture.meta) initFractureLab();
-    if (name === "fracture" || name === "viewer") lendStageTo(name);
+    if (name === "fracture") lendStageTo(name);
   }
 
   async function loadGoal() {
@@ -1712,7 +1741,8 @@
   $("viewer-components").addEventListener("change",e=>state.scene?.showComponents(e.target.checked));$("viewer-reference").addEventListener("change",e=>state.scene?.showReference(e.target.checked));$("viewer-bonds").addEventListener("change",e=>state.scene?.showBonds(e.target.checked));$("viewer-xray").addEventListener("change",e=>state.scene?.setXray(e.target.checked));$("viewer-native").addEventListener("click",()=>openStudio(state.selectedCase));
   $("prompt-input").addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); $("chat-form").requestSubmit(); } });
   renderConversation(); renderHistory(); renderJob(null); renderStatus(); loadGoal(); restoreLatestJob();
-  // The builder posts to the server for every check, so it needs the session
-  // token that /api/status hands out before it can preview anything.
-  loadStatus().then(initBuilder);
+  // The playground is the page now, so it is built on load rather than on a tab
+  // click that no longer has to happen. This also adopts the stage.
+  activateTab("fracture");
+  loadStatus();
 })();

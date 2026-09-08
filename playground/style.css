@@ -306,6 +306,7 @@ h2 { margin-bottom: 0; font-size: 1.02rem; font-weight: 550; letter-spacing: -.0
 /* The object list: one row per body, compact enough that five fit beside the
    scene they describe. */
 .scene-editor { display: grid; gap: 9px; padding: 11px; border: 1px solid var(--line); border-radius: 9px; }
+.scene-editor[hidden] { display: none; }
 .scene-head { display: flex; align-items: center; justify-content: space-between; gap: 8px;
   color: var(--muted); font-size: .68rem; letter-spacing: .05em; text-transform: uppercase; }
 .scene-rows { display: grid; gap: 7px; }
@@ -324,3 +325,18 @@ h2 { margin-bottom: 0; font-size: 1.02rem; font-weight: 550; letter-spacing: -.0
 .scene-actions { display: flex; gap: 7px; flex-wrap: wrap; }
 .scene-hint { margin: 0; font-size: .68rem; line-height: 1.5; }
 .scene-swatch { width: 11px; height: 11px; border-radius: 3px; border: 1px solid rgba(255,255,255,.25); }
+
+/* The viewer's own controls, now under the stage rather than on a tab of their
+   own. They read the scene on the left, so they belong beside it. */
+.fracture-stage-controls { display: grid; gap: 9px; padding: 11px; border: 1px solid var(--line);
+  border-radius: 9px; background: rgba(10, 16, 19, .5); }
+.fracture-stage-controls .viewer-validity { margin: 0; }
+.fracture-stage-controls .viewer-fields { grid-template-columns: 1fr 1fr; }
+.fracture-stage-controls .viewer-inspect { max-height: 132px; overflow-y: auto; }
+.fracture-stage-controls .viewer-custom:empty { display: none; }
+.fracture-stage-controls button { border: 1px solid var(--line); border-radius: 6px; padding: 7px;
+  background: transparent; color: var(--muted); font-size: .68rem; }
+.fracture-stage-controls button:hover:not(:disabled) { border-color: var(--mint-strong); color: var(--mint); }
+.fracture-stage-controls button:disabled { opacity: .5; }
+.stage-more > summary { cursor: pointer; color: var(--muted); font-size: .7rem; }
+.stage-more[open] { display: grid; gap: 9px; }

@@ -21,17 +21,12 @@
     </header>
 
     <nav class="tabs" aria-label="Playground sections" role="tablist">
-      <button class="tab is-active" id="tab-experiment" role="tab" aria-selected="true" aria-controls="panel-experiment" data-tab="experiment">Experiment</button>
-      <button class="tab" id="tab-builder" role="tab" aria-selected="false" aria-controls="panel-builder" data-tab="builder">Builder</button>
-      <button class="tab" id="tab-fracture" role="tab" aria-selected="false" aria-controls="panel-fracture" data-tab="fracture">Fracture lab</button>
-      <button class="tab" id="tab-language" role="tab" aria-selected="false" aria-controls="panel-language" data-tab="language">Language</button>
-      <button class="tab" id="tab-results" role="tab" aria-selected="false" aria-controls="panel-results" data-tab="results">Results</button>
-      <button class="tab" id="tab-viewer" role="tab" aria-selected="false" aria-controls="panel-viewer" data-tab="viewer">3D playback</button>
+      <button class="tab is-active" id="tab-fracture" role="tab" aria-selected="true" aria-controls="panel-fracture" data-tab="fracture">Playground</button>
       <button class="tab" id="tab-goal" role="tab" aria-selected="false" aria-controls="panel-goal" data-tab="goal">Project goal</button>
     </nav>
 
     <main>
-      <section class="tab-panel is-visible" id="panel-experiment" role="tabpanel" aria-labelledby="tab-experiment">
+      <section class="tab-panel" id="panel-experiment" role="tabpanel" aria-labelledby="tab-experiment" hidden>
         <div class="hero-row">
           <div>
             <p class="eyebrow">LOCAL PHYSICS LAB</p>
@@ -154,18 +149,18 @@
         </section>
       </section>
 
-      <section class="tab-panel" id="panel-fracture" role="tabpanel" aria-labelledby="tab-fracture" hidden>
+      <section class="tab-panel is-visible" id="panel-fracture" role="tabpanel" aria-labelledby="tab-fracture">
         <div class="section-intro">
-          <p class="eyebrow">FRACTURE LAB / INSTANT RERUN</p>
-          <h1>Drop a ball on a plate.</h1>
-          <p class="lede">Change anything on the right and run again; the scene on the left is the answer.</p><details class="intro-more"><summary>How this lab works</summary><p>Each lane precomputes what it can when the plate is created and answers the strike from that; the reference lane steps every substep and is the yardstick, not the product. Every run states its wall time against the simulated interaction and the 1.1x rule.</p></details>
+          <p class="eyebrow">BANJO PLAYGROUND / REAL PHYSICS</p>
+          <h1>Build it, then break it.</h1>
+          <p class="lede">A plate and a ball, or a scene of objects that fall on each other. Change anything on the right and run again; the scene on the left is the answer.</p><details class="intro-more"><summary>How this lab works</summary><p>Each lane precomputes what it can when the plate is created and answers the strike from that; the reference lane steps every substep and is the yardstick, not the product. Every run states its wall time against the simulated interaction and the 1.1x rule.</p></details>
         </div>
         <div class="fracture-workbench">
-          <div id="fracture-stage-slot" class="fracture-stage-slot"><p id="fracture-stage-caption" class="fracture-stage-caption">Run something to put it on this stage.</p></div>
+          <div id="fracture-stage-slot" class="fracture-stage-slot"><p id="fracture-stage-caption" class="fracture-stage-caption">Run something to put it on this stage.</p><div id="fracture-stage-controls" class="fracture-stage-controls"></div></div>
           <div class="fracture-controls-column">
           <div class="builder-layout">
           <section class="card builder-card">
-            <div class="card-heading compact"><div><p class="eyebrow">01 / SCENE</p><h2>Plate, ball, drop</h2></div><span id="fracture-cells" class="small-badge">500 cells</span></div>
+            <div class="card-heading compact"><div><p class="eyebrow">01 / SCENE</p><h2 id="fracture-scene-title">Plate, ball, drop</h2></div><span id="fracture-cells" class="small-badge">500 cells</span></div>
             <details id="fracture-scenario-drawer" class="fracture-scenario-drawer"><summary>Start from a scenario</summary><div id="fracture-scenarios" class="fracture-scenarios"></div></details>
             <form id="fracture-controls" class="builder-fields">
               <label class="builder-field"><span>Scene</span><select id="f-mode"><option value="plate">One plate and a ball</option><option value="objects">Many objects</option></select></label><div id="f-scene" class="scene-editor" hidden><div class="scene-head"><span>Objects</span><span id="scene-cells" class="small-badge">0 cells</span></div><div id="scene-rows" class="scene-rows"></div><div class="scene-actions"><button id="scene-add" type="button" class="quiet-button">Add an object</button><button id="scene-drop" type="button" class="quiet-button">Raise the falling one</button></div><p class="muted scene-hint">Give one object a downward speed and it is the one that falls. Everything else is lattice too, so what it lands on can break and so can it.</p></div><label class="builder-field"><span>Algorithm</span><select id="f-algorithm"></select></label>
