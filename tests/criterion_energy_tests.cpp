@@ -33,6 +33,7 @@
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <numbers>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -394,6 +395,57 @@ void theStrengthBoundHoldsWhereItShould() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// 7. An independent check on the constant, not just the scaling.
+//    The derivation is never told about linear elastic fracture mechanics, so
+//    LEFM can be asked whether the answer is sane: a crack of length a in a
+//    body of modulus E' propagates at the stress sqrt(E' Gc / (pi a)). Take a
+//    to be one cell - which is what a lattice that resolves a crack in cells
+//    means - and compare with the stress the criterion actually fails at,
+//    E_eff s_c. Both scale as h^-1/2, so their ratio is a pure number:
+//        E_eff s_c / sqrt(E_eff Gc / (pi h)) = sqrt((E_eff / E) 2 pi m / N_100)
+//    and it must come out of order one for the derivation's constant to be
+//    right. It does: 1.317 at horizon 2, 0.925 at horizon 3, for every
+//    material and every cell size.
+// ---------------------------------------------------------------------------
+void theImpliedStrengthAgreesWithLefmForACellSizedFlaw() {
+    for (const unsigned horizon : kHorizons) {
+        const LatticeHorizonGeometry g = latticeHorizonGeometry(horizon);
+        const double m = static_cast<double>(horizon);
+        double first_ratio = 0.0;
+        for (const MaterialPreset preset : {MaterialPreset::Glass, MaterialPreset::Oak,
+                                            MaterialPreset::Ceramic, MaterialPreset::Ice,
+                                            MaterialPreset::Concrete}) {
+            const MaterialDefinition material = makeReferenceMaterial(preset, 3);
+            const double c11 = material.young_modulus_pa * g.sum_nx4 / m;
+            const double c12 = material.young_modulus_pa * g.sum_nx2ny2 / m;
+            const double young_effective = (c11 - c12) * (c11 + 2.0 * c12) / (c11 + c12);
+            for (const double cell : kCells) {
+                const double s_c = energyScaledCriticalStretch(
+                    material.fracture_energy_j_m2, material.young_modulus_pa, cell, horizon);
+                const double criterion_stress = young_effective * s_c;
+                const double lefm_stress = std::sqrt(
+                    young_effective * material.fracture_energy_j_m2 /
+                    (std::numbers::pi * cell));
+                const double ratio = criterion_stress / lefm_stress;
+                if (first_ratio == 0.0) first_ratio = ratio;
+                requireClose(ratio, first_ratio, 1.0e-12,
+                             "the ratio must not depend on the material or the cell size");
+                requireClose(ratio,
+                             std::sqrt((young_effective / material.young_modulus_pa) *
+                                       2.0 * std::numbers::pi * m / g.crossings_100),
+                             1.0e-12, "the closed form of the ratio");
+                require(ratio > 0.5 && ratio < 2.0,
+                        "the criterion's failure stress must be within a factor two of LEFM's "
+                        "for a cell-sized flaw");
+            }
+        }
+        std::cout << "  horizon " << horizon << ": the criterion fails at " << first_ratio
+                  << " x the LEFM stress for a crack one cell long, for every material and "
+                     "every cell size\n";
+    }
+}
+
 void namesRoundTrip() {
     require(parseBondFailureLaw("strain-threshold") == BondFailureLaw::StrainThreshold, "parse old");
     require(parseBondFailureLaw("energy-scaled") == BondFailureLaw::EnergyScaled, "parse new");
@@ -421,6 +473,8 @@ int main() {
         std::cout << "[PASS] the strain-threshold law is unchanged bit for bit\n";
         theStrengthBoundHoldsWhereItShould();
         std::cout << "[PASS] the strength bound governs exactly where the Irwin length says\n";
+        theImpliedStrengthAgreesWithLefmForACellSizedFlaw();
+        std::cout << "[PASS] the implied failure stress agrees with LEFM for a cell-sized flaw\n";
         namesRoundTrip();
         std::cout << "[PASS] failure law names round trip and unknown names are refused\n";
         return 0;

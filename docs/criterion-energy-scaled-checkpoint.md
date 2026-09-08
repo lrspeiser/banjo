@@ -161,7 +161,25 @@ produced them. Gc is a mode-I crack energy and the catalogue carries no second
 and third fracture energy to calibrate the other two modes against; this is a
 stated limitation, not an oversight (section 8).
 
-### 2.5 What the law is not
+### 2.5 An independent check on the constant, not just the scaling
+
+The derivation is never told about linear elastic fracture mechanics, so LEFM
+can be asked whether its answer is sane. A crack of length a in a body of
+modulus E' propagates at `sqrt(E' Gc / (pi a))`. Take a to be one cell, which is
+what a lattice that resolves a crack in cells means, and compare with the stress
+the criterion actually fails at, `E_eff s_c`. Both scale as h^-1/2, so their
+ratio is a pure number:
+
+    E_eff s_c / sqrt(E_eff Gc / (pi h)) = sqrt( (E_eff / E) . 2 pi m / N_100 )
+
+which is **1.317 at horizon 2 and 0.925 at horizon 3**, for every material and
+every cell size (test 7). The criterion fails a cell-sized ligament within a
+third of where Griffith says it should. Nothing in the derivation was fitted to
+make that come out; it is a consequence of the compliance rule and the crossing
+count, and it is the strongest evidence that the constant - not just the
+h^-1/2 scaling - is right.
+
+### 2.6 What the law is not
 
 It is not a cohesive-zone law. The engine's damage counter does not soften the
 bond, so the traction-separation curve this implies is a rectangle ending in a
@@ -205,7 +223,8 @@ name.
 | 4 | the scaling | s_c(h/2)/s_c(h) = sqrt(2) and G_lattice flat in h, both to 1e-13; the old law's G_lattice scales as h |
 | 5 | **the old law is unchanged bit for bit** | 48 material/cell/horizon combinations and 40,632 generated bonds, `memcmp` |
 | 6 | the strength bound bites where the Irwin length says | `strength_bound_active` against `min(s_c, s_sigma)` for iron, glass, oak |
-| 7 | names | `parseBondFailureLaw` round trips and refuses an unknown name |
+| 7 | **the implied strength agrees with LEFM for a cell-sized flaw** | `E_eff s_c / sqrt(E_eff Gc / (pi h))` is 1.317 (horizon 2) and 0.925 (horizon 3), independent of material and cell size, to 1e-12 |
+| 8 | names | `parseBondFailureLaw` round trips and refuses an unknown name |
 
 ---
 
