@@ -135,6 +135,8 @@ private:
     void *argument_{nullptr};
 };
 
+double measureDispatchCostImpl(unsigned threads, unsigned spins, unsigned dispatches);
+
 // Contiguous slice of [0, count) for one thread: contiguous so each thread
 // walks memory forwards, and deterministic so the work split never changes.
 struct Slice {
@@ -425,8 +427,8 @@ private:
 
 std::unique_ptr<LatticeBackend> makeParallelCpuLatticeBackendImpl(
     const LatticeSchedule &schedule, Precision precision, unsigned threads, unsigned spins) {
-    if (threads == 0) threads = defaultLatticeThreadCount();
     if (spins == 0) spins = 100;
+    if (threads == 0) threads = calibratedLatticeThreadCount(spins);
     if (precision == Precision::Float)
         return std::make_unique<ParallelCpuLatticeBackend<float>>(schedule, threads, spins);
     return std::make_unique<ParallelCpuLatticeBackend<double>>(schedule, threads, spins);
@@ -436,6 +438,10 @@ std::unique_ptr<LatticeBackend> makeParallelCpuLatticeBackendImpl(
 // phase this backend can spread.
 double measureDispatchCostImpl(unsigned threads, unsigned spins, unsigned dispatches) {
     SpinPool pool(threads, spins == 0 ? 400 : spins);
+    // Warm up: the workers were created a moment ago and the first dispatches
+    // pay for the scheduler placing them. Timing those would understate the
+    // pool and make the calibration below too timid.
+    for (unsigned d = 0; d < std::max(64U, dispatches / 4U); ++d) pool.run([](unsigned, unsigned) {});
     const auto begin = std::chrono::steady_clock::now();
     for (unsigned d = 0; d < dispatches; ++d) pool.run([](unsigned, unsigned) {});
     return std::chrono::duration<double>(std::chrono::steady_clock::now() - begin).count();
@@ -449,6 +455,27 @@ unsigned defaultLatticeThreadCount() {
     // twenty-four, where the calling thread competes with a spinning worker for
     // its core. Sixteen is a cap, not a requirement.
     return std::min(16U, std::max(1U, std::thread::hardware_concurrency()));
+}
+
+unsigned calibratedLatticeThreadCount(unsigned spins) {
+    // A spinning pool is only as good as the cores it actually gets. On an idle
+    // machine an empty dispatch costs about a microsecond at sixteen threads;
+    // when something else is already using the machine the same pool waits for
+    // the scheduler and a dispatch costs tens of microseconds, which turned one
+    // measured run of the headline scene from 0.55 s into 138 s and timed out
+    // the Fracture lab's sixty-second budget. So the count is probed rather
+    // than assumed: halve it until a dispatch is cheap enough to be worth
+    // making, and fall back to the serial path if even two threads are not.
+    // The result changes no value the lane computes -- the backend is bit
+    // identical at every thread count (tests/fracture_algo3_tests.cpp) -- so
+    // this is a speed decision only.
+    constexpr double kAcceptableDispatchMicroseconds = 6.0;
+    constexpr unsigned kProbeDispatches = 300;
+    for (unsigned threads = defaultLatticeThreadCount(); threads >= 2U; threads /= 2U) {
+        const double seconds = measureDispatchCostImpl(threads, spins, kProbeDispatches);
+        if (seconds * 1.0e6 / kProbeDispatches <= kAcceptableDispatchMicroseconds) return threads;
+    }
+    return 1U;
 }
 
 std::unique_ptr<LatticeBackend> makeParallelCpuLatticeBackend(

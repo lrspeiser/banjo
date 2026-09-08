@@ -132,10 +132,33 @@ Two performance defects were found and fixed on the way, both measured:
   competes with a spinning worker for its core. The default thread count is
   therefore capped at sixteen (3.89x), not taken from the machine (1.33x).
 
-A spin pool is also sensitive to other load: one measurement taken immediately
-after a parallel `cmake --build` read 92 s where two clean runs of the same
-scene read 18.3 s and 19.8 s. Timings below were taken with the machine
-otherwise idle.
+### 2.6 The thread count is probed, because a spin pool is only worth its cores
+
+A spinning pool is very sensitive to other load. Two measurements made the point
+sharply: one taken immediately after a parallel `cmake --build` read 92 s where
+two clean runs of the same scene read 18.3 s and 19.8 s, and the first Fracture
+lab panel request **timed out at 60 s** on a scene that takes 0.55 s idle (the
+same command run by hand while the machine was still busy took 138 s, a 250x
+cliff). Sixteen threads that each get a fraction of a core spend a scheduler
+quantum per dispatch instead of a microsecond.
+
+So the count is not assumed. When the caller asks for 0 threads,
+`calibratedLatticeThreadCount` times 300 empty dispatches (after a warm-up) at
+the machine's cap, halves and retries while a dispatch costs more than 6 us, and
+returns 1 -- the serial path -- if even two threads are not worth having. The
+choice changes nothing the lane computes: the backend is bit identical at every
+thread count, which the test suite asserts at 2, 4 and 8 and the scene runs
+assert at 4, 8, 12, 16 and 24. It is a speed decision only, and `--threads N`
+overrides it.
+
+Three copies of the default scene run at once now pick 16, 8 and 4 threads and
+finish in 1.87 s, 1.77 s and 1.47 s -- all three still 73 bonds, all three no
+worse than the 2.06 s serial reference. The cliff is gone; the worst case is
+now roughly serial speed.
+
+Timings elsewhere in this document were taken with the machine otherwise idle,
+where the calibration picks 16 (occasionally 8: 0.53-0.59 s on the default
+scene).
 
 ## 3. The default scene
 
@@ -307,9 +330,11 @@ Lattice phase of the default scene, `banjo_fracture_algo3 --bench`:
 | **16** | **0.517 s** | **3.89** | same |
 | 24 | 1.512 s | 1.33 | same |
 
-Empty pool dispatch: 0.17 us (2 threads), 0.31 (4), 0.59 (8), 0.83 (12),
-1.00 (16), **5.10 (24)**. The 24-thread collapse is the calling thread sharing a
-core with a spinner, not a correctness or a barrier-count problem.
+Empty pool dispatch on an idle machine: 0.17 us (2 threads), 0.31 (4), 0.59 (8),
+0.83 (12), 1.00 (16), **5.10 (24)**. The 24-thread collapse is the calling thread
+sharing a core with a spinner, not a correctness or a barrier-count problem. On a
+loaded machine the same figure rises past 6 us and the calibration of section 2.6
+steps the count down.
 
 The speedup rises with the scene because the parallel phases dominate more:
 3.6x at 500 cells, 5.4x at 1,000, **7.2x at 2,000**. The ceiling is Amdahl on
@@ -424,6 +449,9 @@ build/agent/Release/banjo_fracture_algo3.exe --cone --probe-steps 0
 build/agent/Release/banjo_fracture_algo3.exe --precompute --cache build/fracture-cache
 build/agent/Release/banjo_fracture_algo3.exe --bench
 
+# Through the Fracture lab panel (this lane's own playground, port 8803)
+python playground/server.py --port 8803 --engine build/agent/Release/banjo_platform_cli.exe   --runs build/playground-runs-algo3
+
 # Register recordings as playground jobs in the owner's store
 python scripts/import-playback.py --runs C:/Users/henry/dev/banjo/build/playground-runs \
   --title "..." --name "..." out.playback.json
@@ -449,6 +477,25 @@ out of git.
 Confirmed in a browser: the comparison job's reference case plays to its last
 frame at 0.330431 s and comes to rest, and the Algorithm 3 case plays to the
 same last frame at the same time -- which is the exactness result, watchable.
+
+The Fracture lab panel itself was driven end to end against this lane
+(`agent/integration` merged in, this branch's own playground on port 8803,
+stopped afterwards). `POST /api/fracture/run` with the panel's default request
+returns:
+
+```
+status   complete
+message  Algorithm 3: precomputed propagators + causal cones (exact): 500 cells
+         in 3.292 s wall, 1.67x of the simulated interaction (limit 1.1x).
+compute_wall_s 0.5520594   simulated_s 0.3304310   realtime_ratio 1.671
+fracture_window_ratio 39.47   broken_bonds 73   removed_energy_j 2.1478
+precompute_s 0.0056   contact_impulse_n_s 3.8438
+```
+
+The 3.292 s of server wall against 0.552 s of compute is the exactness
+comparison (which runs plain explicit stepping as well) plus process start and
+the recording write. The panel's first request timed out at 60 s before the
+thread calibration of section 2.6 existed; it has not timed out since.
 
 ## 10. Status
 
@@ -480,6 +527,10 @@ same last frame at the same time -- which is the exactness result, watchable.
 
 **Next**
 
+- The dispatch calibration is a blunt instrument: it probes once at startup, so a
+  run that begins on an idle machine and then shares it keeps the count it chose.
+  Re-probing between substeps would cost more than it saves; re-probing at each
+  `upload()` would be nearly free and is the obvious next step.
 - The colour count is the parallel ceiling: 23 stages per substep at ~120 bonds
   each. A coarser colouring (fewer, larger stages) would raise the speedup
   without touching the sweep semantics, since only the *stage order* is physics.

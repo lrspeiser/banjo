@@ -138,8 +138,14 @@ public:
 // phase the parallel backend can spread, measured on this machine.
 [[nodiscard]] double measureParallelDispatchCost(unsigned threads, unsigned spins, unsigned dispatches);
 
-// The thread count makeParallelCpuLatticeBackend uses when asked for 0.
+// The thread count the machine would allow if it were idle.
 [[nodiscard]] unsigned defaultLatticeThreadCount();
+
+// What makeParallelCpuLatticeBackend actually uses when asked for 0: the
+// default, halved until an empty dispatch is cheap on this machine as it is
+// loaded right now, and 1 if even two threads are not worth it. The choice
+// changes speed only; the backend is bit identical at every thread count.
+[[nodiscard]] unsigned calibratedLatticeThreadCount(unsigned spins);
 
 // Throws std::runtime_error when the build has no CUDA backend or no device.
 [[nodiscard]] std::unique_ptr<LatticeBackend> makeCudaLatticeBackend(
