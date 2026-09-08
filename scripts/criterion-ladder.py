@@ -408,8 +408,9 @@ STAGES = {
         for law, short in (("strain-threshold", "old"), ("energy-scaled", "new"))
         for w in (12.0, 60.0)],
     "dt-half": lambda f: [
-        run(f"oak-{short}-10mm-v8-dt{d:g}", material="oak", cell=0.01, speed=8.0,
+        run(f"{material}-{short}-10mm-v8-dt{d:g}", material=material, cell=0.01, speed=8.0,
             law=law, dt_factor=d, force=f, window_ms=WINDOW_MS, settle_s=SETTLE_S)
+        for material in ("oak", "glass")
         for law, short in (("strain-threshold", "old"), ("energy-scaled", "new"))
         for d in (0.5, 0.25)],
 }
