@@ -239,11 +239,77 @@ of the fast lattice lane that reproduces it bit for bit, not of the criterion.
 
 ## 6. The convergence ladder
 
+### 6.1 The scene and the protocol
+
+The bridge tile of `docs/fast-gpu-checkpoint.md`: 0.24 x 0.04 x 0.16 m of
+uniform cubic cells resting on two ledges, struck in the middle of its top face
+by a 4 cm iron ball (2.11 kg) falling at 8 or 12 m/s from a 2 mm gap. Fast
+lattice CPU backend, double precision, `dt_factor 0.5`, one constraint iteration,
+horizon 2 unless stated. 20 mm cells is 192 cells and 1,704 bonds; 10 mm is
+1,536 and 18,852; 5 mm is 12,288 and 173,196.
+
+Two protocol choices matter and both were arrived at by getting them wrong first.
+
+1. **The same exit rule at every level, not the same duration.** A window sized
+   for the 20 mm cascade (which ends at 2.6 ms) closes while the 5 mm cascade is
+   still breaking bonds, and comparing a finished cascade with a truncated one
+   measures the window, not the criterion. Every row runs until the cascade has
+   been quiet for 2 ms, or until 12 ms, whichever comes first. Each row reports
+   which of the two ended it (`exit`) and when its last bond broke, so a capped
+   row is visible rather than silently mixed in.
+2. **The ladder rows do not settle.** The piece count and the largest piece are
+   measured at the handoff, before Jolt is involved. Running the rigid phase
+   costs wall time and, at 5 mm with the energy-scaled law, overflows the rigid
+   world outright (section 6.4). The recordings in section 10 settle fully.
+
+### 6.2 Glass at 8 m/s
+
+*Filled in below.*
+
+### 6.3 Oak at 8 m/s
+
+*Filled in below.*
+
+### 6.4 What the ladder shows
+
 *Filled in below.*
 
 ---
 
 ## 7. Physics check (b): glass, oak and iron under the identical strike
+
+### 7.1 Where iron's yield makes a brittle criterion inapplicable
+
+Stated plainly, before any number: **neither failure law is a valid model of
+iron, and the energy-scaled one is not more valid than the old one.**
+
+`makeReferenceMaterial(Iron)` declares `yield_strength_pa = 200 MPa` on
+E = 211 GPa, so iron yields at a strain of 9.5e-4. Both laws remove a bond well
+past that: the strength-derived threshold is 2.37e-3 (2.5x the yield strain) and
+the energy-scaled one is 2.94e-3 to 5.87e-3 over the ladder (3.1x to 6.2x). The
+lattice has no plasticity, so every one of those strains is carried as recoverable
+elastic energy that a real bar would have shed as plastic work. Three separate
+things are wrong and none of them is fixed by calibrating Gc:
+
+1. **There is no yield surface.** `MaterialModel::RigidOnly` with a brittle bond
+   criterion has one path from elastic to gone. `src/material/Plasticity.cpp`
+   exists in the engine but this lane does not use it.
+2. **Iron's Gc is not a Griffith energy.** 100,000 J/m^2 is a ductile-tearing
+   resistance dominated by plastic work in the process zone. Feeding it to a law
+   derived for the elastic energy stored in bonds prices a crack correctly only
+   if the crack is elastic-brittle, which this one is not.
+3. **LEFM does not apply at this size at all.** Iron's Irwin length
+   `E Gc / sigma_t^2` is 338 mm, more than the tile is long (240 mm). A specimen
+   smaller than its own process zone is fully plastic, not cracked, and no
+   critical-stretch law of any kind is the right model for it.
+
+The law's own bookkeeping says the same thing without being told: for iron the
+strength bound is active at every cell size on the ladder (section 2.4), which is
+exactly the "the element is far smaller than the process zone" branch of the
+crack-band rule. So under the energy-scaled law iron keeps the old law's
+thresholds, and its rows below are, by construction, the old law's rows.
+
+### 7.2 The three materials under one strike
 
 *Filled in below.*
 
