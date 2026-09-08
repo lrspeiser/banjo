@@ -33,7 +33,7 @@ def main() -> int:
     assert math.isclose(given["drop_m"], 16 / (2 * 9.81)), given["drop_m"]
 
     rejects({"algorithm": "nope"}, "algorithm must be one of")
-    rejects({"algorithm": "reference", "plate_m": [0.25, 0.20, 0.01], "cell_m": 0.004}, "cubic cells")
+    rejects({"algorithm": "reference", "plate_m": [0.25, 0.20, 0.004], "cell_m": 0.01}, "cubic cells")  # 4 mm thick, 10 mm cells: 2.5:1
     rejects({"algorithm": "reference", "plate_m": [0.5, 0.5, 0.01], "cell_m": 0.01}, "instant-run cap")
     rejects({"algorithm": "algo3", "offset_m": [0.2, 0.0]}, "offset x")
     rejects({"algorithm": "algo3", "bogus": 1}, "Unknown fracture lab fields")
