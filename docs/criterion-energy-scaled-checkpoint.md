@@ -446,7 +446,18 @@ Two protocol choices matter and both were arrived at by getting them wrong first
 2. **The ladder rows do not settle.** The piece count and the largest piece are
    measured at the handoff, before Jolt is involved. Running the rigid phase
    costs wall time and, at 5 mm with the energy-scaled law, overflows the rigid
-   world outright (section 6.4). The recordings in section 10 settle fully.
+   world outright (section 6.2). The recordings in section 10 settle fully.
+
+**Why the baseline numbers below are not the "3 -> 672" of the brief.** That
+pair comes from `docs/fast-gpu-checkpoint.md`, measured on the GPU backend in
+float with a 200 ms lattice window and its default 10 ms quiet rule. The rows
+here are the CPU backend in double with a 2 ms quiet rule and a 12 ms cap, which
+is a different protocol on purpose: it asks every rung of the ladder the same
+question and it fits inside the wall-time budget at 5 mm. Re-measured that way,
+the same strike and the same old law give **4 -> 36 -> 257** pieces at
+20 / 10 / 5 mm. The non-convergence is the same finding; only the protocol is
+tightened, and the direct comparison between the two laws below is always
+protocol-for-protocol.
 
 ### 6.2 Glass at 8 m/s
 
