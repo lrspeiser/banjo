@@ -96,6 +96,23 @@ offset o, and there are `1 / h^2` columns per unit area. So
 `latticeHorizonGeometry` walks the same offsets `buildBonds` walks and sums
 them: **N_100 = 11 at horizon 2, 70 at horizon 3.**
 
+The same argument gives `sum_half |o.n| / h^2` for a plane of any normal n
+(the lower endpoints of the crossing bonds fill a slab of thickness `|d.n|`
+against the plane, and the node density is `1/h^3`), so the crack energy the
+threshold buys depends on which lattice plane the crack runs on. That
+anisotropy is smaller than one might fear, and it is a reason to prefer
+horizon 3:
+
+| horizon | N_100 | N_110 | N_111 | worst-case error in Gc |
+|---|---:|---:|---:|---:|
+| 2 | 11.000 | 11.314 (1.029x) | 12.124 (1.102x) | +10.2% |
+| 3 | 70.000 | 69.297 (0.990x) | 69.282 (0.990x) | -1.0% |
+
+*Implemented and derived, not separately measured*: the {100} case is the one
+checked against a generated lattice (test 3b). A crack that runs on a {111}
+plane at horizon 2 therefore costs 10% more than the material's Gc, and 1% less
+at horizon 3.
+
 ### 2.3 The threshold
 
 The criterion removes a bond outright at full damage. `fracture/BondFailure.hpp`
@@ -328,12 +345,13 @@ thresholds, and its rows below are, by construction, the old law's rows.
    charge a calibrated energy, so a scene dominated by those modes is no better
    off than before. The catalogue carries one fracture energy per material and
    there is nothing to calibrate mode II and mode III against.
-3. **{100} planes only.** The threshold makes a crack on a {100} lattice plane
-   cost exactly Gc. `latticeHorizonGeometry` also reports the {110} and {111}
-   crossing sums, and they do not give the same energy per area, so a crack that
-   runs on a diagonal plane costs a different amount. Lattice-orientation
-   anisotropy of the crack energy is measured nowhere in this branch and is a
-   known defect of every bond-lattice fracture model.
+3. **Calibrated on {100} planes.** The threshold makes a crack on a {100}
+   lattice plane cost exactly Gc; a crack on a {110} or {111} plane costs a
+   different amount because a different number of bonds crosses it. The spread
+   is +2.9% and +10.2% at horizon 2 and -1.0% at horizon 3 (section 2.2), so the
+   crack energy carries a lattice-orientation bias of up to a tenth at the
+   horizon the lane ships with. That bias is computed from the offset sums, not
+   measured on a running crack.
 4. **No flaw statistics on the reference route.** `compileElasticLatticeReference`
    zeroes `strength_variation`, so every bond in the tile has the identical
    threshold. Real brittle solids localise partly because their surface flaws

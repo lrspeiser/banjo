@@ -100,6 +100,64 @@ def run(name, *, material="glass", cell=0.02, horizon=2, speed=8.0, law="strain-
     return summarise(name, report)
 
 
+STRIP_EXE = ROOT / "build" / "agent" / "Release" / "banjo_criterion_strip_probe.exe"
+# One strip geometry in metres for every resolution, so only the discretisation
+# changes between rows. 0.4 x 0.1 x 0.04 m gives 4 cells of thickness at 10 mm
+# and 16 at 2.5 mm; at 2 cells the crack front is too ragged for the swept area
+# and the bond-count area to agree (measured: 0.48 against 0.87).
+STRIP = dict(length=0.4, height=0.1, thickness=0.04, precrack=0.1, window_us=300.0)
+
+
+def strip(name, *, cell=0.005, material="glass", horizon=2, ratio=1.6,
+          law="energy-scaled", dt_factor=0.5, iterations=1, force=False):
+    OUT.mkdir(parents=True, exist_ok=True)
+    report = OUT / f"{name}.json"
+    args = [str(STRIP_EXE), "--material", material,
+            "--strip", str(STRIP["length"]), str(STRIP["height"]), str(STRIP["thickness"]),
+            "--cell", str(cell), "--horizon", str(horizon),
+            "--precrack", str(STRIP["precrack"]), "--energy-ratio", str(ratio),
+            "--failure-law", law, "--dt-factor", str(dt_factor),
+            "--iterations", str(iterations), "--window-us", str(STRIP["window_us"]),
+            "--report", str(report)]
+    if report.exists() and not force:
+        print(f"[skip] {name}")
+    else:
+        print(f"[run ] {name}", flush=True)
+        proc = subprocess.run(args, capture_output=True, text=True)
+        if proc.returncode not in (0, 2):
+            print(proc.stdout[-3000:]); print(proc.stderr[-3000:])
+            raise SystemExit(f"{name} failed with {proc.returncode}")
+        if proc.returncode == 2:
+            print(f"[refused] {name}: {proc.stderr.strip()}")
+            return None
+        print(proc.stdout.rstrip(), flush=True)
+    return strip_row(name, report)
+
+
+def strip_row(name, path):
+    d = json.loads(Path(path).read_text())
+    r, la, e, ld = d["request"], d["lattice"], d["lattice_elasticity"], d["loading"]
+    st, fi = d.get("steady") or {}, d["final"]
+    return {
+        "name": name, "material": r["material"], "law": r["failure_law"],
+        "cell_mm": r["cell_m"] * 1000.0, "horizon": r["horizon"],
+        "g_over_gc": r["energy_release_ratio"], "cells": la["cells"], "bonds": la["bonds"],
+        "nz": la["nz"], "dt_us": la["dt_s"] * 1e6, "steps": la["steps"],
+        "strain": ld["strain"], "strain_over_sc": ld["strain_over_removal_stretch"],
+        "c_R": e["rayleigh_speed_m_s"], "c_s": e["shear_speed_m_s"],
+        "advance_cells": fi["advance_cells"], "advanced": fi["advanced"],
+        "plane_broken": fi["plane_bonds_broken"], "off_plane": fi["off_plane_bonds_broken"],
+        "tip_speed": st.get("tip_speed_m_s", 0.0),
+        "v_over_cR": st.get("speed_over_rayleigh", 0.0),
+        "gc_measured": st.get("dissipated_per_area_j_m2", 0.0),
+        "gc_ratio": st.get("dissipated_over_gc", 0.0),
+        "released_per_area": st.get("elastic_released_per_area_j_m2", 0.0),
+        "area_over_swept": st.get("area_over_swept", 0.0),
+        "leak_pct_per_us": d["solver_leak"]["fraction_per_us"] * 100.0,
+        "wall_s": d["wall_s"],
+    }
+
+
 def meta_from_name(name):
     """Recover the run parameters from a row name written by run().
 
@@ -286,6 +344,18 @@ STAGES = {
         for material, c, mm in (("glass", 0.02, 20), ("glass", 0.01, 10),
                                 ("oak", 0.02, 20), ("oak", 0.01, 10))
         for law, short in (("strain-threshold", "old"), ("energy-scaled", "new"))],
+    # Physics check (a). One geometry in metres, three discretisations, plus a
+    # Griffith threshold sweep at the middle one and an oak control.
+    "strip": lambda f: [r for r in [
+        strip(f"strip-glass-{mm}mm", cell=c, force=f)
+        for c, mm in ((0.01, 10), (0.005, 5), (0.0025, 2.5))] if r],
+    "strip-griffith": lambda f: [r for r in [
+        strip(f"strip-glass-5mm-g{g:g}", cell=0.005, ratio=g, force=f)
+        for g in (0.6, 0.8, 1.0, 1.2, 1.6, 2.4)] if r],
+    "strip-materials": lambda f: [r for r in [
+        strip("strip-oak-5mm", cell=0.005, material="oak", force=f),
+        strip("strip-glass-5mm-h3", cell=0.005, horizon=3, force=f),
+        strip("strip-glass-5mm-old", cell=0.005, law="strain-threshold", force=f)] if r],
     "dt-half": lambda f: [
         run(f"oak-{short}-10mm-v8-dt{d:g}", material="oak", cell=0.01, speed=8.0,
             law=law, dt_factor=d, force=f, window_ms=WINDOW_MS, settle_s=SETTLE_S)
@@ -324,7 +394,9 @@ if __name__ == "__main__":
     rows = []
     for st in a.stage:
         rows += STAGES[st](a.force)
-    rows += [summarise(n, OUT / f"{n}.json") for n in a.summarise]
+    for n in a.summarise:
+        path = OUT / f"{n}.json"
+        rows.append(strip_row(n, path) if n.startswith("strip-") else summarise(n, path))
     print()
     print(table(rows, a.cols.split(",")))
     if a.converge:
