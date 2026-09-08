@@ -453,6 +453,30 @@ int main(int argc, char **argv) {
             std::string log;
             fastlattice::TileImpactResult result = fastlattice::runTileImpact(request, &log);
             const auto &m = result.measurements;
+            // The reference's first-failure *set*, which runTileImpact does not
+            // report: rerun the lattice phase alone, stopped one substep after
+            // the failure step the full run found, and read the bonds dead in
+            // its handoff frame. The lane is deterministic, so this reproduces
+            // the same first round; it costs a few hundred substeps.
+            std::vector<std::uint32_t> first_failure_bonds;
+            if (m.first_failure_s > 0.0 && m.dt_s > 0.0) {
+                fastlattice::TileImpactRequest probe = request;
+                probe.quiet_ms = 0.0;
+                probe.min_ms = 0.0;
+                probe.no_failure_ms = 0.0;
+                probe.max_ms = 1000.0 * (m.first_failure_s + 0.5 * m.dt_s);
+                probe.settle_limit_s = 0.0;
+                probe.lattice_frames = 1;
+                probe.rigid_frames = 1;
+                std::string probe_log;
+                const fastlattice::TileImpactResult probe_result = fastlattice::runTileImpact(probe, &probe_log);
+                for (auto frame = probe_result.frames.rbegin(); frame != probe_result.frames.rend(); ++frame) {
+                    if (frame->phase != "lattice" || frame->bond_alive.empty()) continue;
+                    for (std::uint32_t bond = 0; bond < frame->bond_alive.size(); ++bond)
+                        if (frame->bond_alive[bond] == 0U) first_failure_bonds.push_back(bond);
+                    break;
+                }
+            }
             if (!o.output.empty()) {
                 fastlattice::writePlayback(result, o.output);
                 Json artifact = Json::parse(std::ifstream(o.output, std::ios::binary));
@@ -473,7 +497,7 @@ int main(int argc, char **argv) {
                                                                  m.contact.impulse_to_material_y,
                                                                  m.contact.impulse_to_material_z})},
                                      {"model", "explicit per-substep sphere contact against every node (fastlattice)"}};
-                report["first_failure"] = {{"time_s", m.first_failure_s}, {"bond_indices", Json::array()}};
+                report["first_failure"] = {{"time_s", m.first_failure_s}, {"bond_indices", first_failure_bonds}};
                 report["rounds"] = m.failure_rounds;
                 report["broken_bonds"] = m.broken_bonds;
                 report["components"] = m.components;
@@ -487,7 +511,8 @@ int main(int argc, char **argv) {
             }
             Json summary{{"lane", "reference-explicit-lattice"}, {"cells", m.cells}, {"bonds", m.bonds},
                          {"broken_bonds", m.broken_bonds}, {"rounds", m.failure_rounds},
-                         {"first_failure_s", m.first_failure_s}, {"components", m.components},
+                         {"first_failure_s", m.first_failure_s},
+                         {"first_failure_bonds", first_failure_bonds.size()}, {"components", m.components},
                          {"largest_component_cells", m.largest_piece_cells},
                          {"removed_energy_j", m.removed_energy_j},
                          {"compute_wall_s", m.wall_total_s}, {"simulated_s", m.simulated_total_s},
