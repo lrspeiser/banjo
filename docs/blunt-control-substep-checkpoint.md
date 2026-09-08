@@ -40,9 +40,10 @@ The fix reduces damage; the old elastic contacts were the ones tearing tissue.
 
 In the suite's world the glass target sets the substep count for everything
 (thousands per tick), so the tissue is integrated far finer than its own waves
-require. The outcome does not converge with that count. Tissue and tool only,
-with the substep count forced by a coarse glass target in the same world
-(`build/blunt-probe/tissue_plus_glass{2,3}.json`; the glass never damages):
+require. The outcome changes with that count and settles only at the resolved
+end. Tissue and tool only, with the substep count forced by a stiff object in
+the same world (`scripts/blunt-control-probes.py`; the forcing object never
+damages):
 
 | substeps per tick | forced by | tissue broken / damaged | peak axial strain | first damage | tool rests at height, lateral drift |
 |---:|---|---:|---:|---:|---|
@@ -87,17 +88,16 @@ trajectory.
 
 ## Reproduce
 
-    # probes (tissue + tool; optionally a glass pacer), 720 ticks each
-    python - <<'EOF'   # writes build/blunt-probe/*.json from the fixture, see this checkpoint's tables
-    EOF
+    python scripts/blunt-control-probes.py build/blunt-probe
     build/integration/Release/banjo_playground_record.exe --package build/blunt-probe/tissue_default_damping.json --steps 720 --output rec_default.json
     build/integration/Release/banjo_playground_record.exe --package build/blunt-probe/tissue_zero_damping.json    --steps 720 --output rec_zero.json
     build/integration/Release/banjo_playground_record.exe --package build/blunt-probe/tissue_plus_glass2.json     --steps 720 --output rec_glass2.json
     build/integration/Release/banjo_playground_record.exe --package build/blunt-probe/tissue_plus_glass3.json     --steps 720 --output rec_glass3.json
-build/integration/Release/banjo_playground_record.exe --package build/blunt-probe/tissue_pacer3600.json       --steps 720 --output rec_pacer.json
+    build/integration/Release/banjo_playground_record.exe --package build/blunt-probe/tissue_pacer3600.json       --steps 720 --output rec_pacer.json
 
-The probe packages are the fixture with objects 7 and 8 (and object 1 at the
-stated resolution) kept and the unused materials dropped; nothing else changes.
-Read `report.objects[id=7]`, `report.network_substepping.substeps_per_host_tick`,
+The probe packages are the fixture with objects 7 and 8 (plus the forcing
+object) kept and the unused materials dropped; nothing else changes. Read
+`report.objects[id=7]`, `report.network_substepping.substeps_per_host_tick`,
 `report.maximum_observed_axial_strain` and
 `report.reaction_reconstruction.maximum_residual_over_irreversible_extension`.
+Wall time per probe on this machine: 2 s, 2 s, 6 min, 17 min, 31 min.
