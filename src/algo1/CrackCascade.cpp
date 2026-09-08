@@ -67,14 +67,19 @@ public:
 
     [[nodiscard]] std::size_t size() const { return released_.size(); }
     [[nodiscard]] unsigned singular() const { return singular_; }
+    [[nodiscard]] unsigned capped() const { return capped_; }
+    [[nodiscard]] unsigned overBudget() const { return over_budget_; }
 
     // Extends the released set. Returns false when the release detaches a
     // mechanism (the Schur complement collapses) and the quasi-static
     // correction for it is unbounded; the bond stays broken in the lattice but
     // is left out of the correction, and the caller reports the count.
-    bool add(std::uint32_t bond, double schur_floor) {
+    bool add(std::uint32_t bond, double schur_floor, const std::vector<double> &intact, double cap_m,
+             std::size_t maximum) {
         const BondGradient &gradient = library_->gradients()[bond];
         if (!(gradient.stiffness_n_m > 0.0)) return false;
+        if (released_.size() >= maximum) { ++over_budget_; return false; }
+        std::vector<double> saved_inverse = inverse_;
         std::vector<double> scratch;
         const double *column = library_->complianceColumn(bond, scratch);
         std::vector<double> stored(column, column + library_->dofs());
@@ -111,6 +116,22 @@ public:
         inverse_ = std::move(extended);
         released_.push_back(bond);
         columns_.push_back(std::move(stored));
+        // A quasi-static release moves the plate by micrometres. When it moves
+        // it by cells the released set has approached a mechanism the Schur
+        // test did not catch, and the correction is not a physical answer: the
+        // bond stays broken in the lattice, but it is dropped from the
+        // correction and counted. Without this the cascade runs away in one
+        // sample -- measured, before the guard, as a 1.2 m correction and
+        // every bond in the plate broken at t = 3.32 ms.
+        std::vector<double> probe = intact;
+        if (correct(intact, probe) > cap_m) {
+            inverse_ = std::move(saved_inverse);
+            released_.pop_back();
+            columns_.pop_back();
+            ++singular_;
+            ++capped_;
+            return false;
+        }
         return true;
     }
 
@@ -153,6 +174,8 @@ private:
     std::vector<std::vector<double>> columns_;
     std::vector<double> inverse_;
     unsigned singular_{};
+    unsigned capped_{};
+    unsigned over_budget_{};
 };
 
 // The envelope trackers the screen reads. For an elastic mode the amplitude
@@ -419,6 +442,8 @@ CascadeResult runCrackCascade(ActiveMatter &matter, const ImpulseLibrary &librar
         Vec3 velocity = initial_ball.velocity_m_s;
         std::vector<Vec3> position(candidates.size()), rate(candidates.size());
         const double margin = 2.0 * settings.cell_m;
+        const double recovery_cap = settings.penetration_recovery_speed_fraction *
+                                    length(initial_ball.velocity_m_s);
         std::vector<std::uint32_t> engaged;
         std::vector<Vec3> normal;
         std::vector<double> lambda, approach;
@@ -455,7 +480,14 @@ CascadeResult runCrackCascade(ActiveMatter &matter, const ImpulseLibrary &librar
                 const double penetration = initial_ball.contact_radius_m - distance;
                 maximum_penetration = std::max(maximum_penetration, penetration);
                 const double closing = dot(rate[index] - velocity, direction);
-                const double target = settings.penetration_recovery * penetration / dt;
+                // Removing the approach velocity leaves a penetration of at
+                // most one substep of closing, and it does not grow. Pushing
+                // that residue out with a velocity of penetration/dt is a
+                // Baumgarte term that injects energy without limit -- measured,
+                // before this cap, as 8.3 N.s delivered to two cells and 269 J
+                // of removed bond energy against a 17 J ball.
+                const double target = std::min(settings.penetration_recovery * penetration / dt,
+                                               recovery_cap);
                 if (closing >= target) continue;
                 engaged.push_back(static_cast<std::uint32_t>(index));
                 normal.push_back(direction);
@@ -481,11 +513,26 @@ CascadeResult runCrackCascade(ActiveMatter &matter, const ImpulseLibrary &librar
             lambda.assign(engaged.size(), 0.0);
             const double inverse_ball = 1.0 / initial_ball.mass_kg;
             Vec3 ball_change{};
+            // The cell's response to an impulse along n is n^T M^-1 n over its
+            // *free* axes only: a cell the support holds in y cannot move that
+            // way, and pretending it can makes the penetration recovery inject
+            // impulse without limit when the ball lands over a ledge.
+            std::vector<double> node_response(engaged.size(), 0.0);
+            for (std::size_t entry = 0; entry < engaged.size(); ++entry) {
+                const std::uint32_t node = candidates[engaged[entry]].node;
+                const double component[3] = {normal[entry].x, normal[entry].y, normal[entry].z};
+                double sum = 0.0;
+                for (unsigned axis = 0; axis < 3U; ++axis)
+                    if (library.freeDofOf()[3U * node + axis] != kFixedDof)
+                        sum += component[axis] * component[axis];
+                node_response[entry] = sum / matter.nodes[node].mass_kg;
+            }
             for (unsigned sweep = 0; sweep < settings.contact_sweeps; ++sweep) {
                 double movement = 0.0;
                 for (std::size_t entry = 0; entry < engaged.size(); ++entry) {
                     const std::uint32_t index = engaged[entry];
-                    const double inverse_mass = 1.0 / matter.nodes[candidates[index].node].mass_kg;
+                    (void)index;
+                    const double inverse_mass = node_response[entry];
                     const double diagonal = inverse_mass + inverse_ball;
                     const double current = approach[entry] + lambda[entry] * inverse_mass -
                                            dot(ball_change, normal[entry]);
@@ -668,7 +715,9 @@ CascadeResult runCrackCascade(ActiveMatter &matter, const ImpulseLibrary &librar
         result.maximum_shear_strain = std::max(result.maximum_shear_strain, summary.maximum_shear_strain);
         if (!removed.empty()) {
             const auto update_start = Clock::now();
-            for (const std::uint32_t bond : removed) woodbury.add(bond, settings.schur_floor);
+            for (const std::uint32_t bond : removed)
+                woodbury.add(bond, settings.schur_floor, intact, settings.correction_cap_m,
+                             settings.maximum_released);
             const double update_wall = since(update_start);
             result.timings.woodbury_s += update_wall;
             broken_total += removed.size();
@@ -725,6 +774,8 @@ CascadeResult runCrackCascade(ActiveMatter &matter, const ImpulseLibrary &librar
     result.last_failure_time_s = last_failure;
     result.simulated_s = stop_time;
     result.singular_releases = woodbury.singular();
+    result.capped_releases = woodbury.capped();
+    result.released_bonds = woodbury.size();
     result.ball = ball;
     result.timings.sample_s = result.timings.field_s + result.timings.criterion_s + result.timings.woodbury_s;
     result.timings.total_s = since(total_start);

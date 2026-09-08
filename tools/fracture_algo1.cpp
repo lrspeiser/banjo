@@ -94,6 +94,9 @@ struct Options {
     // Dense products are memory-bound; more threads than this only contend,
     // and other lanes share this machine. 0 leaves OpenMP's own default.
     unsigned threads{6};
+    double schur_floor{1.0e-3};
+    double correction_cap_m{2.0e-2};
+    std::size_t maximum_released{512};
 };
 
 double number(const std::string &value) {
@@ -165,6 +168,9 @@ Options parse(int argc, char **argv) {
         else if (option == "--no-cache") o.no_cache = true;
         else if (option == "--max-bodies") o.max_bodies = static_cast<unsigned>(number(value()));
         else if (option == "--threads") o.threads = static_cast<unsigned>(number(value()));
+        else if (option == "--schur-floor") o.schur_floor = number(value());
+        else if (option == "--correction-cap") o.correction_cap_m = number(value());
+        else if (option == "--max-released") o.maximum_released = static_cast<std::size_t>(number(value()));
         else throw std::runtime_error("unknown option: " + std::string(option));
     }
     if (have_speed && o.speed_m_s >= 0.0) o.drop_m = o.speed_m_s * o.speed_m_s / (2.0 * kGravity);
@@ -519,6 +525,9 @@ int main(int argc, char **argv) {
         settings.quiet_s = o.quiet_s;
         settings.cell_m = o.cell_m;
         settings.maximum_frames = o.frames;
+        settings.schur_floor = o.schur_floor;
+        settings.correction_cap_m = o.correction_cap_m;
+        settings.maximum_released = o.maximum_released;
         algo1::Ball ball = scene.ball;
         algo1::CascadeResult cascade = algo1::runCrackCascade(scene.matter, library, ball, settings);
 
@@ -645,6 +654,8 @@ int main(int argc, char **argv) {
                          {"events", cascade.contact.events},
                          {"duration_s", cascade.contact.duration_s},
                          {"maximum_penetration_m", cascade.contact.maximum_penetration_m},
+                         {"penetration_recovery", settings.penetration_recovery},
+                         {"penetration_recovery_speed_fraction", settings.penetration_recovery_speed_fraction},
                          {"largest_node_displacement_m", cascade.contact.largest_node_displacement_m},
                          {"ball_speed_end_m_s", cascade.contact.ball_speed_end_m_s},
                          {"wall_s", cascade.contact.wall_s}}},
@@ -690,6 +701,11 @@ int main(int argc, char **argv) {
                         {"samples", cascade.samples}, {"skipped_samples", cascade.skipped_samples},
                         {"simulated_s", cascade.simulated_s},
                         {"singular_releases", cascade.singular_releases},
+                        {"capped_releases", cascade.capped_releases},
+                        {"released_bonds", cascade.released_bonds},
+                        {"maximum_released", settings.maximum_released},
+                        {"schur_floor", settings.schur_floor},
+                        {"correction_cap_m", settings.correction_cap_m},
                         {"maximum_tensile_stretch", cascade.maximum_tensile_stretch},
                         {"maximum_compressive_strain", cascade.maximum_compressive_strain},
                         {"maximum_shear_strain", cascade.maximum_shear_strain},

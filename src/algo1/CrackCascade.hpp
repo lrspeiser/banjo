@@ -78,12 +78,28 @@ struct CascadeSettings {
     unsigned contact_sweeps{32};
     // Uniform cell size, used only to place the single-impulse footprint.
     double cell_m{0.01};
-    // Fraction of the penetration removed per substep by the contact solve.
-    double penetration_recovery{0.8};
-    // A released bond whose Schur complement falls below this fraction of the
-    // bond's own compliance has detached a mechanism: the quasi-static
-    // correction is unbounded there and the bond is left out of it.
-    double schur_floor{1.0e-9};
+    // Fraction of the penetration removed per substep by the contact solve, and
+    // the ceiling on the recovery speed as a fraction of the impact speed. The
+    // constraint already holds the approach velocity at zero, so the residue is
+    // one substep of closing and does not grow; recovering it faster than this
+    // pumps energy into the cells under the ball.
+    double penetration_recovery{0.25};
+    double penetration_recovery_speed_fraction{0.02};
+    // A released bond may not carry more than (1 - schur_floor) of the
+    // structure's stiffness along its own axis: below that the released set has
+    // reached a mechanism, the quasi-static correction is unbounded, and the
+    // bond is left out of the correction (it still breaks in the lattice).
+    double schur_floor{1.0e-3};
+    // Bonds the Woodbury correction may carry at once. The correction costs
+    // O(k^2) to extend and O(k^2 + n k) to apply, so an unbounded released set
+    // turns a shattering plate into an hour of arithmetic. Past the cap a bond
+    // still breaks in the lattice and is still a cut in the connectivity; it
+    // just stops contributing a released force, which is reported.
+    std::size_t maximum_released{512};
+    // Hard cap on how far one release may move any degree of freedom. A
+    // quasi-static release moves the plate by micrometres; a correction of
+    // cells is a near-singular set the Schur test let through.
+    double correction_cap_m{2.0e-2};
 };
 
 struct CascadeRound {
@@ -155,6 +171,8 @@ struct CascadeResult {
     double simulated_s{};
     double maximum_tensile_stretch{}, maximum_compressive_strain{}, maximum_shear_strain{};
     unsigned singular_releases{};
+    unsigned capped_releases{};
+    std::size_t released_bonds{};
     Ball ball{};
 };
 
