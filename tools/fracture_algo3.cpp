@@ -72,6 +72,7 @@ struct LaneOptions {
     unsigned threads{0};
     unsigned spins{0};
     bool exactness{true};
+    std::uint64_t exactness_steps{20000};
     double gate_amplitude{1.0e-6};
 };
 
@@ -571,7 +572,18 @@ int runLane(const LaneOptions &options) {
     // Exactness against plain explicit stepping of the same lattice.
     nlohmann::json exactness;
     if (options.exactness) {
-        const RunControl control = laneControl(setup);
+        // The comparison runs the whole window twice more, once on one thread.
+        // On a long cascade that costs minutes, and the Fracture lab panel
+        // gives the lane sixty seconds, so the comparison is capped: it always
+        // covers the first failure and the front of the cascade, and the report
+        // says how much of the window it covered.
+        RunControl control = laneControl(setup);
+        const std::uint64_t window = m.lattice_steps;
+        const bool full_window = window <= options.exactness_steps;
+        control.max_steps = full_window ? window : options.exactness_steps;
+        control.quiet_steps = 0;
+        control.min_steps = 0;
+        control.no_failure_steps = 0;
         const LatticeOutcome reference = runLattice(setup, initial, sphere, false, 1, Precision::Double, control);
         const LatticeOutcome lane =
             options.reference ? reference
@@ -595,6 +607,9 @@ int runLane(const LaneOptions &options) {
                                                   Precision::Double, lane.status.first_failure_step);
         exactness = {{"max_du_m", max_du},
                      {"max_dv_m_s", max_dv},
+                     {"compared_substeps", control.max_steps},
+                     {"window_substeps", window},
+                     {"full_window", full_window},
                      {"max_damage_difference", max_damage},
                      {"broken_set_identical", alive_mismatches == 0},
                      {"alive_mismatches", alive_mismatches},
@@ -705,6 +720,11 @@ void usage() {
         "  --cache DIR          propagator cache (default build/fracture-cache)\n"
         "  --reference          plain explicit stepping instead of the lane\n"
         "  --precision float|double\n"
+        "  --threads N          worker threads (0 = the measured default)\n"
+        "  --exactness-steps N  substeps compared against plain stepping (default 20000)\n"
+        "  --no-exactness       skip the comparison against plain explicit stepping\n"
+        "  --precompute         build and cache P and its powers, report the cost\n"
+        "  --bench              time the lattice phase serial and parallel\n"
         "  --probe              measure the substep map's linearity and exit\n"
         "  --probe-steps N      substeps of the real scene before the loaded probe\n"
         "  --probe-amplitude A  single probe amplitude in metres\n";
@@ -745,6 +765,7 @@ int main(int argc, char **argv) {
             else if (option == "--jump") options.jump = static_cast<std::uint32_t>(number(value()));
             else if (option == "--threads") options.threads = static_cast<unsigned>(number(value()));
             else if (option == "--no-exactness") options.exactness = false;
+            else if (option == "--exactness-steps") options.exactness_steps = static_cast<std::uint64_t>(number(value()));
             else if (option == "--gate-amplitude") options.gate_amplitude = number(value());
             else if (option == "--spins") options.spins = static_cast<unsigned>(number(value()));
             else throw std::invalid_argument("unknown option " + std::string(option));
