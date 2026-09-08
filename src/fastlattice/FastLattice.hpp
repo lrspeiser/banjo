@@ -69,7 +69,7 @@ struct RunControl {
     std::uint64_t steps_per_launch{};
 };
 
-constexpr unsigned kPhaseCount = 14;
+constexpr unsigned kPhaseCount = 16;
 // Names of the per-substep phases the backends attribute time to.
 [[nodiscard]] const char *latticePhaseName(unsigned phase);
 
@@ -81,6 +81,15 @@ struct RunStatus {
     std::uint32_t broken_bonds{};
     double removed_energy_j{};
     ContactAccumulators contact{};
+    NodeContactAccumulators node_contact{};
+    // Only with StepSettings::audit_energy: kinetic energy the radial bond
+    // damping sweep and the striker contact passes removed from the lattice,
+    // measured as a difference of the lattice's total kinetic energy across each
+    // phase, so they can be compared with node_contact.dissipated_kinetic_energy_j
+    // on the same footing.
+    double damping_dissipated_j{};
+    double striker_dissipated_j{};
+    bool energy_audited{};
     // 0 none/max_steps of the last call, 1 cascade quiet, 2 no failure by the
     // deadline, 3 max_steps reached.
     unsigned exit_reason{};

@@ -35,6 +35,8 @@ public:
         sphere_ = convertSphere<Real>(sphere);
         status_ = {};
         dirty_start_ = true;
+        contact_rebuild_ = true;
+        status_.energy_audited = S_.audit_energy != 0;
         frames_.clear();
         first_failure_bonds_.clear();
     }
@@ -138,7 +140,11 @@ private:
         }
         sphere_ = kicked;
         mark(3);
-        if (S_.sphere_enabled) sphereContactPass(L_, S_, sphere_, 1, status_.contact);
+        if (S_.sphere_enabled) {
+            const double before = S_.audit_energy ? latticeKineticEnergy(L_) : 0.0;
+            sphereContactPass(L_, S_, sphere_, 1, status_.contact);
+            if (S_.audit_energy) status_.striker_dissipated_j += before - latticeKineticEnergy(L_);
+        }
         mark(4);
         for (std::uint32_t iteration = 0; iteration < S_.constraint_iterations; ++iteration) {
             const bool first = iteration == 0;
@@ -156,13 +162,33 @@ private:
         for (std::uint32_t i = 0; i < N; ++i) nodeVelocityUpdate(L_, S_, i);
         mark(8);
         if (S_.damping_fraction > Real(0)) {
+            const double before = S_.audit_energy ? latticeKineticEnergy(L_) : 0.0;
             sweepAll([&](std::uint32_t j) { bondDamp(L_, j, S_.damping_fraction, direct); });
+            if (S_.audit_energy) status_.damping_dissipated_j += before - latticeKineticEnergy(L_);
             for (std::uint32_t i = 0; i < N; ++i)
                 if (!L_.candidate[i]) nodeSupportVelocity(L_, S_, i);
             mark(9);
         }
-        if (S_.sphere_enabled) sphereContactPass(L_, S_, sphere_, 2, status_.contact);
+        if (S_.sphere_enabled) {
+            const double before = S_.audit_energy ? latticeKineticEnergy(L_) : 0.0;
+            sphereContactPass(L_, S_, sphere_, 2, status_.contact);
+            if (S_.audit_energy) status_.striker_dissipated_j += before - latticeKineticEnergy(L_);
+        }
         mark(10);
+        if (S_.node_contact.mode != kNodeContactOff) {
+            if (contact_rebuild_ || nodeContactStale(L_, S_)) {
+                for (std::uint32_t i = 0; i < N; ++i) nodeContactStoreCell(L_, S_, i);
+                nodeContactHashBuild(L_, S_);
+                for (std::uint32_t i = 0; i < N; ++i)
+                    status_.node_contact.pair_overflow += nodeContactGather(L_, S_, i);
+                status_.node_contact.pairs_listed += nodeContactActiveList(L_);
+                ++status_.node_contact.rebuilds;
+                contact_rebuild_ = false;
+            }
+            mark(14);
+            nodeContactPass(L_, S_, status_.node_contact);
+            mark(15);
+        }
         for (std::uint32_t i = 0; i < N; ++i) nodeStrain(L_, i, direct);
         mark(11);
         bool any_failed = false;
@@ -185,7 +211,9 @@ private:
         status_.rank_deficient_nodes = working_.rank_deficient_nodes.front();
         sphere_.center = sphere_.center + S_.dt * sphere_.velocity;
         sphereSupportContact(S_, sphere_, status_.contact);
-        if (any_failed) dirty_start_ = true;
+        // A failure changes which pairs no live bond holds, so the pair list is
+        // rebuilt before it is used again.
+        if (any_failed) dirty_start_ = contact_rebuild_ = true;
         mark(13);
         return any_failed;
     }
@@ -199,6 +227,7 @@ private:
     SphereState<Real> sphere_{};
     RunStatus status_{};
     bool dirty_start_{true};
+    bool contact_rebuild_{true};
     std::vector<FrameCapture> frames_;
     std::vector<std::uint32_t> first_failure_bonds_;
 };

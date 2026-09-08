@@ -16,7 +16,8 @@ const char *latticePhaseName(unsigned phase) {
     static const char *const names[kPhaseCount] = {
         "capture", "start_sample_nodes", "start_sample_bonds", "kick_classify", "contact_pass_1",
         "sweep_interior", "sweep_boundary", "support_project", "velocity_update", "damping",
-        "contact_pass_2", "end_sample_nodes", "end_sample_bonds", "sphere_exit"};
+        "contact_pass_2", "end_sample_nodes", "end_sample_bonds", "sphere_exit",
+        "node_contact_broad", "node_contact_narrow"};
     return phase < kPhaseCount ? names[phase] : "unknown";
 }
 

@@ -636,6 +636,425 @@ void colourOrderIsBrittleBondSolverInAPermutedOrder() {
             "the first failure does not depend on the sweep order");
 }
 
+// -------------------------------------------------------------------------
+// 6. Node-to-node contact.
+// -------------------------------------------------------------------------
+
+// Two cells on the x axis, `separation` apart, optionally joined by a bond.
+// Nothing else exists: no ground, no gravity, no striker and no damping, so a
+// node contact is the only thing that can change either cell's motion.
+struct TwoCells {
+    CompiledBrittleMaterial compiled{};
+    std::unique_ptr<LatticeAsset> asset;
+    ActiveMatter matter;
+    LatticeSchedule schedule;
+    StepSettings<double> settings{};
+    LatticeState state;
+    double cell{}, radius{};
+};
+
+std::unique_ptr<TwoCells> twoCells(double cell, double separation, bool bonded, std::uint8_t mode,
+                                   double mass_ratio = 1.0) {
+    auto p = std::make_unique<TwoCells>();
+    p->cell = cell;
+    p->radius = 0.5 * cell;
+    p->compiled = referenceMaterial(MaterialPreset::Glass, cell, 2);
+    p->asset = std::make_unique<LatticeAsset>();
+    LatticeAsset &a = *p->asset;
+    for (int i = 0; i < 2; ++i) {
+        LatticeNodeRest node{};
+        node.local_position_m = {(i == 0 ? -0.5 : 0.5) * separation, 0.0, 0.0};
+        node.grid = {i, 0, 0};
+        node.represented_volume_m3 = cell * cell * cell;
+        node.surface_node = true;
+        a.nodes.push_back(node);
+    }
+    a.adjacency_offsets.assign(3, 0U);
+    if (bonded) {
+        BondRest bond{};
+        bond.node_a = 0;
+        bond.node_b = 1;
+        bond.rest_length_m = separation; // at rest: the bond pulls nothing
+        bond.compliance = p->compiled.bond_compliance;
+        // Thresholds far out of reach: this test is about contact, and a bond
+        // that failed would change which rule applies to the pair.
+        bond.damage_start_stretch = 1.0;
+        bond.damage_end_stretch = 2.0;
+        bond.compression_damage_start_strain = 1.0;
+        bond.compression_damage_end_strain = 2.0;
+        bond.shear_damage_start_strain = 1.0;
+        bond.shear_damage_end_strain = 2.0;
+        a.bonds.push_back(bond);
+        a.adjacency_offsets = {0U, 1U, 2U};
+        a.adjacent_bond_indices = {0U, 0U};
+    }
+    p->matter.asset = p->asset.get();
+    p->matter.material = p->compiled;
+    for (std::size_t i = 0; i < a.nodes.size(); ++i) {
+        const Vec3 position = a.nodes[i].local_position_m;
+        const double mass = a.nodes[i].represented_volume_m3 * p->compiled.density_kg_m3 *
+                            (i == 1 ? mass_ratio : 1.0);
+        p->matter.nodes.push_back({position, position, {}, mass, {}});
+        p->matter.reference_positions_world_m.push_back(position);
+    }
+    p->matter.bonds.resize(a.bonds.size());
+    p->schedule = buildLatticeSchedule(a);
+
+    StepSettings<double> &S = p->settings;
+    S.dt = 1.0e-6;
+    S.gravity = {0.0, 0.0, 0.0};
+    S.constraint_iterations = 1;
+    S.damping_fraction = 0.0;
+    S.sphere_enabled = 0;
+    S.direct_arithmetic = 1;
+    S.support.plane_count = 0;
+    S.node_contact.mode = mode;
+    S.node_contact.radius = 0.5 * cell;
+    S.node_contact.skin = 0.25 * cell;
+    S.node_contact.margin = 1.0e-5;
+    S.node_contact.restitution = 0.0;
+    S.node_contact.restitution_speed_threshold = 0.5;
+    S.node_contact.static_friction = 0.5;
+    S.node_contact.dynamic_friction = 0.4;
+    S.node_contact.bucket_mask = latticeContactBucketMask(2U);
+
+    p->state = buildLatticeState(p->matter, p->schedule, Vec3{});
+    return p;
+}
+
+struct PairRun {
+    double minimum_separation_m{};
+    double final_separation_m{};
+    double momentum_before{}, momentum_after{};
+    RunStatus status;
+    LatticeState state;
+};
+
+// Steps the pair, sampling the separation every substep so a pass-through
+// cannot hide between samples.
+PairRun runPair(TwoCells &p, double v0, double v1, std::uint64_t steps, unsigned threads) {
+    LatticeState state = p.state;
+    state.v[0] = v0;
+    state.v[3] = v1;
+    const double m0 = state.mass[0], m1 = state.mass[1];
+    PairRun out;
+    out.momentum_before = m0 * v0 + m1 * v1;
+    auto backend = threads == 0 ? makeCpuLatticeBackend(p.schedule, Precision::Double)
+                                : makeParallelCpuLatticeBackend(p.schedule, Precision::Double, threads);
+    SphereState<double> sphere{};
+    sphere.radius = 1.0;
+    sphere.mass = 1.0;
+    sphere.inertia = 1.0;
+    backend->upload(state, p.settings, sphere);
+    out.minimum_separation_m = std::numeric_limits<double>::infinity();
+    RunControl control{};
+    control.max_steps = 1;
+    for (std::uint64_t s = 0; s < steps; ++s) {
+        out.status = backend->run(control);
+        LatticeState probe = state;
+        SphereState<double> probe_sphere = sphere;
+        backend->download(probe, probe_sphere);
+        const double separation = (probe.x0[3] + probe.u[3]) - (probe.x0[0] + probe.u[0]);
+        out.minimum_separation_m = std::min(out.minimum_separation_m, separation);
+        out.final_separation_m = separation;
+        out.state = probe;
+    }
+    out.momentum_after = m0 * out.state.v[0] + m1 * out.state.v[3];
+    return out;
+}
+
+void unbondedCellsDoNotPassThroughEachOther() {
+    const double cell = 0.01, touch = cell; // two cells touch one cell apart
+    const double speed = 2.0;
+    // Two cells apart, closing at 4 m/s: 2.5 ms to touch, 6 ms of run.
+    const std::uint64_t steps = 6000;
+    auto without = twoCells(cell, 2.0 * cell, false, kNodeContactOff);
+    const PairRun off = runPair(*without, speed, -speed, steps, 0);
+    auto with = twoCells(cell, 2.0 * cell, false, kNodeContactOn);
+    const PairRun on = runPair(*with, speed, -speed, steps, 0);
+    std::cout << "  unbonded pair closing at " << 2.0 * speed << " m/s: contact off -> minimum separation "
+              << off.minimum_separation_m << " m (touching is " << touch << "), contact on -> "
+              << on.minimum_separation_m << " m, " << on.status.node_contact.contacts << " contacts\n";
+    require(off.minimum_separation_m < 0.0,
+            "without contact the two cells must pass clean through each other; the test proves nothing otherwise");
+    require(on.status.node_contact.contacts > 0, "contact never engaged on an unbonded closing pair");
+    // The margin is what the response is allowed to leave; anything deeper is
+    // an overlap the contact failed to stop.
+    require(on.minimum_separation_m > touch - 2.0 * with->settings.node_contact.margin,
+            "the unbonded pair overlapped by more than the contact margin");
+    require(on.final_separation_m >= on.minimum_separation_m,
+            "the pair did not come apart again after the contact");
+}
+
+void bondedCellsAreUntouchedByContact() {
+    // Deeply overlapping and held there by their own bond's rest length: if
+    // contact acted on a bonded pair this configuration would be blown apart.
+    const double cell = 0.01, separation = 0.6 * cell;
+    auto bonded_off = twoCells(cell, separation, true, kNodeContactOff);
+    auto bonded_on = twoCells(cell, separation, true, kNodeContactOn);
+    const PairRun off = runPair(*bonded_off, 0.0, 0.0, 2000, 0);
+    const PairRun on = runPair(*bonded_on, 0.0, 0.0, 2000, 0);
+    std::cout << "  bonded pair overlapping by " << (cell - separation) * 1e3 << " mm: "
+              << on.status.node_contact.pairs_listed << " pairs listed, "
+              << on.status.node_contact.contacts << " contacts, separation " << on.final_separation_m
+              << " m (contact off: " << off.final_separation_m << " m)\n";
+    require(on.status.node_contact.rebuilds > 0, "the broad phase never ran, so it proves nothing");
+    require(on.status.node_contact.pairs_listed == 0, "a live bond's pair was put in the contact list");
+    require(on.status.node_contact.contacts == 0, "contact acted on a pair a live bond already holds");
+    for (std::size_t i = 0; i < off.state.u.size(); ++i)
+        require(on.state.u[i] == off.state.u[i], "contact moved a bonded pair");
+    for (std::size_t i = 0; i < off.state.v.size(); ++i)
+        require(on.state.v[i] == off.state.v[i], "contact changed a bonded pair's velocity");
+    // ... and the same pair with its bond dead is exactly the case contact is
+    // for, so it must separate. That is what makes the assertion above a rule
+    // and not an accident of the geometry.
+    auto broken = twoCells(cell, separation, true, kNodeContactOn);
+    broken->state.alive[0] = 0;
+    broken->state.nbr_alive[broken->state.bond_slot_a[0]] = 0;
+    broken->state.nbr_alive[broken->state.bond_slot_b[0]] = 0;
+    const PairRun dead = runPair(*broken, 0.0, 0.0, 2000, 0);
+    std::cout << "  the same pair with the bond dead: " << dead.status.node_contact.pairs_listed
+              << " pairs listed, worst correction " << dead.status.node_contact.maximum_position_correction_m
+              << " m, separation " << dead.final_separation_m << " m\n";
+    require(dead.status.node_contact.pairs_listed > 0, "a failed bond's pair was not put in the contact list");
+    // At rest and already overlapping there is no approach to stop, so the
+    // response is the overlap correction alone and no impulse is applied. The
+    // pair must end up touching, not overlapping.
+    require(dead.status.node_contact.maximum_position_correction_m > 0.0,
+            "contact did not correct the overlap of a pair whose bond had failed");
+    require(dead.final_separation_m > cell - 2.0 * broken->settings.node_contact.margin,
+            "the failed pair was not pushed apart to touching");
+}
+
+void contactConservesMomentum() {
+    // Unequal masses and an unbalanced closing pair, so a response that was not
+    // equal and opposite would show up in the total.
+    const double cell = 0.01;
+    auto p = twoCells(cell, 2.0 * cell, false, kNodeContactOn, 3.0);
+    const PairRun run = runPair(*p, 4.0, -1.0, 8000, 0);
+    const double scale = std::max(std::abs(run.momentum_before), 1e-30);
+    const double drift = std::abs(run.momentum_after - run.momentum_before) / scale;
+    double residual = 0.0;
+    for (const double component : {run.status.node_contact.momentum_residual_x,
+                                   run.status.node_contact.momentum_residual_y,
+                                   run.status.node_contact.momentum_residual_z})
+        residual = std::max(residual, std::abs(component));
+    // Control: the same pair, same velocities, contact off, so it never
+    // interacts. Its drift is the XPBD velocity reconstruction alone --
+    // v = (u - u_prev) / dt every substep -- which is what the total below
+    // carries as well; the contact's own contribution is the residual.
+    auto control = twoCells(cell, 2.0 * cell, false, kNodeContactOff, 3.0);
+    const PairRun free_flight = runPair(*control, 4.0, -1.0, 8000, 0);
+    const double control_drift =
+        std::abs(free_flight.momentum_after - free_flight.momentum_before) / scale;
+    std::cout << "  momentum " << run.momentum_before << " -> " << run.momentum_after << " kg m/s (relative drift "
+              << drift << ", free flight without contact " << control_drift << ") over "
+              << run.status.node_contact.contacts << " contacts, reported residual " << residual
+              << " N s, dissipated " << run.status.node_contact.dissipated_kinetic_energy_j << " J\n";
+    require(run.status.node_contact.contacts > 0, "no contact happened, so nothing was conserved");
+    require(residual < 1e-14 * scale,
+            "node contact created momentum: the response is not equal and opposite");
+    require(drift < 1e-10, "the pair's momentum moved by more than the velocity reconstruction's rounding");
+    require(run.status.node_contact.dissipated_kinetic_energy_j > 0.0,
+            "a zero-restitution contact removed no kinetic energy");
+}
+
+void parallelBackendMatchesSerialWithContact() {
+    // A pair first: the narrow phase is the same one thread's work in both
+    // backends, and this asserts it.
+    for (const unsigned threads : {2U, 4U, 8U}) {
+        auto serial_pair = twoCells(0.01, 0.02, false, kNodeContactOn, 3.0);
+        auto parallel_pair = twoCells(0.01, 0.02, false, kNodeContactOn, 3.0);
+        const PairRun serial = runPair(*serial_pair, 4.0, -1.0, 4000, 0);
+        const PairRun parallel = runPair(*parallel_pair, 4.0, -1.0, 4000, threads);
+        for (std::size_t i = 0; i < serial.state.u.size(); ++i)
+            require(parallel.state.u[i] == serial.state.u[i] && parallel.state.v[i] == serial.state.v[i],
+                    "the parallel backend moved a contacting pair differently");
+        require(parallel.status.node_contact.contacts == serial.status.node_contact.contacts &&
+                    parallel.status.node_contact.dissipated_kinetic_energy_j ==
+                        serial.status.node_contact.dissipated_kinetic_energy_j,
+                "the parallel backend reported a different contact ledger");
+    }
+    // Then a fracture cascade, where the pair list changes every failure round
+    // and the narrow phase runs over hundreds of pairs.
+    TileImpactRequest request = smallScene(BackendKind::Cpu, Precision::Double, 1);
+    request.ball_speed_m_s = 20.0;
+    auto setup = buildTileImpactSetup(request);
+    RunControl control{};
+    control.max_steps = 4000;
+    const auto run = [&](unsigned threads) {
+        LatticeState state = buildLatticeState(setup->matter, setup->schedule, setup->origin);
+        SphereState<double> sphere = setup->sphere_world;
+        sphere.center = sphere.center - V3<double>{setup->origin.x, setup->origin.y, setup->origin.z};
+        auto backend = threads == 0
+            ? makeCpuLatticeBackend(setup->schedule, Precision::Double)
+            : makeParallelCpuLatticeBackend(setup->schedule, Precision::Double, threads);
+        backend->upload(state, setup->settings_scene, sphere);
+        const RunStatus status = backend->run(control);
+        backend->download(state, sphere);
+        return std::pair<LatticeState, RunStatus>{std::move(state), status};
+    };
+    const auto [serial_state, serial_status] = run(0);
+    require(serial_status.broken_bonds > 0 && serial_status.node_contact.contacts > 0,
+            "the cascade scene neither fractured nor contacted; it proves nothing");
+    std::cout << "  cascade with contact: " << serial_status.broken_bonds << " bonds broken, "
+              << serial_status.node_contact.contacts << " contacts, "
+              << serial_status.node_contact.rebuilds << " rebuilds, worst overlap "
+              << serial_status.node_contact.maximum_overlap_m << " m\n";
+    for (const unsigned threads : {2U, 4U, 8U}) {
+        const auto [parallel_state, parallel_status] = run(threads);
+        for (std::size_t i = 0; i < serial_state.u.size(); ++i)
+            require(parallel_state.u[i] == serial_state.u[i] && parallel_state.v[i] == serial_state.v[i],
+                    "the parallel backend diverged from the serial one with contact on, at " +
+                        std::to_string(threads) + " threads");
+        require(aliveMismatches(parallel_state, serial_state) == 0,
+                "the parallel backend broke a different bond set with contact on");
+        require(parallel_status.node_contact.contacts == serial_status.node_contact.contacts &&
+                    parallel_status.node_contact.rebuilds == serial_status.node_contact.rebuilds &&
+                    parallel_status.node_contact.dissipated_kinetic_energy_j ==
+                        serial_status.node_contact.dissipated_kinetic_energy_j &&
+                    parallel_status.node_contact.maximum_overlap_m ==
+                        serial_status.node_contact.maximum_overlap_m,
+                "the parallel backend reported a different contact ledger at " + std::to_string(threads) +
+                    " threads");
+    }
+}
+
+// Off is the lane as it was, and measuring is not acting: the broad phase and
+// the overlap record must leave every number the run reports untouched.
+void measuringTheOverlapChangesNothing() {
+    TileImpactRequest request = smallScene(BackendKind::Cpu, Precision::Double, 1);
+    request.ball_speed_m_s = 20.0;
+    const auto run = [&](NodeContactMode mode) {
+        TileImpactRequest local = request;
+        local.node_contact = mode;
+        auto setup = buildTileImpactSetup(local);
+        LatticeState state = buildLatticeState(setup->matter, setup->schedule, setup->origin);
+        SphereState<double> sphere = setup->sphere_world;
+        sphere.center = sphere.center - V3<double>{setup->origin.x, setup->origin.y, setup->origin.z};
+        auto backend = makeCpuLatticeBackend(setup->schedule, Precision::Double);
+        backend->upload(state, setup->settings_scene, sphere);
+        RunControl control{};
+        control.max_steps = 4000;
+        const RunStatus status = backend->run(control);
+        backend->download(state, sphere);
+        return std::pair<LatticeState, RunStatus>{std::move(state), status};
+    };
+    const auto [off_state, off_status] = run(NodeContactMode::Off);
+    const auto [measure_state, measure_status] = run(NodeContactMode::Measure);
+    std::cout << "  measure mode: worst overlap " << measure_status.node_contact.maximum_overlap_m
+              << " m over " << measure_status.node_contact.pair_tests << " pair tests, "
+              << off_status.broken_bonds << " bonds broken either way\n";
+    require(measure_status.node_contact.pair_tests > 0, "the measure mode tested no pair");
+    require(measure_status.node_contact.maximum_overlap_m > 0.0,
+            "the measure mode found no overlap, so it is not measuring the case it exists for");
+    require(measure_status.node_contact.contacts == 0, "the measure mode applied a response");
+    for (std::size_t i = 0; i < off_state.u.size(); ++i)
+        require(measure_state.u[i] == off_state.u[i] && measure_state.v[i] == off_state.v[i],
+                "measuring the overlap moved a node");
+    require(aliveMismatches(measure_state, off_state) == 0, "measuring the overlap changed the broken set");
+    require(measure_status.broken_bonds == off_status.broken_bonds &&
+                measure_status.removed_energy_j == off_status.removed_energy_j &&
+                measure_status.first_failure_step == off_status.first_failure_step,
+            "measuring the overlap changed the fracture answer");
+}
+
+// The CUDA kernel runs the same broad and narrow phases: the per-node steps are
+// spread over its threads, the hash build, the staleness scan and the whole
+// narrow phase run on its leader thread. A scene that contacts hard is the only
+// way to assert that, since the windows the other CUDA suites use never list a
+// pair (their broken bonds are all longer than the contact reach).
+void cudaAgreesWithContact() {
+    const std::uint64_t steps = 4000;
+    TileImpactRequest cpu_request = smallScene(BackendKind::Cpu, Precision::Double, 1);
+    cpu_request.ball_speed_m_s = 20.0;
+    const Advanced reference = advance(cpu_request, steps);
+    require(reference.status.node_contact.contacts > 0, "the CUDA contact window never contacts");
+    std::cout << "  cpu double: " << reference.status.broken_bonds << " bonds broken, "
+              << reference.status.node_contact.contacts << " contacts, "
+              << reference.status.node_contact.rebuilds << " rebuilds, worst overlap "
+              << reference.status.node_contact.maximum_overlap_m << " m\n";
+    if (!cudaLatticeAvailable()) {
+        std::cout << "  [SKIP] CUDA backend not available: " << cudaLatticeDescription() << '\n';
+        return;
+    }
+    struct Case { const char *name; Precision precision; unsigned blocks; };
+    for (const Case c : {Case{"double, 1 block", Precision::Double, 1U},
+                         Case{"double, 4 slabs", Precision::Double, 4U},
+                         Case{"float, 1 block", Precision::Float, 1U},
+                         Case{"float, 4 slabs", Precision::Float, 4U}}) {
+        TileImpactRequest cpu = smallScene(BackendKind::Cpu, c.precision, c.blocks);
+        cpu.ball_speed_m_s = 20.0;
+        TileImpactRequest gpu = cpu;
+        gpu.backend = BackendKind::Cuda;
+        const Advanced host = advance(cpu, steps);
+        const Advanced device = advance(gpu, steps, 250);
+        const double du = maxDifference(host.state.u, device.state.u);
+        const double dv = maxDifference(host.state.v, device.state.v);
+        std::cout << "  " << c.name << ": contacts cpu " << host.status.node_contact.contacts << " / cuda "
+                  << device.status.node_contact.contacts << ", rebuilds "
+                  << host.status.node_contact.rebuilds << " / " << device.status.node_contact.rebuilds
+                  << ", broken " << host.status.broken_bonds << " / " << device.status.broken_bonds
+                  << ", max |du| = " << du << " m, max |dv| = " << dv << " m/s\n";
+        require(host.status.node_contact.contacts > 0, "no contact in this configuration");
+        require(du == 0.0 && dv == 0.0, "the CUDA node contact moved a node differently");
+        require(aliveMismatches(host.state, device.state) == 0,
+                "the CUDA node contact changed the broken set");
+        require(host.status.node_contact.contacts == device.status.node_contact.contacts &&
+                    host.status.node_contact.rebuilds == device.status.node_contact.rebuilds &&
+                    host.status.node_contact.pairs_listed == device.status.node_contact.pairs_listed &&
+                    host.status.node_contact.maximum_overlap_m ==
+                        device.status.node_contact.maximum_overlap_m &&
+                    host.status.node_contact.dissipated_kinetic_energy_j ==
+                        device.status.node_contact.dissipated_kinetic_energy_j,
+                "the CUDA node contact reported a different ledger");
+    }
+}
+
+// Where the broad phase lists no pair the answer must be the one the lane gave
+// before the contact existed, bit for bit. The horizon is 2 cells and the
+// contact list reaches 1.25, so every pair inside the list radius of an intact
+// lattice is bonded: contact cannot act until a SHORT bond fails, and this
+// window breaks only long ones.
+void fractureWithoutContactIsUnchanged() {
+    TileImpactRequest request = smallScene(BackendKind::Cpu, Precision::Double, 1);
+    request.ball_speed_m_s = 12.0;
+    const auto run = [&](NodeContactMode mode) {
+        TileImpactRequest local = request;
+        local.node_contact = mode;
+        auto setup = buildTileImpactSetup(local);
+        LatticeState state = buildLatticeState(setup->matter, setup->schedule, setup->origin);
+        SphereState<double> sphere = setup->sphere_world;
+        sphere.center = sphere.center - V3<double>{setup->origin.x, setup->origin.y, setup->origin.z};
+        auto backend = makeCpuLatticeBackend(setup->schedule, Precision::Double);
+        backend->upload(state, setup->settings_scene, sphere);
+        RunControl control{};
+        control.max_steps = 4000;
+        const RunStatus status = backend->run(control);
+        backend->download(state, sphere);
+        return std::pair<LatticeState, RunStatus>{std::move(state), status};
+    };
+    const auto [off_state, off_status] = run(NodeContactMode::Off);
+    const auto [on_state, on_status] = run(NodeContactMode::On);
+    std::cout << "  fracture window with no near unbonded pair: " << off_status.broken_bonds
+              << " bonds broken, " << on_status.node_contact.rebuilds << " broad-phase rebuilds, "
+              << on_status.node_contact.pairs_listed << " pairs listed, "
+              << on_status.node_contact.contacts << " contacts\n";
+    require(off_status.broken_bonds > 0, "the window contains no fracture, so it proves nothing");
+    require(on_status.node_contact.rebuilds > 0, "the broad phase never ran");
+    require(on_status.node_contact.pairs_listed == 0 && on_status.node_contact.contacts == 0,
+            "this window was supposed to have no unbonded pair within the contact reach");
+    for (std::size_t i = 0; i < off_state.u.size(); ++i)
+        require(on_state.u[i] == off_state.u[i] && on_state.v[i] == off_state.v[i],
+                "contact moved a node in a window where it never acted");
+    require(aliveMismatches(on_state, off_state) == 0, "contact changed the broken set where it never acted");
+    require(on_status.broken_bonds == off_status.broken_bonds &&
+                on_status.removed_energy_j == off_status.removed_energy_j &&
+                on_status.first_failure_step == off_status.first_failure_step &&
+                on_status.failure_rounds == off_status.failure_rounds,
+            "contact changed the fracture answer in a window where it never acted");
+}
+
 } // namespace
 
 int main() {
@@ -658,6 +1077,20 @@ int main() {
         std::cout << "[PASS] CPU and CUDA backends agree\n";
         backendsAgreeThroughFracture();
         std::cout << "[PASS] CPU and CUDA backends agree bit for bit through a fracture cascade\n";
+        unbondedCellsDoNotPassThroughEachOther();
+        std::cout << "[PASS] two unbonded cells cannot pass through each other\n";
+        bondedCellsAreUntouchedByContact();
+        std::cout << "[PASS] a live bond's pair is left to the bond, and a failed one is not\n";
+        contactConservesMomentum();
+        std::cout << "[PASS] node contact conserves momentum and removes kinetic energy\n";
+        parallelBackendMatchesSerialWithContact();
+        std::cout << "[PASS] the parallel backend is bit identical with node contact on\n";
+        measuringTheOverlapChangesNothing();
+        std::cout << "[PASS] measuring the overlap changes nothing the run reports\n";
+        fractureWithoutContactIsUnchanged();
+        std::cout << "[PASS] the fracture answer is unchanged where contact does not act\n";
+        cudaAgreesWithContact();
+        std::cout << "[PASS] CPU and CUDA agree bit for bit with node contact on\n";
         return 0;
     } catch (const std::exception &error) {
         std::cerr << "[FAIL] " << error.what() << '\n';
