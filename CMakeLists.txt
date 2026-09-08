@@ -676,6 +676,11 @@ if(BANJO_BUILD_TESTS)
         banjo_enable_warnings(banjo_tetrahedron_contact_tests)
         add_test(NAME banjo_tetrahedron_contact_tests COMMAND banjo_tetrahedron_contact_tests)
 
+        add_executable(banjo_criterion_energy_tests tests/criterion_energy_tests.cpp)
+        target_link_libraries(banjo_criterion_energy_tests PRIVATE banjo_fastlattice)
+        banjo_enable_warnings(banjo_criterion_energy_tests)
+        add_test(NAME banjo_criterion_energy_tests COMMAND banjo_criterion_energy_tests)
+
         if(TARGET banjo_fastlattice_scene)
             add_executable(banjo_fast_lattice_tests tests/fast_lattice_tests.cpp)
             target_link_libraries(banjo_fast_lattice_tests PRIVATE banjo_fastlattice_scene)
