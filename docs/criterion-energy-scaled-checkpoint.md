@@ -891,4 +891,39 @@ the server discovers a new job directory on the next request. A separate test
 playground was run on port 8804 against this worktree's own store and stopped
 afterwards.
 
-*URLs filled in below.*
+Two jobs, four cases each, the same 8 m/s strike with the two laws side by side.
+Both were confirmed in a browser against the owner's server; the server picked
+each job up on the next request with no restart.
+
+- **`http://127.0.0.1:8765/?job=8cfdf34a144c43d88120c9460e224b1b`** - 20 mm
+  cells, and every case **plays through to rest**:
+  1. glass, strain-threshold: the crack costs 6,364 J/m^2, 795x glass's Gc.
+     276 bonds, 4 pieces, 28.25 J removed, at rest at 0.41 s (25 frames).
+  2. glass, energy-scaled: the crack costs 8 J/m^2, which is glass's Gc.
+     1,590 bonds, 103 pieces, 0.62 J removed, at rest at 0.90 s (29 frames).
+  3. oak, strain-threshold: 148,500 J/m^2, 149x oak's Gc. 104 bonds, 3 pieces,
+     14.01 J, at rest at 1.08 s.
+  4. oak, energy-scaled: 1,000 J/m^2, oak's Gc. 1,302 bonds, 24 pieces, 8.18 J,
+     at rest at 1.80 s.
+  Verified by opening case 1 and case 2 and pressing play: case 1 reaches frame
+  25/25 at 0.712 s with three slabs and the ball resting on the ledges, case 2
+  reaches 29/29 at 1.205 s with a hundred small pieces scattered and still.
+- **`http://127.0.0.1:8765/?job=a95ce830c5e8444cb80d8c5577870d11`** - the same
+  four runs at 10 mm cells, one rung finer. **None of these four comes to rest
+  inside the 6 s settling limit**, under either law: at 10 mm the handoff gives
+  Jolt 28 to 414 interpenetrating fragments and it spends the whole window
+  separating them. That is the fast lattice lane's known limitation
+  (`docs/fast-gpu-checkpoint.md` section 8, item 6: pieces do not collide during
+  the lattice phase), not something this branch changed, and it is why the
+  ladder rows in section 6 do not settle at all.
+
+The 5 mm energy-scaled rows are not registered: the rigid world refuses their
+handoff outright with `manifold-cache-full body-pair-cache-full
+contact-constraints-full`, because the tile arrives as more than a thousand
+pieces. That refusal is itself one of the measurements in section 6.2.
+
+A separate test playground was run on port 8804 against this worktree's own
+store (`build/playground-runs`, one job `d36706d924ba450a88c187f4355f3978`) to
+rehearse the registration before touching the owner's, and stopped afterwards by
+process id. The owner's checkout was not modified and its server was not
+restarted.
