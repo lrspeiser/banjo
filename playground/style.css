@@ -236,3 +236,21 @@ h2 { margin-bottom: 0; font-size: 1.02rem; font-weight: 550; letter-spacing: -.0
 .admission-note { margin: .45rem 0 0; line-height: 1.45; color: var(--amber); }
 .admission-note strong { color: var(--amber); }
 @media(max-width:980px) { .builder-grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* Execution goals board (Project goal tab). */
+.goals-board { display: grid; gap: 14px; }
+.goal-block { display: grid; gap: 10px; }
+.goal-block-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.goal-block-head h3 { margin: 0; font-size: 1rem; }
+.goal-rule { margin: 0; color: var(--muted); font-size: .82rem; }
+.goal-stage { border: 1px solid var(--line); border-left-width: 4px; border-radius: 6px; padding: 10px 12px; display: grid; gap: 4px; }
+.goal-stage[data-status="ready_for_owner_review"] { border-left-color: rgba(80, 210, 151, .85); }
+.goal-stage[data-status="done"] { border-left-color: rgba(80, 210, 151, 1); }
+.goal-stage[data-status="queued"] { border-left-color: var(--line); }
+.goal-stage[data-status="blocked"], .goal-stage[data-status="failed"] { border-left-color: rgba(241, 139, 136, .85); }
+.goal-stage-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.goal-stage-row { margin: 0; font-size: .82rem; line-height: 1.4; }
+.goal-stage-label { color: var(--muted); }
+.goal-link { margin-right: 4px; }
+.goal-limits { display: block; color: var(--muted); font-size: .78rem; }
+.goal-status[data-status="ready_for_owner_review"] { border-color: rgba(80, 210, 151, .55); color: inherit; }
