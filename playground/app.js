@@ -991,6 +991,52 @@
   async function loadGoal() {
     try { state.goal = await api("/api/goal"); setText($("goal-markdown"), state.goal && state.goal.markdown, "No project goal returned."); setText($("goal-state"), "Fetched"); }
     catch (error) { setText($("goal-markdown"), `Project goal unavailable: ${error.message}`); setText($("goal-state"), "Unavailable"); }
+    try { state.goals = await api("/api/goals"); renderGoalsBoard(); setText($("goals-state"), "Fetched"); }
+    catch (error) { setText($("goals-board"), `Execution goals unavailable: ${error.message}`); setText($("goals-state"), "Unavailable"); }
+  }
+
+  // The stage board: every goal's stages with their status, what to look for
+  // in 3D, the realtime gate, and links to the recordings that exist. Statuses
+  // are the file's own words; nothing is promoted here.
+  function renderGoalsBoard() {
+    const board = $("goals-board"); board.textContent = "";
+    const goals = (state.goals && state.goals.goals) || [];
+    if (!goals.length) { board.textContent = "No execution goals in the file."; return; }
+    const jobUrl = (url) => { const m = /job=([0-9a-f]{32})/.exec(url || ""); return m ? `?job=${m[1]}` : url; };
+    const badge = (status) => {
+      const b = document.createElement("span"); b.className = "small-badge goal-status"; b.dataset.status = status || "";
+      b.textContent = (status || "unknown").replace(/_/g, " "); return b;
+    };
+    goals.forEach((goal) => {
+      const section = document.createElement("section"); section.className = "goal-block";
+      const head = document.createElement("div"); head.className = "goal-block-head";
+      const title = document.createElement("h3"); title.textContent = `${goal.id}: ${goal.title}`; head.append(title, badge(goal.status)); section.append(head);
+      if (goal.rule) { const rule = document.createElement("p"); rule.className = "goal-rule"; rule.textContent = goal.rule; section.append(rule); }
+      (goal.stages || []).forEach((stage) => {
+        const card = document.createElement("div"); card.className = "goal-stage"; card.dataset.status = stage.status || "";
+        const line = document.createElement("div"); line.className = "goal-stage-head";
+        const name = document.createElement("strong"); name.textContent = `${stage.id}. ${stage.title}`; line.append(name, badge(stage.status)); card.append(line);
+        const rows = [["Scene", stage.scene], ["Watch for", stage.visual_confirmation], ["Realtime gate", stage.realtime_gate], ["Risk", stage.risk]];
+        Object.keys(stage).filter((k) => k.startsWith("note_")).forEach((k) => rows.push(["Note", stage[k]]));
+        rows.forEach(([label, value]) => {
+          if (!value) return; const p = document.createElement("p"); p.className = "goal-stage-row";
+          const l = document.createElement("span"); l.className = "goal-stage-label"; l.textContent = `${label}: `; p.append(l, document.createTextNode(value)); card.append(p);
+        });
+        const evidence = Object.keys(stage).filter((k) => k.startsWith("evidence")).map((k) => stage[k]).filter((e) => e && typeof e === "object");
+        evidence.forEach((e) => {
+          const urls = Array.isArray(e.urls) ? e.urls : (e.url ? [e.url] : []);
+          const summary = e.summary || (e.measured && Number.isFinite(e.measured.realtime_ratio) ? `${e.measured.realtime_ratio.toFixed(3)}x realtime, ${e.measured.simulated_s} s simulated` : "");
+          const p = document.createElement("p"); p.className = "goal-stage-row goal-evidence";
+          const l = document.createElement("span"); l.className = "goal-stage-label"; l.textContent = "Recording: "; p.append(l);
+          if (summary) p.append(document.createTextNode(summary + " "));
+          urls.forEach((url, i) => { const a = document.createElement("a"); a.href = jobUrl(url); a.textContent = `open ${i + 1}`; a.className = "goal-link"; p.append(a, document.createTextNode(" ")); });
+          if (e.limits) { const lim = document.createElement("span"); lim.className = "goal-limits"; lim.textContent = `Limits: ${e.limits}`; p.append(lim); }
+          card.append(p);
+        });
+        section.append(card);
+      });
+      board.append(section);
+    });
   }
 
   async function loadStatus() {
