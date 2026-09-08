@@ -552,7 +552,7 @@ Under the new law it does not hold still (0.549 / 0.939 / 0.924 kg), and the
 20 mm row is the odd one out because there the tile is the only case on the
 ladder that actually breaks in half.
 
-### 6.4 Glass at 12 m/s
+### 6.4 At 12 m/s
 
 *Experimental result.* The same tile and ball, struck at 12 m/s instead of 8.
 The pulverisation number scales with the speed, so R rises to 37.9 / 26.8 / 19.0
@@ -574,13 +574,35 @@ under the new law and 1.34 under the old.
 | new | 20 -> 10 mm | +263% | +442% | +306% | +862% |
 | new | 10 -> 5 mm | +375% | -57% | -57% | +550% |
 
-The one quantity anywhere on either ladder that looks like a limit is the old
-law's removed energy at 12 m/s: 36.6 -> 61.5 -> 62.1 J, a 1% change over the
-last refinement. It is not evidence for the old law. At 12 m/s the strike
-saturates - 84% of the 20 mm tile's bonds break under a law that is 795 times
-too tough - and the removed energy converges to "as much as the ball had",
-which is a property of the ball and not of the criterion. The piece count on the
-same rows still triples per level.
+Oak at 12 m/s, same layout:
+
+| cells | law | exit | broken | of all bonds | pieces | largest | removed | R |
+|---|---|---|---:|---:|---:|---:|---:|---:|
+| 20 mm | old | quiet | 555 | 32.6% | 11 | 0.9576 kg | 44.89 J | 0.147 |
+| 10 mm | old | quiet | 2,787 | 14.8% | 112 | 0.9583 kg | 60.62 J | 0.147 |
+| 5 mm | old | quiet | 18,814 | 10.9% | 866 | 0.9783 kg | 61.92 J | 0.147 |
+| 20 mm | new | capped | 1,385 | 81.3% | 11 | 0.9856 kg | 11.87 J | 1.79 |
+| 10 mm | new | capped | 12,436 | 66.0% | 102 | 0.9905 kg | 12.94 J | 1.27 |
+| 5 mm | new | capped | 37,251 | 21.5% | 972 | 0.9119 kg | 30.72 J | 0.90 |
+
+| law | step | pieces | largest piece | removed energy | broken bonds |
+|---|---|---:|---:|---:|---:|
+| old | 20 -> 10 mm | +918% | +0.07% | +35% | +402% |
+| old | 10 -> 5 mm | +673% | **+2%** | **+2%** | +575% |
+| new | 20 -> 10 mm | +827% | +0.5% | +9% | +798% |
+| new | 10 -> 5 mm | +853% | -8% | +137% | +200% |
+
+**Three quantities on these ladders look like limits, and none of them is
+evidence for anything.** The old law's removed energy at 12 m/s converges on
+both materials (glass 36.6 -> 61.5 -> 62.1 J, +1%; oak 44.9 -> 60.6 -> 61.9 J,
++2%), and oak's largest piece converges under both laws to within 2%
+(0.9576 / 0.9583 / 0.9783 kg on a 1.0752 kg tile). Read them together and the
+reason is obvious: at 12 m/s under a law 795 or 149 times too tough, the strike
+saturates - the removed energy converges to how much energy the ball had, not to
+anything the criterion says - and oak's largest piece converges because 89-91%
+of the tile never comes apart, so what is converging is "the tile". A quantity
+that converges because the scene degenerates is not a convergence result, and
+the piece count beside it still grows 7-9x per level.
 
 ### 6.5 dt against dt/2, and the horizon
 
@@ -723,7 +745,11 @@ materials:
 
 The new law halves the piece-count divergence rate (roughly 3-6x per level
 against 6-15x) and that is all. **The gate the brief sets - removed energy,
-largest piece and piece count approaching a limit - is not met.**
+largest piece and piece count approaching a limit - is not met.** Three
+quantities do look like limits (the old law's removed energy at 12 m/s on both
+materials, oak's largest piece under both laws) and section 6.4 shows why none
+of them counts: they converge because the scene degenerates, not because the
+criterion does.
 
 **Why, and it is not the criterion's fault.** The pulverisation number
 R = (v/c_L)/s_c (section 8.2) is 25 to 13 for glass over the ladder and 1.2 to
