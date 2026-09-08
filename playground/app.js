@@ -863,7 +863,9 @@
   // Load a whole measured setup into the controls. The scene still runs from
   // the form, so anything here can be changed before or after loading it.
   function writeFracture(spec) {
-    const mm = (id, metres) => { $(id).value = String(Math.round(metres * 1000)); };
+    // Keep a fraction of a millimetre: a 62.5 mm cell rounded to 63 turns a
+    // 1000 mm pane into 1008 and stops a scenario round-tripping exactly.
+    const mm = (id, metres) => { $(id).value = String(Number((metres * 1000).toFixed(3))); };
     $("f-material").value = spec.material; $("f-striker").value = spec.striker;
     $("f-failure-law").value = spec.failure_law; $("f-plasticity").value = spec.plasticity;
     mm("f-length", spec.plate_m[0]); mm("f-width", spec.plate_m[1]); mm("f-thickness", spec.plate_m[2]);
