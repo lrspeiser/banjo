@@ -500,8 +500,8 @@ criterion can make that converge (sections 8.2 and 8.4).
 
 The crack pattern changes with resolution under both laws. The first failure is
 always on the strike axis (the centroid of the first-failing set sits within
-3e-15 mm of it at every level, i.e. on it), but its depth below the tile's top face moves
-from 30 mm at 20 mm cells - the bottom node layer, which is bending tension on
+3e-15 mm of it at every level, i.e. on it), but its depth below the tile's top
+face moves from 30 mm at 20 mm cells - the bottom node layer, which is bending tension on
 the underside of the bridge - to 5 mm at 5 mm cells, immediately under the ball.
 Refining the mesh resolves the contact stress concentration better than it
 resolves the bending, and the failure mechanism swaps. That is a non-convergence
