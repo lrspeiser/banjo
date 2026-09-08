@@ -155,6 +155,116 @@ void deform(Fixture &f, double strain, double noise, double dead_fraction, Lcg &
     for (auto &bond : f.matter.bonds) bond.alive = rng.next() >= dead_fraction;
 }
 
+// A rigid motion is not a deformation. This is the invariant the node strain
+// measure exists to respect, and it is the one that was broken: with the rest
+// covariance inverted on a direction its neighbourhood does not sample, a plate
+// one cell thick reported shear for merely flexing, and a plate on its ledges
+// broke 436 bonds under gravity alone, never having been struck. Both the CPU
+// criterion and the lattice must read zero here, for a solid block and for a
+// sheet one cell thick, which is the rank-deficient case.
+void rigidMotionProducesNoStrain() {
+    struct Case { const char *name; Vec3 dimensions; double cell; };
+    const Case cases[] = {
+        {"solid block", {0.12, 0.06, 0.08}, 0.02},
+        {"sheet one cell thick", {0.12, 0.01, 0.08}, 0.01},
+        {"two cells thick", {0.12, 0.02, 0.08}, 0.01},
+    };
+    for (const auto &scene : cases) {
+        for (const auto preset : {MaterialPreset::Glass, MaterialPreset::Oak, MaterialPreset::Iron}) {
+            Fixture f(preset, scene.dimensions, scene.cell, 2);
+            // A rotation of 0.37 rad about a tilted axis, then a translation:
+            // large enough that any non-invariant term shows up far above
+            // rounding, and applied to the current positions only, so the rest
+            // configuration the covariance is built from is untouched.
+            const double angle = 0.37;
+            const Vec3 axis = normalized(Vec3{0.3, 0.8, 0.5});
+            const double c = std::cos(angle), s = std::sin(angle), t = 1.0 - c;
+            const double R[9] = {
+                t * axis.x * axis.x + c,          t * axis.x * axis.y - s * axis.z, t * axis.x * axis.z + s * axis.y,
+                t * axis.x * axis.y + s * axis.z, t * axis.y * axis.y + c,          t * axis.y * axis.z - s * axis.x,
+                t * axis.x * axis.z - s * axis.y, t * axis.y * axis.z + s * axis.x, t * axis.z * axis.z + c};
+            const Vec3 shift{0.31, -0.17, 0.09};
+            for (std::size_t i = 0; i < f.matter.nodes.size(); ++i) {
+                const Vec3 x = f.matter.reference_positions_world_m[i];
+                f.matter.nodes[i].position_world_m =
+                    Vec3{R[0] * x.x + R[1] * x.y + R[2] * x.z + shift.x,
+                         R[3] * x.x + R[4] * x.y + R[5] * x.z + shift.y,
+                         R[6] * x.x + R[7] * x.y + R[8] * x.z + shift.z};
+            }
+            for (auto &bond : f.matter.bonds) bond.alive = true;
+
+            resetBondStrainPeaks(f.matter);
+            accumulateBondStrainPeaks(f.matter);
+            double worst_cpu = 0.0;
+            for (const auto &bond : f.matter.bonds) {
+                worst_cpu = std::max({worst_cpu, std::abs(bond.peak_tensile_stretch),
+                                      std::abs(bond.peak_compressive_strain), std::abs(bond.peak_shear_strain)});
+            }
+            require(worst_cpu < 1.0e-9,
+                    std::string("a rigid motion must not strain the CPU criterion: ") + scene.name);
+
+            const LatticeSchedule schedule = buildLatticeSchedule(*f.asset);
+            LatticeState state = buildLatticeState(f.matter, schedule, {});
+            WorkingLattice<double> w = WorkingLattice<double>::fromState(state, schedule);
+            LatticeArrays<double> L = w.arrays();
+            for (std::uint32_t i = 0; i < L.node_count; ++i) nodeStrain(L, i, true);
+            double worst_lattice = 0.0;
+            for (std::uint32_t j = 0; j < L.bond_count; ++j) {
+                if (!L.alive[j]) continue;
+                double tensile = 0, compressive = 0, shear = 0;
+                bondStrainSample(L, j, true, tensile, compressive, shear);
+                worst_lattice = std::max({worst_lattice, std::abs(tensile), std::abs(compressive), std::abs(shear)});
+            }
+            require(worst_lattice < 1.0e-9,
+                    std::string("a rigid motion must not strain the lattice: ") + scene.name);
+            std::cout << "  " << scene.name << ", " << std::string(materialPresetName(preset)) << ": worst |strain| cpu "
+                      << worst_cpu << " lattice " << worst_lattice << '\n';
+        }
+    }
+}
+
+// A sheet one cell thick spans two directions, not three, and the criterion has
+// to state its strain on the plane it does span rather than fall back to the
+// bond's own stretch. Before the pseudo-inverse every such node was rejected,
+// which showed up as a shear strain of exactly zero however the sheet was
+// deformed: the term that produces it was never evaluated. An in-plane shear
+// must therefore read as shear, and the rank deficiency must be reported.
+void thinSheetKeepsTheNonlocalCriterion() {
+    Fixture f(MaterialPreset::Glass, {0.12, 0.01, 0.08}, 0.01, 2);
+    for (std::size_t i = 0; i < f.matter.nodes.size(); ++i) {
+        const Vec3 x = f.matter.reference_positions_world_m[i];
+        // Simple shear in the plane of the sheet: x displaced along z.
+        f.matter.nodes[i].position_world_m = Vec3{x.x, x.y, x.z + 0.02 * x.x};
+    }
+    for (auto &bond : f.matter.bonds) bond.alive = true;
+    resetBondStrainPeaks(f.matter);
+    accumulateBondStrainPeaks(f.matter);
+    double worst_shear = 0.0;
+    for (const auto &bond : f.matter.bonds) worst_shear = std::max(worst_shear, bond.peak_shear_strain);
+    require(worst_shear > 1.0e-4,
+            "an in-plane shear on a one-cell sheet must reach the criterion as shear");
+
+    const LatticeSchedule schedule = buildLatticeSchedule(*f.asset);
+    LatticeState state = buildLatticeState(f.matter, schedule, {});
+    WorkingLattice<double> w = WorkingLattice<double>::fromState(state, schedule);
+    LatticeArrays<double> L = w.arrays();
+    std::uint32_t rank_deficient = 0;
+    L.rank_deficient_nodes = &rank_deficient;
+    for (std::uint32_t i = 0; i < L.node_count; ++i) nodeStrain(L, i, true);
+    double lattice_shear = 0.0;
+    for (std::uint32_t j = 0; j < L.bond_count; ++j) {
+        if (!L.alive[j]) continue;
+        double tensile = 0, compressive = 0, shear = 0;
+        bondStrainSample(L, j, true, tensile, compressive, shear);
+        lattice_shear = std::max(lattice_shear, shear);
+    }
+    require(lattice_shear > 1.0e-4, "the lattice must read the same in-plane shear");
+    require(rank_deficient == L.node_count,
+            "every node of a one-cell sheet spans two directions and must be reported as such");
+    std::cout << "  one-cell sheet: shear cpu " << worst_shear << " lattice " << lattice_shear << ", "
+              << rank_deficient << " of " << L.node_count << " nodes rank-deficient\n";
+}
+
 void criterionMatchesBondFailure() {
     for (const auto preset : {MaterialPreset::Glass, MaterialPreset::Oak, MaterialPreset::Iron}) {
         Fixture cpu(preset, {0.12, 0.06, 0.08}, 0.02, 2);
@@ -534,6 +644,10 @@ int main() {
         std::cout << "[PASS] box lattice follows the sphere generator's bond rules\n";
         scheduleIsAProperColouring();
         std::cout << "[PASS] schedule is a proper edge colouring over adjacent slabs\n";
+        rigidMotionProducesNoStrain();
+        std::cout << "[PASS] a rigid motion strains nothing, at every thickness\n";
+        thinSheetKeepsTheNonlocalCriterion();
+        std::cout << "[PASS] a one-cell sheet keeps the nonlocal criterion\n";
         criterionMatchesBondFailure();
         std::cout << "[PASS] one-element criterion equals fracture/BondFailure.cpp\n";
         colourOrderNamesTheSameFailingBonds();
