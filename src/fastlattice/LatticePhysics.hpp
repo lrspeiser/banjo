@@ -1022,6 +1022,24 @@ BANJO_HD Real kineticEnergy(const LatticeArrays<Real> &L, std::uint32_t i, const
            Real(0.5) * s.inertia * length2(s.angular_velocity);
 }
 
+// One node's kinetic energy, and the sphere's. The combined quantity above is
+// the right thing to difference across a *single* contact, and the wrong thing
+// to sum over a pass: hundreds of nodes touch one sphere in a substep, so
+// differencing the combined energy per contact counts the sphere's change once
+// per contact. That is how a 111 kg projectile carrying 22 kJ came to report
+// 59 kJ of contact dissipation. The pass below differences the sphere once and
+// each node once.
+template <typename Real>
+BANJO_HD Real nodeKineticEnergy(const LatticeArrays<Real> &L, std::uint32_t i) {
+    return Real(0.5) * L.mass[i] * length2(load3(L.v, i));
+}
+
+template <typename Real>
+BANJO_HD Real sphereKineticEnergy(const SphereState<Real> &s) {
+    return Real(0.5) * s.mass * length2(s.velocity) +
+           Real(0.5) * s.inertia * length2(s.angular_velocity);
+}
+
 // One node against the sphere, exactly the loop body of
 // solveSphereMaterialContacts. Returns true when an impulse was applied.
 template <typename Real>
@@ -1051,7 +1069,7 @@ BANJO_HD void sphereContactNode(const LatticeArrays<Real> &L, const StepSettings
     const Real desired_vn = gap > c.contact_margin ? -gap / dt : -restitution * minR(vn, Real(0));
     const Real normal_impulse = maxR(Real(0), (desired_vn - vn) / effective_inverse_mass(normal));
     if (normal_impulse > Real(0)) {
-        const Real before = kineticEnergy(L, i, sphere);
+        const Real before = nodeKineticEnergy(L, i);
         const auto apply = [&](V3<Real> impulse) {
             node_v = node_v + inverse_node_mass * impulse;
             store3(L.v, i, node_v);
@@ -1073,7 +1091,7 @@ BANJO_HD void sphereContactNode(const LatticeArrays<Real> &L, const StepSettings
                 ? sticking_impulse : minR(sticking_impulse, c.dynamic_friction * normal_impulse);
             apply(-friction_impulse * direction);
         }
-        acc.dissipated_kinetic_energy_j += static_cast<double>(before - kineticEnergy(L, i, sphere));
+        acc.dissipated_kinetic_energy_j += static_cast<double>(before - nodeKineticEnergy(L, i));
         ++acc.impulse_contacts;
     }
     if (correct_positions && gap < -c.contact_margin) {
@@ -1099,6 +1117,9 @@ template <typename Real>
 BANJO_HD void sphereContactPass(const LatticeArrays<Real> &L, const StepSettings<Real> &S,
                                 SphereState<Real> &sphere, int pass, ContactAccumulators &acc) {
     const V3<Real> center_before = sphere.center;
+    // The sphere is one body meeting many nodes in this pass, so its kinetic
+    // energy is differenced once here rather than inside every contact.
+    const Real sphere_energy_before = sphereKineticEnergy(sphere);
     for (std::uint32_t block = 0; block < L.block_count; ++block) {
         const std::uint32_t count = L.candidate_count[block];
         const std::uint32_t *list = L.candidate_list + block * kMaxCandidatesPerBlock;
@@ -1111,6 +1132,8 @@ BANJO_HD void sphereContactPass(const LatticeArrays<Real> &L, const StepSettings
             }
         }
     }
+    acc.dissipated_kinetic_energy_j +=
+        static_cast<double>(sphere_energy_before - sphereKineticEnergy(sphere));
     // Candidates always take their support velocity response here: on the CPU
     // it follows damping and the second contact pass, both of which are done
     // for them by the time this pass ends.
