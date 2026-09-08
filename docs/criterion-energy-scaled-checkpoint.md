@@ -12,6 +12,36 @@ Status labels: **implemented** (code exists and a CMake target builds it),
 
 ---
 
+## 0. Headline
+
+1. **The criterion now has a length scale and it is exact.** A crack costs the
+   material's own `fracture_energy_j_m2` per unit area at every cell size and
+   horizon, to 1e-12 relative, measured on generated lattices. Before, the same
+   glass tile was made of a material 795 times tougher than glass at 20 mm cells
+   and 199 times tougher at 5 mm.
+2. **On a well-posed fracture problem the answer converges.** The pre-cracked
+   strip advances 25.0 / 42.5 / 47.5 mm at 10 / 5 / 2.5 mm cells (+70%, +12%),
+   and Griffith's threshold is reproduced: the crack runs at G/Gc = 1.0 and not
+   at 0.8.
+3. **On the tile the answer does not converge, and the brief's gate is not met.**
+   Piece count still grows 3-6x per level under the new law (6-15x under the
+   old); largest piece and removed energy do not settle. One gate item improves:
+   removed energy under timestep refinement, +0.55% against -9.8%.
+4. **Why is now a number, not a mystery.** The pulverisation number
+   `R = (v/c_L)/s_c` is 25-13 for glass and 1.2-0.6 for oak on this ladder.
+   Where R > 1 the impact wave takes every bond it reaches past the threshold -
+   93% of the 20 mm glass tile's bonds break - so the fragment size is the cell
+   size and a piece count counts cells. Glass under this strike would need about
+   31 um cells to be resolvable at all; that is the same bound as its 0.28 mm
+   Irwin length, reached from the lattice side.
+5. **The crack speed check passes.** 0.39 c_R against Freund's 0.375 estimate at
+   G/Gc = 1.6 (4%), never super-Rayleigh, over 0.6 c_R only at G/Gc = 2.4 where
+   the crack is branching.
+6. **The old law is untouched.** Bit for bit, over 48 material/cell/horizon
+   combinations and 40,632 generated bonds.
+
+---
+
 ## 1. The problem, restated as a number
 
 `docs/engine-options-analysis-2026-09-07.md` section 1, Wall 2: the same 8 m/s
@@ -225,6 +255,11 @@ name.
 | 6 | the strength bound bites where the Irwin length says | `strength_bound_active` against `min(s_c, s_sigma)` for iron, glass, oak |
 | 7 | **the implied strength agrees with LEFM for a cell-sized flaw** | `E_eff s_c / sqrt(E_eff Gc / (pi h))` is 1.317 (horizon 2) and 0.925 (horizon 3), independent of material and cell size, to 1e-12 |
 | 8 | names | `parseBondFailureLaw` round trips and refuses an unknown name |
+
+The whole suite passes: **87 of 87 CTest suites**, 81 s, with the five the brief
+excludes not run and no tolerance changed anywhere.
+`python scripts/check-source-registration.py` reports 206 sources registered and
+nothing unbuilt.
 
 ---
 
