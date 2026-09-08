@@ -955,6 +955,48 @@
     return label;
   }
 
+  // Only the lattice phase can break anything, and it ends about 20 ms after the
+  // last failure. A striker that starts far from what it hits arrives after
+  // that, when the scene is already rigid pieces, and then it can knock things
+  // over but nothing can crack however hard it lands. This is the single most
+  // confusing thing about a scene you built yourself, so it is said before the
+  // run rather than discovered in the numbers afterwards.
+  const kFractureWindowS = 0.02;
+
+  function strikeWindowNote(falling) {
+    let worst = null;
+    falling.forEach((body) => {
+      const speed = Math.hypot(...body.velocity_m_s);
+      if (!(speed > 0)) return;
+      const direction = body.velocity_m_s.map((v) => v / speed);
+      // Gap along the direction of travel to the nearest other object, measured
+      // between their bounding boxes on that axis.
+      let gap = Infinity;
+      scene.bodies.forEach((other) => {
+        if (other === body) return;
+        let along = 0;
+        let clears = false;
+        for (let axis = 0; axis < 3; axis += 1) {
+          const halfA = body.size_mm[axis] / 2;
+          const halfB = other.size_mm[axis] / 2;
+          const delta = other.center_mm[axis] - body.center_mm[axis];
+          const separation = Math.abs(delta) - halfA - halfB;
+          if (Math.abs(direction[axis]) > 0.5) along = separation * Math.sign(delta) * Math.sign(direction[axis]);
+          else if (separation > 0) clears = true;
+        }
+        // Ignore anything it will simply miss.
+        if (!clears && along >= 0) gap = Math.min(gap, along);
+      });
+      if (!Number.isFinite(gap)) return;
+      const arrival = gap / 1000 / speed;
+      if (!worst || arrival > worst.arrival) worst = { body, arrival, gap };
+    });
+    if (!worst || worst.arrival <= kFractureWindowS) return "";
+    return ` ${worst.body.name} has ${Math.round(worst.gap)} mm to travel, so it lands at about `
+      + `${Math.round(worst.arrival * 1000)} ms, after the ${Math.round(kFractureWindowS * 1000)} ms `
+      + "fracture window: it will push things over but nothing will break. Start it closer, or faster.";
+  }
+
   function sceneMode() {
     return $("f-mode") && $("f-mode").value === "objects";
   }
@@ -1009,6 +1051,7 @@
       $("fracture-note").textContent = falling.length
         ? `${falling.map((b) => b.name).join(", ")} start${falling.length === 1 ? "s" : ""} moving; `
           + "everything else starts at rest. Every object is lattice, so what falls can break too."
+          + strikeWindowNote(falling)
         : "Nothing is moving yet. Give an object a downward speed and it becomes the one that falls.";
       const badge = $("scene-cells");
       if (badge) badge.textContent = `${cells} cells in ${scene.bodies.length} objects`;
