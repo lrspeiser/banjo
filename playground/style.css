@@ -254,3 +254,11 @@ h2 { margin-bottom: 0; font-size: 1.02rem; font-weight: 550; letter-spacing: -.0
 .goal-link { margin-right: 4px; }
 .goal-limits { display: block; color: var(--muted); font-size: .78rem; }
 .goal-status[data-status="ready_for_owner_review"] { border-color: rgba(80, 210, 151, .55); color: inherit; }
+
+/* Fracture lab result rows and the cell-count badge. */
+#fracture-result .metric { display: flex; justify-content: space-between; gap: 12px; margin: 0; padding: 5px 0; border-bottom: 1px solid var(--line); font-size: .82rem; }
+#fracture-result .metric:last-child { border-bottom: 0; }
+#fracture-result .metric-label { color: var(--muted); }
+#fracture-result .metric.ok span:last-child { color: var(--mint); }
+#fracture-result .metric.bad span:last-child { color: #f18b88; }
+.small-badge.bad { border-color: rgba(241, 139, 136, .55); color: #f18b88; }
