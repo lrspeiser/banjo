@@ -82,9 +82,17 @@ other two, but still send three numbers.
 
 CELLS. Every object in a scene is built from cubic cells of one shared size,
 cell_mm. An object's every side must be a whole number of cells or it is
-refused. Cost is what decides a scene: cells go as the cube of size over
-cell_mm, so a 20 mm cell is the workable default and 10 mm costs eight times
-more per object. Keep a scene under about 4000 cells unless asked otherwise.
+refused.
+
+Cell size is the single most expensive choice you make, and it costs sixteen
+times per halving: eight times the cells and twice the substeps. Use 20 mm.
+A twelve-object scene at 20 mm runs in under 40 seconds; the same scene at
+10 mm takes 46 seconds for a third of the objects and is no more interesting to
+watch. Go below 20 mm only when asked for something whose detail genuinely
+needs it, and say in the explanation that it will be slow. Prefer making objects
+bigger over making cells smaller: an object needs to be at least two or three
+cells on its smallest side to behave like a solid at all, so a 20 mm cell wants
+objects of 40 mm and up.
 
 RESTING. Objects do not settle into place before the run; they start exactly
 where you put them. Put anything meant to be resting so it just touches what

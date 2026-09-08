@@ -1068,6 +1068,37 @@
     fractureCells();
   }
 
+  // Running from chat, with the clock showing. A scene of a few thousand cells
+  // takes tens of seconds and there is nothing else on this tab that moves, so
+  // without this it reads as a hang.
+  async function runFromChat() {
+    const turn = chatTurn("built", "Running", "Working on it. A few thousand cells takes tens of seconds.");
+    const line = turn.querySelector("p");
+    const started = performance.now();
+    const tick = setInterval(() => {
+      const seconds = (performance.now() - started) / 1000;
+      line.textContent = `Working on it, ${seconds.toFixed(0)} s so far. `
+        + "A few thousand cells takes tens of seconds; the cell size is what decides it.";
+    }, 1000);
+    try {
+      const outcome = await runFractureLab();
+      if (!outcome || !outcome.ok) {
+        turn.classList.add("bad");
+        turn.querySelector(".chat-who").textContent = "The run failed";
+        line.textContent = (outcome && outcome.message) || "the run did not complete";
+        return;
+      }
+      const sum = fracture.lastSummary || {};
+      line.textContent = Number.isFinite(sum.broken_bonds)
+        ? `Done in ${outcome.wall_s.toFixed(1)} s. ${sum.broken_bonds} bonds broken, `
+          + `${sum.components ?? "?"} pieces. It is on the stage.`
+        : `Done in ${outcome.wall_s.toFixed(1)} s. It is on the stage.`;
+      turn.querySelector(".chat-who").textContent = "Ran it";
+    } finally {
+      clearInterval(tick);
+    }
+  }
+
   async function sendSceneChat(event) {
     if (event) event.preventDefault();
     if (chat.busy) return;
@@ -1091,11 +1122,20 @@
         }),
       });
       applyPlannedSpec(result.spec);
-      chatTurn("built", "Built", `${result.explanation}\n\nIt is ${describeSpec(result.spec)}`);
+      const built = chatTurn("built", "Built", `${result.explanation}\n\nIt is ${describeSpec(result.spec)}`);
       setText($("chat-state"), `Planned in ${result.planning_wall_s.toFixed(1)} s`);
       $("chat-note").textContent =
         "The manual controls tab now holds exactly this scene; change anything there and run again.";
-      if ($("chat-autorun").checked) await runFractureLab();
+      if ($("chat-autorun").checked) await runFromChat();
+      else {
+        // A plan that was not run leaves an empty stage, so say what to press.
+        const run = document.createElement("button");
+        run.type = "button";
+        run.className = "quiet-button";
+        run.textContent = "Run it now";
+        run.addEventListener("click", () => { run.remove(); runFromChat(); });
+        built.append(run);
+      }
     } catch (error) {
       chatTurn("bad", "Could not build it", error.message);
       setText($("chat-state"), "Failed");
@@ -1416,6 +1456,14 @@
     if (fracture.busy) return;
     fracture.busy = true; $("fracture-run").disabled = true; $("fracture-run").classList.add("is-busy");
     setText($("fracture-state"), "Running"); $("fracture-open").hidden = true;
+    // The stage is the one thing on screen in both tabs, so it is where a run
+    // in progress has to be announced. An empty stage with no explanation is
+    // indistinguishable from a run that never started.
+    const caption = $("fracture-stage-caption");
+    if (caption) {
+      caption.classList.remove("is-new");
+      caption.textContent = "Running the scene. Nothing is on the stage until it finishes.";
+    }
     const started = performance.now();
     try {
       const body = { ...readFracture(), request_id: `fracture-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}` };
@@ -1429,9 +1477,12 @@
         // The stage is on this tab, so the recording loads without leaving the
         // controls that produced it.
         await openFractureJob(result.job_id, "fracture");
+        return { ok: true, wall_s: roundTrip };
       }
+      return { ok: false, message: result.error || result.message || "the run did not complete" };
     } catch (error) {
       setText($("fracture-state"), "Failed"); $("fracture-result").textContent = error.message; showToast(error.message, true);
+      return { ok: false, message: error.message };
     } finally {
       fracture.busy = false; $("fracture-run").classList.remove("is-busy"); fractureCells();
     }
