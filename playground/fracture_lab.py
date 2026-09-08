@@ -39,7 +39,7 @@ ALGORITHMS: dict[str, dict[str, Any]] = {
     "algo3": {"exe": "banjo_fracture_algo3", "title": "Algorithm 3: precomputed propagators + causal cones (exact)",
               "max_cells": 4000, "timeout_s": 60, "contract": "lane"},
     "lattice": {"exe": "banjo_fast_lattice_run", "title": "Explicit lattice, parallel: every substep, the shared criterion",
-                "max_cells": 8000, "timeout_s": 240, "contract": "fast_lattice"},
+                "max_cells": 16000, "timeout_s": 300, "contract": "fast_lattice"},
 }
 
 MATERIALS = ("glass", "oak", "iron")
@@ -253,7 +253,7 @@ SHAPES = {"box": "a rectangular block", "sphere": "a ball"}
 # A scene is capped by objects and by total cells: the cells are what costs, the
 # object count is what keeps a scene readable and the Jolt handoff inside its
 # contact caches.
-BODY_LIMITS = {"bodies": 10, "size_mm": (5.0, 2000.0), "center_mm": (-3000.0, 3000.0),
+BODY_LIMITS = {"bodies": 250, "size_mm": (5.0, 2000.0), "center_mm": (-3000.0, 3000.0),
                "velocity_m_s": (-600.0, 600.0), "name": 40}
 
 

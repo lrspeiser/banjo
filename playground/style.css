@@ -340,3 +340,26 @@ h2 { margin-bottom: 0; font-size: 1.02rem; font-weight: 550; letter-spacing: -.0
 .fracture-stage-controls button:disabled { opacity: .5; }
 .stage-more > summary { cursor: pointer; color: var(--muted); font-size: .7rem; }
 .stage-more[open] { display: grid; gap: 9px; }
+
+/* Two ways to set up the same scene, in the same column, with the scene itself
+   still on the left. */
+.side-switch { display: inline-flex; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 9px; }
+.side-tab { padding: 6px 14px; border: 0; border-radius: 6px; background: transparent; color: var(--muted);
+  font-size: .74rem; cursor: pointer; }
+.side-tab:hover { color: var(--mint); }
+.side-tab.is-active { background: var(--mint); color: #092019; }
+#side-manual[hidden], #side-chat[hidden] { display: none; }
+.chat-card { display: grid; gap: 12px; }
+.chat-log { display: grid; gap: 9px; max-height: 46vh; overflow-y: auto; }
+.chat-log p { margin: 0; }
+.chat-turn { padding: 9px 11px; border: 1px solid var(--line-soft); border-radius: 8px; font-size: .78rem; line-height: 1.55; }
+.chat-turn.you { border-color: rgba(80,210,151,.32); color: var(--text); }
+.chat-turn.built { color: var(--muted); }
+.chat-turn.bad { border-color: rgba(246,197,114,.5); color: var(--amber); }
+.chat-turn .chat-who { display: block; margin-bottom: 3px; color: var(--muted); font-size: .62rem;
+  letter-spacing: .06em; text-transform: uppercase; }
+.chat-composer { display: grid; gap: 9px; }
+.chat-composer textarea { width: 100%; padding: 9px; border: 1px solid var(--line); border-radius: 8px;
+  color: var(--text); background: var(--panel); font: inherit; font-size: .8rem; resize: vertical; }
+.chat-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.chat-auto { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: .7rem; }

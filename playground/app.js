@@ -1001,6 +1001,110 @@
     return $("f-mode") && $("f-mode").value === "objects";
   }
 
+  // Asking for a scene in words. The answer is a spec, not a picture: it goes
+  // into the same controls the manual tab shows, so whatever was built can be
+  // read and corrected there rather than taken on trust.
+  const chat = { turns: [], busy: false };
+
+  // Say up front that chat needs a key rather than letting the first request be
+  // the way anyone finds out. Called again once the status arrives, because the
+  // panel is built before it does.
+  function noteChatKey() {
+    const note = $("chat-note");
+    if (!note || !state.status) return;
+    if (state.status.key_configured === false) {
+      note.textContent = "Chat needs OPENAI_API_KEY in the local .env, and the server restarted. "
+        + "Until then the manual controls tab still runs everything.";
+    }
+  }
+
+  function showSide(which) {
+    const chatOn = which !== "manual";
+    $("side-chat").hidden = !chatOn;
+    $("side-manual").hidden = chatOn;
+    ["chat", "manual"].forEach((id) => {
+      const tab = $(`side-tab-${id}`);
+      const active = (id === "chat") === chatOn;
+      tab.classList.toggle("is-active", active);
+      tab.setAttribute("aria-selected", String(active));
+    });
+  }
+
+  function chatTurn(kind, who, body) {
+    const log = $("chat-log");
+    if (chat.turns.length === 0) log.replaceChildren();
+    const row = document.createElement("div");
+    row.className = `chat-turn ${kind}`;
+    const label = document.createElement("span");
+    label.className = "chat-who";
+    label.textContent = who;
+    const p = document.createElement("p");
+    p.textContent = body;
+    row.append(label, p);
+    log.append(row);
+    log.scrollTop = log.scrollHeight;
+    chat.turns.push({ role: kind === "you" ? "you" : "assistant", text: body });
+    return row;
+  }
+
+  // What the model built, in the terms it was asked in, so a wrong answer is
+  // obvious before it is run.
+  function describeSpec(spec) {
+    if (spec.bodies && spec.bodies.length) {
+      const moving = spec.bodies.filter((b) => b.velocity_m_s.some((v) => v));
+      return `${spec.bodies.length} objects, ${spec.cells} cells at ${spec.cell_m * 1000} mm: `
+        + spec.bodies.map((b) => `${b.name} (${b.material})`).join(", ")
+        + (moving.length ? `. ${moving[0].name} starts moving.` : ". Nothing is moving.");
+    }
+    const plate = spec.plate_m.map((v) => Math.round(v * 1000)).join(" x ");
+    return `a ${plate} mm ${spec.material} plate, ${spec.cells} cells, struck by a `
+      + `${Math.round(spec.ball_m * 1000)} mm ${spec.striker} ball at ${spec.speed_m_s.toFixed(2)} m/s.`;
+  }
+
+  // The spec the server validated becomes what the manual controls show, so the
+  // two are never describing different scenes.
+  function applyPlannedSpec(spec) {
+    writeFracture(spec);
+    fractureCells();
+  }
+
+  async function sendSceneChat(event) {
+    if (event) event.preventDefault();
+    if (chat.busy) return;
+    const input = $("chat-scene-input");
+    const message = input.value.trim();
+    if (!message) return;
+    chat.busy = true;
+    $("chat-send").disabled = true;
+    setText($("chat-state"), "Thinking");
+    chatTurn("you", "You", message);
+    input.value = "";
+    try {
+      const result = await api("/api/scene/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...tokenHeaders() },
+        body: JSON.stringify({
+          message,
+          spec: readFracture(),
+          history: chat.turns.slice(-6),
+          request_id: `chat-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
+        }),
+      });
+      applyPlannedSpec(result.spec);
+      chatTurn("built", "Built", `${result.explanation}\n\nIt is ${describeSpec(result.spec)}`);
+      setText($("chat-state"), `Planned in ${result.planning_wall_s.toFixed(1)} s`);
+      $("chat-note").textContent =
+        "The manual controls tab now holds exactly this scene; change anything there and run again.";
+      if ($("chat-autorun").checked) await runFractureLab();
+    } catch (error) {
+      chatTurn("bad", "Could not build it", error.message);
+      setText($("chat-state"), "Failed");
+    } finally {
+      chat.busy = false;
+      $("chat-send").disabled = false;
+    }
+  }
+
   function readFracture() {
     const mm = (id) => Number($(id).value) / 1000;
     const speed = $("f-speed").value.trim();
@@ -1384,6 +1488,13 @@
       fractureCells();
     }
     extents.concat(["f-cell"]).forEach((id) => $(id).addEventListener("change", snapExtents));
+    $("side-tab-chat").addEventListener("click", () => showSide("chat"));
+    $("side-tab-manual").addEventListener("click", () => showSide("manual"));
+    $("chat-scene-form").addEventListener("submit", sendSceneChat);
+    $("chat-scene-input").addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendSceneChat(); }
+    });
+    noteChatKey();
     $("f-mode").addEventListener("change", () => {
       const on = sceneMode();
       $("f-scene").hidden = !on;
@@ -1765,5 +1876,5 @@
   // The playground is the page now, so it is built on load rather than on a tab
   // click that no longer has to happen. This also adopts the stage.
   activateTab("fracture");
-  loadStatus();
+  loadStatus().then(noteChatKey);
 })();

@@ -27,6 +27,7 @@ import uuid
 from experiment_language import ROOT, KINDS, LIMITATIONS, SCHEMA, PLANNER_SCHEMA, lower_proposal, lower_and_admit, SYSTEM, compile_plan, validate_plan, request_blockers, admit_plan, plan_cost
 import builder
 import fracture_lab
+import scene_chat
 import network_admission
 from network_admission import Inadmissible, LIMITS, describe_package
 from control_contract import default_ui, apply_control
@@ -952,6 +953,9 @@ class Handler(BaseHTTPRequestHandler):
             # timeout and registers the recording as a job, so a changed plate
             # or drop height is watchable as soon as the lane returns.
             if path=="/api/fracture/run": return self.send(fracture_lab.run(self.server.app,body))
+            # Words in, a validated scene spec out. The model fills the same
+            # fields the manual controls do and nothing skips fracture_lab.validate.
+            if path=="/api/scene/chat": return self.send(scene_chat.plan(self.server.app,body))
             # Save the frame the 3D viewer is showing. The page cannot write
             # a file and cannot reach any other origin, so the one way a
             # result leaves the tab it was rendered in is through here.
