@@ -59,6 +59,7 @@ DEFAULT: dict[str, Any] = {
     "material": "glass",
     "failure_law": "strain-threshold",
     "plasticity": "off",
+    "clearance_m": 0.12,
     "striker": "iron",
     "plate_m": [0.25, 0.20, 0.01],
     "cell_m": 0.01,
@@ -104,6 +105,16 @@ SCENARIOS = [
      "spec": {"material": "glass", "striker": "iron", "failure_law": "strain-threshold", "plasticity": "off",
               "plate_m": [0.25, 0.20, 0.01], "cell_m": 0.01, "ball_m": 0.06, "drop_m": 2.0,
               "offset_m": [0.07, 0.04], "support": "ledges", "duration_s": 2.0}},
+    {"id": "bullet-through", "title": "400 m/s through oak: it perforates, it does not bounce",
+     "expect": "exits at 371 m/s downward, 3 m of clearance so the floor is out of the way",
+     "spec": {"material": "oak", "striker": "iron", "failure_law": "energy-scaled", "plasticity": "off",
+              "plate_m": [1.0, 1.0, 0.0625], "cell_m": 0.0625, "ball_m": 0.3, "speed_m_s": 400.0,
+              "offset_m": [0.0, 0.0], "support": "ledges", "duration_s": 0.5, "clearance_m": 3.0}},
+    {"id": "bullet-low-clearance", "title": "The same 400 m/s strike, target 120 mm off the floor",
+     "expect": "it perforates and then bounces off the floor: the rebound is the ground, not the pane",
+     "spec": {"material": "oak", "striker": "iron", "failure_law": "energy-scaled", "plasticity": "off",
+              "plate_m": [1.0, 1.0, 0.0625], "cell_m": 0.0625, "ball_m": 0.3, "speed_m_s": 400.0,
+              "offset_m": [0.0, 0.0], "support": "ledges", "duration_s": 0.5, "clearance_m": 0.12}},
     {"id": "iron-dent", "title": "Iron plate dents and keeps the dent",
      "expect": "plastic flow on: permanent deformation, plastic work dissipated",
      "spec": {"material": "iron", "striker": "iron", "failure_law": "strain-threshold", "plasticity": "on",
@@ -127,11 +138,17 @@ LIMITS = {
 # for a 250 mm plate and a pebble against a metre of glass. The cell bound
 # rises with it so metre-scale objects can still be meshed coarsely.
     "cell_m": {"min": 0.002, "max": 0.15}, "ball_m": {"min": 0.01, "max": 0.5},
-    "drop_m": {"min": 0.0, "max": 5.0}, "speed_m_s": {"min": 0.0, "max": 20.0},
+    # A bullet is ~350 m/s and a dropped tool is a few m/s; the engine should
+    # cover both, and refusing to try is how a wrong answer stays hidden.
+    "drop_m": {"min": 0.0, "max": 500.0}, "speed_m_s": {"min": 0.0, "max": 600.0},
+    # How far the target sits above the floor. The default scene puts it 120 mm
+    # up, so anything that punches through hits the floor at once and bounces
+    # off that -- which reads as the projectile bouncing off the target.
+    "clearance_m": {"min": 0.05, "max": 5.0},
     "duration_s": {"min": 0.2, "max": 6.0},
 }
 
-FIELDS = {"algorithm", "material", "striker", "failure_law", "plasticity", "plate_m", "cell_m", "ball_m", "drop_m", "speed_m_s",
+FIELDS = {"algorithm", "material", "striker", "failure_law", "plasticity", "clearance_m", "plate_m", "cell_m", "ball_m", "drop_m", "speed_m_s",
           "offset_m", "support", "duration_s", "request_id"}
 
 
@@ -190,6 +207,8 @@ def validate(spec: Any) -> dict[str, Any]:
     if result["plasticity"] not in PLASTICITY:
         raise ValueError(f"plasticity must be one of {list(PLASTICITY)}")
     result["duration_s"] = _number(result["duration_s"], LIMITS["duration_s"]["min"], LIMITS["duration_s"]["max"], "duration")
+    result["clearance_m"] = _number(result["clearance_m"], LIMITS["clearance_m"]["min"],
+                                    LIMITS["clearance_m"]["max"], "clearance under the target")
     # `generateBoxTileLattice` refuses an extent that is not a whole number of
     # cells (BoxLattice.cpp cellCount, tolerance 1e-6 relative), so the plate is
     # snapped here rather than accepted and refused four layers down. What was
@@ -266,6 +285,7 @@ def command(algorithm: str, spec: dict[str, Any], engine_path: Path, output: Pat
             "--ball-radius", f"{spec['ball_m'] / 2:.6g}", "--speed", f"{spec['speed_m_s']:.6g}",
             "--offset", f"{spec['offset_m'][0]:.6g}", f"{spec['offset_m'][1]:.6g}",
             "--layout", "bridge" if spec["support"] == "ledges" else "flat",
+            "--ledge-height", f"{spec['clearance_m']:.6g}",
             "--settle-s", f"{spec['duration_s']:.6g}",
             # The parallel backend is the same sweep in the same order with the
             # colour stages spread within a stage, so it is bit-identical to the

@@ -838,6 +838,7 @@
       speed_m_s: speed === "" ? null : Number(speed),
       offset_m: [mm("f-offset-x"), mm("f-offset-z")],
       support: $("f-support").value,
+      clearance_m: Number($("f-clearance").value),
       duration_s: Number($("f-duration").value),
     };
   }
@@ -882,6 +883,7 @@
     mm("f-cell", spec.cell_m); mm("f-ball", spec.ball_m);
     mm("f-offset-x", spec.offset_m[0]); mm("f-offset-z", spec.offset_m[1]);
     $("f-support").value = spec.support; $("f-duration").value = String(spec.duration_s);
+    $("f-clearance").value = String(spec.clearance_m ?? 0.12);
     if (spec.speed_m_s != null) { $("f-speed").value = String(spec.speed_m_s); $("f-drop").value = ""; }
     else { $("f-speed").value = ""; $("f-drop").value = String(spec.drop_m); }
     fractureCells();

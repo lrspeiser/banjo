@@ -178,14 +178,15 @@
               </fieldset>
               <fieldset class="builder-group"><legend>Iron ball</legend>
                 <label><span>Diameter (mm)</span><input id="f-ball" type="number" min="10" max="500" step="1" value="60"></label>
-                <label><span>Drop height (m)</span><input id="f-drop" type="number" min="0" max="5" step="0.05" value="2"></label>
-                <label><span>or impact speed (m/s)</span><input id="f-speed" type="number" min="0" max="20" step="0.1" placeholder="from drop"></label>
+                <label><span>Drop height (m)</span><input id="f-drop" type="number" min="0" max="500" step="0.05" value="2"></label>
+                <label><span>or impact speed (m/s)</span><input id="f-speed" type="number" min="0" max="600" step="0.1" placeholder="from drop"></label>
               </fieldset>
               <fieldset class="builder-group"><legend>Strike offset from centre (mm)</legend>
                 <label><span>Along length</span><input id="f-offset-x" type="number" min="-500" max="500" step="1" value="0"></label>
                 <label><span>Along width</span><input id="f-offset-z" type="number" min="-500" max="500" step="1" value="0"></label>
               </fieldset>
               <label class="builder-field"><span>Support</span><select id="f-support"><option value="ledges">Resting on two ledges</option><option value="flat">Lying on the ground</option><option value="clamped">Clamped edges</option></select></label>
+              <label class="builder-field"><span>Clearance under the target (m)</span><input id="f-clearance" type="number" min="0.05" max="5" step="0.05" value="0.12"></label>
               <label class="builder-field"><span>Simulated duration (s)</span><input id="f-duration" type="number" min="0.2" max="6" step="0.1" value="2"></label>
             </form>
             <p id="fracture-note" class="muted"></p>
