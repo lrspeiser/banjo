@@ -183,13 +183,13 @@ public:
         dirty_start_ = true;
         frames_.clear();
         // Per-thread scratch. Each thread gets its own view of the arrays so
-        // that the degenerate-disagreement counter, the only element function
+        // that the rank-deficiency counter, the only element function
         // that writes a shared scalar, is thread-local; the counts are summed
         // afterwards, which an integer sum makes order-independent.
         const unsigned threads = pool_.size();
         scratch_ = std::vector<Scratch>(threads);
         views_.assign(threads, L_);
-        for (unsigned t = 0; t < threads; ++t) views_[t].degenerate_disagreements = &scratch_[t].degenerate;
+        for (unsigned t = 0; t < threads; ++t) views_[t].rank_deficient_nodes = &scratch_[t].degenerate;
     }
 
     RunStatus run(const RunControl &control) override {
@@ -402,7 +402,7 @@ private:
         mark(12);
         std::uint32_t disagreements = 0;
         for (const Scratch &scratch : scratch_) disagreements += scratch.degenerate;
-        status_.degenerate_disagreements = disagreements;
+        status_.rank_deficient_nodes = disagreements;
         sphere_.center = sphere_.center + S_.dt * sphere_.velocity;
         sphereSupportContact(S_, sphere_, status_.contact);
         if (any_failed) dirty_start_ = true;

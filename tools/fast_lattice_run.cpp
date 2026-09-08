@@ -57,7 +57,7 @@ void usage() {
         "  --node-radius-factor F        node contact radius = F * cell (default 0.5)\n"
         "  --quiet-ms --min-ms --max-ms --no-failure-ms   lattice phase exit rules\n"
         "  --settle-s S                  rigid settling limit (default 6)\n"
-        "  --backend cpu|gpu --precision float|double --blocks N --threads N\n"
+        "  --backend cpu|parallel|gpu --precision float|double --blocks N --threads N\n"
         "  --steps-per-launch N          GPU substeps per kernel launch (0 = one launch)\n"
         "  --frames N                    lattice-phase frames (default 50); --rigid-frames N\n"
         "  --record PATH                 write the banjo.playback.v1 recording\n"
@@ -105,7 +105,8 @@ int main(int argc, char **argv) {
             else if (option == "--max-ms") request.max_ms = number(value());
             else if (option == "--no-failure-ms") request.no_failure_ms = number(value());
             else if (option == "--settle-s") request.settle_limit_s = number(value());
-            else if (option == "--backend") { const auto v = value(); request.backend = v == "cpu" ? BackendKind::Cpu : BackendKind::Cuda; }
+            else if (option == "--backend") { const auto v = value(); request.backend = v == "cpu" ? BackendKind::Cpu
+                : v == "parallel" ? BackendKind::CpuParallel : BackendKind::Cuda; }
             else if (option == "--precision") { const auto v = value(); request.precision = v == "double" ? Precision::Double : Precision::Float; }
             else if (option == "--blocks") request.blocks = static_cast<unsigned>(number(value()));
             else if (option == "--threads") request.threads_per_block = static_cast<unsigned>(number(value()));
