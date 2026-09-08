@@ -158,7 +158,7 @@ def stage_ladder(force, speed=8.0, cells=(0.02, 0.01, 0.005), horizon=2, materia
 
 
 WINDOW_MS = 6.0   # the fixed lattice window every ladder row runs for
-SETTLE_S = 0.25   # ladder rows only need the handoff; the recorded runs settle fully
+SETTLE_S = 0.0    # the ladder measures the lattice phase and the handoff; the playground runs settle
 
 
 STAGES = {
