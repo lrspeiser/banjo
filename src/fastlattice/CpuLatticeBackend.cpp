@@ -178,7 +178,7 @@ private:
             L_.node_dirty[L_.bond_b[j]] = 1;
         }
         mark(12);
-        status_.degenerate_disagreements = working_.degenerate_disagreements.front();
+        status_.rank_deficient_nodes = working_.rank_deficient_nodes.front();
         sphere_.center = sphere_.center + S_.dt * sphere_.velocity;
         sphereSupportContact(S_, sphere_, status_.contact);
         if (any_failed) dirty_start_ = true;

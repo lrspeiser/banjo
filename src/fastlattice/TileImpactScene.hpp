@@ -130,7 +130,7 @@ struct TileImpactMeasurements {
     bool shared_memory_positions{};
     std::size_t shared_memory_bytes{};
     float max_tensile_stretch{}, max_compressive_strain{}, max_shear_strain{};
-    std::uint32_t degenerate_disagreements{};
+    std::uint32_t rank_deficient_nodes{};
     ContactAccumulators contact{};
     std::size_t components{}, rigid_fragments{}, debris_particles{};
     double largest_piece_mass_kg{};

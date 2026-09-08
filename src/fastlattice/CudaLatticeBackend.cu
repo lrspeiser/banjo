@@ -463,6 +463,7 @@ public:
         S_ = convertSettings<Real>(settings);
         x0_.upload(w.x0); u_.upload(w.u); u_prev_.upload(w.u_prev); v_.upload(w.v);
         inv_mass_.upload(w.inv_mass); mass_.upload(w.mass); rinv_.upload(w.rinv);
+        node_unmeasured_.upload(w.node_unmeasured);
         strain_.upload(w.strain); approach_.upload(w.approach);
         node_valid_.upload(w.node_valid); node_dirty_.upload(w.node_dirty);
         engaged_.upload(w.engaged); candidate_.upload(w.candidate);
@@ -482,11 +483,12 @@ public:
         range_begin_.upload(w.range_begin); range_end_.upload(w.range_end);
         bond_block_begin_.upload(w.bond_block_begin);
         candidate_list_.upload(w.candidate_list); candidate_count_.upload(w.candidate_count);
-        degenerate_.upload(w.degenerate_disagreements);
+        degenerate_.upload(w.rank_deficient_nodes);
 
         L_ = w.arrays();
         L_.x0 = x0_.data(); L_.u = u_.data(); L_.u_prev = u_prev_.data(); L_.v = v_.data();
         L_.inv_mass = inv_mass_.data(); L_.mass = mass_.data(); L_.rinv = rinv_.data();
+        L_.node_unmeasured = node_unmeasured_.data();
         L_.node_valid = node_valid_.data(); L_.node_dirty = node_dirty_.data();
         L_.strain = strain_.data(); L_.approach = approach_.data(); L_.engaged = engaged_.data();
         L_.candidate = candidate_.data(); L_.adj_offsets = adj_offsets_.data();
@@ -503,7 +505,7 @@ public:
         L_.range_begin = range_begin_.data(); L_.range_end = range_end_.data();
         L_.bond_block_begin = bond_block_begin_.data(); L_.candidate_list = candidate_list_.data();
         L_.candidate_count = candidate_count_.data();
-        L_.degenerate_disagreements = degenerate_.data();
+        L_.rank_deficient_nodes = degenerate_.data();
 
         std::vector<SphereState<Real>> sphere_host{convertSphere<Real>(sphere)};
         sphere_.upload(sphere_host);
@@ -584,7 +586,7 @@ public:
             host_status_.max_shear_strain = peak;
             std::vector<std::uint32_t> degenerate;
             degenerate_.download(degenerate);
-            host_status_.degenerate_disagreements = degenerate.empty() ? 0U : degenerate.front();
+            host_status_.rank_deficient_nodes = degenerate.empty() ? 0U : degenerate.front();
             host_status_.failure_rounds = d.failure_rounds;
             host_status_.broken_bonds = d.broken_bonds;
             host_status_.removed_energy_j = d.removed_energy_j;
@@ -674,7 +676,7 @@ private:
     unsigned frame_capacity_{};
     SharedLayout layout_{};
 
-    DeviceVector<Real> x0_, u_, u_prev_, v_, inv_mass_, mass_, rinv_, strain_, approach_;
+    DeviceVector<Real> x0_, u_, u_prev_, v_, inv_mass_, mass_, rinv_, node_unmeasured_, strain_, approach_;
     DeviceVector<std::uint8_t> node_valid_, node_dirty_, engaged_, candidate_;
     DeviceVector<std::uint32_t> adj_offsets_, adj_bonds_, node_block_begin_;
     DeviceVector<std::uint32_t> nbr_bond_, nbr_other_;

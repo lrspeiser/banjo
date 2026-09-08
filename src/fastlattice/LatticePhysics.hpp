@@ -201,7 +201,10 @@ struct LatticeArrays {
     // rule accepts but the relative rule rejects (or vice versa), counted at
     // every recomputation. Written by many threads; the count is approximate
     // on the GPU (plain increments), exact on the CPU.
-    std::uint32_t *degenerate_disagreements;
+    std::uint32_t *rank_deficient_nodes;
+    // 3N: unit normal of a coplanar neighbourhood, zero where the node spans
+    // all three directions. The strain is projected into the plane it defines.
+    Real *node_unmeasured;
     // Bonds.
     const std::uint32_t *bond_a;
     const std::uint32_t *bond_b;
@@ -287,20 +290,99 @@ BANJO_HD bool inverse3(const Real m[9], Real epsilon, Real out[9]) {
     return true;
 }
 
-// Degeneracy threshold for the rest covariance determinant. The CPU uses an
-// absolute 1e-16 in double. In float the rounding noise of a coplanar
-// neighbourhood is far above that, so the float path scales the threshold by
-// the isotropic determinant (trace/3)^3; trace(R) equals the live neighbour
-// count because the weights are 1/|rest edge|^2.
+// Relative eigenvalue floor for the rest covariance. A direction the
+// neighbourhood does not sample carries no information about the deformation,
+// and inverting it amplifies rounding noise without bound: that is what
+// produced fabricated strains of 2.3, 4.0 and 127.5 (a deformation gradient
+// collapsed to zero reads as a compressive Green-Lagrange strain of exactly
+// 0.5). The floor is relative to the largest eigenvalue, so it is a statement
+// about conditioning rather than about units; the trace of R equals the live
+// neighbour count because the weights are 1/|rest edge|^2.
 template <typename Real>
-BANJO_HD Real inverseEpsilon(const Real r[9]) {
-    if constexpr (sizeof(Real) == 8) {
-        (void)r;
-        return Real(1.0e-16);
-    } else {
-        const Real third = (r[0] + r[4] + r[8]) * Real(1.0 / 3.0);
-        return Real(1.0e-5) * third * third * third;
+BANJO_HD Real eigenvalueFloor() {
+    return sizeof(Real) == 8 ? Real(1.0e-9) : Real(1.0e-5);
+}
+
+// Eigendecomposition of a symmetric 3x3 by cyclic Jacobi rotations. Fixed
+// sweep count, no allocation, no library call: identical on host and device.
+// Returns eigenvalues in d[3] and orthonormal eigenvectors as the columns of
+// v[9] (row-major, v[row * 3 + col] is component `row` of eigenvector `col`).
+template <typename Real>
+BANJO_HD void symmetricEigen3(const Real m[9], Real d[3], Real v[9]) {
+    Real a[9];
+    for (int k = 0; k < 9; ++k) a[k] = m[k];
+    for (int k = 0; k < 9; ++k) v[k] = (k % 4 == 0) ? Real(1) : Real(0);
+    for (int sweep = 0; sweep < 12; ++sweep) {
+        Real off = absR(a[1]) + absR(a[2]) + absR(a[5]);
+        if (!(off > Real(0))) break;
+        for (int p = 0; p < 2; ++p) {
+            for (int q = p + 1; q < 3; ++q) {
+                const Real apq = a[p * 3 + q];
+                if (!(absR(apq) > Real(0))) continue;
+                const Real app = a[p * 3 + p], aqq = a[q * 3 + q];
+                // t = tan(theta) of the rotation that zeroes a[p][q].
+                const Real theta = (aqq - app) / (Real(2) * apq);
+                const Real sign = theta >= Real(0) ? Real(1) : Real(-1);
+                const Real t = sign / (absR(theta) + sqrtR(theta * theta + Real(1)));
+                const Real c = Real(1) / sqrtR(t * t + Real(1));
+                const Real sn = t * c;
+                for (int k = 0; k < 3; ++k) {
+                    const Real akp = a[k * 3 + p], akq = a[k * 3 + q];
+                    a[k * 3 + p] = c * akp - sn * akq;
+                    a[k * 3 + q] = sn * akp + c * akq;
+                }
+                for (int k = 0; k < 3; ++k) {
+                    const Real apk = a[p * 3 + k], aqk = a[q * 3 + k];
+                    a[p * 3 + k] = c * apk - sn * aqk;
+                    a[q * 3 + k] = sn * apk + c * aqk;
+                }
+                for (int k = 0; k < 3; ++k) {
+                    const Real vkp = v[k * 3 + p], vkq = v[k * 3 + q];
+                    v[k * 3 + p] = c * vkp - sn * vkq;
+                    v[k * 3 + q] = sn * vkp + c * vkq;
+                }
+            }
+        }
     }
+    d[0] = a[0]; d[1] = a[4]; d[2] = a[8];
+}
+
+// Moore-Penrose pseudo-inverse of a symmetric positive semi-definite 3x3,
+// truncating every eigen-direction below the relative floor. `rank` reports how
+// many directions survived: 3 for a solid neighbourhood, 2 for a coplanar one
+// (a sheet one cell thick, where every rest edge lies in the plane), less where
+// fracture has stripped a node of neighbours.
+//
+// Truncation rather than inversion is what makes the unsampled direction
+// harmless. The strain is formed below as G = F - I = dA R+, so a direction
+// killed by R+ contributes G d = 0, i.e. F d = d: the deformation gradient is
+// the identity along a direction the neighbourhood never measured, which is the
+// plane-stress statement for a thin sheet and the only claim the data supports.
+template <typename Real>
+BANJO_HD int symmetricPseudoInverse3(const Real m[9], Real out[9], Real unmeasured[3]) {
+    Real d[3], v[9];
+    symmetricEigen3(m, d, v);
+    Real largest = absR(d[0]);
+    if (absR(d[1]) > largest) largest = absR(d[1]);
+    if (absR(d[2]) > largest) largest = absR(d[2]);
+    const Real floor_value = eigenvalueFloor<Real>() * largest;
+    for (int k = 0; k < 9; ++k) out[k] = Real(0);
+    for (int k = 0; k < 3; ++k) unmeasured[k] = Real(0);
+    int rank = 0, dropped = -1;
+    for (int c = 0; c < 3; ++c) {
+        if (!(d[c] > floor_value)) { dropped = c; continue; }
+        ++rank;
+        const Real inv = Real(1) / d[c];
+        for (int row = 0; row < 3; ++row)
+            for (int col = 0; col < 3; ++col)
+                out[row * 3 + col] += inv * v[row * 3 + c] * v[col * 3 + c];
+    }
+    // Exactly one direction dropped -- a coplanar neighbourhood -- is the case
+    // the strain can still be stated on: report its normal so the strain can be
+    // projected into the plane. Two or more dropped leaves too little to say.
+    if (rank == 2 && dropped >= 0)
+        for (int k = 0; k < 3; ++k) unmeasured[k] = v[k * 3 + dropped];
+    return rank;
 }
 
 // ---------------------------------------------------------------------------
@@ -329,31 +411,33 @@ BANJO_HD void nodeStrain(const LatticeArrays<Real> &L, std::uint32_t i, bool dir
             ++live;
         }
         std::uint8_t valid = 0;
-        if (live >= 3U) {
-            Real inv[9];
-            if (inverse3(rest_cov, inverseEpsilon(rest_cov), inv)) {
+        if (live >= 1U) {
+            Real inv[9], unmeasured[3];
+            const int rank = symmetricPseudoInverse3(rest_cov, inv, unmeasured);
+            if (rank >= 2) {
                 for (int k = 0; k < 9; ++k) L.rinv[9 * i + k] = inv[k];
+                for (int k = 0; k < 3; ++k) L.node_unmeasured[3 * i + k] = unmeasured[k];
                 valid = 1;
             }
-            // Would the other rule have decided differently?
-            const Real det = rest_cov[0] * (rest_cov[4] * rest_cov[8] - rest_cov[5] * rest_cov[7]) -
-                             rest_cov[1] * (rest_cov[3] * rest_cov[8] - rest_cov[5] * rest_cov[6]) +
-                             rest_cov[2] * (rest_cov[3] * rest_cov[7] - rest_cov[4] * rest_cov[6]);
-            const Real third = (rest_cov[0] + rest_cov[4] + rest_cov[8]) * Real(1.0 / 3.0);
-            const bool absolute_rule = absR(det) > Real(1.0e-16);
-            const bool relative_rule = absR(det) > Real(1.0e-5) * third * third * third;
-            if (absolute_rule != relative_rule && L.degenerate_disagreements != nullptr)
-                *L.degenerate_disagreements += 1U;
+            // A node whose neighbourhood does not span three directions still
+            // yields a strain, on the directions it does span. Counting them is
+            // what keeps that visible: a sheet one cell thick has every node at
+            // rank 2, and reporting zero here used to be the only sign that the
+            // nonlocal criterion had quietly become a local stretch test.
+            if (rank < 3 && L.rank_deficient_nodes != nullptr)
+                *L.rank_deficient_nodes += 1U;
         }
         L.node_valid[i] = valid;
         L.node_dirty[i] = 0;
     }
     if (!L.node_valid[i]) return;
 
-    // A = sum w * current (x) rest (direct) or dA = sum w * du (x) rest. Dead
-    // and padded neighbours contribute an exact zero, which leaves the
-    // accumulator unchanged, so the loop has no data-dependent branch and
-    // its independent loads can be issued together.
+    // dA = sum w * (current - rest) (x) rest in both modes. Accumulating the
+    // difference rather than the current edge is what lets a rank-deficient R+
+    // mean "identity along the unmeasured direction": at rest dA is exactly
+    // zero, so G is zero and F is I whatever R+ drops. It is also the
+    // cancellation-free form. Dead and padded neighbours contribute an exact
+    // zero, so the loop has no data-dependent branch.
     Real acc[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
     const V3<Real> xi = direct ? position(L, i) : load3(L.u, i);
     BANJO_UNROLL
@@ -365,7 +449,7 @@ BANJO_HD void nodeStrain(const LatticeArrays<Real> &L, std::uint32_t i, bool dir
         const Real w = (present && L.nbr_alive[slot]) ? L.nbr_weight[slot] : Real(0);
         const V3<Real> rest = present ? load3(L.nbr_rest, slot) : v3<Real>(0, 0, 0);
         const V3<Real> xo = direct ? position(L, other) : load3(L.u, other);
-        const V3<Real> cur = xo - xi;
+        const V3<Real> cur = direct ? (xo - xi) - rest : xo - xi;
         const Real cc[3] = {cur.x, cur.y, cur.z};
         const Real rr[3] = {rest.x, rest.y, rest.z};
         for (int row = 0; row < 3; ++row)
@@ -380,19 +464,11 @@ BANJO_HD void nodeStrain(const LatticeArrays<Real> &L, std::uint32_t i, bool dir
             for (int k = 0; k < 3; ++k) s += acc[row * 3 + k] * inv[k * 3 + col];
             f[row * 3 + col] = s;
         }
+    // G = F - I = dA R+, E = (G + G^T + G^T G) / 2 in both modes: exact, free of
+    // the cancellation that forming F from absolute positions would carry, and
+    // it is the form that leaves E zero along a direction R+ dropped.
     Real e[6];
-    if (direct) {
-        // F = A R^-1, C = F^T F, E = (C - I) / 2.
-        const int rows[6] = {0, 1, 2, 0, 0, 1};
-        const int cols[6] = {0, 1, 2, 1, 2, 2};
-        for (int q = 0; q < 6; ++q) {
-            Real c = Real(0);
-            for (int k = 0; k < 3; ++k) c += f[k * 3 + rows[q]] * f[k * 3 + cols[q]];
-            const Real identity = rows[q] == cols[q] ? Real(1) : Real(0);
-            e[q] = Real(0.5) * (c - identity);
-        }
-    } else {
-        // G = F - I = dA R^-1, E = (G + G^T + G^T G) / 2: no cancellation.
+    {
         const int rows[6] = {0, 1, 2, 0, 0, 1};
         const int cols[6] = {0, 1, 2, 1, 2, 2};
         for (int q = 0; q < 6; ++q) {
@@ -400,6 +476,27 @@ BANJO_HD void nodeStrain(const LatticeArrays<Real> &L, std::uint32_t i, bool dir
             for (int k = 0; k < 3; ++k) c += f[k * 3 + rows[q]] * f[k * 3 + cols[q]];
             e[q] = Real(0.5) * (f[rows[q] * 3 + cols[q]] + f[cols[q] * 3 + rows[q]] + c);
         }
+    }
+    // A coplanar neighbourhood measures the deformation of its own plane and
+    // nothing else. Leaving the unmeasured direction at rest is not a neutral
+    // choice: it is not rotation invariant, so a sheet that merely flexes reads
+    // as shear -- measured at 436 bonds broken under gravity alone on a plate
+    // that was not struck. Projecting the strain into the plane removes exactly
+    // those cross terms and is invariant under rigid motion, because the
+    // in-plane block of E is identically zero for a rotation. Every live bond
+    // at such a node lies in that plane, so nothing the criterion reads is lost.
+    const Real un[3] = {L.node_unmeasured[3 * i], L.node_unmeasured[3 * i + 1],
+                        L.node_unmeasured[3 * i + 2]};
+    if (un[0] * un[0] + un[1] * un[1] + un[2] * un[2] > Real(0)) {
+        const Real a[3] = {e[0] * un[0] + e[3] * un[1] + e[4] * un[2],
+                           e[3] * un[0] + e[1] * un[1] + e[5] * un[2],
+                           e[4] * un[0] + e[5] * un[1] + e[2] * un[2]};
+        const Real s = a[0] * un[0] + a[1] * un[1] + a[2] * un[2];
+        const int rows[6] = {0, 1, 2, 0, 0, 1};
+        const int cols[6] = {0, 1, 2, 1, 2, 2};
+        for (int q = 0; q < 6; ++q)
+            e[q] += -un[rows[q]] * a[cols[q]] - a[rows[q]] * un[cols[q]] +
+                    s * un[rows[q]] * un[cols[q]];
     }
     for (int q = 0; q < 6; ++q) L.strain[6 * i + q] = e[q];
 }

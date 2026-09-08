@@ -98,7 +98,7 @@ struct RunStatus {
     float max_tensile_stretch{}, max_compressive_strain{}, max_shear_strain{};
     // Rest-covariance recomputations on which the CPU's absolute determinant
     // rule and the relative rule disagreed (see LatticePhysics.hpp).
-    std::uint32_t degenerate_disagreements{};
+    std::uint32_t rank_deficient_nodes{};
 };
 
 struct FrameCapture {

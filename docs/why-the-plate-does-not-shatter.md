@@ -194,6 +194,68 @@ surface node.
    rather than a silent downgrade. The second is what makes a windowpane
    expressible at all; the first is what the current criterion requires.
 
+## 6. Fixed, and the plate shatters
+
+Two changes, both to the strain measure the criterion reads, in
+`src/fastlattice/LatticePhysics.hpp` and its mirror
+`src/fracture/BondFailure.cpp`:
+
+1. **Pseudo-inverse instead of inverse.** The rest covariance is
+   eigendecomposed (cyclic Jacobi, fixed sweeps, identical on host and device)
+   and inverted only on directions above a floor relative to its largest
+   eigenvalue. A direction the neighbourhood does not sample is dropped rather
+   than amplified, so no fabricated strain is possible in either precision, and
+   `rank_deficient_nodes` reports how many nodes were affected instead of the
+   old silent count of rule disagreements. The strain is formed once, from
+   `G = F - I = dA R+`, in both the absolute and displacement modes.
+2. **The strain is projected into the plane the neighbourhood spans.** Dropping
+   the unmeasured direction is not enough on its own: leaving it at rest is not
+   invariant under rigid rotation, so a sheet that merely flexes reads as shear.
+   Measured on the way through -- with the pseudo-inverse alone the plate broke
+   **436 bonds under gravity, never having been struck**, at zero tensile strain
+   and 0.0026 of shear. Projecting removes exactly those cross terms and is
+   invariant, because the in-plane block of the strain is identically zero for a
+   rotation, and every live bond at such a node lies in that plane.
+
+Measured after, 60 x 50 x 10 mm tile, same 6.26 m/s strike, double precision:
+
+| layers | before: broken / pieces / stretch / shear | after |
+|---:|---|---|
+| 1 | 1 / 1 / 0.0015 / **0.00000** | **35 / 3** / 0.0015 / 0.0074 |
+| 2 | 1,735 / 56 / **2.2630** / 3.055 | **628 / 43** / **0.0018** / 0.0133 |
+| 4 | 6,823 / 209 / **127.50** / 131.08 | **1,876 / 109** / **0.0019** / 0.0135 |
+
+Peak strain is now 0.0015-0.0019 at every resolution instead of ranging over
+five orders of magnitude, and the one-cell sheet finally reads a nonzero shear,
+which is the sign that the nonlocal criterion is running on it at all.
+
+The 250 x 200 x 10 mm plate, 500 cells, on two ledges:
+
+| impact | at rest, no strike | 6.26 m/s (17 J) | 12 m/s (64 J) | 20 m/s (178 J) |
+|---|---:|---:|---:|---:|
+| bonds broken | **0** / 2,777 | 1,982 | 584 | 561 |
+| pieces | 1 | **295** | 75 | 70 |
+| largest piece | 1,250 g | 265 g | 1,057 g | 1,070 g |
+| removed energy | 0.000 J | 3.38 J | 4.20 J | 4.14 J |
+| failure rounds | 0 | 627 over 83 ms | 207 over 11 ms | 178 over 9 ms |
+
+The at-rest control is the one that matters most: the plate carries its own
+weight on the ledges for 40 ms and breaks nothing, at a peak stretch of 0.000077
+and a peak shear of 0.000136.
+
+The speed trend is not a mistake. The gentlest strike breaks the plate into the
+most pieces because it loads the whole plate in bending for 83 ms; the fastest
+punches a local hole in 9 ms and leaves 86% of the plate in one piece. That is
+the difference between pressing a pane and shooting it, and it is the first
+result in this engine that tracks the request rather than the resolution.
+
+**What is still wrong.** 295 pieces from a 17 J strike on a 10 mm pane is
+over-fragmentation, and the piece count still moves with cell size (3, 43, 109
+for one, two and four layers on the small tile). That is the missing length
+scale in the failure threshold -- crack energy proportional to cell size -- and
+it is a separate fix, in progress. Nothing here calibrates glass; what changed
+is that the criterion is now reading a strain that exists.
+
 ## Reproduce
 
 ```

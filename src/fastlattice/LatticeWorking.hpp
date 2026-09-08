@@ -14,7 +14,7 @@ namespace banjo::fastlattice {
 template <typename Real>
 struct WorkingLattice {
     std::uint32_t node_count{}, bond_count{}, block_count{}, color_count{};
-    std::vector<Real> x0, u, u_prev, v, inv_mass, mass, rinv, strain, approach;
+    std::vector<Real> x0, u, u_prev, v, inv_mass, mass, rinv, node_unmeasured, strain, approach;
     std::vector<std::uint8_t> node_valid, node_dirty, engaged, candidate;
     std::vector<std::uint32_t> adj_offsets, adj_bonds, node_block_begin;
     std::uint32_t max_degree{};
@@ -28,7 +28,7 @@ struct WorkingLattice {
     std::vector<Real> damage, accumulated_lambda, prev_tensile, prev_compressive, prev_shear;
     std::vector<std::uint32_t> range_begin, range_end, bond_block_begin;
     std::vector<std::uint32_t> candidate_list, candidate_count;
-    std::vector<std::uint32_t> degenerate_disagreements; // 1 counter
+    std::vector<std::uint32_t> rank_deficient_nodes; // 1 counter
 
     static WorkingLattice fromState(const LatticeState &state, const LatticeSchedule &schedule) {
         WorkingLattice w;
@@ -48,6 +48,7 @@ struct WorkingLattice {
         w.inv_mass = cast(state.inv_mass);
         w.mass = cast(state.mass);
         w.rinv.assign(9U * state.node_count, Real(0));
+        w.node_unmeasured.assign(3U * state.node_count, Real(0));
         w.strain.assign(6U * state.node_count, Real(0));
         w.approach.assign(kMaxSupportPlanes * state.node_count, Real(0));
         w.node_valid.assign(state.node_count, 0U);
@@ -85,7 +86,7 @@ struct WorkingLattice {
         w.bond_block_begin = schedule.bond_block_begin;
         w.candidate_list.assign(static_cast<std::size_t>(schedule.block_count) * kMaxCandidatesPerBlock, 0U);
         w.candidate_count.assign(schedule.block_count, 0U);
-        w.degenerate_disagreements.assign(1, 0U);
+        w.rank_deficient_nodes.assign(1, 0U);
         return w;
     }
 
@@ -119,6 +120,7 @@ struct WorkingLattice {
         a.inv_mass = inv_mass.data();
         a.mass = mass.data();
         a.rinv = rinv.data();
+        a.node_unmeasured = node_unmeasured.data();
         a.node_valid = node_valid.data();
         a.node_dirty = node_dirty.data();
         a.strain = strain.data();
@@ -156,7 +158,7 @@ struct WorkingLattice {
         a.bond_block_begin = bond_block_begin.data();
         a.candidate_list = candidate_list.data();
         a.candidate_count = candidate_count.data();
-        a.degenerate_disagreements = degenerate_disagreements.data();
+        a.rank_deficient_nodes = rank_deficient_nodes.data();
         return a;
     }
 };

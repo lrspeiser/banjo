@@ -279,7 +279,7 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
     m.max_tensile_stretch = status.max_tensile_stretch;
     m.max_compressive_strain = status.max_compressive_strain;
     m.max_shear_strain = status.max_shear_strain;
-    m.degenerate_disagreements = status.degenerate_disagreements;
+    m.rank_deficient_nodes = status.rank_deficient_nodes;
     m.bond_updates_per_s = m.lattice_wall_s > 0.0
         ? static_cast<double>(m.bonds) * static_cast<double>(status.total_steps) / m.lattice_wall_s : 0.0;
 
@@ -540,7 +540,7 @@ std::string measurementsJson(const TileImpactMeasurements &m) {
         {"max_tensile_stretch", m.max_tensile_stretch},
         {"max_compressive_strain", m.max_compressive_strain},
         {"max_shear_strain", m.max_shear_strain},
-        {"degenerate_disagreements", m.degenerate_disagreements},
+        {"rank_deficient_nodes", m.rank_deficient_nodes},
         {"backend", m.backend_name},
         {"cells", m.cells}, {"bonds", m.bonds}, {"colors", m.colors}, {"blocks", m.blocks},
         {"boundary_bonds", m.boundary_bonds},

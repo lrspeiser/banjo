@@ -19,6 +19,9 @@ namespace {
 struct NodeStrainState {
     Mat3 green_lagrange{};
     bool valid{};
+    // Eigen-directions the neighbourhood spans: 3 for solid matter, 2 for a
+    // sheet one cell thick, fewer where fracture has stripped the node.
+    int rank{};
 };
 
 // Strain resolved onto one bond direction: the normal component along the bond
@@ -71,6 +74,99 @@ void addScaledOuterProduct(
     return result;
 }
 
+// Eigendecomposition of a symmetric 3x3 by cyclic Jacobi rotations, and the
+// Moore-Penrose pseudo-inverse built from it, truncating every eigen-direction
+// below a floor relative to the largest eigenvalue.
+//
+// A direction the neighbourhood does not sample carries no information about
+// the deformation, and inverting it amplifies rounding without bound. That is
+// what an absolute determinant threshold used to allow: a plate two cells thick
+// reported a tensile strain of 2.3 and a compressive strain of exactly 0.5,
+// which is a deformation gradient collapsed to zero, and a plate one cell thick
+// was rejected outright so the criterion silently became a local stretch test.
+// Truncating instead leaves the deformation gradient as the identity along the
+// unmeasured direction, which is the plane-stress statement for a thin sheet
+// and the only claim the neighbourhood supports.
+//
+// Mirrored in fastlattice/LatticePhysics.hpp (symmetricEigen3,
+// symmetricPseudoInverse3); the two must stay identical.
+void symmetricEigen3(const Mat3 &matrix, double eigenvalues[3], Mat3 &vectors) {
+    double a[3][3];
+    for (std::size_t row = 0; row < 3U; ++row)
+        for (std::size_t column = 0; column < 3U; ++column)
+            a[row][column] = matrix.m[row][column];
+    for (std::size_t row = 0; row < 3U; ++row)
+        for (std::size_t column = 0; column < 3U; ++column)
+            vectors.m[row][column] = row == column ? 1.0 : 0.0;
+    for (int sweep = 0; sweep < 12; ++sweep) {
+        const double off = std::abs(a[0][1]) + std::abs(a[0][2]) + std::abs(a[1][2]);
+        if (!(off > 0.0)) {
+            break;
+        }
+        for (int p = 0; p < 2; ++p) {
+            for (int q = p + 1; q < 3; ++q) {
+                const double apq = a[p][q];
+                if (!(std::abs(apq) > 0.0)) {
+                    continue;
+                }
+                const double theta = (a[q][q] - a[p][p]) / (2.0 * apq);
+                const double sign = theta >= 0.0 ? 1.0 : -1.0;
+                const double t = sign / (std::abs(theta) + std::sqrt(theta * theta + 1.0));
+                const double c = 1.0 / std::sqrt(t * t + 1.0);
+                const double sn = t * c;
+                for (int k = 0; k < 3; ++k) {
+                    const double akp = a[k][p], akq = a[k][q];
+                    a[k][p] = c * akp - sn * akq;
+                    a[k][q] = sn * akp + c * akq;
+                }
+                for (int k = 0; k < 3; ++k) {
+                    const double apk = a[p][k], aqk = a[q][k];
+                    a[p][k] = c * apk - sn * aqk;
+                    a[q][k] = sn * apk + c * aqk;
+                }
+                for (int k = 0; k < 3; ++k) {
+                    const double vkp = vectors.m[k][p], vkq = vectors.m[k][q];
+                    vectors.m[k][p] = c * vkp - sn * vkq;
+                    vectors.m[k][q] = sn * vkp + c * vkq;
+                }
+            }
+        }
+    }
+    eigenvalues[0] = a[0][0];
+    eigenvalues[1] = a[1][1];
+    eigenvalues[2] = a[2][2];
+}
+
+// Returns the number of eigen-directions kept: 3 for a solid neighbourhood, 2
+// for a coplanar one (a sheet one cell thick), fewer where fracture has
+// stripped a node of neighbours.
+[[nodiscard]] int symmetricPseudoInverse(const Mat3 &matrix, Mat3 &result) {
+    double eigenvalues[3];
+    Mat3 vectors{};
+    symmetricEigen3(matrix, eigenvalues, vectors);
+    double largest = 0.0;
+    for (const double value : eigenvalues) {
+        largest = std::max(largest, std::abs(value));
+    }
+    const double floor_value = 1.0e-9 * largest;
+    result = Mat3{};
+    int rank = 0;
+    for (std::size_t column = 0; column < 3U; ++column) {
+        if (!(eigenvalues[column] > floor_value)) {
+            continue;
+        }
+        ++rank;
+        const double inverse = 1.0 / eigenvalues[column];
+        for (std::size_t row = 0; row < 3U; ++row) {
+            for (std::size_t col = 0; col < 3U; ++col) {
+                result.m[row][col] +=
+                    inverse * vectors.m[row][column] * vectors.m[col][column];
+            }
+        }
+    }
+    return rank;
+}
+
 [[nodiscard]] std::vector<NodeStrainState> calculateNodeStrains(
     const ActiveMatter &matter) {
     std::vector<NodeStrainState> strains(matter.nodes.size());
@@ -109,9 +205,13 @@ void addScaledOuterProduct(
                 continue;
             }
             const double weight = 1.0 / rest_length_squared;
+            // The displacement difference, not the current edge: at rest this
+            // is exactly zero, so the deformation gradient below is the
+            // identity whatever the pseudo-inverse drops, and the form carries
+            // no cancellation.
             addScaledOuterProduct(
                 current_rest_covariance,
-                current_edge,
+                current_edge - rest_edge,
                 rest_edge,
                 weight);
             addScaledOuterProduct(
@@ -121,30 +221,34 @@ void addScaledOuterProduct(
                 weight);
             ++live_neighbors;
         }
-        if (live_neighbors < 3U) {
+        if (live_neighbors < 1U) {
             continue;
         }
 
-        const auto inverse_rest = rest_covariance.inverse(1.0e-16);
-        if (!inverse_rest) {
+        Mat3 inverse_rest{};
+        const int rank = symmetricPseudoInverse(rest_covariance, inverse_rest);
+        if (rank == 0) {
             continue;
         }
-        const Mat3 deformation_gradient =
-            multiply(current_rest_covariance, *inverse_rest);
-        const Mat3 right_cauchy_green = multiply(
-            transpose(deformation_gradient),
-            deformation_gradient);
+        // G = F - I = dA R+, E = (G + G^T + G^T G) / 2.
+        const Mat3 gradient_minus_identity =
+            multiply(current_rest_covariance, inverse_rest);
+        const Mat3 quadratic = multiply(
+            transpose(gradient_minus_identity),
+            gradient_minus_identity);
         Mat3 green_lagrange_strain{};
         for (std::size_t row = 0; row < 3U; ++row) {
             for (std::size_t column = 0; column < 3U; ++column) {
-                const double identity = row == column ? 1.0 : 0.0;
                 green_lagrange_strain.m[row][column] =
-                    0.5 * (right_cauchy_green.m[row][column] - identity);
+                    0.5 * (gradient_minus_identity.m[row][column] +
+                           gradient_minus_identity.m[column][row] +
+                           quadratic.m[row][column]);
             }
         }
 
         strains[node_index].green_lagrange = green_lagrange_strain;
         strains[node_index].valid = true;
+        strains[node_index].rank = rank;
     }
     return strains;
 }
