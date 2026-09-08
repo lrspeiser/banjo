@@ -25,8 +25,10 @@ Status labels: **implemented** (code exists and a CMake target builds it),
    at 0.8.
 3. **On the tile the answer does not converge, and the brief's gate is not met.**
    Piece count still grows 3-6x per level under the new law (6-15x under the
-   old); largest piece and removed energy do not settle. One gate item improves:
-   removed energy under timestep refinement, +0.55% against -9.8%.
+   old); largest piece and removed energy do not settle. Timestep sensitivity
+   improves in one gate quantity per material: glass's piece count +6.0% for dt
+   against dt/2 where the old law gives +267%, oak's removed energy +0.55%
+   against -9.8%.
 4. **Why is now a number, not a mystery.** The pulverisation number
    `R = (v/c_L)/s_c` is 25-13 for glass and 1.2-0.6 for oak on this ladder.
    Where R > 1 the impact wave takes every bond it reaches past the threshold -
@@ -582,37 +584,69 @@ same rows still triples per level.
 
 ### 6.5 dt against dt/2, and the horizon
 
-*Experimental result.* Oak, 10 mm cells, 8 m/s, `dt_factor 0.5` (0.856 us)
-against `0.25` (0.428 us), same exit rule:
+*Experimental result.* 10 mm cells, 8 m/s, `dt_factor 0.5` against `0.25`, same
+exit rule, both materials and both laws.
 
-| law | substeps | broken | pieces | largest | removed | first failure |
-|---|---:|---:|---:|---:|---:|---:|
-| old, dt | 6,233 | 952 | 28 | 1.0409 kg | 24.306 J | 0.3502 ms |
-| old, dt/2 | 11,565 | 907 | 29 | 1.0416 kg | 21.921 J | 0.3527 ms |
-| change | | **-4.7%** | +3.6% | **+0.07%** | **-9.8%** | +0.7% |
-| new, dt | 14,017 | 11,315 | 155 | 0.9394 kg | 9.1485 J | 0.3502 ms |
-| new, dt/2 | 28,033 | 12,727 | 228 | 0.8666 kg | 9.1987 J | 0.3527 ms |
-| change | | +12.5% | +47% | -7.8% | **+0.55%** | +0.7% |
+| material | law | dt | substeps | exit | broken | pieces | largest | removed |
+|---|---|---:|---:|---|---:|---:|---:|---:|
+| oak | old | 0.856 us | 6,233 | quiet | 952 | 28 | 1.0409 kg | 24.306 J |
+| oak | old | 0.428 us | 11,565 | quiet | 907 | 29 | 1.0416 kg | 21.921 J |
+| | | | | | **-4.7%** | **+3.6%** | **+0.07%** | **-9.8%** |
+| oak | new | 0.856 us | 14,017 | capped | 11,315 | 155 | 0.9394 kg | 9.1485 J |
+| oak | new | 0.428 us | 28,033 | capped | 12,727 | 228 | 0.8666 kg | 9.1987 J |
+| | | | | | **+12.5%** | **+47%** | **-7.8%** | **+0.55%** |
+| glass | old | 0.670 us | 9,214 | quiet | 2,775 | 36 | 1.770 kg | 26.248 J |
+| glass | old | 0.335 us | 35,827 | **capped** | 6,103 | 132 | 1.725 kg | 28.630 J |
+| | | | | | **+120%** | **+267%** | **-2.5%** | **+9.1%** |
+| glass | new | 0.670 us | 17,914 | capped | 16,550 | 414 | 0.940 kg | 3.1524 J |
+| glass | new | 0.335 us | 35,827 | capped | 17,024 | 439 | 0.9175 kg | 2.5365 J |
+| | | | | | **+2.9%** | **+6.0%** | **-2.4%** | **-19.5%** |
 
-One thing here is a clear win for the new law and it is on the brief's list:
-**the removed energy is 18x less sensitive to the timestep** (+0.55% against
--9.8%). That is what an energy-calibrated threshold should buy. Halving the step
-changes the old law's energy ledger by a tenth because the removal stretch has
-nothing to do with energy, so what a bond happens to be carrying when it crosses
-the threshold is set by how far the step overshot it. Under the new law that
-overshoot is bounded by the calibration.
+The result is real but it is not uniform, and saying otherwise would be wrong:
 
-Piece count and largest piece go the other way (+47% and -7.8% against +3.6% and
-+0.07%), for the same reason as section 6.3: oak under the new law is in a
-diffuse-damage regime where the piece count is a count of cells.
+- **Glass's piece count becomes almost insensitive to the step**: +6.0% under the
+  new law against +267% under the old. The old law's glass row also changes its
+  exit from `quiet` to `capped` when the step halves - halving the step changes
+  how long the cascade lasts - so part of that +267% is window truncation rather
+  than timestep, and the honest reading is "the old law's glass cascade is not
+  the same event at the two steps, and the new law's is".
+- **Oak's energy ledger becomes almost insensitive to the step**: +0.55% against
+  -9.8%, an 18x reduction. That is what an energy-calibrated threshold should
+  buy: how much a bond is carrying when it crosses its threshold is set by how
+  far the step overshot it, and under the new law that overshoot is bounded by
+  the calibration.
+- **But the two do not both improve for both materials.** Oak's piece count is
+  worse under the new law (+47% against +3.6%) and glass's energy ledger is
+  worse (-19.5% against +9.1%). The largest piece is the same to within 3% in
+  every row and tells us nothing.
+
+So the fair summary of the timestep study is: **one of the brief's gate
+quantities improves substantially under the new law for each material - piece
+count for glass, removed energy for oak - and neither material improves in
+both.** No claim of a general timestep-convergence improvement is supported.
 
 **Horizon.** The horizon is a parameter of the derivation, of every unit test and
 of the strip probe (2 and 3 throughout). On the tile ladder it is not: at 10 mm
 cells the lane refuses horizon 3 with `lattice needs more than 64 bond colours`,
 because a full horizon-3 neighbourhood has 122 incident bonds and the lane's edge
 colouring caps at 64 colours. The 20 mm tile is only 2 cells thick, which
-truncates the neighbourhood enough to fit, so horizon 3 is measured there only.
-This is a lane limitation, not a criterion limitation.
+truncates the neighbourhood enough to fit, so horizon 3 is measured there only:
+
+| 20 mm, 8 m/s | s_c | crack energy charged | broken | of all bonds | pieces | largest | removed | R |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| glass, old, horizon 3 | 1.286e-3 | 27,000 J/m^2 | 2,923 | 76.1% | 13 | 3.520 kg | 13.16 J | 0.59 |
+| glass, new, horizon 3 | 2.213e-5 | **8 J/m^2** | 3,814 | 99.3% | 166 | 0.060 kg | 1.56 J | 34.5 |
+| oak, old, horizon 3 | 1.500e-2 | 630,000 J/m^2 | 214 | 5.6% | 1 | 1.075 kg | 10.08 J | 0.065 |
+| oak, new, horizon 3 | 5.976e-4 | **1,000 J/m^2** | 3,246 | 84.5% | 19 | 0.610 kg | 7.86 J | 1.63 |
+
+The horizon-3 lattice has 3,840 bonds where horizon 2 has 1,704, and the
+energy-scaled law charges the correct Gc on both, which is the point. It also
+makes things worse in practice at this cell size: R rises with the horizon
+(s_c falls as the crossing count grows faster than the horizon), so glass at
+horizon 3 pulverises even more completely (99.3% of bonds) and oak's R crosses
+from 1.20 to 1.63. Horizon 3 is the better lattice - 1% crack-plane anisotropy
+against 10%, and closer agreement with LEFM in section 2.5 - but it does not
+help a scene that is already past the localisation bound.
 
 ### 6.6 Does the cascade ever stop?
 
@@ -665,9 +699,11 @@ constant is right and not merely self-consistent: the criterion breaks a
 cell-sized ligament at 1.32x (horizon 2) or 0.92x (horizon 3) the Griffith
 stress, for every material and every cell size.
 
-**What improved but is not a limit.** Removed energy under timestep refinement:
-+0.55% for dt against dt/2, where the old law moves -9.8% (section 6.5). That is
-the one item on the brief's gate list that the new law measurably fixes.
+**What improved but is not a limit.** Timestep sensitivity, one gate quantity
+per material (section 6.5): glass's piece count moves +6.0% for dt against dt/2
+where the old law moves +267%, and oak's removed energy moves +0.55% where the
+old law moves -9.8%. Neither material improves in both, so this is a real but
+partial gain, not a general timestep-convergence result.
 
 **What still does not converge (experimental result).** Piece count, largest
 piece and removed energy under *cell* refinement, for both laws and both
