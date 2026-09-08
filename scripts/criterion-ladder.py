@@ -294,12 +294,32 @@ STAGES = {
 }
 
 
+def convergence(rows, keys=("pieces", "largest_kg", "removed_j", "broken", "first_ms")):
+    """Relative change between successive ladder levels.
+
+    The gate the brief sets is that removed energy, largest piece and piece
+    count approach a limit as the cells shrink, so what matters is |x(h/2) -
+    x(h)| / |x(h)| falling from one level to the next. Rows must be one law and
+    one material, coarse to fine.
+    """
+    out = []
+    for previous, current in zip(rows, rows[1:]):
+        line = {"from": f"{previous['cell_mm']:g} mm", "to": f"{current['cell_mm']:g} mm"}
+        for key in keys:
+            a, b = previous.get(key, 0.0), current.get(key, 0.0)
+            line[key] = f"{b - a:+.4g} ({(b - a) / a * 100:+.0f}%)" if a else f"{b:+.4g} (n/a)"
+        out.append(line)
+    return out
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--stage", action="append", default=[], help=f"one of {sorted(STAGES)}")
     ap.add_argument("--summarise", nargs="*", default=[], help="report names already on disk")
     ap.add_argument("--force", action="store_true", help="re-run rows whose report exists")
     ap.add_argument("--cols", default=LADDER_COLS)
+    ap.add_argument("--converge", action="store_true",
+                    help="also print the level-to-level relative change, per law")
     a = ap.parse_args()
     rows = []
     for st in a.stage:
@@ -307,3 +327,17 @@ if __name__ == "__main__":
     rows += [summarise(n, OUT / f"{n}.json") for n in a.summarise]
     print()
     print(table(rows, a.cols.split(",")))
+    if a.converge:
+        groups = {}
+        for row in rows:
+            groups.setdefault((row["material"], row["law"], row["speed"], row["horizon"],
+                               row["dt_factor"]), []).append(row)
+        for key, group in groups.items():
+            group.sort(key=lambda r: -r["cell_mm"])
+            lines = convergence(group)
+            if not lines:
+                continue
+            print("")
+            print(f"level-to-level change - {key[0]}, {key[1]} law, {key[2]:g} m/s, "
+                  f"horizon {key[3]}, dt factor {key[4]:g}")
+            print(table(lines, list(lines[0].keys())))

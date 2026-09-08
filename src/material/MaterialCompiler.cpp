@@ -172,7 +172,14 @@ CompiledBrittleMaterial withEnergyScaledFailure(
     const double energy_stretch = energyScaledCriticalStretch(
         material.fracture_energy_j_m2, material.young_modulus_pa, voxel_size_m, neighbor_horizon_cells);
     // The same floor compiledFailureStrain applies to the strength law, so a
-    // threshold can never sit inside the criterion's rounding noise.
+    // threshold can never sit inside the criterion's rounding noise. Where the
+    // floor bites, the Gc calibration is broken by it: the removal stretch is
+    // then larger than the derivation asks for and the crack costs more than
+    // Gc. That is visible rather than silent - TileImpactScene reports both
+    // energy_scaled_stretch and lattice_crack_energy_j_m2, so a floored run
+    // shows a crack energy above the material's Gc - and no catalogue material
+    // reaches it at 20, 10 or 5 mm cells with horizon 2 or 3 (the smallest is
+    // ceramic at 20 mm, horizon 3: 1.89e-5, about twice the floor).
     const double bounded_end = std::max(1.0e-5, std::min(energy_stretch, strength_end));
     const double break_multiplier = material.calibration.break_strain_multiplier;
     const double damage_multiplier = material.calibration.damage_strain_multiplier;
