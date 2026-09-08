@@ -70,6 +70,19 @@ struct TileImpactRequest {
     // keeps what the material declares, which is 0 (perfect plasticity) for
     // every catalog preset and the only value the network lane admits.
     double hardening_ratio{-1.0};
+    // Unloaded-shape probe. The reference material route compiles no bond
+    // damping, so a plate that is struck and does not break rings for the whole
+    // lattice phase and never settles: the permanent set cannot be read off a
+    // frame. This runs the SAME solver on the state the lattice phase ended in,
+    // with the striker removed, gravity zero, the supports removed and a strong
+    // radial bond damping, until the plate stops moving. What is left is the
+    // shape the material holds with nothing loading it -- the dent.
+    //
+    // It is a measurement of the state, not part of the simulated history: the
+    // relaxed configuration is reported, never recorded as a frame and never fed
+    // to the rigid handoff. 0 substeps (the default) skips it entirely.
+    std::uint64_t relax_steps{0};
+    double relax_damping_fraction{0.5};
     double node_contact_radius_factor{0.5}; // node contact radius = factor * cell
     NodeContactMode node_contact{NodeContactMode::On};
     // Extra height of the tile above its support at t = 0.
@@ -227,6 +240,18 @@ struct TileImpactMeasurements {
     double strike_deflection_mean_m{}, strike_deflection_amplitude_m{};
     double plate_deflection_mean_m{}, dent_depth_m{};
     std::size_t dent_frames{};
+    // The unloaded-shape probe (TileImpactRequest::relax_steps). Heights are
+    // measured against each node's own reference height and referred to the mean
+    // of the plate's two end columns, so a rigid drift of the free plate does not
+    // enter. permanent_dent_m is positive when the strike point sits below that
+    // reference; permanent_max_dip_m is the deepest point anywhere.
+    std::uint64_t relax_steps{};
+    std::uint32_t relax_broken_bonds{};
+    double relax_plastic_work_j{}, relax_elastic_energy_j{}, relax_kinetic_j{};
+    double permanent_dent_m{}, permanent_max_dip_m{};
+    // The same measurement on the plate BEFORE the probe (the loaded, ringing
+    // configuration), so the probe's effect is visible rather than assumed.
+    double loaded_dent_m{};
     std::size_t components{}, rigid_fragments{}, debris_particles{};
     double largest_piece_mass_kg{};
     std::size_t largest_piece_cells{};

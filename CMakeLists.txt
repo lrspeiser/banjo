@@ -700,6 +700,14 @@ if(BANJO_BUILD_TESTS)
             banjo_enable_warnings(banjo_fast_lattice_tests)
             add_test(NAME banjo_fast_lattice_tests COMMAND banjo_fast_lattice_tests)
 
+            # Axial plasticity in the lattice bond solve: the constitutive law
+            # against material/NetworkMaterial.cpp, the coupon's known answer,
+            # the energy ledger and backend parity through a scene that yields.
+            add_executable(banjo_lattice_plasticity_tests tests/lattice_plasticity_tests.cpp)
+            target_link_libraries(banjo_lattice_plasticity_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_lattice_plasticity_tests)
+            add_test(NAME banjo_lattice_plasticity_tests COMMAND banjo_lattice_plasticity_tests)
+
             # Algorithm 3: the propagator premises and the exact parallel backend.
             add_executable(banjo_fracture_algo3_tests tests/fracture_algo3_tests.cpp)
             target_link_libraries(banjo_fracture_algo3_tests PRIVATE banjo_fastlattice_scene)

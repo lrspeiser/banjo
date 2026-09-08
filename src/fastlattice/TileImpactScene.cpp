@@ -405,6 +405,67 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
     }
     (void)previous_broken;
 
+    // The unloaded shape. Same solver, same state, loads removed: the striker
+    // off, gravity zero, the support planes gone, node contact off and a strong
+    // radial bond damping, run until the plate stops. What is left is the shape
+    // the material holds under no load, which is what a dent is. With plasticity
+    // off every bond returns to its original rest length and the plate relaxes
+    // flat, which is the control.
+    if (r.relax_steps > 0) {
+        LatticeState relaxed = state;
+        std::fill(relaxed.v.begin(), relaxed.v.end(), 0.0);
+        StepSettings<double> relax = setup.settings_scene;
+        relax.gravity = {0.0, 0.0, 0.0};
+        relax.sphere_enabled = 0;
+        relax.damping_fraction = std::clamp(r.relax_damping_fraction, 0.0, 1.0);
+        relax.node_contact.mode = kNodeContactOff;
+        relax.support.plane_count = 0;
+        relax.audit_energy = 0;
+        std::unique_ptr<LatticeBackend> probe = makeBackend(r, setup.schedule);
+        SphereState<double> parked = sphere;
+        probe->upload(relaxed, relax, parked);
+        RunControl relax_control{};
+        relax_control.max_steps = r.relax_steps;
+        relax_control.steps_per_launch = r.steps_per_launch;
+        const RunStatus relax_status = probe->run(relax_control);
+        probe->download(relaxed, parked);
+        m.relax_steps = relax_status.total_steps;
+        m.relax_broken_bonds = relax_status.broken_bonds;
+        m.relax_plastic_work_j = relax_status.plastic_work_j;
+        m.relax_elastic_energy_j = latticeStateElasticEnergy(relaxed);
+        m.relax_kinetic_j = latticeStateKineticEnergy(relaxed);
+        // Heights against each node's own reference height, referred to the mean
+        // of the two end columns so a rigid drift of the now-free plate cancels.
+        const auto profile = [&](const std::vector<double> &u) {
+            double x_low = std::numeric_limits<double>::infinity(), x_high = -x_low;
+            for (std::size_t i = 0; i < N; ++i) {
+                x_low = std::min(x_low, state.x0[3 * i]);
+                x_high = std::max(x_high, state.x0[3 * i]);
+            }
+            double ends = 0.0;
+            std::size_t end_count = 0;
+            std::size_t strike = 0;
+            double best = std::numeric_limits<double>::infinity();
+            for (std::size_t i = 0; i < N; ++i) {
+                const double x = state.x0[3 * i], z = state.x0[3 * i + 2];
+                if (x <= x_low + 1.0e-9 || x >= x_high - 1.0e-9) { ends += u[3 * i + 1]; ++end_count; }
+                const double radius = std::hypot(origin.x + x - r.ball_offset_x_m,
+                                                 origin.z + z - r.ball_offset_z_m);
+                const double key = radius - 1.0e-6 * state.x0[3 * i + 1];
+                if (key < best) { best = key; strike = i; }
+            }
+            const double reference = end_count > 0 ? ends / static_cast<double>(end_count) : 0.0;
+            double deepest = 0.0;
+            for (std::size_t i = 0; i < N; ++i) deepest = std::max(deepest, reference - u[3 * i + 1]);
+            return std::pair<double, double>{reference - u[3 * strike + 1], deepest};
+        };
+        const auto after = profile(relaxed.u);
+        const auto before = profile(state.u);
+        m.permanent_dent_m = after.first;
+        m.permanent_max_dip_m = after.second;
+        m.loaded_dent_m = before.first;
+    }
+
     // Permanent deformation. The reference material route compiles no bond
     // damping, so a struck plate that does not break rings for the whole
     // lattice phase; a single frame is therefore not a deflection. What is
@@ -761,6 +822,14 @@ std::string measurementsJson(const TileImpactMeasurements &m) {
                 {"elastic_stored_j", m.elastic_energy_j},
                 {"lattice_kinetic_j", m.lattice_kinetic_j}}},
             {"deformation", {
+                {"relax_steps", m.relax_steps},
+                {"relax_broken_bonds", m.relax_broken_bonds},
+                {"relax_plastic_work_j", m.relax_plastic_work_j},
+                {"relax_elastic_energy_j", m.relax_elastic_energy_j},
+                {"relax_kinetic_j", m.relax_kinetic_j},
+                {"permanent_dent_m", m.permanent_dent_m},
+                {"permanent_max_dip_m", m.permanent_max_dip_m},
+                {"loaded_dent_m", m.loaded_dent_m},
                 {"frames", m.dent_frames},
                 {"strike_deflection_mean_m", m.strike_deflection_mean_m},
                 {"strike_deflection_amplitude_m", m.strike_deflection_amplitude_m},

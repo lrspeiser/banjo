@@ -60,6 +60,11 @@ void usage() {
         "                                (default off: the elastic-plus-damage lane, bit for\n"
         "                                 bit, whatever the material declares)\n"
         "  --hardening R                 linear isotropic hardening, tangent modulus over the\n"
+        "  --relax-steps N               after the lattice phase, relax the plate with the\n"
+        "                                striker, gravity and the supports removed for N\n"
+        "                                substeps and report the shape it holds unloaded\n"
+        "                                (the dent). A measurement, not a recorded frame.\n"
+        "  --relax-damping F             radial bond damping of that probe (default 0.5)\n"
         "                                Young modulus (default: what the material declares,\n"
         "                                 which is 0, perfect plasticity, for every preset)\n"
         "  --node-radius-factor F        node contact radius = F * cell (default 0.5)\n"
@@ -121,6 +126,8 @@ int main(int argc, char **argv) {
                 else if (v == "off") request.plasticity = false;
                 else throw std::invalid_argument("--plasticity takes on or off"); }
             else if (option == "--hardening") request.hardening_ratio = number(value());
+            else if (option == "--relax-steps") request.relax_steps = static_cast<std::uint64_t>(number(value()));
+            else if (option == "--relax-damping") request.relax_damping_fraction = number(value());
             else if (option == "--node-radius-factor") request.node_contact_radius_factor = number(value());
             else if (option == "--node-contact") { const auto v = value();
                 if (v == "off") request.node_contact = NodeContactMode::Off;
