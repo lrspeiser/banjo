@@ -134,6 +134,7 @@ endif()
 add_library(
     banjo_fastlattice
     src/matter/BoxLattice.cpp
+    src/matter/LatticeMerge.cpp
     src/fastlattice/LatticeSchedule.cpp
     src/fastlattice/FastLattice.cpp
     src/fastlattice/CpuLatticeBackend.cpp

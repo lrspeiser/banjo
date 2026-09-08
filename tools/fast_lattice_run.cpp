@@ -16,6 +16,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -32,6 +33,44 @@ MaterialPreset presetFromName(std::string_view name) {
     throw std::invalid_argument("unknown material: " + std::string(name));
 }
 
+// A many-object scene, read from a JSON file. Every body shares the run's cell
+// size, because the solver's contact radius is one number for the lattice.
+//
+// {"bodies":[{"name":"pane","shape":"box","material":"glass",
+//             "dimensions_m":[0.2,0.01,0.16],"center_m":[0,0.2,0],
+//             "velocity_m_s":[0,0,0],"color_rgba":"9fd3ffff"}, ...]}
+std::vector<SceneBody> readScene(const std::string &path) {
+    std::ifstream input(path);
+    if (!input) throw std::invalid_argument("could not open scene " + path);
+    const nlohmann::json document = nlohmann::json::parse(input);
+    const auto &list = document.contains("bodies") ? document.at("bodies") : document;
+    if (!list.is_array() || list.empty()) throw std::invalid_argument("a scene needs a non-empty bodies array");
+    const auto vector3 = [](const nlohmann::json &node, const char *key, Vec3 fallback) {
+        if (!node.contains(key)) return fallback;
+        const auto &v = node.at(key);
+        if (!v.is_array() || v.size() != 3) throw std::invalid_argument(std::string(key) + " needs three numbers");
+        return Vec3{v[0].get<double>(), v[1].get<double>(), v[2].get<double>()};
+    };
+    std::vector<SceneBody> bodies;
+    for (const auto &node : list) {
+        SceneBody body;
+        body.name = node.value("name", std::string("body"));
+        const std::string shape = node.value("shape", std::string("box"));
+        if (shape == "sphere") body.shape = BodyShape::Sphere;
+        else if (shape == "box") body.shape = BodyShape::Box;
+        else throw std::invalid_argument("unknown shape: " + shape);
+        body.material = presetFromName(node.value("material", std::string("glass")));
+        body.dimensions_m = vector3(node, "dimensions_m", Vec3{0.1, 0.1, 0.1});
+        body.center_m = vector3(node, "center_m", Vec3{});
+        body.velocity_m_s = vector3(node, "velocity_m_s", Vec3{});
+        if (node.contains("color_rgba"))
+            body.color_rgba = static_cast<std::uint32_t>(
+                std::stoul(node.at("color_rgba").get<std::string>(), nullptr, 16));
+        bodies.push_back(std::move(body));
+    }
+    return bodies;
+}
+
 double number(const std::string &value) {
     std::size_t used = 0;
     const double result = std::stod(value, &used);
@@ -42,6 +81,12 @@ double number(const std::string &value) {
 void usage() {
     std::cout <<
         "usage: banjo_fast_lattice_run [options]\n"
+        "  --scene FILE                  a many-object scene: a JSON bodies array of\n"
+        "                                {name, shape box|sphere, material, dimensions_m,\n"
+        "                                 center_m, velocity_m_s, color_rgba}. Every body\n"
+        "                                shares --cell. There is no rigid striker: what\n"
+        "                                falls is the body given a velocity, and it can\n"
+        "                                break like any other.\n"
         "  --material glass|oak|iron     tile material (reference route for all three)\n"
         "  --ball-material iron|...      striker material\n"
         "  --tile X Y Z                  tile dimensions in metres (Y is the thickness)\n"
@@ -118,6 +163,7 @@ int main(int argc, char **argv) {
                 return argv[i];
             };
             if (option == "--help" || option == "-h") { usage(); return 0; }
+            else if (option == "--scene") request.bodies = readScene(value());
             else if (option == "--material") request.tile_material = presetFromName(value());
             else if (option == "--ball-material") request.ball_material = presetFromName(value());
             else if (option == "--ground-material") request.ground_material = presetFromName(value());

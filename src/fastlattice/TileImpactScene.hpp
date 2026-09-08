@@ -30,7 +30,34 @@ enum class BackendKind : std::uint8_t { Cpu, Cuda, CpuParallel };
 // "before" interpenetration is measured on the same scene; On applies it.
 enum class NodeContactMode : std::uint8_t { Off, Measure, On };
 
+// One lattice object in a many-object scene.
+//
+// The solver never asks what material it is stepping: node mass is per node,
+// and compliance and all six damage thresholds are per bond. So one lattice can
+// hold a glass plate, an oak block and an iron ball at once. What keeps them
+// separate objects is that no bond crosses between them; what makes them meet
+// is node-to-node contact, which acts on any pair no live bond joins.
+//
+// Every body in a scene shares the request's cell size, because the solver's
+// contact radius and support offset are one number for the whole lattice.
+enum class BodyShape : std::uint8_t { Box, Sphere };
+
+struct SceneBody {
+    std::string name{"body"};
+    BodyShape shape{BodyShape::Box};
+    MaterialPreset material{MaterialPreset::Glass};
+    // Box: the three extents. Sphere: x is the diameter, y and z are ignored.
+    Vec3 dimensions_m{0.1, 0.1, 0.1};
+    Vec3 center_m{};      // where its centre of mass sits at t = 0
+    Vec3 velocity_m_s{};  // what it is already doing at t = 0
+    std::uint32_t color_rgba{0x9fd3ffffU};
+};
+
 struct TileImpactRequest {
+    // Many objects instead of one tile and one rigid striker. Empty means the
+    // single-tile scene this lane has always run, bit for bit: nothing about a
+    // body is read unless this is non-empty.
+    std::vector<SceneBody> bodies;
     MaterialPreset tile_material{MaterialPreset::Glass};
     MaterialPreset ball_material{MaterialPreset::Iron};
     MaterialPreset ground_material{MaterialPreset::Concrete};
@@ -180,6 +207,14 @@ struct TileImpactSetup {
     TileImpactRequest request{};
     MaterialDefinition tile_material{}, ball_material{}, ground_material{};
     CompiledBrittleMaterial compiled{};
+    // Many-object scenes only. The merged asset below owns the geometry; these
+    // keep what each part was, so mass, colour and material survive the merge.
+    bool multi_body{false};
+    std::vector<LatticeAsset> part_assets;
+    std::vector<MaterialDefinition> part_definitions;
+    std::vector<CompiledBrittleMaterial> part_materials;
+    std::vector<std::uint32_t> part_of_node;
+    std::vector<double> node_mass_kg;
     LatticeAsset asset{};
     BoxLatticeLayout layout{};
     ActiveMatter matter{};
@@ -412,7 +447,12 @@ struct TileImpactResult {
     std::string tile_material_name, ball_material_name, ground_material_name;
     std::vector<StaticBox> ledges;
     double ground_y{};
-    std::vector<std::pair<std::uint32_t, std::uint32_t>> bond_nodes; // asset order
+    std::vector<std::pair<std::uint32_t, std::uint32_t>> bond_nodes;
+    // Many-object scenes: which body each cell belongs to, and what those
+    // bodies were, so the recording can name and colour them separately
+    // instead of calling every cell one tile material.
+    std::vector<SceneBody> bodies;
+    std::vector<std::uint32_t> part_of_node; // asset order
 };
 
 // Runs impact through rest. Throws on backend errors.

@@ -1,4 +1,5 @@
 #include "fastlattice/TileImpactScene.hpp"
+#include "matter/LatticeMerge.hpp"
 
 #include "fastlattice/Refracture.hpp"
 #include "fracture/BondFailure.hpp"
@@ -72,7 +73,9 @@ StepSettings<double> buildSettings(const TileImpactSetup &setup, const Vec3 &ori
     s.constraint_iterations = std::max(1U, r.constraint_iterations);
     s.damping_fraction = setup.compiled.bond_damping > 0.0
         ? 1.0 - std::exp(-setup.compiled.bond_damping * setup.dt_s) : 0.0;
-    s.sphere_enabled = 1;
+    // A many-object scene has no rigid striker: every object is lattice, and
+    // the one that was "dropped" is simply the one given a velocity.
+    s.sphere_enabled = setup.multi_body ? 0 : 1;
     s.direct_arithmetic = r.precision == Precision::Double ? 1 : 0;
     s.contact.static_friction = setup.ball_tile.static_friction;
     s.contact.dynamic_friction = setup.ball_tile.dynamic_friction;
@@ -184,8 +187,12 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
     TileImpactSetup &s = *setup;
     s.request = request;
     const TileImpactRequest &r = s.request;
-    if (!(r.cell_size_m > 0.0) || !(r.ball_radius_m > 0.0) || !(r.dt_factor > 0.0) ||
-        !(r.tile_dimensions_m.x > 0.0) || !(r.tile_dimensions_m.y > 0.0) || !(r.tile_dimensions_m.z > 0.0))
+    s.multi_body = !r.bodies.empty();
+    if (!(r.cell_size_m > 0.0) || !(r.dt_factor > 0.0))
+        throw std::invalid_argument("the scene needs a positive cell size and a positive dt factor");
+    if (!s.multi_body &&
+        (!(r.ball_radius_m > 0.0) ||
+         !(r.tile_dimensions_m.x > 0.0) || !(r.tile_dimensions_m.y > 0.0) || !(r.tile_dimensions_m.z > 0.0)))
         throw std::invalid_argument("tile impact request needs positive sizes and a positive dt factor");
 
     s.tile_material = makeReferenceMaterial(r.tile_material, r.material_seed);
@@ -208,9 +215,61 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
     // yield_stretch, which is the one switch StepSettings reads, and it touches
     // no threshold of either failure law.
     if (r.plasticity) s.compiled = withPlasticFlow(s.compiled, s.tile_material);
+    if (s.multi_body) {
+        // Each body is generated on its own, with its own material, and the
+        // results are concatenated. No bond crosses a body, so the objects stay
+        // separate; node contact is what lets them meet.
+        s.part_assets.reserve(r.bodies.size());
+        s.part_materials.reserve(r.bodies.size());
+        s.part_definitions.reserve(r.bodies.size());
+        double substep_limit = std::numeric_limits<double>::infinity();
+        for (const SceneBody &body : r.bodies) {
+            MaterialDefinition definition = makeReferenceMaterial(body.material, r.material_seed);
+            definition.failure_law = r.failure_law;
+            if (r.hardening_ratio >= 0.0) definition.hardening_ratio = r.hardening_ratio;
+            CompiledBrittleMaterial compiled = withFailureLaw(
+                compileElasticLatticeReference(definition, r.cell_size_m, r.neighbor_horizon_cells),
+                definition, r.cell_size_m, r.neighbor_horizon_cells);
+            if (r.plasticity) compiled = withPlasticFlow(compiled, definition);
+            LatticeAsset asset =
+                body.shape == BodyShape::Sphere
+                    ? generateSphereLattice({0.5 * body.dimensions_m.x, r.cell_size_m,
+                                             r.neighbor_horizon_cells, 3},
+                                            compiled)
+                    : generateBoxTileLattice({body.dimensions_m, r.cell_size_m, r.neighbor_horizon_cells},
+                                             compiled);
+            if (asset.nodes.empty())
+                throw std::invalid_argument("body \"" + body.name + "\" is smaller than one cell");
+            // One lattice has one clock, so the scene steps at the smallest
+            // bound any of its objects asks for. A stiff light object sets it.
+            const LatticeResolutionLimit part_limit = measureLatticeResolutionLimit(asset, compiled);
+            if (part_limit.explicit_substep_limit_s > 0.0)
+                substep_limit = std::min(substep_limit, part_limit.explicit_substep_limit_s);
+            s.part_definitions.push_back(definition);
+            s.part_materials.push_back(compiled);
+            s.part_assets.push_back(std::move(asset));
+        }
+        std::vector<LatticePart> parts;
+        parts.reserve(r.bodies.size());
+        for (std::size_t i = 0; i < r.bodies.size(); ++i)
+            parts.push_back({&s.part_assets[i], r.bodies[i].center_m, s.part_materials[i].density_kg_m3});
+        MergedLattice merged = mergeLattices(parts);
+        s.asset = std::move(merged.asset);
+        s.part_of_node = std::move(merged.part_of_node);
+        s.node_mass_kg = std::move(merged.node_mass_kg);
+        // The scalar settings -- bond damping and the plastic yield law -- are
+        // one number for the whole lattice, so they come from the first body.
+        // Every per-bond and per-node quantity is that body's own.
+        s.compiled = s.part_materials.front();
+        s.tile_material = s.part_definitions.front();
+        s.limit = measureLatticeResolutionLimit(s.asset, s.compiled);
+        s.limit.explicit_substep_limit_s = substep_limit;
+        s.layout = {};
+    } else {
     s.asset = generateBoxTileLattice({r.tile_dimensions_m, r.cell_size_m, r.neighbor_horizon_cells},
                                  s.compiled, &s.layout);
     s.limit = measureLatticeResolutionLimit(s.asset, s.compiled);
+    }
     if (!(s.limit.explicit_substep_limit_s > 0.0))
         throw std::runtime_error("lattice has no resolution limit; is the material stiffness zero?");
     if (r.loose_cells) {
@@ -226,7 +285,12 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
     s.support_y = r.layout == SceneLayout::Flat ? 0.0 : r.ledge_height_m;
     s.tile_bottom_y = s.support_y + r.tile_drop_m;
     s.tile_top_y = s.tile_bottom_y + r.tile_dimensions_m.y;
-    const Vec3 tile_center{0.0, s.tile_bottom_y + 0.5 * r.tile_dimensions_m.y, 0.0};
+    // A merged lattice already carries scene coordinates in its rest positions,
+    // so placing about its own centre of mass leaves every body where the
+    // caller put it.
+    const Vec3 tile_center = s.multi_body
+        ? s.asset.rest_center_of_mass_m
+        : Vec3{0.0, s.tile_bottom_y + 0.5 * r.tile_dimensions_m.y, 0.0};
     s.origin = tile_center;
     if (r.layout == SceneLayout::Bridge) {
         // Ledges under the ends of the tile's long (x) axis, half under the
@@ -244,9 +308,16 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
     matter.material = s.compiled;
     matter.nodes.reserve(s.asset.nodes.size());
     matter.reference_positions_world_m.reserve(s.asset.nodes.size());
-    for (const LatticeNodeRest &node : s.asset.nodes) {
+    for (std::size_t i = 0; i < s.asset.nodes.size(); ++i) {
+        const LatticeNodeRest &node = s.asset.nodes[i];
         const Vec3 position = tile_center + (node.local_position_m - s.asset.rest_center_of_mass_m);
-        matter.nodes.push_back({position, position, {}, node.represented_volume_m3 * s.compiled.density_kg_m3, {}});
+        // Mass is per node so that one lattice can hold several densities; a
+        // single-tile scene gets exactly what it always got.
+        const double mass = s.multi_body ? s.node_mass_kg[i]
+                                         : node.represented_volume_m3 * s.compiled.density_kg_m3;
+        // The object that was "dropped" is the one that starts with a velocity.
+        const Vec3 velocity = s.multi_body ? r.bodies[s.part_of_node[i]].velocity_m_s : Vec3{};
+        matter.nodes.push_back({position, position, velocity, mass, {}});
         matter.reference_positions_world_m.push_back(position);
     }
     matter.bonds.resize(s.asset.bonds.size());
@@ -267,8 +338,15 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
     s.settings_scene = buildSettings(s, s.origin);
     s.settings_world = buildSettings(s, Vec3{});
 
-    std::vector<std::uint32_t> slabs = boxLatticeSlabs(s.layout, r.neighbor_horizon_cells, std::max(1U, r.blocks));
-    s.schedule = buildLatticeSchedule(s.asset, slabs);
+    if (s.multi_body) {
+        // Slab decomposition reads a box's z layers, which a merged lattice has
+        // no single version of. The one-block schedule works for any lattice
+        // and still colours the bonds, which is where the parallelism is.
+        s.schedule = buildLatticeSchedule(s.asset);
+    } else {
+        std::vector<std::uint32_t> slabs = boxLatticeSlabs(s.layout, r.neighbor_horizon_cells, std::max(1U, r.blocks));
+        s.schedule = buildLatticeSchedule(s.asset, slabs);
+    }
 
     s.quiet_steps = stepsFor(r.quiet_ms, s.dt_s);
     s.min_steps = stepsFor(r.min_ms, s.dt_s);
@@ -1465,6 +1543,8 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
     result.ground_material_name = std::string(materialPresetName(r.ground_material));
     result.ledges = setup.ledges;
     result.ground_y = setup.ground_y;
+    result.bodies = r.bodies;
+    result.part_of_node = setup.part_of_node;
     result.bond_nodes.reserve(B);
     for (const BondRest &bond : setup.asset.bonds) result.bond_nodes.emplace_back(bond.node_a, bond.node_b);
     if (log) *log += notes.str();
@@ -1666,6 +1746,11 @@ void writePlayback(const TileImpactResult &result, const std::filesystem::path &
     const auto quat = [](const Quat &q) { return Json{q.w, q.x, q.y, q.z}; };
     const std::size_t N = result.frames.empty() ? 0 : result.frames.front().cell_positions.size();
     const std::size_t B = result.bond_nodes.size();
+    // A cell belongs to the object it was generated in. In a single-tile scene
+    // that is the tile and every cell reads the same; in a many-object scene it
+    // is what lets the viewer tell an oak block from the glass under it, and it
+    // is also what says there is no rigid striker to draw.
+    const bool many = !result.bodies.empty() && result.part_of_node.size() == N;
     // The playground accepts 64 MiB per recording, so the frames are thinned to
     // a budget and bond lines are kept only for the lattice phase (a rigid
     // frame carries no bond state of its own) and only while they fit. Thinning
@@ -1684,8 +1769,9 @@ void writePlayback(const TileImpactResult &result, const std::filesystem::path &
             poses.push_back({{"id", "cell:" + std::to_string(i)}, {"position_m", vec(frame.cell_positions[i])},
                              {"orientation_wxyz", quat(frame.cell_orientations[i])},
                              {"component_id", frame.component_ids.empty() ? 0U : frame.component_ids[i]}});
-        poses.push_back({{"id", "ball"}, {"position_m", vec(frame.ball_center)},
-                         {"orientation_wxyz", quat(frame.ball_orientation)}, {"component_id", 0}});
+        if (!many)
+            poses.push_back({{"id", "ball"}, {"position_m", vec(frame.ball_center)},
+                             {"orientation_wxyz", quat(frame.ball_orientation)}, {"component_id", 0}});
         for (std::size_t k = 0; k < result.ledges.size(); ++k)
             poses.push_back({{"id", "ledge:" + std::to_string(k)}, {"position_m", vec(result.ledges[k].center_m)},
                              {"orientation_wxyz", Json{1, 0, 0, 0}}, {"component_id", 0}});
@@ -1747,10 +1833,18 @@ void writePlayback(const TileImpactResult &result, const std::filesystem::path &
     Json bodies = Json::array();
     const double h = result.cell_size_m;
     for (std::size_t i = 0; i < N; ++i) {
-        bodies.push_back({{"id", "cell:" + std::to_string(i)}, {"object_id", 2}, {"element_id", i},
-                          {"material_id", result.tile_material_name}, {"color_rgba", 0x9fd3ffffU},
+        const std::uint32_t part = many ? result.part_of_node[i] : 0U;
+        const std::string material = many ? std::string(materialPresetName(result.bodies[part].material))
+                                          : result.tile_material_name;
+        bodies.push_back({{"id", "cell:" + std::to_string(i)},
+                          {"object_id", many ? 100 + static_cast<int>(part) : 2},
+                          {"element_id", i},
+                          {"material_id", many ? result.bodies[part].name + " (" + material + ")" : material},
+                          {"color_rgba", many ? result.bodies[part].color_rgba : 0x9fd3ffffU},
                           {"shape", "box"}, {"dimensions_m", Json{h, h, h}}});
     }
+    // A many-object scene has no rigid striker to draw.
+    if (!many)
     bodies.push_back({{"id", "ball"}, {"object_id", 1}, {"element_id", 0},
                       {"material_id", result.ball_material_name}, {"color_rgba", 0x8a8f99ffU},
                       {"shape", "sphere"},
