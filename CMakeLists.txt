@@ -138,6 +138,7 @@ add_library(
     src/fastlattice/FastLattice.cpp
     src/fastlattice/CpuLatticeBackend.cpp
     src/fastlattice/ParallelCpuLatticeBackend.cpp
+    src/fastlattice/Refracture.cpp
     src/fastlattice/Propagator.cpp)
 target_link_libraries(banjo_fastlattice PUBLIC banjo_core)
 target_compile_features(banjo_fastlattice PUBLIC cxx_std_23)
@@ -699,6 +700,15 @@ if(BANJO_BUILD_TESTS)
             target_link_libraries(banjo_fast_lattice_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_fast_lattice_tests)
             add_test(NAME banjo_fast_lattice_tests COMMAND banjo_fast_lattice_tests)
+
+            # Breaking a piece that has already broken: the trigger against its
+            # own derivation, the state a fragment carries back into the
+            # lattice, the conservation of the round trip, backend parity
+            # through a re-entry and the unchanged control.
+            add_executable(banjo_refracture_tests tests/refracture_tests.cpp)
+            target_link_libraries(banjo_refracture_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_refracture_tests)
+            add_test(NAME banjo_refracture_tests COMMAND banjo_refracture_tests)
 
             # Axial plasticity in the lattice bond solve: the constitutive law
             # against material/NetworkMaterial.cpp, the coupon's known answer,
