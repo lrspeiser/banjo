@@ -118,6 +118,53 @@ run passes the realtime gate or is refused before it starts.
 
 What this proves: the physics is authorable and the answers track the inputs.
 
+## Evidence from the three parallel lanes, 2026-09-07
+
+Three agents built fracture three different ways in their own worktrees. Two
+delivered recordings that load in this playground; the primary verified each
+job below through `/api/jobs` (full playback frames) and on its case card
+(Realtime row, and the fracture-window row where the lane reports one). The
+owner has watched none of them yet, so nothing below is marked done.
+
+**Modal basis** (`agent/fast-modal`, `c73ce15`, `docs/fast-modal-checkpoint.md`).
+Rule met on the smallest honest scene and not on the next size up. Clamped
+8x8x2 glass tile (128 cells, 20 mm), 20 mm iron ball at 16 m/s, impact through
+fracture, hand-off to Jolt and settling: 1.120 s wall for 8.002 s simulated,
+**0.14x**, 35 fragments through the hole
+(`http://127.0.0.1:8765/?job=65331afc7b2f47f791799e70ed699c97`, case 1; case 2
+is the implicit reference on the same scene at 0.12x). It passes because the
+2 ms fracture window -- itself **497x** slower than realtime -- sits inside
+8 s of rigid settling that Jolt computes at 0.01-0.03x. On 12x12x2 at 20 m/s
+the exact rank-one eigenvector update (O(n k^2) per broken bond) takes 13.8 s
+of a 15.3 s window and the interaction runs at **1.94x**, rule failed
+(`http://127.0.0.1:8765/?job=9afe5fe6e9624dfda6c21d1b51f263cb`). Truncating the
+basis loses the cascade, so the obstacle is a sub-O(n^2) update, not tuning.
+First-failure set identical to the reference on every scene tested.
+
+**Quasi-static** (`agent/fast-quasistatic`, `c272499`,
+`docs/fast-quasistatic-checkpoint.md`). Rule met through to rest up to
+2,048 cells: 32x32x2 tile, 80 mm ball from 3 m, 3.000 s wall for 8.095 s,
+**0.37x**, tile plus nine chips
+(`http://127.0.0.1:8765/?job=5b132ccb059c468ea9ec41e0a4f9ff1d`); 24x24x2 at
+0.125x (`?job=62a1c74327624f658b9e0920c939d63d`); 8x8x2 at 0.010x
+(`?job=73f331b1b4e34d8aa88578b3bdfcafbc`, with the dynamic reference at 0.050x
+in `?job=a74cf2a71c8749e0a685eab6f82ac3fb`). Fails at 3,200 cells (1.56x),
+cost about N^2.3. The caveat is the physics: the quasi-static answer craters
+the tile and stops the ball where the dynamic reference shatters it (8x8x2:
+156 bonds and one piece against 400-912 bonds and 2-30 pieces; first-failure
+sets disjoint; only removed energy agrees, within 11-29%). It meets the rule
+without reproducing the dynamic outcome.
+
+**GPU lattice** (`agent/fast-gpu`): in progress, WIP committed, no
+measurements yet.
+
+What this does to the stages: D, E and F have recordings (modal on 8x8x2;
+quasi-static to 2,048 cells) and are ready for the owner to watch. B and C have
+no elastic-only recording of their own, though the modal checkpoint shows the
+basis exact through the cascade. G is untouched: both lanes are command-line
+tools with recording importers, not Builder routes, and the Builder still
+drives only the network lane.
+
 ## Limits that stay stated throughout
 
 - Uniform cells cap face:thickness at 16:1 (12:1 through the authoring routes).
