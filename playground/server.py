@@ -82,10 +82,36 @@ def strict_json(text):
     def constant(_): raise ValueError("Nonfinite JSON value")
     return json.loads(text, object_pairs_hook=pairs, parse_constant=constant)
 
+def _environment_files():
+    """Where to look for OPENAI_API_KEY, nearest first.
+
+    An agent worktree is a separate directory and `.env` is untracked, so a
+    worktree never receives the key the checkout it was made from holds. The
+    server then reports the key as unconfigured while the file plainly exists,
+    which is confusing and sends people looking in the wrong place. A worktree's
+    own `.env` still wins; this only adds the main checkout as a fallback.
+    """
+    candidates = [ROOT / ".env"]
+    marker = ROOT / ".git"
+    try:
+        if marker.is_file():
+            # A worktree's .git is a file holding "gitdir: <repo>/.git/worktrees/<name>".
+            line = marker.read_text(encoding="utf-8").strip()
+            if line.startswith("gitdir:"):
+                git_dir = Path(line.split(":", 1)[1].strip())
+                for parent in [git_dir, *git_dir.parents]:
+                    if parent.name == ".git":
+                        candidates.append(parent.parent / ".env")
+                        break
+    except OSError:
+        pass
+    return candidates
+
+
 def local_configuration():
     values = {}
-    path = ROOT / ".env"
-    if path.is_file():
+    for path in _environment_files():
+        if not path.is_file(): continue
         if path.stat().st_size > 65536: raise ValueError("Local environment file exceeds size budget")
         for line in path.read_text(encoding="utf-8-sig").splitlines():
             line = line.strip()
@@ -93,7 +119,9 @@ def local_configuration():
             key, value = line.split("=", 1)
             key, value = key.strip(), value.strip()
             if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'": value = value[1:-1]
-            if key in ("OPENAI_API_KEY", "OPENAI_MODEL"): values[key] = value
+            # First file wins, so a worktree can override the checkout it came
+            # from by having its own.
+            if key in ("OPENAI_API_KEY", "OPENAI_MODEL") and key not in values: values[key] = value
     return (os.environ.get("OPENAI_API_KEY") or values.get("OPENAI_API_KEY", ""),
             os.environ.get("OPENAI_MODEL") or values.get("OPENAI_MODEL", "gpt-5-mini"))
 
