@@ -131,15 +131,68 @@ when the two disagree) in `inverseEpsilon` and in `BondFailure.cpp`, and to fail
 loudly rather than count silently. That is a criterion-level change and belongs
 with the energy-scaled criterion work, before any convergence ladder is trusted.
 
+## 4b. The root cause of section 2: at one cell thick the nonlocal criterion is off
+
+`bondStrainSample` (`src/fastlattice/LatticePhysics.hpp`) begins with the
+bond's own local stretch and then takes the maximum with each end node's
+nonlocal strain **only if that node is valid**:
+
+    const Real stretch = bondStretch(L, j, direct);
+    tensile = stretch; compressive = -stretch; shear = Real(0);
+    ...
+    if (!L.node_valid[n]) continue;
+
+In a plate one cell thick every rest edge has zero component through the
+thickness, so every node's rest covariance is **exactly** singular, its
+determinant is 0, and `inverse3` rejects it. Every node is invalid, and the
+failure criterion silently degrades to a **purely local bond-stretch test with
+shear identically zero**. Nothing crashes and nothing is reported: the engine
+simply stops using the criterion it claims to share with the other lanes.
+
+The measurement is unambiguous -- peak shear over the whole run:
+
+| run | layers | precision | peak shear | peak tensile | peak compressive | disagreements |
+|---|---:|---|---:|---:|---:|---:|
+| 250x200x10, 10 mm | 1 | double | **0.00000** | 0.0014 | 0.0017 | 0 |
+| 250x200x5, 5 mm | 1 | double | **0.00000** | 0.0014 | 0.0036 | 0 |
+| 60x50x10, 10 mm | 1 | double | **0.00000** | 0.0015 | 0.0010 | 0 |
+| 60x50x10, 5 mm | 2 | double | 3.055 | 2.263 | 0.5000 | 9 |
+| 60x50x10, 5 mm | 2 | float | 0.011 | 0.0029 | 0.0132 | 10 |
+| 60x50x10, 2.5 mm | 4 | double | 131.08 | 127.50 | 0.5000 | 26 |
+
+Shear cannot be zero to five decimals in a struck plate; it is zero because the
+term that would produce it is never evaluated. That is why the cracks in
+section 2 arrest: a local stretch test carries no information about a crack tip,
+which is precisely what a nonlocal strain measure exists to supply.
+
+So the three regimes are:
+
+- **1 cell**: nonlocal strain exactly singular -> every node rejected -> silent
+  fallback to local bond stretch, no shear, no crack-tip sensing.
+- **2 cells**: nearly singular -> in double the absolute epsilon accepts it and
+  the inverse fabricates strain (section 4); in float it is rejected and the
+  same silent fallback applies to those nodes.
+- **3-4 cells and more**: conditioned, and the criterion is the one the lanes
+  believe they share.
+
+**Two is therefore the worst possible minimum, not the right one.** With a
+horizon of 2 cells an interior node needs neighbours spanning +/-2 cells through
+the thickness, so a full neighbourhood needs about `2*horizon + 1 = 5` cells
+across the thinnest dimension; 3 conditions the matrix but leaves every node a
+surface node.
+
 ## 5. What has to be true before a pane shatters correctly
 
 1. A failure criterion with a length scale, so a crack costs the same energy at
    every resolution and can propagate rather than diffuse. In flight.
-2. The node-validity rule fixed, so strains read near a crack are real. Section 4.
-3. At least 3-4 cells through the thickness, so bending exists -- which for a
-   10 mm pane means ~2.5 mm cells and ~32,000 cells, not 500. The "500
-   components" figure and "shatters like glass" are in direct tension, and the
-   resolution of that tension is the speed work, not a coarser model.
+2. The node-validity rule fixed, so strains read near a crack are real, and the
+   fallback made loud instead of silent. Sections 4 and 4b.
+3. Thin bodies treated as thin bodies. Either the object carries about
+   `2*horizon + 1` cells across its thinnest dimension -- for a 10 mm pane that
+   is ~2 mm cells and ~62,000 cells, not 500 -- or the coplanar case is given a
+   proper projected (plane-stress) strain measure so a one-cell sheet is a shell
+   rather than a silent downgrade. The second is what makes a windowpane
+   expressible at all; the first is what the current criterion requires.
 
 ## Reproduce
 
