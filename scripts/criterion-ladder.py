@@ -274,6 +274,18 @@ STAGES = {
             window_ms=WINDOW_MS, settle_s=SETTLE_S)
         for m in ("glass", "oak", "iron") for c, mm in ((0.02, 20), (0.01, 10))
         for law, short in (("strain-threshold", "old"), ("energy-scaled", "new"))],
+    # The watchable rows: the same ladder runs with a recording and a full
+    # rigid settling phase, so the playground can play them through to rest.
+    # Only resolutions whose piece count the rigid world can take are here; the
+    # 5 mm energy-scaled row overflows Jolt's contact capacity on handoff
+    # (section 6.4), which is itself a measurement.
+    "record": lambda f: [
+        run(f"rec-{material}-{short}-{mm}mm-v8", material=material, cell=c, speed=8.0,
+            law=law, force=f, window_ms=WINDOW_MS, settle_s=6.0, record=True,
+            extra=("--frames", "40", "--rigid-frames", "60"))
+        for material, c, mm in (("glass", 0.02, 20), ("glass", 0.01, 10),
+                                ("oak", 0.02, 20), ("oak", 0.01, 10))
+        for law, short in (("strain-threshold", "old"), ("energy-scaled", "new"))],
     "dt-half": lambda f: [
         run(f"oak-{short}-10mm-v8-dt{d:g}", material="oak", cell=0.01, speed=8.0,
             law=law, dt_factor=d, force=f, window_ms=WINDOW_MS, settle_s=SETTLE_S)

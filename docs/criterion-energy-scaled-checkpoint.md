@@ -251,13 +251,135 @@ of the fast lattice lane that reproduces it bit for bit, not of the criterion.
 
 ## 8. Limitations and what to do next
 
-*Filled in below.*
+### 8.1 What this branch does not claim
+
+1. **No material realism.** The law reproduces the *declared* `fracture_energy_j_m2`
+   of the catalogue preset. Whether 8 J/m^2 is the right number for the glass
+   the owner has in mind is a calibration question this branch does not touch,
+   and no comparison against laboratory fracture data was made.
+2. **Mode I only.** The compressive and shear damage ramps are still the
+   strength-derived ones. A cell that fails in crushing or in shear does not
+   charge a calibrated energy, so a scene dominated by those modes is no better
+   off than before. The catalogue carries one fracture energy per material and
+   there is nothing to calibrate mode II and mode III against.
+3. **{100} planes only.** The threshold makes a crack on a {100} lattice plane
+   cost exactly Gc. `latticeHorizonGeometry` also reports the {110} and {111}
+   crossing sums, and they do not give the same energy per area, so a crack that
+   runs on a diagonal plane costs a different amount. Lattice-orientation
+   anisotropy of the crack energy is measured nowhere in this branch and is a
+   known defect of every bond-lattice fracture model.
+4. **No flaw statistics on the reference route.** `compileElasticLatticeReference`
+   zeroes `strength_variation`, so every bond in the tile has the identical
+   threshold. Real brittle solids localise partly because their surface flaws
+   do not. The catalogue route (`--catalog`, glass only) carries the 12%
+   variation and was not swept here.
+5. **One solver.** Everything is measured on the fast lattice CPU backend in
+   double and on `BrittleBondSolver`, which it reproduces bit for bit in the
+   same sweep order. Nothing here was run on the CUDA backend, the modal lane
+   or the quasi-static lane.
+
+### 8.2 The snap criterion cannot localise where the energy governs
+
+This is the finding that matters most and it is not a bug in the implementation.
+
+Without softening, a bond is fully stiff up to its removal stretch and then
+gone. Under a passing impact wave the material sees a strain of order `v / c_L`.
+Whenever that exceeds the removal stretch **everywhere the wave reaches**, every
+bond it touches breaks in the same few substeps: the damage is diffuse, the
+fragment size falls to one cell, and no piece count can converge under
+refinement. The dimensionless group is
+
+    R = (v / c_L) / s_c,     R^2 = N_100 rho v^2 h / (2 Gc sum n_x^4)
+
+which reads as the kinetic energy in a cell-deep layer of moving material over
+the crack energy of that layer's area. It is computable before any run, and it
+**falls** as h^1/2 under refinement, so refining always moves towards
+localisation - just not fast enough to save a material whose R starts at 25.
+
+### 8.3 What softening would and would not fix
+
+A linear softening ramp (compliance scaled by `1/(1 - d)`) dissipates
+`E h^3 s_0 s_f / (2 m)` per bond over a ramp from initiation s_0 to failure s_f,
+so the energy-consistent condition becomes
+
+    s_0 s_f = s_c^2
+
+with s_c exactly the stretch this branch derives: the snap law is the special
+case s_0 = s_f = s_c, and s_c is the geometric mean of any admissible ramp. Two
+things follow.
+
+- **Softening would not rescue the strength.** Putting s_0 at the material's
+  true strength stretch s_sigma requires `s_f = s_c^2 / s_sigma`, which is
+  *below* s_0 for both glass and oak at every cell size on the ladder
+  (glass at 20 mm: s_f = 1.6e-6 against s_0 = 1.29e-3). That is the snap-back
+  regime, where crack-band theory says the element is too large to carry both
+  the strength and the energy and the strength must be reduced - which is what
+  this law does.
+- **Softening would still help localisation**, by shedding load from a damaged
+  bond onto its neighbours, if the ramp is placed around s_c rather than at the
+  strength (for instance s_0 = s_c / 2, s_f = 2 s_c). That is the recommended
+  next step, and it is a solver change: `BondFailure.cpp`, `LatticePhysics.hpp`
+  and the CUDA kernel all have to scale the bond compliance by `1/(1 - d)`, and
+  the removed-energy ledger has to account for the work the ramp already did.
+  It would end the sibling lanes' bit-for-bit reproduction of the current
+  criterion, which is why it is not in this branch.
+
+### 8.4 The cell size a material actually needs
+
+Setting R = 1 gives the cell size at which a given strike stops pulverising a
+given material:
+
+    h* = 2 Gc sum n_x^4 / (N_100 rho v^2)
+
+*Experimental result, from the constants in section 2.1 at horizon 2.* For the
+4 cm iron ball at 8 m/s: glass needs about 31 um cells (the tile would be
+4.6e11 cells, which is not a resolution any lane can reach), oak needs about
+14 mm, and iron does not break at all. That is the honest bound on what this
+engine can be asked for: a converged *piece count* for glass under a 2 kg
+strike is out of reach at any cell size the engine can run, and the useful
+question for glass is the converged *energy and crack area*, which the new law
+does deliver. Glass's Irwin length `l_ch = E Gc / sigma_t^2` is 0.28 mm, so
+this is the same bound classical fracture mechanics gives, arrived at from the
+lattice side.
 
 ---
 
 ## 9. Exact commands
 
-*Filled in below.*
+```sh
+# Build (CPU only; the CUDA backend is absent and throws if asked for)
+cmake -S . -B build/agent -G "Visual Studio 17 2022" -A x64 -DBANJO_BUILD_LAB=OFF
+cmake --build build/agent --config Release --parallel 6
+
+# The criterion's own tests
+build/agent/Release/banjo_criterion_energy_tests.exe
+
+# The whole suite, minus the five the brief excludes
+ctest --test-dir build/agent -C Release -E "banjo_network_skin_tests|banjo_network_runtime_tests|banjo_material_showcase_tests|banjo_network_adaptive_tests|banjo_contact_capacity_tests"
+
+python scripts/check-source-registration.py
+
+# One ladder row by hand (this is what the runner below issues)
+build/agent/Release/banjo_fast_lattice_run.exe --layout bridge --ball-radius 0.04     --speed 8 --tile 0.24 0.04 0.16 --cell 0.005 --horizon 2 --material glass     --backend cpu --precision double --dt-factor 0.5     --failure-law energy-scaled     --quiet-ms 2 --no-failure-ms 2 --min-ms 0 --max-ms 12 --settle-s 0     --report docs/evidence/criterion/glass-new-5mm-v8.json
+
+# The ladder, its variations and the recordings. Rows already on disk are
+# reused; --force re-runs them. Reports land in docs/evidence/criterion/.
+python scripts/criterion-ladder.py --stage ladder-v8 --stage ladder-oak-v8
+python scripts/criterion-ladder.py --stage ladder-v12 --stage ladder-oak-v12
+python scripts/criterion-ladder.py --stage materials --stage dt-half --stage horizon3
+python scripts/criterion-ladder.py --stage window
+python scripts/criterion-ladder.py --stage record
+
+# Any table in this document, from the reports on disk
+python scripts/criterion-ladder.py --summarise glass-old-20mm-v8 glass-new-20mm-v8     --cols "name,law,cell_mm,cells,broken,pieces,largest_frac,removed_j,measured_gc,pulverisation"
+
+# Physics check (a): the pre-cracked strip
+build/agent/Release/banjo_criterion_strip_probe.exe --strip 0.4 0.1 0.04 --cell 0.005     --precrack 0.1 --energy-ratio 1.6 --window-us 300 --failure-law energy-scaled     --report docs/evidence/criterion/strip-glass-5mm.json
+
+# Register the recordings in the owner's playground store (runtime data only;
+# the server picks a new job directory up on the next request, no restart)
+python scripts/fast-gpu-install-playback.py     docs/evidence/criterion/rec-glass-old-20mm-v8.playback.json     docs/evidence/criterion/rec-glass-new-20mm-v8.playback.json     --runs C:/Users/henry/dev/banjo/build/playground-runs     --title "..." --name "..." --name "..."
+```
 
 ---
 
