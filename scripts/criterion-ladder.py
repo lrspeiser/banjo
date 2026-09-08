@@ -368,6 +368,15 @@ STAGES = {
     "strip-griffith": lambda f: [r for r in [
         strip(f"strip-glass-5mm-g{g:g}", cell=0.005, ratio=g, force=f)
         for g in (0.6, 0.8, 1.0, 1.2, 1.6, 2.4)] if r],
+    # The strain-threshold law on the same strip. At G/Gc = 1.6 nothing moves:
+    # the old law charges 199x Gc per unit area at 5 mm cells, so the loading
+    # that drives a crack under the energy-scaled law is 199x too weak. Matching
+    # the driving force to what the old law actually charges (G/Gc = 318.4, the
+    # same fraction of its own removal stretch, 0.538) makes its crack run - and
+    # that is the whole defect in one pair of runs.
+    "strip-old-matched": lambda f: [r for r in [
+        strip("strip-glass-5mm-old-matched", cell=0.005, law="strain-threshold",
+              ratio=318.4, force=f)] if r],
     "strip-materials": lambda f: [r for r in [
         strip("strip-oak-5mm", cell=0.005, material="oak", force=f),
         strip("strip-glass-5mm-h3", cell=0.005, horizon=3, force=f),
