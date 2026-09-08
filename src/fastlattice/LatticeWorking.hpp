@@ -173,10 +173,13 @@ template <typename Real>
 }
 
 template <typename Real>
+[[nodiscard]] V3<double> widenV3(const V3<Real> &v) {
+    return {static_cast<double>(v.x), static_cast<double>(v.y), static_cast<double>(v.z)};
+}
+
+template <typename Real>
 [[nodiscard]] SphereState<double> widenSphere(const SphereState<Real> &s) {
-    return {{s.center.x, s.center.y, s.center.z},
-            {s.velocity.x, s.velocity.y, s.velocity.z},
-            {s.angular_velocity.x, s.angular_velocity.y, s.angular_velocity.z},
+    return {widenV3(s.center), widenV3(s.velocity), widenV3(s.angular_velocity),
             static_cast<double>(s.radius), static_cast<double>(s.mass), static_cast<double>(s.inertia)};
 }
 

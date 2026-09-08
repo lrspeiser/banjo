@@ -136,7 +136,8 @@ add_library(
     src/matter/BoxLattice.cpp
     src/fastlattice/LatticeSchedule.cpp
     src/fastlattice/FastLattice.cpp
-    src/fastlattice/CpuLatticeBackend.cpp)
+    src/fastlattice/CpuLatticeBackend.cpp
+    src/fastlattice/Propagator.cpp)
 target_link_libraries(banjo_fastlattice PUBLIC banjo_core)
 target_compile_features(banjo_fastlattice PUBLIC cxx_std_23)
 banjo_enable_warnings(banjo_fastlattice)
@@ -320,6 +321,10 @@ if(BANJO_BUILD_HEADLESS)
     add_executable(banjo_fast_lattice_run tools/fast_lattice_run.cpp)
     target_link_libraries(banjo_fast_lattice_run PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_fast_lattice_run)
+    # Algorithm 3: precomputed multi-step propagators with causal-cone patching.
+    add_executable(banjo_fracture_algo3 tools/fracture_algo3.cpp)
+    target_link_libraries(banjo_fracture_algo3 PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
+    banjo_enable_warnings(banjo_fracture_algo3)
 
     add_executable(banjo_headless src/app/headless_main.cpp)
     target_link_libraries(banjo_headless PRIVATE banjo_runtime)
