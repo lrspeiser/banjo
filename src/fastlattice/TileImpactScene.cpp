@@ -157,7 +157,7 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
             compileElasticLatticeReference(s.tile_material, r.cell_size_m, r.neighbor_horizon_cells),
             s.tile_material);
     }
-    s.asset = generateBoxLattice({r.tile_dimensions_m, r.cell_size_m, r.neighbor_horizon_cells},
+    s.asset = generateBoxTileLattice({r.tile_dimensions_m, r.cell_size_m, r.neighbor_horizon_cells},
                                  s.compiled, &s.layout);
     s.limit = measureLatticeResolutionLimit(s.asset, s.compiled);
     if (!(s.limit.explicit_substep_limit_s > 0.0))

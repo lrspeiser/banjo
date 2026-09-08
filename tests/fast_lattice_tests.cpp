@@ -60,7 +60,7 @@ struct Fixture {
     BoxLatticeLayout layout{};
     Fixture(MaterialPreset preset, Vec3 dims, double cell, unsigned horizon) {
         const auto compiled = referenceMaterial(preset, cell, horizon);
-        asset = std::make_unique<LatticeAsset>(generateBoxLattice({dims, cell, horizon}, compiled, &layout));
+        asset = std::make_unique<LatticeAsset>(generateBoxTileLattice({dims, cell, horizon}, compiled, &layout));
         matter.asset = asset.get();
         matter.material = compiled;
         for (const auto &node : asset->nodes) {
@@ -76,7 +76,7 @@ void boxLatticeFollowsTheSphereBondRules() {
     const double cell = 0.02;
     const auto compiled = referenceMaterial(MaterialPreset::Glass, cell, 2);
     BoxLatticeLayout layout{};
-    const auto box = generateBoxLattice({{5 * cell, 5 * cell, 5 * cell}, cell, 2}, compiled, &layout);
+    const auto box = generateBoxTileLattice({{5 * cell, 5 * cell, 5 * cell}, cell, 2}, compiled, &layout);
     require(layout.nx == 5 && layout.ny == 5 && layout.nz == 5, "5x5x5 cells");
     require(box.nodes.size() == 125, "125 nodes");
     // The centre node has every offset within grid distance 2: 6 + 12 + 8 + 6.
@@ -103,7 +103,7 @@ void boxLatticeFollowsTheSphereBondRules() {
             "sphere interior node has 32 bonds too");
     require(std::abs(box.total_mass_kg - 125 * cell * cell * cell * compiled.density_kg_m3) < 1e-12, "uniform mass");
     bool refused = false;
-    try { (void)generateBoxLattice({{0.05, 0.04, 0.04}, cell, 2}, compiled); } catch (const std::invalid_argument &) { refused = true; }
+    try { (void)generateBoxTileLattice({{0.05, 0.04, 0.04}, cell, 2}, compiled); } catch (const std::invalid_argument &) { refused = true; }
     require(refused, "non-integer cell counts are refused");
 }
 

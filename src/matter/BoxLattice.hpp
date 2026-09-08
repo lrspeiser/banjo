@@ -13,7 +13,7 @@ namespace banjo {
 // a box lattice and a sphere lattice of the same material break by the same
 // numbers. Every cell is full, so node masses are uniform and the resolution
 // limit is set by the interior node, not by a partially sampled surface cell.
-struct BoxRecipe {
+struct BoxTileRecipe {
     Vec3 dimensions_m{};
     double voxel_size_m{};
     unsigned neighbor_horizon_cells{2};
@@ -27,8 +27,8 @@ struct BoxLatticeLayout {
 
 // Dimensions must be whole multiples of the cell size (uniform cubic cells
 // only); anything else is refused rather than silently rounded.
-[[nodiscard]] LatticeAsset generateBoxLattice(
-    const BoxRecipe &recipe,
+[[nodiscard]] LatticeAsset generateBoxTileLattice(
+    const BoxTileRecipe &recipe,
     const CompiledBrittleMaterial &material,
     BoxLatticeLayout *layout = nullptr);
 

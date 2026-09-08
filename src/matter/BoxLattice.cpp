@@ -46,8 +46,8 @@ namespace {
 
 } // namespace
 
-LatticeAsset generateBoxLattice(
-    const BoxRecipe &recipe,
+LatticeAsset generateBoxTileLattice(
+    const BoxTileRecipe &recipe,
     const CompiledBrittleMaterial &material,
     BoxLatticeLayout *layout_out) {
     if (!(recipe.voxel_size_m > 0.0) || recipe.neighbor_horizon_cells == 0U ||
