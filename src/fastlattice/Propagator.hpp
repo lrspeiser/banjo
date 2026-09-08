@@ -143,6 +143,10 @@ struct ConeGrowth {
                                                   const std::vector<std::uint64_t> &checkpoints,
                                                   double cell_size_m);
 
+// Wall seconds of one dense n x n multiply in the given precision: the unit
+// cost of a repeated squaring, measured rather than assumed.
+[[nodiscard]] double measureGemmSeconds(std::size_t n, unsigned threads, bool single_precision);
+
 // Cache. The key is the scene: plate, cell, support, material, substep, power.
 struct PropagatorCacheKey {
     std::string scene;   // canonical scene description

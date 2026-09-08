@@ -109,6 +109,8 @@ std::uint64_t stepsFor(double milliseconds, double dt) {
 std::unique_ptr<LatticeBackend> makeBackend(const TileImpactRequest &r, const LatticeSchedule &schedule) {
     if (r.backend == BackendKind::Cuda)
         return makeCudaLatticeBackend(schedule, r.precision, r.threads_per_block);
+    if (r.backend == BackendKind::CpuParallel)
+        return makeParallelCpuLatticeBackend(schedule, r.precision, r.cpu_threads);
     return makeCpuLatticeBackend(schedule, r.precision);
 }
 
@@ -577,7 +579,8 @@ std::string measurementsJson(const TileImpactMeasurements &m) {
     return j.dump();
 }
 
-void writePlayback(const TileImpactResult &result, const std::filesystem::path &path) {
+void writePlayback(const TileImpactResult &result, const std::filesystem::path &path,
+                   const std::string *report_json) {
     const auto vec = [](const Vec3 &v) { return Json{v.x, v.y, v.z}; };
     const auto quat = [](const Quat &q) { return Json{q.w, q.x, q.y, q.z}; };
     const std::size_t N = result.frames.empty() ? 0 : result.frames.front().cell_positions.size();
@@ -660,7 +663,8 @@ void writePlayback(const TileImpactResult &result, const std::filesystem::path &
                                 {"captured_frames", result.frames.size()}, {"bond_lines", record_bonds}}},
                   {"physical_response_validated", false},
                   {"status", "complete"}, {"error", ""},
-                  {"report", Json::parse(measurementsJson(result.measurements))}};
+                  {"report", Json::parse(report_json != nullptr ? *report_json
+                                              : measurementsJson(result.measurements))}};
     const std::string serialized = artifact.dump();
     if (serialized.size() > 64U * 1024U * 1024U) throw std::runtime_error("playback exceeds 64 MiB");
     std::ofstream output(path, std::ios::binary);

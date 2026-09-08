@@ -22,7 +22,7 @@ enum class SceneLayout : std::uint8_t {
     Flat,   // tile lying on the ground (one support plane; BrittleBondSolver can express it)
     Bridge, // tile resting on two ledges above the ground; middle pieces fall
 };
-enum class BackendKind : std::uint8_t { Cpu, Cuda };
+enum class BackendKind : std::uint8_t { Cpu, Cuda, CpuParallel };
 
 struct TileImpactRequest {
     MaterialPreset tile_material{MaterialPreset::Glass};
@@ -57,6 +57,8 @@ struct TileImpactRequest {
     double rest_hold_s{0.3};
     double rigid_step_s{1.0 / 240.0};
     BackendKind backend{BackendKind::Cuda};
+    // CpuParallel only; 0 asks for the hardware concurrency.
+    unsigned cpu_threads{0};
     Precision precision{Precision::Float};
     unsigned blocks{1};
     unsigned threads_per_block{512};
@@ -164,7 +166,10 @@ struct TileImpactResult {
 [[nodiscard]] TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *log = nullptr);
 
 [[nodiscard]] std::string measurementsJson(const TileImpactMeasurements &m);
-void writePlayback(const TileImpactResult &result, const std::filesystem::path &path);
+// report_json, when given, replaces the recording's `report` object: a lane
+// built on this scene reports its own contract, not this one's measurements.
+void writePlayback(const TileImpactResult &result, const std::filesystem::path &path,
+                   const std::string *report_json = nullptr);
 
 // The same scene stepped by BrittleBondSolver (index-order Gauss-Seidel) and
 // by this lane's CPU backend (colour-order) for a fixed number of substeps,

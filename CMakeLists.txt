@@ -137,6 +137,7 @@ add_library(
     src/fastlattice/LatticeSchedule.cpp
     src/fastlattice/FastLattice.cpp
     src/fastlattice/CpuLatticeBackend.cpp
+    src/fastlattice/ParallelCpuLatticeBackend.cpp
     src/fastlattice/Propagator.cpp)
 target_link_libraries(banjo_fastlattice PUBLIC banjo_core)
 target_compile_features(banjo_fastlattice PUBLIC cxx_std_23)
@@ -686,6 +687,12 @@ if(BANJO_BUILD_TESTS)
             target_link_libraries(banjo_fast_lattice_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_fast_lattice_tests)
             add_test(NAME banjo_fast_lattice_tests COMMAND banjo_fast_lattice_tests)
+
+            # Algorithm 3: the propagator premises and the exact parallel backend.
+            add_executable(banjo_fracture_algo3_tests tests/fracture_algo3_tests.cpp)
+            target_link_libraries(banjo_fracture_algo3_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_fracture_algo3_tests)
+            add_test(NAME banjo_fracture_algo3_tests COMMAND banjo_fracture_algo3_tests)
         endif()
 
         add_executable(banjo_runtime_tests tests/runtime_dynamics_tests.cpp)

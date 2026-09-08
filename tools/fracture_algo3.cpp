@@ -19,11 +19,14 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <algorithm>
+#include <limits>
 #include <random>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -59,10 +62,17 @@ struct LaneOptions {
     // Diagnostics.
     bool probe{false};
     bool cone{false};
+    bool bench{false};
+    bool precompute{false};
+    bool gemm_only{false};
     unsigned probe_steps{4000};
     unsigned probe_samples{2};
     double probe_amplitude{-1.0};
     std::uint32_t jump{50};
+    unsigned threads{0};
+    unsigned spins{0};
+    bool exactness{true};
+    double gate_amplitude{1.0e-6};
 };
 
 TileImpactRequest requestFrom(const LaneOptions &options) {
@@ -253,6 +263,434 @@ int runCone(const LaneOptions &options) {
     return 0;
 }
 
+
+// ---------------------------------------------------------------------------
+// The lane
+// ---------------------------------------------------------------------------
+
+// Whether a matrix propagator can be exact here at all. The test is the
+// definition of affine, applied to the engine's own substep at the amplitude
+// the scene reaches: if f(x0 + a + b) - f(x0) differs from the sum of the two
+// separate increments by more than rounding, no matrix of any precision
+// reproduces the substep, and the lane must not jump. It costs nine substeps.
+struct Admissibility {
+    bool affine{};
+    double additivity_rel{};
+    double homogeneity_rel{};
+    double amplitude_m{};
+    double tolerance{};
+    double seconds{};
+    std::string reason;
+};
+
+Admissibility gate(const TileImpactSetup &setup, const LatticeState &state, double amplitude) {
+    const auto begin = Clock::now();
+    Admissibility result;
+    result.amplitude_m = amplitude;
+    // Rounding level for this state vector. The substep works on absolute
+    // positions of order 0.1 m, so one ulp there is ~1e-17 m; measured, the
+    // probe's own floor is 5e-18 m absolute, which at a 1e-6 m amplitude is
+    // 1e-11 relative. A propagator is admissible when the residual is at that
+    // level, which is what "exact to floating point" means here.
+    result.tolerance = 1.0e-9;
+    SubstepMap map(state, setup.schedule, setup.settings_scene, Precision::Double);
+    std::vector<double> x0(map.dimension());
+    SubstepMap::pack(state, x0.data());
+    const LinearityReport report = probeLinearity(map, x0.data(), amplitude, 2, 20260907U);
+    result.additivity_rel = report.additivity_rel;
+    result.homogeneity_rel = report.homogeneity_rel;
+    result.affine = report.additivity_rel <= result.tolerance && report.homogeneity_rel <= result.tolerance;
+    if (!result.affine) {
+        std::ostringstream reason;
+        reason << std::setprecision(3)
+               << "the engine's substep is not an affine map on (u, v): the additivity residual is "
+               << report.additivity_rel << " of the image at " << amplitude << " m (tolerance "
+               << result.tolerance
+               << "), so no matrix propagator reproduces it and the lane takes no jumps";
+        result.reason = reason.str();
+    }
+    result.seconds = std::chrono::duration<double>(Clock::now() - begin).count();
+    return result;
+}
+
+// What one lattice phase produced, for the exactness comparison.
+struct LatticeOutcome {
+    LatticeState state;
+    RunStatus status;
+    double wall_s{};
+};
+
+RunControl laneControl(const TileImpactSetup &setup) {
+    RunControl control{};
+    control.max_steps = setup.max_steps;
+    control.quiet_steps = setup.quiet_steps;
+    control.min_steps = setup.min_steps;
+    control.no_failure_steps = setup.no_failure_steps;
+    return control;
+}
+
+LatticeOutcome runLattice(const TileImpactSetup &setup, const LatticeState &initial,
+                          const SphereState<double> &sphere, bool parallel, unsigned threads,
+                          Precision precision, const RunControl &control, unsigned spins = 0) {
+    LatticeOutcome outcome;
+    outcome.state = initial;
+    SphereState<double> ball = sphere;
+    auto backend = parallel ? makeParallelCpuLatticeBackend(setup.schedule, precision, threads, spins)
+                            : makeCpuLatticeBackend(setup.schedule, precision);
+    const auto begin = Clock::now();
+    backend->upload(outcome.state, setup.settings_scene, ball);
+    outcome.status = backend->run(control);
+    backend->download(outcome.state, ball);
+    outcome.wall_s = std::chrono::duration<double>(Clock::now() - begin).count();
+    return outcome;
+}
+
+// The bonds that died in the first failing substep, read by running again to
+// exactly that step: a capture stride would report everything dead by the next
+// capture instead.
+std::vector<std::uint32_t> firstFailureBonds(const TileImpactSetup &setup, const LatticeState &initial,
+                                             const SphereState<double> &sphere, bool parallel,
+                                             unsigned threads, Precision precision,
+                                             std::uint64_t first_failure_step) {
+    std::vector<std::uint32_t> bonds;
+    if (first_failure_step == std::numeric_limits<std::uint64_t>::max()) return bonds;
+    RunControl control{};
+    control.max_steps = first_failure_step + 1;
+    const LatticeOutcome outcome = runLattice(setup, initial, sphere, parallel, threads, precision, control);
+    for (std::uint32_t j = 0; j < outcome.state.bond_count; ++j)
+        if (!outcome.state.alive[j] && initial.alive[j]) bonds.push_back(setup.schedule.bond_order[j]);
+    std::sort(bonds.begin(), bonds.end());
+    return bonds;
+}
+
+
+// Wall time of the lattice phase, serial and parallel, so the thread count is
+// chosen from measurement rather than from the core count.
+int runBench(const LaneOptions &options) {
+    auto setup_ptr = buildTileImpactSetup(requestFrom(options));
+    TileImpactSetup &setup = *setup_ptr;
+    const LatticeState initial = buildLatticeState(setup.matter, setup.schedule, setup.origin);
+    SphereState<double> sphere = setup.sphere_world;
+    sphere.center = sphere.center - toV3(setup.origin);
+    const RunControl control = laneControl(setup);
+
+    nlohmann::json out;
+    out["cells"] = setup.asset.nodes.size();
+    out["bonds"] = setup.asset.bonds.size();
+    out["hardware_concurrency"] = std::thread::hardware_concurrency();
+    for (const unsigned threads : {2U, 4U, 8U, 12U, 16U, 24U}) {
+        if (threads > std::max(1U, std::thread::hardware_concurrency())) continue;
+        for (const unsigned spins : {0U, 100U, 400U, 4000U, 200000U}) {
+            const double seconds = measureParallelDispatchCost(threads, spins == 0 ? 1 : spins, 20000);
+            out["dispatch_us"].push_back({{"threads", threads},
+                                          {"spins", spins == 0 ? 1 : spins},
+                                          {"microseconds", seconds * 1.0e6 / 20000.0}});
+        }
+    }
+    const LatticeOutcome reference = runLattice(setup, initial, sphere, false, 1, Precision::Double, control);
+    out["serial"] = {{"wall_s", reference.wall_s}, {"substeps", reference.status.total_steps},
+                     {"broken", reference.status.broken_bonds}};
+    for (const unsigned threads : {4U, 8U, 12U, 16U, 24U}) {
+        if (threads > std::max(1U, std::thread::hardware_concurrency())) continue;
+        for (const unsigned spins : {100U, 400U, 20000U, 400000U}) {
+        const LatticeOutcome lane =
+            runLattice(setup, initial, sphere, true, threads, Precision::Double, control, spins);
+        double max_du = 0.0;
+        for (std::size_t i = 0; i < 3U * static_cast<std::size_t>(initial.node_count); ++i)
+            max_du = std::max(max_du, std::abs(lane.state.u[i] - reference.state.u[i]));
+        std::size_t mismatches = 0;
+        for (std::uint32_t j = 0; j < initial.bond_count; ++j)
+            if (lane.state.alive[j] != reference.state.alive[j]) ++mismatches;
+        out["parallel"].push_back({{"threads", threads},
+                                   {"spins", spins},
+                                   {"wall_s", lane.wall_s},
+                                   {"speedup", lane.wall_s > 0.0 ? reference.wall_s / lane.wall_s : 0.0},
+                                   {"substeps", lane.status.total_steps},
+                                   {"broken", lane.status.broken_bonds},
+                                   {"max_du_m", max_du},
+                                   {"alive_mismatches", mismatches}});
+        }
+    }
+    std::cout << out.dump(2) << std::endl;
+    return 0;
+}
+
+
+// What the propagator would cost if it could be used: building P from the
+// engine, squaring it up to the jump lengths, the bytes and the cache. The
+// gate refuses these powers on this engine (they are not exact), so this mode
+// exists to answer the cost question honestly rather than to feed a run.
+int runPrecompute(const LaneOptions &options) {
+    auto setup_ptr = buildTileImpactSetup(requestFrom(options));
+    TileImpactSetup &setup = *setup_ptr;
+    const LatticeState initial = buildLatticeState(setup.matter, setup.schedule, setup.origin);
+    const std::filesystem::path cache(options.cache);
+    const unsigned threads = options.threads == 0 ? defaultLatticeThreadCount() : options.threads;
+
+    nlohmann::json out;
+    out["cells"] = setup.asset.nodes.size();
+    out["bonds"] = setup.asset.bonds.size();
+    out["dimension"] = 6U * setup.asset.nodes.size();
+    out["threads"] = threads;
+    out["scene_key"] = sceneKey(setup);
+
+    // The unit cost of a squaring, both precisions.
+    const std::size_t n = 6U * setup.asset.nodes.size();
+    out["gemm"] = {{"n", n},
+                   {"double_s", measureGemmSeconds(n, threads, false)},
+                   {"float_s", measureGemmSeconds(n, threads, true)},
+                   {"double_bytes", n * n * sizeof(double)},
+                   {"float_bytes", n * n * sizeof(float)}};
+    if (options.gemm_only) {
+        std::cout << out.dump(2) << std::endl;
+        return 0;
+    }
+
+    SubstepMap map(initial, setup.schedule, setup.settings_scene, Precision::Double);
+    std::vector<double> x0(map.dimension());
+    SubstepMap::pack(initial, x0.data());
+
+    const PropagatorCacheKey key{sceneKey(setup), 1};
+    DensePropagator base;
+    auto begin = Clock::now();
+    bool cached = loadPropagator(cache, key, base);
+    if (!cached) {
+        base = buildPropagator(map, x0.data(), 1.0e-9);
+        storePropagator(cache, key, base);
+    }
+    out["build"] = {{"seconds", std::chrono::duration<double>(Clock::now() - begin).count()},
+                    {"cached", cached},
+                    {"bytes", base.bytes()},
+                    {"substeps", map.dimension() + 1}};
+
+    // 50 from P, then 200 from 50 and 1000 from 200: twelve multiplies instead
+    // of thirty if each power were raised from P.
+    double total_bytes = static_cast<double>(base.bytes());
+    DensePropagator previous = base;
+    std::uint32_t previous_power = 1;
+    for (const std::uint32_t m : {50U, 200U, 1000U}) {
+        const PropagatorCacheKey power_key{key.scene, m};
+        DensePropagator power;
+        double gemm_s = 0.0;
+        begin = Clock::now();
+        const bool hit = loadPropagator(cache, power_key, power);
+        if (!hit) {
+            power = propagatorPower(previous, m / previous_power, threads, &gemm_s);
+            power.power = m;
+            storePropagator(cache, power_key, power);
+        }
+        const double seconds = std::chrono::duration<double>(Clock::now() - begin).count();
+        total_bytes += static_cast<double>(power.bytes());
+        out["powers"].push_back({{"m", m},
+                                 {"from", previous_power},
+                                 {"seconds", seconds},
+                                 {"gemm_seconds", gemm_s},
+                                 {"cached", hit},
+                                 {"bytes", power.bytes()}});
+        previous = std::move(power);
+        previous_power = m;
+    }
+    out["total_bytes"] = total_bytes;
+    std::cout << out.dump(2) << std::endl;
+    return 0;
+}
+
+int runLane(const LaneOptions &options) {
+    if (options.output.empty()) throw std::invalid_argument("--output PATH is required");
+    TileImpactRequest request = requestFrom(options);
+    request.backend = options.reference ? BackendKind::Cpu : BackendKind::CpuParallel;
+    request.cpu_threads = options.threads;
+
+    auto setup_ptr = buildTileImpactSetup(request);
+    TileImpactSetup &setup = *setup_ptr;
+    const LatticeState initial = buildLatticeState(setup.matter, setup.schedule, setup.origin);
+    SphereState<double> sphere = setup.sphere_world;
+    sphere.center = sphere.center - toV3(setup.origin);
+
+    // Precompute. The admissibility gate runs first: building P and its powers
+    // costs 288 MB and a minute of GEMM, and the gate settles in nine substeps
+    // whether any of it can be used.
+    nlohmann::json precompute;
+    double precompute_s = 0.0, precompute_bytes = 0.0;
+    bool precompute_cached = false;
+    std::vector<std::uint32_t> jump_powers;
+    Admissibility admissibility;
+    if (!options.reference) {
+        admissibility = gate(setup, initial, options.gate_amplitude);
+        precompute_s += admissibility.seconds;
+        precompute["gate"] = {{"affine", admissibility.affine},
+                              {"additivity_rel", admissibility.additivity_rel},
+                              {"homogeneity_rel", admissibility.homogeneity_rel},
+                              {"amplitude_m", admissibility.amplitude_m},
+                              {"tolerance", admissibility.tolerance},
+                              {"seconds", admissibility.seconds},
+                              {"reason", admissibility.reason}};
+        if (admissibility.affine) {
+            // Reached only if the substep is affine after all. The powers are
+            // built and cached exactly as the lane would use them; on this
+            // engine the gate refuses first.
+            const std::filesystem::path cache(options.cache);
+            SubstepMap map(initial, setup.schedule, setup.settings_scene, Precision::Double);
+            std::vector<double> x0(map.dimension());
+            SubstepMap::pack(initial, x0.data());
+            const PropagatorCacheKey key{sceneKey(setup), 1};
+            DensePropagator base;
+            const auto begin = Clock::now();
+            if (loadPropagator(cache, key, base)) {
+                precompute_cached = true;
+            } else {
+                base = buildPropagator(map, x0.data(), 1.0e-9);
+                storePropagator(cache, key, base);
+            }
+            precompute_bytes += static_cast<double>(base.bytes());
+            for (const std::uint32_t m : {50U, 200U, 1000U}) {
+                const PropagatorCacheKey power_key{key.scene, m};
+                DensePropagator power;
+                if (loadPropagator(cache, power_key, power)) {
+                    precompute_cached = true;
+                } else {
+                    double gemm_s = 0.0;
+                    power = propagatorPower(base, m, options.threads, &gemm_s);
+                    storePropagator(cache, power_key, power);
+                }
+                precompute_bytes += static_cast<double>(power.bytes());
+                jump_powers.push_back(m);
+            }
+            precompute_s += std::chrono::duration<double>(Clock::now() - begin).count();
+        }
+    }
+
+    // The run itself: impact, fracture, connected components, Jolt, recording.
+    std::string log;
+    const TileImpactResult result = runTileImpact(request, &log);
+    const TileImpactMeasurements &m = result.measurements;
+    const std::uint64_t first_failure_step =
+        m.first_failure_s >= 0.0 ? static_cast<std::uint64_t>(std::llround(m.first_failure_s / setup.dt_s))
+                                 : std::numeric_limits<std::uint64_t>::max();
+
+    // Exactness against plain explicit stepping of the same lattice.
+    nlohmann::json exactness;
+    if (options.exactness) {
+        const RunControl control = laneControl(setup);
+        const LatticeOutcome reference = runLattice(setup, initial, sphere, false, 1, Precision::Double, control);
+        const LatticeOutcome lane =
+            options.reference ? reference
+                              : runLattice(setup, initial, sphere, true, options.threads, Precision::Double, control, options.spins);
+        double max_du = 0.0, max_dv = 0.0, max_damage = 0.0;
+        const std::size_t three_n = 3U * static_cast<std::size_t>(reference.state.node_count);
+        for (std::size_t i = 0; i < three_n; ++i) {
+            max_du = std::max(max_du, std::abs(lane.state.u[i] - reference.state.u[i]));
+            max_dv = std::max(max_dv, std::abs(lane.state.v[i] - reference.state.v[i]));
+        }
+        std::size_t alive_mismatches = 0;
+        for (std::uint32_t j = 0; j < reference.state.bond_count; ++j) {
+            if (lane.state.alive[j] != reference.state.alive[j]) ++alive_mismatches;
+            max_damage = std::max(max_damage, std::abs(lane.state.damage[j] - reference.state.damage[j]));
+        }
+        const std::vector<std::uint32_t> reference_first = firstFailureBonds(
+            setup, initial, sphere, false, 1, Precision::Double, reference.status.first_failure_step);
+        const std::vector<std::uint32_t> lane_first =
+            options.reference ? reference_first
+                              : firstFailureBonds(setup, initial, sphere, true, options.threads,
+                                                  Precision::Double, lane.status.first_failure_step);
+        exactness = {{"max_du_m", max_du},
+                     {"max_dv_m_s", max_dv},
+                     {"max_damage_difference", max_damage},
+                     {"broken_set_identical", alive_mismatches == 0},
+                     {"alive_mismatches", alive_mismatches},
+                     {"reference_wall_s", reference.wall_s},
+                     {"lane_wall_s", lane.wall_s},
+                     {"substeps_reference", reference.status.total_steps},
+                     {"substeps_lane", lane.status.total_steps},
+                     {"broken_reference", reference.status.broken_bonds},
+                     {"broken_lane", lane.status.broken_bonds},
+                     {"removed_energy_difference_j",
+                      std::abs(lane.status.removed_energy_j - reference.status.removed_energy_j)},
+                     {"first_failure_step_reference", reference.status.first_failure_step},
+                     {"first_failure_step_lane", lane.status.first_failure_step},
+                     {"first_failure_set_identical", reference_first == lane_first},
+                     {"speedup_over_reference", lane.wall_s > 0.0 ? reference.wall_s / lane.wall_s : 0.0}};
+    } else {
+        exactness = {{"max_du_m", nullptr},
+                     {"max_dv_m_s", nullptr},
+                     {"broken_set_identical", nullptr},
+                     {"reference_wall_s", nullptr},
+                     {"note", "exactness comparison skipped (--no-exactness)"}};
+    }
+
+    const std::vector<std::uint32_t> first_bonds =
+        firstFailureBonds(setup, initial, sphere, !options.reference, options.threads, Precision::Double,
+                          first_failure_step);
+
+    const double impulse = std::sqrt(m.contact.impulse_to_material_x * m.contact.impulse_to_material_x +
+                                     m.contact.impulse_to_material_y * m.contact.impulse_to_material_y +
+                                     m.contact.impulse_to_material_z * m.contact.impulse_to_material_z);
+    const double window_ratio = m.lattice_simulated_s > 0.0 ? m.lattice_wall_s / m.lattice_simulated_s : 0.0;
+
+    nlohmann::json report;
+    report["lane"] = "algo3-propagator-cones";
+    report["mode"] = options.reference ? "reference (plain explicit stepping, one thread)"
+                                       : "exact lattice; propagator jumps refused by the affineness gate";
+    report["backend"] = m.backend_name;
+    report["cells"] = m.cells;
+    report["bonds"] = m.bonds;
+    report["cell_m"] = m.cell_size_m;
+    report["dt_s"] = m.dt_s;
+    report["precompute_s"] = precompute_s;
+    report["precompute_cached"] = precompute_cached;
+    report["precompute_bytes"] = precompute_bytes;
+    report["precompute"] = precompute;
+    report["compute_wall_s"] = m.wall_total_s;
+    report["simulated_s"] = m.simulated_total_s;
+    report["realtime"] = {{"ratio", m.realtime_ratio},
+                          {"simulated_s", m.simulated_total_s},
+                          {"compute_wall_s", m.wall_total_s},
+                          {"fracture_window_ratio", window_ratio},
+                          {"window_simulated_s", m.lattice_simulated_s},
+                          {"limit", 1.1}};
+    report["jumps"] = {{"m_values", jump_powers},
+                       {"count", 0},
+                       {"cone_cells_total", 0},
+                       {"cone_wall_s", 0.0},
+                       {"jump_wall_s", 0.0},
+                       {"refused", !options.reference && !admissibility.affine},
+                       {"reason", options.reference ? std::string("the reference lane takes no jumps")
+                                                    : admissibility.reason}};
+    report["contact"] = {{"model", "sphere/node sequential impulses in node order "
+                                   "(physics/SphereMaterialContact.cpp), twice per substep"},
+                         {"impulse_n_s", impulse},
+                         {"impulse_contacts", m.contact.impulse_contacts},
+                         {"maximum_penetration_m", m.contact.maximum_penetration_m}};
+    report["first_failure"] = {
+        {"time_s", m.first_failure_s},
+        {"substep", first_failure_step == std::numeric_limits<std::uint64_t>::max()
+                        ? -1
+                        : static_cast<std::int64_t>(first_failure_step)},
+        {"bond_indices", first_bonds}};
+    report["broken_bonds"] = m.broken_bonds;
+    report["components"] = m.components;
+    report["largest_component_cells"] = m.largest_piece_cells;
+    report["largest_component_mass_kg"] = m.largest_piece_mass_kg;
+    report["removed_energy_j"] = m.removed_energy_j;
+    report["exactness"] = exactness;
+    report["lattice"] = {{"steps", m.lattice_steps},
+                         {"simulated_s", m.lattice_simulated_s},
+                         {"wall_s", m.lattice_wall_s},
+                         {"failure_rounds", m.failure_rounds},
+                         {"exit_reason", m.exit_reason}};
+    report["rigid"] = {{"simulated_s", m.rigid_simulated_s},
+                       {"wall_s", m.rigid_wall_s},
+                       {"came_to_rest", m.came_to_rest}};
+    report["threads"] = options.reference
+                            ? 1U
+                            : (options.threads == 0 ? defaultLatticeThreadCount() : options.threads);
+
+    const std::string report_text = report.dump();
+    writePlayback(result, std::filesystem::path(options.output), &report_text);
+    std::cout << report.dump(2) << std::endl;
+    return 0;
+}
+
 void usage() {
     std::cout <<
         "usage: banjo_fracture_algo3 [options]\n"
@@ -298,10 +736,17 @@ int main(int argc, char **argv) {
             else if (option == "--precision") { const auto v = value(); options.precision = v == "float" ? Precision::Float : Precision::Double; }
             else if (option == "--probe") options.probe = true;
             else if (option == "--cone") options.cone = true;
+            else if (option == "--bench") options.bench = true;
+            else if (option == "--precompute") options.precompute = true;
+            else if (option == "--gemm-only") options.gemm_only = true;
             else if (option == "--probe-steps") options.probe_steps = static_cast<unsigned>(number(value()));
             else if (option == "--probe-samples") options.probe_samples = static_cast<unsigned>(number(value()));
             else if (option == "--probe-amplitude") options.probe_amplitude = number(value());
             else if (option == "--jump") options.jump = static_cast<std::uint32_t>(number(value()));
+            else if (option == "--threads") options.threads = static_cast<unsigned>(number(value()));
+            else if (option == "--no-exactness") options.exactness = false;
+            else if (option == "--gate-amplitude") options.gate_amplitude = number(value());
+            else if (option == "--spins") options.spins = static_cast<unsigned>(number(value()));
             else throw std::invalid_argument("unknown option " + std::string(option));
         }
         if (options.support != "ledges" && options.support != "clamped")
@@ -310,7 +755,9 @@ int main(int argc, char **argv) {
             throw std::invalid_argument("clamped support is not implemented in this lane; use --support ledges");
         if (options.probe) return runProbe(options);
         if (options.cone) return runCone(options);
-        throw std::invalid_argument("the lane run is not implemented yet; use --probe");
+        if (options.bench) return runBench(options);
+        if (options.precompute || options.gemm_only) return runPrecompute(options);
+        return runLane(options);
     } catch (const std::exception &error) {
         std::cerr << "banjo_fracture_algo3: " << error.what() << "\n";
         return 2;

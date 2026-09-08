@@ -213,26 +213,27 @@ namespace {
 
 // C = A * B, all column-major n x n. Eight columns of C at a time so a column
 // of A is read once for eight of them.
-void gemm(const double *A, const double *B, double *C, std::size_t n, unsigned threads) {
+template <typename Scalar>
+void gemm(const Scalar *A, const Scalar *B, Scalar *C, std::size_t n, unsigned threads) {
     const auto worker = [&](std::size_t j_begin, std::size_t j_end) {
         constexpr std::size_t kBlock = 8;
         for (std::size_t j0 = j_begin; j0 < j_end; j0 += kBlock) {
             const std::size_t jn = std::min(kBlock, j_end - j0);
             for (std::size_t t = 0; t < jn; ++t)
-                std::memset(C + (j0 + t) * n, 0, n * sizeof(double));
+                std::memset(C + (j0 + t) * n, 0, n * sizeof(Scalar));
             for (std::size_t k = 0; k < n; ++k) {
-                const double *a = A + k * n;
-                double s[kBlock];
+                const Scalar *a = A + k * n;
+                Scalar s[kBlock];
                 bool any = false;
                 for (std::size_t t = 0; t < jn; ++t) {
                     s[t] = B[k + (j0 + t) * n];
-                    any = any || s[t] != 0.0;
+                    any = any || s[t] != Scalar(0);
                 }
                 if (!any) continue;
                 for (std::size_t t = 0; t < jn; ++t) {
-                    if (s[t] == 0.0) continue;
-                    double *c = C + (j0 + t) * n;
-                    const double scale = s[t];
+                    if (s[t] == Scalar(0)) continue;
+                    Scalar *c = C + (j0 + t) * n;
+                    const Scalar scale = s[t];
                     for (std::size_t i = 0; i < n; ++i) c[i] += scale * a[i];
                 }
             }
@@ -298,6 +299,23 @@ DensePropagator propagatorPower(const DensePropagator &base, std::uint32_t m, un
     }
     result.power = m;
     return result;
+}
+
+double measureGemmSeconds(std::size_t n, unsigned threads, bool single_precision) {
+    const auto time = [&](auto scalar_tag) {
+        using Scalar = decltype(scalar_tag);
+        std::vector<Scalar> a(n * n), b(n * n), c(n * n);
+        std::mt19937_64 rng(11U);
+        std::uniform_real_distribution<double> dist(-1.0, 1.0);
+        for (std::size_t i = 0; i < n * n; ++i) {
+            a[i] = static_cast<Scalar>(dist(rng));
+            b[i] = static_cast<Scalar>(dist(rng));
+        }
+        const auto begin = std::chrono::steady_clock::now();
+        gemm<Scalar>(a.data(), b.data(), c.data(), n, threads);
+        return std::chrono::duration<double>(std::chrono::steady_clock::now() - begin).count();
+    };
+    return single_precision ? time(float{}) : time(double{});
 }
 
 // ---------------------------------------------------------------------------

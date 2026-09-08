@@ -126,6 +126,21 @@ public:
 [[nodiscard]] std::unique_ptr<LatticeBackend> makeCpuLatticeBackend(
     const LatticeSchedule &schedule, Precision precision);
 
+// The same phases on a thread pool, bit identical to the serial backend: the
+// independent per-node and per-bond phases are split, the Gauss-Seidel sweep
+// and the sphere contact pass stay serial because their order is physics.
+// threads = 0 asks for the hardware concurrency; spins = 0 takes the default
+// number of pause instructions an idle worker spins before yielding.
+[[nodiscard]] std::unique_ptr<LatticeBackend> makeParallelCpuLatticeBackend(
+    const LatticeSchedule &schedule, Precision precision, unsigned threads, unsigned spins = 0);
+
+// Wall seconds for `dispatches` empty pool dispatches: the floor under any
+// phase the parallel backend can spread, measured on this machine.
+[[nodiscard]] double measureParallelDispatchCost(unsigned threads, unsigned spins, unsigned dispatches);
+
+// The thread count makeParallelCpuLatticeBackend uses when asked for 0.
+[[nodiscard]] unsigned defaultLatticeThreadCount();
+
 // Throws std::runtime_error when the build has no CUDA backend or no device.
 [[nodiscard]] std::unique_ptr<LatticeBackend> makeCudaLatticeBackend(
     const LatticeSchedule &schedule, Precision precision, unsigned threads_per_block);
