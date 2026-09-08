@@ -677,9 +677,11 @@
           "evidence_2026_09_07": {
             "summary": "modal 8x8x2 job, case 1: first failure set identical to the reference (case 2), watchable side by side",
             "urls": [
-              "http://127.0.0.1:8765/?job=65331afc7b2f47f791799e70ed699c97"
+              "http://127.0.0.1:8765/?job=65331afc7b2f47f791799e70ed699c97",
+              "http://127.0.0.1:8765/?job=08678486c9aa43949b5a0ec7b00fafb8"
             ],
-            "limits": "rule met on the 8x8x2 tile only for the modal lane (fails at 12x12x2); the quasi-static lane meets it to 2,048 cells but its crack pattern is not the dynamic one"
+            "limits": "rule met on the 8x8x2 tile only for the modal lane (fails at 12x12x2); the quasi-static lane meets it to 2,048 cells but its crack pattern is not the dynamic one",
+            "gpu_lattice": "192-cell tile, fracture window resolved at 1.59 us substeps, 0.20x through rest; holds to 384 cells, fails at 800 (1.50x)"
           }
         },
         {
@@ -693,9 +695,11 @@
           "evidence_2026_09_07": {
             "summary": "modal 8x8x2 job: 35 fragments from rank-one basis updates at 0.14x overall (fracture window 497x); the research answer is measured: exact updates hold accuracy but cost O(n k^2) per bond and fail the rule at 12x12x2 (1.94x)",
             "urls": [
-              "http://127.0.0.1:8765/?job=65331afc7b2f47f791799e70ed699c97"
+              "http://127.0.0.1:8765/?job=65331afc7b2f47f791799e70ed699c97",
+              "http://127.0.0.1:8765/?job=08678486c9aa43949b5a0ec7b00fafb8"
             ],
-            "limits": "rule met on the 8x8x2 tile only for the modal lane (fails at 12x12x2); the quasi-static lane meets it to 2,048 cells but its crack pattern is not the dynamic one"
+            "limits": "rule met on the 8x8x2 tile only for the modal lane (fails at 12x12x2); the quasi-static lane meets it to 2,048 cells but its crack pattern is not the dynamic one",
+            "gpu_lattice": "192-cell tile, fracture window resolved at 1.59 us substeps, 0.20x through rest; holds to 384 cells, fails at 800 (1.50x)"
           }
         },
         {
@@ -709,9 +713,11 @@
             "summary": "modal 8x8x2 at 0.14x and quasi-static 32x32x2 at 0.37x both run through to rest with pieces on the ground",
             "urls": [
               "http://127.0.0.1:8765/?job=65331afc7b2f47f791799e70ed699c97",
-              "http://127.0.0.1:8765/?job=5b132ccb059c468ea9ec41e0a4f9ff1d"
+              "http://127.0.0.1:8765/?job=5b132ccb059c468ea9ec41e0a4f9ff1d",
+              "http://127.0.0.1:8765/?job=08678486c9aa43949b5a0ec7b00fafb8"
             ],
-            "limits": "rule met on the 8x8x2 tile only for the modal lane (fails at 12x12x2); the quasi-static lane meets it to 2,048 cells but its crack pattern is not the dynamic one"
+            "limits": "rule met on the 8x8x2 tile only for the modal lane (fails at 12x12x2); the quasi-static lane meets it to 2,048 cells but its crack pattern is not the dynamic one",
+            "gpu_lattice": "192-cell tile, fracture window resolved at 1.59 us substeps, 0.20x through rest; holds to 384 cells, fails at 800 (1.50x)"
           }
         },
         {
@@ -809,9 +815,35 @@
         },
         "gpu_lattice": {
           "branch": "agent/fast-gpu",
-          "status": "in progress; WIP 5f9dee2; no measurements recorded yet"
+          "commit": "7d07996 (final doc commit pending the last scaling rows)",
+          "checkpoint": "docs/fast-gpu-checkpoint.md",
+          "what_it_is": "the CPU lane physics (BrittleBondSolver) and the shared BondFailure criterion executed bit for bit on a colour-parallel schedule, with a CUDA backend behind BANJO_BUILD_CUDA (default OFF) and a CPU backend that always builds; equality proven: max |du| = 0 GPU vs CPU through a fracture cascade, max |dx| = 4.0e-11 m vs BrittleBondSolver with identical first-failure set, pieces and energy",
+          "rule_met": {
+            "scene": "192-cell uniform-cube glass tile (0.24 x 0.04 x 0.16 m, 20 mm cells, 1,704 bonds) on two ledges, 4 cm iron ball at 8 m/s, through fracture (7,288 substeps at 1.59 us, the window itself resolved), hand-off and settling",
+            "simulated_s": 1.895,
+            "wall_s": 0.377,
+            "realtime_ratio": 0.2,
+            "pieces": 3,
+            "url": "http://127.0.0.1:8765/?job=08678486c9aa43949b5a0ec7b00fafb8",
+            "same_tile_12_m_s": {
+              "realtime_ratio": 0.57,
+              "pieces": 59,
+              "case": 2
+            },
+            "holds_up_to_cells": 384,
+            "ratio_at_384": 0.71
+          },
+          "rule_failed": {
+            "800_cells": 1.5,
+            "1536_cells_glass": "about 7x (the cascade fills the whole 200 ms lattice window at 142-155 us per substep)",
+            "oak_iron_1536_cells": "pass at 0.76x and 0.59x because their cascades end within 15-21 ms",
+            "url": "http://127.0.0.1:8765/?job=34c2b8108580425fbaefbd407ddf0279"
+          },
+          "throughput": "GPU 55 M bond-updates/s at 192 cells, no faster than this lane single-threaded CPU backend (57-68 M; BrittleBondSolver itself 19-21 M; the network lane 0.85 M); the GPU overtakes one core from 384 cells (1.9x) and reaches 616 M at 173k bonds, five times short of the ~3e9 the brief estimated",
+          "obstacle": "structural: one Gauss-Seidel substep is a chain of 22-32 node-disjoint colour stages, each a barrier, costing 25-35 us on one block regardless of bond count below 20k bonds, while the substep advances 0.3-1.6 us of simulated time",
+          "significance": "this is the only lane where the fracture window itself is computed at its resolved step and the rule still holds; at 192 cells even its CPU backend in double meets the rule (0.41x). physical_response_validated stays false; the outcome is not converged with respect to sweep order, precision or cell size."
         },
-        "what_this_changes_for_the_stages": "Stages D-F now have recordings from the modal lane on 8x8x2 (fracture from the basis, cascade on basis updates, pieces to rest) and from the quasi-static lane up to 2,048 cells. Stage B (elastic flex, no fracture) and C (the same flex from the basis) have no recording of their own: the basis is shown exact in the modal checkpoint, but the elastic-only scene was not recorded. Stage G is untouched: both lanes are command-line tools with importers, not Builder routes."
+        "what_this_changes_for_the_stages": "Stages D-F now have recordings from the modal lane on 8x8x2 (fracture from the basis, cascade on basis updates, pieces to rest) and from the quasi-static lane up to 2,048 cells. Stage B (elastic flex, no fracture) and C (the same flex from the basis) have no recording of their own: the basis is shown exact in the modal checkpoint, but the elastic-only scene was not recorded. Stage G is untouched: both lanes are command-line tools with importers, not Builder routes. The GPU lattice lane adds a third route for D-F on a 192-cell tile with the fracture window resolved rather than amortised, holding to 384 cells."
       }
     }
   ],
