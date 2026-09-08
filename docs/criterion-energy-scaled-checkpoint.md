@@ -469,4 +469,11 @@ python scripts/fast-gpu-install-playback.py     docs/evidence/criterion/rec-glas
 
 ## 10. Playground
 
-*Filled in below.*
+The ladder's runs are registered as jobs in the owner's playground store
+(`C:/Users/henry/dev/banjo/build/playground-runs`, server on port 8765).
+Nothing in the owner's checkout was modified and its server was not restarted;
+the server discovers a new job directory on the next request. A separate test
+playground was run on port 8804 against this worktree's own store and stopped
+afterwards.
+
+*URLs filled in below.*
