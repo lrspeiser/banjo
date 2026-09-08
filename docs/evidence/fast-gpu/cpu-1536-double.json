@@ -1,6 +1,6 @@
 {
   "cuda": "CUDA backend not compiled (configure with -DBANJO_BUILD_CUDA=ON)",
-  "frames": 122,
+  "frames": 123,
   "measurements": {
     "backend": "cpu-double",
     "ball_mass_kg": 2.1098098503468097,
@@ -10,80 +10,80 @@
     "cell_size_m": 0.01,
     "cells": 1536,
     "colors": 31,
-    "degenerate_disagreements": 44,
+    "degenerate_disagreements": 38,
     "dt_s": 6.698999132647144e-07,
     "fastest_period_s": 4.2091052923057325e-06,
     "handoff": {
-      "components": 383,
+      "components": 298,
       "debris_particles": 0,
-      "largest_piece_cells": 467,
-      "largest_piece_mass_kg": 1.1674999999999862,
-      "rigid_fragments": 383,
-      "wall_s": 0.0077878
+      "largest_piece_cells": 523,
+      "largest_piece_mass_kg": 1.3074999999999832,
+      "rigid_fragments": 298,
+      "wall_s": 0.0065286
     },
     "lattice": {
-      "bond_updates_per_s": 24125679.465085417,
-      "broken_bonds": 10583,
+      "bond_updates_per_s": 20112553.852357358,
+      "broken_bonds": 9036,
       "contact": {
-        "ball_support_events": 90195,
-        "dissipated_kinetic_energy_j": 35.537730944736936,
-        "impulse_contacts": 169214,
+        "ball_support_events": 0,
+        "dissipated_kinetic_energy_j": 30.54876757217442,
+        "impulse_contacts": 5589,
         "impulse_to_material_n_s": [
-          -0.05604264069886945,
-          -27.580228042981503,
-          -0.7180957261683638
+          -0.020537553749664702,
+          -23.188586763937934,
+          -0.7628641131327613
         ],
         "maximum_center_shift_m": 2.1033301919845382e-08,
-        "maximum_penetration_m": 1.7693709453772688e-05,
-        "maximum_position_correction_m": 7.693709453772687e-06
+        "maximum_penetration_m": 1.7658601315598266e-05,
+        "maximum_position_correction_m": 4.960359649089649e-06
       },
-      "exit_reason": 1,
-      "failure_rounds": 4523,
+      "exit_reason": 3,
+      "failure_rounds": 3733,
       "first_failure_s": 0.00022106697137735574,
       "kernel_s": 0.0,
-      "last_failure_s": 0.18347486784459302,
+      "last_failure_s": 0.029609576166300375,
       "launches": 1,
-      "removed_energy_j": 61.731775017848726,
-      "simulated_s": 0.19347580364972194,
-      "steps": 288813,
-      "wall_s": 225.6808014
+      "removed_energy_j": 61.73070980936629,
+      "simulated_s": 0.030000127815733704,
+      "steps": 44783,
+      "wall_s": 41.9762265
     },
     "max_compressive_strain": 0.5,
     "max_shear_strain": 25.578641891479492,
     "max_tensile_stretch": 31.5,
     "phase_seconds": {
       "capture": 0.0,
-      "contact_pass_1": 0.0857946000002983,
-      "contact_pass_2": 0.07976620000026591,
+      "contact_pass_1": 0.021316100000006877,
+      "contact_pass_2": 0.019898000000002285,
       "damping": 0.0,
-      "end_sample_bonds": 109.06750369999786,
-      "end_sample_nodes": 38.60522339999682,
-      "kick_classify": 4.38519739999637,
-      "sphere_exit": 0.037058100000018586,
-      "start_sample_bonds": 1.4817435000000025,
-      "start_sample_nodes": 0.7311676999999971,
-      "support_project": 9.244609799998296,
-      "sweep_boundary": 0.019245599999949764,
-      "sweep_interior": 59.21744769999125,
-      "velocity_update": 2.690378699999594
+      "end_sample_bonds": 19.895521700001094,
+      "end_sample_nodes": 6.682150499999773,
+      "kick_classify": 0.6710773000001059,
+      "sphere_exit": 0.0049332999999997925,
+      "start_sample_bonds": 1.2756481999999971,
+      "start_sample_nodes": 0.626648499999999,
+      "support_project": 1.3336177999999481,
+      "sweep_boundary": 0.00305939999999873,
+      "sweep_interior": 11.096514499999584,
+      "velocity_update": 0.33695760000003494
     },
-    "realtime_ratio": 36.76666880103296,
+    "realtime_ratio": 7.189799151083035,
     "recording_wall_s": 0.0,
     "rigid": {
-      "ball_height_at_end_m": 0.0393650834273177,
-      "ball_speed_at_end_m_s": 0.0014055209836703467,
+      "ball_height_at_end_m": 0.03999930460001805,
+      "ball_speed_at_end_m_s": 0.10081917984352987,
       "came_to_rest": false,
       "rest_time_s": -1.0,
       "simulated_s": 5.99999999999998,
       "steps": 1440,
-      "wall_s": 2.0060558
+      "wall_s": 1.3527529
     },
     "rule_met": false,
     "shared_memory_bytes": 0,
     "shared_memory_positions": false,
-    "simulated_total_s": 6.193475803649702,
+    "simulated_total_s": 6.030000127815713,
     "substep_limit_s": 1.3397998265294287e-06,
     "tile_mass_kg": 3.8399999999999253,
-    "wall_total_s": 227.7134736
+    "wall_total_s": 43.3544898
   }
 }
