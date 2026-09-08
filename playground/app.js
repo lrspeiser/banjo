@@ -544,7 +544,7 @@
     const item=state.job?.cases?.[index]; if(!state.jobId || !playbackAvailable(item)){if(auto)return;showToast("This case has no embedded playback data.",true);return;}
     $("viewer-review").replaceChildren();$("viewer-evidence").textContent="";$("viewer-evidence-details").open=false;state.selectedCase=index;renderLanguage();renderViewerCaseSelect();activateTab("viewer");$("viewer-title").textContent=text(state.job?.plan?.ui?.title,item.name || "Computed sequence.");
     const key=`${state.jobId}:${index}`, request=++state.playbackRequest;
-    try { let playback=state.playbackCache.get(key);if(!playback){playback=await api(`/api/jobs/${encodeURIComponent(state.jobId)}/playback/${index}`);state.playbackCache.set(key,playback);}if(request!==state.playbackRequest||key!==`${state.jobId}:${state.selectedCase}`)return; setPlaybackEnabled(true); if(state.loadedPlaybackKey!==key){state.sceneMetadata=ensureScene().load(playback);if(playback.native_schema === "banjo.cohesive-sphere-probe.v1"){$("viewer-speed").value="0.001";state.scene.setSpeed(0.001);}state.loadedPlaybackKey=key;} const [kind,message]=validityMessage(item,playback), validity=$("viewer-validity");validity.className=`viewer-validity ${kind}`;validity.textContent=message;renderCustomControls(state.job?.plan?.ui);renderThermalLegend(state.sceneMetadata);$("viewer-native").disabled=!canOpenCase(item); }
+    try { let playback=state.playbackCache.get(key);if(!playback){playback=await api(`/api/jobs/${encodeURIComponent(state.jobId)}/playback/${index}`);state.playbackCache.set(key,playback);}if(request!==state.playbackRequest||key!==`${state.jobId}:${state.selectedCase}`)return; setPlaybackEnabled(true); if(state.loadedPlaybackKey!==key){state.sceneMetadata=ensureScene().load(playback);if(playback.native_schema === "banjo.cohesive-sphere-probe.v1"){$("viewer-speed").value="0.001";state.scene.setSpeed(0.001);}state.scene.holdFracture($("viewer-hold").checked);state.loadedPlaybackKey=key;} const [kind,message]=validityMessage(item,playback), validity=$("viewer-validity");validity.className=`viewer-validity ${kind}`;validity.textContent=message;renderCustomControls(state.job?.plan?.ui);renderThermalLegend(state.sceneMetadata);$("viewer-native").disabled=!canOpenCase(item); }
     catch(error){state.scene?.dispose();state.scene=null;state.sceneMetadata=null;$("viewer-stage").replaceChildren();const p=document.createElement("p");p.className="viewer-error";p.textContent=error.message;$("viewer-stage").append(p);state.loadedPlaybackKey=null;showToast(error.message,true);}
   }
 
@@ -1189,6 +1189,21 @@
   // What is on the stage right now, in the terms that were typed to make it.
   // Two runs can be visually alike at the first frame, so the line under the
   // scene is what tells a changed parameter apart from an unchanged one.
+  // How the recording is being played, appended to whatever the caption says
+  // about what is in it. The fracture is a few milliseconds of a two-second
+  // recording, so at true elapsed time it is over in one blink and every run
+  // looks like the same debris settling. Saying which part is slowed keeps that
+  // from reading as the physics being slow.
+  function playbackNote() {
+    const scene = state.scene;
+    if (!scene || !Number.isFinite(scene.fractureFrames) || !scene.fractureFrames) return "";
+    const held = $("viewer-hold") && $("viewer-hold").checked;
+    const seconds = (scene.fractureFrames * 0.11).toFixed(1);
+    return held
+      ? ` The strike is ${scene.fractureFrames} frames, held to about ${seconds} s so it can be seen; the settle after it runs at true elapsed time.`
+      : ` The strike is ${scene.fractureFrames} frames and passes in well under a tenth of a second at true elapsed time. Turn on "Slow the fracture" to watch it.`;
+  }
+
   function captionStage(sum) {
     const box = $("fracture-stage-caption");
     if (!box) return;
@@ -1203,7 +1218,8 @@
         ? `${sum.broken_bonds} bonds broken, ${sum.components ?? "?"} pieces`
         : "no failure";
       box.append(strong, document.createTextNode(
-        ` — ${list}. ${moving.length ? `${moving[0].name} at ${moving[0].speed_m_s} m/s. ` : ""}${broke}.`));
+        ` — ${list}. ${moving.length ? `${moving[0].name} at ${moving[0].speed_m_s} m/s. ` : ""}${broke}.`
+        + playbackNote()));
       box.classList.remove("is-new");
       void box.offsetWidth;
       box.classList.add("is-new");
@@ -1220,7 +1236,7 @@
     box.replaceChildren();
     const strong = document.createElement("strong");
     strong.textContent = `${plate}, ${sum.cells ?? "?"} cells`;
-    box.append(strong, document.createTextNode(` — struck by a ${ball} at ${speed}. ${broke}.`));
+    box.append(strong, document.createTextNode(` — struck by a ${ball} at ${speed}. ${broke}.` + playbackNote()));
     // A short highlight so a rerun that looks the same is still visibly a
     // rerun.
     box.classList.remove("is-new");
@@ -1234,6 +1250,7 @@
     const row = (label, value, cls = "") => { const p = document.createElement("p"); p.className = `metric ${cls}`.trim(); const l = document.createElement("span"); l.className = "metric-label"; l.textContent = label; const v = document.createElement("span"); v.textContent = value; p.append(l, v); box.append(p); };
     if (result.status !== "complete") { row("Status", result.error || result.message || result.status, "bad"); return; }
     const sum = (result.fracture && result.fracture.summary) || {};
+    fracture.lastSummary = sum;
     captionStage(sum);
     const s3 = (x, unit = "") => Number.isFinite(x) ? `${x.toFixed(3)}${unit}` : "-";
     row("Lane", result.fracture.lane);
@@ -1281,7 +1298,11 @@
     state.selectedCase = Math.max(0, job.cases?.findIndex(playbackAvailable) ?? 0); state.latestPlan = job.plan;
     renderJob(job); renderLanguage(); renderResults();
     if (job.cases?.some(playbackAvailable)) {
-      loadPlayback(state.selectedCase, true);
+      // Awaited, because the caption says how many frames the strike is and
+      // that is a property of the recording being loaded here. Without the
+      // wait the line describes whatever was on the stage before.
+      await loadPlayback(state.selectedCase, true);
+      if (fracture.lastSummary) captionStage(fracture.lastSummary);
       // There is one stage and it is on this page.
       activateTab("fracture");
     } else { clearViewer("This run has no playback."); activateTab("results"); }
@@ -1738,7 +1759,7 @@
   $("viewer-reset").addEventListener("click",()=>{state.scene?.reset();$("viewer-play").textContent="Play";});
   $("viewer-back").addEventListener("click",()=>state.scene?.step(-1));$("viewer-forward").addEventListener("click",()=>state.scene?.step(1));
   $("viewer-frame").addEventListener("input",e=>state.scene?.setFrame(Number(e.target.value)));$("viewer-speed").addEventListener("change",e=>{state.scene?.setSpeed(e.target.value);syncCustomDisplay("playback_speed",Number(e.target.value));});$("viewer-magnification").addEventListener("change",e=>state.scene?.setMagnification(e.target.value));
-  $("viewer-components").addEventListener("change",e=>state.scene?.showComponents(e.target.checked));$("viewer-reference").addEventListener("change",e=>state.scene?.showReference(e.target.checked));$("viewer-bonds").addEventListener("change",e=>state.scene?.showBonds(e.target.checked));$("viewer-xray").addEventListener("change",e=>state.scene?.setXray(e.target.checked));$("viewer-native").addEventListener("click",()=>openStudio(state.selectedCase));
+  $("viewer-components").addEventListener("change",e=>state.scene?.showComponents(e.target.checked));$("viewer-reference").addEventListener("change",e=>state.scene?.showReference(e.target.checked));$("viewer-bonds").addEventListener("change",e=>state.scene?.showBonds(e.target.checked));$("viewer-xray").addEventListener("change",e=>state.scene?.setXray(e.target.checked));$("viewer-hold").addEventListener("change",e=>{state.scene?.holdFracture(e.target.checked);if(fracture.lastSummary)captionStage(fracture.lastSummary);});$("viewer-native").addEventListener("click",()=>openStudio(state.selectedCase));
   $("prompt-input").addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); $("chat-form").requestSubmit(); } });
   renderConversation(); renderHistory(); renderJob(null); renderStatus(); loadGoal(); restoreLatestJob();
   // The playground is the page now, so it is built on load rather than on a tab

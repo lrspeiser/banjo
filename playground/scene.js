@@ -900,13 +900,25 @@ function create(container, hooks = {}) {
     fit();
     return { continuum, dynamic, thermal, magnification, thermalRange };
   }
-  const delay = () =>
-    continuum
-      ? 150
-      : Number.isFinite(frames[frame]?.time_s) &&
-          frames[frame + 1]?.time_s > frames[frame].time_s
+  // The fracture is a blink. In a two-second recording the lattice phase is
+  // about 26 ms of simulated time in 8 of 88 frames, so at 1x it is over in
+  // less than two animation frames and every run looks like the same pile of
+  // debris settling. Holding each lattice frame for a fixed spell turns that
+  // into about a second of watchable fracture and leaves the rigid settle at
+  // real time. It changes nothing about the physics and nothing about what was
+  // computed -- only how long a computed frame stays on screen -- and the
+  // control that turns it off is next to the scene.
+  const kLatticeFrameMs = 110;
+  let holdFracture = true;
+  const delay = () => {
+    if (continuum) return 150;
+    const real =
+      Number.isFinite(frames[frame]?.time_s) && frames[frame + 1]?.time_s > frames[frame].time_s
         ? (frames[frame + 1].time_s - frames[frame].time_s) * 1000
         : 120;
+    if (!holdFracture || frames[frame]?.phase !== "lattice") return real;
+    return Math.max(real, kLatticeFrameMs);
+  };
   function loop(now) {
     if (dead) return;
     const w = Math.max(1, container.clientWidth),
@@ -1011,6 +1023,24 @@ function create(container, hooks = {}) {
     // shows a corner of the scene in the other.
     refit() {
       fit();
+    },
+    // Whether lattice frames are held on screen. Off is true elapsed time.
+    holdFracture(v) {
+      holdFracture = v !== false;
+    },
+    // How much of this recording is the fracture, so the panel can say whether
+    // holding it is doing anything.
+    get fractureFrames() {
+      return frames.filter((f) => f.phase === "lattice").length;
+    },
+    // How long the current frame will stay on screen, in milliseconds. The only
+    // way to check the hold without waiting on animation frames, which a hidden
+    // pane never delivers.
+    get frameDelayMs() {
+      return delay();
+    },
+    get framePhase() {
+      return frames[frame]?.phase ?? "";
     },
     play: (v) => setPlaying(v ?? !playing),
     reset() {
