@@ -70,6 +70,42 @@ once the contact is resolved. A control whose outcome is a toppling trajectory
 cannot certify "blunt loading leaves tissue intact"; it certifies one
 trajectory.
 
+## 4c. The control cannot be a control at this load, at any resolution
+
+Two further probes, 2026-09-08, both at the fully resolved 4,699 substeps per
+tick, tissue and tool only with a pacer forcing the substep count:
+
+| tool | tissue broken / damaged | peak axial strain |
+|---|---:|---:|
+| 25 mm off centre, as the fixture has it | 0 / 3 | 0.5367 |
+| centred over the ball | 0 / 2 | **0.4811** |
+
+Centring removes the topple and a third of the excess strain, and the tissue is
+still damaged: 0.4811 against a failure strain of 0.375. So the fix proposed in
+section 4b -- drop the tool centrally -- is **not sufficient**, and the reason is
+arithmetic rather than numerical.
+
+The blunt tool is a 30 x 120 x 100 mm iron block: 2.833 kg, 27.8 N. Its landing
+face is 30 cm^2, so **at rest on a flat surface it already applies 9.26 kPa,
+which is 62% of the tissue's 15 kPa strength**, before any impact. The target is
+an ellipsoid, so first contact is a line rather than that face and the local
+stress starts far above strength; then 1 m/s of closing speed is added on top.
+
+A tool that damages soft tissue by standing on it cannot be the control in a
+sharp-versus-blunt pair. The assertion passed historically because the lane ran
+one internal solve per host tick and under-reported the strain; the stability
+clock did not break this test, it revealed it.
+
+**What the fix has to be.** The pair's meaning is *the same load through
+different edge geometry*, so the load is the free parameter: lower the shared
+impact speed (and, if needed, the tool mass) until the blunt case leaves the
+tissue intact at the resolved substep count, then confirm the sharp case still
+damages it locally at that same load. Both fixtures change together, the reason
+is recorded, and the pair is re-run in full -- about five hours for the runtime
+suite. Choosing that load is a physics-design decision, not a tolerance to
+widen, and it is deliberately left to the owner rather than tuned here until the
+red test turns green.
+
 ## What this means
 
 - `main` is not fast-forwarded to the integration branch: a red hour-long suite
