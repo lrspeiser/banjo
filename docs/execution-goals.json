@@ -1,1257 +1,1257 @@
 {
- "schema": "banjo.execution-goals.v2",
- "recorded_against": "main:3a974d93d100c36011e241aed1a3d74ab9fdc4f4",
- "recorded_date": "2026-09-07",
- "project_goal_ref": "docs/project-goal-2026-09-06.md",
- "baseline": {
-  "suite_count": 58,
-  "suite_status": "passes",
-  "suite_duration_s": 83.49,
-  "toolchain": "Windows MSVC 19.44 Release",
-  "physics_status": "unfinished",
-  "code_commit": "3a974d93d100c36011e241aed1a3d74ab9fdc4f4"
- },
- "completion_policy": {
-  "prototype": "Instrumented bounded implementation or experiment with explicit limitations; not a completion claim.",
-  "complete": "Acceptance evidence, comparative material coverage, conservation/work checks, refinement checks, and relevant scale/customer checks are recorded.",
-  "global_status": "no_goal_complete",
-  "deferred": [
-   "smoke",
-   "airflow",
-   "pressure_advection",
-   "full_fluid_dynamics"
-  ]
- },
- "retained_requirements_ref": {
-  "source": "docs/mechanics-scorecard.md",
-  "master": "docs/project-master-plan.md",
-  "ids": [
-   "M01",
-   "M02",
-   "M03",
-   "M04",
-   "M05",
-   "M06",
-   "M07",
-   "M08",
-   "M09",
-   "M10",
-   "M11",
-   "M12",
-   "M13",
-   "M14",
-   "M15",
-   "M16",
-   "M17",
-   "M18",
-   "M19",
-   "M20",
-   "M21",
-   "M22",
-   "M23",
-   "M24",
-   "M25",
-   "M26",
-   "M27",
-   "M28",
-   "M29",
-   "M30",
-   "P01",
-   "P02",
-   "P03",
-   "P04",
-   "P05",
-   "P06",
-   "P07",
-   "P08",
-   "P09",
-   "P10"
-  ],
-  "count": 40
- },
- "physical_reference": {
-  "source": "docs/glass-drop-benchmark.md",
-  "specimen": "6 mm fully tempered soda-lime-glass pane",
-  "projectile": "reported 4.11 kg steel ball",
-  "protocol": "0.10 m start and 0.10 m increases on the same pane until first observed fracture",
-  "sample_count": 35,
-  "mean_terminal_height_m": 0.76,
-  "sample_standard_deviation_m": 0.24,
-  "terminal_height_counts": {
-   "0.5": 7,
-   "0.6": 8,
-   "0.7": 6,
-   "0.8": 2,
-   "0.9": 6,
-   "1.0": 0,
-   "1.1": 1,
-   "1.2": 5
+  "schema": "banjo.execution-goals.v2",
+  "recorded_against": "main:3a974d93d100c36011e241aed1a3d74ab9fdc4f4",
+  "recorded_date": "2026-09-07",
+  "project_goal_ref": "docs/project-goal-2026-09-06.md",
+  "baseline": {
+    "suite_count": 58,
+    "suite_status": "passes",
+    "suite_duration_s": 83.49,
+    "toolchain": "Windows MSVC 19.44 Release",
+    "physics_status": "unfinished",
+    "code_commit": "3a974d93d100c36011e241aed1a3d74ab9fdc4f4"
   },
-  "claim_limit": "First observed fracture after staircase history; not complete shattering, fragment distribution, contact force, impulse, or timing.",
-  "raw_data_policy": "Retain the raw terminal-height distribution and protocol history; do not tune one deterministic threshold to the mean.",
-  "unresolved_apparatus": [
-   "steel ball diameter",
-   "steel grade",
-   "roller span",
-   "rubber cover properties",
-   "impact-position tolerance"
-  ]
- },
- "execution_policy": {
-  "routine_docs_and_test_fixtures": "Luna",
-  "bounded_numerical_work": "Sol",
-  "complex_integration": "parent",
-  "integration": "Disjoint agents may prepare bounded slices; the parent owns shared-file review, serial builds, integrated verification, and regular non-force publication to main.",
-  "no_invented_completion_dates_or_speeds": true
- },
- "goals": [
-  {
-   "id": "G01",
-   "title": "Live cell-derived object skins",
-   "status": "active",
-   "owner": "parent",
-   "objective": "Ship blocky v1 surfaces from accepted live matter, including partial cracks and fragment skins, while preserving physics; qualify smooth/deforming refinements separately.",
-   "dependencies": [
-    "object-skin-contract",
-    "stable-cell-component-identities",
-    "accepted-connectivity",
-    "local-patch-queue",
-    "stale-job-rejection"
-   ],
-   "acceptance": {
-    "prototype_gate": [
-     "blocky exposed-face skin follows live connectivity",
-     "partial cracks and repeated fracture update local patches",
-     "fragment state and lineage are preserved",
-     "no reskin reset or fabricated impulse",
-     "stale topology jobs reject"
-    ],
-    "complete_gate": [
-     "glass/oak/iron and tissue/layered cases are measured",
-     "cavity and exposed-interior behavior is verified",
-     "visual detail leaves trajectories and ledgers unchanged",
-     "surface p95/p99, memory/upload, fallback, and mesh backlog are reported",
-     "smooth/deforming work has separate convergence evidence"
+  "completion_policy": {
+    "prototype": "Instrumented bounded implementation or experiment with explicit limitations; not a completion claim.",
+    "complete": "Acceptance evidence, comparative material coverage, conservation/work checks, refinement checks, and relevant scale/customer checks are recorded.",
+    "global_status": "no_goal_complete",
+    "deferred": [
+      "smoke",
+      "airflow",
+      "pressure_advection",
+      "full_fluid_dynamics"
     ]
-   },
-   "next_action": "Add bounded local mesh patches, material coordinates/layers and measured skin/contact error.",
-   "evidence_status": "Blocky topology, partial-cut lips, live skins, geometry export and physics-isolation tests passed. Full surface gate remains open.",
-   "retained_requirements": [
-    "M21",
-    "M24",
-    "P10"
-   ],
-   "evidence_ref": "docs/execution-checkpoint.md"
   },
-  {
-   "id": "G02",
-   "title": "Converged material/contact response and cutting",
-   "status": "active",
-   "objective": "Converge glass, oak, iron, and soft-tissue contact/material response and cutting under force, work, time, and space gates without strength hacks.",
-   "dependencies": [
-    "authoritative-contact-owner",
-    "material-derived-mass-inertia",
-    "constitutive-history",
-    "local-solver-comparison",
-    "G01"
-   ],
-   "acceptance": {
-    "prototype_gate": [
-     "declared laws run for glass/oak/iron/soft tissue",
-     "reactions, work, damage, and history are observable",
-     "cutting changes accepted topology without prescribed launches",
-     "axial/network path remains experimental"
+  "retained_requirements_ref": {
+    "source": "docs/mechanics-scorecard.md",
+    "master": "docs/project-master-plan.md",
+    "ids": [
+      "M01",
+      "M02",
+      "M03",
+      "M04",
+      "M05",
+      "M06",
+      "M07",
+      "M08",
+      "M09",
+      "M10",
+      "M11",
+      "M12",
+      "M13",
+      "M14",
+      "M15",
+      "M16",
+      "M17",
+      "M18",
+      "M19",
+      "M20",
+      "M21",
+      "M22",
+      "M23",
+      "M24",
+      "M25",
+      "M26",
+      "M27",
+      "M28",
+      "M29",
+      "M30",
+      "P01",
+      "P02",
+      "P03",
+      "P04",
+      "P05",
+      "P06",
+      "P07",
+      "P08",
+      "P09",
+      "P10"
     ],
-    "complete_gate": [
-     "time/iteration/space/contact refinement bounds force, work, area, topology, momentum, angular momentum, and energy residuals",
-     "oak has directional evidence",
-     "iron has calibrated plastic evidence",
-     "soft tissue has finite-strain/cohesive cut evidence",
-     "asymmetric/support/third-body cases pass"
-    ]
-   },
-   "next_action": "Cross mesh/load increments and pressure-profile/element-orientation controls with predeclared error bounds; compare a locking-resistant formulation before dynamic contact and calibrated dent/fracture claims.",
-   "evidence_status": "Spring cache and endpoint rollback tests pass. The small-strain isotropic J2 material-point analytical, unloading/reloading, dissipation, rejection, and exact reload-continuation tests pass. It is not dent geometry, contact, finite strain, or calibrated iron. Glass/oak/tissue refinement and the full mechanical work ledger remain open. Connected small-strain isotropic/orthotropic/J2 tetrahedral equilibrium now passes analytical, reaction, rollback and state continuation checks. Low-load three-material controls recover; high-load plastic shape remains strongly spatially unconverged. Conservative partial-face pressure and optional assembled block-CSR tangent products now pass analytical, backend parity and transactional work-limit tests. Crossed high-load spatial refinement still fails; n=16 iron reaches the 64-million-block cap before unloading. The repeated kernel benchmark harness is smoke-tested; isolated p95/p99 qualification remains pending.",
-   "retained_requirements": [
-    "M01",
-    "M02",
-    "M03",
-    "M04",
-    "M05",
-    "M06",
-    "M07",
-    "M08",
-    "M09",
-    "M10",
-    "M11",
-    "M12",
-    "M13",
-    "M14",
-    "M15",
-    "M16",
-    "M17",
-    "M18",
-    "M19",
-    "M20",
-    "M21",
-    "M22",
-    "M23",
-    "M24",
-    "M25",
-    "M26",
-    "M29",
-    "M30"
-   ],
-   "evidence_ref": "docs/continuum-pressure-performance-checkpoint.md"
+    "count": 40
   },
-  {
-   "id": "G03",
-   "title": "Conservative thermal frontier",
-   "status": "active",
-   "objective": "Add cross-region flux, cold-neighbor/frontier activation, and conservative accumulation while preserving phase, reaction, latent heat, and lag accounting.",
-   "dependencies": [
-    "SparseThermalWorld",
-    "ThermalKernel",
-    "two-lump-oracle",
-    "bounded-jobs",
-    "G04"
-   ],
-   "acceptance": {
-    "prototype_gate": [
-     "cross-region interface flux is equal and opposite",
-     "frontier activation reports cause and error bound",
-     "cold storage remains compact until wake",
-     "phase identity and latent energy remain explicit",
-     "lag/frontier age/residual are reported"
-    ],
-    "complete_gate": [
-     "timestep/space refinement closes heat, enthalpy, latent, fuel/oxygen, and interface residuals",
-     "activation/demotion are transactional",
-     "thermal-mechanical coupling is separately validated",
-     "law envelope limits fire/weakening claims"
-    ]
-   },
-   "next_action": "Bound omitted boundary heat error, refine frontier/time/space thresholds, then add conservative cooling/demotion and cross-clock transfers.",
-   "evidence_status": "Opt-in bounded cold-neighbor frontier, transfer ledgers, reactive/phase history, strict commands and grow-first versus fully preactivated oracles pass; global omitted-flux error is not bounded.",
-   "retained_requirements": [
-    "M05",
-    "M27",
-    "M28",
-    "M29",
-    "P01",
-    "P02",
-    "P05",
-    "P10"
-   ],
-   "evidence_ref": "docs/additional-physics-checkpoint.md"
-  },
-  {
-   "id": "G04",
-   "title": "Unified state/energy and bounded authoring API",
-   "status": "active_limited_chat_api_foundation",
-   "objective": "Unify mechanical and thermal state in a versioned, unit-bearing runtime language with explicit stores and bounded creator/job APIs.",
-   "dependencies": [
-    "world-physics-language",
-    "law-capability-manifests",
-    "G02",
-    "G03",
-    "stable-history-identities",
-    "snapshot-receipts"
-   ],
-   "acceptance": {
-    "prototype_gate": [
-     "SI/version/capability/budget validation works",
-     "named energy stores and explicit transfers are exposed",
-     "bounded jobs report admission/progress/lag/cancellation/rejection",
-     "LLM authors declarations but never ticks physics"
-    ],
-    "complete_gate": [
-     "promotion/demotion/contact/fracture/plasticity/reaction/phase/work/snapshot preserve ledgers",
-     "no double counting or silent work reclassification",
-     "commands are durable and capability checked",
-     "creator integration is exercised"
-    ]
-   },
-   "next_action": "Extend one shared declaration and bounded load/validate/step/query/export command surface across chat, CLI, and native tools after passing mocked chat and bounded live-package paths.",
-   "evidence_status": "All 29 mocked playground HTTP tests pass and a bounded live call produced an independently validated package. Full mechanical/thermal state and ledger unification remains open and no completion is claimed.",
-   "retained_requirements": [
-    "M01",
-    "M02",
-    "M03",
-    "M04",
-    "M05",
-    "M17",
-    "M27",
-    "M29",
-    "M30",
-    "P03",
-    "P05",
-    "P06",
-    "P07"
-   ]
-  },
-  {
-   "id": "G05",
-   "title": "Measured world-load performance",
-   "status": "active",
-   "owner": "execution support; Sol phase-kernel optimization",
-   "objective": "Optimize measured active-world kernels and sparse-active scheduling without changing laws; keep cold storage out of full simulation.",
-   "dependencies": [
-    "G03",
-    "G04",
-    "CPU-reference",
-    "sparse-chunks",
-    "active-islands",
-    "bounded-scheduler",
-    "stale-job-rejection",
-    "p95-p99-instrumentation"
-   ],
-   "acceptance": {
-    "prototype_gate": [
-     "storage and allocator overhead are separated",
-     "p50/p95/p99, backlog, age, residual, lag, and memory are reported",
-     "fixed and growing active-count matrices exist",
-     "only measured kernels are optimized",
-     "cold storage is not fully simulated"
-    ],
-    "complete_gate": [
-     "declared scale/load matrices meet budgets or report bounded backlog",
-     "1M and 16M stored-voxel cases are measured at 256, 1024, 4096, and 16384 active cells",
-     "growing contact and wake churn are measured",
-     "the 60 Hz 16.67 ms full-frame engineering target is evaluated on named hardware",
-     "CPU-reference outputs and residuals remain within declared tolerances",
-     "no world-scale realtime claim comes from a small fixture"
-    ]
-   },
-   "next_action": "Run the named-hardware 1M/16M stored-voxel by 256/1024/4096/16384 active-cell matrix with growing contact and wake churn; report physics, full-frame, backlog, and residuals separately.",
-   "evidence_status": "4/256/4096 chunks retain identical 336-active-cell local physics at 10 s across 3 repeats; headless thermal p95 is about 0.36-0.37 ms and tight 1000-operation budgets report backlog. The 2 m/s native playground case measured 50 active frames and 31.25 ms p95 full-frame time, which does not qualify the 60 Hz target. The target is not a measured promise. Conservative partial-face pressure and optional assembled block-CSR tangent products now pass analytical, backend parity and transactional work-limit tests. Crossed high-load spatial refinement still fails; n=16 iron reaches the 64-million-block cap before unloading. The repeated kernel benchmark harness is smoke-tested; isolated p95/p99 qualification remains pending.",
-   "engineering_target": {
-    "full_frame_hz": 60,
-    "full_frame_ms": 16.67,
-    "hardware_requirement": "named",
-    "status": "target_not_yet_qualified",
-    "stored_voxels": [
-     1000000,
-     16000000
-    ],
-    "active_cells": [
-     256,
-     1024,
-     4096,
-     16384
-    ],
-    "dynamic_cases": [
-     "growing-contact",
-     "wake-churn"
-    ]
-   },
-   "retained_requirements": [
-    "M27",
-    "M29",
-    "M30",
-    "P01",
-    "P02",
-    "P04",
-    "P10"
-   ],
-   "evidence_ref": "docs/continuum-pressure-performance-checkpoint.md"
-  },
-  {
-   "id": "G06",
-   "title": "Snapshot, publishing, and customer conformance",
-   "status": "queued",
-   "objective": "Make accepted worlds and objects recoverable, publishable, compatible, and testable through the ax/tree, door/panel, and tomato-bowl loop.",
-   "dependencies": [
-    "G01",
-    "G02",
-    "G03",
-    "G04",
-    "G05",
-    "stable-ids",
-    "manifests",
-    "permissions",
-    "migration",
-    "authority-events"
-   ],
-   "acceptance": {
-    "prototype_gate": [
-     "snapshots include authoritative state/history/energy/config fingerprints",
-     "publication is crash-atomic and dependency validated",
-     "incompatible versions reject",
-     "customer fixtures report unsupported behavior explicitly"
-    ],
-    "complete_gate": [
-     "save/recover/replay/publish/import/rollback preserve accepted state",
-     "manifests support validation/preview/permissions/migration",
-     "authority/bandwidth/determinism behavior is measured",
-     "ax/tree, door/panel, and tomato bowl pass customer conformance"
-    ]
-   },
-   "next_action": "Define snapshot manifest and compatibility matrix; run crash/restart, migration rejection, publish/import, and customer-loop fixtures.",
-   "evidence_status": "queued; not complete",
-   "retained_requirements": [
-    "M21",
-    "M25",
-    "M26",
-    "M30",
-    "P03",
-    "P06",
-    "P07",
-    "P08",
-    "P09",
-    "P10"
-   ]
-  },
-  {
-   "id": "G07",
-   "title": "Compact persistence, history, and repair",
-   "status": "active_foundation_verified_numeric_material_point_slice",
-   "objective": "Persist an immutable base plus sparse versioned state deltas so cold worlds render quickly and accepted physical history resumes without healing, reset, or duplicate work.",
-   "dependencies": [
-    "stable-object-material-law-identities",
-    "topology-revisions",
-    "complete-physical-and-player-history",
-    "solver-config-fingerprints",
-    "G04",
-    "G06"
-   ],
-   "acceptance": {
-    "prototype_gate": [
-     "lossless supported finite IEEE-754 state with explicit signed-zero policy",
-     "nonfinite, corrupt, stale, partial, wrong-version, and wrong-base input rejects transactionally",
-     "reload produces the exact next accepted increment",
-     "compact asleep render cost and reactivation cost are measured separately"
-    ],
-    "complete_gate": [
-     "crash-atomic checkpoint or journal records have checksums and monotonic revisions",
-     "repair selects a verified prefix and reports discarded records",
-     "save/reload preserves trajectories, topology, lineage, ledgers, clocks, material history, inventory, and player history",
-     "rollback and compatibility behavior are explicit and tested",
-     "efficient gameplay repair is bounded, consumes explicit material and energy receipts, restores declared stress/geometry/topology, uses collision-safe placement, preserves the old revision, and reports work/delay"
-    ]
-   },
-   "next_action": "Define the broader state IDs, scalar ordering, fingerprints, journal, and repair semantics; extend beyond numeric material points to geometry, world state, rendering, and bounded reactivation.",
-   "evidence_status": "NumericStateDelta and the fixed-size 14-double J2 history pass same-bit round-trip, old-revision retention, and exact next-material-increment continuation. Scope is numeric material-point state only; no geometry, world dent, render, save-game, crash-repair, or full-world-reactivation claim. Full spatial patch JSON round-trip and next-load state parity now pass against the same immutable definition; compact spatial codec and fingerprint-authenticated world continuation remain open.",
-   "measurement": {
-    "runs": 3,
-    "timed_samples_per_case": 100,
-    "changed_points": 16,
-    "changed_scalars": 64,
-    "delta_bytes": 732,
-    "base_cases": [
-     {
-      "points": 64,
-      "bytes": 7168
-     },
-     {
-      "points": 4096,
-      "bytes": 458752
-     },
-     {
-      "points": 65536,
-      "bytes": 7340032
-     }
-    ],
-    "original_restore_bytes": 92,
-    "history_bytes": 824,
-    "partial_16_point_decode_p95_us": [
-     6.1,
-     6.6
-    ],
-    "sparse_encode_p95_us": [
-     6.9,
-     8.6
-    ],
-    "validate_resume_next_increment_p95_us": [
-     4.4,
-     5.7
-    ],
-    "one_time_full_base_validation_ms": [
-     0.057,
-     65.57
-    ],
-    "full_65536_point_decode_ms": [
-     1.717,
-     2.0013
-    ]
-   },
-   "retained_requirements": [
-    "M05",
-    "M15",
-    "M16",
-    "M27",
-    "M30",
-    "P03",
-    "P06",
-    "P07",
-    "P08"
-   ]
-  },
-  {
-   "id": "G08",
-   "title": "Intrinsic property variation and uncertainty",
-   "status": "active_foundation_reference_sampler_verified",
-   "objective": "Represent fixed intrinsic heterogeneity with deterministic versioned samples keyed by persisted seed and stable object, element, and property IDs.",
-   "dependencies": [
-    "stable-property-law-and-element-identities",
-    "persisted-material-seed",
-    "G02",
-    "G07",
-    "M29-M30"
-   ],
-   "acceptance": {
-    "prototype_gate": [
-     "same-key replay and portable golden values are exact",
-     "range, finite-value, and version validation rejects transactionally",
-     "visit order and sample prefix do not change values",
-     "sampling alone changes no force, mass, energy, or evolving stochastic state"
-    ],
-    "complete_gate": [
-     "law distributions and bounds have provenance and ensemble convergence",
-     "glass, oak, and iron use explicit law families and property IDs rather than names",
-     "intrinsic heterogeneity, stochastic physical state, calibration uncertainty, and numerical error are reported separately",
-     "no glass flaw calibration claim is made without matching population evidence"
-    ]
-   },
-   "next_action": "Persist the verified PropertyVariation seed contract, then connect it only through an explicit constitutive law and ensemble/calibration tests.",
-   "evidence_status": "Portable golden-value, reordered-access, and 100000-seed bounds tests pass. The sampler changes no force by itself and is not a calibrated glass flaw distribution.",
-   "retained_requirements": [
-    "M15",
-    "M16",
-    "M17",
-    "M18",
-    "M19",
-    "M20",
-    "M29",
-    "M30",
-    "P06",
-    "P07"
-   ]
-  },
-  {
-   "id": "G09",
-   "title": "Chat-to-language/API/native playground",
-   "status": "active_foundation_basic_native_request_to_visible_studio_verified",
-   "objective": "Let users request, inspect, edit, validate, and run Banjo declarations through GPT chat and the bounded public physics API, then open the same accepted package in the native laboratory.",
-   "dependencies": [
-    "G01",
-    "G04",
-    "G05",
-    "G07",
-    "native-headless-package-parity",
-    "backend-secret-isolation"
-   ],
-   "acceptance": {
-    "prototype_gate": [
-     "mocked API tests cover proposal, clarification, invalid schema, unsupported law, shortage, retry, idempotency, cancellation, timeout, and budget paths",
-     "model output is independently validated before mutation",
-     "frontend receives structured proposals, validation errors, receipts, and accepted results",
-     "mock tests require no live key"
-    ],
-    "complete_gate": [
-     "opt-in bounded live API test reads its key from ignored .env and records provenance without secrets",
-     "chat, CLI, and native tools accept the same package and physical result",
-     "native flow covers inspect, edit, run, pause, resume, save, reload, and visible errors",
-     "generated tests use only the bounded public API and the LLM never advances the physics clock"
-    ]
-   },
-   "next_action": "Extend the verified basic native path through edit/follow-up, unsupported capability, cancellation, inventory, save/reload, and receipt-backed repair tests while retaining mock coverage, independent validation, bounded calls, and secret isolation.",
-   "evidence_status": "All 29 mocked HTTP tests pass in 2.140 seconds. Live gpt-5-mini job ff0c7d0f1eaa4c4a9f50f8ef7d486202 produced a validated iron-ball versus glass/oak/iron package at 2 and 6 m/s; both headless and native cases completed 480 steps/1 s and the studio was visible. The actual-native validator caught forbidden rigid_drop network fields, which were fixed. The basic gate passes; broader edit, persistence, cancellation, inventory, unsupported, and repair gates remain open. Live GPT spatial-pressure request opens the actual computed native sequence, with glass/iron complete and oak solver_limit. Direct CLI and chat-generated reports match except solve timing.",
-   "basic_native_verification": {
-    "job_id": "ff0c7d0f1eaa4c4a9f50f8ef7d486202",
-    "model": "gpt-5-mini",
-    "credential_source": "ignored .env",
-    "scene": "iron ball versus glass, oak, and iron",
-    "speeds_m_s": [
-     2,
-     6
-    ],
-    "duration_s": 1,
-    "tokens": 1195,
-    "planning_s": 4.433,
-    "total_s": 6.537,
-    "headless_steps_each": 480,
-    "native_steps_each": 480,
-    "visible_studio": true,
-    "physical_report_match": true,
-    "comparison_exclusions": [
-     "compiler-loader-metadata",
-     "load_wall_ms",
-     "performance",
-     "skin",
-     "presentation"
-    ],
-    "native_2_m_s_active_frames": 50,
-    "native_2_m_s_full_frame_p95_ms": 31.25,
-    "qualifies_60_hz": false
-   },
-   "retained_requirements": [
-    "P05",
-    "P06",
-    "P07",
-    "P08",
-    "P10"
-   ],
-   "continuum_native_verification": {
-    "job_id": "da66b2b4bd814676b1da0b890aa52a21",
-    "model": "gpt-5-mini",
-    "tokens": 1514,
-    "planning_wall_s": 6.8221612,
-    "total_wall_s": 7.369295,
-    "physical_report_parity": "exact except solve_wall_ms",
-    "scope": "fixed quasistatic reference, not dynamic contact or calibrated dents"
-   }
-  },
-  {
-   "id": "G10",
-   "title": "Interactions at realtime, watched in 3D",
-   "status": "active",
-   "owner": "primary",
-   "objective": "Every interaction runs on the real engine within 1.1x its simulated duration through to rest, and every stage is done only when it can be loaded into the playground and watched in 3D. Route: wire the fast implicit lane to the viewer, then move the elastic response to a basis computed once per object, then carry fracture on basis updates.",
-   "rule": "No job may take more than 1.1x the simulated duration of the whole interaction including settling to rest; the playground refuses anything projected over that before it runs (REALTIME_LIMIT in playground/server.py).",
-   "definition_of_done": "Loaded in the playground, run on the real engine, watched in the 3D playback tab, wall time on the case card within 1.1x. Measurements, validations and scratch experiments do not count.",
-   "dependencies": [
-    "G09",
-    "implicit-fracture-lane",
-    "shared-bond-failure-criterion",
-    "cubic-cell-admission",
-    "cost-estimate-before-run"
-   ],
-   "stages": [
-    {
-     "id": "A",
-     "title": "Rule enforced; rigid ball onto rigid plate to rest",
-     "scene": "rigid iron ball dropped onto a rigid glass plate on the ground, 1.5 s",
-     "visual_confirmation": "ball falls, strikes, bounces, comes to rest; nothing passes through anything",
-     "realtime_gate": "<=1.1x, shown on the case card; over-budget requests refused before starting",
-     "status": "ready_for_owner_review",
-     "evidence": {
-      "job_id": "bcfc001ce3fd4ac998af5858d882e3c0",
-      "url": "http://127.0.0.1:8765/?job=bcfc001ce3fd4ac998af5858d882e3c0",
-      "package": "stage A rigid iron ball, 80 mm, dropped 0.39 m onto a rigid 0.24 x 0.02 x 0.36 m glass plate lying on the ground; 1/480 s; 3.0 s",
-      "measured": {
-       "wall_s": 0.053,
-       "simulated_s": 3.0,
-       "realtime_ratio": 0.0177,
-       "realtime_limit": 1.1,
-       "first_rebound_over_drop": 0.523,
-       "effective_restitution": 0.723,
-       "bounces": 7,
-       "at_rest_from_s": 1.35,
-       "movement_final_0_25_s_mm": 0.0,
-       "plate_displacement_mm": 0.0,
-       "plate_tilt_deg": 0.0,
-       "ball_penetration_into_plate_mm": 0.0,
-       "energy_in_j": 9.738,
-       "energy_at_rest_j": 1.666
-      },
-      "viewer_check": "the playground's own scene.js, instantiated against this playback, places the sphere (r 0.040) at (0,0.45,0) at frame 0 and at (0,0.06,0) -- plate top plus radius -- at frames 54 (1.35 s) and 120 (3.0 s); one live capture showed the ball rendered at frame 1. No live capture of the resting ball was obtained because the browser pane was hidden.",
-      "gate_proof": "a 200-cell tile at one tick was refused before any job existed: projected 11,154x realtime against the 1.1x limit."
-     }
+  "physical_reference": {
+    "source": "docs/glass-drop-benchmark.md",
+    "specimen": "6 mm fully tempered soda-lime-glass pane",
+    "projectile": "reported 4.11 kg steel ball",
+    "protocol": "0.10 m start and 0.10 m increases on the same pane until first observed fracture",
+    "sample_count": 35,
+    "mean_terminal_height_m": 0.76,
+    "sample_standard_deviation_m": 0.24,
+    "terminal_height_counts": {
+      "0.5": 7,
+      "0.6": 8,
+      "0.7": 6,
+      "0.8": 2,
+      "0.9": 6,
+      "1.0": 0,
+      "1.1": 1,
+      "1.2": 5
     },
-    {
-     "id": "B",
-     "title": "Glass tile flexes elastically at realtime",
-     "scene": "same ball onto an edge-clamped uniform-cube tile, fracture off, implicit lane, <=365 nodes",
-     "visual_confirmation": "tile deflects under the ball and springs back; max at strike point, zero at clamps",
-     "realtime_gate": "<=1.1x (implicit lane measured 1.00-1.03x at 365 nodes, 1/120 s)",
-     "status": "queued",
-     "note_2026_09_07": "The implicit lane now reaches the 3D tab through the recording importers (its reference cases play in every lane job above), but the elastic-only flex scene this stage names has not been recorded."
-    },
-    {
-     "id": "C",
-     "title": "Same flex from a basis computed once",
-     "scene": "identical to B, response evaluated from the object's eigenbasis built at creation",
-     "visual_confirmation": "B and C visually identical; difference view empty; card shows both wall times",
-     "realtime_gate": "faster than B and <=1.1x",
-     "status": "queued",
-     "note_2026_09_07": "docs/fast-modal-checkpoint.md sections 1-2: the basis stays exact through the cascade and the closed form is what the stepped reference converges to. No elastic-only recording yet; the mechanism exists in the engine (src/modal/)."
-    },
-    {
-     "id": "D",
-     "title": "First crack from the basis",
-     "scene": "as C with the shared failure criterion on, to the first failure set",
-     "visual_confirmation": "first crack set at the strike point matches the stepped solver's, side by side",
-     "realtime_gate": "<=1.1x to first failure",
-     "status": "ready_for_owner_review",
-     "evidence_2026_09_07": {
-      "summary": "modal 8x8x2 job, case 1: first failure set identical to the reference (case 2), watchable side by side",
-      "urls": [
-       "http://127.0.0.1:8765/?job=65331afc7b2f47f791799e70ed699c97"
-      ],
-      "limits": "rule met on the 8x8x2 tile only for the modal lane (fails at 12x12x2); the quasi-static lane meets it to 2,048 cells but its crack pattern is not the dynamic one"
-     }
-    },
-    {
-     "id": "E",
-     "title": "Full shatter from basis updates (research gate)",
-     "scene": "as D through the cascade; basis updated per round, not recomputed",
-     "visual_confirmation": "tile shatters into pieces; pattern matches the stepped solver within its own refinement spread",
-     "realtime_gate": "<=1.1x impact through end of fracture",
-     "status": "ready_for_owner_review",
-     "risk": "low-rank updates may lose accuracy across the ~61-round cascade; if so, report where and stop, do not widen a tolerance",
-     "evidence_2026_09_07": {
-      "summary": "modal 8x8x2 job: 35 fragments from rank-one basis updates at 0.14x overall (fracture window 497x); the research answer is measured: exact updates hold accuracy but cost O(n k^2) per bond and fail the rule at 12x12x2 (1.94x)",
-      "urls": [
-       "http://127.0.0.1:8765/?job=65331afc7b2f47f791799e70ed699c97"
-      ],
-      "limits": "rule met on the 8x8x2 tile only for the modal lane (fails at 12x12x2); the quasi-static lane meets it to 2,048 cells but its crack pattern is not the dynamic one"
-     }
-    },
-    {
-     "id": "F",
-     "title": "Pieces fall and come to rest",
-     "scene": "as E run to rest; fragment-fragment and ground contact",
-     "visual_confirmation": "pieces separate, fall, collide, stop; no interpenetration; recording ends at rest",
-     "realtime_gate": "<=1.1x for the entire interaction",
-     "status": "ready_for_owner_review",
-     "evidence_2026_09_07": {
-      "summary": "modal 8x8x2 at 0.14x and quasi-static 32x32x2 at 0.37x both run through to rest with pieces on the ground",
-      "urls": [
-       "http://127.0.0.1:8765/?job=65331afc7b2f47f791799e70ed699c97",
-       "http://127.0.0.1:8765/?job=5b132ccb059c468ea9ec41e0a4f9ff1d"
-      ],
-      "limits": "rule met on the 8x8x2 tile only for the modal lane (fails at 12x12x2); the quasi-static lane meets it to 2,048 cells but its crack pattern is not the dynamic one"
-     }
-    },
-    {
-     "id": "G",
-     "title": "Owner varies the request; result tracks it",
-     "scene": "Builder varies thickness, cube size, speed, material",
-     "visual_confirmation": "thicker cracks less, faster breaks more, oak/iron differ from glass, all in 3D; every run passes the gate or is refused first",
-     "realtime_gate": "<=1.1x or refused",
-     "status": "queued"
-    }
-   ],
-   "acceptance": {
-    "prototype_gate": [
-     "the realtime gate refuses over-budget jobs on both the chat and direct routes before they start",
-     "stage A is watchable in 3D with the measured ratio on the case card",
-     "stage B is watchable in 3D from the implicit lane"
-    ],
-    "complete_gate": [
-     "stages A through G each have a recording the owner has watched in the playground",
-     "every recording's measured wall time is within 1.1x its simulated interaction through rest",
-     "glass, oak and iron are each shown, with different outcomes from identical scenes",
-     "no stage was passed by widening a tolerance, precutting shards, or substituting a scene",
-     "the cubic-cell and slenderness limits are stated on every case that they bound"
+    "claim_limit": "First observed fracture after staircase history; not complete shattering, fragment distribution, contact force, impulse, or timing.",
+    "raw_data_policy": "Retain the raw terminal-height distribution and protocol history; do not tune one deterministic threshold to the mean.",
+    "unresolved_apparatus": [
+      "steel ball diameter",
+      "steel grade",
+      "roller span",
+      "rubber cover properties",
+      "impact-position tolerance"
     ]
-   },
-   "next_action": "Owner opens http://127.0.0.1:8765/?job=bcfc001ce3fd4ac998af5858d882e3c0, 3D playback tab, and watches the ball come to rest. Then stage B: emit the implicit lane's trajectory in the banjo.playback.v1 format so the fast lane reaches the viewer.",
-   "evidence_status": "Stage A ran on the real engine and is loadable in the 3D tab; measured 0.053 s wall for 3.0 s simulated (0.018x), ball at rest on the plate from 1.35 s, zero penetration, zero plate motion. Reaching it exposed and fixed a defect that made every network-lane contact perfectly elastic (docs/rigid-contact-restitution-checkpoint.md): restitution was derived from a hard-coded zero contact damping; per-material contact damping is now declared and reported. The owner has not yet watched it; the viewer check was done through the viewer's scene graph. Not built: stages B-G. Under the rule, only rigid bodies and the implicit lane without fracture (<=365 nodes) are runnable today.",
-   "retained_requirements": [
-    "R-realtime-interaction",
-    "R-visual-confirmation-per-stage",
-    "R-no-authored-fracture",
-    "R-uniform-cells"
-   ],
-   "evidence_ref": [
-    "docs/goal-realtime-fracture.md",
-    "docs/two-day-evaluation-2026-09-07.md",
-    "docs/realtime-envelope-checkpoint.md",
-    "docs/implicit-fracture-checkpoint.md",
-    "docs/network-at-rest-stability-checkpoint.md",
-    "docs/rigid-contact-restitution-checkpoint.md"
-   ],
-   "lane_evidence_2026_09_07": {
-    "note": "Two of three parallel fracture lanes delivered watchable recordings on the real engine. Verified by the primary: every job below loads through /api/jobs with full playback frames, and its case card shows the Realtime row (and the fracture-window row where the lane reports one). The owner has not yet watched any of them; nothing here is marked done.",
-    "modal_basis": {
-     "branch": "agent/fast-modal",
-     "commit": "c73ce15",
-     "checkpoint": "docs/fast-modal-checkpoint.md",
-     "rule_met": {
-      "scene": "clamped 8x8x2 glass tile, 20 mm cells (128 cells), 20 mm iron ball at 16 m/s, through fracture, hand-off to Jolt and settling",
-      "simulated_s": 8.002,
-      "wall_s": 1.12,
-      "realtime_ratio": 0.14,
-      "fracture_window_ratio": 497,
-      "fracture_window_simulated_s": 0.002,
-      "fragments": 35,
-      "url": "http://127.0.0.1:8765/?job=65331afc7b2f47f791799e70ed699c97",
-      "why_it_passes": "a 2 ms fracture window, itself 497x slower than realtime, sits inside 8 s of rigid settling that Jolt computes at 0.01-0.03x"
-     },
-     "rule_failed": {
-      "scene": "12x12x2 glass tile (288 cells), 20 m/s",
-      "simulated_s": 8.0,
-      "wall_s": 15.5,
-      "realtime_ratio": 1.94,
-      "url": "http://127.0.0.1:8765/?job=9afe5fe6e9624dfda6c21d1b51f263cb",
-      "why": "the exact rank-one eigenvector update costs O(n k^2) per broken bond (13.8 s of a 15.3 s window); truncating the basis loses the cascade, so there is no cheap escape short of a sub-O(n^2) update"
-     },
-     "accuracy": "first-failure set identical to the implicit reference on every scene tested; at the threshold the outcome converges; above it both lanes shatter with matching counts but different pieces (see checkpoint sections 3.1-3.4)",
-     "reference_in_same_job": "each job carries the implicit Newton/GMRES reference on the same scene as case 2 (8x8x2: 0.12x; 12x12x2: 0.51x)"
-    },
-    "quasi_static": {
-     "branch": "agent/fast-quasistatic",
-     "commit": "c272499",
-     "checkpoint": "docs/fast-quasistatic-checkpoint.md",
-     "rule_met_up_to": {
-      "cells": 2048,
-      "scene": "32x32x2 glass tile, 80 mm iron ball from 3 m",
-      "simulated_s": 8.095,
-      "wall_s": 3.0,
-      "realtime_ratio": 0.37,
-      "pieces": 10,
-      "url": "http://127.0.0.1:8765/?job=5b132ccb059c468ea9ec41e0a4f9ff1d"
-     },
-     "rule_failed_at": {
-      "cells": 3200,
-      "scene": "40x40x2 glass tile, 90 mm ball from 3 m",
-      "realtime_ratio": 1.56,
-      "cost_scaling": "about N^2.3: PCG cost grows with bonds, iterations with crater depth under block-Jacobi, solves with events"
-     },
-     "other_jobs": {
-      "8x8x2 (0.010x)": "http://127.0.0.1:8765/?job=73f331b1b4e34d8aa88578b3bdfcafbc",
-      "8x8x2 dynamic implicit reference (0.050x)": "http://127.0.0.1:8765/?job=a74cf2a71c8749e0a685eab6f82ac3fb",
-      "24x24x2 (0.125x)": "http://127.0.0.1:8765/?job=62a1c74327624f658b9e0920c939d63d"
-     },
-     "physics_caveat": "the quasi-static answer craters the tile and stops the ball where the dynamic reference shatters it (8x8x2: 156 bonds, 1 piece vs 400-912 bonds, 2-30 pieces; first-failure sets disjoint; only removed energy agrees, within 11-29%). It meets the rule; it does not reproduce the dynamic outcome."
-    },
-    "gpu_lattice": {
-     "branch": "agent/fast-gpu",
-     "status": "in progress; WIP 5f9dee2; no measurements recorded yet"
-    },
-    "what_this_changes_for_the_stages": "Stages D-F now have recordings from the modal lane on 8x8x2 (fracture from the basis, cascade on basis updates, pieces to rest) and from the quasi-static lane up to 2,048 cells. Stage B (elastic flex, no fracture) and C (the same flex from the basis) have no recording of their own: the basis is shown exact in the modal checkpoint, but the elastic-only scene was not recorded. Stage G is untouched: both lanes are command-line tools with importers, not Builder routes."
-   }
-  }
- ],
- "latest_execution": {
-  "date": "2026-09-06",
-  "full_suites_passed": 57,
-  "full_suite_duration_s": 83.23,
-  "toolchain": "Windows MSVC 19.44 Release",
-  "overall_complete": false,
-  "active": [
-   "G01",
-   "G02",
-   "G03",
-   "G04",
-   "G05",
-   "G07",
-   "G08",
-   "G09"
-  ],
-  "queued": [
-   "G06"
-  ],
-  "evidence": [
-   "docs/additional-physics-checkpoint.md",
-   "docs/playground-foundation-checkpoint.md",
-   "docs/continuum-pressure-checkpoint.md",
-   "docs/continuum-pressure-performance-checkpoint.md"
-  ],
-  "milestones_completed": [
-   "blocky-live-skins",
-   "partial-cut-lips",
-   "same-clock-thermal-region-join",
-   "bounded-affine-phase-kernel",
-   "comparative-phase-world-budget-measurement",
-   "explicit-contact-resource-admission",
-   "prestep-spring-reaction-axis-correction",
-   "bounded-cold-neighbor-thermal-frontier",
-   "cold-to-active-energy-transfer-ledger",
-   "spring-configuration-cache-invalidation",
-   "transactional-endpoint-damage-trials",
-   "small-strain-j2-material-point-reference",
-   "deterministic-bounded-property-variation-reference",
-   "lossless-numeric-material-point-delta-and-continuation",
-   "mocked-chat-http-foundation",
-   "bounded-live-gpt-basic-native-request-to-visible-studio",
-   "spatial-quasistatic-pressure-reference",
-   "spatial-patch-json-continuation-reference",
-   "live-gpt-to-computed-pressure-sequence",
-   "conservative-partial-face-pressure-api",
-   "optional-same-law-assembled-tangent-and-work-budget"
-  ],
-  "verified_foundation_modules": [
-   "Plasticity",
-   "PropertyVariation",
-   "NumericStateDelta",
-   "SmallStrainLaw",
-   "SmallStrainPatch",
-   "PatchPressure"
-  ],
-  "focused_verification": {
-   "playground_mock_http_tests_passed": 33,
-   "playground_mock_http_duration_s": 2.164,
-   "j2_variation_codec": "passed",
-   "object_state_probe": "3 serial runs, 100 timed samples per case",
-   "continuum_material_mesh_and_rollback": "passed",
-   "spatial_refinement": "not converged at high plastic load",
-   "pressure_api": "seven analytical/state/rejection groups pass",
-   "assembled_backend": "full 8/4/8 load-cycle field parity; budget rejection and preserved next-load history pass",
-   "kernel_benchmark": "four cases, ten samples per backend smoke-tested; fifteen accepted states checked per backend; timings not qualified"
   },
-  "chat_playground_stage": "Mock HTTP and the bounded live request-to-GPT-to-validation-to-headless-to-visible-studio one-second path pass. Edit/follow-up, unsupported capability, cancellation, inventory, save/reload, and repair gates remain open.",
-  "native_live_verification": "G09 basic request-to-GPT-to-validate-to-headless-to-visible-studio-to-1-second path passes for both 2 and 6 m/s cases with matching physical report fields under stated exclusions. Edit/follow-up, unsupported capability, cancellation, inventory, save/reload, and repair remain open. Earlier heat-lab pause/reset/release/save and 30.71 s evolution remain verified; fracture realism remains failed. Spatial pressure job da66b2b4bd814676b1da0b890aa52a21 opens the computed continuum report, with matched native/direct CLI physical data and explicit oak limit."
- },
- "dependency_policy": "Dependencies name shared contracts and final acceptance gates; independent prototype slices may proceed in parallel, but the parent serially integrates and verifies them. Active means work or bounded evidence exists or is underway; it does not certify a prerequisite or goal complete.",
- "verification_notes": {
-  "live_followup": "Actual GPT revised an iron-cube plate drop at 0.25 m into a rigid drop at 0.5 m. Native and headless runs both completed 480 ticks / 1 second, with physical report fields equal outside the declared metadata and presentation exclusions.",
-  "planner_scope": "Model proposals can misinterpret requests. UI separates proposed setup from authoritative engine status and physical validation.",
-  "native_capture": "Screenshot export now checks success and saves beside job live report."
- },
- "embedded_playground_checkpoint": {
-  "evidence": "docs/embedded-playground-checkpoint.md",
-  "native_suites": 58,
-  "native_suite_s": 80.92,
-  "recorder_integration_tests": 3,
-  "mock_and_control_tests": 49,
-  "status": "experimental authoring and computed 3D inspection; no full goal completed",
-  "next": [
-   "contact/continuum/fracture integration",
-   "calibrated comparative fixtures",
-   "cancellation and durable restoration",
-   "capture/render performance qualification"
-  ]
- },
- "general_experiment_checkpoint": {
-  "plan": "docs/general-experiment-plan.md",
-  "evidence": "docs/general-experiment-checkpoint.md",
-  "authoring": "drop_test and scene_test implemented; bounded experimental scope",
-  "thin_panel": "admitted6mm but failed all3 timestep completion checks",
-  "physics_integration": "thin structure / unified impact and material response / realtime qualification remain open",
-  "all_goals_retained": true
- },
- "rules_engine_execution": {
-  "plan": "docs/rules-engine-execution-plan.md",
-  "baseline_commit": "5c78ae9",
-  "status": "active",
+  "execution_policy": {
+    "routine_docs_and_test_fixtures": "Luna",
+    "bounded_numerical_work": "Sol",
+    "complex_integration": "parent",
+    "integration": "Disjoint agents may prepare bounded slices; the parent owns shared-file review, serial builds, integrated verification, and regular non-force publication to main.",
+    "no_invented_completion_dates_or_speeds": true
+  },
   "goals": [
-   {
-    "id": "R01",
-    "title": "Property-based material contracts",
-    "status": "active",
-    "implementation": "Validate SI density and elastic/orthotropic/J2 parameters, units, state layout and supported combinations. Physical identity excludes display names.",
-    "acceptance": "Unseen names and numeric parameter sets execute the same native material law; invalid values and unsupported models fail explicitly."
-   },
-   {
-    "id": "R02",
-    "title": "Shared inertial deformable state",
-    "status": "active",
-    "implementation": "Reuse tetrahedral geometry and constitutive state for nodal mass, velocity, internal force and irreversible history. Transactional steps and explicit stability/work limits.",
-    "acceptance": "Translation/free-fall oracles, support reactions, rollback, elastic refinement and persistent plastic history pass without name-based branches."
-   },
-   {
-    "id": "R03",
-    "title": "Coupled dynamic contact",
-    "status": "active",
-    "implementation": "Surface triangle/shape contact, consistent equal-and-opposite reactions, friction, continuous collision handling and coupled material updates.",
-    "acceptance": "Sphere on deformable patches: no tunneling; contact impulse, external work, stored energy and numerical losses balance under timestep/mesh refinement."
-   },
-   {
-    "id": "R04",
-    "title": "Recoverable flexible materials",
-    "status": "planned",
-    "implementation": "Finite-strain elasticity for large rubber-like deformation, then explicit viscoelastic internal state and relaxation. Small-strain elasticity alone is not rubber.",
-    "acceptance": "Ball deforms target, releases stored energy and rebounds; shape recovery, frequency dependence and refinement compared against references; no restitution-only substitute."
-   },
-   {
-    "id": "R05",
-    "title": "Permanent impact deformation",
-    "status": "active",
-    "implementation": "Connect J2 history to contact-driven spatial motion, unloading and rendered residual geometry.",
-    "acceptance": "Impact leaves a measured residual dent, low-energy control recovers; glass/oak/iron comparisons plus new alloys; persistent reload reproduces geometry and subsequent response."
-   },
-   {
-    "id": "R06",
-    "title": "Stable progressive fracture",
-    "status": "planned",
-    "implementation": "Resolve localized stress/energy release with length-scale-aware fracture, transactional topology changes and connected fragments. Include thin-plate/shell representation where needed.",
-    "acceptance": "Thin glass impact completes and propagates cracks from loading; fracture energy, fragment mass and momentum audited; timestep/mesh refinement; wood does not become glass by naming."
-   },
-   {
-    "id": "R07",
-    "title": "Compact state and repair",
-    "status": "planned",
-    "implementation": "Serialize only supported canonical deformation, damage, plastic/thermal history and topology deltas; render skins from physical state; budget history and reference repair.",
-    "acceptance": "Reload damaged objects exactly within declared tolerance, contact immediately, repair explicitly with resource/energy accounting and bounded state size."
-   },
-   {
-    "id": "R08",
-    "title": "LLM authoring and experiment contracts",
-    "status": "active",
-    "implementation": "LLM emits validated unit-bearing materials, geometries, initial/boundary conditions, supported law compositions, controls and machine-checkable expectations.",
-    "acceptance": "Fresh randomized requests generate unseen parameter sets through the public API and render actual native trajectories; unsupported requirements never silently substitute."
-   },
-   {
-    "id": "R09",
-    "title": "Realtime execution and compiled behaviors",
-    "status": "active",
-    "implementation": "Profile active islands, sleeping regions, compiled law kernels, conservative LOD and state-keyed offline models with applicability/invalidation checks. Keep LLM out of per-frame execution.",
-    "acceptance": "Publish hardware, active interaction counts, p50/p95/p99 cost, memory and overload policy; target 60 Hz total frame with physics budget <=4 ms on declared reference hardware, qualify before promising."
-   },
-   {
-    "id": "R10",
-    "title": "Cross-material release gate",
-    "status": "planned",
-    "implementation": "Run a held-out matrix of known/novel materials, shapes, speeds, thicknesses, temperature/state and histories; preserve energy/phase/fire and other existing goals.",
-    "acceptance": "Required shatter/dent/flex cases plus unseen supported compositions pass without engine edits per material. Evidence includes source/material hashes, direct contact and energy telemetry, refinement and LLM assessment separated from facts."
-   }
-  ],
-  "checkpoint": {
-   "status": "R03 normal-reaction energy correction; R09 performance gate remains open",
-   "base_commit": "ac324fa58a2f276feae4b053a1f942657bde6fef",
-   "evidence": "docs/normal-contact-energy-checkpoint.md",
-   "results": "docs/normal-contact-energy-results.json",
-   "validation": {
-    "native_suites_passed": 62,
-    "native_wall_s": 89.78,
-    "python_tests_run": 142,
-    "python_passed": 141,
-    "python_skipped": 1,
-    "python_wall_s": 6.871
-   },
-   "implemented": [
-    "distinct normal reaction projection diagnostic and physical impact/friction dissipation",
-    "strict unchanged raw half-step and endpoint energy budgets",
-    "tentative failure telemetry and GPT evidence integration"
-   ],
-   "measured": [
-    "matched glass/oak/iron 10.1 ms first contact completes below 200000 calls",
-    "four full fictional-material runs complete with 6.1 to 10.0 times fewer solver calls",
-    "fresh GPT request completes two 101-frame 3D recordings"
-   ],
-   "failed_gates": [
-    "longer stiff material responsiveness",
-    "spatial/unloading accuracy",
-    "stable fracture and finite-strain rebound",
-    "world persistence and realtime qualification"
-   ],
-   "next": "Audit sticking-friction projections and separating-contact reversal, then stiff energy-accounted integration and refinement."
-  },
-  "foundation_checkpoint": {
-   "status": "R01/R02 partial implementation, no goal fully accepted",
-   "native_material_path": "3 supported small-strain laws; no material-name dispatch",
-   "generated_trials": {
-    "seeded_materials": 12,
-    "live_gpt_materials": 3,
-    "analytic_and_rename_checks": "pass"
-   },
-   "dynamic_patch": "inertia, transactional steps, J2 history, explicit stability bound; no contact",
-   "next": "R03 coupled surface contact with energy/impulse audit, then impact-driven deformation; stiff thin structures need timestep strategy",
-   "evidence": "docs/rules-engine-foundation-checkpoint.md",
-   "validation": {
-    "native_suites_passed": 59,
-    "native_wall_s": 86.07,
-    "new_python_tests_passed": 12,
-    "playground_passed": 61,
-    "playground_skipped": 1,
-    "live_llm_materials_passed": 3
-   }
-  },
-  "coupled_contact_checkpoint": {
-   "status": "R01/R02/R03 and impact J2 partially implemented; no goal fully accepted",
-   "base_commit": "77e1db3",
-   "evidence": "docs/coupled-contact-checkpoint.md",
-   "next": "Qualify contact mesh convergence and cumulative energy accuracy, then unload/reload impact geometry; integrate only accepted capabilities into playground.",
-   "native_contact": "Swept sphere/moving triangle, barycentric impulse, spin/friction, explicit losses, atomic commit and bounded work",
-   "limitations": [
-    "small-strain only",
-    "single sphere and patch",
-    "not exposed in playground",
-    "no fracture or finite-strain rubber",
-    "not realtime qualified"
-   ],
-   "validation": {
-    "native_suites_passed": 61,
-    "native_wall_s": 85.94,
-    "affected_suites_after_final_geometry_fix": 3,
-    "geometry_cases": 9,
-    "coupled_cases": 8,
-    "python_material_tests_passed": 12,
-    "full_duration_probes": 10,
-    "spatial_response_gate": "not_converged",
-    "realtime_gate": "not_passed",
-    "measurements": "docs/coupled-contact-results.json"
-   }
-  },
-  "adaptive_contact_checkpoint": {
-   "status": "R02/R03 adaptive temporal budget checkpoint; no whole-platform goal complete",
-   "base_commit": "3b06ce1",
-   "evidence": "docs/adaptive-material-contact-checkpoint.md",
-   "implemented": [
-    "canonical-state rollback with immutable material evaluation cache",
-    "coarse/two-half adaptive advances with global interval indicator/work budgets",
-    "optional velocity Verlet and passive final contact velocity constraints"
-   ],
-   "measured": {
-    "full_duration_s": 0.1,
-    "material_sets": [
-     "fictional linear elastic E1MPa",
-     "fictional J2 E1MPa yield1.2kPa"
-    ],
-    "absolute_energy_budget_j": 3e-06,
-    "maximum_recording_step_calls": 200000,
-    "elastic_absolute_energy_residual_j": 2.0354075724990256e-06,
-    "j2_absolute_energy_residual_j": 2.2211279782233294e-06
-   },
-   "failed_gates": [
-    "fine mesh work budget",
-    "spatial accuracy qualification",
-    "world realtime qualification"
-   ],
-   "next": "Reduce and qualify spatial/contact work under unchanged error budgets; then validate unloaded impact geometry and integrate accepted state/experiments into playground.",
-   "validation": {
-    "native_suites_passed": 62,
-    "native_wall_s": 93.08,
-    "adaptive_cases": 8,
-    "dynamic_cases": 8,
-    "python_material_tests_passed": 12,
-    "default_reference_frames": "exactly_unchanged",
-    "fine_mesh_gate": "work_budget_exhausted",
-    "playground": "unchanged_not_integrated"
-   }
-  },
-  "plate_admission_checkpoint": {
-   "status": "R08 setup and error-reporting correction; full fracture gate remains open",
-   "base_commit": "b4b5c9e7f0b302aa39d19bcf414ff1b784674aa0",
-   "evidence": "docs/plate-admission-checkpoint.md",
-   "reported_job": "f4dc878d9c084365b4444ed557c46080",
-   "repeated_prompt_job": "96ff6a24a4a74a349f0efa6846af9125",
-   "validation": {
-    "python_tests_run": 141,
-    "python_passed": 140,
-    "python_skipped": 1,
-    "python_wall_s": 13.628,
-    "native_changed": false,
-    "native_admission_parity": "passed",
-    "browser": "archived numerical error, prefilled fresh retry, live identical prompt, actual 42-frame playback and solver-limit message"
-   },
-   "result": {
-    "recording_status": "solver_limit",
-    "final_time_s": 0.3416666666666667,
-    "completed_steps": 164,
-    "requested_steps": 480,
-    "broken_links": {
-     "glass": 0,
-     "oak": 0,
-     "iron": 0
+    {
+      "id": "G01",
+      "title": "Live cell-derived object skins",
+      "status": "active",
+      "owner": "parent",
+      "objective": "Ship blocky v1 surfaces from accepted live matter, including partial cracks and fragment skins, while preserving physics; qualify smooth/deforming refinements separately.",
+      "dependencies": [
+        "object-skin-contract",
+        "stable-cell-component-identities",
+        "accepted-connectivity",
+        "local-patch-queue",
+        "stale-job-rejection"
+      ],
+      "acceptance": {
+        "prototype_gate": [
+          "blocky exposed-face skin follows live connectivity",
+          "partial cracks and repeated fracture update local patches",
+          "fragment state and lineage are preserved",
+          "no reskin reset or fabricated impulse",
+          "stale topology jobs reject"
+        ],
+        "complete_gate": [
+          "glass/oak/iron and tissue/layered cases are measured",
+          "cavity and exposed-interior behavior is verified",
+          "visual detail leaves trajectories and ledgers unchanged",
+          "surface p95/p99, memory/upload, fallback, and mesh backlog are reported",
+          "smooth/deforming work has separate convergence evidence"
+        ]
+      },
+      "next_action": "Add bounded local mesh patches, material coordinates/layers and measured skin/contact error.",
+      "evidence_status": "Blocky topology, partial-cut lips, live skins, geometry export and physics-isolation tests passed. Full surface gate remains open.",
+      "retained_requirements": [
+        "M21",
+        "M24",
+        "P10"
+      ],
+      "evidence_ref": "docs/execution-checkpoint.md"
+    },
+    {
+      "id": "G02",
+      "title": "Converged material/contact response and cutting",
+      "status": "active",
+      "objective": "Converge glass, oak, iron, and soft-tissue contact/material response and cutting under force, work, time, and space gates without strength hacks.",
+      "dependencies": [
+        "authoritative-contact-owner",
+        "material-derived-mass-inertia",
+        "constitutive-history",
+        "local-solver-comparison",
+        "G01"
+      ],
+      "acceptance": {
+        "prototype_gate": [
+          "declared laws run for glass/oak/iron/soft tissue",
+          "reactions, work, damage, and history are observable",
+          "cutting changes accepted topology without prescribed launches",
+          "axial/network path remains experimental"
+        ],
+        "complete_gate": [
+          "time/iteration/space/contact refinement bounds force, work, area, topology, momentum, angular momentum, and energy residuals",
+          "oak has directional evidence",
+          "iron has calibrated plastic evidence",
+          "soft tissue has finite-strain/cohesive cut evidence",
+          "asymmetric/support/third-body cases pass"
+        ]
+      },
+      "next_action": "Cross mesh/load increments and pressure-profile/element-orientation controls with predeclared error bounds; compare a locking-resistant formulation before dynamic contact and calibrated dent/fracture claims.",
+      "evidence_status": "Spring cache and endpoint rollback tests pass. The small-strain isotropic J2 material-point analytical, unloading/reloading, dissipation, rejection, and exact reload-continuation tests pass. It is not dent geometry, contact, finite strain, or calibrated iron. Glass/oak/tissue refinement and the full mechanical work ledger remain open. Connected small-strain isotropic/orthotropic/J2 tetrahedral equilibrium now passes analytical, reaction, rollback and state continuation checks. Low-load three-material controls recover; high-load plastic shape remains strongly spatially unconverged. Conservative partial-face pressure and optional assembled block-CSR tangent products now pass analytical, backend parity and transactional work-limit tests. Crossed high-load spatial refinement still fails; n=16 iron reaches the 64-million-block cap before unloading. The repeated kernel benchmark harness is smoke-tested; isolated p95/p99 qualification remains pending.",
+      "retained_requirements": [
+        "M01",
+        "M02",
+        "M03",
+        "M04",
+        "M05",
+        "M06",
+        "M07",
+        "M08",
+        "M09",
+        "M10",
+        "M11",
+        "M12",
+        "M13",
+        "M14",
+        "M15",
+        "M16",
+        "M17",
+        "M18",
+        "M19",
+        "M20",
+        "M21",
+        "M22",
+        "M23",
+        "M24",
+        "M25",
+        "M26",
+        "M29",
+        "M30"
+      ],
+      "evidence_ref": "docs/continuum-pressure-performance-checkpoint.md"
+    },
+    {
+      "id": "G03",
+      "title": "Conservative thermal frontier",
+      "status": "active",
+      "objective": "Add cross-region flux, cold-neighbor/frontier activation, and conservative accumulation while preserving phase, reaction, latent heat, and lag accounting.",
+      "dependencies": [
+        "SparseThermalWorld",
+        "ThermalKernel",
+        "two-lump-oracle",
+        "bounded-jobs",
+        "G04"
+      ],
+      "acceptance": {
+        "prototype_gate": [
+          "cross-region interface flux is equal and opposite",
+          "frontier activation reports cause and error bound",
+          "cold storage remains compact until wake",
+          "phase identity and latent energy remain explicit",
+          "lag/frontier age/residual are reported"
+        ],
+        "complete_gate": [
+          "timestep/space refinement closes heat, enthalpy, latent, fuel/oxygen, and interface residuals",
+          "activation/demotion are transactional",
+          "thermal-mechanical coupling is separately validated",
+          "law envelope limits fire/weakening claims"
+        ]
+      },
+      "next_action": "Bound omitted boundary heat error, refine frontier/time/space thresholds, then add conservative cooling/demotion and cross-clock transfers.",
+      "evidence_status": "Opt-in bounded cold-neighbor frontier, transfer ledgers, reactive/phase history, strict commands and grow-first versus fully preactivated oracles pass; global omitted-flux error is not bounded.",
+      "retained_requirements": [
+        "M05",
+        "M27",
+        "M28",
+        "M29",
+        "P01",
+        "P02",
+        "P05",
+        "P10"
+      ],
+      "evidence_ref": "docs/additional-physics-checkpoint.md"
+    },
+    {
+      "id": "G04",
+      "title": "Unified state/energy and bounded authoring API",
+      "status": "active_limited_chat_api_foundation",
+      "objective": "Unify mechanical and thermal state in a versioned, unit-bearing runtime language with explicit stores and bounded creator/job APIs.",
+      "dependencies": [
+        "world-physics-language",
+        "law-capability-manifests",
+        "G02",
+        "G03",
+        "stable-history-identities",
+        "snapshot-receipts"
+      ],
+      "acceptance": {
+        "prototype_gate": [
+          "SI/version/capability/budget validation works",
+          "named energy stores and explicit transfers are exposed",
+          "bounded jobs report admission/progress/lag/cancellation/rejection",
+          "LLM authors declarations but never ticks physics"
+        ],
+        "complete_gate": [
+          "promotion/demotion/contact/fracture/plasticity/reaction/phase/work/snapshot preserve ledgers",
+          "no double counting or silent work reclassification",
+          "commands are durable and capability checked",
+          "creator integration is exercised"
+        ]
+      },
+      "next_action": "Extend one shared declaration and bounded load/validate/step/query/export command surface across chat, CLI, and native tools after passing mocked chat and bounded live-package paths.",
+      "evidence_status": "All 29 mocked playground HTTP tests pass and a bounded live call produced an independently validated package. Full mechanical/thermal state and ledger unification remains open and no completion is claimed.",
+      "retained_requirements": [
+        "M01",
+        "M02",
+        "M03",
+        "M04",
+        "M05",
+        "M17",
+        "M27",
+        "M29",
+        "M30",
+        "P03",
+        "P05",
+        "P06",
+        "P07"
+      ]
+    },
+    {
+      "id": "G05",
+      "title": "Measured world-load performance",
+      "status": "active",
+      "owner": "execution support; Sol phase-kernel optimization",
+      "objective": "Optimize measured active-world kernels and sparse-active scheduling without changing laws; keep cold storage out of full simulation.",
+      "dependencies": [
+        "G03",
+        "G04",
+        "CPU-reference",
+        "sparse-chunks",
+        "active-islands",
+        "bounded-scheduler",
+        "stale-job-rejection",
+        "p95-p99-instrumentation"
+      ],
+      "acceptance": {
+        "prototype_gate": [
+          "storage and allocator overhead are separated",
+          "p50/p95/p99, backlog, age, residual, lag, and memory are reported",
+          "fixed and growing active-count matrices exist",
+          "only measured kernels are optimized",
+          "cold storage is not fully simulated"
+        ],
+        "complete_gate": [
+          "declared scale/load matrices meet budgets or report bounded backlog",
+          "1M and 16M stored-voxel cases are measured at 256, 1024, 4096, and 16384 active cells",
+          "growing contact and wake churn are measured",
+          "the 60 Hz 16.67 ms full-frame engineering target is evaluated on named hardware",
+          "CPU-reference outputs and residuals remain within declared tolerances",
+          "no world-scale realtime claim comes from a small fixture"
+        ]
+      },
+      "next_action": "Run the named-hardware 1M/16M stored-voxel by 256/1024/4096/16384 active-cell matrix with growing contact and wake churn; report physics, full-frame, backlog, and residuals separately.",
+      "evidence_status": "4/256/4096 chunks retain identical 336-active-cell local physics at 10 s across 3 repeats; headless thermal p95 is about 0.36-0.37 ms and tight 1000-operation budgets report backlog. The 2 m/s native playground case measured 50 active frames and 31.25 ms p95 full-frame time, which does not qualify the 60 Hz target. The target is not a measured promise. Conservative partial-face pressure and optional assembled block-CSR tangent products now pass analytical, backend parity and transactional work-limit tests. Crossed high-load spatial refinement still fails; n=16 iron reaches the 64-million-block cap before unloading. The repeated kernel benchmark harness is smoke-tested; isolated p95/p99 qualification remains pending.",
+      "engineering_target": {
+        "full_frame_hz": 60,
+        "full_frame_ms": 16.67,
+        "hardware_requirement": "named",
+        "status": "target_not_yet_qualified",
+        "stored_voxels": [
+          1000000,
+          16000000
+        ],
+        "active_cells": [
+          256,
+          1024,
+          4096,
+          16384
+        ],
+        "dynamic_cases": [
+          "growing-contact",
+          "wake-churn"
+        ]
+      },
+      "retained_requirements": [
+        "M27",
+        "M29",
+        "M30",
+        "P01",
+        "P02",
+        "P04",
+        "P10"
+      ],
+      "evidence_ref": "docs/continuum-pressure-performance-checkpoint.md"
+    },
+    {
+      "id": "G06",
+      "title": "Snapshot, publishing, and customer conformance",
+      "status": "queued",
+      "objective": "Make accepted worlds and objects recoverable, publishable, compatible, and testable through the ax/tree, door/panel, and tomato-bowl loop.",
+      "dependencies": [
+        "G01",
+        "G02",
+        "G03",
+        "G04",
+        "G05",
+        "stable-ids",
+        "manifests",
+        "permissions",
+        "migration",
+        "authority-events"
+      ],
+      "acceptance": {
+        "prototype_gate": [
+          "snapshots include authoritative state/history/energy/config fingerprints",
+          "publication is crash-atomic and dependency validated",
+          "incompatible versions reject",
+          "customer fixtures report unsupported behavior explicitly"
+        ],
+        "complete_gate": [
+          "save/recover/replay/publish/import/rollback preserve accepted state",
+          "manifests support validation/preview/permissions/migration",
+          "authority/bandwidth/determinism behavior is measured",
+          "ax/tree, door/panel, and tomato bowl pass customer conformance"
+        ]
+      },
+      "next_action": "Define snapshot manifest and compatibility matrix; run crash/restart, migration rejection, publish/import, and customer-loop fixtures.",
+      "evidence_status": "queued; not complete",
+      "retained_requirements": [
+        "M21",
+        "M25",
+        "M26",
+        "M30",
+        "P03",
+        "P06",
+        "P07",
+        "P08",
+        "P09",
+        "P10"
+      ]
+    },
+    {
+      "id": "G07",
+      "title": "Compact persistence, history, and repair",
+      "status": "active_foundation_verified_numeric_material_point_slice",
+      "objective": "Persist an immutable base plus sparse versioned state deltas so cold worlds render quickly and accepted physical history resumes without healing, reset, or duplicate work.",
+      "dependencies": [
+        "stable-object-material-law-identities",
+        "topology-revisions",
+        "complete-physical-and-player-history",
+        "solver-config-fingerprints",
+        "G04",
+        "G06"
+      ],
+      "acceptance": {
+        "prototype_gate": [
+          "lossless supported finite IEEE-754 state with explicit signed-zero policy",
+          "nonfinite, corrupt, stale, partial, wrong-version, and wrong-base input rejects transactionally",
+          "reload produces the exact next accepted increment",
+          "compact asleep render cost and reactivation cost are measured separately"
+        ],
+        "complete_gate": [
+          "crash-atomic checkpoint or journal records have checksums and monotonic revisions",
+          "repair selects a verified prefix and reports discarded records",
+          "save/reload preserves trajectories, topology, lineage, ledgers, clocks, material history, inventory, and player history",
+          "rollback and compatibility behavior are explicit and tested",
+          "efficient gameplay repair is bounded, consumes explicit material and energy receipts, restores declared stress/geometry/topology, uses collision-safe placement, preserves the old revision, and reports work/delay"
+        ]
+      },
+      "next_action": "Define the broader state IDs, scalar ordering, fingerprints, journal, and repair semantics; extend beyond numeric material points to geometry, world state, rendering, and bounded reactivation.",
+      "evidence_status": "NumericStateDelta and the fixed-size 14-double J2 history pass same-bit round-trip, old-revision retention, and exact next-material-increment continuation. Scope is numeric material-point state only; no geometry, world dent, render, save-game, crash-repair, or full-world-reactivation claim. Full spatial patch JSON round-trip and next-load state parity now pass against the same immutable definition; compact spatial codec and fingerprint-authenticated world continuation remain open.",
+      "measurement": {
+        "runs": 3,
+        "timed_samples_per_case": 100,
+        "changed_points": 16,
+        "changed_scalars": 64,
+        "delta_bytes": 732,
+        "base_cases": [
+          {
+            "points": 64,
+            "bytes": 7168
+          },
+          {
+            "points": 4096,
+            "bytes": 458752
+          },
+          {
+            "points": 65536,
+            "bytes": 7340032
+          }
+        ],
+        "original_restore_bytes": 92,
+        "history_bytes": 824,
+        "partial_16_point_decode_p95_us": [
+          6.1,
+          6.6
+        ],
+        "sparse_encode_p95_us": [
+          6.9,
+          8.6
+        ],
+        "validate_resume_next_increment_p95_us": [
+          4.4,
+          5.7
+        ],
+        "one_time_full_base_validation_ms": [
+          0.057,
+          65.57
+        ],
+        "full_65536_point_decode_ms": [
+          1.717,
+          2.0013
+        ]
+      },
+      "retained_requirements": [
+        "M05",
+        "M15",
+        "M16",
+        "M27",
+        "M30",
+        "P03",
+        "P06",
+        "P07",
+        "P08"
+      ]
+    },
+    {
+      "id": "G08",
+      "title": "Intrinsic property variation and uncertainty",
+      "status": "active_foundation_reference_sampler_verified",
+      "objective": "Represent fixed intrinsic heterogeneity with deterministic versioned samples keyed by persisted seed and stable object, element, and property IDs.",
+      "dependencies": [
+        "stable-property-law-and-element-identities",
+        "persisted-material-seed",
+        "G02",
+        "G07",
+        "M29-M30"
+      ],
+      "acceptance": {
+        "prototype_gate": [
+          "same-key replay and portable golden values are exact",
+          "range, finite-value, and version validation rejects transactionally",
+          "visit order and sample prefix do not change values",
+          "sampling alone changes no force, mass, energy, or evolving stochastic state"
+        ],
+        "complete_gate": [
+          "law distributions and bounds have provenance and ensemble convergence",
+          "glass, oak, and iron use explicit law families and property IDs rather than names",
+          "intrinsic heterogeneity, stochastic physical state, calibration uncertainty, and numerical error are reported separately",
+          "no glass flaw calibration claim is made without matching population evidence"
+        ]
+      },
+      "next_action": "Persist the verified PropertyVariation seed contract, then connect it only through an explicit constitutive law and ensemble/calibration tests.",
+      "evidence_status": "Portable golden-value, reordered-access, and 100000-seed bounds tests pass. The sampler changes no force by itself and is not a calibrated glass flaw distribution.",
+      "retained_requirements": [
+        "M15",
+        "M16",
+        "M17",
+        "M18",
+        "M19",
+        "M20",
+        "M29",
+        "M30",
+        "P06",
+        "P07"
+      ]
+    },
+    {
+      "id": "G09",
+      "title": "Chat-to-language/API/native playground",
+      "status": "active_foundation_basic_native_request_to_visible_studio_verified",
+      "objective": "Let users request, inspect, edit, validate, and run Banjo declarations through GPT chat and the bounded public physics API, then open the same accepted package in the native laboratory.",
+      "dependencies": [
+        "G01",
+        "G04",
+        "G05",
+        "G07",
+        "native-headless-package-parity",
+        "backend-secret-isolation"
+      ],
+      "acceptance": {
+        "prototype_gate": [
+          "mocked API tests cover proposal, clarification, invalid schema, unsupported law, shortage, retry, idempotency, cancellation, timeout, and budget paths",
+          "model output is independently validated before mutation",
+          "frontend receives structured proposals, validation errors, receipts, and accepted results",
+          "mock tests require no live key"
+        ],
+        "complete_gate": [
+          "opt-in bounded live API test reads its key from ignored .env and records provenance without secrets",
+          "chat, CLI, and native tools accept the same package and physical result",
+          "native flow covers inspect, edit, run, pause, resume, save, reload, and visible errors",
+          "generated tests use only the bounded public API and the LLM never advances the physics clock"
+        ]
+      },
+      "next_action": "Extend the verified basic native path through edit/follow-up, unsupported capability, cancellation, inventory, save/reload, and receipt-backed repair tests while retaining mock coverage, independent validation, bounded calls, and secret isolation.",
+      "evidence_status": "All 29 mocked HTTP tests pass in 2.140 seconds. Live gpt-5-mini job ff0c7d0f1eaa4c4a9f50f8ef7d486202 produced a validated iron-ball versus glass/oak/iron package at 2 and 6 m/s; both headless and native cases completed 480 steps/1 s and the studio was visible. The actual-native validator caught forbidden rigid_drop network fields, which were fixed. The basic gate passes; broader edit, persistence, cancellation, inventory, unsupported, and repair gates remain open. Live GPT spatial-pressure request opens the actual computed native sequence, with glass/iron complete and oak solver_limit. Direct CLI and chat-generated reports match except solve timing.",
+      "basic_native_verification": {
+        "job_id": "ff0c7d0f1eaa4c4a9f50f8ef7d486202",
+        "model": "gpt-5-mini",
+        "credential_source": "ignored .env",
+        "scene": "iron ball versus glass, oak, and iron",
+        "speeds_m_s": [
+          2,
+          6
+        ],
+        "duration_s": 1,
+        "tokens": 1195,
+        "planning_s": 4.433,
+        "total_s": 6.537,
+        "headless_steps_each": 480,
+        "native_steps_each": 480,
+        "visible_studio": true,
+        "physical_report_match": true,
+        "comparison_exclusions": [
+          "compiler-loader-metadata",
+          "load_wall_ms",
+          "performance",
+          "skin",
+          "presentation"
+        ],
+        "native_2_m_s_active_frames": 50,
+        "native_2_m_s_full_frame_p95_ms": 31.25,
+        "qualifies_60_hz": false
+      },
+      "retained_requirements": [
+        "P05",
+        "P06",
+        "P07",
+        "P08",
+        "P10"
+      ],
+      "continuum_native_verification": {
+        "job_id": "da66b2b4bd814676b1da0b890aa52a21",
+        "model": "gpt-5-mini",
+        "tokens": 1514,
+        "planning_wall_s": 6.8221612,
+        "total_wall_s": 7.369295,
+        "physical_report_parity": "exact except solve_wall_ms",
+        "scope": "fixed quasistatic reference, not dynamic contact or calibrated dents"
+      }
+    },
+    {
+      "id": "G10",
+      "title": "Interactions at realtime, watched in 3D",
+      "status": "active",
+      "owner": "primary",
+      "objective": "Every interaction runs on the real engine within 1.1x its simulated duration through to rest, and every stage is done only when it can be loaded into the playground and watched in 3D. Route: wire the fast implicit lane to the viewer, then move the elastic response to a basis computed once per object, then carry fracture on basis updates.",
+      "rule": "No job may take more than 1.1x the simulated duration of the whole interaction including settling to rest; the playground refuses anything projected over that before it runs (REALTIME_LIMIT in playground/server.py).",
+      "definition_of_done": "Loaded in the playground, run on the real engine, watched in the 3D playback tab, wall time on the case card within 1.1x. Measurements, validations and scratch experiments do not count.",
+      "dependencies": [
+        "G09",
+        "implicit-fracture-lane",
+        "shared-bond-failure-criterion",
+        "cubic-cell-admission",
+        "cost-estimate-before-run"
+      ],
+      "stages": [
+        {
+          "id": "A",
+          "title": "Rule enforced; rigid ball onto rigid plate to rest",
+          "scene": "rigid iron ball dropped onto a rigid glass plate on the ground, 1.5 s",
+          "visual_confirmation": "ball falls, strikes, bounces, comes to rest; nothing passes through anything",
+          "realtime_gate": "<=1.1x, shown on the case card; over-budget requests refused before starting",
+          "status": "ready_for_owner_review",
+          "evidence": {
+            "job_id": "bcfc001ce3fd4ac998af5858d882e3c0",
+            "url": "http://127.0.0.1:8765/?job=bcfc001ce3fd4ac998af5858d882e3c0",
+            "package": "stage A rigid iron ball, 80 mm, dropped 0.39 m onto a rigid 0.24 x 0.02 x 0.36 m glass plate lying on the ground; 1/480 s; 3.0 s",
+            "measured": {
+              "wall_s": 0.053,
+              "simulated_s": 3.0,
+              "realtime_ratio": 0.0177,
+              "realtime_limit": 1.1,
+              "first_rebound_over_drop": 0.523,
+              "effective_restitution": 0.723,
+              "bounces": 7,
+              "at_rest_from_s": 1.35,
+              "movement_final_0_25_s_mm": 0.0,
+              "plate_displacement_mm": 0.0,
+              "plate_tilt_deg": 0.0,
+              "ball_penetration_into_plate_mm": 0.0,
+              "energy_in_j": 9.738,
+              "energy_at_rest_j": 1.666
+            },
+            "viewer_check": "the playground's own scene.js, instantiated against this playback, places the sphere (r 0.040) at (0,0.45,0) at frame 0 and at (0,0.06,0) -- plate top plus radius -- at frames 54 (1.35 s) and 120 (3.0 s); one live capture showed the ball rendered at frame 1. No live capture of the resting ball was obtained because the browser pane was hidden.",
+            "gate_proof": "a 200-cell tile at one tick was refused before any job existed: projected 11,154x realtime against the 1.1x limit."
+          }
+        },
+        {
+          "id": "B",
+          "title": "Glass tile flexes elastically at realtime",
+          "scene": "same ball onto an edge-clamped uniform-cube tile, fracture off, implicit lane, <=365 nodes",
+          "visual_confirmation": "tile deflects under the ball and springs back; max at strike point, zero at clamps",
+          "realtime_gate": "<=1.1x (implicit lane measured 1.00-1.03x at 365 nodes, 1/120 s)",
+          "status": "queued",
+          "note_2026_09_07": "The implicit lane now reaches the 3D tab through the recording importers (its reference cases play in every lane job above), but the elastic-only flex scene this stage names has not been recorded."
+        },
+        {
+          "id": "C",
+          "title": "Same flex from a basis computed once",
+          "scene": "identical to B, response evaluated from the object's eigenbasis built at creation",
+          "visual_confirmation": "B and C visually identical; difference view empty; card shows both wall times",
+          "realtime_gate": "faster than B and <=1.1x",
+          "status": "queued",
+          "note_2026_09_07": "docs/fast-modal-checkpoint.md sections 1-2: the basis stays exact through the cascade and the closed form is what the stepped reference converges to. No elastic-only recording yet; the mechanism exists in the engine (src/modal/)."
+        },
+        {
+          "id": "D",
+          "title": "First crack from the basis",
+          "scene": "as C with the shared failure criterion on, to the first failure set",
+          "visual_confirmation": "first crack set at the strike point matches the stepped solver's, side by side",
+          "realtime_gate": "<=1.1x to first failure",
+          "status": "ready_for_owner_review",
+          "evidence_2026_09_07": {
+            "summary": "modal 8x8x2 job, case 1: first failure set identical to the reference (case 2), watchable side by side",
+            "urls": [
+              "http://127.0.0.1:8765/?job=65331afc7b2f47f791799e70ed699c97"
+            ],
+            "limits": "rule met on the 8x8x2 tile only for the modal lane (fails at 12x12x2); the quasi-static lane meets it to 2,048 cells but its crack pattern is not the dynamic one"
+          }
+        },
+        {
+          "id": "E",
+          "title": "Full shatter from basis updates (research gate)",
+          "scene": "as D through the cascade; basis updated per round, not recomputed",
+          "visual_confirmation": "tile shatters into pieces; pattern matches the stepped solver within its own refinement spread",
+          "realtime_gate": "<=1.1x impact through end of fracture",
+          "status": "ready_for_owner_review",
+          "risk": "low-rank updates may lose accuracy across the ~61-round cascade; if so, report where and stop, do not widen a tolerance",
+          "evidence_2026_09_07": {
+            "summary": "modal 8x8x2 job: 35 fragments from rank-one basis updates at 0.14x overall (fracture window 497x); the research answer is measured: exact updates hold accuracy but cost O(n k^2) per bond and fail the rule at 12x12x2 (1.94x)",
+            "urls": [
+              "http://127.0.0.1:8765/?job=65331afc7b2f47f791799e70ed699c97"
+            ],
+            "limits": "rule met on the 8x8x2 tile only for the modal lane (fails at 12x12x2); the quasi-static lane meets it to 2,048 cells but its crack pattern is not the dynamic one"
+          }
+        },
+        {
+          "id": "F",
+          "title": "Pieces fall and come to rest",
+          "scene": "as E run to rest; fragment-fragment and ground contact",
+          "visual_confirmation": "pieces separate, fall, collide, stop; no interpenetration; recording ends at rest",
+          "realtime_gate": "<=1.1x for the entire interaction",
+          "status": "ready_for_owner_review",
+          "evidence_2026_09_07": {
+            "summary": "modal 8x8x2 at 0.14x and quasi-static 32x32x2 at 0.37x both run through to rest with pieces on the ground",
+            "urls": [
+              "http://127.0.0.1:8765/?job=65331afc7b2f47f791799e70ed699c97",
+              "http://127.0.0.1:8765/?job=5b132ccb059c468ea9ec41e0a4f9ff1d"
+            ],
+            "limits": "rule met on the 8x8x2 tile only for the modal lane (fails at 12x12x2); the quasi-static lane meets it to 2,048 cells but its crack pattern is not the dynamic one"
+          }
+        },
+        {
+          "id": "G",
+          "title": "Owner varies the request; result tracks it",
+          "scene": "Builder varies thickness, cube size, speed, material",
+          "visual_confirmation": "thicker cracks less, faster breaks more, oak/iron differ from glass, all in 3D; every run passes the gate or is refused first",
+          "realtime_gate": "<=1.1x or refused",
+          "status": "queued"
+        }
+      ],
+      "acceptance": {
+        "prototype_gate": [
+          "the realtime gate refuses over-budget jobs on both the chat and direct routes before they start",
+          "stage A is watchable in 3D with the measured ratio on the case card",
+          "stage B is watchable in 3D from the implicit lane"
+        ],
+        "complete_gate": [
+          "stages A through G each have a recording the owner has watched in the playground",
+          "every recording's measured wall time is within 1.1x its simulated interaction through rest",
+          "glass, oak and iron are each shown, with different outcomes from identical scenes",
+          "no stage was passed by widening a tolerance, precutting shards, or substituting a scene",
+          "the cubic-cell and slenderness limits are stated on every case that they bound"
+        ]
+      },
+      "next_action": "Owner opens http://127.0.0.1:8765/?job=bcfc001ce3fd4ac998af5858d882e3c0, 3D playback tab, and watches the ball come to rest. Then stage B: emit the implicit lane's trajectory in the banjo.playback.v1 format so the fast lane reaches the viewer.",
+      "evidence_status": "Stage A ran on the real engine and is loadable in the 3D tab; measured 0.053 s wall for 3.0 s simulated (0.018x), ball at rest on the plate from 1.35 s, zero penetration, zero plate motion. Reaching it exposed and fixed a defect that made every network-lane contact perfectly elastic (docs/rigid-contact-restitution-checkpoint.md): restitution was derived from a hard-coded zero contact damping; per-material contact damping is now declared and reported. The owner has not yet watched it; the viewer check was done through the viewer's scene graph. Not built: stages B-G. Under the rule, only rigid bodies and the implicit lane without fracture (<=365 nodes) are runnable today.",
+      "retained_requirements": [
+        "R-realtime-interaction",
+        "R-visual-confirmation-per-stage",
+        "R-no-authored-fracture",
+        "R-uniform-cells"
+      ],
+      "evidence_ref": [
+        "docs/goal-realtime-fracture.md",
+        "docs/two-day-evaluation-2026-09-07.md",
+        "docs/realtime-envelope-checkpoint.md",
+        "docs/implicit-fracture-checkpoint.md",
+        "docs/network-at-rest-stability-checkpoint.md",
+        "docs/rigid-contact-restitution-checkpoint.md"
+      ],
+      "lane_evidence_2026_09_07": {
+        "note": "Two of three parallel fracture lanes delivered watchable recordings on the real engine. Verified by the primary: every job below loads through /api/jobs with full playback frames, and its case card shows the Realtime row (and the fracture-window row where the lane reports one). The owner has not yet watched any of them; nothing here is marked done.",
+        "modal_basis": {
+          "branch": "agent/fast-modal",
+          "commit": "c73ce15",
+          "checkpoint": "docs/fast-modal-checkpoint.md",
+          "rule_met": {
+            "scene": "clamped 8x8x2 glass tile, 20 mm cells (128 cells), 20 mm iron ball at 16 m/s, through fracture, hand-off to Jolt and settling",
+            "simulated_s": 8.002,
+            "wall_s": 1.12,
+            "realtime_ratio": 0.14,
+            "fracture_window_ratio": 497,
+            "fracture_window_simulated_s": 0.002,
+            "fragments": 35,
+            "url": "http://127.0.0.1:8765/?job=65331afc7b2f47f791799e70ed699c97",
+            "why_it_passes": "a 2 ms fracture window, itself 497x slower than realtime, sits inside 8 s of rigid settling that Jolt computes at 0.01-0.03x"
+          },
+          "rule_failed": {
+            "scene": "12x12x2 glass tile (288 cells), 20 m/s",
+            "simulated_s": 8.0,
+            "wall_s": 15.5,
+            "realtime_ratio": 1.94,
+            "url": "http://127.0.0.1:8765/?job=9afe5fe6e9624dfda6c21d1b51f263cb",
+            "why": "the exact rank-one eigenvector update costs O(n k^2) per broken bond (13.8 s of a 15.3 s window); truncating the basis loses the cascade, so there is no cheap escape short of a sub-O(n^2) update"
+          },
+          "accuracy": "first-failure set identical to the implicit reference on every scene tested; at the threshold the outcome converges; above it both lanes shatter with matching counts but different pieces (see checkpoint sections 3.1-3.4)",
+          "reference_in_same_job": "each job carries the implicit Newton/GMRES reference on the same scene as case 2 (8x8x2: 0.12x; 12x12x2: 0.51x)"
+        },
+        "quasi_static": {
+          "branch": "agent/fast-quasistatic",
+          "commit": "c272499",
+          "checkpoint": "docs/fast-quasistatic-checkpoint.md",
+          "rule_met_up_to": {
+            "cells": 2048,
+            "scene": "32x32x2 glass tile, 80 mm iron ball from 3 m",
+            "simulated_s": 8.095,
+            "wall_s": 3.0,
+            "realtime_ratio": 0.37,
+            "pieces": 10,
+            "url": "http://127.0.0.1:8765/?job=5b132ccb059c468ea9ec41e0a4f9ff1d"
+          },
+          "rule_failed_at": {
+            "cells": 3200,
+            "scene": "40x40x2 glass tile, 90 mm ball from 3 m",
+            "realtime_ratio": 1.56,
+            "cost_scaling": "about N^2.3: PCG cost grows with bonds, iterations with crater depth under block-Jacobi, solves with events"
+          },
+          "other_jobs": {
+            "8x8x2 (0.010x)": "http://127.0.0.1:8765/?job=73f331b1b4e34d8aa88578b3bdfcafbc",
+            "8x8x2 dynamic implicit reference (0.050x)": "http://127.0.0.1:8765/?job=a74cf2a71c8749e0a685eab6f82ac3fb",
+            "24x24x2 (0.125x)": "http://127.0.0.1:8765/?job=62a1c74327624f658b9e0920c939d63d"
+          },
+          "physics_caveat": "the quasi-static answer craters the tile and stops the ball where the dynamic reference shatters it (8x8x2: 156 bonds, 1 piece vs 400-912 bonds, 2-30 pieces; first-failure sets disjoint; only removed energy agrees, within 11-29%). It meets the rule; it does not reproduce the dynamic outcome."
+        },
+        "gpu_lattice": {
+          "branch": "agent/fast-gpu",
+          "status": "in progress; WIP 5f9dee2; no measurements recorded yet"
+        },
+        "what_this_changes_for_the_stages": "Stages D-F now have recordings from the modal lane on 8x8x2 (fracture from the basis, cascade on basis updates, pieces to rest) and from the quasi-static lane up to 2,048 cells. Stage B (elastic flex, no fracture) and C (the same flex from the basis) have no recording of their own: the basis is shown exact in the modal checkpoint, but the elastic-only scene was not recorded. Stage G is untouched: both lanes are command-line tools with importers, not Builder routes."
+      }
     }
-   },
-   "next": "Resolve stiff contact and stable fracture under convergence and full work accounting; preserve all original goals."
+  ],
+  "latest_execution": {
+    "date": "2026-09-06",
+    "full_suites_passed": 57,
+    "full_suite_duration_s": 83.23,
+    "toolchain": "Windows MSVC 19.44 Release",
+    "overall_complete": false,
+    "active": [
+      "G01",
+      "G02",
+      "G03",
+      "G04",
+      "G05",
+      "G07",
+      "G08",
+      "G09"
+    ],
+    "queued": [
+      "G06"
+    ],
+    "evidence": [
+      "docs/additional-physics-checkpoint.md",
+      "docs/playground-foundation-checkpoint.md",
+      "docs/continuum-pressure-checkpoint.md",
+      "docs/continuum-pressure-performance-checkpoint.md"
+    ],
+    "milestones_completed": [
+      "blocky-live-skins",
+      "partial-cut-lips",
+      "same-clock-thermal-region-join",
+      "bounded-affine-phase-kernel",
+      "comparative-phase-world-budget-measurement",
+      "explicit-contact-resource-admission",
+      "prestep-spring-reaction-axis-correction",
+      "bounded-cold-neighbor-thermal-frontier",
+      "cold-to-active-energy-transfer-ledger",
+      "spring-configuration-cache-invalidation",
+      "transactional-endpoint-damage-trials",
+      "small-strain-j2-material-point-reference",
+      "deterministic-bounded-property-variation-reference",
+      "lossless-numeric-material-point-delta-and-continuation",
+      "mocked-chat-http-foundation",
+      "bounded-live-gpt-basic-native-request-to-visible-studio",
+      "spatial-quasistatic-pressure-reference",
+      "spatial-patch-json-continuation-reference",
+      "live-gpt-to-computed-pressure-sequence",
+      "conservative-partial-face-pressure-api",
+      "optional-same-law-assembled-tangent-and-work-budget"
+    ],
+    "verified_foundation_modules": [
+      "Plasticity",
+      "PropertyVariation",
+      "NumericStateDelta",
+      "SmallStrainLaw",
+      "SmallStrainPatch",
+      "PatchPressure"
+    ],
+    "focused_verification": {
+      "playground_mock_http_tests_passed": 33,
+      "playground_mock_http_duration_s": 2.164,
+      "j2_variation_codec": "passed",
+      "object_state_probe": "3 serial runs, 100 timed samples per case",
+      "continuum_material_mesh_and_rollback": "passed",
+      "spatial_refinement": "not converged at high plastic load",
+      "pressure_api": "seven analytical/state/rejection groups pass",
+      "assembled_backend": "full 8/4/8 load-cycle field parity; budget rejection and preserved next-load history pass",
+      "kernel_benchmark": "four cases, ten samples per backend smoke-tested; fifteen accepted states checked per backend; timings not qualified"
+    },
+    "chat_playground_stage": "Mock HTTP and the bounded live request-to-GPT-to-validation-to-headless-to-visible-studio one-second path pass. Edit/follow-up, unsupported capability, cancellation, inventory, save/reload, and repair gates remain open.",
+    "native_live_verification": "G09 basic request-to-GPT-to-validate-to-headless-to-visible-studio-to-1-second path passes for both 2 and 6 m/s cases with matching physical report fields under stated exclusions. Edit/follow-up, unsupported capability, cancellation, inventory, save/reload, and repair remain open. Earlier heat-lab pause/reset/release/save and 30.71 s evolution remain verified; fracture realism remains failed. Spatial pressure job da66b2b4bd814676b1da0b890aa52a21 opens the computed continuum report, with matched native/direct CLI physical data and explicit oak limit."
   },
-  "dynamic_material_playground_checkpoint": {
-   "status": "R08 bounded dynamic material playground implementation; no whole-platform goal complete",
-   "base_commit": "88d88d342e77fac4844d52b9e0ca1d47d9d39fdf",
-   "evidence": "docs/dynamic-material-playground-checkpoint.md",
-   "implemented": [
-    "strict numeric material/geometry request through shared native parser",
-    "accepted sphere and tetrahedral playback with generated bounded controls",
-    "persistent per-material contact/work/energy evidence and live GPT review"
-   ],
-   "validation": {
-    "native_suites_passed": 62,
-    "native_wall_s": 93.83,
-    "python_tests_run": 131,
-    "python_passed": 130,
-    "python_skipped": 1,
-    "python_wall_s": 13.46,
-    "browser": "actual prompt -> native -> auto 3D, 101-frame timeline, playback and steps, components/reference/X-ray, archived restoration, live GPT evidence review; no page errors",
-    "live_model": "gpt-5-mini",
-    "live_request_count": 4,
-    "live_complete_material_runs": 4,
-    "live_partial_material_runs": 2,
-    "unsupported_blocked_requests": 1
-   },
-   "failed_gates": [
-    "stiff glass/oak/iron work budget near contact",
-    "mesh accuracy and unloaded dent qualification",
-    "fracture and finite-strain rubber",
-    "shared world persistence and realtime release"
-   ],
-   "next": "Reduce and qualify stiff/contact integration cost while preserving error budgets; extend spatial/unloading acceptance and expected-outcome instrumentation."
+  "dependency_policy": "Dependencies name shared contracts and final acceptance gates; independent prototype slices may proceed in parallel, but the parent serially integrates and verifies them. Active means work or bounded evidence exists or is underway; it does not certify a prerequisite or goal complete.",
+  "verification_notes": {
+    "live_followup": "Actual GPT revised an iron-cube plate drop at 0.25 m into a rigid drop at 0.5 m. Native and headless runs both completed 480 ticks / 1 second, with physical report fields equal outside the declared metadata and presentation exclusions.",
+    "planner_scope": "Model proposals can misinterpret requests. UI separates proposed setup from authoritative engine status and physical validation.",
+    "native_capture": "Screenshot export now checks success and saves beside job live report."
   },
-  "parallel_physics_checkpoint": {
-   "status": "R03/R06 dependencies advanced; no full goal complete",
-   "evidence": "docs/parallel-physics-checkpoint.md",
-   "results": "docs/parallel-physics-results.json",
-   "next": "Integrate cohesive forces and accepted topology with dynamics/contact before new 3D fracture playback."
+  "embedded_playground_checkpoint": {
+    "evidence": "docs/embedded-playground-checkpoint.md",
+    "native_suites": 58,
+    "native_suite_s": 80.92,
+    "recorder_integration_tests": 3,
+    "mock_and_control_tests": 49,
+    "status": "experimental authoring and computed 3D inspection; no full goal completed",
+    "next": [
+      "contact/continuum/fracture integration",
+      "calibrated comparative fixtures",
+      "cancellation and durable restoration",
+      "capture/render performance qualification"
+    ]
   },
-  "finite_rotation_parallel_checkpoint": {
-   "status": "bounded_dependencies_verified_no_full_goal_complete",
-   "evidence": "docs/finite-rotation-parallel-checkpoint.md",
-   "next": "Energy-consistent compressed fracture handoff, continued fragment and blade contact, coupled dent unloading and thermal/mechanical state."
+  "general_experiment_checkpoint": {
+    "plan": "docs/general-experiment-plan.md",
+    "evidence": "docs/general-experiment-checkpoint.md",
+    "authoring": "drop_test and scene_test implemented; bounded experimental scope",
+    "thin_panel": "admitted6mm but failed all3 timestep completion checks",
+    "physics_integration": "thin structure / unified impact and material response / realtime qualification remain open",
+    "all_goals_retained": true
+  },
+  "rules_engine_execution": {
+    "plan": "docs/rules-engine-execution-plan.md",
+    "baseline_commit": "5c78ae9",
+    "status": "active",
+    "goals": [
+      {
+        "id": "R01",
+        "title": "Property-based material contracts",
+        "status": "active",
+        "implementation": "Validate SI density and elastic/orthotropic/J2 parameters, units, state layout and supported combinations. Physical identity excludes display names.",
+        "acceptance": "Unseen names and numeric parameter sets execute the same native material law; invalid values and unsupported models fail explicitly."
+      },
+      {
+        "id": "R02",
+        "title": "Shared inertial deformable state",
+        "status": "active",
+        "implementation": "Reuse tetrahedral geometry and constitutive state for nodal mass, velocity, internal force and irreversible history. Transactional steps and explicit stability/work limits.",
+        "acceptance": "Translation/free-fall oracles, support reactions, rollback, elastic refinement and persistent plastic history pass without name-based branches."
+      },
+      {
+        "id": "R03",
+        "title": "Coupled dynamic contact",
+        "status": "active",
+        "implementation": "Surface triangle/shape contact, consistent equal-and-opposite reactions, friction, continuous collision handling and coupled material updates.",
+        "acceptance": "Sphere on deformable patches: no tunneling; contact impulse, external work, stored energy and numerical losses balance under timestep/mesh refinement."
+      },
+      {
+        "id": "R04",
+        "title": "Recoverable flexible materials",
+        "status": "planned",
+        "implementation": "Finite-strain elasticity for large rubber-like deformation, then explicit viscoelastic internal state and relaxation. Small-strain elasticity alone is not rubber.",
+        "acceptance": "Ball deforms target, releases stored energy and rebounds; shape recovery, frequency dependence and refinement compared against references; no restitution-only substitute."
+      },
+      {
+        "id": "R05",
+        "title": "Permanent impact deformation",
+        "status": "active",
+        "implementation": "Connect J2 history to contact-driven spatial motion, unloading and rendered residual geometry.",
+        "acceptance": "Impact leaves a measured residual dent, low-energy control recovers; glass/oak/iron comparisons plus new alloys; persistent reload reproduces geometry and subsequent response."
+      },
+      {
+        "id": "R06",
+        "title": "Stable progressive fracture",
+        "status": "planned",
+        "implementation": "Resolve localized stress/energy release with length-scale-aware fracture, transactional topology changes and connected fragments. Include thin-plate/shell representation where needed.",
+        "acceptance": "Thin glass impact completes and propagates cracks from loading; fracture energy, fragment mass and momentum audited; timestep/mesh refinement; wood does not become glass by naming."
+      },
+      {
+        "id": "R07",
+        "title": "Compact state and repair",
+        "status": "planned",
+        "implementation": "Serialize only supported canonical deformation, damage, plastic/thermal history and topology deltas; render skins from physical state; budget history and reference repair.",
+        "acceptance": "Reload damaged objects exactly within declared tolerance, contact immediately, repair explicitly with resource/energy accounting and bounded state size."
+      },
+      {
+        "id": "R08",
+        "title": "LLM authoring and experiment contracts",
+        "status": "active",
+        "implementation": "LLM emits validated unit-bearing materials, geometries, initial/boundary conditions, supported law compositions, controls and machine-checkable expectations.",
+        "acceptance": "Fresh randomized requests generate unseen parameter sets through the public API and render actual native trajectories; unsupported requirements never silently substitute."
+      },
+      {
+        "id": "R09",
+        "title": "Realtime execution and compiled behaviors",
+        "status": "active",
+        "implementation": "Profile active islands, sleeping regions, compiled law kernels, conservative LOD and state-keyed offline models with applicability/invalidation checks. Keep LLM out of per-frame execution.",
+        "acceptance": "Publish hardware, active interaction counts, p50/p95/p99 cost, memory and overload policy; target 60 Hz total frame with physics budget <=4 ms on declared reference hardware, qualify before promising."
+      },
+      {
+        "id": "R10",
+        "title": "Cross-material release gate",
+        "status": "planned",
+        "implementation": "Run a held-out matrix of known/novel materials, shapes, speeds, thicknesses, temperature/state and histories; preserve energy/phase/fire and other existing goals.",
+        "acceptance": "Required shatter/dent/flex cases plus unseen supported compositions pass without engine edits per material. Evidence includes source/material hashes, direct contact and energy telemetry, refinement and LLM assessment separated from facts."
+      }
+    ],
+    "checkpoint": {
+      "status": "R03 normal-reaction energy correction; R09 performance gate remains open",
+      "base_commit": "ac324fa58a2f276feae4b053a1f942657bde6fef",
+      "evidence": "docs/normal-contact-energy-checkpoint.md",
+      "results": "docs/normal-contact-energy-results.json",
+      "validation": {
+        "native_suites_passed": 62,
+        "native_wall_s": 89.78,
+        "python_tests_run": 142,
+        "python_passed": 141,
+        "python_skipped": 1,
+        "python_wall_s": 6.871
+      },
+      "implemented": [
+        "distinct normal reaction projection diagnostic and physical impact/friction dissipation",
+        "strict unchanged raw half-step and endpoint energy budgets",
+        "tentative failure telemetry and GPT evidence integration"
+      ],
+      "measured": [
+        "matched glass/oak/iron 10.1 ms first contact completes below 200000 calls",
+        "four full fictional-material runs complete with 6.1 to 10.0 times fewer solver calls",
+        "fresh GPT request completes two 101-frame 3D recordings"
+      ],
+      "failed_gates": [
+        "longer stiff material responsiveness",
+        "spatial/unloading accuracy",
+        "stable fracture and finite-strain rebound",
+        "world persistence and realtime qualification"
+      ],
+      "next": "Audit sticking-friction projections and separating-contact reversal, then stiff energy-accounted integration and refinement."
+    },
+    "foundation_checkpoint": {
+      "status": "R01/R02 partial implementation, no goal fully accepted",
+      "native_material_path": "3 supported small-strain laws; no material-name dispatch",
+      "generated_trials": {
+        "seeded_materials": 12,
+        "live_gpt_materials": 3,
+        "analytic_and_rename_checks": "pass"
+      },
+      "dynamic_patch": "inertia, transactional steps, J2 history, explicit stability bound; no contact",
+      "next": "R03 coupled surface contact with energy/impulse audit, then impact-driven deformation; stiff thin structures need timestep strategy",
+      "evidence": "docs/rules-engine-foundation-checkpoint.md",
+      "validation": {
+        "native_suites_passed": 59,
+        "native_wall_s": 86.07,
+        "new_python_tests_passed": 12,
+        "playground_passed": 61,
+        "playground_skipped": 1,
+        "live_llm_materials_passed": 3
+      }
+    },
+    "coupled_contact_checkpoint": {
+      "status": "R01/R02/R03 and impact J2 partially implemented; no goal fully accepted",
+      "base_commit": "77e1db3",
+      "evidence": "docs/coupled-contact-checkpoint.md",
+      "next": "Qualify contact mesh convergence and cumulative energy accuracy, then unload/reload impact geometry; integrate only accepted capabilities into playground.",
+      "native_contact": "Swept sphere/moving triangle, barycentric impulse, spin/friction, explicit losses, atomic commit and bounded work",
+      "limitations": [
+        "small-strain only",
+        "single sphere and patch",
+        "not exposed in playground",
+        "no fracture or finite-strain rubber",
+        "not realtime qualified"
+      ],
+      "validation": {
+        "native_suites_passed": 61,
+        "native_wall_s": 85.94,
+        "affected_suites_after_final_geometry_fix": 3,
+        "geometry_cases": 9,
+        "coupled_cases": 8,
+        "python_material_tests_passed": 12,
+        "full_duration_probes": 10,
+        "spatial_response_gate": "not_converged",
+        "realtime_gate": "not_passed",
+        "measurements": "docs/coupled-contact-results.json"
+      }
+    },
+    "adaptive_contact_checkpoint": {
+      "status": "R02/R03 adaptive temporal budget checkpoint; no whole-platform goal complete",
+      "base_commit": "3b06ce1",
+      "evidence": "docs/adaptive-material-contact-checkpoint.md",
+      "implemented": [
+        "canonical-state rollback with immutable material evaluation cache",
+        "coarse/two-half adaptive advances with global interval indicator/work budgets",
+        "optional velocity Verlet and passive final contact velocity constraints"
+      ],
+      "measured": {
+        "full_duration_s": 0.1,
+        "material_sets": [
+          "fictional linear elastic E1MPa",
+          "fictional J2 E1MPa yield1.2kPa"
+        ],
+        "absolute_energy_budget_j": 3e-06,
+        "maximum_recording_step_calls": 200000,
+        "elastic_absolute_energy_residual_j": 2.0354075724990256e-06,
+        "j2_absolute_energy_residual_j": 2.2211279782233294e-06
+      },
+      "failed_gates": [
+        "fine mesh work budget",
+        "spatial accuracy qualification",
+        "world realtime qualification"
+      ],
+      "next": "Reduce and qualify spatial/contact work under unchanged error budgets; then validate unloaded impact geometry and integrate accepted state/experiments into playground.",
+      "validation": {
+        "native_suites_passed": 62,
+        "native_wall_s": 93.08,
+        "adaptive_cases": 8,
+        "dynamic_cases": 8,
+        "python_material_tests_passed": 12,
+        "default_reference_frames": "exactly_unchanged",
+        "fine_mesh_gate": "work_budget_exhausted",
+        "playground": "unchanged_not_integrated"
+      }
+    },
+    "plate_admission_checkpoint": {
+      "status": "R08 setup and error-reporting correction; full fracture gate remains open",
+      "base_commit": "b4b5c9e7f0b302aa39d19bcf414ff1b784674aa0",
+      "evidence": "docs/plate-admission-checkpoint.md",
+      "reported_job": "f4dc878d9c084365b4444ed557c46080",
+      "repeated_prompt_job": "96ff6a24a4a74a349f0efa6846af9125",
+      "validation": {
+        "python_tests_run": 141,
+        "python_passed": 140,
+        "python_skipped": 1,
+        "python_wall_s": 13.628,
+        "native_changed": false,
+        "native_admission_parity": "passed",
+        "browser": "archived numerical error, prefilled fresh retry, live identical prompt, actual 42-frame playback and solver-limit message"
+      },
+      "result": {
+        "recording_status": "solver_limit",
+        "final_time_s": 0.3416666666666667,
+        "completed_steps": 164,
+        "requested_steps": 480,
+        "broken_links": {
+          "glass": 0,
+          "oak": 0,
+          "iron": 0
+        }
+      },
+      "next": "Resolve stiff contact and stable fracture under convergence and full work accounting; preserve all original goals."
+    },
+    "dynamic_material_playground_checkpoint": {
+      "status": "R08 bounded dynamic material playground implementation; no whole-platform goal complete",
+      "base_commit": "88d88d342e77fac4844d52b9e0ca1d47d9d39fdf",
+      "evidence": "docs/dynamic-material-playground-checkpoint.md",
+      "implemented": [
+        "strict numeric material/geometry request through shared native parser",
+        "accepted sphere and tetrahedral playback with generated bounded controls",
+        "persistent per-material contact/work/energy evidence and live GPT review"
+      ],
+      "validation": {
+        "native_suites_passed": 62,
+        "native_wall_s": 93.83,
+        "python_tests_run": 131,
+        "python_passed": 130,
+        "python_skipped": 1,
+        "python_wall_s": 13.46,
+        "browser": "actual prompt -> native -> auto 3D, 101-frame timeline, playback and steps, components/reference/X-ray, archived restoration, live GPT evidence review; no page errors",
+        "live_model": "gpt-5-mini",
+        "live_request_count": 4,
+        "live_complete_material_runs": 4,
+        "live_partial_material_runs": 2,
+        "unsupported_blocked_requests": 1
+      },
+      "failed_gates": [
+        "stiff glass/oak/iron work budget near contact",
+        "mesh accuracy and unloaded dent qualification",
+        "fracture and finite-strain rubber",
+        "shared world persistence and realtime release"
+      ],
+      "next": "Reduce and qualify stiff/contact integration cost while preserving error budgets; extend spatial/unloading acceptance and expected-outcome instrumentation."
+    },
+    "parallel_physics_checkpoint": {
+      "status": "R03/R06 dependencies advanced; no full goal complete",
+      "evidence": "docs/parallel-physics-checkpoint.md",
+      "results": "docs/parallel-physics-results.json",
+      "next": "Integrate cohesive forces and accepted topology with dynamics/contact before new 3D fracture playback."
+    },
+    "finite_rotation_parallel_checkpoint": {
+      "status": "bounded_dependencies_verified_no_full_goal_complete",
+      "evidence": "docs/finite-rotation-parallel-checkpoint.md",
+      "next": "Energy-consistent compressed fracture handoff, continued fragment and blade contact, coupled dent unloading and thermal/mechanical state."
+    }
+  },
+  "parallel_execution": {
+    "status": "parallel_batches_verified_full_physics_acceptance_open",
+    "assignment_date": "2026-09-06",
+    "workstream_contract": "docs/parallel-physics-workstreams.md",
+    "worker_limit": 4,
+    "first_visual_milestone": "Complete iron-ball/glass fracture and continued fragment contacts in actual 3D; retain oak and iron controls.",
+    "lanes": [
+      {
+        "owner": "primary",
+        "category": "glass_fracture_integration",
+        "assignment": "objective_dynamics_compressed_fracture_handoff_evidence",
+        "status": "rotation_coupons_pass_actual_impact_contact_handoff_open",
+        "next": "conservative_fragment_contact_then_damage_event_refinement"
+      },
+      {
+        "owner": "surface_contact_geometry",
+        "category": "metal_deformation",
+        "assignment": "complete_snapshot_restore_and_unloaded_equilibrium_coupon",
+        "status": "300_step_bitwise_restart_and_zero_load_J2_elastic_comparison_pass",
+        "next": "coupled_sphere_dent_unload_and_bounded_binary_codec"
+      },
+      {
+        "owner": "sphere_patch_acceptance",
+        "category": "cutting",
+        "assignment": "rotated_confined_tearing_and_segment_triangle_geometry",
+        "status": "constitutive_and_static_geometry_pass_full_blade_tissue_open",
+        "next": "continuous_blade_contact_and_finite_strain_tissue"
+      },
+      {
+        "owner": "dynamic_patch",
+        "category": "fire_thermal",
+        "assignment": "actual_GPT_thermal_archive_and_3D_cell_inspection",
+        "status": "reactive_and_matched_inert_live_jobs_pass",
+        "next": "thermal_mechanical_coupling_and_broader_validated_materials"
+      }
+    ],
+    "handoff_policy": "On assignment completion, review and assign the next independent bounded dependency. File owners do not edit shared build/docs; primary integrates and publishes verified changes.",
+    "open_gates": [
+      "mixed_mode_fracture",
+      "finite_rotation_fragments",
+      "fragment_contact",
+      "blade_and_soft_tissue",
+      "thermal_mechanical_coupling",
+      "realtime_qualification",
+      "full_duration_coupled_fracture",
+      "damage_event_contact_timing",
+      "unloaded_dent_equilibrium",
+      "restartable_coupled_material_state"
+    ],
+    "checkpoint": "docs/parallel-physics-checkpoint.md",
+    "verification": {
+      "full_build": "passed",
+      "native_suites_passed": 67,
+      "native_wall_s": 92.54,
+      "python_tests_run": 142,
+      "python_passed": 141,
+      "python_skipped": 1,
+      "python_wall_s": 6.697,
+      "interactive_3d": "unchanged; no new shatter playback"
+    },
+    "latest_checkpoint": "docs/finite-rotation-parallel-checkpoint.md",
+    "latest_verification": {
+      "native_full_suite_passed": 77,
+      "native_full_suite_duration_s": 95.65,
+      "additional_native_suites_passed": 2,
+      "additional_native_duration_s": 0.12,
+      "total_native_suites_covered": 79,
+      "python_discovered": 165,
+      "python_passed": 164,
+      "python_skipped": 1,
+      "python_duration_s": 10.966,
+      "javascript_syntax": "passed",
+      "interactive_3d": "thermal play/reset/scrub/controls/current-cell inspection verified",
+      "physical_acceptance": "unfinished"
+    },
+    "latest_thermal_jobs": [
+      "bd17a88380a147d78cbef4041d89d31f",
+      "6ef80b0441dd46059bf7ef7c6c7efb53"
+    ]
   }
- },
- "parallel_execution": {
-  "status": "parallel_batches_verified_full_physics_acceptance_open",
-  "assignment_date": "2026-09-06",
-  "workstream_contract": "docs/parallel-physics-workstreams.md",
-  "worker_limit": 4,
-  "first_visual_milestone": "Complete iron-ball/glass fracture and continued fragment contacts in actual 3D; retain oak and iron controls.",
-  "lanes": [
-   {
-    "owner": "primary",
-    "category": "glass_fracture_integration",
-    "assignment": "objective_dynamics_compressed_fracture_handoff_evidence",
-    "status": "rotation_coupons_pass_actual_impact_contact_handoff_open",
-    "next": "conservative_fragment_contact_then_damage_event_refinement"
-   },
-   {
-    "owner": "surface_contact_geometry",
-    "category": "metal_deformation",
-    "assignment": "complete_snapshot_restore_and_unloaded_equilibrium_coupon",
-    "status": "300_step_bitwise_restart_and_zero_load_J2_elastic_comparison_pass",
-    "next": "coupled_sphere_dent_unload_and_bounded_binary_codec"
-   },
-   {
-    "owner": "sphere_patch_acceptance",
-    "category": "cutting",
-    "assignment": "rotated_confined_tearing_and_segment_triangle_geometry",
-    "status": "constitutive_and_static_geometry_pass_full_blade_tissue_open",
-    "next": "continuous_blade_contact_and_finite_strain_tissue"
-   },
-   {
-    "owner": "dynamic_patch",
-    "category": "fire_thermal",
-    "assignment": "actual_GPT_thermal_archive_and_3D_cell_inspection",
-    "status": "reactive_and_matched_inert_live_jobs_pass",
-    "next": "thermal_mechanical_coupling_and_broader_validated_materials"
-   }
-  ],
-  "handoff_policy": "On assignment completion, review and assign the next independent bounded dependency. File owners do not edit shared build/docs; primary integrates and publishes verified changes.",
-  "open_gates": [
-   "mixed_mode_fracture",
-   "finite_rotation_fragments",
-   "fragment_contact",
-   "blade_and_soft_tissue",
-   "thermal_mechanical_coupling",
-   "realtime_qualification",
-   "full_duration_coupled_fracture",
-   "damage_event_contact_timing",
-   "unloaded_dent_equilibrium",
-   "restartable_coupled_material_state"
-  ],
-  "checkpoint": "docs/parallel-physics-checkpoint.md",
-  "verification": {
-   "full_build": "passed",
-   "native_suites_passed": 67,
-   "native_wall_s": 92.54,
-   "python_tests_run": 142,
-   "python_passed": 141,
-   "python_skipped": 1,
-   "python_wall_s": 6.697,
-   "interactive_3d": "unchanged; no new shatter playback"
-  },
-  "latest_checkpoint": "docs/finite-rotation-parallel-checkpoint.md",
-  "latest_verification": {
-   "native_full_suite_passed": 77,
-   "native_full_suite_duration_s": 95.65,
-   "additional_native_suites_passed": 2,
-   "additional_native_duration_s": 0.12,
-   "total_native_suites_covered": 79,
-   "python_discovered": 165,
-   "python_passed": 164,
-   "python_skipped": 1,
-   "python_duration_s": 10.966,
-   "javascript_syntax": "passed",
-   "interactive_3d": "thermal play/reset/scrub/controls/current-cell inspection verified",
-   "physical_acceptance": "unfinished"
-  },
-  "latest_thermal_jobs": [
-   "bd17a88380a147d78cbef4041d89d31f",
-   "6ef80b0441dd46059bf7ef7c6c7efb53"
-  ]
- }
 }
