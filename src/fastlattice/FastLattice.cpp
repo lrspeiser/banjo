@@ -66,6 +66,8 @@ LatticeState buildLatticeState(
     s.alive.resize(bond_count);
     s.failure_mode.resize(bond_count);
     s.damage.resize(bond_count);
+    s.plastic_extension.assign(bond_count, 0.0);
+    s.plastic_strain.assign(bond_count, 0.0);
     s.prev_tensile.assign(bond_count, 0.0);
     s.prev_compressive.assign(bond_count, 0.0);
     s.prev_shear.assign(bond_count, 0.0);
@@ -169,6 +171,33 @@ void writeBackLatticeState(
         any_dead = any_dead || !bond.alive;
     }
     if (any_dead) matter.connectivity_dirty = true;
+}
+
+double latticeStateElasticEnergy(const LatticeState &state) {
+    double total = 0.0;
+    for (std::size_t k = 0; k < state.bond_count; ++k) {
+        if (!state.alive[k]) continue;
+        const double c = state.compliance[k];
+        if (!(c > 0.0)) continue;
+        const std::uint32_t a = state.bond_a[k], b = state.bond_b[k];
+        const Vec3 delta{state.x0[3 * b] + state.u[3 * b] - state.x0[3 * a] - state.u[3 * a],
+                         state.x0[3 * b + 1] + state.u[3 * b + 1] - state.x0[3 * a + 1] - state.u[3 * a + 1],
+                         state.x0[3 * b + 2] + state.u[3 * b + 2] - state.x0[3 * a + 2] - state.u[3 * a + 2]};
+        const double extension = length(delta) - state.rest_length[k] - state.plastic_extension[k];
+        total += 0.5 * extension * extension / c;
+    }
+    return total;
+}
+
+double latticeStateKineticEnergy(const LatticeState &state) {
+    double total = 0.0;
+    for (std::size_t i = 0; i < state.node_count; ++i) {
+        const double speed_squared = state.v[3 * i] * state.v[3 * i] +
+                                     state.v[3 * i + 1] * state.v[3 * i + 1] +
+                                     state.v[3 * i + 2] * state.v[3 * i + 2];
+        total += 0.5 * state.mass[i] * speed_squared;
+    }
+    return total;
 }
 
 } // namespace banjo::fastlattice

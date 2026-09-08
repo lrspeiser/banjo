@@ -245,13 +245,21 @@ private:
     // one shared line: with them adjacent the phase did not scale at all
     // (1.08x on sixteen threads), with them apart it does.
     struct alignas(64) Scratch {
-        float tensile{}, compressive{}, shear{};
+        float tensile{}, compressive{}, shear{}, plastic{};
         std::uint32_t degenerate{};
         // Pairs the broad phase could not store, summed as integers, which is
         // order independent.
         std::uint32_t pair_overflow{};
+        // Plastic work this thread's bonds dissipated in the substep. Unlike the
+        // breakages below this is a partial sum rather than a replay, so the
+        // total differs from the serial backend's by summation order alone --
+        // the same statement the CUDA backend's atomic sum of the removed
+        // fracture energy already carries. The per-bond plastic state itself is
+        // bit identical, because each bond's mapping reads and writes only its
+        // own slots.
+        double plastic_work_j{};
         std::vector<Breakage> breakages;
-        char padding[64 - ((3 * sizeof(float) + 2 * sizeof(std::uint32_t) +
+        char padding[64 - ((4 * sizeof(float) + 2 * sizeof(std::uint32_t) + sizeof(double) +
                             sizeof(std::vector<Breakage>)) % 64)]{};
     };
 
@@ -406,16 +414,19 @@ private:
         forEach(N, [&](std::uint32_t i, unsigned thread) { nodeStrain(views_[thread], i, direct); });
         mark(11);
         for (Scratch &scratch : scratch_) {
-            scratch.tensile = scratch.compressive = scratch.shear = 0.0F;
+            scratch.tensile = scratch.compressive = scratch.shear = scratch.plastic = 0.0F;
+            scratch.plastic_work_j = 0.0;
             scratch.breakages.clear();
         }
         forEach(B, [&](std::uint32_t j, unsigned thread) {
             if (!L_.alive[j]) return;
-            const FailureOutcome out = bondEndSampleAndFailure(views_[thread], j, direct);
+            const FailureOutcome out = bondEndSampleAndFailure(views_[thread], S_, j, direct);
             Scratch &scratch = scratch_[thread];
             scratch.tensile = std::max(scratch.tensile, out.peak_tensile);
             scratch.compressive = std::max(scratch.compressive, out.peak_compressive);
             scratch.shear = std::max(scratch.shear, out.peak_shear);
+            scratch.plastic = std::max(scratch.plastic, out.plastic_stretch);
+            scratch.plastic_work_j += out.plastic_increment_j;
             if (out.broke) scratch.breakages.push_back({j, out.removed_energy_j});
         });
         // Serial replay in bond index order: the slices are contiguous and
@@ -426,6 +437,8 @@ private:
             status_.max_tensile_stretch = std::max(status_.max_tensile_stretch, scratch.tensile);
             status_.max_compressive_strain = std::max(status_.max_compressive_strain, scratch.compressive);
             status_.max_shear_strain = std::max(status_.max_shear_strain, scratch.shear);
+            status_.max_plastic_stretch = std::max(status_.max_plastic_stretch, scratch.plastic);
+            status_.plastic_work_j += scratch.plastic_work_j;
         }
         for (const Scratch &scratch : scratch_) {
             for (const Breakage &broken : scratch.breakages) {

@@ -257,6 +257,14 @@ struct StepSettings {
     // contact passes, so the dissipation of each can be reported separately.
     // Two serial passes over the nodes per substep; off by default.
     std::uint8_t audit_energy;
+    // Axial plastic flow (bondPlasticReturn). Zero -- the default, and what
+    // every material that declares no yield strength compiles to -- disables it:
+    // no bond ever takes a permanent extension, plastic_extension stays zero and
+    // every expression below reduces to the elastic one, bit for bit.
+    // yield_stretch is the declared yield strength over the Young modulus; see
+    // material/Material.hpp CompiledBrittleMaterial::yield_stretch.
+    Real plastic_yield_stretch;
+    Real plastic_hardening;
     ContactSettings<Real> contact;
     NodeContactSettings<Real> node_contact;
     SupportSet<Real> support;
@@ -319,6 +327,14 @@ struct LatticeArrays {
     Real *damage;
     std::uint8_t *failure_mode; // 0 none, 1 tension, 2 compression, 3 shear
     Real *accumulated_lambda;   // B
+    // Axial plastic state, one bond each. plastic_extension is the signed
+    // permanent extension: the bond's rest length is rest_length + this, and the
+    // elastic extension it stores energy in is measured from there.
+    // plastic_strain is the accumulated magnitude of the flow, which is what
+    // linear isotropic hardening raises the yield extension with. Both stay
+    // exactly zero unless StepSettings::plastic_yield_stretch is positive.
+    Real *plastic_extension;    // B
+    Real *plastic_strain;       // B
     Real *prev_tensile;         // B   values at the substep start
     Real *prev_compressive;
     Real *prev_shear;
@@ -678,13 +694,75 @@ BANJO_HD Real damageProgress(Real value, Real start, Real end) {
     return p < Real(0) ? Real(0) : (p > Real(1) ? Real(1) : p);
 }
 
-// BondFailure.cpp storedBondEnergy at the current configuration.
+// ---------------------------------------------------------------------------
+// Axial plasticity (material/NetworkMaterial.cpp advanceNetworkBond).
+// ---------------------------------------------------------------------------
+// The bond's recoverable extension: how far it is stretched past the rest
+// length it has NOW, which is its original rest length plus whatever permanent
+// extension it has taken. With plastic_extension zero this is
+// `length - rest_length`, the expression storedBondEnergy has always used, and
+// `x - 0` is x for every finite x, so the elastic lane is unchanged bit for bit.
+template <typename Real>
+BANJO_HD Real bondElasticExtension(const LatticeArrays<Real> &L, std::uint32_t j, bool direct) {
+    return length(bondVector(L, j, direct)) - L.rest_length[j] - L.plastic_extension[j];
+}
+
+// BondFailure.cpp storedBondEnergy at the current configuration, on the elastic
+// extension: plastic work is dissipated, so it is never stored here.
 template <typename Real>
 BANJO_HD Real storedBondEnergy(const LatticeArrays<Real> &L, std::uint32_t j, bool direct) {
     const Real c = L.compliance[j];
     if (c <= Real(0)) return Real(0);
-    const Real extension = length(bondVector(L, j, direct)) - L.rest_length[j];
+    const Real extension = bondElasticExtension(L, j, direct);
     return Real(0.5) * extension * extension / c;
+}
+
+// One bond's return mapping, run once per substep. This is
+// advanceNetworkBond's plasticity block (NetworkMaterial.cpp lines 106-117) on
+// this lattice's bond, with two stated departures:
+//
+//  - the yield extension is `yield_stretch * rest_length` where the network lane
+//    divides `yield_force_n` by the bond stiffness. The two are the same number
+//    whenever the stiffness is E A / L; this lattice's is not, so the quotient
+//    form is the one that gives every bond of the bond family the same yield
+//    strain (material/Material.hpp CompiledBrittleMaterial::yield_stretch);
+//  - linear isotropic hardening is carried through. The network lane declares
+//    `hardening_ratio` and then validates that it is exactly zero, so nothing
+//    there exercises it; with `plastic_hardening` zero every line below is the
+//    network lane's, including the plastic work, which is then
+//    `yield_force * increment` exactly.
+//
+// The mapping runs once per substep rather than once per constraint iteration,
+// so the flow this substep does not depend on how many iterations the solve
+// takes. Within one substep the bond can carry more than the yield force -- the
+// solve sees the plastic extension it started the substep with -- and the
+// overshoot is bounded by how far the load can move in one substep. That is the
+// usual explicit-integration statement, and it is why the elastic extension is
+// at most the yield extension at every substep boundary.
+//
+// Returns the plastic work dissipated, which is never stored anywhere as
+// elastic energy.
+template <typename Real>
+BANJO_HD Real bondPlasticReturn(const LatticeArrays<Real> &L, const StepSettings<Real> &S,
+                                std::uint32_t j, bool direct) {
+    if (!(S.plastic_yield_stretch > Real(0))) return Real(0);
+    const Real elastic = bondElasticExtension(L, j, direct);
+    const Real magnitude = absR(elastic);
+    const Real hardening = S.plastic_hardening;
+    const Real yield_extension =
+        S.plastic_yield_stretch * L.rest_length[j] + hardening * L.plastic_strain[j];
+    if (!(magnitude > yield_extension)) return Real(0);
+    // |e| - increment = yield + hardening * increment.
+    const Real increment = (magnitude - yield_extension) / (Real(1) + hardening);
+    L.plastic_extension[j] =
+        L.plastic_extension[j] + (elastic < Real(0) ? -increment : increment);
+    L.plastic_strain[j] = L.plastic_strain[j] + increment;
+    const Real c = L.compliance[j];
+    if (!(c > Real(0))) return Real(0);
+    // Mean yield force over the increment. With no hardening the two ends are
+    // the same number, so this is the network lane's yield_force_n * increment.
+    const Real yield_end = yield_extension + hardening * increment;
+    return Real(0.5) * (yield_extension + yield_end) * increment / c;
 }
 
 struct FailureOutcome {
@@ -693,14 +771,30 @@ struct FailureOutcome {
     std::uint8_t mode;
     // The substep's peaks for this bond, for diagnostics.
     float peak_tensile, peak_compressive, peak_shear;
+    // Plastic work dissipated by this bond in this substep, and the permanent
+    // extension it now carries as a fraction of its rest length.
+    double plastic_increment_j;
+    float plastic_stretch;
 };
 
-// End-of-substep evaluation for one bond: peaks are the maximum of the start
-// sample (prev_*) and the sample at the current configuration; then
-// evaluateBondDamage and the removal rule of applyBondFailure.
+// End-of-substep evaluation for one bond: the plastic return mapping first, as
+// advanceNetworkBond does it before its own failure test; then the peaks, which
+// are the maximum of the start sample (prev_*) and the sample at the current
+// configuration; then evaluateBondDamage and the removal rule of
+// applyBondFailure.
+//
+// The failure surface reads the bond's TOTAL deformation, exactly as before:
+// plasticity adds no failure law and changes no threshold. A bond that has flowed
+// has spent part of the same stretch budget the criterion measures, which is the
+// statement that this lattice's ductile matter ruptures at a total strain.
 template <typename Real>
-BANJO_HD FailureOutcome bondEndSampleAndFailure(const LatticeArrays<Real> &L, std::uint32_t j, bool direct) {
-    FailureOutcome out{false, 0.0, 0, 0.0F, 0.0F, 0.0F};
+BANJO_HD FailureOutcome bondEndSampleAndFailure(const LatticeArrays<Real> &L, const StepSettings<Real> &S,
+                                                std::uint32_t j, bool direct) {
+    FailureOutcome out{false, 0.0, 0, 0.0F, 0.0F, 0.0F, 0.0, 0.0F};
+    if (S.plastic_yield_stretch > Real(0)) {
+        out.plastic_increment_j = static_cast<double>(bondPlasticReturn(L, S, j, direct));
+        out.plastic_stretch = static_cast<float>(absR(L.plastic_extension[j]) / L.rest_length[j]);
+    }
     Real tensile, compressive, shear;
     bondStrainSample(L, j, direct, tensile, compressive, shear);
     // resetBondStrainPeaks zeroes the peaks before the start sample, so the
@@ -764,14 +858,24 @@ BANJO_HD void bondSolve(const LatticeArrays<Real> &L, std::uint32_t j, Real dt, 
     const V3<Real> delta = bondVector(L, j, direct);
     const Real current_length = length(delta);
     if (current_length <= Real(1.0e-12)) return;
-    const Real rest = L.rest_length[j];
+    // The bond pulls towards the rest length it has now: the original one plus
+    // whatever permanent extension it has taken (zero for every material that
+    // declares no yield strength). Unloading therefore returns it to the new
+    // rest length, not the original one, which is what makes a dent stay.
+    const Real original_rest = L.rest_length[j];
+    const Real plastic = L.plastic_extension[j];
+    const Real rest = original_rest + plastic;
     Real constraint;
     if (direct) {
         constraint = current_length - rest;
     } else {
         const V3<Real> du = load3(L.u, b) - load3(L.u, a);
         const V3<Real> r = load3(L.rest_edge, j);
-        constraint = (L.rest_length_sq_minus[j] + Real(2) * dot(r, du) + dot(du, du)) /
+        // |d|^2 - rest^2 = (|d|^2 - original^2) - plastic * (rest + original),
+        // keeping the cancellation-free numerator of the displacement path and
+        // reducing to it exactly when the plastic extension is zero.
+        constraint = (L.rest_length_sq_minus[j] + Real(2) * dot(r, du) + dot(du, du) -
+                      plastic * (rest + original_rest)) /
                      (current_length + rest);
     }
     const V3<Real> direction = delta / current_length;
@@ -1272,6 +1376,20 @@ BANJO_HD double latticeKineticEnergy(const LatticeArrays<Real> &L) {
     double total = 0.0;
     for (std::uint32_t i = 0; i < L.node_count; ++i)
         total += static_cast<double>(Real(0.5) * L.mass[i] * length2(load3(L.v, i)));
+    return total;
+}
+
+// Elastic energy stored in the live bonds, serial so the sum is in bond order
+// on every backend. Plastic work is not in it: storedBondEnergy measures the
+// recoverable extension only, so a bond that has flowed and then unloaded to its
+// new rest length stores nothing. Used by the energy ledger.
+template <typename Real>
+BANJO_HD double latticeElasticEnergy(const LatticeArrays<Real> &L, bool direct) {
+    double total = 0.0;
+    for (std::uint32_t j = 0; j < L.bond_count; ++j) {
+        if (!L.alive[j]) continue;
+        total += static_cast<double>(storedBondEnergy(L, j, direct));
+    }
     return total;
 }
 

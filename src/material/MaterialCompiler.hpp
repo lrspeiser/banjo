@@ -29,6 +29,21 @@ namespace banjo {
 [[nodiscard]] CompiledBrittleMaterial withStrengthDerivedFailure(
     CompiledBrittleMaterial compiled, const MaterialDefinition &material);
 
+// Add axial plastic flow to an already-compiled lattice material, from the
+// declared yield strength and hardening ratio, the way the network lane derives
+// its yield force (material/NetworkMaterial.cpp directionalNetworkParameters:
+// yield_force_n = yield_strength_pa * area, so the yield extension is
+// yield_force_n / (E A / L) = yield_strength_pa * L / E).  Here the quotient is
+// stored instead of the force, because the lattice's bond stiffness is not
+// E A / L; see CompiledBrittleMaterial::yield_stretch.
+//
+// A material that declares no yield strength (or a non-positive one) is
+// returned unchanged with yield_stretch zero, which disables the plastic law
+// entirely. This adds no failure law, changes no threshold and touches neither
+// of the two failure laws above.
+[[nodiscard]] CompiledBrittleMaterial withPlasticFlow(
+    CompiledBrittleMaterial compiled, const MaterialDefinition &material);
+
 // The bond geometry of a cubic lattice with a grid horizon of m cells, as
 // matter/Lattice.cpp builds it: every integer offset o with 1 <= |o| <= m,
 // each unordered pair counted once ("half offsets", one per bond of an

@@ -56,6 +56,20 @@ struct TileImpactRequest {
     // EnergyScaled derives the removal stretch from Gc, the horizon and the
     // cell size (docs/criterion-energy-scaled-checkpoint.md).
     BondFailureLaw failure_law{BondFailureLaw::StrainThreshold};
+    // Axial plastic flow in the bond solve, compiled from the tile material's
+    // declared yield strength (material/MaterialCompiler.hpp withPlasticFlow;
+    // fastlattice/LatticePhysics.hpp bondPlasticReturn).
+    //
+    // OFF BY DEFAULT, deliberately. With it off no bond can take a permanent
+    // extension whatever the material declares, and the lane reproduces
+    // b778517 bit for bit for every preset -- including oak and rubber, which
+    // declare a yield strength the elastic-plus-damage lane has always ignored.
+    // Turning it on is a change of constitutive model, so it is asked for.
+    bool plasticity{false};
+    // Linear isotropic hardening, tangent modulus over Young modulus. Negative
+    // keeps what the material declares, which is 0 (perfect plasticity) for
+    // every catalog preset and the only value the network lane admits.
+    double hardening_ratio{-1.0};
     double node_contact_radius_factor{0.5}; // node contact radius = factor * cell
     NodeContactMode node_contact{NodeContactMode::On};
     // Extra height of the tile above its support at t = 0.
@@ -191,6 +205,28 @@ struct TileImpactMeasurements {
     NodeContactAccumulators node_contact{};
     double damping_dissipated_j{}, striker_dissipated_j{};
     bool energy_audited{};
+    // Plasticity: the compiled law, the work it dissipated and what it left.
+    bool plasticity_enabled{};
+    double yield_stretch{}, plastic_hardening_ratio{}, yield_strength_pa{};
+    double plastic_work_j{};
+    float max_plastic_stretch{};
+    std::size_t plastic_bonds{};      // bonds carrying a permanent extension
+    double plastic_extension_total_m{}; // sum of |permanent extension|
+    // Energy at the end of the lattice phase: what the bonds still store
+    // elastically (plastic work is not in it), and the lattice's kinetic
+    // energy, both from the downloaded state.
+    double elastic_energy_j{}, lattice_kinetic_j{}, initial_kinetic_j{};
+    // Permanent deformation, measured over the last third of the lattice-phase
+    // frames because the reference route has no bond damping and an undamped
+    // plate rings for the whole phase. Deflections are signed, downward
+    // negative, against each node's own t = 0 height.
+    //   strike_*        : the node nearest the strike axis
+    //   plate_*         : the mean over every node
+    //   dent_depth_m    : plate mean minus strike mean, positive when the strike
+    //                     point sits below the plate as a whole
+    double strike_deflection_mean_m{}, strike_deflection_amplitude_m{};
+    double plate_deflection_mean_m{}, dent_depth_m{};
+    std::size_t dent_frames{};
     std::size_t components{}, rigid_fragments{}, debris_particles{};
     double largest_piece_mass_kg{};
     std::size_t largest_piece_cells{};

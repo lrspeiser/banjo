@@ -26,6 +26,7 @@ struct WorkingLattice {
     std::vector<Real> rest_edge, rest_length, rest_length_sq_minus, weight, compliance, threshold;
     std::vector<std::uint8_t> alive, failure_mode;
     std::vector<Real> damage, accumulated_lambda, prev_tensile, prev_compressive, prev_shear;
+    std::vector<Real> plastic_extension, plastic_strain;
     std::vector<std::uint32_t> range_begin, range_end, bond_block_begin;
     std::vector<std::uint32_t> candidate_list, candidate_count;
     std::vector<std::uint32_t> rank_deficient_nodes; // 1 counter
@@ -83,6 +84,8 @@ struct WorkingLattice {
         w.failure_mode = state.failure_mode;
         w.damage = cast(state.damage);
         w.accumulated_lambda.assign(state.bond_count, Real(0));
+        w.plastic_extension = cast(state.plastic_extension);
+        w.plastic_strain = cast(state.plastic_strain);
         w.prev_tensile = cast(state.prev_tensile);
         w.prev_compressive = cast(state.prev_compressive);
         w.prev_shear = cast(state.prev_shear);
@@ -117,6 +120,8 @@ struct WorkingLattice {
         state.alive = alive;
         state.failure_mode = failure_mode;
         widen(damage, state.damage);
+        widen(plastic_extension, state.plastic_extension);
+        widen(plastic_strain, state.plastic_strain);
         widen(prev_tensile, state.prev_tensile);
         widen(prev_compressive, state.prev_compressive);
         widen(prev_shear, state.prev_shear);
@@ -166,6 +171,8 @@ struct WorkingLattice {
         a.damage = damage.data();
         a.failure_mode = failure_mode.data();
         a.accumulated_lambda = accumulated_lambda.data();
+        a.plastic_extension = plastic_extension.data();
+        a.plastic_strain = plastic_strain.data();
         a.prev_tensile = prev_tensile.data();
         a.prev_compressive = prev_compressive.data();
         a.prev_shear = prev_shear.data();
@@ -221,6 +228,8 @@ template <typename Real>
     out.sphere_enabled = s.sphere_enabled;
     out.direct_arithmetic = s.direct_arithmetic;
     out.audit_energy = s.audit_energy;
+    out.plastic_yield_stretch = static_cast<Real>(s.plastic_yield_stretch);
+    out.plastic_hardening = static_cast<Real>(s.plastic_hardening);
     out.node_contact.mode = s.node_contact.mode;
     out.node_contact.radius = static_cast<Real>(s.node_contact.radius);
     out.node_contact.skin = static_cast<Real>(s.node_contact.skin);

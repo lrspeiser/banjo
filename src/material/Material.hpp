@@ -42,6 +42,11 @@ struct MaterialDefinition {
     double young_modulus_pa{};
     double poisson_ratio{};
     double yield_strength_pa{};
+    // Tangent modulus after yield as a fraction of the Young modulus. 0 is
+    // perfect plasticity, which is the only value material/NetworkMaterial.cpp
+    // admits and the value every catalog preset declares; a caller that wants
+    // linear isotropic hardening declares it here.
+    double hardening_ratio{};
     double tensile_strength_pa{};
     double compressive_strength_pa{};
     double shear_strength_pa{};
@@ -91,6 +96,27 @@ struct CompiledBrittleMaterial {
     BondFailureLaw failure_law{BondFailureLaw::StrainThreshold};
     double energy_scaled_stretch{};
     bool strength_bound_active{};
+
+    // Axial plastic flow, the law of material/NetworkMaterial.cpp
+    // advanceNetworkBond expressed on a bond of this lattice. A bond carries a
+    // permanent extension p; its elastic extension is (current length - rest
+    // length - p) and it yields when that reaches
+    //     yield_stretch * rest_length + plastic_hardening_ratio * kappa,
+    // where kappa is the plastic extension accumulated so far. Beyond yield the
+    // excess becomes permanent and the work it costs is dissipated.
+    //
+    // yield_stretch is zero unless the caller asks for the plastic law
+    // (MaterialCompiler withPlasticFlow), and zero disables every line of it:
+    // p stays zero, the XPBD constraint is the elastic one and the lane is what
+    // it was, bit for bit. It is a stretch rather than a force because the
+    // lattice's bond stiffness is a peridynamic family weight E h / (m |o|^2)
+    // rather than E A / L, and only the quotient yield_strength / E gives every
+    // bond of the family the same yield strain -- the currency the failure
+    // surface above is already stated in. On a bond whose stiffness is E A / L
+    // the two forms are identical: yield_stretch * L * (E A / L) = sigma_y * A,
+    // which is the network lane's yield_force_n.
+    double yield_stretch{};
+    double plastic_hardening_ratio{};
 };
 
 struct CompiledContactMaterial {

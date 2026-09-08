@@ -107,6 +107,23 @@ CompiledBrittleMaterial withStrengthDerivedFailure(
     return compiled;
 }
 
+CompiledBrittleMaterial withPlasticFlow(
+    CompiledBrittleMaterial compiled, const MaterialDefinition &material) {
+    if (!std::isfinite(material.young_modulus_pa) || material.young_modulus_pa <= 0.0)
+        throw std::invalid_argument("plastic flow needs a valid elastic material");
+    if (!std::isfinite(material.yield_strength_pa) || material.yield_strength_pa < 0.0 ||
+        !std::isfinite(material.hardening_ratio) || material.hardening_ratio < 0.0)
+        throw std::invalid_argument("yield strength and hardening ratio must be finite and non-negative");
+    if (material.yield_strength_pa <= 0.0) {
+        compiled.yield_stretch = 0.0;
+        compiled.plastic_hardening_ratio = 0.0;
+        return compiled;
+    }
+    compiled.yield_stretch = material.yield_strength_pa / material.young_modulus_pa;
+    compiled.plastic_hardening_ratio = material.hardening_ratio;
+    return compiled;
+}
+
 LatticeHorizonGeometry latticeHorizonGeometry(unsigned neighbor_horizon_cells) {
     if (neighbor_horizon_cells == 0U) {
         throw std::invalid_argument("lattice horizon must be at least one cell");

@@ -56,6 +56,12 @@ void usage() {
         "  --iterations N                constraint iterations per substep (default 1)\n"
         "  --catalog                     glass: catalog BrittleBond route (variation, damping)\n"
         "  --failure-law LAW             strain-threshold (default) or energy-scaled\n"
+        "  --plasticity on|off           axial plastic flow from the declared yield strength\n"
+        "                                (default off: the elastic-plus-damage lane, bit for\n"
+        "                                 bit, whatever the material declares)\n"
+        "  --hardening R                 linear isotropic hardening, tangent modulus over the\n"
+        "                                Young modulus (default: what the material declares,\n"
+        "                                 which is 0, perfect plasticity, for every preset)\n"
         "  --node-radius-factor F        node contact radius = F * cell (default 0.5)\n"
         "  --node-contact on|measure|off node-to-node contact in the lattice phase\n"
         "                                (default on; measure records the overlap and\n"
@@ -110,6 +116,11 @@ int main(int argc, char **argv) {
             else if (option == "--iterations") request.constraint_iterations = static_cast<unsigned>(number(value()));
             else if (option == "--catalog") request.catalog_material = true;
             else if (option == "--failure-law") request.failure_law = parseBondFailureLaw(value());
+            else if (option == "--plasticity") { const auto v = value();
+                if (v == "on") request.plasticity = true;
+                else if (v == "off") request.plasticity = false;
+                else throw std::invalid_argument("--plasticity takes on or off"); }
+            else if (option == "--hardening") request.hardening_ratio = number(value());
             else if (option == "--node-radius-factor") request.node_contact_radius_factor = number(value());
             else if (option == "--node-contact") { const auto v = value();
                 if (v == "off") request.node_contact = NodeContactMode::Off;
