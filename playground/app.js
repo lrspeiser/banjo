@@ -440,6 +440,9 @@
       onPlayState: (playing) => { $("viewer-play").textContent=playing?"Pause":"Play"; },
       onInspect: (data) => { $("viewer-inspect").textContent = data ? Object.entries(data).filter(([k,v]) => k !== "source" && typeof v !== "object").slice(0,16).map(([k,v])=>`${k}: ${text(v)}`).join(" · ") : "Nothing selected."; },
     });
+    // One handle so a frame of the running viewer can be captured from
+    // outside it: the same rendering the owner is watching, not a redraw.
+    window.banjoViewer = state.scene;
     return state.scene;
   }
 

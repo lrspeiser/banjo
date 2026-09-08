@@ -47,7 +47,11 @@ function create(container, hooks = {}) {
     mouse = new THREE.Vector2();
   ray.params.Line.threshold = 0.004;
   try {
-    renderer = new THREE.WebGLRenderer({ antialias: true });
+    // preserveDrawingBuffer keeps the rendered frame readable after the
+    // compositor has taken it, which is what makes captureFrame() below
+    // possible. A published result that cannot be shown outside the tab it
+    // was rendered in is not much of a publishing platform.
+    renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
   } catch (e) {
     throw new Error(`WebGL could not start: ${e.message}`);
   }
@@ -985,6 +989,23 @@ function create(container, hooks = {}) {
   requestAnimationFrame(loop);
   return {
     load,
+    // The current frame as a PNG data URL, rendered synchronously at the
+    // requested pixel size so a capture does not depend on the pane`s size
+    // or on catching an animation frame.
+    captureFrame(width, height) {
+      const w = Math.max(1, Math.round(width || container.clientWidth || 1200));
+      const h = Math.max(1, Math.round(height || container.clientHeight || 800));
+      const previous = renderer.getSize(new THREE.Vector2());
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.render(scene, camera);
+      const url = renderer.domElement.toDataURL("image/png");
+      renderer.setSize(previous.x, previous.y, false);
+      camera.aspect = previous.x / Math.max(1, previous.y);
+      camera.updateProjectionMatrix();
+      return url;
+    },
     play: (v) => setPlaying(v ?? !playing),
     reset() {
       setPlaying(false);
