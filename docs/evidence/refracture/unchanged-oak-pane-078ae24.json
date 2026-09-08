@@ -21,10 +21,10 @@
    "pieces_over_1pct": 2,
    "pieces_over_5pct": 1,
    "rigid_fragments": 25,
-   "wall_s": 0.0029982
+   "wall_s": 0.0027607
   },
   "lattice": {
-   "bond_updates_per_s": 15368249.049242938,
+   "bond_updates_per_s": 15484717.550168194,
    "broken_bonds": 268,
    "compressive_failures": 18,
    "contact": {
@@ -120,31 +120,31 @@
    "strength_bound_active": false,
    "strength_stretch": 0.015,
    "tensile_failures": 217,
-   "wall_s": 0.2779627
+   "wall_s": 0.275872
   },
   "max_compressive_strain": 0.008714740164577961,
   "max_shear_strain": 0.006779050920158625,
   "max_tensile_stretch": 0.0012628502445295453,
   "phase_seconds": {
    "capture": 0.0,
-   "contact_pass_1": 0.0003355000000000054,
-   "contact_pass_2": 0.00035790000000000577,
+   "contact_pass_1": 0.0003271000000000057,
+   "contact_pass_2": 0.0003910000000000059,
    "damping": 0.0,
-   "end_sample_bonds": 0.12116880000000026,
-   "end_sample_nodes": 0.03765809999999932,
-   "kick_classify": 0.00583250000000016,
-   "node_contact_broad": 0.012633100000000213,
-   "node_contact_narrow": 0.0012890999999999933,
-   "sphere_exit": 0.00013250000000000203,
-   "start_sample_bonds": 0.0048680999999999985,
-   "start_sample_nodes": 0.0023002999999999986,
-   "support_project": 0.014971600000000283,
-   "sweep_boundary": 8.220000000000106e-05,
-   "sweep_interior": 0.07144470000000047,
-   "velocity_update": 0.00446619999999992
+   "end_sample_bonds": 0.1210239000000005,
+   "end_sample_nodes": 0.03787789999999934,
+   "kick_classify": 0.005778800000000205,
+   "node_contact_broad": 0.012215500000000188,
+   "node_contact_narrow": 0.001283299999999988,
+   "sphere_exit": 0.00012780000000000208,
+   "start_sample_bonds": 0.004942,
+   "start_sample_nodes": 0.002329399999999998,
+   "support_project": 0.014714800000000321,
+   "sweep_boundary": 8.34000000000011e-05,
+   "sweep_interior": 0.06984110000000036,
+   "velocity_update": 0.00455049999999997
   },
   "rank_deficient_nodes": 717,
-  "realtime_ratio": 0.291217626149021,
+  "realtime_ratio": 0.29061223997426217,
   "recording_wall_s": 0.0,
   "rigid": {
    "ball_height_at_end_m": 0.14999977786206706,
@@ -153,7 +153,7 @@
    "rest_time_s": 0.808346350777588,
    "simulated_s": 1.0874999999999975,
    "steps": 261,
-   "wall_s": 0.0423451
+   "wall_s": 0.0439114
   },
   "rule_met": true,
   "shared_memory_bytes": 0,
@@ -161,7 +161,7 @@
   "simulated_total_s": 1.1125130174442537,
   "substep_limit_s": 1.613743060919757e-05,
   "tile_mass_kg": 43.75,
-  "wall_total_s": 0.3239834
+  "wall_total_s": 0.3233099
  },
  "_command": [
   "C:\\Users\\henry\\dev\\banjo-agents\\refracture\\build\\ref-078ae24\\build\\ref\\Release\\banjo_fast_lattice_run.exe",
@@ -192,5 +192,5 @@
   "--report",
   "C:\\Users\\henry\\dev\\banjo-agents\\refracture\\docs\\evidence\\refracture\\unchanged-oak-pane-078ae24.json"
  ],
- "_wall_s": 0.331540799990762
+ "_wall_s": 0.3305627999943681
 }

@@ -954,11 +954,31 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
         // a rigid translation, so no momentum, no kinetic energy and no
         // internal state changes, only gravitational potential, which is
         // reported. A lift larger than half a cell is refused instead.
+        //
+        // Every support plane counts, not just the ground: a piece resting on a
+        // ledge is sunk into the ledge, and the reach cap that keeps a finite
+        // footprint from teleporting a node at rest stops capping once the
+        // node's approach speed is high enough (reach = 8 |v| dt), which is
+        // exactly what a second strike produces. Measured on an intact iron
+        // plate struck at 20 m/s: 361 kJ of bond energy removed from a 422 J
+        // scene, where the same plate struck at 20 m/s in the FIRST phase
+        // breaks no bond at all.
         double lift = 0.0;
-        for (std::size_t k = 0; k < pieces[chosen_piece].nodes.size(); ++k) {
-            const Vec3 position = snap.center_of_mass_world_m +
-                                  snap.orientation_world.rotate(pieces[chosen_piece].offsets[k]);
-            lift = std::max(lift, setup.ground_y + 0.5 * r.cell_size_m - position.y);
+        {
+            const SupportSet<double> &support = setup.settings_world.support;
+            for (std::size_t k = 0; k < pieces[chosen_piece].nodes.size(); ++k) {
+                const Vec3 position = snap.center_of_mass_world_m +
+                                      snap.orientation_world.rotate(pieces[chosen_piece].offsets[k]);
+                for (std::uint32_t p = 0; p < support.plane_count; ++p) {
+                    const SupportPlane<double> &plane = support.planes[p];
+                    // The lift is a translation along +y; a plane that does not
+                    // face up cannot be corrected this way and is left alone.
+                    if (plane.normal.y < 0.999) continue;
+                    if (!insideFootprints(plane, toV3(position))) continue;
+                    const double depth = dot(toV3(position) - plane.point, plane.normal) - plane.node_radius;
+                    lift = std::max(lift, -depth);
+                }
+            }
         }
         event.entry_support_penetration_m = lift;
         if (lift > 0.5 * r.cell_size_m) { ++report.refused_support_penetration; return 0U; }
@@ -1016,8 +1036,60 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
             island_sphere.mass = striker_mass;
             island_sphere.inertia = 0.4 * striker_mass * radius * radius;
             striker_position_in = ball.center_of_mass_world_m;
-            world.removeAndDestroy(chosen_partner);
         }
+
+        // The same disagreement on the striker's side. Jolt's collision proxy
+        // for a fragment is a convex hull of at most 192 sampled cell corners,
+        // which sits INSIDE the true box of cells, so the rigid solver lets a
+        // striker reach a depth the lattice's node-sphere contact would never
+        // have allowed: 1.36 mm on an intact iron plate, measured. Handing that
+        // overlap to the contact pass is a position correction of millimetres
+        // in one substep -- 17.9 kJ of bond energy removed from a 422 J scene,
+        // where the same plate struck at the same speed and place in the FIRST
+        // phase removes 55 J. The striker is therefore backed off along the
+        // contact normal until it just touches. A rigid translation of the
+        // striker alone: no momentum, no kinetic energy, and it costs the ball
+        // the microseconds it takes to close the gap again.
+        if (striker_partner) {
+            const double touch = island_sphere.radius + island_settings.contact.node_contact_radius;
+            const auto deepest = [&](Vec3 &axis) {
+                double worst = 0.0;
+                for (std::size_t i = 0; i < island_state.node_count; ++i) {
+                    const Vec3 node{island_state.x0[3 * i] + island_state.u[3 * i],
+                                    island_state.x0[3 * i + 1] + island_state.u[3 * i + 1],
+                                    island_state.x0[3 * i + 2] + island_state.u[3 * i + 2]};
+                    const Vec3 offset = toVec3(island_sphere.center) - node;
+                    const double distance = length(offset);
+                    if (touch - distance > worst && distance > 1.0e-12) {
+                        worst = touch - distance;
+                        axis = offset / distance;
+                    }
+                }
+                return worst;
+            };
+            for (int pass = 0; pass < 8; ++pass) {
+                Vec3 axis{};
+                const double overlap = deepest(axis);
+                if (!(overlap > 0.0)) break;
+                island_sphere.center = island_sphere.center + toV3(overlap * axis);
+                event.entry_striker_backoff_m += overlap;
+            }
+            if (event.entry_striker_backoff_m > 0.5 * r.cell_size_m) {
+                ++report.refused_striker_overlap;
+                return 0U; // nothing has left the rigid world yet
+            }
+            double gap = std::numeric_limits<double>::infinity();
+            for (std::size_t i = 0; i < island_state.node_count; ++i) {
+                const Vec3 node{island_state.x0[3 * i] + island_state.u[3 * i],
+                                island_state.x0[3 * i + 1] + island_state.u[3 * i + 1],
+                                island_state.x0[3 * i + 2] + island_state.u[3 * i + 2]};
+                gap = std::min(gap, length(node - toVec3(island_sphere.center)) - touch);
+            }
+            event.entry_striker_gap_m = gap;
+        }
+        // The island is accepted: take its bodies out of the rigid world for
+        // the length of the window.
+        if (striker_partner) world.removeAndDestroy(chosen_partner);
         world.removeAndDestroy(pieces[chosen_piece].body_id);
 
         // Mass-weighted position now, for the gravity work over the window.
@@ -1409,6 +1481,8 @@ Json refractureJson(const RefractureReport &f) {
                 {"clock_residual_s", e.clock_residual_s},
                 {"entry_support_penetration_m", e.entry_support_penetration_m},
                 {"entry_max_displacement_m", e.entry_max_displacement_m},
+                {"entry_striker_gap_m", e.entry_striker_gap_m},
+                {"entry_striker_backoff_m", e.entry_striker_backoff_m},
                 {"striker_in_island", e.striker_in_island}}},
             {"result", {
                 {"broken_bonds", e.broken_bonds}, {"pieces_out", e.pieces_out},
@@ -1442,6 +1516,7 @@ Json refractureJson(const RefractureReport &f) {
             {"budget_events", f.refused_budget_events}, {"budget_steps", f.refused_budget_steps},
             {"unsupported_partner", f.refused_unsupported}, {"too_many_cells", f.refused_too_large},
             {"support_penetration", f.refused_support_penetration},
+            {"striker_overlap", f.refused_striker_overlap},
             {"no_rollback", f.refused_no_rollback}}},
         {"rollbacks", f.rollbacks}, {"trial_steps", f.trial_steps},
         {"substeps", f.substeps}, {"simulated_s", f.simulated_s}, {"wall_s", f.wall_s},

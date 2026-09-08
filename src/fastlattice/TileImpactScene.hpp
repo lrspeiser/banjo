@@ -260,6 +260,12 @@ struct RefractureEventReport {
     // unconditional on an infinite plane, so a cell that starts below the floor
     // is teleported up through its bonds; this says by how much.
     double entry_support_penetration_m{}, entry_max_displacement_m{};
+    // Gap between the striker's surface and the nearest cell's contact sphere
+    // when the window opens, AFTER the back-off below; zero when no striker is
+    // in the island. `entry_striker_backoff_m` is how far the striker had to be
+    // moved back along the contact normal to reach it, which is how far the
+    // rigid solver had already driven it into the piece.
+    double entry_striker_gap_m{}, entry_striker_backoff_m{};
     bool striker_in_island{};
 };
 
@@ -282,7 +288,7 @@ struct RefractureReport {
     // refusal is visible: the rigid world had sunk the piece too far into the
     // floor to convert without teleporting it, or the world holds too many
     // bodies for the reversible step the re-entry needs.
-    std::size_t refused_support_penetration{}, refused_no_rollback{};
+    std::size_t refused_support_penetration{}, refused_no_rollback{}, refused_striker_overlap{};
     // Rigid steps replayed in the lattice instead of in Jolt, and steps that
     // paid for a rollback that was then committed anyway.
     std::size_t rollbacks{}, trial_steps{};

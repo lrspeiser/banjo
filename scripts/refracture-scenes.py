@@ -11,6 +11,8 @@ Runs `banjo_fast_lattice_run` over five groups and writes one JSON per run under
   landing     fragments dropped from a height onto concrete, for glass, oak and
               iron under identical conditions: the trigger decides which of them
               can break when they land
+  materials   glass, oak and iron struck twice under identical geometry, strike
+              and second strike
   cost        what re-fracture costs on a scene that triggers it and on one
               that does not
 
@@ -177,6 +179,40 @@ def group_landing(exe: Path) -> dict[str, Any]:
     return {"rows": rows}
 
 
+MATERIALS = ["--tile", "0.24", "0.04", "0.16", "--cell", "0.02", "--ball-radius", "0.04",
+             "--speed", "12", "--layout", "bridge", "--settle-s", "1.0",
+             "--ball-material", "iron", "--backend", "parallel", "--precision", "double",
+             "--cpu-threads", "8", "--second-ball", "0.04", "--second-material", "iron",
+             "--second-speed", "20", "--second-offset", "0.08", "0",
+             "--second-at", "rest", "--second-wait", "0.35"]
+
+
+def group_materials(exe: Path) -> dict[str, Any]:
+    """Glass, oak and iron under identical geometry, strike and second strike."""
+    rows = []
+    for material in ("glass", "oak", "iron"):
+        for state in ("off", "on"):
+            m = run(exe, f"materials-{material}-{state}",
+                    ["--material", material, *MATERIALS, "--refracture", state],
+                    EVIDENCE / f"materials-{material}-{state}.playback.json" if state == "on" else None)
+            f = m["refracture"]
+            rows.append({
+                "material": material, "refracture": state,
+                "first_strike_bonds": m["lattice"]["broken_bonds"],
+                "first_strike_pieces": m["handoff"]["components"],
+                "threshold_speed_m_s": (f["events"][0]["trigger"]["threshold_speed_m_s"] if f["events"] else None),
+                "max_closing_speed_m_s": f["rejected"]["max_closing_speed_m_s"],
+                "max_margin": f["rejected"]["max_margin"],
+                "admitted": f["admitted"],
+                "second_strike_bonds": f["broken_bonds"],
+                "removed_energy_j": round(f["removed_energy_j"], 4),
+                "pieces_at_end": m["rigid"]["pieces_at_end"],
+                "realtime_ratio": round(m["realtime_ratio"], 4),
+            })
+            print("  " + json.dumps(rows[-1]))
+    return {"rows": rows}
+
+
 def group_cost(exe: Path) -> dict[str, Any]:
     scenes = {
         "plate-500": ["--material", "glass", *PLATE, "--speed", "6.26424", "--layout", "bridge",
@@ -225,11 +261,11 @@ def main() -> int:
     parser.add_argument("--reference", type=Path,
                         default=ROOT / "build/ref-078ae24/build/ref/Release/banjo_fast_lattice_run.exe")
     parser.add_argument("--group", action="append", default=[],
-                        choices=["all", "unchanged", "twice", "harder", "landing", "cost"])
+                        choices=["all", "unchanged", "twice", "harder", "landing", "materials", "cost"])
     args = parser.parse_args()
     groups = args.group or ["all"]
     if "all" in groups:
-        groups = ["unchanged", "twice", "harder", "landing", "cost"]
+        groups = ["unchanged", "twice", "harder", "landing", "materials", "cost"]
     EVIDENCE.mkdir(parents=True, exist_ok=True)
     summary: dict[str, Any] = {}
     for group in groups:
@@ -242,6 +278,8 @@ def main() -> int:
             summary[group] = group_harder(args.exe)
         elif group == "landing":
             summary[group] = group_landing(args.exe)
+        elif group == "materials":
+            summary[group] = group_materials(args.exe)
         elif group == "cost":
             summary[group] = group_cost(args.exe)
     path = EVIDENCE / "summary.json"

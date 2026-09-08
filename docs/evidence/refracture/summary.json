@@ -389,5 +389,93 @@
     "refracture_substeps": 0
    }
   ]
+ },
+ "materials": {
+  "rows": [
+   {
+    "material": "glass",
+    "refracture": "off",
+    "first_strike_bonds": 1132,
+    "first_strike_pieces": 78,
+    "threshold_speed_m_s": null,
+    "max_closing_speed_m_s": 0.0,
+    "max_margin": 0.0,
+    "admitted": 0,
+    "second_strike_bonds": 0,
+    "removed_energy_j": 0.0,
+    "pieces_at_end": 78,
+    "realtime_ratio": 0.7229
+   },
+   {
+    "material": "glass",
+    "refracture": "on",
+    "first_strike_bonds": 1132,
+    "first_strike_pieces": 78,
+    "threshold_speed_m_s": 4.505972241822995,
+    "max_closing_speed_m_s": 17.286100387573242,
+    "max_margin": 3.836264286568208,
+    "admitted": 1,
+    "second_strike_bonds": 203,
+    "removed_energy_j": 15.9024,
+    "pieces_at_end": 103,
+    "realtime_ratio": 0.902
+   },
+   {
+    "material": "oak",
+    "refracture": "off",
+    "first_strike_bonds": 212,
+    "first_strike_pieces": 7,
+    "threshold_speed_m_s": null,
+    "max_closing_speed_m_s": 0.0,
+    "max_margin": 0.0,
+    "admitted": 0,
+    "second_strike_bonds": 0,
+    "removed_energy_j": 0.0,
+    "pieces_at_end": 7,
+    "realtime_ratio": 0.1707
+   },
+   {
+    "material": "oak",
+    "refracture": "on",
+    "first_strike_bonds": 212,
+    "first_strike_pieces": 7,
+    "threshold_speed_m_s": 10.976306266162329,
+    "max_closing_speed_m_s": 21.490097045898438,
+    "max_margin": 1.756607085320458,
+    "admitted": 1,
+    "second_strike_bonds": 403,
+    "removed_energy_j": 36.5344,
+    "pieces_at_end": 32,
+    "realtime_ratio": 0.4454
+   },
+   {
+    "material": "iron",
+    "refracture": "off",
+    "first_strike_bonds": 0,
+    "first_strike_pieces": 1,
+    "threshold_speed_m_s": null,
+    "max_closing_speed_m_s": 0.0,
+    "max_margin": 0.0,
+    "admitted": 0,
+    "second_strike_bonds": 0,
+    "removed_energy_j": 0.0,
+    "pieces_at_end": 1,
+    "realtime_ratio": 0.588
+   },
+   {
+    "material": "iron",
+    "refracture": "on",
+    "first_strike_bonds": 0,
+    "first_strike_pieces": 1,
+    "threshold_speed_m_s": 12.269910941555,
+    "max_closing_speed_m_s": 20.57231903076172,
+    "max_margin": 1.6766477873191907,
+    "admitted": 1,
+    "second_strike_bonds": 1549,
+    "removed_energy_j": 361520.7013,
+    "pieces_at_end": 119,
+    "realtime_ratio": 0.6322
+   }
+  ]
  }
 }
