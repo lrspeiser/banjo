@@ -634,7 +634,47 @@ thresholds, and its rows below are, by construction, the old law's rows.
 
 ### 7.2 The three materials under one strike
 
-*Filled in below.*
+*Experimental result.* Identical scene: the 0.24 x 0.04 x 0.16 m bridge tile,
+20 mm cells, struck in the middle of its top face by the same 4 cm iron ball
+(2.11 kg) at 8 m/s from the same 2 mm gap; fast lattice CPU backend in double,
+`dt_factor 0.5`, horizon 2, same exit rule. Only the tile material changes.
+
+| material | tile | law | removal stretch | governed by | crack energy charged | Gc declared | broken | pieces | largest | removed | R |
+|---|---:|---|---:|---|---:|---:|---:|---:|---:|---:|---:|
+| glass | 3.840 kg | old | 1.286e-3 | strength | 6,364 J/m^2 | 8 | 276 | 4 | 1.920 kg | 28.25 J | 0.90 |
+| glass | 3.840 kg | **new** | 4.558e-5 | **energy** | **8 J/m^2** | 8 | 1,590 | 103 | 0.340 kg | 0.62 J | 25.3 |
+| oak | 1.075 kg | old | 1.500e-2 | strength | 148,500 J/m^2 | 1,000 | 104 | 3 | 1.053 kg | 14.01 J | 0.098 |
+| oak | 1.075 kg | **new** | 1.231e-3 | **energy** | **1,000 J/m^2** | 1,000 | 1,302 | 24 | 0.549 kg | 8.18 J | 1.20 |
+| iron | 12.088 kg | old | 2.370e-3 | strength | 65,166 J/m^2 | 100,000 | 0 | 1 | 12.088 kg | 0 J | 0.50 |
+| iron | 12.088 kg | **new** | 2.370e-3 | **strength** | 65,166 J/m^2 | 100,000 | 0 | 1 | 12.088 kg | 0 J | 0.50 |
+
+At 10 mm cells iron still breaks nothing under either law, and the two laws give
+byte-identical thresholds for it.
+
+Three things to read off this table.
+
+1. **The two brittle materials now carry their declared fracture energy and did
+   not before.** Glass was 795 times tougher than glass and oak 149 times
+   tougher than oak; both are now exact, at this and at every other cell size.
+2. **Iron is unchanged, by design and for the right reason.** Its removal
+   stretch is identical under both laws to the last bit, because its Irwin
+   length (338 mm) is far above the cell size and the crack-band rule hands the
+   decision to the strength. Section 7.1 says why no critical-stretch law is a
+   model of iron at all; the point here is that the new law does not pretend
+   otherwise, and it does not make iron's rows worse.
+3. **Where the strength bound is active, the crack energy is still mesh
+   dependent.** Iron's charged crack energy is 65,166 J/m^2 at 20 mm and
+   32,583 at 10 mm - proportional to h, exactly as the old law is, because the
+   removal stretch is the old law's. The resolution independence this branch
+   delivers holds only on the energy-governed branch. That is not a defect of
+   the derivation: on the strength-governed branch the element is far smaller
+   than the process zone and the energy release rate is not what decides
+   failure. But it must not be read as "the new law makes everything
+   resolution independent", because it does not.
+
+The lane's other measured material differences are unchanged: oak's substep is
+longer than glass's (lower stiffness over density) and iron's tile is 3.1x the
+mass of glass's, so iron's rows are cheap and inert under both laws.
 
 ---
 
