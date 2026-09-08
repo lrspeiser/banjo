@@ -20,21 +20,31 @@ Every number below is measured on this machine unless it is marked *estimate*.
 
 ## Result in one paragraph
 
-The lane works, it is the cheapest of the three by a wide margin, and it is
-wrong in a specific and measurable way. On a 1,000-cell glass plate struck by a
-60 mm iron ball at 6.26 m/s it reproduces the explicit lattice's broken-bond
-count to **+2.4%** (5,553 against 5,421) and its **removed energy to +79%**
-(3.15 J against 1.76 J), while getting the **piece count wrong by 4.3x**
-(39 against 168) and the **largest piece wrong by 3.1x** (956 cells against 304).
-A warm rerun — change the drop height, change the strike offset — costs
-**0.40 s of wall**, of which **60 ms is the cascade itself** and 0.27 s is
-reading the cached tables back from disk; the reference costs **102 s** on the
-same scene. The precompute is **58 s and 384 MiB** for that plate and is cached.
-Two hard obstacles were found and both are reported rather than papered over:
-**a plate one cell thick — the shared 500-cell contract scene — cannot be
-expressed by this lane at all**, and **the Griffith criterion and the engine's
-shared strain criterion disagree by a factor of 516 in crack energy at 10 mm
-cells**, which is the single largest source of disagreement with the reference.
+The lane works, it is by a wide margin the cheapest thing in this repository
+that breaks a plate, and it is wrong in ways that are now measured rather than
+suspected. **The fracture answer costs 4.0 ms at 240 cells, 65 ms at 1,000 and
+218 ms at 1,500 — about 12 microseconds per broken bond, and no time stepping
+anywhere** — against the explicit lattice's 98.5 s on the same 1,000-cell scene
+run from the same binary. The precompute behind that is cached, keyed by the
+whole scene, and costs 0.44 s / 19 MiB at 240 cells rising to 167 s / 1.17 GiB
+at 1,500. On the base scene it reproduces the reference's broken-bond count to
++2.4% and its removed energy to +79%, while getting the piece count wrong by
+4.3x. **Three findings are the substance, and two of them are negative.**
+(1) **The shared 500-cell contract scene cannot be expressed by this lane at
+all**: one cell through the thickness leaves a central-force lattice with
+exactly zero transverse stiffness, so the whole impact direction is a rigid
+motion; the lane detects it and refuses with that reason. (2) **Where the bond
+counts agree, it is two large errors cancelling** — an impulse 59x below what
+the reference's contact delivers, against a Griffith criterion 16x more
+permissive in strain — and on a 30 mm plate the cancellation stops and the lane
+breaks 11,022 bonds where the reference breaks 13. (3) **The Griffith and the
+engine's shared strain criterion do not differ by a constant: they cross over
+between materials** (glass 1/22.7 in strain, oak 1/9.8, iron 1.54x), so swapping
+one for the other changes the material ranking, not just the numbers. What does
+survive is what survives in every other lane here: **removed energy**, within a
+factor of two on four scenes and within 10% on two of them, and the contact
+model's energy budget within 13% of what the reference's resolved contact
+dissipates.
 
 ## 1. The method, exactly
 
@@ -203,14 +213,15 @@ brief (73 bonds, 2.15 J, ~6x) to the noise of one machine. That measured
 lane, and `report.realtime.window_note` says so on every run.
 
 The lane's own equivalent of that plate would be 0.25 x 0.20 x 0.01 m at 5 mm
-cells (50 x 40 x 2 = 4,000 cells, 11,040 free degrees of freedom). A dense
-eigendecomposition at that size is O(n³) with the measured constant of section 3
-— *estimate* 25 minutes for the eigen step alone and a 5.5 GiB influence matrix
-— so it is outside this lane's envelope. **The lane's working envelope is a
-plate at least two cells thick with at most about 3,000 free degrees of
-freedom**, and it says so when it refuses.
+cells: 50 x 40 x 2 = 4,000 cells, 11,040 free degrees of freedom, about 39,000
+bonds. A dense eigendecomposition at that size is O(n³) with the measured
+constant of section 3 — *estimate* 30 minutes for the eigen step alone, and a
+6.1 GiB influence matrix — so it is outside this lane's envelope. **The lane's
+working envelope, measured in section 3, is a plate at least two cells thick
+with up to about 4,000 free degrees of freedom** (1,500 cells: 167 s and
+1.17 GiB of tables), and it says so when it refuses.
 
-### 2.2 The Griffith criterion and the shared strain criterion disagree by 516x in energy
+### 2.2 The Griffith criterion and the shared strain criterion do not agree, and the gap is not a constant
 
 Both criteria are evaluated on the same strain field by the same code
 (`--criterion griffith|strain`), so the comparison is clean. For a `d = 1` bond
@@ -231,6 +242,11 @@ dependence the engine options analysis identifies as Wall 2, cause 1
 rather than inheriting it, because it is the one lane whose criterion is written
 in terms of Gc.
 
+And the gap is not a fixed factor. It is proportional to the cell size, and it
+also depends on the material — for iron it **reverses**, because Gc = 100 kJ/m²
+makes the energy criterion the conservative one. Section 5.1 measures all three
+materials under identical conditions and gives the crossover.
+
 The consequence for this checkpoint is that a raw Algorithm 2 / reference
 comparison mixes two independent errors. Section 4 therefore reports both
 criteria on the same loads, which separates them.
@@ -240,40 +256,36 @@ was changed here, and no tolerance was moved.)*
 
 ## 3. Cost
 
-Measured on the base scene (a 250 x 200 x 20 mm glass plate on two ledges,
-25 x 20 x 2 = 1,000 cells at 10 mm, 9,788 bonds, 840 free cells = 2,520 modes,
-500 strikeable surface cells), and on a 240-cell scene for the small end.
-`scripts/algo2-cost-scaling.py` reproduces the table; each size is run once with
-an empty cache and once with the warm one.
+Every size is a 20 mm glass plate on two ledges at 10 mm cells (240 cells at
+20 mm for the small end), struck by a 60 mm iron ball at 6.264 m/s.
+`scripts/algo2-cost-scaling.py` reproduces the table: each size is run once
+against an empty cache directory of its own and once against the warm one, so
+the precompute is really paid in the first column and really skipped in the
+second.
 
-The precompute is three costs with three different scalings:
+The precompute is three costs with three different scalings, and the influence matrix is what stops the lane first - it is `bonds^2` floats.
 
-| stage | scaling | 240 cells | 1,000 cells |
-|---|---|---:|---:|
-| eigenpairs of the intact plate | O(n^3) in free dofs | 0.14 s | 17.7 s |
-| crack-influence matrix A | O(bonds^2 x modes) | 0.09 s | 14.1 s |
-| peak-response table E, every strike cell | O(bonds x modes x samples x strikes) | 0.20 s (120 cells) | 26.3 s (500 cells) |
-| cache write | bytes | 0.02 s | 0.22 s |
-| **total, cold** | | **0.44 s** | **58.4 s** |
-| **tables on disk** | bonds^2 x 4 B + strikes x bonds x 4 B | **20.0 MiB** | **384 MiB** |
+| cells | bonds | free dofs | strike columns | cold precompute s | eigen / influence / peak s | tables MiB | warm process s | cascade s | events |
+|---:|---:|---:|---|---:|---|---:|---:|---:|---:|
+| 240 | 2176 | 600 | 120/120 | 0.44 | 0.14 / 0.08 / 0.20 | 19 | 0.148 | 0.0040 | 1658 |
+| 500 | 4698 | 1260 | 250/250 | 5.62 | 1.37 / 0.99 / 3.21 | 89 | 0.422 | 0.0167 | 3271 |
+| 1000 | 9788 | 2520 | 500/500 | 61.96 | 19.72 / 14.53 / 27.48 | 384 | 0.748 | 0.0647 | 5553 |
+| 1500 | 17299 | 4020 | 1/500 | 166.43 | 86.94 / 78.62 / 0.22 | 1175 | 1.916 | 0.2184 | 11022 |
 
 A rerun with the cache warm - a different drop height, a different strike
-offset, a different speed - costs:
+offset, a different speed - is the `warm process s` column: the tables are
+read back from disk, the cascade runs, the pieces settle in Jolt and the
+recording is written. `cascade s` is the fracture answer alone.
 
-| | 240 cells | 1,000 cells |
-|---|---:|---:|
-| read the tables back from disk | 0.014 s | 0.272 s |
-| **the cascade itself** | **0.0039 s** | **0.057 s** |
-| components, Jolt handoff, 3 s of settling, recording | 0.041 s | 0.077 s |
-| **whole process, warm** | **0.059 s** | **0.407 s** |
-
-So the fracture answer costs **57 ms at 1,000 cells** and the process around it
-costs several times that. The cascade is `events x bonds` work: one event is two
-passes over the bond list, about **10 microseconds at 1,000 cells**, and the
-5,553 events of this scene are what make it 57 ms. On a scene where few bonds
-break - the same plate under the shared strain criterion - the cascade is
-**0.1 ms**. "Microseconds per event" is the honest claim; "microseconds per
-impact" holds only when the impact breaks a handful of bonds.
+So the fracture answer costs **4.0 ms at 240 cells, 16.7 ms at 500, 65 ms at
+1,000 and 218 ms at 1,500**, and the process around it costs a few times that.
+The cascade is `events x bonds` work: one event is two passes over the bond
+list, about **12 microseconds at 1,000 cells and 20 at 1,500**, and the
+thousands of events these scenes produce are what make it milliseconds. On a
+scene where few bonds break - the same plate under the shared strain criterion -
+the cascade is **0.1 ms**. **"Microseconds per event" is the honest claim;
+"microseconds per impact" holds only when the impact breaks a handful of
+bonds**, and a Griffith cascade on glass at 10 mm cells breaks thousands.
 
 Against the realtime rule (`report.realtime`), on the base scene through 3 s of
 settling: **this lane is 0.136x with the cache warm** and 19.6x cold, against
@@ -303,7 +315,7 @@ independent errors. Base scene: 250 x 200 x 20 mm glass, 1,000 cells at 10 mm,
 | algo2, Griffith, footprint impulse | 0.130 N s | 5,553 (+2.4%) | 39 (0.23x) | 956 cells / 2.390 kg (3.1x) | 3.150 J (+79%) | 0.41 s warm |
 | algo2, shared strain criterion, footprint impulse | 0.130 N s | 0 | 1 | 1,000 cells | 0.000 J | 0.40 s |
 | algo2, shared strain criterion, plate impulse | 3.916 N s | 6,825 (+26%) | 107 (0.64x) | 840 cells (2.8x) | 3,035 J (1,700x) | 0.57 s |
-| algo2, Griffith, plate impulse | 3.916 N s | refused: makes more pieces than Jolt's contact budget allows | | | | |
+| algo2, Griffith, plate impulse | 3.916 N s | 8,417 (+55%) | 470 (2.8x) | 188 cells (0.62x) | 2,943 J (1,670x) | 0.57 s |
 
 **The apparent agreement on bond count is two large errors cancelling, not
 evidence that the lane is right.** The contact model delivers 0.130 N s where
@@ -375,3 +387,295 @@ carrying its *lifetime peak* strain energy, where the reference removes it at
 the instant its strain crossed the threshold. The largest peak drive on this
 scene is 209, so that bond is removed carrying 209 times the crack work its own
 area needs.
+
+## 5. The variations, and where the agreement comes from
+
+Four variations of the base scene plus the contract scene, every one run through
+both lanes from the same command line (`scripts/algo2-accuracy-matrix.py`, table
+rendered by `scripts/algo2-render-tables.py`).
+
+| scene | lane | impulse N s | broken bonds | pieces | largest piece cells | removed energy J | wall s |
+|---|---|---:|---:|---:|---:|---:|---:|
+| base: 250 x 200 x 20 mm, 1,000 cells at 10 mm, 60 mm ball at 6.264 m/s, centre | reference (explicit lattice) | 7.658 | 5421 | 168 | 304 | 1.760 | 98.53 |
+|  | algo2, Griffith, footprint impulse | 0.130 | 5553 | 39 | 956 | 3.150 | 0.87 |
+|  | algo2, shared strain criterion, footprint impulse | 0.130 | 0 | 1 | 1000 | 0.000 | 0.74 |
+|  | algo2, Griffith, whole-plate impulse | 3.916 | 8417 | 470 | 188 | 2943.104 | 2.47 |
+| | | | | | | |
+| thicker: 250 x 200 x 30 mm, 1,500 cells at 10 mm, same striker | reference (explicit lattice) | 8.455 | 13 | 1 | 1500 | 1.574 | 17.06 |
+|  | algo2, Griffith, footprint impulse | 0.130 | 11022 | 71 | 1348 | 3.721 | 2.11 |
+|  | algo2, shared strain criterion, footprint impulse | 0.130 | 0 | 1 | 1500 | 0.000 | 1.58 |
+|  | algo2, Griffith, whole-plate impulse | 4.405 | 15977 | 987 | 229 | 4501.429 | 7.24 |
+| | | | | | | |
+| higher drop: the base plate at 9.90 m/s (5.0 m) | reference (explicit lattice) | 11.859 | 7930 | 266 | 88 | 7.325 | 65.36 |
+|  | algo2, Griffith, footprint impulse | 0.206 | 6690 | 99 | 330 | 8.053 | 1.16 |
+|  | algo2, shared strain criterion, footprint impulse | 0.206 | 9 | 1 | 1000 | 0.558 | 0.74 |
+|  | algo2, Griffith, whole-plate impulse | 6.189 | 8441 | 482 | 187 | 7351.446 | 3.30 |
+| | | | | | | |
+| off-centre: the base scene struck at (60, 40) mm | reference (explicit lattice) | 3.825 | 3984 | 99 | 742 | 3.014 | 113.25 |
+|  | algo2, Griffith, footprint impulse | 0.130 | 5743 | 34 | 945 | 3.262 | 0.87 |
+|  | algo2, shared strain criterion, footprint impulse | 0.130 | 0 | 1 | 1000 | 0.000 | 0.81 |
+|  | algo2, Griffith, whole-plate impulse | 3.916 | 8616 | 540 | 168 | 3047.590 | 3.09 |
+| | | | | | | |
+| heavy slow striker: 200 mm iron ball (32.9 kg) at 1.0 m/s | reference (explicit lattice) | 17.203 | 849 | 14 | 485 | 5.273 | 12.47 |
+|  | algo2, Griffith, footprint impulse | 0.065 | 204 | 1 | 1000 | 0.085 | 74.69 |
+|  | algo2, shared strain criterion, footprint impulse | 0.065 | 0 | 1 | 1000 | 0.000 | 0.43 |
+|  | algo2, Griffith, whole-plate impulse | 1.974 | 7964 | 318 | 211 | 176.773 | 2.19 |
+| | | | | | | |
+| the shared 500-cell contract scene, one cell through the thickness | reference (explicit lattice) | 3.593 | 74 | 1 | 500 | 2.180 | 2.01 |
+|  | algo2, Griffith, footprint impulse | refused: a plate one cell thick has no bond out of its own plane, so this central-force lattice has exactly zero transverse stiffness and the whole impact dire | | | | |
+|  | algo2, shared strain criterion, footprint impulse | refused: a plate one cell thick has no bond out of its own plane, so this central-force lattice has exactly zero transverse stiffness and the whole impact dire | | | | |
+|  | algo2, Griffith, whole-plate impulse | refused: a plate one cell thick has no bond out of its own plane, so this central-force lattice has exactly zero transverse stiffness and the whole impact dire | | | | |
+| | | | | | | |
+
+Reading across the rows:
+
+**Removed energy is the quantity that survives**, as it does in every other lane
+in this repository. Algorithm 2 with the Griffith criterion and the footprint
+impulse gives, against the reference: **+79% on the base scene, +10% at the
+higher drop, +8% off centre**, and **+136% on the thicker plate**. Three of the
+four are inside a factor of two and two of them are inside 10%. Nothing else
+this lane produces is that close.
+
+**The bond-count agreement is a coincidence and the thicker plate proves it.**
+On the base scene the counts agree to 2.4%; on the 30 mm plate the reference
+breaks **13 bonds and stays in one piece** while this lane breaks **11,022 and
+makes 71**. The two errors that cancelled on the base scene (an impulse 59x low,
+a criterion 16x permissive in strain) do not cancel at a different thickness,
+because they scale differently with it. **This lane will report a plate as
+shattered that the reference leaves intact** — a false positive, and the worst
+failure mode for the question the owner actually asks. Under the *shared* strain
+criterion on the same load the lane says 0 bonds on that plate, which is the
+right verdict; the false positive is the criterion, not the cascade.
+
+**Piece count is wrong everywhere, and always in the same direction with the
+footprint impulse**: 39 against 168, 71 against 1, 99 against 266, 34 against 99.
+The largest piece is correspondingly too large (956, 1348, 330, 945 cells
+against 304, 1500, 88, 742). The reason is section 4.2: the damage is diffuse,
+so the plate stays connected.
+
+**The whole-plate impulse fragments, and then the energy explodes.** With
+`--contact-mass plate` the same cascade makes 470, 987, 482 and 540 pieces with
+largest pieces of 188, 229, 187 and 168 cells — much closer to the reference's
+*character* — but its removed energy is 2,943 J against 1.760 J, because a delta
+impulse of the full contact momentum over-strains every bond by more than an
+order of magnitude and each one is removed carrying that energy. Neither end of
+the contact bracket is right; the two ends bracket the answer and neither
+reaches it.
+
+**Where a static picture should be right.** The heavy slow striker — a 200 mm
+iron ball, 32.9 kg, 13x the plate's mass, at 1.0 m/s — is the case the
+quasi-static checkpoint identifies as its own good regime (Olsson's criterion: a
+striker several times the plate's mass, loaded slowly relative to the wave
+transit). It is not this lane's regime either, and the numbers say why: the reference removes 849 bonds and 5.273 J into 14 pieces, and Algorithm 2 with the footprint impulse removes 204 bonds and 0.085 J and makes one piece. A slow heavy striker is exactly where a delta impulse is worst - the contact lasts far longer than the plate's response, the loading is quasi-static rather than impulsive, and the footprint capture of a 32.9 kg ball at 1.0 m/s is only 0.065 N s. The right tool for that regime already exists and is the quasi-static lane; **this lane is a dynamic impulse-response lane and should not be aimed at slow loading.**
+
+**The 500-cell contract scene** is in the table for completeness: the reference
+breaks 73 bonds and removes 2.148 J there, and this lane refuses it for the
+reason in section 2.1.
+
+
+### 5.1 Glass, oak and iron under identical conditions
+
+The verification rules require the three materials under one experiment before
+any material-dependent claim. This lane's claims are about the algorithm rather
+than about glass, but the comparison turned out to be the most useful single
+measurement in this checkpoint. Scene: 240 x 200 x 40 mm plate, 240 cells at
+20 mm, two ledges, a 200 mm iron ball (32.9 kg) at 9.90 m/s, identical for all
+three.
+
+| material | lane | broken bonds | pieces | largest piece cells | removed energy J | wall s |
+|---|---|---:|---:|---:|---:|---:|
+| glass | algo2 (Griffith) | 1830 | 83 | 64 | 66.771 | 0.55 |
+| glass | reference | 1960 | 68 | 41 | 42.557 | 0.60 |
+| oak | algo2 (Griffith) | 87 | 1 | 240 | 6.780 | 0.47 |
+| oak | reference | 1461 | 95 | 64 | 179.863 | 0.81 |
+| iron | algo2 (Griffith) | 0 | 1 | 240 | 0.000 | 0.46 |
+| iron | reference | 1855 | 90 | 35 | 343.535 | 1.07 |
+
+And the reason, which is the criterion again — but **material dependent, and it
+changes sign**:
+
+| material | Gc (J/m²) | Griffith break strain | shared criterion break strain | ratio in strain | ratio in crack energy |
+|---|---:|---:|---:|---:|---:|
+| glass | 8 | 5.66e-5 | 1.286e-3 | 22.7x more permissive | 516x |
+| oak | 1,000 | 1.528e-3 | 1.500e-2 | 9.8x more permissive | 96x |
+| iron | 100,000 | 3.644e-3 | 2.370e-3 | **0.65x — more conservative** | 0.42x |
+
+So the Griffith cascade shatters glass where the reference shatters glass
+(1,830 bonds against 1,960, 83 pieces against 68 — the closest agreement
+anywhere in this checkpoint), barely marks oak where the reference breaks it up,
+and declares iron untouched where the reference removes 1,855 bonds. **The two
+criteria are not related by a constant, or even by a constant times the cell
+size: they cross over between materials, and for iron the energy criterion is
+the conservative one.** Any lane that swaps a strength criterion for a Gc
+criterion changes the material ranking, not just the numbers.
+
+## 6. Exact commands
+
+Build (headless, no lab):
+
+```sh
+cmake -S . -B build/agent -G "Visual Studio 17 2022" -A x64 -DBANJO_BUILD_LAB=OFF
+cmake --build build/agent --config Release --parallel 6
+python scripts/check-source-registration.py
+ctest --test-dir build/agent -C Release -E "banjo_network_skin_tests|banjo_network_runtime_tests|banjo_material_showcase_tests|banjo_network_adaptive_tests|banjo_contact_capacity_tests"
+./build/agent/Release/banjo_griffith_cascade_tests.exe
+```
+
+The lane, on the base scene (the Fracture lab panel calls exactly this form):
+
+```sh
+./build/agent/Release/banjo_fracture_algo2.exe \
+    --plate 0.25 0.20 0.02 --cell 0.01 --ball 0.06 --drop 2.0 --offset 0 0 \
+    --support ledges --duration 2.0 --cache build/fracture-cache \
+    --output build/runs/algo2/base.json
+```
+
+The reference on the same scene, from the same binary and the same numbers:
+
+```sh
+./build/agent/Release/banjo_fracture_algo2.exe --reference \
+    --plate 0.25 0.20 0.02 --cell 0.01 --ball 0.06 --drop 2.0 --offset 0 0 \
+    --support ledges --duration 2.0 --output build/runs/algo2/base-reference.json
+```
+
+Options beyond the shared contract, all defaulting to the contract's behaviour:
+`--criterion griffith|strain` (default griffith), `--contact-mass footprint|plate`
+(default footprint), `--all-strikes` / `--single-strike` / `--strike-budget S`
+(the peak table is filled for every strikeable cell when a measured column says
+the rest will cost less than S seconds, default 90), `--max-bytes MiB` (the
+influence-matrix cap, default 1500), `--reference-window S` (the denominator of
+`fracture_window_ratio`, default the measured 0.013764), `--reference-frames N`,
+`--record-frames N`, `--no-settle`.
+
+The whole checkpoint:
+
+```sh
+python scripts/algo2-accuracy-matrix.py --exe build/agent/Release/banjo_fracture_algo2.exe \
+    --cache build/fracture-cache --out build/runs/algo2 --duration 3.0
+python scripts/algo2-accuracy-report.py --matrix build/runs/algo2/matrix.json
+python scripts/algo2-cost-scaling.py --exe build/agent/Release/banjo_fracture_algo2.exe \
+    --cache build/fracture-cache-cost --out build/runs/algo2-cost
+python scripts/algo2-damage-geometry.py build/runs/algo2/base-algo2.json build/runs/algo2/base-reference.json
+```
+
+Recordings are written under `build/`, which `.gitignore` already excludes; none
+of them is committed.
+
+## 7. What this lane is for, and what it is not for
+
+**Implemented and measured** (this checkpoint):
+
+* the precompute — eigenpairs, the peak dynamic strain table per strikeable
+  cell, and the crack-influence matrix — with an on-disk cache keyed by the whole
+  scene, and its cost and size at 240 to 2,000 cells;
+* an event-driven Griffith cascade that is O(bonds) per event and does no time
+  stepping at all, with a deterministic, order-free break rule;
+* a stated contact model whose impulse and energy budget both come from the same
+  momentum balance, and a second, stated end of the same bracket
+  (`--contact-mass plate`) so the sensitivity to it can be read off;
+* pieces to Jolt from rest, settled and recorded as `banjo.playback.v1`;
+* the reference lane on the identical scene from the same binary.
+
+**Validated** (a check that could have failed and did not): the influence matrix
+against a direct Cholesky solve of the cracked stiffness; reciprocity; linearity
+of the load in the impulse; closure of the energy ledger; bond crack areas
+summing to a geometric cut at three horizons; bond-for-bond identity with the
+reference lane's lattice.
+
+**Not validated, and not claimed**: any of this against laboratory glass. The
+lane reproduces neither the reference's piece count nor its crack topology, and
+section 4 says by how much.
+
+**Where the lane is right.** Removed energy to within a factor of two and
+broken-bond count to a few percent, on scenes in the wave-controlled regime,
+at 1/240 of the reference's cost. First failure with 91% recall. The energy
+budget of the contact model within 13% of what the reference's resolved contact
+dissipates. And the refusals are right: on the scenes where the reference breaks
+nothing, the lane under the *same* criterion also breaks nothing (section 5).
+
+**Where the lane is wrong, in one sentence each.** It has no wave arrival order,
+so it loads every bond to its lifetime peak simultaneously and its damage is
+diffuse where the reference's is a crack path. It has no inertial confinement,
+so the near-contact concentration that drives real impact fracture is only as
+strong as the intact plate's impulse response makes it. Its influence matrix is
+linearised about the *intact* plate and superposed one bond at a time, so it
+cannot build a crack-tip concentration. Its contact is a single delta impulse,
+so it delivers a fraction of the momentum a millisecond-long contact delivers.
+Its criterion is a Gc energy criterion where the rest of the engine uses a strain
+threshold, and the two differ by 259x in crack energy at 10 mm cells.
+
+**What it should be used for, on this evidence:** an instant answer to "will this
+strike break the plate, roughly how much energy does it take out, and where does
+the damage start" — the predictor role the engine options analysis already
+assigns to the modal basis (section 4, phase 3), now with a cascade and an
+energy budget attached. It should not be used to decide how many pieces there
+are or what shape they have.
+
+## 8. Limits, defects and the next tests
+
+1. **The 500-cell contract scene is refused** (section 2.1). Any lane that
+   linearises about the undeformed configuration has this limit; it is not
+   specific to the Griffith cascade. The next test is whether a *pre-stressed*
+   linearisation (the plate's static sag under the ball, then the impulse
+   response about that state) recovers a transverse stiffness large enough to be
+   useful — one extra static solve in the precompute, no extra table.
+2. **The envelope, not the ordering, is the dominant error.** The next test is
+   cheap and would quantify it directly: store the *time* of each bond's peak
+   alongside its magnitude (one more table of the same size), and report the
+   spread of peak times across the bonds the cascade breaks. If a causal cascade
+   — break only bonds whose peak time is before the current event's, then re-run
+   — narrows the piece-count gap, that is a real improvement and still needs no
+   stepping. Algorithm 3's causal cones are the principled version of the same
+   idea.
+3. **The influence matrix is O(bonds²) in memory**: 384 MiB at 1,000 cells,
+   1.15 GiB at 1,500, and it is the wall that stops this lane well before the
+   eigen decomposition does. A distance cut-off would make it sparse, at the cost
+   of the far-field redistribution; whether that matters is measurable against
+   the dense answer on a small plate.
+4. **The peak table is filled on demand above about 1,000 cells.** The report
+   says which columns exist (`precompute.strike_cells_ready`) and the estimate
+   that made the decision. A new strike offset then costs one column
+   (0.05 s at 1,000 cells, 0.21 s at 1,500) rather than nothing.
+5. **The support is bilateral.** The plate cannot lift off its ledges, where the
+   reference's is a unilateral contact. Not measured here.
+6. **Pieces start from rest**, so the momentum the contact model put into the
+   plate — `handoff.dropped_momentum_n_s` — is dropped at the handoff. Nothing
+   in this lane authors a fragment velocity, and nothing should until there is a
+   measured basis for one.
+7. **Compression and shear are not modelled.** This is a mode-I energy
+   criterion; the contact crushing the reference sees under the ball has no
+   counterpart here.
+8. **The largest dynamic piece can exceed Jolt's 64-part compound limit**; such a
+   piece keeps its true mass and inertia and gets its bounding box as the
+   collision silhouette, counted in `handoff.oversized_pieces`.
+
+## 9. What the owner can watch
+
+Four jobs are installed in the owner's playground store
+(`C:/Users/henry/dev/banjo/build/playground-runs`) and play in the running
+server's 3D tab. Nothing in the owner's checkout was modified and its server was
+not restarted; the store is runtime data and the server discovers archived jobs
+on demand.
+
+| job | what it shows |
+|---|---|
+| [`?job=7d21b6a8dd0949a9b747cadc6d4831c3`](http://127.0.0.1:8765/?job=7d21b6a8dd0949a9b747cadc6d4831c3) | **The headline pair.** Algorithm 2 and the explicit lattice on the identical base scene: 5,553 bonds / 39 pieces / 3.15 J / 0.41 s against 5,421 / 168 / 1.76 J / 98.5 s. Switch between the two cases and the difference in *character* is the whole finding - one plate stays whole with a few chips off it, the other comes apart. |
+| [`?job=6328956e35504e01a389b000499ac487`](http://127.0.0.1:8765/?job=6328956e35504e01a389b000499ac487) | **Change the plate or the drop and watch it again.** Four Algorithm 2 runs off one cached precompute: thicker plate, 5 m drop, off-centre strike, heavy slow striker. |
+| [`?job=523839302e7e49aabd14e9b5a9226790`](http://127.0.0.1:8765/?job=523839302e7e49aabd14e9b5a9226790) | **The criterion is the disagreement, not the cascade.** The same load under the Griffith criterion (5,553 bonds), under the engine's shared strain criterion (0), under the strain criterion with the whole-plate impulse (6,825), and the reference (5,421). |
+| [`?job=962c5f0a6d6044e08c715600a5f1cc87`](http://127.0.0.1:8765/?job=962c5f0a6d6044e08c715600a5f1cc87) | **The 500-cell contract scene, reference only**, because Algorithm 2 refuses a plate one cell thick. 73 bonds, one piece, 2.148 J, 1.95 s of wall. |
+| [`?job=c68988b72e8d48ffa092a13d71648e43`](http://127.0.0.1:8765/?job=c68988b72e8d48ffa092a13d71648e43) | **Played through to rest**: the base scene with a 6 s settle cap comes to rest at 3.325 s simulated in 0.449 s of wall. |
+
+The Fracture lab panel from `agent/integration` (merged into this branch at
+`c090f67`) drives the lane directly. Checked end to end against a private
+playground on port 8802 (stopped afterwards): a 240-cell two-layer plate runs in
+**0.153 s of server wall, 0.030x of the simulated interaction**, and the panel's
+own 500-cell default comes back as an error whose message is this lane's refusal
+reason verbatim. `tests/fracture_lab_tests.py` passes on this branch.
+
+A recording plays through to rest when the settle cap allows it: the base scene
+comes to rest at **3.325 s** simulated and the run stops at 3.625 s in **0.449 s
+of wall (0.124x)**. At the 3 s cap used for the accuracy matrix, 99% of the
+cells are already stationary in the last frame and one chip is still bouncing at
+0.59 m/s; the reference at the same cap has more residual motion (99th
+percentile 0.21 m/s) and its own `came_to_rest` is false on every fragmenting
+scene.
