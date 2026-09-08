@@ -384,6 +384,11 @@ def summary(report: dict[str, Any], wall_s: float, spec: dict[str, Any]) -> dict
         window_ratio = lattice_wall / lattice_sim
     return {
         "plate_mm": [round(v * 1000, 1) for v in spec["plate_m"]],
+        "material": spec["material"],
+        "striker": spec["striker"],
+        "ball_mm": round(spec["ball_m"] * 1000, 1),
+        "speed_m_s": round(spec["speed_m_s"], 3),
+        "cell_mm": round(spec["cell_m"] * 1000, 3),
         "snapped_from_mm": ([round(v * 1000, 1) for v in spec["requested_plate_m"]] if spec.get("snapped") else None),
         "cells": _pick(report, "cells") or spec["cells"],
         "bonds": _pick(report, "bonds", "lattice.bonds"),

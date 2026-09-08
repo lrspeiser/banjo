@@ -295,3 +295,8 @@ h2 { margin-bottom: 0; font-size: 1.02rem; font-weight: 550; letter-spacing: -.0
 .intro-more { margin-top: 7px; }
 .intro-more > summary { cursor: pointer; color: var(--muted); font-size: .72rem; }
 .intro-more p { max-width: 74ch; margin: 8px 0 0; color: var(--muted); font-size: .78rem; line-height: 1.6; }
+
+.fracture-stage-caption { margin: 0; padding: 7px 11px; border: 1px solid var(--line); border-radius: 8px;
+  color: var(--muted); background: rgba(10,16,19,.6); font-size: .72rem; line-height: 1.5; }
+.fracture-stage-caption strong { color: var(--text); font-weight: 600; }
+.fracture-stage-caption.is-new { border-color: var(--mint-strong); color: var(--mint); }

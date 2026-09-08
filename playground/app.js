@@ -930,11 +930,37 @@
     });
   }
 
+  // What is on the stage right now, in the terms that were typed to make it.
+  // Two runs can be visually alike at the first frame, so the line under the
+  // scene is what tells a changed parameter apart from an unchanged one.
+  function captionStage(sum) {
+    const box = $("fracture-stage-caption");
+    if (!box) return;
+    if (!Array.isArray(sum.plate_mm)) { box.textContent = "Run something to put it on this stage."; return; }
+    const plate = `${sum.plate_mm.join(" x ")} mm ${sum.material || "plate"}`;
+    const ball = Number.isFinite(sum.ball_mm) ? `${Math.round(sum.ball_mm)} mm ${sum.striker || "ball"}` : "striker";
+    const speed = Number.isFinite(sum.speed_m_s) ? `${sum.speed_m_s.toFixed(2)} m/s` : "";
+    const broke = Number.isFinite(sum.broken_bonds)
+      ? `${sum.broken_bonds} bonds broken, ${sum.components ?? "?"} pieces`
+      : "no failure";
+    box.replaceChildren();
+    const strong = document.createElement("strong");
+    strong.textContent = `${plate}, ${sum.cells ?? "?"} cells`;
+    box.append(strong, document.createTextNode(` — struck by a ${ball} at ${speed}. ${broke}.`));
+    // A short highlight so a rerun that looks the same is still visibly a
+    // rerun.
+    box.classList.remove("is-new");
+    void box.offsetWidth;
+    box.classList.add("is-new");
+    setTimeout(() => box.classList.remove("is-new"), 1400);
+  }
+
   function renderFractureResult(result) {
     const box = $("fracture-result"); box.textContent = "";
     const row = (label, value, cls = "") => { const p = document.createElement("p"); p.className = `metric ${cls}`.trim(); const l = document.createElement("span"); l.className = "metric-label"; l.textContent = label; const v = document.createElement("span"); v.textContent = value; p.append(l, v); box.append(p); };
     if (result.status !== "complete") { row("Status", result.error || result.message || result.status, "bad"); return; }
     const sum = (result.fracture && result.fracture.summary) || {};
+    captionStage(sum);
     const s3 = (x, unit = "") => Number.isFinite(x) ? `${x.toFixed(3)}${unit}` : "-";
     row("Lane", result.fracture.lane);
     row("Server wall (parameters to recording)", s3(sum.server_wall_s, " s"));
@@ -1039,6 +1065,26 @@
     renderFractureScenarios();
     renderFractureLanes();
     $("fracture-controls").addEventListener("input", fractureCells);
+    // Every extent must be a whole number of cells or the engine refuses it, so
+    // the arrows move a whole cell at a time and a committed value is rewritten
+    // to the one that will actually be built. Typing is left alone: this fires
+    // on change, not on input.
+    const extents = ["f-length", "f-width", "f-thickness"];
+    function snapExtents() {
+      const cell = Number($("f-cell").value);
+      if (!(cell > 0)) return;
+      extents.forEach((id) => {
+        const field = $(id);
+        field.step = String(Number(cell.toFixed(4)));
+        const want = Number(field.value);
+        if (!(want > 0)) return;
+        const built = Math.max(1, Math.round(want / cell)) * cell;
+        const shown = Number(built.toFixed(3));
+        if (Math.abs(shown - want) > 1e-6) field.value = String(shown);
+      });
+      fractureCells();
+    }
+    extents.concat(["f-cell"]).forEach((id) => $(id).addEventListener("change", snapExtents));
     // Typing in either impact field clears the other, so the one being edited
     // is the one that decides. Without this a drop height typed while a speed
     // is present is silently ignored.
@@ -1047,7 +1093,7 @@
     $("fracture-controls").addEventListener("submit", (event) => { event.preventDefault(); runFractureLab(); });
     $("fracture-run").addEventListener("click", runFractureLab);
     $("fracture-open").addEventListener("click", () => { if (fracture.lastJob) openFractureJob(fracture.lastJob).catch((e) => showToast(e.message, true)); });
-    fractureCells();
+    snapExtents();
   }
 
   async function initBuilder() {
