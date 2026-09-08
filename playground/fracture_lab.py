@@ -70,6 +70,57 @@ DEFAULT: dict[str, Any] = {
     "duration_s": 2.0,
 }
 
+# Every scenario here has been run and its headline measured, so the panel can
+# offer a whole setup in one click and say what it did before it is run again.
+# `expect` is what was measured on 2026-09-08, not a promise about this run.
+SCENARIOS = [
+    {"id": "glass-pane", "title": "1 m glass pane shatters",
+     "expect": "38 pieces, 0.18x realtime",
+     "spec": {"material": "glass", "striker": "iron", "failure_law": "strain-threshold", "plasticity": "off",
+              "plate_m": [1.0, 1.0, 0.0625], "cell_m": 0.0625, "ball_m": 0.3, "speed_m_s": 20.0,
+              "offset_m": [0.0, 0.0], "support": "ledges", "duration_s": 2.0}},
+    {"id": "oak-pane-rest", "title": "1 m oak pane, breaks into boards and settles",
+     "expect": "25 pieces, comes to rest, 0.15x realtime",
+     "spec": {"material": "oak", "striker": "iron", "failure_law": "energy-scaled", "plasticity": "off",
+              "plate_m": [1.0, 1.0, 0.0625], "cell_m": 0.0625, "ball_m": 0.3, "speed_m_s": 20.0,
+              "offset_m": [0.0, 0.0], "support": "ledges", "duration_s": 2.0}},
+    {"id": "glass-pulverise", "title": "The same glass pane under the energy-scaled law",
+     "expect": "190 pieces, largest 8 cells: glass is deep in the pulverisation regime",
+     "spec": {"material": "glass", "striker": "iron", "failure_law": "energy-scaled", "plasticity": "off",
+              "plate_m": [1.0, 1.0, 0.0625], "cell_m": 0.0625, "ball_m": 0.3, "speed_m_s": 20.0,
+              "offset_m": [0.0, 0.0], "support": "ledges", "duration_s": 2.0}},
+    {"id": "glass-plate", "title": "250 mm glass plate, 500 cells",
+     "expect": "49 pieces, 0.99x realtime",
+     "spec": {"material": "glass", "striker": "iron", "failure_law": "strain-threshold", "plasticity": "off",
+              "plate_m": [0.25, 0.20, 0.01], "cell_m": 0.01, "ball_m": 0.06, "drop_m": 2.0,
+              "offset_m": [0.0, 0.0], "support": "ledges", "duration_s": 2.0}},
+    {"id": "glass-punch", "title": "The same plate hit three times as fast",
+     "expect": "a local hole instead of a shatter: most of the plate survives",
+     "spec": {"material": "glass", "striker": "iron", "failure_law": "strain-threshold", "plasticity": "off",
+              "plate_m": [0.25, 0.20, 0.01], "cell_m": 0.01, "ball_m": 0.06, "speed_m_s": 20.0,
+              "offset_m": [0.0, 0.0], "support": "ledges", "duration_s": 2.0}},
+    {"id": "glass-offcentre", "title": "The same plate struck off centre",
+     "expect": "the crack pattern follows the strike, not the geometry",
+     "spec": {"material": "glass", "striker": "iron", "failure_law": "strain-threshold", "plasticity": "off",
+              "plate_m": [0.25, 0.20, 0.01], "cell_m": 0.01, "ball_m": 0.06, "drop_m": 2.0,
+              "offset_m": [0.07, 0.04], "support": "ledges", "duration_s": 2.0}},
+    {"id": "iron-dent", "title": "Iron plate dents and keeps the dent",
+     "expect": "plastic flow on: permanent deformation, plastic work dissipated",
+     "spec": {"material": "iron", "striker": "iron", "failure_law": "strain-threshold", "plasticity": "on",
+              "plate_m": [0.15, 0.12, 0.01], "cell_m": 0.005, "ball_m": 0.06, "speed_m_s": 6.0,
+              "offset_m": [0.0, 0.0], "support": "ledges", "duration_s": 2.0}},
+    {"id": "iron-elastic", "title": "The same iron plate with plastic flow off",
+     "expect": "the elastic control: it springs back flat",
+     "spec": {"material": "iron", "striker": "iron", "failure_law": "strain-threshold", "plasticity": "off",
+              "plate_m": [0.15, 0.12, 0.01], "cell_m": 0.005, "ball_m": 0.06, "speed_m_s": 6.0,
+              "offset_m": [0.0, 0.0], "support": "ledges", "duration_s": 2.0}},
+    {"id": "oak-ground", "title": "Oak plate lying on the ground, not on ledges",
+     "expect": "the support changes what breaks: no span to bend across",
+     "spec": {"material": "oak", "striker": "iron", "failure_law": "strain-threshold", "plasticity": "off",
+              "plate_m": [0.25, 0.20, 0.01], "cell_m": 0.01, "ball_m": 0.06, "drop_m": 2.0,
+              "offset_m": [0.0, 0.0], "support": "flat", "duration_s": 2.0}},
+]
+
 LIMITS = {
     "plate_m": {"min": 0.03, "max": 1.0}, "thickness_m": {"min": 0.002, "max": 0.1},
 # The striker scales with the target: a 200 mm ball is a large projectile
@@ -164,6 +215,7 @@ def describe(engine_path: Path) -> dict[str, Any]:
         lanes.append({"id": key, "title": lane["title"], "available": path.is_file(), "max_cells": lane["max_cells"],
                       "timeout_s": lane["timeout_s"], "executable": path.name})
     return {"algorithms": lanes, "default": DEFAULT, "limits": LIMITS, "supports": list(SUPPORTS),
+            "scenarios": SCENARIOS,
             "materials": list(MATERIALS), "failure_laws": list(FAILURE_LAWS),
             "plasticity": list(PLASTICITY),
             "realtime_limit": REALTIME_LIMIT}

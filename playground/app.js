@@ -843,6 +843,34 @@
     $("fracture-run").disabled = fracture.busy || Boolean(over) || !(lane && lane.available);
   }
 
+  // Load a whole measured setup into the controls. The scene still runs from
+  // the form, so anything here can be changed before or after loading it.
+  function writeFracture(spec) {
+    const mm = (id, metres) => { $(id).value = String(Math.round(metres * 1000)); };
+    $("f-material").value = spec.material; $("f-striker").value = spec.striker;
+    $("f-failure-law").value = spec.failure_law; $("f-plasticity").value = spec.plasticity;
+    mm("f-length", spec.plate_m[0]); mm("f-width", spec.plate_m[1]); mm("f-thickness", spec.plate_m[2]);
+    mm("f-cell", spec.cell_m); mm("f-ball", spec.ball_m);
+    mm("f-offset-x", spec.offset_m[0]); mm("f-offset-z", spec.offset_m[1]);
+    $("f-support").value = spec.support; $("f-duration").value = String(spec.duration_s);
+    if (spec.speed_m_s != null) { $("f-speed").value = String(spec.speed_m_s); $("f-drop").value = ""; }
+    else { $("f-speed").value = ""; $("f-drop").value = String(spec.drop_m); }
+    fractureCells();
+  }
+
+  function renderFractureScenarios() {
+    const box = $("fracture-scenarios"); box.textContent = "";
+    (fracture.meta.scenarios || []).forEach((scenario) => {
+      const button = document.createElement("button");
+      button.type = "button"; button.className = "scenario-button";
+      const title = document.createElement("strong"); title.textContent = scenario.title;
+      const note = document.createElement("span"); note.textContent = scenario.expect;
+      button.append(title, note);
+      button.addEventListener("click", () => { writeFracture(scenario.spec); showToast(`Loaded: ${scenario.title}`); });
+      box.append(button);
+    });
+  }
+
   function renderFractureLanes() {
     const box = $("fracture-lanes"); box.textContent = "";
     fracture.meta.algorithms.forEach((lane) => {
@@ -934,6 +962,7 @@
       (optionsFor[id] || ["glass"]).forEach((m) => { const o = document.createElement("option"); o.value = m; o.textContent = m; select.append(o); });
       select.value = fracture.meta.default[key];
     }
+    renderFractureScenarios();
     renderFractureLanes();
     $("fracture-controls").addEventListener("input", fractureCells);
     $("fracture-controls").addEventListener("submit", (event) => { event.preventDefault(); runFractureLab(); });

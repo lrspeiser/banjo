@@ -262,3 +262,10 @@ h2 { margin-bottom: 0; font-size: 1.02rem; font-weight: 550; letter-spacing: -.0
 #fracture-result .metric.ok span:last-child { color: var(--mint); }
 #fracture-result .metric.bad span:last-child { color: #f18b88; }
 .small-badge.bad { border-color: rgba(241, 139, 136, .55); color: #f18b88; }
+
+/* Fracture lab scenario buttons: a measured setup in one click. */
+.fracture-scenarios { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 8px; margin-bottom: 14px; }
+.scenario-button { display: grid; gap: 3px; text-align: left; border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; background: transparent; color: inherit; cursor: pointer; }
+.scenario-button:hover { border-color: var(--mint-strong); }
+.scenario-button strong { font-size: .78rem; font-weight: 600; }
+.scenario-button span { color: var(--muted); font-size: .71rem; line-height: 1.35; }
