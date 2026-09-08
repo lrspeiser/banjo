@@ -232,6 +232,23 @@ dispatches; `compileBrittleMaterial` and `TileImpactScene` route through it;
 `banjo_fast_lattice_run` exposes `--failure-law strain-threshold|energy-scaled`;
 an unknown name throws rather than silently defaulting.
 
+**It costs nothing at runtime.** The law is a compile-time threshold: nothing in
+the substep loop knows which one produced the numbers in `BondRest`. Measured
+per-substep cost on the same scenes (`bond_updates_per_s`, CPU backend, double):
+
+| scene | strain-threshold | energy-scaled |
+|---|---:|---:|
+| glass, 20 mm | 18.4 M bond-updates/s, 92.8 us/step | 50.4 M, 33.8 us/step |
+| glass, 10 mm | 16.5 M, 1,145 us/step | 44.0 M, 428 us/step |
+| glass, 5 mm | 13.5 M, 12,787 us/step | 15.4 M, 11,267 us/step |
+| oak, 5 mm | 14.4 M, 12,067 us/step | 11.8 M, 14,668 us/step |
+
+The differences are entirely how many bonds are still alive to sweep: the
+energy-scaled law kills most of the coarse lattices early, so its later substeps
+are cheap. Nothing here should be read as the law being faster. A lane adopting
+it should expect the same cost per live bond and a different number of live
+bonds.
+
 **Validated.** `banjo_criterion_energy_tests` test 5 compares, for 8 presets x 3
 cell sizes x 2 horizons (48 combinations), the six damage thresholds and the bond
 compliance produced by `withFailureLaw` under the strain-threshold law against
