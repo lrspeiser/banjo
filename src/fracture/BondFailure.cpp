@@ -140,7 +140,8 @@ void symmetricEigen3(const Mat3 &matrix, double eigenvalues[3], Mat3 &vectors) {
 // Returns the number of eigen-directions kept: 3 for a solid neighbourhood, 2
 // for a coplanar one (a sheet one cell thick), fewer where fracture has
 // stripped a node of neighbours.
-[[nodiscard]] int symmetricPseudoInverse(const Mat3 &matrix, Mat3 &result) {
+[[nodiscard]] int symmetricPseudoInverse(
+    const Mat3 &matrix, Mat3 &result, Vec3 &unmeasured) {
     double eigenvalues[3];
     Mat3 vectors{};
     symmetricEigen3(matrix, eigenvalues, vectors);
@@ -150,9 +151,12 @@ void symmetricEigen3(const Mat3 &matrix, double eigenvalues[3], Mat3 &vectors) {
     }
     const double floor_value = 1.0e-9 * largest;
     result = Mat3{};
+    unmeasured = Vec3{};
     int rank = 0;
+    int dropped = -1;
     for (std::size_t column = 0; column < 3U; ++column) {
         if (!(eigenvalues[column] > floor_value)) {
+            dropped = static_cast<int>(column);
             continue;
         }
         ++rank;
@@ -163,6 +167,13 @@ void symmetricEigen3(const Mat3 &matrix, double eigenvalues[3], Mat3 &vectors) {
                     inverse * vectors.m[row][column] * vectors.m[col][column];
             }
         }
+    }
+    // Exactly one direction dropped -- a coplanar neighbourhood -- is the case
+    // the strain can still be stated on: report its normal so the strain can be
+    // projected into the plane. Two or more dropped leaves too little to say.
+    if (rank == 2 && dropped >= 0) {
+        const std::size_t column = static_cast<std::size_t>(dropped);
+        unmeasured = Vec3{vectors.m[0][column], vectors.m[1][column], vectors.m[2][column]};
     }
     return rank;
 }
@@ -226,8 +237,10 @@ void symmetricEigen3(const Mat3 &matrix, double eigenvalues[3], Mat3 &vectors) {
         }
 
         Mat3 inverse_rest{};
-        const int rank = symmetricPseudoInverse(rest_covariance, inverse_rest);
-        if (rank == 0) {
+        Vec3 unmeasured{};
+        const int rank =
+            symmetricPseudoInverse(rest_covariance, inverse_rest, unmeasured);
+        if (rank < 2) {
             continue;
         }
         // G = F - I = dA R+, E = (G + G^T + G^T G) / 2.
@@ -243,6 +256,36 @@ void symmetricEigen3(const Mat3 &matrix, double eigenvalues[3], Mat3 &vectors) {
                     0.5 * (gradient_minus_identity.m[row][column] +
                            gradient_minus_identity.m[column][row] +
                            quadratic.m[row][column]);
+            }
+        }
+
+        // A coplanar neighbourhood measures the deformation of its own plane and
+        // nothing else. Leaving the unmeasured direction at rest is not a
+        // neutral choice: it is not invariant under rigid rotation, so a sheet
+        // that merely flexes reads as shear. Projecting removes exactly those
+        // cross terms, and every live bond at such a node lies in the plane, so
+        // nothing the criterion reads is lost. Mirrored in
+        // fastlattice/LatticePhysics.hpp nodeStrain.
+        if (lengthSquared(unmeasured) > 0.0) {
+            const Vec3 traction{
+                green_lagrange_strain.m[0][0] * unmeasured.x +
+                    green_lagrange_strain.m[0][1] * unmeasured.y +
+                    green_lagrange_strain.m[0][2] * unmeasured.z,
+                green_lagrange_strain.m[1][0] * unmeasured.x +
+                    green_lagrange_strain.m[1][1] * unmeasured.y +
+                    green_lagrange_strain.m[1][2] * unmeasured.z,
+                green_lagrange_strain.m[2][0] * unmeasured.x +
+                    green_lagrange_strain.m[2][1] * unmeasured.y +
+                    green_lagrange_strain.m[2][2] * unmeasured.z};
+            const double normal = dot(traction, unmeasured);
+            const double n[3] = {unmeasured.x, unmeasured.y, unmeasured.z};
+            const double a[3] = {traction.x, traction.y, traction.z};
+            for (std::size_t row = 0; row < 3U; ++row) {
+                for (std::size_t column = 0; column < 3U; ++column) {
+                    green_lagrange_strain.m[row][column] +=
+                        -n[row] * a[column] - a[row] * n[column] +
+                        normal * n[row] * n[column];
+                }
             }
         }
 
