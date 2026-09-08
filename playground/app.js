@@ -815,6 +815,8 @@
     const speed = $("f-speed").value.trim();
     return {
       algorithm: $("f-algorithm").value,
+      material: $("f-material").value,
+      striker: $("f-striker").value,
       plate_m: [mm("f-length"), mm("f-width"), mm("f-thickness")],
       cell_m: mm("f-cell"),
       ball_m: mm("f-ball"),
@@ -862,6 +864,9 @@
     if (Number.isFinite(sum.realtime_ratio)) row("Realtime", `${sum.realtime_ratio.toFixed(3)}x (limit ${sum.realtime_limit}x)`, sum.realtime_ratio <= sum.realtime_limit ? "ok" : "bad");
     if (Number.isFinite(sum.fracture_window_ratio)) row("Fracture window alone", `${sum.fracture_window_ratio.toFixed(0)}x realtime`);
     row("Cells / bonds", `${sum.cells ?? "-"} / ${sum.bonds ?? "-"}`);
+    if (Number.isFinite(sum.peak_tensile_stretch)) row("Peak tensile strain", sum.peak_tensile_stretch.toFixed(5));
+    if (Number.isFinite(sum.rank_deficient_nodes)) row("Rank-deficient node reads", String(sum.rank_deficient_nodes));
+    if (sum.came_to_rest !== undefined && sum.came_to_rest !== null) row("Came to rest", sum.came_to_rest ? "yes" : "no, still moving at the end", sum.came_to_rest ? "ok" : "warn");
     row("Bonds broken", sum.broken_bonds ?? "-");
     row("Pieces", sum.components ?? "-");
     if (Number.isFinite(sum.first_failure_time_s)) row("First failure", `${(sum.first_failure_time_s * 1e6).toFixed(0)} us after contact`);
@@ -906,6 +911,11 @@
     fracture.meta.algorithms.forEach((lane) => { const o = document.createElement("option"); o.value = lane.id; o.textContent = lane.available ? lane.title : `${lane.title} (not built yet)`; o.disabled = !lane.available; select.append(o); });
     const preferred = fracture.meta.algorithms.find((l) => l.id === fracture.meta.default.algorithm && l.available) || fracture.meta.algorithms.find((l) => l.available);
     if (preferred) select.value = preferred.id;
+    for (const [id, key] of [["f-material", "material"], ["f-striker", "striker"]]) {
+      const select = $(id); select.textContent = "";
+      (fracture.meta.materials || ["glass"]).forEach((m) => { const o = document.createElement("option"); o.value = m; o.textContent = m; select.append(o); });
+      select.value = fracture.meta.default[key];
+    }
     renderFractureLanes();
     $("fracture-controls").addEventListener("input", fractureCells);
     $("fracture-controls").addEventListener("submit", (event) => { event.preventDefault(); runFractureLab(); });

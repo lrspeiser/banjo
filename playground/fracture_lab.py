@@ -38,12 +38,17 @@ ALGORITHMS: dict[str, dict[str, Any]] = {
               "max_cells": 4000, "timeout_s": 60, "contract": "lane"},
     "algo3": {"exe": "banjo_fracture_algo3", "title": "Algorithm 3: precomputed propagators + causal cones (exact)",
               "max_cells": 4000, "timeout_s": 60, "contract": "lane"},
-    "reference": {"exe": "banjo_fast_lattice_run", "title": "Reference: explicit lattice, every substep (CPU, double)",
-                  "max_cells": 600, "timeout_s": 180, "contract": "fast_lattice"},
+    "lattice": {"exe": "banjo_fast_lattice_run", "title": "Explicit lattice: every substep, the shared criterion",
+                "max_cells": 2400, "timeout_s": 240, "contract": "fast_lattice"},
 }
 
+MATERIALS = ("glass", "oak", "iron")
+SUPPORTS = ("ledges", "flat", "clamped")
+
 DEFAULT: dict[str, Any] = {
-    "algorithm": "algo3",
+    "algorithm": "lattice",
+    "material": "glass",
+    "striker": "iron",
     "plate_m": [0.25, 0.20, 0.01],
     "cell_m": 0.01,
     "ball_m": 0.06,
@@ -61,8 +66,8 @@ LIMITS = {
     "duration_s": {"min": 0.2, "max": 6.0},
 }
 
-FIELDS = {"algorithm", "plate_m", "cell_m", "ball_m", "drop_m", "speed_m_s", "offset_m", "support", "duration_s", "request_id"}
-SUPPORTS = ("ledges", "clamped")
+FIELDS = {"algorithm", "material", "striker", "plate_m", "cell_m", "ball_m", "drop_m", "speed_m_s",
+          "offset_m", "support", "duration_s", "request_id"}
 
 
 def _number(value: Any, low: float, high: float, label: str) -> float:
@@ -108,6 +113,10 @@ def validate(spec: Any) -> dict[str, Any]:
     result["offset_m"] = [_number(offset[0], -half[0], half[0], "offset x"), _number(offset[1], -half[1], half[1], "offset z")]
     if result["support"] not in SUPPORTS:
         raise ValueError(f"support must be one of {list(SUPPORTS)}")
+    if result["material"] not in MATERIALS:
+        raise ValueError(f"material must be one of {list(MATERIALS)}")
+    if result["striker"] not in MATERIALS:
+        raise ValueError(f"striker must be one of {list(MATERIALS)}")
     result["duration_s"] = _number(result["duration_s"], LIMITS["duration_s"]["min"], LIMITS["duration_s"]["max"], "duration")
     nx, ny, nz = cell_counts(result["plate_m"], result["cell_m"])
     result["cells_per_axis"] = [nx, ny, nz]
@@ -137,7 +146,7 @@ def describe(engine_path: Path) -> dict[str, Any]:
         lanes.append({"id": key, "title": lane["title"], "available": path.is_file(), "max_cells": lane["max_cells"],
                       "timeout_s": lane["timeout_s"], "executable": path.name})
     return {"algorithms": lanes, "default": DEFAULT, "limits": LIMITS, "supports": list(SUPPORTS),
-            "realtime_limit": REALTIME_LIMIT}
+            "materials": list(MATERIALS), "realtime_limit": REALTIME_LIMIT}
 
 
 def command(algorithm: str, spec: dict[str, Any], engine_path: Path, output: Path, cache_dir: Path,
@@ -152,14 +161,17 @@ def command(algorithm: str, spec: dict[str, Any], engine_path: Path, output: Pat
                 "--support", spec["support"], "--duration", f"{spec['duration_s']:.6g}",
                 "--cache", str(cache_dir), "--output", str(output)]
     # The explicit lattice runner: --tile X Y Z with Y the thickness, a ball
-    # radius, the bridge layout for ledges. It has no clamped support.
-    if spec["support"] != "ledges":
-        raise ValueError("The reference lane supports the plate on two ledges only")
-    return [str(exe), "--material", "glass", "--ball-material", "iron",
+    # radius, and a layout that is either two ledges or the ground. It has no
+    # pinned-perimeter support, so `clamped` is refused rather than silently
+    # run as something else.
+    if spec["support"] == "clamped":
+        raise ValueError("This lane supports the target on two ledges or on the ground, not clamped edges")
+    return [str(exe), "--material", spec["material"], "--ball-material", spec["striker"],
             "--tile", f"{L:.6g}", f"{T:.6g}", f"{W:.6g}", "--cell", f"{spec['cell_m']:.6g}",
             "--ball-radius", f"{spec['ball_m'] / 2:.6g}", "--speed", f"{spec['speed_m_s']:.6g}",
             "--offset", f"{spec['offset_m'][0]:.6g}", f"{spec['offset_m'][1]:.6g}",
-            "--layout", "bridge", "--settle-s", f"{spec['duration_s']:.6g}",
+            "--layout", "bridge" if spec["support"] == "ledges" else "flat",
+            "--settle-s", f"{spec['duration_s']:.6g}",
             "--backend", "cpu", "--precision", "double",
             "--record", str(output), "--report", str(report_path)]
 
@@ -203,6 +215,9 @@ def summary(report: dict[str, Any], wall_s: float, spec: dict[str, Any]) -> dict
         "largest_component_cells": _pick(report, "largest_component_cells", "handoff.largest_piece_cells"),
         "removed_energy_j": _pick(report, "removed_energy_j", "lattice.removed_energy_j"),
         "first_failure_time_s": _pick(report, "first_failure.time_s", "lattice.first_failure_s"),
+        "rank_deficient_nodes": _pick(report, "rank_deficient_nodes"),
+        "peak_tensile_stretch": _pick(report, "max_tensile_stretch"),
+        "came_to_rest": (report.get("rigid") or {}).get("came_to_rest"),
         "contact_impulse_n_s": _pick(report, "contact.impulse_n_s", "lattice.contact.impulse_n_s"),
     }
 
@@ -234,9 +249,10 @@ def run(app: Any, body: Any) -> dict[str, Any]:
     argv = command(algorithm, spec, app.engine_path, playback, cache_dir, report_path)
     (directory / "fracture-request.json").write_text(json.dumps({"spec": spec, "argv": argv}, indent=1), encoding="utf-8")
     nx, ny, nz = spec["cells_per_axis"]
-    name = (f"{lane['title'].split(':')[0]}: glass {spec['plate_m'][0]*1000:.0f}x{spec['plate_m'][1]*1000:.0f}x"
+    name = (f"{spec['material']} {spec['plate_m'][0]*1000:.0f}x{spec['plate_m'][1]*1000:.0f}x"
             f"{spec['plate_m'][2]*1000:.0f} mm, {nx}x{ny}x{nz} = {spec['cells']} cells, "
-            f"{spec['ball_m']*1000:.0f} mm iron ball at {spec['speed_m_s']:.2f} m/s")
+            f"{spec['ball_m']*1000:.0f} mm {spec['striker']} ball at {spec['speed_m_s']:.2f} m/s, "
+            f"{spec['support']}")
     started = time.perf_counter()
     case: dict[str, Any] = {"index": 0, "name": name, "package": {}, "status": "pending", "native_scene": False,
                             "playback_available": False, "warnings": [], "error": ""}

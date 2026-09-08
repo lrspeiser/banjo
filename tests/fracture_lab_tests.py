@@ -25,16 +25,18 @@ def rejects(spec, fragment):
 
 
 def main() -> int:
-    spec = lab.validate({"algorithm": "reference"})
+    spec = lab.validate({"algorithm": "lattice"})
     assert spec["cells_per_axis"] == [25, 20, 1] and spec["cells"] == 500, spec
     assert math.isclose(spec["speed_m_s"], math.sqrt(2 * 9.81 * 2.0)), spec["speed_m_s"]
 
-    given = lab.validate({"algorithm": "reference", "speed_m_s": 4.0})
+    given = lab.validate({"algorithm": "lattice", "speed_m_s": 4.0})
     assert math.isclose(given["drop_m"], 16 / (2 * 9.81)), given["drop_m"]
 
     rejects({"algorithm": "nope"}, "algorithm must be one of")
-    rejects({"algorithm": "reference", "plate_m": [0.25, 0.20, 0.004], "cell_m": 0.01}, "cubic cells")  # 4 mm thick, 10 mm cells: 2.5:1
-    rejects({"algorithm": "reference", "plate_m": [0.5, 0.5, 0.01], "cell_m": 0.01}, "instant-run cap")
+    rejects({"algorithm": "lattice", "material": "cheese"}, "material must be one of")
+    rejects({"algorithm": "lattice", "striker": "cheese"}, "striker must be one of")
+    rejects({"algorithm": "lattice", "plate_m": [0.25, 0.20, 0.004], "cell_m": 0.01}, "cubic cells")  # 4 mm thick, 10 mm cells: 2.5:1
+    rejects({"algorithm": "lattice", "plate_m": [0.5, 0.5, 0.01], "cell_m": 0.01}, "instant-run cap")
     rejects({"algorithm": "algo3", "offset_m": [0.2, 0.0]}, "offset x")
     rejects({"algorithm": "algo3", "bogus": 1}, "Unknown fracture lab fields")
 
@@ -45,12 +47,13 @@ def main() -> int:
     assert "--support" in argv and argv[argv.index("--support") + 1] == "ledges", argv
     assert argv[argv.index("--offset") + 1:argv.index("--offset") + 3] == ["0.01", "-0.02"], argv
 
-    ref = lab.command("reference", lab.validate({"algorithm": "reference"}), ENGINE, Path("o.json"), Path("c"), Path("r.json"))
+    ref = lab.command("lattice", lab.validate({"algorithm": "lattice"}), ENGINE, Path("o.json"), Path("c"), Path("r.json"))
     assert ref[ref.index("--tile") + 1:ref.index("--tile") + 4] == ["0.25", "0.01", "0.2"], "tile is L, thickness, W"
     assert ref[ref.index("--ball-radius") + 1] == "0.03", ref
     assert ref[ref.index("--layout") + 1] == "bridge", ref
+    assert ref[ref.index("--material") + 1] == "glass" and ref[ref.index("--ball-material") + 1] == "iron", ref
     try:
-        lab.command("reference", lab.validate({"algorithm": "reference", "support": "clamped"}), ENGINE, Path("o"), Path("c"), Path("r"))
+        lab.command("lattice", lab.validate({"algorithm": "lattice", "support": "clamped"}), ENGINE, Path("o"), Path("c"), Path("r"))
         raise AssertionError("reference accepted clamped support")
     except ValueError as error:
         assert "ledges" in str(error)
@@ -71,7 +74,13 @@ def main() -> int:
     assert out["precompute_cached"] is True and out["first_failure_time_s"] == 1e-4, out
 
     meta = lab.describe(ENGINE)
-    assert [a["id"] for a in meta["algorithms"]] == ["algo1", "algo2", "algo3", "reference"], meta
+    assert [a["id"] for a in meta["algorithms"]] == ["algo1", "algo2", "algo3", "lattice"], meta
+    assert meta["materials"] == ["glass", "oak", "iron"], meta
+    # A material claim needs all three under identical conditions, so the
+    # panel must offer all three on both sides of the impact.
+    for material in meta["materials"]:
+        spec = lab.validate({"algorithm": "lattice", "material": material, "striker": material})
+        assert spec["material"] == material and spec["striker"] == material, spec
     assert all(a["available"] is False for a in meta["algorithms"]), "no executables at a fake path"
     print("[PASS] fracture lab validation, commands and summaries")
     return 0

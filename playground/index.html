@@ -157,7 +157,7 @@
       <section class="tab-panel" id="panel-fracture" role="tabpanel" aria-labelledby="tab-fracture" hidden>
         <div class="section-intro">
           <p class="eyebrow">FRACTURE LAB / INSTANT RERUN</p>
-          <h1>Drop a ball on a glass plate.</h1>
+          <h1>Drop a ball on a plate.</h1>
           <p class="lede">Change the plate, the cell size, the ball or the drop, and run again. Each lane precomputes what it can when the plate is created and answers the strike from that; the reference lane steps every substep and is the yardstick, not the product. Every run states its wall time against the simulated interaction and the 1.1x rule.</p>
         </div>
         <div class="builder-layout">
@@ -165,6 +165,8 @@
             <div class="card-heading compact"><div><p class="eyebrow">01 / SCENE</p><h2>Plate, ball, drop</h2></div><span id="fracture-cells" class="small-badge">500 cells</span></div>
             <form id="fracture-controls" class="builder-fields">
               <label class="builder-field"><span>Algorithm</span><select id="f-algorithm"></select></label>
+              <label class="builder-field"><span>Target material</span><select id="f-material"></select></label>
+              <label class="builder-field"><span>Striker material</span><select id="f-striker"></select></label>
               <fieldset class="builder-group"><legend>Glass plate (mm)</legend>
                 <label><span>Length</span><input id="f-length" type="number" min="30" max="1000" step="5" value="250"></label>
                 <label><span>Width</span><input id="f-width" type="number" min="30" max="1000" step="5" value="200"></label>
@@ -180,7 +182,7 @@
                 <label><span>Along length</span><input id="f-offset-x" type="number" min="-500" max="500" step="5" value="0"></label>
                 <label><span>Along width</span><input id="f-offset-z" type="number" min="-500" max="500" step="5" value="0"></label>
               </fieldset>
-              <label class="builder-field"><span>Support</span><select id="f-support"><option value="ledges">Resting on two ledges</option><option value="clamped">Clamped edges</option></select></label>
+              <label class="builder-field"><span>Support</span><select id="f-support"><option value="ledges">Resting on two ledges</option><option value="flat">Lying on the ground</option><option value="clamped">Clamped edges</option></select></label>
               <label class="builder-field"><span>Simulated duration (s)</span><input id="f-duration" type="number" min="0.2" max="6" step="0.1" value="2"></label>
             </form>
             <p id="fracture-note" class="muted">Speed follows from the drop height (v = sqrt(2 g h)) unless a speed is given.</p>
