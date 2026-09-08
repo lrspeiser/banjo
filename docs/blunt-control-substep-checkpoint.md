@@ -49,10 +49,13 @@ with the substep count forced by a coarse glass target in the same world
 | 5 | tissue alone | 0 / 0 | 0.317 | never | 0.050 m, 0.12 m |
 | 901 | glass 2x2x2 (80 mm cells) | 0 / 1 | 0.394 | 0.082 s | 0.015 m, 0.26 m |
 | 2,271 | glass 3x3x3 (53 mm cells) | 0 / 1 | 0.530 | 0.276 s | 0.021 m (still moving), 0.21 m |
+| 4,699 | a 2x2x2 iron pacer (15 mm cells) placed 1.5 m away | 0 / 3 | 0.537 | 0.272 s | 0.050 m, 0.19 m |
 
-The reconstruction residual falls as the count rises (0.63, 0.35, 0.19 of the
-irreversible extension), so the springs are better resolved, not worse. The
-strain that grows is real lattice state.
+The reconstruction residual stays inside the gate throughout (0.63, 0.35, 0.19,
+0.35 of the irreversible extension), so the springs are resolved; the strain
+that grows is real lattice state. Between 2,271 and 4,699 substeps the peak
+strain settles at 0.53-0.54 and the first damage at 0.27 s, i.e. the resolved
+answer for this scene is "damaged during the topple", not "intact".
 
 The reason is the scene, not a solver defect that a smaller step would cure.
 The tool is a 30 x 120 x 100 mm iron block dropped at 1 m/s from 0.235 m above
@@ -91,6 +94,7 @@ trajectory.
     build/integration/Release/banjo_playground_record.exe --package build/blunt-probe/tissue_zero_damping.json    --steps 720 --output rec_zero.json
     build/integration/Release/banjo_playground_record.exe --package build/blunt-probe/tissue_plus_glass2.json     --steps 720 --output rec_glass2.json
     build/integration/Release/banjo_playground_record.exe --package build/blunt-probe/tissue_plus_glass3.json     --steps 720 --output rec_glass3.json
+build/integration/Release/banjo_playground_record.exe --package build/blunt-probe/tissue_pacer3600.json       --steps 720 --output rec_pacer.json
 
 The probe packages are the fixture with objects 7 and 8 (and object 1 at the
 stated resolution) kept and the unused materials dropped; nothing else changes.
