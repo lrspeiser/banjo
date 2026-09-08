@@ -55,6 +55,14 @@ void usage() {
         "  --iterations N                constraint iterations per substep (default 1)\n"
         "  --catalog                     glass: catalog BrittleBond route (variation, damping)\n"
         "  --node-radius-factor F        node contact radius = F * cell (default 0.5)\n"
+        "  --node-contact on|measure|off node-to-node contact in the lattice phase\n"
+        "                                (default on; measure records the overlap and\n"
+        "                                 applies nothing; off is the lane without it)\n"
+        "  --node-contact-skin F         pair-list skin = F * cell (default 0.25)\n"
+        "  --drop H                      start the tile H metres above its support\n"
+        "  --loose-cells                 remove every bond: a heap of separate cells,\n"
+        "                                a contact scene, no fracture claim\n"
+        "  --energy-audit                measure the damping and striker dissipation too\n"
         "  --quiet-ms --min-ms --max-ms --no-failure-ms   lattice phase exit rules\n"
         "  --settle-s S                  rigid settling limit (default 6)\n"
         "  --backend cpu|parallel|gpu --precision float|double --blocks N --threads N\n"
@@ -100,6 +108,15 @@ int main(int argc, char **argv) {
             else if (option == "--iterations") request.constraint_iterations = static_cast<unsigned>(number(value()));
             else if (option == "--catalog") request.catalog_material = true;
             else if (option == "--node-radius-factor") request.node_contact_radius_factor = number(value());
+            else if (option == "--node-contact") { const auto v = value();
+                if (v == "off") request.node_contact = NodeContactMode::Off;
+                else if (v == "measure") request.node_contact = NodeContactMode::Measure;
+                else if (v == "on") request.node_contact = NodeContactMode::On;
+                else throw std::invalid_argument("--node-contact takes on, measure or off"); }
+            else if (option == "--node-contact-skin") request.node_contact_skin_factor = number(value());
+            else if (option == "--drop") request.tile_drop_m = number(value());
+            else if (option == "--loose-cells") request.loose_cells = true;
+            else if (option == "--energy-audit") request.audit_energy = true;
             else if (option == "--quiet-ms") request.quiet_ms = number(value());
             else if (option == "--min-ms") request.min_ms = number(value());
             else if (option == "--max-ms") request.max_ms = number(value());

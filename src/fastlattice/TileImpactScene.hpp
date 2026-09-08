@@ -23,6 +23,11 @@ enum class SceneLayout : std::uint8_t {
     Bridge, // tile resting on two ledges above the ground; middle pieces fall
 };
 enum class BackendKind : std::uint8_t { Cpu, Cuda, CpuParallel };
+// Node-to-node contact inside the lattice phase. Off reproduces the lane before
+// the contact existed, bit for bit; Measure runs the broad and narrow phases and
+// records the worst overlap without applying any response, which is how the
+// "before" interpenetration is measured on the same scene; On applies it.
+enum class NodeContactMode : std::uint8_t { Off, Measure, On };
 
 struct TileImpactRequest {
     MaterialPreset tile_material{MaterialPreset::Glass};
@@ -47,6 +52,24 @@ struct TileImpactRequest {
     // instead of the strength-derived elastic reference shared by all presets.
     bool catalog_material{false};
     double node_contact_radius_factor{0.5}; // node contact radius = factor * cell
+    NodeContactMode node_contact{NodeContactMode::On};
+    // Extra height of the tile above its support at t = 0.
+    double tile_drop_m{0.0};
+    // Remove every bond after the lattice is generated, leaving a heap of loose
+    // cells that only contact can hold apart. This is a CONTACT scene, not a
+    // fracture one: nothing is precut to stand in for a fracture outcome, no
+    // fracture claim is made from it, and the criterion never runs (a bondless
+    // node has no strain). It exists so node contact can be measured on its own,
+    // and with tile_drop_m it is the pile that must hold.
+    bool loose_cells{false};
+    // Verlet skin of the pair list, as a fraction of the cell size. The list
+    // holds every pair within (2 * radius + skin) and is rebuilt when a node has
+    // drifted more than half the skin since it was built.
+    double node_contact_skin_factor{0.25};
+    // Bracket the damping sweep and the striker passes with a serial kinetic
+    // energy reduction, so their dissipation can be reported separately from the
+    // node contact's. Two extra passes over the nodes per substep.
+    bool audit_energy{false};
     double quiet_ms{10.0};
     double min_ms{5.0};
     double max_ms{200.0};
@@ -89,8 +112,12 @@ struct TileImpactSetup {
     double dt_s{};
     Vec3 origin{};
     double tile_bottom_y{}, tile_top_y{}, ground_y{};
+    // Height of the surface the tile is dropped onto: the ground in the flat
+    // layout, the ledge tops in the bridge one. Equal to tile_bottom_y unless
+    // the request asks for a drop.
+    double support_y{};
     std::vector<StaticBox> ledges;
-    CombinedContactMaterial ball_tile{}, tile_ground{}, ball_ground{};
+    CombinedContactMaterial ball_tile{}, tile_ground{}, ball_ground{}, tile_tile{};
     SphereState<double> sphere_world{};
     StepSettings<double> settings_scene{};   // origin-relative
     StepSettings<double> settings_world{};   // world frame (for the CPU comparison)
@@ -134,6 +161,9 @@ struct TileImpactMeasurements {
     float max_tensile_stretch{}, max_compressive_strain{}, max_shear_strain{};
     std::uint32_t rank_deficient_nodes{};
     ContactAccumulators contact{};
+    NodeContactAccumulators node_contact{};
+    double damping_dissipated_j{}, striker_dissipated_j{};
+    bool energy_audited{};
     std::size_t components{}, rigid_fragments{}, debris_particles{};
     double largest_piece_mass_kg{};
     std::size_t largest_piece_cells{};

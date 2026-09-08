@@ -74,6 +74,14 @@ template <typename Real> BANJO_HD bool finiteR(Real x) {
     return isfinite(x);
 #endif
 }
+template <typename Real> BANJO_HD Real floorR(Real x) {
+#if defined(__CUDA_ARCH__)
+    return floor(x);
+#else
+    using std::floor;
+    return floor(x);
+#endif
+}
 template <typename Real> BANJO_HD Real length(V3<Real> a) { return sqrtR(length2(a)); }
 // core/Math.hpp normalized(): fallback (1,0,0) below 1e-12.
 template <typename Real> BANJO_HD V3<Real> normalized(V3<Real> a) {
@@ -149,6 +157,91 @@ struct ContactSettings {
     Real prefilter_slack;
 };
 
+// ---------------------------------------------------------------------------
+// Node-to-node contact.
+// ---------------------------------------------------------------------------
+// A cell is a cube of side `cell`; for contact it is the sphere of radius
+// node_contact_radius = cell / 2 inscribed in it, which is the same radius the
+// support planes already use to hold a cell centre half a cell above a surface.
+// Two such cells touch when their centres are one cell apart, which is exactly
+// the lattice spacing, so the rest configuration sits on the contact threshold
+// and nothing is pushed at rest.
+//
+// THE RULE. Contact resolves a pair only where no LIVE bond joins it. A bonded
+// pair is already held by its bond; adding contact to it would apply two
+// responses to one interaction, stiffen the material in compression and change
+// the elastic reference the criterion is calibrated against. A pair whose bond
+// has failed is no longer held by anything, and that is precisely the crack
+// surface a fragment would otherwise pass through, so contact must act there.
+// The rule is enforced twice: unbonded-and-live pairs are never put in the pair
+// list, and nodeContactPair re-checks the bond's aliveness where the response
+// is applied.
+constexpr std::uint32_t kMaxPairsPerNode = 24;
+
+// mode
+enum : std::uint8_t {
+    kNodeContactOff = 0,     // no broad phase, no narrow phase: af8af80 exactly
+    kNodeContactMeasure = 1, // broad + narrow, overlap recorded, no response
+    kNodeContactOn = 2,      // broad + narrow with the response
+};
+
+template <typename Real>
+struct NodeContactSettings {
+    std::uint8_t mode;
+    // Per-node contact radius; two nodes touch at 2 * radius.
+    Real radius;
+    // Verlet skin: the pair list holds every pair within 2 * radius + skin, and
+    // is rebuilt once any node has moved more than skin / 2 since the build (two
+    // nodes each moving skin / 2 towards one another close exactly the skin).
+    Real skin;
+    Real margin;
+    Real restitution, restitution_speed_threshold;
+    Real static_friction, dynamic_friction;
+    // Power-of-two hash table size minus one; see latticeContactBucketMask.
+    std::uint32_t bucket_mask;
+};
+
+// Written by the one thread that runs the narrow phase, so every sum is in pair
+// order on every backend.
+struct NodeContactAccumulators {
+    unsigned long long contacts;      // pairs that received an impulse
+    unsigned long long pair_tests;    // narrow-phase pair evaluations
+    unsigned long long rebuilds;      // broad-phase rebuilds
+    unsigned long long pairs_listed;  // pairs in the list, summed over rebuilds
+    unsigned long long pair_overflow; // pairs a node could not store
+    double dissipated_kinetic_energy_j;
+    // Worst overlap between two cells that no live bond joins, over the whole
+    // lattice phase. Recorded in the measure mode as well, which is how the
+    // before/after numbers are taken on the same scene.
+    double maximum_overlap_m;
+    double maximum_position_correction_m;
+    // Momentum the pair responses added to the lattice. Every impulse is applied
+    // equal and opposite, so this is a rounding residual, not a budget.
+    double momentum_residual_x, momentum_residual_y, momentum_residual_z;
+};
+
+inline void clearNodeContactAccumulators(NodeContactAccumulators &c) {
+    c.contacts = 0;
+    c.pair_tests = 0;
+    c.rebuilds = 0;
+    c.pairs_listed = 0;
+    c.pair_overflow = 0;
+    c.dissipated_kinetic_energy_j = 0.0;
+    c.maximum_overlap_m = 0.0;
+    c.maximum_position_correction_m = 0.0;
+    c.momentum_residual_x = c.momentum_residual_y = c.momentum_residual_z = 0.0;
+}
+
+// Hash table size for a lattice of this many nodes: the smallest power of two
+// at least twice the node count, so the average bucket holds half a node. Both
+// the array allocation and the settings derive the mask from the node count by
+// this one rule, so they cannot disagree.
+[[nodiscard]] constexpr std::uint32_t latticeContactBucketMask(std::uint32_t node_count) {
+    std::uint32_t size = 64U;
+    while (size < 2U * node_count && size < (1U << 22)) size <<= 1U;
+    return size - 1U;
+}
+
 template <typename Real>
 struct StepSettings {
     Real dt;
@@ -160,7 +253,12 @@ struct StepSettings {
     // 1: absolute-position arithmetic in the CPU's operation order (double
     // reference). 0: displacement arithmetic (float fast path).
     std::uint8_t direct_arithmetic;
+    // 1: measure the lattice's kinetic energy across the damping sweep and the
+    // contact passes, so the dissipation of each can be reported separately.
+    // Two serial passes over the nodes per substep; off by default.
+    std::uint8_t audit_energy;
     ContactSettings<Real> contact;
+    NodeContactSettings<Real> node_contact;
     SupportSet<Real> support;
 };
 
@@ -231,6 +329,21 @@ struct LatticeArrays {
     // Sphere contact candidate lists, one ordered list per block.
     std::uint32_t *candidate_list;   // block_count * kMaxCandidatesPerBlock
     std::uint32_t *candidate_count;  // block_count
+    // Node-node contact broad phase. The hash is a counting sort of the nodes
+    // into a uniform grid of side 2 * radius + skin, laid out as a power-of-two
+    // hash table so an unbounded domain (fragments leaving the tile) needs no
+    // bounding box. Every array below is written in node index order or by one
+    // thread, so the pair list is the same on every backend.
+    std::int32_t *node_cell;         // 3N grid coordinates at the last build
+    Real *build_u;                   // 3N displacement at the last build
+    std::uint32_t *bucket_begin;     // buckets + 1, prefix sums
+    std::uint32_t *bucket_cursor;    // buckets, scatter cursors
+    std::uint32_t *bucket_nodes;     // N, nodes by bucket, ascending within one
+    std::uint32_t *pair_other;       // kMaxPairsPerNode * N, partners of node a
+    std::uint32_t *pair_bond;        // kMaxPairsPerNode * N, the pair's bond or kNoBond
+    std::uint32_t *pair_fill;        // N, pairs owned by node a
+    std::uint32_t *pair_node_list;   // N, nodes owning at least one pair, ascending
+    std::uint32_t *pair_node_count;  // 1
 };
 
 // Serial contact bookkeeping, written by the one thread that runs the pass.
@@ -906,6 +1019,260 @@ BANJO_HD void sphereContactPass(const LatticeArrays<Real> &L, const StepSettings
     }
     const Real shift = length(sphere.center - center_before);
     if (shift > Real(acc.maximum_center_shift_m)) acc.maximum_center_shift_m = static_cast<double>(shift);
+}
+
+// ---------------------------------------------------------------------------
+// Node-to-node contact: broad phase.
+// ---------------------------------------------------------------------------
+// Four steps, in this order. Steps 1 and 3 are per node and independent, so a
+// backend may spread them; steps 2 and 4 are one serial scan each and are run by
+// one thread on every backend. Nothing in any of them depends on the order the
+// threads finish in: step 1 writes only node i's own cell, step 3 writes only
+// node i's own pair slots, and the two serial steps walk the nodes in index
+// order. The pair list is therefore identical on the serial CPU, the parallel
+// CPU and the GPU.
+
+template <typename Real>
+BANJO_HD Real nodeContactCutoff(const NodeContactSettings<Real> &c) {
+    return Real(2) * c.radius + c.skin;
+}
+
+BANJO_HD std::uint32_t nodeContactBucket(std::int32_t ix, std::int32_t iy, std::int32_t iz,
+                                         std::uint32_t mask) {
+    // Teschner's spatial hash: three large primes, exclusive-or, masked to the
+    // table. Collisions are harmless because the gather compares the stored grid
+    // coordinates before accepting a node.
+    const std::uint32_t h = (static_cast<std::uint32_t>(ix) * 73856093U) ^
+                            (static_cast<std::uint32_t>(iy) * 19349663U) ^
+                            (static_cast<std::uint32_t>(iz) * 83492791U);
+    return h & mask;
+}
+
+// Step 1, per node: the node's grid cell, and the displacement the list is
+// built at, which the staleness test measures drift against.
+template <typename Real>
+BANJO_HD void nodeContactStoreCell(const LatticeArrays<Real> &L, const StepSettings<Real> &S,
+                                   std::uint32_t i) {
+    const Real inverse_cell = Real(1) / nodeContactCutoff(S.node_contact);
+    const V3<Real> p = position(L, i);
+    L.node_cell[3 * i] = static_cast<std::int32_t>(floorR(p.x * inverse_cell));
+    L.node_cell[3 * i + 1] = static_cast<std::int32_t>(floorR(p.y * inverse_cell));
+    L.node_cell[3 * i + 2] = static_cast<std::int32_t>(floorR(p.z * inverse_cell));
+    store3(L.build_u, i, load3(L.u, i));
+}
+
+// Step 2, one thread: counting sort of the nodes into the hash buckets.
+template <typename Real>
+BANJO_HD void nodeContactHashBuild(const LatticeArrays<Real> &L, const StepSettings<Real> &S) {
+    const std::uint32_t buckets = S.node_contact.bucket_mask + 1U;
+    for (std::uint32_t b = 0; b <= buckets; ++b) L.bucket_begin[b] = 0U;
+    for (std::uint32_t i = 0; i < L.node_count; ++i) {
+        if (L.mass[i] <= Real(0)) continue;
+        const std::uint32_t b = nodeContactBucket(L.node_cell[3 * i], L.node_cell[3 * i + 1],
+                                                  L.node_cell[3 * i + 2], S.node_contact.bucket_mask);
+        ++L.bucket_begin[b + 1U];
+    }
+    for (std::uint32_t b = 0; b < buckets; ++b) L.bucket_begin[b + 1U] += L.bucket_begin[b];
+    for (std::uint32_t b = 0; b < buckets; ++b) L.bucket_cursor[b] = L.bucket_begin[b];
+    for (std::uint32_t i = 0; i < L.node_count; ++i) {
+        if (L.mass[i] <= Real(0)) continue;
+        const std::uint32_t b = nodeContactBucket(L.node_cell[3 * i], L.node_cell[3 * i + 1],
+                                                  L.node_cell[3 * i + 2], S.node_contact.bucket_mask);
+        L.bucket_nodes[L.bucket_cursor[b]++] = i;
+    }
+}
+
+// Step 3, per node: the pairs node i owns. A pair belongs to its lower-index
+// end, so every unordered pair is emitted exactly once. Returns the pairs that
+// did not fit in the node's slots (a diagnostic; the cap is generous).
+template <typename Real>
+BANJO_HD std::uint32_t nodeContactGather(const LatticeArrays<Real> &L, const StepSettings<Real> &S,
+                                         std::uint32_t i) {
+    L.pair_fill[i] = 0U;
+    if (L.mass[i] <= Real(0)) return 0U;
+    const NodeContactSettings<Real> &c = S.node_contact;
+    const Real cutoff = nodeContactCutoff(c);
+    const Real cutoff_squared = cutoff * cutoff;
+    const V3<Real> p = position(L, i);
+    const std::int32_t cx = L.node_cell[3 * i], cy = L.node_cell[3 * i + 1], cz = L.node_cell[3 * i + 2];
+    std::uint32_t fill = 0U, overflow = 0U;
+    for (std::int32_t dz = -1; dz <= 1; ++dz) {
+        for (std::int32_t dy = -1; dy <= 1; ++dy) {
+            for (std::int32_t dx = -1; dx <= 1; ++dx) {
+                const std::int32_t gx = cx + dx, gy = cy + dy, gz = cz + dz;
+                const std::uint32_t b = nodeContactBucket(gx, gy, gz, c.bucket_mask);
+                for (std::uint32_t k = L.bucket_begin[b]; k < L.bucket_begin[b + 1U]; ++k) {
+                    const std::uint32_t j = L.bucket_nodes[k];
+                    if (j <= i) continue;
+                    // One bucket can hold several grid cells; take only the
+                    // nodes of the cell this scan is visiting, so a collision
+                    // never emits a pair twice.
+                    if (L.node_cell[3 * j] != gx || L.node_cell[3 * j + 1] != gy ||
+                        L.node_cell[3 * j + 2] != gz)
+                        continue;
+                    if (length2(position(L, j) - p) > cutoff_squared) continue;
+                    // The rule: a live bond already holds this pair.
+                    std::uint32_t bond = kNoBond;
+                    bool held_by_a_live_bond = false;
+                    for (std::uint32_t s = 0; s < L.max_degree; ++s) {
+                        const std::uint32_t slot = s * L.node_count + i;
+                        const std::uint32_t bj = L.nbr_bond[slot];
+                        if (bj == kNoBond) break;
+                        if (L.nbr_other[slot] != j) continue;
+                        bond = bj;
+                        held_by_a_live_bond = L.nbr_alive[slot] != 0U;
+                        break;
+                    }
+                    if (held_by_a_live_bond) continue;
+                    if (fill >= kMaxPairsPerNode) {
+                        ++overflow;
+                        continue;
+                    }
+                    L.pair_other[kMaxPairsPerNode * i + fill] = j;
+                    L.pair_bond[kMaxPairsPerNode * i + fill] = bond;
+                    ++fill;
+                }
+            }
+        }
+    }
+    L.pair_fill[i] = fill;
+    return overflow;
+}
+
+// Step 4, one thread: the ascending list of nodes that own at least one pair.
+// The narrow phase walks this instead of every node, so an intact lattice --
+// where no pair is unbonded and the list is empty -- costs nothing per substep.
+template <typename Real>
+BANJO_HD std::uint32_t nodeContactActiveList(const LatticeArrays<Real> &L) {
+    std::uint32_t count = 0U, pairs = 0U;
+    for (std::uint32_t i = 0; i < L.node_count; ++i) {
+        if (L.pair_fill[i] == 0U) continue;
+        L.pair_node_list[count++] = i;
+        pairs += L.pair_fill[i];
+    }
+    L.pair_node_count[0] = count;
+    return pairs;
+}
+
+// Whether the list has to be rebuilt before it is used: a node has drifted more
+// than half the skin since the build, so a pair that was outside the cutoff then
+// could be inside the contact distance now. One serial scan on every backend.
+template <typename Real>
+BANJO_HD bool nodeContactStale(const LatticeArrays<Real> &L, const StepSettings<Real> &S) {
+    const Real half_skin = Real(0.5) * S.node_contact.skin;
+    const Real limit = half_skin * half_skin;
+    for (std::uint32_t i = 0; i < L.node_count; ++i) {
+        const V3<Real> drift = load3(L.u, i) - load3(L.build_u, i);
+        if (length2(drift) > limit) return true;
+    }
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+// Node-to-node contact: narrow phase.
+// ---------------------------------------------------------------------------
+// One authoritative response per pair: a single normal impulse with the
+// restitution rule the striker uses, then one Coulomb friction impulse, then one
+// overlap correction, all applied equal and opposite so the pair's momentum is
+// unchanged and its centre of mass does not move. It is sphereContactNode with
+// the rigid ball replaced by a second node of finite mass.
+template <typename Real>
+BANJO_HD void nodeContactPair(const LatticeArrays<Real> &L, const StepSettings<Real> &S,
+                              std::uint32_t a, std::uint32_t b, std::uint32_t bond,
+                              NodeContactAccumulators &acc) {
+    // The rule, restated where the response is applied.
+    if (bond != kNoBond && L.alive[bond]) return;
+    const Real ma = L.mass[a], mb = L.mass[b];
+    if (ma <= Real(0) || mb <= Real(0)) return;
+    const NodeContactSettings<Real> &c = S.node_contact;
+    ++acc.pair_tests;
+    const V3<Real> r = position(L, b) - position(L, a);
+    const Real distance = length(r);
+    const V3<Real> normal = normalized(r); // a -> b
+    const Real gap = distance - Real(2) * c.radius;
+    // Recorded before the engagement test, and in the measure mode too: the
+    // deepest interpenetration of a pass-through happens when the two cells are
+    // already separating, which the engagement test would skip.
+    if (gap < Real(0) && -gap > Real(acc.maximum_overlap_m))
+        acc.maximum_overlap_m = static_cast<double>(-gap);
+    if (c.mode != kNodeContactOn) return;
+
+    V3<Real> va = load3(L.v, a), vb = load3(L.v, b);
+    const Real vn = dot(vb - va, normal); // negative while approaching
+    if (gap > maxR(c.margin, -vn * S.dt)) return;
+    const Real inverse_a = Real(1) / ma, inverse_b = Real(1) / mb;
+    const Real inverse_pair_mass = inverse_a + inverse_b;
+    const Real restitution = -vn > c.restitution_speed_threshold ? c.restitution : Real(0);
+    const Real desired_vn = gap > c.margin ? -gap / S.dt : -restitution * minR(vn, Real(0));
+    const Real normal_impulse = maxR(Real(0), (desired_vn - vn) / inverse_pair_mass);
+    if (normal_impulse > Real(0)) {
+        const V3<Real> va_before = va, vb_before = vb;
+        const Real before = Real(0.5) * ma * length2(va) + Real(0.5) * mb * length2(vb);
+        // impulse acts on b, and its negative on a: equal and opposite by
+        // construction, so no momentum is created by the pair.
+        const auto apply = [&](V3<Real> impulse) {
+            vb = vb + inverse_b * impulse;
+            va = va - inverse_a * impulse;
+        };
+        apply(normal_impulse * normal);
+        const V3<Real> relative = vb - va;
+        const V3<Real> tangent = relative - dot(relative, normal) * normal;
+        const Real tangent_speed = length(tangent);
+        if (tangent_speed > Real(1.0e-12)) {
+            const V3<Real> direction = tangent / tangent_speed;
+            const Real sticking_impulse = tangent_speed / inverse_pair_mass;
+            const Real friction_impulse = sticking_impulse <= c.static_friction * normal_impulse
+                ? sticking_impulse : minR(sticking_impulse, c.dynamic_friction * normal_impulse);
+            apply(-friction_impulse * direction);
+        }
+        store3(L.v, a, va);
+        store3(L.v, b, vb);
+        acc.dissipated_kinetic_energy_j += static_cast<double>(
+            before - (Real(0.5) * ma * length2(va) + Real(0.5) * mb * length2(vb)));
+        acc.momentum_residual_x += static_cast<double>(ma * (va.x - va_before.x) + mb * (vb.x - vb_before.x));
+        acc.momentum_residual_y += static_cast<double>(ma * (va.y - va_before.y) + mb * (vb.y - vb_before.y));
+        acc.momentum_residual_z += static_cast<double>(ma * (va.z - va_before.z) + mb * (vb.z - vb_before.z));
+        ++acc.contacts;
+    }
+    if (gap < -c.margin) {
+        const Real correction = minR(-gap - c.margin, Real(0.2) * c.radius);
+        const V3<Real> shift = (correction / inverse_pair_mass) * normal;
+        store3(L.u, a, load3(L.u, a) - inverse_a * shift);
+        store3(L.u, b, load3(L.u, b) + inverse_b * shift);
+        if (correction > Real(acc.maximum_position_correction_m))
+            acc.maximum_position_correction_m = static_cast<double>(correction);
+    }
+}
+
+// The whole narrow phase, sequential in pair order: owner node ascending, then
+// slot ascending. Like the striker pass it is one thread's work on every
+// backend, because the response of one pair changes the state the next pair
+// sees, and a fixed order is what makes the parallel backend bit identical to
+// the serial one.
+template <typename Real>
+BANJO_HD void nodeContactPass(const LatticeArrays<Real> &L, const StepSettings<Real> &S,
+                              NodeContactAccumulators &acc) {
+    const std::uint32_t owners = L.pair_node_count[0];
+    for (std::uint32_t k = 0; k < owners; ++k) {
+        const std::uint32_t a = L.pair_node_list[k];
+        const std::uint32_t fill = L.pair_fill[a];
+        for (std::uint32_t p = 0; p < fill; ++p) {
+            const std::uint32_t slot = kMaxPairsPerNode * a + p;
+            nodeContactPair(L, S, a, L.pair_other[slot], L.pair_bond[slot], acc);
+        }
+    }
+}
+
+// Total kinetic energy of the lattice, serial so the sum is in node order on
+// every backend. Used only by the energy audit (StepSettings::audit_energy),
+// which brackets the damping sweep and the contact passes to attribute the
+// dissipation of each separately.
+template <typename Real>
+BANJO_HD double latticeKineticEnergy(const LatticeArrays<Real> &L) {
+    double total = 0.0;
+    for (std::uint32_t i = 0; i < L.node_count; ++i)
+        total += static_cast<double>(Real(0.5) * L.mass[i] * length2(load3(L.v, i)));
+    return total;
 }
 
 // ---------------------------------------------------------------------------

@@ -78,6 +78,23 @@ StepSettings<double> buildSettings(const TileImpactSetup &setup, const Vec3 &ori
     s.contact.node_contact_radius = r.node_contact_radius_factor * r.cell_size_m;
     s.contact.contact_margin = 1.0e-5;
     s.contact.prefilter_slack = 0.05 * r.ball_radius_m;
+    s.audit_energy = r.audit_energy ? 1 : 0;
+    // Node-node contact. The cell is a cube of side `cell`; its contact sphere
+    // is the inscribed one, the same radius the support planes hold a cell
+    // centre above a surface with, so two cells touch exactly one cell apart --
+    // the lattice spacing -- and the rest configuration sits on the threshold.
+    // The pair coefficients are tile against tile.
+    s.node_contact.mode = r.node_contact == NodeContactMode::Off ? kNodeContactOff
+        : (r.node_contact == NodeContactMode::Measure ? kNodeContactMeasure : kNodeContactOn);
+    s.node_contact.radius = r.node_contact_radius_factor * r.cell_size_m;
+    s.node_contact.skin = r.node_contact_skin_factor * r.cell_size_m;
+    s.node_contact.margin = 1.0e-5;
+    s.node_contact.restitution = setup.tile_tile.restitution;
+    s.node_contact.restitution_speed_threshold = 0.5;
+    s.node_contact.static_friction = setup.tile_tile.static_friction;
+    s.node_contact.dynamic_friction = setup.tile_tile.dynamic_friction;
+    s.node_contact.bucket_mask =
+        latticeContactBucketMask(static_cast<std::uint32_t>(setup.matter.nodes.size()));
     const double infinity = std::numeric_limits<double>::infinity();
     // Nodes are cell centres, so a node rests half a cell above a surface.
     const double node_radius = 0.5 * r.cell_size_m;
@@ -87,7 +104,7 @@ StepSettings<double> buildSettings(const TileImpactSetup &setup, const Vec3 &ori
         s.support.plane_count = 1;
         s.support.planes[0] = ground;
     } else {
-        SupportPlane<double> ledges = makePlane(Vec3{0.0, setup.tile_bottom_y, 0.0} - origin, setup.tile_ground, node_radius);
+        SupportPlane<double> ledges = makePlane(Vec3{0.0, setup.support_y, 0.0} - origin, setup.tile_ground, node_radius);
         for (const StaticBox &ledge : setup.ledges) {
             const Vec3 relative = ledge.center_m - origin;
             addFootprint(ledges, relative.x, relative.z, 0.5 * ledge.dimensions_m.x, 0.5 * ledge.dimensions_m.z);
@@ -164,10 +181,18 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
     s.limit = measureLatticeResolutionLimit(s.asset, s.compiled);
     if (!(s.limit.explicit_substep_limit_s > 0.0))
         throw std::runtime_error("lattice has no resolution limit; is the material stiffness zero?");
+    if (r.loose_cells) {
+        // The substep limit above is the bonded lattice's, so the loose heap is
+        // stepped at the same rate as the material it is made of.
+        s.asset.bonds.clear();
+        s.asset.adjacent_bond_indices.clear();
+        s.asset.adjacency_offsets.assign(s.asset.nodes.size() + 1U, 0U);
+    }
     s.dt_s = r.dt_factor * s.limit.explicit_substep_limit_s;
 
     s.ground_y = 0.0;
-    s.tile_bottom_y = r.layout == SceneLayout::Flat ? 0.0 : r.ledge_height_m;
+    s.support_y = r.layout == SceneLayout::Flat ? 0.0 : r.ledge_height_m;
+    s.tile_bottom_y = s.support_y + r.tile_drop_m;
     s.tile_top_y = s.tile_bottom_y + r.tile_dimensions_m.y;
     const Vec3 tile_center{0.0, s.tile_bottom_y + 0.5 * r.tile_dimensions_m.y, 0.0};
     s.origin = tile_center;
@@ -197,6 +222,7 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
     s.ball_tile = combineContactMaterials(compileContactMaterial(s.ball_material), compileContactMaterial(s.tile_material));
     s.tile_ground = combineContactMaterials(compileContactMaterial(s.tile_material), compileContactMaterial(s.ground_material));
     s.ball_ground = combineContactMaterials(compileContactMaterial(s.ball_material), compileContactMaterial(s.ground_material));
+    s.tile_tile = combineContactMaterials(compileContactMaterial(s.tile_material), compileContactMaterial(s.tile_material));
 
     const double volume = 4.0 / 3.0 * std::numbers::pi * std::pow(r.ball_radius_m, 3.0);
     s.sphere_world.center = {r.ball_offset_x_m, s.tile_top_y + r.ball_radius_m + r.ball_gap_m, r.ball_offset_z_m};
@@ -271,6 +297,10 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
     m.broken_bonds = status.broken_bonds;
     m.removed_energy_j = status.removed_energy_j;
     m.contact = status.contact;
+    m.node_contact = status.node_contact;
+    m.damping_dissipated_j = status.damping_dissipated_j;
+    m.striker_dissipated_j = status.striker_dissipated_j;
+    m.energy_audited = status.energy_audited;
     if (status.last_failure_step != std::numeric_limits<std::uint64_t>::max())
         m.last_failure_s = static_cast<double>(status.last_failure_step) * setup.dt_s;
     if (status.first_failure_step != std::numeric_limits<std::uint64_t>::max())
@@ -562,7 +592,25 @@ std::string measurementsJson(const TileImpactMeasurements &m) {
                 {"maximum_penetration_m", m.contact.maximum_penetration_m},
                 {"maximum_position_correction_m", m.contact.maximum_position_correction_m},
                 {"maximum_center_shift_m", m.contact.maximum_center_shift_m},
-                {"ball_support_events", m.contact.ball_support_events}}}}},
+                {"ball_support_events", m.contact.ball_support_events}}},
+            {"node_contact", {
+                {"contacts", m.node_contact.contacts},
+                {"pair_tests", m.node_contact.pair_tests},
+                {"rebuilds", m.node_contact.rebuilds},
+                {"pairs_listed", m.node_contact.pairs_listed},
+                {"pair_overflow", m.node_contact.pair_overflow},
+                {"dissipated_kinetic_energy_j", m.node_contact.dissipated_kinetic_energy_j},
+                {"maximum_overlap_m", m.node_contact.maximum_overlap_m},
+                {"maximum_position_correction_m", m.node_contact.maximum_position_correction_m},
+                {"momentum_residual_n_s", {m.node_contact.momentum_residual_x,
+                                           m.node_contact.momentum_residual_y,
+                                           m.node_contact.momentum_residual_z}}}},
+            {"dissipated_kinetic_energy_j", {
+                {"audited", m.energy_audited},
+                {"node_contact", m.node_contact.dissipated_kinetic_energy_j},
+                {"striker_contact", m.energy_audited ? m.striker_dissipated_j
+                                                     : m.contact.dissipated_kinetic_energy_j},
+                {"bond_damping", m.damping_dissipated_j}}}}},
         {"handoff", {
             {"components", m.components}, {"rigid_fragments", m.rigid_fragments},
             {"debris_particles", m.debris_particles}, {"largest_piece_mass_kg", m.largest_piece_mass_kg},
@@ -681,6 +729,10 @@ SolverComparison compareWithBrittleBondSolver(
     TileImpactRequest fast_request = request;
     fast_request.precision = fast_precision;
     fast_request.backend = fast_backend;
+    // BrittleBondSolver has no node-to-node contact, so the comparison runs both
+    // lanes without it: this measurement is about the sweep order and the
+    // arithmetic, and enabling on one side only would compare two physics.
+    fast_request.node_contact = NodeContactMode::Off;
     auto reference_setup = buildTileImpactSetup(request);
     auto fast_setup = buildTileImpactSetup(fast_request);
     const double dt = reference_setup->dt_s;

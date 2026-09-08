@@ -181,6 +181,8 @@ public:
         sphere_ = convertSphere<Real>(sphere);
         status_ = {};
         dirty_start_ = true;
+        contact_rebuild_ = true;
+        status_.energy_audited = S_.audit_energy != 0;
         frames_.clear();
         // Per-thread scratch. Each thread gets its own view of the arrays so
         // that the rank-deficiency counter, the only element function
@@ -245,8 +247,11 @@ private:
     struct alignas(64) Scratch {
         float tensile{}, compressive{}, shear{};
         std::uint32_t degenerate{};
+        // Pairs the broad phase could not store, summed as integers, which is
+        // order independent.
+        std::uint32_t pair_overflow{};
         std::vector<Breakage> breakages;
-        char padding[64 - ((3 * sizeof(float) + sizeof(std::uint32_t) +
+        char padding[64 - ((3 * sizeof(float) + 2 * sizeof(std::uint32_t) +
                             sizeof(std::vector<Breakage>)) % 64)]{};
     };
 
@@ -338,7 +343,11 @@ private:
         }
         sphere_ = kicked;
         mark(3);
-        if (S_.sphere_enabled) sphereContactPass(L_, S_, sphere_, 1, status_.contact);
+        if (S_.sphere_enabled) {
+            const double before = S_.audit_energy ? latticeKineticEnergy(L_) : 0.0;
+            sphereContactPass(L_, S_, sphere_, 1, status_.contact);
+            if (S_.audit_energy) status_.striker_dissipated_j += before - latticeKineticEnergy(L_);
+        }
         mark(4);
         for (std::uint32_t iteration = 0; iteration < S_.constraint_iterations; ++iteration) {
             const bool first = iteration == 0;
@@ -358,14 +367,42 @@ private:
         forEach(N, [&](std::uint32_t i, unsigned) { nodeVelocityUpdate(L_, S_, i); });
         mark(8);
         if (S_.damping_fraction > Real(0)) {
+            const double before = S_.audit_energy ? latticeKineticEnergy(L_) : 0.0;
             sweepAll([&](std::uint32_t j) { bondDamp(L_, j, S_.damping_fraction, direct); });
+            if (S_.audit_energy) status_.damping_dissipated_j += before - latticeKineticEnergy(L_);
             forEach(N, [&](std::uint32_t i, unsigned) {
                 if (!L_.candidate[i]) nodeSupportVelocity(L_, S_, i);
             });
             mark(9);
         }
-        if (S_.sphere_enabled) sphereContactPass(L_, S_, sphere_, 2, status_.contact);
+        if (S_.sphere_enabled) {
+            const double before = S_.audit_energy ? latticeKineticEnergy(L_) : 0.0;
+            sphereContactPass(L_, S_, sphere_, 2, status_.contact);
+            if (S_.audit_energy) status_.striker_dissipated_j += before - latticeKineticEnergy(L_);
+        }
         mark(10);
+        // Node-node contact. Steps 1 and 3 of the broad phase are per node and
+        // write only that node's own slots, so spreading them changes nothing;
+        // the hash build, the active list, the staleness scan and the whole
+        // narrow phase are the serial backend's code, called here unchanged.
+        if (S_.node_contact.mode != kNodeContactOff) {
+            if (contact_rebuild_ || nodeContactStale(L_, S_)) {
+                forEach(N, [&](std::uint32_t i, unsigned) { nodeContactStoreCell(L_, S_, i); });
+                nodeContactHashBuild(L_, S_);
+                for (Scratch &scratch : scratch_) scratch.pair_overflow = 0U;
+                forEach(N, [&](std::uint32_t i, unsigned thread) {
+                    scratch_[thread].pair_overflow += nodeContactGather(L_, S_, i);
+                });
+                for (const Scratch &scratch : scratch_)
+                    status_.node_contact.pair_overflow += scratch.pair_overflow;
+                status_.node_contact.pairs_listed += nodeContactActiveList(L_);
+                ++status_.node_contact.rebuilds;
+                contact_rebuild_ = false;
+            }
+            mark(14);
+            nodeContactPass(L_, S_, status_.node_contact);
+            mark(15);
+        }
         forEach(N, [&](std::uint32_t i, unsigned thread) { nodeStrain(views_[thread], i, direct); });
         mark(11);
         for (Scratch &scratch : scratch_) {
@@ -405,7 +442,8 @@ private:
         status_.rank_deficient_nodes = disagreements;
         sphere_.center = sphere_.center + S_.dt * sphere_.velocity;
         sphereSupportContact(S_, sphere_, status_.contact);
-        if (any_failed) dirty_start_ = true;
+        // A failure changes which pairs no live bond holds.
+        if (any_failed) dirty_start_ = contact_rebuild_ = true;
         mark(13);
         return any_failed;
     }
@@ -422,6 +460,7 @@ private:
     SphereState<Real> sphere_{};
     RunStatus status_{};
     bool dirty_start_{true};
+    bool contact_rebuild_{true};
     std::vector<FrameCapture> frames_;
 };
 

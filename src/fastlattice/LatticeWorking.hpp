@@ -29,6 +29,11 @@ struct WorkingLattice {
     std::vector<std::uint32_t> range_begin, range_end, bond_block_begin;
     std::vector<std::uint32_t> candidate_list, candidate_count;
     std::vector<std::uint32_t> rank_deficient_nodes; // 1 counter
+    // Node-node contact broad phase.
+    std::vector<std::int32_t> node_cell;
+    std::vector<Real> build_u;
+    std::vector<std::uint32_t> bucket_begin, bucket_cursor, bucket_nodes;
+    std::vector<std::uint32_t> pair_other, pair_bond, pair_fill, pair_node_list, pair_node_count;
 
     static WorkingLattice fromState(const LatticeState &state, const LatticeSchedule &schedule) {
         WorkingLattice w;
@@ -87,6 +92,17 @@ struct WorkingLattice {
         w.candidate_list.assign(static_cast<std::size_t>(schedule.block_count) * kMaxCandidatesPerBlock, 0U);
         w.candidate_count.assign(schedule.block_count, 0U);
         w.rank_deficient_nodes.assign(1, 0U);
+        const std::uint32_t buckets = latticeContactBucketMask(state.node_count) + 1U;
+        w.node_cell.assign(3U * state.node_count, 0);
+        w.build_u.assign(3U * state.node_count, Real(0));
+        w.bucket_begin.assign(static_cast<std::size_t>(buckets) + 1U, 0U);
+        w.bucket_cursor.assign(buckets, 0U);
+        w.bucket_nodes.assign(state.node_count, 0U);
+        w.pair_other.assign(static_cast<std::size_t>(kMaxPairsPerNode) * state.node_count, 0U);
+        w.pair_bond.assign(static_cast<std::size_t>(kMaxPairsPerNode) * state.node_count, kNoBond);
+        w.pair_fill.assign(state.node_count, 0U);
+        w.pair_node_list.assign(state.node_count, 0U);
+        w.pair_node_count.assign(1, 0U);
         return w;
     }
 
@@ -159,6 +175,16 @@ struct WorkingLattice {
         a.candidate_list = candidate_list.data();
         a.candidate_count = candidate_count.data();
         a.rank_deficient_nodes = rank_deficient_nodes.data();
+        a.node_cell = node_cell.data();
+        a.build_u = build_u.data();
+        a.bucket_begin = bucket_begin.data();
+        a.bucket_cursor = bucket_cursor.data();
+        a.bucket_nodes = bucket_nodes.data();
+        a.pair_other = pair_other.data();
+        a.pair_bond = pair_bond.data();
+        a.pair_fill = pair_fill.data();
+        a.pair_node_list = pair_node_list.data();
+        a.pair_node_count = pair_node_count.data();
         return a;
     }
 };
@@ -194,6 +220,17 @@ template <typename Real>
     out.damping_fraction = static_cast<Real>(s.damping_fraction);
     out.sphere_enabled = s.sphere_enabled;
     out.direct_arithmetic = s.direct_arithmetic;
+    out.audit_energy = s.audit_energy;
+    out.node_contact.mode = s.node_contact.mode;
+    out.node_contact.radius = static_cast<Real>(s.node_contact.radius);
+    out.node_contact.skin = static_cast<Real>(s.node_contact.skin);
+    out.node_contact.margin = static_cast<Real>(s.node_contact.margin);
+    out.node_contact.restitution = static_cast<Real>(s.node_contact.restitution);
+    out.node_contact.restitution_speed_threshold =
+        static_cast<Real>(s.node_contact.restitution_speed_threshold);
+    out.node_contact.static_friction = static_cast<Real>(s.node_contact.static_friction);
+    out.node_contact.dynamic_friction = static_cast<Real>(s.node_contact.dynamic_friction);
+    out.node_contact.bucket_mask = s.node_contact.bucket_mask;
     out.contact.static_friction = static_cast<Real>(s.contact.static_friction);
     out.contact.dynamic_friction = static_cast<Real>(s.contact.dynamic_friction);
     out.contact.restitution = static_cast<Real>(s.contact.restitution);

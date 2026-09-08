@@ -146,9 +146,13 @@ struct DeviceStatus {
     unsigned exit_reason;
     unsigned frames_captured;
     unsigned candidate_overflow;
+    unsigned contact_rebuild;
+    unsigned node_pair_overflow;
     unsigned padding;
     double removed_energy_j;
+    double damping_dissipated_j, striker_dissipated_j;
     ContactAccumulators contact;
+    NodeContactAccumulators node_contact;
     long long phase_cycles[kPhaseCount];
     // Peak substep strains over the run, as non-negative float bit patterns
     // so atomicMax on int orders them correctly.
@@ -186,6 +190,7 @@ latticeKernel(LatticeArrays<Real> L, StepSettings<Real> S, DeviceControl C, Devi
     volatile unsigned *exit_flag = &st->exit_reason;
     volatile unsigned *dirty_flag = &st->dirty_start;
     volatile unsigned *frames_flag = &st->frames_captured;
+    volatile unsigned *rebuild_flag = &st->contact_rebuild;
     // Single-block runs keep the hot state in shared memory: positions (every
     // colour stage), node strain and validity (the resolve phase gathers
     // them) and, when they fit, the bond constants. Copied in here; the
@@ -327,7 +332,10 @@ latticeKernel(LatticeArrays<Real> L, StepSettings<Real> S, DeviceControl C, Devi
         if (leader) {
             SphereState<Real> s = *sphere_ptr;
             s.velocity = s.velocity + S.dt * S.gravity;
+            const double before = S.audit_energy ? latticeKineticEnergy(L) : 0.0;
             if (S.sphere_enabled) sphereContactPass(L, S, s, 1, st->contact);
+            if (S.audit_energy && S.sphere_enabled)
+                st->striker_dissipated_j += before - latticeKineticEnergy(L);
             *sphere_ptr = s;
         }
         sync();
@@ -351,12 +359,18 @@ latticeKernel(LatticeArrays<Real> L, StepSettings<Real> S, DeviceControl C, Devi
         sync();
         mark(8);
         if (S.damping_fraction > Real(0)) {
+            // Bracketed by syncs so the leader's reduction sees no thread's
+            // damping write, in either direction.
+            if (leader && S.audit_energy) st->damping_dissipated_j += latticeKineticEnergy(L);
+            if (S.audit_energy) sync();
             sweep(0U, [&](unsigned j) { bondDamp(L, j, S.damping_fraction, direct); });
             sync();
             if ((block & 1U) == 0U) sweep(1U, [&](unsigned j) { bondDamp(L, j, S.damping_fraction, direct); });
             sync();
             if ((block & 1U) == 1U) sweep(1U, [&](unsigned j) { bondDamp(L, j, S.damping_fraction, direct); });
             sync();
+            if (leader && S.audit_energy) st->damping_dissipated_j -= latticeKineticEnergy(L);
+            if (S.audit_energy) sync();
             for (unsigned i = nb + tid; i < ne; i += nthreads)
                 if (!L.candidate[i]) nodeSupportVelocity(L, S, i);
             sync();
@@ -364,11 +378,43 @@ latticeKernel(LatticeArrays<Real> L, StepSettings<Real> S, DeviceControl C, Devi
         }
         if (leader && S.sphere_enabled) {
             SphereState<Real> s = *sphere_ptr;
+            const double before = S.audit_energy ? latticeKineticEnergy(L) : 0.0;
             sphereContactPass(L, S, s, 2, st->contact);
+            if (S.audit_energy) st->striker_dissipated_j += before - latticeKineticEnergy(L);
             *sphere_ptr = s;
         }
         sync();
         mark(10);
+        // Node-node contact: the same four broad-phase steps and the same serial
+        // narrow phase as the CPU backends. Steps 1 and 3 are per node and are
+        // spread over the threads; steps 2 and 4, the staleness scan and the
+        // narrow phase run on the leader, which is where the striker pass runs
+        // for the same reason.
+        if (S.node_contact.mode != kNodeContactOff) {
+            if (leader && *rebuild_flag == 0U && nodeContactStale(L, S)) *rebuild_flag = 1U;
+            sync();
+            if (*rebuild_flag != 0U) {
+                for (unsigned i = nb + tid; i < ne; i += nthreads) nodeContactStoreCell(L, S, i);
+                sync();
+                if (leader) nodeContactHashBuild(L, S);
+                sync();
+                for (unsigned i = nb + tid; i < ne; i += nthreads) {
+                    const unsigned over = nodeContactGather(L, S, i);
+                    if (over != 0U) atomicAdd(&st->node_pair_overflow, over);
+                }
+                sync();
+                if (leader) {
+                    st->node_contact.pairs_listed += nodeContactActiveList(L);
+                    st->node_contact.rebuilds += 1ULL;
+                    *rebuild_flag = 0U;
+                }
+                sync();
+            }
+            mark(14);
+            if (leader) nodeContactPass(L, S, st->node_contact);
+            sync();
+            mark(15);
+        }
         for (unsigned i = nb + tid; i < ne; i += nthreads) nodeStrain(L, i, direct);
         sync();
         mark(11);
@@ -395,6 +441,8 @@ latticeKernel(LatticeArrays<Real> L, StepSettings<Real> S, DeviceControl C, Devi
             const unsigned long long completed = step + 1ULL;
             if (st->any_failed) {
                 st->dirty_start = 1U;
+                // A failure changes which pairs no live bond holds.
+                st->contact_rebuild = 1U;
                 if (st->first_failure_step == ~0ULL) st->first_failure_step = step;
                 st->last_failure_step = step;
                 st->failure_rounds += 1U;
@@ -484,6 +532,12 @@ public:
         bond_block_begin_.upload(w.bond_block_begin);
         candidate_list_.upload(w.candidate_list); candidate_count_.upload(w.candidate_count);
         degenerate_.upload(w.rank_deficient_nodes);
+        node_cell_.upload(w.node_cell); build_u_.upload(w.build_u);
+        bucket_begin_.upload(w.bucket_begin); bucket_cursor_.upload(w.bucket_cursor);
+        bucket_nodes_.upload(w.bucket_nodes);
+        pair_other_.upload(w.pair_other); pair_bond_.upload(w.pair_bond);
+        pair_fill_.upload(w.pair_fill); pair_node_list_.upload(w.pair_node_list);
+        pair_node_count_.upload(w.pair_node_count);
 
         L_ = w.arrays();
         L_.x0 = x0_.data(); L_.u = u_.data(); L_.u_prev = u_prev_.data(); L_.v = v_.data();
@@ -506,6 +560,12 @@ public:
         L_.bond_block_begin = bond_block_begin_.data(); L_.candidate_list = candidate_list_.data();
         L_.candidate_count = candidate_count_.data();
         L_.rank_deficient_nodes = degenerate_.data();
+        L_.node_cell = node_cell_.data(); L_.build_u = build_u_.data();
+        L_.bucket_begin = bucket_begin_.data(); L_.bucket_cursor = bucket_cursor_.data();
+        L_.bucket_nodes = bucket_nodes_.data();
+        L_.pair_other = pair_other_.data(); L_.pair_bond = pair_bond_.data();
+        L_.pair_fill = pair_fill_.data(); L_.pair_node_list = pair_node_list_.data();
+        L_.pair_node_count = pair_node_count_.data();
 
         std::vector<SphereState<Real>> sphere_host{convertSphere<Real>(sphere)};
         sphere_.upload(sphere_host);
@@ -513,7 +573,9 @@ public:
         initial.first_failure_step = ~0ULL;
         initial.last_failure_step = ~0ULL;
         initial.dirty_start = 1U;
+        initial.contact_rebuild = 1U;
         clearContactAccumulators(initial.contact);
+        clearNodeContactAccumulators(initial.node_contact);
         std::vector<DeviceStatus> status_host{initial};
         status_.upload(status_host);
         host_status_ = {};
@@ -592,6 +654,11 @@ public:
             host_status_.removed_energy_j = d.removed_energy_j;
             host_status_.contact = d.contact;
             host_status_.contact.candidate_overflow = d.candidate_overflow;
+            host_status_.node_contact = d.node_contact;
+            host_status_.node_contact.pair_overflow = d.node_pair_overflow;
+            host_status_.damping_dissipated_j = d.damping_dissipated_j;
+            host_status_.striker_dissipated_j = d.striker_dissipated_j;
+            host_status_.energy_audited = S_.audit_energy != 0;
             host_status_.frames_captured = d.frames_captured;
             host_status_.exit_reason = d.exit_reason;
             if (d.candidate_overflow != 0U)
@@ -690,6 +757,10 @@ private:
     DeviceVector<std::uint32_t> range_begin_, range_end_, bond_block_begin_;
     DeviceVector<std::uint32_t> candidate_list_, candidate_count_;
     DeviceVector<std::uint32_t> degenerate_;
+    DeviceVector<std::int32_t> node_cell_;
+    DeviceVector<Real> build_u_;
+    DeviceVector<std::uint32_t> bucket_begin_, bucket_cursor_, bucket_nodes_;
+    DeviceVector<std::uint32_t> pair_other_, pair_bond_, pair_fill_, pair_node_list_, pair_node_count_;
     DeviceVector<SphereState<Real>> sphere_;
     DeviceVector<DeviceStatus> status_;
     DeviceVector<Real> frame_u_, frame_damage_;
