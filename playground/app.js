@@ -801,6 +801,116 @@
     $("b-duration-out").textContent = `${Math.round(spec.duration_s * 1000)} ms`;
   }
 
+  // Fracture lab: the panel that reruns a lane on a changed plate or drop. It
+  // sends parameters, the server runs the lane executable under its timeout and
+  // registers the recording as a job; the result opens in the 3D tab. Every
+  // number shown comes from the lane's own report or the server's clock.
+  const fracture = { meta: null, busy: false, lastJob: null };
+
+  function readFracture() {
+    const mm = (id) => Number($(id).value) / 1000;
+    const speed = $("f-speed").value.trim();
+    return {
+      algorithm: $("f-algorithm").value,
+      plate_m: [mm("f-length"), mm("f-width"), mm("f-thickness")],
+      cell_m: mm("f-cell"),
+      ball_m: mm("f-ball"),
+      drop_m: Number($("f-drop").value),
+      speed_m_s: speed === "" ? null : Number(speed),
+      offset_m: [mm("f-offset-x"), mm("f-offset-z")],
+      support: $("f-support").value,
+      duration_s: Number($("f-duration").value),
+    };
+  }
+
+  function fractureCells() {
+    const spec = readFracture();
+    const n = spec.plate_m.map((d) => Math.max(1, Math.round(d / spec.cell_m)));
+    const cells = n[0] * n[1] * n[2];
+    const lane = fracture.meta && fracture.meta.algorithms.find((a) => a.id === spec.algorithm);
+    const over = lane && cells > lane.max_cells;
+    $("fracture-cells").textContent = `${n[0]}x${n[1]}x${n[2]} = ${cells} cells` + (over ? ` (over this lane's ${lane.max_cells})` : "");
+    $("fracture-cells").classList.toggle("bad", Boolean(over));
+    const v = spec.speed_m_s ?? Math.sqrt(2 * 9.81 * spec.drop_m);
+    $("fracture-note").textContent = `Impact at ${v.toFixed(2)} m/s` + (spec.speed_m_s == null ? ` from a ${spec.drop_m.toFixed(2)} m drop.` : ` (given speed).`);
+    $("fracture-run").disabled = fracture.busy || Boolean(over) || !(lane && lane.available);
+  }
+
+  function renderFractureLanes() {
+    const box = $("fracture-lanes"); box.textContent = "";
+    fracture.meta.algorithms.forEach((lane) => {
+      const p = document.createElement("p"); p.className = lane.available ? "" : "muted";
+      p.textContent = `${lane.title}: ${lane.available ? `built (${lane.executable}), up to ${lane.max_cells} cells, ${lane.timeout_s} s timeout` : `not built yet (${lane.executable})`}`;
+      box.append(p);
+    });
+  }
+
+  function renderFractureResult(result) {
+    const box = $("fracture-result"); box.textContent = "";
+    const row = (label, value, cls = "") => { const p = document.createElement("p"); p.className = `metric ${cls}`.trim(); const l = document.createElement("span"); l.className = "metric-label"; l.textContent = label; const v = document.createElement("span"); v.textContent = value; p.append(l, v); box.append(p); };
+    if (result.status !== "complete") { row("Status", result.error || result.message || result.status, "bad"); return; }
+    const sum = (result.fracture && result.fracture.summary) || {};
+    const s3 = (x, unit = "") => Number.isFinite(x) ? `${x.toFixed(3)}${unit}` : "-";
+    row("Lane", result.fracture.lane);
+    row("Server wall (parameters to recording)", s3(sum.server_wall_s, " s"));
+    if (Number.isFinite(sum.precompute_s)) row("Precompute at creation", `${s3(sum.precompute_s, " s")}${sum.precompute_cached ? " (cached)" : ""}`);
+    row("Lane compute wall", s3(sum.compute_wall_s, " s"));
+    row("Simulated interaction", s3(sum.simulated_s, " s"));
+    if (Number.isFinite(sum.realtime_ratio)) row("Realtime", `${sum.realtime_ratio.toFixed(3)}x (limit ${sum.realtime_limit}x)`, sum.realtime_ratio <= sum.realtime_limit ? "ok" : "bad");
+    if (Number.isFinite(sum.fracture_window_ratio)) row("Fracture window alone", `${sum.fracture_window_ratio.toFixed(0)}x realtime`);
+    row("Cells / bonds", `${sum.cells ?? "-"} / ${sum.bonds ?? "-"}`);
+    row("Bonds broken", sum.broken_bonds ?? "-");
+    row("Pieces", sum.components ?? "-");
+    if (Number.isFinite(sum.first_failure_time_s)) row("First failure", `${(sum.first_failure_time_s * 1e6).toFixed(0)} us after contact`);
+    if (Number.isFinite(sum.removed_energy_j)) row("Energy removed by fracture", s3(sum.removed_energy_j, " J"));
+    if (Number.isFinite(sum.contact_impulse_n_s)) row("Contact impulse", s3(sum.contact_impulse_n_s, " N s"));
+  }
+
+  async function openFractureJob(jobId) {
+    const job = await api(`/api/jobs/${encodeURIComponent(jobId)}`);
+    state.job = job; state.jobId = job.id; localStorage.setItem(latestJobStorageKey, state.jobId);
+    const url = new URL(window.location.href); url.searchParams.set("job", job.id); history.replaceState(null, "", url);
+    state.selectedCase = Math.max(0, job.cases?.findIndex(playbackAvailable) ?? 0); state.latestPlan = job.plan;
+    renderJob(job); renderLanguage(); renderResults();
+    if (job.cases?.some(playbackAvailable)) { loadPlayback(state.selectedCase, true); activateTab("viewer"); }
+    else { clearViewer("This run has no playback."); activateTab("results"); }
+  }
+
+  async function runFractureLab() {
+    if (fracture.busy) return;
+    fracture.busy = true; $("fracture-run").disabled = true; $("fracture-run").classList.add("is-busy");
+    setText($("fracture-state"), "Running"); $("fracture-open").hidden = true;
+    const started = performance.now();
+    try {
+      const body = { ...readFracture(), request_id: `fracture-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}` };
+      const result = await api("/api/fracture/run", { method: "POST", headers: { "Content-Type": "application/json", ...tokenHeaders() }, body: JSON.stringify(body) });
+      const roundTrip = (performance.now() - started) / 1000;
+      renderFractureResult(result);
+      setText($("fracture-state"), result.status === "complete" ? `Done in ${roundTrip.toFixed(2)} s` : "Failed");
+      fracture.lastJob = result.job_id;
+      if (result.status === "complete") { $("fracture-open").hidden = false; await openFractureJob(result.job_id); }
+    } catch (error) {
+      setText($("fracture-state"), "Failed"); $("fracture-result").textContent = error.message; showToast(error.message, true);
+    } finally {
+      fracture.busy = false; $("fracture-run").classList.remove("is-busy"); fractureCells();
+    }
+  }
+
+  async function initFractureLab() {
+    try { fracture.meta = await api("/api/fracture"); }
+    catch (error) { showToast(`Fracture lab unavailable: ${error.message}`, true); return; }
+    const select = $("f-algorithm"); select.textContent = "";
+    fracture.meta.algorithms.forEach((lane) => { const o = document.createElement("option"); o.value = lane.id; o.textContent = lane.available ? lane.title : `${lane.title} (not built yet)`; o.disabled = !lane.available; select.append(o); });
+    const preferred = fracture.meta.algorithms.find((l) => l.id === fracture.meta.default.algorithm && l.available) || fracture.meta.algorithms.find((l) => l.available);
+    if (preferred) select.value = preferred.id;
+    renderFractureLanes();
+    $("fracture-controls").addEventListener("input", fractureCells);
+    $("fracture-controls").addEventListener("submit", (event) => { event.preventDefault(); runFractureLab(); });
+    $("fracture-run").addEventListener("click", runFractureLab);
+    $("fracture-open").addEventListener("click", () => { if (fracture.lastJob) openFractureJob(fracture.lastJob).catch((e) => showToast(e.message, true)); });
+    fractureCells();
+  }
+
   async function initBuilder() {
     try { builder.meta = await api("/api/builder"); }
     catch (error) { setText($("builder-verdict"), `Builder unavailable: ${error.message}`); return; }
@@ -986,6 +1096,7 @@
     document.querySelectorAll(".tab-panel").forEach((panel) => { const active = panel.id === `panel-${name}`; panel.classList.toggle("is-visible", active); panel.hidden = !active; });
     if (name === "language") renderLanguage(); if (name === "results") renderResults(); if(name === "viewer") renderViewerCaseSelect();
     if (name === "builder" && !builder.meta) initBuilder();
+    if (name === "fracture" && !fracture.meta) initFractureLab();
   }
 
   async function loadGoal() {
