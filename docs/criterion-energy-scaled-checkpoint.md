@@ -20,9 +20,10 @@ Status labels: **implemented** (code exists and a CMake target builds it),
    glass tile was made of a material 795 times tougher than glass at 20 mm cells
    and 199 times tougher at 5 mm.
 2. **On a well-posed fracture problem the answer converges.** The pre-cracked
-   strip advances 25.0 / 42.5 / 47.5 mm at 10 / 5 / 2.5 mm cells (+70%, +12%),
-   and Griffith's threshold is reproduced: the crack runs at G/Gc = 1.0 and not
-   at 0.8.
+   strip advances 25.0 / 42.5 / 47.5 mm at 10 / 5 / 2.5 mm cells; the clean step
+   is 5 -> 2.5 mm at **+12%** (the 10 mm rung sits close to the bulk threshold,
+   section 5.3). Griffith's threshold is reproduced: the crack does not move at
+   G/Gc = 0.8, moves one cell at 1.0 and runs the whole strip at 2.4.
 3. **On the tile the answer does not converge, and the brief's gate is not met.**
    Piece count still grows 3-6x per level under the new law (6-15x under the
    old); largest piece and removed energy do not settle. Timestep sensitivity
@@ -34,8 +35,9 @@ Status labels: **implemented** (code exists and a CMake target builds it),
    Where R > 1 the impact wave takes every bond it reaches past the threshold -
    93% of the 20 mm glass tile's bonds break - so the fragment size is the cell
    size and a piece count counts cells. Glass under this strike would need about
-   31 um cells to be resolvable at all; that is the same bound as its 0.28 mm
-   Irwin length, reached from the lattice side.
+   31 um cells to be resolvable at all - the same order as its 0.28 mm Irwin
+   length, reached from the lattice side and by a route that never mentions
+   LEFM.
 5. **The crack speed check passes.** 0.39 c_R against Freund's 0.375 estimate at
    G/Gc = 1.6 (4%), never super-Rayleigh, over 0.6 c_R only at G/Gc = 2.4 where
    the crack is branching.
@@ -316,7 +318,7 @@ reported next to it and their ratio says how straight the front is.
 ### 5.2 The Griffith threshold: does the crack run exactly when G > Gc?
 
 *Validated.* Glass, 5 mm cells, horizon 2, 0.40 x 0.10 x 0.04 m strip (12,800
-cells, 81,020 bonds), 0.10 m slit, 300 us window. Only the requested G/Gc
+cells, 179,044 bonds), 0.10 m slit, 300 us window. Only the requested G/Gc
 changes between rows; nothing else.
 
 | G/Gc | loading strain | as a fraction of s_c | tip advance | new crack-plane bonds | crack runs? |
@@ -363,7 +365,7 @@ stops being one crack.
 Oak is the outlier: 0.128 c_R against an estimated 0.375. Oak's crack front is
 slower than LEFM by a factor of three under the same relative driving force.
 *Hypothesis, not measured*: oak's shear ramp is only twice its energy-scaled
-tensile one (4.95e-3 against 2.46e-3, where glass's is 28x), so oak's crack tip
+tensile one (4.95e-3 against 2.46e-3, where glass's is 27x), so oak's crack tip
 sheds part of its driving energy into shear failure off the plane instead of
 advancing.
 
@@ -373,16 +375,28 @@ with no pulverisation anywhere - and it is the one place in this branch where an
 outcome converges under cell refinement. The same strip, same loading, same
 300 us window, only the cell size changing:
 
-| cells | lattice | crack advance in 300 us | change | new crack-plane bonds |
-|---|---:|---:|---:|---:|
-| 10 mm | 1,600 cells, 4 thick | 25.0 mm | | 96 |
-| 5 mm | 12,800 cells, 8 thick | 42.5 mm | +70% | 674 |
-| 2.5 mm | 102,400 cells, 16 thick | 47.5 mm | **+12%** | 2,750 |
+| cells | lattice | loading, as a fraction of s_c | crack advance in 300 us | change | new crack-plane bonds | off-plane : plane |
+|---|---:|---:|---:|---:|---:|---:|
+| 10 mm | 1,600 cells, 19,320 bonds, 4 thick | 0.761 | 25.0 mm | | 96 | 48 : 96 |
+| 5 mm | 12,800 cells, 179,044 bonds, 8 thick | 0.538 | 42.5 mm | +70% | 674 | 405 : 674 |
+| 2.5 mm | 102,400 cells, 1,534,092 bonds, 16 thick | 0.381 | 47.5 mm | **+12%** | 2,750 | 2,420 : 2,750 |
 
 That is what convergence looks like, on the same criterion and the same solver
 that will not converge on the tile in section 6. The difference is the problem,
 not the law: here the fracture is localised and the fragment scale is many cells,
 there it is not.
+
+Two caveats on that ladder, both against it. The **10 mm rung is the marginal
+one**: because s_c grows as h^-1/2 while the loading is held fixed in metres, at
+10 mm the bulk sits at 0.761 of the removal stretch against 0.538 and 0.381 at
+the finer rungs, close enough to the bulk threshold that the same fraction at
+horizon 3 disintegrates the strip (section 5.5). It did not disintegrate here -
+its off-plane breaks are the *lowest* fraction of the three - but the clean
+statement is the **5 -> 2.5 mm step, +12%**, with the 10 mm rung shown for
+completeness rather than leaned on. And the off-plane fraction rises with
+refinement (0.50, 0.60, 0.88), so the crack becomes a wider band in cells as the
+cells shrink, which is the same lack of localisation section 8.2 describes,
+present even here.
 
 **Dissipation.** The criterion removes 1.26 to 1.50 Gc per unit of crack area,
 where the area is counted by the crack-plane bonds it broke. The spread is not
@@ -420,24 +434,34 @@ they should and by nothing else.
 ### 5.5 The lane's own energy leak
 
 XPBD damps the modes it cannot resolve; at `dt_factor 0.5` the fastest bond mode
-has `omega dt = 1`. Measured on this very scene while the crack is still
-standing still: **0.0059 to 0.0076% of the stored energy per microsecond**
-(0.07%/us with no crack at all, in the sub-threshold rows). Over the whole
-300 us run the ledger closes 22.4% low. That leak is why the *elastic energy
-released* per unit area cannot be used as the check and the *dissipated* energy
-is used instead: the criterion's own removal accounting is exact, while the
-strip's potential-energy drop is contaminated by numerical damping. The leak is
-a property of `BrittleBondSolver` and of the fast lattice lane that reproduces it
-bit for bit, not of the criterion, and it is unchanged by the failure law
-(0.06949% per us for both laws in the rows where nothing breaks).
+has `omega dt = 1`. The cleanest measurement of it is the sub-threshold rows,
+where the crack never moves and the whole 300 us window is quiet: they close
+**20.9% low, i.e. 0.0695% of the stored energy per microsecond**, identically
+under both failure laws. The rows where a crack does run close 21.8 to 22.6%
+low - barely more - so **essentially the whole ledger gap is the solver's own
+damping and not the fracture**.
+
+(The probe also prints a per-microsecond leak for a cracking run, 0.59 to 0.95%.
+That one is measured over only the 5 us before the crack first moves and is
+dominated by the release of the pre-crack's own stress concentration, so it is
+not comparable with the 300 us average above. Both numbers are in the reports.)
+
+This leak is why the *elastic energy released* per unit area cannot be used as
+the check and the *dissipated* energy is used instead: the criterion's own
+removal accounting is exact, while the strip's potential-energy drop is
+contaminated by numerical damping. It is a property of `BrittleBondSolver` and
+of the fast lattice lane that reproduces it bit for bit, not of the criterion.
 
 **Horizon 3 on this strip is not a valid test at this geometry.** At horizon 3
 the lattice's effective modulus is 3.17x the nominal E rather than 1.52x, while
 s_c falls, so the bulk loading needed for G/Gc = 1.6 reaches 0.77 of the removal
 stretch instead of 0.54 and the strip disintegrates at the grips (46,277
-off-plane breaks against 760 on the plane). The requirement is
-`(G/Gc) . N_100 h / ((E_eff/E) m H) < ~0.3`, which at horizon 3 needs a strip
-twice as tall; that run was not made. The horizon is exercised at 2 and 3
+off-plane breaks against 760 on the plane). The bulk loading as a fraction of the removal stretch is
+`sqrt( (G/Gc) . N_100 . h / ((E_eff/E) . m . H) )`, which is 0.538 for the 5 mm
+horizon-2 row here and 0.767 at horizon 3 - and horizon 3 is far less tolerant of
+it, because 61 half offsets rather than 16 means far more bonds sit near the
+threshold at once. Getting horizon 3 to 0.54 needs a strip twice as tall; that
+run was not made. The horizon is exercised at 2 and 3
 throughout the unit tests and section 2 instead.
 
 ---
@@ -448,7 +472,8 @@ throughout the unit tests and section 2 instead.
 
 The bridge tile of `docs/fast-gpu-checkpoint.md`: 0.24 x 0.04 x 0.16 m of
 uniform cubic cells resting on two ledges, struck in the middle of its top face
-by a 4 cm iron ball (2.11 kg) falling at 8 or 12 m/s from a 2 mm gap. Fast
+by an iron ball of 4 cm **radius** (2.11 kg, `--ball-radius 0.04`) falling at 8
+or 12 m/s from a 2 mm gap. Fast
 lattice CPU backend, double precision, `dt_factor 0.5`, one constraint iteration,
 horizon 2 unless stated. 20 mm cells is 192 cells and 1,704 bonds; 10 mm is
 1,536 and 18,852; 5 mm is 12,288 and 173,196.
@@ -465,7 +490,8 @@ Two protocol choices matter and both were arrived at by getting them wrong first
 2. **The ladder rows do not settle.** The piece count and the largest piece are
    measured at the handoff, before Jolt is involved. Running the rigid phase
    costs wall time and, at 5 mm with the energy-scaled law, overflows the rigid
-   world outright (section 6.2). The recordings in section 10 settle fully.
+   world outright (section 6.2). The 20 mm recordings in section 10 settle
+   fully; the 10 mm ones do not, under either law.
 
 **Why the baseline numbers below are not the "3 -> 672" of the brief.** That
 pair comes from `docs/fast-gpu-checkpoint.md`, measured on the GPU backend in
@@ -506,8 +532,8 @@ Level-to-level change:
 
 **Neither law converges for glass at 8 m/s, and they fail for different
 reasons.** The old law does not converge because the material changes with the
-mesh: it charges 6,364 J/m^2 per unit crack area at 20 mm and 1,591 at 5 mm, so
-each refinement makes the tile four times cheaper to break. The new law charges
+mesh: it charges 6,364 J/m^2 per unit crack area at 20 mm, 3,182 at 10 mm and
+1,591 at 5 mm, so every refinement halves what the tile costs to break. The new law charges
 8 J/m^2 at every level - the material is now the same at every resolution, which
 is what the criterion was built to fix - and still does not converge, because
 8 J/m^2 is glass's real fracture energy and a 2.11 kg ball at 8 m/s pulverises
@@ -516,6 +542,12 @@ The pulverisation number R runs 25 to 13 across the ladder, so the impact wave
 takes essentially every bond it reaches past the threshold and the fragment size
 sits at the cell size at every level. Piece count then counts cells, and no
 criterion can make that converge (sections 8.2 and 8.4).
+
+The 5 mm energy-scaled row also breaks the handoff: with more than a thousand
+pieces the rigid world refuses the step outright with `manifold-cache-full
+body-pair-cache-full contact-constraints-full`. That is why the ladder rows do
+not settle at all (section 6.1) and why the 5 mm rows are absent from the
+playground jobs in section 10.
 
 The crack pattern changes with resolution under both laws. The first failure is
 always on the strike axis (the centroid of the first-failing set sits within
@@ -534,7 +566,8 @@ Oak's Gc is 1,000 J/m^2, 125 times glass's, so the same strike opens far less
 crack area and R falls to 1.20 / 0.85 / 0.60 across the ladder - the regime
 where the criterion should be able to localise.
 
-*Experimental result.*
+*Experimental result*; columns as in section 6.2 (`G_lattice` and `measured Gc`
+in J/m^2, `window` in ms).
 
 | cells | law | exit | window | s_c | G_lattice | broken | of all bonds | pieces | largest | removed | measured Gc | R | tensile / shear | wall |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|
@@ -557,9 +590,12 @@ under the old law oak fails almost entirely in **shear** (0 tensile against 99
 shear at 20 mm; 223 against 8,562 at 5 mm), because oak's declared shear
 strength is 11 MPa against a tensile strength of 90 MPa, so the shear ramp bites
 first and the "crack" is a shear band. Under the energy-scaled law the mode-I
-threshold drops below the shear one and tension becomes the leading mode (845
-tensile against 443 shear at 20 mm). The new law puts oak's failure in the mode
-a bending impact should produce; it does not make the piece count converge.
+threshold drops below the shear one and tension leads at 20 mm (845 against 443)
+and at 10 mm (6,112 against 5,124), though shear takes the lead back at 5 mm
+(16,338 against 18,912) where the damage is diffuse and everything is failing.
+The new law puts oak's failure in the mode a bending impact should produce at
+the resolutions where there is still a crack to speak of; it does not make the
+piece count converge.
 
 Oak's largest piece is the one quantity on the whole ladder that holds still:
 1.053 / 1.041 / 1.026 kg under the old law, within 1.5% per level on a 1.0752 kg
@@ -573,7 +609,8 @@ ladder that actually breaks in half.
 
 *Experimental result.* The same tile and ball, struck at 12 m/s instead of 8.
 The pulverisation number scales with the speed, so R rises to 37.9 / 26.8 / 19.0
-under the new law and 1.34 under the old.
+under the new law and 1.34 under the old. Columns as in section 6.2
+(`G_lattice` and `measured Gc` in J/m^2, `window` in ms, `depth` in mm).
 
 | cells | law | exit | window | broken | of all bonds | pieces | >=1% | largest | removed | measured Gc | R | first failure | depth | wall |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -589,7 +626,7 @@ under the new law and 1.34 under the old.
 | old | 20 -> 10 mm | +355% | +152% | +68% | +447% |
 | old | 10 -> 5 mm | +198% | +29% | **+1%** | +176% |
 | new | 20 -> 10 mm | +263% | +442% | +306% | +862% |
-| new | 10 -> 5 mm | +375% | -57% | -57% | +550% |
+| new | 10 -> 5 mm | +375% | +165% | -57% | +550% |
 
 Oak at 12 m/s, same layout:
 
@@ -708,9 +745,9 @@ running those to quiet is not affordable (5 mm at 12 ms already takes 7 minutes
 of wall time).
 
 The long tail is a lane property, not a criterion property. The reference route
-sets `bond_damping = 0`, and the catalogue's declared damping is a rate of
-0.015-0.04 per second, which over a 12 ms window is a factor of 5e-4, i.e.
-nothing. Fragments also do not collide with each other during the lattice phase
+sets `bond_damping = 0`, and even the catalogue's declared damping would not
+help: it is a rate of 0.015-0.04 per second, and `1 - exp(-rate . dt)` over a
+12 ms window removes 5e-4 of the energy, i.e. nothing. Fragments also do not collide with each other during the lattice phase
 (`docs/fast-gpu-checkpoint.md` section 8, item 6). So a fragment that has come
 free rings for ever at whatever amplitude it separated with, and the criterion
 keeps reading that ringing.
@@ -922,15 +959,28 @@ localisation - just not fast enough to save a material whose R starts at 25.
 
 ### 8.3 What softening would and would not fix
 
-A linear softening ramp (compliance scaled by `1/(1 - d)`) dissipates
-`E h^3 s_0 s_f / (2 m)` per bond over a ramp from initiation s_0 to failure s_f,
-so the energy-consistent condition becomes
+A **linear traction-separation** ramp - the bond's force falling linearly from
+its peak at initiation s_0 to zero at failure s_f - dissipates the area under
+that triangle, `0.5 . k . (s_0 L) . (s_f L) = E h^3 s_0 s_f / (2 m)` per bond, so
+the energy-consistent condition becomes
 
     s_0 s_f = s_c^2
 
 with s_c exactly the stretch this branch derives: the snap law is the special
-case s_0 = s_f = s_c, and s_c is the geometric mean of any admissible ramp. Two
-things follow.
+case s_0 = s_f = s_c, and s_c is the geometric mean of any admissible ramp.
+
+**One implementation trap, worth naming before anyone starts.** Realising that
+ramp means scaling the bond compliance by `1/(1 - d)` with a damage variable
+that makes the *traction* linear, namely
+`d(s) = (s_f / (s_f - s_0)) . (1 - s_0 / s)`. That is **not**
+`bondDamageProgress`, which `fracture/BondFailure.hpp` documents as a linear
+ramp in the strain measure itself. Feeding the existing damage counter into
+`1/(1 - d)` gives a different curve and a different dissipated energy, so
+`s_0 s_f = s_c^2` would not hold. Either the stiffness needs its own damage
+variable or the existing one has to be redefined, and either way the removal
+ledger changes with it.
+
+Two things follow from the condition.
 
 - **Softening would not rescue the strength.** Putting s_0 at the material's
   true strength stretch s_sigma requires `s_f = s_c^2 / s_sigma`, which is
@@ -963,8 +1013,8 @@ engine can be asked for: a converged *piece count* for glass under a 2 kg
 strike is out of reach at any cell size the engine can run, and the useful
 question for glass is the converged *energy and crack area*, which the new law
 does deliver. Glass's Irwin length `l_ch = E Gc / sigma_t^2` is 0.28 mm, so
-this is the same bound classical fracture mechanics gives, arrived at from the
-lattice side.
+this is the same order as the bound classical fracture mechanics gives (h* is
+about a ninth of l_ch), arrived at from the lattice side.
 
 ---
 
