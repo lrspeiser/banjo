@@ -561,6 +561,37 @@ int runLane(const LaneOptions &options) {
         }
     }
 
+    // The second premise, measured on this scene too, so a run carries the
+    // evidence for both refusals rather than pointing at a separate --cone
+    // invocation. It costs 2 x 10 substeps.
+    nlohmann::json cone;
+    double cone_wall_s = 0.0;
+    if (!options.reference) {
+        const auto begin = Clock::now();
+        SubstepMap map(initial, setup.schedule, setup.settings_scene, Precision::Double);
+        std::vector<double> x0(map.dimension());
+        SubstepMap::pack(initial, x0.data());
+        std::uint32_t seed_node = 0;
+        double best = 1.0e30;
+        for (std::uint32_t i = 0; i < initial.node_count; ++i) {
+            const double d = std::abs(initial.x0[3 * i] - sphere.center.x) +
+                             std::abs(initial.x0[3 * i + 2] - sphere.center.z);
+            if (d < best) { best = d; seed_node = i; }
+        }
+        const double cell = setup.request.cell_size_m;
+        const double mode_cells_per_substep =
+            setup.limit.fastest_mode_period_s > 0.0 ? setup.dt_s / setup.limit.fastest_mode_period_s : 0.0;
+        cone["cells_per_substep_from_fastest_mode"] = mode_cells_per_substep;
+        cone["seed_node"] = seed_node;
+        for (const ConeGrowth &g : measureCone(map, x0.data(), seed_node, 1.0e-9, {1, 10}, cell))
+            cone["growth"].push_back({{"substeps", g.substeps},
+                                      {"touched_cells", g.touched_nodes},
+                                      {"touched_fraction", g.touched_fraction},
+                                      {"reach_cells", g.max_cell_distance}});
+        cone_wall_s = std::chrono::duration<double>(Clock::now() - begin).count();
+        precompute_s += cone_wall_s;
+    }
+
     // The run itself: impact, fracture, connected components, Jolt, recording.
     std::string log;
     const TileImpactResult result = runTileImpact(request, &log);
@@ -666,11 +697,12 @@ int runLane(const LaneOptions &options) {
     report["jumps"] = {{"m_values", jump_powers},
                        {"count", 0},
                        {"cone_cells_total", 0},
-                       {"cone_wall_s", 0.0},
+                       {"cone_wall_s", cone_wall_s},
                        {"jump_wall_s", 0.0},
                        {"refused", !options.reference && !admissibility.affine},
                        {"reason", options.reference ? std::string("the reference lane takes no jumps")
-                                                    : admissibility.reason}};
+                                                    : admissibility.reason},
+                       {"cone", cone}};
     report["contact"] = {{"model", "sphere/node sequential impulses in node order "
                                    "(physics/SphereMaterialContact.cpp), twice per substep"},
                          {"impulse_n_s", impulse},

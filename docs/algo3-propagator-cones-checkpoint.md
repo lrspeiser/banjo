@@ -90,7 +90,7 @@ one-ulp difference in a strain sample flips a threshold comparison and from
 there a whole cascade (the fast-GPU lane measured exactly that, section 2.4 of
 `docs/fast-gpu-checkpoint.md`).
 
-### 2.4 The runtime gate
+### 2.4 The runtime gate, and what a run reports about itself
 
 Every non-reference run opens with nine substeps of `probeLinearity` at the
 amplitude the scene reaches (1e-6 m by default) against a 1e-9 relative
@@ -99,6 +99,14 @@ substep, so the lane sets `jumps.refused`, puts the measured residual and the
 reason in the report, builds no matrix, and advances the plate by exact
 explicit stepping. The gate costs 5-23 ms. It is not a fallback that hides a
 failure; it is the lane declining to be wrong and saying why.
+
+A run also measures the cone on its own scene (2 x 10 substeps) and puts it in
+`jumps.cone`, so a single recording is self-contained evidence for both
+refusals. On the default plate a report reads
+`gate.additivity_rel = 0.901` against a 1e-9 tolerance, and
+`cone.growth = [{1 substep, 87 cells, reach 7.81}, {10 substeps, 500 cells,
+reach 15.62}]` against `cells_per_substep_from_fastest_mode = 0.159`. Together
+they cost 17 ms, which is the whole of `precompute_s` on a refused run.
 
 ### 2.5 The exact parallel backend
 
@@ -306,6 +314,9 @@ double, sixteen threads, machine idle. "Reference" is the same lane with
 | higher drop, 4 m (8.86 m/s) | 500 | 2,777 | 45,447 | 1.88 s | 1.89 s | 0.771 s | 2.46 | 40.9 | 289 | 1 | 8.480 J |
 | off-centre strike, 60/40 mm | 500 | 2,777 | 23,954 | 0.97 s | 0.97 s | 0.370 s | 2.63 | 39.9 | 120 | 1 | 3.539 J |
 | **2,000 cells** 500x400x10 mm | 2,000 | 11,552 | 14,507 | 1.21 s | 1.23 s | 0.331 s | 3.70 | 82.9 | 119 | 1 | 3.539 J |
+
+Repeats of the default row land between 0.53 s and 0.60 s, depending on whether
+the calibration of section 2.6 picks sixteen threads or eight.
 
 The 1.1x realtime rule is **not met** on any of these: the default plate is at
 1.65x against a 1.1 limit, and the reference is at 6.27x. The lane closes most
