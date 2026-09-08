@@ -970,7 +970,7 @@ python scripts/check-source-registration.py
 build/agent/Release/banjo_fast_lattice_run.exe --layout bridge --ball-radius 0.04     --speed 8 --tile 0.24 0.04 0.16 --cell 0.005 --horizon 2 --material glass     --backend cpu --precision double --dt-factor 0.5     --failure-law energy-scaled     --quiet-ms 2 --no-failure-ms 2 --min-ms 0 --max-ms 12 --settle-s 0     --report docs/evidence/criterion/glass-new-5mm-v8.json
 
 # The ladder, its variations and the recordings, in the order they were run.
-# Rows already on disk are reused; --force re-runs them. The 68 reports land in
+# Rows already on disk are reused; --force re-runs them. The 78 reports land in
 # docs/evidence/criterion/; recordings sit beside them and are gitignored.
 python scripts/criterion-ladder.py --stage ladder-v8 --stage ladder-oak-v8
 python scripts/criterion-ladder.py --stage long-window --stage materials     --stage dt-half --stage horizon3
