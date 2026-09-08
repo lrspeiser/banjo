@@ -54,11 +54,13 @@ template <typename Real> BANJO_HD V3<Real> cross(V3<Real> a, V3<Real> b) {
 }
 template <typename Real> BANJO_HD Real length2(V3<Real> a) { return dot(a, a); }
 
+// Host: unqualified so that a differentiable Real (Dual.hpp) is found by ADL.
 template <typename Real> BANJO_HD Real sqrtR(Real x) {
 #if defined(__CUDA_ARCH__)
     return sqrt(x);
 #else
-    return std::sqrt(x);
+    using std::sqrt;
+    return sqrt(x);
 #endif
 }
 template <typename Real> BANJO_HD Real absR(Real x) { return x < Real(0) ? -x : x; }
@@ -68,7 +70,8 @@ template <typename Real> BANJO_HD bool finiteR(Real x) {
 #if defined(__CUDA_ARCH__)
     return isfinite(x);
 #else
-    return std::isfinite(x);
+    using std::isfinite;
+    return isfinite(x);
 #endif
 }
 template <typename Real> BANJO_HD Real length(V3<Real> a) { return sqrtR(length2(a)); }
