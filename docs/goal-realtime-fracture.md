@@ -155,11 +155,31 @@ the tile and stops the ball where the dynamic reference shatters it (8x8x2:
 sets disjoint; only removed energy agrees, within 11-29%). It meets the rule
 without reproducing the dynamic outcome.
 
-**GPU lattice** (`agent/fast-gpu`): in progress, WIP committed, no
-measurements yet.
+**GPU lattice** (`agent/fast-gpu`, `7d07996`, `docs/fast-gpu-checkpoint.md`).
+The CPU lane's physics and the shared criterion, bit for bit, on a
+colour-parallel schedule with a CUDA backend (`BANJO_BUILD_CUDA`, default off;
+equality proven against the CPU backend and against `BrittleBondSolver`).
+Rule met with the fracture window itself resolved: a 192-cell glass tile
+(20 mm cells, 1,704 bonds) on two ledges, 4 cm iron ball at 8 m/s, 7,288
+substeps at 1.59 us through fracture, hand-off and settling, 0.377 s wall for
+1.895 s, **0.20x**, 3 pieces
+(`http://127.0.0.1:8765/?job=08678486c9aa43949b5a0ec7b00fafb8`; case 2 is the
+same tile at 12 m/s, 59 pieces, 0.57x). Holds to 384 cells (0.71x), fails at
+800 (1.50x) and by about 7x at 1,536 cells of glass, where the cascade fills
+the whole 200 ms lattice window; oak and iron at 1,536 cells pass (0.76x,
+0.59x) because their cascades end within 15-21 ms
+(`?job=34c2b8108580425fbaefbd407ddf0279`). The GPU is no faster than one CPU
+thread at 192 cells (55 M bond-updates/s against 57-68 M) and reaches 616 M at
+173k bonds, five times short of the ~3e9 estimated: one substep is a chain of
+22-32 barrier-separated colour stages costing 25-35 us regardless of bond
+count, while it advances 0.3-1.6 us of simulated time. This is the only lane
+where the window is computed rather than amortised and the rule still holds;
+its outcome is not converged with respect to sweep order, precision or cell
+size.
 
 What this does to the stages: D, E and F have recordings (modal on 8x8x2;
-quasi-static to 2,048 cells) and are ready for the owner to watch. B and C have
+quasi-static to 2,048 cells; GPU lattice on 192-384 cells with the window
+resolved) and are ready for the owner to watch. B and C have
 no elastic-only recording of their own, though the modal checkpoint shows the
 basis exact through the cascade. G is untouched: both lanes are command-line
 tools with recording importers, not Builder routes, and the Builder still
