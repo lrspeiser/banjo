@@ -976,6 +976,8 @@ python scripts/criterion-ladder.py --stage ladder-v8 --stage ladder-oak-v8
 python scripts/criterion-ladder.py --stage long-window --stage materials     --stage dt-half --stage horizon3
 python scripts/criterion-ladder.py --stage strip --stage strip-griffith     --stage strip-materials --stage strip-old-matched     --stage window --stage horizon3-20mm --stage ladder-v12
 python scripts/criterion-ladder.py --stage record
+python scripts/criterion-ladder.py --stage ladder-oak-v12 --converge
+python scripts/criterion-ladder.py --stage dt-half
 
 # `--stage horizon3` is the one that does not complete: at 10 mm cells the lane
 # refuses horizon 3 with "lattice needs more than 64 bond colours". Use
