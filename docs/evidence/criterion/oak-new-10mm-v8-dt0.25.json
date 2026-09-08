@@ -1,0 +1,111 @@
+{
+  "cuda": "CUDA backend not compiled (configure with -DBANJO_BUILD_CUDA=ON)",
+  "frames": 52,
+  "measurements": {
+    "backend": "cpu-double",
+    "ball_mass_kg": 2.1098098503468097,
+    "blocks": 1,
+    "bonds": 18852,
+    "boundary_bonds": 0,
+    "cell_size_m": 0.01,
+    "cells": 1536,
+    "colors": 31,
+    "degenerate_disagreements": 42,
+    "dt_s": 4.2807250939347803e-07,
+    "fastest_period_s": 5.3793178028571926e-06,
+    "handoff": {
+      "components": 228,
+      "debris_particles": 0,
+      "largest_piece_cells": 1238,
+      "largest_piece_mass_kg": 0.8666000000000117,
+      "mass_fraction_under_1pct": 0.19401041666667151,
+      "pieces_over_1pct": 1,
+      "pieces_over_5pct": 1,
+      "rigid_fragments": 228,
+      "wall_s": 0.0069038
+    },
+    "lattice": {
+      "bond_updates_per_s": 18716228.5933966,
+      "broken_bonds": 12727,
+      "compressive_failures": 76,
+      "contact": {
+        "ball_support_events": 0,
+        "dissipated_kinetic_energy_j": 6.866435905916994,
+        "impulse_contacts": 51147,
+        "impulse_to_material_n_s": [
+          0.030683883959884927,
+          -4.571099015938848,
+          -0.11161429431640171
+        ],
+        "maximum_center_shift_m": 3.2565477163307993e-09,
+        "maximum_penetration_m": 1.3330769075010906e-05,
+        "maximum_position_correction_m": 2.4880069099289606e-06
+      },
+      "critical_stretch": 0.0017407765595569785,
+      "energy_scaled_stretch": 0.0017407765595569785,
+      "exit_reason": 3,
+      "failure_law": "energy-scaled",
+      "failure_rounds": 6002,
+      "first_failure": {
+        "bonds": 8,
+        "centroid_m": [
+          0.0,
+          0.1475,
+          8.673617379884035e-19
+        ],
+        "depth_below_top_m": 0.012500000000000011,
+        "radius_from_strike_m": 8.673617379884035e-19
+      },
+      "first_failure_s": 0.0003527317477402259,
+      "kernel_s": 0.0,
+      "last_failure_s": 0.011994591713205254,
+      "lattice_crack_energy_j_m2": 1000.0000000000002,
+      "launches": 1,
+      "removed_energy_j": 9.198728753752878,
+      "shear_failures": 5789,
+      "simulated_s": 0.01200015665582737,
+      "steps": 28033,
+      "strength_bound_active": false,
+      "strength_stretch": 0.015,
+      "tensile_failures": 6862,
+      "wall_s": 28.2363572
+    },
+    "max_compressive_strain": 0.5,
+    "max_shear_strain": 7.507211685180664,
+    "max_tensile_stretch": 10.61851692199707,
+    "phase_seconds": {
+      "capture": 0.0,
+      "contact_pass_1": 0.026370999999998552,
+      "contact_pass_2": 0.021757899999996014,
+      "damping": 0.0,
+      "end_sample_bonds": 12.06138660000001,
+      "end_sample_nodes": 4.312255200000023,
+      "kick_classify": 0.46887299999981336,
+      "sphere_exit": 0.0033664999999984293,
+      "start_sample_bonds": 2.141090900000003,
+      "start_sample_nodes": 1.1221322999999932,
+      "support_project": 0.9055297000001894,
+      "sweep_boundary": 0.0019936000000002753,
+      "sweep_interior": 6.920719100000025,
+      "velocity_update": 0.2425187999999465
+    },
+    "realtime_ratio": 2355.062788807526,
+    "recording_wall_s": 0.0,
+    "rigid": {
+      "ball_height_at_end_m": 0.12598849503440207,
+      "ball_speed_at_end_m_s": 5.951381386627288,
+      "came_to_rest": false,
+      "rest_time_s": -1.0,
+      "simulated_s": 0.0,
+      "steps": 0,
+      "wall_s": 0.0001754
+    },
+    "rule_met": false,
+    "shared_memory_bytes": 0,
+    "shared_memory_positions": false,
+    "simulated_total_s": 0.01200015665582737,
+    "substep_limit_s": 1.7122900375739121e-06,
+    "tile_mass_kg": 1.075199999999979,
+    "wall_total_s": 28.2611224
+  }
+}

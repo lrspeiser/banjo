@@ -212,7 +212,10 @@ def summarise(name, path, meta=None):
         "s_crit": lat.get("critical_stretch", 0.0),
         "s_energy": lat.get("energy_scaled_stretch", 0.0),
         "s_strength": lat.get("strength_stretch", 0.0),
-        "bound": "strength" if lat.get("strength_bound_active") else "energy",
+        # Which of the two thresholds set the removal stretch. Only meaningful
+        # under the energy-scaled law; the strain-threshold law has one.
+        "bound": ("n/a" if lat.get("failure_law") == "strain-threshold"
+                  else ("strength" if lat.get("strength_bound_active") else "energy")),
         "G_lattice": lat.get("lattice_crack_energy_j_m2", 0.0),
         "broken": lat.get("broken_bonds", 0),
         "rounds": lat.get("failure_rounds", 0),
@@ -322,11 +325,24 @@ STAGES = {
     "ladder-oak-v12": lambda f: stage_ladder(f, speed=12.0, material="oak"),
     "horizon3": lambda f: stage_ladder(f, speed=8.0, horizon=3, cells=(0.02, 0.01),
                                        material="oak", tag="-h3"),
+    # How much of the answer the 12 ms cap costs, measured at 10 mm where a
+    # longer window is affordable. The 5 mm rows cannot be run to 30 ms inside
+    # the wall-time budget, so this is the bound quoted for them.
     "window": lambda f: [
-        run(f"oak-{short}-10mm-v8-w{w:g}", material="oak", cell=0.01, speed=8.0, law=law,
-            force=f, window_ms=w, settle_s=SETTLE_S)
+        run(f"{material}-{short}-10mm-v8-w{w:g}", material=material, cell=0.01, speed=8.0,
+            law=law, force=f, window_ms=w, settle_s=SETTLE_S)
+        for material in ("glass", "oak")
         for law, short in (("strain-threshold", "old"), ("energy-scaled", "new"))
-        for w in (12.0, 24.0)],
+        for w in (12.0, 30.0)],
+    # Horizon 3 runs only at 20 mm on this tile: the lane's edge colouring caps
+    # at 64 colours and a full horizon-3 neighbourhood (122 incident bonds)
+    # needs more, so the 10 mm row is refused with
+    # "lattice needs more than 64 bond colours". The horizon is a parameter of
+    # the derivation, the unit tests and the strip probe throughout.
+    "horizon3-20mm": lambda f: stage_ladder(f, speed=8.0, horizon=3, cells=(0.02,),
+                                            material="oak", tag="-h3") +
+                               stage_ladder(f, speed=8.0, horizon=3, cells=(0.02,),
+                                            material="glass", tag="-h3"),
     "materials": lambda f: [
         run(f"{m}-{short}-{mm}mm-v8", material=m, cell=c, speed=8.0, law=law, force=f,
             window_ms=WINDOW_MS, settle_s=SETTLE_S)

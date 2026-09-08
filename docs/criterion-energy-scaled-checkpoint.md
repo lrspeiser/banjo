@@ -300,11 +300,119 @@ Two protocol choices matter and both were arrived at by getting them wrong first
 
 ### 6.2 Glass at 8 m/s
 
-*Filled in below.*
+*Experimental result.* `exit` is `quiet` if the cascade stopped on its own and
+`capped` if it was still breaking bonds at 12 ms. `s_c` is the removal stretch;
+`G_lattice` the crack energy the law charges per unit {100} area (glass's Gc is
+8 J/m^2); `measured Gc` the energy actually removed per unit of crack area in
+the criterion's own accounting; `R` the pulverisation number of section 8.2.
+
+| cells | law | exit | window | s_c | G_lattice | broken | of all bonds | pieces | >=1% | largest | removed | measured Gc | R | first failure | depth | wall |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 20 mm | old | quiet | 4.56 ms | 1.286e-3 | 6,364 | 276 | 16.2% | 4 | 3 | 1.92 kg | 28.25 J | 2,815 | 0.90 | 0.618 ms | 30 mm | 0.27 s |
+| 10 mm | old | quiet | 6.17 ms | 1.286e-3 | 3,182 | 2,775 | 14.7% | 36 | 5 | 1.77 kg | 26.25 J | 1,040 | 0.90 | 0.334 ms | 10 mm | 10.6 s |
+| 5 mm | old | capped | 12.0 ms | 1.286e-3 | 1,591 | 9,410 | 5.4% | 257 | 1 | 3.71 kg | 31.57 J | 1,476 | 0.90 | 0.275 ms | 5 mm | 462 s |
+| 20 mm | new | quiet | 4.57 ms | 4.558e-5 | **8** | 1,590 | 93.3% | 103 | 25 | 0.34 kg | 0.62 J | 10.7 | 25.3 | 0.505 ms | 18 mm | 0.10 s |
+| 10 mm | new | capped | 12.0 ms | 6.447e-5 | **8** | 16,550 | 87.8% | 414 | 6 | 0.94 kg | 3.15 J | 21.0 | 17.9 | 0.319 ms | 10 mm | 7.7 s |
+| 5 mm | new | capped | 12.0 ms | 9.117e-5 | **8** | 103,122 | 59.5% | 1,526 | 1 | 3.30 kg | 1.53 J | 6.5 | 12.6 | 0.267 ms | 5 mm | 407 s |
+
+Level-to-level change:
+
+| law | step | pieces | largest piece | removed energy | broken bonds |
+|---|---|---:|---:|---:|---:|
+| old | 20 -> 10 mm | +800% | -8% | -7% | +905% |
+| old | 10 -> 5 mm | +614% | +110% | +20% | +239% |
+| new | 20 -> 10 mm | +302% | +176% | +408% | +941% |
+| new | 10 -> 5 mm | +269% | +251% | -51% | +523% |
+
+**Neither law converges for glass at 8 m/s, and they fail for different
+reasons.** The old law does not converge because the material changes with the
+mesh: it charges 6,364 J/m^2 per unit crack area at 20 mm and 1,591 at 5 mm, so
+each refinement makes the tile four times cheaper to break. The new law charges
+8 J/m^2 at every level - the material is now the same at every resolution, which
+is what the criterion was built to fix - and still does not converge, because
+8 J/m^2 is glass's real fracture energy and a 2.11 kg ball at 8 m/s pulverises
+glass. 93% of every bond in the 20 mm tile breaks, 88% at 10 mm, 60% at 5 mm.
+The pulverisation number R runs 25 to 13 across the ladder, so the impact wave
+takes essentially every bond it reaches past the threshold and the fragment size
+sits at the cell size at every level. Piece count then counts cells, and no
+criterion can make that converge (sections 8.2 and 8.4).
+
+The crack pattern changes with resolution under both laws. The first failure is
+always on the strike axis (the centroid of the first-failing set sits within
+3e-15 m of it at every level), but its depth below the tile's top face moves
+from 30 mm at 20 mm cells - the bottom node layer, which is bending tension on
+the underside of the bridge - to 5 mm at 5 mm cells, immediately under the ball.
+Refining the mesh resolves the contact stress concentration better than it
+resolves the bending, and the failure mechanism swaps. That is a non-convergence
+of the *first failure location*, which `docs/fast-gpu-checkpoint.md` had found
+robust to sweep order and to precision. It is not robust to cell size, and the
+new law does not change it.
 
 ### 6.3 Oak at 8 m/s
 
-*Filled in below.*
+Oak's Gc is 1,000 J/m^2, 125 times glass's, so the same strike opens far less
+crack area and R falls to 1.20 / 0.85 / 0.60 across the ladder - the regime
+where the criterion should be able to localise.
+
+*Experimental result.*
+
+| cells | law | exit | window | s_c | G_lattice | broken | of all bonds | pieces | largest | removed | measured Gc | R | tensile / shear | wall |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|
+| 20 mm | old | quiet | 3.09 ms | 1.500e-2 | 148,500 | 104 | 6.1% | 3 | 3.76 kg | 14.01 J | 3,705 | 0.098 | 0 / 99 | 0.15 s |
+| 10 mm | old | quiet | 5.34 ms | 1.500e-2 | 74,250 | 952 | 5.0% | 28 | 3.72 kg | 24.31 J | 2,808 | 0.098 | 8 / 889 | 7.3 s |
+| 5 mm | old | quiet | 7.99 ms | 1.500e-2 | 37,125 | 9,656 | 5.6% | 417 | 3.67 kg | 32.87 J | 1,498 | 0.098 | 223 / 8,562 | 227 s |
+| 20 mm | new | capped | 12.0 ms | 1.231e-3 | **1,000** | 1,302 | 76.4% | 24 | 1.96 kg | 8.18 J | 173 | 1.20 | 845 / 443 | 0.33 s |
+| 10 mm | new | capped | 12.0 ms | 1.741e-3 | **1,000** | 11,315 | 60.0% | 155 | 3.36 kg | 9.15 J | 89 | 0.85 | 6,112 / 5,124 | 13.5 s |
+| 5 mm | new | capped | 12.0 ms | 2.462e-3 | **1,000** | 36,046 | 20.8% | 1,021 | 3.30 kg | 25.01 J | 305 | 0.60 | 16,338 / 18,912 | 414 s |
+
+| law | step | pieces | largest piece | removed energy | broken bonds |
+|---|---|---:|---:|---:|---:|
+| old | 20 -> 10 mm | +833% | -1% | +73% | +815% |
+| old | 10 -> 5 mm | +1389% | -1% | +35% | +914% |
+| new | 20 -> 10 mm | +546% | +71% | +12% | +769% |
+| new | 10 -> 5 mm | +559% | -2% | +173% | +219% |
+
+Oak does not converge either. One thing does improve and is worth recording:
+under the old law oak fails almost entirely in **shear** (0 tensile against 99
+shear at 20 mm; 223 against 8,562 at 5 mm), because oak's declared shear
+strength is 11 MPa against a tensile strength of 90 MPa, so the shear ramp bites
+first and the "crack" is a shear band. Under the energy-scaled law the mode-I
+threshold drops below the shear one and tension becomes the leading mode (845
+tensile against 443 shear at 20 mm). The new law puts oak's failure in the mode
+a bending impact should produce; it does not make the piece count converge.
+
+Oak's largest piece is the one quantity on the whole ladder that does hold
+still: 3.76 / 3.72 / 3.67 kg under the old law, within 1% per level. That is not
+a convergence result, though - it is the tile refusing to come apart. 95-98% of
+the mass stays in one piece and the "pieces" are surface chips.
+
+### 6.4 Does the cascade ever stop?
+
+Every energy-scaled row above ends `capped`, so the obvious question is whether
+the cascade terminates at all. The 20 mm rows are cheap enough to answer it:
+
+| row | 12 ms cap | 60 ms cap |
+|---|---|---|
+| glass, old | quiet at 4.56 ms, 276 bonds, 4 pieces, 28.252 J | identical |
+| glass, new | quiet at 4.57 ms, 1,590 bonds, 103 pieces, 0.6207 J | identical |
+| oak, old | quiet at 3.09 ms, 104 bonds, 3 pieces, 14.010 J | identical |
+| oak, new | capped at 12 ms, 1,302 bonds, 24 pieces, 8.18309 J | **quiet at 20.5 ms**, 1,389 bonds, 30 pieces, 8.18382 J |
+
+It does terminate; the energy-scaled law simply has a longer tail, because the
+debris of an undamped lattice keeps ringing and a threshold far below the
+material's strength keeps catching that ringing. Running oak's 20 mm row out to
+its own quiet point costs +7% bonds and +25% pieces and moves the removed energy
+by 1 part in 10,000. That is the bound quoted for the capped 10 and 5 mm rows;
+running those to quiet is not affordable (5 mm at 12 ms already takes 7 minutes
+of wall time).
+
+The long tail is a lane property, not a criterion property. The reference route
+sets `bond_damping = 0`, and the catalogue's declared damping is a rate of
+0.015-0.04 per second, which over a 12 ms window is a factor of 5e-4, i.e.
+nothing. Fragments also do not collide with each other during the lattice phase
+(`docs/fast-gpu-checkpoint.md` section 8, item 6). So a fragment that has come
+free rings for ever at whatever amplitude it separated with, and the criterion
+keeps reading that ringing.
 
 ### 6.4 What the ladder shows
 
