@@ -4,6 +4,7 @@
 // for the playground's 3D tab.
 
 #include "fastlattice/TileImpactScene.hpp"
+#include "material/MaterialCompiler.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -54,6 +55,7 @@ void usage() {
         "  --dt-factor F                 substep = F * explicit substep limit (default 0.5)\n"
         "  --iterations N                constraint iterations per substep (default 1)\n"
         "  --catalog                     glass: catalog BrittleBond route (variation, damping)\n"
+        "  --failure-law LAW             strain-threshold (default) or energy-scaled\n"
         "  --node-radius-factor F        node contact radius = F * cell (default 0.5)\n"
         "  --quiet-ms --min-ms --max-ms --no-failure-ms   lattice phase exit rules\n"
         "  --settle-s S                  rigid settling limit (default 6)\n"
@@ -99,6 +101,7 @@ int main(int argc, char **argv) {
             else if (option == "--dt-factor") request.dt_factor = number(value());
             else if (option == "--iterations") request.constraint_iterations = static_cast<unsigned>(number(value()));
             else if (option == "--catalog") request.catalog_material = true;
+            else if (option == "--failure-law") request.failure_law = parseBondFailureLaw(value());
             else if (option == "--node-radius-factor") request.node_contact_radius_factor = number(value());
             else if (option == "--quiet-ms") request.quiet_ms = number(value());
             else if (option == "--min-ms") request.min_ms = number(value());

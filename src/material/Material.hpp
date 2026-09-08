@@ -10,6 +10,23 @@ enum class MaterialModel : std::uint8_t {
     BrittleBond,
 };
 
+// Which rule turns a bond's recorded strain peaks into damage.
+//
+// StrainThreshold (default): the bond is removed when its peak stretch reaches
+// break_strain_multiplier * tensile_strength / E. The energy released per unit
+// crack area then grows in proportion to the cell size, so the fracture answer
+// does not converge under refinement (docs/engine-options-analysis-2026-09-07.md,
+// section 1, Wall 2).
+//
+// EnergyScaled: the removal stretch is derived from fracture_energy_j_m2, the
+// horizon and the cell size so that the stored energy of every bond crossing a
+// unit area of a lattice crack plane sums to Gc at every resolution, bounded
+// above by the strength stretch (docs/criterion-energy-scaled-checkpoint.md).
+enum class BondFailureLaw : std::uint8_t {
+    StrainThreshold,
+    EnergyScaled,
+};
+
 struct SolverCalibration {
     double activation_energy_scale{1.0};
     double stress_activation_energy_floor_ratio{0.02};
@@ -46,6 +63,7 @@ struct MaterialDefinition {
     double strength_variation{};
     std::uint64_t seed{};
     SolverCalibration calibration{};
+    BondFailureLaw failure_law{BondFailureLaw::StrainThreshold};
 };
 
 struct CompiledBrittleMaterial {
@@ -65,6 +83,14 @@ struct CompiledBrittleMaterial {
     double activation_energy_scale{1.0};
     double strength_variation{};
     std::uint64_t seed{};
+
+    // Which law set the damage thresholds above, and what the energy-scaled
+    // derivation produced (zero under the strain-threshold law): the removal
+    // stretch that makes a lattice crack plane cost Gc per unit area, before
+    // the strength bound; and whether that bound was the smaller of the two.
+    BondFailureLaw failure_law{BondFailureLaw::StrainThreshold};
+    double energy_scaled_stretch{};
+    bool strength_bound_active{};
 };
 
 struct CompiledContactMaterial {

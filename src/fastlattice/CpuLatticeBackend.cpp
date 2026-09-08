@@ -36,6 +36,7 @@ public:
         status_ = {};
         dirty_start_ = true;
         frames_.clear();
+        first_failure_bonds_.clear();
     }
 
     RunStatus run(const RunControl &control) override {
@@ -82,6 +83,7 @@ public:
     }
 
     [[nodiscard]] const RunStatus &status() const override { return status_; }
+    [[nodiscard]] std::vector<std::uint32_t> firstFailureBonds() const override { return first_failure_bonds_; }
 
 private:
     template <typename Body>
@@ -164,6 +166,7 @@ private:
         for (std::uint32_t i = 0; i < N; ++i) nodeStrain(L_, i, direct);
         mark(11);
         bool any_failed = false;
+        const bool first_failure_round = status_.broken_bonds == 0;
         for (std::uint32_t j = 0; j < B; ++j) {
             if (!L_.alive[j]) continue;
             const FailureOutcome out = bondEndSampleAndFailure(L_, j, direct);
@@ -172,6 +175,7 @@ private:
             status_.max_shear_strain = std::max(status_.max_shear_strain, out.peak_shear);
             if (!out.broke) continue;
             any_failed = true;
+            if (first_failure_round) first_failure_bonds_.push_back(j);
             status_.removed_energy_j += out.removed_energy_j;
             ++status_.broken_bonds;
             L_.node_dirty[L_.bond_a[j]] = 1;
@@ -196,6 +200,7 @@ private:
     RunStatus status_{};
     bool dirty_start_{true};
     std::vector<FrameCapture> frames_;
+    std::vector<std::uint32_t> first_failure_bonds_;
 };
 
 } // namespace
