@@ -206,7 +206,7 @@ one-cell sheet keeps the nonlocal criterion, the one-element criterion equals
 
 ---
 
-## 4. The three measurements
+## 4. The measurements: the three the brief asked for, and the material comparison
 
 Every run below: `banjo_fast_lattice_run`, parallel CPU backend, double
 precision, glass tile, iron ball, concrete ground, reference material route.
@@ -276,7 +276,10 @@ against contact off:
 | `--node-contact off` | 32 | 170 | 3 | 15.2417 J | -- |
 | `--node-contact on` | 32 | 170 | 3 | 15.2417 J | **bit identical** |
 
-Asserted by `the fracture answer is unchanged where contact does not act`.
+Asserted by `the fracture answer is unchanged where contact does not act`. The
+same scene run to its natural exit (6,472 substeps, the recording in section 8)
+behaves the same way: 0 pairs listed, 32 bonds, first failure at
+0.000269920623253 s and 15.2416566484 J removed in both modes.
 
 **(b) `--node-contact off` is `af8af80`, bit for bit.** The `af8af80` binary and
 this branch's binary with contact off, same commands, three scenes:
