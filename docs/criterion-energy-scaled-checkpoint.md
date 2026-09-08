@@ -259,17 +259,100 @@ times h^2/N_100, exactly the counting the threshold was derived from - so it doe
 not depend on guessing where a ragged front lies. The rectangle the tip swept is
 reported next to it and their ratio says how straight the front is.
 
-### 5.2 Results
+### 5.2 The Griffith threshold: does the crack run exactly when G > Gc?
 
-*Filled in below.*
+*Validated.* Glass, 5 mm cells, horizon 2, 0.40 x 0.10 x 0.04 m strip (12,800
+cells, 81,020 bonds), 0.10 m slit, 300 us window. Only the requested G/Gc
+changes between rows; nothing else.
 
-### 5.3 The lane's own energy leak
+| G/Gc | loading strain | as a fraction of s_c | tip advance | new crack-plane bonds | crack runs? |
+|---:|---:|---:|---:|---:|---|
+| 0.6 | 3.005e-5 | 0.330 | 0 | 0 | **no** |
+| 0.8 | 3.470e-5 | 0.381 | 0 | 0 | **no** |
+| 1.0 | 3.879e-5 | 0.425 | 1 cell | 69 | marginal |
+| 1.2 | 4.249e-5 | 0.466 | 3 cells | 206 | yes |
+| 1.6 | 4.907e-5 | 0.538 | 8.5 cells | 674 | yes |
+| 2.4 | 6.010e-5 | 0.659 | 59.5 cells (the whole strip) | 4,591 | yes |
+
+**The threshold sits between G/Gc = 0.8 and 1.0.** Griffith's criterion is
+reproduced by a lattice that was never told about it: the crack advances when
+the energy the strip can release per unit of new crack area exceeds the
+material's declared `fracture_energy_j_m2`, and stops when it does not. The
+loading strain is only 0.33 to 0.66 of the removal stretch throughout, so the
+bulk is nowhere near failing on its own; what fails is the crack tip.
+
+### 5.3 Crack speed against the Rayleigh speed, and dissipation against Gc
+
+*Experimental result*, with LEFM's steady-state estimate `v = c_R (1 - Gc/G)`
+(Freund, *Dynamic Fracture Mechanics*, ch. 7) as the comparison. c_R is this
+lattice's own Rayleigh speed from the constants of section 2.1 (3,313 m/s for
+glass, 2,593 m/s for oak), not the nominal material's.
+
+| run | cells | G/Gc | tip speed | v / c_R | LEFM v / c_R | dissipated per crack area | / Gc | off-plane : plane breaks |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| glass, 5 mm | 12,800 | 1.6 | 1,297 m/s | **0.391** | 0.375 | 10.23 J/m^2 | 1.279 | 405 : 674 |
+| glass, 5 mm | 12,800 | 2.4 | 2,307 m/s | **0.696** | 0.583 | 11.97 J/m^2 | 1.496 | 6,128 : 4,591 |
+| glass, 2.5 mm | 102,400 | 1.6 | 1,070 m/s | **0.323** | 0.375 | 12.03 J/m^2 | 1.503 | 2,420 : 2,750 |
+| oak, 5 mm | 12,800 | 1.6 | 332 m/s | **0.128** | 0.375 | 1,261 J/m^2 | 1.261 | 550 : 766 |
+
+**Speed. The gate holds where the crack is a single crack.** No row is
+super-Rayleigh, which a mode-I crack must not be. At G/Gc = 1.6 the tip runs at
+0.32 to 0.39 c_R, comfortably under the 0.6 c_R branching bound, and the 5 mm
+glass row matches Freund's estimate to **4%** - a much sharper agreement than
+the gate asks for. At G/Gc = 2.4 the tip reaches 0.696 c_R, over the bound and
+19% above the LEFM estimate; that row is also the one where off-plane breaks
+outnumber crack-plane breaks 1.33 : 1, which is what branching looks like in a
+lattice. So the criterion respects the Rayleigh limit, follows the speed against
+driving-force relation to within 4-19%, and crosses 0.6 c_R only when the crack
+stops being one crack.
+
+Oak is the outlier: 0.128 c_R against an estimated 0.375. Oak's crack front is
+slower than LEFM by a factor of three under the same relative driving force.
+*Hypothesis, not measured*: oak's shear ramp is only twice its energy-scaled
+tensile one (4.95e-3 against 2.46e-3, where glass's is 28x), so oak's crack tip
+sheds part of its driving energy into shear failure off the plane instead of
+advancing.
+
+**Dissipation.** The criterion removes 1.26 to 1.50 Gc per unit of crack area,
+where the area is counted by the crack-plane bonds it broke. The spread is not
+calibration error, it is where one draws the crack: counting the off-plane
+breaks into the area as well would put the same four rows at 0.65 to 0.80 Gc.
+The honest statement is **Gc to within a factor of about 1.5, with the ambiguity
+in the definition of the crack area rather than in the threshold**, against a
+unit test (3b) that puts the ideal figure at exactly Gc to 1e-12. A crack in a
+lattice is a band a few cells wide, not a surface.
+
+### 5.4 The same strip under the old law
+
+*Validated, and it is the clearest single demonstration of the defect.* Running
+the identical strip at G/Gc = 1.6 under the strain-threshold law: the loading
+strain is 3.8% of that law's removal stretch, and **nothing happens at all** -
+0 bonds break, the tip does not move. The old law charges 1,591 J/m^2 per unit
+crack area at 5 mm cells against glass's 8, so a strip loaded to 1.6x glass's
+fracture energy is 199 times too weak to crack it.
+
+### 5.5 The lane's own energy leak
 
 XPBD damps the modes it cannot resolve; at `dt_factor 0.5` the fastest bond mode
-has `omega dt = 1`. The probe measures the resulting leak on this very scene
-while the crack is still standing still, so the energy check is stated against
-that number rather than on top of it. It is a property of `BrittleBondSolver` and
-of the fast lattice lane that reproduces it bit for bit, not of the criterion.
+has `omega dt = 1`. Measured on this very scene while the crack is still
+standing still: **0.0059 to 0.0076% of the stored energy per microsecond**
+(0.07%/us with no crack at all, in the sub-threshold rows). Over the whole
+300 us run the ledger closes 22.4% low. That leak is why the *elastic energy
+released* per unit area cannot be used as the check and the *dissipated* energy
+is used instead: the criterion's own removal accounting is exact, while the
+strip's potential-energy drop is contaminated by numerical damping. The leak is
+a property of `BrittleBondSolver` and of the fast lattice lane that reproduces it
+bit for bit, not of the criterion, and it is unchanged by the failure law
+(0.06949% per us for both laws in the rows where nothing breaks).
+
+**Horizon 3 on this strip is not a valid test at this geometry.** At horizon 3
+the lattice's effective modulus is 3.17x the nominal E rather than 1.52x, while
+s_c falls, so the bulk loading needed for G/Gc = 1.6 reaches 0.77 of the removal
+stretch instead of 0.54 and the strip disintegrates at the grips (46,277
+off-plane breaks against 760 on the plane). The requirement is
+`(G/Gc) . N_100 h / ((E_eff/E) m H) < ~0.3`, which at horizon 3 needs a strip
+twice as tall; that run was not made. The horizon is exercised at 2 and 3
+throughout the unit tests and section 2 instead.
 
 ---
 
