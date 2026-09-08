@@ -132,6 +132,9 @@ struct TileImpactRequest {
     // 0 runs the whole window.
     unsigned refracture_quiet_steps{2};
     std::size_t refracture_max_cells{4000};
+    // Print every contact above 5 m/s to stderr while the rigid phase runs.
+    // Observation only; it changes nothing the run computes.
+    bool refracture_trace{false};
     // ---- The second striker ----------------------------------------------
     // A second ball, dropped on the debris of the first strike. Radius 0 (the
     // default) means there is no second strike and nothing about the scene
@@ -244,6 +247,12 @@ struct RefractureEventReport {
     double entry_momentum_residual_kg_m_s{}, entry_angular_residual_kg_m2_s{}, entry_energy_residual_j{};
     double exit_momentum_residual_kg_m_s{}, exit_angular_residual_kg_m2_s{};
     double exit_coarsening_loss_j{}, exit_energy_residual_j{};
+    // Over the window: what is left of the momentum balance after gravity, and
+    // of the energy balance after gravity, the removals, the plastic work and
+    // the measured dissipation. Both are the supports' contribution -- the
+    // impulse is exactly zero when no support engaged -- plus, for the energy,
+    // the solver's own numerical change (the XPBD position projections and the
+    // velocity reconstruction), which nothing in this lane measures directly.
     double window_external_impulse_n_s{}, window_energy_residual_j{};
     // How far the rigid representation had let this piece sink into a support
     // plane when the window opened; the conversion lifts it out by exactly this
@@ -264,6 +273,10 @@ struct RefractureReport {
     // not a silence. `max_margin` is the estimated peak stretch over the
     // smallest removal threshold, so 1.0 is the admission line.
     double max_closing_speed_m_s{}, max_margin{};
+    // The hardest contact on ANY piece, bondless debris included: the
+    // difference between this and max_closing_speed_m_s is how much of a
+    // strike the debris took.
+    double max_closing_speed_any_m_s{};
     std::size_t refused_budget_events{}, refused_budget_steps{}, refused_unsupported{}, refused_too_large{};
     // A re-entry the lane declines for a reason of its own, counted so that a
     // refusal is visible: the rigid world had sunk the piece too far into the
@@ -370,6 +383,7 @@ struct TileImpactMeasurements {
     std::size_t pieces_at_end{};
     std::uint32_t broken_bonds_total{};
     double second_strike_time_s{-1.0}, second_ball_mass_kg{}, second_ball_speed_m_s{};
+    double second_ball_start_y_m{};
     double handoff_wall_s{};
     double rigid_simulated_s{}, rigid_wall_s{};
     std::uint64_t rigid_steps{};

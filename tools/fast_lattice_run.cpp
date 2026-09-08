@@ -166,6 +166,7 @@ int main(int argc, char **argv) {
             else if (option == "--refracture-window") request.refracture_window_steps = static_cast<unsigned>(number(value()));
             else if (option == "--refracture-quiet") request.refracture_quiet_steps = static_cast<unsigned>(number(value()));
             else if (option == "--refracture-max-cells") request.refracture_max_cells = static_cast<std::size_t>(number(value()));
+            else if (option == "--refracture-trace") request.refracture_trace = true;
             else if (option == "--second-ball") request.second_ball_radius_m = number(value());
             else if (option == "--second-speed") request.second_ball_speed_m_s = number(value());
             else if (option == "--second-material") request.second_ball_material = presetFromName(value());

@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -751,6 +752,9 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
     const double ground_impedance =
         acousticImpedance(setup.ground_material.density_kg_m3, setup.ground_material.young_modulus_pa);
 
+    // Observation only, opt-in: every contact above 5 m/s, so a scene that
+    // refuses to break can be read rather than guessed at.
+    const bool refracture_debug = r.refracture && r.refracture_trace;
     const auto fill_rigid_cells = [&](RecordedFrame &frame, std::int64_t skip_piece) {
         for (std::size_t f = 0; f < pieces.size(); ++f) {
             if (static_cast<std::int64_t>(f) == skip_piece) continue;
@@ -798,6 +802,16 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
             if (std::hypot(p.x - r.second_ball_offset_x_m, p.z - r.second_ball_offset_z_m) > reach) continue;
             top = std::max(top, p.y + 0.5 * r.cell_size_m);
         }
+        // ... nor inside a striker that is already resting under the axis.
+        for (const MatterBodyId id : {kBallId, kSecondBallId}) {
+            if (!world.contains(id)) continue;
+            const RigidSnapshot ball = world.snapshot(id);
+            const double radius = id == kBallId ? r.ball_radius_m : r.second_ball_radius_m;
+            if (std::hypot(ball.center_of_mass_world_m.x - r.second_ball_offset_x_m,
+                           ball.center_of_mass_world_m.z - r.second_ball_offset_z_m) > reach + radius)
+                continue;
+            top = std::max(top, ball.center_of_mass_world_m.y + radius);
+        }
         world.addBall({.body_id = kSecondBallId, .radius_m = r.second_ball_radius_m,
                        .material = second_material,
                        .position_world_m = {r.second_ball_offset_x_m,
@@ -808,6 +822,7 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
                        .mass_override_kg = second_mass, .sphere_inertia_factor = 0.4});
         second_inserted = true;
         m.second_strike_time_s = m.lattice_simulated_s + rigid_time;
+        m.second_ball_start_y_m = top + r.second_ball_radius_m + r.second_ball_gap_m;
         still_since = -1.0;
     };
 
@@ -846,6 +861,13 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
         Candidate chosen{};
         if (impacts.empty()) return chosen;
         std::sort(impacts.begin(), impacts.end(), impactOrder);
+        if (refracture_debug) {
+            for (const ImpactEvent &ev : impacts)
+                if (ev.closing_speed_m_s > 5.0)
+                    std::fprintf(stderr, "t=%.4f a=%llu b=%llu v=%.3f e=%.4f\n", rigid_time,
+                                 (unsigned long long)ev.body_a, (unsigned long long)ev.body_b,
+                                 ev.closing_speed_m_s, ev.available_normal_energy_j);
+        }
         for (const ImpactEvent &ev : impacts) {
             const auto a = piece_of_body.find(ev.body_a);
             const auto b = piece_of_body.find(ev.body_b);
@@ -860,6 +882,8 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
                 : (other == kSecondBallId ? second_impedance : ground_impedance);
             const RefractureAdmission admission = admitRefracture(
                 pieces[index].limits, other_impedance, ev.closing_speed_m_s, ev.available_normal_energy_j);
+            report.max_closing_speed_any_m_s =
+                std::max(report.max_closing_speed_any_m_s, ev.closing_speed_m_s);
             if (admission.verdict != RefractureVerdict::NoLiveBond) {
                 report.max_closing_speed_m_s = std::max(report.max_closing_speed_m_s, ev.closing_speed_m_s);
                 report.max_margin = std::max(report.max_margin,
@@ -1402,7 +1426,7 @@ Json refractureJson(const RefractureReport &f) {
                 {"exit_coarsening_loss_j", e.exit_coarsening_loss_j},
                 {"exit_energy_residual_j", e.exit_energy_residual_j},
                 {"window_external_impulse_n_s", e.window_external_impulse_n_s},
-                {"window_energy_residual_j", e.window_energy_residual_j}}},
+                {"window_unaccounted_work_j", e.window_energy_residual_j}}},
         });
     }
     return Json{
@@ -1411,7 +1435,9 @@ Json refractureJson(const RefractureReport &f) {
         {"rejected", {
             {"no_live_bond", f.rejected_no_bond}, {"below_stress_bound", f.rejected_stress},
             {"below_energy_bound", f.rejected_energy},
-            {"max_closing_speed_m_s", f.max_closing_speed_m_s}, {"max_margin", f.max_margin}}},
+            {"max_closing_speed_m_s", f.max_closing_speed_m_s},
+            {"max_closing_speed_any_m_s", f.max_closing_speed_any_m_s},
+            {"max_margin", f.max_margin}}},
         {"refused", {
             {"budget_events", f.refused_budget_events}, {"budget_steps", f.refused_budget_steps},
             {"unsupported_partner", f.refused_unsupported}, {"too_many_cells", f.refused_too_large},
@@ -1538,7 +1564,8 @@ std::string measurementsJson(const TileImpactMeasurements &m) {
             {"pieces_at_end", m.pieces_at_end}, {"broken_bonds_total", m.broken_bonds_total},
             {"second_strike_time_s", m.second_strike_time_s},
             {"second_ball_mass_kg", m.second_ball_mass_kg},
-            {"second_ball_speed_m_s", m.second_ball_speed_m_s}}},
+            {"second_ball_speed_m_s", m.second_ball_speed_m_s},
+            {"second_ball_start_y_m", m.second_ball_start_y_m}}},
         {"refracture", refractureJson(m.refracture)},
         {"simulated_total_s", m.simulated_total_s}, {"wall_total_s", m.wall_total_s},
         {"realtime_ratio", m.realtime_ratio}, {"rule_met", m.rule_met},
