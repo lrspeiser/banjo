@@ -1,10 +1,22 @@
 #!/usr/bin/env python3
-"""Run and summarise the energy-scaled criterion's convergence ladder.
+"""Run and summarise the energy-scaled criterion's evidence.
 
-Each row is one banjo_fast_lattice_run report. The script only launches the
-tool and reads the JSON it writes; every number below comes from the run.
+Two kinds of row:
+  * ladder rows, each one banjo_fast_lattice_run report on the bridge tile;
+  * strip rows, each one banjo_criterion_strip_probe report on the pre-cracked
+    strip of physics check (a).
+
+The script only launches those tools and reads the JSON they write; every number
+it prints comes from a run. Rows whose report is already on disk are reused
+unless --force is given, so a stage can be re-issued cheaply.
+
+    python scripts/criterion-ladder.py --stage ladder-v8 --converge
+    python scripts/criterion-ladder.py --summarise glass-old-20mm-v8 --cols name,pieces
+
+See docs/criterion-energy-scaled-checkpoint.md section 9 for the exact sequence
+that produced the checkpoint's tables.
 """
-import argparse, json, os, subprocess, sys, time
+import argparse, json, subprocess, time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
