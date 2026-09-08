@@ -116,6 +116,10 @@ struct SupportPlane {
     // surface (half a cell), which is the same as BrittleBondSolver seeing a
     // plane raised by node_radius. The rigid ball uses the physical plane.
     Real node_radius;
+    // 1 for a finite footprint (a ledge): the projection only stops what
+    // arrives from above, see projectSupportPosition. 0 for an infinite plane,
+    // where the CPU lane's unconditional projection applies unchanged.
+    std::uint8_t reach_capped;
     std::uint32_t footprint_count;
     Footprint<Real> footprints[kMaxFootprints];
 };
@@ -613,10 +617,15 @@ BANJO_HD Real projectSupportPosition(const LatticeArrays<Real> &L, const Support
     // footprint must not be teleported back up through its bonds: a surface
     // only stops what arrives from above, and such a node can be at most a
     // few approach steps deep. A bond teleported by millimetres carries
-    // kilojoules, which is what an uncapped projection injected here. Inert
-    // for an infinite footprint, where every engaged node arrives from above.
-    const Real reach = Real(8) * maxR(Real(0), -approach_normal_speed) * dt + Real(1.0e-5);
-    if (-distance > reach) return Real(0);
+    // kilojoules, which is what an uncapped projection injected here. The
+    // cap is NOT inert on an infinite plane: under a hard strike the sweep
+    // pushes a resting bottom node deeper than its reach in one substep, and
+    // the CPU lane projects such a node unconditionally. So the cap applies
+    // only to finite footprints, which BrittleBondSolver cannot express.
+    if (plane.reach_capped) {
+        const Real reach = Real(8) * maxR(Real(0), -approach_normal_speed) * dt + Real(1.0e-5);
+        if (-distance > reach) return Real(0);
+    }
     store3(L.u, i, load3(L.u, i) - distance * plane.normal);
     return -distance;
 }

@@ -6,6 +6,7 @@ only varies scene size, material, backend and launch chunking, all existing
 inputs of the tool.
 
     python scripts/fast-gpu-sweep.py [--exe PATH] [--only NAME,...] [--out DIR]
+        [--record NAME,...]   (recordings are written only for the named rows)
 """
 from __future__ import annotations
 
@@ -28,16 +29,23 @@ MATRIX = {
     # Scale at a 20 mm cell: the same tile thickness, growing face.
     "bridge-96":    BASE + ["--tile", "0.12", "0.04", "0.16", "--cell", "0.02"],
     "bridge-192":   BASE + T192,
+    # A gentler strike that breaks the tile into a few pieces instead of
+    # crushing it, at the two headline sizes.
+    "bridge-192-v8":  ["--layout", "bridge", "--ball-radius", "0.04", "--speed", "8"] + T192,
+    "bridge-1536-v8-blocks8": ["--layout", "bridge", "--ball-radius", "0.04", "--speed", "8"] + T1536 + ["--blocks", "8"],
     "bridge-384":   BASE + ["--tile", "0.24", "0.04", "0.32", "--cell", "0.02"],
     "bridge-800":   BASE + ["--tile", "0.40", "0.04", "0.40", "--cell", "0.02"],
     # Refine the cell: the substep halves with it and the bond count grows 12x.
     "bridge-1536":  BASE + T1536,
     "bridge-1536-blocks4": BASE + T1536 + ["--blocks", "4"],
     "bridge-1536-blocks8": BASE + T1536 + ["--blocks", "8"],
-    "bridge-3072-blocks8": BASE + ["--tile", "0.24", "0.04", "0.32", "--cell", "0.01", "--blocks", "8"],
-    "bridge-6400-blocks8":  BASE + ["--tile", "0.40", "0.04", "0.40", "--cell", "0.01", "--blocks", "8"],
-    "bridge-6400-blocks20": BASE + ["--tile", "0.40", "0.04", "0.40", "--cell", "0.01", "--blocks", "20"],
-    "bridge-12288-blocks16": BASE + ["--tile", "0.24", "0.04", "0.16", "--cell", "0.005", "--blocks", "16"],
+    # Beyond 1536 cells the 12 m/s strike already misses the rule by 7x, so
+    # these rows cap the lattice window at 30 ms: they measure the cost per
+    # substep and the throughput at scale, not the rule.
+    "bridge-3072-blocks8": BASE + ["--tile", "0.24", "0.04", "0.32", "--cell", "0.01", "--blocks", "8", "--max-ms", "30"],
+    "bridge-6400-blocks8":  BASE + ["--tile", "0.40", "0.04", "0.40", "--cell", "0.01", "--blocks", "8", "--max-ms", "30"],
+    "bridge-6400-blocks20": BASE + ["--tile", "0.40", "0.04", "0.40", "--cell", "0.01", "--blocks", "20", "--max-ms", "30"],
+    "bridge-12288-blocks16": BASE + ["--tile", "0.24", "0.04", "0.16", "--cell", "0.005", "--blocks", "16", "--max-ms", "30"],
     # Materials under identical conditions.
     "bridge-192-oak":  BASE + T192 + ["--material", "oak"],
     "bridge-192-iron": BASE + T192 + ["--material", "iron"],
@@ -53,12 +61,14 @@ MATRIX = {
 }
 
 
-def run(exe: Path, name: str, extra: list[str], out: Path, timeout: float) -> dict | None:
+def run(exe: Path, name: str, extra: list[str], out: Path, timeout: float, record: bool) -> dict | None:
     report = out / f"{name}.json"
     recording = out / f"{name}.playback.json"
     if recording.exists():
         recording.unlink()
-    command = [str(exe), *extra, "--report", str(report), "--record", str(recording)]
+    command = [str(exe), *extra, "--report", str(report)]
+    if record:
+        command += ["--record", str(recording)]
     started = time.time()
     try:
         process = subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=False)
@@ -79,12 +89,14 @@ def main() -> int:
     parser.add_argument("--only", default="")
     parser.add_argument("--out", type=Path, default=ROOT / "docs" / "evidence" / "fast-gpu")
     parser.add_argument("--timeout", type=float, default=600.0)
+    parser.add_argument("--record", default="", help="comma-separated row names to write recordings for")
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     names = [n for n in args.only.split(",") if n] or list(MATRIX)
+    record = {n for n in args.record.split(",") if n}
     rows = []
     for name in names:
-        data = run(args.exe, name, MATRIX[name], args.out, args.timeout)
+        data = run(args.exe, name, MATRIX[name], args.out, args.timeout, name in record)
         if data is None:
             continue
         m = data["measurements"]
@@ -102,10 +114,22 @@ def main() -> int:
     header = ("name", "backend", "cells", "bonds", "blocks", "colors", "dt_s", "steps", "lattice_sim_s", "lattice_wall_s",
               "us_per_step", "bond_updates_per_s", "launches", "broken", "failure_rounds", "pieces", "largest_piece_kg",
               "removed_j", "rigid_sim_s", "rigid_wall_s", "rest", "sim_total_s", "wall_total_s", "ratio", "rule_met")
-    with open(args.out / "summary.csv", "w", encoding="utf-8") as f:
+    # A partial run (--only) replaces its rows in the existing summary and
+    # keeps the others, in matrix order, so one re-run never erases the table.
+    summary = args.out / "summary.csv"
+    merged: dict[str, list[str]] = {}
+    if summary.exists():
+        with open(summary, encoding="utf-8") as f:
+            for line in f.read().splitlines()[1:]:
+                if line.strip():
+                    merged[line.split(",", 1)[0]] = line.split(",")
+    for row in rows:
+        merged[row[0]] = [str(v) for v in row]
+    order = {name: index for index, name in enumerate(MATRIX)}
+    with open(summary, "w", encoding="utf-8") as f:
         f.write(",".join(header) + "\n")
-        for row in rows:
-            f.write(",".join(str(v) for v in row) + "\n")
+        for name in sorted(merged, key=lambda n: order.get(n, len(order))):
+            f.write(",".join(merged[name]) + "\n")
     print(f"wrote {args.out / 'summary.csv'}")
     return 0
 

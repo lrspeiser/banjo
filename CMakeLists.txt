@@ -11,6 +11,13 @@ option(BANJO_BUILD_HEADLESS "Build the automated headless rolling-ball laborator
 option(BANJO_BUILD_PRECOMPUTE "Build the deterministic scenario precomputation tools" ON)
 option(BANJO_BUILD_TESTS "Build Banjo unit tests" ON)
 option(BANJO_BUILD_CUDA "Build the CUDA backend of the fast explicit lattice fracture lane" OFF)
+# nvcc contracts a*b+c into fused multiply-adds by default; MSVC (/fp:precise)
+# never does. A fused operation rounds once where the CPU rounds twice, and the
+# lattice's discrete failure decisions amplify that last-bit difference into a
+# different fracture cascade. The lane's claim is that the GPU runs the CPU
+# lane's physics, so contraction is off unless asked for; the cost is measured
+# in docs/fast-gpu-checkpoint.md.
+option(BANJO_CUDA_FMAD "Let nvcc fuse multiply-adds in the lattice kernel (breaks bitwise equality with the CPU backend)" OFF)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -120,6 +127,9 @@ if(BANJO_BUILD_CUDA)
     target_include_directories(banjo_fastlattice_cuda PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
     set_target_properties(banjo_fastlattice_cuda PROPERTIES
         CUDA_STANDARD 20 CUDA_STANDARD_REQUIRED ON CUDA_SEPARABLE_COMPILATION OFF)
+    if(NOT BANJO_CUDA_FMAD)
+        target_compile_options(banjo_fastlattice_cuda PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-fmad=false>)
+    endif()
     target_link_libraries(banjo_fastlattice_cuda PUBLIC CUDA::cudart_static)
     target_link_libraries(banjo_fastlattice PUBLIC banjo_fastlattice_cuda)
     target_compile_definitions(banjo_fastlattice PUBLIC BANJO_HAS_CUDA=1)

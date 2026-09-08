@@ -343,6 +343,58 @@ void backendsAgree() {
     require(std::abs(gpu_double.sphere.center.y - cpu_double.sphere.center.y) < 1e-10, "sphere state agrees");
 }
 
+// Through fracture. The removal decisions are discrete, so any rounding
+// difference between the backends becomes a different cascade within a few
+// hundred substeps; agreement here means the kernel executes the criterion
+// and the solve bit for bit (the CUDA target is built without FMA contraction
+// for that reason: CMakeLists.txt, BANJO_CUDA_FMAD). Checked in double and in
+// float, on one block and on four slabs with several launches.
+void backendsAgreeThroughFracture() {
+    const std::uint64_t steps = 2500;
+    TileImpactRequest cpu_double_request = smallScene(BackendKind::Cpu, Precision::Double, 1);
+    cpu_double_request.ball_speed_m_s = 12.0;
+    const Advanced cpu_double = advance(cpu_double_request, steps);
+    require(cpu_double.status.broken_bonds > 0, "the window must contain fracture");
+    std::cout << "  cpu double: broken " << cpu_double.status.broken_bonds << " in "
+              << cpu_double.status.failure_rounds << " rounds, first at step "
+              << cpu_double.status.first_failure_step << ", removed " << cpu_double.status.removed_energy_j << " J\n";
+    if (!cudaLatticeAvailable()) {
+        std::cout << "  [SKIP] CUDA backend not available: " << cudaLatticeDescription() << '\n';
+        return;
+    }
+    struct Pair { const char *name; Precision precision; unsigned blocks; };
+    for (const Pair pair : {Pair{"double, 1 block", Precision::Double, 1U}, Pair{"double, 4 slabs", Precision::Double, 4U},
+                            Pair{"float, 1 block", Precision::Float, 1U}, Pair{"float, 4 slabs", Precision::Float, 4U}}) {
+        TileImpactRequest cpu_request = smallScene(BackendKind::Cpu, pair.precision, pair.blocks);
+        cpu_request.ball_speed_m_s = 12.0;
+        TileImpactRequest gpu_request = cpu_request;
+        gpu_request.backend = BackendKind::Cuda;
+        const Advanced cpu = advance(cpu_request, steps);
+        const Advanced gpu = advance(gpu_request, steps, 250);
+        const double du = maxDifference(cpu.state.u, gpu.state.u);
+        const double dv = maxDifference(cpu.state.v, gpu.state.v);
+        const double ddamage = maxDifference(cpu.state.damage, gpu.state.damage);
+        const std::size_t mismatches = aliveMismatches(cpu.state, gpu.state);
+        const double energy_error = std::abs(cpu.status.removed_energy_j - gpu.status.removed_energy_j) /
+                                    std::max(1e-12, cpu.status.removed_energy_j);
+        std::cout << "  " << pair.name << ": broken cpu " << cpu.status.broken_bonds << " / cuda "
+                  << gpu.status.broken_bonds << ", rounds " << cpu.status.failure_rounds << " / "
+                  << gpu.status.failure_rounds << ", first step " << cpu.status.first_failure_step << " / "
+                  << gpu.status.first_failure_step << ", alive mismatches " << mismatches << ", max |du| = " << du
+                  << " m, max |dv| = " << dv << " m/s, max |ddamage| = " << ddamage
+                  << ", removed energy rel err " << energy_error << ", launches " << gpu.status.launches << '\n';
+        require(cpu.status.broken_bonds > 0, "the window must contain fracture in every configuration");
+        require(mismatches == 0, "same bonds alive after the fracture window");
+        require(cpu.status.broken_bonds == gpu.status.broken_bonds && cpu.status.failure_rounds == gpu.status.failure_rounds &&
+                cpu.status.first_failure_step == gpu.status.first_failure_step,
+                "same failure history");
+        require(du == 0.0 && dv == 0.0 && ddamage == 0.0, "positions, velocities and damage are bit for bit equal");
+        // The kernel sums the removed energy with atomics, in whatever order
+        // the failing bonds' threads arrive; the addends are identical.
+        require(energy_error <= 1e-12, "same removed energy to summation order");
+    }
+}
+
 // A 3x3x3 cubic lattice of unit-spaced nodes with axis-aligned bonds only,
 // as tests/implicit_fracture_tests.cpp builds it.
 struct AxisLattice {
@@ -429,24 +481,49 @@ void colourOrderNamesTheSameFailingBonds() {
 }
 
 // BrittleBondSolver on a copy of the lattice whose bonds are stored in this
-// lane's schedule order must match this lane to rounding: the same physics in
-// the same sweep order. Against the asset's own bond order the difference is
-// the Gauss-Seidel ordering effect, reported for the record.
+// lane's schedule order must match this lane to rounding through a fracture
+// cascade: the same physics in the same sweep order, on a hard strike (a
+// 12 m/s ball on the 192-cell tile, which breaks 28 bonds at step 219 and
+// several hundred by the end of the window). Against the asset's own bond
+// order the difference is the Gauss-Seidel ordering effect, reported for the
+// record; the first failure step and set must still agree.
 void colourOrderIsBrittleBondSolverInAPermutedOrder() {
     TileImpactRequest request = smallScene(BackendKind::Cpu, Precision::Double, 1);
-    const SolverComparison same = compareWithBrittleBondSolver(request, 600, Precision::Double, BackendKind::Cpu, true);
-    std::cout << "  600 substeps, schedule-order reference: max |dx| = " << same.max_position_difference_m
+    request.tile_dimensions_m = {0.24, 0.04, 0.16};
+    request.ball_radius_m = 0.04;
+    request.ball_speed_m_s = 12.0;
+    request.ball_gap_m = 0.002;
+    const std::uint64_t steps = 4000;
+    const SolverComparison same = compareWithBrittleBondSolver(request, steps, Precision::Double, BackendKind::Cpu, true);
+    std::cout << "  " << steps << " substeps, schedule-order reference: first failure step " << same.reference.first_failure_step
+              << " (" << same.reference.first_failure_bonds.size() << " bonds) / " << same.fast.first_failure_step << " ("
+              << same.fast.first_failure_bonds.size() << " bonds), set difference " << same.first_failure_set_symmetric_difference
+              << ", broken " << same.reference.broken_bonds << " / " << same.fast.broken_bonds << ", pieces "
+              << same.reference.components << " / " << same.fast.components << ", removed " << same.reference.removed_energy_j
+              << " / " << same.fast.removed_energy_j << " J, max |dx| = " << same.max_position_difference_m
               << " m, max |dv| = " << same.max_velocity_difference_m_s << " m/s, alive mismatches "
-              << same.alive_mismatches << ", contacts " << same.reference.bond_updates_per_s / 1e6
+              << same.alive_mismatches << ", " << same.reference.bond_updates_per_s / 1e6
               << " M bond-updates/s reference, " << same.fast.bond_updates_per_s / 1e6 << " M fast\n";
-    require(same.max_position_difference_m < 1e-9, "the lane is BrittleBondSolver's physics in schedule order");
-    require(same.max_velocity_difference_m_s < 1e-6, "velocities agree to rounding");
-    require(same.alive_mismatches == 0, "same bonds alive after the window");
-    const SolverComparison index = compareWithBrittleBondSolver(request, 600, Precision::Double, BackendKind::Cpu, false);
-    std::cout << "  600 substeps, index-order reference: max |dx| = " << index.max_position_difference_m
-              << " m, max |dv| = " << index.max_velocity_difference_m_s << " m/s, alive mismatches "
+    require(same.reference.first_failure_step >= 0 && same.reference.broken_bonds > 100, "the window must contain a cascade");
+    require(same.fast.first_failure_step == same.reference.first_failure_step, "same first failure step");
+    require(same.first_failure_set_symmetric_difference == 0, "same first failure set");
+    require(same.alive_mismatches == 0, "same bonds alive after the cascade");
+    require(same.max_position_difference_m < 1e-8, "the lane is BrittleBondSolver's physics in schedule order");
+    require(same.max_velocity_difference_m_s < 1e-5, "velocities agree to rounding");
+    require(std::abs(same.reference.removed_energy_j - same.fast.removed_energy_j) <= 1e-9 * same.reference.removed_energy_j,
+            "same removed energy");
+    const SolverComparison index = compareWithBrittleBondSolver(request, steps, Precision::Double, BackendKind::Cpu, false);
+    std::cout << "  " << steps << " substeps, index-order reference: first failure step " << index.reference.first_failure_step
+              << " (" << index.reference.first_failure_bonds.size() << " bonds), set difference "
+              << index.first_failure_set_symmetric_difference << ", broken " << index.reference.broken_bonds << " / "
+              << index.fast.broken_bonds << ", pieces " << index.reference.components << " / " << index.fast.components
+              << ", largest " << index.reference.largest_piece_cells << " / " << index.fast.largest_piece_cells
+              << ", removed " << index.reference.removed_energy_j << " / " << index.fast.removed_energy_j
+              << " J, max |dx| = " << index.max_position_difference_m << " m, alive mismatches "
               << index.alive_mismatches << " (Gauss-Seidel ordering effect)\n";
-    require(index.max_position_difference_m < 1e-4, "ordering effect stays far below the cell size");
+    require(index.fast.first_failure_step == index.reference.first_failure_step &&
+            index.first_failure_set_symmetric_difference == 0,
+            "the first failure does not depend on the sweep order");
 }
 
 } // namespace
@@ -465,6 +542,8 @@ int main() {
         std::cout << "[PASS] the lane is BrittleBondSolver's physics in a permuted sweep order\n";
         backendsAgree();
         std::cout << "[PASS] CPU and CUDA backends agree\n";
+        backendsAgreeThroughFracture();
+        std::cout << "[PASS] CPU and CUDA backends agree bit for bit through a fracture cascade\n";
         return 0;
     } catch (const std::exception &error) {
         std::cerr << "[FAIL] " << error.what() << '\n';

@@ -208,6 +208,7 @@ template <typename Real>
         plane.static_friction = static_cast<Real>(in.static_friction);
         plane.dynamic_friction = static_cast<Real>(in.dynamic_friction);
         plane.node_radius = static_cast<Real>(in.node_radius);
+        plane.reach_capped = in.reach_capped;
         plane.footprint_count = in.footprint_count;
         for (unsigned f = 0; f < kMaxFootprints; ++f) {
             plane.footprints[f] = {static_cast<Real>(in.footprints[f].center_t),

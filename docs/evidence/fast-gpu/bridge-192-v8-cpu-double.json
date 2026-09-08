@@ -1,0 +1,90 @@
+{
+  "cuda": "CUDA backend not compiled (configure with -DBANJO_BUILD_CUDA=ON)",
+  "frames": 18,
+  "measurements": {
+    "backend": "cpu-double",
+    "ball_mass_kg": 2.1098098503468097,
+    "blocks": 1,
+    "bonds": 1704,
+    "boundary_bonds": 0,
+    "cell_size_m": 0.02,
+    "cells": 192,
+    "colors": 23,
+    "degenerate_disagreements": 1,
+    "dt_s": 1.5877683720748897e-06,
+    "fastest_period_s": 9.976242906625397e-06,
+    "handoff": {
+      "components": 4,
+      "debris_particles": 0,
+      "largest_piece_cells": 96,
+      "largest_piece_mass_kg": 1.9200000000000015,
+      "rigid_fragments": 4,
+      "wall_s": 0.0013347
+    },
+    "lattice": {
+      "bond_updates_per_s": 18312292.44903183,
+      "broken_bonds": 276,
+      "contact": {
+        "ball_support_events": 0,
+        "dissipated_kinetic_energy_j": 5.360331632008728,
+        "impulse_contacts": 438,
+        "impulse_to_material_n_s": [
+          -0.0470430976274258,
+          -16.01240877797619,
+          0.07748658412702296
+        ],
+        "maximum_center_shift_m": 1.3867200601644555e-07,
+        "maximum_penetration_m": 1.97211204467293e-05,
+        "maximum_position_correction_m": 3.923649627448075e-06
+      },
+      "exit_reason": 1,
+      "failure_rounds": 81,
+      "first_failure_s": 0.0006176418967371321,
+      "kernel_s": 0.0,
+      "last_failure_s": 0.002562658152528872,
+      "launches": 1,
+      "removed_energy_j": 28.252314294106622,
+      "simulated_s": 0.012565598896600676,
+      "steps": 7914,
+      "wall_s": 0.7364155
+    },
+    "max_compressive_strain": 0.48723486065864563,
+    "max_shear_strain": 0.648629903793335,
+    "max_tensile_stretch": 0.2641128599643707,
+    "phase_seconds": {
+      "capture": 0.0,
+      "contact_pass_1": 0.0003849000000000068,
+      "contact_pass_2": 0.00033250000000000667,
+      "damping": 0.0,
+      "end_sample_bonds": 0.3733500000000101,
+      "end_sample_nodes": 0.09175319999999826,
+      "kick_classify": 0.011708699999999466,
+      "sphere_exit": 0.00036020000000000713,
+      "start_sample_bonds": 0.0026474999999999997,
+      "start_sample_nodes": 0.0010202,
+      "support_project": 0.0276785000000023,
+      "sweep_boundary": 0.00026260000000000546,
+      "sweep_interior": 0.2205645999999941,
+      "velocity_update": 0.005866300000000188
+    },
+    "realtime_ratio": 0.7163734945946069,
+    "recording_wall_s": 0.0263872,
+    "rigid": {
+      "ball_height_at_end_m": 0.03994494178351149,
+      "ball_speed_at_end_m_s": 2.660923257789475e-10,
+      "came_to_rest": true,
+      "rest_time_s": 0.7708989322299326,
+      "simulated_s": 1.0624999999999976,
+      "steps": 255,
+      "wall_s": 0.0314552
+    },
+    "rule_met": true,
+    "shared_memory_bytes": 0,
+    "shared_memory_positions": false,
+    "simulated_total_s": 1.0750655988965983,
+    "substep_limit_s": 3.1755367441497794e-06,
+    "tile_mass_kg": 3.8399999999999914,
+    "wall_total_s": 0.7701485
+  },
+  "recording": "docs/evidence/fast-gpu/bridge-192-v8-cpu-double.playback.json"
+}

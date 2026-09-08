@@ -20,6 +20,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -47,6 +48,7 @@ SupportPlane<double> makePlane(const Vec3 &point, const CombinedContactMaterial 
     plane.static_friction = contact.static_friction;
     plane.dynamic_friction = contact.dynamic_friction;
     plane.node_radius = node_radius;
+    plane.reach_capped = 0;
     plane.footprint_count = 0;
     return plane;
 }
@@ -54,6 +56,9 @@ SupportPlane<double> makePlane(const Vec3 &point, const CombinedContactMaterial 
 void addFootprint(SupportPlane<double> &plane, double center_t, double center_b, double half_t, double half_b) {
     if (plane.footprint_count >= kMaxFootprints) throw std::logic_error("too many support footprints");
     plane.footprints[plane.footprint_count++] = {center_t, center_b, half_t, half_b};
+    // Only a finite footprint has an edge a node can pass; see
+    // LatticePhysics.hpp projectSupportPosition.
+    if (std::isfinite(half_t) || std::isfinite(half_b)) plane.reach_capped = 1;
 }
 
 StepSettings<double> buildSettings(const TileImpactSetup &setup, const Vec3 &origin) {
@@ -333,7 +338,18 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
     m.rigid_fragments = build.rigid_fragments.size();
     m.debris_particles = build.debris_particles.size();
 
-    JoltWorld world;
+    // Jolt's contact capacity is an allocation, not a law: a crushed tile
+    // hands over hundreds of pieces and the default 8192 constraints
+    // overflowed at about 300 of them (Jolt then refuses the step rather
+    // than dropping contacts). Sized from the piece count within the
+    // world's own bounds; the default worker count is kept.
+    const auto clampCapacity = [](std::size_t value, unsigned low, unsigned high) {
+        return static_cast<unsigned>(std::clamp<std::size_t>(value, low, high));
+    };
+    const RigidContactCapacity capacity{
+        clampCapacity(64U * components.size(), 16384U, 262144U),
+        clampCapacity(128U * components.size(), 8192U, 65536U)};
+    JoltWorld world(std::clamp(std::thread::hardware_concurrency(), 1U, 64U), capacity);
     world.setGravity(r.gravity_m_s2);
     world.addSupportSurface({
         .frame = makeSupportPlane({0.0, setup.ground_y, 0.0}, {0.0, 1.0, 0.0}),
@@ -566,7 +582,29 @@ void writePlayback(const TileImpactResult &result, const std::filesystem::path &
     const auto quat = [](const Quat &q) { return Json{q.w, q.x, q.y, q.z}; };
     const std::size_t N = result.frames.empty() ? 0 : result.frames.front().cell_positions.size();
     const std::size_t B = result.bond_nodes.size();
-    const bool record_bonds = B <= 20000;
+    // The playground accepts 64 MiB per recording. A cell pose costs about
+    // 130 bytes and a bond line about 130 bytes, so the frames are thinned to a
+    // budget and bond lines are kept only for the lattice phase (a rigid frame
+    // carries no bond state of its own) and only while they fit. Thinning
+    // happens here, after the simulation: it never changes what was computed.
+    constexpr std::size_t kBudgetBytes = 48U * 1024U * 1024U;
+    constexpr std::size_t kBytesPerItem = 130;
+    std::vector<std::size_t> kept;
+    {
+        const std::size_t per_frame = kBytesPerItem * std::max<std::size_t>(1, N + 1 + result.ledges.size());
+        const std::size_t budget_frames = std::max<std::size_t>(8, kBudgetBytes / per_frame);
+        const std::size_t total = result.frames.size();
+        const std::size_t stride = total <= budget_frames ? 1 : (total + budget_frames - 1) / budget_frames;
+        std::size_t last_lattice = total;
+        for (std::size_t f = 0; f < total; ++f)
+            if (result.frames[f].phase == "lattice") last_lattice = f;
+        for (std::size_t f = 0; f < total; ++f)
+            if (f % stride == 0 || f + 1 == total || f == last_lattice) kept.push_back(f);
+    }
+    std::size_t lattice_frames_kept = 0;
+    for (const std::size_t f : kept) lattice_frames_kept += result.frames[f].phase == "lattice" ? 1 : 0;
+    const bool record_bonds =
+        B * lattice_frames_kept * kBytesPerItem + kept.size() * (N + 1) * kBytesPerItem <= kBudgetBytes;
     Json bodies = Json::array();
     const double h = result.cell_size_m;
     for (std::size_t i = 0; i < N; ++i) {
@@ -589,8 +627,8 @@ void writePlayback(const TileImpactResult &result, const std::filesystem::path &
     supports.push_back({vec({-g, result.ground_y, -g}), vec({g, result.ground_y, g}), vec({-g, result.ground_y, g})});
 
     Json frames = Json::array();
-    const RecordedFrame *last_lattice = nullptr;
-    for (const RecordedFrame &frame : result.frames) {
+    for (const std::size_t kept_index : kept) {
+        const RecordedFrame &frame = result.frames[kept_index];
         Json poses = Json::array();
         for (std::size_t i = 0; i < N; ++i) {
             poses.push_back({{"id", "cell:" + std::to_string(i)}, {"position_m", vec(frame.cell_positions[i])},
@@ -603,16 +641,12 @@ void writePlayback(const TileImpactResult &result, const std::filesystem::path &
             poses.push_back({{"id", "ledge:" + std::to_string(k)}, {"position_m", vec(result.ledges[k].center_m)},
                              {"orientation_wxyz", Json{1, 0, 0, 0}}, {"component_id", 0}});
         Json bonds = Json::array();
-        if (record_bonds) {
-            const RecordedFrame &source = frame.phase == "lattice" ? frame : (last_lattice ? *last_lattice : frame);
-            if (frame.phase == "lattice") last_lattice = &frame;
-            if (source.bond_alive.size() == B) {
-                for (std::size_t o = 0; o < B; ++o) {
-                    const auto [a, b] = result.bond_nodes[o];
-                    bonds.push_back({{"a_m", vec(frame.cell_positions[a])}, {"b_m", vec(frame.cell_positions[b])},
-                                     {"live", source.bond_alive[o] != 0},
-                                     {"damage", static_cast<double>(source.bond_damage[o])}});
-                }
+        if (record_bonds && frame.phase == "lattice" && frame.bond_alive.size() == B) {
+            for (std::size_t o = 0; o < B; ++o) {
+                const auto [a, b] = result.bond_nodes[o];
+                bonds.push_back({{"a_m", vec(frame.cell_positions[a])}, {"b_m", vec(frame.cell_positions[b])},
+                                 {"live", frame.bond_alive[o] != 0},
+                                 {"damage", static_cast<double>(frame.bond_damage[o])}});
             }
         }
         frames.push_back({{"time_s", frame.time_s}, {"phase", frame.phase}, {"poses", std::move(poses)},
@@ -622,7 +656,8 @@ void writePlayback(const TileImpactResult &result, const std::filesystem::path &
                   {"bodies", std::move(bodies)}, {"supports", std::move(supports)}, {"frames", std::move(frames)},
                   {"requested_steps", result.measurements.lattice_steps + result.measurements.rigid_steps},
                   {"completed_steps", result.measurements.lattice_steps + result.measurements.rigid_steps},
-                  {"sampling", {{"stride_steps", 0}, {"maximum_frames", 122}, {"interpolation", "none"}}},
+                  {"sampling", {{"stride_steps", 0}, {"maximum_frames", kept.size()}, {"interpolation", "none"},
+                                {"captured_frames", result.frames.size()}, {"bond_lines", record_bonds}}},
                   {"physical_response_validated", false},
                   {"status", "complete"}, {"error", ""},
                   {"report", Json::parse(measurementsJson(result.measurements))}};
@@ -755,33 +790,44 @@ SolverComparison compareWithBrittleBondSolver(
         const auto begin = Clock::now();
         backend->upload(state, s.settings_scene, sphere);
         RunControl control{};
-        control.max_steps = steps;
         control.capture_stride = c.history_stride;
         control.max_frames = static_cast<unsigned>(steps / c.history_stride + 1);
         control.steps_per_launch = s.request.steps_per_launch;
-        const RunStatus status = backend->run(control);
+        // Two legs: through the reference's first failure step, so the bonds
+        // dead at that point are exactly this lane's first failure set when
+        // its first failure lands on the same step (the backend reports the
+        // step itself), then the rest of the window from that state.
+        const std::uint64_t first_leg = c.reference.first_failure_step >= 0
+            ? std::min<std::uint64_t>(steps, static_cast<std::uint64_t>(c.reference.first_failure_step) + 1) : steps;
+        control.max_steps = first_leg;
+        RunStatus status = backend->run(control);
+        if (status.broken_bonds > 0) {
+            LatticeState probe = state;
+            SphereState<double> probe_sphere = sphere;
+            backend->download(probe, probe_sphere);
+            lane.first_failure_step = static_cast<std::int64_t>(status.first_failure_step);
+            for (std::size_t k = 0; k < probe.alive.size(); ++k)
+                if (!probe.alive[k]) lane.first_failure_bonds.push_back(s.schedule.bond_order[k]);
+        }
+        if (first_leg < steps) {
+            control.max_steps = steps - first_leg;
+            status = backend->run(control);
+        }
         std::vector<FrameCapture> captures = backend->takeFrames();
         backend->download(state, sphere);
         lane.wall_s = seconds(begin, Clock::now());
         writeBackLatticeState(state, s.schedule, s.matter);
         lane.removed_energy_j = status.removed_energy_j;
         lane.broken_bonds = status.broken_bonds;
-        std::uint32_t previous = 0;
         for (const FrameCapture &capture : captures) {
             std::uint32_t broken = 0;
             for (std::size_t k = 0; k < capture.alive.size(); ++k) if (!capture.alive[k]) ++broken;
             if (capture.step > 0) lane.broken_history.push_back(broken);
-            if (broken > 0 && previous == 0 && lane.first_failure_step < 0) {
-                // Locate the exact step: the capture holds the state before its step.
-                lane.first_failure_step = static_cast<std::int64_t>(capture.step) - 1;
-                for (std::size_t k = 0; k < capture.alive.size(); ++k)
-                    if (!capture.alive[k]) lane.first_failure_bonds.push_back(s.schedule.bond_order[k]);
-            }
-            previous = broken;
         }
-        if (lane.first_failure_step < 0 && status.broken_bonds > 0 &&
-            status.last_failure_step != std::numeric_limits<std::uint64_t>::max()) {
-            lane.first_failure_step = static_cast<std::int64_t>(status.last_failure_step);
+        if (lane.first_failure_step < 0 && status.broken_bonds > 0) {
+            // The reference never failed but this lane did: report the lane's
+            // own first step with everything dead at the end of the window.
+            lane.first_failure_step = static_cast<std::int64_t>(status.first_failure_step);
             for (std::uint32_t o = 0; o < s.matter.bonds.size(); ++o)
                 if (!s.matter.bonds[o].alive) lane.first_failure_bonds.push_back(o);
         }

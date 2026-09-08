@@ -1,0 +1,89 @@
+{
+  "cuda": "NVIDIA GeForce RTX 5090 sm_120, 170 SMs, runtime 12090, driver 13000",
+  "frames": 27,
+  "measurements": {
+    "backend": "cuda-float-1x512",
+    "ball_mass_kg": 2.1098098503468097,
+    "blocks": 1,
+    "bonds": 1704,
+    "boundary_bonds": 0,
+    "cell_size_m": 0.02,
+    "cells": 192,
+    "colors": 23,
+    "degenerate_disagreements": 1,
+    "dt_s": 1.5877683720748897e-06,
+    "fastest_period_s": 9.976242906625397e-06,
+    "handoff": {
+      "components": 59,
+      "debris_particles": 0,
+      "largest_piece_cells": 66,
+      "largest_piece_mass_kg": 1.320000000000001,
+      "rigid_fragments": 59,
+      "wall_s": 0.0032463
+    },
+    "lattice": {
+      "bond_updates_per_s": 53503193.70009373,
+      "broken_bonds": 1534,
+      "contact": {
+        "ball_support_events": 0,
+        "dissipated_kinetic_energy_j": 58.794623255729675,
+        "impulse_contacts": 1412,
+        "impulse_to_material_n_s": [
+          -0.14243172974744966,
+          -30.26178335888312,
+          -0.0034264151036731416
+        ],
+        "maximum_center_shift_m": 4.0660557942828746e-07,
+        "maximum_penetration_m": 5.365908145904541e-05,
+        "maximum_position_correction_m": 4.365908171166666e-05
+      },
+      "exit_reason": 1,
+      "failure_rounds": 645,
+      "first_failure_s": 0.00036201118883307486,
+      "kernel_s": 0.6720544333457953,
+      "last_failure_s": 0.02476601106762413,
+      "launches": 219,
+      "removed_energy_j": 37.08598606997852,
+      "simulated_s": 0.03476895181169593,
+      "steps": 21898,
+      "wall_s": 0.6974199
+    },
+    "max_compressive_strain": 0.0040298146195709705,
+    "max_shear_strain": 0.009590184316039085,
+    "max_tensile_stretch": 0.004557618405669928,
+    "phase_seconds": {
+      "capture": 0.009038468170829976,
+      "contact_pass_1": 0.047201734488315876,
+      "contact_pass_2": 0.047034391216760674,
+      "damping": 0.0,
+      "end_sample_bonds": 0.12083375100725222,
+      "end_sample_nodes": 0.12575841941982271,
+      "kick_classify": 0.039468204270749395,
+      "sphere_exit": 0.01954185414987913,
+      "start_sample_bonds": 0.002363359790491539,
+      "start_sample_nodes": 0.012791232876712329,
+      "support_project": 0.01682958460918614,
+      "sweep_boundary": 0.04697934971796938,
+      "sweep_interior": 0.265000673650282,
+      "velocity_update": 0.020841869863013698
+    },
+    "realtime_ratio": 0.5906765472244092,
+    "recording_wall_s": 0.0,
+    "rigid": {
+      "ball_height_at_end_m": 0.03999977514783683,
+      "ball_speed_at_end_m_s": 0.7470304037942171,
+      "came_to_rest": true,
+      "rest_time_s": 1.093102285145027,
+      "simulated_s": 1.3624999999999965,
+      "steps": 327,
+      "wall_s": 0.0571684
+    },
+    "rule_met": true,
+    "shared_memory_bytes": 62400,
+    "shared_memory_positions": true,
+    "simulated_total_s": 1.3972689518116925,
+    "substep_limit_s": 3.1755367441497794e-06,
+    "tile_mass_kg": 3.8399999999999914,
+    "wall_total_s": 0.825334
+  }
+}

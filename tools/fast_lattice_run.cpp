@@ -7,6 +7,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
@@ -55,7 +56,7 @@ void usage() {
         "  --catalog                     glass: catalog BrittleBond route (variation, damping)\n"
         "  --node-radius-factor F        node contact radius = F * cell (default 0.5)\n"
         "  --quiet-ms --min-ms --max-ms --no-failure-ms   lattice phase exit rules\n"
-        "  --settle-s S                  rigid settling limit (default 4)\n"
+        "  --settle-s S                  rigid settling limit (default 6)\n"
         "  --backend cpu|gpu --precision float|double --blocks N --threads N\n"
         "  --steps-per-launch N          GPU substeps per kernel launch (0 = one launch)\n"
         "  --frames N                    lattice-phase frames (default 50); --rigid-frames N\n"
