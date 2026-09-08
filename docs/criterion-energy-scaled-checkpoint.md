@@ -472,7 +472,37 @@ Under the new law it does not hold still (0.549 / 0.939 / 0.924 kg), and the
 20 mm row is the odd one out because there the tile is the only case on the
 ladder that actually breaks in half.
 
-### 6.4 dt against dt/2, and the horizon
+### 6.4 Glass at 12 m/s
+
+*Experimental result.* The same tile and ball, struck at 12 m/s instead of 8.
+The pulverisation number scales with the speed, so R rises to 37.9 / 26.8 / 19.0
+under the new law and 1.34 under the old.
+
+| cells | law | exit | window | broken | of all bonds | pieces | >=1% | largest | removed | measured Gc | R | first failure | depth | wall |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 20 mm | old | capped | 12.0 ms | 1,433 | 84.1% | 49 | 12 | 1.080 kg | 36.62 J | 703 | 1.34 | 0.362 ms | 30 mm | 0.29 s |
+| 10 mm | old | capped | 12.0 ms | 7,832 | 41.5% | 223 | 4 | 2.718 kg | 61.52 J | 864 | 1.34 | 0.221 ms | 10 mm | 18.8 s |
+| 5 mm | old | capped | 12.0 ms | 21,595 | 12.5% | 664 | 1 | 3.514 kg | 62.07 J | 1,265 | 1.34 | 0.183 ms | 5 mm | 442 s |
+| 20 mm | new | quiet | 4.83 ms | 1,616 | 94.8% | 120 | 29 | 0.220 kg | 1.28 J | 21.7 | 37.9 | 0.337 ms | 20 mm | 0.07 s |
+| 10 mm | new | capped | 12.0 ms | 15,548 | 82.5% | 436 | 4 | 1.193 kg | 5.18 J | 36.6 | 26.8 | 0.213 ms | 9 mm | 7.5 s |
+| 5 mm | new | capped | 12.0 ms | 101,074 | 58.4% | 2,069 | 1 | 3.155 kg | 2.25 J | 9.8 | 19.0 | 0.178 ms | 5 mm | 409 s |
+
+| law | step | pieces | largest piece | removed energy | broken bonds |
+|---|---|---:|---:|---:|---:|
+| old | 20 -> 10 mm | +355% | +152% | +68% | +447% |
+| old | 10 -> 5 mm | +198% | +29% | **+1%** | +176% |
+| new | 20 -> 10 mm | +263% | +442% | +306% | +862% |
+| new | 10 -> 5 mm | +375% | -57% | -57% | +550% |
+
+The one quantity anywhere on either ladder that looks like a limit is the old
+law's removed energy at 12 m/s: 36.6 -> 61.5 -> 62.1 J, a 1% change over the
+last refinement. It is not evidence for the old law. At 12 m/s the strike
+saturates - 84% of the 20 mm tile's bonds break under a law that is 795 times
+too tough - and the removed energy converges to "as much as the ball had",
+which is a property of the ball and not of the criterion. The piece count on the
+same rows still triples per level.
+
+### 6.5 dt against dt/2, and the horizon
 
 *Experimental result.* Oak, 10 mm cells, 8 m/s, `dt_factor 0.5` (0.856 us)
 against `0.25` (0.428 us), same exit rule:
@@ -506,7 +536,7 @@ colouring caps at 64 colours. The 20 mm tile is only 2 cells thick, which
 truncates the neighbourhood enough to fit, so horizon 3 is measured there only.
 This is a lane limitation, not a criterion limitation.
 
-### 6.5 Does the cascade ever stop?
+### 6.6 Does the cascade ever stop?
 
 Every energy-scaled row above ends `capped`, so the obvious question is whether
 the cascade terminates at all. The 20 mm rows are cheap enough to answer it:
@@ -534,7 +564,7 @@ nothing. Fragments also do not collide with each other during the lattice phase
 free rings for ever at whatever amplitude it separated with, and the criterion
 keeps reading that ringing.
 
-### 6.6 What the ladder shows: does the answer converge?
+### 6.7 What the ladder shows: does the answer converge?
 
 **The criterion converges. The answer does not.** Both halves of that sentence
 are measured, and they are different claims about different things.
