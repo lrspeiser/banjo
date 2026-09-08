@@ -43,11 +43,17 @@ ALGORITHMS: dict[str, dict[str, Any]] = {
 }
 
 MATERIALS = ("glass", "oak", "iron")
+# The strain threshold is what every result before 2026-09-08 used; the
+# energy-scaled law derives the critical stretch from the declared fracture
+# energy, the horizon and the cell size, so a crack costs the same per unit
+# area at every resolution (docs/criterion-energy-scaled-checkpoint.md).
+FAILURE_LAWS = ("strain-threshold", "energy-scaled")
 SUPPORTS = ("ledges", "flat", "clamped")
 
 DEFAULT: dict[str, Any] = {
     "algorithm": "lattice",
     "material": "glass",
+    "failure_law": "strain-threshold",
     "striker": "iron",
     "plate_m": [0.25, 0.20, 0.01],
     "cell_m": 0.01,
@@ -69,7 +75,7 @@ LIMITS = {
     "duration_s": {"min": 0.2, "max": 6.0},
 }
 
-FIELDS = {"algorithm", "material", "striker", "plate_m", "cell_m", "ball_m", "drop_m", "speed_m_s",
+FIELDS = {"algorithm", "material", "striker", "failure_law", "plate_m", "cell_m", "ball_m", "drop_m", "speed_m_s",
           "offset_m", "support", "duration_s", "request_id"}
 
 
@@ -120,6 +126,8 @@ def validate(spec: Any) -> dict[str, Any]:
         raise ValueError(f"material must be one of {list(MATERIALS)}")
     if result["striker"] not in MATERIALS:
         raise ValueError(f"striker must be one of {list(MATERIALS)}")
+    if result["failure_law"] not in FAILURE_LAWS:
+        raise ValueError(f"failure_law must be one of {list(FAILURE_LAWS)}")
     result["duration_s"] = _number(result["duration_s"], LIMITS["duration_s"]["min"], LIMITS["duration_s"]["max"], "duration")
     nx, ny, nz = cell_counts(result["plate_m"], result["cell_m"])
     result["cells_per_axis"] = [nx, ny, nz]
@@ -149,7 +157,8 @@ def describe(engine_path: Path) -> dict[str, Any]:
         lanes.append({"id": key, "title": lane["title"], "available": path.is_file(), "max_cells": lane["max_cells"],
                       "timeout_s": lane["timeout_s"], "executable": path.name})
     return {"algorithms": lanes, "default": DEFAULT, "limits": LIMITS, "supports": list(SUPPORTS),
-            "materials": list(MATERIALS), "realtime_limit": REALTIME_LIMIT}
+            "materials": list(MATERIALS), "failure_laws": list(FAILURE_LAWS),
+            "realtime_limit": REALTIME_LIMIT}
 
 
 def command(algorithm: str, spec: dict[str, Any], engine_path: Path, output: Path, cache_dir: Path,
@@ -179,6 +188,7 @@ def command(algorithm: str, spec: dict[str, Any], engine_path: Path, output: Pat
             # colour stages spread within a stage, so it is bit-identical to the
             # serial one (1,982 bonds, 295 pieces, 3.3813 J on the default scene)
             # at 2.9x the speed: 3.5x realtime instead of 10.1x.
+            "--failure-law", spec["failure_law"],
             "--backend", "parallel", "--precision", "double",
             "--record", str(output), "--report", str(report_path)]
 
@@ -259,7 +269,7 @@ def run(app: Any, body: Any) -> dict[str, Any]:
     name = (f"{spec['material']} {spec['plate_m'][0]*1000:.0f}x{spec['plate_m'][1]*1000:.0f}x"
             f"{spec['plate_m'][2]*1000:.0f} mm, {nx}x{ny}x{nz} = {spec['cells']} cells, "
             f"{spec['ball_m']*1000:.0f} mm {spec['striker']} ball at {spec['speed_m_s']:.2f} m/s, "
-            f"{spec['support']}")
+            f"{spec['support']}, {spec['failure_law']}")
     started = time.perf_counter()
     case: dict[str, Any] = {"index": 0, "name": name, "package": {}, "status": "pending", "native_scene": False,
                             "playback_available": False, "warnings": [], "error": ""}

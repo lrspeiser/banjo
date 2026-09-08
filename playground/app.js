@@ -817,6 +817,7 @@
       algorithm: $("f-algorithm").value,
       material: $("f-material").value,
       striker: $("f-striker").value,
+      failure_law: $("f-failure-law").value,
       plate_m: [mm("f-length"), mm("f-width"), mm("f-thickness")],
       cell_m: mm("f-cell"),
       ball_m: mm("f-ball"),
@@ -926,9 +927,10 @@
     fracture.meta.algorithms.forEach((lane) => { const o = document.createElement("option"); o.value = lane.id; o.textContent = lane.available ? lane.title : `${lane.title} (not built yet)`; o.disabled = !lane.available; select.append(o); });
     const preferred = fracture.meta.algorithms.find((l) => l.id === fracture.meta.default.algorithm && l.available) || fracture.meta.algorithms.find((l) => l.available);
     if (preferred) select.value = preferred.id;
-    for (const [id, key] of [["f-material", "material"], ["f-striker", "striker"]]) {
+    const optionsFor = { "f-material": fracture.meta.materials, "f-striker": fracture.meta.materials, "f-failure-law": fracture.meta.failure_laws };
+    for (const [id, key] of [["f-material", "material"], ["f-striker", "striker"], ["f-failure-law", "failure_law"]]) {
       const select = $(id); select.textContent = "";
-      (fracture.meta.materials || ["glass"]).forEach((m) => { const o = document.createElement("option"); o.value = m; o.textContent = m; select.append(o); });
+      (optionsFor[id] || ["glass"]).forEach((m) => { const o = document.createElement("option"); o.value = m; o.textContent = m; select.append(o); });
       select.value = fracture.meta.default[key];
     }
     renderFractureLanes();
