@@ -356,6 +356,15 @@ STAGES = {
         strip("strip-oak-5mm", cell=0.005, material="oak", force=f),
         strip("strip-glass-5mm-h3", cell=0.005, horizon=3, force=f),
         strip("strip-glass-5mm-old", cell=0.005, law="strain-threshold", force=f)] if r],
+    # Does the energy-scaled cascade ever stop? Every ladder row hit the 12 ms
+    # cap with bonds still breaking, so the 20 mm rows (which are cheap) are
+    # run out to 60 ms to see whether the cascade terminates at all.
+    "long-window": lambda f: [
+        run(f"{material}-{short}-20mm-v8-w{w:g}", material=material, cell=0.02, speed=8.0,
+            law=law, force=f, window_ms=w, settle_s=SETTLE_S)
+        for material in ("glass", "oak")
+        for law, short in (("strain-threshold", "old"), ("energy-scaled", "new"))
+        for w in (12.0, 60.0)],
     "dt-half": lambda f: [
         run(f"oak-{short}-10mm-v8-dt{d:g}", material="oak", cell=0.01, speed=8.0,
             law=law, dt_factor=d, force=f, window_ms=WINDOW_MS, settle_s=SETTLE_S)
