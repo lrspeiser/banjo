@@ -23,7 +23,8 @@ from urllib.parse import urlsplit
 import uuid
 
 from experiment_language import ROOT, KINDS, LIMITATIONS, SCHEMA, PLANNER_SCHEMA, lower_proposal, lower_and_admit, SYSTEM, compile_plan, validate_plan, request_blockers, admit_plan, plan_cost
-import builder
+import builder
+import fracture_lab
 import network_admission
 from network_admission import Inadmissible, LIMITS, describe_package
 from control_contract import default_ui, apply_control
@@ -859,6 +860,7 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/goal": return self.send({"markdown":(ROOT/"docs/project-goal-2026-09-06.md").read_text(encoding="utf-8") + "\n\n" + (ROOT/"docs/rules-engine-execution-plan.md").read_text(encoding="utf-8")})
             if path=="/api/goals": return self.send(strict_json((ROOT/"docs/execution-goals.json").read_text(encoding="utf-8")))
             if path=="/api/schema": return self.send({"language":"banjo-playground-1","schema":SCHEMA,"material_validation":"experimental; no calibrated fracture claim","limits":{"network_cells":850,"objects":12,"sweep_cases":4,"duration_s":3,"dynamic_material_duration_s":.1,"dynamic_material_cases":3,"dynamic_material_step_calls_per_case":200000,"recording_bytes":64*1024*1024,**LIMITS}})
+            if path=="/api/fracture": return self.send(fracture_lab.describe(self.server.app.engine_path))
             if path=="/api/builder": return self.send({
                 "schema":builder.BUILDER_SCHEMA,"default":builder.DEFAULT,
                 "materials":builder.MATERIALS,"projectiles":sorted(builder.PROJECTILES),
@@ -907,6 +909,10 @@ class Handler(BaseHTTPRequestHandler):
             # setup. Nothing is executed, so the panel can show what a run would
             # cost before anyone commits to waiting for it.
             if path=="/api/builder/preview": return self.send(builder.describe(body))
+            # The fracture lab runs a lane executable synchronously under its
+            # timeout and registers the recording as a job, so a changed plate
+            # or drop height is watchable as soon as the lane returns.
+            if path=="/api/fracture/run": return self.send(fracture_lab.run(self.server.app,body))
             match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/analyze",path)
             if match: return self.send(self.server.app.analyze(match[1],body))
             match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/rerun",path)

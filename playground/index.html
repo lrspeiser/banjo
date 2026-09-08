@@ -23,6 +23,7 @@
     <nav class="tabs" aria-label="Playground sections" role="tablist">
       <button class="tab is-active" id="tab-experiment" role="tab" aria-selected="true" aria-controls="panel-experiment" data-tab="experiment">Experiment</button>
       <button class="tab" id="tab-builder" role="tab" aria-selected="false" aria-controls="panel-builder" data-tab="builder">Builder</button>
+      <button class="tab" id="tab-fracture" role="tab" aria-selected="false" aria-controls="panel-fracture" data-tab="fracture">Fracture lab</button>
       <button class="tab" id="tab-language" role="tab" aria-selected="false" aria-controls="panel-language" data-tab="language">Language</button>
       <button class="tab" id="tab-results" role="tab" aria-selected="false" aria-controls="panel-results" data-tab="results">Results</button>
       <button class="tab" id="tab-viewer" role="tab" aria-selected="false" aria-controls="panel-viewer" data-tab="viewer">3D playback</button>
@@ -153,6 +154,51 @@
         </section>
       </section>
 
+      <section class="tab-panel" id="panel-fracture" role="tabpanel" aria-labelledby="tab-fracture" hidden>
+        <div class="section-intro">
+          <p class="eyebrow">FRACTURE LAB / INSTANT RERUN</p>
+          <h1>Drop a ball on a glass plate.</h1>
+          <p class="lede">Change the plate, the cell size, the ball or the drop, and run again. Each lane precomputes what it can when the plate is created and answers the strike from that; the reference lane steps every substep and is the yardstick, not the product. Every run states its wall time against the simulated interaction and the 1.1x rule.</p>
+        </div>
+        <div class="builder-layout">
+          <section class="card builder-card">
+            <div class="card-heading compact"><div><p class="eyebrow">01 / SCENE</p><h2>Plate, ball, drop</h2></div><span id="fracture-cells" class="small-badge">500 cells</span></div>
+            <form id="fracture-controls" class="builder-fields">
+              <label class="builder-field"><span>Algorithm</span><select id="f-algorithm"></select></label>
+              <fieldset class="builder-group"><legend>Glass plate (mm)</legend>
+                <label><span>Length</span><input id="f-length" type="number" min="30" max="1000" step="5" value="250"></label>
+                <label><span>Width</span><input id="f-width" type="number" min="30" max="1000" step="5" value="200"></label>
+                <label><span>Thickness</span><input id="f-thickness" type="number" min="2" max="100" step="1" value="10"></label>
+                <label><span>Cell size</span><input id="f-cell" type="number" min="2" max="50" step="1" value="10"></label>
+              </fieldset>
+              <fieldset class="builder-group"><legend>Iron ball</legend>
+                <label><span>Diameter (mm)</span><input id="f-ball" type="number" min="10" max="200" step="5" value="60"></label>
+                <label><span>Drop height (m)</span><input id="f-drop" type="number" min="0" max="5" step="0.05" value="2"></label>
+                <label><span>or speed (m/s)</span><input id="f-speed" type="number" min="0" max="20" step="0.1" placeholder="from drop"></label>
+              </fieldset>
+              <fieldset class="builder-group"><legend>Strike offset from centre (mm)</legend>
+                <label><span>Along length</span><input id="f-offset-x" type="number" min="-500" max="500" step="5" value="0"></label>
+                <label><span>Along width</span><input id="f-offset-z" type="number" min="-500" max="500" step="5" value="0"></label>
+              </fieldset>
+              <label class="builder-field"><span>Support</span><select id="f-support"><option value="ledges">Resting on two ledges</option><option value="clamped">Clamped edges</option></select></label>
+              <label class="builder-field"><span>Simulated duration (s)</span><input id="f-duration" type="number" min="0.2" max="6" step="0.1" value="2"></label>
+            </form>
+            <p id="fracture-note" class="muted">Speed follows from the drop height (v = sqrt(2 g h)) unless a speed is given.</p>
+            <button id="fracture-run" class="primary-button" type="button"><span>Run and watch</span><span aria-hidden="true">&#8599;</span></button>
+          </section>
+          <div class="builder-side">
+            <section class="card">
+              <div class="card-heading compact"><div><p class="eyebrow">02 / RESULT</p><h2>What it cost, what it did</h2></div><span id="fracture-state" class="small-badge">Idle</span></div>
+              <div id="fracture-result" class="builder-metrics">Run a scene to see its timing, pieces and the rule.</div>
+              <button id="fracture-open" class="quiet-button" type="button" hidden>Open in 3D playback</button>
+            </section>
+            <section class="card">
+              <div class="card-heading compact"><div><p class="eyebrow">LANES</p><h2>What is built</h2></div></div>
+              <div id="fracture-lanes" class="builder-limits"></div>
+            </section>
+          </div>
+        </div>
+      </section>
       <section class="tab-panel" id="panel-language" role="tabpanel" aria-labelledby="tab-language" hidden>
         <div class="section-intro"><p class="eyebrow">LANGUAGE / PACKAGE INSPECTOR</p><h1>See what the prompt became.</h1><p class="lede">Inspect the generated Banjo package and the native report without hiding unknown fields.</p></div>
         <div class="inspector-grid">
