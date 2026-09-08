@@ -221,9 +221,6 @@ int run(const Options &o) {
             ++f.plane_broken;
             f.tip_m = std::max(f.tip_m, bondCentreX(asset.bonds[i]) - left_edge);
         }
-        for (std::size_t i = 0; i < matter.bonds.size(); ++i)
-            if (!matter.bonds[i].alive) ++f.off_plane_broken;
-        f.off_plane_broken -= f.plane_broken;
         return f;
     };
     const auto areaOf = [&](std::size_t plane_bonds_broken) {
@@ -240,7 +237,7 @@ int run(const Options &o) {
     {
         const Front f = measureFront();
         history.push_back({0.0, f.tip_m, elastic_0, kineticEnergy(matter), 0.0, precut,
-                           f.plane_broken, f.off_plane_broken});
+                           f.plane_broken, precut - f.plane_broken});
     }
     // The solver's own energy leak, measured on this scene while the crack is
     // still standing still: XPBD damps the modes it cannot resolve, and at
@@ -262,7 +259,7 @@ int run(const Options &o) {
             quiet_leak_per_us = (elastic_0 - elastic - kinetic) / elastic_0 / (t * 1e6);
         }
         history.push_back({t, f.tip_m, elastic, kinetic, dissipated, stats.total_broken_bonds,
-                           f.plane_broken, f.off_plane_broken});
+                           f.plane_broken, stats.total_broken_bonds - f.plane_broken});
     }
     const double wall_s = std::chrono::duration<double>(
         std::chrono::steady_clock::now() - wall_start).count();
