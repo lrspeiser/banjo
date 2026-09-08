@@ -358,12 +358,12 @@ where the criterion should be able to localise.
 
 | cells | law | exit | window | s_c | G_lattice | broken | of all bonds | pieces | largest | removed | measured Gc | R | tensile / shear | wall |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|
-| 20 mm | old | quiet | 3.09 ms | 1.500e-2 | 148,500 | 104 | 6.1% | 3 | 3.76 kg | 14.01 J | 3,705 | 0.098 | 0 / 99 | 0.15 s |
-| 10 mm | old | quiet | 5.34 ms | 1.500e-2 | 74,250 | 952 | 5.0% | 28 | 3.72 kg | 24.31 J | 2,808 | 0.098 | 8 / 889 | 7.3 s |
-| 5 mm | old | quiet | 7.99 ms | 1.500e-2 | 37,125 | 9,656 | 5.6% | 417 | 3.67 kg | 32.87 J | 1,498 | 0.098 | 223 / 8,562 | 227 s |
-| 20 mm | new | capped | 12.0 ms | 1.231e-3 | **1,000** | 1,302 | 76.4% | 24 | 1.96 kg | 8.18 J | 173 | 1.20 | 845 / 443 | 0.33 s |
-| 10 mm | new | capped | 12.0 ms | 1.741e-3 | **1,000** | 11,315 | 60.0% | 155 | 3.36 kg | 9.15 J | 89 | 0.85 | 6,112 / 5,124 | 13.5 s |
-| 5 mm | new | capped | 12.0 ms | 2.462e-3 | **1,000** | 36,046 | 20.8% | 1,021 | 3.30 kg | 25.01 J | 305 | 0.60 | 16,338 / 18,912 | 414 s |
+| 20 mm | old | quiet | 3.09 ms | 1.500e-2 | 148,500 | 104 | 6.1% | 3 | 1.053 kg | 14.01 J | 3,705 | 0.098 | 0 / 99 | 0.15 s |
+| 10 mm | old | quiet | 5.34 ms | 1.500e-2 | 74,250 | 952 | 5.0% | 28 | 1.041 kg | 24.31 J | 2,808 | 0.098 | 8 / 889 | 7.3 s |
+| 5 mm | old | quiet | 7.99 ms | 1.500e-2 | 37,125 | 9,656 | 5.6% | 417 | 1.026 kg | 32.87 J | 1,498 | 0.098 | 223 / 8,562 | 227 s |
+| 20 mm | new | capped | 12.0 ms | 1.231e-3 | **1,000** | 1,302 | 76.4% | 24 | 0.549 kg | 8.18 J | 173 | 1.20 | 845 / 443 | 0.33 s |
+| 10 mm | new | capped | 12.0 ms | 1.741e-3 | **1,000** | 11,315 | 60.0% | 155 | 0.939 kg | 9.15 J | 89 | 0.85 | 6,112 / 5,124 | 13.5 s |
+| 5 mm | new | capped | 12.0 ms | 2.462e-3 | **1,000** | 36,046 | 20.8% | 1,021 | 0.924 kg | 25.01 J | 305 | 0.60 | 16,338 / 18,912 | 414 s |
 
 | law | step | pieces | largest piece | removed energy | broken bonds |
 |---|---|---:|---:|---:|---:|
@@ -381,12 +381,49 @@ threshold drops below the shear one and tension becomes the leading mode (845
 tensile against 443 shear at 20 mm). The new law puts oak's failure in the mode
 a bending impact should produce; it does not make the piece count converge.
 
-Oak's largest piece is the one quantity on the whole ladder that does hold
-still: 3.76 / 3.72 / 3.67 kg under the old law, within 1% per level. That is not
-a convergence result, though - it is the tile refusing to come apart. 95-98% of
-the mass stays in one piece and the "pieces" are surface chips.
+Oak's largest piece is the one quantity on the whole ladder that holds still:
+1.053 / 1.041 / 1.026 kg under the old law, within 1.5% per level on a 1.0752 kg
+tile. That is not a convergence result, though - it is the tile refusing to come
+apart. 95-98% of the mass stays in one piece and the "pieces" are surface chips.
+Under the new law it does not hold still (0.549 / 0.939 / 0.924 kg), and the
+20 mm row is the odd one out because there the tile is the only case on the
+ladder that actually breaks in half.
 
-### 6.4 Does the cascade ever stop?
+### 6.4 dt against dt/2, and the horizon
+
+*Experimental result.* Oak, 10 mm cells, 8 m/s, `dt_factor 0.5` (0.856 us)
+against `0.25` (0.428 us), same exit rule:
+
+| law | substeps | broken | pieces | largest | removed | first failure |
+|---|---:|---:|---:|---:|---:|---:|
+| old, dt | 6,233 | 952 | 28 | 1.0409 kg | 24.306 J | 0.3502 ms |
+| old, dt/2 | 11,565 | 907 | 29 | 1.0416 kg | 21.921 J | 0.3527 ms |
+| change | | **-4.7%** | +3.6% | **+0.07%** | **-9.8%** | +0.7% |
+| new, dt | 14,017 | 11,315 | 155 | 0.9394 kg | 9.1485 J | 0.3502 ms |
+| new, dt/2 | 28,033 | 12,727 | 228 | 0.8666 kg | 9.1987 J | 0.3527 ms |
+| change | | +12.5% | +47% | -7.8% | **+0.55%** | +0.7% |
+
+One thing here is a clear win for the new law and it is on the brief's list:
+**the removed energy is 18x less sensitive to the timestep** (+0.55% against
+-9.8%). That is what an energy-calibrated threshold should buy. Halving the step
+changes the old law's energy ledger by a tenth because the removal stretch has
+nothing to do with energy, so what a bond happens to be carrying when it crosses
+the threshold is set by how far the step overshot it. Under the new law that
+overshoot is bounded by the calibration.
+
+Piece count and largest piece go the other way (+47% and -7.8% against +3.6% and
++0.07%), for the same reason as section 6.3: oak under the new law is in a
+diffuse-damage regime where the piece count is a count of cells.
+
+**Horizon.** The horizon is a parameter of the derivation, of every unit test and
+of the strip probe (2 and 3 throughout). On the tile ladder it is not: at 10 mm
+cells the lane refuses horizon 3 with `lattice needs more than 64 bond colours`,
+because a full horizon-3 neighbourhood has 122 incident bonds and the lane's edge
+colouring caps at 64 colours. The 20 mm tile is only 2 cells thick, which
+truncates the neighbourhood enough to fit, so horizon 3 is measured there only.
+This is a lane limitation, not a criterion limitation.
+
+### 6.5 Does the cascade ever stop?
 
 Every energy-scaled row above ends `capped`, so the obvious question is whether
 the cascade terminates at all. The 20 mm rows are cheap enough to answer it:
@@ -414,7 +451,7 @@ nothing. Fragments also do not collide with each other during the lattice phase
 free rings for ever at whatever amplitude it separated with, and the criterion
 keeps reading that ringing.
 
-### 6.4 What the ladder shows
+### 6.6 What the ladder shows
 
 *Filled in below.*
 
