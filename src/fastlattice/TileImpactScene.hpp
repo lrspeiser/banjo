@@ -46,6 +46,11 @@ struct TileImpactRequest {
     // Glass only: the catalog BrittleBond route (strength variation, damping)
     // instead of the strength-derived elastic reference shared by all presets.
     bool catalog_material{false};
+    // Which rule sets the bond damage thresholds (material/Material.hpp).
+    // StrainThreshold is the lane's original criterion, bit for bit;
+    // EnergyScaled derives the removal stretch from Gc, the horizon and the
+    // cell size (docs/criterion-energy-scaled-checkpoint.md).
+    BondFailureLaw failure_law{BondFailureLaw::StrainThreshold};
     double node_contact_radius_factor{0.5}; // node contact radius = factor * cell
     double quiet_ms{10.0};
     double min_ms{5.0};
@@ -128,6 +133,28 @@ struct TileImpactMeasurements {
     std::uint32_t failure_rounds{}, broken_bonds{};
     double first_failure_s{-1.0}, last_failure_s{-1.0}, removed_energy_j{};
     double bond_updates_per_s{};
+    // The failure law and its thresholds as compiled for this cell size and
+    // horizon: the tensile removal stretch in use, the Gc-derived stretch
+    // (zero under the strain-threshold law), the strength-derived one, and
+    // the energy a {100} lattice crack plane costs per unit area under the
+    // thresholds in use (N_100 E h s_end^2 / (2 m); equals Gc when the
+    // energy-scaled law is unbounded by strength).
+    std::string failure_law;
+    double critical_stretch{}, energy_scaled_stretch{}, strength_stretch{};
+    bool strength_bound_active{};
+    double lattice_crack_energy_j_m2{};
+    // Failure modes of the removed bonds at handoff.
+    std::size_t tensile_failures{}, compressive_failures{}, shear_failures{};
+    // The first failure round: how many bonds, where (centroid of their rest
+    // midpoints, world frame), how deep below the tile top and how far from
+    // the strike axis. Only backends that record the set report it.
+    std::size_t first_failure_bonds{};
+    Vec3 first_failure_centroid_m{};
+    double first_failure_depth_m{-1.0}, first_failure_radius_m{-1.0};
+    // Resolution-independent piece statistics: pieces at least 1% / 5% of the
+    // tile mass, and the mass fraction in pieces below 1%.
+    std::size_t pieces_over_1pct{}, pieces_over_5pct{};
+    double mass_fraction_under_1pct{};
     double phase_seconds[kPhaseCount]{};
     bool shared_memory_positions{};
     std::size_t shared_memory_bytes{};

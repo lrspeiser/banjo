@@ -5,6 +5,7 @@
 #include <limits>
 #include <numbers>
 #include <stdexcept>
+#include <string>
 
 namespace banjo {
 namespace {
@@ -106,6 +107,130 @@ CompiledBrittleMaterial withStrengthDerivedFailure(
     return compiled;
 }
 
+LatticeHorizonGeometry latticeHorizonGeometry(unsigned neighbor_horizon_cells) {
+    if (neighbor_horizon_cells == 0U) {
+        throw std::invalid_argument("lattice horizon must be at least one cell");
+    }
+    // The same offset walk as matter/Lattice.cpp buildBonds: integer offsets
+    // within the grid distance, one member of each +/- pair.
+    const auto positiveHalf = [](int dx, int dy, int dz) {
+        return dz > 0 || (dz == 0 && dy > 0) || (dz == 0 && dy == 0 && dx > 0);
+    };
+    LatticeHorizonGeometry g;
+    g.horizon = neighbor_horizon_cells;
+    const int m = static_cast<int>(neighbor_horizon_cells);
+    const double inv_sqrt2 = 1.0 / std::sqrt(2.0);
+    const double inv_sqrt3 = 1.0 / std::sqrt(3.0);
+    for (int dz = -m; dz <= m; ++dz) {
+        for (int dy = -m; dy <= m; ++dy) {
+            for (int dx = -m; dx <= m; ++dx) {
+                if (!positiveHalf(dx, dy, dz)) continue;
+                const double d2 = static_cast<double>(dx * dx + dy * dy + dz * dz);
+                if (std::sqrt(d2) > static_cast<double>(m) + 1.0e-9) continue;
+                ++g.bonds_per_node;
+                g.crossings_100 += std::abs(static_cast<double>(dx));
+                g.crossings_110 += std::abs(static_cast<double>(dx + dy)) * inv_sqrt2;
+                g.crossings_111 += std::abs(static_cast<double>(dx + dy + dz)) * inv_sqrt3;
+                const double nx2 = static_cast<double>(dx * dx) / d2;
+                const double ny2 = static_cast<double>(dy * dy) / d2;
+                g.sum_nx4 += nx2 * nx2;
+                g.sum_nx2ny2 += nx2 * ny2;
+            }
+        }
+    }
+    return g;
+}
+
+double energyScaledCriticalStretch(
+    double fracture_energy_j_m2,
+    double young_modulus_pa,
+    double voxel_size_m,
+    unsigned neighbor_horizon_cells) {
+    if (!std::isfinite(fracture_energy_j_m2) || fracture_energy_j_m2 <= 0.0 ||
+        !std::isfinite(young_modulus_pa) || young_modulus_pa <= 0.0 ||
+        !std::isfinite(voxel_size_m) || voxel_size_m <= 0.0 || neighbor_horizon_cells == 0U) {
+        throw std::invalid_argument(
+            "energy-scaled failure needs positive Gc, modulus, cell size and horizon");
+    }
+    const LatticeHorizonGeometry g = latticeHorizonGeometry(neighbor_horizon_cells);
+    // Per-bond energy at stretch s: E h^3 s^2 / (2 m). Crossings per unit
+    // {100} area: N_100 / h^2. Energy per unit area: N_100 E h s^2 / (2 m).
+    return std::sqrt(2.0 * static_cast<double>(neighbor_horizon_cells) * fracture_energy_j_m2 /
+                     (g.crossings_100 * young_modulus_pa * voxel_size_m));
+}
+
+CompiledBrittleMaterial withEnergyScaledFailure(
+    CompiledBrittleMaterial compiled,
+    const MaterialDefinition &material,
+    double voxel_size_m,
+    unsigned neighbor_horizon_cells) {
+    // Start from the strength surface: its compressive and shear ramps are
+    // kept, and its tensile removal stretch is the bound the energy-scaled
+    // stretch may not exceed.
+    compiled = withStrengthDerivedFailure(compiled, material);
+    const double strength_end = compiled.damage_end_stretch;
+    const double energy_stretch = energyScaledCriticalStretch(
+        material.fracture_energy_j_m2, material.young_modulus_pa, voxel_size_m, neighbor_horizon_cells);
+    // The same floor compiledFailureStrain applies to the strength law, so a
+    // threshold can never sit inside the criterion's rounding noise. Where the
+    // floor bites, the Gc calibration is broken by it: the removal stretch is
+    // then larger than the derivation asks for and the crack costs more than
+    // Gc. That is visible rather than silent - TileImpactScene reports both
+    // energy_scaled_stretch and lattice_crack_energy_j_m2, so a floored run
+    // shows a crack energy above the material's Gc - and no catalogue material
+    // reaches it at 20, 10 or 5 mm cells with horizon 2 or 3 (the smallest is
+    // ceramic at 20 mm, horizon 3: 1.89e-5, about twice the floor).
+    const double bounded_end = std::max(1.0e-5, std::min(energy_stretch, strength_end));
+    const double break_multiplier = material.calibration.break_strain_multiplier;
+    const double damage_multiplier = material.calibration.damage_strain_multiplier;
+    const double start_fraction =
+        (std::isfinite(break_multiplier) && break_multiplier > 0.0 && std::isfinite(damage_multiplier) &&
+         damage_multiplier > 0.0)
+            ? std::clamp(damage_multiplier / break_multiplier, 0.0, 1.0)
+            : 0.5;
+    compiled.damage_start_stretch = std::max(1.0e-5, bounded_end * start_fraction);
+    compiled.damage_end_stretch = std::max(compiled.damage_start_stretch * 1.01, bounded_end);
+    compiled.failure_law = BondFailureLaw::EnergyScaled;
+    compiled.energy_scaled_stretch = energy_stretch;
+    compiled.strength_bound_active = strength_end < energy_stretch;
+    return compiled;
+}
+
+CompiledBrittleMaterial withFailureLaw(
+    CompiledBrittleMaterial compiled,
+    const MaterialDefinition &material,
+    double voxel_size_m,
+    unsigned neighbor_horizon_cells) {
+    switch (material.failure_law) {
+    case BondFailureLaw::StrainThreshold:
+        compiled = withStrengthDerivedFailure(compiled, material);
+        compiled.failure_law = BondFailureLaw::StrainThreshold;
+        compiled.energy_scaled_stretch = 0.0;
+        compiled.strength_bound_active = false;
+        return compiled;
+    case BondFailureLaw::EnergyScaled:
+        return withEnergyScaledFailure(compiled, material, voxel_size_m, neighbor_horizon_cells);
+    }
+    throw std::invalid_argument("unknown bond failure law");
+}
+
+std::string_view bondFailureLawName(BondFailureLaw law) {
+    switch (law) {
+    case BondFailureLaw::StrainThreshold:
+        return "strain-threshold";
+    case BondFailureLaw::EnergyScaled:
+        return "energy-scaled";
+    }
+    return "unknown";
+}
+
+BondFailureLaw parseBondFailureLaw(std::string_view name) {
+    if (name == "strain-threshold") return BondFailureLaw::StrainThreshold;
+    if (name == "energy-scaled") return BondFailureLaw::EnergyScaled;
+    throw std::invalid_argument("unknown bond failure law: " + std::string(name) +
+                                " (expected strain-threshold or energy-scaled)");
+}
+
 CompiledBrittleMaterial compileBrittleMaterial(
     const MaterialDefinition &material,
     double voxel_size_m,
@@ -129,7 +254,7 @@ CompiledBrittleMaterial compileBrittleMaterial(
     compiled.density_kg_m3 = material.density_kg_m3;
     compiled.poisson_ratio = material.poisson_ratio;
     compiled.bond_compliance = 1.0 / spring_stiffness_n_m;
-    compiled = withStrengthDerivedFailure(compiled, material);
+    compiled = withFailureLaw(compiled, material, voxel_size_m, neighbor_horizon_cells);
     compiled.bond_damping = std::clamp(material.damping_ratio, 0.0, 1.0);
     compiled.fracture_energy_j_m2 = material.fracture_energy_j_m2;
     compiled.activation_energy_scale =

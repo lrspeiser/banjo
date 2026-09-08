@@ -148,6 +148,7 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
         throw std::invalid_argument("tile impact request needs positive sizes and a positive dt factor");
 
     s.tile_material = makeReferenceMaterial(r.tile_material, r.material_seed);
+    s.tile_material.failure_law = r.failure_law;
     s.ball_material = makeReferenceMaterial(r.ball_material, r.material_seed);
     s.ground_material = makeReferenceMaterial(r.ground_material, r.material_seed);
     if (r.catalog_material) {
@@ -155,9 +156,11 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
             throw std::invalid_argument("the catalog route needs a BrittleBond preset; use the reference route");
         s.compiled = compileBrittleMaterial(s.tile_material, r.cell_size_m, r.neighbor_horizon_cells);
     } else {
-        s.compiled = withStrengthDerivedFailure(
+        // withFailureLaw is withStrengthDerivedFailure when the request keeps
+        // the strain-threshold law: the same thresholds, bit for bit.
+        s.compiled = withFailureLaw(
             compileElasticLatticeReference(s.tile_material, r.cell_size_m, r.neighbor_horizon_cells),
-            s.tile_material);
+            s.tile_material, r.cell_size_m, r.neighbor_horizon_cells);
     }
     s.asset = generateBoxTileLattice({r.tile_dimensions_m, r.cell_size_m, r.neighbor_horizon_cells},
                                  s.compiled, &s.layout);
@@ -284,6 +287,34 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
     m.rank_deficient_nodes = status.rank_deficient_nodes;
     m.bond_updates_per_s = m.lattice_wall_s > 0.0
         ? static_cast<double>(m.bonds) * static_cast<double>(status.total_steps) / m.lattice_wall_s : 0.0;
+    m.failure_law = std::string(bondFailureLawName(setup.compiled.failure_law));
+    m.critical_stretch = setup.compiled.damage_end_stretch;
+    m.energy_scaled_stretch = setup.compiled.energy_scaled_stretch;
+    m.strength_stretch = withStrengthDerivedFailure(
+        compileElasticLatticeReference(setup.tile_material, r.cell_size_m, r.neighbor_horizon_cells),
+        setup.tile_material).damage_end_stretch;
+    m.strength_bound_active = setup.compiled.strength_bound_active;
+    {
+        const LatticeHorizonGeometry g = latticeHorizonGeometry(r.neighbor_horizon_cells);
+        m.lattice_crack_energy_j_m2 = g.crossings_100 * setup.tile_material.young_modulus_pa * r.cell_size_m *
+            m.critical_stretch * m.critical_stretch / (2.0 * static_cast<double>(r.neighbor_horizon_cells));
+    }
+    {
+        const std::vector<std::uint32_t> first = backend->firstFailureBonds();
+        m.first_failure_bonds = first.size();
+        if (!first.empty()) {
+            Vec3 centroid{};
+            for (const std::uint32_t k : first) {
+                const BondRest &bond = setup.asset.bonds[setup.schedule.bond_order[k]];
+                centroid += 0.5 * (setup.matter.reference_positions_world_m[bond.node_a] +
+                                   setup.matter.reference_positions_world_m[bond.node_b]);
+            }
+            centroid = centroid / static_cast<double>(first.size());
+            m.first_failure_centroid_m = centroid;
+            m.first_failure_depth_m = setup.tile_top_y - centroid.y;
+            m.first_failure_radius_m = std::hypot(centroid.x - r.ball_offset_x_m, centroid.z - r.ball_offset_z_m);
+        }
+    }
 
     // Frames of the lattice phase; the first failure time comes from them.
     const Vec3 origin = setup.origin;
@@ -328,6 +359,20 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
         m.largest_piece_cells = components.front().node_indices.size();
         for (const std::uint32_t node : components.front().node_indices)
             m.largest_piece_mass_kg += setup.matter.nodes[node].mass_kg;
+    }
+    {
+        const BondFailureModeCounts modes = countBondFailureModes(setup.matter);
+        m.tensile_failures = modes.tensile;
+        m.compressive_failures = modes.compressive;
+        m.shear_failures = modes.shear;
+        double small_mass = 0.0;
+        for (const auto &component : components) {
+            double mass = 0.0;
+            for (const std::uint32_t node : component.node_indices) mass += setup.matter.nodes[node].mass_kg;
+            if (mass >= 0.01 * m.tile_mass_kg) ++m.pieces_over_1pct; else small_mass += mass;
+            if (mass >= 0.05 * m.tile_mass_kg) ++m.pieces_over_5pct;
+        }
+        m.mass_fraction_under_1pct = m.tile_mass_kg > 0.0 ? small_mass / m.tile_mass_kg : 0.0;
     }
     const FragmentBuildResult build = buildFragmentRepresentations(setup.matter, components, {
         .first_body_id = 1000,
@@ -555,6 +600,20 @@ std::string measurementsJson(const TileImpactMeasurements &m) {
             {"broken_bonds", m.broken_bonds}, {"first_failure_s", m.first_failure_s},
             {"last_failure_s", m.last_failure_s}, {"removed_energy_j", m.removed_energy_j},
             {"bond_updates_per_s", m.bond_updates_per_s},
+            {"failure_law", m.failure_law},
+            {"critical_stretch", m.critical_stretch},
+            {"energy_scaled_stretch", m.energy_scaled_stretch},
+            {"strength_stretch", m.strength_stretch},
+            {"strength_bound_active", m.strength_bound_active},
+            {"lattice_crack_energy_j_m2", m.lattice_crack_energy_j_m2},
+            {"tensile_failures", m.tensile_failures},
+            {"compressive_failures", m.compressive_failures},
+            {"shear_failures", m.shear_failures},
+            {"first_failure", {
+                {"bonds", m.first_failure_bonds},
+                {"centroid_m", {m.first_failure_centroid_m.x, m.first_failure_centroid_m.y, m.first_failure_centroid_m.z}},
+                {"depth_below_top_m", m.first_failure_depth_m},
+                {"radius_from_strike_m", m.first_failure_radius_m}}},
             {"contact", {
                 {"impulse_contacts", m.contact.impulse_contacts},
                 {"impulse_to_material_n_s", {m.contact.impulse_to_material_x, m.contact.impulse_to_material_y, m.contact.impulse_to_material_z}},
@@ -566,7 +625,9 @@ std::string measurementsJson(const TileImpactMeasurements &m) {
         {"handoff", {
             {"components", m.components}, {"rigid_fragments", m.rigid_fragments},
             {"debris_particles", m.debris_particles}, {"largest_piece_mass_kg", m.largest_piece_mass_kg},
-            {"largest_piece_cells", m.largest_piece_cells}, {"wall_s", m.handoff_wall_s}}},
+            {"largest_piece_cells", m.largest_piece_cells}, {"wall_s", m.handoff_wall_s},
+            {"pieces_over_1pct", m.pieces_over_1pct}, {"pieces_over_5pct", m.pieces_over_5pct},
+            {"mass_fraction_under_1pct", m.mass_fraction_under_1pct}}},
         {"rigid", {
             {"simulated_s", m.rigid_simulated_s}, {"wall_s", m.rigid_wall_s}, {"steps", m.rigid_steps},
             {"came_to_rest", m.came_to_rest}, {"rest_time_s", m.rest_time_s},

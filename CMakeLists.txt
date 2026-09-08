@@ -327,6 +327,13 @@ if(BANJO_BUILD_HEADLESS)
     target_link_libraries(banjo_fracture_algo3 PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_fracture_algo3)
 
+    # Physics check (a) for the energy-scaled criterion: a pre-cracked strip in
+    # tension, whose crack speed and dissipation per unit crack area have known
+    # answers (docs/criterion-energy-scaled-checkpoint.md, section 5).
+    add_executable(banjo_criterion_strip_probe tools/criterion_strip_probe.cpp)
+    target_link_libraries(banjo_criterion_strip_probe PRIVATE banjo_fastlattice banjo_runtime nlohmann_json::nlohmann_json)
+    banjo_enable_warnings(banjo_criterion_strip_probe)
+
     add_executable(banjo_headless src/app/headless_main.cpp)
     target_link_libraries(banjo_headless PRIVATE banjo_runtime)
     target_compile_features(banjo_headless PRIVATE cxx_std_23)
@@ -681,6 +688,11 @@ if(BANJO_BUILD_TESTS)
         target_link_libraries(banjo_tetrahedron_contact_tests PRIVATE banjo_runtime)
         banjo_enable_warnings(banjo_tetrahedron_contact_tests)
         add_test(NAME banjo_tetrahedron_contact_tests COMMAND banjo_tetrahedron_contact_tests)
+
+        add_executable(banjo_criterion_energy_tests tests/criterion_energy_tests.cpp)
+        target_link_libraries(banjo_criterion_energy_tests PRIVATE banjo_fastlattice)
+        banjo_enable_warnings(banjo_criterion_energy_tests)
+        add_test(NAME banjo_criterion_energy_tests COMMAND banjo_criterion_energy_tests)
 
         if(TARGET banjo_fastlattice_scene)
             add_executable(banjo_fast_lattice_tests tests/fast_lattice_tests.cpp)

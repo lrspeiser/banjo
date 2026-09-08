@@ -121,6 +121,10 @@ public:
     // Frames captured since the last call, oldest first.
     virtual std::vector<FrameCapture> takeFrames() = 0;
     [[nodiscard]] virtual const RunStatus &status() const = 0;
+    // The bonds (schedule indices) removed in the substep of the first
+    // failure since upload, for backends that record them. The CUDA backend
+    // does not; it returns an empty list and the scene reports no location.
+    [[nodiscard]] virtual std::vector<std::uint32_t> firstFailureBonds() const { return {}; }
 };
 
 [[nodiscard]] std::unique_ptr<LatticeBackend> makeCpuLatticeBackend(
