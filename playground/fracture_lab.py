@@ -52,6 +52,10 @@ FAILURE_LAWS = ("strain-threshold", "energy-scaled")
 # reproduces exactly, and the materials that declare a yield strength (iron
 # and, as the catalogue actually has it, oak) only deform when it is asked for.
 PLASTICITY = ("off", "on")
+# Re-fracture after the rigid handoff is off by default, exactly as plastic flow
+# is: with it off the lane is what it was, bit for bit, and the panel's existing
+# scenarios reproduce their measured numbers.
+REFRACTURE = ("off", "on")
 SUPPORTS = ("ledges", "flat", "clamped")
 
 DEFAULT: dict[str, Any] = {
@@ -68,6 +72,12 @@ DEFAULT: dict[str, Any] = {
     "offset_m": [0.0, 0.0],
     "support": "ledges",
     "duration_s": 2.0,
+    # The second strike. `second_speed_m_s` 0 means there is no second ball and
+    # no flag is passed, so the command line is what it has always been.
+    "refracture": "off",
+    "second_speed_m_s": 0.0,
+    "second_ball_m": 0.1,
+    "second_offset_m": [0.0, 0.0],
 }
 
 # Every scenario here has been run and its headline measured, so the panel can
@@ -114,6 +124,27 @@ SCENARIOS = [
      "spec": {"material": "iron", "striker": "iron", "failure_law": "strain-threshold", "plasticity": "off",
               "plate_m": [0.15, 0.12, 0.01], "cell_m": 0.005, "ball_m": 0.06, "speed_m_s": 6.0,
               "offset_m": [0.0, 0.0], "support": "ledges", "duration_s": 2.0}},
+    {"id": "glass-twice", "title": "Hit it twice: a second ball on the broken plate",
+     "expect": "the first strike breaks 523 bonds into 55 pieces; the second breaks 507 more into 77",
+     "spec": {"material": "glass", "striker": "iron", "failure_law": "strain-threshold", "plasticity": "off",
+              "plate_m": [0.25, 0.20, 0.01], "cell_m": 0.01, "ball_m": 0.06, "drop_m": 2.0,
+              "offset_m": [0.0, 0.0], "support": "ledges", "duration_s": 1.5,
+              "refracture": "on", "second_speed_m_s": 8.0, "second_ball_m": 0.1,
+              "second_offset_m": [0.09, 0.0]}},
+    {"id": "glass-twice-before", "title": "The same second strike with re-fracture off",
+     "expect": "the control: the second ball bounces and breaks nothing, as it did before",
+     "spec": {"material": "glass", "striker": "iron", "failure_law": "strain-threshold", "plasticity": "off",
+              "plate_m": [0.25, 0.20, 0.01], "cell_m": 0.01, "ball_m": 0.06, "drop_m": 2.0,
+              "offset_m": [0.0, 0.0], "support": "ledges", "duration_s": 1.5,
+              "refracture": "off", "second_speed_m_s": 8.0, "second_ball_m": 0.1,
+              "second_offset_m": [0.09, 0.0]}},
+    {"id": "glass-twice-harder", "title": "Hit it again harder",
+     "expect": "the same second strike at 20 m/s: 948 bonds and 151 pieces out of one",
+     "spec": {"material": "glass", "striker": "iron", "failure_law": "strain-threshold", "plasticity": "off",
+              "plate_m": [0.25, 0.20, 0.01], "cell_m": 0.01, "ball_m": 0.06, "drop_m": 2.0,
+              "offset_m": [0.0, 0.0], "support": "ledges", "duration_s": 1.5,
+              "refracture": "on", "second_speed_m_s": 20.0, "second_ball_m": 0.1,
+              "second_offset_m": [0.09, 0.0]}},
     {"id": "oak-ground", "title": "Oak plate lying on the ground, not on ledges",
      "expect": "the support changes what breaks: no span to bend across",
      "spec": {"material": "oak", "striker": "iron", "failure_law": "strain-threshold", "plasticity": "off",
@@ -129,10 +160,12 @@ LIMITS = {
     "cell_m": {"min": 0.002, "max": 0.15}, "ball_m": {"min": 0.01, "max": 0.5},
     "drop_m": {"min": 0.0, "max": 5.0}, "speed_m_s": {"min": 0.0, "max": 20.0},
     "duration_s": {"min": 0.2, "max": 6.0},
+    "second_speed_m_s": {"min": 0.0, "max": 40.0}, "second_ball_m": {"min": 0.01, "max": 0.5},
 }
 
 FIELDS = {"algorithm", "material", "striker", "failure_law", "plasticity", "plate_m", "cell_m", "ball_m", "drop_m", "speed_m_s",
-          "offset_m", "support", "duration_s", "request_id"}
+          "offset_m", "support", "duration_s", "request_id",
+          "refracture", "second_speed_m_s", "second_ball_m", "second_offset_m"}
 
 
 def _number(value: Any, low: float, high: float, label: str) -> float:
@@ -189,6 +222,17 @@ def validate(spec: Any) -> dict[str, Any]:
         raise ValueError(f"failure_law must be one of {list(FAILURE_LAWS)}")
     if result["plasticity"] not in PLASTICITY:
         raise ValueError(f"plasticity must be one of {list(PLASTICITY)}")
+    if result["refracture"] not in REFRACTURE:
+        raise ValueError(f"refracture must be one of {list(REFRACTURE)}")
+    result["second_speed_m_s"] = _number(result["second_speed_m_s"], LIMITS["second_speed_m_s"]["min"],
+                                         LIMITS["second_speed_m_s"]["max"], "second strike speed")
+    result["second_ball_m"] = _number(result["second_ball_m"], LIMITS["second_ball_m"]["min"],
+                                      LIMITS["second_ball_m"]["max"], "second ball diameter")
+    second_offset = result["second_offset_m"]
+    if not isinstance(second_offset, list) or len(second_offset) != 2:
+        raise ValueError("second_offset_m requires two values")
+    result["second_offset_m"] = [_number(second_offset[0], -0.5, 0.5, "second offset x"),
+                                 _number(second_offset[1], -0.5, 0.5, "second offset z")]
     result["duration_s"] = _number(result["duration_s"], LIMITS["duration_s"]["min"], LIMITS["duration_s"]["max"], "duration")
     # `generateBoxTileLattice` refuses an extent that is not a whole number of
     # cells (BoxLattice.cpp cellCount, tolerance 1e-6 relative), so the plate is
@@ -240,7 +284,7 @@ def describe(engine_path: Path) -> dict[str, Any]:
     return {"algorithms": lanes, "default": DEFAULT, "limits": LIMITS, "supports": list(SUPPORTS),
             "scenarios": SCENARIOS,
             "materials": list(MATERIALS), "failure_laws": list(FAILURE_LAWS),
-            "plasticity": list(PLASTICITY),
+            "plasticity": list(PLASTICITY), "refracture": list(REFRACTURE),
             "realtime_limit": REALTIME_LIMIT}
 
 
@@ -261,7 +305,7 @@ def command(algorithm: str, spec: dict[str, Any], engine_path: Path, output: Pat
     # run as something else.
     if spec["support"] == "clamped":
         raise ValueError("This lane supports the target on two ledges or on the ground, not clamped edges")
-    return [str(exe), "--material", spec["material"], "--ball-material", spec["striker"],
+    argv = [str(exe), "--material", spec["material"], "--ball-material", spec["striker"],
             "--tile", f"{L:.6g}", f"{T:.6g}", f"{W:.6g}", "--cell", f"{spec['cell_m']:.6g}",
             "--ball-radius", f"{spec['ball_m'] / 2:.6g}", "--speed", f"{spec['speed_m_s']:.6g}",
             "--offset", f"{spec['offset_m'][0]:.6g}", f"{spec['offset_m'][1]:.6g}",
@@ -275,6 +319,16 @@ def command(algorithm: str, spec: dict[str, Any], engine_path: Path, output: Pat
             "--plasticity", spec["plasticity"],
             "--backend", "parallel", "--precision", "double",
             "--record", str(output), "--report", str(report_path)]
+    # Nothing below is emitted unless it is asked for, so the default command
+    # line is byte for byte the one this lane has always run.
+    if spec.get("refracture") == "on":
+        argv += ["--refracture", "on"]
+    if spec.get("second_speed_m_s"):
+        argv += ["--second-ball", f"{spec['second_ball_m'] / 2:.6g}",
+                 "--second-speed", f"{spec['second_speed_m_s']:.6g}",
+                 "--second-offset", f"{spec['second_offset_m'][0]:.6g}", f"{spec['second_offset_m'][1]:.6g}",
+                 "--second-material", spec["striker"]]
+    return argv
 
 
 def _pick(report: dict[str, Any], *paths: str) -> Any:

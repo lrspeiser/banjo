@@ -1,0 +1,393 @@
+{
+ "unchanged": {
+  "rows": [
+   {
+    "scene": "glass-pane",
+    "common_keys": 100,
+    "differing": [],
+    "broken_bonds": 357,
+    "pieces": 42
+   },
+   {
+    "scene": "oak-pane",
+    "common_keys": 100,
+    "differing": [],
+    "broken_bonds": 268,
+    "pieces": 25
+   },
+   {
+    "scene": "glass-plate",
+    "common_keys": 100,
+    "differing": [],
+    "broken_bonds": 523,
+    "pieces": 55
+   },
+   {
+    "scene": "glass-punch",
+    "common_keys": 100,
+    "differing": [],
+    "broken_bonds": 600,
+    "pieces": 73
+   },
+   {
+    "scene": "glass-offcentre",
+    "common_keys": 100,
+    "differing": [],
+    "broken_bonds": 202,
+    "pieces": 23
+   },
+   {
+    "scene": "iron-dent",
+    "common_keys": 100,
+    "differing": [],
+    "broken_bonds": 2450,
+    "pieces": 113
+   },
+   {
+    "scene": "oak-ground",
+    "common_keys": 100,
+    "differing": [],
+    "broken_bonds": 0,
+    "pieces": 1
+   },
+   {
+    "scene": "tile192",
+    "common_keys": 100,
+    "differing": [],
+    "broken_bonds": 303,
+    "pieces": 13
+   }
+  ]
+ },
+ "twice": {
+  "rows": [
+   {
+    "case": "second strike 8 m/s, re-fracture off",
+    "first_strike_bonds": 523,
+    "first_strike_pieces": 55,
+    "second_strike_bonds": 0,
+    "second_strike_events": 0,
+    "pieces_at_end": 55,
+    "contacts_tested": 0,
+    "admitted": 0,
+    "max_closing_speed_m_s": 0.0,
+    "removed_energy_j": 0.0,
+    "realtime_ratio": 0.6746,
+    "wall_total_s": 2.0511
+   },
+   {
+    "case": "second strike 8 m/s, re-fracture on",
+    "first_strike_bonds": 523,
+    "first_strike_pieces": 55,
+    "second_strike_bonds": 507,
+    "second_strike_events": 1,
+    "pieces_at_end": 131,
+    "contacts_tested": 88963,
+    "admitted": 1,
+    "max_closing_speed_m_s": 7.9372,
+    "removed_energy_j": 28.1121,
+    "realtime_ratio": 0.9738,
+    "wall_total_s": 2.9607
+   }
+  ]
+ },
+ "harder": {
+  "rows": [
+   {
+    "case": "4 m/s, off",
+    "first_strike_bonds": 523,
+    "first_strike_pieces": 55,
+    "second_strike_bonds": 0,
+    "second_strike_events": 0,
+    "pieces_at_end": 55,
+    "contacts_tested": 0,
+    "admitted": 0,
+    "max_closing_speed_m_s": 0.0,
+    "removed_energy_j": 0.0,
+    "realtime_ratio": 0.6622,
+    "wall_total_s": 2.0133,
+    "speed_m_s": 4,
+    "refracture": "off"
+   },
+   {
+    "case": "4 m/s, on",
+    "first_strike_bonds": 523,
+    "first_strike_pieces": 55,
+    "second_strike_bonds": 0,
+    "second_strike_events": 0,
+    "pieces_at_end": 55,
+    "contacts_tested": 47045,
+    "admitted": 0,
+    "max_closing_speed_m_s": 3.9686,
+    "removed_energy_j": 0.0,
+    "realtime_ratio": 0.7078,
+    "wall_total_s": 2.152,
+    "speed_m_s": 4,
+    "refracture": "on"
+   },
+   {
+    "case": "6 m/s, off",
+    "first_strike_bonds": 523,
+    "first_strike_pieces": 55,
+    "second_strike_bonds": 0,
+    "second_strike_events": 0,
+    "pieces_at_end": 55,
+    "contacts_tested": 0,
+    "admitted": 0,
+    "max_closing_speed_m_s": 0.0,
+    "removed_energy_j": 0.0,
+    "realtime_ratio": 0.6631,
+    "wall_total_s": 2.0161,
+    "speed_m_s": 6,
+    "refracture": "off"
+   },
+   {
+    "case": "6 m/s, on",
+    "first_strike_bonds": 523,
+    "first_strike_pieces": 55,
+    "second_strike_bonds": 585,
+    "second_strike_events": 1,
+    "pieces_at_end": 137,
+    "contacts_tested": 82464,
+    "admitted": 1,
+    "max_closing_speed_m_s": 5.9529,
+    "removed_energy_j": 5.1388,
+    "realtime_ratio": 0.9531,
+    "wall_total_s": 2.8979,
+    "speed_m_s": 6,
+    "refracture": "on"
+   },
+   {
+    "case": "8 m/s, off",
+    "first_strike_bonds": 523,
+    "first_strike_pieces": 55,
+    "second_strike_bonds": 0,
+    "second_strike_events": 0,
+    "pieces_at_end": 55,
+    "contacts_tested": 0,
+    "admitted": 0,
+    "max_closing_speed_m_s": 0.0,
+    "removed_energy_j": 0.0,
+    "realtime_ratio": 0.6673,
+    "wall_total_s": 2.0288,
+    "speed_m_s": 8,
+    "refracture": "off"
+   },
+   {
+    "case": "8 m/s, on",
+    "first_strike_bonds": 523,
+    "first_strike_pieces": 55,
+    "second_strike_bonds": 507,
+    "second_strike_events": 1,
+    "pieces_at_end": 131,
+    "contacts_tested": 88963,
+    "admitted": 1,
+    "max_closing_speed_m_s": 7.9372,
+    "removed_energy_j": 28.1121,
+    "realtime_ratio": 0.9815,
+    "wall_total_s": 2.984,
+    "speed_m_s": 8,
+    "refracture": "on"
+   },
+   {
+    "case": "12 m/s, off",
+    "first_strike_bonds": 523,
+    "first_strike_pieces": 55,
+    "second_strike_bonds": 0,
+    "second_strike_events": 0,
+    "pieces_at_end": 55,
+    "contacts_tested": 0,
+    "admitted": 0,
+    "max_closing_speed_m_s": 0.0,
+    "removed_energy_j": 0.0,
+    "realtime_ratio": 0.6665,
+    "wall_total_s": 2.0265,
+    "speed_m_s": 12,
+    "refracture": "off"
+   },
+   {
+    "case": "12 m/s, on",
+    "first_strike_bonds": 523,
+    "first_strike_pieces": 55,
+    "second_strike_bonds": 722,
+    "second_strike_events": 1,
+    "pieces_at_end": 169,
+    "contacts_tested": 86255,
+    "admitted": 1,
+    "max_closing_speed_m_s": 11.9058,
+    "removed_energy_j": 29.4408,
+    "realtime_ratio": 1.0255,
+    "wall_total_s": 3.1178,
+    "speed_m_s": 12,
+    "refracture": "on"
+   },
+   {
+    "case": "16 m/s, off",
+    "first_strike_bonds": 523,
+    "first_strike_pieces": 55,
+    "second_strike_bonds": 0,
+    "second_strike_events": 0,
+    "pieces_at_end": 55,
+    "contacts_tested": 0,
+    "admitted": 0,
+    "max_closing_speed_m_s": 0.0,
+    "removed_energy_j": 0.0,
+    "realtime_ratio": 0.6463,
+    "wall_total_s": 1.9649,
+    "speed_m_s": 16,
+    "refracture": "off"
+   },
+   {
+    "case": "16 m/s, on",
+    "first_strike_bonds": 523,
+    "first_strike_pieces": 55,
+    "second_strike_bonds": 860,
+    "second_strike_events": 1,
+    "pieces_at_end": 182,
+    "contacts_tested": 78886,
+    "admitted": 1,
+    "max_closing_speed_m_s": 15.8743,
+    "removed_energy_j": 43.6571,
+    "realtime_ratio": 0.9371,
+    "wall_total_s": 2.849,
+    "speed_m_s": 16,
+    "refracture": "on"
+   },
+   {
+    "case": "20 m/s, off",
+    "first_strike_bonds": 523,
+    "first_strike_pieces": 55,
+    "second_strike_bonds": 0,
+    "second_strike_events": 0,
+    "pieces_at_end": 55,
+    "contacts_tested": 0,
+    "admitted": 0,
+    "max_closing_speed_m_s": 0.0,
+    "removed_energy_j": 0.0,
+    "realtime_ratio": 0.7269,
+    "wall_total_s": 2.21,
+    "speed_m_s": 20,
+    "refracture": "off"
+   },
+   {
+    "case": "20 m/s, on",
+    "first_strike_bonds": 523,
+    "first_strike_pieces": 55,
+    "second_strike_bonds": 948,
+    "second_strike_events": 1,
+    "pieces_at_end": 205,
+    "contacts_tested": 75826,
+    "admitted": 1,
+    "max_closing_speed_m_s": 19.8429,
+    "removed_energy_j": 54.7268,
+    "realtime_ratio": 0.9241,
+    "wall_total_s": 2.8097,
+    "speed_m_s": 20,
+    "refracture": "on"
+   }
+  ]
+ },
+ "landing": {
+  "rows": [
+   {
+    "material": "glass",
+    "first_strike_bonds": 1120,
+    "first_strike_pieces": 74,
+    "impact_speed_m_s": 10.387973815908472,
+    "max_closing_speed_m_s": 11.718873977661133,
+    "threshold_speed_m_s": 8.70498111598215,
+    "max_margin": 1.3462262377738583,
+    "admitted": 9,
+    "landing_bonds_broken": 13,
+    "pieces_at_end": 80,
+    "realtime_ratio": 0.5722423052971991
+   },
+   {
+    "material": "oak",
+    "first_strike_bonds": 212,
+    "first_strike_pieces": 7,
+    "impact_speed_m_s": 10.387973815908472,
+    "max_closing_speed_m_s": 10.646648406982422,
+    "threshold_speed_m_s": null,
+    "max_margin": 0.7744339405480948,
+    "admitted": 0,
+    "landing_bonds_broken": 0,
+    "pieces_at_end": 7,
+    "realtime_ratio": 0.1327950664633466
+   },
+   {
+    "material": "iron",
+    "first_strike_bonds": 0,
+    "first_strike_pieces": 1,
+    "impact_speed_m_s": 10.387973815908472,
+    "max_closing_speed_m_s": 2.0865635871887207,
+    "threshold_speed_m_s": null,
+    "max_margin": 0.05861506104696038,
+    "admitted": 0,
+    "landing_bonds_broken": 0,
+    "pieces_at_end": 1,
+    "realtime_ratio": 0.8366920748089995
+   }
+  ]
+ },
+ "cost": {
+  "rows": [
+   {
+    "scene": "plate-500",
+    "refracture": "off",
+    "simulated_s": 2.0403818581210134,
+    "wall_s": 1.9784353,
+    "realtime_ratio": 0.9696397231359134,
+    "rule_met": true,
+    "contacts_tested": 0,
+    "trial_steps": 0,
+    "rollbacks": 0,
+    "admitted": 0,
+    "refracture_wall_s": 0.0,
+    "refracture_substeps": 0
+   },
+   {
+    "scene": "plate-500",
+    "refracture": "on",
+    "simulated_s": 2.0403818581210134,
+    "wall_s": 2.044764,
+    "realtime_ratio": 1.002147706744963,
+    "rule_met": true,
+    "contacts_tested": 30333,
+    "trial_steps": 480,
+    "rollbacks": 0,
+    "admitted": 0,
+    "refracture_wall_s": 0.0,
+    "refracture_substeps": 0
+   },
+   {
+    "scene": "pane-1m",
+    "refracture": "off",
+    "simulated_s": 1.0551339005150595,
+    "wall_s": 0.1954813,
+    "realtime_ratio": 0.18526681770396777,
+    "rule_met": true,
+    "contacts_tested": 0,
+    "trial_steps": 0,
+    "rollbacks": 0,
+    "admitted": 0,
+    "refracture_wall_s": 0.0,
+    "refracture_substeps": 0
+   },
+   {
+    "scene": "pane-1m",
+    "refracture": "on",
+    "simulated_s": 1.0551339005150595,
+    "wall_s": 0.2141653,
+    "realtime_ratio": 0.2029745228500914,
+    "rule_met": true,
+    "contacts_tested": 8334,
+    "trial_steps": 223,
+    "rollbacks": 0,
+    "admitted": 0,
+    "refracture_wall_s": 0.0,
+    "refracture_substeps": 0
+   }
+  ]
+ }
+}
