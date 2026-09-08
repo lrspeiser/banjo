@@ -304,6 +304,41 @@ contacts** across that crack -- and the fracture answer (first failure
 0.000799030662741 s, 1 round, 1 bond, 1 piece, 0.0304735950711 J removed) is
 identical to af8af80's to twelve figures. Contact acted, and it changed nothing.
 
+### 4.4 Glass, oak and iron under identical conditions
+
+240 x 40 x 160 mm tile, 20 mm cells (192 cells), on two ledges, 40 mm iron ball
+at 8 m/s, everything else equal; only the tile material changes.
+
+| material | mode | broken | pieces | removed (J) | worst overlap (mm) | contacts | contact dissipation (J) | realtime |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| glass | `off` | 305 | 13 | 28.4233 | -- | 0 | 0 | 0.204x |
+| | `measure` | 305 | 13 | 28.4233 | **14.01** | 0 | 0 | 0.193x |
+| | `on` | 303 | 13 | 27.6595 | **0.011** | 67,803 | 3.61 | 1.031x |
+| oak | `off` | 104 | 3 | 14.0100 | -- | 0 | 0 | 0.215x |
+| | `measure` | 104 | 3 | 14.0100 | **15.06** | 0 | 0 | 0.221x |
+| | `on` | 63 | 1 | 16.0337 | **0.139** | 25,528 | 84.71 | 0.319x |
+| iron | `off` | 0 | 1 | 0 | -- | 0 | 0 | 1.031x |
+| | `measure` | 0 | 1 | 0 | 0 | 0 | 0 | 1.070x |
+| | `on` | 0 | 1 | 0 | 0 | 0 | 0 | 1.065x |
+
+Three things are worth naming.
+
+- The **before** overlap is the same order in glass and oak, 14.0 and 15.1 mm of
+  a 20 mm cell: interpenetration was never a material property, it was the
+  absence of a contact.
+- The **after** overlap is not: oak keeps 0.139 mm where glass keeps 0.011 mm, a
+  factor of twelve. Oak's substep is longer (a softer lattice has a higher
+  explicit limit), so `-vn * dt` is larger and the speculative branch engages
+  later in distance, and there are fewer substeps in which to correct what is
+  left. That is a limit of the single-pass response, section 9 item 2, and it is
+  measured here rather than asserted.
+- **Iron does not fracture at 8 m/s**, so no pair is ever listed and all three
+  columns are identical, which is the strictest form of the section 4.3 control.
+
+Oak's 84.7 J of contact dissipation against a 67.5 J ball is not a violated
+budget: it is kinetic energy removed summed over the run, and the bond solve puts
+elastic energy back in between contacts. Section 6.
+
 ---
 
 ## 5. The cost
@@ -507,9 +542,10 @@ and the frame scrubber steps through the strike into the scattered fragments
 2. **The response is one Gauss-Seidel pass per substep, not a solve.** A cell
    squeezed between two others is resolved pair by pair in list order; there is
    no simultaneous solution and no stacking iteration count. It holds an
-   eight-layer pile to 5 um per interface at a 1 us substep (section 4.2); it has
-   not been tested on a deep pile at a coarse substep, and it will sink further
-   as `dt` grows.
+   eight-layer pile to 5 um per interface at a 1 us substep (section 4.2), and it
+   leaves twelve times more residual overlap in oak than in glass on the same
+   strike because oak's substep is longer (section 4.4). It has not been tested
+   on a deep pile at a coarse substep, and it will sink further as `dt` grows.
 3. **Contact acts between cell centres, not between cell faces.** The contact
    sphere is the cube's inscribed sphere, so two cells meeting corner to corner
    touch later than two cubes would, and a cell can sit in the gap between four
