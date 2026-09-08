@@ -60,6 +60,7 @@ struct Options {
     double speed_m_s{-1.0};
     double offset_x_m{0.0}, offset_z_m{0.0};
     SupportKind support{SupportKind::Ledges};
+    MaterialPreset material{MaterialPreset::Glass};
     double duration_s{2.0};
     std::string output;
     std::string cache;
@@ -73,10 +74,12 @@ struct Options {
     bool all_strikes{false};
     bool single_strike{false};
     unsigned reference_frames{400};
+    unsigned record_frames{160};
     double rigid_dt_s{1.0 / 240.0};
     double frame_dt_s{1.0 / 60.0};
     double rest_speed_m_s{0.01};
     double rest_hold_s{0.30};
+    std::size_t max_precompute_bytes{1500ull * 1024ull * 1024ull};
     bool settle{true};
 };
 
@@ -109,6 +112,12 @@ Options parse(int argc, char **argv) {
             const std::string kind = value();
             require(kind == "ledges" || kind == "clamped", "support must be ledges or clamped");
             o.support = kind == "ledges" ? SupportKind::Ledges : SupportKind::Clamped;
+        } else if (option == "--material") {
+            const std::string kind = value();
+            if (kind == "glass") o.material = MaterialPreset::Glass;
+            else if (kind == "oak" || kind == "wood") o.material = MaterialPreset::Oak;
+            else if (kind == "iron") o.material = MaterialPreset::Iron;
+            else throw std::runtime_error("material must be glass, oak or iron");
         } else if (option == "--duration") o.duration_s = number(value(), option);
         else if (option == "--output") o.output = value();
         else if (option == "--cache") o.cache = value();
@@ -126,6 +135,9 @@ Options parse(int argc, char **argv) {
         else if (option == "--all-strikes") o.all_strikes = true;
         else if (option == "--single-strike") o.single_strike = true;
         else if (option == "--reference-frames") o.reference_frames = static_cast<unsigned>(number(value(), option));
+        else if (option == "--record-frames") o.record_frames = static_cast<unsigned>(number(value(), option));
+        else if (option == "--max-bytes") o.max_precompute_bytes =
+            static_cast<std::size_t>(number(value(), option)) * 1024ull * 1024ull;
         else if (option == "--no-settle") o.settle = false;
         else if (option == "--help" || option == "-h") {
             std::cout << "usage: banjo_fracture_algo2 --plate L W T --cell H --ball D "
@@ -180,10 +192,13 @@ struct SceneDescription {
 void writeRecording(const std::filesystem::path &path, const SceneDescription &scene,
                     const std::vector<Frame> &frames, const Json &report) {
     Json bodies = Json::array();
+    const std::uint32_t plate_color = scene.plate_preset == MaterialPreset::Oak ? 0xc8a165ffu
+                                    : scene.plate_preset == MaterialPreset::Iron ? 0xa7a9b0ffu
+                                                                                 : kGlassColor;
     for (std::size_t i = 0; i < scene.cells; ++i)
         bodies.push_back({{"id", "1:" + std::to_string(i)}, {"object_id", 1}, {"element_id", i},
                           {"material_id", std::string(materialPresetName(scene.plate_preset))},
-                          {"color_rgba", kGlassColor}, {"shape", "box"},
+                          {"color_rgba", plate_color}, {"shape", "box"},
                           {"dimensions_m", Json::array({scene.cell_m, scene.cell_m, scene.cell_m})}});
     bodies.push_back({{"id", "2:0"}, {"object_id", 2}, {"element_id", 0}, {"material_id", "iron"},
                       {"color_rgba", kIronColor}, {"shape", "sphere"},
@@ -235,8 +250,25 @@ void writeRecording(const std::filesystem::path &path, const SceneDescription &s
     std::string serialized = artifact.dump();
     constexpr std::size_t kBudget = 60U * 1024U * 1024U;
     if (serialized.size() > kBudget) {
-        for (auto &frame : artifact["frames"]) frame.erase("bonds");
-        artifact["sampling"]["bond_lines"] = "dropped (byte budget)";
+        std::size_t last_with_bonds = 0;
+        for (std::size_t i = 0; i < artifact["frames"].size(); ++i)
+            if (artifact["frames"][i].contains("bonds")) last_with_bonds = i;
+        for (std::size_t i = 0; i < artifact["frames"].size(); ++i)
+            if (i != last_with_bonds) artifact["frames"][i].erase("bonds");
+        artifact["sampling"]["bond_lines"] = "last frame that carried them only (byte budget)";
+        serialized = artifact.dump();
+    }
+    // Then thin the frames, first and last always kept, until it fits. The
+    // report is never cut.
+    unsigned thinned = 1;
+    while (serialized.size() > kBudget && artifact["frames"].size() > 8) {
+        Json kept = Json::array();
+        const std::size_t count = artifact["frames"].size();
+        for (std::size_t i = 0; i < count; ++i)
+            if (i == 0 || i + 1 == count || i % 2 == 0) kept.push_back(artifact["frames"][i]);
+        artifact["frames"] = std::move(kept);
+        thinned *= 2;
+        artifact["sampling"]["frame_stride"] = thinned;
         serialized = artifact.dump();
     }
     require(serialized.size() <= kBudget, "the recording exceeds the 60 MiB playback budget");
@@ -408,7 +440,7 @@ int main(int argc, char **argv) {
             require(o.support == SupportKind::Ledges,
                     "the reference lane supports the plate on two ledges only");
             fastlattice::TileImpactRequest request;
-            request.tile_material = MaterialPreset::Glass;
+            request.tile_material = o.material;
             request.ball_material = MaterialPreset::Iron;
             request.tile_dimensions_m = {o.length_m, o.thickness_m, o.width_m};
             request.cell_size_m = o.cell_m;
@@ -447,8 +479,19 @@ int main(int argc, char **argv) {
                 first_failure_frame_s = frame.time_s;
                 break;
             }
-            std::size_t emitted = 0;
+            // The lattice phase is recorded densely so the first-failure set
+            // above is tight, but only a subsample is written: 400 frames of a
+            // 1,000-cell plate do not fit the playback budget.
+            std::size_t lattice_count = 0;
+            for (const auto &source : result.frames) lattice_count += source.phase == "lattice" ? 1 : 0;
+            const std::size_t stride = std::max<std::size_t>(
+                1, (lattice_count + o.record_frames - 1) / std::max(1U, o.record_frames));
+            std::size_t index = 0, emitted = 0;
             for (const auto &source : result.frames) {
+                const bool lattice = source.phase == "lattice";
+                const bool keep = !lattice || index % stride == 0 || index + 1 == lattice_count;
+                if (lattice) ++index;
+                if (!keep) continue;
                 Frame frame;
                 frame.time_s = source.time_s;
                 frame.positions = source.cell_positions;
@@ -457,8 +500,12 @@ int main(int argc, char **argv) {
                 frame.ball_center = source.ball_center;
                 frame.ball_orientation = source.ball_orientation;
                 frame.broken = source.fracture_count;
-                // Bond lines on a thinned set of the lattice frames only.
-                if (!source.bond_alive.empty() && (emitted % 16 == 0)) frame.bond_alive = source.bond_alive;
+                // Bond lines only where they say something: the intact plate,
+                // the first frame with damage, and the last lattice frame.
+                const bool wanted_bonds = !source.bond_alive.empty() &&
+                    (emitted == 0 || std::abs(source.time_s - first_failure_frame_s) < 1.0e-12 ||
+                     index == lattice_count);
+                if (wanted_bonds) frame.bond_alive = source.bond_alive;
                 ++emitted;
                 frames.push_back(std::move(frame));
             }
@@ -500,7 +547,7 @@ int main(int argc, char **argv) {
                            {"rest_time_s", m.rest_time_s}}},
                 {"physical_response_validated", false},
             };
-            scene.plate_preset = MaterialPreset::Glass;
+            scene.plate_preset = o.material;
         } else {
             // ---- Algorithm 2 -------------------------------------------------
             PlateRequest request;
@@ -510,6 +557,7 @@ int main(int argc, char **argv) {
             request.cell_m = o.cell_m;
             request.ball_diameter_m = o.ball_diameter_m;
             request.support = o.support;
+            request.plate_material = o.material;
             const auto build_start = Clock::now();
             auto plate = buildPlate(request);
             const double build_s = since(build_start);
@@ -522,6 +570,7 @@ int main(int argc, char **argv) {
             precompute_options.all_strikes_budget_s = o.all_strikes_budget_s;
             precompute_options.force_all_strikes = o.all_strikes;
             precompute_options.force_single_strike = o.single_strike;
+            precompute_options.maximum_bytes = o.max_precompute_bytes;
             const auto tables = precompute(*plate, precompute_options, contact.strike_row);
 
             CascadeOptions cascade_options;
@@ -542,7 +591,17 @@ int main(int argc, char **argv) {
                 alive_end[b] = plate->matter.bonds[b].alive ? 1 : 0;
 
             const auto handoff_start = Clock::now();
-            JoltWorld rigid(0);
+            // Jolt's default contact budget is sized for a handful of bodies. A
+            // cascade that makes hundreds of pieces overruns it and the step is
+            // refused rather than silently dropping contacts, so the budget is
+            // sized from the piece count before the world is built.
+            const std::size_t piece_count = findConnectedComponents(plate->matter).size();
+            RigidContactCapacity capacity;
+            capacity.body_pairs = static_cast<unsigned>(
+                std::clamp<std::size_t>(1024 * piece_count, 16384, 262144));
+            capacity.constraints = static_cast<unsigned>(
+                std::clamp<std::size_t>(512 * piece_count, 8192, 65536));
+            JoltWorld rigid(0, capacity);
             rigid.addFloor();
             RigidBallDescription ball;
             ball.body_id = 2;
@@ -737,7 +796,9 @@ int main(int argc, char **argv) {
                              {"influence_singular_used", cascade.influence_singular_used},
                              {"events", events},
                              {"events_truncated", cascade.events.size() > 400}}},
-                {"handoff", {{"fragments", handoff.fragments},
+                {"handoff", {{"contact_body_pairs", capacity.body_pairs},
+                             {"contact_constraints", capacity.constraints},
+                             {"fragments", handoff.fragments},
                              {"static_components", handoff.static_components},
                              {"collision_boxes", handoff.collision_boxes},
                              {"oversized_pieces", handoff.oversized_pieces},

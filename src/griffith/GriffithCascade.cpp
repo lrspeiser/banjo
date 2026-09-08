@@ -554,8 +554,12 @@ InfluenceTables precompute(const PlateModel &plate, const PrecomputeOptions &opt
     for (const auto flag : tables.peak_ready) attempted += flag ? 1 : 0;
     const bool needs_requested = strike_row != kNoIndex && tables.peak_ready[strike_row] == 0;
     tables.stats.strike_cached = strike_row != kNoIndex && !needs_requested;
+    // A warm run whose column is already there does no work at all. Without
+    // this the run rebuilt the eigenbasis (84 s at 1,500 cells) only to
+    // re-decide, every time, that the rest of the table was over budget.
+    const bool decide_again = !loaded || options.force_all_strikes;
     bool changed = false;
-    if (needs_requested || (!options.force_single_strike && attempted < strikes)) {
+    if (needs_requested || (decide_again && !options.force_single_strike && attempted < strikes)) {
         if (basis.modes == 0) {
             const auto eigen_start = Clock::now();
             buildBasis();
@@ -621,7 +625,7 @@ InfluenceTables precompute(const PlateModel &plate, const PrecomputeOptions &opt
             ++attempted;
         }
         bool fill_all = options.force_all_strikes;
-        if (!fill_all && !options.force_single_strike && attempted < strikes) {
+        if (!fill_all && decide_again && !options.force_single_strike && attempted < strikes) {
             if (one_column_s <= 0.0) {
                 // Measure one column before committing to the rest.
                 std::size_t first = strikes;
