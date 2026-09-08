@@ -48,12 +48,17 @@ MATERIALS = ("glass", "oak", "iron")
 # energy, the horizon and the cell size, so a crack costs the same per unit
 # area at every resolution (docs/criterion-energy-scaled-checkpoint.md).
 FAILURE_LAWS = ("strain-threshold", "energy-scaled")
+# Plastic flow is off by default: with it off every earlier measurement
+# reproduces exactly, and the materials that declare a yield strength (iron
+# and, as the catalogue actually has it, oak) only deform when it is asked for.
+PLASTICITY = ("off", "on")
 SUPPORTS = ("ledges", "flat", "clamped")
 
 DEFAULT: dict[str, Any] = {
     "algorithm": "lattice",
     "material": "glass",
     "failure_law": "strain-threshold",
+    "plasticity": "off",
     "striker": "iron",
     "plate_m": [0.25, 0.20, 0.01],
     "cell_m": 0.01,
@@ -75,7 +80,7 @@ LIMITS = {
     "duration_s": {"min": 0.2, "max": 6.0},
 }
 
-FIELDS = {"algorithm", "material", "striker", "failure_law", "plate_m", "cell_m", "ball_m", "drop_m", "speed_m_s",
+FIELDS = {"algorithm", "material", "striker", "failure_law", "plasticity", "plate_m", "cell_m", "ball_m", "drop_m", "speed_m_s",
           "offset_m", "support", "duration_s", "request_id"}
 
 
@@ -128,6 +133,8 @@ def validate(spec: Any) -> dict[str, Any]:
         raise ValueError(f"striker must be one of {list(MATERIALS)}")
     if result["failure_law"] not in FAILURE_LAWS:
         raise ValueError(f"failure_law must be one of {list(FAILURE_LAWS)}")
+    if result["plasticity"] not in PLASTICITY:
+        raise ValueError(f"plasticity must be one of {list(PLASTICITY)}")
     result["duration_s"] = _number(result["duration_s"], LIMITS["duration_s"]["min"], LIMITS["duration_s"]["max"], "duration")
     nx, ny, nz = cell_counts(result["plate_m"], result["cell_m"])
     result["cells_per_axis"] = [nx, ny, nz]
@@ -158,6 +165,7 @@ def describe(engine_path: Path) -> dict[str, Any]:
                       "timeout_s": lane["timeout_s"], "executable": path.name})
     return {"algorithms": lanes, "default": DEFAULT, "limits": LIMITS, "supports": list(SUPPORTS),
             "materials": list(MATERIALS), "failure_laws": list(FAILURE_LAWS),
+            "plasticity": list(PLASTICITY),
             "realtime_limit": REALTIME_LIMIT}
 
 
@@ -189,6 +197,7 @@ def command(algorithm: str, spec: dict[str, Any], engine_path: Path, output: Pat
             # serial one (1,982 bonds, 295 pieces, 3.3813 J on the default scene)
             # at 2.9x the speed: 3.5x realtime instead of 10.1x.
             "--failure-law", spec["failure_law"],
+            "--plasticity", spec["plasticity"],
             "--backend", "parallel", "--precision", "double",
             "--record", str(output), "--report", str(report_path)]
 
