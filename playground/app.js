@@ -839,6 +839,10 @@
       offset_m: [mm("f-offset-x"), mm("f-offset-z")],
       support: $("f-support").value,
       clearance_m: Number($("f-clearance").value),
+      refracture: $("f-refracture").value,
+      second_speed_m_s: Number($("f-second-speed").value),
+      second_ball_m: Number($("f-second-ball").value) / 1000,
+      second_wait_s: Number($("f-second-wait").value),
       duration_s: Number($("f-duration").value),
     };
   }
@@ -867,7 +871,11 @@
     // is not simulated, so a larger drop height is a faster strike, not a
     // longer descent to watch.
     $("fracture-note").textContent =
-      `Strikes at ${v.toFixed(2)} m/s, from ${from}. The ball starts 2 mm above the target already at that speed — the fall is not simulated.`;
+      `Strikes at ${v.toFixed(2)} m/s, from ${from}. The ball starts 2 mm above the target already at that speed — the fall is not simulated.`
+      + (spec.second_speed_m_s > 0
+          ? ` A second ${Math.round(spec.second_ball_m * 1000)} mm ball follows at ${spec.second_speed_m_s} m/s after ${spec.second_wait_s} s`
+            + (spec.refracture === "on" ? ", and the pieces it hits can break again." : "; with \u201cbreak it again\u201d off the pieces are rigid and cannot break.")
+          : "");
     $("fracture-run").disabled = fracture.busy || Boolean(over) || !(lane && lane.available);
   }
 
@@ -884,6 +892,10 @@
     mm("f-offset-x", spec.offset_m[0]); mm("f-offset-z", spec.offset_m[1]);
     $("f-support").value = spec.support; $("f-duration").value = String(spec.duration_s);
     $("f-clearance").value = String(spec.clearance_m ?? 0.12);
+    $("f-refracture").value = spec.refracture ?? "off";
+    $("f-second-speed").value = String(spec.second_speed_m_s ?? 0);
+    mm("f-second-ball", spec.second_ball_m ?? 0.1);
+    $("f-second-wait").value = String(spec.second_wait_s ?? 0.3);
     if (spec.speed_m_s != null) { $("f-speed").value = String(spec.speed_m_s); $("f-drop").value = ""; }
     else { $("f-speed").value = ""; $("f-drop").value = String(spec.drop_m); }
     fractureCells();
@@ -935,6 +947,17 @@
     row("Pieces", sum.components ?? "-");
     if (Number.isFinite(sum.first_failure_time_s)) row("First failure", `${(sum.first_failure_time_s * 1e6).toFixed(0)} us after contact`);
     if (Number.isFinite(sum.removed_energy_j)) row("Energy removed by fracture", s3(sum.removed_energy_j, " J"));
+    if (sum.refracture) {
+      const rf = sum.refracture;
+      row("Second strike", rf.admitted
+        ? `${rf.admitted} re-entry of ${rf.contacts_tested} contacts tested`
+        : `nothing admitted (${rf.contacts_tested} contacts tested)`, rf.admitted ? "ok" : "");
+      if (rf.admitted) {
+        row("Broken by the second strike", `${rf.broken_bonds} bonds into ${rf.pieces_created} pieces`);
+        if (Number.isFinite(rf.removed_energy_j)) row("Energy removed, second strike", s3(rf.removed_energy_j, " J"));
+        if (Number.isFinite(rf.wall_s)) row("Second strike wall", s3(rf.wall_s, " s"));
+      }
+    }
     if (Number.isFinite(sum.contact_impulse_n_s)) row("Contact impulse", s3(sum.contact_impulse_n_s, " N s"));
   }
 
@@ -995,8 +1018,8 @@
     fracture.meta.algorithms.forEach((lane) => { const o = document.createElement("option"); o.value = lane.id; o.textContent = lane.available ? lane.title : `${lane.title} (not built yet)`; o.disabled = !lane.available; select.append(o); });
     const preferred = fracture.meta.algorithms.find((l) => l.id === fracture.meta.default.algorithm && l.available) || fracture.meta.algorithms.find((l) => l.available);
     if (preferred) select.value = preferred.id;
-    const optionsFor = { "f-material": fracture.meta.materials, "f-striker": fracture.meta.materials, "f-failure-law": fracture.meta.failure_laws, "f-plasticity": fracture.meta.plasticity };
-    for (const [id, key] of [["f-material", "material"], ["f-striker", "striker"], ["f-failure-law", "failure_law"], ["f-plasticity", "plasticity"]]) {
+    const optionsFor = { "f-material": fracture.meta.materials, "f-striker": fracture.meta.materials, "f-failure-law": fracture.meta.failure_laws, "f-plasticity": fracture.meta.plasticity, "f-refracture": fracture.meta.refracture };
+    for (const [id, key] of [["f-material", "material"], ["f-striker", "striker"], ["f-failure-law", "failure_law"], ["f-plasticity", "plasticity"], ["f-refracture", "refracture"]]) {
       const select = $(id); select.textContent = "";
       (optionsFor[id] || ["glass"]).forEach((m) => { const o = document.createElement("option"); o.value = m; o.textContent = m; select.append(o); });
       select.value = fracture.meta.default[key];

@@ -403,6 +403,16 @@ def summary(report: dict[str, Any], wall_s: float, spec: dict[str, Any]) -> dict
         "rank_deficient_nodes": _pick(report, "rank_deficient_nodes"),
         "peak_tensile_stretch": _pick(report, "max_tensile_stretch"),
         "came_to_rest": (report.get("rigid") or {}).get("came_to_rest"),
+        # The second strike is a separate phase, so its damage is not in the
+        # first lattice run`s counts. Reporting only the first phase is how a
+        # working re-fracture looked like nothing happening.
+        "refracture": ({"admitted": (report.get("refracture") or {}).get("admitted"),
+                        "contacts_tested": (report.get("refracture") or {}).get("contacts_tested"),
+                        "broken_bonds": (report.get("refracture") or {}).get("broken_bonds"),
+                        "pieces_created": (report.get("refracture") or {}).get("pieces_created"),
+                        "removed_energy_j": (report.get("refracture") or {}).get("removed_energy_j"),
+                        "wall_s": (report.get("refracture") or {}).get("wall_s")}
+                       if (report.get("refracture") or {}).get("enabled") else None),
         "contact_impulse_n_s": _pick(report, "contact.impulse_n_s", "lattice.contact.impulse_n_s"),
     }
 
