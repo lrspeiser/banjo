@@ -896,13 +896,17 @@ python scripts/check-source-registration.py
 # One ladder row by hand (this is what the runner below issues)
 build/agent/Release/banjo_fast_lattice_run.exe --layout bridge --ball-radius 0.04     --speed 8 --tile 0.24 0.04 0.16 --cell 0.005 --horizon 2 --material glass     --backend cpu --precision double --dt-factor 0.5     --failure-law energy-scaled     --quiet-ms 2 --no-failure-ms 2 --min-ms 0 --max-ms 12 --settle-s 0     --report docs/evidence/criterion/glass-new-5mm-v8.json
 
-# The ladder, its variations and the recordings. Rows already on disk are
-# reused; --force re-runs them. Reports land in docs/evidence/criterion/.
+# The ladder, its variations and the recordings, in the order they were run.
+# Rows already on disk are reused; --force re-runs them. The 68 reports land in
+# docs/evidence/criterion/; recordings sit beside them and are gitignored.
 python scripts/criterion-ladder.py --stage ladder-v8 --stage ladder-oak-v8
-python scripts/criterion-ladder.py --stage ladder-v12 --stage ladder-oak-v12
-python scripts/criterion-ladder.py --stage materials --stage dt-half --stage horizon3
-python scripts/criterion-ladder.py --stage window
+python scripts/criterion-ladder.py --stage long-window --stage materials     --stage dt-half --stage horizon3
+python scripts/criterion-ladder.py --stage strip --stage strip-griffith     --stage strip-materials --stage strip-old-matched     --stage window --stage horizon3-20mm --stage ladder-v12
 python scripts/criterion-ladder.py --stage record
+
+# `--stage horizon3` is the one that does not complete: at 10 mm cells the lane
+# refuses horizon 3 with "lattice needs more than 64 bond colours". Use
+# `--stage horizon3-20mm`, which is the part that runs (section 6.5).
 
 # Any table in this document, from the reports on disk
 python scripts/criterion-ladder.py --summarise glass-old-20mm-v8 glass-new-20mm-v8     --cols "name,law,cell_mm,cells,broken,pieces,largest_frac,removed_j,measured_gc,pulverisation"
