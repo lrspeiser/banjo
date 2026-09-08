@@ -420,6 +420,15 @@ modified: `fracture/BondFailure`, `modal/SymmetricEigen` and
 [PASS] the screen's bound is never violated by sampling
 ```
 
+The Fracture lab panel was driven end to end on a private playground
+(`python playground/server.py --port 8801 --engine build/agent/Release/banjo_platform_cli.exe
+--runs build/playground-runs`, stopped afterwards): the panel offers this lane as
+built, runs it on the default scene through the CLI contract in
+`playground/fracture_lab.py` unchanged, and reports `500 cells in 2.958 s wall,
+1.11x of the simulated interaction (limit 1.1x)` with 276 broken bonds, 28
+components and a cached precompute -- the same numbers this note reports, through
+the panel the owner will use.
+
 ### Reproduction
 
 ```powershell
