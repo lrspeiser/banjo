@@ -349,13 +349,13 @@ The elastic plate keeps 2.94 mm of "permanent" shape with no plasticity anywhere
 and its residual elastic energy of 0.011 J is the size the second-order estimate
 gives for a bend of that depth (`strain = -k^2 l^2 / 24` over the plate gives
 0.026 J at 9 mm) — the shape is nearly isometric, so it costs almost nothing to
-hold. **A dent cannot be separated from an
-elastic bend on this discretisation**, and no dent depth is claimed from it.
+hold. **A dent cannot be separated from an elastic bend on this
+discretisation**, and no dent depth is claimed from it.
 
 What that plate *does* show, and it is real: with the law on it breaks 15 bonds
 where the elastic plate breaks 0, dissipates **3.21 J** of plastic work over 57
 bonds, and the ball is still driving the plate down at 40 ms where the elastic
-plate has already thrown it back. That is the recording in section 8, job A.
+plate has already thrown it back. That is the first recording in section 9.
 
 Refining the cell to 5 mm resolves the thickness with two cells, gives the plate
 real bending stiffness, and is the only change between section 3.4 and section
@@ -648,9 +648,11 @@ cases.
    no deviatoric flow rule, no pressure dependence, no volumetric/deviatoric
    split, and therefore no plastic incompressibility. It is exactly the network
    lane's model, on a bond family.
-8. **No rate dependence, no Bauschinger effect beyond the kinematic one the
-   signed permanent extension gives, no temperature, no anisotropy.** Isotropic
-   hardening only, and no catalogue material declares any.
+8. **Hardening is isotropic only.** The yield extension grows with the
+   accumulated flow whatever its sign, so a bond that has flowed in tension
+   yields at the same magnitude in compression: no Bauschinger effect. No rate
+   dependence, no temperature, no anisotropy, and no catalogue material declares
+   any hardening at all.
 9. **The plate ledger is an attribution, not a closed budget** (section 4.2).
 10. **`--plasticity` defaults to off.** That is deliberate — it keeps
     `playground/fracture_lab.py` and every recorded result exactly as they were —
