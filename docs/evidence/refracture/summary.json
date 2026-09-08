@@ -72,8 +72,8 @@
     "admitted": 0,
     "max_closing_speed_m_s": 0.0,
     "removed_energy_j": 0.0,
-    "realtime_ratio": 0.6746,
-    "wall_total_s": 2.0511
+    "realtime_ratio": 0.7687,
+    "wall_total_s": 2.3372
    },
    {
     "case": "second strike 8 m/s, re-fracture on",
@@ -86,8 +86,8 @@
     "admitted": 1,
     "max_closing_speed_m_s": 7.9372,
     "removed_energy_j": 28.1121,
-    "realtime_ratio": 0.9738,
-    "wall_total_s": 2.9607
+    "realtime_ratio": 1.0377,
+    "wall_total_s": 3.1549
    }
   ]
  },
@@ -104,8 +104,8 @@
     "admitted": 0,
     "max_closing_speed_m_s": 0.0,
     "removed_energy_j": 0.0,
-    "realtime_ratio": 0.6622,
-    "wall_total_s": 2.0133,
+    "realtime_ratio": 0.6639,
+    "wall_total_s": 2.0185,
     "speed_m_s": 4,
     "refracture": "off"
    },
@@ -120,8 +120,8 @@
     "admitted": 0,
     "max_closing_speed_m_s": 3.9686,
     "removed_energy_j": 0.0,
-    "realtime_ratio": 0.7078,
-    "wall_total_s": 2.152,
+    "realtime_ratio": 0.697,
+    "wall_total_s": 2.119,
     "speed_m_s": 4,
     "refracture": "on"
    },
@@ -136,8 +136,8 @@
     "admitted": 0,
     "max_closing_speed_m_s": 0.0,
     "removed_energy_j": 0.0,
-    "realtime_ratio": 0.6631,
-    "wall_total_s": 2.0161,
+    "realtime_ratio": 0.6731,
+    "wall_total_s": 2.0464,
     "speed_m_s": 6,
     "refracture": "off"
    },
@@ -152,8 +152,8 @@
     "admitted": 1,
     "max_closing_speed_m_s": 5.9529,
     "removed_energy_j": 5.1388,
-    "realtime_ratio": 0.9531,
-    "wall_total_s": 2.8979,
+    "realtime_ratio": 0.9585,
+    "wall_total_s": 2.9143,
     "speed_m_s": 6,
     "refracture": "on"
    },
@@ -168,8 +168,8 @@
     "admitted": 0,
     "max_closing_speed_m_s": 0.0,
     "removed_energy_j": 0.0,
-    "realtime_ratio": 0.6673,
-    "wall_total_s": 2.0288,
+    "realtime_ratio": 0.6684,
+    "wall_total_s": 2.0323,
     "speed_m_s": 8,
     "refracture": "off"
    },
@@ -184,8 +184,8 @@
     "admitted": 1,
     "max_closing_speed_m_s": 7.9372,
     "removed_energy_j": 28.1121,
-    "realtime_ratio": 0.9815,
-    "wall_total_s": 2.984,
+    "realtime_ratio": 0.9813,
+    "wall_total_s": 2.9834,
     "speed_m_s": 8,
     "refracture": "on"
    },
@@ -200,8 +200,8 @@
     "admitted": 0,
     "max_closing_speed_m_s": 0.0,
     "removed_energy_j": 0.0,
-    "realtime_ratio": 0.6665,
-    "wall_total_s": 2.0265,
+    "realtime_ratio": 0.679,
+    "wall_total_s": 2.0644,
     "speed_m_s": 12,
     "refracture": "off"
    },
@@ -216,8 +216,8 @@
     "admitted": 1,
     "max_closing_speed_m_s": 11.9058,
     "removed_energy_j": 29.4408,
-    "realtime_ratio": 1.0255,
-    "wall_total_s": 3.1178,
+    "realtime_ratio": 0.9482,
+    "wall_total_s": 2.883,
     "speed_m_s": 12,
     "refracture": "on"
    },
@@ -232,8 +232,8 @@
     "admitted": 0,
     "max_closing_speed_m_s": 0.0,
     "removed_energy_j": 0.0,
-    "realtime_ratio": 0.6463,
-    "wall_total_s": 1.9649,
+    "realtime_ratio": 0.641,
+    "wall_total_s": 1.9488,
     "speed_m_s": 16,
     "refracture": "off"
    },
@@ -248,8 +248,8 @@
     "admitted": 1,
     "max_closing_speed_m_s": 15.8743,
     "removed_energy_j": 43.6571,
-    "realtime_ratio": 0.9371,
-    "wall_total_s": 2.849,
+    "realtime_ratio": 0.935,
+    "wall_total_s": 2.8426,
     "speed_m_s": 16,
     "refracture": "on"
    },
@@ -264,8 +264,8 @@
     "admitted": 0,
     "max_closing_speed_m_s": 0.0,
     "removed_energy_j": 0.0,
-    "realtime_ratio": 0.7269,
-    "wall_total_s": 2.21,
+    "realtime_ratio": 0.6804,
+    "wall_total_s": 2.0688,
     "speed_m_s": 20,
     "refracture": "off"
    },
@@ -280,8 +280,8 @@
     "admitted": 1,
     "max_closing_speed_m_s": 19.8429,
     "removed_energy_j": 54.7268,
-    "realtime_ratio": 0.9241,
-    "wall_total_s": 2.8097,
+    "realtime_ratio": 0.9255,
+    "wall_total_s": 2.8139,
     "speed_m_s": 20,
     "refracture": "on"
    }
@@ -300,7 +300,7 @@
     "admitted": 9,
     "landing_bonds_broken": 13,
     "pieces_at_end": 80,
-    "realtime_ratio": 0.5722423052971991
+    "realtime_ratio": 0.5980147627304285
    },
    {
     "material": "oak",
@@ -313,7 +313,7 @@
     "admitted": 0,
     "landing_bonds_broken": 0,
     "pieces_at_end": 7,
-    "realtime_ratio": 0.1327950664633466
+    "realtime_ratio": 0.13769734551116078
    },
    {
     "material": "iron",
@@ -326,7 +326,7 @@
     "admitted": 0,
     "landing_bonds_broken": 0,
     "pieces_at_end": 1,
-    "realtime_ratio": 0.8366920748089995
+    "realtime_ratio": 0.9160373155482314
    }
   ]
  },
@@ -336,8 +336,8 @@
     "scene": "plate-500",
     "refracture": "off",
     "simulated_s": 2.0403818581210134,
-    "wall_s": 1.9784353,
-    "realtime_ratio": 0.9696397231359134,
+    "wall_s": 1.8879495,
+    "realtime_ratio": 0.9252922400214888,
     "rule_met": true,
     "contacts_tested": 0,
     "trial_steps": 0,
@@ -350,8 +350,8 @@
     "scene": "plate-500",
     "refracture": "on",
     "simulated_s": 2.0403818581210134,
-    "wall_s": 2.044764,
-    "realtime_ratio": 1.002147706744963,
+    "wall_s": 1.9633194,
+    "realtime_ratio": 0.9622313549719659,
     "rule_met": true,
     "contacts_tested": 30333,
     "trial_steps": 480,
@@ -364,8 +364,8 @@
     "scene": "pane-1m",
     "refracture": "off",
     "simulated_s": 1.0551339005150595,
-    "wall_s": 0.1954813,
-    "realtime_ratio": 0.18526681770396777,
+    "wall_s": 0.1852151,
+    "realtime_ratio": 0.1755370573437058,
     "rule_met": true,
     "contacts_tested": 0,
     "trial_steps": 0,
@@ -378,8 +378,8 @@
     "scene": "pane-1m",
     "refracture": "on",
     "simulated_s": 1.0551339005150595,
-    "wall_s": 0.2141653,
-    "realtime_ratio": 0.2029745228500914,
+    "wall_s": 0.216541,
+    "realtime_ratio": 0.20522608542318313,
     "rule_met": true,
     "contacts_tested": 8334,
     "trial_steps": 223,
@@ -404,7 +404,7 @@
     "second_strike_bonds": 0,
     "removed_energy_j": 0.0,
     "pieces_at_end": 78,
-    "realtime_ratio": 0.7229
+    "realtime_ratio": 0.7047
    },
    {
     "material": "glass",
@@ -414,11 +414,11 @@
     "threshold_speed_m_s": 4.505972241822995,
     "max_closing_speed_m_s": 17.286100387573242,
     "max_margin": 3.836264286568208,
-    "admitted": 1,
-    "second_strike_bonds": 203,
-    "removed_energy_j": 15.9024,
-    "pieces_at_end": 103,
-    "realtime_ratio": 0.902
+    "admitted": 2,
+    "second_strike_bonds": 219,
+    "removed_energy_j": 13.7068,
+    "pieces_at_end": 104,
+    "realtime_ratio": 0.7179
    },
    {
     "material": "oak",
@@ -432,7 +432,7 @@
     "second_strike_bonds": 0,
     "removed_energy_j": 0.0,
     "pieces_at_end": 7,
-    "realtime_ratio": 0.1707
+    "realtime_ratio": 0.1459
    },
    {
     "material": "oak",
@@ -446,7 +446,7 @@
     "second_strike_bonds": 403,
     "removed_energy_j": 36.5344,
     "pieces_at_end": 32,
-    "realtime_ratio": 0.4454
+    "realtime_ratio": 0.453
    },
    {
     "material": "iron",
@@ -460,21 +460,21 @@
     "second_strike_bonds": 0,
     "removed_energy_j": 0.0,
     "pieces_at_end": 1,
-    "realtime_ratio": 0.588
+    "realtime_ratio": 0.6364
    },
    {
     "material": "iron",
     "refracture": "on",
     "first_strike_bonds": 0,
     "first_strike_pieces": 1,
-    "threshold_speed_m_s": 12.269910941555,
+    "threshold_speed_m_s": null,
     "max_closing_speed_m_s": 20.57231903076172,
     "max_margin": 1.6766477873191907,
     "admitted": 1,
-    "second_strike_bonds": 1549,
-    "removed_energy_j": 361520.7013,
-    "pieces_at_end": 119,
-    "realtime_ratio": 0.6322
+    "second_strike_bonds": 0,
+    "removed_energy_j": 0.0,
+    "pieces_at_end": 1,
+    "realtime_ratio": 0.6045
    }
   ]
  }

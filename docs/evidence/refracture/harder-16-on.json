@@ -21,10 +21,10 @@
    "pieces_over_1pct": 2,
    "pieces_over_5pct": 2,
    "rigid_fragments": 55,
-   "wall_s": 0.0021128
+   "wall_s": 0.001822
   },
   "lattice": {
-   "bond_updates_per_s": 62353351.46305776,
+   "bond_updates_per_s": 60786154.07579089,
    "broken_bonds": 523,
    "compressive_failures": 23,
    "contact": {
@@ -120,31 +120,31 @@
    "strength_bound_active": false,
    "strength_stretch": 0.0012857142857142856,
    "tensile_failures": 109,
-   "wall_s": 1.7803911
+   "wall_s": 1.8262934
   },
   "max_compressive_strain": 0.028585584834218025,
   "max_shear_strain": 0.005397207569330931,
   "max_tensile_stretch": 0.00362884602509439,
   "phase_seconds": {
    "capture": 0.0,
-   "contact_pass_1": 0.009704699999997901,
-   "contact_pass_2": 0.01170429999999469,
+   "contact_pass_1": 0.009254499999997577,
+   "contact_pass_2": 0.011810999999995296,
    "damping": 0.0,
-   "end_sample_bonds": 0.5723766000001014,
-   "end_sample_nodes": 0.19682759999996657,
-   "kick_classify": 0.11555550000000464,
-   "node_contact_broad": 0.03672009999998987,
-   "node_contact_narrow": 0.030694199999988025,
-   "sphere_exit": 0.004534499999998929,
-   "start_sample_bonds": 0.0018023999999999991,
-   "start_sample_nodes": 0.0013907000000000006,
-   "support_project": 0.08735269999997365,
-   "sweep_boundary": 0.0012466999999999101,
-   "sweep_interior": 0.6599266000000439,
-   "velocity_update": 0.04877879999999965
+   "end_sample_bonds": 0.5757731000001255,
+   "end_sample_nodes": 0.20301119999996864,
+   "kick_classify": 0.1438862999999962,
+   "node_contact_broad": 0.033167700000000945,
+   "node_contact_narrow": 0.029059499999987887,
+   "sphere_exit": 0.0034188999999984295,
+   "start_sample_bonds": 0.0018270999999999997,
+   "start_sample_nodes": 0.0011772000000000009,
+   "support_project": 0.09166259999999055,
+   "sweep_boundary": 0.001191299999999883,
+   "sweep_interior": 0.6703665000000238,
+   "velocity_update": 0.04885439999999924
   },
   "rank_deficient_nodes": 1177,
-  "realtime_ratio": 0.9370651888314734,
+  "realtime_ratio": 0.9349606176629182,
   "recording_wall_s": 0.0,
   "refracture": {
    "admitted": 1,
@@ -191,12 +191,14 @@
      "window": {
       "clock_residual_s": 1.2754776672202484e-06,
       "entry_max_displacement_m": 0.010138902462240112,
+      "entry_striker_backoff_m": 0.0,
+      "entry_striker_gap_m": 0.006907690921926737,
       "entry_support_penetration_m": 0.0,
       "rigid_steps": 6,
       "simulated_s": 0.02500127547766722,
       "striker_in_island": true,
       "substeps": 24750,
-      "wall_s": 0.618895
+      "wall_s": 0.5628339
      }
     }
    ],
@@ -206,6 +208,7 @@
     "budget_events": 0,
     "budget_steps": 0,
     "no_rollback": 0,
+    "striker_overlap": 0,
     "support_penetration": 0,
     "too_many_cells": 0,
     "unsupported_partner": 13379
@@ -223,7 +226,7 @@
    "simulated_s": 0.02500127547766722,
    "substeps": 24750,
    "trial_steps": 715,
-   "wall_s": 0.618895,
+   "wall_s": 0.5628339,
    "worst_residual": {
     "entry_energy_j": 2.0679515313825692e-25,
     "entry_momentum_kg_m_s": 0.0,
@@ -244,7 +247,7 @@
    "second_strike_time_s": 0.644548524787685,
    "simulated_s": 3.000000000000044,
    "steps": 720,
-   "wall_s": 1.0647641
+   "wall_s": 1.0126735
   },
   "rule_met": true,
   "shared_memory_bytes": 0,
@@ -252,7 +255,7 @@
   "simulated_total_s": 3.040381858121063,
   "substep_limit_s": 2.020305089104422e-06,
   "tile_mass_kg": 1.2500000000000142,
-  "wall_total_s": 2.849036
+  "wall_total_s": 2.8426373
  },
  "_command": [
   "C:\\Users\\henry\\dev\\banjo-agents\\refracture\\build\\agent\\Release\\banjo_fast_lattice_run.exe",
@@ -298,5 +301,5 @@
   "--report",
   "C:\\Users\\henry\\dev\\banjo-agents\\refracture\\docs\\evidence\\refracture\\harder-16-on.json"
  ],
- "_wall_s": 2.858276899991324
+ "_wall_s": 2.852800400010892
 }

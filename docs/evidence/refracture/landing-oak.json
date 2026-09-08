@@ -21,10 +21,10 @@
    "pieces_over_1pct": 3,
    "pieces_over_5pct": 1,
    "rigid_fragments": 7,
-   "wall_s": 0.0014525
+   "wall_s": 0.0012896
   },
   "lattice": {
-   "bond_updates_per_s": 34668183.48376296,
+   "bond_updates_per_s": 33421913.210048705,
    "broken_bonds": 212,
    "compressive_failures": 9,
    "contact": {
@@ -120,32 +120,32 @@
    "strength_bound_active": false,
    "strength_stretch": 0.015,
    "tensile_failures": 0,
-   "wall_s": 0.2608972
+   "wall_s": 0.2706258
   },
   "max_compressive_strain": 0.009512493386864662,
   "max_shear_strain": 0.010952322743833065,
   "max_tensile_stretch": 0.012359212152659893,
   "phase_seconds": {
    "capture": 0.0,
-   "contact_pass_1": 0.0004343000000000051,
-   "contact_pass_2": 0.0006822999999999161,
+   "contact_pass_1": 0.0004631000000000055,
+   "contact_pass_2": 0.0006477999999999319,
    "damping": 0.0,
-   "end_sample_bonds": 0.06059139999999934,
-   "end_sample_nodes": 0.01727880000000047,
-   "kick_classify": 0.021267699999999806,
-   "node_contact_broad": 0.0019686999999997037,
-   "node_contact_narrow": 0.0070406000000002135,
-   "sphere_exit": 0.0006152999999999715,
-   "start_sample_bonds": 0.0008521,
-   "start_sample_nodes": 0.0008312,
-   "support_project": 0.008788100000000373,
-   "sweep_boundary": 0.00024210000000000494,
-   "sweep_interior": 0.13402450000000063,
-   "velocity_update": 0.005644499999999799
+   "end_sample_bonds": 0.06311099999999928,
+   "end_sample_nodes": 0.017704200000000263,
+   "kick_classify": 0.02118849999999991,
+   "node_contact_broad": 0.001983399999999735,
+   "node_contact_narrow": 0.007260300000000133,
+   "sphere_exit": 0.0006366999999999543,
+   "start_sample_bonds": 0.0007942999999999998,
+   "start_sample_nodes": 0.0008816999999999997,
+   "support_project": 0.009423500000000333,
+   "sweep_boundary": 0.0002724000000000057,
+   "sweep_interior": 0.13960730000000038,
+   "velocity_update": 0.00610869999999988
   },
   "rank_deficient_nodes": 48,
-  "realtime_ratio": 0.1327950664633466,
-  "recording_wall_s": 0.0514278,
+  "realtime_ratio": 0.13769734551116078,
+  "recording_wall_s": 0.0540689,
   "refracture": {
    "admitted": 0,
    "broken_bonds": 0,
@@ -158,6 +158,7 @@
     "budget_events": 0,
     "budget_steps": 0,
     "no_rollback": 0,
+    "striker_overlap": 0,
     "support_penetration": 0,
     "too_many_cells": 0,
     "unsupported_partner": 43
@@ -196,7 +197,7 @@
    "second_strike_time_s": -1.0,
    "simulated_s": 2.500000000000019,
    "steps": 600,
-   "wall_s": 0.070161
+   "wall_s": 0.0731096
   },
   "rule_met": true,
   "shared_memory_bytes": 0,
@@ -204,7 +205,7 @@
   "simulated_total_s": 2.51077098630037,
   "substep_limit_s": 4.058397249567139e-06,
   "tile_mass_kg": 1.0751999999999975,
-  "wall_total_s": 0.333418
+  "wall_total_s": 0.3457265
  },
  "recording": "C:\\Users\\henry\\dev\\banjo-agents\\refracture\\docs\\evidence\\refracture\\landing-oak.playback.json",
  "_command": [
@@ -242,5 +243,5 @@
   "--record",
   "C:\\Users\\henry\\dev\\banjo-agents\\refracture\\docs\\evidence\\refracture\\landing-oak.playback.json"
  ],
- "_wall_s": 0.4004586999944877
+ "_wall_s": 0.408127600006992
 }

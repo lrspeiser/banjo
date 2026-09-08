@@ -1,6 +1,6 @@
 {
  "cuda": "CUDA backend not compiled (configure with -DBANJO_BUILD_CUDA=ON)",
- "frames": 93,
+ "frames": 52,
  "measurements": {
   "backend": "cpu-parallel-double-x8",
   "ball_mass_kg": 2.1098098503468097,
@@ -21,10 +21,10 @@
    "pieces_over_1pct": 1,
    "pieces_over_5pct": 1,
    "rigid_fragments": 1,
-   "wall_s": 0.0011601
+   "wall_s": 0.0009512
   },
   "lattice": {
-   "bond_updates_per_s": 30723092.158288218,
+   "bond_updates_per_s": 33686783.463318564,
    "broken_bonds": 0,
    "compressive_failures": 0,
    "contact": {
@@ -120,139 +120,92 @@
    "strength_bound_active": false,
    "strength_stretch": 0.002369668246445498,
    "tensile_failures": 0,
-   "wall_s": 0.683639
+   "wall_s": 0.6234939
   },
   "max_compressive_strain": 0.0024853155482560396,
   "max_shear_strain": 0.0013288854388520122,
   "max_tensile_stretch": 0.001042509451508522,
   "phase_seconds": {
    "capture": 0.0,
-   "contact_pass_1": 0.0006307999999999358,
-   "contact_pass_2": 0.001126199999999863,
+   "contact_pass_1": 0.0005427999999999814,
+   "contact_pass_2": 0.0010103999999998,
    "damping": 0.0,
-   "end_sample_bonds": 0.16774780000000067,
-   "end_sample_nodes": 0.04659169999999931,
-   "kick_classify": 0.050874699999999023,
-   "node_contact_broad": 0.0030359999999999146,
-   "node_contact_narrow": 0.0003522000000000076,
-   "sphere_exit": 0.0015061999999999372,
-   "start_sample_bonds": 1.04e-05,
-   "start_sample_nodes": 0.0002614,
-   "support_project": 0.023826299999999193,
-   "sweep_boundary": 0.0008959999999998112,
-   "sweep_interior": 0.37082960000000054,
-   "velocity_update": 0.014940199999998596
+   "end_sample_bonds": 0.1574722000000028,
+   "end_sample_nodes": 0.04040609999999902,
+   "kick_classify": 0.049669199999998144,
+   "node_contact_broad": 0.003008899999999949,
+   "node_contact_narrow": 0.00027590000000000584,
+   "sphere_exit": 0.0015318999999999305,
+   "start_sample_bonds": 3.57e-05,
+   "start_sample_nodes": 0.0013687,
+   "support_project": 0.020776900000001364,
+   "sweep_boundary": 0.0006279999999999412,
+   "sweep_interior": 0.33261180000000845,
+   "velocity_update": 0.013340999999998968
   },
   "rank_deficient_nodes": 0,
-  "realtime_ratio": 0.6321604801531049,
-  "recording_wall_s": 0.0665566,
+  "realtime_ratio": 0.6045158534630981,
+  "recording_wall_s": 0.0463634,
   "refracture": {
    "admitted": 1,
-   "broken_bonds": 1549,
-   "contacts_tested": 25719,
+   "broken_bonds": 0,
+   "contacts_tested": 270,
    "enabled": true,
-   "events": [
-    {
-     "body_id": 1000,
-     "cells": 192,
-     "ledger": {
-      "entry_angular_residual_kg_m2_s": 3.5794064413203553e-19,
-      "entry_energy_residual_j": 1.0587911840678754e-22,
-      "entry_momentum_residual_kg_m_s": 1.0842021724855044e-19,
-      "exit_angular_residual_kg_m2_s": 5.356897998970095e-16,
-      "exit_coarsening_loss_j": 0.8212555946208249,
-      "exit_energy_residual_j": -1.7275070263167436e-13,
-      "exit_momentum_residual_kg_m_s": 7.720641304371205e-15,
-      "window_external_impulse_n_s": 48.26161260082611,
-      "window_unaccounted_work_j": -361688.7995201019
-     },
-     "live_bonds_in": 1704,
-     "partner": "second-striker",
-     "result": {
-      "broken_bonds": 1549,
-      "contact_dissipated_j": 155.6438867367229,
-      "damping_dissipated_j": 0.0,
-      "elastic_in_j": 4.179173799332598e-05,
-      "elastic_out_j": 0.07825307113418768,
-      "node_contact_dissipated_j": 275.10773560779046,
-      "pieces_out": 119,
-      "plastic_work_j": 0.0,
-      "removed_energy_j": 361520.70125076006
-     },
-     "time_s": 0.4283335391208442,
-     "trigger": {
-      "available_energy_j": 380.11467809298887,
-      "closing_speed_m_s": 20.57231903076172,
-      "minimum_removal_energy_j": 2.3696682464454977,
-      "minimum_removal_stretch": 0.002369668246445498,
-      "peak_stretch": 0.003973099022083391,
-      "threshold_speed_m_s": 12.269910941555
-     },
-     "window": {
-      "clock_residual_s": 8.904466149775581e-07,
-      "entry_max_displacement_m": 2.1487612812187342e-07,
-      "entry_support_penetration_m": 0.0,
-      "rigid_steps": 5,
-      "simulated_s": 0.02083422377994831,
-      "striker_in_island": true,
-      "substeps": 12840,
-      "wall_s": 0.4734878
-     }
-    }
-   ],
-   "pieces_created": 119,
+   "events": [],
+   "pieces_created": 0,
    "plastic_work_j": 0.0,
    "refused": {
     "budget_events": 0,
     "budget_steps": 0,
     "no_rollback": 0,
+    "striker_overlap": 1,
     "support_penetration": 0,
     "too_many_cells": 0,
-    "unsupported_partner": 2484
+    "unsupported_partner": 0
    },
    "rejected": {
     "below_energy_bound": 0,
-    "below_stress_bound": 3401,
+    "below_stress_bound": 269,
     "max_closing_speed_any_m_s": 20.57231903076172,
     "max_closing_speed_m_s": 20.57231903076172,
     "max_margin": 1.6766477873191907,
-    "no_live_bond": 19833
+    "no_live_bond": 0
    },
-   "removed_energy_j": 361520.70125076006,
+   "removed_energy_j": 0.0,
    "rollbacks": 1,
-   "simulated_s": 0.02083422377994831,
-   "substeps": 12840,
-   "trial_steps": 392,
-   "wall_s": 0.4734878,
+   "simulated_s": 0.0,
+   "substeps": 0,
+   "trial_steps": 64,
+   "wall_s": 0.0,
    "worst_residual": {
-    "entry_energy_j": 1.0587911840678754e-22,
-    "entry_momentum_kg_m_s": 1.0842021724855044e-19,
-    "exit_energy_j": 1.7275070263167436e-13,
-    "exit_momentum_kg_m_s": 7.720641304371205e-15
+    "entry_energy_j": 0.0,
+    "entry_momentum_kg_m_s": 0.0,
+    "exit_energy_j": 0.0,
+    "exit_momentum_kg_m_s": 0.0
    }
   },
   "rigid": {
-   "ball_height_at_end_m": 0.03999974990977751,
-   "ball_speed_at_end_m_s": 0.5687178505216526,
-   "broken_bonds_total": 1549,
-   "came_to_rest": false,
-   "pieces_at_end": 119,
-   "rest_time_s": -1.0,
+   "ball_height_at_end_m": 0.3944213363876865,
+   "ball_speed_at_end_m_s": 0.6040404113725977,
+   "broken_bonds_total": 0,
+   "came_to_rest": true,
+   "pieces_at_end": 1,
+   "rest_time_s": 0.7950002057875096,
    "second_ball_mass_kg": 2.1098098503468097,
    "second_ball_speed_m_s": 20.0,
    "second_ball_start_y_m": 1.3399585450232212,
    "second_strike_time_s": 0.3700002057875111,
-   "simulated_s": 1.9999999999999942,
-   "steps": 480,
-   "wall_s": 0.5912984
+   "simulated_s": 1.0791666666666642,
+   "steps": 259,
+   "wall_s": 0.0392258
   },
   "rule_met": true,
   "shared_memory_bytes": 0,
   "shared_memory_positions": false,
-  "simulated_total_s": 2.0200002057875053,
+  "simulated_total_s": 1.0991668724541752,
   "substep_limit_s": 3.2452061962536308e-06,
   "tile_mass_kg": 12.088319999999973,
-  "wall_total_s": 1.2769643
+  "wall_total_s": 0.6644638
  },
  "recording": "C:\\Users\\henry\\dev\\banjo-agents\\refracture\\docs\\evidence\\refracture\\materials-iron-on.playback.json",
  "_command": [
@@ -301,5 +254,5 @@
   "--record",
   "C:\\Users\\henry\\dev\\banjo-agents\\refracture\\docs\\evidence\\refracture\\materials-iron-on.playback.json"
  ],
- "_wall_s": 1.3519965000014054
+ "_wall_s": 0.7217894999921555
 }

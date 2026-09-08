@@ -21,10 +21,10 @@
       "pieces_over_1pct": 6,
       "pieces_over_5pct": 2,
       "rigid_fragments": 13,
-      "wall_s": 0.0014978
+      "wall_s": 0.0013777
     },
     "lattice": {
-      "bond_updates_per_s": 18751629.462944906,
+      "bond_updates_per_s": 19397069.75772246,
       "broken_bonds": 316,
       "compressive_failures": 0,
       "contact": {
@@ -84,7 +84,7 @@
         "radius_from_strike_m": -1.0
       },
       "first_failure_s": 0.0006176418967371321,
-      "kernel_s": 2.161786651611328,
+      "kernel_s": 2.090177947998047,
       "last_failure_s": 0.027811350805263767,
       "lattice_crack_energy_j_m2": 6364.285714285714,
       "launches": 3,
@@ -120,31 +120,31 @@
       "strength_bound_active": false,
       "strength_stretch": 0.0012857142857142856,
       "tensile_failures": 206,
-      "wall_s": 2.16421
+      "wall_s": 2.0921956
     },
     "max_compressive_strain": 0.003127734176814556,
     "max_shear_strain": 0.00640670582652092,
     "max_tensile_stretch": 0.0026826425455510616,
     "phase_seconds": {
-      "capture": 0.010989693392425464,
-      "contact_pass_1": 0.05882553585817889,
-      "contact_pass_2": 0.06230618614020951,
+      "capture": 0.010584022159548751,
+      "contact_pass_1": 0.0550691450443191,
+      "contact_pass_2": 0.06033136946011281,
       "damping": 0.0,
-      "end_sample_bonds": 0.1819504439967768,
-      "end_sample_nodes": 0.2896997925060435,
-      "kick_classify": 0.06002938396454472,
-      "node_contact_broad": 0.5879726917808219,
-      "node_contact_narrow": 0.7590357892828364,
-      "sphere_exit": 0.02969505157131346,
-      "start_sample_bonds": 0.00041102739726027395,
-      "start_sample_nodes": 0.003275987510072522,
-      "support_project": 0.018630817082997582,
-      "sweep_boundary": 0.06159678525382756,
-      "sweep_interior": 0.42119735697018534,
-      "velocity_update": 0.017739814665592265
+      "end_sample_bonds": 0.17005312369057213,
+      "end_sample_nodes": 0.28858263779210314,
+      "kick_classify": 0.05642959830781628,
+      "node_contact_broad": 0.5454896994359387,
+      "node_contact_narrow": 0.745517939564867,
+      "sphere_exit": 0.028839725624496375,
+      "start_sample_bonds": 0.00040616116035455276,
+      "start_sample_nodes": 0.0032753086220789684,
+      "support_project": 0.017809441176470587,
+      "sweep_boundary": 0.06154155076551168,
+      "sweep_interior": 0.40879672401289285,
+      "velocity_update": 0.01742144883158743
     },
     "rank_deficient_nodes": 45,
-    "realtime_ratio": 3.107494400742407,
+    "realtime_ratio": 3.015750048428798,
     "recording_wall_s": 0.0,
     "refracture": {
       "admitted": 1,
@@ -191,12 +191,14 @@
           "window": {
             "clock_residual_s": -1.4498333686246978e-06,
             "entry_max_displacement_m": 0.00013061124028316618,
+            "entry_striker_backoff_m": 0.0,
+            "entry_striker_gap_m": 0.015636334162061297,
             "entry_support_penetration_m": 0.0,
             "rigid_steps": 4,
             "simulated_s": 0.016665216833298042,
             "striker_in_island": true,
             "substeps": 10496,
-            "wall_s": 0.8658329
+            "wall_s": 0.8526757
           }
         }
       ],
@@ -206,6 +208,7 @@
         "budget_events": 0,
         "budget_steps": 0,
         "no_rollback": 0,
+        "striker_overlap": 0,
         "support_penetration": 0,
         "too_many_cells": 0,
         "unsupported_partner": 6343
@@ -223,7 +226,7 @@
       "simulated_s": 0.016665216833298042,
       "substeps": 10496,
       "trial_steps": 209,
-      "wall_s": 0.8658329,
+      "wall_s": 0.8526757,
       "worst_residual": {
         "entry_energy_j": 3.469446951953614e-18,
         "entry_momentum_kg_m_s": 2.710505431213761e-20,
@@ -244,7 +247,7 @@
       "second_strike_time_s": 0.38781429154933555,
       "simulated_s": 0.9999999999999977,
       "steps": 240,
-      "wall_s": 0.971044
+      "wall_s": 0.9481569
     },
     "rule_met": false,
     "shared_memory_bytes": 62400,
@@ -252,6 +255,6 @@
     "simulated_total_s": 1.0378142915493331,
     "substep_limit_s": 3.1755367441497794e-06,
     "tile_mass_kg": 3.8399999999999914,
-    "wall_total_s": 3.2250021
+    "wall_total_s": 3.1297885
   }
 }

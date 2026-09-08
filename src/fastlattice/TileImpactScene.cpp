@@ -1035,7 +1035,18 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
             island_sphere.radius = radius;
             island_sphere.mass = striker_mass;
             island_sphere.inertia = 0.4 * striker_mass * radius * radius;
+            // The prefilter only has to exceed how far the sphere centre can
+            // move inside one pass, so it follows THIS striker's radius rather
+            // than the first ball's.
+            island_settings.contact.prefilter_slack = 0.05 * radius;
             striker_position_in = ball.center_of_mass_world_m;
+        } else {
+            // No striker: park the unused sphere far above the island so the
+            // ball/support pass has nothing to find and its accumulators stay
+            // clean. `sphere_enabled` is 0, so it never touches a node.
+            island_sphere.center = {0.0, 1.0e4, 0.0};
+            island_sphere.velocity = {0.0, 0.0, 0.0};
+            island_sphere.angular_velocity = {0.0, 0.0, 0.0};
         }
 
         // The same disagreement on the striker's side. Jolt's collision proxy

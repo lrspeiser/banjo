@@ -21,10 +21,10 @@
    "pieces_over_1pct": 1,
    "pieces_over_5pct": 1,
    "rigid_fragments": 113,
-   "wall_s": 0.0033441
+   "wall_s": 0.0040878
   },
   "lattice": {
-   "bond_updates_per_s": 14491203.07942746,
+   "bond_updates_per_s": 14326640.368268833,
    "broken_bonds": 2450,
    "compressive_failures": 39,
    "contact": {
@@ -120,31 +120,31 @@
    "strength_bound_active": false,
    "strength_stretch": 0.002369668246445498,
    "tensile_failures": 756,
-   "wall_s": 74.8330276
+   "wall_s": 75.6925959
   },
   "max_compressive_strain": 0.005859455559402704,
   "max_shear_strain": 0.013225127942860126,
   "max_tensile_stretch": 0.004346350207924843,
   "phase_seconds": {
    "capture": 0.0,
-   "contact_pass_1": 0.02503689999998275,
-   "contact_pass_2": 0.02017219999998104,
+   "contact_pass_1": 0.02483239999998508,
+   "contact_pass_2": 0.019272499999983567,
    "damping": 0.0,
-   "end_sample_bonds": 44.0466588000007,
-   "end_sample_nodes": 7.494733700000672,
-   "kick_classify": 1.0099865999996525,
-   "node_contact_broad": 0.5613027999998438,
-   "node_contact_narrow": 0.35122209999967985,
-   "sphere_exit": 0.007499700000004198,
-   "start_sample_bonds": 0.3510660999999997,
-   "start_sample_nodes": 0.12883080000000002,
-   "support_project": 2.095650499998655,
-   "sweep_boundary": 0.003480799999998142,
-   "sweep_interior": 18.257999500001503,
-   "velocity_update": 0.4721773999996295
+   "end_sample_bonds": 44.24211199999993,
+   "end_sample_nodes": 7.572219000000867,
+   "kick_classify": 0.9922410000006839,
+   "node_contact_broad": 0.5678197999998674,
+   "node_contact_narrow": 0.35205789999968606,
+   "sphere_exit": 0.007345300000003399,
+   "start_sample_bonds": 0.36252959999999995,
+   "start_sample_nodes": 0.13251719999999986,
+   "support_project": 2.1417303000014893,
+   "sweep_boundary": 0.0037647999999979856,
+   "sweep_interior": 18.784183599997448,
+   "velocity_update": 0.4822346999997165
   },
   "rank_deficient_nodes": 723,
-  "realtime_ratio": 37.06047705345244,
+  "realtime_ratio": 37.486397199949,
   "recording_wall_s": 0.0,
   "refracture": {
    "admitted": 0,
@@ -158,6 +158,7 @@
     "budget_events": 0,
     "budget_steps": 0,
     "no_rollback": 0,
+    "striker_overlap": 0,
     "support_penetration": 0,
     "too_many_cells": 0,
     "unsupported_partner": 0
@@ -196,7 +197,7 @@
    "second_strike_time_s": -1.0,
    "simulated_s": 1.9999999999999942,
    "steps": 480,
-   "wall_s": 0.4165658
+   "wall_s": 0.4243556
   },
   "rule_met": false,
   "shared_memory_bytes": 0,
@@ -204,7 +205,7 @@
   "simulated_total_s": 2.030839600133767,
   "substep_limit_s": 8.113015490634077e-07,
   "tile_mass_kg": 1.4165999999999785,
-  "wall_total_s": 75.2638844
+  "wall_total_s": 76.1288599
  },
  "_command": [
   "C:\\Users\\henry\\dev\\banjo-agents\\refracture\\build\\agent\\Release\\banjo_fast_lattice_run.exe",
@@ -235,5 +236,5 @@
   "--report",
   "C:\\Users\\henry\\dev\\banjo-agents\\refracture\\docs\\evidence\\refracture\\unchanged-iron-dent-new.json"
  ],
- "_wall_s": 75.27302619999682
+ "_wall_s": 76.13805039999716
 }

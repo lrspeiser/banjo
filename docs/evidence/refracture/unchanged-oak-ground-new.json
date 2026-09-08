@@ -21,10 +21,10 @@
    "pieces_over_1pct": 1,
    "pieces_over_5pct": 1,
    "rigid_fragments": 1,
-   "wall_s": 0.0010957
+   "wall_s": 0.0011278
   },
   "lattice": {
-   "bond_updates_per_s": 14560293.28198913,
+   "bond_updates_per_s": 14771366.872376934,
    "broken_bonds": 0,
    "compressive_failures": 0,
    "contact": {
@@ -120,31 +120,31 @@
    "strength_bound_active": false,
    "strength_stretch": 0.015,
    "tensile_failures": 0,
-   "wall_s": 2.954699
+   "wall_s": 2.9124782
   },
   "max_compressive_strain": 0.0046587297692894936,
   "max_shear_strain": 0.001247524400241673,
   "max_tensile_stretch": 0.01391136646270752,
   "phase_seconds": {
    "capture": 0.0,
-   "contact_pass_1": 0.0005192999999999963,
-   "contact_pass_2": 0.0004994000000000057,
+   "contact_pass_1": 0.0005126000000000006,
+   "contact_pass_2": 0.0005064000000000024,
    "damping": 0.0,
-   "end_sample_bonds": 1.4707115999999425,
-   "end_sample_nodes": 0.41081030000000396,
-   "kick_classify": 0.05455360000000203,
-   "node_contact_broad": 0.005851899999999399,
-   "node_contact_narrow": 0.00032310000000000693,
-   "sphere_exit": 0.0007744999999999045,
-   "start_sample_bonds": 5.88e-05,
-   "start_sample_nodes": 4.68e-05,
-   "support_project": 0.08460909999999543,
-   "sweep_boundary": 0.0004533000000000098,
-   "sweep_interior": 0.8378683999999985,
-   "velocity_update": 0.08658899999999702
+   "end_sample_bonds": 1.434106699999985,
+   "end_sample_nodes": 0.4065003000000011,
+   "kick_classify": 0.05554359999999759,
+   "node_contact_broad": 0.005842699999999355,
+   "node_contact_narrow": 0.00034480000000000735,
+   "sphere_exit": 0.0007174999999999111,
+   "start_sample_bonds": 6.62e-05,
+   "start_sample_nodes": 0.0001233,
+   "support_project": 0.08357920000000284,
+   "sweep_boundary": 0.00045950000000000976,
+   "sweep_interior": 0.8373038000001006,
+   "velocity_update": 0.08590519999999705
   },
   "rank_deficient_nodes": 500,
-  "realtime_ratio": 9.221739661487176,
+  "realtime_ratio": 9.03625642020653,
   "recording_wall_s": 0.0,
   "refracture": {
    "admitted": 0,
@@ -158,6 +158,7 @@
     "budget_events": 0,
     "budget_steps": 0,
     "no_rollback": 0,
+    "striker_overlap": 0,
     "support_penetration": 0,
     "too_many_cells": 0,
     "unsupported_partner": 0
@@ -196,7 +197,7 @@
    "second_strike_time_s": -1.0,
    "simulated_s": 0.3041666666666668,
    "steps": 73,
-   "wall_s": 0.0320581
+   "wall_s": 0.0141583
   },
   "rule_met": false,
   "shared_memory_bytes": 0,
@@ -204,7 +205,7 @@
   "simulated_total_s": 0.3241667526664819,
   "substep_limit_s": 2.5819888974716113e-06,
   "tile_mass_kg": 0.350000000000004,
-  "wall_total_s": 2.9893814
+  "wall_total_s": 2.9292539
  },
  "_command": [
   "C:\\Users\\henry\\dev\\banjo-agents\\refracture\\build\\agent\\Release\\banjo_fast_lattice_run.exe",
@@ -233,5 +234,5 @@
   "--report",
   "C:\\Users\\henry\\dev\\banjo-agents\\refracture\\docs\\evidence\\refracture\\unchanged-oak-ground-new.json"
  ],
- "_wall_s": 2.9973655000067083
+ "_wall_s": 2.937572099996032
 }

@@ -78,6 +78,9 @@ DEFAULT: dict[str, Any] = {
     "second_speed_m_s": 0.0,
     "second_ball_m": 0.1,
     "second_offset_m": [0.0, 0.0],
+    # How long to wait for the first strike's pieces to come to rest before
+    # dropping the second ball anyway.
+    "second_wait_s": 1.0,
 }
 
 # Every scenario here has been run and its headline measured, so the panel can
@@ -125,26 +128,26 @@ SCENARIOS = [
               "plate_m": [0.15, 0.12, 0.01], "cell_m": 0.005, "ball_m": 0.06, "speed_m_s": 6.0,
               "offset_m": [0.0, 0.0], "support": "ledges", "duration_s": 2.0}},
     {"id": "glass-twice", "title": "Hit it twice: a second ball on the broken plate",
-     "expect": "the first strike breaks 504 bonds into 49 pieces; the second breaks 666 more, one piece into 99",
+     "expect": "the first strike breaks 523 bonds into 55 pieces; the second breaks 507 more, one piece into 77",
      "spec": {"material": "glass", "striker": "iron", "failure_law": "strain-threshold", "plasticity": "off",
-              "plate_m": [0.25, 0.20, 0.01], "cell_m": 0.01, "ball_m": 0.06, "drop_m": 2.0,
+              "plate_m": [0.25, 0.20, 0.01], "cell_m": 0.01, "ball_m": 0.06, "speed_m_s": 6.26424,
               "offset_m": [0.0, 0.0], "support": "ledges", "duration_s": 1.5,
               "refracture": "on", "second_speed_m_s": 8.0, "second_ball_m": 0.1,
-              "second_offset_m": [0.09, 0.0]}},
+              "second_offset_m": [0.09, 0.0], "second_wait_s": 0.6}},
     {"id": "glass-twice-before", "title": "The same second strike with re-fracture off",
-     "expect": "the control: the second ball bounces off, 0 bonds, still 49 pieces",
+     "expect": "the control: the second ball bounces off, 0 bonds, still 55 pieces",
      "spec": {"material": "glass", "striker": "iron", "failure_law": "strain-threshold", "plasticity": "off",
-              "plate_m": [0.25, 0.20, 0.01], "cell_m": 0.01, "ball_m": 0.06, "drop_m": 2.0,
+              "plate_m": [0.25, 0.20, 0.01], "cell_m": 0.01, "ball_m": 0.06, "speed_m_s": 6.26424,
               "offset_m": [0.0, 0.0], "support": "ledges", "duration_s": 1.5,
               "refracture": "off", "second_speed_m_s": 8.0, "second_ball_m": 0.1,
-              "second_offset_m": [0.09, 0.0]}},
+              "second_offset_m": [0.09, 0.0], "second_wait_s": 0.6}},
     {"id": "glass-twice-harder", "title": "Hit it again harder",
-     "expect": "the same second strike at 20 m/s: 991 bonds and 164 pieces out of one",
+     "expect": "the same second strike at 20 m/s: 948 bonds and 151 pieces out of one",
      "spec": {"material": "glass", "striker": "iron", "failure_law": "strain-threshold", "plasticity": "off",
-              "plate_m": [0.25, 0.20, 0.01], "cell_m": 0.01, "ball_m": 0.06, "drop_m": 2.0,
+              "plate_m": [0.25, 0.20, 0.01], "cell_m": 0.01, "ball_m": 0.06, "speed_m_s": 6.26424,
               "offset_m": [0.0, 0.0], "support": "ledges", "duration_s": 1.5,
               "refracture": "on", "second_speed_m_s": 20.0, "second_ball_m": 0.1,
-              "second_offset_m": [0.09, 0.0]}},
+              "second_offset_m": [0.09, 0.0], "second_wait_s": 0.6}},
     {"id": "oak-ground", "title": "Oak plate lying on the ground, not on ledges",
      "expect": "the support changes what breaks: no span to bend across",
      "spec": {"material": "oak", "striker": "iron", "failure_law": "strain-threshold", "plasticity": "off",
@@ -161,11 +164,12 @@ LIMITS = {
     "drop_m": {"min": 0.0, "max": 5.0}, "speed_m_s": {"min": 0.0, "max": 20.0},
     "duration_s": {"min": 0.2, "max": 6.0},
     "second_speed_m_s": {"min": 0.0, "max": 40.0}, "second_ball_m": {"min": 0.01, "max": 0.5},
+    "second_wait_s": {"min": 0.05, "max": 5.0},
 }
 
 FIELDS = {"algorithm", "material", "striker", "failure_law", "plasticity", "plate_m", "cell_m", "ball_m", "drop_m", "speed_m_s",
           "offset_m", "support", "duration_s", "request_id",
-          "refracture", "second_speed_m_s", "second_ball_m", "second_offset_m"}
+          "refracture", "second_speed_m_s", "second_ball_m", "second_offset_m", "second_wait_s"}
 
 
 def _number(value: Any, low: float, high: float, label: str) -> float:
@@ -233,6 +237,8 @@ def validate(spec: Any) -> dict[str, Any]:
         raise ValueError("second_offset_m requires two values")
     result["second_offset_m"] = [_number(second_offset[0], -0.5, 0.5, "second offset x"),
                                  _number(second_offset[1], -0.5, 0.5, "second offset z")]
+    result["second_wait_s"] = _number(result["second_wait_s"], LIMITS["second_wait_s"]["min"],
+                                      LIMITS["second_wait_s"]["max"], "second strike wait")
     result["duration_s"] = _number(result["duration_s"], LIMITS["duration_s"]["min"], LIMITS["duration_s"]["max"], "duration")
     # `generateBoxTileLattice` refuses an extent that is not a whole number of
     # cells (BoxLattice.cpp cellCount, tolerance 1e-6 relative), so the plate is
@@ -327,7 +333,8 @@ def command(algorithm: str, spec: dict[str, Any], engine_path: Path, output: Pat
         argv += ["--second-ball", f"{spec['second_ball_m'] / 2:.6g}",
                  "--second-speed", f"{spec['second_speed_m_s']:.6g}",
                  "--second-offset", f"{spec['second_offset_m'][0]:.6g}", f"{spec['second_offset_m'][1]:.6g}",
-                 "--second-material", spec["striker"]]
+                 "--second-material", spec["striker"],
+                 "--second-wait", f"{spec['second_wait_s']:.6g}"]
     return argv
 
 

@@ -20,7 +20,7 @@ ending at 131 pieces. The damage grows with the second strike:
 | **bonds broken, now** | **0** | **585** | **507** | **722** | **860** | **948** |
 | energy removed (J) | 0 | 5.14 | 28.11 | 29.44 | 43.66 | 54.73 |
 | pieces at rest | 55 | 137 | 131 | 169 | 182 | 205 |
-| realtime | 0.71x | 0.95x | 0.98x | 1.03x | 0.94x | 0.92x |
+| realtime | 0.70x | 0.96x | 0.98x | 0.95x | 0.94x | 0.93x |
 
 4 m/s is not a tuned floor: the trigger's own bound for glass struck by iron is
 **4.506 m/s**, the measured closing speed at 4 m/s is 3.97, and nothing is
@@ -30,12 +30,12 @@ material — 8.70 m/s for glass on concrete, 13.75 for oak, 35.60 for iron
 
 **Off by default.** `--refracture off` is the default and runs not one line of
 this: every panel scenario reproduces the `078ae24` binary on **100 of 100
-measurement keys, on all 8 scenes** (section 6). Turning it on costs **3.3%**
-on the 500-cell plate and **9.6%** on the 1 m pane when nothing is admitted, and
-the 1.1x rule holds through every scene above.
+measurement keys, on all 8 scenes** (section 6). Turning it on costs **4.0%**
+on the 500-cell plate and **16.9%** on the 1 m pane when nothing is admitted,
+and the 1.1x rule holds through every scene above.
 
-**Backend parity holds.** Serial CPU, parallel CPU and CUDA agree on **123 of
-123 measurement keys** through a re-entry, the re-fracture event included down
+**Backend parity holds.** Serial CPU, parallel CPU and CUDA agree on **124 of
+124 measurement keys** through a re-entry, the re-fracture event included down
 to the removed energy's last bit (74.74992354716711 J).
 
 `physical_response_validated` stays false. Nothing here calibrates glass; the
@@ -268,29 +268,67 @@ no event behind.
 
 ---
 
-## 4. The one place matter is moved, and why
+## 4. The two places matter is moved, and why
 
-The rigid solver tolerates a penetration the lattice's support projection does
-not. On an infinite plane the projection is unconditional (`fast-gpu`
-section 2.8 keeps the CPU rule there deliberately), so a cell centre that starts
-below the floor is teleported back up **through its bonds** — the mechanism that
-injected kilojoules before the finite-footprint rule existed. Measured on a
-settled fragment before this was handled: an entry penetration of **2.53 mm** of
-a 10 mm cell, and a window that removed **2,922 J** of bond energy from a scene
-holding 15 J.
+The rigid representation and the lattice do not agree about where a body's
+surface is, and where they disagree the conversion has to choose. Both
+disagreements were found the same way: by running the identical strike as a
+FIRST lattice phase and comparing.
 
-The conversion therefore lifts the island out of the floor by exactly the
-measured penetration before building the lattice. A rigid translation changes no
-momentum, no kinetic energy and no internal state; it changes gravitational
-potential by `m g dz`, and `entry_support_penetration_m` is reported for every
-event. A lift larger than half a cell is refused instead of applied. **No
-fragment is given a velocity, an impulse or a spin anywhere in this lane**;
-this is the only position change, it is bounded, and it is reported. On every
-scene in this checkpoint the measured lift was 0.000 mm, because the rollback
-catches the contact at first touch rather than after Jolt has pressed the piece
-into the ground.
+### 4.1 The piece is lifted out of its supports
 
----
+On an infinite plane the lattice's support projection is unconditional
+(`fast-gpu` section 2.8 keeps the CPU rule there deliberately), so a cell centre
+that starts below the floor is teleported back up **through its bonds** — the
+mechanism that injected kilojoules before the finite-footprint rule existed. A
+finite footprint (a ledge) caps the projection's reach at
+`8 |approach| dt + 10 um`, which protects a node at REST but stops protecting it
+as soon as the approach speed rises — which is exactly what a second strike
+does.
+
+Measured, before this was handled: a settled fragment entered 2.53 mm into the
+ground of a 10 mm cell and its window removed **2,922 J** of bond energy from a
+15 J scene; an intact iron plate resting on ledges, struck at 20 m/s, removed
+**361 kJ** from a 422 J scene, where the same plate struck at 20 m/s in the
+first phase breaks no bond at all.
+
+The conversion therefore measures the penetration against **every upward-facing
+support plane, footprints respected**, and lifts the island by it before
+building the lattice.
+
+### 4.2 The striker is backed off until it just touches
+
+Jolt's collision proxy for a fragment is the convex hull of at most 192 sampled
+cell corners (`FragmentBuildSettings::maximum_collision_points`), and that hull
+sits INSIDE the true box of cells. So the rigid solver lets a striker reach a
+depth the lattice's node-sphere contact would never have allowed, and lets a
+piece sink into the floor further than its cells do. Measured on an intact iron
+plate: the ball is **1.36 mm** inside when the contact is reported, and the
+plate lying flat is **5.5 mm** into the ground.
+
+Handing that overlap to the contact pass is a position correction of millimetres
+in one substep. The striker is therefore backed off along the contact normal,
+iteratively, until it just touches.
+
+### 4.3 What that costs, and what it is not
+
+Both are **rigid translations**: no momentum, no kinetic energy and no internal
+state changes. The lift changes gravitational potential by `m g dz`; the back-off
+costs the striker the microseconds it takes to close the gap again. Both are
+bounded at half a cell and **refused** beyond
+(`refused.support_penetration`, `refused.striker_overlap`), and both are
+reported per event as `entry_support_penetration_m` and
+`entry_striker_backoff_m`. **No fragment is given a velocity, an impulse or a
+spin anywhere in this lane**; these two are the only position changes.
+
+With them, the same intact iron plate struck at 20 m/s removes **177 J** instead
+of 17.9 kJ and the window ledger no longer creates energy. It still breaks 232
+bonds where the first phase at the same speed and place breaks 11, and 81
+against 0 for a mid-span strike: a piece re-entered from Jolt rests where the
+rigid solver left it — tilted by a fraction of a cell, bearing on one edge of a
+ledge rather than flat along it — and that is a different bending problem from
+the one the first phase constructs. The energy scale is right and the outcome is
+sensitive to the resting pose; section 10 keeps that as an open limit.
 
 ## 5. The conservation ledger
 
@@ -343,6 +381,8 @@ engaged — both must vanish, and they do:
 |---|---:|
 | `window_external_impulse_n_s` | **3.4e-11** N s |
 | `window_unaccounted_work_j` | **1.4e-6** J |
+| `exit_momentum_residual_kg_m_s` | 3.5e-18 kg m/s |
+| `exit_energy_residual_j` | **0** J |
 
 and the suite asserts the same thing directly: a 4,000-substep window with no
 gravity, no support and a 30 m/s striker breaks 318 bonds and drifts
@@ -421,7 +461,7 @@ fragment is moved, no velocity is authored, no impulse is applied.
 | the struck piece | 209 cells, intact | **77 pieces** |
 | pieces at rest | 55 | **131** |
 | energy removed by the second strike | 0 J | 28.11 J |
-| realtime | 0.67x | 0.97x |
+| realtime | 0.66x | 0.98-1.04x |
 
 ### 7.2 Hit it again harder
 
@@ -465,26 +505,52 @@ lattice because none did) and one, an 8-cell piece landing at 11.43 m/s, broke
 13 bonds and came apart into 7. One event has partner `striker` at 4.60 m/s —
 0.09 m/s over the bound — and broke nothing.
 
-### 7.4 Cost
+### 7.4 Glass, oak and iron struck twice under identical conditions
+
+The 192-cell tile on ledges, struck by an 80 mm iron ball at 12 m/s, then struck
+again at 20 m/s by an 80 mm iron ball 80 mm off the axis, once the pieces are at
+rest. Same geometry, same striker, same law, same strain-threshold thresholds:
+
+| | glass | oak | iron |
+|---|---:|---:|---:|
+| first strike: bonds / pieces | 1,132 / 78 | 212 / 7 | 0 / 1 |
+| `v*` against iron | 4.51 m/s | 10.98 m/s | 12.27 m/s |
+| hardest contact on a bonded piece | 17.29 m/s | 21.49 m/s | 20.57 m/s |
+| `max_margin` | 3.84 | 1.76 | 1.68 |
+| re-entries admitted | 2 | 1 | 1 |
+| **second strike: bonds broken** | **219** | **403** | **0** |
+| energy removed | 13.71 J | 36.53 J | 0 J |
+| pieces at end | 78 -> **104** | 7 -> **32** | 1 -> **1** |
+| realtime, off / on | 0.70x / 0.72x | 0.15x / 0.45x | 0.55x / 0.60x |
+
+All three are admitted; only two break. Iron's second strike is admitted at a
+margin of 1.68 and the lattice removes no bond — the trigger asks and the
+criterion answers, which is the division of labour the whole design rests on.
+Oak breaks more on the second strike than on the first because the first strike
+at 12 m/s barely reaches its threshold while the second arrives at twice the
+speed on a piece that is now free to move.
+
+### 7.5 Cost
 
 | scene | `--refracture` | simulated | wall | realtime | rule |
 |---|---|---:|---:|---:|---|
-| 500-cell plate, no second strike | off | 2.040 s | 1.978 s | **0.970x** | met |
-| 500-cell plate, no second strike | on | 2.040 s | 2.045 s | **1.002x** | met |
-| 1 m glass pane, 20 m/s | off | 1.055 s | 0.195 s | **0.185x** | met |
-| 1 m glass pane, 20 m/s | on | 1.055 s | 0.214 s | **0.203x** | met |
+| 500-cell plate, no second strike | off | 2.040 s | 1.888 s | **0.925x** | met |
+| 500-cell plate, no second strike | on | 2.040 s | 1.963 s | **0.962x** | met |
+| 1 m glass pane, 20 m/s | off | 1.055 s | 0.185 s | **0.176x** | met |
+| 1 m glass pane, 20 m/s | on | 1.055 s | 0.217 s | **0.205x** | met |
 
-Turning re-fracture on with nothing admitted costs **3.3%** on the plate
-(30,333 trigger evaluations and all 480 rigid steps reversible) and **9.6%** on the pane
-(8,334 evaluations, 223 of its 247 rigid steps reversible). The cost is the reversible trial's
-state save, not the trigger.
+Turning re-fracture on with nothing admitted costs **4.0%** on the plate
+(30,333 trigger evaluations and all 480 rigid steps reversible) and **16.9%** on
+the pane (8,334 evaluations, 223 of its 247 rigid steps reversible). The cost is
+the reversible trial's state save, not the trigger; the pane pays more because
+its rigid phase is short and its 42 bodies make the save relatively dearer.
 
 With a re-entry, one window of 24,750 substeps on a 209-cell fragment costs
-**0.649 s of wall time** and 25.0 ms of simulated time. The whole 3 s scene runs
-at 0.92-1.03x against 0.65-0.73x without it, so a triggered re-entry adds about
-0.3x of the simulated duration and the 1.1x rule still holds on every row of
-section 7.2. The landing scene, with 8 windows on 2-8 cell fragments, runs at
-0.57x.
+**0.685 s of wall time** and 25.0 ms of simulated time. The whole 3 s scene runs
+at **0.92-1.04x** over repeats against 0.65-0.68x without it, so a triggered
+re-entry adds about 0.3x of the simulated duration and the 1.1x rule holds on
+every row of section 7.2 and on every repeat of 7.1. The landing scene, with 8
+windows on 2-8 cell fragments, runs at 0.58x.
 
 ---
 
@@ -496,9 +562,9 @@ excluded:
 
 | | keys | differing |
 |---|---:|---:|
-| serial CPU vs parallel CPU, float | 123 | **0** |
-| serial CPU vs **CUDA**, float | 123 | **0** |
-| serial CPU vs parallel CPU, double | 123 | **0** |
+| serial CPU vs parallel CPU, float | 124 | **0** |
+| serial CPU vs **CUDA**, float | 124 | **0** |
+| serial CPU vs parallel CPU, double | 124 | **0** |
 
 The re-fracture event is identical down to its last bit on all three: 1
 re-entry, 605 broken bonds, 56 pieces out, 74.74992354716711 J removed, and the
@@ -565,26 +631,48 @@ passes.
 3. **The island approximation.** While a fragment is in the lattice the rest of
    the world steps without it, and its own contacts with other pieces during the
    window are not seen. The window is 6 rigid steps at most (25 ms).
-4. **One re-entry per rigid step**, chosen by margin. A scene in which two
+4. **A striker found more than half a cell inside a piece is refused**
+   (`refused.striker_overlap`). The rollback undoes one rigid step, but in a
+   debris field the striker's first contacts are with bondless chips, which the
+   trigger rejects and the world steps through; by the time a bonded piece
+   reports a contact the striker can be deeper than one step's travel. Measured
+   on the panel's plate with a 1 s wait before the second strike: 1 refusal and
+   no re-entry, where the same scene struck 0.4 s earlier admits and breaks 507
+   bonds. The rigid step (1/240 s) is 33 mm of travel at 8 m/s; catching every
+   first contact needs a finer rigid step near a fast striker, which would
+   change the existing lane.
+5. **One re-entry per rigid step**, chosen by margin. A scene in which two
    fragments are struck hard in the same 4.17 ms takes two steps to answer both.
-5. **`runReversibleTrial` caps the world at 256 bodies**, so a scene with more
+6. **`runReversibleTrial` caps the world at 256 bodies**, so a scene with more
    than ~250 pieces refuses every re-entry (`refused.no_rollback`). The 1 m
    pane's 190-piece pulverisation is inside it; a 672-piece scene is not.
-6. **The trigger's factor 2** is the free-surface superposition bound. It is a
+7. **The trigger's factor 2** is the free-surface superposition bound. It is a
    bound, not a calibration, and it makes the lane ask the lattice about
    contacts at half the speed a single-pulse estimate would. Measured on the
    headline scene the price is 1 extra window; on a scene full of near-threshold
    landings it would be more.
-7. **The entry lift** (section 4) is a position change. It is bounded by half a
-   cell, refused beyond, reported per event, and measured at 0.000 mm on every
-   scene here — but it is a change of state at a representation boundary and
-   should be read as such.
-8. **The fragment count is still not converged** (`fast-gpu` section 8 item 4);
+8. **The two entry corrections** (section 4) are position changes. Both are
+   bounded by half a cell, refused beyond and reported per event, and neither
+   changes momentum or kinetic energy — but they are changes of state at a
+   representation boundary and should be read as such. They exist because
+   Jolt's fragment proxy is a decimated convex hull; a proxy that matched the
+   cell box would remove the need for both.
+9. **A re-entered piece is not in the state the first phase would have built.**
+   It rests where the rigid solver left it, which is tilted by a fraction of a
+   cell and bearing on one edge of a support rather than flat along it. On an
+   intact iron plate struck at 20 m/s that is worth 232 broken bonds against the
+   first phase's 11 over a ledge edge, and 81 against 0 at mid-span, at a sane
+   energy scale (177 J and 36 J removed from a 422 J strike). The outcome of a
+   re-entry is therefore sensitive to the resting pose, and no convergence study
+   of that sensitivity has been done. A material claim made from a re-entry
+   should be read as a comparison between materials under the same treatment,
+   not as an absolute.
+10. **The fragment count is still not converged** (`fast-gpu` section 8 item 4);
    section 7.2's 6 -> 8 m/s inversion is that same non-convergence.
-9. **Nothing is calibrated.** The 4.506 m/s bound for glass on iron follows from
+11. **Nothing is calibrated.** The 4.506 m/s bound for glass on iron follows from
    the catalogue's 45 MPa and 70 GPa through the untouched strain-threshold law;
    it is not a measured glass property.
-10. Not done: piece-piece re-entry, an island that carries more than one
+12. Not done: piece-piece re-entry, an island that carries more than one
     fragment, a re-entry triggered by anything other than a Jolt contact, and
     any change to the criterion, the contact rule or the thresholds.
 
@@ -614,7 +702,7 @@ Every scene in section 7, and the `078ae24` comparison of section 6:
 
 ```sh
 python scripts/refracture-scenes.py --group all
-# or one group at a time: unchanged | twice | harder | landing | cost
+# or one group at a time: unchanged | twice | harder | landing | materials | cost
 ```
 
 The headline scene by hand:
@@ -635,6 +723,9 @@ $E --material glass --ball-material iron --tile 0.24 0.04 0.16 --cell 0.02 \
    --ball-radius 0.04 --speed 12 --layout bridge --ledge-height 5.5 --settle-s 2.5 \
    --backend parallel --precision double --cpu-threads 8 --refracture on \
    --report landing-glass.json
+
+# 7.4, glass | oak | iron struck twice under identical conditions
+$E --material glass --ball-material iron --tile 0.24 0.04 0.16 --cell 0.02    --ball-radius 0.04 --speed 12 --layout bridge --settle-s 1.0    --backend parallel --precision double --cpu-threads 8 --refracture on    --second-ball 0.04 --second-material iron --second-speed 20    --second-offset 0.08 0 --second-at rest --second-wait 0.35 --report materials-glass.json
 
 # 8, backend parity (--backend cpu | parallel | gpu)
 build/cuda/banjo_fast_lattice_run.exe --material glass --ball-material iron \
@@ -665,11 +756,12 @@ New flags, all with the previous behaviour as the default:
 | `--second-wait S` | give up waiting for rest after S seconds (default 1) |
 | `--cpu-threads N` | parallel backend worker threads (0: calibrate to the machine's load). The backend is bit identical at every thread count, so this fixes only the speed |
 
-`playground/fracture_lab.py` gains `refracture`, `second_speed_m_s`,
-`second_ball_m` and `second_offset_m`, all defaulting to off/zero, and emits no
-new flag unless asked: the default command line is byte for byte the one this
-lane has always run. Three scenarios were added (`glass-twice`,
-`glass-twice-before`, `glass-twice-harder`).
+`playground/fracture_lab.py` gains those fields, all defaulting to off/zero, and
+emits no new flag unless asked: the default command line is byte for byte the one this
+lane has always run. Five fields were added — `refracture`, `second_speed_m_s`, `second_ball_m`,
+`second_offset_m` and `second_wait_s` — and three scenarios (`glass-twice`,
+`glass-twice-before`, `glass-twice-harder`), which reproduce section 7.1's
+numbers exactly (523 / 55, then 0 against 507, and 948 at 20 m/s).
 
 ---
 
@@ -695,6 +787,11 @@ than adding these run directories.
   - case 1: glass, 8 windows on landing, 13 bonds broken;
   - case 2: oak, the same drop, margin 0.77, nothing admitted;
   - case 3: iron, which does not break in the first strike either.
+- **Struck twice: glass, oak and iron under identical conditions** —
+  `http://127.0.0.1:8765/?job=00349d930e354e1a9ee759fd1b14f136`
+  - case 1: glass, 1,132 bonds then 219 more, 78 -> 104 pieces;
+  - case 2: oak, 212 then 403, 7 -> 32 pieces;
+  - case 3: iron, admitted at margin 1.68 and still 0 bonds, 1 piece.
 
 Verified in a browser: job `5e7e65bc...` opens on the 3D Playback tab, the case
 selector switches between the before and after recordings, and the frame
