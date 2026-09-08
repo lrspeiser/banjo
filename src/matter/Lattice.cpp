@@ -110,16 +110,14 @@ struct GridCoordHash {
     return inertia;
 }
 
-// Bonds and adjacency for any grid-indexed node set. Every rule here (horizon
-// radius, rest length, horizon-weighted compliance, seeded strength variation)
-// is the sphere lattice's; the box lattice calls the same function.
 void buildBonds(
     LatticeAsset &asset,
     const std::unordered_map<GridCoord, std::uint32_t, GridCoordHash> &node_by_grid,
-    const CompiledBrittleMaterial &material) {
-    const SphereRecipe &recipe = asset.recipe;
+    const CompiledBrittleMaterial &material,
+    unsigned neighbor_horizon_cells) {
+    const double voxel_size_m = asset.recipe.voxel_size_m;
     const int horizon =
-        static_cast<int>(recipe.neighbor_horizon_cells);
+        static_cast<int>(neighbor_horizon_cells);
     for (std::uint32_t node_index = 0;
          node_index < asset.nodes.size();
          ++node_index) {
@@ -150,7 +148,7 @@ void buildBonds(
 
                     const std::uint32_t other_index = found->second;
                     const double rest_length =
-                        grid_distance * recipe.voxel_size_m;
+                        grid_distance * voxel_size_m;
                     const double horizon_weight =
                         1.0 / std::max(1.0, grid_distance * grid_distance);
                     const double variation = signedVariation(
@@ -175,6 +173,9 @@ void buildBonds(
         }
     }
 
+}
+
+void buildAdjacency(LatticeAsset &asset) {
     std::vector<std::uint32_t> degree(asset.nodes.size(), 0U);
     for (const BondRest &bond : asset.bonds) {
         ++degree[bond.node_a];
@@ -276,7 +277,8 @@ LatticeAsset generateSphereLattice(
         asset.rest_center_of_mass_m,
         recipe.voxel_size_m);
 
-    buildBonds(asset, node_by_grid, material);
+    buildBonds(asset, node_by_grid, material, recipe.neighbor_horizon_cells);
+    buildAdjacency(asset);
     return asset;
 }
 
@@ -284,30 +286,41 @@ LatticeAsset generateBoxLattice(
     const BoxRecipe &recipe,
     const CompiledBrittleMaterial &material) {
     if (recipe.cells_x == 0U || recipe.cells_y == 0U || recipe.cells_z == 0U ||
-        !(recipe.voxel_size_m > 0.0) || recipe.neighbor_horizon_cells == 0U ||
-        !(material.density_kg_m3 > 0.0)) {
-        throw std::invalid_argument("box recipe needs positive cell counts, size and density");
+        !std::isfinite(recipe.voxel_size_m) || recipe.voxel_size_m <= 0.0 ||
+        recipe.neighbor_horizon_cells == 0U) {
+        throw std::invalid_argument("box recipe needs positive cell counts, cell size and horizon");
     }
-    if (static_cast<std::uint64_t>(recipe.cells_x) * recipe.cells_y * recipe.cells_z > 1000000ULL) {
-        throw std::invalid_argument("box lattice cell budget exceeded");
+    if (static_cast<std::uint64_t>(recipe.cells_x) * recipe.cells_y * recipe.cells_z > 4000000ULL) {
+        throw std::invalid_argument("box recipe exceeds the lattice node budget");
     }
+    if (!(material.density_kg_m3 > 0.0)) {
+        throw std::invalid_argument("box lattice needs a positive density");
+    }
+
     LatticeAsset asset;
-    const double h = recipe.voxel_size_m;
-    const Vec3 half_extent{0.5 * recipe.cells_x * h, 0.5 * recipe.cells_y * h, 0.5 * recipe.cells_z * h};
-    asset.recipe = SphereRecipe{length(half_extent), h, recipe.neighbor_horizon_cells, 1U};
-    const double voxel_volume = h * h * h;
+    const Vec3 half_extent{
+        0.5 * recipe.cells_x * recipe.voxel_size_m,
+        0.5 * recipe.cells_y * recipe.voxel_size_m,
+        0.5 * recipe.cells_z * recipe.voxel_size_m,
+    };
+    asset.recipe = {length(half_extent), recipe.voxel_size_m, recipe.neighbor_horizon_cells, 1U};
+    const double voxel_volume = recipe.voxel_size_m * recipe.voxel_size_m * recipe.voxel_size_m;
     std::unordered_map<GridCoord, std::uint32_t, GridCoordHash> node_by_grid;
-    for (unsigned z = 0; z < recipe.cells_z; ++z) {
-        for (unsigned y = 0; y < recipe.cells_y; ++y) {
-            for (unsigned x = 0; x < recipe.cells_x; ++x) {
+    node_by_grid.reserve(static_cast<std::size_t>(recipe.cells_x) * recipe.cells_y * recipe.cells_z);
+
+    for (int z = 0; z < static_cast<int>(recipe.cells_z); ++z) {
+        for (int y = 0; y < static_cast<int>(recipe.cells_y); ++y) {
+            for (int x = 0; x < static_cast<int>(recipe.cells_x); ++x) {
                 const Vec3 center{
-                    (static_cast<double>(x) + 0.5) * h - half_extent.x,
-                    (static_cast<double>(y) + 0.5) * h - half_extent.y,
-                    (static_cast<double>(z) + 0.5) * h - half_extent.z,
+                    (static_cast<double>(x) + 0.5) * recipe.voxel_size_m - half_extent.x,
+                    (static_cast<double>(y) + 0.5) * recipe.voxel_size_m - half_extent.y,
+                    (static_cast<double>(z) + 0.5) * recipe.voxel_size_m - half_extent.z,
                 };
-                const bool surface = x == 0U || y == 0U || z == 0U ||
-                    x + 1U == recipe.cells_x || y + 1U == recipe.cells_y || z + 1U == recipe.cells_z;
-                const GridCoord grid{static_cast<int>(x), static_cast<int>(y), static_cast<int>(z)};
+                const bool surface = x == 0 || y == 0 || z == 0 ||
+                    x + 1 == static_cast<int>(recipe.cells_x) ||
+                    y + 1 == static_cast<int>(recipe.cells_y) ||
+                    z + 1 == static_cast<int>(recipe.cells_z);
+                const GridCoord grid{x, y, z};
                 node_by_grid.emplace(grid, static_cast<std::uint32_t>(asset.nodes.size()));
                 asset.nodes.push_back({center, grid, voxel_volume, surface});
                 asset.represented_volume_m3 += voxel_volume;
@@ -321,8 +334,9 @@ LatticeAsset generateBoxLattice(
     }
     asset.rest_center_of_mass_m = weighted_center / asset.total_mass_kg;
     asset.rest_inertia_kg_m2 = calculateRestInertia(
-        asset.nodes, material.density_kg_m3, asset.rest_center_of_mass_m, h);
-    buildBonds(asset, node_by_grid, material);
+        asset.nodes, material.density_kg_m3, asset.rest_center_of_mass_m, recipe.voxel_size_m);
+    buildBonds(asset, node_by_grid, material, recipe.neighbor_horizon_cells);
+    buildAdjacency(asset);
     return asset;
 }
 

@@ -3,6 +3,7 @@
 #include "core/Plane.hpp"
 #include "physics/SphereMaterialContact.hpp"
 #include <limits>
+#include <vector>
 
 namespace banjo {
 
@@ -26,6 +27,13 @@ struct ConservativeStepSettings {
     // Solve unilateral material/plane support within the global Newton system.
     // False retains the alternating support-impulse iteration for comparison.
     bool global_support_solve{true};
+    // Optional per-node support eligibility, one flag per node. When set, only
+    // flagged nodes can rest on the support plane; the others pass through it
+    // as if the plane had a hole there, which is how a tile resting on a frame
+    // is expressed. Null keeps every node eligible, the behaviour every
+    // existing caller relies on. This changes which nodes a contact can act
+    // on, never the contact law or any acceptance budget.
+    const std::vector<bool> *support_node_mask{};
 };
 
 struct ConservativeStepResult {

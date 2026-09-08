@@ -60,12 +60,13 @@ struct LatticeAsset {
     const SphereRecipe &recipe,
     const CompiledBrittleMaterial &material);
 
-// A uniform-cube box lattice: every cell fully occupied, so every node carries
-// the same mass and the surface-node mass spread of the sampled sphere cannot
-// occur. Bond rules (horizon, rest lengths, compliance per horizon weight,
-// strength variation seed) are exactly those of generateSphereLattice, so a
-// material compiled for one applies unchanged to the other. Cells are indexed
-// (x, y, z) with the box centred on the origin; node index = x + nx*(y + ny*z).
+// A uniform cubic-cell box: cells_x by cells_y by cells_z cells of one size,
+// every cell fully occupied, centred on the lattice origin. The bonds follow
+// exactly the sphere generator's rules (same horizon, same compliance weights,
+// same strength variation), so a solver that runs on a sphere lattice runs on a
+// box lattice unchanged and two lanes fed the same recipe see the same bonds.
+// Full occupancy also means every node carries the same mass, which removes
+// the surface-cell mass spread the sphere sampling produces.
 struct BoxRecipe {
     unsigned cells_x{};
     unsigned cells_y{};

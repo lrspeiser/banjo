@@ -91,9 +91,14 @@ void detail::validateConservativeState(const ActiveMatter &matter, double dt, co
         std::abs(dot(settings.support->tangent_world,settings.support->bitangent_world)) > 1e-12))
         throw std::invalid_argument("support requires a finite point and orthonormal frame");
     const std::size_t count = matter.nodes.size();
+    if (settings.support_node_mask && settings.support_node_mask->size() != count)
+        throw std::invalid_argument("support node mask needs one flag per node");
     const auto on_support = [&](Vec3 position) {
         return settings.support && insideSupportFootprint(*settings.support, position,
             settings.support_half_tangent_m, settings.support_half_bitangent_m);
+    };
+    const auto eligible = [&](std::size_t i) {
+        return !settings.support_node_mask || (*settings.support_node_mask)[i];
     };
     for (std::size_t i = 0; i < count; ++i) {
         const auto &node = matter.nodes[i];
@@ -101,7 +106,7 @@ void detail::validateConservativeState(const ActiveMatter &matter, double dt, co
             !finite(node.spin_angular_velocity_rad_s) ||
             !std::isfinite(node.mass_kg) || node.mass_kg <= 0)
             throw std::invalid_argument("conservative reference requires finite positive-mass nodes");
-        if (!allow_compression && on_support(node.position_world_m) && signedDistanceToPlane(*settings.support, node.position_world_m) < -settings.contact_tolerance_m)
+        if (!allow_compression && eligible(i) && on_support(node.position_world_m) && signedDistanceToPlane(*settings.support, node.position_world_m) < -settings.contact_tolerance_m)
             throw std::invalid_argument("initial material/support overlap needs a valid initial state");
     }
     for (std::size_t i = 0; i < matter.bonds.size(); ++i) {
@@ -144,11 +149,14 @@ ConservativeStepResult detail::tryConservativeStepMasked(ActiveMatter &matter, d
         return settings.support && insideSupportFootprint(*settings.support, position,
             settings.support_half_tangent_m, settings.support_half_bitangent_m);
     };
+    const auto eligible = [&](std::size_t i) {
+        return !settings.support_node_mask || (*settings.support_node_mask)[i];
+    };
     for (std::size_t i = 0; i < count; ++i) {
         inverse_mass[i] = 1 / matter.nodes[i].mass_kg;
         v0[i] = matter.nodes[i].velocity_m_s;
         velocity[i] = v0[i] + dt * gravity;
-        supported[i] = on_support(matter.nodes[i].position_world_m) && (!contacts || contacts->support_nodes[i]);
+        supported[i] = eligible(i) && on_support(matter.nodes[i].position_world_m) && (!contacts || contacts->support_nodes[i]);
     }
     CoupledSphereState candidate_sphere = sphere ? *sphere : CoupledSphereState{};
     const Vec3 sphere_v0 = candidate_sphere.motion.linear_velocity_m_s;
@@ -280,7 +288,7 @@ ConservativeStepResult detail::tryConservativeStepMasked(ActiveMatter &matter, d
         candidate.nodes[i].previous_position_world_m = matter.nodes[i].position_world_m;
         candidate.nodes[i].position_world_m = position(i);
         candidate.nodes[i].velocity_m_s = velocity[i];
-        footprint_unchanged = footprint_unchanged && on_support(position(i)) == on_support(matter.nodes[i].position_world_m);
+        footprint_unchanged = footprint_unchanged && (!eligible(i) || on_support(position(i)) == on_support(matter.nodes[i].position_world_m));
         if (sphere && (!contacts || contacts->sphere_nodes[i])) {
             result.normal_contact_loss_j -= dot(contact_impulses[i], .5 * (v0[i] - sphere_v0 + velocity[i] - sphere_velocity));
             result.maximum_penetration_m = std::max(result.maximum_penetration_m,
