@@ -804,6 +804,21 @@
     $("b-duration-out").textContent = `${Math.round(spec.duration_s * 1000)} ms`;
   }
 
+  // Write the frame the viewer is showing to disk, through the server, because
+  // the page can neither write a file nor reach another origin.
+  async function captureViewerFrame(label) {
+    if (!state.scene || !state.jobId) return showToast("Load a result first.", true);
+    const url = state.scene.captureFrame(1600, 1000);
+    const frame = Number($("viewer-frame").value) || 0;
+    const result = await api("/api/capture", {
+      method: "POST", headers: { "Content-Type": "application/json", ...tokenHeaders() },
+      body: JSON.stringify({ job_id: state.jobId, case_index: state.selectedCase, frame, data_url: url, label: label || "" }),
+    });
+    showToast(`Frame saved: ${result.path}`);
+    return result.path;
+  }
+  window.banjoCaptureFrame = captureViewerFrame;
+
   async function initBuilder() {
     try { builder.meta = await api("/api/builder"); }
     catch (error) { setText($("builder-verdict"), `Builder unavailable: ${error.message}`); return; }
@@ -1065,6 +1080,7 @@
     stopPolling(); clearViewer(); localStorage.removeItem(latestJobStorageKey); state.job = null; state.jobId = null; state.latestPlan = null; state.followup = false; state.messages = []; $("prompt-input").value = ""; renderConversation(); renderJob(null); renderLanguage(); renderResults(); renderViewerCaseSelect(); showToast("New experiment ready. Follow-up context cleared.");
   }
 
+  $("viewer-capture").addEventListener("click", () => captureViewerFrame().catch((error) => showToast(error.message, true)));
   document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click", () => activateTab(tab.dataset.tab)));
   $("chat-form").addEventListener("submit", submitPrompt);
   $("new-experiment").addEventListener("click", resetExperiment);
