@@ -251,7 +251,7 @@ SCENARIOS = [
 ]
 
 LIMITS = {
-    "plate_m": {"min": 0.03, "max": 1.0}, "thickness_m": {"min": 0.002, "max": 0.1},
+    "plate_m": {"min": 0.03, "max": 6.0}, "thickness_m": {"min": 0.002, "max": 0.1},
 # The striker scales with the target: a 200 mm ball is a large projectile
 # for a 250 mm plate and a pebble against a metre of glass. The cell bound
 # rises with it so metre-scale objects can still be meshed coarsely.
@@ -495,6 +495,9 @@ def seat_bodies(bodies: list[dict[str, Any]], cell_m: float) -> list[str]:
     cell_mm = cell_m * 1000
     by_name = {b["name"]: b for b in bodies}
     moved: list[str] = []
+    # Names that no longer need to wait for anything beneath them: a body with
+    # no rest_on is already where it belongs.
+    placed = {b["name"] for b in bodies if not b.get("rest_on")}
     # Several passes so a thing resting on a thing resting on the floor settles
     # in the right order, however the list was written.
     for _ in range(len(bodies)):
@@ -512,8 +515,11 @@ def seat_bodies(bodies: list[dict[str, Any]], cell_m: float) -> list[str]:
                     f"\"{body['name']}\" rests on \"{target}\", which is not in the scene. "
                     f"Use one of: {', '.join(known)}.")
             support = members[0]
-            if support.get("rest_on"):
-                # Seat the support first.
+            # Seat the support first, but only until it has been seated: a body
+            # keeps its rest_on after it is placed, so waiting on the field
+            # rather than on the act left every stack seating only its first
+            # level and then refusing the rest for overlapping.
+            if support.get("rest_on") and support["name"] not in placed:
                 continue
             # A join group is one object, so resting on it means resting on all
             # of it, minus whatever the group cuts away.
@@ -540,9 +546,16 @@ def seat_bodies(bodies: list[dict[str, Any]], cell_m: float) -> list[str]:
                     columns.add((i, k))
             tops = [j for i, j, k in support_cells if (i, k) in columns]
             if not tops:
+                extent = [(min(i for i, _, _ in support_cells) * cell_mm,
+                           (max(i for i, _, _ in support_cells) + 1) * cell_mm),
+                          (min(k for _, _, k in support_cells) * cell_mm,
+                           (max(k for _, _, k in support_cells) + 1) * cell_mm)]
                 raise ValueError(
                     f"\"{body['name']}\" rests on \"{target}\" but stands nowhere over it. "
-                    f"Move it so it is above \"{target}\" in x and z.")
+                    f"\"{target}\" covers x from {extent[0][0]:.0f} to {extent[0][1]:.0f} mm and z from "
+                    f"{extent[1][0]:.0f} to {extent[1][1]:.0f}; \"{body['name']}\" is at x "
+                    f"{body['center_mm'][0]:.0f}, z {body['center_mm'][2]:.0f}. Move it over its support, "
+                    f"or rest it on whatever is actually beneath it.")
             surface = (max(tops) + 1) * cell_mm
             # Its own lowest point below its centre, which a tilt deepens.
             probe = dict(body)
@@ -552,6 +565,9 @@ def seat_bodies(bodies: list[dict[str, Any]], cell_m: float) -> list[str]:
             if abs(wanted - body["center_mm"][1]) > 1e-6:
                 body["center_mm"] = [body["center_mm"][0], wanted, body["center_mm"][2]]
                 moved.append(f"{body['name']} to {wanted:.0f} mm on {target}")
+                changed = True
+            if body["name"] not in placed:
+                placed.add(body["name"])
                 changed = True
         if not changed:
             break
@@ -612,7 +628,8 @@ def check_scene(bodies: list[dict[str, Any]], cell_m: float) -> list[dict[str, A
             report.append({
                 "severity": "error", "code": "below_ground", "object": body["name"],
                 "message": f"\"{body['name']}\" reaches {-bottom:.0f} mm below the ground, which is at "
-                           f"y = 0. Raise it to a height of {needed:.0f} mm."
+                           f"y = 0. Raise it to a height of {needed:.0f} mm, or set rest_on to whatever "
+                           f"it is meant to stand on and let its height be worked out."
                            + (" It is tilted, so its low corner dips further than half its thickness."
                               if tilted else ""),
                 "fix": {"object": body["name"], "center_mm_y": needed}})
@@ -646,13 +663,32 @@ def check_scene(bodies: list[dict[str, Any]], cell_m: float) -> list[dict[str, A
                                f"two become one bonded object."})
                 continue
             lift = b["center_mm"][1] + max(depth, cell_mm)
+            # Which way they are actually inside each other. Two things side by
+            # side are separated by moving one aside, not by stacking them.
+            offsets = [abs(a["center_mm"][k] - b["center_mm"][k]) for k in range(3)]
+            # Standing over something is a resting problem however far to one
+            # side it is: a ball sunk into a wide floor is not fixed by sliding
+            # it along the floor. Only two things that miss each other in plan
+            # are side by side.
+            over = all(offsets[k] <= (a["size_mm"][k] + b["size_mm"][k]) / 2 for k in (0, 2))
+            sideways = not over and max(offsets[0], offsets[2]) > offsets[1]
+            axis_name = "x" if offsets[0] >= offsets[2] else "z"
+            axis = 0 if axis_name == "x" else 2
+            apart = (a["size_mm"][axis] + b["size_mm"][axis]) / 2 + cell_mm
+            toward = 1 if b["center_mm"][axis] >= a["center_mm"][axis] else -1
+            clear = a["center_mm"][axis] + toward * apart
             report.append({
                 "severity": "error", "code": "overlap", "object": a["name"], "other": b["name"],
-                "message": f"\"{a['name']}\" and \"{b['name']}\" both claim {cells} of the same "
-                           f"cells. Nothing settles before a run, so they blow apart "
-                           f"on the first step. Either raise \"{b['name']}\" to a height of {lift:.0f} mm "
-                           f"so it rests on top, or give both the same \"join\" name to fuse them into "
-                           f"one object with the shared cells removed.",
+                "message": (
+                    f"\"{a['name']}\" and \"{b['name']}\" both claim {cells} of the same cells. "
+                    f"Nothing settles before a run, so they blow apart on the first step. "
+                    + (f"They are side by side, so move \"{b['name']}\" to {axis_name} = {clear:.0f} mm "
+                       f"to stand them clear of each other."
+                       if sideways else
+                       f"The reliable fix is to set rest_on to \"{a.get('join') or a['name']}\" on "
+                       f"\"{b['name']}\" and let its height be worked out, or raise it to {lift:.0f} mm.")
+                    + f" If the two are meant to be one object, give them the same \"join\" name "
+                      f"instead and the shared cells are built once."),
                 "fix": {"object": b["name"], "center_mm_y": lift, "or_join": True}})
 
     # Anything with nothing under it starts by falling, which is legitimate but
@@ -808,15 +844,27 @@ def validate(spec: Any) -> dict[str, Any]:
             raise ValueError("only the explicit lattice lane runs a many-object scene")
         lane = ALGORITHMS[result["algorithm"]]
         if result["cells"] > lane["max_cells"]:
-            raise ValueError(f"{result['cells']} cells exceeds this lane's cap of {lane['max_cells']}; "
-                             f"use larger cells or smaller objects.")
+            # Cells go as the cube of one over the cell size, so the size that
+            # would fit is arithmetic rather than something to guess at.
+            ratio = (result["cells"] / lane["max_cells"]) ** (1.0 / 3.0)
+            suggestion = math.ceil(result["cell_m"] * 1000 * ratio / 5.0) * 5.0
+            raise ValueError(
+                f"{result['cells']} cells exceeds this lane's cap of {lane['max_cells']}. "
+                f"Cell size is what decides it and cost goes as its cube: at {suggestion:g} mm "
+                f"instead of {result['cell_m'] * 1000:g} this scene is about "
+                f"{round(result['cells'] / ratio ** 3)} cells. Use a larger cell, or smaller objects.")
         return result
     plate = result["plate_m"]
     if not isinstance(plate, list) or len(plate) != 3:
         raise ValueError("plate_m requires length, width and thickness in metres")
-    result["plate_m"] = [_number(plate[0], LIMITS["plate_m"]["min"], LIMITS["plate_m"]["max"], "plate length"),
-                         _number(plate[1], LIMITS["plate_m"]["min"], LIMITS["plate_m"]["max"], "plate width"),
-                         _number(plate[2], LIMITS["thickness_m"]["min"], LIMITS["thickness_m"]["max"], "plate thickness")]
+    # Length, width, thickness, in that order. Putting the thickness second is
+    # the mistake this names rather than merely refuses.
+    result["plate_m"] = [_number(plate[0], LIMITS["plate_m"]["min"], LIMITS["plate_m"]["max"],
+                                 "plate length (the first of length, width, thickness)"),
+                         _number(plate[1], LIMITS["plate_m"]["min"], LIMITS["plate_m"]["max"],
+                                 "plate width (the second of length, width, thickness)"),
+                         _number(plate[2], LIMITS["thickness_m"]["min"], LIMITS["thickness_m"]["max"],
+                                 "plate thickness (the third number, and the small one)")]
     result["ball_m"] = _number(result["ball_m"], LIMITS["ball_m"]["min"], LIMITS["ball_m"]["max"], "ball diameter")
     if result.get("speed_m_s") is not None:
         result["speed_m_s"] = _number(result["speed_m_s"], LIMITS["speed_m_s"]["min"], LIMITS["speed_m_s"]["max"], "impact speed")

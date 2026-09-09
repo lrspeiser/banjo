@@ -248,3 +248,47 @@ included, because the cap is a cost bound and has to apply to the cost.
 
 The playground preset "Three beads dropped into a bowl" is 1,848 cells and runs
 in 3 s. Glass, oak and iron beads all settle in the bottom.
+
+## Ten scenes through the model, and what they exposed
+
+Ten varied requests, planned only, to see what the model can turn into a scene
+the lab accepts and to read the refusals for patterns rather than patch one
+prompt at a time: a window smashed, a tower knocked over, two balls colliding,
+a see-saw, a brick wall, a funnel, a table, dominoes, an archway, a cup falling
+off a shelf.
+
+| pass | accepted |
+|---|---|
+| as found | 7 of 10 |
+| errors naming the fix, one automatic retry | 8 of 10 |
+| plus the plate order stated | 8 of 10 |
+
+Run-to-run variance is large, so these counts are indicative rather than exact.
+What the failures showed was not.
+
+**A bug of mine.** A stack seated only its first level. Seating waited for a
+body's support to have no `rest_on`, but a body keeps that field after it is
+placed, so the third block of a tower waited forever on the second and was then
+refused for overlapping it. It now waits on the act rather than the field, and a
+five-block tower seats at 100, 180, 260 and 340 mm.
+
+**Errors that name the fix.** The overlap message offered a height and a join;
+the reliable answer is `rest_on`, so it says that first, and it distinguishes
+two things side by side from one sunk into another, which want opposite advice.
+The over-budget message computes the cell size that would fit, since cost goes
+as its cube. "Stands nowhere over it" gives the support's actual extent and the
+body's position.
+
+**One automatic retry.** Every refusal names what to change and the model fixes
+it when told, so the endpoint now hands its own refusal back once rather than
+making the caller relay it. That is the single change worth the most: 7 to 8 of
+10, and the failures it clears are the ones a person would otherwise have to
+read and paraphrase.
+
+**Two limits that did not match.** A plate stopped at 1 m while a scene body
+went to 6, so the same window was buildable one way and refused the other. And
+a wall of thirty bricks ran out of room to answer in, at 4,000 output tokens.
+
+**One thing the model kept getting wrong until told.** The plate's three numbers
+are length, width, thickness, and nothing said so; it put the thickness second
+twice running. The schema and the error now both say the order.

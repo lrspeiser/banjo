@@ -53,6 +53,7 @@ PLAN_SCHEMA = {
         "plasticity": {"type": "string", "enum": list(fracture_lab.PLASTICITY)},
         "bodies": {"type": "array", "items": BODY_SCHEMA},
         # Read only when mode is "plate".
+        # Length along x, width along z, then thickness. Millimetres.
         "plate_mm": {"type": "array", "items": {"type": "number"}},
         "plate_material": {"type": "string", "enum": list(fracture_lab.MATERIALS)},
         "striker_material": {"type": "string", "enum": list(fracture_lab.MATERIALS)},
@@ -153,7 +154,11 @@ that a tilted box reaches higher at one end than its centre, so put what sits on
 it above the surface at that end, not above the centre.
 
 RESTING. Objects do not settle into place before the run; they start exactly
-where you put them. Rather than working out heights yourself, name what an
+where you put them. Do not work out heights yourself. Whenever an object stands
+on anything -- the floor of your own scene, a table, a lane, another block in a
+stack -- set rest_on and leave its y alone. A stack of four blocks is four
+bodies each resting on the one below it, named in order; working their heights
+out by hand is the single commonest way these scenes are refused. Name what an
 object stands on: set "rest_on" to that object's name and its height is computed
 from the surface directly beneath it. Use this for everything that sits on
 something else, and always on a tilted or stepped surface, where the right
@@ -176,7 +181,11 @@ at 6 m/s cracks a 10 mm glass plate; 12 m/s breaks it apart.
 
 TWO KINDS OF SCENE. mode "objects" is a list of bodies that fall on each other,
 and is what almost every request wants. mode "plate" is the older single target
-struck by one ball; use it only when asked for exactly that. Fill in the fields
+struck by one ball; use it only when asked for exactly that. Its plate_mm is
+length along x, width along z, and thickness last, in that order: a 1000 by 800
+window 10 mm thick is [1000, 800, 10], never [1000, 10, 800]. The thickness is
+the small number and it goes last. A plate is 30 to 6000 mm on its first two
+numbers and 2 to 100 mm thick. Fill in the fields
 of the mode you did not choose with sensible values anyway, and make cell_mm
 divide every side of whichever one you did choose: a 10 mm plate needs a 10 mm
 or 5 mm cell, not a 20 mm one.
@@ -252,7 +261,7 @@ def ask_model(api_key: str, model: str, message: str, spec: dict[str, Any] | Non
     context = {"request": message,
                "current_scene": spec if spec else None,
                "earlier_turns": history[-6:]}
-    payload = {"model": model, "store": False, "max_output_tokens": 4000,
+    payload = {"model": model, "store": False, "max_output_tokens": 12000,
                "reasoning": {"effort": "low"},
                "input": [{"role": "system", "content": SYSTEM},
                          {"role": "user", "content": json.dumps(context, allow_nan=False)}],
@@ -307,11 +316,28 @@ def plan(app: Any, body: Any) -> dict[str, Any]:
                      for h in history if isinstance(h, dict)]
 
     raw_plan, wall = ask_model(app.api_key, app.model, message, body.get("spec"), clean_history)
-    spec = _spec_from_plan(raw_plan, body.get("spec"))
     # The one gate. Whatever the model asked for, this is what decides whether it
     # can be built, using exactly the rules the manual controls are held to.
-    validated = fracture_lab.validate(spec)
-    return {"explanation": str(raw_plan.get("explanation", ""))[:600],
+    try:
+        validated = fracture_lab.validate(_spec_from_plan(raw_plan, body.get("spec")))
+        retried = ""
+    except ValueError as first:
+        # Every refusal names what to change, and the model fixes them when it is
+        # told. Handing that message back to the caller to relay costs a round
+        # trip for something that can be done here, once.
+        history = clean_history + [
+            {"role": "assistant", "text": json.dumps(raw_plan)[:600]},
+            {"role": "refusal", "text": str(first)[:2000]}]
+        follow = (f"{message}\n\nThat scene was refused. Fix exactly these faults and change "
+                  f"nothing else:\n{first}")
+        raw_plan, second_wall = ask_model(app.api_key, app.model, follow, body.get("spec"), history)
+        wall += second_wall
+        try:
+            validated = fracture_lab.validate(_spec_from_plan(raw_plan, body.get("spec")))
+        except ValueError as second:
+            raise ValueError(f"{second}\n\n(Tried twice; the first attempt was refused for: {first})") from None
+        retried = " It was refused once and corrected."
+    return {"explanation": str(raw_plan.get("explanation", ""))[:600] + retried,
             "mode": raw_plan["mode"],
             "spec": validated,
             "planning_wall_s": round(wall, 3)}
