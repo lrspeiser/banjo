@@ -22,6 +22,7 @@
 #include <Jolt/Physics/Collision/Shape/OffsetCenterOfMassShape.h>
 #include <Jolt/Physics/Constraints/FixedConstraint.h>
 #include <Jolt/Physics/Constraints/DistanceConstraint.h>
+#include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
 #include <Jolt/Physics/PhysicsSystem.h>
@@ -1156,6 +1157,19 @@ void JoltWorld::addFragments(
             } else if (fragment.primitive == FragmentPrimitive::Box) {
                 authored = new JPH::BoxShape(toJolt(fragment.primitive_dimensions_m / 2), 0.0F);
             }
+            // A tilted slab collides as a tilted slab, not as the staircase its
+            // cells make, so a ball rolls down a ramp instead of bouncing on
+            // every step of it.
+            if (authored != nullptr) {
+                const auto &q = fragment.primitive_rotation_wxyz;
+                if (q[1] != 0.0 || q[2] != 0.0 || q[3] != 0.0) {
+                    authored = new JPH::RotatedTranslatedShape(
+                        JPH::Vec3::sZero(),
+                        JPH::Quat(static_cast<float>(q[1]), static_cast<float>(q[2]),
+                                  static_cast<float>(q[3]), static_cast<float>(q[0])).Normalized(),
+                        authored);
+                }
+            }
             JPH::ConvexHullShapeSettings hull_settings(
                 hull_points.data(),
                 static_cast<int>(hull_points.size()),
@@ -1181,8 +1195,12 @@ void JoltWorld::addFragments(
                 toJoltPosition(
                     fragment.mass_properties.center_of_mass_world_m),
                 JPH::Quat::sIdentity(),
-                JPH::EMotionType::Dynamic,
-                Layers::kMoving);
+                // Scenery is static: a ramp, a table or a wall has nothing under
+                // it and otherwise falls to the ground, taking whatever was
+                // resting on it with it. Only a whole authored body is ever
+                // anchored; break it and its pieces are ordinary dynamic ones.
+                fragment.anchored ? JPH::EMotionType::Static : JPH::EMotionType::Dynamic,
+                fragment.anchored ? Layers::kNonMoving : Layers::kMoving);
             settings.mFriction =
                 static_cast<float>(contact.dynamic_friction);
             settings.mRestitution =
@@ -1198,6 +1216,7 @@ void JoltWorld::addFragments(
             settings.mMaxAngularVelocity = 1000.0F;
             settings.mUserData = fragment.body_id;
             settings.mMotionQuality = JPH::EMotionQuality::LinearCast;
+            if (!fragment.anchored) {
             settings.mOverrideMassProperties =
                 JPH::EOverrideMassProperties::MassAndInertiaProvided;
             settings.mMassPropertiesOverride.mMass =
@@ -1205,6 +1224,7 @@ void JoltWorld::addFragments(
             settings.mMassPropertiesOverride.mInertia =
                 toJoltInertia(
                     fragment.mass_properties.inertia_world_kg_m2);
+            }
 
             JPH::Body *body = body_interface.CreateBody(settings);
             if (body == nullptr) {

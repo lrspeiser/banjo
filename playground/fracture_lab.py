@@ -240,7 +240,10 @@ FIELDS = {"algorithm", "ball_m", "bodies", "cell_m", "clearance_m", "drop_m", "d
 
 def _number(value: Any, low: float, high: float, label: str) -> float:
     if type(value) not in (int, float) or not math.isfinite(value) or not low <= value <= high:
-        raise ValueError(f"{label} must be a finite number in [{low}, {high}]")
+        # Say what was given, not only what was wanted. A caller told the bound
+        # but not the value has to guess which of its numbers was the problem.
+        raise ValueError(f"{label} is {value!r}, and must be a finite number "
+                         f"between {low:g} and {high:g}")
     return float(value)
 
 
@@ -250,13 +253,15 @@ def _number(value: Any, low: float, high: float, label: str) -> float:
 # Only the lattice phase can break anything and it ends about this long after
 # the last failure. Anything that arrives later can push but not crack.
 FRACTURE_WINDOW_S = 0.02
+# Errors are listed one per line so a reader, human or model, sees them all.
+NEWLINE = chr(10)
 MATERIAL_COLORS = {"glass": "9fd3ffff", "oak": "c9a06aff", "iron": "d0d4dcff",
                    "concrete": "8a8f99ff", "ceramic": "efe6d8ff", "ice": "bfe9f5ff"}
 SHAPES = {"box": "a rectangular block", "sphere": "a ball"}
 # A scene is capped by objects and by total cells: the cells are what costs, the
 # object count is what keeps a scene readable and the Jolt handoff inside its
 # contact caches.
-BODY_LIMITS = {"bodies": 250, "size_mm": (5.0, 2000.0), "center_mm": (-3000.0, 3000.0),
+BODY_LIMITS = {"bodies": 250, "size_mm": (5.0, 6000.0), "center_mm": (-8000.0, 8000.0),
                "velocity_m_s": (-600.0, 600.0), "name": 40}
 
 
@@ -298,6 +303,17 @@ def normalise_bodies(bodies: Any, cell_m: float) -> list[dict[str, Any]]:
             size = [size[0], size[0], size[0]]
         center = triple("center_mm", *BODY_LIMITS["center_mm"])
         velocity = triple("velocity_m_s", *BODY_LIMITS["velocity_m_s"])
+        # Tilt, in degrees about the body's own centre. Without it a ramp has to
+        # be a staircase of boxes, which collide with each other and with
+        # whatever stands on them.
+        rotation = triple("rotation_deg", -180.0, 180.0) if "rotation_deg" in body else [0.0, 0.0, 0.0]
+        # Scenery: a ramp, a table or a wall has nothing under it and otherwise
+        # falls to the ground taking whatever rested on it.
+        anchored = bool(body.get("anchored", False))
+        # What this stands on, by name. Its height is then computed from that
+        # object's actual surface underneath it, which is the one number a
+        # caller cannot work out for a tilted or stepped surface.
+        rest_on = str(body.get("rest_on", ""))[:BODY_LIMITS["name"]].strip()
         # An extent that is not a whole number of cells is refused by the
         # generator, so it is snapped here and the panel is told what will run.
         built = [max(1, round(v / 1000.0 / cell_m)) * cell_m * 1000.0 for v in size]
@@ -317,7 +333,8 @@ def normalise_bodies(bodies: Any, cell_m: float) -> list[dict[str, Any]]:
         horizontal = math.hypot(velocity[0], velocity[2])
         rolls = bool(body.get("roll", False)) or (shape == "sphere" and horizontal > 0.0)
         out.append({"name": name, "shape": shape, "material": material, "join": join,
-                    "roll": rolls,
+                    "roll": rolls, "rotation_deg": rotation, "anchored": anchored,
+                    "rest_on": rest_on,
                     "size_mm": [round(v, 3) for v in built],
                     "requested_size_mm": [round(v, 3) for v in size],
                     "center_mm": center, "velocity_m_s": velocity,
@@ -349,61 +366,118 @@ def _overlap_mm(a: dict[str, Any], b: dict[str, Any]) -> float:
     return max(0.0, min(gaps))
 
 
-def _intersection_cells(a: dict[str, Any], b: dict[str, Any], cell_mm: float) -> float:
-    """How much of the two objects occupies the same space, in cells."""
-    def half(body):
-        return [v / 2 for v in body["size_mm"]]
-
-    ca, cb = a["center_mm"], b["center_mm"]
-    ha, hb = half(a), half(b)
-    if a["shape"] == "sphere" and b["shape"] == "sphere":
-        d = math.dist(ca, cb)
-        ra, rb = ha[0], hb[0]
-        if d >= ra + rb:
-            return 0.0
-        if d <= abs(ra - rb):
-            small = min(ra, rb)
-            return (4.0 / 3.0 * math.pi * small ** 3) / cell_mm ** 3
-        # The classic lens of two overlapping spheres.
-        volume = (math.pi * (ra + rb - d) ** 2
-                  * (d * d + 2 * d * rb - 3 * rb * rb + 2 * d * ra + 6 * ra * rb - 3 * ra * ra)
-                  / (12 * d))
-        return volume / cell_mm ** 3
-    if a["shape"] == "sphere" or b["shape"] == "sphere":
-        # A ball against a block: sample the ball's bounding cells. Exact enough
-        # at this resolution and never wrong about whether they touch at all.
-        ball, block = (a, b) if a["shape"] == "sphere" else (b, a)
-        radius = half(ball)[0]
-        centre = ball["center_mm"]
-        box_c, box_h = block["center_mm"], half(block)
-        steps = 12
-        step = 2 * radius / steps
-        inside = 0
-        for i in range(steps):
-            for j in range(steps):
-                for k in range(steps):
-                    q = [centre[0] - radius + (i + 0.5) * step,
-                         centre[1] - radius + (j + 0.5) * step,
-                         centre[2] - radius + (k + 0.5) * step]
-                    if math.dist(q, centre) > radius:
-                        continue
-                    if all(abs(q[m] - box_c[m]) <= box_h[m] for m in range(3)):
-                        inside += 1
-        return inside * step ** 3 / cell_mm ** 3
-    spans = [min(ca[k] + ha[k], cb[k] + hb[k]) - max(ca[k] - ha[k], cb[k] - hb[k]) for k in range(3)]
-    if min(spans) <= 0:
-        return 0.0
-    return spans[0] * spans[1] * spans[2] / cell_mm ** 3
+def _rotate(v: list[float], degrees: list[float], inverse: bool = False) -> list[float]:
+    """x then y then z, degrees. The inverse undoes them in the opposite order."""
+    order = [2, 1, 0] if inverse else [0, 1, 2]
+    p = list(v)
+    for axis in order:
+        a = math.radians(-degrees[axis] if inverse else degrees[axis])
+        c, s = math.cos(a), math.sin(a)
+        if axis == 0:
+            p = [p[0], p[1] * c - p[2] * s, p[1] * s + p[2] * c]
+        elif axis == 1:
+            p = [p[0] * c + p[2] * s, p[1], -p[0] * s + p[2] * c]
+        else:
+            p = [p[0] * c - p[1] * s, p[0] * s + p[1] * c, p[2]]
+    return p
 
 
-def _separation_mm(a: dict[str, Any], b: dict[str, Any]) -> float:
-    """How deep one object is into the other along its shallowest axis, in mm."""
-    def half(body):
-        return [v / 2 for v in body["size_mm"]]
+def body_cell_set(body: dict[str, Any], cell_mm: float) -> set[tuple[int, int, int]]:
+    """The cells this body covers, by the rule the engine builds it with.
 
-    ca, cb, ha, hb = a["center_mm"], b["center_mm"], half(a), half(b)
-    spans = [min(ca[k] + ha[k], cb[k] + hb[k]) - max(ca[k] - ha[k], cb[k] - hb[k]) for k in range(3)]
-    return min(spans)
+    A cell belongs to a body when its centre lies inside the body's shape, tested
+    in the body's own frame so a tilt keeps the true extents and only moves the
+    cells. This is the same question the engine asks, so what is counted here is
+    what will actually be built.
+    """
+    half = [v / 2 for v in body["size_mm"]]
+    centre = body["center_mm"]
+    rotation = body.get("rotation_deg") or [0.0, 0.0, 0.0]
+    sphere = body["shape"] == "sphere"
+    radius = half[0]
+    reach = radius if sphere else math.dist(half, [0, 0, 0])
+    cells: set[tuple[int, int, int]] = set()
+    ranges = []
+    for k in range(3):
+        ranges.append((math.floor((centre[k] - reach) / cell_mm),
+                       math.ceil((centre[k] + reach) / cell_mm)))
+    for i in range(ranges[0][0], ranges[0][1] + 1):
+        for j in range(ranges[1][0], ranges[1][1] + 1):
+            for k in range(ranges[2][0], ranges[2][1] + 1):
+                point = [(i + 0.5) * cell_mm - centre[0],
+                         (j + 0.5) * cell_mm - centre[1],
+                         (k + 0.5) * cell_mm - centre[2]]
+                local = _rotate(point, rotation, inverse=True) if any(rotation) else point
+                inside = (math.dist(local, [0, 0, 0]) <= radius if sphere
+                          else all(abs(local[m]) <= half[m] for m in range(3)))
+                if inside:
+                    cells.add((i, j, k))
+    return cells
+
+
+def _lowest_cell_mm(body: dict[str, Any], cell_mm: float) -> float:
+    """The bottom of the body's lowest cell, which is what the ground sees."""
+    cells = body_cell_set(body, cell_mm)
+    return min(j for _, j, _ in cells) * cell_mm if cells else 0.0
+
+
+def seat_bodies(bodies: list[dict[str, Any]], cell_m: float) -> list[str]:
+    """Place every body that names what it stands on, and say what moved.
+
+    The height an object needs is decided by the surface directly beneath it,
+    which on a tilted or stepped surface is different for every object on it.
+    Working that out is the job of whatever knows the cells, which is here.
+    """
+    cell_mm = cell_m * 1000
+    by_name = {b["name"]: b for b in bodies}
+    moved: list[str] = []
+    # Several passes so a thing resting on a thing resting on the floor settles
+    # in the right order, however the list was written.
+    for _ in range(len(bodies)):
+        changed = False
+        for body in bodies:
+            target = body.get("rest_on")
+            if not target:
+                continue
+            support = by_name.get(target)
+            if support is None or support is body:
+                raise ValueError(f"\"{body['name']}\" rests on \"{target}\", which is not in the scene")
+            if support.get("rest_on"):
+                # Seat the support first.
+                continue
+            support_cells = body_cell_set(support, cell_mm)
+            if not support_cells:
+                continue
+            # The columns this body stands in, from its footprint rather than
+            # from its cells, so the answer does not depend on where it is now.
+            reach = [v / 2 for v in body["size_mm"]]
+            if any(body.get("rotation_deg") or [0, 0, 0]):
+                span = math.dist(reach, [0, 0, 0])
+                reach = [span, span, span]
+            columns = set()
+            for i in range(math.floor((body["center_mm"][0] - reach[0]) / cell_mm),
+                           math.ceil((body["center_mm"][0] + reach[0]) / cell_mm) + 1):
+                for k in range(math.floor((body["center_mm"][2] - reach[2]) / cell_mm),
+                               math.ceil((body["center_mm"][2] + reach[2]) / cell_mm) + 1):
+                    columns.add((i, k))
+            tops = [j for i, j, k in support_cells if (i, k) in columns]
+            if not tops:
+                raise ValueError(
+                    f"\"{body['name']}\" rests on \"{target}\" but stands nowhere over it. "
+                    f"Move it so it is above \"{target}\" in x and z.")
+            surface = (max(tops) + 1) * cell_mm
+            # Its own lowest point below its centre, which a tilt deepens.
+            probe = dict(body)
+            probe["center_mm"] = [body["center_mm"][0], 0.0, body["center_mm"][2]]
+            drop = -_lowest_cell_mm(probe, cell_mm)
+            wanted = round(surface + drop, 3)
+            if abs(wanted - body["center_mm"][1]) > 1e-6:
+                body["center_mm"] = [body["center_mm"][0], wanted, body["center_mm"][2]]
+                moved.append(f"{body['name']} to {wanted:.0f} mm on {target}")
+                changed = True
+        if not changed:
+            break
+    return moved
 
 
 def check_scene(bodies: list[dict[str, Any]], cell_m: float) -> list[dict[str, Any]]:
@@ -422,35 +496,51 @@ def check_scene(bodies: list[dict[str, Any]], cell_m: float) -> list[dict[str, A
     report: list[dict[str, Any]] = []
 
     for body in bodies:
-        bottom = body["center_mm"][1] - body["size_mm"][1] / 2
+        bottom = _lowest_cell_mm(body, cell_mm)
         if bottom < -tolerance:
+            # The height that fixes it is measured from the body's own lowest
+            # cell, so a tilted body is told about the corner that actually dips
+            # rather than about half its height, which is only right when it is
+            # sitting square.
+            needed = body["center_mm"][1] - bottom
+            tilted = any(body.get("rotation_deg") or [0.0, 0.0, 0.0])
             report.append({
                 "severity": "error", "code": "below_ground", "object": body["name"],
-                "message": f"\"{body['name']}\" starts {-bottom:.0f} mm below the ground. The ground is "
-                           f"at y = 0 and center_mm is the middle of an object, so its height must be at "
-                           f"least half its own height, {body['size_mm'][1] / 2:.0f} mm.",
-                "fix": {"object": body["name"], "center_mm_y": body["size_mm"][1] / 2}})
+                "message": f"\"{body['name']}\" reaches {-bottom:.0f} mm below the ground, which is at "
+                           f"y = 0. Raise it to a height of {needed:.0f} mm."
+                           + (" It is tilted, so its low corner dips further than half its thickness."
+                              if tilted else ""),
+                "fix": {"object": body["name"], "center_mm_y": needed}})
 
+    covered = [body_cell_set(b, cell_mm) for b in bodies]
     for i in range(len(bodies)):
         for j in range(i + 1, len(bodies)):
             a, b = bodies[i], bodies[j]
-            cells = _intersection_cells(a, b, cell_mm)
-            if cells <= 0.01:
+            shared = covered[i] & covered[j]
+            cells = len(shared)
+            if cells == 0:
                 continue
             joined = a.get("join") and a.get("join") == b.get("join")
-            depth = _separation_mm(a, b)
+            # How far one has to rise to clear the other, measured column by
+            # column so a tilted surface gives a different answer under each
+            # object rather than one number for all of them.
+            columns = {(i2, k2) for i2, _, k2 in covered[j]}
+            under = [j2 for i2, j2, k2 in covered[i] if (i2, k2) in columns]
+            top_of_a = (max(under) + 1) * cell_mm if under else 0.0
+            bottom_of_b = min(j2 for _, j2, _ in covered[j]) * cell_mm
+            depth = top_of_a - bottom_of_b
             if joined:
                 report.append({
                     "severity": "info", "code": "joined_overlap", "object": a["name"], "other": b["name"],
-                    "message": f"\"{a['name']}\" and \"{b['name']}\" share {cells:.1f} cells and are "
+                    "message": f"\"{a['name']}\" and \"{b['name']}\" share {cells} cells and are "
                                f"joined as \"{a['join']}\", so the shared cells are built once and the "
                                f"two become one bonded object."})
                 continue
-            lift = b["center_mm"][1] + max(depth, 0.0)
+            lift = b["center_mm"][1] + max(depth, cell_mm)
             report.append({
                 "severity": "error", "code": "overlap", "object": a["name"], "other": b["name"],
-                "message": f"\"{a['name']}\" and \"{b['name']}\" occupy {cells:.1f} cells of the same "
-                           f"space, {depth:.0f} mm deep. Nothing settles before a run, so they blow apart "
+                "message": f"\"{a['name']}\" and \"{b['name']}\" both claim {cells} of the same "
+                           f"cells. Nothing settles before a run, so they blow apart "
                            f"on the first step. Either raise \"{b['name']}\" to a height of {lift:.0f} mm "
                            f"so it rests on top, or give both the same \"join\" name to fuse them into "
                            f"one object with the shared cells removed.",
@@ -525,10 +615,15 @@ def check_placement(bodies: list[dict[str, Any]], cell_m: float) -> None:
     errors = [item for item in report if item["severity"] == "error"]
     if not errors:
         return
-    message = errors[0]["message"]
-    if len(errors) > 1:
-        message += f" ({len(errors) - 1} more placement error(s); ask for a scene check to see them all.)"
-    raise ValueError(message)
+    # Every error, not the first one. Each carries the height that fixes it, so
+    # a caller with all of them can repair the scene in one pass; a caller given
+    # one at a time pays a round trip per object, and with a tilted surface
+    # there is an error per object by construction.
+    shown = errors[:16]
+    lines = [f"{len(errors)} placement error(s):"] + [f"  - {item['message']}" for item in shown]
+    if len(errors) > len(shown):
+        lines.append(f"  - and {len(errors) - len(shown)} more of the same kind.")
+    raise ValueError(NEWLINE.join(lines))
 
 
 def scene_document(spec: dict[str, Any]) -> dict[str, Any]:
@@ -540,6 +635,8 @@ def scene_document(spec: dict[str, Any]) -> dict[str, Any]:
                         # Bodies sharing a join name are voxelised onto the shared grid and
                         # unioned: a cell both claim is built once and bonds cross the seam.
                         "join": b["join"],
+                        "rotation_deg": b["rotation_deg"],
+                        "anchored": b["anchored"],
                         # Nothing turns sliding into rolling, so a ball that should roll is
                         # given the spin that goes with its speed.
                         "roll": b["roll"],
@@ -571,6 +668,7 @@ def validate(spec: Any) -> dict[str, Any]:
         result["bodies"] = normalise_bodies(result["bodies"], result["cell_m"])
         result["duration_s"] = _number(result["duration_s"], LIMITS["duration_s"]["min"],
                                        LIMITS["duration_s"]["max"], "duration")
+        result["seated"] = seat_bodies(result["bodies"], result["cell_m"])
         check_placement(result["bodies"], result["cell_m"])
         result["cells"] = sum(b["cells"] for b in result["bodies"])
         result["cells_per_axis"] = [0, 0, 0]
@@ -782,6 +880,7 @@ def summary(report: dict[str, Any], wall_s: float, spec: dict[str, Any]) -> dict
         "bodies": [{"name": b["name"], "shape": b["shape"], "material": b["material"],
                     "size_mm": b["size_mm"], "cells": b["cells"],
                     "join": b.get("join", ""), "roll": b.get("roll", False),
+                    "rotation_deg": b.get("rotation_deg", [0,0,0]), "anchored": b.get("anchored", False),
                     "speed_m_s": round(max(abs(v) for v in b["velocity_m_s"]), 3)}
                    for b in spec.get("bodies", [])],
         "snapped_from_mm": ([round(v * 1000, 1) for v in spec["requested_plate_m"]] if spec.get("snapped") else None),
@@ -894,8 +993,8 @@ def run(app: Any, body: Any) -> dict[str, Any]:
         job.update({"status": "error", "message": case["error"], "error": case["error"]})
     except (ValueError, OSError, json.JSONDecodeError) as exc:
         wall = time.perf_counter() - started
-        case.update({"status": "error", "error": str(exc)[:300], "wall_s": round(wall, 3)})
-        job.update({"status": "error", "message": str(exc)[:300], "error": str(exc)[:300]})
+        case.update({"status": "error", "error": str(exc)[:4000], "wall_s": round(wall, 3)})
+        job.update({"status": "error", "message": str(exc)[:4000], "error": str(exc)[:4000]})
     (directory / "job.json").write_text(json.dumps(job, indent=2, allow_nan=False), encoding="utf-8")
     with app.lock:
         app.jobs[job_id] = job

@@ -47,6 +47,11 @@ struct RigidFragmentDescription {
     // uses all three extents; Sphere uses x as the diameter.
     FragmentPrimitive primitive{FragmentPrimitive::None};
     Vec3 primitive_dimensions_m{};
+    // The orientation the authored shape sits at, as w, x, y, z. Identity for
+    // anything that was not tilted.
+    double primitive_rotation_wxyz[4]{1.0, 0.0, 0.0, 0.0};
+    // Scenery: created static, so it holds what rests on it.
+    bool anchored{false};
 };
 
 struct DebrisParticleDescription {

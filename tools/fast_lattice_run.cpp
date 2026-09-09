@@ -67,6 +67,8 @@ std::vector<SceneBody> readScene(const std::string &path) {
         // unioned, so a cell both claim is built once and bonds cross the seam.
         body.join = node.value("join", std::string());
         body.spin_rad_s = vector3(node, "spin_rad_s", Vec3{});
+        body.rotation_deg = vector3(node, "rotation_deg", Vec3{});
+        body.anchored = node.value("anchored", false);
         // "roll": true derives the spin that rolls without slipping at the
         // speed already given, which is the sign nobody gets right by hand.
         if (node.value("roll", false)) {

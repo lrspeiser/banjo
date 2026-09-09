@@ -39,6 +39,32 @@ double seconds(Clock::time_point from, Clock::time_point to) {
 }
 
 V3<double> toV3(const Vec3 &v) { return {v.x, v.y, v.z}; }
+
+// x then y then z, degrees. Used to place a tilted body's cells and to
+// orient the shape it collides as, so the two always agree.
+Vec3 rotateDegrees(const Vec3 &v, const Vec3 &degrees) {
+    const double to_rad = std::acos(-1.0) / 180.0;
+    Vec3 p = v;
+    const double cx = std::cos(degrees.x * to_rad), sx = std::sin(degrees.x * to_rad);
+    p = {p.x, p.y * cx - p.z * sx, p.y * sx + p.z * cx};
+    const double cy = std::cos(degrees.y * to_rad), sy = std::sin(degrees.y * to_rad);
+    p = {p.x * cy + p.z * sy, p.y, -p.x * sy + p.z * cy};
+    const double cz = std::cos(degrees.z * to_rad), sz = std::sin(degrees.z * to_rad);
+    p = {p.x * cz - p.y * sz, p.x * sz + p.y * cz, p.z};
+    return p;
+}
+
+// The same rotation as a quaternion, w first.
+void rotationQuaternion(const Vec3 &degrees, double out[4]) {
+    const double h = std::acos(-1.0) / 360.0;
+    const double cx = std::cos(degrees.x * h), sx = std::sin(degrees.x * h);
+    const double cy = std::cos(degrees.y * h), sy = std::sin(degrees.y * h);
+    const double cz = std::cos(degrees.z * h), sz = std::sin(degrees.z * h);
+    out[0] = cz * cy * cx - sz * sy * sx;
+    out[1] = cz * cy * sx + sz * sy * cx;
+    out[2] = cz * sy * cx - sz * cy * sx;
+    out[3] = sz * cy * cx + cz * sy * sx;
+}
 Vec3 toVec3(const V3<double> &v) { return {v.x, v.y, v.z}; }
 
 SupportPlane<double> makePlane(const Vec3 &point, const CombinedContactMaterial &contact, double node_radius) {
@@ -260,7 +286,9 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
             // generator has always had. The staircase it leaves on the surface
             // costs nothing now that a whole body collides as the shape it was
             // authored as.
-            const bool voxelised = group.size() > 1 || body.shape == BodyShape::Sphere;
+            const bool tilted = body.rotation_deg.x != 0.0 || body.rotation_deg.y != 0.0 ||
+                                body.rotation_deg.z != 0.0;
+            const bool voxelised = group.size() > 1 || body.shape == BodyShape::Sphere || tilted;
             if (voxelised) {
                 // Voxelise every shape in the group onto the one shared grid
                 // and take the union. A cell two shapes both claim appears
@@ -273,11 +301,14 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
                         ? Vec3{0.5 * part.dimensions_m.x, 0.5 * part.dimensions_m.x, 0.5 * part.dimensions_m.x}
                         : Vec3{0.5 * part.dimensions_m.x, 0.5 * part.dimensions_m.y, 0.5 * part.dimensions_m.z};
                     const double radius = 0.5 * part.dimensions_m.x;
-                    const auto lo = [&](double centre, double h) {
-                        return static_cast<int>(std::floor((centre - h) / r.cell_size_m));
+                    // A tilted box reaches further than its own half extents,
+                    // so the search covers its diagonal.
+                    const double reach = length(half);
+                    const auto lo = [&](double centre, double) {
+                        return static_cast<int>(std::floor((centre - reach) / r.cell_size_m));
                     };
-                    const auto hi = [&](double centre, double h) {
-                        return static_cast<int>(std::ceil((centre + h) / r.cell_size_m));
+                    const auto hi = [&](double centre, double) {
+                        return static_cast<int>(std::ceil((centre + reach) / r.cell_size_m));
                     };
                     for (int gx = lo(part.center_m.x, half.x); gx <= hi(part.center_m.x, half.x); ++gx)
                     for (int gy = lo(part.center_m.y, half.y); gy <= hi(part.center_m.y, half.y); ++gy)
@@ -285,11 +316,15 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
                         const Vec3 centre{(gx + 0.5) * r.cell_size_m,
                                           (gy + 0.5) * r.cell_size_m,
                                           (gz + 0.5) * r.cell_size_m};
+                        // Test the cell in the body's own frame, so a tilted
+                        // box keeps its true extents and only its cells change.
+                        const Vec3 local = rotateDegrees(centre - part.center_m,
+                                                         {-part.rotation_deg.x, -part.rotation_deg.y,
+                                                          -part.rotation_deg.z});
                         const bool inside = part.shape == BodyShape::Sphere
-                            ? length(centre - part.center_m) <= radius
-                            : (std::abs(centre.x - part.center_m.x) <= half.x &&
-                               std::abs(centre.y - part.center_m.y) <= half.y &&
-                               std::abs(centre.z - part.center_m.z) <= half.z);
+                            ? length(local) <= radius
+                            : (std::abs(local.x) <= half.x && std::abs(local.y) <= half.y &&
+                               std::abs(local.z) <= half.z);
                         if (inside) cells.push_back({gx, gy, gz});
                     }
                 }
@@ -768,6 +803,8 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
             fragment.primitive = body.shape == BodyShape::Sphere ? FragmentPrimitive::Sphere
                                                                  : FragmentPrimitive::Box;
             fragment.primitive_dimensions_m = body.dimensions_m;
+            rotationQuaternion(body.rotation_deg, fragment.primitive_rotation_wxyz);
+            fragment.anchored = body.anchored;
         }
     }
     m.rigid_fragments = build.rigid_fragments.size();

@@ -57,6 +57,17 @@ struct SceneBody {
     // meant to roll has to be given the spin that goes with its speed,
     // which for rolling without slipping along +x is -v/radius about z.
     Vec3 spin_rad_s{};
+    // Rotation about the body's own centre at t = 0, degrees, applied x then y
+    // then z. Without it every object is axis aligned and a ramp has to be
+    // built as a staircase of boxes, which collide with each other and with
+    // whatever stands on them. A tilted body is voxelised through its rotation
+    // and collides as a rotated box rather than as the staircase its cells make.
+    Vec3 rotation_deg{};
+    // Held in place: scenery rather than an object. A ramp, a table or a
+    // wall has nothing under it and otherwise simply falls to the ground,
+    // taking whatever was resting on it. An anchored body still collides
+    // and can still be broken; it just does not move.
+    bool anchored{false};
     std::uint32_t color_rgba{0x9fd3ffffU};
     // Bodies sharing a non-empty join name become one object. Their shapes are
     // voxelised onto the shared cell grid and unioned, so a cell both claim is

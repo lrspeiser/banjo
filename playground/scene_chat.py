@@ -32,8 +32,12 @@ BODY_SCHEMA = {
         "center_mm": {"type": "array", "items": {"type": "number"}},
         "velocity_m_s": {"type": "array", "items": {"type": "number"}},
         "join": {"type": "string"},
+        "rotation_deg": {"type": "array", "items": {"type": "number"}},
+        "anchored": {"type": "boolean"},
+        "rest_on": {"type": "string"},
     },
-    "required": ["name", "shape", "material", "size_mm", "center_mm", "velocity_m_s", "join"],
+    "required": ["name", "shape", "material", "size_mm", "center_mm", "velocity_m_s", "join",
+                 "rotation_deg", "anchored", "rest_on"],
 }
 
 PLAN_SCHEMA = {
@@ -116,8 +120,29 @@ turns sliding into rolling by itself. You do not have to ask for it. Do note
 that a rolling ball travels a long way before it stops, so put what it should
 hit within reach rather than at the far end of a long lane.
 
+ANCHORED SCENERY. An object with nothing under it falls, and that includes the
+thing you meant to be the floor. Set "anchored": true on anything that is
+scenery rather than a participant: a lane, a table, a ramp, a wall, a pier. An
+anchored body does not move, still collides, and still breaks if hit hard
+enough. Ordinary objects that are meant to fall or be knocked over stay
+unanchored.
+
+TILT. "rotation_deg" turns a body about its own centre, x then y then z. Use it
+for a ramp rather than building a staircase of boxes: a stack of steps collides
+with itself and with whatever stands on it, and a ball bounces down it instead
+of rolling. A ramp is one anchored box with a rotation of a few degrees. Note
+that a tilted box reaches higher at one end than its centre, so put what sits on
+it above the surface at that end, not above the centre.
+
 RESTING. Objects do not settle into place before the run; they start exactly
-where you put them. Put anything meant to be resting so it just touches what
+where you put them. Rather than working out heights yourself, name what an
+object stands on: set "rest_on" to that object's name and its height is computed
+from the surface directly beneath it. Use this for everything that sits on
+something else, and always on a tilted or stepped surface, where the right
+height is different for every object along the slope and is the commonest thing
+to get wrong. Place the object over its support in x and z; only y is decided
+for you. Leave "rest_on" empty for anything standing on the ground or falling
+through the air. Put anything meant to be resting so it just touches what
 holds it, or it will start by falling. Stack two 60 mm cubes on a 40 mm floor
 slab at y = 20 by placing them at y = 70 and y = 130.
 
@@ -165,7 +190,10 @@ def _spec_from_plan(plan: dict[str, Any], previous: dict[str, Any] | None) -> di
         spec["bodies"] = [{"name": b["name"], "shape": b["shape"], "material": b["material"],
                            "size_mm": list(b["size_mm"]), "center_mm": list(b["center_mm"]),
                            "velocity_m_s": list(b["velocity_m_s"]),
-                           "join": b.get("join", "")}
+                           "join": b.get("join", ""),
+                           "rotation_deg": list(b.get("rotation_deg") or [0.0, 0.0, 0.0]),
+                           "anchored": bool(b.get("anchored", False)),
+                           "rest_on": str(b.get("rest_on", ""))}
                           for b in plan["bodies"]]
     else:
         spec["bodies"] = []
