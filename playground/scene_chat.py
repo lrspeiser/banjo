@@ -32,9 +32,8 @@ BODY_SCHEMA = {
         "center_mm": {"type": "array", "items": {"type": "number"}},
         "velocity_m_s": {"type": "array", "items": {"type": "number"}},
         "join": {"type": "string"},
-        "roll": {"type": "boolean"},
     },
-    "required": ["name", "shape", "material", "size_mm", "center_mm", "velocity_m_s", "join", "roll"],
+    "required": ["name", "shape", "material", "size_mm", "center_mm", "velocity_m_s", "join"],
 }
 
 PLAN_SCHEMA = {
@@ -111,11 +110,11 @@ should meet and give them the same join name. A join takes one material, the
 first body's, so do not join a wooden handle to an iron blade and expect the
 handle to be wood.
 
-ROLLING. Nothing in the engine turns sliding into rolling: friction slows a body
-down and applies no torque to it, so a ball given only a linear velocity slides
-the whole way without ever turning. Set "roll": true on a sphere that should
-roll and the spin that goes with its speed is worked out for it. A rolling ball
-also travels much further than a sliding one, so aim accordingly.
+ROLLING. A sphere given a horizontal velocity is rolled for you: the spin that
+goes with its speed is worked out and applied, because nothing in the engine
+turns sliding into rolling by itself. You do not have to ask for it. Do note
+that a rolling ball travels a long way before it stops, so put what it should
+hit within reach rather than at the far end of a long lane.
 
 RESTING. Objects do not settle into place before the run; they start exactly
 where you put them. Put anything meant to be resting so it just touches what
@@ -166,7 +165,7 @@ def _spec_from_plan(plan: dict[str, Any], previous: dict[str, Any] | None) -> di
         spec["bodies"] = [{"name": b["name"], "shape": b["shape"], "material": b["material"],
                            "size_mm": list(b["size_mm"]), "center_mm": list(b["center_mm"]),
                            "velocity_m_s": list(b["velocity_m_s"]),
-                           "join": b.get("join", ""), "roll": bool(b.get("roll", False))}
+                           "join": b.get("join", "")}
                           for b in plan["bodies"]]
     else:
         spec["bodies"] = []

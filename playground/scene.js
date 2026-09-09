@@ -910,13 +910,20 @@ function create(container, hooks = {}) {
   // control that turns it off is next to the scene.
   const kLatticeFrameMs = 110;
   let holdFracture = true;
+  // Whether this recording contains a failure at all.
+  const anyFailure = () => frames.some((f) => (f.fracture_count || 0) > 0);
   const delay = () => {
     if (continuum) return 150;
     const real =
       Number.isFinite(frames[frame]?.time_s) && frames[frame + 1]?.time_s > frames[frame].time_s
         ? (frames[frame + 1].time_s - frames[frame].time_s) * 1000
         : 120;
-    if (!holdFracture || frames[frame]?.phase !== "lattice") return real;
+    // Only where something actually breaks. A run that breaks no bonds has no
+    // fracture to slow down, and holding its opening frames shows a motionless
+    // scene for the better part of a second and then snaps to full speed: a
+    // bowling ball that "starts slow and then rockets to the pins" is this, not
+    // the physics.
+    if (!holdFracture || !anyFailure() || frames[frame]?.phase !== "lattice") return real;
     return Math.max(real, kLatticeFrameMs);
   };
   function loop(now) {
@@ -1031,7 +1038,9 @@ function create(container, hooks = {}) {
     // How much of this recording is the fracture, so the panel can say whether
     // holding it is doing anything.
     get fractureFrames() {
-      return frames.filter((f) => f.phase === "lattice").length;
+      // Frames that are actually being held. A run with no failure holds none,
+      // so the caption does not claim a slowed strike it is not showing.
+      return anyFailure() ? frames.filter((f) => f.phase === "lattice").length : 0;
     },
     // How long the current frame will stay on screen, in milliseconds. The only
     // way to check the hold without waiting on animation frames, which a hidden

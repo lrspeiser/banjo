@@ -137,3 +137,44 @@ conversation. One correcting turn later it planned a scene that passed.
 The run: 12 objects, 3,576 cells, 5.2 seconds. The ball rolls the whole length
 of the lane, turning continuously, and seven pins are down at 0.37 s and all ten
 by 0.62 s. No bonds broke, which is what bowling is.
+
+## Two faults found by playing a bowling game
+
+**"It started slow and then rocketed to the pins."** That was the playback, not
+the physics. Every lattice frame is held for 110 ms so a fracture can be seen,
+and the rigid frames run at true elapsed time. In a bowling run the lattice
+phase is 7 frames covering 20 ms, during which the ball moves 0.0 mm, so the
+first 0.77 s of playback is a motionless scene and then it snaps to full speed.
+Worse, that run broke no bonds at all, so the hold was showing a fracture that
+did not happen. The hold now applies only where a recording contains a failure.
+
+**"Did it roll?"** No.
+
+| the ball as run | measured |
+|---|---|
+| travelled | 10,368 mm |
+| net turn | 2 degrees |
+| a true roll over that distance | 10,041 degrees |
+
+A pure slide. The model had set `roll` to false, and nothing in the engine turns
+sliding into rolling. Asking a model to remember a switch that must be on
+whenever a ball moves is asking it to get something wrong, so the lab decides
+now: a sphere with a horizontal velocity rolls, and `roll` is gone from the
+chat schema.
+
+## Open: the spin arrives at 0.375 of what it should
+
+With rolling on, the same ball turns 6,309 degrees over 17.5 m, so it rolls. But
+it slips the whole way:
+
+| | measured | a true roll needs |
+|---|---|---|
+| speed | 5.97 m/s | |
+| spin | 37.5 rad/s | 100.9 rad/s |
+
+The spin is 37.5 rad/s in the first rigid frame and stays there, so this is not
+friction bleeding it off: it arrives wrong. The ratio 0.375 sits close to 0.4,
+the solid-sphere inertia coefficient, which points at the handoff, where a
+fragment's angular velocity is recovered as `I^-1 L` from its node velocities.
+Not yet diagnosed. The visible consequence is that a rolling ball slips and so
+travels much further than it should before stopping.

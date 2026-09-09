@@ -309,8 +309,15 @@ def normalise_bodies(bodies: Any, cell_m: float) -> list[dict[str, Any]]:
                     f"{name}: a {want:.0f} mm side is not a whole number of {cell_m * 1000:g} mm cells, "
                     f"and the nearest whole number is {got:.0f} mm - too far to substitute.")
         join = str(body.get("join", ""))[:40].strip()
+        # Nothing in either phase turns sliding into rolling: friction slows a body
+        # and applies no torque. A sphere sent along the ground with no spin slides
+        # the whole way, measured at 2 degrees of turn over 10.4 m where a true roll
+        # is 10,041. So a sphere with a horizontal velocity rolls, decided here
+        # rather than asked of the caller, and said out loud in the summary.
+        horizontal = math.hypot(velocity[0], velocity[2])
+        rolls = bool(body.get("roll", False)) or (shape == "sphere" and horizontal > 0.0)
         out.append({"name": name, "shape": shape, "material": material, "join": join,
-                    "roll": bool(body.get("roll", False)),
+                    "roll": rolls,
                     "size_mm": [round(v, 3) for v in built],
                     "requested_size_mm": [round(v, 3) for v in size],
                     "center_mm": center, "velocity_m_s": velocity,
