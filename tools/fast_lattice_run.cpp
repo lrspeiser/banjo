@@ -69,6 +69,8 @@ std::vector<SceneBody> readScene(const std::string &path) {
         body.spin_rad_s = vector3(node, "spin_rad_s", Vec3{});
         body.rotation_deg = vector3(node, "rotation_deg", Vec3{});
         body.anchored = node.value("anchored", false);
+        // Cut this shape out of its join group instead of adding it.
+        body.subtract = node.value("subtract", false);
         // "roll": true derives the spin that rolls without slipping at the
         // speed already given, which is the sign nobody gets right by hand.
         if (node.value("roll", false)) {

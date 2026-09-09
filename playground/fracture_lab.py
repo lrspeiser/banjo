@@ -128,6 +128,21 @@ SCENARIOS = [
     # height for each of them along the slope. The ball is released at rest and
     # rolls: measured 1.2 per cent slip on an 8 degree ramp and an acceleration
     # of 0.97 m/s^2 against the 0.974 a rolling solid sphere gives.
+    # A bowl, which union alone cannot make: an oak sphere with a smaller sphere
+    # and a lid cut out of it, all three in one join group. Anchored, so it is
+    # scenery, and anchored scenery collides as its own cells rather than as a
+    # convex hull, which is what lets a bead fall into it instead of landing on
+    # the rim.
+    {"id": "scene-bowl", "title": "Three beads dropped into a bowl",
+     "expect": "a hollow bowl cut from a sphere; the beads fall in and settle in the bottom",
+     "spec": {"algorithm": "lattice", "failure_law": "strain-threshold", "plasticity": "off",
+              "cell_m": 0.02, "duration_s": 2.5, "bodies": [
+              {"name": "bowl", "shape": "sphere", "material": "oak", "size_mm": [400, 400, 400], "center_mm": [0, 200, 0], "join": "bowl", "anchored": True},
+              {"name": "cavity", "shape": "sphere", "material": "oak", "size_mm": [320, 320, 320], "center_mm": [0, 220, 0], "join": "bowl", "subtract": True},
+              {"name": "open top", "shape": "box", "material": "oak", "size_mm": [600, 200, 600], "center_mm": [0, 420, 0], "join": "bowl", "subtract": True},
+              {"name": "glass bead", "shape": "sphere", "material": "glass", "size_mm": [60, 60, 60], "center_mm": [-110, 460, 0], "velocity_m_s": [0.5, 0.0, 0.0]},
+              {"name": "oak bead", "shape": "sphere", "material": "oak", "size_mm": [60, 60, 60], "center_mm": [110, 460, 0], "velocity_m_s": [-0.5, 0.0, 0.0]},
+              {"name": "iron bead", "shape": "sphere", "material": "iron", "size_mm": [60, 60, 60], "center_mm": [0, 460, -110], "velocity_m_s": [0.0, 0.0, 0.5]}]}},
     {"id": "scene-alley", "title": "A bowling alley on a tilted lane",
      "expect": "the ball is released at rest at the top and rolls the length of the lane into the pins",
      "spec": {"algorithm": "lattice", "failure_law": "strain-threshold", "plasticity": "off",
@@ -338,6 +353,10 @@ def normalise_bodies(bodies: Any, cell_m: float) -> list[dict[str, Any]]:
         # object's actual surface underneath it, which is the one number a
         # caller cannot work out for a tilted or stepped surface.
         rest_on = str(body.get("rest_on", ""))[:BODY_LIMITS["name"]].strip()
+        # Cut this shape out of its join group rather than adding it. Union alone
+        # makes only shapes that bulge; a bowl is a sphere with a cavity and a
+        # lid taken out of it.
+        subtract = bool(body.get("subtract", False))
         # An extent that is not a whole number of cells is refused by the
         # generator, so it is snapped here and the panel is told what will run.
         built = [max(1, round(v / 1000.0 / cell_m)) * cell_m * 1000.0 for v in size]
@@ -358,7 +377,7 @@ def normalise_bodies(bodies: Any, cell_m: float) -> list[dict[str, Any]]:
         rolls = bool(body.get("roll", False)) or (shape == "sphere" and horizontal > 0.0)
         out.append({"name": name, "shape": shape, "material": material, "join": join,
                     "roll": rolls, "rotation_deg": rotation, "anchored": anchored,
-                    "rest_on": rest_on,
+                    "rest_on": rest_on, "subtract": subtract,
                     "size_mm": [round(v, 3) for v in built],
                     "requested_size_mm": [round(v, 3) for v in size],
                     "center_mm": center, "velocity_m_s": velocity,
@@ -504,6 +523,33 @@ def seat_bodies(bodies: list[dict[str, Any]], cell_m: float) -> list[str]:
     return moved
 
 
+def scene_cell_count(bodies: list[dict[str, Any]], cell_m: float) -> int:
+    """How many cells the engine will actually build.
+
+    Counting each body's own cells over-reports a scene badly: a bowl is a
+    sphere with a smaller sphere and a lid cut out of it, and adding the three
+    together says fifteen thousand cells where the engine builds under two. The
+    cap is a cost bound, so it has to be applied to what is built.
+    """
+    cell_mm = cell_m * 1000
+    groups: dict[str, list[dict[str, Any]]] = {}
+    loose = 0
+    for body in bodies:
+        name = body.get("join") or ""
+        if name:
+            groups.setdefault(name, []).append(body)
+        elif not body.get("subtract"):
+            loose += len(body_cell_set(body, cell_mm))
+    total = loose
+    for members in groups.values():
+        add: set[tuple[int, int, int]] = set()
+        cut: set[tuple[int, int, int]] = set()
+        for body in members:
+            (cut if body.get("subtract") else add).update(body_cell_set(body, cell_mm))
+        total += len(add - cut)
+    return total
+
+
 def check_scene(bodies: list[dict[str, Any]], cell_m: float) -> list[dict[str, Any]]:
     """Everything wrong with a scene, at once, in the terms it was written in.
 
@@ -536,7 +582,11 @@ def check_scene(bodies: list[dict[str, Any]], cell_m: float) -> list[dict[str, A
                               if tilted else ""),
                 "fix": {"object": body["name"], "center_mm_y": needed}})
 
-    covered = [body_cell_set(b, cell_mm) for b in bodies]
+    # A subtracted shape is a hole, not an object. It is meant to be inside what
+    # it cuts, so it takes no part in the overlap, ground or support checks.
+    solid = [b for b in bodies if not b.get("subtract")]
+    covered = [body_cell_set(b, cell_mm) for b in solid]
+    bodies = solid
     for i in range(len(bodies)):
         for j in range(i + 1, len(bodies)):
             a, b = bodies[i], bodies[j]
@@ -612,14 +662,31 @@ def check_scene(bodies: list[dict[str, Any]], cell_m: float) -> list[dict[str, A
         speed = math.sqrt(sum(v * v for v in body["velocity_m_s"]))
         if speed <= 0:
             continue
+        # The clear distance to the nearest thing in the way, measured between
+        # the two bodies' cells rather than between guessed boxes, and only
+        # counting what the body is actually heading into.
+        axis = max(range(3), key=lambda k: abs(body["velocity_m_s"][k]))
+        forward = 1 if body["velocity_m_s"][axis] > 0 else -1
+        mine = covered[bodies.index(body)]
+        others = [(k, (0, 1, 2)[k]) for k in range(3) if k != axis]
+        my_span = {tuple(sorted((c[o[0]] for o in others))) for c in
+                   [(x, y, z) for x, y, z in mine]} if False else {
+            (c[others[0][0]], c[others[1][0]]) for c in mine}
+        my_edge = (max(c[axis] for c in mine) if forward > 0 else min(c[axis] for c in mine))
         gap = None
-        for other in bodies:
+        for index, other in enumerate(bodies):
             if other is body:
                 continue
-            depth = _separation_mm(body, other)
-            clearance = -depth
-            if clearance >= 0 and (gap is None or clearance < gap):
-                gap = clearance
+            theirs = covered[index]
+            ahead = [c[axis] for c in theirs
+                     if (c[others[0][0]], c[others[1][0]]) in my_span
+                     and (c[axis] - my_edge) * forward > 0]
+            if not ahead:
+                continue
+            near = min(ahead) if forward > 0 else max(ahead)
+            clearance = abs(near - my_edge) * cell_mm - cell_mm
+            if gap is None or clearance < gap:
+                gap = max(0.0, clearance)
         if gap is None:
             continue
         arrival = gap / 1000.0 / speed
@@ -661,6 +728,7 @@ def scene_document(spec: dict[str, Any]) -> dict[str, Any]:
                         "join": b["join"],
                         "rotation_deg": b["rotation_deg"],
                         "anchored": b["anchored"],
+                        "subtract": b["subtract"],
                         # Nothing turns sliding into rolling, so a ball that should roll is
                         # given the spin that goes with its speed.
                         "roll": b["roll"],
@@ -694,7 +762,7 @@ def validate(spec: Any) -> dict[str, Any]:
                                        LIMITS["duration_s"]["max"], "duration")
         result["seated"] = seat_bodies(result["bodies"], result["cell_m"])
         check_placement(result["bodies"], result["cell_m"])
-        result["cells"] = sum(b["cells"] for b in result["bodies"])
+        result["cells"] = scene_cell_count(result["bodies"], result["cell_m"])
         result["cells_per_axis"] = [0, 0, 0]
         result["plate_m"] = [0.0, 0.0, 0.0]
         result["requested_plate_m"] = [0.0, 0.0, 0.0]

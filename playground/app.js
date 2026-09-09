@@ -830,13 +830,16 @@
   function defaultBody(index) {
     return { name: `object ${index + 1}`, shape: "box", material: "glass",
              size_mm: [80, 40, 80], center_mm: [0, 40 + index * 60, 0], velocity_m_s: [0, 0, 0],
-             rotation_deg: [0, 0, 0], anchored: false, rest_on: "", join: "" };
+             rotation_deg: [0, 0, 0], anchored: false, rest_on: "", join: "", subtract: false };
   }
 
   function sceneCellCount() {
     const cell = Number($("f-cell").value) / 1000;
     if (!(cell > 0)) return 0;
+    // A cut adds nothing and a join shares cells, so this is an upper bound for
+    // a scene using either. The server counts exactly what will be built.
     return scene.bodies.reduce((total, body) => {
+      if (body.subtract) return total;
       const [x, y, z] = body.size_mm.map((v) => v / 1000);
       if (body.shape === "sphere") {
         const r = x / 2;
@@ -910,6 +913,14 @@
           renderScene(); fractureCells();
         }, 0.1));
       });
+
+      const role = document.createElement("span");
+      role.className = "muted";
+      role.style.fontSize = ".6rem";
+      role.textContent = [body.subtract ? "cuts" : "", body.anchored ? "anchored" : "",
+                          body.join ? `joined: ${body.join}` : "",
+                          body.rest_on ? `on ${body.rest_on}` : ""].filter(Boolean).join(", ");
+      if (role.textContent) row.append(role);
 
       const remove = document.createElement("button");
       remove.type = "button"; remove.className = "scene-remove"; remove.textContent = "Remove";
@@ -1175,7 +1186,7 @@
         size_mm: b.size_mm.slice(), center_mm: b.center_mm.slice(),
         velocity_m_s: b.velocity_m_s.slice(),
         rotation_deg: (b.rotation_deg || [0, 0, 0]).slice(),
-        anchored: Boolean(b.anchored), rest_on: b.rest_on || "", join: b.join || "",
+        anchored: Boolean(b.anchored), rest_on: b.rest_on || "", join: b.join || "", subtract: Boolean(b.subtract),
       })) : [],
     };
   }
@@ -1285,7 +1296,7 @@
           center_mm: (b.center_mm || [0, 0, 0]).slice(),
           velocity_m_s: (b.velocity_m_s || [0, 0, 0]).slice(),
           rotation_deg: (b.rotation_deg || [0, 0, 0]).slice(),
-          anchored: Boolean(b.anchored), rest_on: b.rest_on || "", join: b.join || "",
+          anchored: Boolean(b.anchored), rest_on: b.rest_on || "", join: b.join || "", subtract: Boolean(b.subtract),
         }))
       : [];
     if ($("f-mode")) $("f-mode").value = scene.bodies.length ? "objects" : "plate";

@@ -212,3 +212,39 @@ Known blemish: tall thin pins seated exactly on a tilted lane settle in the
 first half second, and four of ten are over before the ball arrives. A gentler
 three degree lane drops that to two, but the ball then stops short of them. Not
 diagnosed.
+
+## A bowl, which needed cutting and a non-convex collision
+
+Asked for a bowl with beads dropped into it, and refused for a placement error.
+The refusal was right, and behind it were two things a bowl needs that nothing
+else so far had.
+
+**Cutting.** Union alone makes only shapes that bulge. A body in a join group
+with `subtract` set is cut out of the group instead of added, so a bowl is a
+sphere, a smaller sphere inside it and a box over the top, all sharing one join
+name with the last two subtracting. A cup, a pipe, an arch and a room are the
+same idea. A subtracted body contributes no material and no mass, and takes no
+part in the overlap, ground or support checks: it is a hole, and it is meant to
+be inside what it cuts.
+
+**A collision shape that can be concave.** A fragment collides as the convex
+hull of its cells, and a hull cannot be concave, so the first bowl was hollow in
+the lattice and solid to the touch. A bead dropped into the middle landed on the
+rim at 350 mm. Anchored scenery now collides as a compound of one box per cell,
+which is the shape it actually is; static geometry has no reason to be convex.
+Dynamic pieces keep the hull, where a convex approximation is both reasonable
+for a tumbling fragment and far cheaper.
+
+| bead dropped from 460 mm | before | after |
+|---|---|---|
+| into the bowl | landed on the rim, or rolled off to the ground at 30 mm | settles at 110 mm, inside |
+| beside the bowl | 30 mm, the ground | 30 mm, the ground |
+
+Two smaller things fell out of it. Anchoring was only being applied to
+single-shape bodies, so a bowl made of three could not be scenery and fell over.
+And the cell count summed each body's own cells, which said 15,376 for a bowl
+the engine builds with 1,848; the count now mirrors what is built, union and cut
+included, because the cap is a cost bound and has to apply to the cost.
+
+The playground preset "Three beads dropped into a bowl" is 1,848 cells and runs
+in 3 s. Glass, oak and iron beads all settle in the bottom.

@@ -68,6 +68,13 @@ struct SceneBody {
     // taking whatever was resting on it. An anchored body still collides
     // and can still be broken; it just does not move.
     bool anchored{false};
+    // Cut this shape out of its join group instead of adding it. A bowl is a
+    // sphere with a smaller sphere and a box taken out of it; a pipe is a
+    // cylinder of boxes with a hole down the middle. Union alone can only make
+    // shapes that bulge, and a bowl is the first thing anyone asks for that
+    // does not. A subtracted body contributes no material and no mass; it only
+    // says which cells are not there.
+    bool subtract{false};
     std::uint32_t color_rgba{0x9fd3ffffU};
     // Bodies sharing a non-empty join name become one object. Their shapes are
     // voxelised onto the shared cell grid and unioned, so a cell both claim is

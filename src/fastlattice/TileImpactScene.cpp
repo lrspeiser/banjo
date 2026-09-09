@@ -26,6 +26,8 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <set>
+#include <tuple>
 #include <vector>
 
 namespace banjo::fastlattice {
@@ -265,7 +267,12 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
         }
         s.part_bodies = groups;
         for (const std::vector<std::size_t> &group : groups) {
-        const SceneBody &body = r.bodies[group.front()];
+        // The group takes its material and its name from the first body that
+        // adds material, never from one that only cuts.
+        std::size_t lead = group.front();
+        for (const std::size_t index : group)
+            if (!r.bodies[index].subtract) { lead = index; break; }
+        const SceneBody &body = r.bodies[lead];
             MaterialDefinition definition = makeReferenceMaterial(body.material, r.material_seed);
             definition.failure_law = r.failure_law;
             if (r.hardening_ratio >= 0.0) definition.hardening_ratio = r.hardening_ratio;
@@ -295,6 +302,7 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
                 // once: that is what removing the overlap means here, and it is
                 // what lets bonds cross the seam and make them one object.
                 std::vector<GridCoord> cells;
+                std::vector<GridCoord> removed;
                 for (const std::size_t index : group) {
                     const SceneBody &part = r.bodies[index];
                     const Vec3 half = part.shape == BodyShape::Sphere
@@ -325,11 +333,27 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
                             ? length(local) <= radius
                             : (std::abs(local.x) <= half.x && std::abs(local.y) <= half.y &&
                                std::abs(local.z) <= half.z);
-                        if (inside) cells.push_back({gx, gy, gz});
+                        if (!inside) continue;
+                        if (part.subtract) removed.push_back({gx, gy, gz});
+                        else cells.push_back({gx, gy, gz});
                     }
                 }
+                if (!removed.empty()) {
+                    // What is cut is cut wherever it lands, so the order the
+                    // bodies were written in does not change the shape.
+                    // An ordered set of plain triples: this needs no hash and
+                    // borrows no type from the generators.
+                    std::set<std::tuple<int, int, int>> gone;
+                    for (const GridCoord &c : removed) gone.emplace(c.x, c.y, c.z);
+                    std::vector<GridCoord> kept;
+                    kept.reserve(cells.size());
+                    for (const GridCoord &c : cells)
+                        if (!gone.contains({c.x, c.y, c.z})) kept.push_back(c);
+                    cells.swap(kept);
+                }
                 if (cells.empty())
-                    throw std::invalid_argument("joined group \"" + body.join + "\" covers no cells");
+                    throw std::invalid_argument("joined group \"" + body.join +
+                                                "\" has nothing left after what it cuts away");
                 asset = generateVoxelLattice({std::move(cells), r.cell_size_m, r.neighbor_horizon_cells},
                                              compiled);
             } else {
@@ -798,13 +822,21 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
             bool whole = part_size[part] == component.node_indices.size();
             for (const std::uint32_t node : component.node_indices)
                 if (setup.part_of_node[node] != part) { whole = false; break; }
-            if (!whole || setup.part_bodies[part].size() != 1) continue;
-            const SceneBody &body = r.bodies[setup.part_bodies[part].front()];
+            if (!whole) continue;
+            // Anchoring belongs to the group, however many shapes made it: a
+            // bowl is three shapes joined and is still scenery. Only the
+            // authored collision primitive needs a single shape, because a
+            // union is not a box or a sphere.
+            const SceneBody &lead = r.bodies[setup.part_bodies[part].front()];
+            fragment.anchored = lead.anchored;
+            for (const std::size_t index : setup.part_bodies[part])
+                if (r.bodies[index].anchored) fragment.anchored = true;
+            if (setup.part_bodies[part].size() != 1) continue;
+            const SceneBody &body = lead;
             fragment.primitive = body.shape == BodyShape::Sphere ? FragmentPrimitive::Sphere
                                                                  : FragmentPrimitive::Box;
             fragment.primitive_dimensions_m = body.dimensions_m;
             rotationQuaternion(body.rotation_deg, fragment.primitive_rotation_wxyz);
-            fragment.anchored = body.anchored;
         }
     }
     m.rigid_fragments = build.rigid_fragments.size();

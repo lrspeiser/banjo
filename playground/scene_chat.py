@@ -35,9 +35,10 @@ BODY_SCHEMA = {
         "rotation_deg": {"type": "array", "items": {"type": "number"}},
         "anchored": {"type": "boolean"},
         "rest_on": {"type": "string"},
+        "subtract": {"type": "boolean"},
     },
     "required": ["name", "shape", "material", "size_mm", "center_mm", "velocity_m_s", "join",
-                 "rotation_deg", "anchored", "rest_on"],
+                 "rotation_deg", "anchored", "rest_on", "subtract"],
 }
 
 PLAN_SCHEMA = {
@@ -104,6 +105,15 @@ space blow apart on the first step, because nothing settles and the engine has
 to undo the interpenetration all at once. This is the single commonest way to
 produce a scene that detonates. Every object must either rest on top of what
 holds it or stand clear of it.
+
+HOLLOW THINGS. A body in a join group with "subtract": true is cut out of the
+group rather than added to it. Union alone makes only shapes that bulge, so this
+is the only way to build anything hollow or concave: a bowl is a sphere, a
+smaller sphere inside it and a box over the top, all three sharing one join
+name, with the last two subtracting. A cup, a pipe, an arch and a room are the
+same idea. Anchor a hollow thing that is meant to hold something, because
+anchored scenery collides as its own cells; an unanchored one collides as the
+solid shape its outside describes, and things land on it rather than in it.
 
 The exception is a deliberate join. Give two bodies the same "join" name and
 their shapes are voxelised onto the shared grid and unioned: a cell both claim
@@ -207,7 +217,8 @@ def _spec_from_plan(plan: dict[str, Any], previous: dict[str, Any] | None) -> di
                            "join": b.get("join", ""),
                            "rotation_deg": list(b.get("rotation_deg") or [0.0, 0.0, 0.0]),
                            "anchored": bool(b.get("anchored", False)),
-                           "rest_on": str(b.get("rest_on", ""))}
+                           "rest_on": str(b.get("rest_on", "")),
+                           "subtract": bool(b.get("subtract", False))}
                           for b in plan["bodies"]]
     else:
         spec["bodies"] = []

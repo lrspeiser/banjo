@@ -1182,8 +1182,28 @@ void JoltWorld::addFragments(
                     "Jolt could not build a fragment convex hull: " +
                     std::string(error.begin(), error.end()));
             }
+            // Anchored scenery collides as its actual cells. A convex hull
+            // cannot be concave, so a bowl built by cutting a cavity out of a
+            // sphere is hollow in the lattice and solid to the touch: a bead
+            // dropped into it lands on the rim. Static geometry has no reason to
+            // be convex, so it becomes a compound of one box per cell, which is
+            // the shape it really is. Dynamic pieces keep the hull, where a
+            // convex approximation is both reasonable for a tumbling fragment
+            // and far cheaper.
+            JPH::RefConst<JPH::Shape> concrete;
+            if (fragment.anchored && !fragment.voxel_centers_local_m.empty() &&
+                fragment.voxel_size_m > 0.0) {
+                JPH::StaticCompoundShapeSettings compound;
+                const JPH::RefConst<JPH::Shape> cell = new JPH::BoxShape(
+                    JPH::Vec3::sReplicate(static_cast<float>(0.5 * fragment.voxel_size_m)), 0.0F);
+                for (const Vec3 &centre : fragment.voxel_centers_local_m)
+                    compound.AddShape(toJolt(centre), JPH::Quat::sIdentity(), cell.GetPtr());
+                const JPH::ShapeSettings::ShapeResult built = compound.Create();
+                if (built.IsValid()) concrete = built.Get();
+            }
             const JPH::RefConst<JPH::Shape> inner_shape =
-                authored != nullptr ? authored : hull_result.Get();
+                concrete != nullptr ? concrete
+                                    : (authored != nullptr ? authored : hull_result.Get());
             const JPH::RefConst<JPH::Shape> centered_shape =
                 new JPH::OffsetCenterOfMassShape(
                     inner_shape.GetPtr(), -inner_shape->GetCenterOfMass());
