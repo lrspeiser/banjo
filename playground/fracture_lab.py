@@ -293,7 +293,8 @@ FRACTURE_WINDOW_S = 0.02
 NEWLINE = chr(10)
 MATERIAL_COLORS = {"glass": "9fd3ffff", "oak": "c9a06aff", "iron": "d0d4dcff",
                    "concrete": "8a8f99ff", "ceramic": "efe6d8ff", "ice": "bfe9f5ff"}
-SHAPES = {"box": "a rectangular block", "sphere": "a ball"}
+SHAPES = {"box": "a rectangular block", "sphere": "a ball",
+          "cone": "a round shape, top diameter by height by bottom diameter"}
 # A scene is capped by objects and by total cells: the cells are what costs, the
 # object count is what keeps a scene readable and the Jolt handoff inside its
 # contact caches.
@@ -334,9 +335,12 @@ def normalise_bodies(bodies: Any, cell_m: float) -> list[dict[str, Any]]:
             if not isinstance(value, list) or len(value) != 3:
                 raise ValueError(f"{name}: {key} needs three numbers")
             return [_number(v, low, high, f"{name} {key}") for v in value]
-        size = triple("size_mm", *BODY_LIMITS["size_mm"])
+        low = 0.0 if shape == "cone" else BODY_LIMITS["size_mm"][0]
+        size = triple("size_mm", low, BODY_LIMITS["size_mm"][1])
         if shape == "sphere":
             size = [size[0], size[0], size[0]]
+        if shape == "cone" and not (size[1] > 0 and max(size[0], size[2]) > 0):
+            raise ValueError(f"{name}: a cone needs a height and at least one end with a width")
         center = triple("center_mm", *BODY_LIMITS["center_mm"])
         # Most objects are at rest, so an absent velocity means at rest rather
         # than an error.
@@ -360,8 +364,10 @@ def normalise_bodies(bodies: Any, cell_m: float) -> list[dict[str, Any]]:
         # An extent that is not a whole number of cells is refused by the
         # generator, so it is snapped here and the panel is told what will run.
         built = [max(1, round(v / 1000.0 / cell_m)) * cell_m * 1000.0 for v in size]
-        if shape == "sphere":
-            built = [size[0], size[0], size[0]]
+        if shape in ("sphere", "cone"):
+            # A round shape is cut from cells rather than tiled by them, so its
+            # dimensions are used as given and never snapped.
+            built = list(size)
         for axis, (want, got) in enumerate(zip(size, built)):
             if abs(got - want) > 0.2 * want:
                 raise ValueError(
@@ -437,7 +443,11 @@ def body_cell_set(body: dict[str, Any], cell_mm: float) -> set[tuple[int, int, i
     centre = body["center_mm"]
     rotation = body.get("rotation_deg") or [0.0, 0.0, 0.0]
     sphere = body["shape"] == "sphere"
+    cone = body["shape"] == "cone"
     radius = half[0]
+    if cone:
+        widest = max(body["size_mm"][0], body["size_mm"][2]) / 2
+        half = [widest, half[1], widest]
     reach = radius if sphere else math.dist(half, [0, 0, 0])
     cells: set[tuple[int, int, int]] = set()
     ranges = []
@@ -451,8 +461,19 @@ def body_cell_set(body: dict[str, Any], cell_mm: float) -> set[tuple[int, int, i
                          (j + 0.5) * cell_mm - centre[1],
                          (k + 0.5) * cell_mm - centre[2]]
                 local = _rotate(point, rotation, inverse=True) if any(rotation) else point
-                inside = (math.dist(local, [0, 0, 0]) <= radius if sphere
-                          else all(abs(local[m]) <= half[m] for m in range(3)))
+                if sphere:
+                    inside = math.dist(local, [0, 0, 0]) <= radius
+                elif cone:
+                    # Width runs from the bottom diameter to the top one, so an
+                    # upside-down cone is simply a wider top.
+                    height = body["size_mm"][1]
+                    inside = False
+                    if abs(local[1]) <= height / 2:
+                        t = (local[1] + height / 2) / height if height else 0.0
+                        r = (body["size_mm"][2] + t * (body["size_mm"][0] - body["size_mm"][2])) / 2
+                        inside = math.hypot(local[0], local[2]) <= r
+                else:
+                    inside = all(abs(local[m]) <= half[m] for m in range(3))
                 if inside:
                     cells.add((i, j, k))
     return cells
@@ -482,13 +503,27 @@ def seat_bodies(bodies: list[dict[str, Any]], cell_m: float) -> list[str]:
             target = body.get("rest_on")
             if not target:
                 continue
-            support = by_name.get(target)
-            if support is None or support is body:
-                raise ValueError(f"\"{body['name']}\" rests on \"{target}\", which is not in the scene")
+            members = [b for b in bodies if b["name"] == target or (b.get("join") or "") == target]
+            members = [b for b in members if b is not body and not b.get("subtract")]
+            if not members:
+                known = sorted({b["name"] for b in bodies if b is not body}
+                               | {b["join"] for b in bodies if b.get("join")})
+                raise ValueError(
+                    f"\"{body['name']}\" rests on \"{target}\", which is not in the scene. "
+                    f"Use one of: {', '.join(known)}.")
+            support = members[0]
             if support.get("rest_on"):
                 # Seat the support first.
                 continue
-            support_cells = body_cell_set(support, cell_mm)
+            # A join group is one object, so resting on it means resting on all
+            # of it, minus whatever the group cuts away.
+            support_cells: set[tuple[int, int, int]] = set()
+            for member in members:
+                support_cells |= body_cell_set(member, cell_mm)
+            if members[0].get("join"):
+                for other in bodies:
+                    if other.get("subtract") and (other.get("join") or "") == members[0]["join"]:
+                        support_cells -= body_cell_set(other, cell_mm)
             if not support_cells:
                 continue
             # The columns this body stands in, from its footprint rather than

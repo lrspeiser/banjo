@@ -40,13 +40,19 @@ enum class NodeContactMode : std::uint8_t { Off, Measure, On };
 //
 // Every body in a scene shares the request's cell size, because the solver's
 // contact radius and support offset are one number for the whole lattice.
-enum class BodyShape : std::uint8_t { Box, Sphere };
+// Box, ball, and a round shape whose width changes with height: dimensions are
+// the top diameter, the height and the bottom diameter, so one shape covers a
+// cone, a funnel, a cylinder and everything between. A bowl shaped like an
+// upside-down cone is one of these with a narrower one cut out of it.
+enum class BodyShape : std::uint8_t { Box, Sphere, Cone };
 
 struct SceneBody {
     std::string name{"body"};
     BodyShape shape{BodyShape::Box};
     MaterialPreset material{MaterialPreset::Glass};
     // Box: the three extents. Sphere: x is the diameter, y and z are ignored.
+    // Cone: x is the diameter at the top, y the height, z the diameter at the
+    // bottom.
     Vec3 dimensions_m{0.1, 0.1, 0.1};
     Vec3 center_m{};      // where its centre of mass sits at t = 0
     Vec3 velocity_m_s{};  // what it is already doing at t = 0

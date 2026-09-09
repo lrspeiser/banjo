@@ -295,7 +295,7 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
             // authored as.
             const bool tilted = body.rotation_deg.x != 0.0 || body.rotation_deg.y != 0.0 ||
                                 body.rotation_deg.z != 0.0;
-            const bool voxelised = group.size() > 1 || body.shape == BodyShape::Sphere || tilted;
+            const bool voxelised = group.size() > 1 || body.shape != BodyShape::Box || tilted;
             if (voxelised) {
                 // Voxelise every shape in the group onto the one shared grid
                 // and take the union. A cell two shapes both claim appears
@@ -305,9 +305,15 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
                 std::vector<GridCoord> removed;
                 for (const std::size_t index : group) {
                     const SceneBody &part = r.bodies[index];
-                    const Vec3 half = part.shape == BodyShape::Sphere
-                        ? Vec3{0.5 * part.dimensions_m.x, 0.5 * part.dimensions_m.x, 0.5 * part.dimensions_m.x}
-                        : Vec3{0.5 * part.dimensions_m.x, 0.5 * part.dimensions_m.y, 0.5 * part.dimensions_m.z};
+                    const double widest = std::max(part.dimensions_m.x, part.dimensions_m.z);
+                    const Vec3 half =
+                        part.shape == BodyShape::Sphere
+                            ? Vec3{0.5 * part.dimensions_m.x, 0.5 * part.dimensions_m.x,
+                                   0.5 * part.dimensions_m.x}
+                        : part.shape == BodyShape::Cone
+                            ? Vec3{0.5 * widest, 0.5 * part.dimensions_m.y, 0.5 * widest}
+                            : Vec3{0.5 * part.dimensions_m.x, 0.5 * part.dimensions_m.y,
+                                   0.5 * part.dimensions_m.z};
                     const double radius = 0.5 * part.dimensions_m.x;
                     // A tilted box reaches further than its own half extents,
                     // so the search covers its diagonal.
@@ -326,13 +332,26 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
                                           (gz + 0.5) * r.cell_size_m};
                         // Test the cell in the body's own frame, so a tilted
                         // box keeps its true extents and only its cells change.
-                        const Vec3 local = rotateDegrees(centre - part.center_m,
+                    const Vec3 local = rotateDegrees(centre - part.center_m,
                                                          {-part.rotation_deg.x, -part.rotation_deg.y,
                                                           -part.rotation_deg.z});
-                        const bool inside = part.shape == BodyShape::Sphere
-                            ? length(local) <= radius
-                            : (std::abs(local.x) <= half.x && std::abs(local.y) <= half.y &&
-                               std::abs(local.z) <= half.z);
+                    bool inside = false;
+                    if (part.shape == BodyShape::Sphere) {
+                        inside = length(local) <= radius;
+                    } else if (part.shape == BodyShape::Cone) {
+                        // Its width runs from the bottom diameter to the top
+                        // one, so an upside-down cone is simply a wider top.
+                        const double h = part.dimensions_m.y;
+                        if (std::abs(local.y) <= 0.5 * h) {
+                            const double t = h > 0.0 ? (local.y + 0.5 * h) / h : 0.0;
+                            const double r = 0.5 * (part.dimensions_m.z +
+                                                    t * (part.dimensions_m.x - part.dimensions_m.z));
+                            inside = std::hypot(local.x, local.z) <= r;
+                        }
+                    } else {
+                        inside = std::abs(local.x) <= half.x && std::abs(local.y) <= half.y &&
+                                 std::abs(local.z) <= half.z;
+                    }
                         if (!inside) continue;
                         if (part.subtract) removed.push_back({gx, gy, gz});
                         else cells.push_back({gx, gy, gz});
@@ -833,6 +852,9 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
                 if (r.bodies[index].anchored) fragment.anchored = true;
             if (setup.part_bodies[part].size() != 1) continue;
             const SceneBody &body = lead;
+            // A cone is convex, so the hull of its cells is already its true
+            // surface and it needs no authored primitive.
+            if (body.shape == BodyShape::Cone) continue;
             fragment.primitive = body.shape == BodyShape::Sphere ? FragmentPrimitive::Sphere
                                                                  : FragmentPrimitive::Box;
             fragment.primitive_dimensions_m = body.dimensions_m;

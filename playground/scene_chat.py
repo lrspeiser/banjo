@@ -26,7 +26,7 @@ BODY_SCHEMA = {
     "additionalProperties": False,
     "properties": {
         "name": {"type": "string"},
-        "shape": {"type": "string", "enum": ["box", "sphere"]},
+        "shape": {"type": "string", "enum": ["box", "sphere", "cone"]},
         "material": {"type": "string", "enum": list(fracture_lab.MATERIALS)},
         "size_mm": {"type": "array", "items": {"type": "number"}},
         "center_mm": {"type": "array", "items": {"type": "number"}},
@@ -83,8 +83,16 @@ MATERIALS. Only glass, oak and iron. These are the three this lane has measured.
 There is no concrete, plastic, rubber or stone; pick the nearest of the three
 and say in the explanation that you did.
 
-SHAPES. box or sphere. A sphere uses size_mm[0] as its diameter and ignores the
-other two, but still send three numbers.
+SHAPES. box, sphere or cone. A sphere uses size_mm[0] as its diameter and
+ignores the other two, but still send three numbers. A cone's three numbers are
+the diameter at its top, its height, and the diameter at its bottom, so one
+shape gives you a cone, a funnel, a cylinder and everything between: [300, 200,
+60] is a bowl-shaped flare, wide at the top and narrow at the bottom, and an end
+of 0 makes a point. A round shape is cut from cells rather than tiled by them,
+so its dimensions are used exactly and never snapped to the grid.
+
+You can rest_on a join name as well as a body name, which is what to use when
+the thing being stood on is built from several shapes.
 
 CELLS. Every object in a scene is built from cubic cells of one shared size,
 cell_mm. An object's every side must be a whole number of cells or it is

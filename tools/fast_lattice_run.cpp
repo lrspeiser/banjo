@@ -58,6 +58,7 @@ std::vector<SceneBody> readScene(const std::string &path) {
         const std::string shape = node.value("shape", std::string("box"));
         if (shape == "sphere") body.shape = BodyShape::Sphere;
         else if (shape == "box") body.shape = BodyShape::Box;
+        else if (shape == "cone") body.shape = BodyShape::Cone;
         else throw std::invalid_argument("unknown shape: " + shape);
         body.material = presetFromName(node.value("material", std::string("glass")));
         body.dimensions_m = vector3(node, "dimensions_m", Vec3{0.1, 0.1, 0.1});
