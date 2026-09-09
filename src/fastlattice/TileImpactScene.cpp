@@ -392,12 +392,19 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
         // The object that was "dropped" is the one that starts with a velocity,
         // and a spin carries every node around the body's centre with it.
         Vec3 velocity{};
+        Vec3 cell_spin{};
         if (s.multi_body) {
             const std::uint32_t group = s.part_of_node[i];
             const SceneBody &owner = r.bodies[s.part_bodies[group].front()];
             velocity = owner.velocity_m_s + cross(owner.spin_rad_s, position - owner.center_m);
+            // Every point of a rigidly turning body turns with it, cells
+            // included. The handoff's inertia counts each cell's own spin
+            // (m h^2 / 6 on the diagonal) but its angular momentum only counts
+            // the spin a cell is actually carrying, so leaving this at zero
+            // divides by an inertia the momentum was never given.
+            cell_spin = owner.spin_rad_s;
         }
-        matter.nodes.push_back({position, position, velocity, mass, {}});
+        matter.nodes.push_back({position, position, velocity, mass, cell_spin});
         matter.reference_positions_world_m.push_back(position);
     }
     matter.bonds.resize(s.asset.bonds.size());

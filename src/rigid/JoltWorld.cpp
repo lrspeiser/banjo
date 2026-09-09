@@ -1189,6 +1189,13 @@ void JoltWorld::addFragments(
                 static_cast<float>(contact.restitution);
             settings.mLinearDamping = 0.02F;
             settings.mAngularDamping = 0.02F;
+            // Jolt caps angular velocity at 0.25 * pi * 60 = 47.12 rad/s unless
+            // told otherwise, and a rolling ball goes past that at walking pace:
+            // 6 m/s on a 60 mm radius needs 100 rad/s. The cap was silently
+            // holding every ball at 47.1 rad/s, which reads as a ball that rolls
+            // but slips, and is why one travelled 17 m without stopping. The
+            // other body paths in this file already raise it.
+            settings.mMaxAngularVelocity = 1000.0F;
             settings.mUserData = fragment.body_id;
             settings.mMotionQuality = JPH::EMotionQuality::LinearCast;
             settings.mOverrideMassProperties =
