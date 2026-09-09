@@ -50,7 +50,20 @@ struct SceneBody {
     Vec3 dimensions_m{0.1, 0.1, 0.1};
     Vec3 center_m{};      // where its centre of mass sits at t = 0
     Vec3 velocity_m_s{};  // what it is already doing at t = 0
+    // Spin at t = 0, radians per second, about the body's own centre.
+    // Nothing in either phase turns sliding into rolling: friction slows a
+    // body and applies no torque to it, so a ball given only a linear
+    // velocity slides the whole way without ever turning. A ball that is
+    // meant to roll has to be given the spin that goes with its speed,
+    // which for rolling without slipping along +x is -v/radius about z.
+    Vec3 spin_rad_s{};
     std::uint32_t color_rgba{0x9fd3ffffU};
+    // Bodies sharing a non-empty join name become one object. Their shapes are
+    // voxelised onto the shared cell grid and unioned, so a cell both claim is
+    // built once, and bonds are generated across the whole union: a handle
+    // joined to a blade is one knife, not two touching pieces. A join takes one
+    // material, the first body's.
+    std::string join;
 };
 
 struct TileImpactRequest {
@@ -215,6 +228,9 @@ struct TileImpactSetup {
     std::vector<CompiledBrittleMaterial> part_materials;
     std::vector<std::uint32_t> part_of_node;
     std::vector<double> node_mass_kg;
+    // Which bodies each part was built from. One entry for a plain body,
+    // several for a joined group, whose first body names and colours it.
+    std::vector<std::vector<std::size_t>> part_bodies;
     LatticeAsset asset{};
     BoxLatticeLayout layout{};
     ActiveMatter matter{};
@@ -452,7 +468,8 @@ struct TileImpactResult {
     // bodies were, so the recording can name and colour them separately
     // instead of calling every cell one tile material.
     std::vector<SceneBody> bodies;
-    std::vector<std::uint32_t> part_of_node; // asset order
+    std::vector<std::uint32_t> part_of_node;
+    std::vector<std::vector<std::size_t>> part_bodies; // asset order
 };
 
 // Runs impact through rest. Throws on backend errors.

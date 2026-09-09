@@ -63,6 +63,17 @@ std::vector<SceneBody> readScene(const std::string &path) {
         body.dimensions_m = vector3(node, "dimensions_m", Vec3{0.1, 0.1, 0.1});
         body.center_m = vector3(node, "center_m", Vec3{});
         body.velocity_m_s = vector3(node, "velocity_m_s", Vec3{});
+        // Bodies sharing a join name are voxelised onto the shared grid and
+        // unioned, so a cell both claim is built once and bonds cross the seam.
+        body.join = node.value("join", std::string());
+        body.spin_rad_s = vector3(node, "spin_rad_s", Vec3{});
+        // "roll": true derives the spin that rolls without slipping at the
+        // speed already given, which is the sign nobody gets right by hand.
+        if (node.value("roll", false)) {
+            const double radius = 0.5 * body.dimensions_m.x;
+            if (radius > 0.0)
+                body.spin_rad_s = {body.velocity_m_s.z / radius, 0.0, -body.velocity_m_s.x / radius};
+        }
         if (node.contains("color_rgba"))
             body.color_rgba = static_cast<std::uint32_t>(
                 std::stoul(node.at("color_rgba").get<std::string>(), nullptr, 16));

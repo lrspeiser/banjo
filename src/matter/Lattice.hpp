@@ -95,6 +95,28 @@ struct LatticeResolutionLimit {
     std::uint32_t governing_node{};
 };
 
+// A lattice from an arbitrary set of occupied cells on one shared grid.
+//
+// Cell (i, j, k) is centred at ((i + 0.5) h, (j + 0.5) h, (k + 0.5) h), so the
+// grid origin is a corner at the world origin and a body standing on the ground
+// starts at j = 0. Two objects voxelised onto this grid can be unioned: a cell
+// claimed by both appears once, which is how a handle is joined to a blade
+// rather than left overlapping it. Bonds are built by the same neighbour rule
+// every other generator uses, so they cross the seam and the result is one
+// object, not two touching ones.
+//
+// Duplicate cells in `cells` are ignored rather than refused: the union of two
+// overlapping shapes is the ordinary case here, not an error.
+struct VoxelRecipe {
+    std::vector<GridCoord> cells;
+    double voxel_size_m{};
+    unsigned neighbor_horizon_cells{2};
+};
+
+[[nodiscard]] LatticeAsset generateVoxelLattice(
+    const VoxelRecipe &recipe,
+    const CompiledBrittleMaterial &material);
+
 [[nodiscard]] LatticeResolutionLimit measureLatticeResolutionLimit(
     const LatticeAsset &asset, const CompiledBrittleMaterial &material);
 

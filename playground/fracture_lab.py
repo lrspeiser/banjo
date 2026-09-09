@@ -247,6 +247,9 @@ def _number(value: Any, low: float, high: float, label: str) -> float:
 # What a body of each material looks like in the 3D tab. Colour follows the
 # material rather than being chosen per object, so two oak blocks always read as
 # the same stuff and the panel has one fewer control.
+# Only the lattice phase can break anything and it ends about this long after
+# the last failure. Anything that arrives later can push but not crack.
+FRACTURE_WINDOW_S = 0.02
 MATERIAL_COLORS = {"glass": "9fd3ffff", "oak": "c9a06aff", "iron": "d0d4dcff",
                    "concrete": "8a8f99ff", "ceramic": "efe6d8ff", "ice": "bfe9f5ff"}
 SHAPES = {"box": "a rectangular block", "sphere": "a ball"}
@@ -305,7 +308,9 @@ def normalise_bodies(bodies: Any, cell_m: float) -> list[dict[str, Any]]:
                 raise ValueError(
                     f"{name}: a {want:.0f} mm side is not a whole number of {cell_m * 1000:g} mm cells, "
                     f"and the nearest whole number is {got:.0f} mm - too far to substitute.")
-        out.append({"name": name, "shape": shape, "material": material,
+        join = str(body.get("join", ""))[:40].strip()
+        out.append({"name": name, "shape": shape, "material": material, "join": join,
+                    "roll": bool(body.get("roll", False)),
                     "size_mm": [round(v, 3) for v in built],
                     "requested_size_mm": [round(v, 3) for v in size],
                     "center_mm": center, "velocity_m_s": velocity,
@@ -314,12 +319,223 @@ def normalise_bodies(bodies: Any, cell_m: float) -> list[dict[str, Any]]:
     return out
 
 
+def _overlap_mm(a: dict[str, Any], b: dict[str, Any]) -> float:
+    """How far two objects start inside each other, in mm. Zero if they only touch."""
+    def half(body):
+        return [v / 2 for v in body["size_mm"]]
+
+    ca, cb = a["center_mm"], b["center_mm"]
+    ha, hb = half(a), half(b)
+    if a["shape"] == "sphere" and b["shape"] == "sphere":
+        distance = math.dist(ca, cb)
+        return max(0.0, ha[0] + hb[0] - distance)
+    if a["shape"] == "sphere" or b["shape"] == "sphere":
+        ball, block = (a, b) if a["shape"] == "sphere" else (b, a)
+        centre, radius = ball["center_mm"], half(ball)[0]
+        box_c, box_h = block["center_mm"], half(block)
+        # Nearest point of the block to the ball's centre.
+        near = [min(max(centre[k], box_c[k] - box_h[k]), box_c[k] + box_h[k]) for k in range(3)]
+        return max(0.0, radius - math.dist(centre, near))
+    # Two blocks: they intersect only where they overlap on all three axes, and
+    # the shallowest axis is how far one would have to move to be clear.
+    gaps = [min(ca[k] + ha[k], cb[k] + hb[k]) - max(ca[k] - ha[k], cb[k] - hb[k]) for k in range(3)]
+    return max(0.0, min(gaps))
+
+
+def _intersection_cells(a: dict[str, Any], b: dict[str, Any], cell_mm: float) -> float:
+    """How much of the two objects occupies the same space, in cells."""
+    def half(body):
+        return [v / 2 for v in body["size_mm"]]
+
+    ca, cb = a["center_mm"], b["center_mm"]
+    ha, hb = half(a), half(b)
+    if a["shape"] == "sphere" and b["shape"] == "sphere":
+        d = math.dist(ca, cb)
+        ra, rb = ha[0], hb[0]
+        if d >= ra + rb:
+            return 0.0
+        if d <= abs(ra - rb):
+            small = min(ra, rb)
+            return (4.0 / 3.0 * math.pi * small ** 3) / cell_mm ** 3
+        # The classic lens of two overlapping spheres.
+        volume = (math.pi * (ra + rb - d) ** 2
+                  * (d * d + 2 * d * rb - 3 * rb * rb + 2 * d * ra + 6 * ra * rb - 3 * ra * ra)
+                  / (12 * d))
+        return volume / cell_mm ** 3
+    if a["shape"] == "sphere" or b["shape"] == "sphere":
+        # A ball against a block: sample the ball's bounding cells. Exact enough
+        # at this resolution and never wrong about whether they touch at all.
+        ball, block = (a, b) if a["shape"] == "sphere" else (b, a)
+        radius = half(ball)[0]
+        centre = ball["center_mm"]
+        box_c, box_h = block["center_mm"], half(block)
+        steps = 12
+        step = 2 * radius / steps
+        inside = 0
+        for i in range(steps):
+            for j in range(steps):
+                for k in range(steps):
+                    q = [centre[0] - radius + (i + 0.5) * step,
+                         centre[1] - radius + (j + 0.5) * step,
+                         centre[2] - radius + (k + 0.5) * step]
+                    if math.dist(q, centre) > radius:
+                        continue
+                    if all(abs(q[m] - box_c[m]) <= box_h[m] for m in range(3)):
+                        inside += 1
+        return inside * step ** 3 / cell_mm ** 3
+    spans = [min(ca[k] + ha[k], cb[k] + hb[k]) - max(ca[k] - ha[k], cb[k] - hb[k]) for k in range(3)]
+    if min(spans) <= 0:
+        return 0.0
+    return spans[0] * spans[1] * spans[2] / cell_mm ** 3
+
+
+def _separation_mm(a: dict[str, Any], b: dict[str, Any]) -> float:
+    """How deep one object is into the other along its shallowest axis, in mm."""
+    def half(body):
+        return [v / 2 for v in body["size_mm"]]
+
+    ca, cb, ha, hb = a["center_mm"], b["center_mm"], half(a), half(b)
+    spans = [min(ca[k] + ha[k], cb[k] + hb[k]) - max(ca[k] - ha[k], cb[k] - hb[k]) for k in range(3)]
+    return min(spans)
+
+
+def check_scene(bodies: list[dict[str, Any]], cell_m: float) -> list[dict[str, Any]]:
+    """Everything wrong with a scene, at once, in the terms it was written in.
+
+    Nothing settles before a run and nothing is repaired behind the caller's
+    back, so a scene that is wrong stays wrong and usually detonates. Every
+    fault is reported together rather than one per round trip, because whoever
+    is fixing them -- a person or a model -- pays for each trip.
+
+    Severity "error" stops the run. "warning" does not: it is a thing worth
+    knowing that is nonetheless a legitimate scene.
+    """
+    cell_mm = cell_m * 1000
+    tolerance = max(0.05, cell_mm * 0.01)
+    report: list[dict[str, Any]] = []
+
+    for body in bodies:
+        bottom = body["center_mm"][1] - body["size_mm"][1] / 2
+        if bottom < -tolerance:
+            report.append({
+                "severity": "error", "code": "below_ground", "object": body["name"],
+                "message": f"\"{body['name']}\" starts {-bottom:.0f} mm below the ground. The ground is "
+                           f"at y = 0 and center_mm is the middle of an object, so its height must be at "
+                           f"least half its own height, {body['size_mm'][1] / 2:.0f} mm.",
+                "fix": {"object": body["name"], "center_mm_y": body["size_mm"][1] / 2}})
+
+    for i in range(len(bodies)):
+        for j in range(i + 1, len(bodies)):
+            a, b = bodies[i], bodies[j]
+            cells = _intersection_cells(a, b, cell_mm)
+            if cells <= 0.01:
+                continue
+            joined = a.get("join") and a.get("join") == b.get("join")
+            depth = _separation_mm(a, b)
+            if joined:
+                report.append({
+                    "severity": "info", "code": "joined_overlap", "object": a["name"], "other": b["name"],
+                    "message": f"\"{a['name']}\" and \"{b['name']}\" share {cells:.1f} cells and are "
+                               f"joined as \"{a['join']}\", so the shared cells are built once and the "
+                               f"two become one bonded object."})
+                continue
+            lift = b["center_mm"][1] + max(depth, 0.0)
+            report.append({
+                "severity": "error", "code": "overlap", "object": a["name"], "other": b["name"],
+                "message": f"\"{a['name']}\" and \"{b['name']}\" occupy {cells:.1f} cells of the same "
+                           f"space, {depth:.0f} mm deep. Nothing settles before a run, so they blow apart "
+                           f"on the first step. Either raise \"{b['name']}\" to a height of {lift:.0f} mm "
+                           f"so it rests on top, or give both the same \"join\" name to fuse them into "
+                           f"one object with the shared cells removed.",
+                "fix": {"object": b["name"], "center_mm_y": lift, "or_join": True}})
+
+    # Anything with nothing under it starts by falling, which is legitimate but
+    # is usually a placement mistake rather than an intention.
+    for body in bodies:
+        if any(v for v in body["velocity_m_s"]):
+            continue
+        bottom = body["center_mm"][1] - body["size_mm"][1] / 2
+        if bottom <= tolerance:
+            continue
+        supported = False
+        for other in bodies:
+            if other is body:
+                continue
+            top = other["center_mm"][1] + other["size_mm"][1] / 2
+            if abs(top - bottom) > cell_mm * 0.5:
+                continue
+            if all(abs(body["center_mm"][k] - other["center_mm"][k])
+                   <= (body["size_mm"][k] + other["size_mm"][k]) / 2 for k in (0, 2)):
+                supported = True
+                break
+        if not supported:
+            report.append({
+                "severity": "warning", "code": "unsupported", "object": body["name"],
+                "message": f"\"{body['name']}\" has nothing under it and is not moving, so it starts "
+                           f"{bottom:.0f} mm up and falls. Rest it on something or lower it to the ground."})
+
+    # One cell through a dimension has no bending stiffness at all.
+    for body in bodies:
+        if body["shape"] == "sphere":
+            continue
+        thin = min(body["size_mm"])
+        if thin < cell_mm * 1.5:
+            report.append({
+                "severity": "warning", "code": "one_cell_thick", "object": body["name"],
+                "message": f"\"{body['name']}\" is one cell through its thinnest side, so it has no "
+                           f"bending stiffness: it flexes about six times too far and reads bending strain "
+                           f"about sixteen times low. Make that side {cell_mm * 2:.0f} mm, or halve the cell."})
+
+    # A striker that arrives after the fracture window can only push.
+    for body in bodies:
+        speed = math.sqrt(sum(v * v for v in body["velocity_m_s"]))
+        if speed <= 0:
+            continue
+        gap = None
+        for other in bodies:
+            if other is body:
+                continue
+            depth = _separation_mm(body, other)
+            clearance = -depth
+            if clearance >= 0 and (gap is None or clearance < gap):
+                gap = clearance
+        if gap is None:
+            continue
+        arrival = gap / 1000.0 / speed
+        if arrival > FRACTURE_WINDOW_S:
+            report.append({
+                "severity": "warning", "code": "late_strike", "object": body["name"],
+                "message": f"\"{body['name']}\" has {gap:.0f} mm to cross at {speed:.1f} m/s, so it "
+                           f"arrives at about {arrival * 1000:.0f} ms, after the {FRACTURE_WINDOW_S * 1000:.0f} ms "
+                           f"window in which anything can break. It will push things over and break "
+                           f"nothing. Start it closer or send it faster."})
+    return report
+
+
+def check_placement(bodies: list[dict[str, Any]], cell_m: float) -> None:
+    """The hard gate: raise on the first thing that would make a run worthless."""
+    report = check_scene(bodies, cell_m)
+    errors = [item for item in report if item["severity"] == "error"]
+    if not errors:
+        return
+    message = errors[0]["message"]
+    if len(errors) > 1:
+        message += f" ({len(errors) - 1} more placement error(s); ask for a scene check to see them all.)"
+    raise ValueError(message)
+
+
 def scene_document(spec: dict[str, Any]) -> dict[str, Any]:
     """The --scene file: metres, the engine's units, nothing the panel added."""
     return {"bodies": [{"name": b["name"], "shape": b["shape"], "material": b["material"],
                         "dimensions_m": [v / 1000.0 for v in b["size_mm"]],
                         "center_m": [v / 1000.0 for v in b["center_mm"]],
                         "velocity_m_s": b["velocity_m_s"],
+                        # Bodies sharing a join name are voxelised onto the shared grid and
+                        # unioned: a cell both claim is built once and bonds cross the seam.
+                        "join": b["join"],
+                        # Nothing turns sliding into rolling, so a ball that should roll is
+                        # given the spin that goes with its speed.
+                        "roll": b["roll"],
                         "color_rgba": b["color_rgba"]}
                        for b in spec["bodies"]]}
 
@@ -348,6 +564,7 @@ def validate(spec: Any) -> dict[str, Any]:
         result["bodies"] = normalise_bodies(result["bodies"], result["cell_m"])
         result["duration_s"] = _number(result["duration_s"], LIMITS["duration_s"]["min"],
                                        LIMITS["duration_s"]["max"], "duration")
+        check_placement(result["bodies"], result["cell_m"])
         result["cells"] = sum(b["cells"] for b in result["bodies"])
         result["cells_per_axis"] = [0, 0, 0]
         result["plate_m"] = [0.0, 0.0, 0.0]
@@ -557,6 +774,7 @@ def summary(report: dict[str, Any], wall_s: float, spec: dict[str, Any]) -> dict
         "thickness_cells": spec["cells_per_axis"][2],
         "bodies": [{"name": b["name"], "shape": b["shape"], "material": b["material"],
                     "size_mm": b["size_mm"], "cells": b["cells"],
+                    "join": b.get("join", ""), "roll": b.get("roll", False),
                     "speed_m_s": round(max(abs(v) for v in b["velocity_m_s"]), 3)}
                    for b in spec.get("bodies", [])],
         "snapped_from_mm": ([round(v * 1000, 1) for v in spec["requested_plate_m"]] if spec.get("snapped") else None),

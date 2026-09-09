@@ -31,8 +31,10 @@ BODY_SCHEMA = {
         "size_mm": {"type": "array", "items": {"type": "number"}},
         "center_mm": {"type": "array", "items": {"type": "number"}},
         "velocity_m_s": {"type": "array", "items": {"type": "number"}},
+        "join": {"type": "string"},
+        "roll": {"type": "boolean"},
     },
-    "required": ["name", "shape", "material", "size_mm", "center_mm", "velocity_m_s"],
+    "required": ["name", "shape", "material", "size_mm", "center_mm", "velocity_m_s", "join", "roll"],
 }
 
 PLAN_SCHEMA = {
@@ -94,6 +96,27 @@ bigger over making cells smaller: an object needs to be at least two or three
 cells on its smallest side to behave like a solid at all, so a 20 mm cell wants
 objects of 40 mm and up.
 
+OVERLAP IS AN ERROR, EXCEPT WHEN IT IS A JOIN. Two objects that occupy the same
+space blow apart on the first step, because nothing settles and the engine has
+to undo the interpenetration all at once. This is the single commonest way to
+produce a scene that detonates. Every object must either rest on top of what
+holds it or stand clear of it.
+
+The exception is a deliberate join. Give two bodies the same "join" name and
+their shapes are voxelised onto the shared grid and unioned: a cell both claim
+is built once, and bonds are generated across the seam, so they become one
+object rather than two touching ones. That is how a handle is attached to a
+blade, a leg to a table, a spout to a jug. Overlap the two shapes where they
+should meet and give them the same join name. A join takes one material, the
+first body's, so do not join a wooden handle to an iron blade and expect the
+handle to be wood.
+
+ROLLING. Nothing in the engine turns sliding into rolling: friction slows a body
+down and applies no torque to it, so a ball given only a linear velocity slides
+the whole way without ever turning. Set "roll": true on a sphere that should
+roll and the spin that goes with its speed is worked out for it. A rolling ball
+also travels much further than a sliding one, so aim accordingly.
+
 RESTING. Objects do not settle into place before the run; they start exactly
 where you put them. Put anything meant to be resting so it just touches what
 holds it, or it will start by falling. Stack two 60 mm cubes on a 40 mm floor
@@ -142,7 +165,8 @@ def _spec_from_plan(plan: dict[str, Any], previous: dict[str, Any] | None) -> di
     if plan["mode"] == "objects":
         spec["bodies"] = [{"name": b["name"], "shape": b["shape"], "material": b["material"],
                            "size_mm": list(b["size_mm"]), "center_mm": list(b["center_mm"]),
-                           "velocity_m_s": list(b["velocity_m_s"])}
+                           "velocity_m_s": list(b["velocity_m_s"]),
+                           "join": b.get("join", ""), "roll": bool(b.get("roll", False))}
                           for b in plan["bodies"]]
     else:
         spec["bodies"] = []

@@ -340,6 +340,62 @@ LatticeAsset generateBoxLattice(
     return asset;
 }
 
+LatticeAsset generateVoxelLattice(
+    const VoxelRecipe &recipe,
+    const CompiledBrittleMaterial &material) {
+    if (recipe.cells.empty() || !std::isfinite(recipe.voxel_size_m) ||
+        recipe.voxel_size_m <= 0.0 || recipe.neighbor_horizon_cells == 0U) {
+        throw std::invalid_argument("voxel recipe needs cells, a positive cell size and a horizon");
+    }
+    if (recipe.cells.size() > 4000000U) {
+        throw std::invalid_argument("voxel recipe exceeds the lattice node budget");
+    }
+    if (!(material.density_kg_m3 > 0.0)) {
+        throw std::invalid_argument("voxel lattice needs a positive density");
+    }
+
+    LatticeAsset asset;
+    const double h = recipe.voxel_size_m;
+    const double voxel_volume = h * h * h;
+    std::unordered_map<GridCoord, std::uint32_t, GridCoordHash> node_by_grid;
+    node_by_grid.reserve(recipe.cells.size());
+
+    // One node per distinct cell. A cell two shapes both claim is one cell.
+    for (const GridCoord &grid : recipe.cells) {
+        if (node_by_grid.contains(grid)) continue;
+        const Vec3 center{(static_cast<double>(grid.x) + 0.5) * h,
+                          (static_cast<double>(grid.y) + 0.5) * h,
+                          (static_cast<double>(grid.z) + 0.5) * h};
+        node_by_grid.emplace(grid, static_cast<std::uint32_t>(asset.nodes.size()));
+        asset.nodes.push_back({center, grid, voxel_volume, true});
+        asset.represented_volume_m3 += voxel_volume;
+    }
+    // A cell is interior when all six of its face neighbours are present. This
+    // is what the box generator means by surface, decided by occupancy rather
+    // than by being on the edge of a box.
+    for (LatticeNodeRest &node : asset.nodes) {
+        const GridCoord g = node.grid;
+        node.surface_node =
+            !(node_by_grid.contains({g.x + 1, g.y, g.z}) && node_by_grid.contains({g.x - 1, g.y, g.z}) &&
+              node_by_grid.contains({g.x, g.y + 1, g.z}) && node_by_grid.contains({g.x, g.y - 1, g.z}) &&
+              node_by_grid.contains({g.x, g.y, g.z + 1}) && node_by_grid.contains({g.x, g.y, g.z - 1}));
+    }
+
+    asset.recipe = {0.5 * h * std::cbrt(static_cast<double>(asset.nodes.size())), h,
+                    recipe.neighbor_horizon_cells, 1U};
+    asset.total_mass_kg = asset.represented_volume_m3 * material.density_kg_m3;
+    Vec3 weighted_center{};
+    for (const LatticeNodeRest &node : asset.nodes) {
+        weighted_center += node.represented_volume_m3 * material.density_kg_m3 * node.local_position_m;
+    }
+    asset.rest_center_of_mass_m = weighted_center / asset.total_mass_kg;
+    asset.rest_inertia_kg_m2 = calculateRestInertia(
+        asset.nodes, material.density_kg_m3, asset.rest_center_of_mass_m, h);
+    buildBonds(asset, node_by_grid, material, recipe.neighbor_horizon_cells);
+    buildAdjacency(asset);
+    return asset;
+}
+
 LatticeResolutionLimit measureLatticeResolutionLimit(
     const LatticeAsset &asset, const CompiledBrittleMaterial &material) {
     LatticeResolutionLimit limit;

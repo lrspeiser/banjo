@@ -223,7 +223,23 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
         s.part_materials.reserve(r.bodies.size());
         s.part_definitions.reserve(r.bodies.size());
         double substep_limit = std::numeric_limits<double>::infinity();
-        for (const SceneBody &body : r.bodies) {
+        // Bodies are grouped by their join name first. An empty name is its own
+        // group of one, which is every scene that does not ask to fuse
+        // anything, and those are built exactly as before.
+        std::vector<std::vector<std::size_t>> groups;
+        std::vector<std::string> group_names;
+        for (std::size_t i = 0; i < r.bodies.size(); ++i) {
+            const std::string &name = r.bodies[i].join;
+            std::size_t found = group_names.size();
+            if (!name.empty())
+                for (std::size_t g = 0; g < group_names.size(); ++g)
+                    if (group_names[g] == name) { found = g; break; }
+            if (found == group_names.size()) { group_names.push_back(name); groups.emplace_back(); }
+            groups[found].push_back(i);
+        }
+        s.part_bodies = groups;
+        for (const std::vector<std::size_t> &group : groups) {
+        const SceneBody &body = r.bodies[group.front()];
             MaterialDefinition definition = makeReferenceMaterial(body.material, r.material_seed);
             definition.failure_law = r.failure_law;
             if (r.hardening_ratio >= 0.0) definition.hardening_ratio = r.hardening_ratio;
@@ -231,13 +247,52 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
                 compileElasticLatticeReference(definition, r.cell_size_m, r.neighbor_horizon_cells),
                 definition, r.cell_size_m, r.neighbor_horizon_cells);
             if (r.plasticity) compiled = withPlasticFlow(compiled, definition);
-            LatticeAsset asset =
-                body.shape == BodyShape::Sphere
-                    ? generateSphereLattice({0.5 * body.dimensions_m.x, r.cell_size_m,
-                                             r.neighbor_horizon_cells, 3},
-                                            compiled)
-                    : generateBoxTileLattice({body.dimensions_m, r.cell_size_m, r.neighbor_horizon_cells},
+            LatticeAsset asset;
+            if (group.size() > 1) {
+                // Voxelise every shape in the group onto the one shared grid
+                // and take the union. A cell two shapes both claim appears
+                // once: that is what removing the overlap means here, and it is
+                // what lets bonds cross the seam and make them one object.
+                std::vector<GridCoord> cells;
+                for (const std::size_t index : group) {
+                    const SceneBody &part = r.bodies[index];
+                    const Vec3 half = part.shape == BodyShape::Sphere
+                        ? Vec3{0.5 * part.dimensions_m.x, 0.5 * part.dimensions_m.x, 0.5 * part.dimensions_m.x}
+                        : Vec3{0.5 * part.dimensions_m.x, 0.5 * part.dimensions_m.y, 0.5 * part.dimensions_m.z};
+                    const double radius = 0.5 * part.dimensions_m.x;
+                    const auto lo = [&](double centre, double h) {
+                        return static_cast<int>(std::floor((centre - h) / r.cell_size_m));
+                    };
+                    const auto hi = [&](double centre, double h) {
+                        return static_cast<int>(std::ceil((centre + h) / r.cell_size_m));
+                    };
+                    for (int gx = lo(part.center_m.x, half.x); gx <= hi(part.center_m.x, half.x); ++gx)
+                    for (int gy = lo(part.center_m.y, half.y); gy <= hi(part.center_m.y, half.y); ++gy)
+                    for (int gz = lo(part.center_m.z, half.z); gz <= hi(part.center_m.z, half.z); ++gz) {
+                        const Vec3 centre{(gx + 0.5) * r.cell_size_m,
+                                          (gy + 0.5) * r.cell_size_m,
+                                          (gz + 0.5) * r.cell_size_m};
+                        const bool inside = part.shape == BodyShape::Sphere
+                            ? length(centre - part.center_m) <= radius
+                            : (std::abs(centre.x - part.center_m.x) <= half.x &&
+                               std::abs(centre.y - part.center_m.y) <= half.y &&
+                               std::abs(centre.z - part.center_m.z) <= half.z);
+                        if (inside) cells.push_back({gx, gy, gz});
+                    }
+                }
+                if (cells.empty())
+                    throw std::invalid_argument("joined group \"" + body.join + "\" covers no cells");
+                asset = generateVoxelLattice({std::move(cells), r.cell_size_m, r.neighbor_horizon_cells},
                                              compiled);
+            } else {
+                asset =
+                    body.shape == BodyShape::Sphere
+                        ? generateSphereLattice({0.5 * body.dimensions_m.x, r.cell_size_m,
+                                                 r.neighbor_horizon_cells, 3},
+                                                compiled)
+                        : generateBoxTileLattice({body.dimensions_m, r.cell_size_m, r.neighbor_horizon_cells},
+                                                 compiled);
+            }
             if (asset.nodes.empty())
                 throw std::invalid_argument("body \"" + body.name + "\" is smaller than one cell");
             // One lattice has one clock, so the scene steps at the smallest
@@ -251,8 +306,14 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
         }
         std::vector<LatticePart> parts;
         parts.reserve(r.bodies.size());
-        for (std::size_t i = 0; i < r.bodies.size(); ++i)
-            parts.push_back({&s.part_assets[i], r.bodies[i].center_m, s.part_materials[i].density_kg_m3});
+        for (std::size_t g = 0; g < groups.size(); ++g) {
+            // A union is built in world cells already, so it is placed at the
+            // centre it came out with; a single shape is placed where it asked.
+            const Vec3 centre = groups[g].size() > 1
+                ? s.part_assets[g].rest_center_of_mass_m
+                : r.bodies[groups[g].front()].center_m;
+            parts.push_back({&s.part_assets[g], centre, s.part_materials[g].density_kg_m3});
+        }
         MergedLattice merged = mergeLattices(parts);
         s.asset = std::move(merged.asset);
         s.part_of_node = std::move(merged.part_of_node);
@@ -315,8 +376,14 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
         // single-tile scene gets exactly what it always got.
         const double mass = s.multi_body ? s.node_mass_kg[i]
                                          : node.represented_volume_m3 * s.compiled.density_kg_m3;
-        // The object that was "dropped" is the one that starts with a velocity.
-        const Vec3 velocity = s.multi_body ? r.bodies[s.part_of_node[i]].velocity_m_s : Vec3{};
+        // The object that was "dropped" is the one that starts with a velocity,
+        // and a spin carries every node around the body's centre with it.
+        Vec3 velocity{};
+        if (s.multi_body) {
+            const std::uint32_t group = s.part_of_node[i];
+            const SceneBody &owner = r.bodies[s.part_bodies[group].front()];
+            velocity = owner.velocity_m_s + cross(owner.spin_rad_s, position - owner.center_m);
+        }
         matter.nodes.push_back({position, position, velocity, mass, {}});
         matter.reference_positions_world_m.push_back(position);
     }
@@ -1545,6 +1612,7 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
     result.ground_y = setup.ground_y;
     result.bodies = r.bodies;
     result.part_of_node = setup.part_of_node;
+    result.part_bodies = setup.part_bodies;
     result.bond_nodes.reserve(B);
     for (const BondRest &bond : setup.asset.bonds) result.bond_nodes.emplace_back(bond.node_a, bond.node_b);
     if (log) *log += notes.str();
@@ -1833,11 +1901,14 @@ void writePlayback(const TileImpactResult &result, const std::filesystem::path &
     Json bodies = Json::array();
     const double h = result.cell_size_m;
     for (std::size_t i = 0; i < N; ++i) {
-        const std::uint32_t part = many ? result.part_of_node[i] : 0U;
+        const std::uint32_t group = many ? result.part_of_node[i] : 0U;
+        // A joined part is several bodies; the first one names and colours it.
+        const std::size_t part = group < result.part_bodies.size() && !result.part_bodies[group].empty()
+                                     ? result.part_bodies[group].front() : group;
         const std::string material = many ? std::string(materialPresetName(result.bodies[part].material))
                                           : result.tile_material_name;
         bodies.push_back({{"id", "cell:" + std::to_string(i)},
-                          {"object_id", many ? 100 + static_cast<int>(part) : 2},
+                          {"object_id", many ? 100 + static_cast<int>(group) : 2},
                           {"element_id", i},
                           {"material_id", many ? result.bodies[part].name + " (" + material + ")" : material},
                           {"color_rgba", many ? result.bodies[part].color_rgba : 0x9fd3ffffU},
