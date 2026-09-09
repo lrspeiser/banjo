@@ -24,6 +24,15 @@ struct FragmentSurfaceMesh {
     std::size_t exposed_face_count{};
 };
 
+// The collision shape a fragment gets. None means the convex hull of its cells,
+// which is the honest surface of a broken piece. Sphere and Box are the shape
+// the object was authored as, used only while it is still whole: a ball made of
+// five cells across hulls into a lump with a flat bottom, and a flat-bottomed
+// lump slides where a ball would roll. Measured: the same 100 mm ball turns 0.0
+// degrees at five cells across and 24.4 at ten, because of the hull and not
+// because of anything about torque.
+enum class FragmentPrimitive : std::uint8_t { None, Sphere, Box };
+
 struct RigidFragmentDescription {
     MatterBodyId body_id{kInvalidMatterBodyId};
     FragmentMassProperties mass_properties{};
@@ -34,6 +43,10 @@ struct RigidFragmentDescription {
     double friction{0.35};
     double restitution{0.08};
     std::size_t source_node_count{};
+    // Set only where the fragment is exactly one whole authored object. Box
+    // uses all three extents; Sphere uses x as the diameter.
+    FragmentPrimitive primitive{FragmentPrimitive::None};
+    Vec3 primitive_dimensions_m{};
 };
 
 struct DebrisParticleDescription {

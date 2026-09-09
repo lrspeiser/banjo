@@ -1146,6 +1146,16 @@ void JoltWorld::addFragments(
                 hull_points.push_back(toJolt(point));
             }
 
+            // An object that has not broken collides as the shape it was
+            // authored as. Only a piece that came off something gets the hull
+            // of its cells, which is then its real surface.
+            JPH::RefConst<JPH::Shape> authored;
+            if (fragment.primitive == FragmentPrimitive::Sphere) {
+                authored = new JPH::SphereShape(
+                    static_cast<float>(0.5 * fragment.primitive_dimensions_m.x));
+            } else if (fragment.primitive == FragmentPrimitive::Box) {
+                authored = new JPH::BoxShape(toJolt(fragment.primitive_dimensions_m / 2), 0.0F);
+            }
             JPH::ConvexHullShapeSettings hull_settings(
                 hull_points.data(),
                 static_cast<int>(hull_points.size()),
@@ -1158,7 +1168,8 @@ void JoltWorld::addFragments(
                     "Jolt could not build a fragment convex hull: " +
                     std::string(error.begin(), error.end()));
             }
-            const JPH::RefConst<JPH::Shape> inner_shape = hull_result.Get();
+            const JPH::RefConst<JPH::Shape> inner_shape =
+                authored != nullptr ? authored : hull_result.Get();
             const JPH::RefConst<JPH::Shape> centered_shape =
                 new JPH::OffsetCenterOfMassShape(
                     inner_shape.GetPtr(), -inner_shape->GetCenterOfMass());

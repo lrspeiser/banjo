@@ -248,7 +248,20 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
                 definition, r.cell_size_m, r.neighbor_horizon_cells);
             if (r.plasticity) compiled = withPlasticFlow(compiled, definition);
             LatticeAsset asset;
-            if (group.size() > 1) {
+            // A sphere goes through the voxel path too, not only a join.
+            // generateSphereLattice samples partial occupancy, which leaves rim
+            // cells with a fraction of a cell's mass and a sparse, degenerate
+            // neighbourhood. Those read fabricated strain and fail on the first
+            // substep: a 100 mm iron ball at 10 mm cells broke 5,791 of its
+            // 9,477 bonds sitting still on the ground, with 1,263 rank-deficient
+            // node reads and its first failure at 0.000 ms, while the same iron
+            // as a cube broke none and read exactly zero strain. Whole cells
+            // only, above half occupancy, gives the uniform masses the box
+            // generator has always had. The staircase it leaves on the surface
+            // costs nothing now that a whole body collides as the shape it was
+            // authored as.
+            const bool voxelised = group.size() > 1 || body.shape == BodyShape::Sphere;
+            if (voxelised) {
                 // Voxelise every shape in the group onto the one shared grid
                 // and take the union. A cell two shapes both claim appears
                 // once: that is what removing the overlap means here, and it is
@@ -716,7 +729,7 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
         }
         m.mass_fraction_under_1pct = m.tile_mass_kg > 0.0 ? small_mass / m.tile_mass_kg : 0.0;
     }
-    const FragmentBuildResult build = buildFragmentRepresentations(setup.matter, components, {
+    FragmentBuildResult build = buildFragmentRepresentations(setup.matter, components, {
         .first_body_id = 1000,
         .maximum_rigid_fragments = std::max<std::size_t>(1, components.size()),
         .minimum_nodes_per_rigid_fragment = 1,
@@ -724,6 +737,32 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
         .friction = setup.tile_ground.dynamic_friction,
         .restitution = setup.tile_ground.restitution,
     });
+    // A component that is exactly one whole authored body collides as the shape
+    // that was asked for rather than as a hull of its cells. Only while it is
+    // whole: the moment it loses a cell it is a broken piece and the hull is its
+    // real surface. Joined groups keep the hull, since their shape is the union
+    // and no primitive describes it.
+    if (setup.multi_body) {
+        std::vector<std::size_t> part_size(setup.part_bodies.size(), 0);
+        for (const std::uint32_t part : setup.part_of_node) ++part_size[part];
+        std::size_t fragment_index = 0;
+        for (const auto &component : components) {
+            if (fragment_index >= build.rigid_fragments.size()) break;
+            RigidFragmentDescription &fragment = build.rigid_fragments[fragment_index];
+            if (fragment.source_node_count != component.node_indices.size()) continue;
+            ++fragment_index;
+            if (component.node_indices.empty()) continue;
+            const std::uint32_t part = setup.part_of_node[component.node_indices.front()];
+            bool whole = part_size[part] == component.node_indices.size();
+            for (const std::uint32_t node : component.node_indices)
+                if (setup.part_of_node[node] != part) { whole = false; break; }
+            if (!whole || setup.part_bodies[part].size() != 1) continue;
+            const SceneBody &body = r.bodies[setup.part_bodies[part].front()];
+            fragment.primitive = body.shape == BodyShape::Sphere ? FragmentPrimitive::Sphere
+                                                                 : FragmentPrimitive::Box;
+            fragment.primitive_dimensions_m = body.dimensions_m;
+        }
+    }
     m.rigid_fragments = build.rigid_fragments.size();
     m.debris_particles = build.debris_particles.size();
 
