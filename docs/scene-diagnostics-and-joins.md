@@ -178,3 +178,37 @@ the solid-sphere inertia coefficient, which points at the handoff, where a
 fragment's angular velocity is recovered as `I^-1 L` from its node velocities.
 Not yet diagnosed. The visible consequence is that a rolling ball slips and so
 travels much further than it should before stopping.
+
+## An angled lane, and what it needed
+
+Asked to angle the floor towards the pins, and refused for a placement error.
+The refusal was right and three capabilities were missing behind it.
+
+- `rotation_deg` turns a body about its own centre. It is voxelised through the
+  rotation and collides as a rotated box, not as the staircase its cells make,
+  so a ball rolls down a ramp rather than bouncing on every step.
+- `anchored` makes a body scenery. Without it the ramp fell to the floor in
+  0.24 s and took the ball with it. An anchored body still collides and still
+  breaks; it just does not move.
+- `rest_on` names what a body stands on and its height is computed from the
+  surface directly beneath it. On a slope that height is different for every
+  object along it, and asking a caller to do that trigonometry is asking for the
+  error being refused. Eleven objects seat themselves on a six degree lane at
+  240, 240, 240, 220 mm and so on down the slope.
+
+The check now asks what the engine asks: it builds each body's cell set by the
+generators' own rule, rotation included, and reports the cells two bodies both
+claim. It reports every error at once, each with the height that fixes it,
+measured column by column. A refusal that names one fault of ten costs ten
+turns.
+
+Measured on an eight degree ramp with an anchored lane and a ball released at
+rest: 1.2 per cent slip, accelerating at 0.97 m/s², against the 0.974 that a
+rolling solid sphere gives. The playground preset "A bowling alley on a tilted
+lane" is 12 objects and 4,805 cells, runs in 5 s, and the ball rolls 1.5 m into
+the pins.
+
+Known blemish: tall thin pins seated exactly on a tilted lane settle in the
+first half second, and four of ten are over before the ball arrives. A gentler
+three degree lane drops that to two, but the ball then stops short of them. Not
+diagnosed.

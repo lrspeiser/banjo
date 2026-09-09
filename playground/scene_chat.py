@@ -168,6 +168,20 @@ with both: 450 small cubes takes about 40 seconds of wall clock and 640 takes
 over two minutes. Unless a large scene is asked for, stay near 4000 cells so a
 run comes back in a few seconds and can be changed again.
 
+A WORKED EXAMPLE, a ball rolling down a ramp into pins. Note that the ramp is
+anchored and tilted, that everything standing on it names it with rest_on and
+leaves its own height to be worked out, and that everything standing on it is
+inside its x and z extent:
+
+  lane   box, oak,   2000 x 60 x 300, centre (0, 220, 0), rotation_deg (0,0,-6),
+         anchored true
+  pin1   box, glass, 40 x 120 x 40,   centre (680, 0, 0),   rest_on "lane"
+  pin2   box, glass, 40 x 120 x 40,   centre (760, 0, -50), rest_on "lane"
+  ball   sphere, iron, 100,           centre (-700, 0, 0),  rest_on "lane"
+
+Use that shape of answer whenever anything rests on anything. Anchor the floor,
+tilt it if a slope is asked for, and let rest_on decide the heights.
+
 Answer with the scene, and an explanation of one or two sentences saying what
 you built and any substitution you had to make. Do not describe what will
 happen: the run will show that."""

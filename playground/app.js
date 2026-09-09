@@ -829,7 +829,8 @@
 
   function defaultBody(index) {
     return { name: `object ${index + 1}`, shape: "box", material: "glass",
-             size_mm: [80, 40, 80], center_mm: [0, 40 + index * 60, 0], velocity_m_s: [0, 0, 0] };
+             size_mm: [80, 40, 80], center_mm: [0, 40 + index * 60, 0], velocity_m_s: [0, 0, 0],
+             rotation_deg: [0, 0, 0], anchored: false, rest_on: "", join: "" };
   }
 
   function sceneCellCount() {
@@ -1173,6 +1174,8 @@
         name: b.name, shape: b.shape, material: b.material,
         size_mm: b.size_mm.slice(), center_mm: b.center_mm.slice(),
         velocity_m_s: b.velocity_m_s.slice(),
+        rotation_deg: (b.rotation_deg || [0, 0, 0]).slice(),
+        anchored: Boolean(b.anchored), rest_on: b.rest_on || "", join: b.join || "",
       })) : [],
     };
   }
@@ -1272,11 +1275,17 @@
     // A scenario is either a scene or a plate, and a scene carries none of the
     // plate fields, so it is loaded and returned from before any of them are
     // read.
+    // A scenario may leave out what it does not use: an object at rest has no
+    // velocity, an untilted one no rotation. Copy what is there and default the
+    // rest rather than throwing on the first missing field.
     scene.bodies = Array.isArray(spec.bodies)
       ? spec.bodies.map((b) => ({
           name: b.name, shape: b.shape, material: b.material,
-          size_mm: b.size_mm.slice(), center_mm: b.center_mm.slice(),
-          velocity_m_s: b.velocity_m_s.slice(),
+          size_mm: (b.size_mm || [0, 0, 0]).slice(),
+          center_mm: (b.center_mm || [0, 0, 0]).slice(),
+          velocity_m_s: (b.velocity_m_s || [0, 0, 0]).slice(),
+          rotation_deg: (b.rotation_deg || [0, 0, 0]).slice(),
+          anchored: Boolean(b.anchored), rest_on: b.rest_on || "", join: b.join || "",
         }))
       : [];
     if ($("f-mode")) $("f-mode").value = scene.bodies.length ? "objects" : "plate";

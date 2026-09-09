@@ -122,6 +122,27 @@ SCENARIOS = [
     # could. Cell size is shared, because the solver's contact radius is one
     # number for the whole lattice. Only the three materials this lane has
     # measured appear: glass, oak and iron.
+    # The scene the tilt, the anchor and the seating were built for. The lane is
+    # held in place and tilted six degrees; every pin and the ball name it as
+    # what they stand on and are seated on its surface, which is a different
+    # height for each of them along the slope. The ball is released at rest and
+    # rolls: measured 1.2 per cent slip on an 8 degree ramp and an acceleration
+    # of 0.97 m/s^2 against the 0.974 a rolling solid sphere gives.
+    {"id": "scene-alley", "title": "A bowling alley on a tilted lane",
+     "expect": "the ball is released at rest at the top and rolls the length of the lane into the pins",
+     "spec": {"algorithm": "lattice", "failure_law": "strain-threshold", "plasticity": "off",
+              "cell_m": 0.02, "duration_s": 2.5, "bodies": [{"name": "lane", "shape": "box", "material": "oak", "size_mm": [2000, 60, 300], "center_mm": [0, 220, 0], "rotation_deg": [0, 0, -6], "anchored": True},
+              {"name": "pin1", "shape": "box", "material": "glass", "size_mm": [40, 120, 40], "center_mm": [680, 0, 0], "rest_on": "lane"},
+              {"name": "pin2", "shape": "box", "material": "glass", "size_mm": [40, 120, 40], "center_mm": [760, 0, -50], "rest_on": "lane"},
+              {"name": "pin3", "shape": "box", "material": "glass", "size_mm": [40, 120, 40], "center_mm": [760, 0, 50], "rest_on": "lane"},
+              {"name": "pin4", "shape": "box", "material": "glass", "size_mm": [40, 120, 40], "center_mm": [840, 0, -100], "rest_on": "lane"},
+              {"name": "pin5", "shape": "box", "material": "glass", "size_mm": [40, 120, 40], "center_mm": [840, 0, 0], "rest_on": "lane"},
+              {"name": "pin6", "shape": "box", "material": "glass", "size_mm": [40, 120, 40], "center_mm": [840, 0, 100], "rest_on": "lane"},
+              {"name": "pin7", "shape": "box", "material": "glass", "size_mm": [40, 120, 40], "center_mm": [920, 0, -150], "rest_on": "lane"},
+              {"name": "pin8", "shape": "box", "material": "glass", "size_mm": [40, 120, 40], "center_mm": [920, 0, -50], "rest_on": "lane"},
+              {"name": "pin9", "shape": "box", "material": "glass", "size_mm": [40, 120, 40], "center_mm": [920, 0, 50], "rest_on": "lane"},
+              {"name": "pin10", "shape": "box", "material": "glass", "size_mm": [40, 120, 40], "center_mm": [920, 0, 150], "rest_on": "lane"},
+              {"name": "ball", "shape": "sphere", "material": "iron", "size_mm": [100, 100, 100], "center_mm": [-700, 0, 0], "rest_on": "lane"}]}},
     {"id": "scene-shelf", "title": "A ball dropped on a glass shelf between two piers",
      "expect": "255 bonds broken, 45 pieces: the shelf gives way under the ball and the oak block rides it down",
      "spec": {"algorithm": "lattice", "failure_law": "strain-threshold", "plasticity": "off",
@@ -302,7 +323,10 @@ def normalise_bodies(bodies: Any, cell_m: float) -> list[dict[str, Any]]:
         if shape == "sphere":
             size = [size[0], size[0], size[0]]
         center = triple("center_mm", *BODY_LIMITS["center_mm"])
-        velocity = triple("velocity_m_s", *BODY_LIMITS["velocity_m_s"])
+        # Most objects are at rest, so an absent velocity means at rest rather
+        # than an error.
+        velocity = (triple("velocity_m_s", *BODY_LIMITS["velocity_m_s"])
+                    if "velocity_m_s" in body else [0.0, 0.0, 0.0])
         # Tilt, in degrees about the body's own centre. Without it a ramp has to
         # be a staircase of boxes, which collide with each other and with
         # whatever stands on them.
