@@ -87,3 +87,53 @@ speed already given. The same ball:
 
 The single-tile lane: 167 physics fields compared before and after, none differ.
 Fast-lattice, refracture and plasticity suites, 30 tests, all pass.
+
+## Rolling, resolved
+
+Torque was never the missing piece. What stopped a ball rolling was its
+collision shape. A fragment becomes a convex hull of its cell corners, so a
+100 mm ball at 20 mm cells is a five-facet lump with a flat bottom, and a
+flat-bottomed lump sliding on a plane does not roll. That is right for the shape
+it actually was.
+
+A fragment now carries the primitive it was authored as, set wherever a
+component is exactly one whole un-joined body. Only while whole: the moment it
+loses a cell it is a broken piece and the hull is its real surface. A joined
+group keeps the hull, because its shape is a union no primitive describes.
+
+That exposed a worse bug underneath. `generateSphereLattice` samples partial
+occupancy, so rim cells hold a fraction of a cell's mass with sparse degenerate
+neighbourhoods. They read fabricated strain and fail on the first substep.
+
+| 100 mm iron at rest, 10 mm cells | bonds broken | peak stretch | rank-deficient reads |
+|---|---|---|---|
+| as a cube | 0 of 12,876 | 0.00000 | 0 |
+| as a sphere | 5,791 of 9,477 | 0.0219 | 1,263 |
+
+Critical stretch is 0.0024, so the sphere was reading nine times over it, at
+rest, with its first failure at 0.000 ms. Every ball in every scene at that
+resolution had been tearing itself apart, and most of its broken-bond count was
+its own. Spheres in a scene now take the whole-cell voxel path, which is the
+uniform-mass property the box generator has always had and warns about in its
+own comment. The staircase that leaves costs nothing now that a whole body
+collides as its authored shape.
+
+| 100 mm iron ball | before | after |
+|---|---|---|
+| resting | 5,791 bonds broken | 0 |
+| 5 cells across | 0.0 deg, 544 mm | 152.7 deg, 2,679 mm |
+| 10 cells across | 24.4 deg, 2,302 mm | 168.1 deg, 2,629 mm |
+
+The two resolutions now agree to 2%. They did not before.
+
+## Tested in the playground
+
+Asked for in words: an oak lane with ten glass pins in a triangle and an iron
+ball rolled into them. The first attempt was refused, because the model buried
+the pins in the lane again; the refusal named the objects, the 9.0 cells of
+shared space and the height to raise them to, and went back into the
+conversation. One correcting turn later it planned a scene that passed.
+
+The run: 12 objects, 3,576 cells, 5.2 seconds. The ball rolls the whole length
+of the lane, turning continuously, and seven pins are down at 0.37 s and all ten
+by 0.62 s. No bonds broke, which is what bowling is.
