@@ -2082,8 +2082,11 @@ void writePlayback(const TileImpactResult &result, const std::filesystem::path &
     // conditions are the collision path's, for the same reason: the moment it
     // breaks, the cells are its real surface and no primitive describes it.
     // Bond lines carry their own endpoints, so they are unaffected.
-    std::vector<char> draw_as_sphere(result.part_bodies.size(), 0);
-    std::vector<std::vector<std::size_t>> sphere_cells(result.part_bodies.size());
+    std::vector<char> draw_whole(result.part_bodies.size(), 0);
+    std::vector<std::vector<std::size_t>> whole_cells(result.part_bodies.size());
+    std::vector<BodyShape> whole_shape(result.part_bodies.size(), BodyShape::Box);
+    std::vector<std::array<double, 4>> whole_rotation(result.part_bodies.size(),
+                                                     std::array<double, 4>{1.0, 0.0, 0.0, 0.0});
     if (many) {
         // Bonds do not heal, so the last frame that carries bond state says
         // whether anything inside a part ever failed.
@@ -2100,47 +2103,76 @@ void writePlayback(const TileImpactResult &result, const std::filesystem::path &
             }
         for (std::size_t g = 0; g < result.part_bodies.size(); ++g) {
             if (part_broke[g] || result.part_bodies[g].size() != 1) continue;
-            if (result.bodies[result.part_bodies[g].front()].shape != BodyShape::Sphere) continue;
-            draw_as_sphere[g] = 1;
+            const SceneBody &body = result.bodies[result.part_bodies[g].front()];
+            // A cone's cell hull is already its true surface and it carries no
+            // authored primitive; a join is a union and no primitive describes
+            // one. Everything else was authored as one convex shape, and the
+            // cells are an approximation OF it.
+            if (body.shape != BodyShape::Sphere && body.shape != BodyShape::Box) continue;
+            draw_whole[g] = 1;
+            whole_shape[g] = body.shape;
+            rotationQuaternion(body.rotation_deg, whole_rotation[g].data());
         }
         for (std::size_t i = 0; i < N; ++i) {
             const std::uint32_t g = result.part_of_node[i];
-            if (g < draw_as_sphere.size() && draw_as_sphere[g]) sphere_cells[g].push_back(i);
+            if (g < draw_whole.size() && draw_whole[g]) whole_cells[g].push_back(i);
         }
-        // A sphere of one cell is a cube either way, and drawing it as a ball
-        // would claim a roundness the lattice does not have.
-        for (std::size_t g = 0; g < draw_as_sphere.size(); ++g)
-            if (sphere_cells[g].size() < 2) { draw_as_sphere[g] = 0; sphere_cells[g].clear(); }
+        for (std::size_t g = 0; g < draw_whole.size(); ++g) {
+            // A sphere of one cell is a cube either way, and drawing it round
+            // would claim a shape the lattice does not have. A box of one cell
+            // IS that cube, so it keeps its primitive.
+            const bool too_coarse =
+                whole_shape[g] == BodyShape::Sphere && whole_cells[g].size() < 2;
+            if (whole_cells[g].empty() || too_coarse) {
+                draw_whole[g] = 0;
+                whole_cells[g].clear();
+            }
+        }
     }
     // The centroid of a rigid part transforms with it, so one representative
     // pose per frame is exact for as long as the part stays whole.
-    const auto spherePose = [&](const RecordedFrame &frame, std::size_t group) {
+    const auto wholeCentre = [&](const RecordedFrame &frame, std::size_t group) {
         double cx = 0.0, cy = 0.0, cz = 0.0;
-        for (const std::size_t cell : sphere_cells[group]) {
+        for (const std::size_t cell : whole_cells[group]) {
             cx += frame.cell_positions[cell].x;
             cy += frame.cell_positions[cell].y;
             cz += frame.cell_positions[cell].z;
         }
-        const double n = static_cast<double>(sphere_cells[group].size());
+        const double n = static_cast<double>(whole_cells[group].size());
         return Vec3{cx / n, cy / n, cz / n};
+    };
+    // A box has to be turned the way it was authored as well as the way the
+    // part is lying, so the two rotations compose. A sphere does not care, but
+    // composing costs nothing and keeps one code path. This is the same order
+    // the collision shape uses: the authored rotation is applied inside the
+    // shape, then the body's own transform on top.
+    const auto composeQuat = [](const std::array<double, 4> &lhs, const double *rhs) {
+        return std::array<double, 4>{
+            lhs[0] * rhs[0] - lhs[1] * rhs[1] - lhs[2] * rhs[2] - lhs[3] * rhs[3],
+            lhs[0] * rhs[1] + lhs[1] * rhs[0] + lhs[2] * rhs[3] - lhs[3] * rhs[2],
+            lhs[0] * rhs[2] - lhs[1] * rhs[3] + lhs[2] * rhs[0] + lhs[3] * rhs[1],
+            lhs[0] * rhs[3] + lhs[1] * rhs[2] - lhs[2] * rhs[1] + lhs[3] * rhs[0]};
     };
     const auto posesFor = [&](const RecordedFrame &frame) {
         Json poses = Json::array();
         for (std::size_t i = 0; i < N; ++i) {
             if (many) {
                 const std::uint32_t g = result.part_of_node[i];
-                if (g < draw_as_sphere.size() && draw_as_sphere[g]) continue;
+                if (g < draw_whole.size() && draw_whole[g]) continue;
             }
             poses.push_back({{"id", "cell:" + std::to_string(i)}, {"position_m", vec(frame.cell_positions[i])},
                              {"orientation_wxyz", quat(frame.cell_orientations[i])},
                              {"component_id", frame.component_ids.empty() ? 0U : frame.component_ids[i]}});
         }
-        for (std::size_t g = 0; g < draw_as_sphere.size(); ++g) {
-            if (!draw_as_sphere[g]) continue;
-            const std::size_t lead = sphere_cells[g].front();
-            poses.push_back({{"id", "sphere:" + std::to_string(g)},
-                             {"position_m", vec(spherePose(frame, g))},
-                             {"orientation_wxyz", quat(frame.cell_orientations[lead])},
+        for (std::size_t g = 0; g < draw_whole.size(); ++g) {
+            if (!draw_whole[g]) continue;
+            const std::size_t lead = whole_cells[g].front();
+            const Quat &lying = frame.cell_orientations[lead];
+            const std::array<double, 4> part{lying.w, lying.x, lying.y, lying.z};
+            const std::array<double, 4> turned = composeQuat(part, whole_rotation[g].data());
+            poses.push_back({{"id", "whole:" + std::to_string(g)},
+                             {"position_m", vec(wholeCentre(frame, g))},
+                             {"orientation_wxyz", Json{turned[0], turned[1], turned[2], turned[3]}},
                              {"component_id", frame.component_ids.empty() ? 0U : frame.component_ids[lead]}});
         }
         if (!many)
@@ -2208,7 +2240,7 @@ void writePlayback(const TileImpactResult &result, const std::filesystem::path &
     const double h = result.cell_size_m;
     for (std::size_t i = 0; i < N; ++i) {
         const std::uint32_t group = many ? result.part_of_node[i] : 0U;
-        if (group < draw_as_sphere.size() && draw_as_sphere[group]) continue;
+        if (group < draw_whole.size() && draw_whole[group]) continue;
         // A joined part is several bodies; the first one names and colours it.
         const std::size_t part = group < result.part_bodies.size() && !result.part_bodies[group].empty()
                                      ? result.part_bodies[group].front() : group;
@@ -2221,16 +2253,17 @@ void writePlayback(const TileImpactResult &result, const std::filesystem::path &
                           {"color_rgba", many ? result.bodies[part].color_rgba : 0x9fd3ffffU},
                           {"shape", "box"}, {"dimensions_m", Json{h, h, h}}});
     }
-    for (std::size_t g = 0; g < draw_as_sphere.size(); ++g) {
-        if (!draw_as_sphere[g]) continue;
+    for (std::size_t g = 0; g < draw_whole.size(); ++g) {
+        if (!draw_whole[g]) continue;
         const SceneBody &body = result.bodies[result.part_bodies[g].front()];
         const std::string material{materialPresetName(body.material)};
-        bodies.push_back({{"id", "sphere:" + std::to_string(g)},
+        bodies.push_back({{"id", "whole:" + std::to_string(g)},
                           {"object_id", 100 + static_cast<int>(g)},
                           {"element_id", 0},
                           {"material_id", body.name + " (" + material + ")"},
                           {"color_rgba", body.color_rgba},
-                          {"shape", "sphere"}, {"dimensions_m", vec(body.dimensions_m)}});
+                          {"shape", whole_shape[g] == BodyShape::Sphere ? "sphere" : "box"},
+                          {"dimensions_m", vec(body.dimensions_m)}});
     }
     // A many-object scene has no rigid striker to draw.
     if (!many)
