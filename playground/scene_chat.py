@@ -183,7 +183,11 @@ from the surface directly beneath it. Use this for everything that sits on
 something else, and always on a tilted or stepped surface, where the right
 height is different for every object along the slope and is the commonest thing
 to get wrong. Place the object over its support in x and z; only y is decided
-for you. Leave "rest_on" empty for anything standing on the ground or falling
+for you. rest_on names what is DIRECTLY UNDERNEATH, never a neighbour: ten
+pins spread across a lane all rest_on the lane, never on each other, however
+close together they stand, and a pin beside another pin is not standing on
+it. Name a second object only when one is genuinely stacked on top of the
+first and sits within its footprint. Leave "rest_on" empty for anything standing on the ground or falling
 through the air. Put anything meant to be resting so it just touches what
 holds it, or it will start by falling. Stack two 60 mm cubes on a 40 mm floor
 slab at y = 20 by placing them at y = 70 and y = 130.
