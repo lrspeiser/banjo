@@ -909,10 +909,17 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
     }
     constexpr MatterBodyId kBallId = 1;
     const Vec3 ball_center = origin + toVec3(sphere.center);
-    world.addBall({.body_id = kBallId, .radius_m = r.ball_radius_m, .material = setup.ball_material,
-                   .position_world_m = ball_center, .linear_velocity_m_s = toVec3(sphere.velocity),
-                   .angular_velocity_rad_s = toVec3(sphere.angular_velocity),
-                   .mass_override_kg = setup.sphere_world.mass, .sphere_inertia_factor = 0.4});
+    // The rigid striker belongs to the single-tile lane. A many-object scene
+    // has no striker -- whatever is moving is one of its own bodies -- and this
+    // was adding one anyway: an invisible ball that the recorder does not draw
+    // (the "ball" body is written only when !many) but that Jolt still
+    // simulates. The contact ledger found it landing on a bowling lane at
+    // 4.05 m/s with 12.5 N.s of impulse, in a scene nobody put a ball in.
+    if (!setup.multi_body)
+        world.addBall({.body_id = kBallId, .radius_m = r.ball_radius_m, .material = setup.ball_material,
+                       .position_world_m = ball_center, .linear_velocity_m_s = toVec3(sphere.velocity),
+                       .angular_velocity_rad_s = toVec3(sphere.angular_velocity),
+                       .mass_override_kg = setup.sphere_world.mass, .sphere_inertia_factor = 0.4});
     world.addFragments(build.rigid_fragments);
     // Cell -> piece mapping and the cells' offsets in the piece's frame. A
     // "piece" is a rigid body that owns a set of the tile's cells; the handoff
@@ -960,6 +967,80 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
     }
     std::unordered_map<MatterBodyId, std::size_t> piece_of_body;
     for (std::size_t p = 0; p < pieces.size(); ++p) piece_of_body[pieces[p].body_id] = p;
+    // Every rigid body under the name the request gave it, so a contact can be
+    // reported as "ball (iron) reached pin3 (glass)" rather than by body id. A
+    // piece that broke off something keeps its parent's name with a marker,
+    // because "a piece of the plate landed" is the true statement.
+    std::unordered_map<MatterBodyId, std::string> label_of_body;
+    for (const RigidPiece &piece : pieces) {
+        std::string name = setup.multi_body
+                               ? std::string("piece")
+                               : std::string(materialPresetName(r.tile_material)) + " tile";
+        if (setup.multi_body && !piece.nodes.empty() &&
+            piece.nodes.front() < setup.part_of_node.size()) {
+            const std::uint32_t part = setup.part_of_node[piece.nodes.front()];
+            if (part < setup.part_bodies.size() && !setup.part_bodies[part].empty()) {
+                const SceneBody &body = r.bodies[setup.part_bodies[part].front()];
+                name = body.name + " (" + std::string(materialPresetName(body.material)) + ")";
+                // A component smaller than the part it came from is a fragment.
+                std::size_t part_nodes = 0;
+                for (const std::uint32_t owner : setup.part_of_node)
+                    if (owner == part) ++part_nodes;
+                if (piece.nodes.size() < part_nodes) name += " [piece]";
+            }
+        }
+        label_of_body[piece.body_id] = name;
+    }
+    // The rigid strikers exist only in the single-tile lane. A many-object scene
+    // has none, and its pieces are numbered from 1, so naming those ids here
+    // would rename a piece after a ball that is not in the scene.
+    if (!setup.multi_body) {
+        label_of_body[kBallId] = std::string(materialPresetName(r.ball_material)) + " ball";
+        // kSecondBallId is declared further down with the second striker; 2 is
+        // its value and the ledger only needs the name.
+        label_of_body[2] =
+            std::string(materialPresetName(r.second_ball_material)) + " second ball";
+    }
+    // Every contact this run has seen, keyed by the unordered pair of names.
+    std::map<std::pair<std::string, std::string>, ContactPair> contact_ledger;
+    const auto noteContacts = [&](const std::vector<ImpactEvent> &events, double at_time_s) {
+        for (const ImpactEvent &ev : events) {
+            const auto first = label_of_body.find(ev.body_a);
+            const auto second = label_of_body.find(ev.body_b);
+            // Anything still unlabelled is named for what it is rather than
+            // guessed at. Calling an unknown body "the ground" would be exactly
+            // the kind of plausible-but-unmeasured claim this channel exists to
+            // avoid, so it says so instead.
+            const auto name_of = [&](MatterBodyId id,
+                                     std::unordered_map<MatterBodyId, std::string>::const_iterator it) {
+                if (it != label_of_body.end()) return it->second;
+                if (id == kSupportSurfaceMatterId) return std::string("the ground");
+                if (id >= 900U && id < 900U + setup.ledges.size()) return std::string("a ledge");
+                // Carrying the id keeps this honest and self-diagnosing: it
+                // names what it knows and says which body it could not name.
+                return "unnamed body #" + std::to_string(id);
+            };
+            const std::string a = name_of(ev.body_a, first);
+            const std::string b = name_of(ev.body_b, second);
+            if (a == b) continue;
+            auto key = std::minmax(a, b);
+            auto [entry, inserted] = contact_ledger.try_emplace(
+                std::pair<std::string, std::string>{key.first, key.second});
+            ContactPair &pair = entry->second;
+            if (inserted) {
+                pair.a = key.first;
+                pair.b = key.second;
+                pair.first_time_s = at_time_s;
+            }
+            pair.peak_closing_speed_m_s =
+                std::max(pair.peak_closing_speed_m_s, ev.closing_speed_m_s);
+            pair.peak_impulse_n_s =
+                std::max(pair.peak_impulse_n_s, ev.estimated_normal_impulse_n_s);
+            pair.peak_energy_j =
+                std::max(pair.peak_energy_j, ev.available_normal_energy_j);
+            ++pair.events;
+        }
+    };
     // Debris (components beyond the rigid budget) is integrated ballistically
     // against the ground only; with the budget equal to the component count
     // there is none.
@@ -1658,21 +1739,32 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
         if (r.refracture && refracture_possible()) {
             if (!rollback_available()) {
                 world.step(rigid_dt);
-                candidate = evaluate_impacts(world.drainImpacts());
+                std::vector<ImpactEvent> observed = world.drainImpacts();
+                noteContacts(observed, rigid_time + rigid_dt);
+                candidate = evaluate_impacts(std::move(observed));
                 if (candidate.have) { ++report.refused_no_rollback; candidate.have = false; }
             } else {
                 ++report.trial_steps;
+                std::vector<ImpactEvent> observed;
                 const bool committed = world.runReversibleTrial([&]() {
                     world.step(rigid_dt);
-                    candidate = evaluate_impacts(world.drainImpacts());
+                    observed = world.drainImpacts();
+                    candidate = evaluate_impacts(observed);
                     return !candidate.have;
                 });
+                // A rolled-back trial never happened, so its contacts did not
+                // either; only a committed step's contacts go in the ledger.
+                if (committed) noteContacts(observed, rigid_time + rigid_dt);
                 rolled_back = !committed;
                 if (rolled_back) ++report.rollbacks;
             }
         } else {
             world.step(rigid_dt);
-            if (r.refracture) (void)evaluate_impacts(world.drainImpacts());
+            // Drain unconditionally. With refracture off this was never called,
+            // so the collector's event vector grew for the length of the run.
+            std::vector<ImpactEvent> observed = world.drainImpacts();
+            noteContacts(observed, rigid_time + rigid_dt);
+            if (r.refracture) (void)evaluate_impacts(std::move(observed));
         }
         if (!rolled_back) {
             for (Debris &d : debris) {
@@ -1689,7 +1781,7 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
             // The re-entry was refused after the rollback; take the step the
             // trial threw away so the world still advances.
             world.step(rigid_dt);
-            (void)world.drainImpacts();
+            noteContacts(world.drainImpacts(), rigid_time + rigid_dt);
             for (Debris &d : debris) {
                 d.velocity += rigid_dt * r.gravity_m_s2;
                 d.position += rigid_dt * d.velocity;
@@ -1757,6 +1849,8 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
     result.bodies = r.bodies;
     result.part_of_node = setup.part_of_node;
     result.part_bodies = setup.part_bodies;
+    result.contacts.reserve(contact_ledger.size());
+    for (auto &[key, pair] : contact_ledger) result.contacts.push_back(std::move(pair));
     result.bond_nodes.reserve(B);
     for (const BondRest &bond : setup.asset.bonds) result.bond_nodes.emplace_back(bond.node_a, bond.node_b);
     if (log) *log += notes.str();
@@ -2162,8 +2256,21 @@ void writePlayback(const TileImpactResult &result, const std::filesystem::path &
         frames.push_back({{"time_s", frame.time_s}, {"phase", frame.phase}, {"poses", std::move(poses)},
                           {"bonds", std::move(bonds)}, {"fracture_count", frame.fracture_count}});
     }
+    // Who touched whom, by the names the request used. Measured from Jolt's own
+    // contact callbacks rather than inferred from how close two bodies came --
+    // an inferred contact is a guess, and this is the channel a model is meant
+    // to trust.
+    Json contacts = Json::array();
+    for (const ContactPair &pair : result.contacts)
+        contacts.push_back({{"a", pair.a}, {"b", pair.b},
+                            {"first_time_s", pair.first_time_s},
+                            {"peak_closing_speed_m_s", pair.peak_closing_speed_m_s},
+                            {"peak_impulse_n_s", pair.peak_impulse_n_s},
+                            {"peak_energy_j", pair.peak_energy_j},
+                            {"events", pair.events}});
     Json artifact{{"schema", "banjo.playback.v1"}, {"mode", "network"}, {"units", "SI"},
-                  {"bodies", std::move(bodies)}, {"supports", std::move(supports)}, {"frames", std::move(frames)},
+                  {"bodies", std::move(bodies)}, {"supports", std::move(supports)},
+                  {"contacts", std::move(contacts)}, {"frames", std::move(frames)},
                   {"requested_steps", result.measurements.lattice_steps + result.measurements.rigid_steps},
                   {"completed_steps", result.measurements.lattice_steps + result.measurements.rigid_steps},
                   {"sampling", {{"stride_steps", 0}, {"maximum_frames", kept.size()}, {"interpolation", "none"},

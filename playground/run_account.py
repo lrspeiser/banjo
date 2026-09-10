@@ -17,14 +17,13 @@ The recording already carries the author's own names: a body's `material_id` is
 "pin7 (glass)", the name the request chose. The account speaks that vocabulary
 back, which is what lets a model connect what it asked for to what happened.
 
-Not measured here, on purpose: which body touched which. The recording carries no
-contact events (Jolt computes them and they are not written out), and inferring
-them from how close two centres came is guesswork that gets visibly wrong answers
--- a ball resting on a lane from the first frame reads as "reached the lane" the
-moment its centre falls inside the lane's longest dimension. Instead this reports
-WHEN EACH BODY STARTED MOVING, which is exact, and carries the same information
-for the question that matters: whether the interesting event happened inside the
-fracture window or after it.
+Contacts are read, not inferred. The recording carries Jolt's own contact
+callbacks, aggregated per pair of named objects: when they first touched and how
+hard the hardest touch was. Inferring them instead from how close two centres came
+gets visibly wrong answers -- a ball resting on a lane from the first frame reads
+as "reached the lane" the moment its centre falls inside the lane's longest
+dimension -- so nothing here guesses at one. A pair with no recorded contact is
+simply not mentioned.
 """
 from __future__ import annotations
 
@@ -41,6 +40,12 @@ FELL_OUT_M = 1.0
 # Beyond this many objects the per-object lines are grouped, so a rack of ten
 # pins is one line rather than ten.
 GROUP_ABOVE = 8
+# Below this a contact is two things leaning on each other, which is how a scene
+# starts and is not what anyone asked about. Above it something arrived.
+STRUCK_SPEED_M_S = 0.5
+# How many impacts are worth listing. They are sorted hardest first, so the cap
+# keeps the strike and drops the rattle.
+MOST_CONTACTS = 6
 AXES = "xyz"
 
 
@@ -222,6 +227,22 @@ def account(playback: dict[str, Any], report: dict[str, Any],
                 f"rolled into a stack, a piece landing) cannot fracture anything. For "
                 f"something to break, it has to be under load in that first window.")
             facts["impact_after_window"] = True
+
+    # Who hit what, hardest first. Measured by Jolt, not inferred here.
+    contacts = [c for c in (playback.get("contacts") or [])
+                if float(c.get("peak_closing_speed_m_s") or 0.0) >= STRUCK_SPEED_M_S]
+    contacts.sort(key=lambda c: -float(c.get("peak_closing_speed_m_s") or 0.0))
+    if contacts:
+        lines.append("IMPACTS (measured, hardest first):")
+        for c in contacts[:MOST_CONTACTS]:
+            lines.append(f"  {c['a']} hit {c['b']} at t={float(c['first_time_s']):.2f} s, "
+                         f"closing at {float(c['peak_closing_speed_m_s']):.1f} m/s")
+        if len(contacts) > MOST_CONTACTS:
+            lines.append(f"  ...and {len(contacts) - MOST_CONTACTS} more")
+        facts["impacts"] = contacts
+    elif playback.get("contacts") is not None:
+        lines.append("IMPACTS: nothing struck anything; "
+                     "every contact was two objects resting against each other.")
 
     ratio = measurements.get("realtime_ratio")
     if isinstance(ratio, (int, float)) and ratio > 0:

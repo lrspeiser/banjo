@@ -101,15 +101,43 @@ class Account(unittest.TestCase):
         self.assertTrue(any("NOTHING BROKE" in line for line in out), out)
         self.assertTrue(any("lattice window" in line for line in out), out)
 
-    def test_it_never_claims_a_contact(self):
-        """The recording carries no contact events, so the account must not
-        invent one -- inferring hits from centre distance gets visibly wrong
-        answers and this channel exists to be trusted."""
+    def test_a_contact_is_only_claimed_when_the_recording_has_one(self):
+        """Contacts are read from Jolt's callbacks, never inferred. A recording
+        with no contact list must produce no impact claim, however suggestive
+        the trajectories are -- inferring hits from centre distance gets
+        visibly wrong answers and this channel exists to be trusted."""
         doc = playback({"lane (oak)": [(0.0, [0, 0, 0]), (0.5, [0, 0, 0])],
                         "ball (iron)": [(0.0, [0, 0.05, 0]), (0.5, [1, 0.05, 0])]})
         joined = " ".join(lines(doc, report())).lower()
         for verb in ("hit ", "struck", "collided", "reached "):
             self.assertNotIn(verb, joined)
+
+    def test_recorded_impacts_are_reported_hardest_first(self):
+        doc = playback({"ball (iron)": [(0.0, [0, 1, 0]), (1.0, [2, 1, 0])]})
+        doc["contacts"] = [
+            {"a": "ball (iron)", "b": "pin1 (glass)", "first_time_s": 0.20,
+             "peak_closing_speed_m_s": 6.97, "peak_impulse_n_s": 3.75,
+             "peak_energy_j": 1.0, "events": 2},
+            {"a": "pin1 (glass)", "b": "pin5 (glass)", "first_time_s": 0.22,
+             "peak_closing_speed_m_s": 8.22, "peak_impulse_n_s": 2.82,
+             "peak_energy_j": 1.0, "events": 2},
+        ]
+        out = lines(doc, report())
+        impacts = [line for line in out if " hit " in line]
+        self.assertEqual(len(impacts), 2, out)
+        self.assertIn("pin1 (glass) hit pin5 (glass)", impacts[0])
+        self.assertIn("8.2 m/s", impacts[0])
+
+    def test_things_resting_on_each_other_are_not_impacts(self):
+        doc = playback({"ball (iron)": [(0.0, [0, 1, 0]), (1.0, [0, 1, 0])]})
+        doc["contacts"] = [
+            {"a": "ball (iron)", "b": "lane (oak)", "first_time_s": 0.004,
+             "peak_closing_speed_m_s": 0.05, "peak_impulse_n_s": 0.1,
+             "peak_energy_j": 0.0, "events": 1},
+        ]
+        out = lines(doc, report())
+        self.assertFalse(any(" hit " in line for line in out), out)
+        self.assertTrue(any("nothing struck anything" in line for line in out), out)
 
     def test_the_cost_is_reported_against_the_gate(self):
         doc = playback({"ball (iron)": [(0.0, [0, 1, 0]), (1.0, [0, 1, 0])]})

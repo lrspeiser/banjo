@@ -495,6 +495,20 @@ struct TileImpactMeasurements {
     double recording_wall_s{};
 };
 
+// Two objects that touched during the rigid phase, aggregated over the run.
+// Jolt reports a contact for every manifold it adds, and a settled pile adds and
+// drops them constantly, so a per-event list would be both enormous and useless.
+// What answers "did the ball reach the pins, and how hard" is the first touch and
+// the hardest one, which is what this keeps.
+struct ContactPair {
+    std::string a, b;
+    double first_time_s{};
+    double peak_closing_speed_m_s{};
+    double peak_impulse_n_s{};
+    double peak_energy_j{};
+    std::uint64_t events{};
+};
+
 struct TileImpactResult {
     TileImpactMeasurements measurements{};
     std::vector<RecordedFrame> frames;
@@ -512,6 +526,8 @@ struct TileImpactResult {
     std::vector<SceneBody> bodies;
     std::vector<std::uint32_t> part_of_node;
     std::vector<std::vector<std::size_t>> part_bodies; // asset order
+    // Who touched whom during the rigid phase, in the names the request used.
+    std::vector<ContactPair> contacts;
 };
 
 // Runs impact through rest. Throws on backend errors.

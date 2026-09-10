@@ -53,8 +53,8 @@ namespace {
 
 using namespace JPH::literals;
 
-constexpr MatterBodyId kSupportSurfaceMatterId =
-    std::numeric_limits<MatterBodyId>::max() - 1U;
+// kSupportSurfaceMatterId now lives in core/Types.hpp, so a scene that
+// reports contacts by name can recognise the ground.
 
 namespace Layers {
 constexpr JPH::ObjectLayer kNonMoving = 0;
