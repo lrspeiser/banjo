@@ -450,6 +450,21 @@
     state.scene = window.BanjoScene.create($("viewer-stage"), {
       onFrame: ({index, count, frame, continuum, dynamic, thermal}) => { $("viewer-frame").max = String(Math.max(0,count-1)); $("viewer-frame").value=String(index); syncCustomDisplay("frame",count>1?index/(count-1):0); const stopped=dynamic ? frame?.material_states?.filter(x=>x.stopped).map(x=>x.material_id) || [] : []; const shownTime=(dynamic||thermal)&&Number.isFinite(frame?.time_s) ? Number(frame.time_s.toPrecision(9)) : frame?.time_s; const thermalPhase=thermal&&frame?.cells?.some(cell=>cell.phase_change); const thermalDetail=thermal&&frame?.ledger ? thermalPhase ? ` · ${thermalTemperature(frame.ledger.temperature_min_k)}–${thermalTemperature(frame.ledger.temperature_max_k)} · liquid ${thermalMass(frame.ledger.liquid_mass_kg)} · enthalpy ${thermalEnergy(frame.ledger.thermal_enthalpy_j)}` : ` · ${thermalTemperature(frame.ledger.temperature_min_k)}–${thermalTemperature(frame.ledger.temperature_max_k)} · fuel ${thermalMass(frame.ledger.fuel_kg)} · products ${thermalMass(frame.ledger.products_kg)}` : ""; const detail=continuum ? ` · ${text(frame?.phase,"load")} · load ${frame?.load_fraction !== undefined ? `${Math.round(frame.load_fraction*100)}%` : `frame ${index+1}`}` : shownTime !== undefined ? ` · ${text(shownTime)} s${stopped.length ? ` · stopped: ${stopped.join(", ")}` : ""}${thermalDetail}` : ""; $("viewer-frame-output").textContent=`${index+1} / ${count || 0}${detail}`; $("viewer-magnification").disabled=!continuum;if(!continuum)$("viewer-magnification").value="1"; $("viewer-bonds").closest("label").hidden=!!dynamic||!!thermal; },
       onPlayState: (playing) => { $("viewer-play").textContent=playing?"Pause":"Play"; },
+      // Picking an object up and putting it down. The stage is a recording, so
+      // a grab only repositions: the fall is simulated by running the engine
+      // again from where the object was let go, which is why it obeys gravity,
+      // lands on what is under it and reports real contacts.
+      onGrab: ({name, held, moved_m}) => {
+        const box = $("viewer-grab-state");
+        if (!box) return;
+        box.hidden = false;
+        const up = moved_m[1];
+        box.textContent = held
+          ? `Holding ${name} — ${up >= 0 ? "up" : "down"} ${Math.abs(up).toFixed(2)} m,`
+            + ` across ${Math.hypot(moved_m[0], moved_m[2]).toFixed(2)} m. Let go to drop it.`
+          : "Let go.";
+      },
+      onRelease: (move) => { dropObject(move); },
       onInspect: (data) => { $("viewer-inspect").textContent = data ? Object.entries(data).filter(([k,v]) => k !== "source" && typeof v !== "object").slice(0,16).map(([k,v])=>`${k}: ${text(v)}`).join(" · ") : "Nothing selected."; },
     });
     // One handle so a frame of the running viewer can be captured from
@@ -1071,6 +1086,49 @@
     const p = row.querySelector("p");
     if (p) p.textContent = body;
     if (row._recorded) row._recorded.text = body;
+  }
+
+  // Putting a moved object down: write its new position into the scene the
+  // panel is holding and run it again. Nothing else about the scene changes, so
+  // what comes back is the same world with one thing somewhere else.
+  async function dropObject({name, moved_m, to_m}) {
+    const spec = readFracture();
+    if (!spec.bodies || !spec.bodies.length) {
+      chatTurn("bad", "Cannot move that", "Only a many-object scene can be rearranged by hand.");
+      return;
+    }
+    // The recording names a body "pin7 (glass)"; the scene calls it "pin7".
+    const plain = String(name).replace(/\s*\([^)]*\)\s*$/, "");
+    const body = spec.bodies.find((b) => b.name === plain);
+    if (!body) {
+      chatTurn("bad", "Cannot move that", `${plain} is not one of this scene's objects.`);
+      return;
+    }
+    if (body.anchored) {
+      chatTurn("bad", "That one is fixed",
+        `${plain} is anchored, so it is scenery and does not move. Turn off its anchor to pick it up.`);
+      return;
+    }
+    body.center_mm = [
+      Math.round(body.center_mm[0] + moved_m[0] * 1000),
+      Math.round(body.center_mm[1] + moved_m[1] * 1000),
+      Math.round(body.center_mm[2] + moved_m[2] * 1000),
+    ];
+    // Placed by hand, so it is no longer standing on whatever it stood on, and
+    // it is let go from rest however fast the pointer was travelling.
+    body.rest_on = "";
+    body.velocity_m_s = [0, 0, 0];
+    const up = moved_m[1];
+    const across = Math.hypot(moved_m[0], moved_m[2]);
+    const what = up >= 0.01
+      ? `picked up ${plain} and lifted it ${up.toFixed(2)} m`
+      : up <= -0.01
+        ? `pushed ${plain} down ${Math.abs(up).toFixed(2)} m`
+        : `moved ${plain} ${across.toFixed(2)} m sideways`;
+    chatTurn("you", "You", `${what}${across >= 0.01 && up >= 0.01 ? ` and ${across.toFixed(2)} m across` : ""}, then let go.`);
+    writeFracture(spec);
+    fractureCells();
+    await runFromChat();
   }
 
   // What the model built, in the terms it was asked in, so a wrong answer is
@@ -1963,7 +2021,7 @@
   $("viewer-reset").addEventListener("click",()=>{state.scene?.reset();$("viewer-play").textContent="Play";});
   $("viewer-back").addEventListener("click",()=>state.scene?.step(-1));$("viewer-forward").addEventListener("click",()=>state.scene?.step(1));
   $("viewer-frame").addEventListener("input",e=>state.scene?.setFrame(Number(e.target.value)));$("viewer-speed").addEventListener("change",e=>{state.scene?.setSpeed(e.target.value);syncCustomDisplay("playback_speed",Number(e.target.value));});$("viewer-magnification").addEventListener("change",e=>state.scene?.setMagnification(e.target.value));
-  $("viewer-components").addEventListener("change",e=>state.scene?.showComponents(e.target.checked));$("viewer-reference").addEventListener("change",e=>state.scene?.showReference(e.target.checked));$("viewer-bonds").addEventListener("change",e=>state.scene?.showBonds(e.target.checked));$("viewer-xray").addEventListener("change",e=>state.scene?.setXray(e.target.checked));$("viewer-hold").addEventListener("change",e=>{state.scene?.holdFracture(e.target.checked);if(fracture.lastSummary)captionStage(fracture.lastSummary);});$("viewer-native").addEventListener("click",()=>openStudio(state.selectedCase));
+  $("viewer-components").addEventListener("change",e=>state.scene?.showComponents(e.target.checked));$("viewer-reference").addEventListener("change",e=>state.scene?.showReference(e.target.checked));$("viewer-bonds").addEventListener("change",e=>state.scene?.showBonds(e.target.checked));$("viewer-xray").addEventListener("change",e=>state.scene?.setXray(e.target.checked));$("viewer-hold").addEventListener("change",e=>{state.scene?.holdFracture(e.target.checked);if(fracture.lastSummary)captionStage(fracture.lastSummary);});$("viewer-grab").addEventListener("change",e=>{const on=state.scene?.setGrabMode(e.target.checked);const box=$("viewer-grab-state");if(box){box.hidden=!on;box.textContent=on?"Drag an object to move it. Let go and it is dropped from there, and the scene runs again.":"";}});$("viewer-native").addEventListener("click",()=>openStudio(state.selectedCase));
   $("prompt-input").addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); $("chat-form").requestSubmit(); } });
   renderConversation(); renderHistory(); renderJob(null); renderStatus(); loadGoal(); restoreLatestJob();
   // The playground is the page now, so it is built on load rather than on a tab

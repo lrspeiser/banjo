@@ -43,6 +43,12 @@ function create(container, hooks = {}) {
     radius = 5,
     azimuth = 0.75,
     polar = 1.05;
+  // Moving objects by hand. The stage is a recording, so a grab cannot fall
+  // where it stands: dragging repositions the object and the app re-runs the
+  // engine from there, which is what makes the fall real physics rather than an
+  // animation. Everything here is the reposition half.
+  let grabMode = false;
+  let grab = null;
   const ray = new THREE.Raycaster(),
     mouse = new THREE.Vector2();
   ray.params.Line.threshold = 0.004;
@@ -176,6 +182,80 @@ function create(container, hooks = {}) {
     l.userData = { kind: "support boundary" };
     supports.add(l);
   }
+  // Every drawn piece of one authored object. A body is drawn as many cells or
+  // as one primitive, and they all carry the name the request gave it.
+  function partsOf(name) {
+    return bodies.filter((b) => String(b.material_id) === String(name));
+  }
+
+  // Where a grab should move things. Sideways follows the camera's own right
+  // vector flattened onto the ground, so a drag goes where it looks like it
+  // goes from any angle; up and down is world up, because "lift it" has only
+  // one meaning.
+  function dragBasis() {
+    const right = new THREE.Vector3();
+    camera.getWorldDirection(right);
+    right.y = 0;
+    if (right.lengthSq() < 1e-9) right.set(1, 0, 0);
+    right.normalize().cross(new THREE.Vector3(0, 1, 0)).normalize();
+    return { right, up: new THREE.Vector3(0, 1, 0) };
+  }
+
+  function beginGrab(clientX, clientY) {
+    const r = canvas.getBoundingClientRect();
+    mouse.set(((clientX - r.left) / r.width) * 2 - 1,
+              (-(clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(mouse, camera);
+    const hit = ray.intersectObjects([solids], true)[0];
+    const name = hit?.object?.userData?.material_id;
+    if (!name) return false;
+    const parts = partsOf(name);
+    if (!parts.length) return false;
+    const centre = new THREE.Vector3();
+    parts.forEach((b) => centre.add(b.mesh.position));
+    centre.multiplyScalar(1 / parts.length);
+    // The distance from the camera decides how far a pixel of drag moves the
+    // object, so it tracks the pointer instead of crawling or bolting away.
+    const scale = camera.position.distanceTo(centre) * 0.0016;
+    grab = { name, parts, x: clientX, y: clientY, basis: dragBasis(), scale,
+             moved: new THREE.Vector3(), start: centre.clone() };
+    // A recording that keeps playing would fight the pointer for the object.
+    setPlaying(false);
+    parts.forEach((b) => { b.mesh.material.emissive?.setHex(0x224433); });
+    hooks.onGrab?.({ name, held: true, moved_m: [0, 0, 0] });
+    return true;
+  }
+
+  function moveGrab(clientX, clientY) {
+    if (!grab) return;
+    const dx = (clientX - grab.x) * grab.scale;
+    const dy = -(clientY - grab.y) * grab.scale;
+    const next = grab.basis.right.clone().multiplyScalar(dx)
+      .add(grab.basis.up.clone().multiplyScalar(dy));
+    const step = next.clone().sub(grab.moved);
+    grab.parts.forEach((b) => {
+      b.mesh.position.add(step);
+      if (b.edge) b.edge.position.copy(b.mesh.position);
+    });
+    grab.moved.copy(next);
+    hooks.onGrab?.({ name: grab.name, held: true,
+                     moved_m: [grab.moved.x, grab.moved.y, grab.moved.z] });
+  }
+
+  function endGrab() {
+    if (!grab) return;
+    grab.parts.forEach((b) => { b.mesh.material.emissive?.setHex(0x000000); });
+    const moved = grab.moved;
+    const name = grab.name;
+    const to = grab.start.clone().add(moved);
+    grab = null;
+    // A drag of less than a millimetre is a click, not a move.
+    if (moved.length() < 0.001) { hooks.onGrab?.({ name, held: false, moved_m: [0, 0, 0] }); return; }
+    hooks.onGrab?.({ name, held: false, moved_m: [moved.x, moved.y, moved.z] });
+    hooks.onRelease?.({ name, moved_m: [moved.x, moved.y, moved.z],
+                        to_m: [to.x, to.y, to.z] });
+  }
+
   function buildNetwork(d) {
     continuum = false;
     const ys = (d.supports || []).flat(2).filter((_, i) => i % 3 === 1);
@@ -847,7 +927,12 @@ function create(container, hooks = {}) {
       });
     else {
       const poses = new Map((f.poses || []).map((p) => [p.id, p]));
+      const held = grab ? new Set(grab.parts.map((b) => b.id)) : null;
       bodies.forEach((b) => {
+        // A body being held stays where the hand put it. The recording still
+        // says where it was, and writing that back every frame would drag it
+        // out of the pointer.
+        if (held && held.has(b.id)) return;
         const m = b.mesh,
           p = poses.get(b.id);
         m.visible = !!p;
@@ -969,10 +1054,14 @@ function create(container, hooks = {}) {
   }
   const canvas = renderer.domElement;
   canvas.addEventListener("pointerdown", (e) => {
-    pointer = { x: e.clientX, y: e.clientY, azimuth, polar, moved: false };
     canvas.setPointerCapture(e.pointerId);
+    // In grab mode a drag that starts on an object moves it; a drag that starts
+    // on empty space still orbits, so the camera is never taken away.
+    if (grabMode && beginGrab(e.clientX, e.clientY)) { pointer = null; return; }
+    pointer = { x: e.clientX, y: e.clientY, azimuth, polar, moved: false };
   });
   canvas.addEventListener("pointermove", (e) => {
+    if (grab) { moveGrab(e.clientX, e.clientY); return; }
     if (!pointer) return;
     const dx = e.clientX - pointer.x,
       dy = e.clientY - pointer.y;
@@ -981,6 +1070,7 @@ function create(container, hooks = {}) {
     polar = clamp(pointer.polar + dy * 0.007, 0.08, Math.PI - 0.08);
   });
   canvas.addEventListener("pointerup", (e) => {
+    if (grab) { endGrab(); pointer = null; return; }
     if (pointer && !pointer.moved) {
       const r = canvas.getBoundingClientRect();
       mouse.set(
@@ -1030,6 +1120,17 @@ function create(container, hooks = {}) {
     // shows a corner of the scene in the other.
     refit() {
       fit();
+    },
+    // Let the pointer move objects instead of orbiting the camera. A grab is
+    // only a reposition: the fall itself is simulated by re-running the engine
+    // from where the object was let go.
+    setGrabMode(v) {
+      grabMode = v !== false;
+      if (!grabMode && grab) endGrab();
+      return grabMode;
+    },
+    get grabbing() {
+      return grab != null;
     },
     // Whether lattice frames are held on screen. Off is true elapsed time.
     holdFracture(v) {
