@@ -132,6 +132,77 @@ void aStepFitsInAFrame() {
     require(per_step_ms < 8.0, "a step does not fit in half a frame");
 }
 
+// An iron ball dropped from a height onto a glass pane resting on the ground.
+TileImpactRequest ballOntoGlass(double drop_m) {
+    TileImpactRequest r;
+    r.cell_size_m = 0.02;
+    SceneBody pane;
+    pane.name = "pane";
+    pane.shape = BodyShape::Box;
+    pane.material = MaterialPreset::Glass;
+    pane.dimensions_m = {0.3, 0.04, 0.3};
+    pane.center_m = {0.0, 0.02, 0.0};
+    SceneBody ball;
+    ball.name = "ball";
+    ball.shape = BodyShape::Sphere;
+    ball.material = MaterialPreset::Iron;
+    ball.dimensions_m = {0.1, 0.1, 0.1};
+    ball.center_m = {0.0, 0.04 + 0.05 + drop_m, 0.0};
+    r.bodies = {pane, ball};
+    return r;
+}
+
+// The hardest hit the pane takes over a fall, and whether the engine judged it
+// enough to break it.
+LiveImpact hardestOnThePane(double drop_m) {
+    const auto live = LiveWorld::open(ballOntoGlass(drop_m));
+    LiveImpact worst{};
+    for (int i = 0; i < 400; ++i) {
+        live->step(1.0 / 240.0);
+        for (const LiveImpact &impact : live->impacts())
+            if (impact.struck == "pane" && impact.closing_speed_m_s > worst.closing_speed_m_s)
+                worst = impact;
+    }
+    return worst;
+}
+
+void aContactIsJudgedAgainstWhatItHit() {
+    // Falling 1.5 m arrives at about 5.4 m/s; falling 20 mm at about 0.6 m/s.
+    const LiveImpact hard = hardestOnThePane(1.5);
+    const LiveImpact soft = hardestOnThePane(0.02);
+    std::cout << "  dropped 1.50 m: pane hit at " << hard.closing_speed_m_s
+              << " m/s, needs " << hard.threshold_speed_m_s << " m/s -> "
+              << (hard.would_break ? "breaks" : "holds") << "\n";
+    std::cout << "  dropped 0.02 m: pane hit at " << soft.closing_speed_m_s
+              << " m/s, needs " << soft.threshold_speed_m_s << " m/s -> "
+              << (soft.would_break ? "breaks" : "holds") << "\n";
+    require(hard.closing_speed_m_s > 3.0, "the ball did not arrive with any speed");
+    require(hard.threshold_speed_m_s > 0.0, "the pane has no breaking speed at all");
+    require(soft.closing_speed_m_s < hard.closing_speed_m_s,
+            "a shorter drop should land more gently");
+    // The point of the test: the SAME pane and the SAME ball give different
+    // verdicts, because the verdict is about the contact and not about the
+    // scene. If both came back alike the trigger would be reporting nothing.
+    require(hard.would_break != soft.would_break,
+            "a hard drop and a gentle one were judged identically, so the "
+            "trigger is not reading the contact");
+    require(hard.would_break, "a 5 m/s iron ball onto a glass pane should break it");
+    require(!soft.would_break, "a 0.6 m/s tap should not break a glass pane");
+}
+
+void anImpactNamesBothSides() {
+    const auto live = LiveWorld::open(ballOntoGlass(1.0));
+    for (int i = 0; i < 400; ++i) {
+        live->step(1.0 / 240.0);
+        for (const LiveImpact &impact : live->impacts()) {
+            require(!impact.struck.empty() && !impact.by.empty(), "an impact with no names");
+            require(impact.struck != impact.by, "an object was reported hitting itself");
+        }
+    }
+    // Two things leaning on each other are not an impact.
+    require(live->impacts(1000.0).empty(), "a 1000 m/s filter still reported impacts");
+}
+
 } // namespace
 
 int main() {
@@ -146,6 +217,10 @@ int main() {
         std::cout << "[PASS] anchored scenery cannot be picked up\n";
         aStepFitsInAFrame();
         std::cout << "[PASS] a step fits inside a frame with room to spare\n";
+        aContactIsJudgedAgainstWhatItHit();
+        std::cout << "[PASS] a contact is judged against what it hit, hard differs from gentle\n";
+        anImpactNamesBothSides();
+        std::cout << "[PASS] an impact names both sides; resting contacts are not impacts\n";
         return 0;
     } catch (const std::exception &error) {
         std::cerr << "live world tests failed: " << error.what() << "\n";

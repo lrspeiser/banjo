@@ -2,6 +2,7 @@
 
 #include "core/Plane.hpp"
 #include "fracture/ConnectedComponents.hpp"
+#include "fastlattice/Refracture.hpp"
 #include "fracture/FragmentGeometry.hpp"
 #include "rigid/JoltWorld.hpp"
 
@@ -17,6 +18,15 @@ struct LiveWorld::Impl {
     std::unique_ptr<JoltWorld> world;
     std::vector<LiveBodyPose> described;   // one per rigid fragment, static parts
     std::vector<MatterBodyId> body_of;     // parallel to described
+    // What each body is made of, kept because breaking one means rebuilding its
+    // lattice from the parent it was cut out of.
+    std::vector<std::vector<std::uint32_t>> nodes_of;
+    std::vector<FragmentFractureLimits> limits_of;
+    std::vector<double> impedance_of;
+    std::vector<LiveImpact> last_impacts;
+    // The floor is concrete, not a rigid abstraction: it has a finite impedance
+    // and the admission test uses it like any other partner.
+    double ground_impedance{};
     std::unordered_map<std::string, std::size_t> index_of;
     double time_s{};
     std::size_t holding{static_cast<std::size_t>(-1)};
@@ -92,6 +102,20 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request) {
                 }
             }
         }
+        // What it would take to break this one. The impedance is the struck
+        // body's own material, not the tile's: a glass pin and an oak lane in
+        // the same scene do not break at the same speed.
+        const MaterialDefinition *definition = &setup.tile_material;
+        if (setup.multi_body && !setup.part_of_node.empty()) {
+            const std::uint32_t part = setup.part_of_node[component.node_indices.front()];
+            if (part < setup.part_definitions.size()) definition = &setup.part_definitions[part];
+        }
+        impl.limits_of.push_back(fragmentFractureLimits(
+            setup.matter, component.node_indices,
+            definition->density_kg_m3, definition->young_modulus_pa));
+        impl.impedance_of.push_back(
+            acousticImpedance(definition->density_kg_m3, definition->young_modulus_pa));
+        impl.nodes_of.emplace_back(component.node_indices.begin(), component.node_indices.end());
         impl.described.push_back(std::move(described));
         impl.body_of.push_back(fragment.body_id);
     }
@@ -103,6 +127,8 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request) {
         std::clamp(std::thread::hardware_concurrency(), 1U, 64U),
         RigidContactCapacity{clampCapacity(64U * components.size(), 16384U, 262144U),
                              clampCapacity(128U * components.size(), 8192U, 65536U)});
+    impl.ground_impedance = acousticImpedance(setup.ground_material.density_kg_m3,
+                                             setup.ground_material.young_modulus_pa);
     impl.world->setGravity(r.gravity_m_s2);
     // A live world always watches contacts: they are how it will know when
     // something has been hit hard enough to break, and they are what a host
@@ -143,9 +169,46 @@ void LiveWorld::step(double dt_s) {
         state.angular_velocity_rad_s = {};
         impl_->world->applyRigidState(id, state);
     }
-    // Draining keeps the collector's queue from growing for the life of the
-    // world. What is in it is every contact of the step just taken.
-    (void)impl_->world->drainImpacts();
+    // Every contact of the step just taken, judged against what the struck
+    // object can take. Draining also keeps the collector's queue from growing
+    // for the life of the world.
+    impl_->last_impacts.clear();
+    std::unordered_map<MatterBodyId, std::size_t> index_of_body;
+    for (std::size_t i = 0; i < impl_->body_of.size(); ++i)
+        index_of_body.emplace(impl_->body_of[i], i);
+    for (const ImpactEvent &event : impl_->world->drainImpacts()) {
+        const auto a = index_of_body.find(event.body_a);
+        const auto b = index_of_body.find(event.body_b);
+        const bool a_known = a != index_of_body.end();
+        const bool b_known = b != index_of_body.end();
+        if (!a_known && !b_known) continue;
+        // Judge both sides: a glass pin struck by an iron ball and the ball
+        // struck by the pin are two different questions with two answers.
+        const std::size_t pair[2] = {a_known ? a->second : b->second,
+                                     b_known ? b->second : a->second};
+        for (int which = 0; which < 2; ++which) {
+            const std::size_t struck = pair[which];
+            const std::size_t other = pair[1 - which];
+            const bool other_known = which == 0 ? b_known : a_known;
+            if (which == 1 && !(a_known && b_known)) break;
+            if (impl_->described[struck].anchored) continue;
+            const double other_impedance =
+                other_known && other != struck ? impl_->impedance_of[other]
+                                               : impl_->ground_impedance;
+            const RefractureAdmission admission = admitRefracture(
+                impl_->limits_of[struck], other_impedance,
+                event.closing_speed_m_s, event.available_normal_energy_j);
+            LiveImpact impact{};
+            impact.struck = impl_->described[struck].name;
+            impact.by = other_known && other != struck ? impl_->described[other].name
+                                                       : std::string("the ground");
+            impact.closing_speed_m_s = event.closing_speed_m_s;
+            impact.threshold_speed_m_s = admission.threshold_speed_m_s;
+            impact.energy_j = event.available_normal_energy_j;
+            impact.would_break = admission.admitted();
+            impl_->last_impacts.push_back(std::move(impact));
+        }
+    }
     impl_->time_s += dt_s;
 }
 
@@ -201,6 +264,16 @@ void LiveWorld::release() {
     // Nothing to undo: the hold was only the pose being re-asserted, so simply
     // not asserting it hands the object back to gravity, from rest.
     impl_->holding = static_cast<std::size_t>(-1);
+}
+
+std::vector<LiveImpact> LiveWorld::impacts(double quiet_speed_m_s) const {
+    std::vector<LiveImpact> out;
+    for (const LiveImpact &impact : impl_->last_impacts)
+        if (impact.closing_speed_m_s >= quiet_speed_m_s) out.push_back(impact);
+    std::sort(out.begin(), out.end(), [](const LiveImpact &lhs, const LiveImpact &rhs) {
+        return lhs.closing_speed_m_s > rhs.closing_speed_m_s;
+    });
+    return out;
 }
 
 std::string LiveWorld::held() const {

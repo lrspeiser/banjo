@@ -24,6 +24,24 @@ struct LiveBodyPose {
     bool held{};
 };
 
+// One contact from the step just taken, judged against what the struck object
+// can actually take.
+//
+// The verdict is not a guess. `would_break` is the refracture admission test:
+// two necessary conditions, stress and energy, derived in Refracture.hpp from
+// the acoustic impedances of the two bodies and the smallest removal threshold
+// any live bond in the struck one carries. A contact that fails either cannot
+// break anything, and one that passes is a contact the lattice has to be run on
+// to find out what it did.
+struct LiveImpact {
+    std::string struck;              // the object that took the hit
+    std::string by;                  // what hit it, or "the ground"
+    double closing_speed_m_s{};
+    double threshold_speed_m_s{};    // what it would take to break `struck`
+    double energy_j{};
+    bool would_break{};
+};
+
 // A scene that keeps running instead of being run.
 //
 // runTileImpact is a batch: build, fracture, hand off, settle, write a
@@ -57,6 +75,12 @@ public:
 
     // Every object, in the order they were authored.
     [[nodiscard]] std::vector<LiveBodyPose> poses() const;
+
+    // What happened in the step just taken. Cleared by the next step, so a host
+    // reads it once per frame and narrates it. Contacts too gentle to be worth
+    // mentioning are left out: `quiet_speed_m_s` is what counts as an arrival
+    // rather than two things leaning on each other.
+    [[nodiscard]] std::vector<LiveImpact> impacts(double quiet_speed_m_s = 0.5) const;
 
     // Taking hold of something. A held body is pinned out of the simulation --
     // gravity and contacts stop moving it -- and goes exactly where it is put,
