@@ -1971,12 +1971,80 @@ void writePlayback(const TileImpactResult &result, const std::filesystem::path &
     // already been paid for. One frame is built and dumped here to price the
     // rest.
     constexpr std::size_t kBudgetBytes = 48U * 1024U * 1024U;
+    // A sphere built from cubes is drawn as cubes, and at any cell size a viewer
+    // reads that as a lump rather than a ball. The lane already knows better:
+    // the handoff gives a whole un-joined sphere an authored collision primitive
+    // (FragmentPrimitive::Sphere) so Jolt rolls it properly. That knowledge was
+    // being thrown away at the drawing step, which left "make the ball round"
+    // with no answer except a smaller cell -- and a smaller cell is what puts a
+    // scene over the cell cap.
+    //
+    // So a part that is one un-joined sphere and never loses a bond is drawn as
+    // one sphere of the diameter that was asked for, in place of its cells. The
+    // conditions are the collision path's, for the same reason: the moment it
+    // breaks, the cells are its real surface and no primitive describes it.
+    // Bond lines carry their own endpoints, so they are unaffected.
+    std::vector<char> draw_as_sphere(result.part_bodies.size(), 0);
+    std::vector<std::vector<std::size_t>> sphere_cells(result.part_bodies.size());
+    if (many) {
+        // Bonds do not heal, so the last frame that carries bond state says
+        // whether anything inside a part ever failed.
+        const std::vector<std::uint8_t> *final_alive = nullptr;
+        for (const RecordedFrame &frame : result.frames)
+            if (frame.bond_alive.size() == B) final_alive = &frame.bond_alive;
+        std::vector<char> part_broke(result.part_bodies.size(), 0);
+        if (final_alive != nullptr)
+            for (std::size_t o = 0; o < B; ++o) {
+                if ((*final_alive)[o] != 0) continue;
+                const auto [a, b] = result.bond_nodes[o];
+                if (a < N) part_broke[result.part_of_node[a]] = 1;
+                if (b < N) part_broke[result.part_of_node[b]] = 1;
+            }
+        for (std::size_t g = 0; g < result.part_bodies.size(); ++g) {
+            if (part_broke[g] || result.part_bodies[g].size() != 1) continue;
+            if (result.bodies[result.part_bodies[g].front()].shape != BodyShape::Sphere) continue;
+            draw_as_sphere[g] = 1;
+        }
+        for (std::size_t i = 0; i < N; ++i) {
+            const std::uint32_t g = result.part_of_node[i];
+            if (g < draw_as_sphere.size() && draw_as_sphere[g]) sphere_cells[g].push_back(i);
+        }
+        // A sphere of one cell is a cube either way, and drawing it as a ball
+        // would claim a roundness the lattice does not have.
+        for (std::size_t g = 0; g < draw_as_sphere.size(); ++g)
+            if (sphere_cells[g].size() < 2) { draw_as_sphere[g] = 0; sphere_cells[g].clear(); }
+    }
+    // The centroid of a rigid part transforms with it, so one representative
+    // pose per frame is exact for as long as the part stays whole.
+    const auto spherePose = [&](const RecordedFrame &frame, std::size_t group) {
+        double cx = 0.0, cy = 0.0, cz = 0.0;
+        for (const std::size_t cell : sphere_cells[group]) {
+            cx += frame.cell_positions[cell].x;
+            cy += frame.cell_positions[cell].y;
+            cz += frame.cell_positions[cell].z;
+        }
+        const double n = static_cast<double>(sphere_cells[group].size());
+        return Vec3{cx / n, cy / n, cz / n};
+    };
     const auto posesFor = [&](const RecordedFrame &frame) {
         Json poses = Json::array();
-        for (std::size_t i = 0; i < N; ++i)
+        for (std::size_t i = 0; i < N; ++i) {
+            if (many) {
+                const std::uint32_t g = result.part_of_node[i];
+                if (g < draw_as_sphere.size() && draw_as_sphere[g]) continue;
+            }
             poses.push_back({{"id", "cell:" + std::to_string(i)}, {"position_m", vec(frame.cell_positions[i])},
                              {"orientation_wxyz", quat(frame.cell_orientations[i])},
                              {"component_id", frame.component_ids.empty() ? 0U : frame.component_ids[i]}});
+        }
+        for (std::size_t g = 0; g < draw_as_sphere.size(); ++g) {
+            if (!draw_as_sphere[g]) continue;
+            const std::size_t lead = sphere_cells[g].front();
+            poses.push_back({{"id", "sphere:" + std::to_string(g)},
+                             {"position_m", vec(spherePose(frame, g))},
+                             {"orientation_wxyz", quat(frame.cell_orientations[lead])},
+                             {"component_id", frame.component_ids.empty() ? 0U : frame.component_ids[lead]}});
+        }
         if (!many)
             poses.push_back({{"id", "ball"}, {"position_m", vec(frame.ball_center)},
                              {"orientation_wxyz", quat(frame.ball_orientation)}, {"component_id", 0}});
@@ -2042,6 +2110,7 @@ void writePlayback(const TileImpactResult &result, const std::filesystem::path &
     const double h = result.cell_size_m;
     for (std::size_t i = 0; i < N; ++i) {
         const std::uint32_t group = many ? result.part_of_node[i] : 0U;
+        if (group < draw_as_sphere.size() && draw_as_sphere[group]) continue;
         // A joined part is several bodies; the first one names and colours it.
         const std::size_t part = group < result.part_bodies.size() && !result.part_bodies[group].empty()
                                      ? result.part_bodies[group].front() : group;
@@ -2053,6 +2122,17 @@ void writePlayback(const TileImpactResult &result, const std::filesystem::path &
                           {"material_id", many ? result.bodies[part].name + " (" + material + ")" : material},
                           {"color_rgba", many ? result.bodies[part].color_rgba : 0x9fd3ffffU},
                           {"shape", "box"}, {"dimensions_m", Json{h, h, h}}});
+    }
+    for (std::size_t g = 0; g < draw_as_sphere.size(); ++g) {
+        if (!draw_as_sphere[g]) continue;
+        const SceneBody &body = result.bodies[result.part_bodies[g].front()];
+        const std::string material{materialPresetName(body.material)};
+        bodies.push_back({{"id", "sphere:" + std::to_string(g)},
+                          {"object_id", 100 + static_cast<int>(g)},
+                          {"element_id", 0},
+                          {"material_id", body.name + " (" + material + ")"},
+                          {"color_rgba", body.color_rgba},
+                          {"shape", "sphere"}, {"dimensions_m", vec(body.dimensions_m)}});
     }
     // A many-object scene has no rigid striker to draw.
     if (!many)

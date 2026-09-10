@@ -109,6 +109,25 @@ bigger over making cells smaller: an object needs to be at least two or three
 cells on its smallest side to behave like a solid at all, so a 20 mm cell wants
 objects of 40 mm and up.
 
+COUNT THE CELLS BEFORE YOU ANSWER. Nothing tells you the total after the fact
+except a refusal, so do the arithmetic yourself: a box is
+(length/cell) x (width/cell) x (height/cell), so 600 x 40 x 240 mm at 20 mm is
+30 x 2 x 12 = 720 cells; a sphere of diameter d is a little over half of
+(d/cell) cubed. Add them up and keep the total under 16000. Long objects are
+what blow this: two 2000 x 60 x 400 mm ramps at 20 mm are 60000 cells on their
+own. If the total is too big, raise cell_mm before you answer rather than
+shrinking what was asked for -- doubling the cell divides the count by eight.
+
+A BALL IS DRAWN AS A BALL. A sphere that stays whole is drawn at the diameter
+you asked for, not as the cubes it is built from, so you never need a smaller
+cell to make something look round. Only ask for a smaller cell when the physics
+needs it.
+
+TILTED THINGS DIP. A body's corner sits lower than its centre by more than half
+its thickness once it is rotated, and a body that reaches below y = 0 is
+refused. If a body has a rotation_deg and sits near the ground, give it a
+rest_on and let its height be worked out instead of guessing a centre.
+
 OVERLAP IS AN ERROR, EXCEPT WHEN IT IS A JOIN. Two objects that occupy the same
 space blow apart on the first step, because nothing settles and the engine has
 to undo the interpenetration all at once. This is the single commonest way to
@@ -297,6 +316,13 @@ def ask_model(api_key: str, model: str, message: str, spec: dict[str, Any] | Non
     return json.loads("".join(texts)), time.perf_counter() - started
 
 
+# How many times the model may be handed a refusal and asked again. Four is
+# what it takes for a scene to clear two independent classes of fault -- a
+# placement one and a budget one -- with a pass to spare; each costs one
+# model round trip and nothing else.
+ATTEMPTS = 4
+
+
 def plan(app: Any, body: Any) -> dict[str, Any]:
     """One chat turn: words in, a validated spec and an explanation out."""
     if not isinstance(body, dict):
@@ -318,26 +344,44 @@ def plan(app: Any, body: Any) -> dict[str, Any]:
     raw_plan, wall = ask_model(app.api_key, app.model, message, body.get("spec"), clean_history)
     # The one gate. Whatever the model asked for, this is what decides whether it
     # can be built, using exactly the rules the manual controls are held to.
-    try:
-        validated = fracture_lab.validate(_spec_from_plan(raw_plan, body.get("spec")))
-        retried = ""
-    except ValueError as first:
-        # Every refusal names what to change, and the model fixes them when it is
-        # told. Handing that message back to the caller to relay costs a round
-        # trip for something that can be done here, once.
-        history = clean_history + [
-            {"role": "assistant", "text": json.dumps(raw_plan)[:600]},
-            {"role": "refusal", "text": str(first)[:2000]}]
-        follow = (f"{message}\n\nThat scene was refused. Fix exactly these faults and change "
-                  f"nothing else:\n{first}")
-        raw_plan, second_wall = ask_model(app.api_key, app.model, follow, body.get("spec"), history)
-        wall += second_wall
+    #
+    # Refusals arrive in independent classes, and fixing one can create another:
+    # a scene refused for reaching below the ground gets raised, and the raised
+    # version is then refused for exceeding the cell cap. With a single retry the
+    # first class eats the only correction and the caller is handed a refusal
+    # whose fix was already spelled out for it -- which is exactly what happened
+    # to a ski ramp: two below-ground faults on the first pass, 58,540 cells
+    # against a cap of 16,000 on the second, and no third pass to spend the
+    # answer on. Every refusal here names the change to make, so the loop runs
+    # until one validates or the attempts are gone.
+    attempts, refusals, validated = ATTEMPTS, [], None
+    for attempt in range(attempts):
         try:
             validated = fracture_lab.validate(_spec_from_plan(raw_plan, body.get("spec")))
-        except ValueError as second:
-            raise ValueError(f"{second}\n\n(Tried twice; the first attempt was refused for: {first})") from None
-        retried = " It was refused once and corrected."
-    return {"explanation": str(raw_plan.get("explanation", ""))[:600] + retried,
+            break
+        except ValueError as refused:
+            refusals.append(str(refused))
+            if attempt + 1 == attempts:
+                tried = "\n\n".join(f"attempt {i + 1}: {r}" for i, r in enumerate(refusals[:-1]))
+                raise ValueError(
+                    f"{refusals[-1]}\n\n(Tried {attempts} times. Earlier attempts were "
+                    f"refused for:\n{tried})") from None
+            # Only the last two turns of correction are worth carrying: the
+            # refusal being answered, and what was tried just before it.
+            history = clean_history + [
+                {"role": "assistant", "text": json.dumps(raw_plan)[:600]},
+                {"role": "refusal", "text": str(refused)[:2000]}]
+            follow = (f"{message}\n\nThat scene was refused. Fix exactly these faults and change "
+                      f"nothing else:\n{refused}")
+            if len(refusals) > 1:
+                follow += ("\n\nYou have already been refused for the following, so do not "
+                           "reintroduce them:\n" + "\n".join(refusals[:-1])[:1500])
+            raw_plan, again = ask_model(app.api_key, app.model, follow, body.get("spec"), history)
+            wall += again
+    corrected = ("" if not refusals else
+                 f" It was refused {'once' if len(refusals) == 1 else f'{len(refusals)} times'} "
+                 f"and corrected.")
+    return {"explanation": str(raw_plan.get("explanation", ""))[:600] + corrected,
             "mode": raw_plan["mode"],
             "spec": validated,
             "planning_wall_s": round(wall, 3)}
