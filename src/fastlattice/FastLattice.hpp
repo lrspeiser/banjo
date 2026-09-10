@@ -71,6 +71,12 @@ struct RunControl {
     std::uint64_t min_steps{};
     // Stop if nothing has failed by this many substeps in total. 0 disables.
     std::uint64_t no_failure_steps{};
+    // Stop once the removed bond energy has grown by less than
+    // energy_flat_fraction of its running total for this many substeps, after at
+    // least one failure and min_steps in total. 0 disables. This is the cheap
+    // exit: energy settles five to ten times earlier than the piece count does.
+    std::uint64_t energy_flat_steps{};
+    double energy_flat_fraction{1.0e-3};
     // Capture node displacements and bond state every this many substeps
     // (state before the substep). 0 disables.
     std::uint64_t capture_stride{};
@@ -90,6 +96,9 @@ struct RunStatus {
     std::uint32_t failure_rounds{};   // substeps in which at least one bond failed
     std::uint32_t broken_bonds{};
     double removed_energy_j{};
+    // The last substep at which removed energy grew by more than
+    // RunControl::energy_flat_fraction of the running total.
+    std::uint64_t last_energy_gain_step{std::numeric_limits<std::uint64_t>::max()};
     ContactAccumulators contact{};
     NodeContactAccumulators node_contact{};
     // Only with StepSettings::audit_energy: kinetic energy the radial bond

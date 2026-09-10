@@ -76,6 +76,33 @@ DEFAULT: dict[str, Any] = {
     "offset_m": [0.0, 0.0],
     "support": "ledges",
     "duration_s": 2.0,
+    # Stop the lattice phase once the removed bond energy has been flat this
+    # long. The window is what the phase costs, and energy settles long before
+    # the piece count does -- which is the quantity to stop on, since the piece
+    # count does not converge in cell size, time step, sweep order or precision.
+    #
+    # 3 ms, measured on this scene at both thicknesses against the same run with
+    # no plateau at all:
+    #
+    #   plate          window   energy kept   pieces   wall clock
+    #   250x200x10     none        100%        51/51   1.23x realtime (over the gate)
+    #   250x200x10     2 ms       82.40%       14/51   0.28x
+    #   250x200x10     3 ms       99.76%       33/51   0.48x
+    #   250x200x20     none        100%        77/77   1.95x realtime (over the gate)
+    #   250x200x20     2 ms       98.27%       62/77   0.56x
+    #   250x200x20     3 ms       99.98%       75/77   0.94x
+    #
+    # 2 ms is too short for the one-cell plate: it stops inside a lull and drops
+    # 17.6% of the energy. 3 ms clears 99.7% at both thicknesses and leaves both
+    # inside the 1.1x realtime gate, which neither of them met before.
+    #
+    # Pieces stay short of the full count on purpose. They are the number that
+    # does not converge, and the ones still missing at 3 ms are separations that
+    # release no measurable energy.
+    #
+    # Set to 0 to run the window out, which is what every result measured before
+    # 2026-09-10 did.
+    "energy_flat_ms": 3.0,
     # The second strike. `second_speed_m_s` 0 means there is no second ball and
     # no flag is passed, so the command line is what it has always been.
     "refracture": "off",
@@ -268,10 +295,11 @@ LIMITS = {
     "second_wait_s": {"min": 0.05, "max": 5.0},
 }
 
-FIELDS = {"algorithm", "ball_m", "bodies", "cell_m", "clearance_m", "drop_m", "duration_s",
-          "failure_law", "material", "offset_m", "plasticity", "plate_m", "refracture",
-          "request_id", "second_ball_m", "second_offset_m", "second_speed_m_s",
-          "second_wait_s", "speed_m_s", "striker", "support"}
+# What a request may carry. Derived from DEFAULT rather than written out, because
+# a hand-kept copy of this list is how `subtract` was silently dropped on the way
+# in: the field existed on both sides and the whitelist in the middle did not
+# know about it, so a cut arrived as a solid box with no error anywhere.
+FIELDS = set(DEFAULT) | {"request_id"}
 
 
 def _number(value: Any, low: float, high: float, label: str) -> float:
@@ -987,6 +1015,7 @@ def command(algorithm: str, spec: dict[str, Any], engine_path: Path, output: Pat
                 "--layout", "flat", "--settle-s", f"{spec['duration_s']:.6g}",
                 "--failure-law", spec["failure_law"], "--plasticity", spec["plasticity"],
                 "--backend", "parallel", "--precision", "double",
+                "--energy-flat-ms", f"{spec.get('energy_flat_ms', 0.0):.6g}",
                 "--record", str(output), "--report", str(report_path)]
     argv = [str(exe), "--material", spec["material"], "--ball-material", spec["striker"],
             "--tile", f"{L:.6g}", f"{T:.6g}", f"{W:.6g}", "--cell", f"{spec['cell_m']:.6g}",
@@ -1002,6 +1031,7 @@ def command(algorithm: str, spec: dict[str, Any], engine_path: Path, output: Pat
             "--failure-law", spec["failure_law"],
             "--plasticity", spec["plasticity"],
             "--backend", "parallel", "--precision", "double",
+            "--energy-flat-ms", f"{spec.get('energy_flat_ms', 0.0):.6g}",
             "--record", str(output), "--report", str(report_path)]
     # Nothing below is emitted unless it is asked for, so the default command
     # line is byte for byte the one this lane has always run.

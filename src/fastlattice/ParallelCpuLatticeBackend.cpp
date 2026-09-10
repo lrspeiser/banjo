@@ -195,6 +195,7 @@ public:
     }
 
     RunStatus run(const RunControl &control) override {
+        energy_flat_fraction_ = control.energy_flat_fraction;
         const auto start = std::chrono::steady_clock::now();
         status_.exit_reason = 0;
         std::uint64_t done = 0;
@@ -216,7 +217,8 @@ public:
             }
             status_.exit_reason = latticeExitReason(status_.total_steps, status_.broken_bonds,
                 status_.last_failure_step, control.quiet_steps, control.min_steps,
-                control.no_failure_steps);
+                control.no_failure_steps, control.energy_flat_steps,
+                status_.last_energy_gain_step);
             if (status_.exit_reason != 0) break;
         }
         if (status_.exit_reason == 0 && done >= control.max_steps) status_.exit_reason = 3;
@@ -440,6 +442,7 @@ private:
             status_.max_plastic_stretch = std::max(status_.max_plastic_stretch, scratch.plastic);
             status_.plastic_work_j += scratch.plastic_work_j;
         }
+        const double energy_before_round = status_.removed_energy_j;
         for (const Scratch &scratch : scratch_) {
             for (const Breakage &broken : scratch.breakages) {
                 any_failed = true;
@@ -449,6 +452,13 @@ private:
                 L_.node_dirty[L_.bond_b[broken.bond]] = 1;
             }
         }
+        // The substep at which the removed energy last grew by more than a
+        // stated fraction of its running total. A cascade that is still
+        // producing pieces but no longer removing energy is past the point
+        // where anything measurable is still being decided.
+        if (status_.removed_energy_j - energy_before_round >
+            energy_flat_fraction_ * std::max(status_.removed_energy_j, 1.0e-12))
+            status_.last_energy_gain_step = status_.total_steps;
         mark(12);
         std::uint32_t disagreements = 0;
         for (const Scratch &scratch : scratch_) disagreements += scratch.degenerate;
@@ -472,6 +482,9 @@ private:
     StepSettings<Real> S_{};
     SphereState<Real> sphere_{};
     RunStatus status_{};
+    // RunControl::energy_flat_fraction, held here because the substep that
+    // accumulates removed energy does not see the control.
+    double energy_flat_fraction_{1.0e-3};
     bool dirty_start_{true};
     bool contact_rebuild_{true};
     std::vector<FrameCapture> frames_;

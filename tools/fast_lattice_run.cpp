@@ -138,6 +138,11 @@ void usage() {
         "                                a contact scene, no fracture claim\n"
         "  --energy-audit                measure the damping and striker dissipation too\n"
         "  --quiet-ms --min-ms --max-ms --no-failure-ms   lattice phase exit rules\n"
+        "  --energy-flat-ms MS           stop once removed energy has been flat this long\n"
+        "                                (0 off). Energy settles five to ten times earlier\n"
+        "                                than the piece count, which never converges\n"
+        "  --energy-flat-fraction F      what counts as flat, as a fraction of the running\n"
+        "                                total (default 0.001)\n"
         "  --settle-s S                  rigid settling limit (default 6)\n"
         "  --refracture on|off           let a fragment that is struck hard enough go back\n"
         "                                into the lattice phase and break again (default off:\n"
@@ -218,6 +223,9 @@ int main(int argc, char **argv) {
             else if (option == "--min-ms") request.min_ms = number(value());
             else if (option == "--max-ms") request.max_ms = number(value());
             else if (option == "--no-failure-ms") request.no_failure_ms = number(value());
+            else if (option == "--energy-flat-ms") request.energy_flat_ms = number(value());
+            else if (option == "--energy-flat-fraction")
+                request.energy_flat_fraction = number(value());
             else if (option == "--settle-s") request.settle_limit_s = number(value());
             else if (option == "--refracture") { const auto v = value();
                 if (v == "on") request.refracture = true;

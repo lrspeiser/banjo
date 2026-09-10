@@ -1056,6 +1056,73 @@ void fractureWithoutContactIsUnchanged() {
             "contact changed the fracture answer in a window where it never acted");
 }
 
+
+// 6. The energy plateau exit (reason 4) stops the window once the removed energy
+//    has stopped growing, and is off unless asked for.
+//
+//    It exists because the three things this phase produces settle at very
+//    different times. On a 250 x 200 x 20 mm glass plate the removed energy is
+//    within 0.8% of its final value by 106 wave transits while the piece count is
+//    still 38% short, and the piece count does not converge in cell size, time
+//    step, sweep order or precision anyway, so it was never a quantity to wait on.
+void energyPlateauStopsTheWindow() {
+    // The rule itself, before any scene: reason 4 needs a failure, a window, and
+    // a gap since the last energy gain, and never outranks the quiet rule.
+    const auto reason = [](unsigned broken, unsigned long long completed,
+                           unsigned long long last_fail, unsigned long long quiet,
+                           unsigned long long flat, unsigned long long last_gain) {
+        return latticeExitReason(completed, broken, last_fail, quiet, /*min_steps=*/10,
+                                 /*no_failure_steps=*/0, flat, last_gain);
+    };
+    const auto never = std::numeric_limits<unsigned long long>::max();
+    require(reason(0, 500, 0, 0, 100, 100) == 0U,
+            "the plateau fired on a scene that has broken nothing");
+    require(reason(3, 500, 400, 0, 0, 100) == 0U,
+            "a zero window is supposed to disable the rule");
+    require(reason(3, 5, 0, 0, 100, never) == 0U,
+            "the plateau fired before min_steps");
+    require(reason(3, 500, 400, 0, 100, 380) == 4U,
+            "the plateau did not fire after a long flat run");
+    require(reason(3, 500, 400, 0, 100, 450) == 0U,
+            "the plateau fired while energy was still growing");
+    require(reason(3, 500, 300, 100, 100, 380) == 1U,
+            "the quiet rule is supposed to win when both are satisfied");
+
+    // And on a real cascade: the same scene run to a fixed long window, then with
+    // the plateau deciding. The plateau must stop sooner and must not lose a
+    // material amount of the energy the long run removed.
+    TileImpactRequest request = smallScene(BackendKind::Cpu, Precision::Double, 1);
+    request.ball_speed_m_s = 12.0;
+    const auto advance = [&](std::uint64_t flat_steps) {
+        auto setup = buildTileImpactSetup(request);
+        LatticeState state = buildLatticeState(setup->matter, setup->schedule, setup->origin);
+        SphereState<double> sphere = setup->sphere_world;
+        sphere.center = sphere.center - V3<double>{setup->origin.x, setup->origin.y, setup->origin.z};
+        auto backend = makeCpuLatticeBackend(setup->schedule, Precision::Double);
+        backend->upload(state, setup->settings_scene, sphere);
+        RunControl control{};
+        control.max_steps = 20000;
+        control.min_steps = 200;
+        control.energy_flat_steps = flat_steps;
+        return backend->run(control);
+    };
+    const RunStatus full = advance(0);
+    const RunStatus capped = advance(1500);
+    std::cout << "  full window: " << full.total_steps << " steps, " << full.broken_bonds
+              << " bonds, " << full.removed_energy_j << " J (exit " << full.exit_reason
+              << ")\n  energy plateau: " << capped.total_steps << " steps, "
+              << capped.broken_bonds << " bonds, " << capped.removed_energy_j
+              << " J (exit " << capped.exit_reason << ")\n";
+    require(full.broken_bonds > 0, "the window contains no fracture, so it proves nothing");
+    require(full.exit_reason != 4U, "the rule was off and fired anyway");
+    require(capped.exit_reason == 4U, "the plateau rule did not stop this run");
+    require(capped.total_steps < full.total_steps, "the plateau did not stop sooner");
+    const double lost = (full.removed_energy_j - capped.removed_energy_j) /
+                        std::max(full.removed_energy_j, 1.0e-12);
+    require(lost < 0.02,
+            "the plateau lost more than 2% of the removed energy: " + std::to_string(lost));
+}
+
 } // namespace
 
 int main() {
@@ -1088,6 +1155,8 @@ int main() {
         std::cout << "[PASS] the parallel backend is bit identical with node contact on\n";
         measuringTheOverlapChangesNothing();
         std::cout << "[PASS] measuring the overlap changes nothing the run reports\n";
+        energyPlateauStopsTheWindow();
+        std::cout << "[PASS] the energy plateau stops the window and is off unless asked for\n";
         fractureWithoutContactIsUnchanged();
         std::cout << "[PASS] the fracture answer is unchanged where contact does not act\n";
         cudaAgreesWithContact();

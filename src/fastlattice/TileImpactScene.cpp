@@ -517,6 +517,7 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
     s.min_steps = stepsFor(r.min_ms, s.dt_s);
     s.max_steps = std::max<std::uint64_t>(1, stepsFor(r.max_ms, s.dt_s));
     s.no_failure_steps = stepsFor(r.no_failure_ms, s.dt_s);
+    s.energy_flat_steps = stepsFor(r.energy_flat_ms, s.dt_s);
     return setup;
 }
 
@@ -554,6 +555,8 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
     control.quiet_steps = setup.quiet_steps;
     control.min_steps = setup.min_steps;
     control.no_failure_steps = setup.no_failure_steps;
+    control.energy_flat_steps = setup.energy_flat_steps;
+    control.energy_flat_fraction = setup.request.energy_flat_fraction;
     control.max_frames = std::max(1U, r.lattice_frames);
     control.capture_stride = std::max<std::uint64_t>(1, setup.max_steps / control.max_frames);
     control.steps_per_launch = r.steps_per_launch;

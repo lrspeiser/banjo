@@ -42,6 +42,7 @@ public:
     }
 
     RunStatus run(const RunControl &control) override {
+        energy_flat_fraction_ = control.energy_flat_fraction;
         const auto start = std::chrono::steady_clock::now();
         status_.exit_reason = 0;
         std::uint64_t done = 0;
@@ -63,7 +64,8 @@ public:
             }
             status_.exit_reason = latticeExitReason(status_.total_steps, status_.broken_bonds,
                 status_.last_failure_step, control.quiet_steps, control.min_steps,
-                control.no_failure_steps);
+                control.no_failure_steps, control.energy_flat_steps,
+                status_.last_energy_gain_step);
             if (status_.exit_reason != 0) break;
         }
         if (status_.exit_reason == 0 && done >= control.max_steps) status_.exit_reason = 3;
@@ -205,6 +207,11 @@ private:
             any_failed = true;
             if (first_failure_round) first_failure_bonds_.push_back(j);
             status_.removed_energy_j += out.removed_energy_j;
+            // See the parallel backend: the substep at which removed energy
+            // last grew materially, which is what exit reason 4 waits on.
+            if (out.removed_energy_j >
+                energy_flat_fraction_ * std::max(status_.removed_energy_j, 1.0e-12))
+                status_.last_energy_gain_step = status_.total_steps;
             ++status_.broken_bonds;
             L_.node_dirty[L_.bond_a[j]] = 1;
             L_.node_dirty[L_.bond_b[j]] = 1;
@@ -228,6 +235,9 @@ private:
     StepSettings<Real> S_{};
     SphereState<Real> sphere_{};
     RunStatus status_{};
+    // RunControl::energy_flat_fraction, held here because the substep that
+    // accumulates removed energy does not see the control.
+    double energy_flat_fraction_{1.0e-3};
     bool dirty_start_{true};
     bool contact_rebuild_{true};
     std::vector<FrameCapture> frames_;

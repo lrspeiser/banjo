@@ -171,6 +171,14 @@ struct TileImpactRequest {
     double min_ms{5.0};
     double max_ms{200.0};
     double no_failure_ms{20.0};
+    // Stop once the removed bond energy has grown by less than
+    // energy_flat_fraction of its running total for this long. 0 disables,
+    // which is this lane exactly as it was. Measured on a 250 x 200 x 20 mm
+    // glass plate, energy is within 0.8% of its final value five to ten times
+    // earlier than the piece count settles, and the piece count does not
+    // converge in cell size, time step, sweep order or precision anyway.
+    double energy_flat_ms{0.0};
+    double energy_flat_fraction{1.0e-3};
     double settle_limit_s{6.0};
     // ---- Re-fracture after the handoff (fastlattice/Refracture.hpp) --------
     //
@@ -272,7 +280,8 @@ struct TileImpactSetup {
     StepSettings<double> settings_scene{};   // origin-relative
     StepSettings<double> settings_world{};   // world frame (for the CPU comparison)
     LatticeSchedule schedule{};
-    std::uint64_t quiet_steps{}, min_steps{}, max_steps{}, no_failure_steps{};
+    std::uint64_t quiet_steps{}, min_steps{}, max_steps{}, no_failure_steps{},
+        energy_flat_steps{};
 
     TileImpactSetup() = default;
     TileImpactSetup(const TileImpactSetup &) = delete;

@@ -1452,16 +1452,31 @@ BANJO_HD void nodeVelocityUpdate(const LatticeArrays<Real> &L, const StepSetting
 
 // When the lattice phase may stop, shared by both backends. 0 continue,
 // 1 cascade quiet (no failure for quiet_steps after at least one failure and
-// min_steps in total), 2 nothing has failed by no_failure_steps.
+// min_steps in total), 2 nothing has failed by no_failure_steps, 4 the removed
+// energy has stopped growing.
+//
+// Reason 4 exists because the three things this phase produces settle at very
+// different times. Measured on a 250 x 200 x 20 mm glass plate, against the same
+// run taken to 1,058 wave transits: removed energy is within 0.8% of its final
+// value by 106 transits, while the piece count is still 38% short there and 12%
+// short at 212. Waiting for the pieces costs five to ten times the wall clock
+// and buys a number that does not converge in cell size, time step, sweep order
+// or precision either, so it was never a quantity to wait on. Energy is, and it
+// is the one quantity every lane in this repository agrees converges.
 BANJO_HD unsigned latticeExitReason(unsigned long long completed, unsigned broken,
                                     unsigned long long last_failure_step,
                                     unsigned long long quiet_steps,
                                     unsigned long long min_steps,
-                                    unsigned long long no_failure_steps) {
+                                    unsigned long long no_failure_steps,
+                                    unsigned long long energy_flat_steps,
+                                    unsigned long long last_energy_gain_step) {
     if (broken > 0U && quiet_steps > 0ULL && completed >= min_steps &&
         completed > last_failure_step && completed - last_failure_step > quiet_steps)
         return 1U;
     if (broken == 0U && no_failure_steps > 0ULL && completed >= no_failure_steps) return 2U;
+    if (broken > 0U && energy_flat_steps > 0ULL && completed >= min_steps &&
+        completed > last_energy_gain_step && completed - last_energy_gain_step > energy_flat_steps)
+        return 4U;
     return 0U;
 }
 
