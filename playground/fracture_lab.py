@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import math
+import run_account
 import re
 import subprocess
 import time
@@ -1207,6 +1208,14 @@ def run(app: Any, body: Any) -> dict[str, Any]:
         case.update({"status": recording.get("status", "complete"), "report": report, "playback_available": True,
                      "wall_s": round(wall, 3), "error": recording.get("error", "")})
         job["fracture"]["summary"] = summary(report, wall, spec)
+        # What actually happened, in the words the request used. This is what the
+        # chat hands back to the model in place of "0 bonds broken", which reads
+        # the same whether the ball launched off the ramp or never moved.
+        try:
+            job["fracture"]["account"] = run_account.account(recording, report, spec)["lines"]
+        except Exception as exc:  # noqa: BLE001 - never fail a good run over its summary
+            job["fracture"]["account"] = []
+            job["warnings"].append(f"could not summarise the run: {exc}")
         job["fracture"]["wall_s"] = round(wall, 3)
         job["status"] = "complete"
         ratio = job["fracture"]["summary"].get("realtime_ratio")

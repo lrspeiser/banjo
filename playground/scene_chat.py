@@ -342,7 +342,11 @@ def plan(app: Any, body: Any) -> dict[str, Any]:
     history = body.get("history") or []
     if not isinstance(history, list) or len(history) > 20:
         raise ValueError("history must be a list of at most 20 turns")
-    clean_history = [{"role": str(h.get("role", ""))[:16], "text": str(h.get("text", ""))[:600]}
+    # 600 characters was enough when a run turn said "0 bonds broken". It now
+    # carries the measured account -- what each named object did, whether
+    # anything broke and why not -- which is the only part of the history worth
+    # spending context on, so it must not be cut off mid-sentence.
+    clean_history = [{"role": str(h.get("role", ""))[:16], "text": str(h.get("text", ""))[:1600]}
                      for h in history if isinstance(h, dict)]
 
     raw_plan, wall = ask_model(app.api_key, app.model, message, body.get("spec"), clean_history)

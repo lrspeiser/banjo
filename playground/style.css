@@ -356,6 +356,9 @@ h2 { margin-bottom: 0; font-size: 1.02rem; font-weight: 550; letter-spacing: -.0
 .chat-turn.you { border-color: rgba(80,210,151,.32); color: var(--text); }
 .chat-turn.built { color: var(--muted); }
 .chat-turn.bad { border-color: rgba(246,197,114,.5); color: var(--amber); }
+/* A run turn is now several measured lines, one per object, so the
+   newlines in it have to survive. */
+.chat-turn p { white-space: pre-wrap; margin: 0; }
 .chat-turn .chat-who { display: block; margin-bottom: 3px; color: var(--muted); font-size: .62rem;
   letter-spacing: .06em; text-transform: uppercase; }
 .chat-composer { display: grid; gap: 9px; }

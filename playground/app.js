@@ -1055,8 +1055,22 @@
     row.append(label, p);
     log.append(row);
     log.scrollTop = log.scrollHeight;
-    chat.turns.push({ role: kind === "you" ? "you" : "assistant", text: body });
+    // The recorded turn is what the model sees next time. Keep a handle on it
+    // so a turn that is filled in later -- a run reports "Working on it" first
+    // and its result tens of seconds afterwards -- records the result rather
+    // than the placeholder. Without this the model was fed "Working on it." and
+    // never learned what any of its scenes did.
+    const recorded = { role: kind === "you" ? "you" : "assistant", text: body };
+    chat.turns.push(recorded);
+    row._recorded = recorded;
     return row;
+  }
+
+  // Set both what the reader sees and what the model will be told.
+  function setTurnText(row, body) {
+    const p = row.querySelector("p");
+    if (p) p.textContent = body;
+    if (row._recorded) row._recorded.text = body;
   }
 
   // What the model built, in the terms it was asked in, so a wrong answer is
@@ -1097,14 +1111,19 @@
       if (!outcome || !outcome.ok) {
         turn.classList.add("bad");
         turn.querySelector(".chat-who").textContent = "The run failed";
-        line.textContent = (outcome && outcome.message) || "the run did not complete";
+        setTurnText(turn, (outcome && outcome.message) || "the run did not complete");
         return;
       }
       const sum = fracture.lastSummary || {};
-      line.textContent = Number.isFinite(sum.broken_bonds)
+      const headline = Number.isFinite(sum.broken_bonds)
         ? `Done in ${outcome.wall_s.toFixed(1)} s. ${sum.broken_bonds} bonds broken, `
           + `${sum.components ?? "?"} pieces. It is on the stage.`
         : `Done in ${outcome.wall_s.toFixed(1)} s. It is on the stage.`;
+      // The account is measured from the recording, object by object, in the
+      // names the request used. It is the only way a scene that did nothing can
+      // be told apart from one that did what was asked.
+      const account = Array.isArray(fracture.lastAccount) ? fracture.lastAccount : [];
+      setTurnText(turn, account.length ? `${headline}\n\n${account.join("\n")}` : headline);
       turn.querySelector(".chat-who").textContent = "Ran it";
     } finally {
       clearInterval(tick);
@@ -1415,6 +1434,9 @@
     if (result.status !== "complete") { row("Status", result.error || result.message || result.status, "bad"); return; }
     const sum = (result.fracture && result.fracture.summary) || {};
     fracture.lastSummary = sum;
+    // Measured object by object from the recording, server side. The chat turn
+    // reports it so the model is told what its scene actually did.
+    fracture.lastAccount = (result.fracture && result.fracture.account) || [];
     captionStage(sum);
     const s3 = (x, unit = "") => Number.isFinite(x) ? `${x.toFixed(3)}${unit}` : "-";
     row("Lane", result.fracture.lane);
