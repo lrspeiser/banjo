@@ -65,7 +65,9 @@ public:
             status_.exit_reason = latticeExitReason(status_.total_steps, status_.broken_bonds,
                 status_.last_failure_step, control.quiet_steps, control.min_steps,
                 control.no_failure_steps, control.energy_flat_steps,
-                status_.last_energy_gain_step);
+                status_.last_energy_gain_step, control.calm_steps,
+                status_.last_damage_gain_step, status_.max_damage,
+                control.calm_damage_margin);
             if (status_.exit_reason != 0) break;
         }
         if (status_.exit_reason == 0 && done >= control.max_steps) status_.exit_reason = 3;
@@ -203,6 +205,13 @@ private:
             status_.max_shear_strain = std::max(status_.max_shear_strain, out.peak_shear);
             status_.plastic_work_j += out.plastic_increment_j;
             status_.max_plastic_stretch = std::max(status_.max_plastic_stretch, out.plastic_stretch);
+            // See the parallel backend: the worst bond's progress toward
+            // failure, and the substep it last climbed at, which is what
+            // exit reason 5 waits on.
+            if (out.damage > status_.max_damage + 1.0e-6) {
+                status_.max_damage = out.damage;
+                status_.last_damage_gain_step = status_.total_steps;
+            }
             if (!out.broke) continue;
             any_failed = true;
             if (first_failure_round) first_failure_bonds_.push_back(j);

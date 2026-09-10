@@ -179,6 +179,12 @@ struct TileImpactRequest {
     // converge in cell size, time step, sweep order or precision anyway.
     double energy_flat_ms{0.0};
     double energy_flat_fraction{1.0e-3};
+    // Stop once nothing has failed and the worst-stressed bond has sat below
+    // calm_damage_margin of the way to failing for this long. 0 disables.
+    // A scene that was never going to break otherwise pays the full
+    // no_failure_ms window to prove it, which is most of a run's compute.
+    double calm_ms{0.0};
+    double calm_damage_margin{0.5};
     double settle_limit_s{6.0};
     // ---- Re-fracture after the handoff (fastlattice/Refracture.hpp) --------
     //
@@ -281,7 +287,7 @@ struct TileImpactSetup {
     StepSettings<double> settings_world{};   // world frame (for the CPU comparison)
     LatticeSchedule schedule{};
     std::uint64_t quiet_steps{}, min_steps{}, max_steps{}, no_failure_steps{},
-        energy_flat_steps{};
+        energy_flat_steps{}, calm_steps{};
 
     TileImpactSetup() = default;
     TileImpactSetup(const TileImpactSetup &) = delete;
@@ -424,6 +430,9 @@ struct TileImpactMeasurements {
     bool shared_memory_positions{};
     std::size_t shared_memory_bytes{};
     float max_tensile_stretch{}, max_compressive_strain{}, max_shear_strain{};
+    // The worst bond's progress toward failing, 0 to 1. Exit reason 5 stops a
+    // run when this stays low, so a run that stopped early can be checked.
+    double max_damage{};
     std::uint32_t rank_deficient_nodes{};
     ContactAccumulators contact{};
     NodeContactAccumulators node_contact{};

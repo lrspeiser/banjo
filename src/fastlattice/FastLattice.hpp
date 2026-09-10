@@ -77,6 +77,11 @@ struct RunControl {
     // exit: energy settles five to ten times earlier than the piece count does.
     std::uint64_t energy_flat_steps{};
     double energy_flat_fraction{1.0e-3};
+    // Stop when nothing has failed, the worst bond is below calm_damage_margin
+    // of the way to failing, and it has not climbed for this many substeps.
+    // 0 disables. This is what saves a scene that was never going to break.
+    std::uint64_t calm_steps{};
+    double calm_damage_margin{0.5};
     // Capture node displacements and bond state every this many substeps
     // (state before the substep). 0 disables.
     std::uint64_t capture_stride{};
@@ -99,6 +104,11 @@ struct RunStatus {
     // The last substep at which removed energy grew by more than
     // RunControl::energy_flat_fraction of the running total.
     std::uint64_t last_energy_gain_step{std::numeric_limits<std::uint64_t>::max()};
+    // The worst bond damage seen, 0 to 1, and the last substep it climbed at.
+    // Zero rather than max() because a lattice nothing has touched has been
+    // flat since the start, which is exactly the case reason 5 exists for.
+    double max_damage{};
+    std::uint64_t last_damage_gain_step{};
     ContactAccumulators contact{};
     NodeContactAccumulators node_contact{};
     // Only with StepSettings::audit_energy: kinetic energy the radial bond

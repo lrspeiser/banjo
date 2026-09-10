@@ -518,6 +518,7 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
     s.max_steps = std::max<std::uint64_t>(1, stepsFor(r.max_ms, s.dt_s));
     s.no_failure_steps = stepsFor(r.no_failure_ms, s.dt_s);
     s.energy_flat_steps = stepsFor(r.energy_flat_ms, s.dt_s);
+    s.calm_steps = stepsFor(r.calm_ms, s.dt_s);
     return setup;
 }
 
@@ -557,6 +558,8 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
     control.no_failure_steps = setup.no_failure_steps;
     control.energy_flat_steps = setup.energy_flat_steps;
     control.energy_flat_fraction = setup.request.energy_flat_fraction;
+    control.calm_steps = setup.calm_steps;
+    control.calm_damage_margin = setup.request.calm_damage_margin;
     control.max_frames = std::max(1U, r.lattice_frames);
     control.capture_stride = std::max<std::uint64_t>(1, setup.max_steps / control.max_frames);
     control.steps_per_launch = r.steps_per_launch;
@@ -587,6 +590,7 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
     m.shared_memory_positions = status.shared_memory_positions;
     m.shared_memory_bytes = status.shared_memory_bytes;
     m.max_tensile_stretch = status.max_tensile_stretch;
+    m.max_damage = status.max_damage;
     m.max_compressive_strain = status.max_compressive_strain;
     m.max_shear_strain = status.max_shear_strain;
     m.rank_deficient_nodes = status.rank_deficient_nodes;
@@ -1839,7 +1843,7 @@ std::string measurementsJson(const TileImpactMeasurements &m) {
         {"phase_seconds", phases},
         {"shared_memory_positions", m.shared_memory_positions},
         {"shared_memory_bytes", m.shared_memory_bytes},
-        {"max_tensile_stretch", m.max_tensile_stretch},
+        {"max_tensile_stretch", m.max_tensile_stretch}, {"max_damage", m.max_damage},
         {"max_compressive_strain", m.max_compressive_strain},
         {"max_shear_strain", m.max_shear_strain},
         {"rank_deficient_nodes", m.rank_deficient_nodes},

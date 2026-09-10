@@ -1072,7 +1072,9 @@ void energyPlateauStopsTheWindow() {
                            unsigned long long last_fail, unsigned long long quiet,
                            unsigned long long flat, unsigned long long last_gain) {
         return latticeExitReason(completed, broken, last_fail, quiet, /*min_steps=*/10,
-                                 /*no_failure_steps=*/0, flat, last_gain);
+                                 /*no_failure_steps=*/0, flat, last_gain,
+                                 /*calm_steps=*/0, /*last_damage_gain_step=*/0,
+                                 /*max_damage=*/0.0, /*calm_damage_margin=*/0.5);
     };
     const auto never = std::numeric_limits<unsigned long long>::max();
     require(reason(0, 500, 0, 0, 100, 100) == 0U,
@@ -1123,6 +1125,97 @@ void energyPlateauStopsTheWindow() {
             "the plateau lost more than 2% of the removed energy: " + std::to_string(lost));
 }
 
+
+// 7. The calm exit (reason 5) stops a scene that was never going to break, and
+//    never touches one that does.
+//
+//    Most scenes never fracture -- a ball rolling down a ramp, a stack standing
+//    there -- and they were paying the full no-failure window to establish it.
+//    Measured on a four-object ski ramp of 9,056 cells: 11.46 s of wall clock
+//    for 20 ms of simulated time, 573x realtime, 91% of the run's compute, and
+//    zero bonds broken, because the worst bond never passed a tenth of its
+//    failure strain. The rule watches L.damage, which is already computed for
+//    the failure test and is normalised by each bond's own thresholds.
+void calmLatticeStopsEarly() {
+    const auto reason = [](unsigned broken, unsigned long long completed,
+                           unsigned long long calm, unsigned long long last_gain,
+                           double damage) {
+        return latticeExitReason(completed, broken, /*last_failure_step=*/0,
+                                 /*quiet_steps=*/0, /*min_steps=*/10,
+                                 /*no_failure_steps=*/0, /*energy_flat_steps=*/0,
+                                 /*last_energy_gain_step=*/0, calm, last_gain, damage,
+                                 /*calm_damage_margin=*/0.5);
+    };
+    require(reason(0, 500, 100, 0, 0.02) == 5U,
+            "the calm rule did not fire on an untouched lattice");
+    require(reason(0, 500, 0, 0, 0.02) == 0U,
+            "a zero window is supposed to disable the calm rule");
+    require(reason(1, 500, 100, 0, 0.02) == 0U,
+            "the calm rule fired after something had already broken");
+    require(reason(0, 500, 100, 0, 0.90) == 0U,
+            "the calm rule fired with a bond nine tenths of the way to failing");
+    require(reason(0, 500, 100, 450, 0.02) == 0U,
+            "the calm rule fired while damage was still climbing");
+    require(reason(0, 50, 100, 0, 0.02) == 0U,
+            "the calm rule fired before its own window had elapsed");
+
+    // On a real scene: the same impact run with the rule off and on. This one
+    // fractures, so the rule must not fire and the answer must be identical.
+    TileImpactRequest request = smallScene(BackendKind::Cpu, Precision::Double, 1);
+    request.ball_speed_m_s = 12.0;
+    const auto advance = [&](std::uint64_t calm_steps) {
+        auto setup = buildTileImpactSetup(request);
+        LatticeState state = buildLatticeState(setup->matter, setup->schedule, setup->origin);
+        SphereState<double> sphere = setup->sphere_world;
+        sphere.center = sphere.center - V3<double>{setup->origin.x, setup->origin.y, setup->origin.z};
+        auto backend = makeCpuLatticeBackend(setup->schedule, Precision::Double);
+        backend->upload(state, setup->settings_scene, sphere);
+        RunControl control{};
+        control.max_steps = 8000;
+        control.min_steps = 200;
+        control.calm_steps = calm_steps;
+        return backend->run(control);
+    };
+    const RunStatus off = advance(0);
+    const RunStatus on = advance(500);
+    std::cout << "  fracturing scene: off " << off.broken_bonds << " bonds / "
+              << off.removed_energy_j << " J (exit " << off.exit_reason << "), on "
+              << on.broken_bonds << " bonds / " << on.removed_energy_j << " J (exit "
+              << on.exit_reason << "), worst damage " << on.max_damage << "\n";
+    require(off.broken_bonds > 0, "this scene was supposed to fracture");
+    require(on.exit_reason != 5U, "the calm rule fired on a scene that fractures");
+    require(on.broken_bonds == off.broken_bonds &&
+                on.removed_energy_j == off.removed_energy_j &&
+                on.total_steps == off.total_steps,
+            "the calm rule changed a fracturing run");
+
+    // And a scene gentle enough that nothing comes close: the rule must fire
+    // and must stop well short of where the run would otherwise have gone.
+    TileImpactRequest gentle = smallScene(BackendKind::Cpu, Precision::Double, 1);
+    gentle.ball_speed_m_s = 0.02;
+    const auto quiet = [&](std::uint64_t calm_steps) {
+        auto setup = buildTileImpactSetup(gentle);
+        LatticeState state = buildLatticeState(setup->matter, setup->schedule, setup->origin);
+        SphereState<double> sphere = setup->sphere_world;
+        sphere.center = sphere.center - V3<double>{setup->origin.x, setup->origin.y, setup->origin.z};
+        auto backend = makeCpuLatticeBackend(setup->schedule, Precision::Double);
+        backend->upload(state, setup->settings_scene, sphere);
+        RunControl control{};
+        control.max_steps = 8000;
+        control.calm_steps = calm_steps;
+        return backend->run(control);
+    };
+    const RunStatus long_run = quiet(0);
+    const RunStatus short_run = quiet(400);
+    std::cout << "  gentle scene: off " << long_run.total_steps << " steps, on "
+              << short_run.total_steps << " steps (exit " << short_run.exit_reason
+              << "), worst damage " << short_run.max_damage << "\n";
+    require(long_run.broken_bonds == 0, "this scene was supposed to break nothing");
+    require(short_run.exit_reason == 5U, "the calm rule did not stop a scene that breaks nothing");
+    require(short_run.total_steps < long_run.total_steps, "the calm rule stopped nothing short");
+    require(short_run.max_damage < 0.5, "the rule fired with a bond past the margin");
+}
+
 } // namespace
 
 int main() {
@@ -1157,6 +1250,8 @@ int main() {
         std::cout << "[PASS] measuring the overlap changes nothing the run reports\n";
         energyPlateauStopsTheWindow();
         std::cout << "[PASS] the energy plateau stops the window and is off unless asked for\n";
+        calmLatticeStopsEarly();
+        std::cout << "[PASS] the calm exit stops a scene that never breaks and spares one that does\n";
         fractureWithoutContactIsUnchanged();
         std::cout << "[PASS] the fracture answer is unchanged where contact does not act\n";
         cudaAgreesWithContact();

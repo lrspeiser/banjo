@@ -138,6 +138,9 @@ void usage() {
         "                                a contact scene, no fracture claim\n"
         "  --energy-audit                measure the damping and striker dissipation too\n"
         "  --quiet-ms --min-ms --max-ms --no-failure-ms   lattice phase exit rules\n"
+        "  --calm-ms MS                  stop once nothing has failed and the worst bond\n"
+        "                                has sat below --calm-margin of failing this long\n"
+        "  --calm-margin F               how close to failing still counts as calm (0.5)\n"
         "  --energy-flat-ms MS           stop once removed energy has been flat this long\n"
         "                                (0 off). Energy settles five to ten times earlier\n"
         "                                than the piece count, which never converges\n"
@@ -223,6 +226,8 @@ int main(int argc, char **argv) {
             else if (option == "--min-ms") request.min_ms = number(value());
             else if (option == "--max-ms") request.max_ms = number(value());
             else if (option == "--no-failure-ms") request.no_failure_ms = number(value());
+            else if (option == "--calm-ms") request.calm_ms = number(value());
+            else if (option == "--calm-margin") request.calm_damage_margin = number(value());
             else if (option == "--energy-flat-ms") request.energy_flat_ms = number(value());
             else if (option == "--energy-flat-fraction")
                 request.energy_flat_fraction = number(value());

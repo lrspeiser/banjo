@@ -103,6 +103,27 @@ DEFAULT: dict[str, Any] = {
     # Set to 0 to run the window out, which is what every result measured before
     # 2026-09-10 did.
     "energy_flat_ms": 3.0,
+    # Stop a scene that was never going to break as soon as that is clear,
+    # rather than running the full no-failure window to prove it. Most scenes
+    # are this: a ball rolling down a ramp, a stack standing there.
+    #
+    # Measured on a four-object ski ramp, 9,056 cells, nothing breaking:
+    #
+    #   calm_ms   lattice wall   whole run
+    #   off             11.47 s   3.12x realtime -- over the gate
+    #   0.5              0.49 s   0.39x
+    #   1.0              0.59 s   0.40x
+    #   2.0              1.21 s   0.55x
+    #   4.0              3.66 s   1.18x -- over the gate again
+    #
+    # 1 ms is about two and a half wave transits of the largest body there, so
+    # "flat" means something, and it costs almost nothing over 0.5. The safety
+    # is not the window though, it is the margin: the rule only fires while the
+    # worst bond is under half way to failing AND has stopped climbing, so
+    # anything actually being loaded keeps the run going. Checked against the
+    # plate-and-ball scenes that do break at both thicknesses -- same bonds,
+    # same pieces, same energy to four decimals.
+    "calm_ms": 1.0,
     # The second strike. `second_speed_m_s` 0 means there is no second ball and
     # no flag is passed, so the command line is what it has always been.
     "refracture": "off",
@@ -1016,6 +1037,7 @@ def command(algorithm: str, spec: dict[str, Any], engine_path: Path, output: Pat
                 "--failure-law", spec["failure_law"], "--plasticity", spec["plasticity"],
                 "--backend", "parallel", "--precision", "double",
                 "--energy-flat-ms", f"{spec.get('energy_flat_ms', 0.0):.6g}",
+                "--calm-ms", f"{spec.get('calm_ms', 0.0):.6g}",
                 "--record", str(output), "--report", str(report_path)]
     argv = [str(exe), "--material", spec["material"], "--ball-material", spec["striker"],
             "--tile", f"{L:.6g}", f"{T:.6g}", f"{W:.6g}", "--cell", f"{spec['cell_m']:.6g}",
@@ -1032,6 +1054,7 @@ def command(algorithm: str, spec: dict[str, Any], engine_path: Path, output: Pat
             "--plasticity", spec["plasticity"],
             "--backend", "parallel", "--precision", "double",
             "--energy-flat-ms", f"{spec.get('energy_flat_ms', 0.0):.6g}",
+            "--calm-ms", f"{spec.get('calm_ms', 0.0):.6g}",
             "--record", str(output), "--report", str(report_path)]
     # Nothing below is emitted unless it is asked for, so the default command
     # line is byte for byte the one this lane has always run.

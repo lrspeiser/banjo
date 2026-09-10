@@ -775,6 +775,11 @@ struct FailureOutcome {
     // extension it now carries as a fraction of its rest length.
     double plastic_increment_j;
     float plastic_stretch;
+    // How close this bond now is to failing, 0 to 1, monotone over the run.
+    // This is the quantity exit reason 5 watches: it is already computed for
+    // the failure test, and unlike a raw strain it is normalised by the bond's
+    // own six thresholds, so one number compares across materials.
+    float damage;
 };
 
 // End-of-substep evaluation for one bond: the plastic return mapping first, as
@@ -790,7 +795,7 @@ struct FailureOutcome {
 template <typename Real>
 BANJO_HD FailureOutcome bondEndSampleAndFailure(const LatticeArrays<Real> &L, const StepSettings<Real> &S,
                                                 std::uint32_t j, bool direct) {
-    FailureOutcome out{false, 0.0, 0, 0.0F, 0.0F, 0.0F, 0.0, 0.0F};
+    FailureOutcome out{false, 0.0, 0, 0.0F, 0.0F, 0.0F, 0.0, 0.0F, 0.0F};
     if (S.plastic_yield_stretch > Real(0)) {
         out.plastic_increment_j = static_cast<double>(bondPlasticReturn(L, S, j, direct));
         out.plastic_stretch = static_cast<float>(absR(L.plastic_extension[j]) / L.rest_length[j]);
@@ -823,6 +828,7 @@ BANJO_HD FailureOutcome bondEndSampleAndFailure(const LatticeArrays<Real> &L, co
         L.damage[j] = damage;
         L.failure_mode[j] = mode;
     }
+    out.damage = static_cast<float>(L.damage[j]);
     if (L.damage[j] >= Real(1)) {
         out.removed_energy_j = static_cast<double>(storedBondEnergy(L, j, direct));
         out.broke = true;
@@ -1453,7 +1459,22 @@ BANJO_HD void nodeVelocityUpdate(const LatticeArrays<Real> &L, const StepSetting
 // When the lattice phase may stop, shared by both backends. 0 continue,
 // 1 cascade quiet (no failure for quiet_steps after at least one failure and
 // min_steps in total), 2 nothing has failed by no_failure_steps, 4 the removed
-// energy has stopped growing.
+// energy has stopped growing, 5 nothing is anywhere near failing.
+//
+// Reason 5 is the cheap exit for a scene that never breaks, and those are most
+// of them: a ball rolling down a ramp, a stack standing there. Measured on a
+// four-object ski ramp of 9,056 cells, the lattice phase spent 11.46 s of wall
+// clock covering 20 ms of simulated time -- 573x realtime, 91% of the whole
+// run's compute, for 0.5% of the watched time -- and broke nothing, because the
+// worst-stressed bond never got past a tenth of its failure strain. Waiting out
+// no_failure_steps to establish that is the most expensive way to learn nothing.
+//
+// The test is on damage rather than on a strain, because damage is already
+// normalised by each bond's own thresholds: below calm_damage_margin, with no
+// material rise for calm_steps, means the lattice is not being loaded toward
+// failure at all. It is deliberately not a promise about the future -- a later
+// impact is a new event, and re-entering the lattice on contact is what the
+// refracture lane is for.
 //
 // Reason 4 exists because the three things this phase produces settle at very
 // different times. Measured on a 250 x 200 x 20 mm glass plate, against the same
@@ -1469,11 +1490,18 @@ BANJO_HD unsigned latticeExitReason(unsigned long long completed, unsigned broke
                                     unsigned long long min_steps,
                                     unsigned long long no_failure_steps,
                                     unsigned long long energy_flat_steps,
-                                    unsigned long long last_energy_gain_step) {
+                                    unsigned long long last_energy_gain_step,
+                                    unsigned long long calm_steps,
+                                    unsigned long long last_damage_gain_step,
+                                    double max_damage, double calm_damage_margin) {
     if (broken > 0U && quiet_steps > 0ULL && completed >= min_steps &&
         completed > last_failure_step && completed - last_failure_step > quiet_steps)
         return 1U;
     if (broken == 0U && no_failure_steps > 0ULL && completed >= no_failure_steps) return 2U;
+    if (broken == 0U && calm_steps > 0ULL && completed >= calm_steps &&
+        max_damage < calm_damage_margin && completed > last_damage_gain_step &&
+        completed - last_damage_gain_step > calm_steps)
+        return 5U;
     if (broken > 0U && energy_flat_steps > 0ULL && completed >= min_steps &&
         completed > last_energy_gain_step && completed - last_energy_gain_step > energy_flat_steps)
         return 4U;

@@ -218,7 +218,9 @@ public:
             status_.exit_reason = latticeExitReason(status_.total_steps, status_.broken_bonds,
                 status_.last_failure_step, control.quiet_steps, control.min_steps,
                 control.no_failure_steps, control.energy_flat_steps,
-                status_.last_energy_gain_step);
+                status_.last_energy_gain_step, control.calm_steps,
+                status_.last_damage_gain_step, status_.max_damage,
+                control.calm_damage_margin);
             if (status_.exit_reason != 0) break;
         }
         if (status_.exit_reason == 0 && done >= control.max_steps) status_.exit_reason = 3;
@@ -247,7 +249,7 @@ private:
     // one shared line: with them adjacent the phase did not scale at all
     // (1.08x on sixteen threads), with them apart it does.
     struct alignas(64) Scratch {
-        float tensile{}, compressive{}, shear{}, plastic{};
+        float tensile{}, compressive{}, shear{}, plastic{}, damage{};
         std::uint32_t degenerate{};
         // Pairs the broad phase could not store, summed as integers, which is
         // order independent.
@@ -417,6 +419,7 @@ private:
         mark(11);
         for (Scratch &scratch : scratch_) {
             scratch.tensile = scratch.compressive = scratch.shear = scratch.plastic = 0.0F;
+            scratch.damage = 0.0F;
             scratch.plastic_work_j = 0.0;
             scratch.breakages.clear();
         }
@@ -428,6 +431,7 @@ private:
             scratch.compressive = std::max(scratch.compressive, out.peak_compressive);
             scratch.shear = std::max(scratch.shear, out.peak_shear);
             scratch.plastic = std::max(scratch.plastic, out.plastic_stretch);
+            scratch.damage = std::max(scratch.damage, out.damage);
             scratch.plastic_work_j += out.plastic_increment_j;
             if (out.broke) scratch.breakages.push_back({j, out.removed_energy_j});
         });
@@ -436,6 +440,10 @@ private:
         // which is the order the serial backend accumulates in.
         bool any_failed = false;
         for (const Scratch &scratch : scratch_) {
+            if (scratch.damage > status_.max_damage + calm_damage_epsilon_) {
+                status_.max_damage = scratch.damage;
+                status_.last_damage_gain_step = status_.total_steps;
+            }
             status_.max_tensile_stretch = std::max(status_.max_tensile_stretch, scratch.tensile);
             status_.max_compressive_strain = std::max(status_.max_compressive_strain, scratch.compressive);
             status_.max_shear_strain = std::max(status_.max_shear_strain, scratch.shear);
@@ -485,6 +493,10 @@ private:
     // RunControl::energy_flat_fraction, held here because the substep that
     // accumulates removed energy does not see the control.
     double energy_flat_fraction_{1.0e-3};
+    // What counts as a rise in the worst bond's damage. Float noise on a
+    // quantity that is stored as a float and only ever compared against a
+    // margin; without it a lattice at rest never looks flat.
+    static constexpr double calm_damage_epsilon_ = 1.0e-6;
     bool dirty_start_{true};
     bool contact_rebuild_{true};
     std::vector<FrameCapture> frames_;

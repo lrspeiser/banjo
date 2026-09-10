@@ -95,3 +95,52 @@ Across five fracturing scenes (150-400 mm plates, glass and oak, 6-18 m/s) the
 lattice phase costs 7-16x less wall clock. On the panel's own default the whole
 run went from 1.20x realtime (over the gate) to 0.471x, keeping 99.76% of the
 energy, 416 bonds and 33 pieces, and coming to rest — as the panel reports itself.
+
+## The other exit: scenes that were never going to break
+
+Most scenes never fracture -- a ball rolling down a ramp, a stack standing there --
+and they were paying the full no-failure window to establish it. Measured on a
+four-object ski ramp of 9,056 cells:
+
+| | wall clock | simulated | share of compute |
+| --- | --- | --- | --- |
+| lattice | 11.46 s | 20 ms | **91%** |
+| rigid | 0.15 s | 4.000 s | 1% |
+
+573x realtime, 91% of the run's compute for 0.5% of the watched time, and zero
+bonds broken -- the worst-stressed bond never passed a tenth of its failure strain.
+
+Exit reason 5 watches `L.damage`, which is already computed for the failure test
+and is normalised by each bond's own six thresholds, so one number compares across
+materials. It fires when nothing has broken, the worst bond is under
+`calm_damage_margin` (0.5) of the way to failing, and it has not climbed for
+`calm_steps`. `--calm-ms` sets the window; 0 disables it.
+
+| calm_ms | lattice wall | whole run |
+| --- | --- | --- |
+| off | 11.47 s | 3.12x realtime -- over the gate |
+| 0.5 | 0.49 s | 0.39x |
+| **1.0** | **0.59 s** | **0.40x** |
+| 2.0 | 1.21 s | 0.55x |
+| 4.0 | 3.66 s | 1.18x -- over again |
+
+1 ms is the default: about two and a half wave transits of the largest body there,
+so "flat" means something. The safety is the margin rather than the window --
+anything actually being loaded keeps `last_damage_gain_step` advancing and the run
+continues. Checked against the plate-and-ball scenes that do break, at both
+thicknesses: same bonds, same pieces, same energy to four decimals.
+
+## What this exposed, and did not cause
+
+With the rule off, those scenes break nothing either. A many-object scene can only
+fracture during the lattice window, which runs at t = 0; a ball that has to travel
+arrives during the rigid phase, and Jolt does not fracture. The lane that would
+re-enter the lattice on a rigid contact -- refracture -- is built for the
+single-tile scene: `piece_reach_m` is `0.5 * length(tile_dimensions_m)`, which is
+zero when there is no tile, and a contact between two lattice pieces is explicitly
+`refused_unsupported`. In a many-object scene every contact is piece-versus-piece.
+
+So the bowling ball has never broken the pins, and the ski ramp reports 0 bonds
+broken, for a reason that has nothing to do with the geometry or the request:
+**the engine cannot yet fracture anything that is not already in contact at t = 0
+in a multi-object scene.** That is the next thing to build.
