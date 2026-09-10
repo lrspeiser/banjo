@@ -318,7 +318,8 @@ if(BANJO_BUILD_HEADLESS)
     add_executable(banjo_quasistatic_probe src/app/quasistatic_probe_main.cpp)
     target_link_libraries(banjo_quasistatic_probe PRIVATE banjo_runtime nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_quasistatic_probe)
-    add_library(banjo_fastlattice_scene src/fastlattice/TileImpactScene.cpp)
+    add_library(banjo_fastlattice_scene src/fastlattice/TileImpactScene.cpp
+                                       src/fastlattice/LiveWorld.cpp)
     target_link_libraries(banjo_fastlattice_scene PUBLIC banjo_fastlattice banjo_runtime PRIVATE nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_fastlattice_scene)
     add_executable(banjo_fast_lattice_run tools/fast_lattice_run.cpp)
@@ -701,6 +702,13 @@ if(BANJO_BUILD_TESTS)
             target_link_libraries(banjo_fast_lattice_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_fast_lattice_tests)
             add_test(NAME banjo_fast_lattice_tests COMMAND banjo_fast_lattice_tests)
+
+            # A scene that keeps running instead of being run: stepping, reading
+            # where everything is, and taking hold of something.
+            add_executable(banjo_live_world_tests tests/live_world_tests.cpp)
+            target_link_libraries(banjo_live_world_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_live_world_tests)
+            add_test(NAME banjo_live_world_tests COMMAND banjo_live_world_tests)
 
             # Breaking a piece that has already broken: the trigger against its
             # own derivation, the state a fragment carries back into the

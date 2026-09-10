@@ -294,6 +294,11 @@ struct TileImpactSetup {
     TileImpactSetup &operator=(const TileImpactSetup &) = delete;
 };
 
+// A body's authored rotation_deg as a quaternion, w first. Shared because the
+// batch lane and the live world both have to turn a body the same way; two
+// copies of this convention would mean a ramp tilting differently in each.
+void rotationQuaternion(const Vec3 &degrees, double out[4]);
+
 [[nodiscard]] std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &request);
 
 struct RecordedFrame {

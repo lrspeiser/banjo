@@ -56,7 +56,9 @@ Vec3 rotateDegrees(const Vec3 &v, const Vec3 &degrees) {
     return p;
 }
 
-// The same rotation as a quaternion, w first.
+// Declared in the header: see there for why it is shared.
+} // namespace
+
 void rotationQuaternion(const Vec3 &degrees, double out[4]) {
     const double h = std::acos(-1.0) / 360.0;
     const double cx = std::cos(degrees.x * h), sx = std::sin(degrees.x * h);
@@ -67,6 +69,8 @@ void rotationQuaternion(const Vec3 &degrees, double out[4]) {
     out[2] = cz * sy * cx - sz * cy * sx;
     out[3] = sz * cy * cx + cz * sy * sx;
 }
+
+namespace {
 Vec3 toVec3(const V3<double> &v) { return {v.x, v.y, v.z}; }
 
 SupportPlane<double> makePlane(const Vec3 &point, const CombinedContactMaterial &contact, double node_radius) {
