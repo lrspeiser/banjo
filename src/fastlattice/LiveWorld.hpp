@@ -82,6 +82,30 @@ public:
     // rather than two things leaning on each other.
     [[nodiscard]] std::vector<LiveImpact> impacts(double quiet_speed_m_s = 0.5) const;
 
+    // What the last step hit hard enough to break, by name and once each.
+    [[nodiscard]] std::vector<std::string> breakable() const;
+
+    // True when the last step was taken back because it would have broken
+    // something. The world is one step short of that impact and the clock has
+    // not moved, so a host that is drawing frames knows not to draw one, and
+    // knows the next thing to do is decide whether to pay for the fracture.
+    [[nodiscard]] bool steppedBack() const;
+
+    // Put one object back into the lattice for `window_s` of simulated time and
+    // replace it with whatever it became. Returns how many pieces it is now:
+    // 1 means it took the hit and held.
+    //
+    // This is deliberately NOT automatic inside step(). A step costs about two
+    // microseconds; this costs roughly the object's cell count times a third of
+    // a millisecond, so a 500-cell object is about 165 ms and a 5,000-cell one
+    // about 1.6 s. A host has to decide when to pay that -- on a worker, over a
+    // held frame, or not at all -- and hiding it inside step() would take the
+    // choice away and make a frame budget meaningless.
+    //
+    // The window is short because it can be: removed energy settles five to ten
+    // times sooner than the piece count, and 3 ms covers it.
+    std::size_t fracture(const std::string &name, double window_s = 0.003);
+
     // Taking hold of something. A held body is pinned out of the simulation --
     // gravity and contacts stop moving it -- and goes exactly where it is put,
     // which is what makes dragging feel like holding rather than pushing.
@@ -95,6 +119,10 @@ public:
 
 private:
     LiveWorld();
+    // Reads the contacts of the step just taken and answers whether any of them
+    // could break what it hit. Called inside a reversible trial, so it must not
+    // change the world.
+    [[nodiscard]] bool judgeStep();
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };

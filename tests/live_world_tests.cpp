@@ -15,6 +15,7 @@
 
 #include "fastlattice/LiveWorld.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <iostream>
@@ -33,6 +34,9 @@ void require(bool ok, const std::string &message) {
 TileImpactRequest ballOverFloor(double ball_height_mm = 600.0) {
     TileImpactRequest r;
     r.cell_size_m = 0.02;
+    // The default is CUDA, which this build does not have. The playground
+    // asks for the parallel CPU lane and so does this.
+    r.backend = BackendKind::CpuParallel;
     SceneBody floor;
     floor.name = "floor";
     floor.shape = BodyShape::Box;
@@ -136,6 +140,9 @@ void aStepFitsInAFrame() {
 TileImpactRequest ballOntoGlass(double drop_m) {
     TileImpactRequest r;
     r.cell_size_m = 0.02;
+    // The default is CUDA, which this build does not have. The playground
+    // asks for the parallel CPU lane and so does this.
+    r.backend = BackendKind::CpuParallel;
     SceneBody pane;
     pane.name = "pane";
     pane.shape = BodyShape::Box;
@@ -167,17 +174,20 @@ LiveImpact hardestOnThePane(double drop_m) {
 }
 
 void aContactIsJudgedAgainstWhatItHit() {
-    // Falling 1.5 m arrives at about 5.4 m/s; falling 20 mm at about 0.6 m/s.
+    // Falling 1.5 m arrives at about 5.4 m/s; falling 60 mm at about 1 m/s.
     const LiveImpact hard = hardestOnThePane(1.5);
-    const LiveImpact soft = hardestOnThePane(0.02);
+    const LiveImpact soft = hardestOnThePane(0.06);
     std::cout << "  dropped 1.50 m: pane hit at " << hard.closing_speed_m_s
               << " m/s, needs " << hard.threshold_speed_m_s << " m/s -> "
               << (hard.would_break ? "breaks" : "holds") << "\n";
-    std::cout << "  dropped 0.02 m: pane hit at " << soft.closing_speed_m_s
+    std::cout << "  dropped 0.06 m: pane hit at " << soft.closing_speed_m_s
               << " m/s, needs " << soft.threshold_speed_m_s << " m/s -> "
               << (soft.would_break ? "breaks" : "holds") << "\n";
     require(hard.closing_speed_m_s > 3.0, "the ball did not arrive with any speed");
     require(hard.threshold_speed_m_s > 0.0, "the pane has no breaking speed at all");
+    // Without this the gentle half could pass by never landing at all, which
+    // is not the same statement as "it landed and held".
+    require(soft.closing_speed_m_s > 0.1, "the gentle drop never actually hit the pane");
     require(soft.closing_speed_m_s < hard.closing_speed_m_s,
             "a shorter drop should land more gently");
     // The point of the test: the SAME pane and the SAME ball give different
@@ -187,7 +197,7 @@ void aContactIsJudgedAgainstWhatItHit() {
             "a hard drop and a gentle one were judged identically, so the "
             "trigger is not reading the contact");
     require(hard.would_break, "a 5 m/s iron ball onto a glass pane should break it");
-    require(!soft.would_break, "a 0.6 m/s tap should not break a glass pane");
+    require(!soft.would_break, "a gentle tap should not break a glass pane");
 }
 
 void anImpactNamesBothSides() {
@@ -201,6 +211,90 @@ void anImpactNamesBothSides() {
     }
     // Two things leaning on each other are not an impact.
     require(live->impacts(1000.0).empty(), "a 1000 m/s filter still reported impacts");
+}
+
+// Drop the ball, and when the world says the pane cannot take it, break it.
+// Returns what the pane became.
+struct Drop {
+    std::size_t pieces{};
+    double at_speed{};
+    double threshold{};
+    double fracture_wall_ms{};
+    std::size_t bodies_after{};
+};
+
+Drop dropAndBreak(double drop_m) {
+    const auto live = LiveWorld::open(ballOntoGlass(drop_m));
+    Drop out{};
+    for (int i = 0; i < 600; ++i) {
+        live->step(1.0 / 240.0);
+        for (const LiveImpact &impact : live->impacts())
+            if (impact.struck == "pane" && impact.closing_speed_m_s > out.at_speed) {
+                out.at_speed = impact.closing_speed_m_s;
+                out.threshold = impact.threshold_speed_m_s;
+            }
+        const auto breakable = live->breakable();
+        if (std::find(breakable.begin(), breakable.end(), std::string("pane")) == breakable.end())
+            continue;
+        const auto began = std::chrono::steady_clock::now();
+        out.pieces = live->fracture("pane");
+        out.fracture_wall_ms = 1000.0 * std::chrono::duration<double>(
+            std::chrono::steady_clock::now() - began).count();
+        break;
+    }
+    out.bodies_after = live->bodies();
+    // The world must still be steppable after being rearranged mid-flight.
+    for (int i = 0; i < 120; ++i) live->step(1.0 / 240.0);
+    return out;
+}
+
+void aHardEnoughHitActuallyBreaksIt() {
+    const Drop hard = dropAndBreak(10.0);
+    const Drop marginal = dropAndBreak(1.5);
+    std::cout << "  dropped 10.00 m: hit at " << hard.at_speed << " m/s (threshold "
+              << hard.threshold << ") -> " << hard.pieces << " pieces of pane in "
+              << hard.fracture_wall_ms << " ms; world now holds " << hard.bodies_after
+              << " bodies\n";
+    std::cout << "  dropped  1.50 m: hit at " << marginal.at_speed << " m/s (threshold "
+              << marginal.threshold << ") -> " << marginal.pieces << " pieces\n";
+
+    require(hard.at_speed > hard.threshold, "the drop never exceeded the breaking speed");
+    require(hard.pieces > 1, "a 14 m/s iron ball did not break a glass pane");
+    require(hard.bodies_after > 2, "the world did not gain the pieces it made");
+    require(hard.fracture_wall_ms > 1.0,
+            "the lattice cannot have run at all in under a millisecond");
+
+    // The threshold is a LOWER BOUND -- a necessary condition, taken from a
+    // spall bound that is deliberately generous. Clearing it means a break is
+    // possible, not that one happens, and this pair is the evidence: 5.4 m/s
+    // against a 4.5 m/s threshold is admitted and the pane still holds, while
+    // 13.9 m/s shatters it. Reading admission as a promise reads the derivation
+    // backwards, and a test that only ever checked the hard case would let that
+    // misreading stand.
+    require(marginal.at_speed > marginal.threshold,
+            "the 1.5 m drop was supposed to clear the threshold");
+    require(marginal.pieces <= 1,
+            "the marginal drop broke it after all -- the note about the bound "
+            "being necessary rather than sufficient needs revisiting");
+}
+
+void aGentleHitLeavesItWhole() {
+    const auto live = LiveWorld::open(ballOntoGlass(0.06));
+    for (int i = 0; i < 600; ++i) {
+        live->step(1.0 / 240.0);
+        require(live->breakable().empty(), "a gentle tap was called breakable");
+    }
+    require(live->bodies() == 2, "a scene that broke nothing changed its body count");
+    // And asking directly still refuses to invent a break.
+    require(live->fracture("pane") == 1, "a pane nothing happened to came apart anyway");
+    require(live->bodies() == 2, "a refused fracture still changed the world");
+}
+
+void breakingSomethingThatCannotBreakIsHarmless() {
+    const auto live = LiveWorld::open(ballOverFloor());
+    require(live->fracture("floor") == 1, "anchored scenery was broken up");
+    require(live->fracture("no such object") == 0, "an unknown name was fractured");
+    require(live->bodies() == 2, "the world changed size over refused requests");
 }
 
 } // namespace
@@ -221,6 +315,12 @@ int main() {
         std::cout << "[PASS] a contact is judged against what it hit, hard differs from gentle\n";
         anImpactNamesBothSides();
         std::cout << "[PASS] an impact names both sides; resting contacts are not impacts\n";
+        aHardEnoughHitActuallyBreaksIt();
+        std::cout << "[PASS] a hard enough hit puts the object back in the lattice and breaks it\n";
+        aGentleHitLeavesItWhole();
+        std::cout << "[PASS] a gentle hit leaves it whole, and asking anyway does not break it\n";
+        breakingSomethingThatCannotBreakIsHarmless();
+        std::cout << "[PASS] breaking scenery or a name that is not there changes nothing\n";
         return 0;
     } catch (const std::exception &error) {
         std::cerr << "live world tests failed: " << error.what() << "\n";

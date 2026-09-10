@@ -97,6 +97,9 @@ void addFootprint(SupportPlane<double> &plane, double center_t, double center_b,
     if (std::isfinite(half_t) || std::isfinite(half_b)) plane.reach_capped = 1;
 }
 
+} // namespace
+
+// Declared in the header: see there for why these two are shared.
 StepSettings<double> buildSettings(const TileImpactSetup &setup, const Vec3 &origin) {
     const TileImpactRequest &r = setup.request;
     StepSettings<double> s{};
@@ -158,10 +161,13 @@ StepSettings<double> buildSettings(const TileImpactSetup &setup, const Vec3 &ori
     return s;
 }
 
+namespace {
 std::uint64_t stepsFor(double milliseconds, double dt) {
     if (milliseconds <= 0.0) return 0;
     return static_cast<std::uint64_t>(std::ceil(milliseconds * 1.0e-3 / dt));
 }
+
+} // namespace
 
 std::unique_ptr<LatticeBackend> makeBackend(const TileImpactRequest &r, const LatticeSchedule &schedule) {
     if (r.backend == BackendKind::Cuda)
@@ -171,6 +177,7 @@ std::unique_ptr<LatticeBackend> makeBackend(const TileImpactRequest &r, const La
     return makeCpuLatticeBackend(schedule, r.precision);
 }
 
+namespace {
 Vec3 nodePosition(const LatticeState &state, std::uint32_t i) {
     return state.origin + Vec3{state.x0[3 * i] + state.u[3 * i], state.x0[3 * i + 1] + state.u[3 * i + 1],
                                state.x0[3 * i + 2] + state.u[3 * i + 2]};

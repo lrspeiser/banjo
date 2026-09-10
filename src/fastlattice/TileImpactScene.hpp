@@ -299,6 +299,15 @@ struct TileImpactSetup {
 // copies of this convention would mean a ramp tilting differently in each.
 void rotationQuaternion(const Vec3 &degrees, double out[4]);
 
+// The substep settings for a scene, in a frame with the given origin, and the
+// backend a request asks for. Shared for the same reason as the rotation above:
+// the batch lane and the live lane have to solve the same physics, and two
+// copies of how the settings are assembled is two ways for that to stop being
+// true without anyone noticing.
+[[nodiscard]] StepSettings<double> buildSettings(const TileImpactSetup &setup, const Vec3 &origin);
+[[nodiscard]] std::unique_ptr<LatticeBackend> makeBackend(const TileImpactRequest &request,
+                                                          const LatticeSchedule &schedule);
+
 [[nodiscard]] std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &request);
 
 struct RecordedFrame {
