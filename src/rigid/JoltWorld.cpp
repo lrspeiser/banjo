@@ -1201,9 +1201,27 @@ void JoltWorld::addFragments(
                 const JPH::ShapeSettings::ShapeResult built = compound.Create();
                 if (built.IsValid()) concrete = built.Get();
             }
+            // The authored primitive wins over the per-cell compound, and the
+            // hull is the last resort.
+            //
+            // The compound above exists because a CONCAVE shape cannot be a
+            // convex hull: a bowl cut out of a sphere would be solid to the
+            // touch. That argument does not reach a body that was authored as
+            // one convex primitive. There the cells are an approximation OF the
+            // primitive, not the other way round, and preferring them threw
+            // away the exact shape in favour of its own staircase.
+            //
+            // A ramp has to be anchored to be a ramp, so before this every ramp
+            // in every scene collided as a staircase of cells and a ball
+            // released on a 20 degree slope travelled 29 mm in 1.5 s -- it
+            // dropped into the first notch and stopped. Which is what the
+            // tilted-slab comment above was written to prevent.
+            //
+            // Joins, subtractions, cones and broken pieces carry no primitive,
+            // so they still get the compound, which is where it was needed.
             const JPH::RefConst<JPH::Shape> inner_shape =
-                concrete != nullptr ? concrete
-                                    : (authored != nullptr ? authored : hull_result.Get());
+                authored != nullptr ? authored
+                                    : (concrete != nullptr ? concrete : hull_result.Get());
             const JPH::RefConst<JPH::Shape> centered_shape =
                 new JPH::OffsetCenterOfMassShape(
                     inner_shape.GetPtr(), -inner_shape->GetCenterOfMass());
