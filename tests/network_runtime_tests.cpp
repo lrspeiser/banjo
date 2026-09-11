@@ -6,6 +6,9 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <chrono>
+#include <utility>
+#include <vector>
 #include <iostream>
 #include <numbers>
 #include <stdexcept>
@@ -290,17 +293,49 @@ void temporalAdmissionIsSeparateFromValidation() {
 }
 }
 
-int main() {
+int main(int argc, char **argv) {
+    // This suite used to print one line, after every check had passed. Silence
+    // therefore meant nothing: a run that produced no output in forty-five
+    // minutes could have been stuck in the first check or grinding through the
+    // eighth, and there was no way to tell without waiting for an end that never
+    // came. It has blocked a merge for days on exactly that ambiguity.
+    //
+    // Each check now says its name before it runs and its wall clock after, and
+    // a name on the command line runs just that one -- so a suspect check can be
+    // watched on its own instead of behind the seven in front of it.
+    const std::vector<std::pair<std::string, void (*)()>> checks{
+        {"rigid-sphere-mass-inertia-geometry", rigidSphereHasMaterialMassInertiaAndRenderGeometry},
+        {"rigid-sphere-rejects-anisotropy", rigidSphereRejectsAnisotropyAndNetworkRepresentation},
+        {"rigid-sphere-ground-contact", rigidSphereMovesThroughGroundContact},
+        {"free-flight-momentum", freeFlightPreservesMomentum},
+        {"resting-four-material-control", restingFourMaterialControl},
+        {"sharp-local-damage-and-blunt-control", sharpLocalDamageAndBluntControl},
+        {"ductile-coupon-plastic-work", ductileCouponHasPlasticWorkWithoutFracture},
+        {"package-validation-and-renaming", packageValidationAndMaterialRenaming},
+        {"temporal-admission", temporalAdmissionIsSeparateFromValidation},
+    };
+    const std::string only = argc > 1 ? argv[1] : std::string();
+    if (only == "--list") {
+        for (const auto &[name, _] : checks) std::cout << name << '\n';
+        return 0;
+    }
     try {
-        rigidSphereHasMaterialMassInertiaAndRenderGeometry();
-        rigidSphereRejectsAnisotropyAndNetworkRepresentation();
-        rigidSphereMovesThroughGroundContact();
-        freeFlightPreservesMomentum();
-        restingFourMaterialControl();
-        sharpLocalDamageAndBluntControl();
-        ductileCouponHasPlasticWorkWithoutFracture();
-        packageValidationAndMaterialRenaming();
-        temporalAdmissionIsSeparateFromValidation();
+        bool ran = false;
+        for (const auto &[name, check] : checks) {
+            if (!only.empty() && only != name) continue;
+            ran = true;
+            std::cout << "  ... " << name << std::flush;
+            const auto began = std::chrono::steady_clock::now();
+            check();
+            const double seconds = std::chrono::duration<double>(
+                std::chrono::steady_clock::now() - began).count();
+            std::cout << "  ok (" << seconds << " s)\n" << std::flush;
+        }
+        if (!ran) {
+            std::cerr << "[FAIL] no check called " << only
+                      << "; --list shows the names\n";
+            return 1;
+        }
         std::cout << "[PASS] network runtime controls, local damage, plastic work, validation and ID invariance\n";
         return 0;
     } catch (const std::exception &error) {
