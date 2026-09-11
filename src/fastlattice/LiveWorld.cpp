@@ -859,7 +859,10 @@ std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
     std::size_t made = 0, of_asked = 0, fragment_index = 0;
     for (const auto &component : island_components) {
         if (fragment_index >= rebuilt.rigid_fragments.size()) break;
-        const RigidFragmentDescription &fragment = rebuilt.rigid_fragments[fragment_index];
+        // Not const: a piece that came through whole has its authored collision
+        // shape put back below, and the fragments are handed to the world after
+        // this loop rather than during it.
+        RigidFragmentDescription &fragment = rebuilt.rigid_fragments[fragment_index];
         if (fragment.source_node_count != component.node_indices.size()) continue;
         ++fragment_index;
         std::vector<std::uint32_t> parent_nodes;
@@ -890,7 +893,36 @@ std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
                                   : parent.name + " piece " + std::to_string(++made);
         piece.material = parent.material;
         if (dominant == asked_part) ++of_asked;
-        piece.shape = "hull";
+
+        // Something that came through whole is still the shape it was.
+        //
+        // Every piece used to be made a hull, including the ones nothing had
+        // happened to. An island is the struck body AND the thing that struck
+        // it, so a ball that cracked a pane was rebuilt too -- and came out of
+        // the collision as a lump of cubes, having not been damaged at all.
+        // From the outside that reads as the whole scene turning to voxels the
+        // moment anything breaks, which is what it looked like because it is
+        // what it was.
+        //
+        // A hull is the honest surface of a piece that BROKE: its boundary is
+        // where the material failed and there is no smooth original to keep.
+        // For a body still in one piece there is, and it is the shape it was
+        // authored as. The collision primitive goes back with it, or a ball
+        // with a flat-bottomed hull slides where it should roll.
+        // "Whole" is not the same as "unchanged". A body that yielded still has
+        // all of its cells and is still one piece -- that is what a dent IS --
+        // and giving it back its authored sphere would hide the very thing that
+        // just happened to it. So the permanent set decides too.
+        const bool untouched = whole_parent && !dented && parent.shape != "hull";
+        if (untouched) {
+            piece.shape = parent.shape;
+            piece.dimensions_m = parent.dimensions_m;
+            fragment.primitive = parent.shape == "sphere" ? FragmentPrimitive::Sphere
+                                                          : FragmentPrimitive::Box;
+            fragment.primitive_dimensions_m = parent.dimensions_m;
+        } else {
+            piece.shape = "hull";
+        }
         piece.color_rgba = parent.color_rgba;
         impl_->limits_of.push_back(fragmentFractureLimits(
             setup.matter, parent_nodes, material.density_kg_m3, material.young_modulus_pa,
