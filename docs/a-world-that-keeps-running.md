@@ -472,6 +472,82 @@ And only the break being *asked about* was timed. A cascade queues most of them,
 so the majority arrived with no time against them at all — and a queued break,
 which waits for the one in front of it, is exactly the one whose timing matters.
 
+## A fall is not long enough to hide a run behind
+
+The first thing the frame trace was used for was a report from somebody playing
+in the room, who pressed L:
+
+```
+banjo room (somebody said it lagged): room: 98% of realtime  60.1 fps
+  worst frame 18.3 ms  134 objects  concrete plate 20mm broke into 75
+  356 ms after the impact
+```
+
+Sixty frames a second, worst frame 18 ms, the clock keeping up — and the break
+still 356 ms late. The trace answered in one line what had taken a day to find
+the time before.
+
+The cause is arithmetic. A concrete pane's run costs about 810 ms, and the
+warning a fall gives can never be longer than the fall:
+
+| dropped from | the fall itself | warning | impact → pieces |
+|---|---|---|---|
+| 0.6 m | 350 ms | 268 ms | 573 ms |
+| 1.0 m | 452 ms | 375 ms | 462 ms |
+| 2.0 m | 639 ms | 501 ms | 330 ms |
+| 4.0 m | 903 ms | 702 ms | 147 ms |
+
+Below about three and a half metres there is simply not enough air to work in,
+and looking further ahead creates none: the object has not been let go yet.
+
+### So start before it is let go
+
+Somebody holding a ball over a pane has already given us all the warning anyone
+could want — seconds of it — and nothing was being done with it. A ray straight
+down from whatever is in the hand says what is underneath and how far; `v² = 2gh`
+says how fast it would arrive. That is a collision description, and the run for
+it can start while the person is still lining the drop up.
+
+If they move, the guess is thrown away and made again — 2% of the arrival speed
+is the bar for "still the same drop", so a wobbling hand does not restart it. If
+they throw it instead of dropping it the speed will not match and it is refused.
+Being wrong costs a worker thread.
+
+| dropped from | before | after |
+|---|---|---|
+| 0.6 m | 573 ms | **43 ms** |
+| 1.0 m | 462 ms | **49 ms** |
+| 2.0 m | 330 ms | **53 ms** |
+| 4.0 m | 147 ms | **45 ms** |
+
+Flat, because the answer is ready before the thing is released. Watched in the
+room: the log shows `guessing concrete plate 20mm` while it is still held, and
+the room reports the pane breaking into 65 pieces **46 ms after the impact**.
+
+### Two things it needed
+
+**A guess must not be binned for one quiet pass.** A guess is dropped when the
+collision it was made for stops being expected — and the instant somebody lets
+go, the drop stops being a held one and has not yet become a falling one. The
+guess was binned in that gap, after 816 ms of finished work, at the exact moment
+it was about to pay. It now survives four passes of not being expected.
+
+**The held body has to be allowed into the island.** A thing in a hand is
+deliberately kept out of a fracture — it is being carried, not colliding — but a
+guess that names it is describing what happens when it is let go, and its state
+is overridden to the moment it lands. Without that the island was the pane
+alone: a free-flying body with no stress in it, which breaks nothing.
+
+### And the contact capacity had to follow the body cap
+
+Raising the reversible-trial ceiling from 256 bodies to 2,048 left Jolt's
+contact capacity sized from the scene's *opening* body count. A room that had
+broken and been swept a few times reached 504 bodies and Jolt reported
+`contact-constraints-full` — which does not slow anything down, it **drops
+contacts** and says the step is not validated. Worse than any pause. The
+capacity is now sized for what the world may grow to rather than what it opened
+with, and the same room runs to over a thousand bodies.
+
 ## Every wait is written down
 
 Anything the world waits on, or is spared waiting on, goes out in the reply's

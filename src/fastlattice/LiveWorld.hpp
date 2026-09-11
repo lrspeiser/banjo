@@ -3,6 +3,7 @@
 #include "fastlattice/TileImpactScene.hpp"
 
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -312,6 +313,11 @@ private:
     // Start the run for a collision that is still coming, from where the two
     // things are going to be rather than where they are.
     void guessAhead(const Foresight &guess, const std::string &name);
+    // What would happen if the thing in the hand were let go right now. The
+    // warning a fall gives can never be longer than the fall, and below about
+    // three and a half metres that is shorter than the run -- but somebody
+    // lining up a drop has already given us seconds of it.
+    void guessWhatIsHeld(std::set<std::string> &still_coming);
     // Is the run already going for exactly this impact? Adopting it is what
     // turns most of a second of waiting into none.
     [[nodiscard]] bool adoptGuess(const std::string &name);

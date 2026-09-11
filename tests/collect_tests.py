@@ -48,7 +48,14 @@ def shatter(live: live_session.Session, plate: str = "glass plate 20mm") -> list
     itself have come apart, and a test that insists on it by name fails for a
     reason that has nothing to do with what it is checking.
     """
-    at = next(b["position_m"] for b in live.state["bodies"] if b["name"] == plate)
+    # Said plainly when it is not there. `next()` on an empty generator raises
+    # StopIteration, whose message is the empty string, so a test that leant on
+    # it failed with no reason printed at all -- and a cascade can take out a
+    # plate this was never aimed at.
+    standing = {b["name"]: b for b in live.state["bodies"]}
+    require(plate in standing,
+            f"{plate!r} is not in the room any more, so it cannot be broken")
+    at = standing[plate]["position_m"]
     # Anything whole and loose will do. After a few cascades the iron ball has
     # itself come apart and been swept up, and a test that insists on it by name
     # fails for a reason that has nothing to do with what it is checking.
@@ -215,11 +222,16 @@ def aSweptRoomCanStillBreakThings() -> None:
                 f"sweeping the whole room took it from {full} bodies only to {left}, "
                 f"so it is not keeping the room small")
 
-        # And the room still does the thing the body budget protects.
-        at = shatter(live, "concrete plate 20mm")
-        pieces = [b for b in hulls(live)
-                  if b["name"].startswith("concrete plate 20mm piece")]
-        print(f"  and a fresh drop still breaks: {len(pieces)} pieces, "
+        # And the room still does the thing the body budget protects. Whichever
+        # plate is still whole: a cascade takes out more than it was aimed at,
+        # and which ones survive is not what is being tested here.
+        whole = [b["name"] for b in live.state["bodies"]
+                 if "plate" in b["name"] and "piece" not in b["name"]]
+        require(whole, "no plate came through whole, so there is nothing to break")
+        target = whole[0]
+        shatter(live, target)
+        pieces = [b for b in hulls(live) if b["name"].startswith(target + " piece")]
+        print(f"  and a fresh drop still breaks {target}: {len(pieces)} pieces, "
               f"{len(live.state['bodies'])} bodies in the room")
         require(len(pieces) > 1,
                 "after breaking and sweeping three panes, a fresh drop no longer "

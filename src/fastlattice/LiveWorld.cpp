@@ -146,6 +146,13 @@ struct LiveWorld::Impl {
     // behaves as though no fracture were running, because none is.
     std::unique_ptr<LiveWorld::Pending> guessing;
     std::future<void> guess_worker;
+    // How many passes in a row the collision a guess was made for has not been
+    // expected. One is nothing -- the instant somebody lets go of a thing, it
+    // stops being a held drop and has not yet become a falling one, and a guess
+    // binned in that gap is binned at the exact moment it was about to pay.
+    // That happened: a run started while the object was being held, finished
+    // 816 ms of work, and was thrown away on release.
+    int guess_unseen{};
     LiveWorld::Foresight guess{};
     double guess_error_pct{};
     // Pinned while their fracture is worked out, so they do not carry on as
@@ -349,13 +356,24 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request) {
         impl.body_of.push_back(fragment.body_id);
     }
 
+    // The most bodies a live world will hold: what runReversibleTrial allows,
+    // which is what breaking depends on.
+    constexpr std::size_t kLiveBodyCeiling = 2048;
     const auto clampCapacity = [](std::size_t value, unsigned low, unsigned high) {
         return static_cast<unsigned>(std::clamp<std::size_t>(value, low, high));
     };
     impl.world = std::make_unique<JoltWorld>(
         std::clamp(std::thread::hardware_concurrency(), 1U, 64U),
-        RigidContactCapacity{clampCapacity(64U * components.size(), 16384U, 262144U),
-                             clampCapacity(128U * components.size(), 8192U, 65536U)});
+        // Sized for what the world may GROW to, not for what it opened with.
+        //
+        // A live world starts with a few dozen bodies and reaches hundreds by
+        // breaking them, and the capacity was worked out once from the opening
+        // count. That was fine while the reversible trial capped the world at
+        // 256; with the cap at 2,048 it is not, and going over does not slow
+        // anything down -- it drops contacts and says "the step is not
+        // validated", which is a worse failure than any pause.
+        RigidContactCapacity{clampCapacity(64U * kLiveBodyCeiling, 16384U, 262144U),
+                             clampCapacity(128U * kLiveBodyCeiling, 8192U, 65536U)});
     impl.ground_impedance = acousticImpedance(setup.ground_material.density_kg_m3,
                                              setup.ground_material.young_modulus_pa);
     impl.world->setGravity(r.gravity_m_s2);
@@ -722,11 +740,20 @@ void LiveWorld::guessAhead(const Foresight &guess, const std::string &name) {
     if (impl_->pending || impl_->guessing || !impl_->queued.empty()) return;
     if (guess.struck >= impl_->described.size()) return;
     // The hand is not a collision anybody is waiting on.
-    if (guess.struck == impl_->holding || guess.striker == impl_->holding) return;
+    // The thing in the hand can be the thing that DOES the breaking -- that is
+    // what a hold guess is -- but not the thing broken.
+    if (guess.struck == impl_->holding) return;
     std::unique_ptr<Pending> job = prepared(name, 0.003, &guess);
     if (job->settled) return;                    // nothing to run
     impl_->guess = guess;
+    impl_->guess_unseen = 0;
     impl_->guessing = std::move(job);
+    // Said out loud. A run that starts early and is never heard from again is
+    // indistinguishable from one that never started, which cost an afternoon.
+    // `lead_ms` carries the speed it is expecting, so the log can be read
+    // against what actually turned up.
+    impl_->delays.push_back({impl_->time_s, name, "guessing",
+                             guess.arrival_speed_m_s, 0.0});
     Pending *running = impl_->guessing.get();
     running->started = std::chrono::steady_clock::now();
     impl_->guess_worker = std::async(std::launch::async, [running] { work(*running); });
@@ -769,7 +796,14 @@ bool LiveWorld::adoptGuess(const std::string &name) {
     // against the arithmetic.
     const bool same_speed = expected > 0.0 &&
                             std::abs(came_in - expected) <= 0.05 * expected;
-    if (!same_striker || !same_speed) { dropGuess("guess-wasted"); return false; }
+    if (!same_striker || !same_speed) {
+        // Worth knowing WHY, or a guess that is never adopted looks like a
+        // guess that is never made.
+        impl_->delays.push_back({impl_->time_s, name, "guess-missed",
+                                 expected, came_in});
+        dropGuess("guess-wasted");
+        return false;
+    }
 
     if (impl_->guess_worker.valid()) impl_->guess_worker.get();
     // NOW it has had its chance at this contact. prepare() records that for a
@@ -1089,10 +1123,86 @@ void LiveWorld::foresee() {
         if (impl_->foreseen.count(about)) continue;   // already said
         impl_->delays.push_back({impl_->time_s, about, "foreseen", lead_s * 1000.0, 0.0});
     }
-    // A guess whose collision stopped being expected is not going to be adopted.
-    if (impl_->guessing && !still_coming.count(impl_->guessing->name))
-        dropGuess("guess-wasted");
+    guessWhatIsHeld(still_coming);
+    // A guess whose collision has stopped being expected for a while is not
+    // going to be adopted. For a WHILE: see guess_unseen above.
+    if (impl_->guessing) {
+        impl_->guess_unseen = still_coming.count(impl_->guessing->name)
+                                  ? 0 : impl_->guess_unseen + 1;
+        if (impl_->guess_unseen >= 4) dropGuess("guess-wasted");
+    } else {
+        impl_->guess_unseen = 0;
+    }
     impl_->foreseen.swap(still_coming);
+}
+
+// What would happen if the thing in the hand were let go right now.
+//
+// The warning a fall gives can never be longer than the fall. Measured on a
+// concrete pane, whose run costs about 810 ms: a 4 m drop gives 702 ms of
+// warning and the pieces are 147 ms late; a 0.6 m drop gives 268 ms and they are
+// 573 ms late. Below about three and a half metres there is simply not enough
+// air to work in, and no amount of looking further ahead creates any.
+//
+// But somebody holding a ball over a pane has already given us all the warning
+// anyone could want -- seconds of it -- and nothing was being done with it. So
+// the run for the drop they are lining up starts while they are still lining it
+// up. If they move, the guess is thrown away and made again; if they throw it
+// instead of dropping it the arrival speed will not match and it is refused.
+// Being wrong costs a worker thread.
+void LiveWorld::guessWhatIsHeld(std::set<std::string> &still_coming) {
+    if (impl_->holding == static_cast<std::size_t>(-1)) return;
+    if (impl_->pending || !impl_->queued.empty()) return;
+    const std::size_t held = impl_->holding;
+    if (held >= impl_->described.size()) return;
+    const RigidSnapshot now = impl_->world->snapshot(impl_->body_of[held]);
+
+    // Straight down, from underneath it.
+    const LiveBodyPose &body = impl_->described[held];
+    const double clear = 0.5 * std::max({body.dimensions_m.x, body.dimensions_m.y,
+                                         body.dimensions_m.z}) + 0.005;
+    const Vec3 down{0.0, -1.0, 0.0};
+    const RayHit below = impl_->world->castRay(
+        now.center_of_mass_world_m + clear * down, down, 40.0);
+    if (!below.hit || !below.named) return;
+
+    std::size_t struck = static_cast<std::size_t>(-1);
+    for (std::size_t k = 0; k < impl_->body_of.size(); ++k)
+        if (impl_->body_of[k] == below.body_id) { struck = k; break; }
+    if (struck == static_cast<std::size_t>(-1) || struck == held) return;
+    if (impl_->described[struck].anchored) return;
+
+    constexpr double kGravity = 9.80665;
+    const double arrival = std::sqrt(2.0 * kGravity * std::max(0.0, below.distance_m));
+    if (arrival < 0.5) return;
+    const RefractureAdmission would = admitRefracture(
+        impl_->limits_of[struck], impl_->impedance_of[held], arrival,
+        std::numeric_limits<double>::max());
+    if (!would.worthRunning()) return;
+
+    const std::string about = impl_->described[struck].name;
+    still_coming.insert(about);
+    // Already working on this exact drop? Then leave it alone. Re-making the
+    // guess every time the hand wobbles a millimetre would mean never finishing
+    // one.
+    if (impl_->guessing) {
+        const bool same = impl_->guessing->name == about &&
+                          std::abs(impl_->guessing->guessed_speed - arrival) <=
+                              0.02 * std::max(0.5, arrival);
+        if (same) return;
+        dropGuess("guess-wasted");
+    }
+    if (impl_->pending) return;
+
+    Foresight guess{};
+    guess.striker = held;
+    guess.struck = struck;
+    guess.arrival_speed_m_s = arrival;
+    guess.striker_state = now;
+    guess.striker_state.center_of_mass_world_m =
+        now.center_of_mass_world_m + below.distance_m * down;
+    guess.striker_state.linear_velocity_m_s = arrival * down;
+    guessAhead(guess, about);
 }
 
 std::vector<std::string> LiveWorld::breakable() const {
@@ -1174,8 +1284,13 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
             const auto partner = impl_->partner_of.find(which);
             if (partner != impl_->partner_of.end()) with = partner->second;
         }
+        // A held body is normally kept out of an island: it is in a hand, not in
+        // a collision. A guess that names it is saying what will happen when it
+        // is let go, and its state is overridden to the moment it lands, so it
+        // belongs in the island exactly like anything else that is falling.
+        const bool in_a_hand = with == impl_->holding && !(guess && guess->striker == with);
         if (with != static_cast<std::size_t>(-1) && with < impl_->described.size() &&
-            with != impl_->holding) {
+            !in_a_hand) {
             if (impl_->described[with].anchored) anvil = with;
             else island_bodies.push_back(with);
         }
