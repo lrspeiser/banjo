@@ -230,11 +230,24 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request) {
     // something has been hit hard enough to break, and they are what a host
     // narrates back to whoever is playing with it.
     impl.world->setImpactObservationsEnabled(true);
+    // The floor reaches as far as a hand can carry something.
+    //
+    // The batch lane's ground is 8 m square, which is ample for a plate dropped
+    // where it was authored -- nothing in a recording ever moves sideways on
+    // its own. A live world is different: someone picks an object up and takes
+    // it where they like, and past 4 m there was simply no floor. An iron ball
+    // carried to x = 5 m and let go fell to -7.9 m and kept going, which is not
+    // a physics answer, it is the absence of one.
+    //
+    // A support plane costs one entry in a fixed-size set however big it is, so
+    // there is nothing to trade: make it larger than anywhere a pointer can
+    // reasonably drag something.
+    constexpr double kLiveGroundHalfSpanM = 200.0;
     impl.world->addSupportSurface({
         .frame = makeSupportPlane({0.0, setup.ground_y, 0.0}, {0.0, 1.0, 0.0}),
         .material = setup.ground_material,
-        .half_length_tangent_m = 4.0,
-        .half_length_bitangent_m = 4.0,
+        .half_length_tangent_m = kLiveGroundHalfSpanM,
+        .half_length_bitangent_m = kLiveGroundHalfSpanM,
         .thickness_m = 0.5,
     });
     MatterBodyId next_static = 900;

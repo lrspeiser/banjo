@@ -331,6 +331,31 @@ void aThingThatHeldDoesNotStopTheWorld() {
             "the world is still refusing to take a step after the object held");
 }
 
+// Lift something, carry it well away from where it started, let go: it falls
+// and the ground catches it. It used to fall for ever.
+//
+// The batch lane's floor is 8 m square, which is ample for a plate dropped where
+// it was authored -- nothing in a recording moves sideways on its own. A live
+// world is different: someone carries an object where they like, and past 4 m
+// there was no floor at all. An iron ball taken to x = 5 m and released reached
+// -7.9 m and was still going, which is not a physics answer.
+void theGroundCatchesThingsWhereverTheyAreDropped() {
+    for (const double x : {0.0, 3.0, 9.0, 40.0}) {
+        const auto live = LiveWorld::open(ballOverFloor());
+        require(live->grab("ball"), "the ball could not be picked up");
+        live->moveHeld({x, 3.0, 0.0});
+        live->release();
+        for (int i = 0; i < 900; ++i) live->step(1.0 / 240.0);
+        const LiveBodyPose ball = named(live->poses(), "ball");
+        std::cout << "  let go at x=" << x << " m -> settled y=" << ball.position_m.y << "\n";
+        // The oak floor is 40 mm thick and the ball is 100 mm across, so resting
+        // on it puts the centre near 0.09; off the world it is tens of metres
+        // down and still accelerating.
+        require(ball.position_m.y > -0.2,
+                "nothing caught it: there is no ground where it was dropped");
+    }
+}
+
 } // namespace
 
 int main() {
@@ -357,6 +382,8 @@ int main() {
         std::cout << "[PASS] breaking scenery or a name that is not there changes nothing\n";
         aThingThatHeldDoesNotStopTheWorld();
         std::cout << "[PASS] something that was hit hard and held does not deadlock the world\n";
+        theGroundCatchesThingsWhereverTheyAreDropped();
+        std::cout << "[PASS] the ground catches things wherever they are dropped\n";
         return 0;
     } catch (const std::exception &error) {
         std::cerr << "live world tests failed: " << error.what() << "\n";
