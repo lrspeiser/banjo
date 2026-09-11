@@ -728,6 +728,43 @@ class Playground:
             "native_cli_metadata":metadata,"inner_cases":inner_cases,"status":case_status,"native_scene":True,"playback_available":True}],
             status="complete",message=message)
 
+    def trace(self,body):
+        """What the room saw, from the room.
+
+        Every lag in this engine so far has been invisible from this side: the
+        world clock stopping while the wall clock ran, and the pieces of a
+        broken pane arriving most of a second after the impact, both while
+        every server-side number looked perfect. Only the page can see its own
+        frames, so the page sends them here and they go in the log.
+
+        The report is written by the browser, so it is treated as numbers to
+        record rather than anything to act on, and it is capped.
+        """
+        if not isinstance(body,dict): raise ValueError("a frame report must be an object")
+        raw=json.dumps(body,separators=(",",":"))
+        if len(raw)>64*1024: raise ValueError("that frame report is too big")
+        stamp=time.strftime("%Y-%m-%dT%H:%M:%S",time.gmtime())
+        line=trace_line(body)
+        # Said out loud when somebody pressed L, or when the room was visibly
+        # not keeping up. Otherwise it is on the file and not in the way.
+        why=str(body.get("why","routine"))[:60]
+        # Only a report from a room that was actually being drawn says anything
+        # about how the room looked.
+        watched=bool(body.get("frames")) and body.get("watched") is not False
+        behind=watched and isinstance(body.get("realtime_pct"),(int,float)) and body["realtime_pct"]<90
+        worst=((body.get("frame_ms") or {}).get("worst") or 0) if watched else 0
+        if why!="routine" or behind or (isinstance(worst,(int,float)) and worst>100):
+            logging.info("banjo room (%s): %s",why,line)
+        else:
+            logging.debug("banjo room: %s",line)
+        try:
+            self.runs_path.mkdir(parents=True,exist_ok=True)
+            with (self.runs_path/"room-frames.jsonl").open("a",encoding="utf-8") as out:
+                out.write(json.dumps({"at":stamp,**body},separators=(",",":"))+"\n")
+        except OSError:
+            pass    # a report that cannot be filed is not worth failing a request over
+        return {"ok":True}
+
     def capture(self, body):
         """Write a viewer frame to disk and return where it went.
 
@@ -1041,6 +1078,7 @@ class Handler(BaseHTTPRequestHandler):
             # a file and cannot reach any other origin, so the one way a
             # result leaves the tab it was rendered in is through here.
             if path=="/api/capture": return self.send(self.server.app.capture(body))
+            if path=="/api/trace": return self.send(self.server.app.trace(body))
             match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/analyze",path)
             if match: return self.send(self.server.app.analyze(match[1],body))
             match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/rerun",path)
@@ -1055,6 +1093,45 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(self.server.app.open_case(match[1],body["case_index"]))
             self.send({"error":"Not found"},404)
         except (ValueError,UnicodeError) as exc: self.send({"error":str(exc)},400)
+
+def trace_line(report):
+    """One readable line for the log, out of a frame report from the room.
+
+    Three numbers, because each of them has caught a lag that the other two
+    missed. How much of the scene's clock went by against how much real time
+    (a world that has stopped reads 0% while everything else looks perfect).
+    The worst frame (what the eye sees). And how long a break took from the
+    contact to the pieces, which is the one a person actually complains about
+    and the one no server-side measurement can see at all.
+    """
+    frame=report.get("frame_ms") or {}
+    parts=[f"room: {report.get('realtime_pct')}% of realtime",
+           f"{report.get('fps')} fps",
+           f"worst frame {frame.get('worst')} ms",
+           f"{report.get('objects')} objects"]
+    # Said first, because it changes what every other number means.
+    #
+    # Nothing drawn at all is the honest test. `document.hidden` is the obvious
+    # one and it is not enough: a pane can be off screen in a way that stops the
+    # drawing without ever setting it, which reads as a catastrophic lag and is
+    # nothing of the kind. It cost this project two wrong diagnoses.
+    if not report.get("frames"):
+        parts.insert(0,"NOTHING WAS DRAWN (not on screen, or the tab was throttled "
+                       "-- the frame numbers below mean nothing)")
+    elif report.get("watched") is False:
+        parts.insert(0,"NOT ON SCREEN")
+    breaks=report.get("breaks") or []
+    for one in breaks:
+        gap=one.get("impact_to_pieces_ms")
+        parts.append(f"{one.get('name')} {one.get('outcome')} into {one.get('pieces')}"
+                     + (f" {gap} ms after the impact" if gap is not None else ""))
+    slow=report.get("slow_frames") or []
+    if slow:
+        worst=max(slow,key=lambda s:s.get("ms",0))
+        parts.append(f"{len(slow)} slow frames, worst {worst.get('ms')} ms while "
+                     f"{worst.get('doing')}")
+    return "  ".join(str(p) for p in parts)
+
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)

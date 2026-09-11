@@ -50,6 +50,7 @@ const world = {
   fading: [],             // pieces on their way out, being collected
   stock: new Map(),       // material -> { kg, pieces }
   sweptSince: new Map(),  // material -> kg, waiting to be announced
+  workingOn: "",          // what the engine is working out, for the frame record
   held: null,             // { name, distance }
   aim: null,              // what the crosshair is on, from the engine
   busy: false,
@@ -386,6 +387,131 @@ function fadePieces(now) {
 }
 
 // ---------------------------------------------------------------------------
+// What the room actually did, written down where somebody else can read it
+// ---------------------------------------------------------------------------
+//
+// Every lag in this thing so far has been invisible from the outside. The
+// engine ran at 99% of real time while the world clock stood still; it ran at
+// 99% again while the pieces of a broken pane turned up most of a second after
+// the impact. Each was found only by measuring the right thing, and each time
+// the right thing was something only this page could see.
+//
+// So the page writes down what it did and posts it to the server, which puts it
+// in the log. The two clocks are what matter -- wall against world -- because
+// that pair has caught two of these on its own. The frame interval is what the
+// eye actually sees. And a break is timed end to end: the contact, and the
+// moment the pieces appear.
+//
+// The cost is one small POST every few seconds, and only when there is
+// something to say.
+
+const TRACE_EVERY_MS = 4000;     // how often a summary goes out
+const SLOW_FRAME_MS = 60;        // a frame worth naming individually
+const KEEP_SLOW = 12;            // at most this many named per report
+
+const trace = {
+  frames: [],          // frame intervals since the last report
+  slow: [],            // the individual bad ones, with what was happening
+  ticks: [],           // round trip of each step
+  bytes: [],           // and how big the reply was
+  breaks: [],          // { name, pieces, impact_to_pieces_ms }
+  awaiting: new Map(), // name -> when the impact was seen
+  startedWall: 0,
+  startedWorld: 0,
+  sentAt: 0,
+  marked: false,       // the reader pressed L, meaning "that lagged"
+};
+
+function traceFrame(dt) {
+  trace.frames.push(dt);
+  if (dt >= SLOW_FRAME_MS && trace.slow.length < KEEP_SLOW) {
+    trace.slow.push({
+      ms: Math.round(dt),
+      at_s: +world.clock.toFixed(2),
+      objects: world.bodies.size,
+      fading: world.fading.length,
+      // What the room was in the middle of. A slow frame while a break is
+      // landing means something different from a slow frame while walking.
+      doing: world.workingOn ? "a break is being worked out"
+           : world.held ? "carrying something"
+           : "nothing in particular",
+    });
+  }
+}
+
+// The impact, and the pieces. This is the measurement that found the last one:
+// the room can be running perfectly and the EVENT still be most of a second
+// late, which is what a person actually sees.
+function traceImpact(name) {
+  if (!trace.awaiting.has(name)) trace.awaiting.set(name, performance.now());
+}
+function tracePieces(name, outcome, pieces) {
+  const began = trace.awaiting.get(name);
+  trace.awaiting.delete(name);
+  trace.breaks.push({
+    name, outcome, pieces,
+    impact_to_pieces_ms: began ? Math.round(performance.now() - began) : null,
+  });
+}
+
+function quantile(sorted, at) {
+  if (!sorted.length) return null;
+  return +sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * at))].toFixed(1);
+}
+
+// Post what happened, and start again. Sent through the same guarded endpoint
+// everything else uses, so it needs no new way in.
+async function sendTrace(why) {
+  const now = performance.now();
+  const wall_s = (now - trace.startedWall) / 1000;
+  if (wall_s <= 0) return;
+  const frames = trace.frames.slice().sort((a, b) => a - b);
+  const ticks = trace.ticks.slice().sort((a, b) => a - b);
+  const report = {
+    why,
+    // Whether anybody was looking. A browser throttles a tab it is not showing
+    // to about one frame a second, which reads in these numbers as a
+    // catastrophic lag and is nothing of the kind -- it cost this project two
+    // wrong diagnoses before it was written down.
+    watched: !document.hidden,
+    wall_s: +wall_s.toFixed(2),
+    // The pair that catches a stopped world: how much of the scene's own clock
+    // went by against how much real time did.
+    world_s: +(world.clock - trace.startedWorld).toFixed(2),
+    realtime_pct: Math.round((world.clock - trace.startedWorld) / wall_s * 100),
+    frames: frames.length,
+    fps: +(frames.length / wall_s).toFixed(1),
+    frame_ms: { median: quantile(frames, 0.5), p95: quantile(frames, 0.95),
+                worst: frames.length ? +frames[frames.length - 1].toFixed(1) : null },
+    // Copied, not handed over. These two were passed by reference and then
+    // emptied a few lines below, before the request was serialised -- so every
+    // report went out with no slow frames and no breaks in it, which is exactly
+    // the half worth reading.
+    slow_frames: trace.slow.slice(),
+    step_ms: { median: quantile(ticks, 0.5), p95: quantile(ticks, 0.95),
+               worst: ticks.length ? +ticks[ticks.length - 1].toFixed(1) : null },
+    reply_kb: trace.bytes.length
+      ? +(trace.bytes.reduce((a, b) => a + b, 0) / trace.bytes.length / 1024).toFixed(2) : null,
+    worst_reply_kb: trace.bytes.length ? +(Math.max(...trace.bytes) / 1024).toFixed(0) : null,
+    breaks: trace.breaks.slice(),
+    objects: world.bodies.size,
+  };
+  trace.frames.length = 0; trace.slow.length = 0; trace.ticks.length = 0;
+  trace.bytes.length = 0; trace.breaks.length = 0;
+  trace.startedWall = now;
+  trace.startedWorld = world.clock;
+  trace.sentAt = now;
+  try { await api("/api/trace", report); } catch (e) { /* a lost report is not worth a bad frame */ }
+}
+
+// L for "that lagged". Marks the moment and sends everything immediately, so
+// there is a report in the log that lines up with what was just seen.
+function markLag() {
+  say("world", "Noted — the last few seconds are in the server log.");
+  sendTrace("somebody said it lagged");
+}
+
+// ---------------------------------------------------------------------------
 // Standing in it: W A S D, and the mouse
 // ---------------------------------------------------------------------------
 
@@ -396,6 +522,7 @@ addEventListener("keydown", (e) => {
   if (e.target instanceof HTMLInputElement) return;
   keys.add(e.code);
   if (e.code === "KeyF" && world.held) intend("throw");
+  if (e.code === "KeyL") markLag();
   if (["KeyW","KeyA","KeyS","KeyD","KeyQ","KeyE","Space",
        "ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.code)) e.preventDefault();
 });
@@ -711,7 +838,13 @@ async function tick() {
     const elapsed = world.lastTick ? (now - world.lastTick) / 1000 : LIVE_DT;
     world.lastTick = now;
     const steps = clamp(Math.round(elapsed / LIVE_DT), 1, MAX_STEPS);
+    const asked = performance.now();
     let state = await act("step", { dt: LIVE_DT, n: steps, moved: true });
+    trace.ticks.push(+(performance.now() - asked).toFixed(1));
+    // Roughly, and without stringifying it twice: bodies are what a reply is
+    // made of, and they are all about the same size.
+    trace.bytes.push(200 + (state.bodies ? state.bodies.length * 190 : 0));
+    world.workingOn = state.working_on || "";
 
     // Anything loose underfoot comes with you. Done after the step so it acts
     // on where things have just landed, and before draw so the pieces it takes
@@ -729,6 +862,11 @@ async function tick() {
     // is started and NOT waited for: `wait: false` puts the run on a worker,
     // pins the pair where they are, and comes straight back. The room carries
     // on, you carry on, and a later step brings the answer.
+    // Time every impact the engine reports, not just the one being asked
+    // about. A cascade queues most of them, and those are the ones that were
+    // coming back with no time at all against them -- which is the half of the
+    // log worth having, because a queued break waits for the one in front.
+    for (const coming of state.breakable || []) traceImpact(coming);
     if (state.breakable && state.breakable.length && !state.working_on) {
       const name = state.breakable[0];
       const hit = (state.impacts || []).filter((i) => i.struck === name)
@@ -741,6 +879,7 @@ async function tick() {
     // The answer to one started earlier.
     if (state.finished) {
       const name = state.finished;
+      tracePieces(name, state.outcome, state.pieces);
       const hit = world.why.get(name);
       world.why.delete(name);
       const bars = hit
@@ -801,8 +940,10 @@ async function tick() {
 let last = performance.now();
 function frame() {
   const now = performance.now();
-  const dt = Math.min(0.1, (now - last) / 1000);
+  const gap = now - last;
+  const dt = Math.min(0.1, gap / 1000);
   last = now;
+  traceFrame(gap);
   lookFromKeys(dt);
   walk(dt);
   updateGuides();
@@ -928,6 +1069,10 @@ window.banjoRoom = {
   buildMesh, renderer, THREE, MATERIALS,
 };
 
+// Reported on its own timer rather than from the frame loop, because a room
+// that has stopped drawing is exactly the case worth hearing about and it
+// would never send anything. "0 frames in four seconds" is a report.
+setInterval(() => sendTrace("routine"), TRACE_EVERY_MS);
 setInterval(tick, 33);
 setInterval(aim, 90);
 open();

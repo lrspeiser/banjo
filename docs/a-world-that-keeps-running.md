@@ -411,6 +411,67 @@ material definition called them `soda_lime_glass` while every other body said
 made of, in the words the room uses, is now recorded once when the scene opens,
 which is the only place both halves are in hand at the same time.
 
+## The room writes down what it saw
+
+Four lags now, and every one of them was invisible from the server's side. The
+world clock stopped while the wall clock ran. The pieces of a broken pane turned
+up most of a second after the impact. Both times every number available here said
+the room was fine, because every number available here was measuring the clock.
+
+Only the page can see its own frames. So it writes down what it did and posts it
+to the server, which puts it in the log:
+
+```
+banjo room (somebody said it lagged): room: 104% of realtime  58 fps
+  worst frame 34 ms  136 objects  glass plate 20mm broke into 79 87 ms after the
+  impact  1 slow frames, worst 71 ms while a break is being worked out
+```
+
+Three numbers, because each has caught a lag the other two missed:
+
+- **The two clocks.** How much of the scene's own time went by against how much
+  real time did. A world that has stopped reads 0% while everything else looks
+  perfect.
+- **The worst frame.** What the eye actually sees, which no round-trip
+  measurement reaches.
+- **How late a break was** — the contact, and the moment the pieces appear. This
+  is the one a person actually complains about, and nothing on this side can see
+  it at all.
+
+Individual slow frames are named with what the room was in the middle of, since
+a slow frame while a break lands means something different from a slow frame
+while walking. Every report is also appended to `room-frames.jsonl` under the
+runs directory, so a session can be read back rather than described.
+
+**Press L when it lags.** That marks the moment and sends the last few seconds
+immediately, so there is a report in the log lining up with what was just seen.
+Routine reports go out every four seconds and stay at debug level unless the
+room was visibly behind; anything marked by hand is said out loud.
+
+### Nothing drawn is not the same as slow
+
+A browser throttles a tab it is not showing to about one frame a second. In the
+numbers that reads as a catastrophic lag — *0.1 fps, worst frame 10,205 ms* —
+and it is nothing of the kind. It cost this project two wrong diagnoses before
+it was written down, so a report from a room that drew no frames says so on the
+front of the line, ahead of any number it would otherwise mislead somebody with.
+
+`document.hidden` is the obvious test for that and it is not enough: a pane can
+be off screen in a way that stops the drawing without ever setting it. The
+honest test is whether any frames were drawn at all.
+
+### Two mistakes worth keeping
+
+The report was handed `trace.breaks` and `trace.slow` **by reference** and then
+emptied them a few lines later, before the request was serialised. Every report
+went out with no slow frames and no breaks in it — which is precisely the half
+worth reading, and it looked like a working feature that simply never had
+anything to say.
+
+And only the break being *asked about* was timed. A cascade queues most of them,
+so the majority arrived with no time against them at all — and a queued break,
+which waits for the one in front of it, is exactly the one whose timing matters.
+
 ## Every wait is written down
 
 Anything the world waits on, or is spared waiting on, goes out in the reply's
