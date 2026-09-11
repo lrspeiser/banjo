@@ -307,6 +307,10 @@ void rotationQuaternion(const Vec3 &degrees, double out[4]);
 [[nodiscard]] MaterialPreset presetFromName(std::string_view name);
 
 [[nodiscard]] std::vector<SceneBody> readSceneFile(const std::string &path);
+// The same reader, given the text rather than a path. A host that is not a
+// command line has its scene in memory and should not have to write it to a
+// file to be allowed to use it.
+[[nodiscard]] std::vector<SceneBody> readSceneJson(const std::string &text);
 
 // The substep settings for a scene, in a frame with the given origin, and the
 // backend a request asks for. Shared for the same reason as the rotation above:

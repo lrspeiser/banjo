@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 import fracture_lab
+import live_inprocess
 
 # A scene bigger than this is refused rather than left to crawl. The rigid step
 # itself is microseconds; what grows is the reply and the contact work.
@@ -106,6 +107,7 @@ class Session:
 
     def close(self) -> None:
         if self._process.poll() is not None:
+            self._shut()
             return
         try:
             assert self._process.stdin is not None
@@ -114,6 +116,21 @@ class Session:
             self._process.wait(timeout=5)
         except Exception:
             self._process.kill()
+        finally:
+            self._shut()
+
+    def _shut(self) -> None:
+        """Close the pipes. They do not close themselves when the child goes.
+
+        A server that opens a world per scene leaks three handles every time,
+        which is invisible until a long session runs out of them.
+        """
+        for pipe in (self._process.stdin, self._process.stdout, self._process.stderr):
+            try:
+                if pipe is not None:
+                    pipe.close()
+            except Exception:
+                pass
 
 
 class Live:
@@ -131,7 +148,14 @@ class Live:
             if self.session is not None:
                 self.session.close()
                 self.session = None
-            session = Session(app.engine_path, spec, app.runs_path)
+            # Two ways to hold a world: a subprocess speaking the line protocol,
+            # or the C library loaded here. They answer the same interface and
+            # the tests run both against the same scenes, so the choice is about
+            # where a crash lands, not about what the physics does.
+            if getattr(app, "live_inprocess", False):
+                session = live_inprocess.InProcessSession(spec)
+            else:
+                session = Session(app.engine_path, spec, app.runs_path)
             self.session = session
         return {"session": session.id, "spec": spec, **session.state}
 

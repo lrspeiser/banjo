@@ -487,6 +487,12 @@ std::vector<std::string> LiveWorld::breakable() const {
     return out;
 }
 
+void LiveWorld::declineBreak(const std::string &name) {
+    // The same record fracture() keeps, without the lattice run: this body has
+    // had its chance at this contact.
+    impl_->held_through.insert(name);
+}
+
 std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
     // Whatever happens below, this object has now had its chance at this
     // contact. Recording that here rather than at each of the five ways out is

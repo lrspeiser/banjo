@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
+#include <iterator>
 #include <limits>
 #include <numbers>
 #include <sstream>
@@ -117,7 +118,12 @@ MaterialPreset presetFromName(std::string_view name) {
 std::vector<SceneBody> readSceneFile(const std::string &path) {
     std::ifstream input(path);
     if (!input) throw std::invalid_argument("could not open scene " + path);
-    const nlohmann::json document = nlohmann::json::parse(input);
+    return readSceneJson(std::string(std::istreambuf_iterator<char>(input),
+                                     std::istreambuf_iterator<char>()));
+}
+
+std::vector<SceneBody> readSceneJson(const std::string &text) {
+    const nlohmann::json document = nlohmann::json::parse(text);
     const auto &list = document.contains("bodies") ? document.at("bodies") : document;
     if (!list.is_array() || list.empty()) throw std::invalid_argument("a scene needs a non-empty bodies array");
     const auto vector3 = [](const nlohmann::json &node, const char *key, Vec3 fallback) {

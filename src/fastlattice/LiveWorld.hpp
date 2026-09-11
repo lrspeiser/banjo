@@ -130,6 +130,15 @@ public:
     // The window is short because it can be: removed energy settles five to ten
     // times sooner than the piece count, and 3 ms covers it.
     std::size_t fracture(const std::string &name, double window_s = 0.003);
+    // Let this contact pass. The world can move again without anything being
+    // put back into the lattice.
+    //
+    // A step that would break something is taken back and time stops until the
+    // host answers. Answering is what matters, not which way: a host that only
+    // ever calls fracture has no way to say "not this one" and, if it says
+    // nothing at all, the same contact is judged again on the next step and
+    // taken back again, for ever.
+    void declineBreak(const std::string &name);
 
     // Taking hold of something. A held body is pinned out of the simulation --
     // gravity and contacts stop moving it -- and goes exactly where it is put,

@@ -25,9 +25,10 @@ from urllib.parse import urlsplit
 import uuid
 
 from experiment_language import ROOT, KINDS, LIMITATIONS, SCHEMA, PLANNER_SCHEMA, lower_proposal, lower_and_admit, SYSTEM, compile_plan, validate_plan, request_blockers, admit_plan, plan_cost
-import builder
+import builder
 import fracture_lab
 import live_session
+import live_inprocess
 import scene_chat
 import network_admission
 from network_admission import Inadmissible, LIMITS, describe_package
@@ -1020,9 +1021,22 @@ def main():
     parser.add_argument("--engine",type=Path,default=binary/"banjo_platform_cli.exe")
     parser.add_argument("--studio",type=Path,default=binary/"banjo_network_lab.exe")
     parser.add_argument("--runs",type=Path,default=ROOT/"build/playground-runs")
+    # Hold the world in this process, through the C library, instead of in a
+    # subprocess speaking the line protocol. Same engine, same scenes, same
+    # replies -- one process boundary fewer. Off by default because a world that
+    # falls over takes the server with it here, and the server is what is on
+    # screen.
+    parser.add_argument("--live-inprocess",action="store_true",
+                        default=os.environ.get("BANJO_LIVE_INPROCESS")=="1",
+                        help="drive live worlds through the C library in this process")
     args=parser.parse_args()
     if not 1024<=args.port<=65535: parser.error("Use a port in 1024..65535")
     app=Playground(args.engine,args.studio,args.runs)
+    app.live_inprocess=args.live_inprocess
+    if args.live_inprocess:
+        ok,why=live_inprocess.available()
+        if not ok: parser.error(f"--live-inprocess needs the C library: {why}")
+        print("live worlds run in this process, through the C library",flush=True)
     server=ThreadingHTTPServer(("127.0.0.1",args.port),Handler);server.app=app
     print(f"Banjo playground: http://127.0.0.1:{args.port}",flush=True)
     try: server.serve_forever()

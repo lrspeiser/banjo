@@ -325,6 +325,87 @@ if(BANJO_BUILD_HEADLESS)
     add_executable(banjo_fast_lattice_run tools/fast_lattice_run.cpp)
     target_link_libraries(banjo_fast_lattice_run PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_fast_lattice_run)
+    # The C face of the engine, and the only target meant to leave this tree.
+    #
+    # Everything else here is built to be linked from inside the project, with
+    # C++ types in the interface and no promise that anything stays put. This
+    # one is a shared library behind a flat C header: a version to check, a
+    # handle to hold, and no exception crossing the boundary. Anything that can
+    # call a C function can drive a world -- which was the gap. Before this, a
+    # host either vendored the whole tree and built it in C++, or spoke to a
+    # subprocess.
+    add_library(banjo_c SHARED src/capi/banjo.cpp)
+    target_link_libraries(banjo_c PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
+    target_include_directories(banjo_c PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>)
+    target_compile_definitions(banjo_c PRIVATE BANJO_BUILDING_SHARED INTERFACE BANJO_SHARED)
+    set_target_properties(banjo_c PROPERTIES
+        OUTPUT_NAME banjo
+        # Hide everything the header does not declare, so the exported surface
+        # is the header and nothing else.
+        CXX_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN ON
+        # The ABI version, in the file name. A host linking against it says
+        # which one it was built for, and two of them can sit side by side.
+        SOVERSION 1
+        VERSION 1.0.0
+        WINDOWS_EXPORT_ALL_SYMBOLS OFF)
+    banjo_enable_warnings(banjo_c)
+
+    # What it takes to hand this to someone else: the library, the one header,
+    # and a CMake package so `find_package(Banjo)` works in their tree. There
+    # were no install rules at all before this, which is the practical reason
+    # nothing outside this repository could use the engine.
+    include(GNUInstallDirs)
+    include(CMakePackageConfigHelpers)
+    install(TARGETS banjo_c EXPORT BanjoTargets
+            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+    install(FILES include/banjo/banjo.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/banjo)
+    install(EXPORT BanjoTargets NAMESPACE Banjo::
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Banjo)
+    write_basic_package_version_file(
+        "${CMAKE_CURRENT_BINARY_DIR}/BanjoConfigVersion.cmake"
+        VERSION 1.0.0 COMPATIBILITY SameMajorVersion)
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/BanjoConfig.cmake"
+         "include(\"\${CMAKE_CURRENT_LIST_DIR}/BanjoTargets.cmake\")\n")
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/BanjoConfig.cmake"
+                  "${CMAKE_CURRENT_BINARY_DIR}/BanjoConfigVersion.cmake"
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Banjo)
+
+    # A consumer, built the way a consumer builds: C, against the header only.
+    # It is a test as much as an example -- if the header needs a C++ compiler
+    # or a type the header does not declare, this stops compiling.
+    add_executable(banjo_c_example examples/drop.c)
+    target_link_libraries(banjo_c_example PRIVATE banjo_c)
+    set_property(TARGET banjo_c_example PROPERTY C_STANDARD 99)
+
+    add_test(NAME banjo_capi_tests COMMAND banjo_c_example --test)
+
+    # The same library driven from a language that cannot read a C++ header.
+    # ctypes gets no help from the compiler, so a wrong argument type is a
+    # silent pointer truncation rather than an error, and only running it finds
+    # that out. Skipped rather than failed when there is no Python, because a
+    # C++ tree should not stop building for the want of an interpreter.
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_FOUND)
+        add_test(NAME banjo_ffi_tests
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/banjo_ffi_tests.py)
+        set_tests_properties(banjo_ffi_tests PROPERTIES
+            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
+        # The two ways the playground can hold a world, run against the same
+        # scene and compared. Claiming they are interchangeable is easy; this
+        # is the part that makes it true.
+        add_test(NAME banjo_live_lanes_agree_tests
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/live_lanes_agree_tests.py)
+        set_tests_properties(banjo_live_lanes_agree_tests PROPERTIES
+            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
+    endif()
+
     # A live scene, driven a line at a time: the playground talks to this instead
     # of asking for a recording and playing it back.
     add_executable(banjo_live_world_run tools/live_world_run.cpp)
