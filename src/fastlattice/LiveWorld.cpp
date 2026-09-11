@@ -16,6 +16,7 @@
 #include <thread>
 #include <deque>
 #include <future>
+#include <map>
 #include <set>
 #include <unordered_map>
 
@@ -90,6 +91,7 @@ struct LiveWorld::Impl {
     std::vector<std::vector<std::uint32_t>> nodes_of;
     std::vector<FragmentFractureLimits> limits_of;
     std::vector<double> impedance_of;
+    std::vector<double> density_of;
     // This step's contacts, which is what breakable() and the step-back
     // decision are about: a body that has already been answered for must not be
     // re-offered on the strength of a contact from three steps ago.
@@ -284,6 +286,9 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request) {
             definition->yield_strength_pa));
         impl.impedance_of.push_back(
             acousticImpedance(definition->density_kg_m3, definition->young_modulus_pa));
+        // Kept so a piece can say what it weighs. Its cells are its volume, and
+        // volume times this is matter somebody can carry away.
+        impl.density_of.push_back(definition->density_kg_m3);
         // How it meets the floor, from the same material the threshold came
         // from. Without this every body in the scene carried the contact of the
         // scene's default matter and nothing bounced differently from anything
@@ -508,13 +513,16 @@ void LiveWorld::step(double dt_s) {
     // leaves the world one step short of the impact with the closing speed
     // intact, which is the state fracture() has to start from.
     //
-    // runReversibleTrial caps out at 256 bodies. Past that the step is taken
+    // runReversibleTrial caps out at 2,048 bodies. Past that the step is taken
     // straight; impacts are still reported, but they describe a collision that
     // has already been resolved, so fracture() will find nothing left to break.
+    // That is a silent failure -- the room keeps running and simply stops
+    // shattering -- so the ceiling is set where a room has to work to reach it
+    // rather than where two broken panes reach it.
     impl_->stepped_back = false;
     impl_->last_dt_s = dt_s;
     ++impl_->steps_taken;
-    if (impl_->body_of.size() + 8 <= 250) {
+    if (impl_->body_of.size() + 8 <= 2000) {
         const bool committed = impl_->world->runReversibleTrial([&]() {
             impl_->world->step(dt_s);
             holdStill();
@@ -731,6 +739,110 @@ void LiveWorld::restackQueue(const std::vector<std::size_t> &dropped) {
         keeping.push_back(std::move(job));
     }
     impl_->queued = std::move(keeping);
+}
+
+// Take the loose pieces near a point out of the world, and say what they were.
+//
+// A room that shatters fills up: every pane is dozens of shards that will lie
+// where they fell for as long as the world is open, and past a couple of
+// thousand bodies the reversible trial cannot run, which is what breaking
+// depends on. Sweeping them up is the natural answer -- they are debris, and
+// somebody walking through the room is the obvious thing to sweep with.
+//
+// What is taken is deliberately narrow. Only a piece -- a "hull", which is what
+// something that broke or bent becomes, never an authored object, so walking
+// past a bowl does not pocket it. Never anchored scenery, never what is in a
+// hand, and never anything an unfinished fracture is holding an index to.
+//
+// What comes back is what the pieces were MADE of, added up by material, which
+// is the useful form: nobody wants forty entries called "glass plate 20mm
+// piece 31", they want to know they now have 400 grams of glass.
+std::vector<LiveCollected> LiveWorld::collect(const Vec3 &at, double radius_m,
+                                              std::size_t largest_cells) {
+    std::vector<LiveCollected> haul;
+    if (!(radius_m > 0.0)) return haul;
+    const double reach = radius_m * radius_m;
+    const double cell_volume = impl_->request.cell_size_m * impl_->request.cell_size_m *
+                               impl_->request.cell_size_m;
+
+    // Anything a fracture still has an index into stays. Its job holds body
+    // numbers, and taking one out from under it would either resurrect a body
+    // that is gone or write a piece back onto somebody else's slot.
+    std::set<std::size_t> spoken_for;
+    const auto reserve = [&](const Pending &job) {
+        for (const std::size_t body : job.island_bodies) spoken_for.insert(body);
+    };
+    if (impl_->pending) reserve(*impl_->pending);
+    for (const auto &job : impl_->queued) reserve(*job);
+
+    std::vector<std::size_t> taking;
+    for (std::size_t i = 0; i < impl_->described.size(); ++i) {
+        const LiveBodyPose &body = impl_->described[i];
+        if (body.anchored || body.shape != "hull") continue;
+        if (i == impl_->holding || spoken_for.count(i)) continue;
+        if (i >= impl_->nodes_of.size() || impl_->nodes_of[i].size() > largest_cells) continue;
+        if (!impl_->world->contains(impl_->body_of[i])) continue;
+        // From where the body IS, not from where `described` remembers it.
+        // `described` carries the pose a body was built with and poses() is
+        // what refreshes it from the world -- so reading it here found every
+        // piece sitting at the origin, a fixed 3.06 m from the plate they came
+        // off. A sweep of 3 m collected nothing and a sweep of 50 m collected
+        // the room, which is the shape of a bug that looks like a tuning problem.
+        const Vec3 gap = impl_->world->snapshot(impl_->body_of[i]).center_of_mass_world_m - at;
+        if (dot(gap, gap) > reach) continue;
+        taking.push_back(i);
+    }
+    if (taking.empty()) return haul;
+
+    // Added up by what it is, not by which shard it was.
+    std::map<std::string, LiveCollected> by_material;
+    for (const std::size_t i : taking) {
+        const std::size_t cells = impl_->nodes_of[i].size();
+        const double density = i < impl_->density_of.size() ? impl_->density_of[i] : 0.0;
+        LiveCollected &into = by_material[impl_->described[i].material];
+        into.material = impl_->described[i].material;
+        into.cells += cells;
+        into.pieces += 1;
+        into.kilograms += static_cast<double>(cells) * cell_volume * density;
+        into.took.push_back(impl_->described[i].name);
+    }
+    for (auto &entry : by_material) haul.push_back(std::move(entry.second));
+
+    dropBodies(taking);
+    return haul;
+}
+
+// Take bodies out of the world and out of every table that is parallel to it.
+//
+// The tables are indexed in step, so an erase shifts everything above it -- and
+// three other things hold indices into them: the hand, the fracture being
+// worked out, and anything queued behind it. Missing one of those does not
+// crash, it silently moves somebody else's body, which is far worse.
+void LiveWorld::dropBodies(const std::vector<std::size_t> &which) {
+    std::vector<std::size_t> going = which;
+    std::sort(going.begin(), going.end(), std::greater<std::size_t>());
+    going.erase(std::unique(going.begin(), going.end()), going.end());
+    for (const std::size_t body : going) {
+        if (body >= impl_->body_of.size()) continue;
+        if (impl_->world->contains(impl_->body_of[body]))
+            impl_->world->removeAndDestroy(impl_->body_of[body]);
+        const auto drop = [&](auto &vector) {
+            if (body < vector.size())
+                vector.erase(vector.begin() + static_cast<std::ptrdiff_t>(body));
+        };
+        drop(impl_->described); drop(impl_->body_of); drop(impl_->nodes_of);
+        drop(impl_->limits_of); drop(impl_->impedance_of); drop(impl_->density_of);
+        if (impl_->holding != static_cast<std::size_t>(-1) && impl_->holding > body)
+            --impl_->holding;
+    }
+    // Queued fractures hold indices too, and the same rules apply to them.
+    std::vector<std::size_t> dropped = which;
+    std::sort(dropped.begin(), dropped.end());
+    restackQueue(dropped);
+    impl_->index_of.clear();
+    for (std::size_t i = 0; i < impl_->described.size(); ++i)
+        impl_->index_of.emplace(impl_->described[i].name, i);
+    repin();
 }
 
 bool LiveWorld::steppedBack() const { return impl_->stepped_back; }
@@ -1206,7 +1318,7 @@ std::size_t LiveWorld::applyPending() {
             vector.erase(vector.begin() + static_cast<std::ptrdiff_t>(body));
         };
         drop(impl_->described); drop(impl_->body_of); drop(impl_->nodes_of);
-        drop(impl_->limits_of); drop(impl_->impedance_of);
+        drop(impl_->limits_of); drop(impl_->impedance_of); drop(impl_->density_of);
         if (impl_->holding != static_cast<std::size_t>(-1) && impl_->holding > body) --impl_->holding;
     }
 
@@ -1286,6 +1398,7 @@ std::size_t LiveWorld::applyPending() {
             material.yield_strength_pa));
         impl_->impedance_of.push_back(
             acousticImpedance(material.density_kg_m3, material.young_modulus_pa));
+        impl_->density_of.push_back(material.density_kg_m3);
         impl_->nodes_of.push_back(std::move(parent_nodes));
         if (piece.shape == "hull")
             piece.dimensions_m = cellBounds(impl_->nodes_of.back(), impl_->cell_offset_m,

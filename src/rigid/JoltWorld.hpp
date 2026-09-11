@@ -222,7 +222,16 @@ public:
     // restores Jolt bodies/contacts/constraints/global state, ticks and queued
     // impacts. Geometry/configuration mutations reject while a trial is open.
     // Caller owns external histories and must keep this world alive/unmoved.
-    // At most 256 bodies and 16 nested trials; no persistence/portable snapshot.
+    // At most 2,048 bodies and 16 nested trials; no persistence/portable
+    // snapshot. The budget is the state recorder's, not Jolt's: every trial
+    // saves the world and restores it if the trial is refused. Measured on a
+    // room of shattered glass, a step with the trial on costs 0.6 ms at 58
+    // bodies, 3.3 ms at 250 and 3.1 ms at 600 -- flat, because a body that has
+    // settled is cheap to record. It was 256, and 256 is reached by breaking
+    // two panes: past it the step is taken straight, and a fracture handed an
+    // already-resolved contact finds nothing to break. Measured, the same iron
+    // ball onto the same 20 mm pane broke it into 71 pieces in a room of 58
+    // bodies and left it whole in a room of 430.
     [[nodiscard]] bool runReversibleTrial(const std::function<bool()> &trial);
     // Trusted host callback for adaptive spring integration. Existing distance
     // springs may be updated or removed; additions and every other topology or

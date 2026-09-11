@@ -106,7 +106,21 @@ class Session:
             state = self._read(f"handling {command.get('op')}")
         if not state.get("ok"):
             raise LiveError(state.get("error") or "the live world refused that")
-        self.state = self._whole(state)
+        # Only a reply that describes the world replaces this side's picture of
+        # it. `pick` and `collect` answer about one thing and carry no bodies at
+        # all, and taking those as the world left `self.state` with no bodies in
+        # it -- every caller on this side then saw an empty room.
+        if "bodies" in state:
+            self.state = self._whole(state)
+        elif state.get("collected"):
+            # A sweep carries no bodies, but it did change the world: it took
+            # some away, and it names them. Applying that here keeps this side's
+            # picture right without asking for the whole room back.
+            went = {name for lot in state["collected"] for name in lot.get("took") or ()}
+            if went and self.state.get("bodies"):
+                self.state = {**self.state,
+                              "bodies": [b for b in self.state["bodies"]
+                                         if b["name"] not in went]}
         # Anything the world waited on goes to the server's log, so a run that
         # stalls leaves a trace behind rather than only an impression.
         for wait in state.get("waits") or ():
@@ -229,6 +243,18 @@ class Live:
             if not isinstance(to, list) or len(to) != 3:
                 raise LiveError("move needs a position of three numbers")
             return session.send(op="move", to=[float(v) for v in to])
+        if op == "collect":
+            at = body.get("at")
+            if not isinstance(at, list) or len(at) != 3:
+                raise LiveError("collect needs a point of three numbers")
+            spot = [float(v) for v in at]
+            if not all(math.isfinite(v) for v in spot):
+                raise LiveError("collect was given a point that is not a number")
+            radius = float(body.get("radius_m", 1.0))
+            if not 0.0 < radius <= 10.0:
+                raise LiveError("collect needs a radius between 0 and 10 metres")
+            return session.send(op="collect", at=spot, radius_m=radius,
+                                largest_cells=int(body.get("largest_cells", 64)))
         if op in ("release", "poses"):
             return session.send(op=op)
         if op == "pick":

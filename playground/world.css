@@ -123,3 +123,41 @@ button.quiet { background: transparent; }
   #carry { right: 320px; }
   #hud { max-width: calc(100vw - 340px); }
 }
+
+/* What has been swept up off the floor.
+   Bottom left, opposite the carry readout, because both are about what you are
+   holding and neither should be where the crosshair is. */
+#stock {
+  position: fixed;
+  left: 16px;
+  bottom: 92px;
+  min-width: 168px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgb(12 16 22 / 0.72);
+  border: 1px solid rgb(255 255 255 / 0.09);
+  backdrop-filter: blur(6px);
+  font-size: 12px;
+  pointer-events: none;
+}
+#stock h2 {
+  margin: 0 0 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(255 255 255 / 0.45);
+}
+#stock-list { margin: 0; padding: 0; list-style: none; }
+#stock-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 2px 0;
+  color: rgb(233 237 243 / 0.92);
+}
+#stock-list .what { text-transform: capitalize; }
+/* Digits line up so a total that is growing reads as one column. */
+#stock-list .much { font-variant-numeric: tabular-nums; color: rgb(150 200 255 / 0.95); }
+/* A tally that just changed, so the eye is drawn to what was added. */
+#stock-list li.just-in .much { color: rgb(180 235 190); }

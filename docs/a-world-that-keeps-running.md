@@ -250,6 +250,80 @@ the lattice solver, which was innocent. `cost_ms` is now the run alone and
 banjo: precomputed concrete plate 20mm, 794 ms of run, 196 ms queued (t=20.72 s)
 ```
 
+## The room fills up, so you sweep it
+
+Breaking depends on the step being reversible. Before every step the engine
+snapshots the physics world, takes the step, and rewinds if that step would break
+something — because Jolt resolves a contact *inside* the step, and a fracture
+handed an already-resolved contact is handed a ball that has already bounced.
+
+That snapshot has a budget, and the budget is what the room runs out of. It was
+256 bodies, which is two broken panes. Past it the step is taken straight and
+the room quietly stops shattering — measured, the same iron ball onto the same
+20 mm pane broke it into **71 pieces in a room of 58 bodies and left it whole in
+a room of 430**. Nothing says so; the room just stops working.
+
+The budget turned out to be far more conservative than it needed to be. Measured
+across a room of shattered glass, one step with the trial on:
+
+| bodies | one step | of a 33 ms frame |
+|---|---|---|
+| 58 | 0.6 ms | 2% |
+| 250 | 3.3 ms | 10% |
+| 600 | 3.1 ms | 9% |
+
+Flat from 250 to 600, because a body that has settled is cheap to record. So the
+ceiling is now **2,048**, which a room has to work to reach rather than reach by
+breaking two panes. The same drop that left the pane whole at 430 bodies breaks
+it into 75 at 468.
+
+That moves the wall; it does not remove it. What removes it is picking the
+pieces up.
+
+### Walking over debris collects it
+
+`{"op":"collect","at":[x,y,z],"radius_m":1.2}` takes the loose pieces near a
+point out of the world and says what they were made of:
+
+```json
+{"ok": true, "collected": [
+  {"material": "glass", "kg": 1.62, "pieces": 66, "cells": 81, "took": ["glass plate 20mm piece 1", "..."]}]}
+```
+
+Added up by material, because that is the useful form — nobody wants sixty-six
+entries called "glass plate 20mm piece 31", they want to know they have 1.62 kg
+of glass. The weight is the matter that was actually there: a piece's cells are
+its volume, and volume times the material's density is what you carry away.
+
+What it takes is deliberately narrow, and most of the tests are about what it
+must **not** take. Only a *hull* — what something becomes when it breaks or
+bends — so an authored bowl is not pocketed by walking past it. Never anchored
+scenery, never what is in a hand, and never a body that an unfinished fracture
+still holds an index to, which would either resurrect a body that is gone or
+write a piece back onto somebody else's slot.
+
+Three things this needed:
+
+**`described` is not where a body is.** It carries the pose a body was *built*
+with; `poses()` is what refreshes it from the world. Reading it in the sweep
+found every piece sitting at the origin — a fixed 3.06 m from the plate they came
+off — so a 3 m sweep collected nothing and a 50 m sweep collected the room. That
+is a bug that reads exactly like a tuning problem.
+
+**A sweep answers lean, like `pick`.** It is asked for whenever there is debris
+underfoot, and carrying the world along with each answer would put back exactly
+the cost that trimming the step reply took out. Every body that went is named in
+`took`, which is all a host needs to remove.
+
+**A lean reply is not the world.** `Session.state` was being replaced by whatever
+came back, so a `collect` — or a `pick`, which had the same hole and nobody had
+noticed — left this side of the wire with no bodies in it at all. A reply only
+replaces the world if it describes one; a sweep instead applies its own `took`.
+
+In the room, walking into the pieces shrinks them away over a quarter of a
+second, adds them to a tally in the corner, and says so once the sweeping stops —
+once, not once per step, or crossing a shattered pane would bury the chat.
+
 ## Every wait is written down
 
 Anything the world waits on, or is spared waiting on, goes out in the reply's

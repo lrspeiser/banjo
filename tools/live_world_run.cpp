@@ -11,6 +11,7 @@
 //        {"op":"fracture","name":"pane"}   {"op":"poses"}   {"op":"quit"}
 //        {"op":"fracture","name":"pane","wait":false}
 //        {"op":"step","dt":0.008,"n":4,"moved":true}   only what changed
+//        {"op":"collect","at":[0,1.6,0],"radius_m":1.2}   sweep up the pieces
 //        {"op":"pick","from":[0,6,0],"dir":[0,-1,0],"max_m":1000}
 //   out  {"ok":true,"t":0.033,"stepped_back":false,
 //         "bodies":[{"name":"ball","shape":"sphere","dimensions_m":[...],
@@ -275,6 +276,33 @@ int main(int argc, char **argv) {
                             "nothing", "held", "dented", "broke"}
                             [static_cast<std::size_t>(world->lastOutcome())];
                     }
+                } else if (op == "collect") {
+                    // Loose pieces near a point, out of the world and into
+                    // whatever the host wants to do with them. A room that
+                    // shatters fills up, and past the body budget the step
+                    // cannot be taken back, which is what breaking needs --
+                    // so sweeping the floor is also how the room keeps working.
+                    const std::vector<LiveCollected> haul = world->collect(
+                        readVec(command, "at"), command.value("radius_m", 1.0),
+                        static_cast<std::size_t>(command.value("largest_cells", 64)));
+                    nlohmann::json got = nlohmann::json::array();
+                    for (const LiveCollected &what : haul)
+                        got.push_back({{"material", what.material},
+                                       {"kg", tidy(what.kilograms)},
+                                       {"pieces", what.pieces},
+                                       {"cells", what.cells},
+                                       {"took", what.took}});
+                    reply["ok"] = true;
+                    reply["collected"] = std::move(got);
+                    // Lean, like `pick`. A sweep is asked for whenever there is
+                    // debris underfoot, and carrying the world along with each
+                    // answer would put back exactly the cost that trimming the
+                    // step reply took out. The host does not need it: every
+                    // body that went is named in `took`, which is all it has to
+                    // remove -- and the next step reply lists them in `gone`
+                    // anyway, which is harmless because they are already gone.
+                    std::cout << reply.dump() << std::endl;
+                    continue;
                 } else if (op == "grab") {
                     if (!world->grab(command.at("name").get<std::string>()))
                         throw std::invalid_argument("that object cannot be picked up");

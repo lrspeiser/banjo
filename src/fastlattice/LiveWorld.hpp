@@ -84,6 +84,19 @@ struct LiveImpact {
 // every one of them changes the answer. So the only thing left is to not make
 // anyone wait for it, and the only way to know whether that is working is to
 // write down every time it happens.
+// What a sweep picked up, added up by material rather than by shard: nobody
+// wants forty entries called "glass plate 20mm piece 31", they want to know they
+// now have four hundred grams of glass.
+struct LiveCollected {
+    std::string material;
+    double kilograms{};
+    std::size_t pieces{};
+    std::size_t cells{};
+    // Which bodies went, so a host can show them going rather than have them
+    // blink out of existence between one frame and the next.
+    std::vector<std::string> took;
+};
+
 struct LiveDelay {
     // When, in world time.
     double at_s{};
@@ -222,6 +235,20 @@ public:
     // forgetDelays(). A host that never looks at this cannot tell a world that
     // is keeping up from one that is stalling twice a second.
     [[nodiscard]] std::vector<LiveDelay> delays() const;
+
+    // Sweep up the loose pieces within `radius_m` of a point and say what they
+    // were made of, added up by material.
+    //
+    // Only pieces: a "hull" is what something becomes when it breaks or bends,
+    // so authored objects, anchored scenery and whatever is in a hand all stay
+    // where they are. `largest_cells` is what counts as little -- a shard of
+    // nine cells is debris, half a pane is not.
+    //
+    // This is also how a room that shatters stays inside the body budget, which
+    // is what breaking depends on: sweeping the floor is the natural way to
+    // keep the world small enough to keep working.
+    [[nodiscard]] std::vector<LiveCollected> collect(const Vec3 &at, double radius_m,
+                                                     std::size_t largest_cells = 64);
     void forgetDelays();
     // How far ahead to look for a collision that will need the lattice. Zero
     // turns the looking off. A ray per moving body is cheap -- 0.02 ms -- but
@@ -277,6 +304,9 @@ private:
     void startNextQueued();
     void restackQueue(const std::vector<std::size_t> &dropped);
     void repin();
+    // Take bodies out of the world and out of every table parallel to it,
+    // fixing up the hand and any fracture holding an index.
+    void dropBodies(const std::vector<std::size_t> &which);
     static void work(Pending &job);
     std::size_t applyPending();
     struct Impl;

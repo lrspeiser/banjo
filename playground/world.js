@@ -47,6 +47,9 @@ async function api(path, body) {
 const world = {
   session: null,
   bodies: new Map(),      // name -> { mesh, material, dims, anchored }
+  fading: [],             // pieces on their way out, being collected
+  stock: new Map(),       // material -> { kg, pieces }
+  sweptSince: new Map(),  // material -> kg, waiting to be announced
   held: null,             // { name, distance }
   aim: null,              // what the crosshair is on, from the engine
   busy: false,
@@ -223,6 +226,119 @@ function draw(state) {
     world.bodies.delete(name);
   }
   $("panel-count").textContent = `${world.bodies.size} objects`;
+}
+
+// How close you have to be, and how big a thing can be and still be debris.
+// A cell is 20 mm, so 64 cells is a fragment you could hold in one hand; a
+// plate that broke in half is not something you pocket by walking past it.
+const REACH_M = 1.2;
+const DEBRIS_CELLS = 64;
+
+// Walking over the pieces picks them up.
+//
+// A room that shatters fills with debris that will lie there for as long as the
+// world is open, and the engine cannot take a step back past a couple of
+// thousand bodies -- which is what breaking depends on. So sweeping the floor
+// is not only how you get materials, it is how the room stays able to break
+// things at all.
+// Is there anything underfoot worth asking about?
+//
+// The engine decides what can be collected -- this only decides whether it is
+// worth a round trip. Asking every tick regardless would be thirty requests a
+// second to be told "nothing", which is the cost that trimming the step reply
+// just removed.
+function debrisUnderfoot() {
+  const p = camera.position;
+  for (const entry of world.bodies.values()) {
+    if (entry.shape !== "hull" || entry.anchored) continue;
+    if (entry.mesh.position.distanceTo(p) <= REACH_M) return true;
+  }
+  return false;
+}
+
+async function sweep() {
+  const p = camera.position;
+  const got = await act("collect", { at: [p.x, p.y, p.z], radius_m: REACH_M,
+                                     largest_cells: DEBRIS_CELLS });
+  const haul = got.collected || [];
+  if (haul.length) {
+    for (const lot of haul) {
+      // Out of the world's hands and into the fade, BEFORE draw runs: the
+      // reply no longer carries them, and draw deletes whatever a reply leaves
+      // out, so without this they would blink out between two frames.
+      for (const name of lot.took || []) {
+        const entry = world.bodies.get(name);
+        if (!entry) continue;
+        world.bodies.delete(name);
+        world.fading.push({ mesh: entry.mesh, until: performance.now() + 260 });
+      }
+      const have = world.stock.get(lot.material) || { kg: 0, pieces: 0 };
+      have.kg += lot.kg;
+      have.pieces += lot.pieces;
+      world.stock.set(lot.material, have);
+      world.sweptSince.set(lot.material,
+        (world.sweptSince.get(lot.material) || 0) + lot.kg);
+    }
+    showStock();
+  }
+  return got;
+}
+
+// Say what was picked up -- but not once per step.
+//
+// Walking across a shattered pane collects a few shards every tick, and a line
+// in the chat for each would bury everything else that is said. They are added
+// up and announced once the sweeping stops.
+let tellTimer = null;
+function tellLater() {
+  if (tellTimer || !world.sweptSince.size) return;
+  tellTimer = setTimeout(() => {
+    tellTimer = null;
+    const lots = [...world.sweptSince];
+    world.sweptSince.clear();
+    if (!lots.length) return;
+    const said = lots.map(([what, kg]) => `${grams(kg)} of ${what}`).join(", ");
+    say("world", `Collected ${said}.`);
+  }, 700);
+}
+
+// Grams below a kilogram, kilograms above it. Nobody says "0.042 kilograms".
+function grams(kg) {
+  return kg < 1 ? `${Math.round(kg * 1000)} g` : `${kg.toFixed(2)} kg`;
+}
+
+function showStock() {
+  const list = $("stock-list");
+  const rows = [...world.stock].sort((a, b) => b[1].kg - a[1].kg);
+  $("stock").hidden = rows.length === 0;
+  list.replaceChildren(...rows.map(([what, have]) => {
+    const li = document.createElement("li");
+    const name = document.createElement("span");
+    name.className = "what";
+    name.textContent = what;
+    const much = document.createElement("span");
+    much.className = "much";
+    much.textContent = grams(have.kg);
+    li.append(name, much);
+    if (world.sweptSince.has(what)) li.className = "just-in";
+    return li;
+  }));
+}
+
+// A piece being collected shrinks away over a quarter of a second rather than
+// vanishing. A thing that disappears between two frames reads as a glitch; a
+// thing that shrinks reads as being picked up.
+function fadePieces(now) {
+  if (!world.fading.length) return;
+  world.fading = world.fading.filter((going) => {
+    const left = (going.until - now) / 260;
+    if (left <= 0) {
+      scene.remove(going.mesh);
+      return false;
+    }
+    going.mesh.scale.setScalar(Math.max(0.01, left));
+    return true;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -553,6 +669,14 @@ async function tick() {
     const steps = clamp(Math.round(elapsed / LIVE_DT), 1, MAX_STEPS);
     let state = await act("step", { dt: LIVE_DT, n: steps, moved: true });
 
+    // Anything loose underfoot comes with you. Done after the step so it acts
+    // on where things have just landed, and before draw so the pieces it takes
+    // are moved into the fade rather than deleted outright.
+    if (!world.held && debrisUnderfoot()) {
+      const swept = await sweep();
+      if (swept.collected && swept.collected.length) tellLater();
+    }
+
     // Something is about to break. The engine has taken the step back and is
     // waiting to be told what to do, and until it is told, time does not move.
     //
@@ -638,6 +762,7 @@ function frame() {
   lookFromKeys(dt);
   walk(dt);
   updateGuides();
+  fadePieces(now);
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
@@ -697,6 +822,11 @@ $("ask").addEventListener("submit", async (e) => {
       world.session = answer.session;
       world.bodies.forEach((e) => scene.remove(e.mesh));
       world.bodies.clear();
+      world.fading.forEach((f) => scene.remove(f.mesh));
+      world.fading.length = 0;
+      world.stock.clear();
+      world.sweptSince.clear();
+      showStock();
       draw(answer.state);
       remember("the room was rebuilt: " + (answer.did || []).join(", "));
     }

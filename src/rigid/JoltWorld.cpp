@@ -1371,7 +1371,7 @@ void JoltWorld::addFragments(
 unsigned JoltWorld::positionPrecisionBits() noexcept { return 8*sizeof(JPH::Real); }
 
 bool JoltWorld::runReversibleTrial(const std::function<bool()> &trial) {
-    if(!trial||impl_->bodies_.size()>256||impl_->trial_depth_>=16)
+    if(!trial||impl_->bodies_.size()>2048||impl_->trial_depth_>=16)
         throw std::invalid_argument("invalid reversible trial or body/depth budget exceeded");
     JPH::StateRecorderImpl recorder;impl_->physics_->SaveState(recorder);
     if(recorder.IsFailed()||recorder.GetDataSize()>16U*1024U*1024U)
