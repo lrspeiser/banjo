@@ -47,10 +47,13 @@ class Session:
     """One open world."""
 
     def __init__(self, engine_path: Path, spec: dict[str, Any], runs_path: Path) -> None:
-        bodies = spec.get("bodies") or []
+        # Anything the panel can describe can be run live. A plate-and-ball spec
+        # is translated into the objects it already is, rather than refused for
+        # being the wrong shape.
+        bodies = fracture_lab.as_objects(spec)
         if not bodies:
-            raise LiveError("A live world needs a many-object scene. Build one first, "
-                            "or switch the scene to Many objects.")
+            raise LiveError("This scene has nothing in it to simulate.")
+        spec = dict(spec, bodies=bodies)
         if len(bodies) > MAX_BODIES:
             raise LiveError(f"{len(bodies)} objects is more than a live world will hold "
                             f"({MAX_BODIES}).")

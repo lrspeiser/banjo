@@ -213,6 +213,15 @@ void anImpactNamesBothSides() {
     require(live->impacts(1000.0).empty(), "a 1000 m/s filter still reported impacts");
 }
 
+// How many bodies in the world are pieces of a given parent, counted by name.
+// fracture() returns the same number, so the two can be held against each other.
+std::size_t piecesNamedAfter(const LiveWorld &live, const std::string &parent) {
+    std::size_t found = 0;
+    for (const LiveBodyPose &pose : live.poses(false))
+        if (pose.name.rfind(parent, 0) == 0) ++found;
+    return found;
+}
+
 // Drop the ball, and when the world says the pane cannot take it, break it.
 // Returns what the pane became.
 struct Drop {
@@ -221,6 +230,9 @@ struct Drop {
     double threshold{};
     double fracture_wall_ms{};
     std::size_t bodies_after{};
+    // What the world actually holds under the pane's name, to hold the reported
+    // count against.
+    std::size_t pane_bodies{};
 };
 
 Drop dropAndBreak(double drop_m) {
@@ -243,9 +255,75 @@ Drop dropAndBreak(double drop_m) {
         break;
     }
     out.bodies_after = live->bodies();
+    out.pane_bodies = piecesNamedAfter(*live, "pane");
     // The world must still be steppable after being rearranged mid-flight.
     for (int i = 0; i < 120; ++i) live->step(1.0 / 240.0);
     return out;
+}
+
+// The count fracture() reports is the count that is actually in the world.
+//
+// It used to be read after the struck body had been erased from nodes_of, so it
+// indexed a vector that had just been shortened past the index it was using.
+// With the struck body at index 0 the read landed on memory that happened to
+// give the right answer and every test passed; with a plate standing on two
+// piers -- the playground's own arrangement, where the plate is body 2 of 4 --
+// it read off the end. A plate that came apart into eight pieces was reported
+// as having held, and the panel said so in the chat while the pieces were on
+// screen in front of the reader.
+//
+// So this scene puts the struck body where the bug shows: not first, and with
+// bodies both before and after it.
+void theCountIsWhatIsActuallyInTheWorld() {
+    TileImpactRequest r;
+    r.cell_size_m = 0.02;
+    r.backend = BackendKind::CpuParallel;
+    std::vector<SceneBody> scene;
+    for (int side = -1; side <= 1; side += 2) {
+        SceneBody pier;
+        pier.name = side < 0 ? "pier left" : "pier right";
+        pier.shape = BodyShape::Box;
+        pier.material = MaterialPreset::Iron;
+        pier.dimensions_m = {0.06, 0.2, 0.3};
+        pier.center_m = {side * 0.12, 0.1, 0.0};
+        pier.anchored = true;
+        scene.push_back(pier);
+    }
+    SceneBody pane;
+    pane.name = "pane";
+    pane.shape = BodyShape::Box;
+    pane.material = MaterialPreset::Glass;
+    pane.dimensions_m = {0.3, 0.04, 0.3};
+    pane.center_m = {0.0, 0.22, 0.0};
+    scene.push_back(pane);
+    SceneBody ball;
+    ball.name = "ball";
+    ball.shape = BodyShape::Sphere;
+    ball.material = MaterialPreset::Iron;
+    ball.dimensions_m = {0.1, 0.1, 0.1};
+    ball.center_m = {0.0, 0.22 + 0.02 + 0.05 + 10.0, 0.0};
+    scene.push_back(ball);
+    r.bodies = scene;
+
+    const auto live = LiveWorld::open(r);
+    require(live->bodies() == 4, "the scene did not open with its four bodies");
+    std::size_t reported = 0;
+    bool broke = false;
+    for (int i = 0; i < 900 && !broke; ++i) {
+        live->step(1.0 / 240.0);
+        const auto breakable = live->breakable();
+        if (std::find(breakable.begin(), breakable.end(), std::string("pane")) == breakable.end())
+            continue;
+        reported = live->fracture("pane");
+        broke = true;
+    }
+    require(broke, "the pane was never judged breakable, so this proves nothing");
+    const std::size_t present = piecesNamedAfter(*live, "pane");
+    std::cout << "  pane at index 2 of 4: fracture() said " << reported
+              << ", the world holds " << present << "\n";
+    require(reported > 1, "a ball dropped 10 m did not break the pane");
+    require(reported == present,
+            "fracture() reported a different number of pieces than the world holds");
 }
 
 void aHardEnoughHitActuallyBreaksIt() {
@@ -260,6 +338,8 @@ void aHardEnoughHitActuallyBreaksIt() {
 
     require(hard.at_speed > hard.threshold, "the drop never exceeded the breaking speed");
     require(hard.pieces > 1, "a 14 m/s iron ball did not break a glass pane");
+    require(hard.pieces == hard.pane_bodies,
+            "fracture() reported a different number of pieces than the world holds");
     require(hard.bodies_after > 2, "the world did not gain the pieces it made");
     require(hard.fracture_wall_ms > 1.0,
             "the lattice cannot have run at all in under a millisecond");
@@ -339,6 +419,54 @@ void aThingThatHeldDoesNotStopTheWorld() {
 // world is different: someone carries an object where they like, and past 4 m
 // there was no floor at all. An iron ball taken to x = 5 m and released reached
 // -7.9 m and was still going, which is not a physics answer.
+// Lift something out of a world that has been sitting still, and let it go.
+//
+// The other hold-and-drop test grabs an object seconds after the world opens,
+// while everything in it is still moving. A playground is not like that: it is
+// left running, everything comes to rest, and THEN someone reaches in. A rigid
+// solver stops simulating a body that has been still long enough -- that is how
+// a scene of a hundred pieces stays cheap -- and a hold that only re-asserts a
+// pose never wakes it. The object then rode up with the hand, was let go, and
+// hung there, because as far as the solver was concerned it was not a body in
+// flight, it was furniture.
+//
+// This is the bug the owner hit twice: "if I lift an object off the ground and
+// let it go, gravity should drop it", and then "when i pick it up it just stays
+// up". So the test waits for the world to go quiet before it touches anything.
+void somethingLiftedOutOfASettledWorldStillFalls() {
+    const auto live = LiveWorld::open(ballOntoGlass(0.06));   // too gentle to break
+    // Long enough for everything to come to rest and be put to sleep.
+    for (int i = 0; i < 1200; ++i) live->step(1.0 / 240.0);
+    const auto ballY = [&] {
+        for (const LiveBodyPose &pose : live->poses(false))
+            if (pose.name == "ball") return pose.position_m.y;
+        throw std::runtime_error("the ball is gone");
+    };
+    const double settled = ballY();
+    std::cout << "  world quiet at t=" << live->time_s() << " s, ball resting at y="
+              << settled << "\n";
+
+    require(live->grab("ball"), "a settled ball could not be picked up");
+    // Carry it up a metre, the way a hand does: a move per frame.
+    const double lifted = settled + 1.0;
+    for (int i = 1; i <= 60; ++i) {
+        live->moveHeld({0.0, settled + (lifted - settled) * i / 60.0, 0.0});
+        live->step(1.0 / 240.0);
+    }
+    require(std::abs(ballY() - lifted) < 0.02, "the ball did not go where it was carried");
+    live->release();
+    std::cout << "  let go at y=" << ballY() << "\n";
+
+    for (int i = 0; i < 480; ++i) live->step(1.0 / 240.0);   // two seconds
+    const double after = ballY();
+    std::cout << "  two seconds later: y=" << after << "\n";
+    require(after < lifted - 0.3,
+            "it was let go a metre up and did not fall: the world had gone to sleep "
+            "and letting go never woke it");
+    require(std::abs(after - settled) < 0.05,
+            "it fell, but not back to where it had been resting");
+}
+
 void theGroundCatchesThingsWhereverTheyAreDropped() {
     for (const double x : {0.0, 3.0, 9.0, 40.0}) {
         const auto live = LiveWorld::open(ballOverFloor());
@@ -374,6 +502,8 @@ int main() {
         std::cout << "[PASS] a contact is judged against what it hit, hard differs from gentle\n";
         anImpactNamesBothSides();
         std::cout << "[PASS] an impact names both sides; resting contacts are not impacts\n";
+        theCountIsWhatIsActuallyInTheWorld();
+        std::cout << "[PASS] the piece count reported is the piece count in the world\n";
         aHardEnoughHitActuallyBreaksIt();
         std::cout << "[PASS] a hard enough hit puts the object back in the lattice and breaks it\n";
         aGentleHitLeavesItWhole();
@@ -382,6 +512,8 @@ int main() {
         std::cout << "[PASS] breaking scenery or a name that is not there changes nothing\n";
         aThingThatHeldDoesNotStopTheWorld();
         std::cout << "[PASS] something that was hit hard and held does not deadlock the world\n";
+        somethingLiftedOutOfASettledWorldStillFalls();
+        std::cout << "[PASS] something lifted out of a settled world still falls\n";
         theGroundCatchesThingsWhereverTheyAreDropped();
         std::cout << "[PASS] the ground catches things wherever they are dropped\n";
         return 0;

@@ -491,8 +491,8 @@
         // the scene again from where it was left rather than dropping it where
         // you are looking -- so say which of the two this is.
         liveStatus(over
-          ? `Click to pick up ${over.name}. This is a recording, so putting it down`
-            + ` runs the scene again — press Go live to drop things in real time.`
+          ? `Click to pick up ${over.name}. Putting it down runs the scene again`
+            + ` from where you left it.`
           : "");
       },
       onRelease: (move) => {
@@ -1125,11 +1125,11 @@
 
   // ---- A live world -----------------------------------------------------
   //
-  // The stage normally plays a recording. Going live opens the same scene as a
-  // running physics engine instead: the browser steps it, reads where
-  // everything is, and puts it on screen, about thirty times a second. Picking
-  // something up is then a hold the engine itself honours, and letting go is a
-  // fall rather than a re-run.
+  // The stage is a running physics engine, opened as soon as the page is: the
+  // browser steps it, reads where everything is, and puts it on screen about
+  // thirty times a second. Picking something up is a hold the engine itself
+  // honours, and letting go is a fall. There is nothing to start and nothing to
+  // play, so the one control left restarts the scene.
   const live = { session: null, timer: null, busy: false, dropped: 0, breaking: false,
                  lastTick: 0, holding: null, hovering: null };
 
@@ -1152,22 +1152,21 @@
     if (!box || !button) return;
     let spec = null;
     try { spec = readFracture(); } catch { /* the panel is mid-edit */ }
-    const ready = !!(spec && spec.bodies && spec.bodies.length);
-    // The same answer decides whether the pointer can pick anything up, so the
-    // viewer declines at the hover rather than after a carry.
-    state.scene?.setGrabbable(ready,
-      "This is a plate-and-ball scene: a tile and a striker, not objects to rearrange."
-      + " Set Scene to “Many objects”, or load a scenario such as"
-      + " “Drop balls of every material onto panels”.");
-    button.disabled = !ready;
-    button.title = ready
-      ? "Run this scene as a live world instead of a recording"
-      : "Only a many-object scene can run live";
-    if (!ready && !box.textContent) {
-      box.hidden = false;
-      box.textContent = "Go live needs a many-object scene. This one is a single plate"
-        + " and a striker, so there is nothing for the live lane to hand you.";
-    }
+    // Every scene can be handled, so there is nothing to decline and nothing to
+    // explain about which kind of scene this is.
+    state.scene?.setGrabbable(true, "");
+    button.disabled = false;
+    button.title = "Start this scene again from the beginning";
+  }
+
+  // A running world has no frames to scrub, nothing to play and nothing to
+  // pause. Those controls belong to a recording, and leaving them over a live
+  // scene invites the reader to press something that cannot mean anything.
+  function showTransport(on) {
+    ["viewer-transport", "viewer-frame-field", "viewer-playback-fields"].forEach((id) => {
+      const node = $(id);
+      if (node) node.hidden = !on;
+    });
   }
 
   function liveStatus(text) {
@@ -1178,17 +1177,14 @@
   }
 
   async function goLive() {
-    if (live.session) return stopLive("Back to the recording.");
+    // Restart rather than toggle: whatever is on the stage is re-opened from
+    // the scene the panel is holding. There is no recording to go back to.
+    if (live.session) stopLive("");
     const spec = readFracture();
-    if (!spec.bodies || !spec.bodies.length) {
-      const why = "A live world needs a scene of objects. Set Scene to \u201cMany objects\u201d"
-        + " above, or ask the chat for one \u2014 a plate and a ball is a single tile and the"
-        + " live lane has no striker to show you.";
-      liveStatus(why);
-      chatTurn("bad", "Nothing to run live", why);
-      return;
-    }
     $("viewer-live").disabled = true;
+    // Put the film controls away before the world opens rather than after, so a
+    // restart does not flash them back during the round trip.
+    showTransport(false);
     liveStatus("Opening a live world...");
     try {
       const data = await api("/api/live/open", {
@@ -1201,7 +1197,8 @@
       live.lastTick = 0;
       state.scene.setGrabbable(true, "");
       state.scene.loadLive(data.bodies, 0, data.cell_size_m);
-      $("viewer-live").textContent = "Stop live";
+      showTransport(false);
+      $("viewer-live").textContent = "Restart the scene";
       $("viewer-grab").checked = true;
       state.scene.setGrabMode(true);
       chatTurn("built", "Live",
@@ -1224,7 +1221,8 @@
     live.timer = null;
     const closing = live.session;
     live.session = null;
-    $("viewer-live").textContent = "Go live";
+    showTransport(true);
+    $("viewer-live").textContent = "Restart the scene";
     liveStatus("");
     if (closing) {
       api("/api/live/act", {
@@ -1342,13 +1340,9 @@
     // is what made a declined move look like the object getting stuck in mid
     // air -- the scene had been changed to show a move that never happened.
     const refuse = (title, why) => { state.scene?.cancelGrab(); chatTurn("bad", title, why); };
-    if (!spec.bodies || !spec.bodies.length) {
-      refuse("Cannot move that",
-        "This is a plate-and-ball scene: it has a tile and a striker, not objects to"
-        + " rearrange. Set Scene to \u201cMany objects\u201d, or load a scenario such as"
-        + " \u201cDrop balls of every material onto panels\u201d.");
-      return;
-    }
+    // A plate-and-ball spec is still a scene of objects, only written down
+    // differently, and the server reads it that way. Nothing to refuse.
+    if (!spec.bodies || !spec.bodies.length) { state.scene?.cancelGrab(); return; }
     // The recording names a body "pin7 (glass)"; the scene calls it "pin7".
     const plain = String(name).replace(/\s*\([^)]*\)\s*$/, "");
     const body = spec.bodies.find((b) => b.name === plain);
@@ -2285,4 +2279,7 @@
   // click that no longer has to happen. This also adopts the stage.
   activateTab("fracture");
   loadStatus().then(noteChatKey);
+  // The stage is a world, so it is running before anyone asks. Waiting behind a
+  // button meant the first thing anyone saw was a still frame of nothing.
+  setTimeout(() => { goLive().catch(() => {}); }, 400);
 })();

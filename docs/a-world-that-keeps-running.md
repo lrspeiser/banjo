@@ -102,3 +102,54 @@ surface. Drawing those from a bounding box rendered the hollow bowl as a solid
 block. They are one instanced mesh carried by the body's own pose, so it stays one
 pose a frame on the wire and one draw call on screen — and the cells travel only
 when the set of bodies can have changed.
+
+## Nothing to press, and nothing to decline
+
+The stage opens as a running world. There is no transport over it, because a
+transport belongs to a recording: a frame to scrub to, a speed to play at, a
+pause. None of those mean anything about a world that is still happening, and
+leaving them on screen invites the reader to press something that cannot answer.
+The one control left restarts the scene.
+
+There is also no scene the lane refuses. It used to accept only a many-object
+scene and tell anyone holding the other kind to go and pick a different one --
+and the other kind was the default, so the first thing a new reader saw was a
+refusal. But a plate and a ball is not a different kind of scene, it is the same
+matter written down differently: `fracture_lab.as_objects` turns the plate into a
+panel, the striker into a ball already moving at the speed the drop resolves to,
+and ledges into two anchored piers. It then goes through `normalise_bodies`, the
+same gate a typed scene goes through, so a translated scene cannot slip past a
+bound a typed one is held to. What the reader gets is their scene, running.
+
+## Three things a live world needs that a recording does not
+
+**A body that has been still is not being simulated.** A rigid solver stops
+stepping a body that has come to rest -- that is what keeps a scene of a hundred
+settled pieces cheap -- and writing a pose does not bring it back, because
+writing a pose is also how a sleeping body gets placed. A hold that only
+re-asserts a pose therefore picks up a sleeping body, carries it, and lets go of
+it still asleep: it hangs in the air. Measured: let go a metre up, still a metre
+up two seconds later. So `grab`, the per-step hold and `release` all call
+`JoltWorld::wake`, which activates the body and clears its sleep timer -- the
+timer as well, or a body still resting against the same contacts is asleep again
+within a step or two, before it has had a chance to start moving. This is only a
+live-world problem. Nothing in a recording is picked up by hand.
+
+**A body that has already broken is not breakable.** Its impacts are still on
+record naming it, and a fracture deliberately clears it from the "already tried"
+set because its pieces are new and untried. Without a check that the name still
+answers to something, the same break was offered a second time, the host asked
+again, got nothing back, and told the reader the object had held -- while its
+pieces lay on the floor in front of them.
+
+**The piece count has to be read before the pieces replace the body.** `fracture`
+reports how many pieces the thing it was asked about became. That count was read
+after the struck body had been erased from `nodes_of`, which indexed a vector
+that had just been shortened past the index in hand. With the struck body first
+the read landed on memory that happened to give the right answer and every test
+passed. With a plate standing on two piers -- the arrangement the playground
+actually opens with, where the plate is body 2 of 4 -- it read off the end: a
+plate that had come apart into eight pieces was reported as having held, and the
+panel said so in the chat. The test that pins it holds the reported count against
+what the world is holding, in a scene where the struck body is neither first nor
+last.

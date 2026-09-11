@@ -102,10 +102,42 @@ class LiveSession(unittest.TestCase):
             self.live.act({"session": state["session"], "op": "grab", "name": "floor"})
         self.assertIn("cannot be picked up", str(caught.exception))
 
-    def test_a_scene_with_no_objects_says_what_to_do(self):
-        with self.assertRaises(ValueError) as caught:
-            self.live.open(self.app, {"spec": {"algorithm": "lattice"}})
-        self.assertIn("many-object scene", str(caught.exception))
+    def test_the_single_tile_scene_runs_live_too(self):
+        """A plate and a ball is a scene of objects, so it opens like any other.
+
+        It used to be refused -- "a live world needs a many-object scene" -- and
+        that refusal was the playground's default scene, so the first thing
+        anyone saw was a message telling them to go and pick a different one.
+        The same physics written in different words is still the same physics:
+        the plate is a panel, the striker is a ball above it, and ledges are two
+        anchored piers.
+        """
+        spec = dict(fracture_lab.DEFAULT)
+        self.assertFalse(spec.get("bodies"), "this test needs the single-tile form")
+        state = self.live.open(self.app, {"spec": spec})
+        names = [b["name"] for b in state["bodies"]]
+        self.assertIn("glass plate", names)
+        self.assertIn("iron ball", names)
+        self.assertEqual(sum(1 for n in names if n.startswith("pier")), 2,
+                         f"the ledges did not become piers: {names}")
+        # The striker arrives already moving, because the lane resolves its drop
+        # height into a speed rather than simulating the fall.
+        ball = self.body(state, "iron ball")
+        self.assertLess(ball["velocity_m_s"][1], -6.0,
+                        "the striker was parked in mid air instead of being dropped")
+
+    def test_an_empty_request_still_opens_a_world(self):
+        """There is no request left that cannot be run.
+
+        A spec is validated before it is opened, and validation fills in every
+        default, so a caller who sends nothing gets the default scene rather
+        than an error. That is the point of the change: the panel has no state
+        it can be in that the live lane will not accept, so it never has to
+        explain to the reader why their scene is the wrong kind.
+        """
+        state = self.live.open(self.app, {"spec": {}})
+        self.assertTrue(state["bodies"], "an empty request opened an empty world")
+        self.assertIn("glass plate", [b["name"] for b in state["bodies"]])
 
     def test_a_stale_session_is_refused_clearly(self):
         first = self.live.open(self.app, {"spec": scene()})

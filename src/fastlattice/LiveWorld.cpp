@@ -421,6 +421,11 @@ bool LiveWorld::grab(const std::string &name) {
     if (impl_->described[found->second].anchored) return false;
     if (impl_->holding != static_cast<std::size_t>(-1)) release();
     impl_->holding = found->second;
+    // The world it is being taken out of has probably been still for a while,
+    // and a body that has been still is not being simulated. Everything below
+    // -- carrying it, and gravity when it is let go -- needs it back in the
+    // step, and writing a pose does not do that.
+    impl_->world->wake(impl_->body_of[found->second]);
     const RigidSnapshot now = impl_->world->snapshot(impl_->body_of[impl_->holding]);
     impl_->held_at = now.center_of_mass_world_m;
     impl_->held_facing = now.orientation_world;
@@ -439,12 +444,21 @@ void LiveWorld::moveHeld(const Vec3 &to_world_m) {
     state.linear_velocity_m_s = {};
     state.angular_velocity_rad_s = {};
     impl_->world->applyRigidState(id, state);
+    // Held still at zero velocity is exactly what "has come to rest" looks like,
+    // so a carried object puts itself to sleep within half a second of being
+    // picked up unless this keeps saying otherwise. Asleep, it stops pushing
+    // what it is carried into, and it does not fall when it is let go.
+    impl_->world->wake(id);
 }
 
 void LiveWorld::release() {
     if (impl_->holding == static_cast<std::size_t>(-1)) return;
-    // Nothing to undo: the hold was only the pose being re-asserted, so simply
-    // not asserting it hands the object back to gravity, from rest.
+    // The hold was only the pose being re-asserted, so there is nothing to undo
+    // -- but the object has spent the whole hold perfectly still, which is the
+    // one thing a rigid solver reads as "stop simulating this". Letting go has
+    // to put it back in the step, or it hangs in the air where it was released.
+    // Watched: let go a metre up, still a metre up two seconds later.
+    impl_->world->wake(impl_->body_of[impl_->holding]);
     impl_->holding = static_cast<std::size_t>(-1);
 }
 
@@ -465,6 +479,8 @@ std::vector<std::string> LiveWorld::breakable() const {
     for (const LiveImpact &impact : impl_->last_impacts) {
         if (!impact.would_break) continue;
         if (impl_->held_through.count(impact.struck)) continue;
+        // Gone: it broke, and what it became carries different names.
+        if (impl_->index_of.find(impact.struck) == impl_->index_of.end()) continue;
         if (std::find(out.begin(), out.end(), impact.struck) == out.end())
             out.push_back(impact.struck);
     }
@@ -644,6 +660,12 @@ std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
             const std::uint32_t part = setup.part_of_node[impl_->nodes_of[body].front()];
             if (part < parent_of_part.size()) parent_of_part[part] = impl_->described[body];
         }
+    // Read now, while the struck body is still in nodes_of. The drop loop below
+    // erases it, and reading afterwards indexed off the end of the shortened
+    // vector: the answer matched no piece, so a plate that had just come apart
+    // into eight was reported as having held.
+    const std::uint32_t asked_part =
+        impl_->nodes_of[which].empty() ? 0 : setup.part_of_node[impl_->nodes_of[which].front()];
 
     // Drop every body in the island and append what they became. A piece is a
     // hull: its cells ARE its surface now, so no authored primitive fits.
@@ -658,11 +680,9 @@ std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
         if (impl_->holding != static_cast<std::size_t>(-1) && impl_->holding > body) --impl_->holding;
     }
 
-    // What was asked about. The island may hold the thing that struck it, and
-    // that thing may have come apart too, so counting every component would
-    // answer a question nobody asked.
-    const std::uint32_t asked_part =
-        impl_->nodes_of[which].empty() ? 0 : setup.part_of_node[impl_->nodes_of[which].front()];
+    // What was asked about is `asked_part`, taken above. The island may hold the
+    // thing that struck it, and that thing may have come apart too, so counting
+    // every component would answer a question nobody asked.
     std::size_t made = 0, of_asked = 0, fragment_index = 0;
     for (const auto &component : island_components) {
         if (fragment_index >= rebuilt.rigid_fragments.size()) break;

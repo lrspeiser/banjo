@@ -1104,6 +1104,17 @@ void JoltWorld::releaseFromWorld(MatterBodyId body_id) {
     impl_->physics_->GetBodyInterface().ActivateBody(impl_->bodies_.at(body_id));
 }
 
+void JoltWorld::wake(MatterBodyId body_id) {
+    const auto found=impl_->bodies_.find(body_id);
+    if(found==impl_->bodies_.end())throw std::invalid_argument("rigid body is missing");
+    auto &bodies=impl_->physics_->GetBodyInterface();
+    bodies.ActivateBody(found->second);
+    // Clearing the timer as well as activating: a body that is still against
+    // the same contacts would otherwise be asleep again within a step or two,
+    // before it has had a chance to start moving.
+    bodies.ResetSleepTimer(found->second);
+}
+
 void JoltWorld::addFragments(
     const std::vector<RigidFragmentDescription> &fragments) {
     impl_->requireConfigurationMutable();

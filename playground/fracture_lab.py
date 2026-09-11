@@ -146,7 +146,7 @@ DEFAULT: dict[str, Any] = {
 SCENARIOS = [
     # The one to reach for first: eight balls, one of every material the
     # catalogue carries, hanging over four panels to drop them on. It is built to
-    # be PLAYED WITH rather than watched -- press Go live and pick one up.
+    # be PLAYED WITH rather than watched: load it and pick one of the balls up.
     #
     # Sized for that. The live step is microseconds, but putting something back
     # into the lattice to break it costs about a third of a millisecond per cell,
@@ -154,7 +154,7 @@ SCENARIOS = [
     # not a coffee break. 12 objects, 2,596 cells, measured at 0.02x realtime
     # live -- fifty times faster than it needs to be.
     {"id": "drop-test", "title": "Drop balls of every material onto panels",
-     "expect": "12 objects, live at 0.02x realtime; press Go live and pick one up",
+     "expect": "12 objects, live at 0.02x realtime; load it and pick one of the balls up",
      "spec": {"algorithm": "lattice", "cell_m": 0.02, "duration_s": 4.0,
               "bodies": [
               {"name": "glass panel", "shape": "box", "material": "glass", "size_mm": [320, 40, 320], "center_mm": [-540, 20, 0], "anchored": True},
@@ -866,6 +866,63 @@ def check_placement(bodies: list[dict[str, Any]], cell_m: float) -> None:
     if len(errors) > len(shown):
         lines.append(f"  - and {len(errors) - len(shown)} more of the same kind.")
     raise ValueError(NEWLINE.join(lines))
+
+
+def as_objects(spec: dict[str, Any]) -> list[dict[str, Any]]:
+    """A plate-and-ball spec as a scene of objects.
+
+    A live world holds objects. The single-tile lane describes the same physics
+    in different words -- a tile, a striker, and a support -- so rather than
+    tell someone their scene is the wrong shape and make them go and find a
+    different one, it is translated: the plate becomes a panel, the striker
+    becomes a ball above it, and ledges become two anchored piers.
+
+    Nothing here is a new kind of scene. It is the same bodies the lane would
+    build, named so a hand can pick them up.
+    """
+    if spec.get("bodies"):
+        return list(spec["bodies"])
+    length, width, thickness = spec["plate_m"]
+    mm = lambda v: round(v * 1000.0, 3)
+    support = spec.get("support", "ledges")
+    rest_y = spec["clearance_m"] if support == "ledges" else 0.0
+    bodies: list[dict[str, Any]] = []
+    if support == "ledges":
+        # Two piers under the ends, leaving the middle unsupported, which is
+        # what makes the plate a bridge rather than a slab on the floor.
+        pier = max(0.06, 0.12 * length)
+        for side in (-1, 1):
+            bodies.append({
+                "name": f"pier {'left' if side < 0 else 'right'}",
+                "shape": "box", "material": "iron",
+                "size_mm": [mm(pier), mm(rest_y), mm(width)],
+                "center_mm": [side * mm(0.5 * (length - pier)), mm(0.5 * rest_y), 0.0],
+                "anchored": True,
+            })
+    bodies.append({
+        "name": f"{spec['material']} plate", "shape": "box", "material": spec["material"],
+        "size_mm": [mm(length), mm(thickness), mm(width)],
+        "center_mm": [0.0, mm(rest_y + 0.5 * thickness), 0.0],
+    })
+    # The striker, placed just clear of the plate and already moving, because
+    # its fall has been resolved into the speed the lane hands the solver.
+    ball = spec["ball_m"]
+    offset = spec.get("offset_m") or [0.0, 0.0]
+    speed = spec.get("speed_m_s")
+    if not speed:
+        # No speed asked for means the drop height decides it, which is what the
+        # single-tile lane does before it hands the striker to the solver.
+        speed = math.sqrt(2.0 * 9.80665 * max(0.0, spec.get("drop_m") or 0.0))
+    bodies.append({
+        "name": f"{spec['striker']} ball", "shape": "sphere", "material": spec["striker"],
+        "size_mm": [mm(ball), mm(ball), mm(ball)],
+        "center_mm": [mm(offset[0]), mm(rest_y + thickness + 0.5 * ball + 0.02), mm(offset[1])],
+        "velocity_m_s": [0.0, -abs(speed), 0.0],
+    })
+    # Through the same gate as any other scene: it fills in the fields a body
+    # carries, and it applies the same bounds, so a translated scene cannot slip
+    # past a limit a typed one would have been held to.
+    return normalise_bodies(bodies, spec["cell_m"])
 
 
 def scene_document(spec: dict[str, Any]) -> dict[str, Any]:

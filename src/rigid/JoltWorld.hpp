@@ -178,6 +178,13 @@ public:
     void pinToWorld(MatterBodyId body_id);
     void releaseFromWorld(MatterBodyId body_id);
     void applyRigidState(MatterBodyId body_id,const RigidSnapshot &state);
+    // Put a body back into simulation and clear how long it has been still.
+    // A body that has come to rest is dropped from the step -- that is what
+    // keeps a scene of a hundred settled pieces cheap -- and nothing that only
+    // writes a pose brings it back, because writing a pose is how a sleeping
+    // body is placed. A host that moves a body by hand and then expects gravity
+    // to act on it has to say so.
+    void wake(MatterBodyId body_id);
     void addFragments(const std::vector<RigidFragmentDescription> &fragments);
     // Trusted host callback, between steps. True accepts; false or an exception
     // restores Jolt bodies/contacts/constraints/global state, ticks and queued
