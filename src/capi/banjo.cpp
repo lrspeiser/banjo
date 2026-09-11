@@ -202,6 +202,7 @@ int banjo_bodies(const banjo_world *world, banjo_body *out, int max) {
             const LiveBodyPose &pose = mutable_world->poses[static_cast<std::size_t>(i)];
             banjo_body &body = out[i];
             body.name = pose.name.c_str();
+            body.material = pose.material.c_str();
             writeVec(pose.position_m, body.position_m);
             for (int k = 0; k < 4; ++k) body.orientation_wxyz[k] = pose.orientation_wxyz[k];
             writeVec(pose.velocity_m_s, body.velocity_m_s);

@@ -176,6 +176,7 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request) {
             if (part < setup.part_bodies.size() && !setup.part_bodies[part].empty()) {
                 const SceneBody &lead = r.bodies[setup.part_bodies[part].front()];
                 described.name = lead.name;
+                described.material = materialPresetName(lead.material);
                 described.color_rgba = lead.color_rgba;
                 for (const std::size_t which : setup.part_bodies[part])
                     if (r.bodies[which].anchored) described.anchored = true;
@@ -761,6 +762,7 @@ std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
                                       impl_->cellsOfPart(dominant);
         piece.name = whole_parent ? parent.name
                                   : parent.name + " piece " + std::to_string(++made);
+        piece.material = parent.material;
         if (dominant == asked_part) ++of_asked;
         piece.shape = "hull";
         piece.color_rgba = parent.color_rgba;

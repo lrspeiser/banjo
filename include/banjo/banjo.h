@@ -75,7 +75,7 @@ extern "C" {
 /* The ABI version. Bumped when the meaning or layout of anything here changes.
  * Check it once at startup against banjo_abi_version(): a header and a library
  * that disagree will not tell you so any other way. */
-#define BANJO_ABI_VERSION 1
+#define BANJO_ABI_VERSION 2
 
 /* What a call reported. Anything below zero is a failure and leaves the world
  * unchanged; banjo_last_error() says what happened. */
@@ -104,6 +104,10 @@ typedef enum {
 typedef struct {
     /* Valid until the next call on this world. */
     const char *name;
+    /* What it is made of, by its common name: "oak", "alumina ceramic". Valid
+     * until the next call, like the name. A piece that broke off something
+     * carries the material of what it broke off. */
+    const char *material;
     double position_m[3];
     double orientation_wxyz[4];
     double velocity_m_s[3];

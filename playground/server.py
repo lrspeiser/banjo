@@ -29,6 +29,8 @@ import builder
 import fracture_lab
 import live_session
 import live_inprocess
+import world_chat
+import world_room
 import scene_chat
 import network_admission
 from network_admission import Inadmissible, LIMITS, describe_package
@@ -198,6 +200,11 @@ class Playground:
         # will; a live world is a running physics engine with a scene resident
         # in it, so there is one at a time and opening another closes the first.
         self.live = live_session.Live()
+        # The room on /world, held as the set of objects it was authored with
+        # rather than as whatever the engine last reported. Those are different
+        # things once something has broken: rebuilding a room out of two
+        # hundred shards is not what anyone means by "add a ball to it".
+        self.room = world_room.Room()
         self.lock = threading.RLock()
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="banjo-playground")
         self.studios = []
@@ -951,6 +958,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(job["cases"][index]["package"])
                 return self.send(job)
             allowed={"/":"index.html","/index.html":"index.html","/app.js":"app.js","/style.css":"style.css","/scene.js":"scene.js",
+                "/world":"world.html","/world.html":"world.html","/world.js":"world.js","/world.css":"world.css",
                 "/vendor/three.module.js":"vendor/three.module.js","/vendor/three.core.js":"vendor/three.core.js"}
             if path not in allowed: return self.send({"error":"Not found"},404)
             file=STATIC/allowed[path]
@@ -993,6 +1001,39 @@ class Handler(BaseHTTPRequestHandler):
             # A live world, instead of a recording. /open starts one from a
             # validated scene; /act steps it, takes hold of an object, moves it,
             # lets go, or puts something back into the lattice to be broken.
+            if path=="/api/world/open":
+                app=self.server.app
+                app.room=world_room.Room()
+                return self.send(app.live.open(app,{"spec":app.room.spec}))
+            if path=="/api/world/ask":
+                app=self.server.app
+                session=app.live.session
+                if session is None: raise ValueError("the room is not open")
+                answer=world_chat.ask(app.api_key,app.model,app.room,session.state,
+                                      str(body.get("message",""))[:2000],
+                                      [str(s)[:200] for s in (body.get("story") or [])][-24:])
+                if answer.pop("changed",False):
+                    if app.room.bodies():
+                        # Objects cannot be added to or taken out of a running
+                        # world: a world is opened from a scene and that is the
+                        # set of bodies it has. So a change means opening the
+                        # room again from what it has become. Everything in
+                        # flight lands back where it was authored to; that is
+                        # the cost, and it is said out loud rather than hidden.
+                        opened=app.live.open(app,{"spec":app.room.spec})
+                        answer["reopened"]=True
+                        answer["session"]=opened["session"]
+                        answer["state"]=opened
+                    else:
+                        # Nothing left to open, and a world needs at least one
+                        # body. The running one stays up rather than being
+                        # replaced by nothing, and the reply says so instead of
+                        # the page quietly showing a room nobody is describing.
+                        answer["reply"]=(answer.get("reply","")
+                                         +" The room is empty now, so what is still on"
+                                         " screen is the last one. Ask for something to"
+                                         " be added and it will be built.").strip()
+                return self.send(answer)
             if path=="/api/live/open": return self.send(self.server.app.live.open(self.server.app,body))
             if path=="/api/live/act": return self.send(self.server.app.live.act(body))
             # Save the frame the 3D viewer is showing. The page cannot write

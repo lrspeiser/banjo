@@ -926,8 +926,20 @@ def as_objects(spec: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def scene_document(spec: dict[str, Any]) -> dict[str, Any]:
-    """The --scene file: metres, the engine's units, nothing the panel added."""
-    return {"bodies": [{"name": b["name"], "shape": b["shape"], "material": b["material"],
+    """The --scene file: metres, the engine's units, nothing the panel added.
+
+    Plus the handful of settings the engine reads from the scene itself. Only
+    those: `readSceneSettings` takes plasticity and its hardening ratio and
+    ignores everything else, and a document that carried the whole panel spec
+    would be inviting the engine to start caring about fields that are the
+    panel's business.
+
+    Without this the flag was set on the panel, validated, shown in the summary
+    and never reached the solver -- the one lane that could carry it was the C
+    library, which does not go through here.
+    """
+    return {"plasticity": spec.get("plasticity") == "on",
+            "bodies": [{"name": b["name"], "shape": b["shape"], "material": b["material"],
                         "dimensions_m": [v / 1000.0 for v in b["size_mm"]],
                         "center_m": [v / 1000.0 for v in b["center_mm"]],
                         "velocity_m_s": b["velocity_m_s"],

@@ -99,6 +99,7 @@ class InProcessSession:
         for body in world.bodies():
             bodies.append({
                 "name": body.name,
+                "material": body.material,
                 "shape": body.shape,
                 "dimensions_m": list(body.dimensions_m),
                 "position_m": [self._number(v) for v in body.position_m],

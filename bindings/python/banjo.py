@@ -32,7 +32,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterator
 
-ABI_VERSION = 1
+# Bumped with the header: banjo_body gained a material.
+ABI_VERSION = 2
 
 OK = 0
 BREAK_PENDING = 1
@@ -48,6 +49,7 @@ class BanjoError(RuntimeError):
 
 class _Body(ctypes.Structure):
     _fields_ = [("name", ctypes.c_char_p),
+                ("material", ctypes.c_char_p),
                 ("position_m", ctypes.c_double * 3),
                 ("orientation_wxyz", ctypes.c_double * 4),
                 ("velocity_m_s", ctypes.c_double * 3),
@@ -78,6 +80,7 @@ class _Impact(ctypes.Structure):
 class Body:
     """A body as it is right now. A copy, so it survives the next call."""
     name: str
+    material: str
     shape: str
     position_m: tuple[float, float, float]
     orientation_wxyz: tuple[float, float, float, float]
@@ -311,6 +314,7 @@ class World:
         buffer = (_Body * count)()
         written = self._check(self._lib.banjo_bodies(handle, buffer, count), "reading bodies")
         return [Body(name=(b.name or b"").decode("utf-8", "replace"),
+                     material=(b.material or b"").decode("utf-8", "replace"),
                      shape=SHAPES.get(b.shape, "hull"),
                      position_m=tuple(b.position_m),
                      orientation_wxyz=tuple(b.orientation_wxyz),

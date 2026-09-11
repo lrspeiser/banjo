@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Banjo — a room you can walk around in</title>
+<link rel="stylesheet" href="/world.css">
+</head>
+<body>
+
+<canvas id="stage"></canvas>
+
+<!-- The crosshair is the pointer. In a first-person view the mouse aims the
+     camera, so what you are pointing at is always the middle of the screen. -->
+<div id="crosshair" aria-hidden="true"><span></span></div>
+
+<!-- What the crosshair is on, and what it is made of. -->
+<div id="label" hidden>
+  <strong id="label-name"></strong>
+  <span id="label-material"></span>
+  <span id="label-size"></span>
+</div>
+
+<div id="hud">
+  <div id="hud-clock">—</div>
+  <div id="hud-hint"><b>W A S D</b> walk · <b>Q E</b> up and down · <b>Shift</b> run
+    · <b>drag</b> or <b>arrow keys</b> look · <b>click</b> pick up and drop · <b>F</b> throw
+    · <b>Esc</b> release the mouse</div>
+</div>
+
+<!-- Where the held thing is, in metres, and what is under it. Carrying
+     something you cannot place is the whole difficulty of doing this by hand,
+     so the numbers and the drop line are always on while something is held. -->
+<div id="carry" hidden>
+  <div class="carry-row"><span class="axis x">X</span><output id="carry-x">0.00</output><span class="unit">m</span></div>
+  <div class="carry-row"><span class="axis y">Y</span><output id="carry-y">0.00</output><span class="unit">m</span></div>
+  <div class="carry-row"><span class="axis z">Z</span><output id="carry-z">0.00</output><span class="unit">m</span></div>
+  <div class="carry-drop">drops onto <b id="carry-onto">the floor</b>, <output id="carry-fall">0.00</output> m below</div>
+</div>
+
+<section id="panel">
+  <header>
+    <h1>Banjo</h1>
+    <p id="panel-state">Opening the room…</p>
+  </header>
+  <div id="chat" role="log" aria-live="polite"></div>
+  <form id="ask">
+    <input id="ask-text" type="text" autocomplete="off" spellcheck="false"
+           placeholder="Ask for something — &ldquo;drop a glass ball on the iron plate&rdquo;">
+    <button type="submit" id="ask-send">Send</button>
+  </form>
+  <footer>
+    <button type="button" id="reset" class="quiet">Start the room again</button>
+    <span id="panel-count"></span>
+  </footer>
+</section>
+
+<script type="module" src="/world.js"></script>
+</body>
+</html>

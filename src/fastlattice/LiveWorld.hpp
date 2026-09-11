@@ -11,6 +11,11 @@ namespace banjo::fastlattice {
 // Where one object is, under the name the request gave it.
 struct LiveBodyPose {
     std::string name;
+    // What it is made of, by its common name -- "oak", "alumina ceramic". A
+    // host showing someone an object has to be able to say what it is, and
+    // working it back from the name is guesswork the moment something breaks:
+    // "glass plate piece 7" only looks like glass because of how it was named.
+    std::string material;
     // "box" and "sphere" are the shape that was asked for and are drawn exactly.
     // "hull" is a piece that broke off something, whose cells are its real
     // surface -- there is no primitive for it and the host draws its cells.

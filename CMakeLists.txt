@@ -348,8 +348,8 @@ if(BANJO_BUILD_HEADLESS)
         VISIBILITY_INLINES_HIDDEN ON
         # The ABI version, in the file name. A host linking against it says
         # which one it was built for, and two of them can sit side by side.
-        SOVERSION 1
-        VERSION 1.0.0
+        SOVERSION 2
+        VERSION 2.0.0
         WINDOWS_EXPORT_ALL_SYMBOLS OFF)
     banjo_enable_warnings(banjo_c)
 
@@ -368,7 +368,7 @@ if(BANJO_BUILD_HEADLESS)
             DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Banjo)
     write_basic_package_version_file(
         "${CMAKE_CURRENT_BINARY_DIR}/BanjoConfigVersion.cmake"
-        VERSION 1.0.0 COMPATIBILITY SameMajorVersion)
+        VERSION 2.0.0 COMPATIBILITY SameMajorVersion)
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/BanjoConfig.cmake"
          "include(\"\${CMAKE_CURRENT_LIST_DIR}/BanjoTargets.cmake\")\n")
     install(FILES "${CMAKE_CURRENT_BINARY_DIR}/BanjoConfig.cmake"
@@ -399,6 +399,12 @@ if(BANJO_BUILD_HEADLESS)
         # The two ways the playground can hold a world, run against the same
         # scene and compared. Claiming they are interchangeable is easy; this
         # is the part that makes it true.
+        # The room on /world: what it is made of, that it fits the lane, and
+        # that a change the engine would refuse is refused where the thing that
+        # made it can be told.
+        add_test(NAME banjo_world_room_tests
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/world_room_tests.py)
         add_test(NAME banjo_live_lanes_agree_tests
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/live_lanes_agree_tests.py)

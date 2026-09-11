@@ -53,7 +53,7 @@ nlohmann::json describe(const LiveWorld &world, bool with_geometry) {
     for (const LiveBodyPose &pose : world.poses(with_geometry)) {
         char colour[16];
         std::snprintf(colour, sizeof colour, "%08x", pose.color_rgba);
-        bodies.push_back({{"name", pose.name},
+        bodies.push_back({{"name", pose.name}, {"material", pose.material},
                           {"shape", pose.shape},
                           {"dimensions_m", vec(pose.dimensions_m)},
                           {"position_m", vec(pose.position_m)},
