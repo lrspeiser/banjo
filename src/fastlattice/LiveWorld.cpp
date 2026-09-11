@@ -791,8 +791,7 @@ std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
     const bool dented = yield_extension > 0.0 && dent_m > 2.0 * yield_extension;
     if (status.broken_bonds == 0 && island_components.size() <= 1 && !dented) return 1;
     if (island_components.empty()) return 1;
-    impl_->last_outcome =
-        island_components.size() > 1 ? LiveOutcome::Broke : LiveOutcome::Dented;
+
 
     // It broke, or it bent. Either way it is not what it was, so replace it.
     FragmentBuildResult rebuilt = buildFragmentRepresentations(island.matter, island_components, {
@@ -891,6 +890,14 @@ std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
     impl_->index_of.clear();
     for (std::size_t i = 0; i < impl_->described.size(); ++i)
         impl_->index_of.emplace(impl_->described[i].name, i);
+    // What happened to the body that was ASKED about, which is not the same as
+    // what happened to the island. An island can come apart while the thing in
+    // question survives whole -- a ball that cracked the pane it hit is one
+    // piece still -- and reporting the island's fate as the body's says a thing
+    // broke when it did not.
+    impl_->last_outcome = of_asked > 1 ? LiveOutcome::Broke
+                        : dented       ? LiveOutcome::Dented
+                                       : LiveOutcome::Held;
     // It broke, so the name it held under is gone and its pieces are new ones
     // that have never been tried. A body that only BENT keeps its name, and
     // must keep its place in the already-answered set with it -- otherwise the
