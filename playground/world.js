@@ -568,6 +568,18 @@ async function tick() {
     }
 
     draw(state);
+    // Past 250 bodies the engine stops using the reversible trial, and with it
+    // goes the step-back that fracture depends on -- impacts are still
+    // reported, but they describe collisions that have already been resolved
+    // and nothing can break any more. That is a cliff worth seeing coming
+    // rather than discovering by wondering why the room went inert.
+    if (state.bodies.length > 200 && !world.warnedFull) {
+      world.warnedFull = true;
+      say("world", `${state.bodies.length} pieces in the room. Past about 250 the engine`
+        + ` stops being able to break anything — there is a limit on how many bodies it`
+        + ` can take back a step for. Start the room again to clear it.`);
+    }
+    if (state.bodies.length < 150) world.warnedFull = false;
     world.clock = state.t;
     $("hud-clock").textContent = `${state.t.toFixed(1)} s · ${steps} steps`;
     $("panel-state").textContent = world.held

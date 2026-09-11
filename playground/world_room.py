@@ -36,8 +36,13 @@ COMMON_NAMES = {
 # How big a thing may be, and how far out. The room is 60 m of drawn floor; the
 # engine's ground is much larger, but nothing useful happens 100 m away and a
 # body that size costs cells nobody asked for.
+# The object cap is about what the engine can still fracture, not about tidiness.
+# Past 250 bodies the reversible trial stops being used and fracture quietly
+# stops working, and a single plate coming apart can add ninety. The room starts
+# at 58, so this leaves room for a couple of shatters on top of whatever gets
+# built.
 LIMITS = {"size_mm": (10.0, 2000.0), "position_mm": (-12000.0, 12000.0),
-          "speed_m_s": 60.0, "objects": 40}
+          "speed_m_s": 60.0, "objects": 120}
 
 
 def room() -> dict[str, Any]:
@@ -60,31 +65,54 @@ def room() -> dict[str, Any]:
         bodies.append(body)
 
     # Every side is a whole number of 20 mm cells, because matter here is built
-    # out of cells and a 30 mm side is not a thing the engine can make. Every
-    # loose object rests ON the floor, so its centre sits at half its height;
-    # putting it at y = 0 buries half of it.
+    # out of cells and a 30 mm side is not a thing the engine can make. That is
+    # also the floor on how thin a plate can be: one cell, 20 mm. Real window
+    # glass is 4 to 6 mm and is not reachable without a finer grid, which costs
+    # about h^-4 -- eight times the cells and twice the substeps for each
+    # halving -- so 20 mm is the thin end here and it is structural glass.
     #
-    # Sizes are kept down on purpose. A 700 mm anvil is 9,555 cells on its own
-    # and the lane holds about sixteen thousand for the whole room, so a scene
-    # that reads as reasonable can be unopenable.
+    # Every loose object rests ON the floor, so its centre sits at half its own
+    # height; putting it at y = 0 buries half of it.
 
-    # Two hard things to drop other things onto.
-    add("iron anvil", "box", "iron", [400, 200, 300], [-1400, 100, -700], anchored=True)
-    add("concrete block", "box", "concrete", [400, 200, 300], [1400, 100, -700], anchored=True)
+    # ---- the targets: something of everything, at two thicknesses -----------
+    #
+    # Laid out as a grid you can walk between. Each plate bridges two short
+    # piers, unsupported in the middle, because that is the arrangement that
+    # breaks: the same plate lying flat on the floor is held everywhere and
+    # will not.
+    #
+    # Thickness matters, though not in the way it first looks. The admission
+    # bound is a stress-wave argument and does not depend on geometry at all:
+    # a 20 mm and an 80 mm glass plate are admitted at the same 4.5 m/s. What
+    # thickness changes is what the lattice then DOES -- measured, a 120 mm iron
+    # ball dropped 1.5 m breaks the 20 mm glass and is held by the 40 mm.
+    #
+    # Plates are kept small on purpose. A 600 x 200 mm concrete plate comes
+    # apart into 291 pieces and an 80 mm one exceeded Jolt's contact budget
+    # outright; past 250 bodies the reversible trial stops being used and
+    # fracture quietly stops working. A 240 x 160 plate is at most 96 cells, so
+    # at most 96 pieces.
+    TARGETS = ["glass", "ceramic", "ice", "concrete", "oak", "aluminum", "iron", "rubber"]
+    for column, material in enumerate(TARGETS):
+        x = -2800 + column * 800
+        for row, thick in enumerate((20, 40)):
+            z = -1200 - row * 800
+            rest = 120                      # how high the plate is carried
+            add(f"{material} pier {column}{row}L", "box", "iron", [40, rest, 160],
+                [x - 100, rest // 2, z], anchored=True)
+            add(f"{material} pier {column}{row}R", "box", "iron", [40, rest, 160],
+                [x + 100, rest // 2, z], anchored=True)
+            add(f"{material} plate {thick}mm", "box", material,
+                [240, thick, 160], [x, rest + thick // 2, z])
 
-    # A glass pane bridged between two piers: thin, brittle and unsupported in
-    # the middle, which is the one arrangement here that shatters at the speeds
-    # a person can reach by hand. The same glass flat on the floor will not.
-    add("left pier", "box", "iron", [80, 400, 200], [-260, 200, 900], anchored=True)
-    add("right pier", "box", "iron", [80, 400, 200], [260, 200, 900], anchored=True)
-    add("glass pane", "box", "glass", [600, 20, 200], [0, 410, 900])
+    # ---- an anvil, for the things that need something immovable ------------
+    add("iron anvil", "box", "iron", [300, 160, 240], [0, 80, -3200], anchored=True)
 
-    # Something brittle at ground level too.
-    add("ceramic tile", "box", "ceramic", [300, 40, 300], [0, 20, -1600])
-
-    # A bench of things to pick up: eight materials, sizes from a marble to a
-    # slab, because a 40 mm marble and a 400 mm slab behave nothing alike and
-    # that difference is most of what there is to notice.
+    # ---- a bench of things to pick up and drop -----------------------------
+    #
+    # Eight materials, sizes from a marble to a slab, because a 40 mm marble and
+    # a 400 mm slab behave nothing alike and that difference is most of what
+    # there is to notice.
     add("iron ball", "sphere", "iron", [120, 120, 120], [-900, 60, 0])
     add("aluminium ball", "sphere", "aluminum", [140, 140, 140], [-600, 70, 0])
     add("glass marble", "sphere", "glass", [60, 60, 60], [-350, 30, 0])
@@ -93,10 +121,7 @@ def room() -> dict[str, Any]:
     add("ice cube", "box", "ice", [160, 160, 160], [500, 80, 0])
     add("concrete brick", "box", "concrete", [240, 120, 120], [800, 60, 0])
     add("ceramic cup", "box", "ceramic", [120, 140, 120], [1060, 70, 0])
-
-    # Awkwardly big, and easily lost.
-    add("oak slab", "box", "oak", [400, 80, 300], [1400, 40, 600])
-    add("iron marble", "sphere", "iron", [40, 40, 40], [-1250, 20, 400])
+    add("iron marble", "sphere", "iron", [40, 40, 40], [-1250, 20, 0])
 
     return {
         "algorithm": "lattice",
@@ -197,11 +222,27 @@ Call list_objects before answering anything that depends on where things are.
 Then make the changes with add_object, move_object, remove_object or clear_room,
 and say in one or two plain sentences what you did and what is likely to happen.
 
+The room has a grid of plates to drop things on: every material in the
+catalogue, at 20 mm and 40 mm, each bridged between two short iron piers. The
+20 mm row is nearer the viewer. There is also a bench of loose objects to pick
+up and an iron anvil.
+
 What actually breaks things, measured on this engine and worth knowing:
 
-- A thin brittle plate with a span under it is what shatters. The glass pane
-  bridged between the two piers breaks when something is dropped on it from
-  about two metres. The same glass lying flat on the floor will not.
+- A thin brittle plate with a span under it is what shatters. The same plate
+  lying flat on the floor is held everywhere and will not break however hard it
+  is hit.
+- Thickness matters, but not to whether a hit COUNTS -- the bar is the same for
+  a 20 mm and an 80 mm plate. It matters to what happens next: measured, a
+  120 mm iron ball dropped 1.5 m shatters the 20 mm glass plate and is held by
+  the 40 mm one.
+- What is doing the hitting matters as much as how fast. A glass plate needs
+  4.5 m/s from an iron ball and 6.7 m/s from an aluminium one, because
+  aluminium is springier and transmits less of the blow. Iron is the thing to
+  reach for when you want something to break.
+- Mass does not help. A 111 kg iron ball and a 0.9 kg one arriving at the same
+  speed are judged identically, and a heavy thing resting on a plate will never
+  break it -- the engine judges the blow, not the load.
 - Metals dent rather than shatter, and only when they are hit hard -- tens of
   metres a second, not a hand-drop.
 - Rubber bounces about a third of the height it fell. Concrete bounces least.

@@ -70,6 +70,35 @@ class TheRoomAsAuthored(unittest.TestCase):
                         "the engine is not being told to allow a permanent set")
 
 
+    def test_there_is_something_of_every_material_to_drop_things_on(self):
+        """Targets, not just things to throw.
+
+        A room where the only thing that breaks is one glass pane teaches one
+        fact. Every material has its own threshold and its own way of failing,
+        and the only way to see that is to have one of each to aim at."""
+        plates = [b for b in world_room.room()["bodies"] if "plate" in b["name"]]
+        self.assertEqual({b["material"] for b in plates}, set(world_room.MATERIALS),
+                         "not every material has something to drop things on")
+        for material in world_room.MATERIALS:
+            thicknesses = {b["size_mm"][1] for b in plates if b["material"] == material}
+            self.assertGreater(len(thicknesses), 1,
+                               f"{material} comes in only one thickness, so nothing "
+                               f"there can show that thickness matters")
+
+    def test_every_plate_is_bridged_rather_than_lying_on_the_floor(self):
+        """What breaks a plate is a span under it.
+
+        The same plate flat on the ground is held everywhere and will not break
+        however hard it is hit, so a room of plates lying on the floor would
+        have nothing to show."""
+        room = world_room.room()["bodies"]
+        for plate in [b for b in room if "plate" in b["name"]]:
+            bottom = plate["center_mm"][1] - plate["size_mm"][1] / 2.0
+            self.assertGreater(bottom, 50.0,
+                               f"{plate['name']} sits {bottom:.0f} mm up, which is on "
+                               f"the floor rather than on piers")
+
+
 class TheToolsThatChangeIt(unittest.TestCase):
     def setUp(self):
         self.room = world_room.Room()
@@ -92,9 +121,14 @@ class TheToolsThatChangeIt(unittest.TestCase):
         """
         before = [dict(b) for b in self.room.bodies()]
         with self.assertRaises(ValueError) as caught:
+            # Right on top of a plate that is already there. Found rather than
+            # written down, so the test does not quietly stop testing anything
+            # when the room is laid out differently.
+            plate = next(b for b in self.room.bodies() if "plate" in b["name"])
             self.room.add_object(
                 {"name": "overlapping tile", "shape": "box", "material": "ceramic",
-                 "size_mm": [300, 40, 300], "position_mm": [-260, 200, 900],
+                 "size_mm": list(plate["size_mm"]),
+                 "position_mm": list(plate["center_mm"]),
                  "velocity_m_s": [0, 0, 0], "anchored": False})
         self.assertIn("same cells", str(caught.exception))
         self.assertEqual(self.room.bodies(), before, "the refused change was left behind")
