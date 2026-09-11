@@ -460,7 +460,11 @@
           // engine to put down something it is not holding, which it ignores.
           if (held && live.holding !== name) { live.holding = name; liveGrab(name); }
           if (held && at_m) liveMove(at_m);
-          if (!held) live.holding = null;
+          // Do NOT clear live.holding here. This fires immediately before
+          // onRelease, and onRelease is what actually tells the engine to let
+          // go -- it skips itself when nothing is held. Clearing the flag first
+          // meant an object could be picked up and never put down: the engine
+          // went on holding it, out of the simulation, for ever.
           return;
         }
         const box = $("viewer-grab-state");
@@ -471,6 +475,15 @@
           ? `Holding ${name} — ${up >= 0 ? "up" : "down"} ${Math.abs(up).toFixed(2)} m,`
             + ` across ${Math.hypot(moved_m[0], moved_m[2]).toFixed(2)} m. Let go to drop it.`
           : "Let go.";
+      },
+      // What the pointer is over, named while it is lit, so the click that
+      // follows is never a guess.
+      onHover: (over) => {
+        live.hovering = over ? over.name : null;
+        if (!live.session || live.holding) return;
+        liveStatus(over
+          ? `Click to pick up ${over.name}.`
+          : `Live — point at something to pick it up.`);
       },
       onRelease: (move) => {
         if (live.session) { liveRelease(move.name); return; }
@@ -1108,7 +1121,7 @@
   // something up is then a hold the engine itself honours, and letting go is a
   // fall rather than a re-run.
   const live = { session: null, timer: null, busy: false, dropped: 0, breaking: false,
-                 lastTick: 0, holding: null };
+                 lastTick: 0, holding: null, hovering: null };
 
   async function liveCall(op, extra) {
     // api() carries the session token and re-mints it if the server restarted,
@@ -1175,8 +1188,9 @@
       $("viewer-grab").checked = true;
       state.scene.setGrabMode(true);
       chatTurn("built", "Live",
-        `${data.bodies.length} objects, running. Drag something to pick it up; let go and it falls.`);
-      liveStatus("Live. Drag an object to pick it up; let go and it falls.");
+        `${data.bodies.length} objects, running. Point at something and click to pick it up;`
+        + ` move the mouse to carry it and click again to let it fall.`);
+      liveStatus("Live — point at something to pick it up.");
       live.timer = setInterval(liveTick, 33);
     } catch (error) {
       const why = String(error.message || error);
@@ -1232,8 +1246,12 @@
       // A step the engine took back is one it refused to take, because taking it
       // would have broken something. Nothing moves until that is dealt with.
       if (data.breakable && data.breakable.length) await breakIt(data);
-      else liveStatus(`Live — t = ${data.t.toFixed(2)} s, ${data.bodies.length} objects`
-        + `, ${steps} step${steps === 1 ? "" : "s"} a tick.`);
+      // While something is in hand, or the pointer is over something, the
+      // status line belongs to that -- a clock ticking over it would bury the
+      // only thing the reader needs to know.
+      else if (!live.holding && !live.hovering)
+        liveStatus(`Live — t = ${data.t.toFixed(2)} s, ${data.bodies.length} objects`
+          + `, ${steps} step${steps === 1 ? "" : "s"} a tick.`);
     } catch (error) {
       stopLive(`The live world stopped: ${error.message || error}`);
     } finally {
@@ -1277,6 +1295,7 @@
   async function liveGrab(name) {
     try {
       await liveCall("grab", { name });
+      liveStatus(`Holding ${name}. Move the mouse to carry it, click to let it go.`);
       chatTurn("you", "You", `picked up ${name}.`);
     } catch (error) {
       live.holding = null;
@@ -1292,6 +1311,7 @@
     if (!was) return;   // nothing was ever taken hold of
     try {
       await liveCall("release", {});
+      liveStatus("Live — point at something to pick it up.");
       chatTurn("you", "You", `let go of ${name}.`);
     } catch (error) { /* the next tick will tell */ }
   }

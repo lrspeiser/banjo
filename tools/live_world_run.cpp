@@ -116,7 +116,17 @@ int main(int argc, char **argv) {
                     // Stop early on a step that was taken back: the world is
                     // one step short of an impact and the host has a decision
                     // to make before time moves again.
-                    for (int s = 0; s < count && !world->steppedBack(); ++s) world->step(dt);
+                    //
+                    // The test is AFTER the step, not before it. Testing first
+                    // meant that once a step had been taken back the loop never
+                    // ran again -- and since step() is what clears the flag,
+                    // nothing could ever clear it. The world froze permanently
+                    // at the instant of the first refusal, whatever the host
+                    // did about it.
+                    for (int s = 0; s < count; ++s) {
+                        world->step(dt);
+                        if (world->steppedBack()) break;
+                    }
                 } else if (op == "grab") {
                     if (!world->grab(command.at("name").get<std::string>()))
                         throw std::invalid_argument("that object cannot be picked up");

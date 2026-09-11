@@ -206,13 +206,55 @@ function create(container, hooks = {}) {
     return { right, up: new THREE.Vector3(0, 1, 0) };
   }
 
-  function beginGrab(clientX, clientY) {
+  // What the pointer is over, or the nearest thing to it. A 100 mm ball a few
+  // metres away is a handful of pixels, and missing it by three of them should
+  // not mean the camera swings instead -- that reads as the object refusing to
+  // be picked up. So a miss falls back to the closest body within a forgiving
+  // radius, which is what makes small things grabbable without pixel precision.
+  const kGrabSlackPx = 44;
+  function bodyUnder(clientX, clientY) {
     const r = canvas.getBoundingClientRect();
     mouse.set(((clientX - r.left) / r.width) * 2 - 1,
               (-(clientY - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(mouse, camera);
     const hit = ray.intersectObjects([solids], true)[0];
-    const name = hit?.object?.userData?.material_id;
+    if (hit?.object?.userData?.material_id) return hit.object.userData.material_id;
+
+    let best = null;
+    let bestPx = kGrabSlackPx;
+    const at = new THREE.Vector3();
+    bodies.forEach((b) => {
+      if (!b.mesh || !b.mesh.visible) return;
+      at.copy(b.mesh.position).project(camera);
+      if (at.z < -1 || at.z > 1) return;   // behind the camera
+      const px = r.left + ((at.x + 1) / 2) * r.width;
+      const py = r.top + ((1 - at.y) / 2) * r.height;
+      const away = Math.hypot(px - clientX, py - clientY);
+      if (away < bestPx) { bestPx = away; best = b.material_id; }
+    });
+    return best;
+  }
+
+  // What the pointer is over, lit so there is no guessing. Dragging a small
+  // ball you cannot see you are on is how every attempt at this went wrong:
+  // a miss looks exactly like the object refusing to move.
+  let hovered = null;
+  function litUp(body, on) {
+    const material = body && body.mesh && body.mesh.material;
+    if (material && material.emissive) material.emissive.setHex(on ? 0x1d4a3a : 0x000000);
+  }
+  function setHover(name) {
+    const next = name ? bodies.find((b) => String(b.material_id) === String(name)) : null;
+    if (next === hovered) return;
+    litUp(hovered, false);
+    hovered = next && !next.anchored ? next : null;
+    litUp(hovered, true);
+    canvas.style.cursor = hovered ? "pointer" : "";
+    hooks.onHover?.(hovered ? { name: hovered.material_id } : null);
+  }
+
+  function beginGrab(clientX, clientY) {
+    const name = bodyUnder(clientX, clientY);
     if (!name) return false;
     const parts = partsOf(name);
     if (!parts.length) return false;
@@ -222,6 +264,7 @@ function create(container, hooks = {}) {
     // The distance from the camera decides how far a pixel of drag moves the
     // object, so it tracks the pointer instead of crawling or bolting away.
     const scale = camera.position.distanceTo(centre) * 0.0016;
+    setHover(null);
     grab = { name, parts, x: clientX, y: clientY, basis: dragBasis(), scale,
              moved: new THREE.Vector3(), start: centre.clone() };
     // A recording that keeps playing would fight the pointer for the object.
@@ -1166,25 +1209,40 @@ function create(container, hooks = {}) {
     requestAnimationFrame(loop);
   }
   const canvas = renderer.domElement;
+  // Pick up and put down are CLICKS, not a drag.
+  //
+  // Dragging to grab meant committing to an object before knowing whether you
+  // were on it, and a miss orbited the camera instead -- which reads as the
+  // object refusing to be moved. Now the thing under the pointer lights up, a
+  // click takes hold of it, moving the mouse carries it, and a second click
+  // lets it go. Dragging still orbits, so the camera is never taken away.
   canvas.addEventListener("pointerdown", (e) => {
     canvas.setPointerCapture(e.pointerId);
-    // In grab mode a drag that starts on an object moves it; a drag that starts
-    // on empty space still orbits, so the camera is never taken away.
-    if (grabMode && beginGrab(e.clientX, e.clientY)) { pointer = null; return; }
+    // While something is held the mouse is carrying it, so there is no orbit
+    // to start and the click that ends here will put it down.
+    if (grab) { pointer = { x: e.clientX, y: e.clientY, azimuth, polar, moved: false, carrying: true }; return; }
     pointer = { x: e.clientX, y: e.clientY, azimuth, polar, moved: false };
   });
   canvas.addEventListener("pointermove", (e) => {
     if (grab) { moveGrab(e.clientX, e.clientY); return; }
-    if (!pointer) return;
+    if (!pointer) { if (grabMode) setHover(bodyUnder(e.clientX, e.clientY)); return; }
     const dx = e.clientX - pointer.x,
       dy = e.clientY - pointer.y;
     if (Math.abs(dx) + Math.abs(dy) > 3) pointer.moved = true;
     azimuth = pointer.azimuth - dx * 0.007;
     polar = clamp(pointer.polar + dy * 0.007, 0.08, Math.PI - 0.08);
   });
+  canvas.addEventListener("pointerleave", () => setHover(null));
   canvas.addEventListener("pointerup", (e) => {
-    if (grab) { endGrab(); pointer = null; return; }
-    if (pointer && !pointer.moved) {
+    const click = pointer && !pointer.moved;
+    if (grab) {
+      // A click puts it down; a drag while carrying just keeps carrying.
+      if (click) endGrab();
+      pointer = null;
+      return;
+    }
+    if (click && grabMode && beginGrab(e.clientX, e.clientY)) { pointer = null; return; }
+    if (click) {
       const r = canvas.getBoundingClientRect();
       mouse.set(
         ((e.clientX - r.left) / r.width) * 2 - 1,
@@ -1245,7 +1303,7 @@ function create(container, hooks = {}) {
     // reposition and the fall is simulated by running the lane again.
     setGrabMode(v) {
       grabMode = v !== false;
-      if (!grabMode && grab) endGrab();
+      if (!grabMode) { if (grab) endGrab(); setHover(null); }
       return grabMode;
     },
     get grabbing() {

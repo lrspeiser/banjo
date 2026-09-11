@@ -105,8 +105,10 @@ MaterialPreset presetFromName(std::string_view name) {
     if (name == "oak") return MaterialPreset::Oak;
     if (name == "iron") return MaterialPreset::Iron;
     if (name == "concrete") return MaterialPreset::Concrete;
-    if (name == "ceramic") return MaterialPreset::Ceramic;
+    if (name == "ceramic" || name == "alumina ceramic") return MaterialPreset::Ceramic;
     if (name == "ice") return MaterialPreset::Ice;
+    if (name == "aluminum" || name == "aluminium") return MaterialPreset::Aluminum;
+    if (name == "rubber") return MaterialPreset::Rubber;
     throw std::invalid_argument("unknown material: " + std::string(name));
 }
 

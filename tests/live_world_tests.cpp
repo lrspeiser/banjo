@@ -297,6 +297,40 @@ void breakingSomethingThatCannotBreakIsHarmless() {
     require(live->bodies() == 2, "the world changed size over refused requests");
 }
 
+// The world must not deadlock on something that was hit hard enough to be worth
+// trying and came through whole.
+//
+// A step that would break something is taken back, so the world sits one step
+// short of the impact. If the fracture then finds the object HELD, nothing has
+// changed: the next step meets the same contact, is judged breakable again, and
+// is taken back again. The clock stops, and a host is told the same thing for
+// ever. That is exactly what a live playground did -- the scene froze and the
+// chat repeated "concrete ball was hit hard enough to break" without end.
+void aThingThatHeldDoesNotStopTheWorld() {
+    // 1.5 m arrives above the threshold and does not break the pane, which is
+    // the case that used to wedge.
+    const auto live = LiveWorld::open(ballOntoGlass(1.5));
+    bool ever_breakable = false, tried = false;
+    for (int i = 0; i < 900; ++i) {
+        live->step(1.0 / 240.0);
+        if (!tried && !live->breakable().empty()) {
+            ever_breakable = true;
+            tried = true;
+            require(live->fracture("pane") <= 1,
+                    "this drop was supposed to be the marginal one that holds");
+        }
+    }
+    require(ever_breakable, "the drop never cleared the threshold, so this proves nothing");
+    const double reached = live->time_s();
+    std::cout << "  held at the threshold, then ran on to t=" << reached << " s\n";
+    // The clock is the whole point: a deadlocked world sits at the instant it
+    // refused, however many times it is stepped.
+    require(reached > 1.0,
+            "the world stopped advancing after something held: it is deadlocked");
+    require(!live->steppedBack(),
+            "the world is still refusing to take a step after the object held");
+}
+
 } // namespace
 
 int main() {
@@ -321,6 +355,8 @@ int main() {
         std::cout << "[PASS] a gentle hit leaves it whole, and asking anyway does not break it\n";
         breakingSomethingThatCannotBreakIsHarmless();
         std::cout << "[PASS] breaking scenery or a name that is not there changes nothing\n";
+        aThingThatHeldDoesNotStopTheWorld();
+        std::cout << "[PASS] something that was hit hard and held does not deadlock the world\n";
         return 0;
     } catch (const std::exception &error) {
         std::cerr << "live world tests failed: " << error.what() << "\n";

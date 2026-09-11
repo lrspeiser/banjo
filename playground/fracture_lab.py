@@ -43,7 +43,11 @@ ALGORITHMS: dict[str, dict[str, Any]] = {
                 "max_cells": 16000, "timeout_s": 300, "contract": "fast_lattice"},
 }
 
-MATERIALS = ("glass", "oak", "iron")
+# Every material the catalogue carries. These are not eight code paths -- a
+# material is a density, a modulus and six failure thresholds, and the solver has
+# never needed to know which one it is holding. The panel offered three because
+# three were typed here, not because the other five were unavailable.
+MATERIALS = ("glass", "oak", "iron", "concrete", "ceramic", "ice", "aluminum", "rubber")
 # The strain threshold is what every result before 2026-09-08 used; the
 # energy-scaled law derives the critical stretch from the declared fracture
 # energy, the horizon and the cell size, so a crack costs the same per unit
@@ -140,6 +144,32 @@ DEFAULT: dict[str, Any] = {
 # offer a whole setup in one click and say what it did before it is run again.
 # `expect` is what was measured on 2026-09-08, not a promise about this run.
 SCENARIOS = [
+    # The one to reach for first: eight balls, one of every material the
+    # catalogue carries, hanging over four panels to drop them on. It is built to
+    # be PLAYED WITH rather than watched -- press Go live and pick one up.
+    #
+    # Sized for that. The live step is microseconds, but putting something back
+    # into the lattice to break it costs about a third of a millisecond per cell,
+    # so the panels are 320 mm rather than a metre: a shattering one is a pause,
+    # not a coffee break. 12 objects, 2,596 cells, measured at 0.02x realtime
+    # live -- fifty times faster than it needs to be.
+    {"id": "drop-test", "title": "Drop balls of every material onto panels",
+     "expect": "12 objects, live at 0.02x realtime; press Go live and pick one up",
+     "spec": {"algorithm": "lattice", "cell_m": 0.02, "duration_s": 4.0,
+              "bodies": [
+              {"name": "glass panel", "shape": "box", "material": "glass", "size_mm": [320, 40, 320], "center_mm": [-540, 20, 0], "anchored": True},
+              {"name": "oak panel", "shape": "box", "material": "oak", "size_mm": [320, 40, 320], "center_mm": [-180, 20, 0], "anchored": True},
+              {"name": "iron panel", "shape": "box", "material": "iron", "size_mm": [320, 40, 320], "center_mm": [180, 20, 0], "anchored": True},
+              {"name": "concrete panel", "shape": "box", "material": "concrete", "size_mm": [320, 40, 320], "center_mm": [540, 20, 0], "anchored": True},
+              {"name": "glass ball", "shape": "sphere", "material": "glass", "size_mm": [100, 100, 100], "center_mm": [-540, 700, -90]},
+              {"name": "oak ball", "shape": "sphere", "material": "oak", "size_mm": [100, 100, 100], "center_mm": [-180, 700, -90]},
+              {"name": "iron ball", "shape": "sphere", "material": "iron", "size_mm": [100, 100, 100], "center_mm": [180, 700, -90]},
+              {"name": "concrete ball", "shape": "sphere", "material": "concrete", "size_mm": [100, 100, 100], "center_mm": [540, 700, -90]},
+              {"name": "ceramic ball", "shape": "sphere", "material": "ceramic", "size_mm": [100, 100, 100], "center_mm": [-540, 960, 90]},
+              {"name": "ice ball", "shape": "sphere", "material": "ice", "size_mm": [100, 100, 100], "center_mm": [-180, 960, 90]},
+              {"name": "aluminum ball", "shape": "sphere", "material": "aluminum", "size_mm": [100, 100, 100], "center_mm": [180, 960, 90]},
+              {"name": "rubber ball", "shape": "sphere", "material": "rubber", "size_mm": [100, 100, 100], "center_mm": [540, 960, 90]},
+              ]}},
     {"id": "glass-pane", "title": "1 m glass pane shatters",
      "expect": "38 pieces, 0.18x realtime",
      "spec": {"material": "glass", "striker": "iron", "failure_law": "strain-threshold", "plasticity": "off",

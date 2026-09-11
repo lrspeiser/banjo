@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <stdexcept>
 #include <thread>
+#include <set>
 #include <unordered_map>
 
 namespace banjo::fastlattice {
@@ -85,6 +86,21 @@ struct LiveWorld::Impl {
     // the hand does.
     Vec3 held_at{};
     Quat held_facing{};
+    // Bodies that were put back into the lattice for this contact and came
+    // through it whole.
+    //
+    // Without this the world deadlocks. A step that would break something is
+    // taken back, so the world sits one step short of the impact. If the
+    // fracture then finds the object HELD, nothing has changed -- the next step
+    // meets the same contact, is judged breakable again, and is taken back
+    // again, for ever. The scene freezes and the host is told the same thing
+    // over and over.
+    //
+    // An object that has already been tried at this contact therefore stops
+    // being a reason to refuse a step. It is cleared again the moment its
+    // contacts stop being hard enough to break it, which is what happens as
+    // soon as the two bodies separate.
+    std::set<std::string> held_through;
 };
 
 LiveWorld::LiveWorld() : impl_(std::make_unique<Impl>()) {}
@@ -242,6 +258,8 @@ bool LiveWorld::judgeStep() {
     for (std::size_t i = 0; i < impl_->body_of.size(); ++i)
         index_of_body.emplace(impl_->body_of[i], i);
     bool any_would_break = false;
+    std::set<std::string> breaking_now;
+    std::unordered_map<std::size_t, double> worst_speed;
     for (const ImpactEvent &event : impl_->world->drainImpacts()) {
         const auto a = index_of_body.find(event.body_a);
         const auto b = index_of_body.find(event.body_b);
@@ -271,13 +289,34 @@ bool LiveWorld::judgeStep() {
             impact.energy_j = event.available_normal_energy_j;
             impact.would_break = admission.admitted();
             if (impact.would_break) {
-                any_would_break = true;
-                impl_->partner_of[struck] =
-                    both && other != struck ? other : static_cast<std::size_t>(-1);
+                breaking_now.insert(impact.struck);
+                // Remember what hit it, for the island a fracture would build.
+                // The hardest contact wins: a body resting on the floor and
+                // struck by a ball reports both, and the ball is the one that
+                // matters.
+                double &worst = worst_speed[struck];
+                if (impact.closing_speed_m_s >= worst) {
+                    worst = impact.closing_speed_m_s;
+                    impl_->partner_of[struck] =
+                        both && other != struck ? other : static_cast<std::size_t>(-1);
+                }
             }
             impl_->last_impacts.push_back(std::move(impact));
         }
     }
+
+    // One body reports several contacts in a step -- a ball on a panel is also
+    // resting on something, and most of those are gentle. Deciding "has this
+    // already been tried" inside the event loop made the answer depend on the
+    // order the events happened to arrive in: a gentle contact cleared the flag
+    // that a hard one then set again, and the world stayed wedged even though
+    // every part of the rule looked right. Decide it once, after all of them.
+    for (const std::string &name : breaking_now)
+        if (impl_->held_through.count(name) == 0) any_would_break = true;
+    // A body that is no longer in danger from anything gets a fresh hearing the
+    // next time something hits it hard.
+    for (auto it = impl_->held_through.begin(); it != impl_->held_through.end();)
+        it = breaking_now.count(*it) ? std::next(it) : impl_->held_through.erase(it);
     return any_would_break;
 }
 
@@ -412,6 +451,7 @@ std::vector<std::string> LiveWorld::breakable() const {
     std::vector<std::string> out;
     for (const LiveImpact &impact : impl_->last_impacts) {
         if (!impact.would_break) continue;
+        if (impl_->held_through.count(impact.struck)) continue;
         if (std::find(out.begin(), out.end(), impact.struck) == out.end())
             out.push_back(impact.struck);
     }
@@ -419,6 +459,10 @@ std::vector<std::string> LiveWorld::breakable() const {
 }
 
 std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
+    // Whatever happens below, this object has now had its chance at this
+    // contact. Recording that here rather than at each of the five ways out is
+    // what stops one of them being forgotten and deadlocking the world.
+    impl_->held_through.insert(name);
     const auto found = impl_->index_of.find(name);
     if (found == impl_->index_of.end()) return 0;
     const std::size_t which = found->second;
@@ -657,6 +701,9 @@ std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
     impl_->index_of.clear();
     for (std::size_t i = 0; i < impl_->described.size(); ++i)
         impl_->index_of.emplace(impl_->described[i].name, i);
+    // It broke, so the name it held under is gone and its pieces are new ones
+    // that have never been tried.
+    impl_->held_through.erase(name);
     return of_asked;
 }
 
