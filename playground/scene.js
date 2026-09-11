@@ -49,6 +49,11 @@ function create(container, hooks = {}) {
   // animation. Everything here is the reposition half.
   let grabMode = false;
   let grab = null;
+  // A live world drives its own poses in from outside. There is nothing to play
+  // and no frame slider to honour, so the playback path has to stay out of the
+  // way: `live` is what tells it to.
+  let live = false;
+  let liveCellSize = 0.02;
   const ray = new THREE.Raycaster(),
     mouse = new THREE.Vector2();
   ray.params.Line.threshold = 0.004;
@@ -222,7 +227,10 @@ function create(container, hooks = {}) {
     // A recording that keeps playing would fight the pointer for the object.
     setPlaying(false);
     parts.forEach((b) => { b.mesh.material.emissive?.setHex(0x224433); });
-    hooks.onGrab?.({ name, held: true, moved_m: [0, 0, 0] });
+    // at_m is where the object IS, which is what a live world needs; moved_m is
+    // how far the hand has taken it, which is what a caption reads better as.
+    hooks.onGrab?.({ name, held: true, moved_m: [0, 0, 0],
+                     at_m: [centre.x, centre.y, centre.z] });
     return true;
   }
 
@@ -238,8 +246,10 @@ function create(container, hooks = {}) {
       if (b.edge) b.edge.position.copy(b.mesh.position);
     });
     grab.moved.copy(next);
+    const at = grab.start.clone().add(grab.moved);
     hooks.onGrab?.({ name: grab.name, held: true,
-                     moved_m: [grab.moved.x, grab.moved.y, grab.moved.z] });
+                     moved_m: [grab.moved.x, grab.moved.y, grab.moved.z],
+                     at_m: [at.x, at.y, at.z] });
   }
 
   function endGrab() {
@@ -254,6 +264,108 @@ function create(container, hooks = {}) {
     hooks.onGrab?.({ name, held: false, moved_m: [moved.x, moved.y, moved.z] });
     hooks.onRelease?.({ name, moved_m: [moved.x, moved.y, moved.z],
                         to_m: [to.x, to.y, to.z] });
+  }
+
+  // Open a live world: one mesh per object, and no frames at all. The bodies
+  // arrive as {name, shape, dimensions_m, color_rgba} and are keyed by name,
+  // because that is what the engine answers about and what a request called it.
+  // A body with no primitive -- a join, whose union no box or sphere describes,
+  // or a piece that broke off something, whose cells ARE its surface -- is drawn
+  // as the cells it is made of. Drawing a bowl from its bounding box instead
+  // renders a hollow object as a solid block, which is worse than not drawing it.
+  //
+  // The cells do not move relative to each other while the body is whole, so
+  // they are one instanced mesh carried by the body's own pose: one pose a frame
+  // on the wire, one draw call on screen.
+  function cellCloud(spec, cells, size) {
+    const edge = size > 0 ? size : 0.02;
+    const mesh = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(edge, edge, edge),
+      new THREE.MeshStandardMaterial({
+        color: color(spec.color_rgba),
+        roughness: 0.55,
+        metalness: 0.08,
+        transparent: true,
+      }),
+      cells.length,
+    );
+    const at = new THREE.Object3D();
+    cells.forEach((offset, index) => {
+      at.position.set(offset[0], offset[1], offset[2]);
+      at.updateMatrix();
+      mesh.setMatrixAt(index, at.matrix);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.userData = {
+      kind: "constituent cells",
+      id: spec.id,
+      material_id: spec.material_id,
+      cells: cells.length,
+    };
+    return mesh;
+  }
+
+  function loadLive(list, groundHeight, cellSize) {
+    if (cellSize > 0) liveCellSize = cellSize;
+    setPlaying(false);
+    [solids, edges, references, supports, bonds].forEach(dispose);
+    continuum = dynamic = thermal = false;
+    frames = [];
+    live = true;
+    groundY = Number.isFinite(groundHeight) ? groundHeight : 0;
+    bodies = (list || []).map((b) => {
+      const spec = {
+        id: b.name,
+        object_id: 0,
+        element_id: 0,
+        material_id: b.name,
+        color_rgba: parseInt(String(b.color_rgba || "9fd3ffff"), 16) || 0x9fd3ffff,
+        shape: b.shape === "sphere" ? "sphere" : "box",
+        dimensions_m: b.dimensions_m,
+        anchored: !!b.anchored,
+      };
+      const cells = b.cells_local_m;
+      const asCells = Array.isArray(cells) && cells.length > 0;
+      spec.mesh = asCells ? cellCloud(spec, cells, liveCellSize) : primitive(spec);
+      solids.add(spec.mesh);
+      // An instanced cloud has no single outline worth drawing.
+      spec.edge = asCells ? null : wire(spec.mesh, spec);
+      return spec;
+    });
+    const g = 2;
+    triangleLines([
+      [[-g, groundY, -g], [g, groundY, -g], [g, groundY, g]],
+      [[-g, groundY, -g], [g, groundY, g], [-g, groundY, g]],
+    ]);
+    setLivePoses(list);
+    fit();
+    live = true;
+  }
+
+  // Where everything is now. A body the engine has stopped reporting has been
+  // broken up and replaced, so the meshes are rebuilt rather than left showing
+  // an object that is no longer there.
+  function setLivePoses(list) {
+    const byName = new Map((list || []).map((b) => [b.name, b]));
+    // The set of bodies changed: something broke and was replaced by its pieces.
+    // Rebuilding needs their cells, which a step does not carry, so say so and
+    // let the caller fetch geometry rather than draw the new pieces as boxes.
+    if (byName.size !== bodies.length || bodies.some((b) => !byName.has(b.id)))
+      return false;
+    bodies.forEach((b) => {
+      const at = byName.get(b.id);
+      if (!at) return;
+      // A held body is where the hand put it; the engine agrees, so there is
+      // nothing to suppress here the way a recording needs.
+      b.mesh.position.fromArray(at.position_m);
+      const q = at.orientation_wxyz || [1, 0, 0, 0];
+      b.mesh.quaternion.set(q[1], q[2], q[3], q[0]);
+      if (b.edge) {
+        b.edge.position.copy(b.mesh.position);
+        b.edge.quaternion.copy(b.mesh.quaternion);
+      }
+    });
+    return true;
   }
 
   function buildNetwork(d) {
@@ -957,6 +1069,7 @@ function create(container, hooks = {}) {
     });
   }
   function load(d) {
+    live = false;
     setPlaying(false);
     [solids, edges, references, supports, bonds].forEach(dispose);
     bodies = [];
@@ -1121,9 +1234,15 @@ function create(container, hooks = {}) {
     refit() {
       fit();
     },
-    // Let the pointer move objects instead of orbiting the camera. A grab is
-    // only a reposition: the fall itself is simulated by re-running the engine
-    // from where the object was let go.
+    // A live world: one mesh per object, poses pushed in from outside.
+    loadLive,
+    setLivePoses,
+    get isLive() {
+      return live;
+    },
+    // Let the pointer move objects instead of orbiting the camera. In a live
+    // world a grab is a hold the engine itself honours; in a recording it is a
+    // reposition and the fall is simulated by running the lane again.
     setGrabMode(v) {
       grabMode = v !== false;
       if (!grabMode && grab) endGrab();

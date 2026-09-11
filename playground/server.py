@@ -27,6 +27,7 @@ import uuid
 from experiment_language import ROOT, KINDS, LIMITATIONS, SCHEMA, PLANNER_SCHEMA, lower_proposal, lower_and_admit, SYSTEM, compile_plan, validate_plan, request_blockers, admit_plan, plan_cost
 import builder
 import fracture_lab
+import live_session
 import scene_chat
 import network_admission
 from network_admission import Inadmissible, LIMITS, describe_package
@@ -192,6 +193,10 @@ class Playground:
         self.planner = planner
         self.csrf_token = secrets.token_urlsafe(32)
         self.jobs, self.requests, self.paths, self.playbacks = {}, {}, {}, {}
+        # The one open live world. A recording is a file the panel can replay at
+        # will; a live world is a running physics engine with a scene resident
+        # in it, so there is one at a time and opening another closes the first.
+        self.live = live_session.Live()
         self.lock = threading.RLock()
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="banjo-playground")
         self.studios = []
@@ -984,6 +989,11 @@ class Handler(BaseHTTPRequestHandler):
             # Words in, a validated scene spec out. The model fills the same
             # fields the manual controls do and nothing skips fracture_lab.validate.
             if path=="/api/scene/chat": return self.send(scene_chat.plan(self.server.app,body))
+            # A live world, instead of a recording. /open starts one from a
+            # validated scene; /act steps it, takes hold of an object, moves it,
+            # lets go, or puts something back into the lattice to be broken.
+            if path=="/api/live/open": return self.send(self.server.app.live.open(self.server.app,body))
+            if path=="/api/live/act": return self.send(self.server.app.live.act(body))
             # Save the frame the 3D viewer is showing. The page cannot write
             # a file and cannot reach any other origin, so the one way a
             # result leaves the tab it was rendered in is through here.
@@ -1017,6 +1027,6 @@ def main():
     print(f"Banjo playground: http://127.0.0.1:{args.port}",flush=True)
     try: server.serve_forever()
     except KeyboardInterrupt: pass
-    finally: server.server_close();app.pool.shutdown(wait=False,cancel_futures=True)
+    finally: server.server_close();app.live.shutdown();app.pool.shutdown(wait=False,cancel_futures=True)
 
 if __name__=="__main__": main()

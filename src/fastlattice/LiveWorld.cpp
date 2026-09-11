@@ -20,6 +20,23 @@ namespace {
 // The lattice's own vector type. The support planes are templated on it, and a
 // scene's Vec3 is a different struct with the same three numbers in it.
 V3<double> toV3(const Vec3 &v) { return {v.x, v.y, v.z}; }
+
+// How big a piece is, from the cells it is made of. A body authored as a box or
+// a sphere reports the size it was asked for; a piece that broke off something
+// was never asked for at any size, and a host still has to draw it, so it gets
+// the extent of its own cells rather than nothing at all.
+Vec3 cellBounds(const std::vector<std::uint32_t> &nodes,
+                const std::vector<Vec3> &offsets, double cell_m) {
+    if (nodes.empty()) return {cell_m, cell_m, cell_m};
+    Vec3 low = offsets[nodes.front()], high = low;
+    for (const std::uint32_t node : nodes) {
+        const Vec3 &at = offsets[node];
+        low = {std::min(low.x, at.x), std::min(low.y, at.y), std::min(low.z, at.z)};
+        high = {std::max(high.x, at.x), std::max(high.y, at.y), std::max(high.z, at.z)};
+    }
+    // The offsets are cell CENTRES, so the piece reaches half a cell past each.
+    return {high.x - low.x + cell_m, high.y - low.y + cell_m, high.z - low.z + cell_m};
+}
 } // namespace
 
 struct LiveWorld::Impl {
@@ -176,6 +193,9 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request) {
             impl.cell_offset_m[node] = setup.matter.nodes[node].position_world_m -
                                        fragment.mass_properties.center_of_mass_world_m;
         impl.next_body_id = std::max(impl.next_body_id, fragment.body_id + 1);
+        if (described.shape == "hull")
+            described.dimensions_m = cellBounds(impl.nodes_of.back(), impl.cell_offset_m,
+                                                r.cell_size_m);
         impl.described.push_back(std::move(described));
         impl.body_of.push_back(fragment.body_id);
     }
@@ -318,9 +338,16 @@ void LiveWorld::step(double dt_s) {
 double LiveWorld::time_s() const { return impl_->time_s; }
 std::size_t LiveWorld::bodies() const { return impl_->described.size(); }
 
-std::vector<LiveBodyPose> LiveWorld::poses() const {
+double LiveWorld::cellSize() const { return impl_->request.cell_size_m; }
+
+std::vector<LiveBodyPose> LiveWorld::poses(bool with_geometry) const {
     std::vector<LiveBodyPose> out = impl_->described;
     for (std::size_t i = 0; i < out.size(); ++i) {
+        if (with_geometry && out[i].shape == "hull") {
+            out[i].cells_local_m.reserve(impl_->nodes_of[i].size());
+            for (const std::uint32_t node : impl_->nodes_of[i])
+                out[i].cells_local_m.push_back(impl_->cell_offset_m[node]);
+        }
         if (!impl_->world->contains(impl_->body_of[i])) continue;
         const RigidSnapshot snap = impl_->world->snapshot(impl_->body_of[i]);
         out[i].position_m = snap.center_of_mass_world_m;
@@ -619,6 +646,9 @@ std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
         impl_->impedance_of.push_back(
             acousticImpedance(material.density_kg_m3, material.young_modulus_pa));
         impl_->nodes_of.push_back(std::move(parent_nodes));
+        if (piece.shape == "hull")
+            piece.dimensions_m = cellBounds(impl_->nodes_of.back(), impl_->cell_offset_m,
+                                            impl_->request.cell_size_m);
         impl_->described.push_back(std::move(piece));
         impl_->body_of.push_back(fragment.body_id);
         impl_->next_body_id = std::max(impl_->next_body_id, fragment.body_id + 1);

@@ -325,6 +325,11 @@ if(BANJO_BUILD_HEADLESS)
     add_executable(banjo_fast_lattice_run tools/fast_lattice_run.cpp)
     target_link_libraries(banjo_fast_lattice_run PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_fast_lattice_run)
+    # A live scene, driven a line at a time: the playground talks to this instead
+    # of asking for a recording and playing it back.
+    add_executable(banjo_live_world_run tools/live_world_run.cpp)
+    target_link_libraries(banjo_live_world_run PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
+    banjo_enable_warnings(banjo_live_world_run)
     # Algorithm 3: precomputed multi-step propagators with causal-cone patching.
     add_executable(banjo_fracture_algo3 tools/fracture_algo3.cpp)
     target_link_libraries(banjo_fracture_algo3 PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)

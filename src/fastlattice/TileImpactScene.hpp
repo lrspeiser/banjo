@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace banjo::fastlattice {
@@ -298,6 +299,14 @@ struct TileImpactSetup {
 // batch lane and the live world both have to turn a body the same way; two
 // copies of this convention would mean a ramp tilting differently in each.
 void rotationQuaternion(const Vec3 &degrees, double out[4]);
+
+// The bodies of a scene file: a JSON array, or an object with a "bodies"
+// array. Every lane that runs a scene reads it through here, so the batch
+// lane and the live one can never disagree about what a scene file means.
+// The material names a scene file and a command line may use.
+[[nodiscard]] MaterialPreset presetFromName(std::string_view name);
+
+[[nodiscard]] std::vector<SceneBody> readSceneFile(const std::string &path);
 
 // The substep settings for a scene, in a frame with the given origin, and the
 // backend a request asks for. Shared for the same reason as the rotation above:

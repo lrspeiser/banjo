@@ -23,15 +23,6 @@ namespace {
 using namespace banjo;
 using namespace banjo::fastlattice;
 
-MaterialPreset presetFromName(std::string_view name) {
-    if (name == "glass") return MaterialPreset::Glass;
-    if (name == "oak") return MaterialPreset::Oak;
-    if (name == "iron") return MaterialPreset::Iron;
-    if (name == "concrete") return MaterialPreset::Concrete;
-    if (name == "ceramic") return MaterialPreset::Ceramic;
-    if (name == "ice") return MaterialPreset::Ice;
-    throw std::invalid_argument("unknown material: " + std::string(name));
-}
 
 // A many-object scene, read from a JSON file. Every body shares the run's cell
 // size, because the solver's contact radius is one number for the lattice.
@@ -39,53 +30,6 @@ MaterialPreset presetFromName(std::string_view name) {
 // {"bodies":[{"name":"pane","shape":"box","material":"glass",
 //             "dimensions_m":[0.2,0.01,0.16],"center_m":[0,0.2,0],
 //             "velocity_m_s":[0,0,0],"color_rgba":"9fd3ffff"}, ...]}
-std::vector<SceneBody> readScene(const std::string &path) {
-    std::ifstream input(path);
-    if (!input) throw std::invalid_argument("could not open scene " + path);
-    const nlohmann::json document = nlohmann::json::parse(input);
-    const auto &list = document.contains("bodies") ? document.at("bodies") : document;
-    if (!list.is_array() || list.empty()) throw std::invalid_argument("a scene needs a non-empty bodies array");
-    const auto vector3 = [](const nlohmann::json &node, const char *key, Vec3 fallback) {
-        if (!node.contains(key)) return fallback;
-        const auto &v = node.at(key);
-        if (!v.is_array() || v.size() != 3) throw std::invalid_argument(std::string(key) + " needs three numbers");
-        return Vec3{v[0].get<double>(), v[1].get<double>(), v[2].get<double>()};
-    };
-    std::vector<SceneBody> bodies;
-    for (const auto &node : list) {
-        SceneBody body;
-        body.name = node.value("name", std::string("body"));
-        const std::string shape = node.value("shape", std::string("box"));
-        if (shape == "sphere") body.shape = BodyShape::Sphere;
-        else if (shape == "box") body.shape = BodyShape::Box;
-        else if (shape == "cone") body.shape = BodyShape::Cone;
-        else throw std::invalid_argument("unknown shape: " + shape);
-        body.material = presetFromName(node.value("material", std::string("glass")));
-        body.dimensions_m = vector3(node, "dimensions_m", Vec3{0.1, 0.1, 0.1});
-        body.center_m = vector3(node, "center_m", Vec3{});
-        body.velocity_m_s = vector3(node, "velocity_m_s", Vec3{});
-        // Bodies sharing a join name are voxelised onto the shared grid and
-        // unioned, so a cell both claim is built once and bonds cross the seam.
-        body.join = node.value("join", std::string());
-        body.spin_rad_s = vector3(node, "spin_rad_s", Vec3{});
-        body.rotation_deg = vector3(node, "rotation_deg", Vec3{});
-        body.anchored = node.value("anchored", false);
-        // Cut this shape out of its join group instead of adding it.
-        body.subtract = node.value("subtract", false);
-        // "roll": true derives the spin that rolls without slipping at the
-        // speed already given, which is the sign nobody gets right by hand.
-        if (node.value("roll", false)) {
-            const double radius = 0.5 * body.dimensions_m.x;
-            if (radius > 0.0)
-                body.spin_rad_s = {body.velocity_m_s.z / radius, 0.0, -body.velocity_m_s.x / radius};
-        }
-        if (node.contains("color_rgba"))
-            body.color_rgba = static_cast<std::uint32_t>(
-                std::stoul(node.at("color_rgba").get<std::string>(), nullptr, 16));
-        bodies.push_back(std::move(body));
-    }
-    return bodies;
-}
 
 double number(const std::string &value) {
     std::size_t used = 0;
@@ -187,7 +131,7 @@ int main(int argc, char **argv) {
                 return argv[i];
             };
             if (option == "--help" || option == "-h") { usage(); return 0; }
-            else if (option == "--scene") request.bodies = readScene(value());
+            else if (option == "--scene") request.bodies = readSceneFile(value());
             else if (option == "--material") request.tile_material = presetFromName(value());
             else if (option == "--ball-material") request.ball_material = presetFromName(value());
             else if (option == "--ground-material") request.ground_material = presetFromName(value());

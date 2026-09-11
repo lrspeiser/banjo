@@ -454,7 +454,15 @@
       // a grab only repositions: the fall is simulated by running the engine
       // again from where the object was let go, which is why it obeys gravity,
       // lands on what is under it and reports real contacts.
-      onGrab: ({name, held, moved_m}) => {
+      onGrab: ({name, held, moved_m, at_m}) => {
+        if (live.session) {
+          // Take hold first, then carry. Moving without having grabbed asks the
+          // engine to put down something it is not holding, which it ignores.
+          if (held && live.holding !== name) { live.holding = name; liveGrab(name); }
+          if (held && at_m) liveMove(at_m);
+          if (!held) live.holding = null;
+          return;
+        }
         const box = $("viewer-grab-state");
         if (!box) return;
         box.hidden = false;
@@ -464,7 +472,10 @@
             + ` across ${Math.hypot(moved_m[0], moved_m[2]).toFixed(2)} m. Let go to drop it.`
           : "Let go.";
       },
-      onRelease: (move) => { dropObject(move); },
+      onRelease: (move) => {
+        if (live.session) { liveRelease(move.name); return; }
+        dropObject(move);
+      },
       onInspect: (data) => { $("viewer-inspect").textContent = data ? Object.entries(data).filter(([k,v]) => k !== "source" && typeof v !== "object").slice(0,16).map(([k,v])=>`${k}: ${text(v)}`).join(" · ") : "Nothing selected."; },
     });
     // One handle so a frame of the running viewer can be captured from
@@ -1086,6 +1097,177 @@
     const p = row.querySelector("p");
     if (p) p.textContent = body;
     if (row._recorded) row._recorded.text = body;
+  }
+
+
+  // ---- A live world -----------------------------------------------------
+  //
+  // The stage normally plays a recording. Going live opens the same scene as a
+  // running physics engine instead: the browser steps it, reads where
+  // everything is, and puts it on screen, about thirty times a second. Picking
+  // something up is then a hold the engine itself honours, and letting go is a
+  // fall rather than a re-run.
+  const live = { session: null, timer: null, busy: false, dropped: 0, breaking: false,
+                 lastTick: 0, holding: null };
+
+  async function liveCall(op, extra) {
+    // api() carries the session token and re-mints it if the server restarted,
+    // which matters here: a live world ticks thirty times a second.
+    return api("/api/live/act", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...tokenHeaders() },
+      body: JSON.stringify(Object.assign({ session: live.session, op }, extra || {})),
+    });
+  }
+
+  function liveStatus(text) {
+    const box = $("viewer-grab-state");
+    if (!box) return;
+    box.hidden = !text;
+    box.textContent = text || "";
+  }
+
+  async function goLive() {
+    if (live.session) return stopLive("Back to the recording.");
+    const spec = readFracture();
+    if (!spec.bodies || !spec.bodies.length) {
+      chatTurn("bad", "Nothing to run live",
+        "A live world needs a scene of objects. Build one first, or switch Scene to Many objects.");
+      return;
+    }
+    $("viewer-live").disabled = true;
+    liveStatus("Opening a live world...");
+    try {
+      const data = await api("/api/live/open", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...tokenHeaders() },
+        body: JSON.stringify({ spec }),
+      });
+      live.session = data.session;
+      live.dropped = 0;
+      live.lastTick = 0;
+      state.scene.loadLive(data.bodies, 0, data.cell_size_m);
+      $("viewer-live").textContent = "Stop live";
+      $("viewer-grab").checked = true;
+      state.scene.setGrabMode(true);
+      chatTurn("built", "Live",
+        `${data.bodies.length} objects, running. Drag something to pick it up; let go and it falls.`);
+      liveStatus("Live. Drag an object to pick it up; let go and it falls.");
+      live.timer = setInterval(liveTick, 33);
+    } catch (error) {
+      chatTurn("bad", "Could not go live", String(error.message || error));
+      liveStatus("");
+    } finally {
+      $("viewer-live").disabled = false;
+    }
+  }
+
+  function stopLive(why) {
+    if (live.timer) clearInterval(live.timer);
+    live.timer = null;
+    const closing = live.session;
+    live.session = null;
+    $("viewer-live").textContent = "Go live";
+    liveStatus("");
+    if (closing) {
+      api("/api/live/act", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...tokenHeaders() },
+        body: JSON.stringify({ session: closing, op: "close" }),
+      }).catch(() => {});
+    }
+    if (why) chatTurn("built", "Live", why);
+  }
+
+  // One tick: advance the world by however much real time has passed, and draw
+  // it. Asking for a fixed number of steps per tick would tie the scene's clock
+  // to the browser's timer, and a browser throttles a hidden tab to about one
+  // tick a second -- the scene would then crawl for a reason that has nothing
+  // to do with the physics. Pacing on elapsed time instead plays at true speed
+  // when someone is watching and simply drops frames when nobody is.
+  const LIVE_DT = 1 / 120;
+  const LIVE_MAX_STEPS = 120;  // the server's own cap; asking for more is refused
+  async function liveTick() {
+    if (!live.session || live.busy || live.breaking) return;
+    const now = performance.now();
+    const elapsed = live.lastTick ? (now - live.lastTick) / 1000 : LIVE_DT;
+    live.lastTick = now;
+    const steps = Math.max(1, Math.min(Math.round(elapsed / LIVE_DT), LIVE_MAX_STEPS));
+    live.busy = true;
+    try {
+      const data = await liveCall("step", { dt: LIVE_DT, n: steps });
+      // false means the set of bodies changed under us -- something broke -- and
+      // the new pieces have to be drawn from their cells, which a step does not
+      // carry. Ask for geometry rather than guess at their shapes.
+      if (!state.scene.setLivePoses(data.bodies)) {
+        const full = await liveCall("poses", {});
+        state.scene.loadLive(full.bodies, 0, full.cell_size_m);
+      }
+      // A step the engine took back is one it refused to take, because taking it
+      // would have broken something. Nothing moves until that is dealt with.
+      if (data.breakable && data.breakable.length) await breakIt(data);
+      else liveStatus(`Live — t = ${data.t.toFixed(2)} s, ${data.bodies.length} objects`
+        + `, ${steps} step${steps === 1 ? "" : "s"} a tick.`);
+    } catch (error) {
+      stopLive(`The live world stopped: ${error.message || error}`);
+    } finally {
+      live.busy = false;
+    }
+  }
+
+  // Something was hit hard enough to break. Putting it back into the lattice
+  // costs roughly a third of a millisecond per cell, so it is said out loud
+  // rather than hidden inside a frame that then takes half a second.
+  async function breakIt(state_before) {
+    const name = state_before.breakable[0];
+    const hit = (state_before.impacts || [])
+      .filter((i) => i.struck === name)
+      .sort((a, b) => b.closing_speed_m_s - a.closing_speed_m_s)[0];
+    live.breaking = true;
+    liveStatus(`${name} was hit hard enough to break — working it out...`);
+    try {
+      const began = performance.now();
+      const after = await liveCall("fracture", { name });
+      const took = performance.now() - began;
+      state.scene.loadLive(after.bodies, 0, after.cell_size_m);
+      const how = hit
+        ? `${hit.by} hit ${name} at ${hit.closing_speed_m_s.toFixed(1)} m/s`
+          + ` (it takes ${hit.threshold_speed_m_s.toFixed(1)} m/s to break it)`
+        : `${name} was struck hard enough to break`;
+      chatTurn("built", "Live",
+        after.pieces > 1
+          ? `${how}. It broke into ${after.pieces} pieces, worked out in ${Math.round(took)} ms.`
+          : `${how}, but it held. The threshold is the speed below which nothing CAN break;`
+            + ` above it a break is possible, not certain.`);
+    } catch (error) {
+      chatTurn("bad", "Live", `Could not break ${name}: ${error.message || error}`);
+    } finally {
+      live.breaking = false;
+    }
+  }
+
+  // Picking something up in a live world is a hold the engine honours, so the
+  // pointer talks to it directly instead of editing the scene and re-running.
+  async function liveGrab(name) {
+    try {
+      await liveCall("grab", { name });
+      chatTurn("you", "You", `picked up ${name}.`);
+    } catch (error) {
+      live.holding = null;
+      liveStatus(`${name} cannot be picked up: ${error.message || error}`);
+    }
+  }
+  async function liveMove(to) {
+    try { await liveCall("move", { to }); } catch (error) { /* the next tick will tell */ }
+  }
+  async function liveRelease(name) {
+    const was = live.holding;
+    live.holding = null;
+    if (!was) return;   // nothing was ever taken hold of
+    try {
+      await liveCall("release", {});
+      chatTurn("you", "You", `let go of ${name}.`);
+    } catch (error) { /* the next tick will tell */ }
   }
 
   // Putting a moved object down: write its new position into the scene the
@@ -2021,7 +2203,8 @@
   $("viewer-reset").addEventListener("click",()=>{state.scene?.reset();$("viewer-play").textContent="Play";});
   $("viewer-back").addEventListener("click",()=>state.scene?.step(-1));$("viewer-forward").addEventListener("click",()=>state.scene?.step(1));
   $("viewer-frame").addEventListener("input",e=>state.scene?.setFrame(Number(e.target.value)));$("viewer-speed").addEventListener("change",e=>{state.scene?.setSpeed(e.target.value);syncCustomDisplay("playback_speed",Number(e.target.value));});$("viewer-magnification").addEventListener("change",e=>state.scene?.setMagnification(e.target.value));
-  $("viewer-components").addEventListener("change",e=>state.scene?.showComponents(e.target.checked));$("viewer-reference").addEventListener("change",e=>state.scene?.showReference(e.target.checked));$("viewer-bonds").addEventListener("change",e=>state.scene?.showBonds(e.target.checked));$("viewer-xray").addEventListener("change",e=>state.scene?.setXray(e.target.checked));$("viewer-hold").addEventListener("change",e=>{state.scene?.holdFracture(e.target.checked);if(fracture.lastSummary)captionStage(fracture.lastSummary);});$("viewer-grab").addEventListener("change",e=>{const on=state.scene?.setGrabMode(e.target.checked);const box=$("viewer-grab-state");if(box){box.hidden=!on;box.textContent=on?"Drag an object to move it. Let go and it is dropped from there, and the scene runs again.":"";}});$("viewer-native").addEventListener("click",()=>openStudio(state.selectedCase));
+  $("viewer-components").addEventListener("change",e=>state.scene?.showComponents(e.target.checked));$("viewer-reference").addEventListener("change",e=>state.scene?.showReference(e.target.checked));$("viewer-bonds").addEventListener("change",e=>state.scene?.showBonds(e.target.checked));$("viewer-xray").addEventListener("change",e=>state.scene?.setXray(e.target.checked));$("viewer-hold").addEventListener("change",e=>{state.scene?.holdFracture(e.target.checked);if(fracture.lastSummary)captionStage(fracture.lastSummary);});$("viewer-live").addEventListener("click",()=>goLive());
+  $("viewer-grab").addEventListener("change",e=>{const on=state.scene?.setGrabMode(e.target.checked);const box=$("viewer-grab-state");if(box){box.hidden=!on;box.textContent=on?"Drag an object to move it. Let go and it is dropped from there, and the scene runs again.":"";}});$("viewer-native").addEventListener("click",()=>openStudio(state.selectedCase));
   $("prompt-input").addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); $("chat-form").requestSubmit(); } });
   renderConversation(); renderHistory(); renderJob(null); renderStatus(); loadGoal(); restoreLatestJob();
   // The playground is the page now, so it is built on load rather than on a tab

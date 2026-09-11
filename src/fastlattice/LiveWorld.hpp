@@ -22,6 +22,16 @@ struct LiveBodyPose {
     Vec3 velocity_m_s{};
     bool anchored{};
     bool held{};
+    // Where this body's cells sit in its own frame. Only filled in when the
+    // caller asks for geometry, because it does not change between steps and a
+    // bowl has two thousand of them.
+    //
+    // A body authored as one box or sphere is drawn as that shape and needs
+    // none of this. Everything else -- a join, whose union no primitive
+    // describes, and a piece that broke off something, whose cells ARE its
+    // surface -- has to be drawn as its cells or it is drawn as a lie: a
+    // hollow bowl rendered from its bounding box is a solid block.
+    std::vector<Vec3> cells_local_m;
 };
 
 // One contact from the step just taken, judged against what the struck object
@@ -74,7 +84,11 @@ public:
     [[nodiscard]] std::size_t bodies() const;
 
     // Every object, in the order they were authored.
-    [[nodiscard]] std::vector<LiveBodyPose> poses() const;
+    // `with_geometry` fills in cells_local_m for the bodies that need it. It is
+    // static between steps, so a host asks for it when the set of bodies
+    // changes and not on every frame.
+    [[nodiscard]] std::vector<LiveBodyPose> poses(bool with_geometry = false) const;
+    [[nodiscard]] double cellSize() const;
 
     // What happened in the step just taken. Cleared by the next step, so a host
     // reads it once per frame and narrates it. Contacts too gentle to be worth
