@@ -221,7 +221,32 @@ function create(container, hooks = {}) {
   // be picked up. So a miss falls back to the closest body within a forgiving
   // radius, which is what makes small things grabbable without pixel precision.
   const kGrabSlackPx = 44;
+  // The ray the camera casts through a point on screen, in world metres.
+  //
+  // The engine can say what a ray hits, against the shapes it is really
+  // colliding. This is how the browser asks that question about a place on
+  // screen: everything about where the camera is stays here, and what is out
+  // there stays with the physics.
+  function rayThrough(clientX, clientY) {
+    const r = canvas.getBoundingClientRect();
+    mouse.set(((clientX - r.left) / r.width) * 2 - 1,
+              (-(clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(mouse, camera);
+    return { from: ray.ray.origin.toArray(), dir: ray.ray.direction.toArray() };
+  }
+
+  // What the engine last said is under the pointer. Null means nobody has asked
+  // it, and the local test below answers instead -- which is what a recording
+  // does, because a recording is not a world and has nothing to ask.
+  let picked = null;
+  let usePicked = false;
+
   function bodyUnder(clientX, clientY) {
+    // A live world answers for itself. Its answer is the shape the solver
+    // collides, so the pointer and the physics cannot disagree about which
+    // object is which -- and a piece that broke off something has no bounding
+    // box worth testing: its cells are its surface.
+    if (usePicked) return picked;
     const r = canvas.getBoundingClientRect();
     mouse.set(((clientX - r.left) / r.width) * 2 - 1,
               (-(clientY - r.top) / r.height) * 2 + 1);
@@ -1257,7 +1282,15 @@ function create(container, hooks = {}) {
   });
   canvas.addEventListener("pointermove", (e) => {
     if (grab) { moveGrab(e.clientX, e.clientY); return; }
-    if (!pointer) { if (grabMode) setHover(bodyUnder(e.clientX, e.clientY)); return; }
+    if (!pointer) {
+      if (!grabMode) return;
+      // Where the pointer is, for a host that wants to ask the engine. The
+      // local answer is applied first either way, so the highlight never waits
+      // on a round trip; an engine answer replaces it when it arrives.
+      hooks.onPoint?.(e.clientX, e.clientY);
+      setHover(bodyUnder(e.clientX, e.clientY));
+      return;
+    }
     const dx = e.clientX - pointer.x,
       dy = e.clientY - pointer.y;
     if (Math.abs(dx) + Math.abs(dy) > 3) pointer.moved = true;
@@ -1326,6 +1359,15 @@ function create(container, hooks = {}) {
     },
     // A live world: one mesh per object, poses pushed in from outside.
     loadLive,
+    rayThrough,
+    // The engine's answer about what is under the pointer, pushed in from the
+    // host because asking costs a round trip and the scene does not do those.
+    // Passing null goes back to answering locally.
+    setPicked(name) {
+      usePicked = name !== undefined;
+      picked = name || null;
+      if (usePicked && grabMode && !grab) setHover(picked);
+    },
     setLivePoses,
     get isLive() {
       return live;

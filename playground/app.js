@@ -478,6 +478,7 @@
       },
       // What the pointer is over, named while it is lit, so the click that
       // follows is never a guess.
+      onPoint: (x, y) => { askWhatIsUnder(x, y); },
       onHover: (over) => {
         live.hovering = over ? over.name : null;
         if (live.holding) return;
@@ -1169,6 +1170,32 @@
     });
   }
 
+  // What is under the pointer, asked of the engine rather than worked out from
+  // a second copy of the shapes in the browser.
+  //
+  // One question in flight at a time and at most one per animation frame: a
+  // pointer move fires far more often than that, and the answers would arrive
+  // out of order. A round trip is about a millisecond on a local server, so the
+  // highlight keeps up with the mouse.
+  let pickBusy = false, pickAt = null;
+  async function askWhatIsUnder(clientX, clientY) {
+    if (!live.session || !state.scene) return;
+    pickAt = [clientX, clientY];
+    if (pickBusy) return;
+    pickBusy = true;
+    try {
+      while (pickAt) {
+        const [x, y] = pickAt;
+        pickAt = null;
+        const ray = state.scene.rayThrough(x, y);
+        const found = await liveCall("pick", { from: ray.from, dir: ray.dir });
+        // An empty name with a hit is the ground: something is there, but it is
+        // not one of the scene's objects and cannot be picked up.
+        state.scene.setPicked(found.hit && found.name ? found.name : null);
+      }
+    } catch { /* the next move asks again */ } finally { pickBusy = false; }
+  }
+
   function liveStatus(text) {
     const box = $("viewer-grab-state");
     if (!box) return;
@@ -1197,6 +1224,7 @@
       live.lastTick = 0;
       state.scene.setGrabbable(true, "");
       state.scene.loadLive(data.bodies, 0, data.cell_size_m);
+      state.scene.setPicked(null);   // the engine answers from here on
       showTransport(false);
       const caption = $("fracture-stage-caption");
       if (caption) {
@@ -1231,6 +1259,8 @@
     live.timer = null;
     const closing = live.session;
     live.session = null;
+    // No world to ask any more, so the scene goes back to answering locally.
+    state.scene?.setPicked(undefined);
     showTransport(true);
     $("viewer-live").textContent = "Restart the scene";
     liveStatus("");

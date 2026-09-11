@@ -467,6 +467,100 @@ void somethingLiftedOutOfASettledWorldStillFalls() {
             "it fell, but not back to where it had been resting");
 }
 
+// What the pointer is on is a question for the solver, not for a second copy
+// of the shapes.
+//
+// The playground answered it in the browser, against each body's bounding box
+// with a margin. That is wrong in both directions: it claims a hit in the empty
+// corner of a box, and it cannot describe a piece that broke off something,
+// whose cells ARE its surface and which no box fits. Asking the world means the
+// answer is the shape the body actually collides with.
+void aRayFindsWhatItActuallyHits() {
+    const auto live = LiveWorld::open(ballOntoGlass(0.5));
+    // Straight down the middle from above: the ball is on top, the pane under
+    // it, so the first thing met must be the ball.
+    const LivePick top = live->pick({0.0, 6.0, 0.0}, {0.0, -1.0, 0.0});
+    std::cout << "  down the middle: " << (top.hit ? top.name : "nothing")
+              << " at " << top.distance_m << " m\n";
+    require(top.hit && top.name == "ball", "a ray down the middle did not meet the ball");
+
+    // A ray that passes beside everything meets the ground, which is a hit with
+    // no name -- a different answer from meeting nothing at all.
+    const LivePick beside = live->pick({3.0, 6.0, 0.0}, {0.0, -1.0, 0.0});
+    require(beside.hit && beside.name.empty(),
+            "a ray beside the scene should meet the unnamed ground");
+
+    // And one aimed at the sky meets nothing.
+    const LivePick sky = live->pick({0.0, 6.0, 0.0}, {0.0, 1.0, 0.0});
+    require(!sky.hit, "a ray fired at the sky hit something");
+
+    // The distance has to be a real distance, not a fraction: the ball's top is
+    // 0.5 m of drop plus the pane and its own radius below the ray's start.
+    require(top.distance_m > 4.0 && top.distance_m < 6.0,
+            "the reported distance is not in metres along the ray");
+    // And the point has to be ON the ray.
+    require(std::abs(top.point_world_m.x) < 1e-9 &&
+                std::abs(top.point_world_m.y - (6.0 - top.distance_m)) < 1e-6,
+            "the reported hit point is not on the ray");
+
+    // A ray too short to reach reports nothing, rather than the thing it would
+    // have reached.
+    require(!live->pick({0.0, 6.0, 0.0}, {0.0, -1.0, 0.0}, 0.5).hit,
+            "a ray shorter than the gap still reported a hit");
+
+    // The pointer's real job: pick something and it is the thing you can grab.
+    require(live->grab(top.name), "what the ray found could not be picked up");
+    require(live->held() == top.name, "a different object ended up in the hand");
+    live->release();
+}
+
+// A piece that broke off something can be pointed at.
+//
+// This is the case a bounding box cannot do. A fragment is a hull whose cells
+// are its surface; its box covers empty space its neighbours are sitting in, so
+// a box test picks whichever fragment happens to be checked first.
+void aRayFindsPiecesAfterSomethingBreaks() {
+    const auto live = LiveWorld::open(ballOntoGlass(10.0));
+    bool broke = false;
+    for (int i = 0; i < 900 && !broke; ++i) {
+        live->step(1.0 / 240.0);
+        const auto breakable = live->breakable();
+        if (std::find(breakable.begin(), breakable.end(), std::string("pane")) != breakable.end()) {
+            live->fracture("pane");
+            broke = true;
+        }
+    }
+    require(broke, "the pane never broke, so this proves nothing");
+    for (int i = 0; i < 600; ++i) live->step(1.0 / 240.0);   // let the pieces settle
+
+    // Fire straight down at each piece's own centre. Whatever else is in the
+    // way, the ray must come back with the name of a body that is really there.
+    std::size_t asked = 0, answered = 0, exact = 0;
+    for (const LiveBodyPose &pose : live->poses(false)) {
+        if (pose.name.rfind("pane", 0) != 0) continue;
+        ++asked;
+        const LivePick got = live->pick({pose.position_m.x, pose.position_m.y + 2.0,
+                                         pose.position_m.z}, {0.0, -1.0, 0.0});
+        if (!got.hit || got.name.empty()) continue;
+        ++answered;
+        if (got.name == pose.name) ++exact;
+        // Whatever it named has to be a body the world is holding.
+        bool real = false;
+        for (const LiveBodyPose &other : live->poses(false))
+            if (other.name == got.name) { real = true; break; }
+        require(real, "the ray named something the world is not holding: " + got.name);
+    }
+    std::cout << "  " << asked << " pieces, " << answered << " rays met a named body, "
+              << exact << " met the piece they were aimed at\n";
+    require(asked > 4, "the pane did not break into enough pieces to prove anything");
+    require(answered == asked, "a ray aimed straight down at a piece met nothing named");
+    // Aimed from directly above its own centre, a piece is usually what is hit
+    // first -- but not always, because another piece can be resting over it.
+    require(exact * 2 >= asked,
+            "fewer than half the rays found the piece they were aimed at, so the "
+            "query is not tracking the real shapes");
+}
+
 void theGroundCatchesThingsWhereverTheyAreDropped() {
     for (const double x : {0.0, 3.0, 9.0, 40.0}) {
         const auto live = LiveWorld::open(ballOverFloor());
@@ -512,6 +606,10 @@ int main() {
         std::cout << "[PASS] breaking scenery or a name that is not there changes nothing\n";
         aThingThatHeldDoesNotStopTheWorld();
         std::cout << "[PASS] something that was hit hard and held does not deadlock the world\n";
+        aRayFindsWhatItActuallyHits();
+        std::cout << "[PASS] a ray finds what it actually hits, named and measured\n";
+        aRayFindsPiecesAfterSomethingBreaks();
+        std::cout << "[PASS] a ray finds pieces after something breaks\n";
         somethingLiftedOutOfASettledWorldStillFalls();
         std::cout << "[PASS] something lifted out of a settled world still falls\n";
         theGroundCatchesThingsWhereverTheyAreDropped();

@@ -23,6 +23,8 @@
 #include <Jolt/Physics/Constraints/FixedConstraint.h>
 #include <Jolt/Physics/Constraints/DistanceConstraint.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
+#include <Jolt/Physics/Collision/CastResult.h>
+#include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
 #include <Jolt/Physics/PhysicsSystem.h>
@@ -1102,6 +1104,30 @@ void JoltWorld::releaseFromWorld(MatterBodyId body_id) {
     if(found==impl_->pins_.end())return;
     impl_->physics_->RemoveConstraint(found->second);impl_->pins_.erase(found);
     impl_->physics_->GetBodyInterface().ActivateBody(impl_->bodies_.at(body_id));
+}
+
+RayHit JoltWorld::castRay(const Vec3 &from_world_m,const Vec3 &direction,
+                          double max_distance_m) const {
+    RayHit out{};
+    // A ray with no direction is a question with no answer, and normalising it
+    // would divide by zero rather than say so.
+    const double reach=banjo::length(direction);
+    if(!(reach>0.0)||!(max_distance_m>0.0))return out;
+    const Vec3 along=(max_distance_m/reach)*direction;
+    const JPH::RRayCast ray{toJoltPosition(from_world_m),toJolt(along)};
+    JPH::RayCastResult result;
+    // The closest hit, against the real shapes the solver collides -- including
+    // a fragment's convex hull -- so the answer cannot disagree with what the
+    // body actually does.
+    if(!impl_->physics_->GetNarrowPhaseQuery().CastRay(ray,result))return out;
+    out.hit=true;
+    out.distance_m=static_cast<double>(result.mFraction)*max_distance_m;
+    out.point_world_m=from_world_m+static_cast<double>(result.mFraction)*along;
+    // Jolt answers with its own body id; the caller speaks in ours. Something
+    // with no id of ours still stopped the ray and is still reported.
+    for(const auto &[id,body]:impl_->bodies_)
+        if(body==result.mBodyID){out.named=true;out.body_id=id;break;}
+    return out;
 }
 
 void JoltWorld::wake(MatterBodyId body_id) {

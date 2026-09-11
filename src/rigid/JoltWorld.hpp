@@ -91,6 +91,21 @@ struct CohesiveTensionKick {
     PairImpulseAudit transfer;
 };
 
+// What a ray met first.
+//
+// `named` is separate from `hit` because a ray can stop on something this world
+// is holding that has no id of ours -- the ground is added through its own path
+// and is not in the body table. Saying "it hit the ground" is a different answer
+// from "it hit nothing", and a host that is deciding whether the pointer is over
+// an object needs to tell them apart.
+struct RayHit {
+    bool hit{};
+    bool named{};
+    MatterBodyId body_id{};
+    double distance_m{};
+    Vec3 point_world_m{};
+};
+
 struct CohesiveTensionPatchKick {
     std::vector<CohesiveInterfaceIncrement> interface_increments;
     PairImpulseAudit transfer;
@@ -178,6 +193,18 @@ public:
     void pinToWorld(MatterBodyId body_id);
     void releaseFromWorld(MatterBodyId body_id);
     void applyRigidState(MatterBodyId body_id,const RigidSnapshot &state);
+    // What a ray hits first, asked of the shapes the solver is actually using.
+    //
+    // "What is the pointer on", "can this see that", "is anything in the way"
+    // are all this one question, and without it a host has to keep its own copy
+    // of the world and answer from that -- a second set of shapes that drifts
+    // from the real ones. The playground did exactly that, picking against
+    // bounding boxes in the browser, so a piece that broke off something could
+    // not be pointed at: its cells are its surface and no box describes it.
+    //
+    // Costs no step and changes nothing, so it is safe to ask every frame.
+    [[nodiscard]] RayHit castRay(const Vec3 &from_world_m,const Vec3 &direction,
+                                 double max_distance_m) const;
     // Put a body back into simulation and clear how long it has been still.
     // A body that has come to rest is dropped from the step -- that is what
     // keeps a scene of a hundred settled pieces cheap -- and nothing that only

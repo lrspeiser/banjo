@@ -9,6 +9,7 @@
 //   in   {"op":"step","dt":0.0166,"n":2}
 //        {"op":"grab","name":"ball"}  {"op":"move","to":[0,1.2,0]}  {"op":"release"}
 //        {"op":"fracture","name":"pane"}   {"op":"poses"}   {"op":"quit"}
+//        {"op":"pick","from":[0,6,0],"dir":[0,-1,0],"max_m":1000}
 //   out  {"ok":true,"t":0.033,"stepped_back":false,
 //         "bodies":[{"name":"ball","shape":"sphere","dimensions_m":[...],
 //                    "position_m":[...],"orientation_wxyz":[...],"held":false,
@@ -20,6 +21,16 @@
 // Every reply carries the whole world. A scene of a dozen objects is about a
 // kilobyte, which is what drawing one authored body per object rather than one
 // per cell bought: the same reply for a bowling lane used to be 9,841 poses.
+//
+// `pick` is the exception. It answers
+//
+//   {"ok":true,"hit":true,"name":"ball","distance_m":5.36,"point_m":[0,0.64,0]}
+//
+// and nothing else, because it changes nothing and a pointer asks it on every
+// mouse move: carrying 78 poses along with each answer would be most of a
+// megabyte a second to say which object is under the cursor. An empty name with
+// hit true is the ground -- something stopped the ray, but not one of the
+// scene's bodies.
 
 #include "fastlattice/LiveWorld.hpp"
 
@@ -139,6 +150,18 @@ int main(int argc, char **argv) {
                         command.at("name").get<std::string>(),
                         command.value("window_s", 0.003));
                     reply["pieces"] = pieces;
+                } else if (op == "pick") {
+                    // Changes nothing and reports nothing about the world, so
+                    // it answers on its own rather than through describe().
+                    const LivePick found = world->pick(readVec(command, "from"),
+                                                       readVec(command, "dir"),
+                                                       command.value("max_m", 1000.0));
+                    nlohmann::json answer{{"ok", true}, {"hit", found.hit},
+                                          {"name", found.name},
+                                          {"distance_m", found.distance_m},
+                                          {"point_m", vec(found.point_world_m)}};
+                    std::cout << answer.dump() << std::endl;
+                    continue;
                 } else if (op != "poses") {
                     throw std::invalid_argument("unknown op: " + op);
                 }

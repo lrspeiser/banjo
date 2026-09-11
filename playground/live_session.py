@@ -12,6 +12,7 @@ about a kilobyte, where the same scene as cells was 9,841.
 from __future__ import annotations
 
 import json
+import math
 import subprocess
 import threading
 import time
@@ -160,6 +161,20 @@ class Live:
             return session.send(op="move", to=[float(v) for v in to])
         if op in ("release", "poses"):
             return session.send(op=op)
+        if op == "pick":
+            # A ray in world metres. Costs no step and changes nothing, so it is
+            # not bounded the way a step is -- but it is still checked, because
+            # a ray of NaNs would reach the engine otherwise.
+            def ray(key: str) -> list[float]:
+                value = body.get(key)
+                if not isinstance(value, list) or len(value) != 3:
+                    raise LiveError(f"pick needs {key} as three numbers")
+                out = [float(v) for v in value]
+                if not all(math.isfinite(v) for v in out):
+                    raise LiveError(f"pick was given a {key} that is not a number")
+                return out
+            return session.send(op="pick", **{"from": ray("from"), "dir": ray("dir"),
+                                              "max_m": float(body.get("max_m", 1000.0))})
         if op == "fracture":
             return session.send(op="fracture", name=str(body.get("name", "")),
                                 window_s=float(body.get("window_s", 0.003)))

@@ -740,6 +740,20 @@ std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
     return of_asked;
 }
 
+LivePick LiveWorld::pick(const Vec3 &from_world_m, const Vec3 &direction,
+                         double max_distance_m) const {
+    LivePick out{};
+    const RayHit hit = impl_->world->castRay(from_world_m, direction, max_distance_m);
+    if (!hit.hit) return out;
+    out.hit = true;
+    out.distance_m = hit.distance_m;
+    out.point_world_m = hit.point_world_m;
+    if (!hit.named) return out;   // the ground: hit, but not one of the scene's
+    for (std::size_t i = 0; i < impl_->body_of.size(); ++i)
+        if (impl_->body_of[i] == hit.body_id) { out.name = impl_->described[i].name; break; }
+    return out;
+}
+
 std::string LiveWorld::held() const {
     return impl_->holding == static_cast<std::size_t>(-1)
                ? std::string{}

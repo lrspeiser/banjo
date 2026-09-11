@@ -43,6 +43,17 @@ struct LiveBodyPose {
 // any live bond in the struck one carries. A contact that fails either cannot
 // break anything, and one that passes is a contact the lattice has to be run on
 // to find out what it did.
+// What a ray met, named the way the scene names things.
+struct LivePick {
+    bool hit{};
+    // Empty when the ray stopped on something that is not one of the scene's
+    // bodies -- the ground. "It hit the floor" and "it hit nothing" are
+    // different answers and a pointer has to tell them apart.
+    std::string name;
+    double distance_m{};
+    Vec3 point_world_m{};
+};
+
 struct LiveImpact {
     std::string struck;              // the object that took the hit
     std::string by;                  // what hit it, or "the ground"
@@ -130,6 +141,11 @@ public:
     // where it was left rather than carrying the hand's speed.
     void release();
     [[nodiscard]] std::string held() const;
+    // What is under a ray: the same question the solver answers, so a pointer
+    // agrees with the physics instead of with a second copy of the shapes.
+    // Costs no step; safe to ask every frame.
+    [[nodiscard]] LivePick pick(const Vec3 &from_world_m,const Vec3 &direction,
+                                double max_distance_m = 1000.0) const;
 
 private:
     LiveWorld();
