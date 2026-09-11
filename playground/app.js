@@ -1673,7 +1673,11 @@
       const title = document.createElement("strong"); title.textContent = scenario.title;
       const note = document.createElement("span"); note.textContent = scenario.expect;
       button.append(title, note);
-      button.addEventListener("click", () => { writeFracture(scenario.spec); showToast(`Loaded: ${scenario.title}`); });
+      button.addEventListener("click", () => {
+        writeFracture(scenario.spec);
+        showToast(`Loaded: ${scenario.title}`);
+        goLive().catch(() => { /* goLive says so itself */ });
+      });
       box.append(button);
     });
   }
