@@ -247,7 +247,15 @@ int main(int argc, char **argv) {
                     // did about it.
                     for (int s = 0; s < count; ++s) {
                         world->step(dt);
-                        if (world->steppedBack()) break;
+                        // A step taken back is the world asking the host to
+                        // decide, and the batch stops so it can. Unless
+                        // something is already being worked out: then the break
+                        // was captured by the engine and the next step takes.
+                        // Stopping there spent a whole round trip per break,
+                        // and a cascade has dozens of them -- the world fell
+                        // behind by one break per reply for as long as the
+                        // pieces kept landing.
+                        if (world->steppedBack() && !world->fracturePending()) break;
                     }
                     // A fracture that was started without waiting is collected
                     // here, the first step after its answer is ready.

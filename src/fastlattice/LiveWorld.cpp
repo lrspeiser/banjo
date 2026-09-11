@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <stdexcept>
 #include <thread>
+#include <deque>
 #include <future>
 #include <set>
 #include <unordered_map>
@@ -53,7 +54,14 @@ struct LiveWorld::Pending {
     std::size_t answer{};
     bool worked{};
     double cost_ms{};
+    // Captured, and started. They are not the same moment for anything that had
+    // to wait its turn, and reporting the gap as cost made the log say a
+    // fracture took four seconds when it took thirty milliseconds and spent the
+    // rest queued. A log that misattributes time is worse than no log: it sends
+    // you to optimise the wrong thing.
     std::chrono::steady_clock::time_point began{};
+    std::chrono::steady_clock::time_point started{};
+    double waited_ms{};
 
     FragmentLattice island{};
     LatticeState state{};
@@ -99,6 +107,20 @@ struct LiveWorld::Impl {
     std::vector<LiveDelay> delays;
     std::unique_ptr<LiveWorld::Pending> pending;
     std::future<void> worker;
+    // Breaks that arrived while one was already being worked out.
+    //
+    // They are PREPARED at the moment they are detected -- from the rolled-back
+    // step, which is the only state that still has the closing speed in it --
+    // and only the expensive part waits. Preparing is a copy; the run is the
+    // third of a second.
+    //
+    // Without this the clock simply stopped. A break the world has not resolved
+    // is a step it will not take, and the host cannot resolve it because asking
+    // for a second fracture while one is running gets nothing back. So the
+    // world sat at one instant for as long as the run took: measured in the
+    // owner's own session, 756 ms of wall clock in which the world advanced
+    // 0 ms, twice in one cascade.
+    std::deque<std::unique_ptr<LiveWorld::Pending>> queued;
     // Pinned while their fracture is worked out, so they do not carry on as
     // though nothing were about to happen to them. A ball that bounced off a
     // pane which was in fact shattering would have to be put back afterwards,
@@ -411,8 +433,24 @@ bool LiveWorld::judgeStep() {
         else if (impact.closing_speed_m_s > same->closing_speed_m_s) *same = impact;
     }
 
+    // A body whose answer is already being worked out, or already captured and
+    // waiting for a worker, is accounted for: stopping the world over it a
+    // second time achieves nothing, because nobody can answer for it twice.
+    //
+    // `held_through` alone was not enough. It is cleared for any body that is
+    // not in contact this step, and a captured body whose contact lapses for a
+    // step and resumes was then treated as brand new -- it stopped the clock,
+    // and queueBreaks skipped it because it was already in the queue, so
+    // nothing cleared it and nothing could. Measured, that stalled the world for
+    // 106 steps in a row with the capture working perfectly.
+    const auto accounted = [&](const std::string &name) {
+        if (impl_->pending && impl_->pending->name == name) return true;
+        for (const auto &waiting : impl_->queued)
+            if (waiting->name == name) return true;
+        return false;
+    };
     for (const std::string &name : breaking_now)
-        if (impl_->held_through.count(name) == 0) any_would_break = true;
+        if (impl_->held_through.count(name) == 0 && !accounted(name)) any_would_break = true;
     // A body that is no longer in danger from anything gets a fresh hearing the
     // next time something hits it hard.
     for (auto it = impl_->held_through.begin(); it != impl_->held_through.end();)
@@ -431,6 +469,10 @@ void LiveWorld::step(double dt_s) {
     // Whatever is waiting on a fracture stays put. The same kinematic hold the
     // hand uses: the pose is re-asserted after the step, so the body does not
     // move and does not accumulate speed, but still pushes what runs into it.
+    // Everything waiting on an answer, running or queued. A queued body must be
+    // pinned for the same reason a running one is: its pieces will be put back
+    // where it was when it broke, so if it is allowed to bounce away first it
+    // visibly springs back to the impact before it comes apart.
     const auto holdPending = [&]() {
         for (const std::size_t body : impl_->held_for_fracture) {
             if (body >= impl_->body_of.size()) continue;
@@ -482,7 +524,25 @@ void LiveWorld::step(double dt_s) {
         impl_->stepped_back = !committed;
         // A step that was taken back did not happen, so the clock does not move
         // and the hold does not need re-asserting -- the world is as it was.
-        if (!committed) return;
+        //
+        // That is the handshake, and it is right when the host can answer. It is
+        // NOT right when something is already being worked out: the host asking
+        // for a second fracture gets nothing back, so nobody can resolve this
+        // break and the world sits at one instant for as long as the first run
+        // takes. Measured in the owner's own session: 756 ms of wall clock in
+        // which the world advanced 0 ms, and again 750 ms for 10 ms, in a
+        // cascade that came out at 40% of real time with nothing "blocked".
+        //
+        // So take the break now instead of waiting to be asked. Right here the
+        // world is one step short of the impact with the closing speed intact,
+        // which is exactly the state the host would have handed back, and
+        // preparing is a copy -- it is the RUN that costs a third of a second.
+        // Preparing also records the name as heard, so the next step commits
+        // and the clock moves again.
+        if (!committed) {
+            if (impl_->pending) queueBreaks();
+            return;
+        }
         impl_->time_s += dt_s;
         foresee();
         return;
@@ -580,6 +640,97 @@ std::vector<LiveImpact> LiveWorld::impacts(double quiet_speed_m_s) const {
         return lhs.closing_speed_m_s > rhs.closing_speed_m_s;
     });
     return out;
+}
+
+// Everything waiting on an answer stays where it is. Rebuilt rather than
+// patched, because there are five places that change what is waiting and a
+// pinned body that nobody unpins never moves again.
+void LiveWorld::repin() {
+    impl_->held_for_fracture.clear();
+    const auto pin = [&](const Pending &job) {
+        for (const std::size_t body : job.island_bodies)
+            if (body < impl_->described.size() && !impl_->described[body].anchored)
+                impl_->held_for_fracture.push_back(body);
+    };
+    if (impl_->pending && !impl_->pending->settled) pin(*impl_->pending);
+    for (const auto &job : impl_->queued) pin(*job);
+}
+
+// Capture every break the world is refusing to step past, so it can step.
+void LiveWorld::queueBreaks() {
+    for (const std::string &name : breakable()) {
+        if (impl_->pending && impl_->pending->name == name) continue;
+        bool already = false;
+        for (const auto &waiting : impl_->queued)
+            already = already || waiting->name == name;
+        if (already) continue;
+        // Capacity: a cascade can want dozens at once, and each one holds an
+        // island's worth of lattice. Past this the world goes back to stopping,
+        // which is slow but bounded -- unlike memory.
+        if (impl_->queued.size() >= 16) {
+            impl_->delays.push_back({impl_->time_s, name, "blocked", 0.0, 0.0});
+            continue;
+        }
+        std::unique_ptr<Pending> job = prepared(name, impl_->pending->window_s);
+        if (job->settled) continue;          // nothing to run; it will be re-heard
+        impl_->delays.push_back({impl_->time_s, name, "queued", 0.0, 0.0});
+        impl_->queued.push_back(std::move(job));
+        repin();
+    }
+}
+
+// Take the next one waiting and put it on the worker.
+void LiveWorld::startNextQueued() {
+    while (!impl_->queued.empty()) {
+        impl_->pending = std::move(impl_->queued.front());
+        impl_->queued.pop_front();
+        if (impl_->pending->settled) {       // nothing to run; apply it and move on
+            applyPending();
+            impl_->pending.reset();
+            continue;
+        }
+        Pending *job = impl_->pending.get();
+        job->started = std::chrono::steady_clock::now();
+        job->waited_ms = 1000.0 * std::chrono::duration<double>(
+            job->started - job->began).count();
+        impl_->worker = std::async(std::launch::async, [job] { work(*job); });
+        repin();
+        return;
+    }
+    repin();
+}
+
+// The queue's indices are into the body table, and applying a fracture erases
+// the island it broke from that table. Everything above those slots shifts
+// down -- the same fixup `holding` already gets a few lines below the drop.
+//
+// A queued job whose island shared a body with the one just applied is not
+// fixable and must go: the thing it was going to break has itself just come
+// apart, and its pieces are new and untried. They will be heard on their own.
+void LiveWorld::restackQueue(const std::vector<std::size_t> &dropped) {
+    std::vector<std::size_t> gone = dropped;
+    std::sort(gone.begin(), gone.end());
+    const auto shift = [&](std::size_t index) {
+        std::size_t below = 0;
+        for (const std::size_t was : gone) below += was < index ? 1 : 0;
+        return index - below;
+    };
+    std::deque<std::unique_ptr<Pending>> keeping;
+    for (auto &job : impl_->queued) {
+        bool shared = false;
+        for (const std::size_t body : job->island_bodies)
+            shared = shared || std::find(gone.begin(), gone.end(), body) != gone.end();
+        if (shared) continue;
+        job->which = shift(job->which);
+        if (job->anvil != static_cast<std::size_t>(-1)) job->anvil = shift(job->anvil);
+        for (std::size_t &body : job->island_bodies) body = shift(body);
+        std::unordered_map<std::size_t, RigidSnapshot> poses;
+        for (auto &entry : job->poses_before) poses.emplace(shift(entry.first), entry.second);
+        job->poses_before = std::move(poses);
+        for (auto &entry : job->body_of_node) entry.second = shift(entry.second);
+        keeping.push_back(std::move(job));
+    }
+    impl_->queued = std::move(keeping);
 }
 
 bool LiveWorld::steppedBack() const { return impl_->stepped_back; }
@@ -701,8 +852,13 @@ void LiveWorld::declineBreak(const std::string &name) {
 }
 
 void LiveWorld::prepare(const std::string &name, double window_s) {
-    impl_->pending = std::make_unique<Pending>();
-    Pending &job = *impl_->pending;
+    impl_->pending = prepared(name, window_s);
+}
+
+std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
+                                                        double window_s) {
+    auto held = std::make_unique<Pending>();
+    Pending &job = *held;
     job.name = name;
     job.window_s = window_s;
     // Whatever happens below, this object has now had its chance at this
@@ -711,12 +867,12 @@ void LiveWorld::prepare(const std::string &name, double window_s) {
     impl_->held_through.insert(name);
     impl_->last_outcome = LiveOutcome::Nothing;
     const auto found = impl_->index_of.find(name);
-    if (found == impl_->index_of.end()) { job.settled = true; job.answer = 0; return; }
+    if (found == impl_->index_of.end()) { job.settled = true; job.answer = 0; return held; }
     const std::size_t which = found->second;
     // Anchored scenery is the world. Breaking the floor is a different feature.
     impl_->last_outcome = LiveOutcome::Held;
-    if (impl_->described[which].anchored) { job.settled = true; job.answer = 1; return; }
-    if (impl_->holding == which) { job.settled = true; job.answer = 1; return; }   // it is in a hand, not in a collision
+    if (impl_->described[which].anchored) { job.settled = true; job.answer = 1; return held; }
+    if (impl_->holding == which) { job.settled = true; job.answer = 1; return held; }   // it is in a hand, not in a collision
     const TileImpactSetup &setup = *impl_->setup;
     // Whatever struck it goes into the island too. A body on its own, entered
     // after the contact, is a free-flying object with a uniform velocity and no
@@ -745,7 +901,7 @@ void LiveWorld::prepare(const std::string &name, double window_s) {
         }
     }
     for (const std::size_t body : island_bodies)
-        if (!impl_->world->contains(impl_->body_of[body])) { job.settled = true; job.answer = 0; return; }
+        if (!impl_->world->contains(impl_->body_of[body])) { job.settled = true; job.answer = 0; return held; }
     const MatterBodyId old_body = impl_->body_of[which];
     const RigidSnapshot snap = impl_->world->snapshot(old_body);
 
@@ -796,7 +952,7 @@ void LiveWorld::prepare(const std::string &name, double window_s) {
             }
         }
     }
-    if (lift > 0.5 * impl_->request.cell_size_m) { job.settled = true; job.answer = 1; return; }
+    if (lift > 0.5 * impl_->request.cell_size_m) { job.settled = true; job.answer = 1; return held; }
 
     const FragmentPose pose{snap.center_of_mass_world_m + Vec3{0.0, lift, 0.0},
                             snap.orientation_world, snap.linear_velocity_m_s,
@@ -939,6 +1095,8 @@ void LiveWorld::prepare(const std::string &name, double window_s) {
     job.struck_material = struck_material;
     job.yield_extension = settings.plastic_yield_stretch * impl_->request.cell_size_m;
     job.began = std::chrono::steady_clock::now();
+    job.started = job.began;
+    return held;
 }
 
 // The only part that takes any time, and the only part that touches nothing
@@ -947,7 +1105,7 @@ void LiveWorld::work(Pending &job) {
     job.status = job.backend->run(job.control);
     job.backend->download(job.state, job.parked);
     job.cost_ms = 1000.0 * std::chrono::duration<double>(
-        std::chrono::steady_clock::now() - job.began).count();
+        std::chrono::steady_clock::now() - job.started).count();
     job.worked = true;
 }
 
@@ -1191,13 +1349,10 @@ bool LiveWorld::beginFracture(const std::string &name, double window_s) {
     // bounces off a thing that is in fact breaking, and has to be put back when
     // the answer lands: measured, an iron ball arcs half a metre into the air
     // and comes back down in the time the run takes.
-    impl_->held_for_fracture.clear();
-    for (const std::size_t body : impl_->pending->island_bodies) {
-        if (body >= impl_->described.size() || impl_->described[body].anchored) continue;
-        impl_->held_for_fracture.push_back(body);
-    }
+    repin();
     impl_->delays.push_back({impl_->time_s, name, "held", 0.0, 0.0});
     Pending *job = impl_->pending.get();
+    job->started = std::chrono::steady_clock::now();
     impl_->worker = std::async(std::launch::async, [job] { work(*job); });
     return true;
 }
@@ -1217,11 +1372,30 @@ std::string LiveWorld::fractureSubject() const {
 std::size_t LiveWorld::finishFracture() {
     if (!impl_->pending) return 0;
     if (impl_->worker.valid()) impl_->worker.get();   // waits only if it has to
-    impl_->delays.push_back({impl_->time_s, impl_->pending->name, "precomputed", 0.0,
-                             impl_->pending->cost_ms});
-    impl_->held_for_fracture.clear();
+    // `lead_ms` here is how long it sat in the queue before a worker took it;
+    // `cost_ms` is what the run itself cost. Neither was paid by the caller.
+    impl_->delays.push_back({impl_->time_s, impl_->pending->name, "precomputed",
+                             impl_->pending->waited_ms, impl_->pending->cost_ms});
+    // Which slots the apply is about to empty, read by name rather than by
+    // trusting what the island said it would drop: a body that held drops
+    // nothing, and a body that came apart drops its whole island. Names are
+    // unique and survive the apply, indices do not.
+    std::vector<std::string> before;
+    before.reserve(impl_->described.size());
+    for (const LiveBodyPose &pose : impl_->described) before.push_back(pose.name);
+
     const std::size_t pieces = applyPending();
     impl_->pending.reset();
+
+    std::set<std::string> standing;
+    for (const LiveBodyPose &pose : impl_->described) standing.insert(pose.name);
+    std::vector<std::size_t> dropped;
+    for (std::size_t i = 0; i < before.size(); ++i)
+        if (standing.count(before[i]) == 0) dropped.push_back(i);
+    restackQueue(dropped);
+
+    // Whatever was waiting behind it starts now, on the same worker.
+    startNextQueued();
     return pieces;
 }
 

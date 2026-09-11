@@ -114,6 +114,15 @@ class Session:
             if kind == "foreseen":
                 _log.info("banjo: %s coming in %.0f ms (t=%.2f s)",
                           wait.get("object"), wait.get("lead_ms", 0.0), wait.get("at_s", 0.0))
+            elif kind == "precomputed":
+                # The run, and separately how long it sat waiting for a worker.
+                # Rolling the two together made the log report a 30 ms fracture
+                # as a 4 second one.
+                queued = wait.get("lead_ms", 0.0)
+                _log.info("banjo: %s %s, %.0f ms of run%s (t=%.2f s)",
+                          kind, wait.get("object"), wait.get("cost_ms", 0.0),
+                          f", {queued:.0f} ms queued" if queued >= 1.0 else "",
+                          wait.get("at_s", 0.0))
             else:
                 _log.info("banjo: %s %s, %.0f ms (t=%.2f s)",
                           kind, wait.get("object"), wait.get("cost_ms", 0.0),

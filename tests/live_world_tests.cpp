@@ -875,6 +875,85 @@ void theWorldKeepsRunningWhileAFractureIsWorkedOut() {
             "have to be put back when the answer lands");
 }
 
+// The clock does not stop because a SECOND thing wants to break.
+//
+// Taking the fracture off the caller's thread was not enough, and the way it
+// failed was invisible: nothing blocked, no fracture took longer, and the room
+// still lurched. A break the world has not resolved is a step it will not take
+// -- that is the handshake, and it is right when the host can answer. It is not
+// right when a run is already going, because asking for a second fracture then
+// gets nothing back, so nobody can resolve it and the world sits at one instant
+// for as long as the first run takes.
+//
+// Measured in the owner's own session before this: 756 ms of wall clock in
+// which the world advanced 0 ms, and again 750 ms in which it advanced 10 ms,
+// inside one cascade that came out at 40% of real time with every delay in the
+// log reading "precomputed".
+//
+// So a break that arrives mid-run is captured where it is detected -- the
+// rolled-back step, the only state that still has the closing speed in it --
+// and queued. Preparing is a copy; it is the run that costs a third of a
+// second.
+void aSecondBreakDoesNotStopTheClock() {
+    // Driven the way the room drives it: whenever something is breakable and
+    // nothing is being worked out, ask. That is what produces the cascade --
+    // a pane comes apart, its pieces land, and they want to break too, which is
+    // the only way a second break ever turns up while the first is running.
+    const auto live = LiveWorld::open(paneAndBall(3.0));
+    int steps_pending = 0, steps_pending_that_moved = 0;
+    int fractures = 0;
+    // The symptom, measured the way it is felt: the longest UNBROKEN run of
+    // steps that left the clock exactly where it was. A share of steps that
+    // moved is not enough to catch this -- most fractures in this scene are
+    // milliseconds, so the share stays near one even with the clock stopping,
+    // and a test asserting on it passes with the fault in. It is the length of
+    // a single stall that is seen, and before this it was the whole run.
+    int stall = 0, longest_stall = 0;
+
+    for (int i = 0; i < 6000; ++i) {
+        const double before = live->time_s();
+        live->step(1.0 / 240.0);
+        const bool moved = live->time_s() > before;
+
+        if (live->fracturePending()) {
+            ++steps_pending;
+            steps_pending_that_moved += moved ? 1 : 0;
+            stall = moved ? 0 : stall + 1;
+            longest_stall = std::max(longest_stall, stall);
+            if (live->fractureReady()) { live->finishFracture(); ++fractures; }
+            continue;
+        }
+        stall = 0;
+        const std::vector<std::string> waiting = live->breakable();
+        if (!waiting.empty()) live->beginFracture(waiting.front());
+    }
+
+    std::size_t captured = 0;
+    for (const LiveDelay &delay : live->delays())
+        if (std::string(delay.kind) == "queued") ++captured;
+
+    std::cout << "  " << fractures << " fractures; " << captured
+              << " later breaks captured rather than waited on; longest stall "
+              << longest_stall << " steps (" << steps_pending_that_moved << " of "
+              << steps_pending << " pending steps moved the clock)\n";
+
+    require(fractures > 1, "only one thing ever broke, so no second break can have "
+                           "arrived mid-run and this proves nothing");
+    require(steps_pending > 50, "nothing was pending for long enough to tell");
+    // This is the situation the fix exists for. If it never arose, the numbers
+    // below are meaningless and saying so is better than a green tick.
+    require(captured > 0,
+            "no break ever arrived while another was being worked out, so this "
+            "test did not exercise what it claims to");
+    // The whole point. A break is captured in the step that detects it, and
+    // that step is taken back -- so one stalled step is the floor, and anything
+    // past a handful is the world waiting out somebody else's run.
+    require(longest_stall <= 4,
+            "the clock stood still for " + std::to_string(longest_stall) +
+            " steps in a row while a fracture was pending, which is the lurch "
+            "this is here to catch");
+}
+
 void theWorldSeesACollisionComing() {
     struct Seen { double lead_ms, cost_ms; std::string object; bool foreseen, blocked; };
     const auto watch = [](double fall) {
@@ -1098,6 +1177,8 @@ int main() {
         std::cout << "[PASS] something that was hit hard and held does not deadlock the world\n";
         theWorldKeepsRunningWhileAFractureIsWorkedOut();
         std::cout << "[PASS] the world keeps running while a fracture is worked out\n";
+        aSecondBreakDoesNotStopTheClock();
+        std::cout << "[PASS] a second break does not stop the clock\n";
         theWorldSeesACollisionComing();
         std::cout << "[PASS] the world sees a collision coming, with more warning than the run costs\n";
         landingOnTheFloorIsAnImpact();

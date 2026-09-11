@@ -267,6 +267,16 @@ private:
     // the rigid world.
     struct Pending;
     void prepare(const std::string &name, double window_s);
+    [[nodiscard]] std::unique_ptr<Pending> prepared(const std::string &name, double window_s);
+    // A break detected while another is being worked out. Captured here and
+    // now -- this is the only moment that still has the closing speed in it --
+    // so the world can take the step instead of stopping until the first run
+    // finishes. See LiveWorld.cpp; it cost 756 ms of a stopped clock, twice, in
+    // one cascade before this existed.
+    void queueBreaks();
+    void startNextQueued();
+    void restackQueue(const std::vector<std::size_t> &dropped);
+    void repin();
     static void work(Pending &job);
     std::size_t applyPending();
     struct Impl;

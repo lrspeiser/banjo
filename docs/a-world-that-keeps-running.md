@@ -169,6 +169,87 @@ them. Not waiting means the pieces arrive on a *step* instead, and a step does
 not normally carry shape -- so every shard was about to be drawn as a box around
 itself, which is a lie about what broke.
 
+## And then the clock stopped instead
+
+Two pauses fixed and the room still lurched, and this one was invisible to every
+measurement built so far: nothing blocked, no fracture took longer than before,
+the wire was a fifth of a kilobyte. The log said `precomputed` every time, which
+is the entry that means *nobody waited*.
+
+What it did not say was that the world had stopped.
+
+Reading the owner's own session back, lining the wall clock up against the world
+clock, one pair of lines gave it away:
+
+```
+14:06:09,196 banjo: held concrete plate 20mm piece 1, 0 ms (t=16.83 s)
+14:06:09,977 banjo: precomputed concrete plate 20mm piece 1, 756 ms (t=16.83 s)
+```
+
+781 ms of wall clock. **The world clock did not move at all.** And again later,
+750 ms for 10 ms of world. The cascade came out at **40% of real time** with
+every delay in the log reading "precomputed".
+
+The cause is the handshake meeting itself coming the other way. A break the
+world has not resolved is a step it will not take — that is deliberate, and it
+is right, because Jolt resolves a contact inside the step and the rolled-back
+state is the only one that still has the closing speed in it. The host is meant
+to answer. But a host cannot answer while a run is going: asking for a second
+fracture then gets nothing back, and the room knows it, so it does not ask.
+Nobody could resolve the break and the world sat at one instant for as long as
+the first run took.
+
+So the engine stops waiting to be asked. A break detected while another is being
+worked out is **captured where it is detected** — in the rolled-back step, from
+exactly the state the host would have been handed — and queued. Preparing is a
+copy of an island; it is the *run* that costs a third of a second. Capturing it
+also records the name as heard, so the next step commits and the clock moves.
+
+Three things this needed that were not obvious:
+
+**A captured break must be accounted for even when its contact lapses.**
+`held_through` is cleared for any body not in contact this step. A captured body
+whose contact lapsed for one step and resumed was then treated as brand new: it
+stopped the clock, and the capture skipped it because it was already queued, so
+nothing cleared it and nothing could. Measured, that stalled the world **106
+steps in a row** with the capture otherwise working perfectly.
+
+**Applying a fracture renumbers the body table**, and a queued job's indices are
+into that table. Everything above the erased island shifts down — the same fixup
+`holding` already gets. A queued job whose island *shared* a body with the one
+just applied is not fixable and is dropped: the thing it was going to break has
+itself come apart, and its pieces are new and untried.
+
+**A batch of steps must run through a captured break.** The batch stopped at the
+first rolled-back step so the host could decide — but once the engine captures
+it, the next step takes, and stopping there spent a whole round trip per break.
+A cascade has dozens.
+
+| | before | after |
+|---|---|---|
+| longest stall with a fracture pending | 45–106 steps | **0** |
+| the owner's cascade | 40% of real time | — |
+| the same cascade here | — | **99% of real time** |
+| worst the world fell behind the wall clock | — | 0.11 s |
+| median round trip, in the browser | — | 12.9 ms |
+
+## A log that misattributes time is worse than none
+
+While reading the above, the log claimed a fracture had taken **4,039 ms**, and
+32,670 ms across the cascade. Neither was true. `cost_ms` ran from the moment a
+job was *captured*, and a queued job is captured long before a worker takes it,
+so the queue wait was being reported as compute. The real numbers were 532 ms
+worst and 650 ms total.
+
+That is worth more than a tidy-up: a log that misattributes time sends you to
+optimise the wrong thing, and this one would have sent the next reader back into
+the lattice solver, which was innocent. `cost_ms` is now the run alone and
+`lead_ms` is the wait, and the server prints both:
+
+```
+banjo: precomputed concrete plate 20mm, 794 ms of run, 196 ms queued (t=20.72 s)
+```
+
 ## Every wait is written down
 
 Anything the world waits on, or is spared waiting on, goes out in the reply's
