@@ -9,6 +9,7 @@
 //   in   {"op":"step","dt":0.0166,"n":2}
 //        {"op":"grab","name":"ball"}  {"op":"move","to":[0,1.2,0]}  {"op":"release"}
 //        {"op":"fracture","name":"pane"}   {"op":"poses"}   {"op":"quit"}
+//        {"op":"fracture","name":"pane","wait":false}
 //        {"op":"pick","from":[0,6,0],"dir":[0,-1,0],"max_m":1000}
 //   out  {"ok":true,"t":0.033,"stepped_back":false,
 //         "bodies":[{"name":"ball","shape":"sphere","dimensions_m":[...],
@@ -83,7 +84,11 @@ nlohmann::json describe(const LiveWorld &world, bool with_geometry) {
     return {{"ok", true}, {"t", world.time_s()}, {"stepped_back", world.steppedBack()},
             {"cell_size_m", world.cellSize()}, {"geometry", with_geometry},
             {"held", world.held()}, {"bodies", std::move(bodies)},
-            {"impacts", std::move(impacts)}, {"breakable", world.breakable()}};
+            {"impacts", std::move(impacts)}, {"breakable", world.breakable()},
+            // What is being worked out right now, if anything. A host that asks
+            // for a second fracture while one is running gets nothing, so it
+            // needs to know.
+            {"working_on", world.fracturePending() ? world.fractureSubject() : std::string{}}};
 }
 
 Vec3 readVec(const nlohmann::json &node, const char *key) {
@@ -157,6 +162,16 @@ int main(int argc, char **argv) {
                         world->step(dt);
                         if (world->steppedBack()) break;
                     }
+                    // A fracture that was started without waiting is collected
+                    // here, the first step after its answer is ready.
+                    if (world->fracturePending() && world->fractureReady()) {
+                        const std::string what = world->fractureSubject();
+                        reply["pieces"] = world->finishFracture();
+                        reply["finished"] = what;
+                        reply["outcome"] = std::array<const char *, 4>{
+                            "nothing", "held", "dented", "broke"}
+                            [static_cast<std::size_t>(world->lastOutcome())];
+                    }
                 } else if (op == "grab") {
                     if (!world->grab(command.at("name").get<std::string>()))
                         throw std::invalid_argument("that object cannot be picked up");
@@ -165,15 +180,26 @@ int main(int argc, char **argv) {
                 } else if (op == "release") {
                     world->release();
                 } else if (op == "fracture") {
-                    const std::size_t pieces = world->fracture(
-                        command.at("name").get<std::string>(),
-                        command.value("window_s", 0.003));
-                    reply["pieces"] = pieces;
-                    // What it turned out to be. A count of one cannot tell a
-                    // thing that held from a thing that bent.
-                    reply["outcome"] = std::array<const char *, 4>{
-                        "nothing", "held", "dented", "broke"}
-                        [static_cast<std::size_t>(world->lastOutcome())];
+                    const std::string what = command.at("name").get<std::string>();
+                    const double window = command.value("window_s", 0.003);
+                    // Without waiting, if the host says so. The run goes onto a
+                    // worker, the pair is pinned where it is, and the reply
+                    // comes straight back saying it is being worked out. A
+                    // later step carries the answer. The host keeps stepping
+                    // the whole time, so the room never stops -- which is the
+                    // pause anyone watching actually complains about.
+                    if (!command.value("wait", true) && world->beginFracture(what, window)) {
+                        reply["working_on"] = what;
+                        reply["pieces"] = 0;
+                        reply["outcome"] = "working";
+                    } else {
+                        reply["pieces"] = world->fracture(what, window);
+                        // What it turned out to be. A count of one cannot
+                        // tell a thing that held from a thing that bent.
+                        reply["outcome"] = std::array<const char *, 4>{
+                            "nothing", "held", "dented", "broke"}
+                            [static_cast<std::size_t>(world->lastOutcome())];
+                    }
                 } else if (op == "pick") {
                     // Changes nothing and reports nothing about the world, so
                     // it answers on its own rather than through describe().

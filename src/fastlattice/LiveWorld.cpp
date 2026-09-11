@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <stdexcept>
 #include <thread>
+#include <future>
 #include <set>
 #include <unordered_map>
 
@@ -41,6 +42,35 @@ Vec3 cellBounds(const std::vector<std::uint32_t> &nodes,
 }
 } // namespace
 
+// One fracture in progress: everything the three phases pass between them.
+struct LiveWorld::Pending {
+    std::string name;
+    double window_s{};
+    // Set when prepare decided there was nothing to run -- an anchored body, a
+    // name that is not there, something in a hand. `answer` is what fracture()
+    // would have returned.
+    bool settled{};
+    std::size_t answer{};
+    bool worked{};
+    double cost_ms{};
+    std::chrono::steady_clock::time_point began{};
+
+    FragmentLattice island{};
+    LatticeState state{};
+    std::unique_ptr<LatticeBackend> backend;
+    RunControl control{};
+    SphereState<double> parked{};
+    RunStatus status{};
+    std::size_t which{};
+    std::size_t anvil{static_cast<std::size_t>(-1)};
+    std::vector<std::size_t> island_bodies;
+    std::unordered_map<std::size_t, RigidSnapshot> poses_before;
+    std::unordered_map<std::uint32_t, std::size_t> body_of_node;
+    RigidSnapshot snap{};
+    const MaterialDefinition *struck_material{};
+    double yield_extension{};
+};
+
 struct LiveWorld::Impl {
     TileImpactRequest request{};
     std::unique_ptr<TileImpactSetup> setup;
@@ -67,6 +97,13 @@ struct LiveWorld::Impl {
     bool stepped_back{};
     LiveOutcome last_outcome{LiveOutcome::Nothing};
     std::vector<LiveDelay> delays;
+    std::unique_ptr<LiveWorld::Pending> pending;
+    std::future<void> worker;
+    // Pinned while their fracture is worked out, so they do not carry on as
+    // though nothing were about to happen to them. A ball that bounced off a
+    // pane which was in fact shattering would have to be put back afterwards,
+    // and that correction is more jarring than the wait it replaced.
+    std::vector<std::size_t> held_for_fracture;
     // How far ahead to look, and how often. Looking every step would cost a ray
     // per moving body per step; every eighth is thirty times a second at the
     // rate a live host runs, which is far finer than the tenths of a second
@@ -391,6 +428,22 @@ void LiveWorld::step(double dt_s) {
     // auto-detects its anchor from wherever the body was when it was made, so
     // it drags a moved body straight back, while re-asserting the pose has no
     // such memory and still lets a dragged object push what it runs into.
+    // Whatever is waiting on a fracture stays put. The same kinematic hold the
+    // hand uses: the pose is re-asserted after the step, so the body does not
+    // move and does not accumulate speed, but still pushes what runs into it.
+    const auto holdPending = [&]() {
+        for (const std::size_t body : impl_->held_for_fracture) {
+            if (body >= impl_->body_of.size()) continue;
+            const MatterBodyId id = impl_->body_of[body];
+            if (!impl_->world->contains(id)) continue;
+            RigidSnapshot state = impl_->world->snapshot(id);
+            state.linear_velocity_m_s = {};
+            state.angular_velocity_rad_s = {};
+            impl_->world->applyRigidState(id, state);
+            impl_->world->wake(id);
+        }
+    };
+
     const auto holdStill = [&]() {
         if (impl_->holding == static_cast<std::size_t>(-1)) return;
         const MatterBodyId id = impl_->body_of[impl_->holding];
@@ -423,6 +476,7 @@ void LiveWorld::step(double dt_s) {
         const bool committed = impl_->world->runReversibleTrial([&]() {
             impl_->world->step(dt_s);
             holdStill();
+            holdPending();
             return !judgeStep();
         });
         impl_->stepped_back = !committed;
@@ -435,6 +489,7 @@ void LiveWorld::step(double dt_s) {
     }
     impl_->world->step(dt_s);
     holdStill();
+    holdPending();
     (void)judgeStep();
     impl_->time_s += dt_s;
     foresee();
@@ -645,19 +700,23 @@ void LiveWorld::declineBreak(const std::string &name) {
     impl_->held_through.insert(name);
 }
 
-std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
+void LiveWorld::prepare(const std::string &name, double window_s) {
+    impl_->pending = std::make_unique<Pending>();
+    Pending &job = *impl_->pending;
+    job.name = name;
+    job.window_s = window_s;
     // Whatever happens below, this object has now had its chance at this
     // contact. Recording that here rather than at each of the five ways out is
     // what stops one of them being forgotten and deadlocking the world.
     impl_->held_through.insert(name);
     impl_->last_outcome = LiveOutcome::Nothing;
     const auto found = impl_->index_of.find(name);
-    if (found == impl_->index_of.end()) return 0;
+    if (found == impl_->index_of.end()) { job.settled = true; job.answer = 0; return; }
     const std::size_t which = found->second;
     // Anchored scenery is the world. Breaking the floor is a different feature.
     impl_->last_outcome = LiveOutcome::Held;
-    if (impl_->described[which].anchored) return 1;
-    if (impl_->holding == which) return 1;   // it is in a hand, not in a collision
+    if (impl_->described[which].anchored) { job.settled = true; job.answer = 1; return; }
+    if (impl_->holding == which) { job.settled = true; job.answer = 1; return; }   // it is in a hand, not in a collision
     const TileImpactSetup &setup = *impl_->setup;
     // Whatever struck it goes into the island too. A body on its own, entered
     // after the contact, is a free-flying object with a uniform velocity and no
@@ -686,7 +745,7 @@ std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
         }
     }
     for (const std::size_t body : island_bodies)
-        if (!impl_->world->contains(impl_->body_of[body])) return 0;
+        if (!impl_->world->contains(impl_->body_of[body])) { job.settled = true; job.answer = 0; return; }
     const MatterBodyId old_body = impl_->body_of[which];
     const RigidSnapshot snap = impl_->world->snapshot(old_body);
 
@@ -737,7 +796,7 @@ std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
             }
         }
     }
-    if (lift > 0.5 * impl_->request.cell_size_m) return 1;
+    if (lift > 0.5 * impl_->request.cell_size_m) { job.settled = true; job.answer = 1; return; }
 
     const FragmentPose pose{snap.center_of_mass_world_m + Vec3{0.0, lift, 0.0},
                             snap.orientation_world, snap.linear_velocity_m_s,
@@ -866,13 +925,45 @@ std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
     // bodies are still closing -- it would fire a millisecond in and end the
     // run before the impact it was opened for.
     control.calm_steps = 0;
-    const auto lattice_began = std::chrono::steady_clock::now();
-    const RunStatus status = backend->run(control);
-    impl_->delays.push_back({
-        impl_->time_s, name, "blocked", 0.0,
-        1000.0 * std::chrono::duration<double>(
-            std::chrono::steady_clock::now() - lattice_began).count()});
-    backend->download(island_state, parked);
+    job.island = std::move(island);
+    job.state = std::move(island_state);
+    job.backend = std::move(backend);
+    job.control = control;
+    job.parked = parked;
+    job.which = which;
+    job.anvil = anvil;
+    job.island_bodies = std::move(island_bodies);
+    job.poses_before = std::move(poses_before);
+    job.body_of_node = std::move(body_of_node);
+    job.snap = snap;
+    job.struck_material = struck_material;
+    job.yield_extension = settings.plastic_yield_stretch * impl_->request.cell_size_m;
+    job.began = std::chrono::steady_clock::now();
+}
+
+// The only part that takes any time, and the only part that touches nothing
+// shared. Safe to call from a worker.
+void LiveWorld::work(Pending &job) {
+    job.status = job.backend->run(job.control);
+    job.backend->download(job.state, job.parked);
+    job.cost_ms = 1000.0 * std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - job.began).count();
+    job.worked = true;
+}
+
+std::size_t LiveWorld::applyPending() {
+    Pending &job = *impl_->pending;
+    if (job.settled) return job.answer;
+    const std::string &name = job.name;
+    const RunStatus &status = job.status;
+    FragmentLattice &island = job.island;
+    LatticeState &island_state = job.state;
+    const std::size_t which = job.which;
+    const std::vector<std::size_t> &island_bodies = job.island_bodies;
+    const auto &poses_before = job.poses_before;
+    const auto &body_of_node = job.body_of_node;
+    const RigidSnapshot &snap = job.snap;
+    const TileImpactSetup &setup = *impl_->setup;
     writeBackLatticeState(island_state, island.schedule, island.matter);
     // The permanent set the run left behind: bond lengths the material will not
     // give back. This is a dent. It is carried out of the island and into the
@@ -914,8 +1005,7 @@ std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
     // springing back, so that is what it is measured against. Twice the yield
     // extension is past the point where the flow could be one substep's
     // overshoot rather than a set.
-    const double yield_extension =
-        settings.plastic_yield_stretch * impl_->request.cell_size_m;
+    const double yield_extension = job.yield_extension;
     const bool dented = yield_extension > 0.0 && dent_m > 2.0 * yield_extension;
     if (status.broken_bonds == 0 && island_components.size() <= 1 && !dented) return 1;
     if (island_components.empty()) return 1;
@@ -1065,6 +1155,88 @@ std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
     // world spends itself deforming one object for ever.
     if (impl_->index_of.find(name) == impl_->index_of.end()) impl_->held_through.erase(name);
     return of_asked;
+}
+
+
+bool LiveWorld::beginFracture(const std::string &name, double window_s) {
+    // One at a time, and a second one waits for the first.
+    //
+    // Dropping it instead is not an option: the step that turned it up was
+    // taken back, and it stays taken back until somebody answers, so ignoring
+    // it stops the clock -- the very thing this is here to prevent. So the
+    // first is collected, waiting for it if it is not ready yet, and that wait
+    // is written down as a block because that is what it is.
+    //
+    // Two that share no matter could run side by side; that is a real
+    // improvement and not this one. Until then a queue is correct, and honest
+    // about what it costs.
+    if (impl_->pending) {
+        const bool ready = fractureReady();
+        const auto waited_from = std::chrono::steady_clock::now();
+        const std::string first = impl_->pending->name;
+        finishFracture();
+        if (!ready)
+            impl_->delays.push_back({impl_->time_s, first, "blocked", 0.0,
+                1000.0 * std::chrono::duration<double>(
+                    std::chrono::steady_clock::now() - waited_from).count()});
+    }
+    prepare(name, window_s);
+    if (impl_->pending->settled) {
+        // Nothing to run. Apply it here and now -- there is no cost to hide.
+        applyPending();
+        impl_->pending.reset();
+        return false;
+    }
+    // Pin what is about to happen to something. Letting it carry on means it
+    // bounces off a thing that is in fact breaking, and has to be put back when
+    // the answer lands: measured, an iron ball arcs half a metre into the air
+    // and comes back down in the time the run takes.
+    impl_->held_for_fracture.clear();
+    for (const std::size_t body : impl_->pending->island_bodies) {
+        if (body >= impl_->described.size() || impl_->described[body].anchored) continue;
+        impl_->held_for_fracture.push_back(body);
+    }
+    impl_->delays.push_back({impl_->time_s, name, "held", 0.0, 0.0});
+    Pending *job = impl_->pending.get();
+    impl_->worker = std::async(std::launch::async, [job] { work(*job); });
+    return true;
+}
+
+bool LiveWorld::fracturePending() const { return impl_->pending != nullptr; }
+
+bool LiveWorld::fractureReady() const {
+    if (!impl_->pending) return false;
+    if (!impl_->worker.valid()) return true;
+    return impl_->worker.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+}
+
+std::string LiveWorld::fractureSubject() const {
+    return impl_->pending ? impl_->pending->name : std::string{};
+}
+
+std::size_t LiveWorld::finishFracture() {
+    if (!impl_->pending) return 0;
+    if (impl_->worker.valid()) impl_->worker.get();   // waits only if it has to
+    impl_->delays.push_back({impl_->time_s, impl_->pending->name, "precomputed", 0.0,
+                             impl_->pending->cost_ms});
+    impl_->held_for_fracture.clear();
+    const std::size_t pieces = applyPending();
+    impl_->pending.reset();
+    return pieces;
+}
+
+// The whole thing at once, which is what a caller that does not mind waiting
+// wants. Identical to what this always did.
+std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
+    prepare(name, window_s);
+    if (!impl_->pending->settled) {
+        work(*impl_->pending);
+        impl_->delays.push_back({impl_->time_s, name, "blocked", 0.0,
+                                 impl_->pending->cost_ms});
+    }
+    const std::size_t pieces = applyPending();
+    impl_->pending.reset();
+    return pieces;
 }
 
 LivePick LiveWorld::pick(const Vec3 &from_world_m, const Vec3 &direction,

@@ -57,6 +57,10 @@ const world = {
   // model asked to change a room it cannot see has to be told what the person
   // has been doing in it, or every answer starts from the room as authored.
   story: [],
+  // Why each pending fracture was started, kept until its answer lands. The
+  // contact is gone from the engine by then -- the body it was about has been
+  // replaced by its pieces.
+  why: new Map(),
 };
 
 function remember(what) {
@@ -537,34 +541,44 @@ async function tick() {
 
     // Something is about to break. The engine has taken the step back and is
     // waiting to be told what to do, and until it is told, time does not move.
-    while (state.breakable && state.breakable.length) {
+    //
+    // Working it out costs a third of a second to a second and that cannot be
+    // made smaller -- every way of shortening the run changes the answer. So it
+    // is started and NOT waited for: `wait: false` puts the run on a worker,
+    // pins the pair where they are, and comes straight back. The room carries
+    // on, you carry on, and a later step brings the answer.
+    if (state.breakable && state.breakable.length && !state.working_on) {
       const name = state.breakable[0];
       const hit = (state.impacts || []).filter((i) => i.struck === name)
         .sort((a, b) => b.closing_speed_m_s - a.closing_speed_m_s)[0];
-      $("panel-state").textContent = `${name} was hit hard enough to break — working it out…`;
-      const after = await act("fracture", { name });
-      // What the engine says it was, rather than what the piece count implies:
-      // a count of one cannot tell a thing that held from a thing that bent.
-      const how = hit
-        ? `${hit.by || "the ground"} hit ${name} at ${hit.closing_speed_m_s.toFixed(1)} m/s`
-        : `${name} was struck`;
+      if (hit) world.why.set(name, hit);
+      $("panel-state").textContent =
+        `${name} was hit hard enough to break — working it out…`;
+      await act("fracture", { name, wait: false });
+    }
+    // The answer to one started earlier.
+    if (state.finished) {
+      const name = state.finished;
+      const hit = world.why.get(name);
+      world.why.delete(name);
       const bars = hit
         ? ` (it bends above ${Number.isFinite(hit.dent_speed_m_s)
               ? hit.dent_speed_m_s.toFixed(1) + " m/s" : "no speed — it is brittle"}`
           + `, breaks above ${hit.threshold_speed_m_s.toFixed(1)} m/s)`
         : "";
-      if (after.outcome === "broke") {
-        say("world", `${how}${bars}. It broke into ${after.pieces} pieces.`);
-        remember(`${name} broke into ${after.pieces} pieces`);
-      } else if (after.outcome === "dented") {
+      const how = hit
+        ? `${hit.by || "the ground"} hit ${name} at ${hit.closing_speed_m_s.toFixed(1)} m/s`
+        : `${name} was struck`;
+      if (state.outcome === "broke") {
+        say("world", `${how}${bars}. It broke into ${state.pieces} pieces.`);
+        remember(`${name} broke into ${state.pieces} pieces`);
+      } else if (state.outcome === "dented") {
         say("world", `${how}${bars}. It held together and came out a different shape.`);
         remember(`${name} was dented`);
       } else if (hit) {
         say("world", `${how}${bars} and it held. A threshold is the speed below which`
           + ` nothing CAN happen; above it, it is possible and not certain.`);
-        remember(`${name} was hit at ${hit.closing_speed_m_s.toFixed(1)} m/s and held`);
       }
-      state = after;
     }
 
     draw(state);

@@ -188,6 +188,31 @@ public:
     // The window is short because it can be: removed energy settles five to ten
     // times sooner than the piece count, and 3 ms covers it.
     std::size_t fracture(const std::string &name, double window_s = 0.003);
+
+    // The same thing, without waiting for it.
+    //
+    // Working out a fracture costs a third of a second to a second, and that is
+    // irreducible -- every way of making the run shorter changes the answer.
+    // So the world does not stop for it: the run goes onto a worker, the pair
+    // involved is pinned where it is, and everything else carries on. The room
+    // keeps moving, the camera keeps moving, and half a second later the pieces
+    // appear.
+    //
+    //     if (world.beginFracture(name)) {        // false: nothing to do
+    //         while (!world.fractureReady()) world.step(dt);   // world runs on
+    //         const std::size_t pieces = world.finishFracture();
+    //     }
+    //
+    // Only one at a time. A second contact that needs the lattice while one is
+    // pending has to wait, unless it shares no matter with the first -- which is
+    // what `fracturePending` is for asking about.
+    [[nodiscard]] bool beginFracture(const std::string &name, double window_s = 0.003);
+    [[nodiscard]] bool fracturePending() const;
+    [[nodiscard]] bool fractureReady() const;
+    // What is being worked out, so a caller can tell whether a new contact
+    // touches it.
+    [[nodiscard]] std::string fractureSubject() const;
+    std::size_t finishFracture();
     // What the last fracture() call turned out to be. The return value counts
     // pieces, which cannot tell "held exactly as it was" from "held, but bent
     // out of shape" -- both are one piece.
@@ -237,6 +262,13 @@ private:
     // Look ahead for a collision that will need the lattice, and write down how
     // much warning there is.
     void foresee();
+    // The three phases of a fracture. Only `work` takes any time, and it is the
+    // only one that touches nothing shared -- everything else reads and writes
+    // the rigid world.
+    struct Pending;
+    void prepare(const std::string &name, double window_s);
+    static void work(Pending &job);
+    std::size_t applyPending();
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };

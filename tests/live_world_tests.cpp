@@ -790,6 +790,91 @@ TileImpactRequest paneAndBall(double fall_m) {
 // ball a metre up is barely moving and fails every admission test, and by the
 // time its current speed clears the bar it is nine milliseconds from the thing
 // it is about to break. That is what this pins.
+// The world does not stop to work out a fracture.
+//
+// It used to. The run costs a third of a second to a second and the caller sat
+// through all of it -- and because the caller is the thing driving time, the
+// whole room stopped: other objects, the camera, walking about. That is the
+// pause somebody watching actually complains about, and it is not the physics,
+// it is who is made to wait for it.
+//
+// Now the run goes onto a worker and the world carries on. The pair that is
+// about to break is pinned where it is, because letting it carry on means it
+// bounces off something that is in fact shattering and has to be put back when
+// the answer lands -- measured, an iron ball arcs half a metre up and comes
+// down again in the time the run takes, which is a worse thing to watch than
+// the wait it replaced.
+void theWorldKeepsRunningWhileAFractureIsWorkedOut() {
+    const auto live = LiveWorld::open(paneAndBall(3.0));
+    // Something else entirely, to prove the rest of the room still moves.
+    // (The scene's own ball is the one that will be pinned.)
+    const auto whereIs = [&](const std::string &what) {
+        for (const LiveBodyPose &pose : live->poses(false))
+            if (pose.name == what) return pose.position_m;
+        return Vec3{0.0, -999.0, 0.0};
+    };
+
+    bool started = false;
+    double clock_when_started = 0.0;
+    int steps_while_working = 0;
+    std::size_t pieces = 0;
+    Vec3 pinned_at{}, pinned_after{};
+
+    // Long enough in WALL time, not just step count. The world runs far faster
+    // than real time -- nine hundred steps go by in about seventy milliseconds
+    // -- so a loop counted in steps finishes long before a run that takes a
+    // quarter of a second. A live host paces on elapsed time and has no such
+    // problem; a test stepping as fast as it can does.
+    for (int i = 0; i < 20000 && (!started || live->fracturePending()); ++i) {
+        live->step(1.0 / 240.0);
+        if (!started) {
+            const std::vector<std::string> waiting = live->breakable();
+            if (!waiting.empty()) {
+                started = live->beginFracture(waiting.front());
+                if (started) {
+                    clock_when_started = live->time_s();
+                    pinned_at = whereIs(live->fractureSubject());
+                }
+            }
+            continue;
+        }
+        if (live->fracturePending()) {
+            ++steps_while_working;
+            if (!live->fractureReady()) continue;
+            pinned_after = whereIs(live->fractureSubject());
+            pieces = live->finishFracture();
+        }
+    }
+
+    double blocked_ms = 0.0, held_ms = 0.0;
+    for (const LiveDelay &delay : live->delays()) {
+        if (std::string(delay.kind) == "blocked") blocked_ms += delay.cost_ms;
+        if (std::string(delay.kind) == "precomputed") held_ms += delay.cost_ms;
+    }
+    std::cout << "  the world took " << steps_while_working
+              << " steps while the fracture was worked out (" << held_ms
+              << " ms of computing), and broke it into " << pieces << " pieces\n";
+
+    require(started, "the fracture never started, so this proves nothing");
+    require(pieces > 1, "it did not break, so there was nothing to work out");
+    // The whole point: time moved while the answer was being worked out.
+    require(steps_while_working > 10,
+            "the world took almost no steps while the fracture ran, so it was "
+            "waiting for it after all");
+    require(live->time_s() > clock_when_started,
+            "the clock did not move while the fracture was worked out");
+    // And nothing was BLOCKED: every millisecond of computing was spent off the
+    // caller's thread.
+    require(blocked_ms == 0.0,
+            "something still blocked the caller, so the run is not off the "
+            "thread that drives time");
+    require(held_ms > 1.0, "no computing was recorded at all");
+    // The thing being worked out stayed put rather than carrying on.
+    require(std::abs(pinned_after.y - pinned_at.y) < 0.02,
+            "the object being worked out moved while it was pinned, so it will "
+            "have to be put back when the answer lands");
+}
+
 void theWorldSeesACollisionComing() {
     struct Seen { double lead_ms, cost_ms; std::string object; bool foreseen, blocked; };
     const auto watch = [](double fall) {
@@ -1011,6 +1096,8 @@ int main() {
         std::cout << "[PASS] breaking scenery or a name that is not there changes nothing\n";
         aThingThatHeldDoesNotStopTheWorld();
         std::cout << "[PASS] something that was hit hard and held does not deadlock the world\n";
+        theWorldKeepsRunningWhileAFractureIsWorkedOut();
+        std::cout << "[PASS] the world keeps running while a fracture is worked out\n";
         theWorldSeesACollisionComing();
         std::cout << "[PASS] the world sees a collision coming, with more warning than the run costs\n";
         landingOnTheFloorIsAnImpact();

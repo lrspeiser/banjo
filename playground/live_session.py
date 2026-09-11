@@ -200,8 +200,11 @@ class Live:
             return session.send(op="pick", **{"from": ray("from"), "dir": ray("dir"),
                                               "max_m": float(body.get("max_m", 1000.0))})
         if op == "fracture":
+            # `wait` false starts the run on a worker and comes straight back.
+            # The world keeps stepping and a later step carries the answer.
             return session.send(op="fracture", name=str(body.get("name", "")),
-                                window_s=float(body.get("window_s", 0.003)))
+                                window_s=float(body.get("window_s", 0.003)),
+                                wait=bool(body.get("wait", True)))
         if op == "close":
             with self._lock:
                 session.close()
