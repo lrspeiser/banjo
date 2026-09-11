@@ -25,9 +25,20 @@
 
 namespace {
 
-// MEASUREMENT PATCH (uncommitted): pick the lattice backend from the
-// environment so the same binary can be timed on either lane.
-// BANJO_BENCH_BACKEND=cuda | cpuparallel (default) | cpu
+// Which lattice backend to time, from the environment, so the same binary can
+// be run on either lane: BANJO_BENCH_BACKEND=cuda | cpuparallel | cpu.
+// Unset means the parallel CPU lane, which is what everything else uses.
+//
+// This exists because the GPU lane turned out to be TEN TIMES SLOWER than the
+// parallel CPU one -- 3358 ms against 331 ms for the same 506-node island over
+// the same 5193 substeps -- and the reason is worth being able to re-measure.
+// The island schedule is built through the single-argument buildLatticeSchedule
+// (Refracture.cpp), which hard-wires block_count = 1, so the kernel runs as one
+// cooperative block: one streaming multiprocessor out of a 5090's 170, about
+// 0.6% of the card, against all 24 cores on the CPU side. The kernel is not
+// wrong -- the parity tests pass bit for bit -- it is starved. When the
+// schedule is made multi-block this switch is how you find out whether that
+// fixed it.
 banjo::fastlattice::BackendKind benchBackend() {
     using banjo::fastlattice::BackendKind;
     const char *v = std::getenv("BANJO_BENCH_BACKEND");
