@@ -1120,6 +1120,27 @@
     });
   }
 
+  // Whether the scene the panel is holding could go live, said next to the
+  // button rather than discovered by pressing it.
+  function liveReadiness() {
+    if (live.session) return;
+    const box = $("viewer-grab-state");
+    const button = $("viewer-live");
+    if (!box || !button) return;
+    let spec = null;
+    try { spec = readFracture(); } catch { /* the panel is mid-edit */ }
+    const ready = !!(spec && spec.bodies && spec.bodies.length);
+    button.disabled = !ready;
+    button.title = ready
+      ? "Run this scene as a live world instead of a recording"
+      : "Only a many-object scene can run live";
+    if (!ready && !box.textContent) {
+      box.hidden = false;
+      box.textContent = "Go live needs a many-object scene. This one is a single plate"
+        + " and a striker, so there is nothing for the live lane to hand you.";
+    }
+  }
+
   function liveStatus(text) {
     const box = $("viewer-grab-state");
     if (!box) return;
@@ -1131,8 +1152,11 @@
     if (live.session) return stopLive("Back to the recording.");
     const spec = readFracture();
     if (!spec.bodies || !spec.bodies.length) {
-      chatTurn("bad", "Nothing to run live",
-        "A live world needs a scene of objects. Build one first, or switch Scene to Many objects.");
+      const why = "A live world needs a scene of objects. Set Scene to \u201cMany objects\u201d"
+        + " above, or ask the chat for one \u2014 a plate and a ball is a single tile and the"
+        + " live lane has no striker to show you.";
+      liveStatus(why);
+      chatTurn("bad", "Nothing to run live", why);
       return;
     }
     $("viewer-live").disabled = true;
@@ -1155,14 +1179,16 @@
       liveStatus("Live. Drag an object to pick it up; let go and it falls.");
       live.timer = setInterval(liveTick, 33);
     } catch (error) {
-      chatTurn("bad", "Could not go live", String(error.message || error));
-      liveStatus("");
+      const why = String(error.message || error);
+      liveStatus(`Could not go live: ${why}`);
+      chatTurn("bad", "Could not go live", why);
     } finally {
       $("viewer-live").disabled = false;
     }
   }
 
   function stopLive(why) {
+    live.holding = null;
     if (live.timer) clearInterval(live.timer);
     live.timer = null;
     const closing = live.session;
@@ -1452,6 +1478,10 @@
 
   function fractureCells() {
     const spec = readFracture();
+    // Whether this scene could go live is part of what the panel is saying
+    // about it, so it is kept current with everything else rather than found
+    // out by pressing the button.
+    liveReadiness();
     // Scene mode counts objects, not a plate. Everything below this point
     // describes a plate that is not being built.
     if (spec.bodies.length) {
