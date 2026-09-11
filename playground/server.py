@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import logging
 import json
 import math
 import os
@@ -1072,6 +1073,9 @@ def main():
                         help="drive live worlds through the C library in this process")
     args=parser.parse_args()
     if not 1024<=args.port<=65535: parser.error("Use a port in 1024..65535")
+    # Whatever the engine says it waited on goes to the log, at the level the
+    # rest of the server uses.
+    logging.basicConfig(level=logging.INFO,format="%(asctime)s %(message)s")
     app=Playground(args.engine,args.studio,args.runs)
     app.live_inprocess=args.live_inprocess
     if args.live_inprocess:

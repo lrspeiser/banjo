@@ -103,6 +103,94 @@ block. They are one instanced mesh carried by the body's own pose, so it stays o
 pose a frame on the wire and one draw call on screen — and the cells travel only
 when the set of bodies can have changed.
 
+## Then the pause moved to the wire
+
+Taking the fracture off the caller's thread fixed the engine and the room still
+stuttered. The engine was not the thing left to blame: paced exactly as the
+browser drives it -- thirty replies a second, fractures and all -- the slowest
+tick was 34 ms and nothing blocked. What was left was the size of a reply.
+
+Every reply carried every body. A room that has shattered holds two hundred and
+fifty of them, and a step reply measured **259 KB**. Thirty times a second is
+7.8 MB/s for the browser to fetch, parse and walk, to be told what it already
+knew: of those two hundred and fifty bodies, four were moving. The rest were
+lying still on the floor being re-sent a hundred and eighty times a minute.
+
+That reads exactly like slow physics from the other side of the glass, which is
+why it was worth chasing twice.
+
+Two things fixed it, in this order:
+
+**Numbers at the precision anyone can use.** Positions went out with seventeen
+digits and are meaningful to about five. Rounding to 10 µm -- a two-thousandth of
+the smallest cell the engine will build, and nothing anybody can see -- took
+259 KB to 200 KB on its own.
+
+**A step carries only what changed.** `{"op":"step","moved":true}` compares each
+body against the last one sent under that name and leaves out the ones that are
+identical. The reply then says `"partial":true`, gives `"count"` for the whole
+world, and names in `"gone"` the bodies that really did disappear -- because the
+host deletes whatever a reply leaves out, and "unchanged" and "gone" must not
+look the same to it.
+
+Measured in the browser, over 805 steps with a 77-piece shatter in the middle:
+
+| | before | after |
+|---|---|---|
+| median reply | 259 KB | **0.2 KB** |
+| worst reply | 259 KB | 42 KB |
+| traffic at 30 Hz | 7.8 MB/s | **0.6 MB/s** |
+| median round trip | — | 5.0 ms |
+| 99th round trip | — | 9.5 ms |
+| worst round trip | — | 14.6 ms |
+| steps over 100 ms | — | **0** |
+
+The room runs at 106% of real time with 243 bodies in it, inside the 110% gate.
+
+Three things this had to get right, none of them obvious:
+
+**A full reply to anyone resets the trimming.** One process can be drawing a room
+and answering a chat window's questions at the same time. If a reply that went to
+the chat window counted as "already sent", the room would be told a body was
+unchanged on the strength of a reply it never saw, and would leave it standing in
+the air. So a reply that goes out whole empties the cache behind it; the next
+partial request is answered in full, marked `"partial":false` so the host
+replaces what it has, and trimming resumes from there. It costs one big reply and
+it cannot go stale.
+
+**The session still hands callers the whole world.** Trimming is for the wire.
+`live_session.Session.state` folds each partial reply into the last full picture,
+so the tools, the tests and anything else asking what the world looks like get
+all of it, exactly as before.
+
+**The step that lands a fracture has to carry geometry.** A piece's cells *are*
+its surface. When fracture was synchronous, the fracture's own reply carried
+them. Not waiting means the pieces arrive on a *step* instead, and a step does
+not normally carry shape -- so every shard was about to be drawn as a box around
+itself, which is a lie about what broke.
+
+## Every wait is written down
+
+Anything the world waits on, or is spared waiting on, goes out in the reply's
+`waits` array and into the server's log:
+
+```
+banjo: held glass plate 20mm, 0 ms (t=37.25 s)
+banjo: precomputed glass plate 20mm, 815 ms (t=38.13 s)
+banjo: precomputed glass plate 20mm piece 3, 6 ms (t=38.13 s)
+```
+
+Four kinds. `foreseen` is a collision seen coming, with how long the warning was.
+`held` is a pair pinned while its answer is worked out. `precomputed` is an
+answer that landed without the caller waiting -- the cost is what it *would* have
+cost. `blocked` is the only one that means somebody waited, and the run above has
+none.
+
+This was missing when it mattered. The delays were recorded in `LiveWorld` and
+handed to the C library, and the playground talks to neither -- it talks to the
+line protocol. So the log existed and nothing that drives the room could read it,
+which is the same as not having one.
+
 ## Nothing to press, and nothing to decline
 
 The stage opens as a running world. There is no transport over it, because a

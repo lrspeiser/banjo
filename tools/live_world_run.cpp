@@ -10,6 +10,7 @@
 //        {"op":"grab","name":"ball"}  {"op":"move","to":[0,1.2,0]}  {"op":"release"}
 //        {"op":"fracture","name":"pane"}   {"op":"poses"}   {"op":"quit"}
 //        {"op":"fracture","name":"pane","wait":false}
+//        {"op":"step","dt":0.008,"n":4,"moved":true}   only what changed
 //        {"op":"pick","from":[0,6,0],"dir":[0,-1,0],"max_m":1000}
 //   out  {"ok":true,"t":0.033,"stepped_back":false,
 //         "bodies":[{"name":"ball","shape":"sphere","dimensions_m":[...],
@@ -37,41 +38,104 @@
 
 #include <nlohmann/json.hpp>
 
+#include <cmath>
 #include <fstream>
 #include <array>
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace {
 using namespace banjo;
 using namespace banjo::fastlattice;
 
-nlohmann::json vec(const Vec3 &v) { return nlohmann::json::array({v.x, v.y, v.z}); }
+// A number at the precision anyone can use, rather than the precision a double
+// happens to have.
+//
+// Every reply carries every body, and a scene that has shattered holds
+// hundreds: a step reply was measured at 259 KB, thirty times a second, which
+// the host has to fetch, parse and walk. Most of that was seventeen digits of a
+// position meaningful to about five. Ten micrometres is a two-thousandth of the
+// smallest cell the engine will build, and nothing anybody can see.
+[[nodiscard]] double tidy(double v) {
+    return std::isfinite(v) ? std::round(v * 1.0e5) / 1.0e5 : v;
+}
 
-nlohmann::json describe(const LiveWorld &world, bool with_geometry) {
+// What each body looked like in the last reply that carried it.
+//
+// A room that has shattered holds hundreds of bodies and almost all of them are
+// lying still: of 244 bodies a step, four were moving. Sending the other 240
+// again, thirty times a second, was 200 KB a reply -- six megabytes a second
+// for the host to fetch, parse and walk, to be told that nothing happened. That
+// is a real pause and it is not the physics.
+//
+// One world to a process, so one cache.
+std::unordered_map<std::string, std::string> last_sent;
+
+nlohmann::json vec(const Vec3 &v) {
+    return nlohmann::json::array({tidy(v.x), tidy(v.y), tidy(v.z)});
+}
+
+// `only_moved` sends a body only if it is not identical to the last one sent
+// under that name. The reply then says so, and says which names have gone, so a
+// host can tell "this body did not change" from "this body no longer exists" --
+// which it has to, because it deletes anything a reply leaves out.
+nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = false) {
+    // A reply that goes out whole leaves the cache empty behind it, because
+    // whoever got it is up to date and nobody else is: one process can be
+    // driving a room and answering a chat window's questions at the same time,
+    // and the room must not be told a body is unchanged on the strength of a
+    // reply that went somewhere else. The next partial request after that is
+    // answered in full -- marked not partial, so the host replaces what it has
+    // -- and trimming resumes from there. It costs one big reply and it cannot
+    // go stale.
+    const bool trim = only_moved && !last_sent.empty();
     nlohmann::json bodies = nlohmann::json::array();
+    std::unordered_set<std::string> present;
+    std::size_t count = 0;
     for (const LiveBodyPose &pose : world.poses(with_geometry)) {
         char colour[16];
         std::snprintf(colour, sizeof colour, "%08x", pose.color_rgba);
-        bodies.push_back({{"name", pose.name}, {"material", pose.material},
+        nlohmann::json body = {{"name", pose.name}, {"material", pose.material},
                           {"shape", pose.shape},
                           {"dimensions_m", vec(pose.dimensions_m)},
                           {"position_m", vec(pose.position_m)},
                           {"orientation_wxyz", nlohmann::json::array({
-                               pose.orientation_wxyz[0], pose.orientation_wxyz[1],
-                               pose.orientation_wxyz[2], pose.orientation_wxyz[3]})},
+                               tidy(pose.orientation_wxyz[0]), tidy(pose.orientation_wxyz[1]),
+                               tidy(pose.orientation_wxyz[2]), tidy(pose.orientation_wxyz[3])})},
                           {"velocity_m_s", vec(pose.velocity_m_s)},
                           {"anchored", pose.anchored},
                           {"held", pose.held},
-                          {"color_rgba", std::string(colour)}});
+                          {"color_rgba", std::string(colour)}};
         if (!pose.cells_local_m.empty()) {
             nlohmann::json cells = nlohmann::json::array();
             for (const Vec3 &at : pose.cells_local_m) cells.push_back(vec(at));
-            bodies.back()["cells_local_m"] = std::move(cells);
+            body["cells_local_m"] = std::move(cells);
         }
+        ++count;
+        present.insert(pose.name);
+        // Compared as written, so the comparison is exactly what the host would
+        // have received -- a difference too small to survive tidy() is not a
+        // difference anybody can see.
+        std::string written = body.dump();
+        std::string &remembered = last_sent[pose.name];
+        const bool same = remembered == written;
+        remembered = std::move(written);
+        if (trim && same) continue;
+        bodies.push_back(std::move(body));
     }
+    // Names the cache still holds that the world no longer has: broken up,
+    // or replaced by their pieces.
+    nlohmann::json gone = nlohmann::json::array();
+    for (auto it = last_sent.begin(); it != last_sent.end();) {
+        if (present.count(it->first)) { ++it; continue; }
+        gone.push_back(it->first);
+        it = last_sent.erase(it);
+    }
+    if (!only_moved) last_sent.clear();
     nlohmann::json impacts = nlohmann::json::array();
     for (const LiveImpact &impact : world.impacts())
         impacts.push_back({{"struck", impact.struck}, {"by", impact.by},
@@ -81,14 +145,33 @@ nlohmann::json describe(const LiveWorld &world, bool with_geometry) {
                            {"energy_j", impact.energy_j},
                            {"would_break", impact.would_break},
                            {"would_dent", impact.would_dent}});
-    return {{"ok", true}, {"t", world.time_s()}, {"stepped_back", world.steppedBack()},
+    nlohmann::json state = {{"ok", true}, {"t", world.time_s()}, {"stepped_back", world.steppedBack()},
             {"cell_size_m", world.cellSize()}, {"geometry", with_geometry},
+            // `partial` true means bodies missing from this reply are unchanged,
+            // not gone; `gone` names the ones that really did go. `count` is how
+            // many the world holds either way.
+            {"partial", trim}, {"count", count}, {"gone", std::move(gone)},
             {"held", world.held()}, {"bodies", std::move(bodies)},
             {"impacts", std::move(impacts)}, {"breakable", world.breakable()},
             // What is being worked out right now, if anything. A host that asks
             // for a second fracture while one is running gets nothing, so it
             // needs to know.
             {"working_on", world.fracturePending() ? world.fractureSubject() : std::string{}}};
+    // Every moment the world waited, or was spared waiting, since the last
+    // reply carried them. Drained here rather than accumulated, so a host
+    // reading each reply sees each one exactly once.
+    //
+    // This was the whole point of recording them and it was missing: they were
+    // kept in the engine and handed to the C library, and the playground talks
+    // to this, so nothing that drives the room could see any of it. A log
+    // nobody can read is not a log.
+    nlohmann::json waits = nlohmann::json::array();
+    for (const LiveDelay &delay : world.delays())
+        waits.push_back({{"at_s", delay.at_s}, {"object", delay.object},
+                         {"kind", delay.kind}, {"lead_ms", delay.lead_ms},
+                         {"cost_ms", delay.cost_ms}});
+    if (!waits.empty()) state["waits"] = std::move(waits);
+    return state;
 }
 
 Vec3 readVec(const nlohmann::json &node, const char *key) {
@@ -134,6 +217,7 @@ int main(int argc, char **argv) {
         std::unique_ptr<LiveWorld> world = LiveWorld::open(request);
         // The opening state, so a host can draw the scene before it moves.
         std::cout << describe(*world, true).dump() << std::endl;
+        world->forgetDelays();
 
         std::string line;
         while (std::getline(std::cin, line)) {
@@ -143,6 +227,9 @@ int main(int argc, char **argv) {
                 const nlohmann::json command = nlohmann::json::parse(line);
                 const std::string op = command.value("op", std::string());
                 if (op == "quit") break;
+                // Set by whatever produced new bodies this line, so the
+                // reply carries their shape as well as their place.
+                bool made_bodies = false;
                 if (op == "step") {
                     const double dt = command.value("dt", 1.0 / 60.0);
                     const int count = std::max(1, command.value("n", 1));
@@ -168,6 +255,14 @@ int main(int argc, char **argv) {
                         const std::string what = world->fractureSubject();
                         reply["pieces"] = world->finishFracture();
                         reply["finished"] = what;
+                        // The pieces are new and a piece's cells ARE its
+                        // surface, so this reply has to carry them. Waiting for
+                        // a fracture used to mean the fracture's own reply
+                        // carried the shape; not waiting means it lands on a
+                        // step instead, and a step does not normally carry
+                        // shape. Without this every shard is drawn as a box
+                        // around itself, which is a lie about what broke.
+                        made_bodies = true;
                         reply["outcome"] = std::array<const char *, 4>{
                             "nothing", "held", "dented", "broke"}
                             [static_cast<std::size_t>(world->lastOutcome())];
@@ -218,7 +313,13 @@ int main(int argc, char **argv) {
                 // Geometry travels with the opening state, with an explicit
                 // poses request, and after a fracture -- the three moments the
                 // set of bodies can have changed. A step never carries it.
-                nlohmann::json state = describe(*world, op == "poses" || op == "fracture");
+                // A host that draws the room asks for only what moved. A
+                // reply that carries geometry carries all of it regardless:
+                // that is the reply that rebuilds the scene.
+                const bool geometry = made_bodies || op == "poses" || op == "fracture";
+                nlohmann::json state = describe(*world, geometry,
+                                                !geometry && command.value("moved", false));
+                world->forgetDelays();
                 for (auto &[key, value] : reply.items()) state[key] = value;
                 std::cout << state.dump() << std::endl;
             } catch (const std::exception &error) {

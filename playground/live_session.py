@@ -12,6 +12,7 @@ about a kilobyte, where the same scene as cells was 9,841.
 from __future__ import annotations
 
 import json
+import logging
 import math
 import subprocess
 import threading
@@ -39,6 +40,8 @@ REPLY_TIMEOUT_S = 60.0
 # physics.
 MAX_STEPS_PER_CALL = 120
 MAX_DT_S = 1.0 / 30.0
+
+_log = logging.getLogger("banjo.live")
 
 
 class LiveError(ValueError):
@@ -77,6 +80,7 @@ class Session:
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding="utf-8", errors="replace", bufsize=1, cwd=str(directory))
         self.opened_at = time.time()
+        self.state: dict[str, Any] = {}
         self.state = self._read("opening the world")
         if not self.state.get("ok"):
             raise LiveError(self.state.get("error") or "the live world refused this scene")
@@ -102,8 +106,37 @@ class Session:
             state = self._read(f"handling {command.get('op')}")
         if not state.get("ok"):
             raise LiveError(state.get("error") or "the live world refused that")
-        self.state = state
+        self.state = self._whole(state)
+        # Anything the world waited on goes to the server's log, so a run that
+        # stalls leaves a trace behind rather than only an impression.
+        for wait in state.get("waits") or ():
+            kind = wait.get("kind", "?")
+            if kind == "foreseen":
+                _log.info("banjo: %s coming in %.0f ms (t=%.2f s)",
+                          wait.get("object"), wait.get("lead_ms", 0.0), wait.get("at_s", 0.0))
+            else:
+                _log.info("banjo: %s %s, %.0f ms (t=%.2f s)",
+                          kind, wait.get("object"), wait.get("cost_ms", 0.0),
+                          wait.get("at_s", 0.0))
         return state
+
+    def _whole(self, reply: dict[str, Any]) -> dict[str, Any]:
+        """The world as it now stands, whichever way the reply arrived.
+
+        A reply marked `partial` carries only the bodies that moved, because
+        sending two hundred motionless ones thirty times a second was most of
+        the cost of running the room. Everything on this side -- the tools, the
+        tests, anything asking what the world looks like -- still wants all of
+        them, so the last full picture is kept here and the changes folded in.
+        """
+        if not reply.get("partial"):
+            return reply
+        bodies = {body["name"]: body for body in (self.state or {}).get("bodies", ())}
+        for name in reply.get("gone") or ():
+            bodies.pop(name, None)
+        for body in reply.get("bodies", ()):
+            bodies[body["name"]] = body
+        return {**reply, "bodies": list(bodies.values()), "partial": False}
 
     def close(self) -> None:
         if self._process.poll() is not None:
@@ -175,7 +208,11 @@ class Live:
             count = max(1, min(int(body.get("n", 1)), MAX_STEPS_PER_CALL))
             if not dt > 0.0:
                 raise LiveError("a step needs a positive dt")
-            return session.send(op="step", dt=dt, n=count)
+            # A host that draws the room asks for only what moved: it keeps
+            # its own copy of the scene and merges. One that does not gets the
+            # whole world, as it always did.
+            return session.send(op="step", dt=dt, n=count,
+                                moved=bool(body.get("moved", False)))
         if op == "grab":
             return session.send(op="grab", name=str(body.get("name", "")))
         if op == "move":

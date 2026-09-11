@@ -180,8 +180,18 @@ function place(mesh, body) {
   mesh.quaternion.set(q[1], q[2], q[3], q[0]);
 }
 
-// Rebuild whatever changed. A body the engine has stopped reporting has broken
-// up and been replaced, so its mesh goes with it.
+// Rebuild whatever changed.
+//
+// A step reply is `partial`: it carries only the bodies that are not identical
+// to the last ones sent, and names the ones that have gone in `gone`. That is
+// worth the care it costs. A room that has shattered holds two hundred and
+// fifty bodies and four of them are moving; sending the other two hundred and
+// forty-six thirty times a second was six megabytes a second for this to fetch,
+// parse and walk, to be told nothing happened -- and that showed up as the room
+// stuttering, which reads exactly like the physics being slow. It is not.
+//
+// A full reply (the scene opening, or one carrying geometry) is not partial,
+// and then anything it leaves out really has gone.
 function draw(state) {
   if (state.cell_size_m) world.cellSize = state.cell_size_m;
   const seen = new Set();
@@ -203,12 +213,16 @@ function draw(state) {
     held.shape = body.shape;
     place(held.mesh, body);
   }
-  for (const [name, entry] of [...world.bodies]) {
-    if (seen.has(name)) continue;
+  const drop = state.partial
+    ? (state.gone || [])
+    : [...world.bodies.keys()].filter((name) => !seen.has(name));
+  for (const name of drop) {
+    const entry = world.bodies.get(name);
+    if (!entry) continue;
     scene.remove(entry.mesh);
     world.bodies.delete(name);
   }
-  $("panel-count").textContent = `${state.bodies.length} objects`;
+  $("panel-count").textContent = `${world.bodies.size} objects`;
 }
 
 // ---------------------------------------------------------------------------
@@ -537,7 +551,7 @@ async function tick() {
     const elapsed = world.lastTick ? (now - world.lastTick) / 1000 : LIVE_DT;
     world.lastTick = now;
     const steps = clamp(Math.round(elapsed / LIVE_DT), 1, MAX_STEPS);
-    let state = await act("step", { dt: LIVE_DT, n: steps });
+    let state = await act("step", { dt: LIVE_DT, n: steps, moved: true });
 
     // Something is about to break. The engine has taken the step back and is
     // waiting to be told what to do, and until it is told, time does not move.
@@ -587,13 +601,14 @@ async function tick() {
     // reported, but they describe collisions that have already been resolved
     // and nothing can break any more. That is a cliff worth seeing coming
     // rather than discovering by wondering why the room went inert.
-    if (state.bodies.length > 200 && !world.warnedFull) {
+    const here = state.count ?? state.bodies.length;
+    if (here > 200 && !world.warnedFull) {
       world.warnedFull = true;
-      say("world", `${state.bodies.length} pieces in the room. Past about 250 the engine`
+      say("world", `${here} pieces in the room. Past about 250 the engine`
         + ` stops being able to break anything — there is a limit on how many bodies it`
         + ` can take back a step for. Start the room again to clear it.`);
     }
-    if (state.bodies.length < 150) world.warnedFull = false;
+    if (here < 150) world.warnedFull = false;
     world.clock = state.t;
     $("hud-clock").textContent = `${state.t.toFixed(1)} s · ${steps} steps`;
     $("panel-state").textContent = world.held
