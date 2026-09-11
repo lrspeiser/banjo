@@ -18,11 +18,25 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 #include <string>
 
 namespace {
+
+// MEASUREMENT PATCH (uncommitted): pick the lattice backend from the
+// environment so the same binary can be timed on either lane.
+// BANJO_BENCH_BACKEND=cuda | cpuparallel (default) | cpu
+banjo::fastlattice::BackendKind benchBackend() {
+    using banjo::fastlattice::BackendKind;
+    const char *v = std::getenv("BANJO_BENCH_BACKEND");
+    if (v == nullptr) return BackendKind::CpuParallel;
+    const std::string s{v};
+    if (s == "cuda") return BackendKind::Cuda;
+    if (s == "cpu") return BackendKind::Cpu;
+    return BackendKind::CpuParallel;
+}
 using namespace banjo;
 using namespace banjo::fastlattice;
 
@@ -36,7 +50,7 @@ TileImpactRequest ballOverFloor(double ball_height_mm = 600.0) {
     r.cell_size_m = 0.02;
     // The default is CUDA, which this build does not have. The playground
     // asks for the parallel CPU lane and so does this.
-    r.backend = BackendKind::CpuParallel;
+    r.backend = benchBackend();
     SceneBody floor;
     floor.name = "floor";
     floor.shape = BodyShape::Box;
@@ -142,7 +156,7 @@ TileImpactRequest ballOntoGlass(double drop_m) {
     r.cell_size_m = 0.02;
     // The default is CUDA, which this build does not have. The playground
     // asks for the parallel CPU lane and so does this.
-    r.backend = BackendKind::CpuParallel;
+    r.backend = benchBackend();
     SceneBody pane;
     pane.name = "pane";
     pane.shape = BodyShape::Box;
@@ -277,7 +291,7 @@ Drop dropAndBreak(double drop_m) {
 void theCountIsWhatIsActuallyInTheWorld() {
     TileImpactRequest r;
     r.cell_size_m = 0.02;
-    r.backend = BackendKind::CpuParallel;
+    r.backend = benchBackend();
     std::vector<SceneBody> scene;
     for (int side = -1; side <= 1; side += 2) {
         SceneBody pier;
@@ -574,7 +588,7 @@ void aRayFindsPiecesAfterSomethingBreaks() {
 double bounceFraction(MaterialPreset material) {
     TileImpactRequest r;
     r.cell_size_m = 0.02;
-    r.backend = BackendKind::CpuParallel;
+    r.backend = benchBackend();
     SceneBody floor;
     floor.name = "floor";
     floor.shape = BodyShape::Box;
@@ -676,7 +690,7 @@ struct Landing {
 Landing dropOnFloor(MaterialPreset material, double speed) {
     TileImpactRequest r;
     r.cell_size_m = 0.02;
-    r.backend = BackendKind::CpuParallel;
+    r.backend = benchBackend();
     r.plasticity = true;   // nothing can hold a shape it was pushed into without it
     SceneBody ball;
     ball.name = "ball";
@@ -777,7 +791,7 @@ void somethingBrittleHasNoDentingRange() {
 void somethingCanBeDentedWithoutBeingBroken() {
     TileImpactRequest r;
     r.cell_size_m = 0.02;
-    r.backend = BackendKind::CpuParallel;
+    r.backend = benchBackend();
     SceneBody anvil;
     anvil.name = "anvil";
     anvil.shape = BodyShape::Box;

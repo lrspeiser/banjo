@@ -458,8 +458,13 @@ latticeKernel(LatticeArrays<Real> L, StepSettings<Real> S, DeviceControl C, Devi
             }
             st->steps_completed = completed;
             if (capture) st->frames_captured = frames_done + 1U;
+            // PROBE PATCH (uncommitted, measurement only): exit reasons 4
+            // (energy-flat) and 5 (calm) are disabled by passing 0 for their
+            // step budgets. The kernel does not track last_energy_gain_step,
+            // last_damage_gain_step or max_damage, so it cannot evaluate them.
             st->exit_reason = latticeExitReason(completed, st->broken_bonds, st->last_failure_step,
-                                                C.quiet_steps, C.min_steps, C.no_failure_steps);
+                                                C.quiet_steps, C.min_steps, C.no_failure_steps,
+                                                0ULL, 0ULL, 0ULL, 0ULL, 0.0, 0.0);
         }
         sync();
         mark(13);

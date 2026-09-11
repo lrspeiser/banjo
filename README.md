@@ -1,18 +1,61 @@
 # Banjo
 
-## Chat playground and current goal
+**A physics engine where things are made of something.**
 
-The [September 6 project goal](docs/project-goal-2026-09-06.md) groups all 40
-requirements into nine workstreams. The [current checkpoint](docs/playground-foundation-checkpoint.md)
-records the tested chat/API path, material-point plasticity, bounded property
-variation and compact numeric history, with remaining physics gates explicit.
+An object here is not a shape with a "breakable" flag on it: it is cells joined
+by bonds, the bonds carry tension and compression, they yield and they fail, and
+what happens to a thing is worked out rather than looked up. Drop a glass ball
+and an iron one from the same height onto the same floor and they do different
+things, because they are made of different stuff.
 
-After building, run `python playground/server.py --port 8765` and open
-`http://127.0.0.1:8765`. Ask for a test, inspect its generated Banjo package and
-report, then release it in the native studio. GPT uses the ignored local `.env`
-on the server. See [playground instructions](playground/README.md) for examples,
-supported experiments and limits. Earlier checkpoints below retain their
-original evidence and dates.
+```c
+#include "banjo/banjo.h"
+
+banjo_world *w = banjo_open(scene_json, 0.02);
+for (int i = 0; i < 600; ++i) banjo_advance(w, 1.0 / 120.0, 0.003);
+printf("%d bodies now
+", banjo_body_count(w));
+banjo_close(w);
+```
+
+## Using it
+
+- **[docs/api/](docs/api/README.md)** — start here. Install, quickstart in C and
+  Python, and the four things to know before you build anything.
+- **[docs/api/c-api.md](docs/api/c-api.md)** — every function, the scene format,
+  the caps.
+- **[docs/api/materials.md](docs/api/materials.md)** — the eight materials, what
+  each actually does, and how to design an experiment that shows something.
+- **[docs/api/mcp.md](docs/api/mcp.md)** — the MCP server, so Claude or ChatGPT
+  can run experiments instead of guessing at them.
+- **[docs/building-on-banjo.md](docs/building-on-banjo.md)** — a shorter
+  orientation, and the honest list of what is not built in.
+
+## Seeing it
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --config Release
+python playground/server.py --port 8765
+```
+
+`http://127.0.0.1:8765/world` is a room you stand in: W A S D to walk, click to
+pick things up, and a chat panel that can rearrange the room for you. Sixteen
+plates of every material at two thicknesses to drop things on.
+
+`http://127.0.0.1:8765` is the older bench: describe an experiment, watch it run,
+read the report.
+
+## The one thing that surprises people
+
+**Breaking is a conversation, not a property.** When a step would break
+something, the step is *taken back* and time does not move until you answer —
+because handing the lattice a collision that has already been resolved is
+handing it a ball that has already bounced, and it breaks nothing however hard
+it was hit. `banjo_advance` holds that conversation for you.
+
+---
+
+## Project history
 
 Banjo is an experimental **matter-first runtime for editable-physics worlds**. Ordinary objects remain inexpensive rigid bodies until an interaction requires material detail. The object can then become an active voxel-and-bond simulation, fracture according to its material law, and return to inexpensive rigid fragments.
 

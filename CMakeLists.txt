@@ -402,6 +402,12 @@ if(BANJO_BUILD_HEADLESS)
         # The room on /world: what it is made of, that it fits the lane, and
         # that a change the engine would refuse is refused where the thing that
         # made it can be told.
+        # The MCP server, driven as a real subprocess through the real protocol.
+        add_test(NAME banjo_mcp_tests
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/banjo_mcp_tests.py)
+        set_tests_properties(banjo_mcp_tests PROPERTIES
+            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
         add_test(NAME banjo_world_room_tests
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/world_room_tests.py)

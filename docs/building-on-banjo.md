@@ -87,6 +87,18 @@ through the line protocol, so ask it on every mouse move.
 
 Honest list, so nobody discovers these by hitting them:
 
+- **Things break by being hit, not by being loaded.** The admission bound is a
+  stress-wave argument: it asks whether a transmitted pulse carries enough
+  strain to fail a bond. That is right for a fast impact and wrong for a heavy
+  weight sitting still. Measured: 111 kg resting on a 600 mm span of 20 mm glass
+  for six seconds offered zero breaks and sagged 0.07 mm. There is no bending or
+  quasi-static failure path.
+- **Mass does not affect whether something breaks.** A 111 kg iron ball and a
+  0.9 kg one arriving at the same speed are judged identically. Speed and
+  impedance decide it.
+- **Nothing can be thinner than one cell.** At the usual 20 mm grid that is
+  20 mm, so real window glass at 4-6 mm is out of reach; a finer grid costs
+  about h^-4.
 - **No joints.** A distance spring and a world pin exist inside the C++ layer;
   the C face exposes neither. No hinge, slider, motor or ragdoll.
 - **No spawning or deleting at runtime.** A world is opened from a scene and
@@ -103,6 +115,13 @@ Honest list, so nobody discovers these by hitting them:
   lane. Past 250 bodies the step is taken straight and **fracture stops
   working** — impacts are still reported, but they describe a collision that has
   already been resolved.
+
+Denting used to be on this list and is not any more: a body that yields is
+rebuilt from where its matter ended up, so it can come out of a collision in one
+piece and a different shape. It needs `"plasticity": true` in the scene, and it
+only happens to materials with a yield point -- iron, aluminium, oak and rubber.
+The four brittle ones go from whole to broken with nothing in between, which is
+what brittle means.
 
 `PlatformWorld` is a separate, older C++ surface for authored packages and is
 documented in [object-authoring-api.md](object-authoring-api.md). It is not
