@@ -36,6 +36,11 @@ inspect both `completed_steps` and `error`. A faulted step is not guaranteed to
 roll back all intermediate state. Budget/argument errors may throw directly.
 This API has no live `spawnObject`, deletion, impulse command, property edit,
 joint builder, savegame restore, HTTP server or JavaScript/WASM binding yet.
+
+It is also C++, reachable only from inside this tree. The live lane now has a C
+face — one flat header, a shared library, CMake install and export rules, and a
+Python binding — described in [building-on-banjo.md](building-on-banjo.md).
+That is the surface to reach for when the caller is another program.
 Loading a changed package starts another simulation, with fresh histories.
 
 ```cpp
