@@ -77,6 +77,29 @@ struct LiveImpact {
     bool would_dent{};
 };
 
+// A moment where the world was made to wait, or was saved from waiting.
+//
+// Working out a fracture costs between a third of a second and a second, and
+// that is irreducible -- every way of making the run shorter was measured and
+// every one of them changes the answer. So the only thing left is to not make
+// anyone wait for it, and the only way to know whether that is working is to
+// write down every time it happens.
+struct LiveDelay {
+    // When, in world time.
+    double at_s{};
+    // What it was about.
+    std::string object;
+    // "blocked"     the host asked and had to wait for the whole run
+    // "foreseen"    a collision was spotted coming, with this much warning
+    // "precomputed" the answer was ready before it was asked for
+    // "held"        the pair was pinned while the answer was worked out
+    const char *kind{"blocked"};
+    // How much warning there was, for "foreseen": the time until contact.
+    double lead_ms{};
+    // What it cost, for "blocked" and "precomputed".
+    double cost_ms{};
+};
+
 // What the lattice actually did when it was run. The bounds above say what is
 // POSSIBLE; only running it says what happened.
 enum class LiveOutcome : std::uint8_t {
@@ -169,6 +192,16 @@ public:
     // pieces, which cannot tell "held exactly as it was" from "held, but bent
     // out of shape" -- both are one piece.
     [[nodiscard]] LiveOutcome lastOutcome() const;
+
+    // Every moment the world waited, or was spared waiting, since the last
+    // forgetDelays(). A host that never looks at this cannot tell a world that
+    // is keeping up from one that is stalling twice a second.
+    [[nodiscard]] std::vector<LiveDelay> delays() const;
+    void forgetDelays();
+    // How far ahead to look for a collision that will need the lattice. Zero
+    // turns the looking off. A ray per moving body is cheap -- 0.02 ms -- but
+    // it is not free, so it is asked at a stride rather than every step.
+    void foreseeCollisions(double horizon_s);
     // Let this contact pass. The world can move again without anything being
     // put back into the lattice.
     //
@@ -201,6 +234,9 @@ private:
     // could break what it hit. Called inside a reversible trial, so it must not
     // change the world.
     [[nodiscard]] bool judgeStep();
+    // Look ahead for a collision that will need the lattice, and write down how
+    // much warning there is.
+    void foresee();
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };

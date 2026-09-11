@@ -19,6 +19,7 @@
 using banjo::Vec3;
 using banjo::fastlattice::BackendKind;
 using banjo::fastlattice::LiveBodyPose;
+using banjo::fastlattice::LiveDelay;
 using banjo::fastlattice::LiveImpact;
 using banjo::fastlattice::LivePick;
 using banjo::fastlattice::LiveWorld;
@@ -56,6 +57,7 @@ struct banjo_world {
     std::vector<std::string> breakable;
     std::string held;
     std::string picked;
+    std::vector<LiveDelay> delays;
 };
 
 namespace {
@@ -252,6 +254,43 @@ int banjo_impacts(const banjo_world *world, double quiet_speed_m_s,
         }
         return count;
     });
+}
+
+int banjo_delay_count(const banjo_world *world) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        auto *mutable_world = const_cast<banjo_world *>(world);
+        mutable_world->delays = world->world->delays();
+        return static_cast<int>(mutable_world->delays.size());
+    });
+}
+
+int banjo_delays(const banjo_world *world, banjo_delay *out, int max) {
+    if (!world || (!out && max > 0) || max < 0) { setError("no world or nowhere to write"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        auto *mutable_world = const_cast<banjo_world *>(world);
+        mutable_world->delays = world->world->delays();
+        const int count = std::min<int>(max, static_cast<int>(mutable_world->delays.size()));
+        for (int i = 0; i < count; ++i) {
+            const LiveDelay &delay = mutable_world->delays[static_cast<std::size_t>(i)];
+            out[i].at_s = delay.at_s;
+            out[i].object = delay.object.c_str();
+            out[i].kind = delay.kind;
+            out[i].lead_ms = delay.lead_ms;
+            out[i].cost_ms = delay.cost_ms;
+        }
+        return count;
+    });
+}
+
+int banjo_forget_delays(banjo_world *world) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] { world->world->forgetDelays(); return BANJO_OK; });
+}
+
+int banjo_foresee(banjo_world *world, double horizon_s) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] { world->world->foreseeCollisions(horizon_s); return BANJO_OK; });
 }
 
 int banjo_grab(banjo_world *world, const char *name) {

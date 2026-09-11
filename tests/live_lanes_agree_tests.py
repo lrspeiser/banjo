@@ -152,8 +152,20 @@ class TheTwoLanesDescribeTheSameWorld(unittest.TestCase):
                                "nothing broke in the subprocess lane, so this proves nothing")
             self.assertEqual(sorted(places(a)), sorted(places(b)),
                              "the lanes broke the pane into differently named pieces")
-            self.assertLess(max(speeds(a).values()), 0.1,
-                            "the world is still moving, so this compares trajectories")
+            # Not "nothing is moving" -- "nothing is bouncing". A body that
+            # came through a break whole keeps its authored shape now, so the
+            # iron ball is a sphere and rolls: 0.40 m/s at three seconds, still
+            # 0.33 at twelve. It never comes to rest, and waiting for it to is
+            # waiting for ever.
+            #
+            # What the guard is actually for is the chaotic part -- comparing
+            # two worlds mid-bounce measures chaos and calls it a bug. A steady
+            # roll is not that, and the evidence is in the comparison itself:
+            # the two lanes agree to 0.00 um at one, three and six seconds with
+            # the ball rolling the whole time.
+            self.assertLess(max(speeds(a).values()), 0.6,
+                            "something is moving fast enough to still be bouncing, "
+                            "so this would compare trajectories rather than places")
             compare(self, a, b, "t=3.00 s, at rest")
         finally:
             out.close(); here.close()
@@ -203,9 +215,9 @@ class TheTwoLanesDescribeTheSameWorld(unittest.TestCase):
             a, b = run_to(out, 4.0), run_to(here, 4.0)
             fell_out = places(a)[ball][1]
             self.assertLess(fell_out, 1.3, "the ball did not fall after being let go")
-            self.assertLess(speeds(a)[ball], 0.05,
-                            "the ball is still moving, so this is comparing a "
-                            "trajectory rather than a resting place")
+            self.assertLess(speeds(a)[ball], 0.6,
+                            "the ball is moving fast enough to still be bouncing, so "
+                            "this would compare a trajectory rather than a place")
             self.assertAlmostEqual(fell_out, places(b)[ball][1], delta=TOLERANCE_M,
                                    msg="the two lanes put it to rest in different places")
         finally:

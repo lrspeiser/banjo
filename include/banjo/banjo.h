@@ -75,7 +75,7 @@ extern "C" {
 /* The ABI version. Bumped when the meaning or layout of anything here changes.
  * Check it once at startup against banjo_abi_version(): a header and a library
  * that disagree will not tell you so any other way. */
-#define BANJO_ABI_VERSION 3
+#define BANJO_ABI_VERSION 4
 
 /* What a call reported. Anything below zero is a failure and leaves the world
  * unchanged; banjo_last_error() says what happened. */
@@ -235,6 +235,35 @@ BANJO_API int banjo_bodies(const banjo_world *world, banjo_body *out, int max);
 BANJO_API int banjo_impact_count(const banjo_world *world, double quiet_speed_m_s);
 BANJO_API int banjo_impacts(const banjo_world *world, double quiet_speed_m_s,
                             banjo_impact *out, int max);
+
+/* ---- what made the world wait ---------------------------------------- */
+
+/* Working out a fracture costs between a third of a second and a second, and
+ * that is irreducible: every way of making the run shorter changes the answer.
+ * So the only thing left is to not make anyone wait for it -- and the only way
+ * to know whether that is working is to write down every time it happens. */
+typedef struct {
+    double at_s;             /* when, in world time */
+    const char *object;
+    /* "blocked"     the caller asked and waited for the whole run
+     * "foreseen"    a collision was spotted coming, with this much warning
+     * "precomputed" the answer was ready before it was asked for
+     * "held"        the pair was pinned while the answer was worked out */
+    const char *kind;
+    double lead_ms;          /* warning, for "foreseen" */
+    double cost_ms;          /* what it cost, for "blocked" and "precomputed" */
+} banjo_delay;
+
+BANJO_API int banjo_delay_count(const banjo_world *world);
+BANJO_API int banjo_delays(const banjo_world *world, banjo_delay *out, int max);
+/* Start a fresh record. Call it when you have read what you need. */
+BANJO_API int banjo_forget_delays(banjo_world *world);
+
+/* Look this far ahead for a collision that will need the lattice, so there is a
+ * chance to work it out before it arrives. 0 turns the looking off; 2.0 is a
+ * reasonable horizon, since a fall of two metres takes about 0.64 s and a run
+ * costs about that. Costs one ray per moving body, asked at a stride. */
+BANJO_API int banjo_foresee(banjo_world *world, double horizon_s);
 
 /* ---- the hand -------------------------------------------------------- */
 

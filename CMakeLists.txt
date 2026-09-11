@@ -348,8 +348,8 @@ if(BANJO_BUILD_HEADLESS)
         VISIBILITY_INLINES_HIDDEN ON
         # The ABI version, in the file name. A host linking against it says
         # which one it was built for, and two of them can sit side by side.
-        SOVERSION 3
-        VERSION 3.0.0
+        SOVERSION 4
+        VERSION 4.0.0
         WINDOWS_EXPORT_ALL_SYMBOLS OFF)
     banjo_enable_warnings(banjo_c)
 
@@ -368,7 +368,7 @@ if(BANJO_BUILD_HEADLESS)
             DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Banjo)
     write_basic_package_version_file(
         "${CMAKE_CURRENT_BINARY_DIR}/BanjoConfigVersion.cmake"
-        VERSION 3.0.0 COMPATIBILITY SameMajorVersion)
+        VERSION 4.0.0 COMPATIBILITY SameMajorVersion)
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/BanjoConfig.cmake"
          "include(\"\${CMAKE_CURRENT_LIST_DIR}/BanjoTargets.cmake\")\n")
     install(FILES "${CMAKE_CURRENT_BINARY_DIR}/BanjoConfig.cmake"

@@ -66,6 +66,16 @@ struct LiveWorld::Impl {
     std::unordered_map<std::size_t, std::size_t> partner_of;
     bool stepped_back{};
     LiveOutcome last_outcome{LiveOutcome::Nothing};
+    std::vector<LiveDelay> delays;
+    // How far ahead to look, and how often. Looking every step would cost a ray
+    // per moving body per step; every eighth is thirty times a second at the
+    // rate a live host runs, which is far finer than the tenths of a second
+    // this is trying to see coming.
+    double foresee_horizon_s{0.0};
+    std::uint64_t steps_taken{};
+    // What has already been said about, so one approach is not reported on
+    // every step for a third of a second.
+    std::set<std::string> foreseen;
     // The rigid step that was taken back. The lattice has to cover it before it
     // can cover the impact, because the world is that far short of contact.
     double last_dt_s{};
@@ -408,6 +418,7 @@ void LiveWorld::step(double dt_s) {
     // has already been resolved, so fracture() will find nothing left to break.
     impl_->stepped_back = false;
     impl_->last_dt_s = dt_s;
+    ++impl_->steps_taken;
     if (impl_->body_of.size() + 8 <= 250) {
         const bool committed = impl_->world->runReversibleTrial([&]() {
             impl_->world->step(dt_s);
@@ -419,12 +430,14 @@ void LiveWorld::step(double dt_s) {
         // and the hold does not need re-asserting -- the world is as it was.
         if (!committed) return;
         impl_->time_s += dt_s;
+        foresee();
         return;
     }
     impl_->world->step(dt_s);
     holdStill();
     (void)judgeStep();
     impl_->time_s += dt_s;
+    foresee();
 }
 
 double LiveWorld::time_s() const { return impl_->time_s; }
@@ -517,6 +530,97 @@ std::vector<LiveImpact> LiveWorld::impacts(double quiet_speed_m_s) const {
 bool LiveWorld::steppedBack() const { return impl_->stepped_back; }
 
 LiveOutcome LiveWorld::lastOutcome() const { return impl_->last_outcome; }
+
+std::vector<LiveDelay> LiveWorld::delays() const { return impl_->delays; }
+void LiveWorld::forgetDelays() { impl_->delays.clear(); }
+void LiveWorld::foreseeCollisions(double horizon_s) {
+    impl_->foresee_horizon_s = std::max(0.0, horizon_s);
+}
+
+// Look ahead for a collision that is going to need the lattice.
+//
+// A ray along each moving body's own path says what is in front of it and how
+// far; its speed says how long until it gets there. The same admission test the
+// step uses then says whether that arrival would need the lattice at all. What
+// comes out is a name and an amount of warning -- and warning is the whole
+// point, because the run costs about as long as a two-metre fall takes.
+//
+// Cheap, but not free: a ray is 0.02 ms and there can be a hundred bodies. So
+// it is asked at a stride, and only of things actually going somewhere.
+void LiveWorld::foresee() {
+    if (!(impl_->foresee_horizon_s > 0.0)) return;
+    constexpr std::uint64_t kStride = 8;   // ~30 times a second at a live rate
+    if (impl_->steps_taken % kStride != 0) return;
+
+    std::set<std::string> still_coming;
+    for (std::size_t i = 0; i < impl_->described.size(); ++i) {
+        const LiveBodyPose &body = impl_->described[i];
+        if (body.anchored || i == impl_->holding) continue;
+        const RigidSnapshot now = impl_->world->snapshot(impl_->body_of[i]);
+        const double speed = length(now.linear_velocity_m_s);
+        // Below this nothing can be admitted anywhere in the catalogue, so
+        // there is nothing to look for.
+        if (speed < 0.5) continue;
+        // From the leading surface, not the centre, or the ray starts inside
+        // the body and meets it.
+        const Vec3 heading = (1.0 / speed) * now.linear_velocity_m_s;
+        const double clear = 0.5 * std::max({body.dimensions_m.x, body.dimensions_m.y,
+                                             body.dimensions_m.z}) + 0.005;
+        const double reach = speed * impl_->foresee_horizon_s;
+        const RayHit ahead = impl_->world->castRay(
+            now.center_of_mass_world_m + clear * heading, heading, reach);
+        if (!ahead.hit) continue;
+        // How fast it will be going when it gets there, not how fast it is
+        // going now. This is the whole difference between foresight and a
+        // running commentary: a ball a metre up is barely moving and would fail
+        // every admission test, and by the time its present speed clears the
+        // bar it is nine milliseconds from the thing it is about to break.
+        //
+        // Falling accelerates it, so the arrival speed comes from the drop
+        // still to go: v^2 = u^2 + 2*g*h. Rising or level, the drop is negative
+        // and it arrives no faster than it is going.
+        constexpr double kGravity = 9.80665;
+        const double falling = -ahead.distance_m * heading.y;   // metres of drop left
+        const double arrival =
+            std::sqrt(std::max(0.0, speed * speed + 2.0 * kGravity * std::max(0.0, falling)));
+        // Time to contact at the average of the two speeds, which is exact for
+        // constant acceleration along the path and near enough otherwise.
+        const double lead_s = 2.0 * ahead.distance_m / std::max(0.1, speed + arrival);
+
+        // Would that arrival need the lattice? The same question the step asks,
+        // asked early. Impedance from whatever is in the way, or the ground's
+        // when the ray stopped on something with no id of ours.
+        // The limits are the STRUCK body's, and the impedance is the striker's
+        // -- that is the way round admitRefracture reads them, and it matters:
+        // a glass pane hit by iron and an iron ball hit by glass have very
+        // different answers from the same contact.
+        FragmentFractureLimits struck = impl_->limits_of[i];
+        double other = impl_->impedance_of[i];
+        if (ahead.named) {
+            for (std::size_t k = 0; k < impl_->body_of.size(); ++k)
+                if (impl_->body_of[k] == ahead.body_id) { struck = impl_->limits_of[k]; break; }
+        } else {
+            // The floor. Nothing of ours is struck, so ask about the mover.
+            struck = impl_->limits_of[i];
+            other = impl_->ground_impedance;
+        }
+        const RefractureAdmission would = admitRefracture(struck, other, arrival,
+                                                          std::numeric_limits<double>::max());
+        if (!would.worthRunning()) continue;
+
+        // Name what is about to be HIT, where there is one. That is what the
+        // lattice will be run on, and what the warning is for. A ray that
+        // stopped on the floor has no name, so the mover is named instead.
+        std::string about = body.name;
+        if (ahead.named)
+            for (std::size_t k = 0; k < impl_->body_of.size(); ++k)
+                if (impl_->body_of[k] == ahead.body_id) { about = impl_->described[k].name; break; }
+        still_coming.insert(about);
+        if (impl_->foreseen.count(about)) continue;   // already said
+        impl_->delays.push_back({impl_->time_s, about, "foreseen", lead_s * 1000.0, 0.0});
+    }
+    impl_->foreseen.swap(still_coming);
+}
 
 std::vector<std::string> LiveWorld::breakable() const {
     std::vector<std::string> out;
@@ -762,7 +866,12 @@ std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
     // bodies are still closing -- it would fire a millisecond in and end the
     // run before the impact it was opened for.
     control.calm_steps = 0;
+    const auto lattice_began = std::chrono::steady_clock::now();
     const RunStatus status = backend->run(control);
+    impl_->delays.push_back({
+        impl_->time_s, name, "blocked", 0.0,
+        1000.0 * std::chrono::duration<double>(
+            std::chrono::steady_clock::now() - lattice_began).count()});
     backend->download(island_state, parked);
     writeBackLatticeState(island_state, island.schedule, island.matter);
     // The permanent set the run left behind: bond lengths the material will not

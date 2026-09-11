@@ -746,6 +746,103 @@ Landing dropOnFloor(MaterialPreset material, double speed) {
 // floor -- so it was never judged, the lattice never ran, and nothing could be
 // damaged by being dropped. The line in this engine that names an impact's
 // other side "the ground" was unreachable.
+// A glass pane bridged between two piers, with a ball above it.
+TileImpactRequest paneAndBall(double fall_m) {
+    TileImpactRequest r;
+    r.cell_size_m = 0.02;
+    r.backend = benchBackend();
+    SceneBody left, right, pane, ball;
+    left.name = "left pier";
+    left.shape = BodyShape::Box;
+    left.material = MaterialPreset::Iron;
+    left.dimensions_m = {0.08, 0.40, 0.20};
+    left.center_m = {-0.26, 0.20, 0.0};
+    left.anchored = true;
+    right = left;
+    right.name = "right pier";
+    right.center_m = {0.26, 0.20, 0.0};
+    pane.name = "pane";
+    pane.shape = BodyShape::Box;
+    pane.material = MaterialPreset::Glass;
+    pane.dimensions_m = {0.60, 0.02, 0.20};
+    pane.center_m = {0.0, 0.41, 0.0};
+    ball.name = "ball";
+    ball.shape = BodyShape::Sphere;
+    ball.material = MaterialPreset::Iron;
+    ball.dimensions_m = {0.12, 0.12, 0.12};
+    ball.center_m = {0.0, 0.42 + 0.06 + fall_m, 0.0};
+    r.bodies = {left, right, pane, ball};
+    return r;
+}
+
+// The world can see a collision coming, and writes down every time it waited.
+//
+// Working out a fracture costs between a third of a second and a second, and
+// that is irreducible: enabling the energy plateau gives 41 pieces where the
+// full run gives 83, the calm exit fires during the approach and nothing breaks
+// at all, a shorter window gives 63, a smaller host step costs MORE because the
+// shards each pay a full window, and the GPU lane is ten times slower because
+// the island schedule is one block. Every way of making the run shorter changes
+// the answer or costs more.
+//
+// So the run has to start before it is needed, and that needs warning. The
+// warning has to be measured against the ARRIVAL speed, not the present one: a
+// ball a metre up is barely moving and fails every admission test, and by the
+// time its current speed clears the bar it is nine milliseconds from the thing
+// it is about to break. That is what this pins.
+void theWorldSeesACollisionComing() {
+    struct Seen { double lead_ms, cost_ms; std::string object; bool foreseen, blocked; };
+    const auto watch = [](double fall) {
+        const auto live = LiveWorld::open(paneAndBall(fall));
+        live->foreseeCollisions(4.0);
+        for (int i = 0; i < 432; ++i) {   // 1.8 s at 1/240
+            live->step(1.0 / 240.0);
+            for (const std::string &name : live->breakable()) live->fracture(name);
+        }
+        Seen out{0.0, 0.0, "", false, false};
+        for (const LiveDelay &delay : live->delays()) {
+            if (std::string(delay.kind) == "foreseen" && !out.foreseen) {
+                out.foreseen = true;
+                out.lead_ms = delay.lead_ms;
+                out.object = delay.object;
+            }
+            if (std::string(delay.kind) == "blocked" && !out.blocked) {
+                out.blocked = true;
+                out.cost_ms = delay.cost_ms;
+            }
+        }
+        return out;
+    };
+
+    const Seen gentle = watch(0.5);
+    const Seen fair = watch(1.5);
+    const Seen high = watch(6.0);
+    std::cout << "  1.5 m: " << fair.lead_ms << " ms warning on " << fair.object
+              << ", first run cost " << fair.cost_ms << " ms\n"
+              << "  6.0 m: " << high.lead_ms << " ms warning on " << high.object
+              << ", first run cost " << high.cost_ms << " ms\n";
+
+    // Nothing is coming when nothing will break. A warning about every contact
+    // would be a running commentary and no use for deciding anything.
+    require(!gentle.foreseen, "a drop too gentle to break anything was still foreseen");
+    require(!gentle.blocked, "a drop too gentle to break anything still ran the lattice");
+
+    // What is about to be BROKEN is named, not what is about to do it. The
+    // lattice runs on the pane.
+    require(fair.foreseen, "a drop that breaks the pane was not seen coming at all");
+    require(fair.object == "pane", "the warning named " + fair.object + " and not the pane");
+
+    // And the warning has to be worth having: longer than the run it is meant
+    // to hide. That is the whole test.
+    require(fair.blocked, "nothing blocked, so there is nothing to compare against");
+    require(fair.lead_ms > fair.cost_ms,
+            "the warning is shorter than the run it would have to cover, so there "
+            "is no time to work the fracture out before it is needed");
+    require(high.lead_ms > fair.lead_ms,
+            "a longer fall did not give more warning, so the lead is not being "
+            "worked out from the approach at all");
+}
+
 void landingOnTheFloorIsAnImpact() {
     const Landing hard = dropOnFloor(MaterialPreset::Glass, 20.0);
     std::cout << "  glass onto the floor at 20 m/s: hit at " << hard.hit
@@ -914,6 +1011,8 @@ int main() {
         std::cout << "[PASS] breaking scenery or a name that is not there changes nothing\n";
         aThingThatHeldDoesNotStopTheWorld();
         std::cout << "[PASS] something that was hit hard and held does not deadlock the world\n";
+        theWorldSeesACollisionComing();
+        std::cout << "[PASS] the world sees a collision coming, with more warning than the run costs\n";
         landingOnTheFloorIsAnImpact();
         std::cout << "[PASS] landing on the floor is an impact and is judged like any other\n";
         aThingBendsBeforeItBreaks();

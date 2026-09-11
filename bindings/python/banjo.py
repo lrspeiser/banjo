@@ -32,8 +32,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterator
 
-# Bumped with the header: banjo_impact gained the dent bound.
-ABI_VERSION = 3
+# Bumped with the header: the world reports what made it wait.
+ABI_VERSION = 4
 
 NOTHING, HELD, DENTED, BROKE = 0, 1, 2, 3
 OUTCOMES = {0: "nothing", 1: "held", 2: "dented", 3: "broke"}
@@ -61,6 +61,14 @@ class _Body(ctypes.Structure):
                 ("anchored", ctypes.c_int),
                 ("held", ctypes.c_int),
                 ("rgba", ctypes.c_uint)]
+
+
+class _Delay(ctypes.Structure):
+    _fields_ = [("at_s", ctypes.c_double),
+                ("object", ctypes.c_char_p),
+                ("kind", ctypes.c_char_p),
+                ("lead_ms", ctypes.c_double),
+                ("cost_ms", ctypes.c_double)]
 
 
 class _Pick(ctypes.Structure):
@@ -112,6 +120,17 @@ class Impact:
     energy_j: float
     would_break: bool
     would_dent: bool
+
+
+@dataclass(frozen=True)
+class Delay:
+    """A moment the world waited, or was spared waiting."""
+    at_s: float
+    object: str
+    # "blocked" | "foreseen" | "precomputed" | "held"
+    kind: str
+    lead_ms: float
+    cost_ms: float
 
 
 @dataclass(frozen=True)
@@ -216,6 +235,15 @@ def library(path: str | os.PathLike[str] | None = None) -> ctypes.CDLL:
     lib.banjo_pick_ray.argtypes = [ctypes.c_void_p, ctypes.c_double * 3, ctypes.c_double * 3,
                                    ctypes.c_double, ctypes.POINTER(_Pick)]
     lib.banjo_pick_ray.restype = ctypes.c_int
+
+    lib.banjo_delay_count.argtypes = [ctypes.c_void_p]
+    lib.banjo_delay_count.restype = ctypes.c_int
+    lib.banjo_delays.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Delay), ctypes.c_int]
+    lib.banjo_delays.restype = ctypes.c_int
+    lib.banjo_forget_delays.argtypes = [ctypes.c_void_p]
+    lib.banjo_forget_delays.restype = ctypes.c_int
+    lib.banjo_foresee.argtypes = [ctypes.c_void_p, ctypes.c_double]
+    lib.banjo_foresee.restype = ctypes.c_int
 
     found = lib.banjo_abi_version()
     if found != ABI_VERSION:
@@ -364,6 +392,29 @@ class World:
                        energy_j=i.energy_j, would_break=bool(i.would_break),
                        would_dent=bool(i.would_dent))
                 for i in buffer[:written]]
+
+    # -- what made it wait ------------------------------------------------
+    def delays(self) -> list[Delay]:
+        """Every moment the world waited, or was spared waiting."""
+        handle = self._alive()
+        count = self._check(self._lib.banjo_delay_count(handle), "counting delays")
+        if count == 0:
+            return []
+        buffer = (_Delay * count)()
+        written = self._check(self._lib.banjo_delays(handle, buffer, count), "reading delays")
+        return [Delay(at_s=d.at_s,
+                      object=(d.object or b"").decode("utf-8", "replace"),
+                      kind=(d.kind or b"").decode("utf-8", "replace"),
+                      lead_ms=d.lead_ms, cost_ms=d.cost_ms)
+                for d in buffer[:written]]
+
+    def forget_delays(self) -> None:
+        self._check(self._lib.banjo_forget_delays(self._alive()), "clearing delays")
+
+    def foresee(self, horizon_s: float) -> None:
+        """Look this far ahead for a collision that will need the lattice."""
+        self._check(self._lib.banjo_foresee(self._alive(), float(horizon_s)),
+                    "setting the lookahead")
 
     # -- the hand ---------------------------------------------------------
     def grab(self, name: str) -> None:
