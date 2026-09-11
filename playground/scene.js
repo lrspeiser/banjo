@@ -47,7 +47,9 @@ function create(container, hooks = {}) {
   // where it stands: dragging repositions the object and the app re-runs the
   // engine from there, which is what makes the fall real physics rather than an
   // animation. Everything here is the reposition half.
-  let grabMode = false;
+  // On from the start: a drag still orbits, and only a click picks something
+  // up, so there is nothing this costs and a great deal it makes discoverable.
+  let grabMode = true;
   let grab = null;
   // A live world drives its own poses in from outside. There is nothing to play
   // and no frame slider to honour, so the playback path has to stay out of the
@@ -238,19 +240,22 @@ function create(container, hooks = {}) {
   // What the pointer is over, lit so there is no guessing. Dragging a small
   // ball you cannot see you are on is how every attempt at this went wrong:
   // a miss looks exactly like the object refusing to move.
-  let hovered = null;
+  let hovered = null;   // the NAME of what is lit, not one of its meshes
   function litUp(body, on) {
     const material = body && body.mesh && body.mesh.material;
     if (material && material.emissive) material.emissive.setHex(on ? 0x1d4a3a : 0x000000);
   }
   function setHover(name) {
-    const next = name ? bodies.find((b) => String(b.material_id) === String(name)) : null;
-    if (next === hovered) return;
-    litUp(hovered, false);
-    hovered = next && !next.anchored ? next : null;
-    litUp(hovered, true);
+    if (String(name || "") === String(hovered || "")) return;
+    // An object is one mesh in a live world and hundreds of cells in a
+    // recording. Light every part of it either way, or hovering a plate lights
+    // one cube somewhere in the middle of it.
+    if (hovered) partsOf(hovered).forEach((b) => litUp(b, false));
+    const parts = name ? partsOf(name) : [];
+    hovered = parts.length && !parts[0].anchored ? name : null;
+    if (hovered) parts.forEach((b) => litUp(b, true));
     canvas.style.cursor = hovered ? "pointer" : "";
-    hooks.onHover?.(hovered ? { name: hovered.material_id } : null);
+    hooks.onHover?.(hovered ? { name: hovered } : null);
   }
 
   function beginGrab(clientX, clientY) {

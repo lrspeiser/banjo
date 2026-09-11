@@ -480,10 +480,19 @@
       // follows is never a guess.
       onHover: (over) => {
         live.hovering = over ? over.name : null;
-        if (!live.session || live.holding) return;
+        if (live.holding) return;
+        if (live.session) {
+          liveStatus(over ? `Click to pick up ${over.name}.`
+                          : "Live — point at something to pick it up.");
+          return;
+        }
+        // Not live. A click still picks the object up, but putting it down runs
+        // the scene again from where it was left rather than dropping it where
+        // you are looking -- so say which of the two this is.
         liveStatus(over
-          ? `Click to pick up ${over.name}.`
-          : `Live — point at something to pick it up.`);
+          ? `Click to pick up ${over.name}. This is a recording, so putting it down`
+            + ` runs the scene again — press Go live to drop things in real time.`
+          : "");
       },
       onRelease: (move) => {
         if (live.session) { liveRelease(move.name); return; }
