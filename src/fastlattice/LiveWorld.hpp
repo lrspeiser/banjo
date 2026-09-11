@@ -64,8 +64,26 @@ struct LiveImpact {
     std::string by;                  // what hit it, or "the ground"
     double closing_speed_m_s{};
     double threshold_speed_m_s{};    // what it would take to break `struck`
+    // What it would take to leave a mark on it: the speed below which nothing
+    // can take a permanent set. Infinite for a brittle material, which has no
+    // yield point and goes from elastic straight to broken.
+    //
+    // Almost always the lower of the two, and the gap between them is where
+    // real damage lives: iron yields in compression at 200 MPa and crushes at
+    // 600, so most of what happens to an iron thing happens in between.
+    double dent_speed_m_s{};
     double energy_j{};
     bool would_break{};
+    bool would_dent{};
+};
+
+// What the lattice actually did when it was run. The bounds above say what is
+// POSSIBLE; only running it says what happened.
+enum class LiveOutcome : std::uint8_t {
+    Nothing = 0,   // asked about something that is not there, or cannot be run
+    Held = 1,      // it took the hit and is the shape it was
+    Dented = 2,    // still one piece, and no longer the shape it was
+    Broke = 3,     // it came apart
 };
 
 // A scene that keeps running instead of being run.
@@ -135,6 +153,10 @@ public:
     // The window is short because it can be: removed energy settles five to ten
     // times sooner than the piece count, and 3 ms covers it.
     std::size_t fracture(const std::string &name, double window_s = 0.003);
+    // What the last fracture() call turned out to be. The return value counts
+    // pieces, which cannot tell "held exactly as it was" from "held, but bent
+    // out of shape" -- both are one piece.
+    [[nodiscard]] LiveOutcome lastOutcome() const;
     // Let this contact pass. The world can move again without anything being
     // put back into the lattice.
     //

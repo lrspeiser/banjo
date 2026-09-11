@@ -100,6 +100,17 @@ namespace banjo::fastlattice {
 struct FragmentFractureLimits {
     double minimum_removal_stretch{};      // s_min over live bonds and modes
     double minimum_removal_energy_j{};     // U_min over live bonds
+    // The strain at which this material stops springing back: sigma_y / E.
+    // Zero for a brittle material, which has no yield point and goes from
+    // elastic straight to broken.
+    //
+    // This is what makes a dent reachable. The removal stretch above asks "can
+    // any bond be broken"; between the two lies the whole range where a thing
+    // deforms and stays in one piece, which for iron in compression is 200 MPa
+    // to 600 MPa -- a factor of three, and the regime most real damage happens
+    // in. A trigger that only ever asked the first question could only ever
+    // show you things intact or in bits.
+    double yield_stretch{};
     double bar_wave_speed_m_s{};           // c = sqrt(E/rho)
     double acoustic_impedance_pa_s_m{};    // z = rho * c = sqrt(rho * E)
     std::size_t live_bonds{};
@@ -118,7 +129,17 @@ struct RefractureAdmission {
     double threshold_speed_m_s{};    // v*
     double estimated_peak_stretch{}; // 2 * eps_0
     double available_energy_j{};
+    // The same bound taken against the yield stretch instead of the removal
+    // stretch: below this speed nothing can take a permanent set. Infinite for
+    // a material with no yield point.
+    double yield_speed_m_s{std::numeric_limits<double>::infinity()};
+    bool yields{};
     [[nodiscard]] bool admitted() const { return verdict == RefractureVerdict::Admitted; }
+    // Whether the lattice has anything to say about this contact at all: either
+    // something can break, or something can bend and stay bent. Both need the
+    // same machinery -- the step taken back and the matter put back into the
+    // lattice -- and only the lattice can tell which one actually happens.
+    [[nodiscard]] bool worthRunning() const { return admitted() || yields; }
 };
 
 // z = sqrt(rho * E) for a declared material.
@@ -132,9 +153,10 @@ struct RefractureAdmission {
 // The per-fragment limits, read from the parent lattice state so that the
 // per-bond strength variation and any bond already removed are accounted for:
 // `bonds` are indices into the parent's ORIGINAL bond order.
+// `yield_strength_pa` of zero means a brittle material with no yield point.
 [[nodiscard]] FragmentFractureLimits fragmentFractureLimits(
     const ActiveMatter &matter, std::span<const std::uint32_t> node_indices,
-    double density_kg_m3, double young_modulus_pa);
+    double density_kg_m3, double young_modulus_pa, double yield_strength_pa = 0.0);
 
 // ---------------------------------------------------------------------------
 // 2. The return path

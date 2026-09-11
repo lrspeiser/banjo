@@ -37,6 +37,7 @@
 #include <nlohmann/json.hpp>
 
 #include <fstream>
+#include <array>
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
@@ -75,8 +76,10 @@ nlohmann::json describe(const LiveWorld &world, bool with_geometry) {
         impacts.push_back({{"struck", impact.struck}, {"by", impact.by},
                            {"closing_speed_m_s", impact.closing_speed_m_s},
                            {"threshold_speed_m_s", impact.threshold_speed_m_s},
+                           {"dent_speed_m_s", impact.dent_speed_m_s},
                            {"energy_j", impact.energy_j},
-                           {"would_break", impact.would_break}});
+                           {"would_break", impact.would_break},
+                           {"would_dent", impact.would_dent}});
     return {{"ok", true}, {"t", world.time_s()}, {"stepped_back", world.steppedBack()},
             {"cell_size_m", world.cellSize()}, {"geometry", with_geometry},
             {"held", world.held()}, {"bodies", std::move(bodies)},
@@ -164,6 +167,11 @@ int main(int argc, char **argv) {
                         command.at("name").get<std::string>(),
                         command.value("window_s", 0.003));
                     reply["pieces"] = pieces;
+                    // What it turned out to be. A count of one cannot tell a
+                    // thing that held from a thing that bent.
+                    reply["outcome"] = std::array<const char *, 4>{
+                        "nothing", "held", "dented", "broke"}
+                        [static_cast<std::size_t>(world->lastOutcome())];
                 } else if (op == "pick") {
                     // Changes nothing and reports nothing about the world, so
                     // it answers on its own rather than through describe().

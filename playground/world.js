@@ -543,17 +543,25 @@ async function tick() {
         .sort((a, b) => b.closing_speed_m_s - a.closing_speed_m_s)[0];
       $("panel-state").textContent = `${name} was hit hard enough to break — working it out…`;
       const after = await act("fracture", { name });
-      if (after.pieces > 1) {
-        const how = hit
-          ? `${hit.by} hit ${name} at ${hit.closing_speed_m_s.toFixed(1)} m/s`
-            + ` (it takes ${hit.threshold_speed_m_s.toFixed(1)} m/s to break it)`
-          : `${name} was struck hard enough to break`;
-        say("world", `${how}. It broke into ${after.pieces} pieces.`);
+      // What the engine says it was, rather than what the piece count implies:
+      // a count of one cannot tell a thing that held from a thing that bent.
+      const how = hit
+        ? `${hit.by || "the ground"} hit ${name} at ${hit.closing_speed_m_s.toFixed(1)} m/s`
+        : `${name} was struck`;
+      const bars = hit
+        ? ` (it bends above ${Number.isFinite(hit.dent_speed_m_s)
+              ? hit.dent_speed_m_s.toFixed(1) + " m/s" : "no speed — it is brittle"}`
+          + `, breaks above ${hit.threshold_speed_m_s.toFixed(1)} m/s)`
+        : "";
+      if (after.outcome === "broke") {
+        say("world", `${how}${bars}. It broke into ${after.pieces} pieces.`);
         remember(`${name} broke into ${after.pieces} pieces`);
+      } else if (after.outcome === "dented") {
+        say("world", `${how}${bars}. It held together and came out a different shape.`);
+        remember(`${name} was dented`);
       } else if (hit) {
-        say("world", `${hit.by} hit ${name} at ${hit.closing_speed_m_s.toFixed(1)} m/s and it held.`
-          + ` The threshold is the speed below which nothing CAN break; above it a break is`
-          + ` possible, not certain.`);
+        say("world", `${how}${bars} and it held. A threshold is the speed below which`
+          + ` nothing CAN happen; above it, it is possible and not certain.`);
         remember(`${name} was hit at ${hit.closing_speed_m_s.toFixed(1)} m/s and held`);
       }
       state = after;

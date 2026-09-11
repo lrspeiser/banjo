@@ -116,6 +116,15 @@ RefractureAdmission admitRefracture(
         2.0 * closing_speed_m_s * transmission / fragment.bar_wave_speed_m_s;
     out.threshold_speed_m_s =
         fragment.minimum_removal_stretch * fragment.bar_wave_speed_m_s / (2.0 * transmission);
+    // The same bound against the yield stretch. Everything in the derivation is
+    // about how much strain the transmitted pulse carries; which strain you
+    // then compare it to is the only difference between "can this break" and
+    // "can this take a permanent set".
+    if (fragment.yield_stretch > 0.0) {
+        out.yield_speed_m_s =
+            fragment.yield_stretch * fragment.bar_wave_speed_m_s / (2.0 * transmission);
+        out.yields = out.estimated_peak_stretch >= fragment.yield_stretch;
+    }
     if (!(out.estimated_peak_stretch >= fragment.minimum_removal_stretch)) {
         out.verdict = RefractureVerdict::BelowStressBound;
         return out;
@@ -130,9 +139,16 @@ RefractureAdmission admitRefracture(
 
 FragmentFractureLimits fragmentFractureLimits(
     const ActiveMatter &matter, std::span<const std::uint32_t> node_indices,
-    double density_kg_m3, double young_modulus_pa) {
+    double density_kg_m3, double young_modulus_pa, double yield_strength_pa) {
     FragmentFractureLimits limits{};
     limits.cells = node_indices.size();
+    // sigma_y / E, the same number the plastic law uses for its yield
+    // extension. Left at zero for anything with no yield strength declared,
+    // which is every brittle material in the catalogue.
+    limits.yield_stretch =
+        std::isfinite(yield_strength_pa) && yield_strength_pa > 0.0 && young_modulus_pa > 0.0
+            ? yield_strength_pa / young_modulus_pa
+            : 0.0;
     limits.bar_wave_speed_m_s =
         density_kg_m3 > 0.0 && young_modulus_pa > 0.0 ? std::sqrt(young_modulus_pa / density_kg_m3) : 0.0;
     limits.acoustic_impedance_pa_s_m = acousticImpedance(density_kg_m3, young_modulus_pa);

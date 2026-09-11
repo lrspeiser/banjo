@@ -210,6 +210,11 @@ class ImpactCollector final : public JPH::ContactListener {
 public:
     bool detailed_observations{};
     bool observations_enabled{true};
+    // Whether landing on the support surface counts as an impact worth
+    // reporting. Off by default, because a body lying on the floor is in
+    // contact with it on every step for ever and a lane that does not need
+    // those should not pay for them.
+    bool surface_observations{};
     std::atomic<unsigned> manifolds{},points{},speculative_manifolds{};
     ImpactCollector(
         std::atomic<std::uint64_t> &tick,
@@ -371,7 +376,19 @@ private:
             settings.mIsSensor = true;
             event.response_deferred_to_material = true;
         }
-        const bool surface_contact = id1 == kSupportSurfaceMatterId || id2 == kSupportSurfaceMatterId;
+        // A contact with the floor. Suppressed unless a lane has asked for it,
+        // and even then only the moment it ARRIVES -- `record_impact` is true
+        // for a contact added and false for one that persists, so a thing lying
+        // on the floor reports its landing and then says nothing more about it.
+        //
+        // Without this nothing could ever be damaged by hitting the ground,
+        // which is most of what happens to anything: the impact was never
+        // reported, so it was never judged, so the lattice never ran. The line
+        // in LiveWorld that names an impact's other side "the ground" could not
+        // be reached at all.
+        const bool surface_contact =
+            (id1 == kSupportSurfaceMatterId || id2 == kSupportSurfaceMatterId) &&
+            !surface_observations;
         if(!observations_enabled&&!event.response_deferred_to_material)return;
         if (!event.response_deferred_to_material && (!record_impact || surface_contact) && !detailed_observations) return;
         if(detailed_observations && closing_speed<.01) return;
@@ -874,6 +891,11 @@ void JoltWorld::addCompound(const RigidCompoundDescription &d){
         bodies.SetLinearAndAngularVelocity(id,toJolt(d.state.linear_velocity_m_s),toJolt(d.state.angular_velocity_rad_s));
         impl_->bodies_.emplace(d.body_id,id);impl_->contact_states_.emplace(d.body_id,BodyContactState{contact,0,0,false,d.mass_kg,{}});
     }catch(...){impl_->bodies_.erase(d.body_id);impl_->contact_states_.erase(d.body_id);bodies.RemoveBody(id);bodies.DestroyBody(id);throw;}
+}
+
+void JoltWorld::setSurfaceImpactObservations(bool enabled){
+    impl_->requireConfigurationMutable();
+    impl_->impact_collector_.surface_observations=enabled;
 }
 
 void JoltWorld::setImpactObservationsEnabled(bool enabled) {

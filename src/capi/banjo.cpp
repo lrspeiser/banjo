@@ -180,6 +180,11 @@ int banjo_fracture(banjo_world *world, const char *name, double window_s) {
     return guarded([&] { return static_cast<int>(world->world->fracture(name, window_s)); });
 }
 
+int banjo_last_outcome(const banjo_world *world) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    return static_cast<int>(world->world->lastOutcome());
+}
+
 int banjo_decline_break(banjo_world *world, const char *name) {
     if (!world || !name) { setError("no world or no name"); return BANJO_BAD_ARGUMENT; }
     return guarded([&] { world->world->declineBreak(name); return BANJO_OK; });
@@ -238,8 +243,10 @@ int banjo_impacts(const banjo_world *world, double quiet_speed_m_s,
             out[i].by = hit.by.c_str();
             out[i].closing_speed_m_s = hit.closing_speed_m_s;
             out[i].threshold_speed_m_s = hit.threshold_speed_m_s;
+            out[i].dent_speed_m_s = hit.dent_speed_m_s;
             out[i].energy_j = hit.energy_j;
             out[i].would_break = hit.would_break ? 1 : 0;
+            out[i].would_dent = hit.would_dent ? 1 : 0;
         }
         return count;
     });

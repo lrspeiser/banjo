@@ -595,9 +595,17 @@ double bounceFraction(MaterialPreset material) {
     bool rising = false;
     for (int i = 0; i < 960 && apex < 0.0; ++i) {
         live->step(1.0 / 240.0);
-        // Answer whatever asks to break, so the clock cannot stop. Some of
-        // these materials are admitted at this speed and hold.
-        for (const std::string &name : live->breakable()) live->fracture(name);
+        // Decline whatever asks to break, so the clock cannot stop and there is
+        // still a ball to measure.
+        //
+        // This is a question about bouncing, and answering it needs the ball to
+        // survive the landing. Concrete can be broken by a 1.5 m drop onto
+        // concrete -- its tensile strength is 3 MPa and its threshold is
+        // 0.71 m/s -- so letting the breaks through left no ball at all and the
+        // bounce read as zero. Declining is a real answer a host can give, and
+        // it is the right one here: the contact is then resolved by the rigid
+        // solver with its restitution, which IS the thing being measured.
+        for (const std::string &name : live->breakable()) live->declineBreak(name);
         for (const LiveBodyPose &pose : live->poses(false)) {
             if (pose.name != "ball") continue;
             lowest = std::min(lowest, pose.position_m.y);
@@ -658,6 +666,114 @@ void whatAThingIsMadeOfDecidesHowItBounces() {
 // The bar for "no longer the shape it was" is a tenth of a cell of permanent
 // set, or bonds lost inside it; below that, rebuilding would turn every
 // authored sphere into a hull the first time it landed hard.
+// Drop one ball of one material onto the floor and report what became of it.
+struct Landing {
+    std::string outcome;
+    double hit{}, break_speed{}, dent_speed{};
+    std::size_t pieces{};
+};
+
+Landing dropOnFloor(MaterialPreset material, double speed) {
+    TileImpactRequest r;
+    r.cell_size_m = 0.02;
+    r.backend = BackendKind::CpuParallel;
+    r.plasticity = true;   // nothing can hold a shape it was pushed into without it
+    SceneBody ball;
+    ball.name = "ball";
+    ball.shape = BodyShape::Sphere;
+    ball.material = material;
+    ball.dimensions_m = {0.1, 0.1, 0.1};
+    ball.center_m = {0.0, 0.30, 0.0};
+    ball.velocity_m_s = {0.0, -speed, 0.0};
+    r.bodies = {ball};
+
+    const auto live = LiveWorld::open(r);
+    Landing out;
+    out.outcome = "held";
+    for (int i = 0; i < 288; ++i) {
+        live->step(1.0 / 960.0);
+        for (const LiveImpact &impact : live->impacts(0.2))
+            if (impact.struck.rfind("ball", 0) == 0 && impact.closing_speed_m_s > out.hit) {
+                out.hit = impact.closing_speed_m_s;
+                out.break_speed = impact.threshold_speed_m_s;
+                out.dent_speed = impact.dent_speed_m_s;
+            }
+        for (const std::string &name : live->breakable()) {
+            live->fracture(name);
+            if (name.rfind("ball", 0) != 0) continue;
+            switch (live->lastOutcome()) {
+            case LiveOutcome::Broke: out.outcome = "broke"; break;
+            case LiveOutcome::Dented: out.outcome = "dented"; break;
+            case LiveOutcome::Held: out.outcome = "held"; break;
+            default: break;
+            }
+        }
+    }
+    for (const LiveBodyPose &pose : live->poses(false))
+        if (pose.name.rfind("ball", 0) == 0) ++out.pieces;
+    return out;
+}
+
+// Hitting the floor is something that happens to things.
+//
+// It could not be. A contact with the support surface was dropped before it
+// was ever reported -- the collector returned early on any pair involving the
+// floor -- so it was never judged, the lattice never ran, and nothing could be
+// damaged by being dropped. The line in this engine that names an impact's
+// other side "the ground" was unreachable.
+void landingOnTheFloorIsAnImpact() {
+    const Landing hard = dropOnFloor(MaterialPreset::Glass, 20.0);
+    std::cout << "  glass onto the floor at 20 m/s: hit at " << hard.hit
+              << " m/s, " << hard.outcome << " into " << hard.pieces << " pieces\n";
+    require(hard.hit > 15.0, "landing on the floor was not reported as an impact at all");
+    require(hard.outcome == "broke", "a glass ball hit the floor at 20 m/s and survived");
+}
+
+// A thing bends before it breaks, and the engine can now tell you which.
+//
+// The trigger only ever asked one question -- can any bond reach its REMOVAL
+// threshold -- so the lattice only ever ran at speeds that could break
+// something. Everything between yielding and breaking, which for iron on
+// concrete is 14 m/s to 36 m/s, was invisible: below the bar the step was not
+// even taken back, so an iron ball hammered into the floor came away a perfect
+// sphere.
+//
+// Now the same bound is taken against the yield stretch as well, and a contact
+// that can only bend something still stops the step. Which of the two actually
+// happens is not predicted -- only running the lattice says.
+void aThingBendsBeforeItBreaks() {
+    const Landing gentle = dropOnFloor(MaterialPreset::Iron, 10.0);
+    const Landing middle = dropOnFloor(MaterialPreset::Iron, 20.0);
+    const Landing hard = dropOnFloor(MaterialPreset::Iron, 40.0);
+    std::cout << "  iron onto the floor: dents above " << middle.dent_speed
+              << " m/s, breaks above " << middle.break_speed << " m/s\n"
+              << "    10 m/s -> " << gentle.outcome << ", 20 m/s -> " << middle.outcome
+              << ", 40 m/s -> " << hard.outcome << "\n";
+
+    require(middle.dent_speed < middle.break_speed,
+            "a thing that can bend should start bending before it starts breaking");
+    require(gentle.outcome == "held", "10 m/s should not mark an iron ball");
+    require(middle.outcome == "dented",
+            "the whole range between yielding and breaking is still invisible");
+    require(middle.pieces == 1, "it came apart, so that is a break and not a dent");
+    require(hard.outcome == "broke", "40 m/s onto concrete should break an iron ball");
+}
+
+// A brittle thing has no bending range at all, and says so.
+void somethingBrittleHasNoDentingRange() {
+    const Landing glass = dropOnFloor(MaterialPreset::Glass, 20.0);
+    const Landing ceramic = dropOnFloor(MaterialPreset::Ceramic, 20.0);
+    std::cout << "  glass dents above " << glass.dent_speed << " m/s (breaks above "
+              << glass.break_speed << "), ceramic dents above " << ceramic.dent_speed << "\n";
+    // Not a large number: no number. Glass and alumina have no yield strength
+    // in the catalogue because they have no yield point, and a bound taken
+    // against a yield stretch of zero would admit every contact there is.
+    require(!std::isfinite(glass.dent_speed), "glass was given a speed at which it bends");
+    require(!std::isfinite(ceramic.dent_speed), "ceramic was given a speed at which it bends");
+    require(glass.outcome == "broke", "glass hit the floor at 20 m/s and did not break");
+    require(glass.pieces > 1, "it broke into one piece, which is not a break");
+}
+
 void somethingCanBeDentedWithoutBeingBroken() {
     TileImpactRequest r;
     r.cell_size_m = 0.02;
@@ -672,12 +788,18 @@ void somethingCanBeDentedWithoutBeingBroken() {
     SceneBody ball;
     ball.name = "ball";
     ball.shape = BodyShape::Sphere;
-    ball.material = MaterialPreset::Aluminum;
+    ball.material = MaterialPreset::Iron;
     ball.dimensions_m = {0.1, 0.1, 0.1};
     ball.center_m = {0.0, 0.20, 0.0};
-    // Hard enough to be admitted -- aluminium needs about 24.5 m/s against an
-    // iron anvil -- and not so hard that it comes apart.
-    ball.velocity_m_s = {0.0, -60.0, 0.0};
+    // Hard enough to bend it and not hard enough to break it: iron against an
+    // iron anvil bends above about 4.9 m/s and breaks above 12.3.
+    //
+    // This used to need 60 m/s, and what happened at 60 was not really a dent:
+    // the ball was re-entered on its own with nothing to press against, and
+    // what changed its shape was bonds inside it snapping. Anchored scenery is
+    // a support plane now, so the ball is squashed against the anvil the way it
+    // would be, and it yields at a speed a person could actually produce.
+    ball.velocity_m_s = {0.0, -16.0, 0.0};
     r.bodies = {anvil, ball};
 
     const auto live = LiveWorld::open(r);
@@ -700,11 +822,14 @@ void somethingCanBeDentedWithoutBeingBroken() {
     const std::vector<LiveBodyPose> after = findBall();
     require(!after.empty(), "the ball vanished");
     const double now = after[0].dimensions_m.x;
-    std::cout << "  aluminium at 60 m/s onto an iron anvil: " << after.size()
+    std::cout << "  iron at 16 m/s onto an anchored iron anvil: " << after.size()
               << " piece(s), " << before[0].shape << " -> " << after[0].shape
               << ", " << was * 1000.0 << " mm across -> " << now * 1000.0 << " mm\n";
 
     require(after.size() == 1, "it came apart, so this is a break and not a dent");
+    require(live->lastOutcome() == LiveOutcome::Dented,
+            "the world does not call this a dent, so the shape change came from "
+            "somewhere other than the material yielding");
     require(after[0].shape == "hull",
             "it is still being drawn as the sphere it was authored as, so the "
             "shape it ended up in was thrown away");
@@ -764,6 +889,12 @@ int main() {
         std::cout << "[PASS] breaking scenery or a name that is not there changes nothing\n";
         aThingThatHeldDoesNotStopTheWorld();
         std::cout << "[PASS] something that was hit hard and held does not deadlock the world\n";
+        landingOnTheFloorIsAnImpact();
+        std::cout << "[PASS] landing on the floor is an impact and is judged like any other\n";
+        aThingBendsBeforeItBreaks();
+        std::cout << "[PASS] a thing bends before it breaks, and the engine says which\n";
+        somethingBrittleHasNoDentingRange();
+        std::cout << "[PASS] something brittle has no bending range and says so\n";
         somethingCanBeDentedWithoutBeingBroken();
         std::cout << "[PASS] something can be dented without being broken\n";
         whatAThingIsMadeOfDecidesHowItBounces();

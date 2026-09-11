@@ -131,6 +131,11 @@ public:
     // Resource capacity and observations do not alter contact laws/settings.
     // Deferred material contacts still require their activation observations.
     void setImpactObservationsEnabled(bool enabled);
+    // Whether landing on the support surface is reported as an impact. Off by
+    // default: a body at rest touches the floor on every step, and only a lane
+    // that judges those contacts wants them. Only the arrival is reported, not
+    // the resting that follows.
+    void setSurfaceImpactObservations(bool enabled);
     [[nodiscard]] RigidContactDiagnostics contactDiagnostics() const;
     // Initial/current AABB + speculative-margin pair envelope, no time sweep.
     // Host-thread observation for bounded convex v2 admission, <=1024 bodies.

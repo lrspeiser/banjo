@@ -75,7 +75,7 @@ extern "C" {
 /* The ABI version. Bumped when the meaning or layout of anything here changes.
  * Check it once at startup against banjo_abi_version(): a header and a library
  * that disagree will not tell you so any other way. */
-#define BANJO_ABI_VERSION 2
+#define BANJO_ABI_VERSION 3
 
 /* What a call reported. Anything below zero is a failure and leaves the world
  * unchanged; banjo_last_error() says what happened. */
@@ -139,9 +139,27 @@ typedef struct {
      * necessary condition and never a promise. Reading it as a promise reads
      * the derivation backwards. */
     double threshold_speed_m_s;
+    /* What it would take to leave a MARK on it -- the speed below which nothing
+     * can take a permanent set. Infinite for a brittle material, which has no
+     * yield point and goes from elastic straight to broken.
+     *
+     * Almost always the lower of the two, and the gap between them is where
+     * most real damage lives: iron yields in compression at 200 MPa and
+     * crushes at 600. */
+    double dent_speed_m_s;
     double energy_j;
     int would_break;
+    int would_dent;
 } banjo_impact;
+
+/* What the lattice actually did. The two speeds above say what is POSSIBLE;
+ * only running it says what happened. */
+typedef enum {
+    BANJO_NOTHING = 0,  /* asked about something that is not there */
+    BANJO_HELD = 1,     /* it took the hit and is the shape it was */
+    BANJO_DENTED = 2,   /* still one piece, and no longer the shape it was */
+    BANJO_BROKE = 3     /* it came apart */
+} banjo_outcome;
 
 /* ---- opening and closing -------------------------------------------- */
 
@@ -195,6 +213,11 @@ BANJO_API const char *banjo_breakable_name(const banjo_world *world, int i);
  * Returns how many pieces it became: 1 means it held. Costs roughly a third of
  * a millisecond per cell, so it is worth telling the user it is happening. */
 BANJO_API int banjo_fracture(banjo_world *world, const char *name, double window_s);
+
+/* What the last banjo_fracture turned out to be, as a banjo_outcome. The piece
+ * count it returns cannot tell "held exactly as it was" from "held, but bent
+ * out of shape": both are one piece. */
+BANJO_API int banjo_last_outcome(const banjo_world *world);
 
 /* Let this contact pass without breaking anything. Time can move again.
  * Answering is what matters, not which way you answer. */

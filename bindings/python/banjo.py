@@ -32,8 +32,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterator
 
-# Bumped with the header: banjo_body gained a material.
-ABI_VERSION = 2
+# Bumped with the header: banjo_impact gained the dent bound.
+ABI_VERSION = 3
+
+NOTHING, HELD, DENTED, BROKE = 0, 1, 2, 3
+OUTCOMES = {0: "nothing", 1: "held", 2: "dented", 3: "broke"}
 
 OK = 0
 BREAK_PENDING = 1
@@ -72,8 +75,10 @@ class _Impact(ctypes.Structure):
                 ("by", ctypes.c_char_p),
                 ("closing_speed_m_s", ctypes.c_double),
                 ("threshold_speed_m_s", ctypes.c_double),
+                ("dent_speed_m_s", ctypes.c_double),
                 ("energy_j", ctypes.c_double),
-                ("would_break", ctypes.c_int)]
+                ("would_break", ctypes.c_int),
+                ("would_dent", ctypes.c_int)]
 
 
 @dataclass(frozen=True)
@@ -100,8 +105,13 @@ class Impact:
     # never certain: the bound is deliberately generous, so clearing it is a
     # necessary condition and reading it as a promise reads it backwards.
     threshold_speed_m_s: float
+    # The speed below which nothing can take a permanent set. Infinite for a
+    # brittle material. Almost always the lower of the two, and the gap is
+    # where most real damage lives.
+    dent_speed_m_s: float
     energy_j: float
     would_break: bool
+    would_dent: bool
 
 
 @dataclass(frozen=True)
@@ -181,6 +191,8 @@ def library(path: str | os.PathLike[str] | None = None) -> ctypes.CDLL:
     lib.banjo_fracture.restype = ctypes.c_int
     lib.banjo_decline_break.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
     lib.banjo_decline_break.restype = ctypes.c_int
+    lib.banjo_last_outcome.argtypes = [ctypes.c_void_p]
+    lib.banjo_last_outcome.restype = ctypes.c_int
 
     lib.banjo_body_count.argtypes = [ctypes.c_void_p]
     lib.banjo_body_count.restype = ctypes.c_int
@@ -300,6 +312,11 @@ class World:
             self._lib.banjo_fracture(self._alive(), name.encode("utf-8"), float(window_s)),
             f"breaking {name}")
 
+    @property
+    def last_outcome(self) -> str:
+        """What the last fracture turned out to be: held, dented or broke."""
+        return OUTCOMES.get(self._lib.banjo_last_outcome(self._alive()), "nothing")
+
     def decline_break(self, name: str) -> None:
         """Let this contact pass. Answering is what matters, not which way."""
         self._check(self._lib.banjo_decline_break(self._alive(), name.encode("utf-8")),
@@ -343,7 +360,9 @@ class World:
                        by=(i.by or b"").decode("utf-8", "replace"),
                        closing_speed_m_s=i.closing_speed_m_s,
                        threshold_speed_m_s=i.threshold_speed_m_s,
-                       energy_j=i.energy_j, would_break=bool(i.would_break))
+                       dent_speed_m_s=i.dent_speed_m_s,
+                       energy_j=i.energy_j, would_break=bool(i.would_break),
+                       would_dent=bool(i.would_dent))
                 for i in buffer[:written]]
 
     # -- the hand ---------------------------------------------------------

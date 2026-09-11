@@ -58,6 +58,7 @@ struct LiveWorld::Impl {
     // a free-flying object with no stress in it, which breaks nothing.
     std::unordered_map<std::size_t, std::size_t> partner_of;
     bool stepped_back{};
+    LiveOutcome last_outcome{LiveOutcome::Nothing};
     // The rigid step that was taken back. The lattice has to cover it before it
     // can cover the impact, because the world is that far short of contact.
     double last_dt_s{};
@@ -203,7 +204,8 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request) {
         }
         impl.limits_of.push_back(fragmentFractureLimits(
             setup.matter, component.node_indices,
-            definition->density_kg_m3, definition->young_modulus_pa));
+            definition->density_kg_m3, definition->young_modulus_pa,
+            definition->yield_strength_pa));
         impl.impedance_of.push_back(
             acousticImpedance(definition->density_kg_m3, definition->young_modulus_pa));
         // How it meets the floor, from the same material the threshold came
@@ -252,6 +254,10 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request) {
     // A support plane costs one entry in a fixed-size set however big it is, so
     // there is nothing to trade: make it larger than anywhere a pointer can
     // reasonably drag something.
+    // Hitting the floor is something that happens to things, so it is judged
+    // like any other contact. The batch lane does not ask for this and is
+    // unchanged by it.
+    impl.world->setSurfaceImpactObservations(true);
     constexpr double kLiveGroundHalfSpanM = 200.0;
     impl.world->addSupportSurface({
         .frame = makeSupportPlane({0.0, setup.ground_y, 0.0}, {0.0, 1.0, 0.0}),
@@ -310,8 +316,15 @@ bool LiveWorld::judgeStep() {
             impact.closing_speed_m_s = event.closing_speed_m_s;
             impact.threshold_speed_m_s = admission.threshold_speed_m_s;
             impact.energy_j = event.available_normal_energy_j;
+            impact.threshold_speed_m_s = admission.threshold_speed_m_s;
+            impact.dent_speed_m_s = admission.yield_speed_m_s;
             impact.would_break = admission.admitted();
-            if (impact.would_break) {
+            impact.would_dent = admission.yields;
+            // Either one needs the lattice, and only the lattice can say which
+            // of them actually happens. A trigger that asked about breaking
+            // alone never ran below the breaking bar, which is exactly where a
+            // dent lives.
+            if (admission.worthRunning()) {
                 breaking_now.insert(impact.struck);
                 // Remember what hit it, for the island a fracture would build.
                 // The hardest contact wins: a body resting on the floor and
@@ -484,10 +497,16 @@ std::vector<LiveImpact> LiveWorld::impacts(double quiet_speed_m_s) const {
 
 bool LiveWorld::steppedBack() const { return impl_->stepped_back; }
 
+LiveOutcome LiveWorld::lastOutcome() const { return impl_->last_outcome; }
+
 std::vector<std::string> LiveWorld::breakable() const {
     std::vector<std::string> out;
     for (const LiveImpact &impact : impl_->last_impacts) {
-        if (!impact.would_break) continue;
+        // Either bound. The name is a hangover from when breaking was the only
+        // thing the lattice was ever run for; what it means is "the lattice has
+        // something to say about this one", and a dent is one of the things it
+        // can say.
+        if (!impact.would_break && !impact.would_dent) continue;
         if (impl_->held_through.count(impact.struck)) continue;
         // Gone: it broke, and what it became carries different names.
         if (impl_->index_of.find(impact.struck) == impl_->index_of.end()) continue;
@@ -508,10 +527,12 @@ std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
     // contact. Recording that here rather than at each of the five ways out is
     // what stops one of them being forgotten and deadlocking the world.
     impl_->held_through.insert(name);
+    impl_->last_outcome = LiveOutcome::Nothing;
     const auto found = impl_->index_of.find(name);
     if (found == impl_->index_of.end()) return 0;
     const std::size_t which = found->second;
     // Anchored scenery is the world. Breaking the floor is a different feature.
+    impl_->last_outcome = LiveOutcome::Held;
     if (impl_->described[which].anchored) return 1;
     if (impl_->holding == which) return 1;   // it is in a hand, not in a collision
     const TileImpactSetup &setup = *impl_->setup;
@@ -522,14 +543,24 @@ std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
     // union of their cells, and running it resolves the collision through the
     // failure criterion rather than through Jolt's contact solver.
     std::vector<std::size_t> island_bodies{which};
+    // Scenery that was struck, kept aside. It does not go INTO the island --
+    // it is immovable, and putting immovable matter into a lattice run is
+    // paying to solve something whose answer is "it did not move". But it must
+    // not simply be dropped either, which is what used to happen: a ball that
+    // hit an anchored anvil was re-entered on its own, a free-flying object
+    // with a uniform velocity and nothing to press against, and came away a
+    // perfect sphere however hard it was driven in. Below, it becomes what it
+    // physically is -- a surface that does not give.
+    std::size_t anvil = static_cast<std::size_t>(-1);
     {
         const auto partner = impl_->partner_of.find(which);
         if (partner != impl_->partner_of.end() &&
             partner->second != static_cast<std::size_t>(-1) &&
             partner->second < impl_->described.size() &&
-            !impl_->described[partner->second].anchored &&
-            partner->second != impl_->holding)
-            island_bodies.push_back(partner->second);
+            partner->second != impl_->holding) {
+            if (impl_->described[partner->second].anchored) anvil = partner->second;
+            else island_bodies.push_back(partner->second);
+        }
     }
     for (const std::size_t body : island_bodies)
         if (!impl_->world->contains(impl_->body_of[body])) return 0;
@@ -616,6 +647,70 @@ std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
 
     // The island alone: no striker, the same support planes the scene uses.
     StepSettings<double> settings = buildSettings(setup, island.origin);
+    // Yield from the struck body's OWN material.
+    //
+    // buildSettings takes it from the scene's default matter, because there is
+    // one plastic_yield_stretch for the whole solve and the single-tile lane
+    // has one material to put in it. In a scene of objects that default is
+    // glass, which has no yield point at all -- so an iron ball being hammered
+    // into an anvil was solved with a yield stretch of zero and could not take
+    // a permanent set however hard it was hit. An island is one body, or a body
+    // and the thing that struck it, so the struck body's material is the one
+    // that belongs here.
+    const MaterialDefinition *struck_material = &setup.tile_material;
+    if (setup.multi_body && !setup.part_of_node.empty() && !impl_->nodes_of[which].empty()) {
+        const std::uint32_t part = setup.part_of_node[impl_->nodes_of[which].front()];
+        if (part < setup.part_definitions.size()) {
+            const MaterialDefinition &own = setup.part_definitions[part];
+            struck_material = &own;
+            const bool yields = own.yield_strength_pa > 0.0 && own.young_modulus_pa > 0.0;
+            settings.plastic_yield_stretch =
+                yields ? own.yield_strength_pa / own.young_modulus_pa : 0.0;
+            settings.plastic_hardening = yields ? std::max(0.0, own.hardening_ratio) : 0.0;
+        }
+    }
+    // The scenery it was driven into, as the surface it is.
+    //
+    // A support plane is exactly "a thing that does not give", which is what
+    // anchored matter is, and the lattice already has the ground as one. The
+    // footprint is the body's own extent, so the island is stopped where the
+    // scenery actually is and passes beside it where it is not.
+    //
+    // Horizontal only: the plane's normal is +Y. So this is a table top, an
+    // anvil, a floor -- the cases where something is driven DOWN into
+    // something. A wall or a tilted ramp is not covered, and would need a
+    // plane that can face any direction.
+    if (anvil != static_cast<std::size_t>(-1) &&
+        settings.support.plane_count < kMaxSupportPlanes) {
+        const RigidSnapshot on = impl_->world->snapshot(impl_->body_of[anvil]);
+        const Vec3 half = 0.5 * impl_->described[anvil].dimensions_m;
+        const double top = on.center_of_mass_world_m.y + half.y;
+        // How the struck body meets the scenery, from the two materials.
+        const MaterialDefinition &anvil_material =
+            setup.multi_body && !impl_->nodes_of[anvil].empty() &&
+                    setup.part_of_node[impl_->nodes_of[anvil].front()] <
+                        setup.part_definitions.size()
+                ? setup.part_definitions[setup.part_of_node[impl_->nodes_of[anvil].front()]]
+                : setup.ground_material;
+        const CombinedContactMaterial against = combineContactMaterials(
+            compileContactMaterial(*struck_material), compileContactMaterial(anvil_material));
+        SupportPlane<double> plane{};
+        const SupportPlaneFrame frame = makeSupportPlane(
+            Vec3{on.center_of_mass_world_m.x, top, on.center_of_mass_world_m.z} - island.origin,
+            Vec3{0.0, 1.0, 0.0});
+        plane.point = toV3(frame.point_world_m);
+        plane.normal = toV3(frame.normal_world);
+        plane.tangent = toV3(frame.tangent_world);
+        plane.bitangent = toV3(frame.bitangent_world);
+        plane.restitution = against.restitution;
+        plane.static_friction = against.static_friction;
+        plane.dynamic_friction = against.dynamic_friction;
+        plane.node_radius = impl_->request.node_contact_radius_factor * impl_->request.cell_size_m;
+        plane.reach_capped = 1;
+        plane.footprint_count = 1;
+        plane.footprints[0] = {0.0, 0.0, half.x, half.z};
+        settings.support.planes[settings.support.plane_count++] = plane;
+    }
     settings.node_contact.bucket_mask =
         latticeContactBucketMask(static_cast<std::uint32_t>(island.matter.nodes.size()));
     settings.sphere_enabled = 0U;
@@ -679,12 +774,25 @@ std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
     // makes it a hull -- because that IS its surface now, and no box or sphere
     // describes a dented thing.
     //
-    // The bar is a tenth of a cell. Below that the deformation is not visible
-    // at the resolution the body is drawn at, and rebuilding would turn every
-    // authored sphere into a hull the first time it landed hard.
-    const bool dented = dent_m > 0.1 * impl_->request.cell_size_m;
+    // The bar is in the material's own units, not the grid's.
+    //
+    // It was a tenth of a cell -- 2 mm on a 20 mm cell -- which is a tenth of
+    // permanent strain on one bond. Nothing reaches that without coming apart
+    // first, so the test could never fire: an iron ball hammered into the floor
+    // flowed 173 micrometres per bond, nine times what it took to start
+    // flowing, and was still called unchanged.
+    //
+    // What "permanently deformed" means is set by where the material stops
+    // springing back, so that is what it is measured against. Twice the yield
+    // extension is past the point where the flow could be one substep's
+    // overshoot rather than a set.
+    const double yield_extension =
+        settings.plastic_yield_stretch * impl_->request.cell_size_m;
+    const bool dented = yield_extension > 0.0 && dent_m > 2.0 * yield_extension;
     if (status.broken_bonds == 0 && island_components.size() <= 1 && !dented) return 1;
     if (island_components.empty()) return 1;
+    impl_->last_outcome =
+        island_components.size() > 1 ? LiveOutcome::Broke : LiveOutcome::Dented;
 
     // It broke, or it bent. Either way it is not what it was, so replace it.
     FragmentBuildResult rebuilt = buildFragmentRepresentations(island.matter, island_components, {
@@ -767,7 +875,8 @@ std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
         piece.shape = "hull";
         piece.color_rgba = parent.color_rgba;
         impl_->limits_of.push_back(fragmentFractureLimits(
-            setup.matter, parent_nodes, material.density_kg_m3, material.young_modulus_pa));
+            setup.matter, parent_nodes, material.density_kg_m3, material.young_modulus_pa,
+            material.yield_strength_pa));
         impl_->impedance_of.push_back(
             acousticImpedance(material.density_kg_m3, material.young_modulus_pa));
         impl_->nodes_of.push_back(std::move(parent_nodes));

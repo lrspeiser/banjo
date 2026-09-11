@@ -123,6 +123,8 @@ class InProcessSession:
             "impacts": [{"struck": i.struck, "by": i.by,
                          "closing_speed_m_s": self._number(i.closing_speed_m_s),
                          "threshold_speed_m_s": self._number(i.threshold_speed_m_s),
+                         "dent_speed_m_s": self._number(i.dent_speed_m_s),
+                         "would_dent": i.would_dent,
                          "energy_j": self._number(i.energy_j),
                          "would_break": i.would_break}
                         for i in world.impacts()],
@@ -163,7 +165,9 @@ class InProcessSession:
             elif op == "fracture":
                 pieces = world.fracture(str(command.get("name", "")),
                                         float(command.get("window_s", 0.003)))
-                self.state = self._describe(geometry=True, extra={"pieces": pieces})
+                self.state = self._describe(geometry=True,
+                                            extra={"pieces": pieces,
+                                                   "outcome": world.last_outcome})
                 return self.state
             elif op == "pick":
                 # The one reply that does not carry the world: it changes
