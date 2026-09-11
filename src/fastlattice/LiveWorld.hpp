@@ -293,8 +293,29 @@ private:
     // only one that touches nothing shared -- everything else reads and writes
     // the rigid world.
     struct Pending;
+    // A collision that has not happened yet, described as it is expected to be.
+    //
+    // The lattice run costs about as long as a two-metre fall takes, and until
+    // now it started when the two things touched -- so you dropped something,
+    // it landed, and then it sat there for most of a second before it came
+    // apart. The engine can see the collision coming hundreds of milliseconds
+    // out. This is what it sees, in the form prepare() needs to start early.
+    struct Foresight {
+        std::size_t struck{};
+        std::size_t striker{static_cast<std::size_t>(-1)};
+        RigidSnapshot striker_state{};
+        double arrival_speed_m_s{};
+    };
     void prepare(const std::string &name, double window_s);
-    [[nodiscard]] std::unique_ptr<Pending> prepared(const std::string &name, double window_s);
+    [[nodiscard]] std::unique_ptr<Pending> prepared(const std::string &name, double window_s,
+                                                    const Foresight *guess = nullptr);
+    // Start the run for a collision that is still coming, from where the two
+    // things are going to be rather than where they are.
+    void guessAhead(const Foresight &guess, const std::string &name);
+    // Is the run already going for exactly this impact? Adopting it is what
+    // turns most of a second of waiting into none.
+    [[nodiscard]] bool adoptGuess(const std::string &name);
+    void dropGuess(const char *why);
     // A break detected while another is being worked out. Captured here and
     // now -- this is the only moment that still has the closing speed in it --
     // so the world can take the step instead of stopping until the first run

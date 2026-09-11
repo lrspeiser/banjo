@@ -78,6 +78,12 @@ struct LiveWorld::Pending {
     RigidSnapshot snap{};
     const MaterialDefinition *struck_material{};
     double yield_extension{};
+    // Set when this run was started before the collision happened, so it can be
+    // checked against the collision that actually turned up.
+    bool guessed{};
+    std::string guessed_striker;
+    double guessed_speed{};
+    Vec3 guessed_at{};
 };
 
 struct LiveWorld::Impl {
@@ -92,6 +98,17 @@ struct LiveWorld::Impl {
     std::vector<FragmentFractureLimits> limits_of;
     std::vector<double> impedance_of;
     std::vector<double> density_of;
+    // What each PART of the scene is made of, in the words the room uses.
+    //
+    // Filled once, when the scene opens, because that is the only place both
+    // halves are in hand at the same time: the part index, and the common name
+    // the bodies carry. A piece works out what it is from the part its cells
+    // mostly belong to, and looking that up through whichever body happened to
+    // be in the island was wrong twice over -- a part with no body in the
+    // island gave a piece no material at all ("2,833 g of "), and a part whose
+    // slot had been claimed by something else gave it the wrong one (iron
+    // shards reported as 4.3 kg of glass where there were 2.5).
+    std::vector<std::string> material_of_part;
     // This step's contacts, which is what breakable() and the step-back
     // decision are about: a body that has already been answered for must not be
     // re-offered on the strength of a contact from three steps ago.
@@ -123,6 +140,14 @@ struct LiveWorld::Impl {
     // owner's own session, 756 ms of wall clock in which the world advanced
     // 0 ms, twice in one cascade.
     std::deque<std::unique_ptr<LiveWorld::Pending>> queued;
+    // A run started for a collision that has not happened yet. Kept apart from
+    // `pending` on purpose: nothing has actually broken, so the world must look
+    // exactly as it did -- nothing is pinned, `working_on` is empty, and a host
+    // behaves as though no fracture were running, because none is.
+    std::unique_ptr<LiveWorld::Pending> guessing;
+    std::future<void> guess_worker;
+    LiveWorld::Foresight guess{};
+    double guess_error_pct{};
     // Pinned while their fracture is worked out, so they do not carry on as
     // though nothing were about to happen to them. A ball that bounced off a
     // pane which was in fact shattering would have to be put back afterwards,
@@ -132,7 +157,12 @@ struct LiveWorld::Impl {
     // per moving body per step; every eighth is thirty times a second at the
     // rate a live host runs, which is far finer than the tenths of a second
     // this is trying to see coming.
-    double foresee_horizon_s{0.0};
+    // Far enough ahead to be worth having: the lattice run costs about as long
+    // as a two-metre fall takes, so a horizon shorter than that can only ever
+    // narrate what is about to happen rather than get ahead of it. It was 0,
+    // which means off -- and nothing in the playground ever turned it on, so
+    // the foresight this engine already had was never once used.
+    double foresee_horizon_s{2.5};
     std::uint64_t steps_taken{};
     // What has already been said about, so one approach is not reported on
     // every step for a third of a second.
@@ -289,6 +319,16 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request) {
         // Kept so a piece can say what it weighs. Its cells are its volume, and
         // volume times this is matter somebody can carry away.
         impl.density_of.push_back(definition->density_kg_m3);
+        if (!setup.part_of_node.empty()) {
+            if (impl.material_of_part.size() < setup.part_bodies.size())
+                impl.material_of_part.resize(setup.part_bodies.size());
+            for (const std::uint32_t node : component.node_indices) {
+                const std::uint32_t part = setup.part_of_node[node];
+                if (part < impl.material_of_part.size() &&
+                    impl.material_of_part[part].empty())
+                    impl.material_of_part[part] = described.material;
+            }
+        }
         // How it meets the floor, from the same material the threshold came
         // from. Without this every body in the scene carried the contact of the
         // scene's default matter and nothing bounced differently from anything
@@ -664,6 +704,92 @@ void LiveWorld::repin() {
     for (const auto &job : impl_->queued) pin(*job);
 }
 
+// Start the run for a collision that has not happened yet.
+//
+// The run costs about as long as a two-metre fall takes, and it used to start
+// when the two things touched -- so you dropped something, it landed, and then
+// it sat there for most of a second before coming apart. Measured on an iron
+// ball onto a 20 mm pane: 856 ms between the contact and the pieces, with the
+// world running at 99% of real time throughout. The clock was never the
+// problem. The EVENT was late.
+//
+// So it starts on the way down instead, from where the two things are going to
+// be. Nothing is pinned and nothing is told: the world carries on exactly as it
+// would have, and if the collision turns up as expected the answer is already
+// waiting. If it does not, the work is thrown away -- which costs a worker
+// thread and nothing else.
+void LiveWorld::guessAhead(const Foresight &guess, const std::string &name) {
+    if (impl_->pending || impl_->guessing || !impl_->queued.empty()) return;
+    if (guess.struck >= impl_->described.size()) return;
+    // The hand is not a collision anybody is waiting on.
+    if (guess.struck == impl_->holding || guess.striker == impl_->holding) return;
+    std::unique_ptr<Pending> job = prepared(name, 0.003, &guess);
+    if (job->settled) return;                    // nothing to run
+    impl_->guess = guess;
+    impl_->guessing = std::move(job);
+    Pending *running = impl_->guessing.get();
+    running->started = std::chrono::steady_clock::now();
+    impl_->guess_worker = std::async(std::launch::async, [running] { work(*running); });
+}
+
+void LiveWorld::dropGuess(const char *why) {
+    if (!impl_->guessing) return;
+    if (impl_->guess_worker.valid()) impl_->guess_worker.get();   // let it finish, then bin it
+    impl_->delays.push_back({impl_->time_s, impl_->guessing->name, why, 0.0,
+                             impl_->guessing->cost_ms});
+    impl_->guessing.reset();
+}
+
+// Is the run that is already going the run for THIS collision?
+//
+// A guess is built from where things were going to be, and what actually turned
+// up has to match it or the answer describes a different impact. Three things
+// are checked: the same thing struck, by the same thing, arriving at close to
+// the speed that was expected. The speed is the one that matters -- it sets how
+// much energy goes into the lattice, and the whole answer turns on it.
+bool LiveWorld::adoptGuess(const std::string &name) {
+    if (!impl_->guessing) return false;
+    if (impl_->guessing->name != name) { dropGuess("guess-wasted"); return false; }
+
+    // What actually hit it, and how hard.
+    double came_in = 0.0;
+    std::string by;
+    for (const LiveImpact &impact : impl_->last_impacts) {
+        if (impact.struck != name) continue;
+        if (impact.closing_speed_m_s >= came_in) { came_in = impact.closing_speed_m_s; by = impact.by; }
+    }
+    const double expected = impl_->guessing->guessed_speed;
+    const bool same_striker = impl_->guessing->guessed_striker.empty()
+                                  ? by == "the ground"
+                                  : by == impl_->guessing->guessed_striker;
+    // Five per cent of the speed, because the energy handed to the lattice goes
+    // as the square of it: five per cent of speed is ten of energy, and fifteen
+    // would have been a third. Measured on clean drops the prediction is out by
+    // 0.18%, so this is a bar against a DIFFERENT collision turning up, not
+    // against the arithmetic.
+    const bool same_speed = expected > 0.0 &&
+                            std::abs(came_in - expected) <= 0.05 * expected;
+    if (!same_striker || !same_speed) { dropGuess("guess-wasted"); return false; }
+
+    if (impl_->guess_worker.valid()) impl_->guess_worker.get();
+    // NOW it has had its chance at this contact. prepare() records that for a
+    // run it starts itself, and a guess deliberately does not -- a prediction
+    // about a later collision must not stop the world reporting a different
+    // impact in the meantime. But adopting one IS the body having its chance,
+    // and without this a thing that held was never written down as having held:
+    // the world went on offering the same break, the step went on being taken
+    // back, and it deadlocked exactly as the handshake is designed not to.
+    impl_->held_through.insert(name);
+    // How far out the prediction was, as a percentage of the speed it expected.
+    // This is the one number that says whether looking ahead is sound: the
+    // arrival speed is what sets the energy going into the lattice, and the
+    // whole answer turns on it.
+    impl_->guess_error_pct = 100.0 * std::abs(came_in - expected) / expected;
+    impl_->pending = std::move(impl_->guessing);
+    impl_->worker = std::future<void>{};          // already run
+    return true;
+}
+
 // Capture every break the world is refusing to step past, so it can step.
 void LiveWorld::queueBreaks() {
     for (const std::string &name : breakable()) {
@@ -689,6 +815,8 @@ void LiveWorld::queueBreaks() {
 
 // Take the next one waiting and put it on the worker.
 void LiveWorld::startNextQueued() {
+    // One lattice run at a time. A guess is speculative and the queue is not.
+    if (!impl_->queued.empty()) dropGuess("guess-wasted");
     while (!impl_->queued.empty()) {
         impl_->pending = std::move(impl_->queued.front());
         impl_->queued.pop_front();
@@ -835,6 +963,10 @@ void LiveWorld::dropBodies(const std::vector<std::size_t> &which) {
         if (impl_->holding != static_cast<std::size_t>(-1) && impl_->holding > body)
             --impl_->holding;
     }
+    // A guess holds indices into these tables as well, and unlike a queued job
+    // it is speculative -- so it is thrown away rather than carefully renumbered.
+    // It cost a worker thread and nothing else.
+    dropGuess("guess-wasted");
     // Queued fractures hold indices too, and the same rules apply to them.
     std::vector<std::size_t> dropped = which;
     std::sort(dropped.begin(), dropped.end());
@@ -934,9 +1066,32 @@ void LiveWorld::foresee() {
             for (std::size_t k = 0; k < impl_->body_of.size(); ++k)
                 if (impl_->body_of[k] == ahead.body_id) { about = impl_->described[k].name; break; }
         still_coming.insert(about);
+        // Start it now, from where the two of them are going to be. Everything
+        // this needs has just been worked out to decide whether to warn at all.
+        if (!impl_->guessing && !impl_->pending && impl_->queued.empty()) {
+            Foresight guess{};
+            guess.striker = i;
+            guess.arrival_speed_m_s = arrival;
+            guess.struck = i;
+            if (ahead.named)
+                for (std::size_t k = 0; k < impl_->body_of.size(); ++k)
+                    if (impl_->body_of[k] == ahead.body_id) { guess.struck = k; break; }
+            // Where it will be when it gets there, going as fast as it will be
+            // going. The rest of its state -- how it is turned, how it is
+            // spinning -- carries over unchanged, which is right for the short
+            // flight that is left.
+            guess.striker_state = now;
+            guess.striker_state.center_of_mass_world_m =
+                now.center_of_mass_world_m + ahead.distance_m * heading;
+            guess.striker_state.linear_velocity_m_s = arrival * heading;
+            if (guess.struck != guess.striker) guessAhead(guess, about);
+        }
         if (impl_->foreseen.count(about)) continue;   // already said
         impl_->delays.push_back({impl_->time_s, about, "foreseen", lead_s * 1000.0, 0.0});
     }
+    // A guess whose collision stopped being expected is not going to be adopted.
+    if (impl_->guessing && !still_coming.count(impl_->guessing->name))
+        dropGuess("guess-wasted");
     impl_->foreseen.swap(still_coming);
 }
 
@@ -968,7 +1123,8 @@ void LiveWorld::prepare(const std::string &name, double window_s) {
 }
 
 std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
-                                                        double window_s) {
+                                                        double window_s,
+                                                        const Foresight *guess) {
     auto held = std::make_unique<Pending>();
     Pending &job = *held;
     job.name = name;
@@ -976,7 +1132,12 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
     // Whatever happens below, this object has now had its chance at this
     // contact. Recording that here rather than at each of the five ways out is
     // what stops one of them being forgotten and deadlocking the world.
-    impl_->held_through.insert(name);
+    //
+    // Not for a guess. A guess is about a collision that has not happened, so
+    // the body has had no chance at anything yet -- and marking it would stop
+    // the world reporting a DIFFERENT impact on it in the meantime, which is a
+    // real break quietly suppressed by a prediction about a later one.
+    if (!guess) impl_->held_through.insert(name);
     impl_->last_outcome = LiveOutcome::Nothing;
     const auto found = impl_->index_of.find(name);
     if (found == impl_->index_of.end()) { job.settled = true; job.answer = 0; return held; }
@@ -1003,19 +1164,33 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
     // physically is -- a surface that does not give.
     std::size_t anvil = static_cast<std::size_t>(-1);
     {
-        const auto partner = impl_->partner_of.find(which);
-        if (partner != impl_->partner_of.end() &&
-            partner->second != static_cast<std::size_t>(-1) &&
-            partner->second < impl_->described.size() &&
-            partner->second != impl_->holding) {
-            if (impl_->described[partner->second].anchored) anvil = partner->second;
-            else island_bodies.push_back(partner->second);
+        // A guess names its own striker: partner_of is written by the step that
+        // saw the contact, and for a collision that has not happened there is
+        // no such step yet.
+        std::size_t with = static_cast<std::size_t>(-1);
+        if (guess) {
+            with = guess->striker;
+        } else {
+            const auto partner = impl_->partner_of.find(which);
+            if (partner != impl_->partner_of.end()) with = partner->second;
+        }
+        if (with != static_cast<std::size_t>(-1) && with < impl_->described.size() &&
+            with != impl_->holding) {
+            if (impl_->described[with].anchored) anvil = with;
+            else island_bodies.push_back(with);
         }
     }
     for (const std::size_t body : island_bodies)
         if (!impl_->world->contains(impl_->body_of[body])) { job.settled = true; job.answer = 0; return held; }
+    // Where a body is, or -- for the one thing that has not arrived yet -- where
+    // it is going to be. Everything below asks through this, so a run started
+    // early is built from the collision as it is expected to happen.
+    const auto stateOf = [&](std::size_t body) {
+        if (guess && body == guess->striker) return guess->striker_state;
+        return impl_->world->snapshot(impl_->body_of[body]);
+    };
     const MatterBodyId old_body = impl_->body_of[which];
-    const RigidSnapshot snap = impl_->world->snapshot(old_body);
+    const RigidSnapshot snap = stateOf(which);
 
     // Every cell of every body in the island, in parent numbering. Each body's
     // cells are placed by ITS own rigid pose, which is what buildFragmentLattice
@@ -1025,7 +1200,7 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
     std::unordered_map<std::uint32_t, std::size_t> body_of_node;
     std::unordered_map<std::size_t, RigidSnapshot> poses_before;
     for (const std::size_t body : island_bodies) {
-        const RigidSnapshot pose = impl_->world->snapshot(impl_->body_of[body]);
+        const RigidSnapshot pose = stateOf(body);
         poses_before.emplace(body, pose);
         for (const std::uint32_t node : impl_->nodes_of[body]) {
             island_nodes.push_back(node);
@@ -1208,6 +1383,13 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
     job.yield_extension = settings.plastic_yield_stretch * impl_->request.cell_size_m;
     job.began = std::chrono::steady_clock::now();
     job.started = job.began;
+    if (guess) {
+        job.guessed = true;
+        job.guessed_speed = guess->arrival_speed_m_s;
+        job.guessed_at = guess->striker_state.center_of_mass_world_m;
+        if (guess->striker < impl_->described.size())
+            job.guessed_striker = impl_->described[guess->striker].name;
+    }
     return held;
 }
 
@@ -1297,11 +1479,23 @@ std::size_t LiveWorld::applyPending() {
     // is still the ball and the pane's shards are the pane's.
     std::vector<LiveBodyPose> parent_of_part(setup.part_bodies.size());
     std::vector<std::size_t> counted(setup.part_bodies.size(), 0);
+    // Every part a body covers, not just the part of its first cell.
+    //
+    // A body used to be filed under its first cell alone, and a piece that is
+    // itself made of pieces can span several parts. Any component whose
+    // dominant part was not the first cell of anything found an empty slot and
+    // took an empty name and an empty material out of it: the room filled with
+    // things called " piece 1 piece 1" made of nothing, and sweeping the floor
+    // up reported "2,833 g of ".
     for (const std::size_t body : island_bodies)
-        if (!impl_->nodes_of[body].empty()) {
-            const std::uint32_t part = setup.part_of_node[impl_->nodes_of[body].front()];
-            if (part < parent_of_part.size()) parent_of_part[part] = impl_->described[body];
+        for (const std::uint32_t node : impl_->nodes_of[body]) {
+            const std::uint32_t part = setup.part_of_node[node];
+            if (part < parent_of_part.size() && parent_of_part[part].name.empty())
+                parent_of_part[part] = impl_->described[body];
         }
+    // And if a part still has nobody -- it was not in the island at all -- the
+    // thing that was struck is the honest answer for whose piece this is.
+    const LiveBodyPose fell_from = impl_->described[which];
     // Read now, while the struck body is still in nodes_of. The drop loop below
     // erases it, and reading afterwards indexed off the end of the shortened
     // vector: the answer matched no piece, so a plate that had just come apart
@@ -1347,7 +1541,9 @@ std::size_t LiveWorld::applyPending() {
         }
         const std::size_t dominant = static_cast<std::size_t>(
             std::max_element(counted.begin(), counted.end()) - counted.begin());
-        const LiveBodyPose &parent = parent_of_part[dominant];
+        const LiveBodyPose &parent = parent_of_part[dominant].name.empty()
+                                         ? fell_from
+                                         : parent_of_part[dominant];
         const MaterialDefinition &material = dominant < setup.part_definitions.size()
                                                  ? setup.part_definitions[dominant]
                                                  : setup.tile_material;
@@ -1355,12 +1551,20 @@ std::size_t LiveWorld::applyPending() {
         // A piece that is still all of its parent kept its parent; only a piece
         // that is part of one is numbered.
         const bool whole_parent = counted[dominant] == component.node_indices.size() &&
-                                  parent_of_part[dominant].name.size() > 0 &&
+                                  !parent_of_part[dominant].name.empty() &&
                                   component.node_indices.size() ==
                                       impl_->cellsOfPart(dominant);
         piece.name = whole_parent ? parent.name
                                   : parent.name + " piece " + std::to_string(++made);
-        piece.material = parent.material;
+        // What it is made of is a property of the PART, not of whichever body
+        // happened to be standing in as its parent. Asked of the scene, which
+        // has known the answer since it opened. (The material definition has a
+        // name too -- "soda_lime_glass" -- but the bodies say "glass", and an
+        // inventory holding both has two entries for one substance.)
+        piece.material = dominant < impl_->material_of_part.size() &&
+                                 !impl_->material_of_part[dominant].empty()
+                             ? impl_->material_of_part[dominant]
+                             : parent.material;
         if (dominant == asked_part) ++of_asked;
 
         // Something that came through whole is still the shape it was.
@@ -1441,6 +1645,16 @@ bool LiveWorld::beginFracture(const std::string &name, double window_s) {
     // Two that share no matter could run side by side; that is a real
     // improvement and not this one. Until then a queue is correct, and honest
     // about what it costs.
+    // If the run for exactly this impact was started on the way down, it is
+    // finished or nearly so, and there is nothing left to wait for. This is the
+    // whole point of looking ahead: the pieces appear when the thing lands
+    // rather than most of a second later.
+    if (!impl_->pending && adoptGuess(name)) {
+        impl_->delays.push_back({impl_->time_s, name, "foreseen",
+                                 impl_->guess_error_pct, impl_->pending->cost_ms});
+        repin();
+        return true;
+    }
     if (impl_->pending) {
         const bool ready = fractureReady();
         const auto waited_from = std::chrono::steady_clock::now();
@@ -1505,6 +1719,8 @@ std::size_t LiveWorld::finishFracture() {
     std::vector<std::size_t> dropped;
     for (std::size_t i = 0; i < before.size(); ++i)
         if (standing.count(before[i]) == 0) dropped.push_back(i);
+    // Same for a guess: its indices are into the table that just changed shape.
+    if (!dropped.empty()) dropGuess("guess-wasted");
     restackQueue(dropped);
 
     // Whatever was waiting behind it starts now, on the same worker.
@@ -1515,6 +1731,21 @@ std::size_t LiveWorld::finishFracture() {
 // The whole thing at once, which is what a caller that does not mind waiting
 // wants. Identical to what this always did.
 std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
+    // A run may already be going for this very impact, started on the way down.
+    // Take it if it fits, and if it does not, wait for it and bin it -- because
+    // starting a second lattice run beside it is two at once, which nothing
+    // here was built for. That was a real deadlock: the guess and the real run
+    // went side by side, the answer came back wrong, and the world sat refusing
+    // the same step for ever.
+    if (adoptGuess(name)) {
+        impl_->delays.push_back({impl_->time_s, name, "foreseen",
+                                 impl_->guess_error_pct, impl_->pending->cost_ms});
+        impl_->held_through.insert(name);
+        const std::size_t early = applyPending();
+        impl_->pending.reset();
+        return early;
+    }
+    dropGuess("guess-wasted");
     prepare(name, window_s);
     if (!impl_->pending->settled) {
         work(*impl_->pending);

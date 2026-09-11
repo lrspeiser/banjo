@@ -142,39 +142,83 @@ const MATERIAL_LOOK = {
   "concrete":        { color: 0x9a9285, rough: 0.92, metal: 0.0 },
 };
 
+// One material per substance, not one per body.
+//
+// This used to build a fresh MeshStandardMaterial on every call, and buildMesh
+// called it twice per body. A pane that comes apart into seventy-four shards
+// arrives in a single reply, so that was about a hundred and fifty new
+// materials in one frame -- and a material three.js has not seen before is a
+// shader program to look up, compile and upload the first time it is drawn.
+// That is the lurch when something breaks, and it is not in the engine, the
+// wire or the clock: it is the frame that has to draw the pieces.
+//
+// Glass is glass. Two shards off the same pane want the same material object,
+// and then they also batch instead of forcing a state change between them.
+const MATERIALS = new Map();
 function look(material) {
+  const had = MATERIALS.get(material);
+  if (had) return had;
   const m = MATERIAL_LOOK[material] || { color: 0x9aa6ae, rough: 0.6, metal: 0.1 };
   const options = { color: m.color, roughness: m.rough, metalness: m.metal };
   if (m.clear) { options.transparent = true; options.opacity = 1 - m.clear * 0.55; }
-  return new THREE.MeshStandardMaterial(options);
+  const made = new THREE.MeshStandardMaterial(options);
+  MATERIALS.set(material, made);
+  return made;
+}
+
+// Every cell in the room is the same cube, so there is one of it. Building a
+// BoxGeometry per shard meant seventy-four identical vertex buffers uploaded to
+// the card to draw one broken pane.
+let cellGeometry = null;
+let cellGeometryFor = 0;
+function cellCube() {
+  if (!cellGeometry || cellGeometryFor !== world.cellSize) {
+    if (cellGeometry) cellGeometry.dispose();
+    cellGeometry = new THREE.BoxGeometry(world.cellSize, world.cellSize, world.cellSize);
+    cellGeometryFor = world.cellSize;
+  }
+  return cellGeometry;
 }
 
 // A body is drawn as what it is. A box is a box and a sphere is a sphere; a
 // hull is a piece that broke or bent off something, and its cells ARE its
 // surface, so it is drawn as those cells rather than as a box around them --
 // a box around a shard is a lie about its shape and its size.
-function buildMesh(body) {
-  const [w, h, d] = body.dimensions_m;
-  let geometry;
-  if (body.shape === "sphere") geometry = new THREE.SphereGeometry(w / 2, 24, 16);
-  else geometry = new THREE.BoxGeometry(Math.max(w, 1e-4), Math.max(h, 1e-4), Math.max(d, 1e-4));
+const placing = new THREE.Object3D();
 
-  const mesh = new THREE.Mesh(geometry, look(body.material));
+function buildMesh(body) {
+  // Cells first. This used to build a box or a sphere and a material before
+  // asking, then throw both away for anything drawn from its cells -- which is
+  // every piece of everything that ever breaks.
   if (Array.isArray(body.cells_local_m) && body.cells_local_m.length) {
     // Drawn from its cells: one instanced cube per cell, carried by the body's
     // own pose, so it stays one pose on the wire and one draw call on screen.
-    const cell = new THREE.BoxGeometry(world.cellSize, world.cellSize, world.cellSize);
-    const cloud = new THREE.InstancedMesh(cell, look(body.material), body.cells_local_m.length);
-    const at = new THREE.Object3D();
-    body.cells_local_m.forEach((c, i) => {
-      at.position.set(c[0], c[1], c[2]);
-      at.updateMatrix();
-      cloud.setMatrixAt(i, at.matrix);
-    });
+    const cloud = new THREE.InstancedMesh(cellCube(), look(body.material),
+                                          body.cells_local_m.length);
+    for (let i = 0; i < body.cells_local_m.length; ++i) {
+      const c = body.cells_local_m[i];
+      placing.position.set(c[0], c[1], c[2]);
+      placing.updateMatrix();
+      cloud.setMatrixAt(i, placing.matrix);
+    }
     cloud.instanceMatrix.needsUpdate = true;
     return cloud;
   }
-  return mesh;
+  const [w, h, d] = body.dimensions_m;
+  const geometry = body.shape === "sphere"
+    ? new THREE.SphereGeometry(w / 2, 24, 16)
+    : new THREE.BoxGeometry(Math.max(w, 1e-4), Math.max(h, 1e-4), Math.max(d, 1e-4));
+  return new THREE.Mesh(geometry, look(body.material));
+}
+
+// Take a mesh out of the scene and give back what only it was using.
+//
+// The material is shared and the cell cube is shared, so neither is this
+// mesh's to dispose -- but an authored body's own box or sphere is, and a
+// room where things break and are swept up builds and drops these all day.
+function forget(mesh) {
+  scene.remove(mesh);
+  if (mesh.geometry && mesh.geometry !== cellGeometry) mesh.geometry.dispose();
 }
 
 function place(mesh, body) {
@@ -204,7 +248,7 @@ function draw(state) {
     // Geometry only travels when the set of bodies can have changed, so a
     // body already on screen keeps its mesh and only moves.
     if (!held || (body.cells_local_m && !held.fromCells)) {
-      if (held) scene.remove(held.mesh);
+      if (held) forget(held.mesh);
       const mesh = buildMesh(body);
       scene.add(mesh);
       held = { mesh, fromCells: !!(body.cells_local_m && body.cells_local_m.length) };
@@ -222,7 +266,7 @@ function draw(state) {
   for (const name of drop) {
     const entry = world.bodies.get(name);
     if (!entry) continue;
-    scene.remove(entry.mesh);
+    forget(entry.mesh);
     world.bodies.delete(name);
   }
   $("panel-count").textContent = `${world.bodies.size} objects`;
@@ -333,7 +377,7 @@ function fadePieces(now) {
   world.fading = world.fading.filter((going) => {
     const left = (going.until - now) / 260;
     if (left <= 0) {
-      scene.remove(going.mesh);
+      forget(going.mesh);
       return false;
     }
     going.mesh.scale.setScalar(Math.max(0.01, left));
@@ -820,9 +864,9 @@ $("ask").addEventListener("submit", async (e) => {
     say("world", answer.reply || "(nothing to say)", answer.did);
     if (answer.reopened) {
       world.session = answer.session;
-      world.bodies.forEach((e) => scene.remove(e.mesh));
+      world.bodies.forEach((e) => forget(e.mesh));
       world.bodies.clear();
-      world.fading.forEach((f) => scene.remove(f.mesh));
+      world.fading.forEach((f) => forget(f.mesh));
       world.fading.length = 0;
       world.stock.clear();
       world.sweptSince.clear();
@@ -851,7 +895,7 @@ async function open() {
     world.story = [];
     world.held = null;
     $("carry").hidden = true;
-    world.bodies.forEach((e) => scene.remove(e.mesh));
+    world.bodies.forEach((e) => forget(e.mesh));
     world.bodies.clear();
     draw(data);
     $("panel-state").textContent = "Live.";
@@ -879,6 +923,9 @@ window.banjoRoom = {
   },
   standAt(x, y, z) { camera.position.set(x, y, z); },
   aim, pickUp, dropIt, throwIt, intend,
+  // For measuring what a frame costs: building the meshes for a shattered pane
+  // is the expensive part of a break, and it cannot be seen from outside.
+  buildMesh, renderer, THREE, MATERIALS,
 };
 
 setInterval(tick, 33);

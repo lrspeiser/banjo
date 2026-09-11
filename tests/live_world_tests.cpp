@@ -806,6 +806,12 @@ TileImpactRequest paneAndBall(double fall_m) {
 // the wait it replaced.
 void theWorldKeepsRunningWhileAFractureIsWorkedOut() {
     const auto live = LiveWorld::open(paneAndBall(3.0));
+    // Foresight off, deliberately. This is about the run that HAS to happen at
+    // the moment of contact -- something thrown from close range, a piece
+    // landing on another piece, anything the ray did not see coming. When the
+    // collision is foreseen there is no wait to keep running through, which is
+    // a different test.
+    live->foreseeCollisions(0.0);
     // Something else entirely, to prove the rest of the room still moves.
     // (The scene's own ball is the one that will be pinned.)
     const auto whereIs = [&](const std::string &what) {
@@ -900,6 +906,9 @@ void aSecondBreakDoesNotStopTheClock() {
     // a pane comes apart, its pieces land, and they want to break too, which is
     // the only way a second break ever turns up while the first is running.
     const auto live = LiveWorld::open(paneAndBall(3.0));
+    // Foresight off: a cascade of pieces landing on pieces is exactly what it
+    // cannot see coming, and this is about what happens when it does not.
+    live->foreseeCollisions(0.0);
     int steps_pending = 0, steps_pending_that_moved = 0;
     int fractures = 0;
     // The symptom, measured the way it is felt: the longest UNBROKEN run of
@@ -910,7 +919,15 @@ void aSecondBreakDoesNotStopTheClock() {
     // a single stall that is seen, and before this it was the whole run.
     int stall = 0, longest_stall = 0;
 
-    for (int i = 0; i < 6000; ++i) {
+    // Runs until a second break has actually been through, not for a fixed
+    // number of steps.
+    //
+    // This loop steps as fast as the machine will let it, and a fracture takes
+    // most of a second of WALL clock -- so a step budget is a race against the
+    // worker, and on a busy machine the budget runs out first and the test
+    // reports "nothing ever broke". It did that, intermittently, which is worse
+    // than failing: it passes often enough to be believed.
+    for (int i = 0; i < 200000 && fractures < 3; ++i) {
         const double before = live->time_s();
         live->step(1.0 / 240.0);
         const bool moved = live->time_s() > before;
@@ -965,15 +982,17 @@ void theWorldSeesACollisionComing() {
         }
         Seen out{0.0, 0.0, "", false, false};
         for (const LiveDelay &delay : live->delays()) {
-            if (std::string(delay.kind) == "foreseen" && !out.foreseen) {
+            const std::string kind(delay.kind);
+            // The warning, which carries how much lead there was.
+            if (kind == "foreseen" && delay.cost_ms == 0.0 && !out.foreseen) {
                 out.foreseen = true;
                 out.lead_ms = delay.lead_ms;
                 out.object = delay.object;
             }
-            if (std::string(delay.kind) == "blocked" && !out.blocked) {
-                out.blocked = true;
-                out.cost_ms = delay.cost_ms;
-            }
+            // The run that was started on the back of it and then used. Its
+            // cost is what the warning had to cover.
+            if (kind == "foreseen" && delay.cost_ms > 0.0) out.cost_ms = delay.cost_ms;
+            if (kind == "blocked" && !out.blocked) out.blocked = true;
         }
         return out;
     };
@@ -996,9 +1015,16 @@ void theWorldSeesACollisionComing() {
     require(fair.foreseen, "a drop that breaks the pane was not seen coming at all");
     require(fair.object == "pane", "the warning named " + fair.object + " and not the pane");
 
-    // And the warning has to be worth having: longer than the run it is meant
-    // to hide. That is the whole test.
-    require(fair.blocked, "nothing blocked, so there is nothing to compare against");
+    // And the warning has to be worth having: longer than the run it covers.
+    // This is no longer hypothetical -- the run is actually started on the back
+    // of the warning and finished before the two things touch, so what proves
+    // it is that NOTHING blocked. A caller that waited is a warning that was
+    // not acted on, or not long enough to be worth acting on.
+    require(fair.cost_ms > 0.0,
+            "the warning did not start the run, so looking ahead bought nothing");
+    require(!fair.blocked,
+            "something still blocked at the moment of contact, so the run that "
+            "was started on the way down was not ready in time");
     require(fair.lead_ms > fair.cost_ms,
             "the warning is shorter than the run it would have to cover, so there "
             "is no time to work the fracture out before it is needed");

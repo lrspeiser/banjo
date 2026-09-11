@@ -12,6 +12,7 @@
 //        {"op":"fracture","name":"pane","wait":false}
 //        {"op":"step","dt":0.008,"n":4,"moved":true}   only what changed
 //        {"op":"collect","at":[0,1.6,0],"radius_m":1.2}   sweep up the pieces
+//        {"op":"foresee","horizon_s":2.5}   how far ahead to start runs (0 = off)
 //        {"op":"pick","from":[0,6,0],"dir":[0,-1,0],"max_m":1000}
 //   out  {"ok":true,"t":0.033,"stepped_back":false,
 //         "bodies":[{"name":"ball","shape":"sphere","dimensions_m":[...],
@@ -276,6 +277,10 @@ int main(int argc, char **argv) {
                             "nothing", "held", "dented", "broke"}
                             [static_cast<std::size_t>(world->lastOutcome())];
                     }
+                } else if (op == "foresee") {
+                    // How far ahead to look, in seconds. Zero is off, which is
+                    // what a caller comparing the two paths wants.
+                    world->foreseeCollisions(command.value("horizon_s", 2.5));
                 } else if (op == "collect") {
                     // Loose pieces near a point, out of the world and into
                     // whatever the host wants to do with them. A room that

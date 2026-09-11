@@ -42,9 +42,22 @@ def open_room() -> live_session.Session:
 
 
 def shatter(live: live_session.Session, plate: str = "glass plate 20mm") -> list[float]:
-    """Drop the iron ball on a pane and wait for the pieces."""
+    """Drop something heavy on a pane and wait for the pieces.
+
+    Whatever heavy thing is still whole -- after a cascade the iron ball may
+    itself have come apart, and a test that insists on it by name fails for a
+    reason that has nothing to do with what it is checking.
+    """
     at = next(b["position_m"] for b in live.state["bodies"] if b["name"] == plate)
-    live.send(op="grab", name="iron ball")
+    # Anything whole and loose will do. After a few cascades the iron ball has
+    # itself come apart and been swept up, and a test that insists on it by name
+    # fails for a reason that has nothing to do with what it is checking.
+    loose = [b["name"] for b in live.state["bodies"]
+             if not b["anchored"] and b["shape"] != "hull" and b["name"] != plate]
+    hammer = next((n for n in ("iron ball", "iron anvil", "concrete brick", "oak block")
+                   if n in loose), loose[0] if loose else None)
+    require(hammer is not None, "nothing whole and loose left in the room to drop")
+    live.send(op="grab", name=hammer)
     live.send(op="move", to=[at[0], at[1] + 4.0, at[2]])
     live.send(op="step", dt=1 / 240.0, n=1)
     live.send(op="release")
@@ -94,16 +107,30 @@ def theFloorCanBeSweptUp() -> None:
 
 
 def itOnlyReachesSoFar() -> None:
+    """A sweep takes what is within reach, and only that.
+
+    Checked against where the pieces actually ARE rather than against an
+    assumed layout: a shard can skitter a long way, and a test that assumes it
+    cannot is testing the scene rather than the reach.
+    """
     live = open_room()
     try:
         at = shatter(live)
         away = [at[0] + 3.0, at[1], at[2]]
+        within = {b["name"] for b in hulls(live)
+                  if math.dist(b["position_m"], away) <= 1.2}
         got = live.send(op="collect", at=away, radius_m=1.2)["collected"]
-        print(f"  standing 3 m away collected {got or 'nothing'}")
-        require(not got, f"a sweep 3 m away still collected {got}")
+        took = {name for lot in got for name in lot.get("took") or ()}
+        print(f"  standing 3 m away: {len(within)} pieces within reach, {len(took)} taken")
+        require(took == within,
+                f"a sweep 3 m away took {sorted(took - within)[:3]} which were out of "
+                f"reach, and missed {sorted(within - took)[:3]} which were not")
         near = live.send(op="collect", at=at, radius_m=1.2)["collected"]
-        require(near, "and standing on it collected nothing either, so the test "
-                      "proves nothing about reach")
+        require(near, "and standing on the debris collected nothing either, so the "
+                      "test proves nothing about reach")
+        require(sum(lot["pieces"] for lot in near) > len(within),
+                "the sweep on the debris took no more than the one 3 m away, so "
+                "reach is not doing anything")
     finally:
         live.close()
 
@@ -168,20 +195,36 @@ def somethingInAHandIsNotDebris() -> None:
 def aSweptRoomCanStillBreakThings() -> None:
     """The point of sweeping, as far as the engine is concerned.
 
-    Debris is what fills the body table, and a full body table is what stops
-    the step being taken back, which is what breaking needs.
+    Debris is what fills the body table, and a full body table is what stops the
+    step being taken back -- which is the whole basis of breaking. So the test
+    is not a body count, it is whether the room still works afterwards.
     """
     live = open_room()
     try:
-        # A different pane each time -- the first one is not there to break twice.
         for plate in ("glass plate 20mm", "glass plate 40mm", "ice plate 20mm"):
-            at = shatter(live, plate)
-            live.send(op="collect", at=at, radius_m=3.0)
+            shatter(live, plate)
+        full = len(live.state["bodies"])
+
+        # Walk the room rather than standing on one spot: pieces scatter, and a
+        # sweep only reaches what is underfoot.
+        for body in list(live.state["bodies"]):
+            live.send(op="collect", at=body["position_m"], radius_m=1.5)
         left = len(live.state["bodies"])
-        print(f"  three panes broken and swept: {left} bodies left in the room")
-        require(left < 120,
-                f"{left} bodies after sweeping three shattered panes -- sweeping is "
-                f"not keeping the room small")
+        print(f"  three panes broken: {full} bodies, swept up: {left}")
+        require(left < full // 2,
+                f"sweeping the whole room took it from {full} bodies only to {left}, "
+                f"so it is not keeping the room small")
+
+        # And the room still does the thing the body budget protects.
+        at = shatter(live, "concrete plate 20mm")
+        pieces = [b for b in hulls(live)
+                  if b["name"].startswith("concrete plate 20mm piece")]
+        print(f"  and a fresh drop still breaks: {len(pieces)} pieces, "
+              f"{len(live.state['bodies'])} bodies in the room")
+        require(len(pieces) > 1,
+                "after breaking and sweeping three panes, a fresh drop no longer "
+                "breaks anything -- which is exactly what a full body table looks "
+                "like from outside")
     finally:
         live.close()
 

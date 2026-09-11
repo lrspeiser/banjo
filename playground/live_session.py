@@ -255,6 +255,11 @@ class Live:
                 raise LiveError("collect needs a radius between 0 and 10 metres")
             return session.send(op="collect", at=spot, radius_m=radius,
                                 largest_cells=int(body.get("largest_cells", 64)))
+        if op == "foresee":
+            horizon = float(body.get("horizon_s", 2.5))
+            if not 0.0 <= horizon <= 10.0:
+                raise LiveError("foresee needs a horizon between 0 and 10 seconds")
+            return session.send(op="foresee", horizon_s=horizon)
         if op in ("release", "poses"):
             return session.send(op=op)
         if op == "pick":

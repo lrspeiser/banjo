@@ -324,6 +324,93 @@ In the room, walking into the pieces shrinks them away over a quarter of a
 second, adds them to a tally in the corner, and says so once the sweeping stops —
 once, not once per step, or crossing a shattered pane would bury the chat.
 
+## The clock was never the problem. The event was late.
+
+Three pauses fixed — the run off the caller's thread, the wire trimmed, the
+clock kept moving — and dropping something that breaks still lurched. Every
+measurement said the room was fine: 99% of real time, median round trip 5 ms,
+nothing over 100 ms, no stall longer than one tick.
+
+They were all measuring the clock. Here is the measurement that was not:
+
+> **856 ms between the impact and the pieces.**
+
+You drop something, it lands, and then for most of a second *nothing happens* —
+and then it shatters. The room is running perfectly the whole time. That is the
+lag, and no amount of frame rate fixes it, because the frames were never the
+problem.
+
+### Start the run on the way down
+
+The engine could already see it coming. `foresee()` casts a ray along each
+moving body's path, works out how fast it will be going when it arrives
+(`v² = u² + 2gh`, so a ball that is barely moving now is still judged on the
+speed it will land at), and asks the same admission test the step asks. It
+reports 485 ms of warning for a 1.5 m drop and 939 ms for 6 m.
+
+And **it was switched off.** The horizon defaulted to zero, nothing in the
+playground ever set it, and no caller ever turned it on. The foresight this
+engine had was never once used.
+
+So: turn it on, and when a collision is foreseen, start the lattice run *then* —
+built from where the two things are going to be rather than where they are.
+Nothing is pinned and nothing is told; the world carries on exactly as it would
+have. If the collision turns up as expected the answer is already waiting.
+
+| | before | after |
+|---|---|---|
+| impact → pieces, glass 20 mm | 856 ms | **127 ms** |
+| impact → pieces, concrete 20 mm | 818 ms | **113 ms** |
+| runs started early and used | — | 6 of 6 |
+| how far out the predicted arrival speed was | — | **0.18%** |
+
+0.18% is the number that makes this sound. The lattice is being handed a
+collision that differs from the real one by a fifth of a per cent in closing
+speed. A guess is only adopted if the same thing was struck, by the same thing,
+arriving within 5% of the predicted speed — five, not fifteen, because the
+energy goes as the square of it, so 5% of speed is 10% of energy and 15% would
+be a third. Anything else is thrown away, which costs a worker thread and
+nothing else.
+
+### Four things this got wrong first
+
+**One lattice run at a time.** A guess running beside a real fracture is two at
+once, which nothing here was built for. The world deadlocked: the answers came
+back wrong, the step was refused for ever, and the test that exists for exactly
+that deadlock caught it. Every path that starts a run now settles the guess
+first — adopting it if it fits, waiting for it and binning it if not.
+
+**Adopting a guess is the body having its chance.** `prepare()` records that a
+body has been tried, which is what lets the world step past something that
+*held*. A guess deliberately does not — a prediction about a later collision
+must not suppress a different impact in the meantime — so adoption has to record
+it instead. Without that, a thing that held was never written down as having
+held, and the world deadlocked a second way.
+
+**A guess holds indices into the body table**, which every fracture and every
+sweep renumbers. Unlike a queued job it is speculative, so it is thrown away
+rather than carefully renumbered.
+
+**Two tests now had nothing to test.** The one that proves the world keeps
+running while a fracture runs, and the one that proves a second break does not
+stop the clock, both need a run that happens *at contact* — which foresight
+removes. They turn it off, deliberately, because that path still matters: a
+piece landing on a piece is exactly what a ray does not see coming.
+
+### And a piece that did not know what it was made of
+
+Sweeping the floor reported **"2,833 g of "**. A body is filed under the part of
+its first cell, and a piece made of pieces can span several; any component whose
+dominant part was not the first cell of anything took an empty name and an empty
+material. The room held things called `" piece 1 piece 1"` made of nothing.
+
+Two wrong fixes before the right one: falling back to the struck body called
+iron shards glass (4.3 kg of glass where there were 2.5), and falling back to the
+material definition called them `soda_lime_glass` while every other body said
+`glass` — two entries in the inventory for one substance. What each *part* is
+made of, in the words the room uses, is now recorded once when the scene opens,
+which is the only place both halves are in hand at the same time.
+
 ## Every wait is written down
 
 Anything the world waits on, or is spared waiting on, goes out in the reply's
