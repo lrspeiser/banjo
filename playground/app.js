@@ -481,6 +481,7 @@
       onHover: (over) => {
         live.hovering = over ? over.name : null;
         if (live.holding) return;
+        if (over && over.grabbable === false) { liveStatus(over.why); return; }
         if (live.session) {
           liveStatus(over ? `Click to pick up ${over.name}.`
                           : "Live — point at something to pick it up.");
@@ -1152,6 +1153,12 @@
     let spec = null;
     try { spec = readFracture(); } catch { /* the panel is mid-edit */ }
     const ready = !!(spec && spec.bodies && spec.bodies.length);
+    // The same answer decides whether the pointer can pick anything up, so the
+    // viewer declines at the hover rather than after a carry.
+    state.scene?.setGrabbable(ready,
+      "This is a plate-and-ball scene: a tile and a striker, not objects to rearrange."
+      + " Set Scene to “Many objects”, or load a scenario such as"
+      + " “Drop balls of every material onto panels”.");
     button.disabled = !ready;
     button.title = ready
       ? "Run this scene as a live world instead of a recording"
@@ -1192,6 +1199,7 @@
       live.session = data.session;
       live.dropped = 0;
       live.lastTick = 0;
+      state.scene.setGrabbable(true, "");
       state.scene.loadLive(data.bodies, 0, data.cell_size_m);
       $("viewer-live").textContent = "Stop live";
       $("viewer-grab").checked = true;
@@ -1330,19 +1338,26 @@
   // what comes back is the same world with one thing somewhere else.
   async function dropObject({name, moved_m, to_m}) {
     const spec = readFracture();
+    // Every refusal below puts the object back. Leaving it where the hand let go
+    // is what made a declined move look like the object getting stuck in mid
+    // air -- the scene had been changed to show a move that never happened.
+    const refuse = (title, why) => { state.scene?.cancelGrab(); chatTurn("bad", title, why); };
     if (!spec.bodies || !spec.bodies.length) {
-      chatTurn("bad", "Cannot move that", "Only a many-object scene can be rearranged by hand.");
+      refuse("Cannot move that",
+        "This is a plate-and-ball scene: it has a tile and a striker, not objects to"
+        + " rearrange. Set Scene to \u201cMany objects\u201d, or load a scenario such as"
+        + " \u201cDrop balls of every material onto panels\u201d.");
       return;
     }
     // The recording names a body "pin7 (glass)"; the scene calls it "pin7".
     const plain = String(name).replace(/\s*\([^)]*\)\s*$/, "");
     const body = spec.bodies.find((b) => b.name === plain);
     if (!body) {
-      chatTurn("bad", "Cannot move that", `${plain} is not one of this scene's objects.`);
+      refuse("Cannot move that", `${plain} is not one of this scene's objects.`);
       return;
     }
     if (body.anchored) {
-      chatTurn("bad", "That one is fixed",
+      refuse("That one is fixed",
         `${plain} is anchored, so it is scenery and does not move. Turn off its anchor to pick it up.`);
       return;
     }

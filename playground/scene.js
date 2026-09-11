@@ -50,6 +50,13 @@ function create(container, hooks = {}) {
   // On from the start: a drag still orbits, and only a click picks something
   // up, so there is nothing this costs and a great deal it makes discoverable.
   let grabMode = true;
+    // Whether anything in this scene can be moved by hand, and why not. A
+    // plate-and-ball scene cannot: it has no objects to rearrange, only a tile
+    // and a striker. Knowing that BEFORE a grab starts is the difference
+    // between a pointer that declines and one that lets you pick something up,
+    // carry it, and only then tell you it was never going to work.
+  let grabbable = true;
+  let ungrabbableWhy = "";
   let grab = null;
   // A live world drives its own poses in from outside. There is nothing to play
   // and no frame slider to honour, so the playback path has to stay out of the
@@ -253,12 +260,13 @@ function create(container, hooks = {}) {
     if (hovered) partsOf(hovered).forEach((b) => litUp(b, false));
     const parts = name ? partsOf(name) : [];
     hovered = parts.length && !parts[0].anchored ? name : null;
-    if (hovered) parts.forEach((b) => litUp(b, true));
-    canvas.style.cursor = hovered ? "pointer" : "";
-    hooks.onHover?.(hovered ? { name: hovered } : null);
+    if (hovered && grabbable) parts.forEach((b) => litUp(b, true));
+    canvas.style.cursor = hovered && grabbable ? "pointer" : "";
+    hooks.onHover?.(hovered ? { name: hovered, grabbable, why: ungrabbableWhy } : null);
   }
 
   function beginGrab(clientX, clientY) {
+    if (!grabbable) return false;
     const name = bodyUnder(clientX, clientY);
     if (!name) return false;
     const parts = partsOf(name);
@@ -271,7 +279,12 @@ function create(container, hooks = {}) {
     const scale = camera.position.distanceTo(centre) * 0.0016;
     setHover(null);
     grab = { name, parts, x: clientX, y: clientY, basis: dragBasis(), scale,
-             moved: new THREE.Vector3(), start: centre.clone() };
+             moved: new THREE.Vector3(), start: centre.clone(),
+             // Where each part was before the hand touched it. A move that is
+             // refused has to leave the scene as it found it; without this a
+             // refusal left the object hanging in the air where it was let go,
+             // which looks exactly like the object being stuck.
+             was: parts.map((b) => b.mesh.position.clone()) };
     // A recording that keeps playing would fight the pointer for the object.
     setPlaying(false);
     parts.forEach((b) => { b.mesh.material.emissive?.setHex(0x224433); });
@@ -298,6 +311,20 @@ function create(container, hooks = {}) {
     hooks.onGrab?.({ name: grab.name, held: true,
                      moved_m: [grab.moved.x, grab.moved.y, grab.moved.z],
                      at_m: [at.x, at.y, at.z] });
+  }
+
+  // Put everything back where it was and forget the grab, without telling the
+  // host it was released -- nothing happened.
+  function cancelGrab() {
+    if (!grab) return;
+    grab.parts.forEach((b, i) => {
+      b.mesh.material.emissive?.setHex(0x000000);
+      b.mesh.position.copy(grab.was[i]);
+      if (b.edge) b.edge.position.copy(b.mesh.position);
+    });
+    const name = grab.name;
+    grab = null;
+    hooks.onGrab?.({ name, held: false, moved_m: [0, 0, 0] });
   }
 
   function endGrab() {
@@ -1306,6 +1333,15 @@ function create(container, hooks = {}) {
     // Let the pointer move objects instead of orbiting the camera. In a live
     // world a grab is a hold the engine itself honours; in a recording it is a
     // reposition and the fall is simulated by running the lane again.
+    // Whether this scene can be rearranged by hand at all, and what to say
+    // when it cannot.
+    setGrabbable(ok, why) {
+      grabbable = ok !== false;
+      ungrabbableWhy = String(why || "");
+      if (!grabbable) { if (grab) cancelGrab(); setHover(null); }
+    },
+    // Put back whatever the hand moved. For a move the host would not accept.
+    cancelGrab,
     setGrabMode(v) {
       grabMode = v !== false;
       if (!grabMode) { if (grab) endGrab(); setHover(null); }
