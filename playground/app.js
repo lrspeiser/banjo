@@ -1198,6 +1198,16 @@
       state.scene.setGrabbable(true, "");
       state.scene.loadLive(data.bodies, 0, data.cell_size_m);
       showTransport(false);
+      const caption = $("fracture-stage-caption");
+      if (caption) {
+        const names = data.bodies.map((b) => b.name);
+        const moving = data.bodies.filter((b) =>
+          (b.velocity_m_s || []).some((v) => Math.abs(v) > 0.01));
+        caption.textContent = `Running: ${names.length} objects`
+          + `${moving.length ? `, ${moving[0].name} at `
+             + `${Math.hypot(...moving[0].velocity_m_s).toFixed(1)} m/s` : ""}.`
+          + " Point at something and click to pick it up.";
+      }
       $("viewer-live").textContent = "Restart the scene";
       $("viewer-grab").checked = true;
       state.scene.setGrabMode(true);
@@ -1698,6 +1708,9 @@
   function captionStage(sum) {
     const box = $("fracture-stage-caption");
     if (!box) return;
+    // A live world is what is on the stage; a recording summary does not
+    // describe it and must not overwrite what it says.
+    if (live.session) return;
     if (Array.isArray(sum.bodies) && sum.bodies.length) {
       // A scene is named by what is in it, not by a plate it does not have.
       const moving = sum.bodies.filter((b) => b.speed_m_s > 0);
@@ -1717,7 +1730,7 @@
       setTimeout(() => box.classList.remove("is-new"), 1400);
       return;
     }
-    if (!Array.isArray(sum.plate_mm)) { box.textContent = "Run something to put it on this stage."; return; }
+    if (!Array.isArray(sum.plate_mm)) { box.textContent = "Nothing on this stage."; return; }
     const plate = `${sum.plate_mm.join(" x ")} mm ${sum.material || "plate"}`;
     const ball = Number.isFinite(sum.ball_mm) ? `${Math.round(sum.ball_mm)} mm ${sum.striker || "ball"}` : "striker";
     const speed = Number.isFinite(sum.speed_m_s) ? `${sum.speed_m_s.toFixed(2)} m/s` : "";
