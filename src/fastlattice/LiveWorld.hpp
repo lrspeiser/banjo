@@ -128,7 +128,19 @@ public:
     // reads it once per frame and narrates it. Contacts too gentle to be worth
     // mentioning are left out: `quiet_speed_m_s` is what counts as an arrival
     // rather than two things leaning on each other.
+    // Every contact since the last forgetImpacts(), hardest first.
+    //
+    // Accumulated rather than per-step, because a host almost never steps once.
+    // The playground asks for however many steps have gone by since the last
+    // frame -- four, usually -- and a step only ever kept the contacts of the
+    // step it just took, so three steps out of four were thrown away before
+    // anyone could read them. Measured: a ball dropped on a pane reported four
+    // contacts when stepped one at a time and NONE when stepped four at a time.
+    // Everything that did not clear a threshold happened in silence.
     [[nodiscard]] std::vector<LiveImpact> impacts(double quiet_speed_m_s = 0.5) const;
+    // Start a fresh batch. A host calls this when it has read what it needs,
+    // which in practice is at the top of each batch of steps.
+    void forgetImpacts();
 
     // What the last step hit hard enough to break, by name and once each.
     [[nodiscard]] std::vector<std::string> breakable() const;

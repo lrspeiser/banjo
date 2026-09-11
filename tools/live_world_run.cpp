@@ -141,6 +141,8 @@ int main(int argc, char **argv) {
                 if (op == "step") {
                     const double dt = command.value("dt", 1.0 / 60.0);
                     const int count = std::max(1, command.value("n", 1));
+                    // A fresh batch: what follows is what this call reports.
+                    world->forgetImpacts();
                     // Stop early on a step that was taken back: the world is
                     // one step short of an impact and the host has a decision
                     // to make before time moves again.

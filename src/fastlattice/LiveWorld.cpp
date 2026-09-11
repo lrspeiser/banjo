@@ -52,7 +52,14 @@ struct LiveWorld::Impl {
     std::vector<std::vector<std::uint32_t>> nodes_of;
     std::vector<FragmentFractureLimits> limits_of;
     std::vector<double> impedance_of;
+    // This step's contacts, which is what breakable() and the step-back
+    // decision are about: a body that has already been answered for must not be
+    // re-offered on the strength of a contact from three steps ago.
     std::vector<LiveImpact> last_impacts;
+    // Every contact since the host last said it had read them. The hardest of
+    // each pair survives, because a landing reports the same pair many times as
+    // it settles and the one that matters is the one that arrived.
+    std::vector<LiveImpact> reported;
     // For each body the last step would have broken, the body that hit it, or
     // npos for the ground. An island built without the thing that struck it is
     // a free-flying object with no stress in it, which breaks nothing.
@@ -347,6 +354,16 @@ bool LiveWorld::judgeStep() {
     // order the events happened to arrive in: a gentle contact cleared the flag
     // that a hard one then set again, and the world stayed wedged even though
     // every part of the rule looked right. Decide it once, after all of them.
+    // Keep them where the host can still find them after the batch.
+    for (const LiveImpact &impact : impl_->last_impacts) {
+        auto same = std::find_if(impl_->reported.begin(), impl_->reported.end(),
+                                 [&](const LiveImpact &seen) {
+                                     return seen.struck == impact.struck && seen.by == impact.by;
+                                 });
+        if (same == impl_->reported.end()) impl_->reported.push_back(impact);
+        else if (impact.closing_speed_m_s > same->closing_speed_m_s) *same = impact;
+    }
+
     for (const std::string &name : breaking_now)
         if (impl_->held_through.count(name) == 0) any_would_break = true;
     // A body that is no longer in danger from anything gets a fresh hearing the
@@ -485,9 +502,11 @@ void LiveWorld::release() {
     impl_->holding = static_cast<std::size_t>(-1);
 }
 
+void LiveWorld::forgetImpacts() { impl_->reported.clear(); }
+
 std::vector<LiveImpact> LiveWorld::impacts(double quiet_speed_m_s) const {
     std::vector<LiveImpact> out;
-    for (const LiveImpact &impact : impl_->last_impacts)
+    for (const LiveImpact &impact : impl_->reported)
         if (impact.closing_speed_m_s >= quiet_speed_m_s) out.push_back(impact);
     std::sort(out.begin(), out.end(), [](const LiveImpact &lhs, const LiveImpact &rhs) {
         return lhs.closing_speed_m_s > rhs.closing_speed_m_s;

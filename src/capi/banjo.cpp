@@ -123,6 +123,7 @@ void banjo_close(banjo_world *world) { delete world; }
 int banjo_step(banjo_world *world, double dt_s) {
     if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
     return guarded([&] {
+        world->world->forgetImpacts();
         world->world->step(dt_s);
         // A step that was taken back did not happen. Saying so in the return
         // value rather than in a flag the caller has to remember to read is the
@@ -139,6 +140,7 @@ int banjo_advance(banjo_world *world, double dt_s, double window_s) {
         // contact that wants answering, so this repeats -- but only while
         // something is actually being resolved, and each answered name is
         // recorded by the engine so the same one cannot come back for ever.
+        world->world->forgetImpacts();
         for (int rounds = 0; rounds < 64; ++rounds) {
             world->world->step(dt_s);
             if (!world->world->steppedBack()) return BANJO_OK;
