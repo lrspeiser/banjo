@@ -122,6 +122,15 @@ std::vector<SceneBody> readSceneFile(const std::string &path) {
                                      std::istreambuf_iterator<char>()));
 }
 
+void readSceneSettings(const std::string &text, TileImpactRequest &request) {
+    const nlohmann::json document = nlohmann::json::parse(text);
+    if (!document.is_object()) return;   // a bare array is bodies and nothing else
+    if (document.contains("plasticity"))
+        request.plasticity = document.at("plasticity").get<bool>();
+    if (document.contains("hardening_ratio"))
+        request.hardening_ratio = document.at("hardening_ratio").get<double>();
+}
+
 std::vector<SceneBody> readSceneJson(const std::string &text) {
     const nlohmann::json document = nlohmann::json::parse(text);
     const auto &list = document.contains("bodies") ? document.at("bodies") : document;

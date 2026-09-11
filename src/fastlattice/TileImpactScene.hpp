@@ -311,6 +311,16 @@ void rotationQuaternion(const Vec3 &degrees, double out[4]);
 // command line has its scene in memory and should not have to write it to a
 // file to be allowed to use it.
 [[nodiscard]] std::vector<SceneBody> readSceneJson(const std::string &text);
+// The settings a scene may carry alongside its bodies, applied to `request`.
+// Only the ones a host has any business choosing: everything else about how the
+// solver runs is the engine's own affair.
+//
+//   {"bodies": [...], "plasticity": true, "hardening_ratio": 0.0}
+//
+// Plasticity is OFF unless asked for, which is why a dent is something a scene
+// opts into. With it off every bond springs back to its rest length and nothing
+// can hold a shape it was pushed into.
+void readSceneSettings(const std::string &text, TileImpactRequest &request);
 
 // The substep settings for a scene, in a frame with the given origin, and the
 // backend a request asks for. Shared for the same reason as the rotation above:

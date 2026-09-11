@@ -6,6 +6,7 @@
 #include "fastlattice/LatticePhysics.hpp"
 #include "fastlattice/Refracture.hpp"
 #include "fracture/FragmentGeometry.hpp"
+#include "material/MaterialCompiler.hpp"
 #include "rigid/JoltWorld.hpp"
 
 #include <algorithm>
@@ -204,6 +205,14 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request) {
             definition->density_kg_m3, definition->young_modulus_pa));
         impl.impedance_of.push_back(
             acousticImpedance(definition->density_kg_m3, definition->young_modulus_pa));
+        // How it meets the floor, from the same material the threshold came
+        // from. Without this every body in the scene carried the contact of the
+        // scene's default matter and nothing bounced differently from anything
+        // else.
+        const CombinedContactMaterial against_ground = combineContactMaterials(
+            compileContactMaterial(*definition), compileContactMaterial(setup.ground_material));
+        fragment.friction = against_ground.dynamic_friction;
+        fragment.restitution = against_ground.restitution;
         impl.nodes_of.emplace_back(component.node_indices.begin(), component.node_indices.end());
         for (const std::uint32_t node : component.node_indices)
             impl.cell_offset_m[node] = setup.matter.nodes[node].position_world_m -
@@ -641,11 +650,42 @@ std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
     const RunStatus status = backend->run(control);
     backend->download(island_state, parked);
     writeBackLatticeState(island_state, island.schedule, island.matter);
+    // The permanent set the run left behind: bond lengths the material will not
+    // give back. This is a dent. It is carried out of the island and into the
+    // parent's own record, so the next hit starts from the shape this one left
+    // rather than from the shape it was authored as.
+    double dent_m = 0.0;
+    for (std::size_t k = 0; k < island_state.bond_count; ++k) {
+        const std::uint32_t o = island.schedule.bond_order[k];
+        const std::uint32_t parent_bond = island.parent_bond.empty()
+                                              ? static_cast<std::uint32_t>(o)
+                                              : island.parent_bond[o];
+        if (parent_bond < impl_->plastic_extension_m.size()) {
+            impl_->plastic_extension_m[parent_bond] = island_state.plastic_extension[k];
+            impl_->plastic_strain_m[parent_bond] = island_state.plastic_strain[k];
+        }
+        dent_m = std::max(dent_m, std::abs(island_state.plastic_extension[k]));
+    }
 
     const auto island_components = findConnectedComponents(island.matter);
-    if (status.broken_bonds == 0 || island_components.size() <= 1) return 1;
+    // Nothing came apart. Usually that is the end of it -- the body held, and
+    // it keeps the shape it was authored with.
+    //
+    // Unless it took a permanent set. A dent is not a break: the object is one
+    // piece still, but it is not the shape it was, and an engine that throws
+    // that away can only ever show things intact or in bits. So a body that
+    // has yielded is rebuilt from where its matter actually ended up, which
+    // makes it a hull -- because that IS its surface now, and no box or sphere
+    // describes a dented thing.
+    //
+    // The bar is a tenth of a cell. Below that the deformation is not visible
+    // at the resolution the body is drawn at, and rebuilding would turn every
+    // authored sphere into a hull the first time it landed hard.
+    const bool dented = dent_m > 0.1 * impl_->request.cell_size_m;
+    if (status.broken_bonds == 0 && island_components.size() <= 1 && !dented) return 1;
+    if (island_components.empty()) return 1;
 
-    // It broke. Replace the body with what it became.
+    // It broke, or it bent. Either way it is not what it was, so replace it.
     FragmentBuildResult rebuilt = buildFragmentRepresentations(island.matter, island_components, {
         .first_body_id = impl_->next_body_id,
         .maximum_rigid_fragments = std::max<std::size_t>(1, island_components.size()),
@@ -741,8 +781,11 @@ std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
     for (std::size_t i = 0; i < impl_->described.size(); ++i)
         impl_->index_of.emplace(impl_->described[i].name, i);
     // It broke, so the name it held under is gone and its pieces are new ones
-    // that have never been tried.
-    impl_->held_through.erase(name);
+    // that have never been tried. A body that only BENT keeps its name, and
+    // must keep its place in the already-answered set with it -- otherwise the
+    // same contact is offered again on the next step, dents it again, and the
+    // world spends itself deforming one object for ever.
+    if (impl_->index_of.find(name) == impl_->index_of.end()) impl_->held_through.erase(name);
     return of_asked;
 }
 

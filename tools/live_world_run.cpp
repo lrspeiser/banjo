@@ -36,7 +36,9 @@
 
 #include <nlohmann/json.hpp>
 
+#include <fstream>
 #include <iostream>
+#include <iterator>
 #include <stdexcept>
 #include <string>
 
@@ -102,7 +104,19 @@ int main(int argc, char **argv) {
                 if (i + 1 >= argc) throw std::invalid_argument(option + " needs a value");
                 return argv[++i];
             };
-            if (option == "--scene") request.bodies = readSceneFile(value());
+            if (option == "--scene") {
+                // Once. value() walks the argument list forward, so asking it
+                // twice eats the next option's value and the engine is handed
+                // "0.02" as though it were a flag.
+                const std::string path = value();
+                request.bodies = readSceneFile(path);
+                // The same settings the C face reads, so a scene behaves the
+                // same whichever way it reaches the engine.
+                std::ifstream input(path);
+                if (input)
+                    readSceneSettings(std::string(std::istreambuf_iterator<char>(input),
+                                                  std::istreambuf_iterator<char>()), request);
+            }
             else if (option == "--cell") request.cell_size_m = std::stod(value());
             else if (option == "--ground-material") request.ground_material = presetFromName(value());
             else throw std::invalid_argument("unknown option: " + option);

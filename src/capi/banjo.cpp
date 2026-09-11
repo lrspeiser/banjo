@@ -104,6 +104,7 @@ banjo_world *banjo_open(const char *scene_json, double cell_size_m) {
         // when they have it; a library handed to someone else cannot assume it.
         request.backend = BackendKind::CpuParallel;
         request.bodies = banjo::fastlattice::readSceneJson(scene_json);
+        banjo::fastlattice::readSceneSettings(scene_json, request);
         if (request.bodies.empty()) { setError("a world needs at least one body"); return nullptr; }
         auto handle = std::make_unique<banjo_world>();
         handle->world = LiveWorld::open(request);

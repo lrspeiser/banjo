@@ -561,6 +561,164 @@ void aRayFindsPiecesAfterSomethingBreaks() {
             "query is not tracking the real shapes");
 }
 
+// How high a ball of some material comes back off a concrete floor, as a
+// fraction of the height it fell.
+//
+// Measured at the turn, not by watching for it to get within some distance of
+// the floor. A threshold on height cannot work: a bouncy ball reverses before
+// it ever gets that low, so the trigger never fires and the bounciest material
+// in the catalogue reads as not bouncing at all. That is not a hypothetical --
+// it is what the first version of this measurement said, and rubber came back
+// as 0.0 mm, which is the sort of number that should stop you rather than be
+// written down.
+double bounceFraction(MaterialPreset material) {
+    TileImpactRequest r;
+    r.cell_size_m = 0.02;
+    r.backend = BackendKind::CpuParallel;
+    SceneBody floor;
+    floor.name = "floor";
+    floor.shape = BodyShape::Box;
+    floor.material = MaterialPreset::Concrete;
+    floor.dimensions_m = {3.0, 0.1, 3.0};
+    floor.center_m = {0.0, 0.05, 0.0};
+    floor.anchored = true;
+    SceneBody ball;
+    ball.name = "ball";
+    ball.shape = BodyShape::Sphere;
+    ball.material = material;
+    ball.dimensions_m = {0.1, 0.1, 0.1};
+    ball.center_m = {0.0, 1.5, 0.0};
+    r.bodies = {floor, ball};
+
+    const auto live = LiveWorld::open(r);
+    double lowest = 1.5, apex = -1.0;
+    bool rising = false;
+    for (int i = 0; i < 960 && apex < 0.0; ++i) {
+        live->step(1.0 / 240.0);
+        // Answer whatever asks to break, so the clock cannot stop. Some of
+        // these materials are admitted at this speed and hold.
+        for (const std::string &name : live->breakable()) live->fracture(name);
+        for (const LiveBodyPose &pose : live->poses(false)) {
+            if (pose.name != "ball") continue;
+            lowest = std::min(lowest, pose.position_m.y);
+            if (pose.velocity_m_s.y > 0.05) rising = true;
+            else if (rising && pose.velocity_m_s.y <= 0.0) apex = pose.position_m.y;
+        }
+    }
+    if (apex < 0.0) return 0.0;
+    return std::max(0.0, apex - lowest) / (1.5 - lowest);
+}
+
+// What a thing is made of decides how it comes off the floor.
+//
+// It did not. Every body in a live world was handed one combined contact
+// material -- the scene's default matter against the ground -- so a rubber ball
+// and an iron ball left the floor at exactly the same height: 29.5 mm for all
+// eight materials in the catalogue, to the millimetre. That is not a
+// coincidence, it is one number being used eight times.
+//
+// The fracture threshold two lines from the same place already took the struck
+// body's OWN material, with a comment about a glass pin and an oak lane not
+// breaking at the same speed. They do not bounce the same either.
+void whatAThingIsMadeOfDecidesHowItBounces() {
+    const double rubber = bounceFraction(MaterialPreset::Rubber);
+    const double concrete = bounceFraction(MaterialPreset::Concrete);
+    const double ice = bounceFraction(MaterialPreset::Ice);
+    const double glass = bounceFraction(MaterialPreset::Glass);
+    std::cout << "  off concrete, as a fraction of the fall: rubber " << rubber
+              << ", ice " << ice << ", glass " << glass << ", concrete " << concrete << "\n";
+
+    require(rubber > 0.05, "a rubber ball did not bounce off a concrete floor at all");
+    require(concrete > 0.05, "a concrete ball did not bounce at all");
+    // Rubber is the least damped thing in the catalogue at 0.05 and concrete
+    // the most at 0.30, so this ordering is the catalogue showing through
+    // rather than a number anyone picked.
+    require(rubber > concrete * 1.5,
+            "rubber and concrete bounce the same, so the contact is not taking "
+            "the body's own material");
+    require(ice > glass, "ice is more compliant than glass and should keep more of its fall");
+    // The one that would have passed before the fix is this failing: every
+    // material giving the same answer.
+    require(std::abs(rubber - concrete) > 1.0e-3 && std::abs(ice - glass) > 1.0e-3,
+            "two different materials bounced identically");
+}
+
+// A thing can come out of a collision in one piece and a different shape.
+//
+// It could not before. A body was rebuilt only when it came APART: the run put
+// it back into the lattice, worked out what happened, and then, if it was still
+// one connected piece, threw the result away and left the authored sphere
+// exactly as it was. So an engine of real matter could show you a thing intact
+// or a thing in bits, and nothing in between -- no dent, no crumple, no
+// flattened side. Which is most of what actually happens to objects.
+//
+// Now a body that is still one piece but is no longer the shape it was gets
+// rebuilt from where its matter ended up. That makes it a hull, because its
+// cells ARE its surface once it has been deformed and no sphere describes it.
+// The bar for "no longer the shape it was" is a tenth of a cell of permanent
+// set, or bonds lost inside it; below that, rebuilding would turn every
+// authored sphere into a hull the first time it landed hard.
+void somethingCanBeDentedWithoutBeingBroken() {
+    TileImpactRequest r;
+    r.cell_size_m = 0.02;
+    r.backend = BackendKind::CpuParallel;
+    SceneBody anvil;
+    anvil.name = "anvil";
+    anvil.shape = BodyShape::Box;
+    anvil.material = MaterialPreset::Iron;
+    anvil.dimensions_m = {0.3, 0.12, 0.3};
+    anvil.center_m = {0.0, 0.06, 0.0};
+    anvil.anchored = true;
+    SceneBody ball;
+    ball.name = "ball";
+    ball.shape = BodyShape::Sphere;
+    ball.material = MaterialPreset::Aluminum;
+    ball.dimensions_m = {0.1, 0.1, 0.1};
+    ball.center_m = {0.0, 0.20, 0.0};
+    // Hard enough to be admitted -- aluminium needs about 24.5 m/s against an
+    // iron anvil -- and not so hard that it comes apart.
+    ball.velocity_m_s = {0.0, -60.0, 0.0};
+    r.bodies = {anvil, ball};
+
+    const auto live = LiveWorld::open(r);
+    const auto findBall = [&] {
+        std::vector<LiveBodyPose> out;
+        for (const LiveBodyPose &pose : live->poses(false))
+            if (pose.name.rfind("ball", 0) == 0) out.push_back(pose);
+        return out;
+    };
+    const std::vector<LiveBodyPose> before = findBall();
+    require(before.size() == 1 && before[0].shape == "sphere",
+            "the ball did not start as one sphere");
+    const double was = before[0].dimensions_m.x;
+
+    for (int i = 0; i < 288; ++i) {          // 0.6 s at 1/480
+        live->step(1.0 / 480.0);
+        for (const std::string &name : live->breakable()) live->fracture(name);
+    }
+
+    const std::vector<LiveBodyPose> after = findBall();
+    require(!after.empty(), "the ball vanished");
+    const double now = after[0].dimensions_m.x;
+    std::cout << "  aluminium at 60 m/s onto an iron anvil: " << after.size()
+              << " piece(s), " << before[0].shape << " -> " << after[0].shape
+              << ", " << was * 1000.0 << " mm across -> " << now * 1000.0 << " mm\n";
+
+    require(after.size() == 1, "it came apart, so this is a break and not a dent");
+    require(after[0].shape == "hull",
+            "it is still being drawn as the sphere it was authored as, so the "
+            "shape it ended up in was thrown away");
+    require(was - now > 0.01,
+            "it held its exact authored size, so nothing was actually deformed");
+    // Still a real object afterwards: it has somewhere to be and it can be
+    // picked up. A rebuild that produced a body the world cannot use would
+    // pass every check above.
+    require(after[0].position_m.y > 0.0 && after[0].position_m.y < 1.0,
+            "the dented ball ended up somewhere impossible");
+    require(live->grab(after[0].name), "the dented ball cannot be picked up");
+    live->release();
+}
+
 void theGroundCatchesThingsWhereverTheyAreDropped() {
     for (const double x : {0.0, 3.0, 9.0, 40.0}) {
         const auto live = LiveWorld::open(ballOverFloor());
@@ -606,6 +764,10 @@ int main() {
         std::cout << "[PASS] breaking scenery or a name that is not there changes nothing\n";
         aThingThatHeldDoesNotStopTheWorld();
         std::cout << "[PASS] something that was hit hard and held does not deadlock the world\n";
+        somethingCanBeDentedWithoutBeingBroken();
+        std::cout << "[PASS] something can be dented without being broken\n";
+        whatAThingIsMadeOfDecidesHowItBounces();
+        std::cout << "[PASS] what a thing is made of decides how it bounces\n";
         aRayFindsWhatItActuallyHits();
         std::cout << "[PASS] a ray finds what it actually hits, named and measured\n";
         aRayFindsPiecesAfterSomethingBreaks();
