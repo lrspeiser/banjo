@@ -157,6 +157,15 @@ def itTakesOnlyThePieces() -> None:
         at = shatter(live)
         require(anchored, "the scene has no anchored scenery to protect")
 
+        # What broke, read off the world BEFORE anything is swept up -- once the
+        # pieces are collected there is nothing left to tell a body that broke
+        # from one that was wrongly pocketed. A body dragged into somebody
+        # else's island can be broken there, so the striker is not necessarily
+        # intact afterwards either.
+        standing = {b["name"] for b in live.state["bodies"]}
+        broke = {n for n in whole
+                 if any(p.startswith(n + " piece") for p in standing)}
+
         # Sweep the whole room, from every plate, with a generous reach.
         for body in list(live.state["bodies"]):
             live.send(op="collect", at=body["position_m"], radius_m=2.0)
@@ -168,7 +177,6 @@ def itTakesOnlyThePieces() -> None:
                 f"{sorted(gone_scenery)[:4]}")
         # Everything authored that did not break is still here.
         authored_left = {n for n in whole if n in left}
-        broke = {"glass plate 20mm"}
         missing = whole - left - broke
         require(not missing,
                 f"sweeping took authored objects that never broke: {sorted(missing)[:4]}")

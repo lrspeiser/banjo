@@ -351,7 +351,12 @@ private:
     // one cascade before this existed.
     void queueBreaks();
     void startNextQueued();
-    void restackQueue(const std::vector<std::size_t> &dropped);
+    // Follow every queued job's indices through a rearrangement of the body
+    // table, given the names that were there before it. By NAME, because a body
+    // that came through whole keeps its name and is re-appended at the end --
+    // so counting erasures below an index gets it wrong by one and the next
+    // apply destroys the body next door.
+    void restackQueue(const std::vector<std::string> &before);
     void repin();
     // Take bodies out of the world and out of every table parallel to it,
     // fixing up the hand and any fracture holding an index.

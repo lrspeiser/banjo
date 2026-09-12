@@ -197,7 +197,21 @@ function cellCube() {
 // So the shape stays the shape and the hollow is pressed into it here, deep
 // enough to see. The label says the true depth, which is what keeps it honest:
 // the picture is legible, the number is not exaggerated.
-const DENT_SHOWN_M = 0.05;      // of the object's own radius
+// Drawn deeper than it is, but not all the same depth.
+//
+// This used to floor every hollow at a twentieth of the radius, so a dent of a
+// tenth of a millimetre and one of a millimetre were drawn identically -- and a
+// picture that makes every dent look the same makes every dent look like it
+// ought to matter. It does not: a millimetre on a 140 mm ball does not stop it
+// rolling, and the engine is right to keep rolling it.
+//
+// So the hollow follows the real depth, three times over, between a floor deep
+// enough to notice and a cap shallow enough not to claim the ball was staved
+// in. A deeper dent now looks deeper, which is the only thing a drawing like
+// this can honestly promise.
+const DENT_SCALE = 3;           // times the true depth
+const DENT_FLOOR = 0.006;       // of the object's own radius
+const DENT_CAP = 0.05;          // of the object's own radius
 const DENT_WIDTH = 0.45;        // how much of the face it spreads over
 
 function pressDent(geometry, body) {
@@ -206,7 +220,9 @@ function pressDent(geometry, body) {
     const here = new THREE.Vector3(at[0], at[1], at[2]);
     if (here.lengthSq() < 1e-12) return;
     const half = Math.max(...body.dimensions_m) / 2;
-    const deep = Math.max((body.dent_mm || 0) / 1000, DENT_SHOWN_M * half);
+    const truly = (body.dent_mm || 0) / 1000;
+    const deep = Math.min(DENT_CAP * half,
+                          Math.max(DENT_FLOOR * half, truly * DENT_SCALE));
     const toward = here.clone().normalize();
     const spread = Math.cos(DENT_WIDTH);
 
@@ -702,9 +718,13 @@ function showLabel(found) {
       // The true depth, beside a hollow drawn deeper than that so it can be
       // seen at all. Saying so is what makes the drawing honest rather than a
       // claim about the shape.
+      // The true depth, beside a hollow drawn deeper than that so it can be
+      // seen at all. Saying so is what makes the drawing honest rather than a
+      // claim about the shape -- and a dent this shallow does not stop the
+      // thing rolling, which is why it is worth being plain about the size.
       + (entry.dentMm > 0
           ? ` · dented ${entry.dentMm < 1 ? entry.dentMm.toFixed(2) : entry.dentMm.toFixed(1)} mm`
-            + ` (shown deeper than it is)` : "")
+            + ` (drawn deeper so you can see it)` : "")
       + ` · ${found.distance_m.toFixed(2)} m away`
     : "";
   cross.classList.toggle("on", !entry?.anchored);

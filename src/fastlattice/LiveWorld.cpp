@@ -11,7 +11,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 #include <stdexcept>
 #include <thread>
 #include <deque>
@@ -877,27 +876,55 @@ void LiveWorld::startNextQueued() {
 // A queued job whose island shared a body with the one just applied is not
 // fixable and must go: the thing it was going to break has itself just come
 // apart, and its pieces are new and untried. They will be heard on their own.
-void LiveWorld::restackQueue(const std::vector<std::size_t> &dropped) {
-    std::vector<std::size_t> gone = dropped;
-    std::sort(gone.begin(), gone.end());
-    const auto shift = [&](std::size_t index) {
-        std::size_t below = 0;
-        for (const std::size_t was : gone) below += was < index ? 1 : 0;
-        return index - below;
+// Where everything ended up, given where it was.
+//
+// `before` is the body table's names in index order, taken just before whatever
+// rearranged it. Names are unique and a body keeps its name across a rebuild, so
+// they are what survives an operation that indices do not.
+//
+// Counting how many slots below an index were erased is NOT enough, and getting
+// that wrong is what this is written the long way to prevent. A body that came
+// through a fracture whole keeps its name and is erased and RE-APPENDED at the
+// end: it has not gone, so nothing counts it as gone, and yet every index above
+// its old slot has moved down by one. Queued jobs then held indices one too
+// high, and the next apply erased the body next door -- measured, an iron ball
+// dropped on a plate quietly destroyed two anchored piers, one of them across
+// the room, and the only sign was scenery missing afterwards.
+void LiveWorld::restackQueue(const std::vector<std::string> &before) {
+    std::unordered_map<std::string, std::size_t> now;
+    for (std::size_t i = 0; i < impl_->described.size(); ++i)
+        now.emplace(impl_->described[i].name, i);
+
+    constexpr std::size_t kGone = static_cast<std::size_t>(-1);
+    std::vector<std::size_t> moved(before.size(), kGone);
+    for (std::size_t i = 0; i < before.size(); ++i) {
+        const auto found = now.find(before[i]);
+        if (found != now.end()) moved[i] = found->second;
+    }
+    const auto follow = [&](std::size_t was) {
+        return was < moved.size() ? moved[was] : kGone;
     };
+
     std::deque<std::unique_ptr<Pending>> keeping;
     for (auto &job : impl_->queued) {
-        bool shared = false;
+        // A job whose subject or island no longer exists cannot be applied: the
+        // thing it was going to break has itself come apart, and its pieces are
+        // new and untried.
+        bool lost = follow(job->which) == kGone;
         for (const std::size_t body : job->island_bodies)
-            shared = shared || std::find(gone.begin(), gone.end(), body) != gone.end();
-        if (shared) continue;
-        job->which = shift(job->which);
-        if (job->anvil != static_cast<std::size_t>(-1)) job->anvil = shift(job->anvil);
-        for (std::size_t &body : job->island_bodies) body = shift(body);
+            lost = lost || follow(body) == kGone;
+        if (lost) continue;
+
+        job->which = follow(job->which);
+        if (job->anvil != kGone) {
+            const std::size_t anvil = follow(job->anvil);
+            job->anvil = anvil;            // kGone here simply means "no anvil"
+        }
+        for (std::size_t &body : job->island_bodies) body = follow(body);
         std::unordered_map<std::size_t, RigidSnapshot> poses;
-        for (auto &entry : job->poses_before) poses.emplace(shift(entry.first), entry.second);
+        for (auto &entry : job->poses_before) poses.emplace(follow(entry.first), entry.second);
         job->poses_before = std::move(poses);
-        for (auto &entry : job->body_of_node) entry.second = shift(entry.second);
+        for (auto &entry : job->body_of_node) entry.second = follow(entry.second);
         keeping.push_back(std::move(job));
     }
     impl_->queued = std::move(keeping);
@@ -983,6 +1010,10 @@ std::vector<LiveCollected> LiveWorld::collect(const Vec3 &at, double radius_m,
 // worked out, and anything queued behind it. Missing one of those does not
 // crash, it silently moves somebody else's body, which is far worse.
 void LiveWorld::dropBodies(const std::vector<std::size_t> &which) {
+    // What was where, so anything still holding an index can follow it.
+    std::vector<std::string> before;
+    before.reserve(impl_->described.size());
+    for (const LiveBodyPose &pose : impl_->described) before.push_back(pose.name);
     std::vector<std::size_t> going = which;
     std::sort(going.begin(), going.end(), std::greater<std::size_t>());
     going.erase(std::unique(going.begin(), going.end()), going.end());
@@ -1000,13 +1031,10 @@ void LiveWorld::dropBodies(const std::vector<std::size_t> &which) {
             --impl_->holding;
     }
     // A guess holds indices into these tables as well, and unlike a queued job
-    // it is speculative -- so it is thrown away rather than carefully renumbered.
+    // it is speculative -- so it is thrown away rather than carefully followed.
     // It cost a worker thread and nothing else.
     dropGuess("guess-wasted");
-    // Queued fractures hold indices too, and the same rules apply to them.
-    std::vector<std::size_t> dropped = which;
-    std::sort(dropped.begin(), dropped.end());
-    restackQueue(dropped);
+    restackQueue(before);
     impl_->index_of.clear();
     for (std::size_t i = 0; i < impl_->described.size(); ++i)
         impl_->index_of.emplace(impl_->described[i].name, i);
@@ -1909,14 +1937,11 @@ std::size_t LiveWorld::finishFracture() {
     const std::size_t pieces = applyPending();
     impl_->pending.reset();
 
-    std::set<std::string> standing;
-    for (const LiveBodyPose &pose : impl_->described) standing.insert(pose.name);
-    std::vector<std::size_t> dropped;
-    for (std::size_t i = 0; i < before.size(); ++i)
-        if (standing.count(before[i]) == 0) dropped.push_back(i);
-    // Same for a guess: its indices are into the table that just changed shape.
-    if (!dropped.empty()) dropGuess("guess-wasted");
-    restackQueue(dropped);
+    // A guess holds indices into the table that has just changed shape, and
+    // unlike a queued job it is speculative, so it is thrown away rather than
+    // carefully followed.
+    dropGuess("guess-wasted");
+    restackQueue(before);
 
     // Whatever was waiting behind it starts now, on the same worker.
     startNextQueued();
