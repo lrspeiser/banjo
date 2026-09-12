@@ -111,6 +111,12 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
                           {"velocity_m_s", vec(pose.velocity_m_s)},
                           {"anchored", pose.anchored},
                           {"held", pose.held},
+                          // How deep a permanent set it carries, and where.
+                          // A dent is real and small -- a fifth of a millimetre
+                          // on a 120 mm ball -- so the number is the honest way
+                          // to show it, not a redrawn outline.
+                          {"dent_mm", tidy(pose.dent_m * 1000.0)},
+                          {"dent_at_m", vec(pose.dent_at_m)},
                           {"color_rgba", std::string(colour)}};
         if (!pose.cells_local_m.empty()) {
             nlohmann::json cells = nlohmann::json::array();

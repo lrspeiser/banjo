@@ -770,6 +770,11 @@ if(BANJO_BUILD_TESTS)
         banjo_enable_warnings(banjo_creator_tests)
         add_test(NAME banjo_creator_tests COMMAND banjo_creator_tests)
 
+        add_executable(banjo_degenerate_fragment_tests tests/degenerate_fragment_tests.cpp)
+        target_link_libraries(banjo_degenerate_fragment_tests PRIVATE banjo_runtime)
+        banjo_enable_warnings(banjo_degenerate_fragment_tests)
+        add_test(NAME banjo_degenerate_fragment_tests COMMAND banjo_degenerate_fragment_tests)
+
         add_executable(banjo_transfer_tests tests/transfer_accounting_tests.cpp)
         target_link_libraries(banjo_transfer_tests PRIVATE banjo_runtime)
         banjo_enable_warnings(banjo_transfer_tests)

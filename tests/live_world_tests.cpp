@@ -1156,6 +1156,75 @@ void somethingCanBeDentedWithoutBeingBroken() {
     live->release();
 }
 
+// A thing that was squashed is still the thing, not debris.
+//
+// Something that yields badly enough is rebuilt from where its matter ended up,
+// which makes it a hull -- the same kind of shape a shard off a break is. But it
+// is the same object in a new shape, and nobody expects to pocket their own
+// hammer by walking past it. Measured before this was pinned: an iron ball
+// dented against an anvil weighs three and a half kilograms and was swept up as
+// debris.
+//
+// This lives here rather than beside the other sweep tests because it needs a
+// body that has really been squashed, and a drop in the playground room does
+// not do that -- the set there is a tenth of a millimetre and the ball keeps
+// its sphere.
+void aSquashedThingIsNotDebris() {
+    TileImpactRequest r;
+    r.cell_size_m = 0.02;
+    r.backend = benchBackend();
+    SceneBody anvil;
+    anvil.name = "anvil";
+    anvil.shape = BodyShape::Box;
+    anvil.material = MaterialPreset::Iron;
+    anvil.dimensions_m = {0.3, 0.12, 0.3};
+    anvil.center_m = {0.0, 0.06, 0.0};
+    anvil.anchored = true;
+    SceneBody ball;
+    ball.name = "ball";
+    ball.shape = BodyShape::Sphere;
+    ball.material = MaterialPreset::Iron;
+    ball.dimensions_m = {0.1, 0.1, 0.1};
+    ball.center_m = {0.0, 0.20, 0.0};
+    ball.velocity_m_s = {0.0, -16.0, 0.0};
+    r.bodies = {anvil, ball};
+
+    const auto live = LiveWorld::open(r);
+    live->foreseeCollisions(0.0);       // the squash is the subject, not the timing
+    for (int i = 0; i < 288; ++i) {
+        live->step(1.0 / 480.0);
+        for (const std::string &name : live->breakable()) live->fracture(name);
+    }
+
+    const auto ballNow = [&]() -> LiveBodyPose {
+        for (const LiveBodyPose &pose : live->poses(false))
+            if (pose.name.rfind("ball", 0) == 0) return pose;
+        return LiveBodyPose{};
+    };
+    const LiveBodyPose squashed = ballNow();
+    require(!squashed.name.empty(), "the ball vanished before it could be swept at");
+    require(squashed.shape == "hull",
+            "the ball was not squashed into a hull, so this test cannot tell the "
+            "rule it is checking from the one about shapes");
+
+    // Sweep right where it is, with the size limit out of the way so that being
+    // too big is not what saves it. Without that the ball is spared by its cell
+    // count and the test passes whether the rule exists or not -- which is
+    // exactly how its first version passed.
+    const std::vector<LiveCollected> haul =
+        live->collect(squashed.position_m, 2.0, 100000);
+
+    std::size_t left = 0;
+    for (const LiveBodyPose &pose : live->poses(false))
+        if (pose.name.rfind("ball", 0) == 0) ++left;
+    std::cout << "  a ball squashed into a hull, swept at from 2 m: "
+              << (left ? "still there" : "POCKETED") << ", "
+              << haul.size() << " material(s) picked up\n";
+    require(left == 1,
+            "the sweep took the squashed ball -- it is a hull, but it is still "
+            "the ball, not something that came off anything");
+}
+
 void theGroundCatchesThingsWhereverTheyAreDropped() {
     for (const double x : {0.0, 3.0, 9.0, 40.0}) {
         const auto live = LiveWorld::open(ballOverFloor());
@@ -1223,6 +1292,8 @@ int main() {
         std::cout << "[PASS] a ray finds pieces after something breaks\n";
         somethingLiftedOutOfASettledWorldStillFalls();
         std::cout << "[PASS] something lifted out of a settled world still falls\n";
+        aSquashedThingIsNotDebris();
+        std::cout << "[PASS] a squashed thing is not debris\n";
         theGroundCatchesThingsWhereverTheyAreDropped();
         std::cout << "[PASS] the ground catches things wherever they are dropped\n";
         return 0;

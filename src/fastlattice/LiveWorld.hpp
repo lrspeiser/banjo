@@ -37,6 +37,19 @@ struct LiveBodyPose {
     // three and a half kilograms and had gone into somebody's pockets as
     // "debris" before this existed.
     bool fragment{};
+    // The deepest permanent set this body carries, and where it is in the
+    // body's own frame. Zero for anything that has never been dented.
+    //
+    // A dent is real and it is SMALL. An iron ball hammered into an anvil takes
+    // a permanent set of about a fifth of a millimetre on a 120 mm ball -- so
+    // the shape barely changes, and rebuilding it out of its cells to "show"
+    // that threw away a smooth sphere in exchange for a 136-cube staircase that
+    // displays no dent at all, because the cells had moved 90 micrometres.
+    //
+    // So the number travels instead. A host can draw the shape it was and mark
+    // the spot, and say a true depth next to it.
+    double dent_m{};
+    Vec3 dent_at_m{};
     // Where this body's cells sit in its own frame. Only filled in when the
     // caller asks for geometry, because it does not change between steps and a
     // bowl has two thousand of them.

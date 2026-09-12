@@ -185,6 +185,49 @@ function cellCube() {
 // hull is a piece that broke or bent off something, and its cells ARE its
 // surface, so it is drawn as those cells rather than as a box around them --
 // a box around a shard is a lie about its shape and its size.
+// Press a dent into the surface of an authored shape.
+//
+// A dent is real and it is SMALL: an iron ball driven into an anvil takes a
+// permanent set of about a tenth of a millimetre on a 120 mm ball. Drawn to
+// scale that is nothing at all, and the engine used to "show" it by rebuilding
+// the ball out of its cells -- which threw away a smooth sphere for a
+// 136-cube staircase that displayed no dent either, because the cells had moved
+// ninety micrometres.
+//
+// So the shape stays the shape and the hollow is pressed into it here, deep
+// enough to see. The label says the true depth, which is what keeps it honest:
+// the picture is legible, the number is not exaggerated.
+const DENT_SHOWN_M = 0.05;      // of the object's own radius
+const DENT_WIDTH = 0.45;        // how much of the face it spreads over
+
+function pressDent(geometry, body) {
+    const at = body.dent_at_m;
+    if (!at) return;
+    const here = new THREE.Vector3(at[0], at[1], at[2]);
+    if (here.lengthSq() < 1e-12) return;
+    const half = Math.max(...body.dimensions_m) / 2;
+    const deep = Math.max((body.dent_mm || 0) / 1000, DENT_SHOWN_M * half);
+    const toward = here.clone().normalize();
+    const spread = Math.cos(DENT_WIDTH);
+
+    const at_v = geometry.attributes.position;
+    const v = new THREE.Vector3();
+    for (let i = 0; i < at_v.count; ++i) {
+        v.fromBufferAttribute(at_v, i);
+        const out = v.clone().normalize();
+        const facing = out.dot(toward);
+        if (facing <= spread) continue;
+        // Smooth across the hollow rather than a cone, or the rim shows as a
+        // crease and reads as damage of a different kind.
+        const t = (facing - spread) / (1 - spread);
+        const fall = t * t * (3 - 2 * t);
+        v.addScaledVector(out, -deep * fall);
+        at_v.setXYZ(i, v.x, v.y, v.z);
+    }
+    at_v.needsUpdate = true;
+    geometry.computeVertexNormals();
+}
+
 const placing = new THREE.Object3D();
 
 function buildMesh(body) {
@@ -206,9 +249,14 @@ function buildMesh(body) {
     return cloud;
   }
   const [w, h, d] = body.dimensions_m;
+  const dented = (body.dent_mm || 0) > 0;
+  // A dented box needs somewhere to put the hollow, so it is built with enough
+  // vertices to have a surface rather than eight corners.
   const geometry = body.shape === "sphere"
-    ? new THREE.SphereGeometry(w / 2, 24, 16)
-    : new THREE.BoxGeometry(Math.max(w, 1e-4), Math.max(h, 1e-4), Math.max(d, 1e-4));
+    ? new THREE.SphereGeometry(w / 2, dented ? 48 : 24, dented ? 32 : 16)
+    : new THREE.BoxGeometry(Math.max(w, 1e-4), Math.max(h, 1e-4), Math.max(d, 1e-4),
+                            dented ? 12 : 1, dented ? 12 : 1, dented ? 12 : 1);
+  if (dented) pressDent(geometry, body);
   return new THREE.Mesh(geometry, look(body.material));
 }
 
@@ -248,14 +296,19 @@ function draw(state) {
     let held = world.bodies.get(body.name);
     // Geometry only travels when the set of bodies can have changed, so a
     // body already on screen keeps its mesh and only moves.
-    if (!held || (body.cells_local_m && !held.fromCells)) {
+    // A body that has just taken a dent needs its mesh made again: the hollow
+    // is pressed into the geometry, not painted on.
+    const dentChanged = held && (body.dent_mm || 0) !== (held.dentMm || 0);
+    if (!held || dentChanged || (body.cells_local_m && !held.fromCells)) {
       if (held) forget(held.mesh);
       const mesh = buildMesh(body);
       scene.add(mesh);
-      held = { mesh, fromCells: !!(body.cells_local_m && body.cells_local_m.length) };
+      held = { mesh, fromCells: !!(body.cells_local_m && body.cells_local_m.length),
+               dentMm: body.dent_mm || 0 };
       world.bodies.set(body.name, held);
     }
     held.material = body.material || "";
+    held.dentMm = body.dent_mm || 0;
     held.dims = body.dimensions_m;
     held.anchored = !!body.anchored;
     held.shape = body.shape;
@@ -646,6 +699,12 @@ function showLabel(found) {
   $("label-size").textContent = d
     ? `${Math.round(d[0]*1000)} × ${Math.round(d[1]*1000)} × ${Math.round(d[2]*1000)} mm`
       + (entry.anchored ? " · fixed in place" : "")
+      // The true depth, beside a hollow drawn deeper than that so it can be
+      // seen at all. Saying so is what makes the drawing honest rather than a
+      // claim about the shape.
+      + (entry.dentMm > 0
+          ? ` · dented ${entry.dentMm < 1 ? entry.dentMm.toFixed(2) : entry.dentMm.toFixed(1)} mm`
+            + ` (shown deeper than it is)` : "")
       + ` · ${found.distance_m.toFixed(2)} m away`
     : "";
   cross.classList.toggle("on", !entry?.anchored);

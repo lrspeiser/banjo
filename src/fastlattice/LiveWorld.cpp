@@ -1539,6 +1539,7 @@ std::size_t LiveWorld::applyPending() {
     // parent's own record, so the next hit starts from the shape this one left
     // rather than from the shape it was authored as.
     double dent_m = 0.0;
+    Vec3 dent_at{};
     for (std::size_t k = 0; k < island_state.bond_count; ++k) {
         const std::uint32_t o = island.schedule.bond_order[k];
         const std::uint32_t parent_bond = island.parent_bond.empty()
@@ -1548,7 +1549,21 @@ std::size_t LiveWorld::applyPending() {
             impl_->plastic_extension_m[parent_bond] = island_state.plastic_extension[k];
             impl_->plastic_strain_m[parent_bond] = island_state.plastic_strain[k];
         }
-        dent_m = std::max(dent_m, std::abs(island_state.plastic_extension[k]));
+        const double set_here = std::abs(island_state.plastic_extension[k]);
+        if (set_here > dent_m) {
+            dent_m = set_here;
+            // Where it happened: the middle of the bond that took the set. In
+            // the island's frame, which is the frame the cells are already in.
+            // Which two cells the bond joins lives on the asset the island was
+            // cut from; the state alongside it carries only how it is doing.
+            if (island.matter.asset != nullptr && o < island.matter.asset->bonds.size()) {
+                const BondRest &bond = island.matter.asset->bonds[o];
+                if (bond.node_a < island.matter.nodes.size() &&
+                    bond.node_b < island.matter.nodes.size())
+                    dent_at = 0.5 * (island.matter.nodes[bond.node_a].position_world_m +
+                                     island.matter.nodes[bond.node_b].position_world_m);
+            }
+        }
     }
 
     const auto island_components = findConnectedComponents(island.matter);
@@ -1576,6 +1591,7 @@ std::size_t LiveWorld::applyPending() {
     // overshoot rather than a set.
     const double yield_extension = job.yield_extension;
     const bool dented = yield_extension > 0.0 && dent_m > 2.0 * yield_extension;
+
     if (status.broken_bonds == 0 && island_components.size() <= 1 && !dented) return 1;
     if (island_components.empty()) return 1;
 
@@ -1676,6 +1692,14 @@ std::size_t LiveWorld::applyPending() {
         // A piece that is still all of its parent is that parent, bent. Only
         // something that actually came off is debris.
         piece.fragment = !whole_parent || parent.fragment;
+        // The deepest set it carries, and where. A piece keeps what its parent
+        // had unless this run went deeper.
+        piece.dent_m = parent.dent_m;
+        piece.dent_at_m = parent.dent_at_m;
+        if (whole_parent && dent_m > piece.dent_m) {
+            piece.dent_m = dent_m;
+            piece.dent_at_m = dent_at - fragment.mass_properties.center_of_mass_world_m;
+        }
         // What it is made of is a property of the PART, not of whichever body
         // happened to be standing in as its parent. Asked of the scene, which
         // has known the answer since it opened. (The material definition has a
@@ -1706,7 +1730,32 @@ std::size_t LiveWorld::applyPending() {
         // all of its cells and is still one piece -- that is what a dent IS --
         // and giving it back its authored sphere would hide the very thing that
         // just happened to it. So the permanent set decides too.
-        const bool untouched = whole_parent && !dented && parent.shape != "hull";
+        // Whether the OUTLINE changed enough to be worth drawing differently,
+        // which is a different question from whether the body was dented.
+        //
+        // Everything that yielded used to be rebuilt out of its cells. That is
+        // right when something has really been squashed and wrong when it has
+        // not: measured on an iron ball dropped twelve metres onto an anvil, the
+        // permanent set is about a tenth of a millimetre, the cells end up
+        // within ninety micrometres of where they started, and a 120 mm sphere
+        // was redrawn as a 136-cube staircase that showed no dent whatever --
+        // strictly worse than the sphere it replaced, and it cost the rolling
+        // too, because a hull of cells has a flat bottom.
+        //
+        // The deepest single bond does not answer this. Many bonds each giving
+        // a little adds up along a chain, so the same ball driven at 16 m/s
+        // loses more than a centimetre off its width with no single bond
+        // anywhere near that. What answers it is the outline itself: the extent
+        // the cells now occupy, against the size it was authored at. Half a cell
+        // is the bar, because below that nothing has moved by as much as the
+        // grid it is drawn on.
+        const Vec3 outline = cellBounds(parent_nodes, impl_->cell_offset_m,
+                                        impl_->request.cell_size_m);
+        const double moved = std::max({std::abs(outline.x - parent.dimensions_m.x),
+                                       std::abs(outline.y - parent.dimensions_m.y),
+                                       std::abs(outline.z - parent.dimensions_m.z)});
+        const bool reshaped = moved > 0.5 * impl_->request.cell_size_m;
+        const bool untouched = whole_parent && !reshaped && parent.shape != "hull";
         if (untouched) {
             piece.shape = parent.shape;
             piece.dimensions_m = parent.dimensions_m;

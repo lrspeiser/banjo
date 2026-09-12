@@ -1235,12 +1235,25 @@ void JoltWorld::addFragments(
                 0.0F);
             const JPH::ShapeSettings::ShapeResult hull_result =
                 hull_settings.Create();
-            if (hull_result.HasError()) {
-                const JPH::String &error = hull_result.GetError();
-                throw std::runtime_error(
-                    "Jolt could not build a fragment convex hull: " +
-                    std::string(error.begin(), error.end()));
-            }
+            // A hull that cannot be built is not the end of the matter.
+            //
+            // Some pieces come off nearly flat or nearly in a line, and the hull
+            // builder cannot make a shape that contains them: measured, "point
+            // 166 had an error of 0.049654" -- five centimetres outside, which
+            // is two and a half cells, not a rounding problem. Loosening the
+            // tolerance until Jolt accepts it would only mean accepting a shape
+            // that is wrong by five centimetres.
+            //
+            // But the cells are RIGHT THERE, and they are the piece's actual
+            // shape rather than an approximation of it. Anchored scenery has
+            // always been built that way, for a different reason (a hull cannot
+            // be concave, so a bowl would be solid to the touch). The same
+            // fallback serves here: when the hull will not build, the piece
+            // collides as the cells it is made of.
+            //
+            // Before this, one shard the builder could not handle refused the
+            // whole fracture, and from outside a break simply did not happen.
+            const bool hull_failed = hull_result.HasError();
             // Anchored scenery collides as its actual cells. A convex hull
             // cannot be concave, so a bowl built by cutting a cavity out of a
             // sphere is hollow in the lattice and solid to the touch: a bead
@@ -1250,7 +1263,8 @@ void JoltWorld::addFragments(
             // convex approximation is both reasonable for a tumbling fragment
             // and far cheaper.
             JPH::RefConst<JPH::Shape> concrete;
-            if (fragment.anchored && !fragment.voxel_centers_local_m.empty() &&
+            if ((fragment.anchored || hull_failed) &&
+                !fragment.voxel_centers_local_m.empty() &&
                 fragment.voxel_size_m > 0.0) {
                 JPH::StaticCompoundShapeSettings compound;
                 const JPH::RefConst<JPH::Shape> cell = new JPH::BoxShape(
@@ -1278,6 +1292,15 @@ void JoltWorld::addFragments(
             //
             // Joins, subtractions, cones and broken pieces carry no primitive,
             // so they still get the compound, which is where it was needed.
+            if (hull_failed && authored == nullptr && concrete == nullptr) {
+                // Nothing left to fall back to: no primitive it was authored as,
+                // and no cells to build from.
+                const JPH::String &error = hull_result.GetError();
+                throw std::runtime_error(
+                    "Jolt could not build a fragment convex hull and the piece "
+                    "has no cells to fall back to: " +
+                    std::string(error.begin(), error.end()));
+            }
             const JPH::RefConst<JPH::Shape> inner_shape =
                 authored != nullptr ? authored
                                     : (concrete != nullptr ? concrete : hull_result.Get());

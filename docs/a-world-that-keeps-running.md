@@ -548,6 +548,53 @@ contacts** and says the step is not validated. Worse than any pause. The
 capacity is now sized for what the world may grow to rather than what it opened
 with, and the same room runs to over a thousand bodies.
 
+## A dent is real, and it is small
+
+Anything that yielded used to be rebuilt out of its cells, on the reasoning that
+a dented thing is no longer the shape it was authored as and giving it back its
+sphere would hide what had just happened to it.
+
+Measured, that was backwards. An iron ball dropped twelve metres onto an anvil
+takes a permanent set of **0.11 mm** on a 120 mm ball, and its cells end up
+within **90 micrometres** of where they started. So a smooth sphere was being
+replaced by a 136-cube staircase that showed no dent whatever -- and it cost the
+rolling too, because a hull of cells has a flat bottom.
+
+The deepest single bond is not the right question either. Many bonds each giving
+a little adds up along a chain: the same ball driven at 16 m/s loses **20 mm**
+off its width with no single bond anywhere near that. So what decides whether to
+redraw is the outline itself -- the extent the cells now occupy against the size
+it was authored at, with half a cell as the bar.
+
+| | permanent set | outline | drawn as |
+|---|---|---|---|
+| dropped 12 m onto an anvil | 0.11 mm | unchanged | the sphere it is, with the depth reported |
+| driven at 16 m/s into an anvil | — | 100 mm → 80 mm | a hull of its cells |
+
+Below the bar the body keeps its shape and carries `dent_m` and `dent_at_m`
+instead: how deep the set is and where it is, in its own frame. The room presses
+a hollow into the mesh at that spot, deep enough to see, and the label says the
+true depth beside it — *"dented 0.12 mm (shown deeper than it is)"*. The picture
+is legible and the number is not exaggerated, which is the only honest way to
+draw a tenth of a millimetre on a ball you can hold.
+
+## A piece whose hull will not build
+
+Some pieces come off nearly flat, or nearly in a line, and Jolt's convex hull
+builder cannot make a shape that contains them: *"point 166 had an error of
+0.049654"* — five centimetres outside, which is two and a half cells. Loosening
+the tolerance until it is accepted only means accepting a shape that is wrong by
+five centimetres.
+
+The cells are right there, though, and they are the piece's actual shape rather
+than an approximation of one. Anchored scenery has always been built that way,
+for a different reason (a convex hull cannot be concave, so a bowl would be
+solid to the touch), and the same fallback serves here. A piece with no cells to
+fall back to still refuses, and says so.
+
+Before this, one shard the builder could not handle threw out of the fracture,
+and from outside a break simply did not happen.
+
 ## Every wait is written down
 
 Anything the world waits on, or is spared waiting on, goes out in the reply's

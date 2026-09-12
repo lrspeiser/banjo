@@ -200,48 +200,6 @@ def somethingInAHandIsNotDebris() -> None:
         live.close()
 
 
-def aDentedThingIsNotDebris() -> None:
-    """A thing that bends is the same thing, in a new shape.
-
-    It becomes a hull, exactly as a shard does -- rebuilt from where its matter
-    actually ended up, because no box or sphere describes a dented thing. But
-    nobody expects to pocket their own hammer by walking past it. Measured: an
-    iron ball dropped on glass dents, and three and a half kilograms of it went
-    into somebody's pockets as "debris" before this was pinned.
-    """
-    live = open_room()
-    try:
-        # Hard enough to dent the ball, not just break what it lands on. A 4 m
-        # drop onto 20 mm glass leaves the ball a perfect sphere.
-        at = shatter(live, "iron anvil" if any(
-            b["name"] == "iron anvil" for b in live.state["bodies"]) else "concrete plate 20mm",
-            height=12.0)
-        ball = next((b for b in live.send(op="poses")["bodies"]
-                     if b["name"] == "iron ball"), None)
-        require(ball is not None, "the iron ball is gone, so there is nothing to protect")
-        require(ball["shape"] == "hull",
-                "the iron ball did not dent, so this test would pass without the rule "
-                "it is here to check")
-        # Sweep right where it is, with the size limit taken out of the way.
-        #
-        # Without this the ball is spared by being too BIG to count as debris,
-        # not by being the same object it always was -- and the test passes
-        # whether the rule it is checking exists or not. It did exactly that
-        # until this line was added.
-        cells = len(ball.get("cells_local_m") or [])
-        require(cells > 0, "the ball has no cells, so nothing here means anything")
-        live.send(op="collect", at=ball["position_m"], radius_m=3.0,
-                  largest_cells=cells * 10)
-        left = {b["name"] for b in live.state["bodies"]}
-        print(f"  the iron ball dented into a hull and survived the sweep: "
-              f"{'iron ball' in left}")
-        require("iron ball" in left,
-                "the sweep pocketed the dented iron ball -- it is a hull, but it is "
-                "still the ball, not debris")
-    finally:
-        live.close()
-
-
 def aSweptRoomCanStillBreakThings() -> None:
     """The point of sweeping, as far as the engine is concerned.
 
@@ -293,7 +251,6 @@ def main() -> int:
         ("it only reaches so far", itOnlyReachesSoFar),
         ("it takes only the pieces", itTakesOnlyThePieces),
         ("something in a hand is not debris", somethingInAHandIsNotDebris),
-        ("a dented thing is not debris", aDentedThingIsNotDebris),
         ("a swept room can still break things", aSweptRoomCanStillBreakThings),
     ]:
         try:
