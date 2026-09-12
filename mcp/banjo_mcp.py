@@ -812,6 +812,17 @@ def tool_overloaded(args: dict[str, Any]) -> dict[str, Any]:
     """Everything carrying more than it can hold up."""
     world: banjo.World = _live(_world(args.get("world_id")))
     sagging = world.overloaded()
+    # The survey runs as the world runs. Asked of a world just opened -- which
+    # every add_object makes it -- it has never looked, and "nothing is
+    # overloaded" is an answer about nothing. A model asked that three times,
+    # piled on more iron each time, and finally moved the piers until the shelf
+    # fell off them.
+    if not sagging and world.time_s < 0.5:
+        return {"overloaded": [],
+                "note": f"this world has run for only {world.time_s:.2f} s since it was "
+                        f"last opened: nothing has settled onto what carries it yet, and "
+                        f"the load survey runs as the world runs. Call run for a second "
+                        f"or two, then ask again."}
     return {"overloaded": [
                 {"object": load.name,
                  "carrying_n": round(load.carrying_n, 1),
@@ -1301,6 +1312,119 @@ TOOLS = [
                      "properties": {"world_id": {"type": "string"}}}},
 ]
 
+# ---------------------------------------------------------------------------
+# What a new joint is likely to get wrong, said at the call
+# ---------------------------------------------------------------------------
+#
+# Each of these is a mechanism that is perfectly legal and does not work, and
+# each one was built by a model that then described it as working:
+#
+#   a gate leaf standing on the floor -- held there by friction, it turned 0.3
+#   degrees when shoved;
+#   a leaf set between its posts touching both -- jammed against its own frame;
+#   a rope pulling a gate on an upright hinge straight up, made off at the hinge
+#   line -- no leverage at all, and the gate did not move while the wheel that
+#   was meant to open it turned ninety degrees.
+#
+# None is refused: a caller may mean it. They come back as `warnings` with the
+# reason, which is what a model needs in order to fix it on the next call.
+
+
+def _box(entry: dict[str, Any], name: str) -> dict[str, Any] | None:
+    return next((b for b in entry["scene"]["bodies"] if b["name"] == name), None)
+
+
+def _unit3(v: Any) -> list[float]:
+    n = math.sqrt(sum(float(x) * float(x) for x in v)) or 1.0
+    return [float(x) / n for x in v]
+
+
+def _faces_touching(one: dict[str, Any], two: dict[str, Any], slack: float) -> bool:
+    """Do two boxes meet over an AREA -- overlapping on two axes and touching or
+    overlapping on the third? A shared edge or corner is not rubbing; a shared
+    face is."""
+    overlaps = touches = 0
+    for axis in range(3):
+        a0 = one["center_m"][axis] - one["dimensions_m"][axis] / 2
+        a1 = one["center_m"][axis] + one["dimensions_m"][axis] / 2
+        b0 = two["center_m"][axis] - two["dimensions_m"][axis] / 2
+        b1 = two["center_m"][axis] + two["dimensions_m"][axis] / 2
+        depth = min(a1, b1) - max(a0, b0)
+        if depth > slack:
+            overlaps += 1
+        elif depth > -slack:
+            touches += 1
+        else:
+            return False
+    return overlaps >= 2
+
+
+def _hinge_of(entry: dict[str, Any], name: str) -> dict[str, Any] | None:
+    return next((r for r in entry.get("joints", [])
+                 if r["tool"] == "hinge" and r["args"].get("b") == name), None)
+
+
+def _leverage_warnings(entry: dict[str, Any], name: str, made_off: Any,
+                       pulling_towards: Any, what: str) -> list[str]:
+    """A rope or rod pulling on something that turns on a hinge: can it turn it?"""
+    hinge = _hinge_of(entry, name)
+    if hinge is None:
+        return []
+    axis = _unit3(hinge["args"].get("axis", [0, 1, 0]))
+    pin = [float(v) for v in hinge["args"].get("at_m", [0, 0, 0])]
+    at = [float(v) for v in made_off]
+    pull = _unit3([float(b) - float(a) for a, b in zip(at, pulling_towards)])
+    said = []
+    if abs(sum(p * q for p, q in zip(pull, axis))) > 0.8:
+        said.append(f"this {what} pulls {name} along the axis of its hinge, and a pull "
+                    f"along a hinge's axis cannot turn it. A gate on an upright hinge "
+                    f"is swung by pulling SIDEWAYS on it -- a stiff spring from the "
+                    f"wheel as a connecting rod, or a rope to a pulley beside the gate "
+                    f"rather than above it.")
+    offset = [a - p for a, p in zip(at, pin)]
+    along = sum(o * q for o, q in zip(offset, axis))
+    arm = math.sqrt(max(0.0, sum(o * o for o in offset) - along * along))
+    if arm < 0.1:
+        said.append(f"this {what} is made off {arm:.2f} m from the line {name} turns "
+                    f"about, where a pull has almost no leverage. Make it off near "
+                    f"{name}'s far edge.")
+    return said
+
+
+def _joint_warnings(entry: dict[str, Any], tool: str, args: dict[str, Any]) -> list[str]:
+    cell = float(entry.get("cell_m", 0.02))
+    said: list[str] = []
+    if tool == "hinge":
+        leaf = _box(entry, str(args.get("b", "")))
+        axis = _unit3(args.get("axis", [0, 1, 0]))
+        if leaf is not None and abs(axis[1]) > 0.7:
+            low = leaf["center_m"][1] - leaf["dimensions_m"][1] / 2
+            if low < 0.5 * cell:
+                said.append(f"{leaf['name']} stands on the floor, and a leaf on the ground "
+                            f"is held there by friction and will not swing. Raise it one "
+                            f"cell, so its bottom is {cell:g} m up.")
+        if leaf is not None:
+            for other in entry["scene"]["bodies"]:
+                if other is leaf or not _faces_touching(leaf, other, 0.25 * cell):
+                    continue
+                said.append(f"{leaf['name']} is up against {other['name']} face to face, "
+                            f"so it will rub on it and may not turn freely. Leave a cell's "
+                            f"gap between them -- a gate hangs in FRONT of its posts, not "
+                            f"squeezed between them -- unless {other['name']} is meant to "
+                            f"be one piece with it, in which case fix it to it.")
+    if tool in ("reeve", "tie", "spring"):
+        towards_b = args.get("over_b_m") if tool == "reeve" else args.get("at_a_m")
+        towards_a = args.get("over_a_m") if tool == "reeve" else args.get("at_b_m")
+        what = {"reeve": "rope", "tie": "rope", "spring": "rod"}[tool]
+        if args.get("at_b_m") is not None and towards_b is not None:
+            said += _leverage_warnings(entry, str(args.get("b", "")), args["at_b_m"],
+                                       towards_b, what)
+        if args.get("at_a_m") is not None and towards_a is not None:
+            said += _leverage_warnings(entry, str(args.get("a", "")), args["at_a_m"],
+                                       towards_a, what)
+    return said
+
+
 # The calls that make joints, unwrapped: what a rebuild uses to hang a
 # recorded joint again on a fresh world.
 MAKE_JOINT = {"hinge": tool_hinge, "slide": tool_slide, "tie": tool_tie,
@@ -1332,7 +1456,11 @@ def _recorded(tool_name: str):
                 entry["joints"].remove(made)
                 entry["world"].unhinge(made["live"])
                 raise Refused(str(problem)) from None
-        return {**answer, "joint": made["id"]}
+        answer = {**answer, "joint": made["id"]}
+        warnings = _joint_warnings(entry, tool_name, made["args"])
+        if warnings:
+            answer["warnings"] = warnings
+        return answer
 
     record.__name__ = make.__name__
     record.__doc__ = make.__doc__

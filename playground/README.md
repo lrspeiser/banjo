@@ -155,6 +155,33 @@ this setup; Results reports that limit and its last accepted state. Speed and
 height arrays must be empty; generic duration, projectile and panel fields do
 not change this fixed reference. See the [API, refinement and limitations](../docs/continuum-pressure-checkpoint.md).
 
+## The room on /world, and its chat
+
+`/world` is a room to walk around in — **the bench**, **the courtyard** and
+**an empty yard**, picked at the bottom right. Its chat box builds with the MCP
+server's own tools: the same names, schemas and handlers as `mcp/banjo_mcp.py`,
+run on the room held as an MCP world (`playground/room_world.py`). Anything the
+MCP can do, the chat can do, and `tests/chat_tool_parity_tests.py` fails if a
+tool reaches the MCP and not the chat without a written reason.
+
+The chat tries what it built before it answers — in its own copy of the world it
+can pick things up, pull on them and let time pass — and every turn is logged
+with the calls it made and anything that was refused, one file per turn under
+`build/playground-logs/chat/`.
+
+Whether it can actually build things is measured by asking it:
+
+```powershell
+python tests/agent_build_tests.py --trials 3
+```
+
+That asks the real model to build a gate, a portcullis, a hanging sign, a chain,
+an overloaded shelf and a castle gate worked by a wheel — mostly in the empty
+yard, nothing preloaded — then opens each room in the engine and uses what was
+built: shoves the gate, hauls the grate, turns the wheel by its handle. It
+costs a model conversation per trial, so it is run on purpose rather than from
+ctest. Results go to `build/agent-regression/<time>/`.
+
 ## Local HTTP contract
 
 | Request | Purpose |

@@ -55,16 +55,59 @@ broke.
 | `run` | let time pass and say what happened: every break, every dent, and the hardest contacts with the speeds they would have needed |
 | `drop` | the common experiment: put an object a given distance above a point, let it fall, report. The height is measured from **what it lands on**, not from the floor. |
 | `describe_world` | every object, where it is, and what has happened to it |
-| `add_object` / `remove_object` | change a world |
+| `add_object` / `remove_object` | change a world. It is opened again from its scene, so anything in flight starts over — and every joint is hung again. A removed object takes the joints that held it with it, and they are listed. |
+| `move_object` | put an object somewhere else, at rest: an **edit**, not a push. Refused for a joined object, with the reason — a joint is made at fixed points |
+| `clear_world` | empty a world, joints and all, to build it again. It stays open under the same id |
 | `pick_up` / `place` / `let_go` | the hand: take hold of something already in the world and move it. Without this a model can only add new objects from above — it can build a scene but never rearrange one. |
 | `collect` | sweep up the loose pieces near a point and say what they were made of, by material and by weight |
 | `carried` | what has been swept up in this world so far |
 | `cast_ray` | what a ray meets first — what is above or below something, what is in the way |
 | `close_world` | free it |
+| `hinge` / `slide` | a pin or a groove: `b` turns about, or slides along, a line fixed in `a` |
+| `tie` / `reeve` | a rope between a point on each of two things, or one run over two fixed pulleys |
+| `fix` / `spring` | a latch or bracket that holds two things as one piece; an elastic element that pushes and pulls |
+| `joints` / `hinge_friction` / `unhinge` | read them, stiffen them, take one out |
+| `overloaded` | what is carrying more than it can hold, worked out from statics — the only way a loaded shelf is ever noticed |
 
 `run` holds the **break conversation** itself. That is the part of this engine a
 caller can get wrong: ignore it and the world freezes at the first impact for
 ever. Nothing using these tools has to know that.
+
+## A joint outlives the next edit
+
+A world is opened from its scene, so adding, moving or removing an object means
+opening it again. The scene used to hold bodies only, and so every joint
+vanished at the next edit: hinge a gate, add a ball, and the gate was lying on
+the floor with nothing anywhere to say it had ever been hung. Now:
+
+- every joint is recorded as the call that made it and **hung again** on every
+  rebuild, in the order it was made;
+- the id `hinge` returned is the id `joints`, `hinge_friction` and `unhinge`
+  keep taking, however the engine numbers them afresh underneath;
+- what `hinge_friction` set is kept, and a joint `unhinge` took out stays out;
+- removing an object removes the joints that held it, and says which;
+- a joint that cannot be hung again is dropped and listed under `joints_lost`,
+  never silently.
+
+`move_object` refuses a joined object rather than leave its pins behind in
+mid-air: unhinge it first, or put things where they belong before joining them.
+Two objects can no longer share a name, because joints and every later call
+find things by name.
+
+**A world's owner can add conditions.** A world entry may carry a
+`check(scene, joints)` callable, run before any rebuild or new joint is
+committed; raising refuses the change and leaves the world exactly as it was.
+The playground uses this to hold its room to its lane's rules — no overlaps, at
+most 16,000 cells and 120 objects — so a model hears about a broken rule at the
+call that broke it rather than the person at the next reopen. Worlds made over
+stdio have no check and behave as before.
+
+**The playground's chat is a client of exactly these tools.** It is sent this
+list — the same names, descriptions and schemas, less `world_id` — and every
+call it makes runs these handlers, on the person's room held as an MCP world
+(`playground/room_world.py`). A tool added here reaches it untouched;
+`tests/chat_tool_parity_tests.py` fails if one does not and no reason is
+written down.
 
 ## What a session looks like
 

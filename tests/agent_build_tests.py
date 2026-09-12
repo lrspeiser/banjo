@@ -34,6 +34,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import sys
 import threading
 import time
@@ -545,6 +546,10 @@ class Case:
     message: str
     check: Callable[[Built], Verdict]
     tests: str
+    # When changing nothing is a right answer, what the reply must say for it to
+    # count: the courtyard has no room for a gate, and an agent that says so is
+    # doing better than one that clears a person's room unasked.
+    accept_no_change: Callable[[str], bool] | None = None
 
 
 CASES = [
@@ -564,12 +569,138 @@ CASES = [
     Case("castle-gate", "yard", "Build a castle gate that opens and closes with a wheel.",
          check_castle_gate, "the request that did not make it: a wheel that drives a gate"),
     Case("castle-gate-courtyard", "courtyard",
+         "Clear the courtyard and build a castle gate that opens and closes with a wheel.",
+         check_castle_gate,
+         "the courtyard cleared first -- the path that failed on its leftover joints"),
+    Case("courtyard-full", "courtyard",
          "Build a castle gate that opens and closes with a wheel.", check_castle_gate,
-         "the same request in the courtyard, which is nearly full"),
+         "the courtyard as it stands, 15,364 of 16,000 cells full: build a working gate, "
+         "or change nothing and say why",
+         accept_no_change=lambda reply: bool(re.search(
+             r"\b(clear|fit|space|cells|yard)\b", reply, re.I))),
     Case("drop-on-glass", "bench",
          "Drop an iron ball onto the 20 mm glass plate from two metres up.",
          check_drop_on_glass, "placing something over a target"),
 ]
+
+
+# ---------------------------------------------------------------------------
+# The builds the guide describes, as the MCP calls that make them
+# ---------------------------------------------------------------------------
+#
+# Run with --recipes: each is built through the MCP on the case's own room and
+# then faces the case's own check. If one of these fails, the guide is teaching
+# the model something that does not work, and no amount of model will fix it.
+
+def _box(name, material, size, at, anchored=False):
+    return ("add_object", {"object": {"name": name, "shape": "box", "material": material,
+                                      "size_m": size, "position_m": at,
+                                      "anchored": anchored}})
+
+
+RECIPES: dict[str, tuple[str, list[tuple[str, dict[str, Any]]]]] = {
+    # A gate hung IN FRONT of its post, a cell clear of the floor, the pin at
+    # the post's face and the leaf's own depth. The far post stands a cell past
+    # the leaf's end, so nothing rubs.
+    "hinged-gate": ("hinged-gate", [
+        _box("stone post", "concrete", [0.16, 2.0, 0.16], [0.0, 1.0, 0.0], True),
+        _box("far post", "concrete", [0.16, 2.0, 0.16], [1.44, 1.0, 0.0], True),
+        _box("oak gate", "oak", [1.2, 1.6, 0.08], [0.68, 0.84, 0.16]),
+        ("hinge", {"a": "stone post", "b": "oak gate", "at_m": [0.08, 0.84, 0.16],
+                   "axis": [0, 1, 0], "lower_deg": 0, "upper_deg": 100,
+                   "friction_n_m": 10}),
+    ]),
+    # A castle gate as a castle has one: a portcullis, raised by a winch. The
+    # rope runs from the TOP of the wheel's rim over two pulleys to the top of
+    # the grate, load at b, ratio 2 -- so turning the wheel either way carries
+    # the rim point away from its pulley and the grate rises half as far.
+    "castle-gate-winch": ("castle-gate", [
+        _box("left post", "concrete", [0.16, 2.4, 0.16], [-0.72, 1.2, 0.0], True),
+        _box("right post", "concrete", [0.16, 2.4, 0.16], [0.72, 1.2, 0.0], True),
+        _box("lintel", "oak", [1.6, 0.12, 0.16], [0.0, 2.46, 0.0], True),
+        _box("castle gate", "oak", [1.28, 1.04, 0.08], [0.0, 0.52, 0.16]),
+        ("slide", {"a": "left post", "b": "castle gate", "at_m": [0.0, 0.52, 0.16],
+                   "axis": [0, 1, 0], "lower_m": 0.0, "upper_m": 1.2,
+                   "friction_n": 100}),
+        _box("winch post", "concrete", [0.16, 1.2, 0.16], [1.6, 0.6, 0.0], True),
+        _box("winch wheel", "oak", [0.64, 0.64, 0.08], [1.6, 1.0, 0.16]),
+        ("hinge", {"a": "winch post", "b": "winch wheel", "at_m": [1.6, 1.0, 0.16],
+                   "axis": [0, 0, 1], "lower_deg": -180, "upper_deg": 180,
+                   "friction_n_m": 2}),
+        _box("winch handle", "oak", [0.08, 0.08, 0.16], [1.6, 1.24, 0.28]),
+        ("fix", {"a": "winch wheel", "b": "winch handle", "at_m": [1.6, 1.24, 0.2],
+                 "axis": [0, 0, 1]}),
+        ("reeve", {"a": "winch wheel", "b": "castle gate",
+                   "at_a_m": [1.6, 1.32, 0.16], "at_b_m": [0.0, 1.04, 0.16],
+                   "over_a_m": [1.6, 2.3, 0.16], "over_b_m": [0.0, 2.3, 0.16],
+                   "ratio": 2}),
+    ]),
+    # A gate that SWINGS, worked by a capstan: a flat wheel on an upright axle,
+    # a peg to push it round by, and a stiff spring from its rim to the gate as
+    # a connecting rod. The capstan stands beyond the reach of the gate's swing.
+    "castle-gate-capstan": ("castle-gate", [
+        _box("stone post", "concrete", [0.16, 2.0, 0.16], [0.0, 1.0, 0.0], True),
+        _box("far post", "concrete", [0.16, 2.0, 0.16], [1.44, 1.0, 0.0], True),
+        _box("oak gate", "oak", [1.2, 1.6, 0.08], [0.68, 0.84, 0.16]),
+        ("hinge", {"a": "stone post", "b": "oak gate", "at_m": [0.08, 0.84, 0.16],
+                   "axis": [0, 1, 0], "lower_deg": -100, "upper_deg": 0,
+                   "friction_n_m": 10}),
+        _box("capstan post", "concrete", [0.16, 1.36, 0.16], [0.68, 0.68, 1.6], True),
+        # A cell ABOVE its post, not sitting on it: a wheel resting on its post
+        # rubs on it, which the hinge call says, and which this passed anyway only
+        # because a hand is strong.
+        _box("capstan wheel", "oak", [0.48, 0.08, 0.48], [0.68, 1.44, 1.6]),
+        ("hinge", {"a": "capstan post", "b": "capstan wheel", "at_m": [0.68, 1.44, 1.6],
+                   "axis": [0, 1, 0], "lower_deg": -180, "upper_deg": 180,
+                   "friction_n_m": 2}),
+        _box("capstan handle", "oak", [0.08, 0.16, 0.08], [0.88, 1.56, 1.6]),
+        ("fix", {"a": "capstan wheel", "b": "capstan handle", "at_m": [0.88, 1.48, 1.6],
+                 "axis": [0, 1, 0]}),
+        ("spring", {"a": "capstan wheel", "b": "oak gate",
+                    "at_a_m": [0.68, 1.44, 1.36], "at_b_m": [0.68, 1.44, 0.20],
+                    "rest_m": 0.0, "stiffness_n_m": 20000, "damping_n_s_m": 200}),
+    ]),
+    # A thin concrete shelf: 40 mm over an 840 mm span, about 900 N to break.
+    # Two 200 mm iron blocks are 617 N each, and together they are too much.
+    "loaded-shelf": ("loaded-shelf", [
+        _box("left pier", "concrete", [0.16, 0.8, 0.16], [-0.5, 0.4, 0.0], True),
+        _box("right pier", "concrete", [0.16, 0.8, 0.16], [0.5, 0.4, 0.0], True),
+        _box("stone shelf", "concrete", [1.2, 0.04, 0.24], [0.0, 0.82, 0.0]),
+        _box("iron block", "iron", [0.2, 0.2, 0.2], [-0.12, 0.94, 0.0]),
+        _box("second iron block", "iron", [0.2, 0.2, 0.2], [0.12, 0.94, 0.0]),
+    ]),
+}
+
+
+def run_recipe(recipe_id: str) -> dict[str, Any]:
+    """Build a recipe through the MCP, then give it the case's own check."""
+    import room_world
+    case_id, calls = RECIPES[recipe_id]
+    case = next(c for c in CASES if c.id == case_id)
+    record: dict[str, Any] = {"recipe": recipe_id, "case": case_id, "passed": False}
+    room = world_room.Room(case.scene)
+    before = {b["name"] for b in room.bodies()}
+    world_id = room_world.open_room(room.spec)
+    try:
+        room_world.call(world_id, "clear_world", {})
+        warnings = []
+        for tool, args in calls:
+            answer = room_world.call(world_id, tool, args)
+            if "error" in answer:
+                record["reason"] = f"the recipe itself was refused at {tool}: {answer['error']}"
+                return record
+            warnings += answer.get("warnings", [])
+        record["warnings"] = warnings
+        room.spec = room_world.export_spec(room_world.entry_of(world_id))
+    finally:
+        room_world.close_room(world_id)
+    world = World(room.spec)
+    try:
+        verdict = case.check(Built(room, world, before))
+        record.update(passed=verdict.ok, reason=verdict.reason, measured=verdict.measured)
+    finally:
+        world.close()
+    return record
 
 
 # ---------------------------------------------------------------------------
@@ -613,7 +744,12 @@ def run_trial(case: Case, trial: int, api_key: str, model: str,
                     "answer": answer, "trace": trace}, indent=1, default=str),
         encoding="utf-8")
     if not answer.get("changed"):
-        record["reason"] = "the agent changed nothing in the room"
+        reply = str(answer.get("reply") or "")
+        if case.accept_no_change is not None and case.accept_no_change(reply):
+            record.update(passed=True,
+                          reason="changed nothing, and said why: " + reply[:200])
+        else:
+            record["reason"] = "the agent changed nothing in the room"
         return record
     checked = time.perf_counter()
     try:
@@ -675,6 +811,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--jobs", type=int, default=3)
     parser.add_argument("--model", default=None, help="instead of OPENAI_MODEL")
     parser.add_argument("--list", action="store_true")
+    parser.add_argument("--recipes", action="store_true",
+                        help="build the guide's recipes through the MCP and check them "
+                             "-- no model, no key, no cost")
     args = parser.parse_args(argv)
 
     wanted = [w.strip() for w in args.cases.split(",") if w.strip()]
@@ -686,6 +825,20 @@ def main(argv: list[str] | None = None) -> int:
     if ENGINE is None:
         print("no live engine: build banjo_live_world_run into build/integration first")
         return 2
+    if args.recipes:
+        failed = 0
+        for recipe_id in RECIPES:
+            if wanted and not any(w in recipe_id for w in wanted):
+                continue
+            record = run_recipe(recipe_id)
+            failed += 0 if record["passed"] else 1
+            print(f"{'pass' if record['passed'] else 'FAIL'}  {recipe_id}: "
+                  f"{record.get('reason')}")
+            for warning in record.get("warnings") or []:
+                print(f"      warned: {warning[:160]}")
+            if not record["passed"]:
+                print(f"      measured: {json.dumps(record.get('measured'))[:600]}")
+        return 1 if failed else 0
     import server   # the playground's own .env reader, so the same key and model
     api_key, model = server.local_configuration()
     model = args.model or model
