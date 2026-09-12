@@ -374,16 +374,29 @@ function drawJoints(pins) {
   for (const pin of pins) {
     const at = pin.at || [0, 0, 0];
     const axis = pin.axis || [0, 1, 0];
-    // A stub of pin, long enough to read at arm's length and thin enough not
-    // to be mistaken for part of the gate.
+    const along = new THREE.Vector3(axis[0], axis[1], axis[2]).normalize();
+    // A pin is a short stub across the joint; a groove is a thin rail running
+    // the length of the travel, so you can see how far the thing can go before
+    // you start hauling on it. They are drawn differently because they ARE
+    // different: one turns, one slides, and a rail that looked like a pin
+    // would say the portcullis pivots.
+    const sliding = pin.kind === "slider";
+    const span = sliding
+      ? Math.max(0.2, (pin.upper_m || 0) - (pin.lower_m || 0))
+      : 0.34;
     const rod = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.028, 0.028, 0.34, 10),
+      new THREE.CylinderGeometry(sliding ? 0.018 : 0.028,
+                                 sliding ? 0.018 : 0.028, span, 10),
       pin.attached ? PIN_SOLID : PIN_GONE);
-    rod.position.set(at[0], at[1], at[2]);
-    // A cylinder is made standing up the y axis; point it along the pin.
-    rod.quaternion.setFromUnitVectors(
-      new THREE.Vector3(0, 1, 0),
-      new THREE.Vector3(axis[0], axis[1], axis[2]).normalize());
+    // A groove's rail runs from the bottom of the travel to the top, measured
+    // from where the thing was BUILT -- which is what `at` is for a slider.
+    const middle = sliding
+      ? new THREE.Vector3(at[0], at[1], at[2]).addScaledVector(
+          along, ((pin.upper_m || 0) + (pin.lower_m || 0)) / 2)
+      : new THREE.Vector3(at[0], at[1], at[2]);
+    rod.position.copy(middle);
+    // A cylinder is made standing up the y axis; point it along the joint.
+    rod.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), along);
     pinGroup.add(rod);
   }
 }
@@ -1040,9 +1053,10 @@ async function tick() {
         const wasAttached = new Map(world.joints.map((p) => [p.id, p.attached]));
         for (const pin of state.joints) {
           if (wasAttached.get(pin.id) && !pin.attached) {
-            say("world", `${pin.b} has come off its hinge — there is nothing left`
-              + ` of ${pin.a} around the pin to hold it.`);
-            remember(`${pin.b} came off its hinge`);
+            const how = pin.kind === "slider" ? "out of its groove" : "off its hinge";
+            say("world", `${pin.b} has come ${how} — there is nothing left`
+              + ` of ${pin.a} around the joint to hold it.`);
+            remember(`${pin.b} came ${how}`);
           } else if (wasAttached.has(pin.id) && pin.b !== world.joints.find(
                        (p) => p.id === pin.id).b) {
             remember(`the pin moved into ${pin.b}`);

@@ -183,7 +183,7 @@ announcing rather than hiding inside a frame that then takes half a second.
 `banjo_pick_ray` costs nothing at all — 0.02 ms measured — so ask it as often as
 you like.
 
-### 6. A mechanism is a pin, not an animation
+### 6. A mechanism is a joint, not an animation
 
 `banjo_hinge` hangs one named thing off another on a pin, and that is the whole
 of how a door, a gate, a hatch, a lever or a drawbridge works here. There is no
@@ -196,9 +196,25 @@ double at[3] = {0.0, 1.0, 0.12}, up[3] = {0.0, 1.0, 0.0};
 int gate = banjo_hinge(w, "post", "gate", at, up, 0.0, 100.0, 12.0);
 ```
 
-The pin is given where it is in the world right now and kept in both bodies'
+`banjo_slide` is the same idea one degree of freedom the other way round: two
+bodies locked in rotation and free to move along one line, which is a
+portcullis, a sliding door or a locking bolt.
+
+```c
+double at[3] = {0.0, 0.8, 0.2}, up[3] = {0.0, 1.0, 0.0};
+int grooves = banjo_slide(w, "left jamb", "grate", at, up, 0.0, 1.5, 0.0);
+```
+
+**A grate hauled up and let go falls**, and stops on whatever is under it at
+whatever height that thing happens to be. If it should stay up, give the groove
+friction — and size it against the weight, which for 1.2 × 1.6 × 0.12 m of iron
+is 17.8 kN. A groove gripping at 4 kN holds a quarter of a portcullis.
+
+Both are given where they are in the world right now and kept in both bodies'
 own frames, so the mechanism goes on working if the assembly is carried
-somewhere else or turned over.
+somewhere else or turned over. `banjo_joints` reports a `kind`, and **the kind
+is the unit**: degrees and newton metres for a pin, metres and newtons for a
+slide.
 
 **A pin holds two names, and names change when things break.** Bodies do not
 survive breaking — everything in an island is destroyed and rebuilt when

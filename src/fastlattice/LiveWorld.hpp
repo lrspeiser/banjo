@@ -115,12 +115,22 @@ struct LiveImpact {
 // in the same place in the wood, because that is how it was written down.
 struct LiveJoint {
     unsigned id{};
+    // "hinge" -- a pin two things turn about.
+    // "slider" -- a line two things move along.
+    //
+    // This is also the unit on the three numbers below, because a joint with
+    // one degree of freedom has one number and the only question is what it is
+    // measured in: radians and newton metres for a pin, metres and newtons for
+    // a slide.
+    std::string kind{"hinge"};
     std::string a, b;
-    // Where the pin has got to, in radians, from where it was made.
-    double angle_rad{};
-    double lower_rad{}, upper_rad{};
-    double friction_torque_n_m{};
-    // Where it is now, in the world, for a host that wants to draw it.
+    // Where it has got to, from where it was made.
+    double at{};
+    double lower{}, upper{};
+    double friction{};
+    // Where it is now, in the world, for a host that wants to draw it. For a
+    // slide, the point is where the travel is measured FROM -- where the thing
+    // was built -- not where it has got to.
     Vec3 point_world_m{};
     Vec3 axis_world{};
     // True while both ends are real and the pin is doing its job. A joint whose
@@ -346,6 +356,30 @@ public:
                    const Vec3 &point_world_m, const Vec3 &axis_world,
                    double lower_deg = -180.0, double upper_deg = 180.0,
                    double friction_torque_n_m = 0.0);
+
+    // Let one named thing slide along a line fixed in another.
+    //
+    // The same idea as a pin, one degree of freedom the other way round: the
+    // two are locked in rotation and free to move along one axis. A portcullis
+    // in its grooves, a sliding door, a bolt going across a door.
+    //
+    // And, like a pin, nothing is played. A portcullis that has been hauled up
+    // and let go FALLS, because gravity is still acting on a body that is free
+    // to move down its own axis -- which is the thing that makes a winch worth
+    // having and a prop useless.
+    //
+    // Travel is metres either side of where it is built, so a grate built down
+    // in its gateway has 0..2 of lift and one built up has -2..0 of drop.
+    // `friction_n` is what it takes to start it moving: a heavy grate in dry
+    // stone grooves does not run freely, and this is the difference between a
+    // gate that stays where you leave it and one that drops the moment you stop
+    // hauling.
+    //
+    // Returns 0 if either name is not there, or if they are the same thing.
+    unsigned slide(const std::string &a, const std::string &b,
+                   const Vec3 &point_world_m, const Vec3 &axis_world,
+                   double lower_m = -1.0, double upper_m = 1.0,
+                   double friction_n = 0.0);
     // Every pin in the scene, with where each has turned to.
     [[nodiscard]] std::vector<LiveJoint> joints() const;
     // How hard it is to move. A stiff hinge holds a door where it is left.
@@ -408,6 +442,10 @@ private:
     // apply destroys the body next door.
     void restackQueue(const std::vector<std::string> &before);
     void repin();
+    // Where the hand puts what it is holding: carried if it is loose, hauled
+    // along its joint if it is attached to something. See the definition; the
+    // hand writes the world from two places and both have to agree.
+    void carryOrHaul(double dt_s);
     // Put the pins back after the body table has been rearranged.
     //
     // Every body in an island is destroyed and rebuilt when anything in it

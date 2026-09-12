@@ -78,7 +78,7 @@ struct Doorway {
         hinge = world.addHinge(pin);
     }
 
-    double angleDegrees() { return world.jointState(hinge).angle_rad * 180.0 / kPi; }
+    double angleDegrees() { return world.jointState(hinge).at * 180.0 / kPi; }
 
     // A shove, as a change of speed rather than a teleport: this is the
     // playground's "push", and a hinge has to answer it with a turn.
@@ -259,7 +259,7 @@ void anAssemblyWorksOnItsSide() {
     const unsigned hinge = world.addHinge(pin);
 
     for (int i = 0; i < 1440; ++i) world.step(1.0 / 240.0);   // six seconds
-    const double turned = world.jointState(hinge).angle_rad * 180.0 / kPi;
+    const double turned = world.jointState(hinge).at * 180.0 / kPi;
     const RigidSnapshot hangs = world.snapshot(2);
     std::cout << "  a hatch on a horizontal pin fell to " << turned
               << " degrees and hangs at y=" << hangs.center_of_mass_world_m.y << "\n";

@@ -529,15 +529,52 @@ def tool_hinge(args: dict[str, Any]) -> dict[str, Any]:
                     "Push something into it to open it; it will not move on its own."}
 
 
-def _said(pin: banjo.Joint) -> dict[str, Any]:
-    return {"joint": pin.id, "a": pin.a, "b": pin.b,
-            "degrees": round(pin.degrees, 3),
-            "opens_from_deg": round(pin.lower_deg, 1),
-            "opens_to_deg": round(pin.upper_deg, 1),
-            "friction_n_m": round(pin.friction_n_m, 3),
-            "at_m": [round(v, 4) for v in pin.at_m],
-            "axis": [round(v, 4) for v in pin.axis],
-            "attached": pin.attached}
+def _said(joint: banjo.Joint) -> dict[str, Any]:
+    """One joint, in the unit its kind is measured in.
+
+    Spelled out in the key rather than left for the reader to infer from
+    `kind`: a caller that reads a slider's 0.8 as degrees has a portcullis
+    fifty-seven times too tall.
+    """
+    common = {"joint": joint.id, "kind": joint.kind, "a": joint.a, "b": joint.b,
+              "at_m": [round(v, 4) for v in joint.at_m],
+              "axis": [round(v, 4) for v in joint.axis],
+              "attached": joint.attached}
+    if joint.kind == "slider":
+        return {**common,
+                "moved_m": round(joint.at, 4),
+                "travels_from_m": round(joint.lower, 4),
+                "travels_to_m": round(joint.upper, 4),
+                "friction_n": round(joint.friction, 2)}
+    return {**common,
+            "degrees": round(joint.at, 3),
+            "opens_from_deg": round(joint.lower, 1),
+            "opens_to_deg": round(joint.upper, 1),
+            "friction_n_m": round(joint.friction, 3)}
+
+
+def tool_slide(args: dict[str, Any]) -> dict[str, Any]:
+    """Let one named thing slide along a line fixed in another.
+
+    A portcullis in its grooves, a sliding door, a bolt across a door. Nothing
+    is played: a grate hauled up and let go falls, and stops on whatever is
+    under it at whatever height that thing happens to be.
+    """
+    world: banjo.World = _world(args.get("world_id"))["world"]
+    try:
+        joint = world.slide(
+            str(args.get("a", "")), str(args.get("b", "")),
+            _triple(args.get("at_m"), "at_m", -200.0, 200.0),
+            _triple(args.get("axis", [0.0, 1.0, 0.0]), "axis", -1e6, 1e6),
+            _number(args.get("lower_m", -1.0), "lower_m", -100.0, 0.0),
+            _number(args.get("upper_m", 1.0), "upper_m", 0.0, 100.0),
+            _number(args.get("friction_n", 0.0), "friction_n", 0.0, 1e9))
+    except banjo.BanjoError as error:
+        raise Refused(str(error))
+    return {"joint": joint,
+            "note": f"{args.get('b')} now slides along a line in {args.get('a')}. "
+                    "Nothing holds it there: if it can fall along that line, it "
+                    "will, and it stops on whatever is under it."}
 
 
 def tool_joints(args: dict[str, Any]) -> dict[str, Any]:
@@ -550,9 +587,9 @@ def tool_joints(args: dict[str, Any]) -> dict[str, Any]:
     """
     pins = _world(args.get("world_id"))["world"].joints()
     return {"joints": [_said(pin) for pin in pins],
-            "note": "nothing here is animated: a pin is a constraint and what "
-                    "hangs on it moves only when something pushes it"
-                    if pins else "there are no pins in this world"}
+            "note": "nothing here is animated: a joint is a constraint, and what "
+                    "is on it moves when something pushes it or when gravity does"
+                    if pins else "there are no joints in this world"}
 
 
 def tool_unhinge(args: dict[str, Any]) -> dict[str, Any]:
@@ -567,15 +604,22 @@ def tool_unhinge(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def tool_hinge_friction(args: dict[str, Any]) -> dict[str, Any]:
-    """How hard a pin is to turn. A stiff old hinge holds a door where it is left."""
+    """How hard a joint is to move.
+
+    Newton metres for a pin, newtons for a slide -- so a grate that has to hold
+    itself up wants friction of the order of its own weight, which is thousands
+    of newtons, while a door hinge wants tens of newton metres. One bound, wide
+    enough for both, rather than a number that silently refuses a portcullis.
+    """
     world: banjo.World = _world(args.get("world_id"))["world"]
     joint = int(_number(args.get("joint", 0), "joint", 1, 1e9))
-    friction = _number(args.get("friction_n_m", 0.0), "friction_n_m", 0.0, 1e6)
+    friction = _number(args.get("friction_n_m", args.get("friction_n", 0.0)),
+                       "friction_n_m", 0.0, 1e9)
     try:
         world.joint_friction(joint, friction)
     except banjo.BanjoError as error:
         raise Refused(str(error))
-    return {"joint": joint, "friction_n_m": friction}
+    return {"joint": joint, "friction": friction}
 
 
 def tool_close_world(args: dict[str, Any]) -> dict[str, Any]:
@@ -728,6 +772,37 @@ TOOLS = [
                                          "newton metres. Zero swings freely; a "
                                          "stiff hinge holds a door where it is "
                                          "left instead of rocking for ever."}}}},
+    {"name": "slide",
+     "description": "Let one named thing slide along a line fixed in another, so "
+                    "it moves along that line and nothing else. A portcullis in "
+                    "its grooves, a sliding door, a locking bolt. Nothing is "
+                    "animated: a grate hauled up and let go FALLS, because "
+                    "gravity is still acting on a body free to move down its own "
+                    "axis, and it stops on whatever happens to be under it. Give "
+                    "it friction if it should stay where it is put -- size that "
+                    "against the weight it holds, which for 1.5 x 1.8 x 0.1 m of "
+                    "iron is 20.8 kN.",
+     "inputSchema": {"type": "object",
+                     "required": ["world_id", "a", "b", "at_m"],
+                     "properties": {
+         "world_id": {"type": "string"},
+         "a": {"type": "string", "description": "What it slides IN, usually the "
+                                                "anchored side."},
+         "b": {"type": "string", "description": "What moves."},
+         "at_m": dict(VECTOR, description="Where the travel is measured from, in "
+                                          "world metres: where the thing is now."),
+         "axis": dict(VECTOR, description="Which way it may move. [0,1,0] for a "
+                                          "portcullis. Vertical by default."),
+         "lower_m": {"type": "number",
+                     "description": "How far it may go the other way, in metres: "
+                                    "zero or less. Use 0 for a grate resting on "
+                                    "the ground that can only go up."},
+         "upper_m": {"type": "number",
+                     "description": "How far it may go along the axis: zero or "
+                                    "more."},
+         "friction_n": {"type": "number",
+                        "description": "What it takes to start it moving, in "
+                                       "newtons."}}}},
     {"name": "joints",
      "description": "Every pin in the world and where each has turned to. The two "
                     "names a pin holds can change -- a pin whose wood is smashed "
@@ -737,13 +812,14 @@ TOOLS = [
      "inputSchema": {"type": "object", "required": ["world_id"],
                      "properties": {"world_id": {"type": "string"}}}},
     {"name": "hinge_friction",
-     "description": "Change how hard a pin is to turn, in newton metres.",
+     "description": "Change how hard a joint is to move: newton metres for a pin, "
+                    "newtons for a slide.",
      "inputSchema": {"type": "object", "required": ["world_id", "joint", "friction_n_m"],
                      "properties": {"world_id": {"type": "string"},
                                     "joint": {"type": "integer"},
                                     "friction_n_m": {"type": "number"}}}},
     {"name": "unhinge",
-     "description": "Take a pin out. What was hanging on it falls.",
+     "description": "Take a joint out. What it was holding up falls.",
      "inputSchema": {"type": "object", "required": ["world_id", "joint"],
                      "properties": {"world_id": {"type": "string"},
                                     "joint": {"type": "integer"}}}},
@@ -776,6 +852,7 @@ HANDLERS = {
     "collect": tool_collect,
     "carried": tool_carried,
     "hinge": tool_hinge,
+    "slide": tool_slide,
     "joints": tool_joints,
     "hinge_friction": tool_hinge_friction,
     "unhinge": tool_unhinge,

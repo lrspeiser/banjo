@@ -248,13 +248,14 @@ struct LiveWorld::Impl {
         // can be carried across the room or turned over and the pin is still in
         // the same place in the wood.
         Vec3 point_local_a{}, point_local_b{}, axis_local_a{};
-        double lower_rad{}, upper_rad{}, friction_torque_n_m{};
-        // How far it had turned, last time anyone could ask. Kept up to date
-        // every step because the thing that destroys the constraint is the same
-        // thing that needs to know this -- once the wood is rebuilt there is
-        // nobody left to ask, and a door that had swung 60 degrees would be
-        // re-hung as though it were shut.
-        double angle_when_hung{};
+        JoltWorld::JointKind kind{JoltWorld::JointKind::Hinge};
+        double lower{}, upper{}, friction{};
+        // How far it had got, last time anyone could ask. Kept up to date every
+        // step because the thing that destroys the constraint is the same thing
+        // that needs to know it -- once the wood is rebuilt there is nobody left
+        // to ask, and a door that had swung 60 degrees, or a portcullis hauled
+        // a metre up, would be re-made as though it were shut.
+        double at_when_hung{};
         unsigned rigid{};        // 0 when the pin is not currently in anything
         bool attached{true};
     };
@@ -263,7 +264,7 @@ struct LiveWorld::Impl {
     void rememberJointAngles(const JoltWorld &in) {
         for (SceneJoint &joint : joints)
             if (joint.rigid != 0 && in.hasJoint(joint.rigid))
-                joint.angle_when_hung = in.jointState(joint.rigid).angle_rad;
+                joint.at_when_hung = in.jointState(joint.rigid).at;
     }
 };
 
@@ -596,18 +597,10 @@ void LiveWorld::step(double dt_s) {
         }
     };
 
-    const auto holdStill = [&]() {
-        if (impl_->holding == static_cast<std::size_t>(-1)) return;
-        const MatterBodyId id = impl_->body_of[impl_->holding];
-        RigidSnapshot state = impl_->world->snapshot(id);
-        state.center_of_mass_world_m = impl_->held_at;
-        state.orientation_world = impl_->held_facing;
-        state.linear_velocity_m_s = {};
-        state.angular_velocity_rad_s = {};
-        impl_->world->applyRigidState(id, state);
-    };
+    const auto holdStill = [&]() { carryOrHaul(dt_s); };
 
     // A step that would break something is taken back.
+
     //
     // Jolt resolves a contact within the step, so by the time the contact is
     // reported the energy has already gone into bouncing the two bodies apart.
@@ -722,9 +715,10 @@ unsigned LiveWorld::hinge(const std::string &a, const std::string &b,
     joint.id = impl_->next_joint++;
     joint.a = a;
     joint.b = b;
-    joint.lower_rad = lower;
-    joint.upper_rad = upper;
-    joint.friction_torque_n_m = std::max(0.0, friction_torque_n_m);
+    joint.kind = JoltWorld::JointKind::Hinge;
+    joint.lower = lower;
+    joint.upper = upper;
+    joint.friction = std::max(0.0, friction_torque_n_m);
 
     // Write the pin down in each body's own frame. Where they are standing at
     // this moment is the only thing that ties the two together, and after this
@@ -745,7 +739,7 @@ unsigned LiveWorld::hinge(const std::string &a, const std::string &b,
         pin.axis_world = (1.0 / reach) * axis_world;
         pin.lower_rad = lower;
         pin.upper_rad = upper;
-        pin.friction_torque_n_m = joint.friction_torque_n_m;
+        pin.friction_torque_n_m = joint.friction;
         joint.rigid = impl_->world->addHinge(pin);
     } catch (const std::exception &) {
         return 0;
@@ -758,24 +752,72 @@ unsigned LiveWorld::hinge(const std::string &a, const std::string &b,
     return impl_->joints.back().id;
 }
 
+unsigned LiveWorld::slide(const std::string &a, const std::string &b,
+                          const Vec3 &point_world_m, const Vec3 &axis_world,
+                          double lower_m, double upper_m, double friction_n) {
+    const auto first = impl_->index_of.find(a);
+    const auto second = impl_->index_of.find(b);
+    if (first == impl_->index_of.end() || second == impl_->index_of.end()) return 0;
+    if (first->second == second->second) return 0;
+    const double reach = length(axis_world);
+    if (!(reach > 1e-9)) return 0;
+    if (!(lower_m <= 0.0) || !(upper_m >= 0.0)) return 0;
+
+    Impl::SceneJoint joint{};
+    joint.id = impl_->next_joint++;
+    joint.a = a;
+    joint.b = b;
+    joint.kind = JoltWorld::JointKind::Slider;
+    joint.lower = lower_m;
+    joint.upper = upper_m;
+    joint.friction = std::max(0.0, friction_n);
+
+    const RigidSnapshot one = impl_->world->snapshot(impl_->body_of[first->second]);
+    const RigidSnapshot two = impl_->world->snapshot(impl_->body_of[second->second]);
+    joint.point_local_a = conjugateOf(one.orientation_world)
+                              .rotate(point_world_m - one.center_of_mass_world_m);
+    joint.point_local_b = conjugateOf(two.orientation_world)
+                              .rotate(point_world_m - two.center_of_mass_world_m);
+    joint.axis_local_a = conjugateOf(one.orientation_world).rotate((1.0 / reach) * axis_world);
+
+    try {
+        JoltWorld::SliderDescription groove{};
+        groove.a = impl_->body_of[first->second];
+        groove.b = impl_->body_of[second->second];
+        groove.point_world_m = point_world_m;
+        groove.axis_world = (1.0 / reach) * axis_world;
+        groove.lower_m = lower_m;
+        groove.upper_m = upper_m;
+        groove.friction_n = joint.friction;
+        joint.rigid = impl_->world->addSlider(groove);
+    } catch (const std::exception &) {
+        return 0;
+    }
+    impl_->world->wake(impl_->body_of[first->second]);
+    impl_->world->wake(impl_->body_of[second->second]);
+    impl_->joints.push_back(std::move(joint));
+    return impl_->joints.back().id;
+}
+
 std::vector<LiveJoint> LiveWorld::joints() const {
     std::vector<LiveJoint> out;
     out.reserve(impl_->joints.size());
     for (const Impl::SceneJoint &joint : impl_->joints) {
         LiveJoint said{};
         said.id = joint.id;
+        said.kind = joint.kind == JoltWorld::JointKind::Slider ? "slider" : "hinge";
         said.a = joint.a;
         said.b = joint.b;
-        said.lower_rad = joint.lower_rad;
-        said.upper_rad = joint.upper_rad;
-        said.friction_torque_n_m = joint.friction_torque_n_m;
+        said.lower = joint.lower;
+        said.upper = joint.upper;
+        said.friction = joint.friction;
         said.attached = joint.attached && joint.rigid != 0;
         if (joint.rigid != 0 && impl_->world->hasJoint(joint.rigid)) {
             const JoltWorld::JointReport now = impl_->world->jointState(joint.rigid);
-            said.angle_rad = now.angle_rad;
-            said.lower_rad = now.lower_rad;
-            said.upper_rad = now.upper_rad;
-            said.friction_torque_n_m = now.friction_torque_n_m;
+            said.at = now.at;
+            said.lower = now.lower;
+            said.upper = now.upper;
+            said.friction = now.friction;
         }
         // Where the pin has got to, worked out from the body it is in rather
         // than remembered, so a gate that has been carried across the room
@@ -795,9 +837,9 @@ std::vector<LiveJoint> LiveWorld::joints() const {
 void LiveWorld::setJointFriction(unsigned joint, double friction_torque_n_m) {
     for (Impl::SceneJoint &held : impl_->joints) {
         if (held.id != joint) continue;
-        held.friction_torque_n_m = std::max(0.0, friction_torque_n_m);
+        held.friction = std::max(0.0, friction_torque_n_m);
         if (held.rigid != 0 && impl_->world->hasJoint(held.rigid))
-            impl_->world->setJointFriction(held.rigid, held.friction_torque_n_m);
+            impl_->world->setJointFriction(held.rigid, held.friction);
         return;
     }
 }
@@ -903,22 +945,36 @@ void LiveWorld::rehangJoints() {
         }
         try {
             const RigidSnapshot one = impl_->world->snapshot(impl_->body_of[side[0]]);
-            JoltWorld::HingeDescription pin{};
-            pin.a = impl_->body_of[side[0]];
-            pin.b = impl_->body_of[side[1]];
-            pin.point_world_m = point;
-            pin.axis_world = one.orientation_world.rotate(joint.axis_local_a);
-            // The limits were measured from where the door was standing when the
-            // pin went in, and it is not standing there now. Jolt measures a
-            // fresh hinge from where it finds the bodies, so the travel that is
-            // LEFT is what can be asked for: a door that has swung 30 of its 90
-            // degrees has 60 to go and 30 to come back.
-            const double turned = std::max(joint.lower_rad,
-                                           std::min(joint.upper_rad, joint.angle_when_hung));
-            pin.lower_rad = joint.lower_rad - turned;
-            pin.upper_rad = joint.upper_rad - turned;
-            pin.friction_torque_n_m = joint.friction_torque_n_m;
-            joint.rigid = impl_->world->addHinge(pin);
+            const Vec3 along = one.orientation_world.rotate(joint.axis_local_a);
+            // The limits were measured from where the thing was standing when
+            // the joint was made, and it is not standing there now. Jolt
+            // measures a fresh constraint from where it finds the bodies, so
+            // what can be asked for is the travel that is LEFT: a door that has
+            // swung 30 of its 90 degrees has 60 to go and 30 to come back, and
+            // a portcullis hauled 1 m of its 2 has 1 m either way.
+            const double got = std::max(joint.lower, std::min(joint.upper,
+                                                              joint.at_when_hung));
+            if (joint.kind == JoltWorld::JointKind::Slider) {
+                JoltWorld::SliderDescription groove{};
+                groove.a = impl_->body_of[side[0]];
+                groove.b = impl_->body_of[side[1]];
+                groove.point_world_m = point;
+                groove.axis_world = along;
+                groove.lower_m = joint.lower - got;
+                groove.upper_m = joint.upper - got;
+                groove.friction_n = joint.friction;
+                joint.rigid = impl_->world->addSlider(groove);
+            } else {
+                JoltWorld::HingeDescription pin{};
+                pin.a = impl_->body_of[side[0]];
+                pin.b = impl_->body_of[side[1]];
+                pin.point_world_m = point;
+                pin.axis_world = along;
+                pin.lower_rad = joint.lower - got;
+                pin.upper_rad = joint.upper - got;
+                pin.friction_torque_n_m = joint.friction;
+                joint.rigid = impl_->world->addHinge(pin);
+            }
         } catch (const std::exception &) {
             joint.attached = false;
         }
@@ -947,12 +1003,85 @@ bool LiveWorld::grab(const std::string &name) {
 void LiveWorld::moveHeld(const Vec3 &to_world_m) {
     if (impl_->holding == static_cast<std::size_t>(-1)) return;
     impl_->held_at = to_world_m;
+    // And put it there now, rather than waiting for the next step: a host that
+    // moves the hand and then reads the world back expects the thing to have
+    // moved. Which of the two things below that means is carryOrHaul's
+    // business, and the whole reason it is a function rather than a lambda
+    // inside step() -- the hand writes the world in two places, and the first
+    // version of hauling only fixed one of them. A portcullis with 800 mm of
+    // travel went 1.57 m up, because this line here was still a teleport.
+    carryOrHaul(impl_->last_dt_s > 0.0 ? impl_->last_dt_s : 1.0 / 240.0);
+}
+
+// Where the hand puts what it is holding.
+//
+// Two different things, and which one depends on whether the thing is attached
+// to anything.
+//
+// A LOOSE body is carried: put exactly where the hand is, every step, at zero
+// velocity. That is what makes dragging feel like holding rather than pushing,
+// and it is right, because nothing else has an opinion about where it should be.
+//
+// A body on a JOINT is hauled instead. Carrying it would override everything it
+// is attached to -- writing a pose is the last word, and a portcullis with
+// 800 mm of travel dragged two metres went two metres, with its grooves
+// reporting `upper = 0.8` the whole way and working perfectly. So the hand
+// pulls, by velocity, and the mechanism decides what that does: a grate goes up
+// its grooves and no further, a gate goes round its pin, and nothing comes off
+// its mountings because somebody dragged hard.
+//
+// For a slide the pull is resolved along the groove and clamped to the travel
+// that is actually left, rather than left for the limit to fight. A hard
+// constraint against a velocity written in from outside on every step is a tug
+// of war, and position correction does not win it -- that is where the 1.57 m
+// came from even after the pull became a velocity.
+void LiveWorld::carryOrHaul(double dt_s) {
+    if (impl_->holding == static_cast<std::size_t>(-1)) return;
+    if (!(dt_s > 0.0)) dt_s = 1.0 / 240.0;
     const MatterBodyId id = impl_->body_of[impl_->holding];
     RigidSnapshot state = impl_->world->snapshot(id);
-    state.center_of_mass_world_m = to_world_m;
+
+    const std::string carrying = impl_->described[impl_->holding].name;
+    const Impl::SceneJoint *on = nullptr;
+    for (const Impl::SceneJoint &joint : impl_->joints)
+        if (joint.attached && joint.rigid != 0 &&
+            (joint.a == carrying || joint.b == carrying))
+            on = &joint;
+
+    if (on != nullptr) {
+        constexpr double kFastestHaul = 6.0;   // a hard haul, not a teleport
+        const Vec3 gap = impl_->held_at - state.center_of_mass_world_m;
+        Vec3 pull{};
+        if (on->kind == JoltWorld::JointKind::Slider) {
+            const auto found = impl_->index_of.find(on->a);
+            const RigidSnapshot anchor =
+                found != impl_->index_of.end()
+                    ? impl_->world->snapshot(impl_->body_of[found->second])
+                    : RigidSnapshot{};
+            const Vec3 along = anchor.orientation_world.rotate(on->axis_local_a);
+            const double got = impl_->world->hasJoint(on->rigid)
+                                   ? impl_->world->jointState(on->rigid).at
+                                   : 0.0;
+            double wanted = dot(gap, along);
+            wanted = std::max(on->lower - got, std::min(on->upper - got, wanted));
+            const double speed =
+                std::max(-kFastestHaul, std::min(kFastestHaul, wanted / dt_s));
+            pull = speed * along;
+        } else {
+            const double far = length(gap);
+            if (far > 1e-9)
+                pull = (std::min(far / dt_s, kFastestHaul) / far) * gap;
+        }
+        state.linear_velocity_m_s = pull;
+        impl_->world->applyRigidState(id, state);
+        impl_->world->wake(id);
+        return;
+    }
+
+    state.center_of_mass_world_m = impl_->held_at;
     state.orientation_world = impl_->held_facing;
-    // A held object does not accumulate speed from being carried; letting go is
-    // what hands it back to gravity.
+    // A carried object does not accumulate speed from being carried; letting go
+    // is what hands it back to gravity.
     state.linear_velocity_m_s = {};
     state.angular_velocity_rad_s = {};
     impl_->world->applyRigidState(id, state);

@@ -75,7 +75,7 @@ extern "C" {
 /* The ABI version. Bumped when the meaning or layout of anything here changes.
  * Check it once at startup against banjo_abi_version(): a header and a library
  * that disagree will not tell you so any other way. */
-#define BANJO_ABI_VERSION 6
+#define BANJO_ABI_VERSION 7
 
 /* What a call reported. Anything below zero is a failure and leaves the world
  * unchanged; banjo_last_error() says what happened. */
@@ -130,13 +130,17 @@ typedef struct {
  * it, which is a gate coming off its hinges. */
 typedef struct {
     unsigned id;
+    /* BANJO_JOINT_HINGE or BANJO_JOINT_SLIDER. This is also the unit on the
+     * four numbers below: a pin has turned so many degrees and grips in newton
+     * metres, a slide has moved so many metres and grips in newtons. */
+    int kind;
     const char *a;
     const char *b;
-    /* Where it has turned to, in degrees, from where it was hung. */
-    double degrees;
-    double lower_deg;
-    double upper_deg;
-    double friction_n_m;
+    /* Where it has got to, from where it was made: degrees, or metres. */
+    double at;
+    double lower;
+    double upper;
+    double friction;
     /* Where the pin is now and which way it runs, in world metres. Worked out
      * from the body it is in rather than remembered, so a gate carried across
      * the room reports its hinge where the gate is. */
@@ -428,15 +432,41 @@ BANJO_API int banjo_hinge(banjo_world *world, const char *a, const char *b,
                           double lower_deg, double upper_deg,
                           double friction_n_m);
 
-/* How many pins are in the world. */
+/* Let one named thing slide along a line fixed in another.
+ *
+ * The same idea as a pin, one degree of freedom the other way round: the two
+ * are locked in rotation and free to move along one axis. A portcullis in its
+ * grooves, a sliding door, a bolt going across a door.
+ *
+ * And, like a pin, nothing is played. A portcullis hauled up and let go FALLS,
+ * because gravity is still acting on a body free to move down its own axis, and
+ * it stops on whatever is under it at whatever height that thing happens to be.
+ * Nothing in the engine knows what a portcullis is.
+ *
+ * Travel is metres either side of where it is built: `lower_m` of zero or less,
+ * `upper_m` of zero or more. A grate built down in its gateway has 0..2 of lift.
+ * `friction_n` is what it takes to start it moving, and it is the difference
+ * between a gate that stays where you leave it and one that drops the moment
+ * you stop hauling -- size it against the weight it has to hold, which for
+ * 1.5 x 1.8 x 0.1 m of iron is 20.8 kN.
+ *
+ * Returns the joint's id, always above zero, or a negative banjo_status. */
+BANJO_API int banjo_slide(banjo_world *world, const char *a, const char *b,
+                          const double at_m[3], const double axis[3],
+                          double lower_m, double upper_m, double friction_n);
+
+enum { BANJO_JOINT_HINGE = 0, BANJO_JOINT_SLIDER = 1 };
+
+/* How many joints are in the world. */
 BANJO_API int banjo_joint_count(const banjo_world *world);
 /* Fills up to `max` pins and returns how many were written, or a negative
  * banjo_status. The strings belong to the world and stay good until the next
  * call that changes it. */
 BANJO_API int banjo_joints(const banjo_world *world, banjo_joint *out, int max);
 /* How hard it is to turn, in newton metres. */
+/* Newton metres for a pin, newtons for a slide. */
 BANJO_API int banjo_joint_friction(banjo_world *world, unsigned joint,
-                                   double friction_n_m);
+                                   double friction);
 /* Take the pin out. What was hanging on it falls. */
 BANJO_API int banjo_unhinge(banjo_world *world, unsigned joint);
 

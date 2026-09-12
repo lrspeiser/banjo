@@ -18,6 +18,8 @@
 //        {"op":"hinge","a":"post","b":"gate","at":[0,1.2,0],"axis":[0,1,0],
 //         "lower_deg":0,"upper_deg":110,"friction_n_m":2}   hang it on a pin
 //        {"op":"joints"}                     every pin, and where each has got to
+//        {"op":"slide","a":"jamb","b":"grate","at":[0,0.9,0],"axis":[0,1,0],
+//         "lower_m":0,"upper_m":2,"friction_n":40000}      put it in a groove
 //        {"op":"unhinge","joint":1}          take the pin out; it falls
 //        {"op":"joint_friction","joint":1,"friction_n_m":40}   stiffen it
 //   out  {"ok":true,"t":0.033,"stepped_back":false,
@@ -96,17 +98,33 @@ nlohmann::json vec(const Vec3 &v) {
 nlohmann::json jointsOf(const LiveWorld &world) {
     constexpr double kDegrees = 180.0 / 3.14159265358979323846;
     nlohmann::json out = nlohmann::json::array();
-    for (const LiveJoint &pin : world.joints())
-        out.push_back({{"id", pin.id},
-                       {"a", pin.a},
-                       {"b", pin.b},
-                       {"degrees", tidy(pin.angle_rad * kDegrees)},
-                       {"lower_deg", tidy(pin.lower_rad * kDegrees)},
-                       {"upper_deg", tidy(pin.upper_rad * kDegrees)},
-                       {"friction_n_m", tidy(pin.friction_torque_n_m)},
-                       {"at", vec(pin.point_world_m)},
-                       {"axis", vec(pin.axis_world)},
-                       {"attached", pin.attached}});
+    for (const LiveJoint &joint : world.joints()) {
+        // The unit is the kind. A pin has turned so many degrees and grips in
+        // newton metres; a slide has moved so many metres and grips in newtons.
+        // Spelled out in the key rather than left for the reader to work out
+        // from `kind`, because a host that draws "0.8" next to a portcullis had
+        // better not be reading it as degrees.
+        const bool sliding = joint.kind == "slider";
+        nlohmann::json said{{"id", joint.id},
+                            {"kind", joint.kind},
+                            {"a", joint.a},
+                            {"b", joint.b},
+                            {"at", vec(joint.point_world_m)},
+                            {"axis", vec(joint.axis_world)},
+                            {"attached", joint.attached}};
+        if (sliding) {
+            said["metres"] = tidy(joint.at);
+            said["lower_m"] = tidy(joint.lower);
+            said["upper_m"] = tidy(joint.upper);
+            said["friction_n"] = tidy(joint.friction);
+        } else {
+            said["degrees"] = tidy(joint.at * kDegrees);
+            said["lower_deg"] = tidy(joint.lower * kDegrees);
+            said["upper_deg"] = tidy(joint.upper * kDegrees);
+            said["friction_n_m"] = tidy(joint.friction);
+        }
+        out.push_back(std::move(said));
+    }
     return out;
 }
 
@@ -397,11 +415,33 @@ int main(int argc, char **argv) {
                         throw std::invalid_argument(
                             "those two cannot be hung on a pin together");
                     reply["joint"] = pin;
+                } else if (op == "slide") {
+                    // A line two things move along. A portcullis in its
+                    // grooves, a sliding door, a bolt across a door -- and,
+                    // like a pin, nothing is played: a grate hauled up and let
+                    // go falls, because gravity is still acting on a body that
+                    // is free to move down its own axis.
+                    const unsigned groove = world->slide(
+                        command.at("a").get<std::string>(),
+                        command.at("b").get<std::string>(),
+                        readVec(command, "at"), readVec(command, "axis"),
+                        command.value("lower_m", -1.0),
+                        command.value("upper_m", 1.0),
+                        command.value("friction_n", 0.0));
+                    if (groove == 0)
+                        throw std::invalid_argument(
+                            "those two cannot be put in a groove together");
+                    reply["joint"] = groove;
                 } else if (op == "unhinge") {
                     world->unhinge(command.at("joint").get<unsigned>());
                 } else if (op == "joint_friction") {
-                    world->setJointFriction(command.at("joint").get<unsigned>(),
-                                            command.value("friction_n_m", 0.0));
+                    // Newton metres for a pin, newtons for a slide; the joint
+                    // knows which it is, so either spelling is accepted.
+                    world->setJointFriction(
+                        command.at("joint").get<unsigned>(),
+                        command.contains("friction_n")
+                            ? command.at("friction_n").get<double>()
+                            : command.value("friction_n_m", 0.0));
                 } else if (op == "joints") {
                     // Reports nothing about where the bodies are, so it answers
                     // on its own like `pick` does.

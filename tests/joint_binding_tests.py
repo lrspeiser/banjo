@@ -1,4 +1,4 @@
-"""Pins through the public C ABI and the Python binding.
+"""Joints through the public C ABI and the Python binding.
 
 The engine's own tests (tests/hinge_tests.cpp) and the scene's
 (tests/scene_joint_tests.cpp) already pin the physics. This is about the
@@ -109,7 +109,7 @@ def a_gate_hung_through_the_abi_swings() -> None:
 
         shove(world, 0.5)
         tick(world, 360)
-        turned = abs(pin_of(world, pin).degrees)
+        turned = abs(pin_of(world, pin).at)
         gate = next(b for b in world.bodies() if b.name == "gate")
         out = math.dist(gate.position_m, (0.0, 1.0, 0.12))
         print(f"  shoved through the ABI, the gate swung {turned:.2f} degrees; "
@@ -126,7 +126,7 @@ def limits_are_degrees() -> None:
                           axis=(0.0, 1.0, 0.0), lower_deg=0.0, upper_deg=30.0)
         shove(world, 1.4)
         tick(world, 240)
-        turned = abs(pin_of(world, pin).degrees)
+        turned = abs(pin_of(world, pin).at)
         print(f"  a gate stopped at 30 degrees, shoved well past it, reached {turned:.2f}")
         require(turned <= 31.0, "the gate went past the stop it was given")
         require(turned > 12.0, "it never got near the stop, so the shove proved nothing")
@@ -148,7 +148,7 @@ def the_pin_is_body_local() -> None:
         tick(world, 240)
         now = pin_of(world, pin)
         moved = math.dist(now.at_m, was)
-        print(f"  after a {abs(now.degrees):.1f} degree swing the pin has moved "
+        print(f"  after a {abs(now.at):.1f} degree swing the pin has moved "
               f"{moved * 1000:.1f} mm")
         # The post is anchored, so the pin's place in the world cannot change at
         # all -- however far the gate has gone round it.
@@ -182,8 +182,8 @@ def a_stiff_pin_holds_and_a_free_one_does_not() -> None:
             furthest = 0.0
             for _ in range(720):      # three seconds: the blow, and after it
                 tick(world)
-                furthest = max(furthest, abs(pin_of(world, pin).degrees))
-            watched[friction] = (furthest, abs(pin_of(world, pin).degrees))
+                furthest = max(furthest, abs(pin_of(world, pin).at))
+            watched[friction] = (furthest, abs(pin_of(world, pin).at))
     free_far, free_end = watched[0.0]
     stiff_far, stiff_end = watched[400.0]
     print(f"  the same blow: free, the gate reached {free_far:.2f} degrees and "
@@ -249,8 +249,146 @@ def a_pin_refuses_what_it_cannot_hold() -> None:
               "and backwards limits")
 
 
+def gateway() -> dict:
+    """A pair of jambs with an iron grate resting on the ground between them."""
+    return {
+        "bodies": [
+            {"name": "left jamb", "shape": "box", "material": "concrete",
+             "dimensions_m": [0.16, 3.0, 0.16], "center_m": [-0.8, 1.5, 0.0],
+             "anchored": True},
+            {"name": "right jamb", "shape": "box", "material": "concrete",
+             "dimensions_m": [0.16, 3.0, 0.16], "center_m": [0.8, 1.5, 0.0],
+             "anchored": True},
+            {"name": "grate", "shape": "box", "material": "iron",
+             "dimensions_m": [1.2, 1.6, 0.12], "center_m": [0.0, 0.8, 0.2]},
+        ],
+    }
+
+
+# 1.2 x 1.6 x 0.12 m of iron is 0.2304 cubic metres at 7,870 kg/m3: 1,813 kg,
+# and 17.8 kN of weight. Every friction below is sized against that, because a
+# groove gripping at a tenth of what it holds reads as friction being broken.
+GRATE_WEIGHT_N = 1.2 * 1.6 * 0.12 * 7870.0 * 9.81
+
+
+def groove_of(world: banjo.World, joint: int) -> banjo.Joint:
+    for held in world.joints():
+        if held.id == joint:
+            return held
+    raise SystemExit(f"[FAIL] there is no joint {joint}")
+
+
+def haul(world: banjo.World, by_m: float) -> None:
+    """Pull the grate up by hand, a centimetre a step, and let go."""
+    world.grab("grate")
+    start = next(b for b in world.bodies() if b.name == "grate").position_m
+    steps = max(1, int(by_m / 0.01))
+    for i in range(1, steps + 1):
+        world.move_held((start[0], start[1] + by_m * i / steps, start[2]))
+        tick(world)
+    world.release()
+
+
+def a_raised_grate_falls_when_you_let_go() -> None:
+    """The whole claim, through the public ABI.
+
+    Nothing in the library knows what a portcullis is. The grate falls because
+    it is 1.8 tonnes of iron free to move along a vertical line and there is
+    nothing holding it up.
+    """
+    with banjo.World(gateway(), cell_size_m=CELL_M) as world:
+        groove = world.slide("left jamb", "grate", at_m=(0.0, 0.8, 0.2),
+                             axis=(0.0, 1.0, 0.0), lower_m=0.0, upper_m=1.5)
+        require(groove > 0, "the grate would not go into its grooves")
+        require(groove_of(world, groove).kind == "slider",
+                "a slide came back calling itself something else")
+
+        down = next(b for b in world.bodies() if b.name == "grate").position_m[1]
+        haul(world, 1.2)
+        up = next(b for b in world.bodies() if b.name == "grate").position_m[1]
+        tick(world, 600)
+        after = next(b for b in world.bodies() if b.name == "grate").position_m[1]
+        print(f"  hauled from y={down:.3f} to y={up:.3f}; two and a half seconds "
+              f"after letting go it is at y={after:.3f}")
+        require(up > down + 1.0, "the haul did not lift it")
+        require(after < down + 0.1, "it was let go over a metre up and stayed there")
+
+
+def travel_is_metres_and_it_holds() -> None:
+    with banjo.World(gateway(), cell_size_m=CELL_M) as world:
+        groove = world.slide("left jamb", "grate", at_m=(0.0, 0.8, 0.2),
+                             axis=(0.0, 1.0, 0.0), lower_m=0.0, upper_m=0.6)
+        haul(world, 2.0)          # hauled well past the 600 mm it is allowed
+        reached = groove_of(world, groove).at
+        print(f"  a grate with 600 mm of travel, hauled 2 m, reached {reached:.3f} m")
+        require(reached <= 0.62, "it went further than its grooves allow")
+        require(reached > 0.5, "it barely moved, so the haul proved nothing")
+
+
+def friction_is_what_makes_it_stay() -> None:
+    left_at = {}
+    for friction in (0.0, 2.0 * GRATE_WEIGHT_N):
+        with banjo.World(gateway(), cell_size_m=CELL_M) as world:
+            groove = world.slide("left jamb", "grate", at_m=(0.0, 0.8, 0.2),
+                                 axis=(0.0, 1.0, 0.0), lower_m=0.0, upper_m=1.5,
+                                 friction_n=friction)
+            haul(world, 1.0)
+            tick(world, 600)
+            left_at[friction] = groove_of(world, groove).at
+    free, stiff = left_at[0.0], left_at[2.0 * GRATE_WEIGHT_N]
+    print(f"  the grate weighs {GRATE_WEIGHT_N / 1000:.1f} kN. Hauled 1 m and let "
+          f"go: a free groove left it {free:.3f} m up, one gripping at twice its "
+          f"weight left it {stiff:.3f} m up")
+    require(stiff > free + 0.5,
+            "the stiff groove let the grate drop as far as the free one, so "
+            "friction is not holding anything")
+
+
+def a_slide_only_moves_along_its_own_line() -> None:
+    with banjo.World(gateway(), cell_size_m=CELL_M) as world:
+        world.slide("left jamb", "grate", at_m=(0.0, 0.8, 0.2),
+                    axis=(0.0, 1.0, 0.0), lower_m=0.0, upper_m=1.5)
+        was = next(b for b in world.bodies() if b.name == "grate").position_m
+        world.grab("grate")
+        for i in range(1, 121):
+            world.move_held((was[0] + 0.02 * i, was[1], was[2] + 0.02 * i))
+            tick(world)
+        world.release()
+        tick(world, 240)
+        now = next(b for b in world.bodies() if b.name == "grate").position_m
+        print(f"  dragged 2.4 m sideways and 2.4 m forward, the grate moved "
+              f"{abs(now[0] - was[0]) * 1000:.0f} mm in x and "
+              f"{abs(now[2] - was[2]) * 1000:.0f} mm in z")
+        require(abs(now[0] - was[0]) < 0.02, "it came out of its grooves sideways")
+        require(abs(now[2] - was[2]) < 0.02, "it came out of its grooves forwards")
+
+
+def a_slide_refuses_what_it_cannot_hold() -> None:
+    with banjo.World(gateway(), cell_size_m=CELL_M) as world:
+        for why, call in (
+            ("a body that does not exist",
+             lambda: world.slide("left jamb", "no such grate", at_m=(0, 1, 0))),
+            ("a body sliding in itself",
+             lambda: world.slide("grate", "grate", at_m=(0, 1, 0))),
+            ("an axis with no direction",
+             lambda: world.slide("left jamb", "grate", at_m=(0, 0.8, 0.2),
+                                 axis=(0, 0, 0))),
+            ("travel the wrong way round",
+             lambda: world.slide("left jamb", "grate", at_m=(0, 0.8, 0.2),
+                                 lower_m=1.0, upper_m=-1.0)),
+        ):
+            try:
+                call()
+            except banjo.BanjoError:
+                continue
+            raise SystemExit(f"[FAIL] the engine accepted {why}")
+        require(world.joints() == [], "a refused slide was recorded anyway")
+        print("  a slide refuses a missing body, a body in itself, no axis, "
+              "and backwards travel")
+
+
 def main() -> int:
-    require(banjo.ABI_VERSION >= 6, "this test needs ABI 6 or later")
+    require(banjo.ABI_VERSION >= 7, "this test needs ABI 7 or later")
     for run, what in (
         (a_gate_hung_through_the_abi_swings, "a gate hung through the ABI swings"),
         (limits_are_degrees, "limits are degrees and they hold"),
@@ -258,6 +396,14 @@ def main() -> int:
         (a_stiff_pin_holds_and_a_free_one_does_not, "friction holds a gate where it is put"),
         (taking_the_pin_out_drops_it, "taking the pin out drops what hung on it"),
         (a_pin_refuses_what_it_cannot_hold, "a pin refuses what it cannot hold"),
+        (a_raised_grate_falls_when_you_let_go,
+         "a raised grate falls when you let go"),
+        (travel_is_metres_and_it_holds, "travel is metres and it holds"),
+        (friction_is_what_makes_it_stay, "friction is what makes a grate stay up"),
+        (a_slide_only_moves_along_its_own_line,
+         "a slide only moves along its own line"),
+        (a_slide_refuses_what_it_cannot_hold,
+         "a slide refuses what it cannot hold"),
     ):
         run()
         print(f"[PASS] {what}")

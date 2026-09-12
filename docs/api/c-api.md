@@ -14,7 +14,7 @@ tell you any other way:
 if (banjo_abi_version() != BANJO_ABI_VERSION) { /* mismatch */ }
 ```
 
-Current ABI: **6**.
+Current ABI: **7**.
 
 ---
 
@@ -260,7 +260,7 @@ what has been carried away.
 
 ---
 
-## Pins
+## Joints
 
 A pin is what turns a scene into a mechanism. A door swings because a push off
 its centre line makes a torque about its hinge, and stops because it meets its
@@ -303,6 +303,42 @@ Two things about the geometry that cost an afternoon each:
 - **Hang it clear of the floor.** A door resting on the ground is held by
   friction with the ground and will not swing either.
 
+### `int banjo_slide(banjo_world *world, const char *a, const char *b, const double at_m[3], const double axis[3], double lower_m, double upper_m, double friction_n)`
+
+The same idea one degree of freedom the other way round: `b` is locked to `a` in
+rotation and free to move along one line. A portcullis in its grooves, a sliding
+door, a bolt going across a door.
+
+```c
+double at[3] = {0.0, 0.8, 0.2}, up[3] = {0.0, 1.0, 0.0};
+int grooves = banjo_slide(w, "left jamb", "grate", at, up,
+                          0.0, 1.5,      /* resting on the ground, 1.5 m of lift */
+                          0.0);          /* and nothing holding it up there */
+```
+
+**A grate hauled up and let go falls.** Nothing in the library knows what a
+portcullis is: it is a body free to move down its own axis with gravity still
+acting on it, and it stops on whatever is under it, at whatever height that
+thing happens to be. Push a barrel into the gateway and the grate comes to rest
+on the barrel — measured, 600 mm barrel, 600 mm of clearance.
+
+Travel is metres either side of where it is built: `lower_m` zero or less,
+`upper_m` zero or more.
+
+**Size `friction_n` against what it holds.** It is newtons, and the weight it
+has to resist is real: 1.2 × 1.6 × 0.12 m of iron is 1,813 kg and 17.8 kN. A
+groove gripping at 4 kN does not hold that, and from the outside it reads as
+friction not working. Measured, hauled 1 m and let go: a free groove left it at
+0.000 m, one gripping at twice the weight left it at 0.999 m.
+
+A hand hauling something on a joint **pulls it**, rather than putting it where
+the hand is. A carried body is placed exactly where the hand is every step,
+which overrides everything it is attached to — measured, a portcullis with
+800 mm of travel dragged two metres went 1.57 m up its own 0.8 m groove, with
+the constraint reporting `upper = 0.8` the whole way. So anything on a joint is
+pulled towards the hand along what the joint allows, and the mechanism decides
+where it ends up.
+
 ### `int banjo_joint_count(const banjo_world *world)`
 ### `int banjo_joints(const banjo_world *world, banjo_joint *out, int max)`
 
@@ -312,16 +348,22 @@ the world and stay good until the next call that changes it.
 ```c
 typedef struct {
     unsigned id;
+    int kind;                  /* BANJO_JOINT_HINGE or BANJO_JOINT_SLIDER */
     const char *a;
     const char *b;
-    double degrees;            /* where it has turned to, from where it was hung */
-    double lower_deg, upper_deg;
-    double friction_n_m;
-    double at_m[3];            /* where the pin is NOW */
+    double at;                 /* where it has got to, from where it was made */
+    double lower, upper;
+    double friction;
+    double at_m[3];            /* where the joint is NOW */
     double axis[3];
     int attached;
 } banjo_joint;
 ```
+
+**`kind` is also the unit.** A hinge reports `at`, `lower` and `upper` in
+**degrees** and `friction` in newton metres; a slider reports them in **metres**
+and newtons. Reading a slider's `0.8` as degrees gives a portcullis fifty-seven
+times too tall.
 
 `at_m` is worked out from the body the pin is in rather than remembered, so a
 gate carried across the room reports its hinge where the gate is.
@@ -335,10 +377,11 @@ left around the pin, `attached` goes to 0 and what was hanging on it falls. That
 is a gate coming off its hinges, it is reported rather than silently dropped, and
 it is the one thing about a hinge a host cannot work out from the bodies alone.
 
-### `int banjo_joint_friction(banjo_world *world, unsigned joint, double friction_n_m)`
+### `int banjo_joint_friction(banjo_world *world, unsigned joint, double friction)`
 ### `int banjo_unhinge(banjo_world *world, unsigned joint)`
 
-Taking the pin out drops whatever was hanging on it.
+Newton metres for a pin, newtons for a slide. Taking the joint out drops
+whatever it was holding up — both kinds; the name is historical.
 
 ---
 

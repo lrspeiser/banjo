@@ -428,6 +428,33 @@ int banjo_hinge(banjo_world *world, const char *a, const char *b,
     });
 }
 
+int banjo_slide(banjo_world *world, const char *a, const char *b,
+                const double at_m[3], const double axis[3],
+                double lower_m, double upper_m, double friction_n) {
+    if (!world || !a || !b || !at_m || !axis) {
+        setError("no world, no names, or no groove"); return BANJO_BAD_ARGUMENT;
+    }
+    if (!(lower_m <= 0.0) || !(upper_m >= 0.0) || !(lower_m <= upper_m)) {
+        setError("slide travel is metres either side of where it is built: a lower "
+                 "of zero or less and an upper of zero or more");
+        return BANJO_BAD_ARGUMENT;
+    }
+    if (!(friction_n >= 0.0)) {
+        setError("slide friction is newtons, zero or more"); return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        const unsigned groove = world->world->slide(a, b, readVec(at_m), readVec(axis),
+                                                    lower_m, upper_m, friction_n);
+        if (groove == 0) {
+            setError(std::string("\"") + b + "\" cannot slide along \"" + a +
+                     "\": one of them is not in the scene, they are the same thing, "
+                     "or the axis has no direction");
+            return static_cast<int>(BANJO_BAD_ARGUMENT);
+        }
+        return static_cast<int>(groove);
+    });
+}
+
 int banjo_joint_count(const banjo_world *world) {
     if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
     return guarded([&] {
@@ -447,29 +474,37 @@ int banjo_joints(const banjo_world *world, banjo_joint *out, int max) {
         mutable_world->joints = world->world->joints();
         const int count = std::min<int>(max, static_cast<int>(mutable_world->joints.size()));
         for (int i = 0; i < count; ++i) {
-            const LiveJoint &pin = mutable_world->joints[static_cast<std::size_t>(i)];
-            out[i].id = pin.id;
-            out[i].a = pin.a.c_str();
-            out[i].b = pin.b.c_str();
-            out[i].degrees = pin.angle_rad * kDegrees;
-            out[i].lower_deg = pin.lower_rad * kDegrees;
-            out[i].upper_deg = pin.upper_rad * kDegrees;
-            out[i].friction_n_m = pin.friction_torque_n_m;
-            writeVec(pin.point_world_m, out[i].at_m);
-            writeVec(pin.axis_world, out[i].axis);
-            out[i].attached = pin.attached ? 1 : 0;
+            const LiveJoint &joint = mutable_world->joints[static_cast<std::size_t>(i)];
+            const bool sliding = joint.kind == "slider";
+            // Radians on the wire, degrees at the boundary -- but only for a
+            // pin. A slide is in metres and converting those would be a very
+            // quiet way to make a portcullis 57 times too tall.
+            const double scale = sliding ? 1.0 : kDegrees;
+            out[i].id = joint.id;
+            out[i].kind = sliding ? BANJO_JOINT_SLIDER : BANJO_JOINT_HINGE;
+            out[i].a = joint.a.c_str();
+            out[i].b = joint.b.c_str();
+            out[i].at = joint.at * scale;
+            out[i].lower = joint.lower * scale;
+            out[i].upper = joint.upper * scale;
+            out[i].friction = joint.friction;
+            writeVec(joint.point_world_m, out[i].at_m);
+            writeVec(joint.axis_world, out[i].axis);
+            out[i].attached = joint.attached ? 1 : 0;
         }
         return count;
     });
 }
 
-int banjo_joint_friction(banjo_world *world, unsigned joint, double friction_n_m) {
+int banjo_joint_friction(banjo_world *world, unsigned joint, double friction) {
     if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
-    if (!(friction_n_m >= 0.0)) {
-        setError("hinge friction is newton metres, zero or more"); return BANJO_BAD_ARGUMENT;
+    if (!(friction >= 0.0)) {
+        setError("joint friction is zero or more: newton metres for a pin, newtons "
+                 "for a slide");
+        return BANJO_BAD_ARGUMENT;
     }
     return guarded([&] {
-        world->world->setJointFriction(joint, friction_n_m);
+        world->world->setJointFriction(joint, friction);
         return BANJO_OK;
     });
 }

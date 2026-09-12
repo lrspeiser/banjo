@@ -23,6 +23,7 @@
 #include <Jolt/Physics/Constraints/FixedConstraint.h>
 #include <Jolt/Physics/Constraints/DistanceConstraint.h>
 #include <Jolt/Physics/Constraints/HingeConstraint.h>
+#include <Jolt/Physics/Constraints/SliderConstraint.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/RayCast.h>
@@ -580,7 +581,16 @@ public:
     struct Spring { MatterBodyId a,b; JPH::Ref<JPH::DistanceConstraint> constraint; };
     std::unordered_map<unsigned,Spring> springs_;
     unsigned next_spring_{1};
-    struct Joint { MatterBodyId a,b; JPH::Ref<JPH::HingeConstraint> constraint; };
+    // Every kind of joint in one table, held as the base class Jolt gives them
+    // all. jointsOn(), removeJoint() and the drop that happens when a body is
+    // destroyed have to work the same for a pin and a slide -- and for the rope
+    // anchors and pulleys that come next -- so the one thing they must not do is
+    // be two tables that each half-remember a body.
+    struct Joint {
+        MatterBodyId a,b;
+        JointKind kind;
+        JPH::Ref<JPH::TwoBodyConstraint> constraint;
+    };
     std::unordered_map<unsigned,Joint> joints_;
     unsigned next_joint_{1};
     std::unordered_map<MatterBodyId, JPH::BodyID> bodies_;
@@ -999,8 +1009,8 @@ unsigned JoltWorld::addHinge(const HingeDescription &d) {
         &settings, impl_->bodies_.at(d.a), impl_->bodies_.at(d.b));
     if (!raw) throw std::runtime_error("hinge creation failed");
     const auto id = impl_->next_joint_++;
-    impl_->joints_.emplace(id, Impl::Joint{d.a, d.b,
-                                           static_cast<JPH::HingeConstraint *>(raw)});
+    impl_->joints_.emplace(id, Impl::Joint{d.a, d.b, JointKind::Hinge,
+                                           static_cast<JPH::TwoBodyConstraint *>(raw)});
     impl_->physics_->AddConstraint(raw);
     return id;
 }
@@ -1014,18 +1024,84 @@ JoltWorld::JointReport JoltWorld::jointState(unsigned joint) const {
     JointReport out{};
     out.a = held.a;
     out.b = held.b;
-    out.angle_rad = held.constraint->GetCurrentAngle();
-    out.lower_rad = held.constraint->GetLimitsMin();
-    out.upper_rad = held.constraint->GetLimitsMax();
-    out.friction_torque_n_m = held.constraint->GetMaxFrictionTorque();
+    out.kind = held.kind;
+    if (held.kind == JointKind::Slider) {
+        auto *slide = static_cast<JPH::SliderConstraint *>(held.constraint.GetPtr());
+        out.at = slide->GetCurrentPosition();
+        out.lower = slide->GetLimitsMin();
+        out.upper = slide->GetLimitsMax();
+        out.friction = slide->GetMaxFrictionForce();
+    } else {
+        auto *pin = static_cast<JPH::HingeConstraint *>(held.constraint.GetPtr());
+        out.at = pin->GetCurrentAngle();
+        out.lower = pin->GetLimitsMin();
+        out.upper = pin->GetLimitsMax();
+        out.friction = pin->GetMaxFrictionTorque();
+    }
     return out;
 }
 
-void JoltWorld::setJointFriction(unsigned joint, double friction_torque_n_m) {
-    if (!(friction_torque_n_m >= 0.0) || !std::isfinite(friction_torque_n_m))
-        throw std::invalid_argument("hinge friction must be zero or more newton metres");
-    impl_->joints_.at(joint).constraint->SetMaxFrictionTorque(
-        static_cast<float>(friction_torque_n_m));
+void JoltWorld::setJointFriction(unsigned joint, double friction) {
+    if (!(friction >= 0.0) || !std::isfinite(friction))
+        throw std::invalid_argument("joint friction must be zero or more");
+    auto &held = impl_->joints_.at(joint);
+    if (held.kind == JointKind::Slider)
+        static_cast<JPH::SliderConstraint *>(held.constraint.GetPtr())
+            ->SetMaxFrictionForce(static_cast<float>(friction));
+    else
+        static_cast<JPH::HingeConstraint *>(held.constraint.GetPtr())
+            ->SetMaxFrictionTorque(static_cast<float>(friction));
+}
+
+unsigned JoltWorld::addSlider(const SliderDescription &d) {
+    impl_->requireConfigurationMutable();
+    if (d.a == d.b || !contains(d.a) || !contains(d.b))
+        throw std::invalid_argument("a slide needs two different bodies that are both in the world");
+    if (impl_->joints_.size() >= 4096)
+        throw std::invalid_argument("joint budget exceeded");
+    const double reach = length(d.axis_world);
+    if (!(reach > 1e-9) || !std::isfinite(reach))
+        throw std::invalid_argument("a slide needs an axis with a direction");
+    if (!std::isfinite(d.point_world_m.x) || !std::isfinite(d.point_world_m.y) ||
+        !std::isfinite(d.point_world_m.z))
+        throw std::invalid_argument("a slide needs a point that is a place");
+    if (!(d.lower_m <= 0.0) || !(d.upper_m >= 0.0) || !(d.lower_m <= d.upper_m) ||
+        !std::isfinite(d.lower_m) || !std::isfinite(d.upper_m))
+        throw std::invalid_argument("slide travel is metres either side of where it is "
+                                    "built: a lower of zero or less and an upper of zero "
+                                    "or more");
+    if (!(d.friction_n >= 0.0) || !std::isfinite(d.friction_n))
+        throw std::invalid_argument("slide friction must be zero or more newtons");
+
+    const Vec3 along = (1.0 / reach) * d.axis_world;
+    // Something square to the line of travel, for Jolt to measure from. Same
+    // reasoning as the hinge's normal: it only has to be perpendicular.
+    const Vec3 away = std::abs(along.y) < 0.9 ? Vec3{0.0, 1.0, 0.0} : Vec3{1.0, 0.0, 0.0};
+    Vec3 normal = cross(away, along);
+    const double across = length(normal);
+    if (!(across > 1e-9)) throw std::runtime_error("could not square up a slide axis");
+    normal = (1.0 / across) * normal;
+
+    JPH::SliderConstraintSettings settings;
+    settings.mSpace = JPH::EConstraintSpace::WorldSpace;
+    // RVec3, not Vec3: this build carries positions in double precision, which
+    // is the whole reason a room can be forty metres across and still place a
+    // slide to the micrometre.
+    settings.mPoint1 = settings.mPoint2 = toJoltPosition(d.point_world_m);
+    settings.mSliderAxis1 = settings.mSliderAxis2 = toJolt(along);
+    settings.mNormalAxis1 = settings.mNormalAxis2 = toJolt(normal);
+    settings.mLimitsMin = static_cast<float>(d.lower_m);
+    settings.mLimitsMax = static_cast<float>(d.upper_m);
+    settings.mMaxFrictionForce = static_cast<float>(d.friction_n);
+
+    auto *raw = impl_->physics_->GetBodyInterface().CreateConstraint(
+        &settings, impl_->bodies_.at(d.a), impl_->bodies_.at(d.b));
+    if (!raw) throw std::runtime_error("slide creation failed");
+    const auto id = impl_->next_joint_++;
+    impl_->joints_.emplace(id, Impl::Joint{d.a, d.b, JointKind::Slider,
+                                           static_cast<JPH::TwoBodyConstraint *>(raw)});
+    impl_->physics_->AddConstraint(raw);
+    return id;
 }
 
 void JoltWorld::removeJoint(unsigned joint) {

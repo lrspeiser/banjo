@@ -835,6 +835,15 @@ if(BANJO_BUILD_TESTS)
             banjo_enable_warnings(banjo_scene_joint_tests)
             add_test(NAME banjo_scene_joint_tests COMMAND banjo_scene_joint_tests)
 
+            # Things that slide: a portcullis in its grooves, a sliding door, a
+            # bolt across a door. The test that matters is the first one -- a
+            # raised grate falls when you let go, because nothing here knows
+            # what a portcullis is.
+            add_executable(banjo_slider_tests tests/slider_tests.cpp)
+            target_link_libraries(banjo_slider_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_slider_tests)
+            add_test(NAME banjo_slider_tests COMMAND banjo_slider_tests)
+
             # Breaking a piece that has already broken: the trigger against its
             # own derivation, the state a fragment carries back into the
             # lattice, the conservation of the round trip, backend parity

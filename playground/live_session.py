@@ -242,18 +242,28 @@ class Live:
                 problems.append("a joint that is not an object")
                 continue
             kind = str(pin.get("kind", "hinge"))
-            if kind != "hinge":
+            if kind not in ("hinge", "slider"):
                 problems.append(f"{kind!r} is not a kind of joint this room knows")
                 continue
             at = pin.get("at_mm")
             if not isinstance(at, list) or len(at) != 3:
-                problems.append("a hinge needs at_mm as three numbers")
+                problems.append(f"a {kind} needs at_mm as three numbers")
                 continue
             try:
+                common = {"a": str(pin.get("a", "")), "b": str(pin.get("b", "")),
+                          "at": [float(v) / 1000.0 for v in at],
+                          "axis": [float(v) for v in (pin.get("axis") or [0, 1, 0])]}
+                # Millimetres in the room's own spelling, metres on the wire --
+                # the room talks in millimetres everywhere else and a travel in
+                # metres sitting next to a size in millimetres is how a 2 m lift
+                # becomes 2 mm.
                 answer = session.send(
-                    op="hinge", a=str(pin.get("a", "")), b=str(pin.get("b", "")),
-                    at=[float(v) / 1000.0 for v in at],
-                    axis=[float(v) for v in (pin.get("axis") or [0, 1, 0])],
+                    op="slide", **common,
+                    lower_m=float(pin.get("lower_mm", 0.0)) / 1000.0,
+                    upper_m=float(pin.get("upper_mm", 0.0)) / 1000.0,
+                    friction_n=float(pin.get("friction_n", 0.0))) \
+                    if kind == "slider" else session.send(
+                    op="hinge", **common,
                     lower_deg=float(pin.get("lower_deg", -180.0)),
                     upper_deg=float(pin.get("upper_deg", 180.0)),
                     friction_n_m=float(pin.get("friction_n_m", 0.0)))
@@ -358,15 +368,44 @@ class Live:
                                 b=str(body.get("b", "")), at=spot("at"), axis=axis,
                                 lower_deg=lower, upper_deg=upper,
                                 friction_n_m=friction)
+        if op == "slide":
+            def spot(key: str, fallback: Any = None) -> list[float]:
+                value = body.get(key, fallback)
+                if not isinstance(value, list) or len(value) != 3:
+                    raise LiveError(f"a slide needs {key} as three numbers")
+                out = [float(v) for v in value]
+                if not all(math.isfinite(v) for v in out):
+                    raise LiveError(f"a slide was given {key} that is not a number")
+                return out
+            axis = spot("axis", [0.0, 1.0, 0.0])
+            if not any(abs(v) > 1e-9 for v in axis):
+                raise LiveError("a slide needs an axis with a direction")
+            lower = float(body.get("lower_m", -1.0))
+            upper = float(body.get("upper_m", 1.0))
+            if not lower <= 0.0 <= upper:
+                raise LiveError("slide travel is metres either side of where it is "
+                                "built: a lower of zero or less and an upper of "
+                                "zero or more")
+            if upper - lower > 100.0:
+                raise LiveError("a slide of more than 100 metres is not a mechanism")
+            friction = float(body.get("friction_n", 0.0))
+            if not 0.0 <= friction <= 1e9:
+                raise LiveError("slide friction is newtons, zero or more")
+            return session.send(op="slide", a=str(body.get("a", "")),
+                                b=str(body.get("b", "")), at=spot("at"), axis=axis,
+                                lower_m=lower, upper_m=upper, friction_n=friction)
         if op == "unhinge":
             return session.send(op="unhinge", joint=int(body.get("joint", 0)))
         if op == "joint_friction":
-            friction = float(body.get("friction_n_m", 0.0))
-            if not 0.0 <= friction <= 1e6:
-                raise LiveError("hinge friction is newton metres, zero or more")
+            # Newton metres for a pin, newtons for a slide. The joint knows
+            # which it is, so either spelling arrives here and goes through.
+            friction = float(body.get("friction_n", body.get("friction_n_m", 0.0)))
+            if not 0.0 <= friction <= 1e9:
+                raise LiveError("joint friction is zero or more: newton metres for "
+                                "a pin, newtons for a slide")
             return session.send(op="joint_friction",
                                 joint=int(body.get("joint", 0)),
-                                friction_n_m=friction)
+                                friction_n=friction)
         if op == "pick":
             # A ray in world metres. Costs no step and changes nothing, so it is
             # not bounded the way a step is -- but it is still checked, because

@@ -206,16 +206,50 @@ class TheCourtyard(unittest.TestCase):
     that opening the room actually hangs them.
     """
 
-    def test_the_courtyard_carries_its_own_pins(self):
+    def test_the_courtyard_carries_its_own_joints(self):
         spec = fracture_lab.validate(world_room.courtyard())
-        self.assertEqual(len(spec["joints"]), 1)
-        pin = spec["joints"][0]
+        by_kind = {joint["kind"]: joint for joint in spec["joints"]}
+        self.assertEqual(set(by_kind), {"hinge", "slider"})
+
+        pin = by_kind["hinge"]
         self.assertEqual((pin["a"], pin["b"]), ("gate jamb left", "oak gate"))
         # It opens outward only. A gate that swings both ways is a saloon door.
         self.assertEqual(pin["lower_deg"], 0.0)
         self.assertGreater(pin["upper_deg"], 45.0)
         # And it is stiff enough to stay where it is pushed.
         self.assertGreater(pin["friction_n_m"], 0.0)
+
+        groove = by_kind["slider"]
+        self.assertEqual((groove["a"], groove["b"]),
+                         ("portcullis jamb left", "iron portcullis"))
+        # It rests on the ground and can only go up.
+        self.assertEqual(groove["lower_mm"], 0.0)
+        self.assertGreater(groove["upper_mm"], 500.0)
+        # 1.28 x 1.2 x 0.12 m of iron is 1,450 kg: 14.2 kN of weight. The
+        # grooves grip at far less than that ON PURPOSE, because a portcullis
+        # that holds itself up needs no winch and demonstrates nothing.
+        weight_n = 1.28 * 1.2 * 0.12 * 7870.0 * 9.81
+        self.assertLess(groove["friction_n"], 0.5 * weight_n,
+                        "the portcullis holds itself up, so letting go of it "
+                        "shows nothing")
+
+    def test_the_portcullis_cannot_rise_through_its_own_arch(self):
+        """Travel measured against the room, not guessed.
+
+        A grate whose lift puts its top above the lintel is a grate that was
+        never measured against the gateway it is in.
+        """
+        spec = fracture_lab.validate(world_room.courtyard())
+        bodies = {body["name"]: body for body in spec["bodies"]}
+        grate = bodies["iron portcullis"]
+        lintel = bodies["portcullis lintel"]
+        groove = next(j for j in spec["joints"] if j["kind"] == "slider")
+        top_when_up = (grate["center_mm"][1] + grate["size_mm"][1] / 2
+                       + groove["upper_mm"])
+        arch = lintel["center_mm"][1] - lintel["size_mm"][1] / 2
+        self.assertLessEqual(top_when_up, arch + 1.0,
+                             f"raised fully, the grate's top is at {top_when_up} mm "
+                             f"and the arch starts at {arch} mm")
 
     def test_the_bench_room_still_has_none(self):
         self.assertEqual(fracture_lab.validate(world_room.room())["joints"], [])
@@ -264,10 +298,14 @@ class TheCourtyard(unittest.TestCase):
                              f"the room could not hang its own gate: "
                              f"{opened.get('joint_problems')}")
             pins = opened.get("joints") or []
-            self.assertEqual(len(pins), 1, "the gate was not hung when the room opened")
-            self.assertTrue(pins[0]["attached"])
-            self.assertAlmostEqual(pins[0]["degrees"], 0.0, places=3,
+            self.assertEqual(len(pins), 2,
+                             "the room's joints were not all made when it opened")
+            by_kind = {pin["kind"]: pin for pin in pins}
+            self.assertTrue(all(pin["attached"] for pin in pins))
+            self.assertAlmostEqual(by_kind["hinge"]["degrees"], 0.0, places=3,
                                    msg="the gate did not open shut")
+            self.assertAlmostEqual(by_kind["slider"]["metres"], 0.0, places=3,
+                                   msg="the portcullis did not open down")
 
             # And it swings when something is pushed into it -- which is the
             # whole claim. Nothing here asks for the gate to move.
@@ -277,12 +315,31 @@ class TheCourtyard(unittest.TestCase):
                 session.send(op="step", dt=1 / 240.0, n=4, moved=True,
                              hand=[0.9, 1.0, 1.0 - i * 0.01])
             session.send(op="release")
-            turned = session.send(op="joints")["joints"][0]["degrees"]
+            turned = next(j for j in session.send(op="joints")["joints"]
+                          if j["kind"] == "hinge")["degrees"]
             self.assertGreater(abs(turned), 10.0,
                                f"the ball was walked through where the gate is and "
                                f"the gate turned {turned} degrees")
             self.assertLessEqual(abs(turned), 100.0,
                                  "the gate went past the stop the room gave it")
+
+            # And the portcullis: hauled up and let go, it comes back down. The
+            # grooves grip at a fifth of its weight, so nothing holds it.
+            session.send(op="grab", name="iron portcullis")
+            for i in range(1, 101):
+                session.send(op="step", dt=1 / 240.0, n=4, moved=True,
+                             hand=[-2.6, 0.6 + i * 0.01, 0.14])
+            lifted = next(j for j in session.send(op="joints")["joints"]
+                          if j["kind"] == "slider")["metres"]
+            session.send(op="release")
+            for _ in range(180):
+                session.send(op="step", dt=1 / 240.0, n=4, moved=True)
+            fell = next(j for j in session.send(op="joints")["joints"]
+                        if j["kind"] == "slider")["metres"]
+            self.assertGreater(lifted, 0.7, "hauling did not lift the portcullis")
+            self.assertLess(fell, 0.2,
+                            f"the portcullis was let go {lifted} m up and is still "
+                            f"at {fell} m")
         finally:
             live.shutdown()
 

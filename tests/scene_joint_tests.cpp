@@ -164,7 +164,7 @@ void shove(LiveWorld &world, double through_m) {
 }
 
 double degreesOf(const LiveWorld &world, unsigned pin) {
-    return pinNumber(world.joints(), pin).angle_rad * 180.0 / kPi;
+    return pinNumber(world.joints(), pin).at * 180.0 / kPi;
 }
 
 // -----------------------------------------------------------------------------

@@ -227,19 +227,52 @@ public:
         double friction_torque_n_m{0.0};
     };
     [[nodiscard]] unsigned addHinge(const HingeDescription &description);
+
+    // A way two bodies slide along each other.
+    //
+    // The same idea as a pin, one degree of freedom the other way round: the
+    // two are locked in rotation and free to move along one line. A portcullis
+    // in its grooves, a sliding door, a bolt going across a door -- and, like a
+    // pin, none of it is played. A raised portcullis with nothing under it
+    // falls, because gravity is still acting on a body that is free to move
+    // down its own axis.
+    //
+    // Travel is metres either side of where it is built, so a portcullis built
+    // down has 0..2 of lift and one built up has -2..0 of drop.
+    struct SliderDescription {
+        MatterBodyId a{kInvalidMatterBodyId};
+        MatterBodyId b{kInvalidMatterBodyId};
+        Vec3 point_world_m{};
+        // Which way it may move. Vertical for a portcullis.
+        Vec3 axis_world{0.0, 1.0, 0.0};
+        double lower_m{-1.0}, upper_m{1.0};
+        // What it takes to start it moving, in newtons. A heavy grate in dry
+        // stone grooves does not slide freely, and friction here is the whole
+        // difference between a gate that stays up when you stop hauling and one
+        // that drops the moment you let go.
+        double friction_n{0.0};
+    };
+    [[nodiscard]] unsigned addSlider(const SliderDescription &description);
+
+    enum class JointKind : std::uint8_t { Hinge = 0, Slider = 1 };
+
     // Everything about a joint that a caller can see from outside.
     struct JointReport {
         MatterBodyId a{kInvalidMatterBodyId};
         MatterBodyId b{kInvalidMatterBodyId};
-        // Where it has turned to, in radians, measured from where it was made.
-        double angle_rad{};
-        double lower_rad{};
-        double upper_rad{};
-        double friction_torque_n_m{};
+        JointKind kind{JointKind::Hinge};
+        // Where it has got to, from where it was made: radians for a pin,
+        // metres for a slide. One number, because a joint with one degree of
+        // freedom has one number, and which unit it is in is what `kind` says.
+        double at{};
+        double lower{};
+        double upper{};
+        // Newton metres for a pin, newtons for a slide.
+        double friction{};
     };
     [[nodiscard]] bool hasJoint(unsigned joint) const;
     [[nodiscard]] JointReport jointState(unsigned joint) const;
-    void setJointFriction(unsigned joint, double friction_torque_n_m);
+    void setJointFriction(unsigned joint, double friction);
     // Take the pin out. What was hanging on it falls.
     void removeJoint(unsigned joint);
     [[nodiscard]] std::vector<unsigned> jointsOn(MatterBodyId body_id) const;

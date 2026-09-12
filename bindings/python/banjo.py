@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 # Bumped with the header: the world reports what made it wait.
-ABI_VERSION = 6
+ABI_VERSION = 7
 
 NOTHING, HELD, DENTED, BROKE = 0, 1, 2, 3
 OUTCOMES = {0: "nothing", 1: "held", 2: "dented", 3: "broke"}
@@ -78,14 +78,20 @@ class _Lot(ctypes.Structure):
                 ("cells", ctypes.c_int)]
 
 
+# What kind of joint, which is also the unit on its numbers.
+JOINT_HINGE = 0
+JOINT_SLIDER = 1
+
+
 class _Joint(ctypes.Structure):
     _fields_ = [("id", ctypes.c_uint),
+                ("kind", ctypes.c_int),
                 ("a", ctypes.c_char_p),
                 ("b", ctypes.c_char_p),
-                ("degrees", ctypes.c_double),
-                ("lower_deg", ctypes.c_double),
-                ("upper_deg", ctypes.c_double),
-                ("friction_n_m", ctypes.c_double),
+                ("at", ctypes.c_double),
+                ("lower", ctypes.c_double),
+                ("upper", ctypes.c_double),
+                ("friction", ctypes.c_double),
                 ("at_m", ctypes.c_double * 3),
                 ("axis", ctypes.c_double * 3),
                 ("attached", ctypes.c_int)]
@@ -180,7 +186,8 @@ class Lot:
 
 @dataclass(frozen=True)
 class Joint:
-    """A pin two named things turn about.
+    """A joint between two named things: a pin they turn about, or a line they
+    slide along.
 
     Two NAMES rather than two bodies, because bodies do not survive breaking:
     everything in an island is destroyed and rebuilt when anything in it comes
@@ -190,13 +197,17 @@ class Joint:
     hold it, which is a gate coming off its hinges.
     """
     id: int
+    # "hinge" or "slider". Also the unit on the four numbers below: a pin has
+    # turned so many DEGREES and grips in newton metres; a slide has moved so
+    # many METRES and grips in newtons.
+    kind: str
     a: str
     b: str
-    # Where it has turned to, from where it was hung.
-    degrees: float
-    lower_deg: float
-    upper_deg: float
-    friction_n_m: float
+    # Where it has got to, from where it was made.
+    at: float
+    lower: float
+    upper: float
+    friction: float
     # Where the pin is and which way it runs, worked out from the body it is in
     # rather than remembered -- so a gate carried across the room reports its
     # hinge where the gate is.
@@ -300,6 +311,10 @@ def library(path: str | os.PathLike[str] | None = None) -> ctypes.CDLL:
                                 ctypes.c_double * 3, ctypes.c_double * 3,
                                 ctypes.c_double, ctypes.c_double, ctypes.c_double]
     lib.banjo_hinge.restype = ctypes.c_int
+    lib.banjo_slide.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p,
+                                ctypes.c_double * 3, ctypes.c_double * 3,
+                                ctypes.c_double, ctypes.c_double, ctypes.c_double]
+    lib.banjo_slide.restype = ctypes.c_int
     lib.banjo_joint_count.argtypes = [ctypes.c_void_p]
     lib.banjo_joint_count.restype = ctypes.c_int
     lib.banjo_joints.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Joint), ctypes.c_int]
@@ -520,8 +535,38 @@ class World:
                                   where, along, lower_deg, upper_deg, friction_n_m),
             f"hanging {b!r} on {a!r}")
 
+    def slide(self, a: str, b: str, at_m: Any, axis: Any = (0.0, 1.0, 0.0),
+              lower_m: float = -1.0, upper_m: float = 1.0,
+              friction_n: float = 0.0) -> int:
+        """Let one named thing slide along a line fixed in another.
+
+        The same idea as a pin, one degree of freedom the other way round: the
+        two are locked in rotation and free to move along one axis. A portcullis
+        in its grooves, a sliding door, a bolt going across a door.
+
+        And, like a pin, nothing is played. A portcullis hauled up and let go
+        FALLS -- gravity is still acting on a body free to move down its own
+        axis -- and it stops on whatever is under it, at whatever height that
+        thing happens to be. Nothing here knows what a portcullis is.
+
+        Travel is metres either side of where it is built: `lower_m` zero or
+        less, `upper_m` zero or more. `friction_n` is what it takes to start it
+        moving, and it is the difference between a gate that stays where you
+        leave it and one that drops the moment you stop hauling -- size it
+        against the weight it has to hold, which for 1.5 x 1.8 x 0.1 m of iron
+        is 20.8 kN.
+
+        Returns the joint's id.
+        """
+        where = (ctypes.c_double * 3)(*(float(v) for v in at_m))
+        along = (ctypes.c_double * 3)(*(float(v) for v in axis))
+        return self._check(
+            self._lib.banjo_slide(self._alive(), a.encode("utf-8"), b.encode("utf-8"),
+                                  where, along, lower_m, upper_m, friction_n),
+            f"putting {b!r} in a groove on {a!r}")
+
     def joints(self) -> list[Joint]:
-        """Every pin in the world, and where each has turned to."""
+        """Every joint in the world, and where each has got to."""
         count = self._check(self._lib.banjo_joint_count(self._alive()),
                             "counting the pins")
         if count <= 0:
@@ -530,21 +575,22 @@ class World:
         written = self._check(self._lib.banjo_joints(self._alive(), out, count),
                               "reading the pins")
         return [Joint(id=int(out[i].id),
+                      kind="slider" if out[i].kind == JOINT_SLIDER else "hinge",
                       a=(out[i].a or b"").decode("utf-8"),
                       b=(out[i].b or b"").decode("utf-8"),
-                      degrees=out[i].degrees,
-                      lower_deg=out[i].lower_deg,
-                      upper_deg=out[i].upper_deg,
-                      friction_n_m=out[i].friction_n_m,
+                      at=out[i].at,
+                      lower=out[i].lower,
+                      upper=out[i].upper,
+                      friction=out[i].friction,
                       at_m=tuple(out[i].at_m),
                       axis=tuple(out[i].axis),
                       attached=bool(out[i].attached))
                 for i in range(written)]
 
-    def joint_friction(self, joint: int, friction_n_m: float) -> None:
-        """How hard a pin is to turn, in newton metres."""
-        self._check(self._lib.banjo_joint_friction(self._alive(), joint, friction_n_m),
-                    "stiffening a pin")
+    def joint_friction(self, joint: int, friction: float) -> None:
+        """How hard a joint is to move: newton metres for a pin, newtons for a slide."""
+        self._check(self._lib.banjo_joint_friction(self._alive(), joint, friction),
+                    "stiffening a joint")
 
     def unhinge(self, joint: int) -> None:
         """Take the pin out. What was hanging on it falls."""

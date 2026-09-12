@@ -362,7 +362,7 @@ FIELDS = set(DEFAULT) | {"request_id"}
 
 
 # How far either way a pin may turn, in degrees, from where it is hung.
-JOINT_KINDS = ("hinge",)
+JOINT_KINDS = ("hinge", "slider")
 
 
 def normalise_joints(joints: Any, bodies: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -404,6 +404,27 @@ def normalise_joints(joints: Any, bodies: list[dict[str, Any]]) -> list[dict[str
         axis = [_number(v, -1e6, 1e6, f"joint {i} axis") for v in axis]
         if not any(abs(v) > 1e-9 for v in axis):
             raise ValueError(f"joint {i} has an axis with no direction")
+        if kind == "slider":
+            # Travel in MILLIMETRES, like every other length in a room
+            # document. A travel in metres sitting next to a size in
+            # millimetres is how a two metre lift becomes two millimetres.
+            lower = _number(joint.get("lower_mm", 0.0), -100000.0, 0.0,
+                            f"joint {i} lower_mm")
+            upper = _number(joint.get("upper_mm", 0.0), 0.0, 100000.0,
+                            f"joint {i} upper_mm")
+            if upper - lower <= 0.0:
+                raise ValueError(f"joint {i} is a slider with no travel: give it a "
+                                 f"lower_mm below zero or an upper_mm above it")
+            # Newtons, and it has to be sized against what it holds up. A
+            # portcullis of iron 1.5 x 1.8 x 0.1 m weighs 20.8 kN, so a groove
+            # gripping at 4 kN does not hold it and reads as friction being
+            # broken.
+            friction = _number(joint.get("friction_n", 0.0), 0.0, 1e9,
+                               f"joint {i} friction_n")
+            out.append({"kind": kind, "a": a, "b": b, "at_mm": at, "axis": axis,
+                        "lower_mm": lower, "upper_mm": upper,
+                        "friction_n": friction})
+            continue
         lower = _number(joint.get("lower_deg", -180.0), -180.0, 0.0,
                         f"joint {i} lower_deg")
         upper = _number(joint.get("upper_deg", 180.0), 0.0, 180.0,

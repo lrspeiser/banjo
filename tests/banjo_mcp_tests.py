@@ -269,6 +269,39 @@ class TheTools(unittest.TestCase):
         self.assertLessEqual(abs(pins[0]["degrees"]), 100.0,
                              "the gate went past the stop it was given")
 
+    def test_a_raised_grate_falls_when_you_let_go(self):
+        """A slide is a joint, not an animation.
+
+        Nothing in the engine knows what a portcullis is: the grate falls
+        because it is iron free to move down a vertical line with gravity still
+        acting on it.
+        """
+        world_id = self.client.call("create_world", cell_size_m=0.04, objects=[
+            {"name": "left jamb", "shape": "box", "material": "concrete",
+             "size_m": [0.16, 3.0, 0.16], "position_m": [-0.8, 1.5, 0], "anchored": True},
+            {"name": "grate", "shape": "box", "material": "iron",
+             "size_m": [1.2, 1.6, 0.12], "position_m": [0, 0.8, 0.2]},
+        ])["world_id"]
+        made = self.client.call("slide", world_id=world_id, a="left jamb", b="grate",
+                                at_m=[0, 0.8, 0.2], axis=[0, 1, 0],
+                                lower_m=0.0, upper_m=1.5)
+        self.assertGreater(made["joint"], 0)
+        grooves = self.client.call("joints", world_id=world_id)["joints"]
+        self.assertEqual(grooves[0]["kind"], "slider")
+        # A slide is reported in METRES, and says so in the key.
+        self.assertIn("moved_m", grooves[0])
+        self.assertNotIn("degrees", grooves[0])
+
+        self.client.call("pick_up", world_id=world_id, name="grate")
+        for i in range(1, 101):
+            self.client.call("place", world_id=world_id, to_m=[0, 0.8 + i * 0.01, 0.2])
+        up = self.client.call("joints", world_id=world_id)["joints"][0]["moved_m"]
+        self.assertGreater(up, 0.8, "hauling did not lift the grate")
+        self.client.call("let_go", world_id=world_id)
+        down = self.client.call("joints", world_id=world_id)["joints"][0]["moved_m"]
+        self.assertLess(down, 0.2,
+                        f"the grate was let go {up} m up and is still at {down}")
+
     def test_a_pin_can_be_stiffened_and_taken_out(self):
         world_id = self.gateway()
         joint = self.client.call("hinge", world_id=world_id, a="post", b="gate",

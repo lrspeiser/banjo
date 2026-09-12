@@ -184,7 +184,38 @@ def courtyard() -> dict[str, Any]:
     # and is most of why it takes a shove rather than a nudge.
     add("oak gate", "box", "oak", [1440, 1760, 80], [720, 1000, 120])
 
-    # Things to push it with, and to wedge it open.
+    # ---- a portcullis, in its own gateway ----------------------------------
+    #
+    # Set well along from the gate so you can stand between them. It is an iron
+    # grate in a pair of grooves: hauled up it has 1.6 m of lift, and let go it
+    # FALLS, because nothing here knows what a portcullis is -- it is a body
+    # free to move down one line with gravity still acting on it.
+    #
+    # Which also means it stops on whatever is under it. Push the barrel into
+    # the gateway and the grate comes to rest on the barrel, at the barrel's
+    # height, because that is where the contact is.
+    #
+    # 1.28 x 1.2 x 0.12 m of iron is 1,450 kg and 14.2 kN of weight; the grooves
+    # grip at 3 kN, which is enough to slow it and nowhere near enough to hold
+    # it. A winch is what would hold it, and a winch is a rope and a pulley.
+    #
+    # Sized down to what the cell budget allows: the room is 40 mm cells and the
+    # lane caps at 16,000 of them, and the first version of this gateway put the
+    # room at 16,952. A 3 m jamb is 1,500 cells and a 2.4 m one is 960.
+    PORT_X, PORT_Z = -2600, 0
+    add("portcullis jamb left", "box", "concrete", [160, 2400, 160],
+        [PORT_X - 720, 1200, PORT_Z], anchored=True)
+    add("portcullis jamb right", "box", "concrete", [160, 2400, 160],
+        [PORT_X + 720, 1200, PORT_Z], anchored=True)
+    add("portcullis lintel", "box", "concrete", [1600, 160, 160],
+        [PORT_X, 2480, PORT_Z], anchored=True)
+    # In front of the jambs in z, and resting on the ground. Its 1.2 m of lift
+    # puts its top at 2.4 m, exactly under the lintel -- a grate that would go
+    # through its own arch is a grate whose travel was never measured.
+    add("iron portcullis", "box", "iron", [1280, 1200, 120],
+        [PORT_X, 600, PORT_Z + 140])
+
+    # Things to push with, and to wedge things open.
     add("iron ball", "sphere", "iron", [200, 200, 200], [-800, 100, 800])
     add("oak barrel", "box", "oak", [400, 480, 400], [400, 240, 1200])
     add("stone block", "box", "concrete", [320, 320, 320], [1200, 160, 1200])
@@ -207,6 +238,16 @@ def courtyard() -> dict[str, Any]:
             "lower_deg": 0,
             "upper_deg": 100,
             "friction_n_m": 12,
+        }, {
+            # Straight up and down, 1.2 m of lift, and nothing holding it there.
+            "kind": "slider",
+            "a": "portcullis jamb left",
+            "b": "iron portcullis",
+            "at_mm": [PORT_X, 600, PORT_Z + 140],
+            "axis": [0, 1, 0],
+            "lower_mm": 0,
+            "upper_mm": 1200,
+            "friction_n": 3000,
         }],
     }
 
