@@ -31,6 +31,11 @@
 //         "rest_m":0,"stiffness_n_m":4000,"damping_n_s_m":5}   a bow limb
 //        {"op":"unhinge","joint":1}          take the pin out; it falls
 //        {"op":"joint_friction","joint":1,"friction_n_m":40}   stiffen it
+//        {"op":"heat","target":"log","power_w":10000,"seconds":60}   kindling,
+//                                            a torch, a stove: external work, counted
+//        {"op":"declare","json":{"gas_regions":[...],"heaters":[...]}}
+//        {"op":"vent","region":"cylinder gas","open":true}
+//        {"op":"thermo","model":false}      heat, chemistry, gas and the ledger
 //   out  {"ok":true,"t":0.033,"stepped_back":false,
 //         "bodies":[{"name":"ball","shape":"sphere","dimensions_m":[...],
 //                    "position_m":[...],"orientation_wxyz":[...],"held":false,
@@ -58,6 +63,7 @@
 #include <nlohmann/json.hpp>
 
 #include <cmath>
+#include <algorithm>
 #include <fstream>
 #include <array>
 #include <iostream>
@@ -268,6 +274,62 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
                          {"cost_ms", delay.cost_ms}});
     if (!waits.empty()) state["waits"] = std::move(waits);
     return state;
+}
+
+// What is hot, what is burning and what the gas is doing, for a host that
+// draws it. Every reply that describes the world carries this while the world
+// has any heat, chemistry or gas in it -- rounded to what can be seen, and only
+// the bodies worth drawing: a room of two hundred shards at room temperature is
+// not news, and the wire is where the room's lags have been found before.
+nlohmann::json heatSummary(const banjo::thermo::ThermoWorld &network) {
+    const auto round = [](double v, double unit) {
+        return std::isfinite(v) ? std::round(v / unit) * unit : v;
+    };
+    const double ambient = network.ambient().temperature_k;
+    std::vector<banjo::thermo::BodyHeat> all = network.bodies();
+    std::sort(all.begin(), all.end(), [&](const auto &a, const auto &b) {
+        return std::abs(a.temperature_k - ambient) + (a.reacting ? 1.0e4 : 0.0) >
+               std::abs(b.temperature_k - ambient) + (b.reacting ? 1.0e4 : 0.0);
+    });
+    nlohmann::json bodies = nlohmann::json::array();
+    for (const banjo::thermo::BodyHeat &b : all) {
+        if (bodies.size() >= 48) break;
+        if (!b.reacting && !(b.heater_w > 0.0) && std::abs(b.temperature_k - ambient) < 1.0) continue;
+        bodies.push_back({{"name", b.body},
+                          {"t_k", round(b.temperature_k, 0.1)},
+                          {"core_k", round(b.core_temperature_k, 0.1)},
+                          {"fuel_kg", round(b.fuel_kg, 1.0e-4)},
+                          {"power_w", round(b.heat_release_w, 1.0)},
+                          {"heater_w", round(b.heater_w, 1.0)},
+                          {"remaining_s", std::isfinite(b.remaining_s)
+                                              ? nlohmann::json(round(b.remaining_s, 1.0))
+                                              : nlohmann::json(nullptr)},
+                          {"reacting", b.reacting}});
+    }
+    nlohmann::json regions = nlohmann::json::array();
+    for (const banjo::thermo::RegionState &r : network.regions())
+        regions.push_back({{"name", r.name},
+                           {"piston", r.piston},
+                           {"t_k", round(r.temperature_k, 0.1)},
+                           {"p_pa", round(r.pressure_pa, 1.0)},
+                           {"v_m3", round(r.volume_m3, 1.0e-7)},
+                           {"base_m", vec(r.base_m)},
+                           {"axis", vec(r.axis)},
+                           {"area_m2", round(r.area_m2, 1.0e-6)},
+                           {"height_m", tidy(r.height_m)},
+                           {"stroke_m", tidy(r.stroke_m)},
+                           {"force_n", round(r.force_n, 0.1)},
+                           {"work_j", round(r.work_to_bodies_j, 0.01)},
+                           {"heater_w", round(r.heater_w, 1.0)}});
+    const banjo::thermo::Ledger l = network.ledger();
+    return {{"t", network.timeS()},
+            {"ambient_k", ambient},
+            {"bodies", std::move(bodies)},
+            {"regions", std::move(regions)},
+            {"ledger", {{"stored_j", round(l.storedJ(), 1.0)},
+                        {"residual_j", l.residualJ()},
+                        {"heater_in_j", round(l.heater_in_j, 1.0)},
+                        {"heat_out_j", round(l.heat_to_surroundings_j, 1.0)}}}};
 }
 
 Vec3 readVec(const nlohmann::json &node, const char *key) {
@@ -560,6 +622,28 @@ int main(int argc, char **argv) {
                                           {"point_m", vec(found.point_world_m)}};
                     std::cout << answer.dump() << std::endl;
                     continue;
+                } else if (op == "heat") {
+                    // Kindling, a torch, a stove: external work into a body or a
+                    // gas region from now, and counted in the ledger. Whether
+                    // it lights anything is the model's answer, not this one's.
+                    reply["heater"] = world->heat(command.at("target").get<std::string>(),
+                                                  command.value("power_w", 0.0),
+                                                  command.value("seconds", 0.0));
+                } else if (op == "declare") {
+                    // Contents, gas regions and heaters into the running world.
+                    world->declareThermo(command.at("json").dump());
+                } else if (op == "vent") {
+                    world->setVent(command.at("region").get<std::string>(),
+                                   command.value("open", true));
+                } else if (op == "thermo") {
+                    // Everything about heat, chemistry and gas, answered on its
+                    // own like `joints`: it moves nothing.
+                    nlohmann::json report =
+                        nlohmann::json::parse(world->thermoReport(command.value("model", false)));
+                    report["ledger"]["mechanical_j"] = world->mechanicalEnergyJ();
+                    std::cout << nlohmann::json{{"ok", true}, {"thermo", std::move(report)}}.dump()
+                              << std::endl;
+                    continue;
                 } else if (op != "poses" && op != "overloaded") {
                     // "overloaded" changes nothing and reports nothing about
                     // where anything is; it falls through to the ordinary reply
@@ -592,6 +676,9 @@ int main(int argc, char **argv) {
                                        {"stress_mpa", tidy(load.stress_pa / 1e6)},
                                        {"holds_mpa", tidy(load.strength_pa / 1e6)}});
                 if (!sagging.empty()) reply["overloaded"] = std::move(sagging);
+                if (const banjo::thermo::ThermoWorld *network = world->thermo();
+                    network != nullptr && network->active())
+                    reply["heat"] = heatSummary(*network);
                 // Pins travel when the SET of them changes -- one hung, one
                 // taken out, one that came off because its wood was smashed --
                 // and not on every tick. Their angles change every frame, but

@@ -32,8 +32,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterator
 
-# Bumped with the header: the world reports what made it wait.
-ABI_VERSION = 12
+# Bumped with the header: heat, chemistry and gas. (13 is another branch's.)
+ABI_VERSION = 14
 
 NOTHING, HELD, DENTED, BROKE = 0, 1, 2, 3
 OUTCOMES = {0: "nothing", 1: "held", 2: "dented", 3: "broke"}
@@ -139,6 +139,52 @@ class _Impact(ctypes.Structure):
                 ("energy_j", ctypes.c_double),
                 ("would_break", ctypes.c_int),
                 ("would_dent", ctypes.c_int)]
+
+
+class _BodyHeat(ctypes.Structure):
+    _fields_ = [("name", ctypes.c_char_p),
+                ("material", ctypes.c_char_p),
+                ("temperature_k", ctypes.c_double),
+                ("core_temperature_k", ctypes.c_double),
+                ("mass_kg", ctypes.c_double),
+                ("fuel_kg", ctypes.c_double),
+                ("heat_release_w", ctypes.c_double),
+                ("fuel_use_kg_s", ctypes.c_double),
+                ("remaining_s", ctypes.c_double),
+                ("heater_w", ctypes.c_double),
+                ("gained_w", ctypes.c_double),
+                ("lost_w", ctypes.c_double),
+                ("reacting", ctypes.c_int),
+                ("declared", ctypes.c_int)]
+
+
+class _GasRegion(ctypes.Structure):
+    _fields_ = [("name", ctypes.c_char_p),
+                ("piston", ctypes.c_char_p),
+                ("temperature_k", ctypes.c_double),
+                ("pressure_pa", ctypes.c_double),
+                ("volume_m3", ctypes.c_double),
+                ("mass_kg", ctypes.c_double),
+                ("moles", ctypes.c_double),
+                ("base_m", ctypes.c_double * 3),
+                ("axis", ctypes.c_double * 3),
+                ("area_m2", ctypes.c_double),
+                ("height_m", ctypes.c_double),
+                ("stroke_m", ctypes.c_double),
+                ("force_n", ctypes.c_double),
+                ("work_to_bodies_j", ctypes.c_double),
+                ("work_to_atmosphere_j", ctypes.c_double),
+                ("heater_w", ctypes.c_double),
+                ("wall_loss_w", ctypes.c_double),
+                ("vent_open", ctypes.c_int)]
+
+
+class _Energy(ctypes.Structure):
+    _fields_ = [(field, ctypes.c_double) for field in (
+        "chemical_j", "thermal_j", "stored_j", "mass_kg", "initial_j", "heater_in_j",
+        "heat_to_surroundings_j", "matter_in_j", "matter_in_kg", "matter_out_j",
+        "matter_out_kg", "joined_j", "left_j", "work_to_bodies_j", "work_to_atmosphere_j",
+        "numerical_j", "residual_j", "mass_residual_kg", "mechanical_j")]
 
 
 @dataclass(frozen=True)
@@ -302,6 +348,90 @@ class Pick:
     point_m: tuple[float, float, float]
 
 
+@dataclass(frozen=True)
+class BodyHeat:
+    """What one body holds and how hot it is.
+
+    `temperature_k` is the surface -- what glows, burns and radiates -- and
+    `core_temperature_k` the rest of it. `remaining_s` is the fuel left over the
+    rate it is being used now: an estimate under current conditions, infinite
+    when nothing is burning. Nothing here has a burn time; a fire lasts as long
+    as its fuel does at the rate the model burns it.
+    """
+    name: str
+    material: str
+    temperature_k: float
+    core_temperature_k: float
+    mass_kg: float
+    fuel_kg: float
+    heat_release_w: float
+    fuel_use_kg_s: float
+    remaining_s: float
+    heater_w: float
+    gained_w: float
+    lost_w: float
+    reacting: bool
+    declared: bool
+
+
+@dataclass(frozen=True)
+class GasRegion:
+    """A volume of gas, and the body it pushes on.
+
+    Temperature and pressure are derived from what the gas holds and the
+    volume it has, never assigned. `work_to_bodies_j` is the boundary work
+    delivered to bodies, net of pushing the atmosphere back -- exactly the
+    force that was applied times how far the body went.
+    """
+    name: str
+    piston: str
+    temperature_k: float
+    pressure_pa: float
+    volume_m3: float
+    mass_kg: float
+    moles: float
+    base_m: tuple[float, float, float]
+    axis: tuple[float, float, float]
+    area_m2: float
+    height_m: float
+    stroke_m: float
+    force_n: float
+    work_to_bodies_j: float
+    work_to_atmosphere_j: float
+    heater_w: float
+    wall_loss_w: float
+    vent_open: bool
+
+
+@dataclass(frozen=True)
+class Energy:
+    """The ledger. Chemical and thermal are two views of ONE stored energy.
+
+        stored - initial = heater_in - heat_to_surroundings + matter_in
+                           - matter_out + joined - left - work_to_bodies
+                           - work_to_atmosphere + numerical + residual
+    """
+    chemical_j: float
+    thermal_j: float
+    stored_j: float
+    mass_kg: float
+    initial_j: float
+    heater_in_j: float
+    heat_to_surroundings_j: float
+    matter_in_j: float
+    matter_in_kg: float
+    matter_out_j: float
+    matter_out_kg: float
+    joined_j: float
+    left_j: float
+    work_to_bodies_j: float
+    work_to_atmosphere_j: float
+    numerical_j: float
+    residual_j: float
+    mass_residual_kg: float
+    mechanical_j: float
+
+
 def _find_library(explicit: str | os.PathLike[str] | None = None) -> Path:
     """The built or installed library, wherever it is.
 
@@ -456,6 +586,27 @@ def library(path: str | os.PathLike[str] | None = None) -> ctypes.CDLL:
     lib.banjo_forget_delays.restype = ctypes.c_int
     lib.banjo_foresee.argtypes = [ctypes.c_void_p, ctypes.c_double]
     lib.banjo_foresee.restype = ctypes.c_int
+
+    lib.banjo_declare.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+    lib.banjo_declare.restype = ctypes.c_int
+    lib.banjo_heat.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_double]
+    lib.banjo_heat.restype = ctypes.c_int
+    lib.banjo_vent.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+    lib.banjo_vent.restype = ctypes.c_int
+    lib.banjo_body_heat_count.argtypes = [ctypes.c_void_p]
+    lib.banjo_body_heat_count.restype = ctypes.c_int
+    lib.banjo_bodies_heat.argtypes = [ctypes.c_void_p, ctypes.POINTER(_BodyHeat), ctypes.c_int]
+    lib.banjo_bodies_heat.restype = ctypes.c_int
+    lib.banjo_gas_region_count.argtypes = [ctypes.c_void_p]
+    lib.banjo_gas_region_count.restype = ctypes.c_int
+    lib.banjo_gas_regions.argtypes = [ctypes.c_void_p, ctypes.POINTER(_GasRegion), ctypes.c_int]
+    lib.banjo_gas_regions.restype = ctypes.c_int
+    lib.banjo_energy_ledger.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Energy)]
+    lib.banjo_energy_ledger.restype = ctypes.c_int
+    lib.banjo_thermo_report.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    lib.banjo_thermo_report.restype = ctypes.c_char_p
+    lib.banjo_thermo_model.argtypes = []
+    lib.banjo_thermo_model.restype = ctypes.c_char_p
 
     found = lib.banjo_abi_version()
     if found != ABI_VERSION:
@@ -974,6 +1125,92 @@ class World:
         return Pick(hit=bool(out.hit), name=(out.name or b"").decode("utf-8", "replace"),
                     distance_m=out.distance_m, point_m=tuple(out.point_m))
 
+    # -- heat, chemistry and gas -------------------------------------------
+    def declare(self, declaration: dict[str, Any] | str) -> None:
+        """Declare contents, gas regions or heaters into the running world.
+
+            world.declare({"heaters": [{"target": "log", "power_w": 10000,
+                                        "seconds": 60}]})
+
+        A heater declared here starts now. A key the network does not know is
+        refused by name.
+        """
+        text = declaration if isinstance(declaration, str) else json.dumps(declaration)
+        self._check(self._lib.banjo_declare(self._alive(), text.encode("utf-8")),
+                    "declaring heat, chemistry or gas")
+
+    def heat(self, target: str, power_w: float, seconds: float) -> int:
+        """Heat a body or a gas region from now: external work, in the ledger.
+
+        Enough of it lights a log and less does not -- burning is a result.
+        Returns the heater's id.
+        """
+        return self._check(self._lib.banjo_heat(self._alive(), target.encode("utf-8"),
+                                                float(power_w), float(seconds)),
+                           f"heating {target!r}")
+
+    def vent(self, region: str, open_: bool = True) -> None:
+        self._check(self._lib.banjo_vent(self._alive(), region.encode("utf-8"), int(bool(open_))),
+                    f"venting {region!r}")
+
+    def heat_states(self) -> list[BodyHeat]:
+        """Every body the thermochemical network holds, and how hot it is."""
+        handle = self._alive()
+        count = self._check(self._lib.banjo_body_heat_count(handle), "counting hot bodies")
+        if count <= 0:
+            return []
+        buffer = (_BodyHeat * count)()
+        written = self._check(self._lib.banjo_bodies_heat(handle, buffer, count),
+                              "reading hot bodies")
+        return [BodyHeat(name=(b.name or b"").decode("utf-8", "replace"),
+                         material=(b.material or b"").decode("utf-8", "replace"),
+                         temperature_k=b.temperature_k,
+                         core_temperature_k=b.core_temperature_k, mass_kg=b.mass_kg,
+                         fuel_kg=b.fuel_kg, heat_release_w=b.heat_release_w,
+                         fuel_use_kg_s=b.fuel_use_kg_s, remaining_s=b.remaining_s,
+                         heater_w=b.heater_w, gained_w=b.gained_w, lost_w=b.lost_w,
+                         reacting=bool(b.reacting), declared=bool(b.declared))
+                for b in buffer[:written]]
+
+    def gas_regions(self) -> list[GasRegion]:
+        """Every volume of gas, derived state and all."""
+        handle = self._alive()
+        count = self._check(self._lib.banjo_gas_region_count(handle), "counting gas regions")
+        if count <= 0:
+            return []
+        buffer = (_GasRegion * count)()
+        written = self._check(self._lib.banjo_gas_regions(handle, buffer, count),
+                              "reading gas regions")
+        return [GasRegion(name=(g.name or b"").decode("utf-8", "replace"),
+                          piston=(g.piston or b"").decode("utf-8", "replace"),
+                          temperature_k=g.temperature_k, pressure_pa=g.pressure_pa,
+                          volume_m3=g.volume_m3, mass_kg=g.mass_kg, moles=g.moles,
+                          base_m=tuple(g.base_m), axis=tuple(g.axis), area_m2=g.area_m2,
+                          height_m=g.height_m, stroke_m=g.stroke_m, force_n=g.force_n,
+                          work_to_bodies_j=g.work_to_bodies_j,
+                          work_to_atmosphere_j=g.work_to_atmosphere_j,
+                          heater_w=g.heater_w, wall_loss_w=g.wall_loss_w,
+                          vent_open=bool(g.vent_open))
+                for g in buffer[:written]]
+
+    def energy(self) -> Energy:
+        """The ledger: where the energy is and everything that crossed."""
+        out = _Energy()
+        self._check(self._lib.banjo_energy_ledger(self._alive(), ctypes.byref(out)),
+                    "reading the energy ledger")
+        return Energy(**{name: getattr(out, name) for name, _ in _Energy._fields_})
+
+    def thermo_report(self, with_model: bool = False) -> dict[str, Any]:
+        """Everything about heat, chemistry and gas, as the engine says it."""
+        text = self._lib.banjo_thermo_report(self._alive(), int(bool(with_model))) or b"{}"
+        return json.loads(text.decode("utf-8"))
+
 
 def version() -> str:
     return (library().banjo_version_string() or b"").decode("utf-8", "replace")
+
+
+def thermo_model() -> dict[str, Any]:
+    """The substances, reactions and compositions a world starts with, and
+    where every number came from -- without opening a world."""
+    return json.loads((library().banjo_thermo_model() or b"{}").decode("utf-8"))

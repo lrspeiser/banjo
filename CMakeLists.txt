@@ -419,6 +419,13 @@ if(BANJO_BUILD_HEADLESS)
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/joint_binding_tests.py)
         set_tests_properties(banjo_joint_binding_tests PROPERTIES
             ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
+        # Heat, chemistry and gas through the same boundary: declaring what
+        # things contain, lighting them, a gas lifting a load, and the ledger.
+        add_test(NAME banjo_thermo_ffi_tests
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/thermo_ffi_tests.py)
+        set_tests_properties(banjo_thermo_ffi_tests PROPERTIES
+            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
         # The two ways the playground can hold a world, run against the same
         # scene and compared. Claiming they are interchangeable is easy; this
         # is the part that makes it true.

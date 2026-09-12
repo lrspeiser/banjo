@@ -16,6 +16,15 @@ void require(bool ok, const std::string &message) {
     if (!ok) throw std::invalid_argument(message);
 }
 
+// Text that is not JSON is the caller's mistake, said as one.
+json parse(const std::string &text, const char *what) {
+    try {
+        return json::parse(text);
+    } catch (const json::exception &error) {
+        throw std::invalid_argument(std::string(what) + " is not JSON: " + error.what());
+    }
+}
+
 // Anything a declaration does not understand is refused by name. A misspelt
 // "tempreature_k" silently ignored is a log at room temperature that somebody
 // believes is alight.
@@ -160,7 +169,7 @@ json contentsOf(const std::vector<std::pair<std::string, double>> &kg) {
 } // namespace
 
 Declarations readSceneDeclarations(const std::string &scene_json) {
-    const json document = json::parse(scene_json);
+    const json document = parse(scene_json, "the scene");
     Declarations out;
     if (!document.is_object()) return out;
     if (document.contains("bodies") && document.at("bodies").is_array()) {
@@ -186,7 +195,7 @@ Declarations readSceneDeclarations(const std::string &scene_json) {
 
 Declarations readDeclarations(const std::string &text_json) {
     Declarations out;
-    readBlock(json::parse(text_json), out, "a thermochemical declaration");
+    readBlock(parse(text_json, "the declaration"), out, "a thermochemical declaration");
     return out;
 }
 

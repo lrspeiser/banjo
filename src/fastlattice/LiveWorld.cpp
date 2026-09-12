@@ -3319,4 +3319,8 @@ std::string LiveWorld::thermoReport(bool with_model) const {
     return thermo::reportJson(nothing, with_model);
 }
 
+double LiveWorld::mechanicalEnergyJ() const {
+    return impl_->world->mechanicalTotals(impl_->request.gravity_m_s2).mechanicalEnergy();
+}
+
 } // namespace banjo::fastlattice

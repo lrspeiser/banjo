@@ -9,8 +9,11 @@
 
 #include "fastlattice/LiveWorld.hpp"
 #include "fastlattice/TileImpactScene.hpp"
+#include "thermo/ThermoJson.hpp"
+#include "thermo/ThermoWorld.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <deque>
 #include <exception>
 #include <string>
@@ -71,6 +74,11 @@ struct banjo_world {
     // call on this world.
     std::vector<LiveJoint> joints;
     std::vector<LiveOverload> overloaded;
+    // Heat, chemistry and gas, last time anyone asked. Kept for the same
+    // reason as the poses: the names handed out point into here.
+    std::vector<banjo::thermo::BodyHeat> heats;
+    std::vector<banjo::thermo::RegionState> gases;
+    std::string report;
 };
 
 namespace {
@@ -684,6 +692,158 @@ int banjo_pick_ray(const banjo_world *world, const double from_m[3],
         writeVec(found.point_world_m, out->point_m);
         return BANJO_OK;
     });
+}
+
+int banjo_declare(banjo_world *world, const char *json) {
+    if (!world || !json) { setError("no world or no declaration"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] { world->world->declareThermo(json); return static_cast<int>(BANJO_OK); });
+}
+
+int banjo_heat(banjo_world *world, const char *target, double power_w, double seconds) {
+    if (!world || !target) { setError("no world or nothing to heat"); return BANJO_BAD_ARGUMENT; }
+    if (!(power_w >= 0.0) || !(seconds > 0.0)) {
+        setError("a heater's power is zero or more watts, for a positive number of seconds");
+        return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] { return static_cast<int>(world->world->heat(target, power_w, seconds)); });
+}
+
+int banjo_vent(banjo_world *world, const char *region, int open) {
+    if (!world || !region) { setError("no world or no region"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] { world->world->setVent(region, open != 0); return static_cast<int>(BANJO_OK); });
+}
+
+int banjo_body_heat_count(const banjo_world *world) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        auto *mutable_world = const_cast<banjo_world *>(world);
+        const banjo::thermo::ThermoWorld *network = world->world->thermo();
+        mutable_world->heats = network ? network->bodies() : std::vector<banjo::thermo::BodyHeat>{};
+        return static_cast<int>(mutable_world->heats.size());
+    });
+}
+
+int banjo_bodies_heat(const banjo_world *world, banjo_body_heat *out, int max) {
+    if (!world || (!out && max > 0) || max < 0) { setError("no world or nowhere to write"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        auto *mutable_world = const_cast<banjo_world *>(world);
+        const banjo::thermo::ThermoWorld *network = world->world->thermo();
+        mutable_world->heats = network ? network->bodies() : std::vector<banjo::thermo::BodyHeat>{};
+        const int count = std::min<int>(max, static_cast<int>(mutable_world->heats.size()));
+        for (int i = 0; i < count; ++i) {
+            const banjo::thermo::BodyHeat &b = mutable_world->heats[static_cast<std::size_t>(i)];
+            banjo_body_heat &o = out[i];
+            o.name = b.body.c_str();
+            o.material = b.material.c_str();
+            o.temperature_k = b.temperature_k;
+            o.core_temperature_k = b.core_temperature_k;
+            o.mass_kg = b.mass_kg;
+            o.fuel_kg = b.fuel_kg;
+            o.heat_release_w = b.heat_release_w;
+            o.fuel_use_kg_s = b.fuel_use_kg_s;
+            o.remaining_s = b.remaining_s;
+            o.heater_w = b.heater_w;
+            o.gained_w = b.gained_w;
+            o.lost_w = b.lost_w;
+            o.reacting = b.reacting ? 1 : 0;
+            o.declared = b.declared ? 1 : 0;
+        }
+        return count;
+    });
+}
+
+int banjo_gas_region_count(const banjo_world *world) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        auto *mutable_world = const_cast<banjo_world *>(world);
+        const banjo::thermo::ThermoWorld *network = world->world->thermo();
+        mutable_world->gases = network ? network->regions() : std::vector<banjo::thermo::RegionState>{};
+        return static_cast<int>(mutable_world->gases.size());
+    });
+}
+
+int banjo_gas_regions(const banjo_world *world, banjo_gas_region *out, int max) {
+    if (!world || (!out && max > 0) || max < 0) { setError("no world or nowhere to write"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        auto *mutable_world = const_cast<banjo_world *>(world);
+        const banjo::thermo::ThermoWorld *network = world->world->thermo();
+        mutable_world->gases = network ? network->regions() : std::vector<banjo::thermo::RegionState>{};
+        const int count = std::min<int>(max, static_cast<int>(mutable_world->gases.size()));
+        for (int i = 0; i < count; ++i) {
+            const banjo::thermo::RegionState &r = mutable_world->gases[static_cast<std::size_t>(i)];
+            banjo_gas_region &o = out[i];
+            o.name = r.name.c_str();
+            o.piston = r.piston.c_str();
+            o.temperature_k = r.temperature_k;
+            o.pressure_pa = r.pressure_pa;
+            o.volume_m3 = r.volume_m3;
+            o.mass_kg = r.mass_kg;
+            o.moles = r.moles;
+            writeVec(r.base_m, o.base_m);
+            writeVec(r.axis, o.axis);
+            o.area_m2 = r.area_m2;
+            o.height_m = r.height_m;
+            o.stroke_m = r.stroke_m;
+            o.force_n = r.force_n;
+            o.work_to_bodies_j = r.work_to_bodies_j;
+            o.work_to_atmosphere_j = r.work_to_atmosphere_j;
+            o.heater_w = r.heater_w;
+            o.wall_loss_w = r.wall_loss_w;
+            o.vent_open = r.vent_open ? 1 : 0;
+        }
+        return count;
+    });
+}
+
+int banjo_energy_ledger(const banjo_world *world, banjo_energy *out) {
+    if (!world || !out) { setError("no world or nowhere to write"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        const banjo::thermo::ThermoWorld *network = world->world->thermo();
+        const banjo::thermo::Ledger l = network ? network->ledger() : banjo::thermo::Ledger{};
+        *out = banjo_energy{};
+        out->chemical_j = l.reference_j;
+        out->thermal_j = l.sensible_j;
+        out->stored_j = l.storedJ();
+        out->mass_kg = l.mass_kg;
+        out->initial_j = l.initial_j;
+        out->heater_in_j = l.heater_in_j;
+        out->heat_to_surroundings_j = l.heat_to_surroundings_j;
+        out->matter_in_j = l.matter_in_j;
+        out->matter_in_kg = l.matter_in_kg;
+        out->matter_out_j = l.matter_out_j;
+        out->matter_out_kg = l.matter_out_kg;
+        out->joined_j = l.joined_j;
+        out->left_j = l.left_j;
+        out->work_to_bodies_j = l.work_to_bodies_j;
+        out->work_to_atmosphere_j = l.work_to_atmosphere_j;
+        out->numerical_j = l.numerical_j;
+        out->residual_j = l.residualJ();
+        out->mass_residual_kg = l.massResidualKg();
+        out->mechanical_j = world->world->mechanicalEnergyJ();
+        return static_cast<int>(BANJO_OK);
+    });
+}
+
+const char *banjo_thermo_report(const banjo_world *world, int with_model) {
+    if (!world) return "";
+    auto *mutable_world = const_cast<banjo_world *>(world);
+    try {
+        mutable_world->report = world->world->thermoReport(with_model != 0);
+    } catch (...) {
+        mutable_world->report.clear();
+    }
+    return mutable_world->report.c_str();
+}
+
+const char *banjo_thermo_model(void) {
+    thread_local std::string model;
+    try {
+        const banjo::thermo::ThermoWorld nothing;
+        model = banjo::thermo::reportJson(nothing, true);
+    } catch (...) {
+        model.clear();
+    }
+    return model.c_str();
 }
 
 } // extern "C"

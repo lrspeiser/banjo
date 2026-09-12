@@ -609,6 +609,10 @@ public:
     // Bodies, regions and the ledger as JSON; with `with_model`, also every
     // substance and reaction with its provenance, and what is not modelled.
     [[nodiscard]] std::string thermoReport(bool with_model = false) const;
+    // The kinetic and gravitational energy of every body, from the solver's own
+    // masses: the mechanical view beside the thermochemical ledger. Boundary
+    // work is what passes between the two.
+    [[nodiscard]] double mechanicalEnergyJ() const;
 
 private:
     // Every body as the network sees it: where it is, how it is turned, what
