@@ -22,6 +22,7 @@
 #include <Jolt/Physics/Collision/Shape/OffsetCenterOfMassShape.h>
 #include <Jolt/Physics/Constraints/FixedConstraint.h>
 #include <Jolt/Physics/Constraints/DistanceConstraint.h>
+#include <Jolt/Physics/Constraints/HingeConstraint.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/RayCast.h>
@@ -579,6 +580,9 @@ public:
     struct Spring { MatterBodyId a,b; JPH::Ref<JPH::DistanceConstraint> constraint; };
     std::unordered_map<unsigned,Spring> springs_;
     unsigned next_spring_{1};
+    struct Joint { MatterBodyId a,b; JPH::Ref<JPH::HingeConstraint> constraint; };
+    std::unordered_map<unsigned,Joint> joints_;
+    unsigned next_joint_{1};
     std::unordered_map<MatterBodyId, JPH::BodyID> bodies_;
     RigidContactDiagnostics contact_diagnostics_;
     std::optional<RigidSurfaceDescription> support_surface_;
@@ -942,6 +946,103 @@ void validateSpring(double rest,double stiffness,double damping) {
        !std::isfinite(damping)||damping<0||damping>1e10)throw std::invalid_argument("invalid bounded distance spring");
 }
 }
+unsigned JoltWorld::addHinge(const HingeDescription &d) {
+    impl_->requireConfigurationMutable();
+    if (d.a == d.b || !contains(d.a) || !contains(d.b))
+        throw std::invalid_argument("a hinge needs two different bodies that are both in the world");
+    if (impl_->joints_.size() >= 4096)
+        throw std::invalid_argument("joint budget exceeded");
+    const double reach = length(d.axis_world);
+    if (!(reach > 1e-9) || !std::isfinite(reach))
+        throw std::invalid_argument("a hinge needs an axis with a direction");
+    if (!std::isfinite(d.point_world_m.x) || !std::isfinite(d.point_world_m.y) ||
+        !std::isfinite(d.point_world_m.z))
+        throw std::invalid_argument("a hinge needs a point that is a place");
+    constexpr double kPi = 3.14159265358979323846;
+    if (!(d.lower_rad >= -kPi - 1e-9 && d.lower_rad <= 1e-9) ||
+        !(d.upper_rad >= -1e-9 && d.upper_rad <= kPi + 1e-9) ||
+        !(d.lower_rad <= d.upper_rad))
+        throw std::invalid_argument("hinge limits must be a lower in [-pi, 0] and an upper in [0, pi]");
+    if (!(d.friction_torque_n_m >= 0.0) || !std::isfinite(d.friction_torque_n_m))
+        throw std::invalid_argument("hinge friction must be zero or more newton metres");
+
+    const Vec3 axis = (1.0 / reach) * d.axis_world;
+    // Something square to the pin, for Jolt to measure the angle from. Which
+    // way it points does not matter -- it only has to be perpendicular -- but
+    // it must not be parallel to the axis, so the more distant world direction
+    // is taken and squared up against it.
+    const Vec3 away = std::abs(axis.y) < 0.9 ? Vec3{0.0, 1.0, 0.0} : Vec3{1.0, 0.0, 0.0};
+    Vec3 normal = cross(away, axis);
+    const double across = length(normal);
+    if (!(across > 1e-9)) throw std::runtime_error("could not square up a hinge axis");
+    normal = (1.0 / across) * normal;
+
+    JPH::HingeConstraintSettings settings;
+    // World space, where the bodies are standing right now. Jolt keeps the
+    // frame in each body's own coordinates from here on, which is what lets the
+    // whole assembly be moved or turned over afterwards.
+    settings.mSpace = JPH::EConstraintSpace::WorldSpace;
+    // RVec3, not Vec3: this build carries world positions in double precision,
+    // which is the whole reason a room can be forty metres across and still
+    // place a pin to the micrometre.
+    settings.mPoint1 = settings.mPoint2 =
+        JPH::RVec3(static_cast<JPH::Real>(d.point_world_m.x),
+                   static_cast<JPH::Real>(d.point_world_m.y),
+                   static_cast<JPH::Real>(d.point_world_m.z));
+    settings.mHingeAxis1 = settings.mHingeAxis2 = toJolt(axis);
+    settings.mNormalAxis1 = settings.mNormalAxis2 = toJolt(normal);
+    settings.mLimitsMin = static_cast<float>(d.lower_rad);
+    settings.mLimitsMax = static_cast<float>(d.upper_rad);
+    settings.mMaxFrictionTorque = static_cast<float>(d.friction_torque_n_m);
+
+    auto *raw = impl_->physics_->GetBodyInterface().CreateConstraint(
+        &settings, impl_->bodies_.at(d.a), impl_->bodies_.at(d.b));
+    if (!raw) throw std::runtime_error("hinge creation failed");
+    const auto id = impl_->next_joint_++;
+    impl_->joints_.emplace(id, Impl::Joint{d.a, d.b,
+                                           static_cast<JPH::HingeConstraint *>(raw)});
+    impl_->physics_->AddConstraint(raw);
+    return id;
+}
+
+bool JoltWorld::hasJoint(unsigned joint) const {
+    return impl_->joints_.find(joint) != impl_->joints_.end();
+}
+
+JoltWorld::JointReport JoltWorld::jointState(unsigned joint) const {
+    const auto &held = impl_->joints_.at(joint);
+    JointReport out{};
+    out.a = held.a;
+    out.b = held.b;
+    out.angle_rad = held.constraint->GetCurrentAngle();
+    out.lower_rad = held.constraint->GetLimitsMin();
+    out.upper_rad = held.constraint->GetLimitsMax();
+    out.friction_torque_n_m = held.constraint->GetMaxFrictionTorque();
+    return out;
+}
+
+void JoltWorld::setJointFriction(unsigned joint, double friction_torque_n_m) {
+    if (!(friction_torque_n_m >= 0.0) || !std::isfinite(friction_torque_n_m))
+        throw std::invalid_argument("hinge friction must be zero or more newton metres");
+    impl_->joints_.at(joint).constraint->SetMaxFrictionTorque(
+        static_cast<float>(friction_torque_n_m));
+}
+
+void JoltWorld::removeJoint(unsigned joint) {
+    const auto found = impl_->joints_.find(joint);
+    if (found == impl_->joints_.end()) return;
+    impl_->physics_->RemoveConstraint(found->second.constraint.GetPtr());
+    impl_->joints_.erase(found);
+}
+
+std::vector<unsigned> JoltWorld::jointsOn(MatterBodyId body_id) const {
+    std::vector<unsigned> out;
+    for (const auto &[id, joint] : impl_->joints_)
+        if (joint.a == body_id || joint.b == body_id) out.push_back(id);
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
 unsigned JoltWorld::addDistanceSpring(MatterBodyId a,MatterBodyId b,double rest,double stiffness,double damping) {
     impl_->requireConfigurationMutable();validateSpring(rest,stiffness,damping);
     if(a==b||!contains(a)||!contains(b)||impl_->springs_.size()>=20000)throw std::invalid_argument("invalid spring endpoints or budget");
@@ -1606,6 +1707,12 @@ void JoltWorld::removeAndDestroy(MatterBodyId body_id) {
     std::vector<unsigned> attached;
     for(auto &[id,spring]:impl_->springs_)if(spring.a==body_id||spring.b==body_id)attached.push_back(id);
     for(auto id:attached)removeDistanceSpring(id);
+    // And the pins. A joint outliving one of the two bodies it holds is a
+    // constraint pointing at nothing, which is how a physics engine crashes
+    // rather than misbehaves -- and something that breaks takes its hinges with
+    // it, which is the honest outcome anyway: tear a door off its frame and it
+    // is no longer hinged to it.
+    for (const unsigned id : jointsOn(body_id)) removeJoint(id);
     std::erase_if(impl_->external_pairs_,[&](const auto &pair){return pair.first==body_id||pair.second==body_id;});
     JPH::BodyInterface &body_interface = impl_->physics_->GetBodyInterface();
     body_interface.RemoveBody(found->second);

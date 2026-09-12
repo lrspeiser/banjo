@@ -195,6 +195,55 @@ public:
     [[nodiscard]] CohesiveTensionPatchKick applyCohesiveTensionPatchKick(MatterBodyId a,MatterBodyId b,
         const std::vector<CohesivePatchSite> &sites,const CohesiveInterfaceLaw &law,
         double impulse_duration_s,double maximum_roundoff_energy_j);
+    // A pin two bodies turn about.
+    //
+    // This is the first real joint in the engine, and it is a joint rather than
+    // an animation on purpose: a door swings because a push off its centre line
+    // makes a torque about the pin, and stops because it meets the frame or
+    // runs out of the travel its hinge allows. Nothing plays a door opening.
+    //
+    // The frame is given in WORLD space, where the two bodies are standing at
+    // the moment it is made, and Jolt keeps it in each body's own frame from
+    // then on. That is what makes a mechanism keep working when the whole
+    // assembly is moved or turned over: the pin is a fact about the two bodies,
+    // not about where they happened to be.
+    //
+    // Either body may be anchored scenery -- a door on a wall is the ordinary
+    // case -- but not both, or there is nothing for the joint to move.
+    struct HingeDescription {
+        MatterBodyId a{kInvalidMatterBodyId};
+        MatterBodyId b{kInvalidMatterBodyId};
+        // Where the pin is and which way it runs, in world metres, as things
+        // stand right now.
+        Vec3 point_world_m{};
+        Vec3 axis_world{0.0, 1.0, 0.0};
+        // How far it may turn from where it starts, in radians. Jolt takes a
+        // lower in [-pi, 0] and an upper in [0, pi]; a full circle is the
+        // default and is what a wheel wants.
+        double lower_rad{-3.14159265358979323846};
+        double upper_rad{3.14159265358979323846};
+        // What it takes to start it turning, in newton metres. A stiff old
+        // hinge holds a door where it is left; zero swings freely.
+        double friction_torque_n_m{0.0};
+    };
+    [[nodiscard]] unsigned addHinge(const HingeDescription &description);
+    // Everything about a joint that a caller can see from outside.
+    struct JointReport {
+        MatterBodyId a{kInvalidMatterBodyId};
+        MatterBodyId b{kInvalidMatterBodyId};
+        // Where it has turned to, in radians, measured from where it was made.
+        double angle_rad{};
+        double lower_rad{};
+        double upper_rad{};
+        double friction_torque_n_m{};
+    };
+    [[nodiscard]] bool hasJoint(unsigned joint) const;
+    [[nodiscard]] JointReport jointState(unsigned joint) const;
+    void setJointFriction(unsigned joint, double friction_torque_n_m);
+    // Take the pin out. What was hanging on it falls.
+    void removeJoint(unsigned joint);
+    [[nodiscard]] std::vector<unsigned> jointsOn(MatterBodyId body_id) const;
+
     void pinToWorld(MatterBodyId body_id);
     void releaseFromWorld(MatterBodyId body_id);
     void applyRigidState(MatterBodyId body_id,const RigidSnapshot &state);
