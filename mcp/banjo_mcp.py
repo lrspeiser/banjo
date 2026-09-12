@@ -394,12 +394,42 @@ def tool_place(args: dict[str, Any]) -> dict[str, Any]:
     if not world.held:
         raise Refused("nothing is being held. Call pick_up first.")
     to = _triple(args.get("to_m") or [0, 1, 0], "to_m", -50.0, 50.0)
+    held = world.held
     world.move_held(to)
-    # One step, so the world sees it where it now is rather than where it was.
-    world.step(1.0 / 240.0)
-    entry["story"].append(f"moved {world.held} to "
-                          f"[{to[0]:.2f}, {to[1]:.2f}, {to[2]:.2f}]")
-    return {"holding": world.held, "at_m": [round(v, 3) for v in to]}
+    # A loose thing is CARRIED: it is wherever it is put, and one step shows the
+    # world where. A thing on a joint is HAULED -- pulled towards the hand with
+    # what the hand has, 800 N -- and one step of that is 1/240 of a second of a
+    # pull, which moves nothing. A model placed a winch handle a quarter turn
+    # round, let go, read the wheel at 0.0 degrees and reported that the winch
+    # did not work; the same winch, pulled for a second, lifts its gate 0.30 m.
+    # So a hauled thing is pulled until it stops coming, or for a second.
+    hauled = any(held in (r["args"].get("a"), r["args"].get("b"))
+                 for r in entry.get("joints", []))
+    steps, last, still = 0, None, 0
+    while True:
+        world.step(1.0 / 240.0)
+        steps += 1
+        if not hauled or steps >= 240:
+            break
+        body = world.body(held)
+        here = list(body.position_m) if body else None
+        if here is not None and last is not None:
+            moved = math.sqrt(sum((a - b) ** 2 for a, b in zip(here, last)))
+            still = still + 1 if moved < 1e-4 else 0
+            if still >= 24:
+                break
+        last = here
+    body = world.body(held)
+    got = [round(v, 3) for v in body.position_m] if body else None
+    entry["story"].append(f"moved {held} to [{to[0]:.2f}, {to[1]:.2f}, {to[2]:.2f}]")
+    answer: dict[str, Any] = {"holding": held, "asked_for_m": [round(v, 3) for v in to],
+                              "got_to_m": got}
+    if hauled:
+        answer["pulled_for_s"] = round(steps / 240.0, 3)
+        answer["note"] = ("it is on a joint, so the hand PULLED it -- with at most "
+                          "800 N -- rather than carrying it. got_to_m is as far as "
+                          "that took it; read joints to see what moved.")
+    return answer
 
 
 def tool_let_go(args: dict[str, Any]) -> dict[str, Any]:

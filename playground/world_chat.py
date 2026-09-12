@@ -130,6 +130,8 @@ A gate on a hinge (it swung 44 degrees when shoved):
     0.04 m off the floor, and a cell short of the far post)
   hinge a=stone post b=oak gate at [0.08, 0.84, 0.16] axis [0,1,0]
     lower 0 upper 100 friction 10
+  try it: pick_up oak gate, place [0.68, 0.84, -0.4] (its middle, pulled
+    straight off its face), run 1, joints: the hinge reads 20 degrees or more
 
 A castle gate raised by a winch -- a portcullis (half a turn of the handle
 raised it 0.30 m; turned back, it came down to 0):
@@ -148,6 +150,10 @@ raised it 0.30 m; turned back, it came down to 0):
   reeve a=winch wheel b=castle gate at_a [1.6, 1.32, 0.16] (the top of the
     wheel's rim) at_b [0, 1.04, 0.16] (the top of the gate) over_a [1.6, 2.3,
     0.16] over_b [0, 2.3, 0.16] ratio 2
+  try it: pick_up winch handle, place [1.84, 1.0, 0.28] -- a quarter turn
+    round the axle, SIDEWAYS; a pull straight up, or along the axle, cannot
+    turn a wheel at all -- run 1, joints: the slide reads moved_m of about
+    0.18 and the wheel's hinge about 90 degrees. let_go and it comes down.
 
 A gate that swings, worked by a capstan (half a turn swung it 56 degrees;
 turned back, it closed):
@@ -163,6 +169,9 @@ turned back, it closed):
   fix a=capstan wheel b=capstan handle at [0.88, 1.48, 1.6] axis [0,1,0]
   spring a=capstan wheel b=oak gate at_a [0.68, 1.44, 1.36] at_b [0.68, 1.44,
     0.20] rest 0 stiffness 20000 damping 200 (the connecting rod)
+  try it: pick_up capstan handle, place [0.68, 1.56, 1.8] (a quarter turn
+    round the upright axle), run 1, joints: the gate's hinge reads about 30
+    degrees
 
 A shelf that is carrying more than it can hold:
   add_object left pier  concrete [0.16, 0.8, 0.16] at [-0.5, 0.4, 0] anchored
