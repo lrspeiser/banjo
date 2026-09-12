@@ -441,11 +441,17 @@ if(BANJO_BUILD_HEADLESS)
         add_test(NAME banjo_world_room_tests
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/world_room_tests.py)
+        # The engine and library THIS tree built. Without them the room and
+        # lane suites looked only in build/integration, so in any other build
+        # tree they tested some other build -- or, finding none, skipped and
+        # were counted as passing.
+        set_tests_properties(banjo_world_room_tests PROPERTIES
+            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>;BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>")
         add_test(NAME banjo_live_lanes_agree_tests
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/live_lanes_agree_tests.py)
         set_tests_properties(banjo_live_lanes_agree_tests PROPERTIES
-            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
+            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>;BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>")
     endif()
 
     # A live scene, driven a line at a time: the playground talks to this instead

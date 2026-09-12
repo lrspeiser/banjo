@@ -415,6 +415,27 @@ class Live:
             return session.send(op="foresee", horizon_s=horizon)
         if op in ("release", "poses", "joints", "overloaded"):
             return session.send(op=op)
+        if op == "heat":
+            # Kindling, a torch, a stove: external work into a body or a gas
+            # region, from now. Whether it lights anything is the engine's
+            # answer. Bounded here so a slip of the mouse is not a megawatt.
+            target = str(body.get("target", ""))
+            if not target:
+                raise LiveError("heat needs a target: a body or a gas region")
+            power = float(body.get("power_w", 0.0))
+            seconds = float(body.get("seconds", 0.0))
+            if not (math.isfinite(power) and 0.0 <= power <= 100000.0):
+                raise LiveError("a heater's power is between 0 and 100 kW")
+            if not (math.isfinite(seconds) and 0.0 < seconds <= 3600.0):
+                raise LiveError("a heater runs for between 0 and 3600 seconds")
+            return session.send(op="heat", target=target, power_w=power, seconds=seconds)
+        if op == "thermo":
+            # Everything about heat, chemistry and gas, and the ledger. Moves
+            # nothing, so it answers on its own and carries no bodies.
+            return session.send(op="thermo", model=bool(body.get("model", False)))
+        if op == "vent":
+            return session.send(op="vent", region=str(body.get("region", "")),
+                                open=bool(body.get("open", True)))
         if op == "hinge":
             # Hang one named thing off another on a pin. Everything is checked
             # here rather than trusted: the engine refuses what it cannot hang,

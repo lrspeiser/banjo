@@ -79,6 +79,10 @@ DEFAULT: dict[str, Any] = {
     # DOCUMENT, so that saving a room and opening it again puts its gates back
     # on their hinges.
     "joints": [],
+    # Heat, chemistry and gas that are not a property of one body: gas regions
+    # and heaters, in SI units (metres, pascals, watts) because nothing in them
+    # is a size on the room's grid. What a body CONTAINS is on the body.
+    "thermo": {},
     "striker": "iron",
     "plate_m": [0.25, 0.20, 0.01],
     "cell_m": 0.01,
@@ -617,14 +621,76 @@ def normalise_bodies(bodies: Any, cell_m: float) -> list[dict[str, Any]]:
         # rather than asked of the caller, and said out loud in the summary.
         horizontal = math.hypot(velocity[0], velocity[2])
         rolls = bool(body.get("roll", False)) or (shape == "sphere" and horizontal > 0.0)
-        out.append({"name": name, "shape": shape, "material": material, "join": join,
-                    "roll": rolls, "rotation_deg": rotation, "anchored": anchored,
-                    "rest_on": rest_on, "subtract": subtract,
-                    "size_mm": [round(v, 3) for v in built],
-                    "requested_size_mm": [round(v, 3) for v in size],
-                    "center_mm": center, "velocity_m_s": velocity,
-                    "color_rgba": MATERIAL_COLORS.get(material, "9fd3ffff"),
-                    "cells": body_cells({"shape": shape, "size_mm": built}, cell_m)})
+        entry = {"name": name, "shape": shape, "material": material, "join": join,
+                 "roll": rolls, "rotation_deg": rotation, "anchored": anchored,
+                 "rest_on": rest_on, "subtract": subtract,
+                 "size_mm": [round(v, 3) for v in built],
+                 "requested_size_mm": [round(v, 3) for v in size],
+                 "center_mm": center, "velocity_m_s": velocity,
+                 "color_rgba": MATERIAL_COLORS.get(material, "9fd3ffff"),
+                 "cells": body_cells({"shape": shape, "size_mm": built}, cell_m)}
+        # What it contains, by mass fraction of its own mass, and how hot it
+        # starts. Checked for shape here; the engine checks the substances
+        # against its model when the room opens, and says which one it does
+        # not know.
+        if body.get("contents") is not None:
+            contents = body["contents"]
+            if not isinstance(contents, dict) or not contents:
+                raise ValueError(f"{name}: contents are substances and mass fractions, "
+                                 f"like {{\"dry wood\": 0.8, \"moisture\": 0.2}}")
+            checked = {}
+            for substance, fraction in contents.items():
+                checked[str(substance)[:40]] = _number(fraction, 0.0, 1000.0,
+                                                       f"{name} contents {substance}")
+            if not sum(checked.values()) > 0.0:
+                raise ValueError(f"{name}: contents need something in them")
+            entry["contents"] = checked
+        if body.get("temperature_k") is not None:
+            entry["temperature_k"] = _number(body["temperature_k"], 1.0, 3000.0,
+                                             f"{name} temperature_k")
+        out.append(entry)
+    return out
+
+
+def normalise_thermo(thermo: Any, bodies: list[dict[str, Any]]) -> dict[str, Any]:
+    """A room's gas regions and heaters, checked for shape and for the names
+    they point at. The physics is checked by the engine when the room opens."""
+    if thermo in (None, {}):
+        return {}
+    if not isinstance(thermo, dict):
+        raise ValueError("thermo must be an object of gas_regions and heaters")
+    unknown = set(thermo) - {"gas_regions", "heaters", "ambient"}
+    if unknown:
+        raise ValueError(f"thermo cannot say {sorted(unknown)}: it holds gas_regions, heaters "
+                         f"and ambient")
+    names = {b["name"] for b in bodies}
+    out: dict[str, Any] = {}
+    regions = thermo.get("gas_regions") or []
+    if not isinstance(regions, list) or len(regions) > 8:
+        raise ValueError("gas_regions is a list of at most 8")
+    for region in regions:
+        if not isinstance(region, dict) or not str(region.get("name", "")).strip():
+            raise ValueError("a gas region needs a name")
+        for key in ("piston", "container"):
+            if region.get(key) and region[key] not in names:
+                raise ValueError(f"gas region {region['name']}: there is nothing called "
+                                 f"{region[key]!r} for it to push on")
+        names.add(str(region["name"]))
+    if regions:
+        out["gas_regions"] = regions
+    heaters = thermo.get("heaters") or []
+    if not isinstance(heaters, list) or len(heaters) > 32:
+        raise ValueError("heaters is a list of at most 32")
+    for heater in heaters:
+        if not isinstance(heater, dict) or heater.get("target") not in names:
+            raise ValueError(f"a heater's target must be something in the room: "
+                             f"{(heater or {}).get('target')!r} is not")
+        _number(heater.get("power_w", 0.0), 0.0, 1.0e6, "heater power_w")
+        _number(heater.get("seconds", 0.0), 0.001, 36000.0, "heater seconds")
+    if heaters:
+        out["heaters"] = heaters
+    if thermo.get("ambient"):
+        out["ambient"] = thermo["ambient"]
     return out
 
 
@@ -1094,22 +1160,33 @@ def scene_document(spec: dict[str, Any]) -> dict[str, Any]:
     and never reached the solver -- the one lane that could carry it was the C
     library, which does not go through here.
     """
-    return {"plasticity": spec.get("plasticity") == "on",
-            "bodies": [{"name": b["name"], "shape": b["shape"], "material": b["material"],
-                        "dimensions_m": [v / 1000.0 for v in b["size_mm"]],
-                        "center_m": [v / 1000.0 for v in b["center_mm"]],
-                        "velocity_m_s": b["velocity_m_s"],
-                        # Bodies sharing a join name are voxelised onto the shared grid and
-                        # unioned: a cell both claim is built once and bonds cross the seam.
-                        "join": b["join"],
-                        "rotation_deg": b["rotation_deg"],
-                        "anchored": b["anchored"],
-                        "subtract": b["subtract"],
-                        # Nothing turns sliding into rolling, so a ball that should roll is
-                        # given the spin that goes with its speed.
-                        "roll": b["roll"],
-                        "color_rgba": b["color_rgba"]}
-                       for b in spec["bodies"]]}
+    def body(b: dict[str, Any]) -> dict[str, Any]:
+        out = {"name": b["name"], "shape": b["shape"], "material": b["material"],
+               "dimensions_m": [v / 1000.0 for v in b["size_mm"]],
+               "center_m": [v / 1000.0 for v in b["center_mm"]],
+               "velocity_m_s": b["velocity_m_s"],
+               # Bodies sharing a join name are voxelised onto the shared grid and
+               # unioned: a cell both claim is built once and bonds cross the seam.
+               "join": b["join"],
+               "rotation_deg": b["rotation_deg"],
+               "anchored": b["anchored"],
+               "subtract": b["subtract"],
+               # Nothing turns sliding into rolling, so a ball that should roll is
+               # given the spin that goes with its speed.
+               "roll": b["roll"],
+               "color_rgba": b["color_rgba"]}
+        # What it contains and how hot it starts: read by the engine's
+        # thermochemical network, which refuses a substance it does not know.
+        for key in ("contents", "temperature_k"):
+            if b.get(key) is not None:
+                out[key] = b[key]
+        return out
+
+    document = {"plasticity": spec.get("plasticity") == "on",
+                "bodies": [body(b) for b in spec["bodies"]]}
+    if spec.get("thermo"):
+        document["thermo"] = spec["thermo"]
+    return document
 
 
 def cell_counts(plate_m: list[float], cell_m: float) -> tuple[int, int, int]:
@@ -1135,6 +1212,7 @@ def validate(spec: Any) -> dict[str, Any]:
         # plate and ball fields are not read.
         result["bodies"] = normalise_bodies(result["bodies"], result["cell_m"])
         result["joints"] = normalise_joints(result["joints"], result["bodies"])
+        result["thermo"] = normalise_thermo(result.get("thermo"), result["bodies"])
         result["duration_s"] = _number(result["duration_s"], LIMITS["duration_s"]["min"],
                                        LIMITS["duration_s"]["max"], "duration")
         result["seated"] = seat_bodies(result["bodies"], result["cell_m"])
