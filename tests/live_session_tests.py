@@ -7,11 +7,16 @@ browser depends on: a world opens with the objects that were asked for, stepping
 is gravity, a hold is honoured, and a request the engine cannot satisfy comes back
 as something a person can read rather than a stack trace.
 """
+import os
 from pathlib import Path
+import signal
 import sys
 import tempfile
+import threading
+import time
 import types
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "playground"))
@@ -162,6 +167,219 @@ class LiveSession(unittest.TestCase):
         with self.assertRaises(live_session.LiveError) as caught:
             self.live.act({"session": state["session"], "op": "explode"})
         self.assertIn("explode", str(caught.exception))
+
+
+# The engine a session actually runs, found next to the one the panel is given.
+WORLD = ENGINE.with_name("banjo_live_world_run" + ENGINE.suffix)
+
+
+def freeze(process):
+    """Stop a process where it stands: a hung engine, as far as anyone talking
+    to it can tell -- alive, holding its pipes, answering nothing. It is never
+    thawed; whatever froze it is killed afterwards."""
+    if sys.platform == "win32":
+        import ctypes
+        status = ctypes.WinDLL("ntdll").NtSuspendProcess(
+            ctypes.c_void_p(int(process._handle)))
+        if status != 0:
+            raise OSError(f"could not suspend the engine (NTSTATUS {status:#x})")
+    else:
+        os.kill(process.pid, signal.SIGSTOP)
+
+
+class AWorldClosedUnderACall(unittest.TestCase):
+    """Closing a world while a call is inside it.
+
+    The server answers on many threads, so a pick for the old room can be in
+    flight at the moment the page opens a new one -- and opening a room closes
+    the last. Closing the pipes under that pick turned its answer into
+    "OSError: [Errno 22] Invalid argument" from the write, which nothing
+    handles: the request died with a traceback in the server's log and the page
+    got no answer at all. Whatever the moment, a call has to come back as its
+    reply or as a LiveError, which every caller already handles.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        if not WORLD.is_file():
+            raise unittest.SkipTest(f"{WORLD.name} is not built")
+        cls._temp = tempfile.TemporaryDirectory()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._temp.cleanup()
+
+    def open(self):
+        session = live_session.Session(ENGINE, fracture_lab.validate(scene()),
+                                       Path(self._temp.name))
+        self.addCleanup(self.bury, session)
+        return session
+
+    @staticmethod
+    def bury(session):
+        """No engine outlives its test, whatever the test did to it."""
+        if session._process.poll() is None:
+            session._process.kill()
+        session._process.wait(timeout=10)
+        session._shut()
+
+    @staticmethod
+    def pick(session, outcome):
+        """The call the page was making when this was found."""
+        try:
+            outcome["reply"] = session.send(op="pick", **{"from": [0.0, 1.2, 0.0],
+                                                         "dir": [0.0, -1.0, 0.0]})
+        except BaseException as error:      # anything, so the test can say what
+            outcome["error"] = error
+
+    def assertAnsweredOrClosed(self, outcome):
+        error = outcome.get("error")
+        if error is not None and not isinstance(error, live_session.LiveError):
+            self.fail(f"a call to a world being closed came back as "
+                      f"{type(error).__name__}: {error}")
+
+    def test_a_call_past_its_check_is_answered_before_the_pipes_close(self):
+        """The interleaving in the log, pinned rather than hoped for.
+
+        The pick had checked that the world was up; then the world was closed
+        and the engine quit; then the pick wrote its command into a pipe with
+        nobody on the other end. The pick is held exactly there -- between the
+        check and the write -- and the pipes are kept open until it is done
+        with them, so a close that does not wait its turn fails this with the
+        very error that was logged, every time.
+        """
+        session = self.open()
+        checked, go, done = threading.Event(), threading.Event(), threading.Event()
+        poll, shut = session._process.poll, session._shut
+
+        def held_at_the_check():
+            answer = poll()
+            if threading.current_thread() is asker and not checked.is_set():
+                checked.set()
+                go.wait(10)
+            return answer
+
+        def shut_once_the_pick_is_done():
+            done.wait(10)
+            shut()
+
+        session._process.poll = held_at_the_check
+        session._shut = shut_once_the_pick_is_done
+        outcome: dict = {}
+
+        def ask():
+            try:
+                self.pick(session, outcome)
+            finally:
+                done.set()
+
+        asker = threading.Thread(target=ask)
+        asker.start()
+        self.assertTrue(checked.wait(10), "the pick never reached its check")
+        closer = threading.Thread(target=session.close)
+        closer.start()
+        # Long enough for a close that does not wait its turn to have quit the
+        # engine. One that does is still waiting for the pick, and the engine is
+        # still up when the pick goes on.
+        deadline = time.monotonic() + 1.0
+        while session._process.returncode is None and time.monotonic() < deadline:
+            time.sleep(0.005)
+        go.set()
+        asker.join(timeout=20)
+        closer.join(timeout=20)
+        self.assertFalse(asker.is_alive(), "the pick never came back")
+        self.assertFalse(closer.is_alive(), "close() never came back")
+        self.assertAnsweredOrClosed(outcome)
+        # It was inside before the close began, so it is owed its answer.
+        self.assertIn("reply", outcome, f"a pick already under way was cut off: {outcome}")
+        self.assertTrue(outcome["reply"].get("ok"), outcome["reply"])
+        # And the world is shut behind it.
+        with self.assertRaises(live_session.LiveError) as caught:
+            session.send(op="poses")
+        self.assertIn("has closed", str(caught.exception))
+        self.assertIsNotNone(session._process.poll(), "the engine outlived its close")
+
+    def test_a_call_into_a_hung_engine_comes_back_closed(self):
+        """The slowest op there is: an engine that will never answer.
+
+        close() waits CLOSE_WAIT_S for the call inside, then kills the engine,
+        and the call's read comes back empty. The call must come back as a
+        LiveError -- and close() must come back at all, because Live.open holds
+        its own lock across it: a close that waited forever on a hung engine
+        would take every room with it.
+        """
+        session = self.open()
+        freeze(session._process)
+        outcome: dict = {}
+        asker = threading.Thread(target=self.pick, args=(session, outcome), daemon=True)
+        asker.start()
+        # In once it holds the world's lock; from then on it is waiting on an
+        # engine that will not answer.
+        deadline = time.monotonic() + 10
+        while not session._lock.locked() and time.monotonic() < deadline:
+            time.sleep(0.005)
+        self.assertTrue(session._lock.locked(), "the pick never went in")
+        with mock.patch.object(live_session, "CLOSE_WAIT_S", 0.5):
+            began = time.monotonic()
+            closer = threading.Thread(target=session.close, daemon=True)
+            closer.start()
+            closer.join(timeout=20)
+            took = time.monotonic() - began
+        asker.join(timeout=20)
+        self.assertFalse(closer.is_alive(), "close() never came back from a hung engine")
+        self.assertFalse(asker.is_alive(), "the pick stuck in a hung engine never came back")
+        self.assertLess(took, 4.0, f"close() took {took:.1f} s to give up on a hung "
+                                   f"engine, against a wait of 0.5 s")
+        self.assertIn("error", outcome, f"a frozen engine answered: {outcome}")
+        self.assertAnsweredOrClosed(outcome)
+        self.assertIn("has closed", str(outcome["error"]))
+
+    def test_the_server_answers_a_closed_world_as_a_400_with_the_reason(self):
+        """What the page gets.
+
+        LiveError is a ValueError, and the server answers every ValueError as a
+        400 carrying the reason, which the page's catch reads. The OSError this
+        used to be was answered by nothing: the connection was dropped and the
+        traceback went to the log.
+        """
+        import http.client
+        from http.server import ThreadingHTTPServer
+        import json
+        import server as playground_server
+
+        app = types.SimpleNamespace(csrf_token="token", live=live_session.Live(),
+                                    engine_path=ENGINE, runs_path=Path(self._temp.name),
+                                    live_inprocess=False)
+        self.addCleanup(app.live.shutdown)
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), playground_server.Handler)
+        httpd.app = app
+        serving = threading.Thread(target=httpd.serve_forever, daemon=True)
+        serving.start()
+        self.addCleanup(serving.join, 3)
+        self.addCleanup(httpd.server_close)
+        self.addCleanup(httpd.shutdown)
+
+        def post(path, body):
+            connection = http.client.HTTPConnection("127.0.0.1", httpd.server_port,
+                                                    timeout=20)
+            try:
+                connection.request("POST", path, body=json.dumps(body),
+                                   headers={"Content-Type": "application/json",
+                                            "X-Banjo-Token": app.csrf_token})
+                response = connection.getresponse()
+                return response.status, json.loads(response.read() or b"{}")
+            finally:
+                connection.close()
+
+        status, opened = post("/api/live/open", {"spec": scene()})
+        self.assertEqual(status, 200, opened)
+        # The close that won the race: the world goes while it is still the
+        # current one, so the act gets past the session check and into send().
+        app.live.session.close()
+        status, answer = post("/api/live/act", {"session": opened["session"], "op": "pick",
+                                               "from": [0, 1.2, 0], "dir": [0, -1, 0]})
+        self.assertEqual(status, 400, answer)
+        self.assertIn("has closed", answer.get("error", ""))
 
 
 if __name__ == "__main__":
