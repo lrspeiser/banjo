@@ -1043,7 +1043,19 @@ class Handler(BaseHTTPRequestHandler):
                 app=self.server.app
                 # Which room. The bench is the materials room this playground
                 # opened with; the courtyard is the one with things that swing.
-                app.room=world_room.Room(str(body.get("scene","bench")))
+                # Each room is kept, with whatever the chat has built in it.
+                # Opening a room used to author it from scratch every time, so
+                # "Start the room again" -- or a page reload, or switching away
+                # and back -- threw away a castle gate the chat had just built.
+                # Starting again now replays the room as it was last authored,
+                # and the chat's changes ARE authoring; asking the chat to clear
+                # it is how to get the original back.
+                scene=str(body.get("scene","bench"))
+                if scene not in world_room.SCENES: scene="bench"
+                rooms=getattr(app,"rooms",None)
+                if rooms is None: rooms=app.rooms={}
+                if body.get("fresh") or scene not in rooms: rooms[scene]=world_room.Room(scene)
+                app.room=rooms[scene]
                 opened=app.live.open(app,{"spec":app.room.spec})
                 opened["scene"]=app.room.scene
                 opened["scenes"]=sorted(world_room.SCENES)

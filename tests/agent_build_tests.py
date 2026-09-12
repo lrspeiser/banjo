@@ -642,8 +642,13 @@ RECIPES: dict[str, tuple[str, list[tuple[str, dict[str, Any]]]]] = {
         _box("stone post", "concrete", [0.16, 2.0, 0.16], [0.0, 1.0, 0.0], True),
         _box("far post", "concrete", [0.16, 2.0, 0.16], [1.44, 1.0, 0.0], True),
         _box("oak gate", "oak", [1.2, 1.6, 0.08], [0.68, 0.84, 0.16]),
+        # Free BOTH ways. The capstan pulls the gate towards itself, and a gate
+        # whose limit only lets it open the other way is pinned against its stop
+        # -- which is exactly what a model did, copying this recipe with the
+        # first recipe's limits. A leaf hung this way never crosses its own pin,
+        # so swinging both ways cannot put it into its post.
         ("hinge", {"a": "stone post", "b": "oak gate", "at_m": [0.08, 0.84, 0.16],
-                   "axis": [0, 1, 0], "lower_deg": -100, "upper_deg": 0,
+                   "axis": [0, 1, 0], "lower_deg": -100, "upper_deg": 100,
                    "friction_n_m": 10}),
         _box("capstan post", "concrete", [0.16, 1.36, 0.16], [0.68, 0.68, 1.6], True),
         # A cell ABOVE its post, not sitting on it: a wheel resting on its post

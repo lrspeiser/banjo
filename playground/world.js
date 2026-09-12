@@ -1141,6 +1141,14 @@ const MAX_STEPS = 240;
 async function tick() {
   if (!world.session || world.busy) return;
   world.busy = true;
+  // Which world this tick is driving. The chat can rebuild the room while a
+  // tick is in flight -- a rebuild opens a NEW world and closes the old one --
+  // and the tick then fails, correctly, on a world that no longer exists. What
+  // it must not do is take the new one down with it: it used to set
+  // world.session to null on any failure, which landed a moment after the chat
+  // had handed over the new world and left "the room stopped" on screen over a
+  // castle gate that had just been built.
+  const driving = world.session;
   try {
     // Whatever was clicked for while the last step was in flight.
     if (wants) { const what = wants; wants = null; 
@@ -1288,8 +1296,10 @@ async function tick() {
     // than no numbers.
     updateGuides();
   } catch (error) {
-    $("panel-state").textContent = `The room stopped: ${error.message || error}`;
-    world.session = null;
+    if (world.session === driving) {
+      $("panel-state").textContent = `The room stopped: ${error.message || error}`;
+      world.session = null;
+    }
   } finally { world.busy = false; }
 }
 

@@ -152,7 +152,8 @@ raised it 0.30 m; turned back, it came down to 0):
 A gate that swings, worked by a capstan (half a turn swung it 56 degrees;
 turned back, it closed):
   the posts and oak gate as in the first example, but hinged with
-    lower -100 upper 0, so that it opens towards the capstan
+    lower -100 upper 100: the capstan pulls the gate TOWARDS itself, and a gate
+    whose limits only let it open the other way cannot move at all
   add_object capstan post   concrete [0.16, 1.36, 0.16] at [0.68, 0.68, 1.6] anchored
   add_object capstan wheel  oak [0.48, 0.08, 0.48] at [0.68, 1.44, 1.6]
     (a flat wheel a cell above its post, beyond the reach of the gate's swing)
@@ -172,6 +173,13 @@ A shelf that is carrying more than it can hold:
   then run for 2 seconds and call overloaded: it reports the shelf. 40 mm of
   concrete over that span takes about 900 N and the two blocks are 1,234.
 
+WHAT THE PERSON SEES. Your world is a copy; the person is watching THEIR room,
+which becomes what you authored when you finish. So anything they asked to SEE
+happen -- a ball dropped on a plate, something pushed off a shelf -- must be set
+up in the room with add_object, move_object or drop, and then it happens in
+front of them. Doing it in your copy with pick_up, place, let_go and run shows
+it to nobody but you, and changes nothing they will see.
+
 TRY IT BEFORE YOU SAY IT WORKS. The world you build in is a real engine world.
 Use the mechanism the way a person would: pick_up the handle (or the leaf, or
 the grate), place it where a hand would pull it -- a quarter turn round the
@@ -179,7 +187,9 @@ axle, or 0.3 m up -- run for about a second, then read joints: a hinge reports
 degrees, a slide moved_m, a rope tension_n. let_go when you have finished. If it
 did not move, find out why and fix it -- a joint that reads 0 when it was pulled
 on is almost always touching something: the floor, its own post, or another
-part. Every joint call says so under `warnings`; read them. A rope or rod that
+part -- or it is HELD: a fix (a latch, a locking bar) keeps a gate shut until
+unhinge takes it out, so read joints for anything else on the thing you are
+moving. Every joint call says what it noticed under `warnings`; read them. A rope or rod that
 pulls along a hinge's own axis, or is made off right at the hinge line, cannot
 turn it at all. overloaded only knows about what has settled, so run for a
 second or two before asking it. Adding, moving or removing anything opens the
