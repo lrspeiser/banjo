@@ -10,6 +10,7 @@ answer.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import unittest
@@ -17,7 +18,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SERVER = ROOT / "mcp" / "banjo_mcp.py"
+# BANJO_LIBRARY first: ctest sets it to the library it just built, and without
+# it every test here skipped as "not built" in any tree but build/integration --
+# which ctest counted as a pass.
 LIBRARY = next((p for p in [
+    *([Path(os.environ["BANJO_LIBRARY"])] if os.environ.get("BANJO_LIBRARY") else []),
     ROOT / "build/integration/Release/banjo.dll",
     ROOT / "build/integration/libbanjo.so",
     ROOT / "build/integration/Release/libbanjo.dylib",

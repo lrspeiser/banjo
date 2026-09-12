@@ -189,6 +189,46 @@ up in the room with add_object, move_object or drop, and then it happens in
 front of them. Doing it in your copy with pick_up, place, let_go and run shows
 it to nobody but you, and changes nothing they will see.
 
+HEAT, FIRE AND GAS. Matter holds what it is made of: oak is dry wood, moisture
+and ash, so an oak log can burn and an iron one cannot. Nothing has a burn
+time -- a fire lasts as long as its fuel does at the rate the engine burns it,
+and thermal_state says how long that would be at the rate it is burning now.
+list_substances says what there is and where its numbers come from.
+- heat(target, power_w, seconds): heat put in from outside, from when the world
+  starts -- kindling, a torch, a stove. It lights something only if it delivers
+  enough: two oak logs on a stone slab light with 10000 W under EACH bottom log
+  for 90 s, and much less warms them and goes out.
+- enclose_gas(name, piston, height_m): a column of gas under a loose piston on
+  a slide, starting at the pressure that holds the piston and its load up.
+  Heat it and it lifts the load; as it cools the load comes back down.
+
+A hearth (lit by that kindling, the two bottom logs burn at about 11 kW each,
+the kettle warms, and thermal_state estimates about an hour and a half):
+  add_object hearth stone concrete [0.8, 0.08, 0.64] at [0, 0.04, 0] anchored
+  add_object log 1 oak [0.12, 0.12, 0.48] at [-0.08, 0.14, 0]
+  add_object log 2 oak [0.12, 0.12, 0.48] at [0.08, 0.14, 0]
+  add_object log 3 oak [0.48, 0.12, 0.12] at [0, 0.26, 0]   (across the top)
+  add_object kettle iron [0.16, 0.16, 0.16] at [0.36, 0.16, 0]
+  heat log 1 10000 W for 90 s; heat log 2 10000 W for 90 s   (the kindling)
+  then run for 120 s -- one run does 20 s at most, so call run six times in
+  the same turn -- and call thermal_state. The logs catch about a minute into
+  their kindling: after only 20 s they are warming, not yet alight, and saying
+  "not burning" then is a report on the first 20 s, not on the fire.
+
+A heated piston lifting a weight (800 W for 30 s lifted it about 0.2 m; when
+the heat stopped it came back down):
+  add_object cylinder base concrete [0.48, 0.08, 0.48] at [0, 0.04, 0] anchored
+  add_object cylinder wall left concrete [0.08, 1.2, 0.48] at [-0.2, 0.68, 0] anchored
+  add_object cylinder wall right concrete [0.08, 1.2, 0.48] at [0.2, 0.68, 0] anchored
+  add_object cylinder wall back concrete [0.32, 1.2, 0.08] at [0, 0.68, -0.2] anchored
+  add_object cylinder window glass [0.32, 1.2, 0.08] at [0, 0.68, 0.2] anchored
+  add_object piston iron [0.24, 0.08, 0.24] at [0, 0.52, 0]   (a cell clear of the walls)
+  add_object weight iron [0.16, 0.16, 0.16] at [0, 0.64, 0]   (resting on the piston)
+  slide a=cylinder base b=piston at [0, 0.52, 0] axis [0,1,0] lower -0.2 upper 0.6 friction 0
+  enclose_gas name=cylinder gas piston=piston height_m=0.4 contents {"argon": 1}
+  heat cylinder gas 800 W for 30 s
+  then run for 20 seconds and call thermal_state: the gas says how far it pushed.
+
 TRY IT BEFORE YOU SAY IT WORKS. The world you build in is a real engine world.
 Use the mechanism the way a person would: pick_up the handle (or the leaf, or
 the grate), place it where a hand would pull it -- a quarter turn round the
@@ -269,6 +309,11 @@ def _did(name: str, args: dict[str, Any], answer: dict[str, Any]) -> str:
         return f"dropped {(answer.get('dropped') or {}).get('object')}"
     if name in ("unhinge", "hinge_friction"):
         return f"{name} on joint {args.get('joint')}"
+    if name == "enclose_gas":
+        return f"filled {answer.get('gas_region')} with gas under {args.get('piston') or 'nothing'}"
+    if name == "heat":
+        return (f"heating {args.get('target')} at {float(args.get('power_w') or 0) / 1000:g} kW "
+                f"for {args.get('seconds')} s")
     return f"{name} {args.get('a')} to {args.get('b')}"
 
 

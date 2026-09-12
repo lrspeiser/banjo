@@ -65,7 +65,7 @@ NOT_FOR_THE_ROOM = {
 # person will be handed.
 AUTHORING = {"add_object", "remove_object", "move_object", "clear_world", "drop",
              "hinge", "slide", "tie", "reeve", "fix", "spring", "unhinge",
-             "hinge_friction"}
+             "hinge_friction", "enclose_gas", "heat"}
 
 # How many objects a room may be built up to. See check() in open_room.
 MAX_OBJECTS = 120
@@ -164,7 +164,8 @@ def joint_spec(record: dict[str, Any]) -> dict[str, Any]:
 
 # The fields a room body carries that the engine's scene document also carries,
 # beyond the ones every body has. Passed through untouched both ways.
-_PASSED = ("join", "rotation_deg", "subtract", "roll", "color_rgba")
+_PASSED = ("join", "rotation_deg", "subtract", "roll", "color_rgba", "contents",
+           "temperature_k")
 
 
 def export_spec(entry: dict[str, Any], scene: dict[str, Any] | None = None,
@@ -182,7 +183,12 @@ def export_spec(entry: dict[str, Any], scene: dict[str, Any] | None = None,
             if key in body:
                 out[key] = body[key]
         bodies.append(out)
-    return {**entry["room"], "bodies": bodies, "joints": [joint_spec(r) for r in joints]}
+    spec = {**entry["room"], "bodies": bodies, "joints": [joint_spec(r) for r in joints]}
+    # Gas regions and heaters, in SI units as the MCP wrote them: nothing in
+    # them is a size on the room's grid.
+    if scene.get("thermo"):
+        spec["thermo"] = scene["thermo"]
+    return spec
 
 
 def open_room(spec: dict[str, Any]) -> str:

@@ -129,6 +129,18 @@ void readSceneSettings(const std::string &text, TileImpactRequest &request) {
         request.plasticity = document.at("plasticity").get<bool>();
     if (document.contains("hardening_ratio"))
         request.hardening_ratio = document.at("hardening_ratio").get<double>();
+    // Heat, chemistry and gas: declared on bodies and in a "thermo" block, and
+    // read by the live world with the thermochemical network's own reader, so
+    // the two can never disagree about what a declaration means.
+    bool thermal = document.contains("thermo");
+    if (!thermal && document.contains("bodies") && document.at("bodies").is_array())
+        for (const auto &body : document.at("bodies"))
+            if (body.is_object() && (body.contains("contents") || body.contains("temperature_k") ||
+                                     body.contains("layer_depth_m") || body.contains("environment"))) {
+                thermal = true;
+                break;
+            }
+    if (thermal) request.thermo_scene_json = text;
 }
 
 std::vector<SceneBody> readSceneJson(const std::string &text) {

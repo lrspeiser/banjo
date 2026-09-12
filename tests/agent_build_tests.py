@@ -35,6 +35,7 @@ import argparse
 import json
 import math
 import re
+import os
 import sys
 import threading
 import time
@@ -52,6 +53,7 @@ import world_chat    # noqa: E402
 import world_room    # noqa: E402
 
 ENGINE = next((p for p in [
+    *([Path(os.environ["BANJO_LIVE_ENGINE"])] if os.environ.get("BANJO_LIVE_ENGINE") else []),
     ROOT / "build/integration/Release/banjo_live_world_run.exe",
     ROOT / "build/integration/banjo_live_world_run",
 ] if p.is_file()), None)
@@ -539,6 +541,101 @@ def check_castle_gate(built: Built) -> Verdict:
                          f"back, it closed to {end:.2f}", measured)
 
 
+def _thermo(world: World) -> dict[str, Any]:
+    return world.session.send(op="thermo")["thermo"]
+
+
+def _heater_end_s(room: world_room.Room) -> float:
+    heaters = (room.spec.get("thermo") or {}).get("heaters") or []
+    return max((float(h.get("start_s") or 0.0) + float(h.get("seconds") or 0.0) for h in heaters),
+               default=0.0)
+
+
+def check_hearth(built: Built) -> Verdict:
+    """Something burning, something warmed by it, and a burn time predicted.
+
+    Burning is a result: nothing here asks whether a log is "on fire", it asks
+    the engine what is releasing heat and what that heat reached.
+    """
+    world = built.world
+    # Long enough for the kindling to finish and the fire to take or fail.
+    world.seconds(max(120.0, _heater_end_s(built.room) + 45.0))
+    report = _thermo(world)
+    ambient = report["ambient"]["temperature_k"]
+    burning = [b for b in report["bodies"]
+               if b["reacting"] and b["heat_release_w"] > 1000.0 and b["fuel_kg"] > 0.0]
+    hottest = sorted(report["bodies"], key=lambda b: -b["temperature_k"])[:4]
+    measured = {"burning": [[b["name"], round(b["temperature_k"]), round(b["heat_release_w"] / 1000.0, 1)]
+                            for b in burning],
+                "hottest": [[b["name"], round(b["temperature_k"])] for b in hottest],
+                "heater_in_kj": round(report["ledger"]["heater_in_j"] / 1000.0, 1),
+                "ledger_residual_j": report["ledger"]["residual_j"]}
+    if not burning:
+        return Verdict(False, "nothing is burning once the kindling has finished", measured)
+    warmed = [b for b in report["bodies"]
+              if b["fuel_kg"] <= 0.0 and b["temperature_k"] > ambient + 2.0]
+    lasting = min(b["remaining_s"] for b in burning if b.get("remaining_s"))
+    measured.update(warmed=[[b["name"], round(b["temperature_k"] - ambient, 1)] for b in warmed],
+                    would_last_min=round(lasting / 60.0, 1),
+                    fire_kw=round(sum(b["heat_release_w"] for b in burning) / 1000.0, 1))
+    if not warmed:
+        return Verdict(False, f"{len(burning)} burning, but nothing that does not burn was warmed "
+                              f"by it", measured)
+    if abs(report["ledger"]["residual_j"]) > 1.0e-6 * abs(report["ledger"]["stored_j"]):
+        return Verdict(False, "the energy ledger does not close", measured)
+    return Verdict(True, f"{len(burning)} burning at {measured['fire_kw']} kW, "
+                         f"estimated to last {measured['would_last_min']:.0f} min at this rate; "
+                         f"warmed {', '.join(w[0] for w in measured['warmed'][:3])}", measured)
+
+
+def check_heated_piston(built: Built) -> Verdict:
+    """Heat the gas and what rests on the piston goes up; when the heat stops,
+    it comes back down."""
+    world = built.world
+    # Everything is read from the opening state, at t = 0. The heater starts
+    # with the world, so half a second in the gas has already lifted the load
+    # about 24 mm -- a baseline taken there reads the rise short by exactly that
+    # and calls a piston that came home "24 mm low".
+    regions = [r for r in _thermo(world)["regions"] if r.get("piston")]
+    if not regions:
+        return Verdict(False, "no gas in the room pushes on anything",
+                       {"regions": [r["name"] for r in _thermo(world)["regions"]]})
+    region = regions[0]
+    piston = region["piston"]
+    body = world.body(piston)
+    if body is None:
+        return Verdict(False, f"the gas pushes on {piston}, which is not in the room", {})
+    top = body["position_m"][1] + body["dimensions_m"][1] / 2.0
+    riders = [b["name"] for b in world.bodies().values()
+              if not b.get("anchored") and b["name"] != piston
+              and abs((b["position_m"][1] - b["dimensions_m"][1] / 2.0) - top) < 0.03]
+    start = {name: world.body(name)["position_m"][1] for name in [piston] + riders}
+    heated_for = max(5.0, _heater_end_s(built.room))
+    world.seconds(min(heated_for, 60.0))
+    hot = next(r for r in _thermo(world)["regions"] if r["name"] == region["name"])
+    rose = world.body(piston)["position_m"][1] - start[piston]
+    lifted = {name: round(world.body(name)["position_m"][1] - start[name], 3) for name in riders}
+    world.seconds(60.0)
+    cool = next(r for r in _thermo(world)["regions"] if r["name"] == region["name"])
+    back = world.body(piston)["position_m"][1] - start[piston]
+    measured = {"gas": region["name"], "piston": piston, "load": riders,
+                "rose_m": round(rose, 3), "load_rose_m": lifted, "hot_k": round(hot["temperature_k"]),
+                "work_to_bodies_j": round(hot["work_to_bodies_j"], 1),
+                "after_cooling_m": round(back, 3), "cooled_k": round(cool["temperature_k"])}
+    if rose < 0.05:
+        return Verdict(False, f"heated to {hot['temperature_k']:.0f} K, {piston} rose only "
+                              f"{rose * 1000:.0f} mm", measured)
+    if riders and min(lifted.values()) < 0.5 * rose:
+        return Verdict(False, f"{piston} rose but what rests on it did not", measured)
+    if back > 0.5 * rose:
+        return Verdict(False, f"{piston} rose {rose:.2f} m and stayed {back:.2f} m up after the heat "
+                              f"stopped", measured)
+    return Verdict(True, f"heated to {hot['temperature_k']:.0f} K, the gas lifted {piston}"
+                         + (f" and {', '.join(riders)}" if riders else "")
+                         + f" {rose * 1000:.0f} mm; cooled, it came back to {back * 1000:.0f} mm",
+                   measured)
+
+
 @dataclass
 class Case:
     id: str
@@ -581,6 +678,13 @@ CASES = [
     Case("drop-on-glass", "bench",
          "Drop an iron ball onto the 20 mm glass plate from two metres up.",
          check_drop_on_glass, "placing something over a target"),
+    Case("hearth", "yard",
+         "Build a hearth of oak logs on a stone slab with an iron kettle beside it, and light it.",
+         check_hearth, "fuel, ignition, heat reaching a physical object, and a predicted burn time"),
+    Case("heated-piston", "yard",
+         "Build a cylinder with an iron piston in it and a weight on the piston, with gas under "
+         "the piston, and heat the gas so it lifts the weight.",
+         check_heated_piston, "heat into gas into work: a pressure boundary on a real body"),
 ]
 
 
@@ -664,6 +768,36 @@ RECIPES: dict[str, tuple[str, list[tuple[str, dict[str, Any]]]]] = {
         ("spring", {"a": "capstan wheel", "b": "oak gate",
                     "at_a_m": [0.68, 1.44, 1.36], "at_b_m": [0.68, 1.44, 0.20],
                     "rest_m": 0.0, "stiffness_n_m": 20000, "damping_n_s_m": 200}),
+    ]),
+    # A hearth: two oak logs on a stone slab and one across them, an iron kettle
+    # beside it, and kindling -- 10 kW under each of the bottom logs for 90 s.
+    # Less than that on a stone slab warms the logs and goes out: the slab and
+    # the cold log beside take the margin a lone log would have.
+    "hearth": ("hearth", [
+        _box("hearth stone", "concrete", [0.8, 0.08, 0.64], [0.0, 0.04, 0.0], True),
+        _box("log 1", "oak", [0.12, 0.12, 0.48], [-0.08, 0.14, 0.0]),
+        _box("log 2", "oak", [0.12, 0.12, 0.48], [0.08, 0.14, 0.0]),
+        _box("log 3", "oak", [0.48, 0.12, 0.12], [0.0, 0.26, 0.0]),
+        _box("kettle", "iron", [0.16, 0.16, 0.16], [0.36, 0.16, 0.0]),
+        ("heat", {"target": "log 1", "power_w": 10000, "seconds": 90, "label": "kindling"}),
+        ("heat", {"target": "log 2", "power_w": 10000, "seconds": 90, "label": "kindling"}),
+    ]),
+    # A heated piston: a cylinder of anchored walls with a glass front, an iron
+    # piston on a slide over 0.4 m of argon, an iron weight on the piston, and
+    # 800 W under the gas for 30 s.
+    "heated-piston": ("heated-piston", [
+        _box("cylinder base", "concrete", [0.48, 0.08, 0.48], [0.0, 0.04, 0.0], True),
+        _box("cylinder wall left", "concrete", [0.08, 1.2, 0.48], [-0.2, 0.68, 0.0], True),
+        _box("cylinder wall right", "concrete", [0.08, 1.2, 0.48], [0.2, 0.68, 0.0], True),
+        _box("cylinder wall back", "concrete", [0.32, 1.2, 0.08], [0.0, 0.68, -0.2], True),
+        _box("cylinder window", "glass", [0.32, 1.2, 0.08], [0.0, 0.68, 0.2], True),
+        _box("piston", "iron", [0.24, 0.08, 0.24], [0.0, 0.52, 0.0]),
+        _box("weight", "iron", [0.16, 0.16, 0.16], [0.0, 0.64, 0.0]),
+        ("slide", {"a": "cylinder base", "b": "piston", "at_m": [0.0, 0.52, 0.0],
+                   "axis": [0, 1, 0], "lower_m": -0.2, "upper_m": 0.6, "friction_n": 0}),
+        ("enclose_gas", {"name": "cylinder gas", "piston": "piston", "height_m": 0.4,
+                         "contents": {"argon": 1}}),
+        ("heat", {"target": "cylinder gas", "power_w": 800, "seconds": 30}),
     ]),
     # A thin concrete shelf: 40 mm over an 840 mm span, about 900 N to break.
     # Two 200 mm iron blocks are 617 N each, and together they are too much.

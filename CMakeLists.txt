@@ -318,9 +318,23 @@ if(BANJO_BUILD_HEADLESS)
     add_executable(banjo_quasistatic_probe src/app/quasistatic_probe_main.cpp)
     target_link_libraries(banjo_quasistatic_probe PRIVATE banjo_runtime nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_quasistatic_probe)
+    # The thermochemical network: matter inventories, reactions, heat paths,
+    # gas regions and pressure boundaries, with one energy ledger. It owns no
+    # geometry and no motion -- the live world tells it where things are and
+    # applies the forces it asks for -- so it builds and tests on its own.
+    add_library(banjo_thermo src/thermo/Thermochemistry.cpp src/thermo/ThermoWorld.cpp
+                             src/thermo/ThermoJson.cpp)
+    target_link_libraries(banjo_thermo PUBLIC banjo_core PRIVATE nlohmann_json::nlohmann_json)
+    banjo_enable_warnings(banjo_thermo)
+    if(BANJO_BUILD_TESTS)
+        add_executable(banjo_thermochemistry_tests tests/thermochemistry_tests.cpp)
+        target_link_libraries(banjo_thermochemistry_tests PRIVATE banjo_thermo)
+        banjo_enable_warnings(banjo_thermochemistry_tests)
+        add_test(NAME banjo_thermochemistry_tests COMMAND banjo_thermochemistry_tests)
+    endif()
     add_library(banjo_fastlattice_scene src/fastlattice/TileImpactScene.cpp
                                        src/fastlattice/LiveWorld.cpp)
-    target_link_libraries(banjo_fastlattice_scene PUBLIC banjo_fastlattice banjo_runtime PRIVATE nlohmann_json::nlohmann_json)
+    target_link_libraries(banjo_fastlattice_scene PUBLIC banjo_fastlattice banjo_runtime banjo_thermo PRIVATE nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_fastlattice_scene)
     add_executable(banjo_fast_lattice_run tools/fast_lattice_run.cpp)
     target_link_libraries(banjo_fast_lattice_run PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
@@ -405,6 +419,13 @@ if(BANJO_BUILD_HEADLESS)
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/joint_binding_tests.py)
         set_tests_properties(banjo_joint_binding_tests PROPERTIES
             ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
+        # Heat, chemistry and gas through the same boundary: declaring what
+        # things contain, lighting them, a gas lifting a load, and the ledger.
+        add_test(NAME banjo_thermo_ffi_tests
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/thermo_ffi_tests.py)
+        set_tests_properties(banjo_thermo_ffi_tests PROPERTIES
+            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
         # The two ways the playground can hold a world, run against the same
         # scene and compared. Claiming they are interchangeable is easy; this
         # is the part that makes it true.
@@ -420,11 +441,17 @@ if(BANJO_BUILD_HEADLESS)
         add_test(NAME banjo_world_room_tests
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/world_room_tests.py)
+        # The engine and library THIS tree built. Without them the room and
+        # lane suites looked only in build/integration, so in any other build
+        # tree they tested some other build -- or, finding none, skipped and
+        # were counted as passing.
+        set_tests_properties(banjo_world_room_tests PROPERTIES
+            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>;BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>")
         add_test(NAME banjo_live_lanes_agree_tests
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/live_lanes_agree_tests.py)
         set_tests_properties(banjo_live_lanes_agree_tests PROPERTIES
-            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
+            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>;BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>")
     endif()
 
     # A live scene, driven a line at a time: the playground talks to this instead
@@ -826,6 +853,14 @@ if(BANJO_BUILD_TESTS)
             target_link_libraries(banjo_live_world_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_live_world_tests)
             add_test(NAME banjo_live_world_tests COMMAND banjo_live_world_tests)
+
+            # Heat, chemistry and gas inside a live world: a heated gas lifting
+            # a load through a real slide, a refused step taking its chemistry
+            # back, a burning plank breaking and sharing out what it held.
+            add_executable(banjo_thermo_live_tests tests/thermo_live_tests.cpp)
+            target_link_libraries(banjo_thermo_live_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_thermo_live_tests)
+            add_test(NAME banjo_thermo_live_tests COMMAND banjo_thermo_live_tests)
 
             # Pins, as the scene sees them: a joint between two NAMES, which is
             # what has to survive the bodies underneath being destroyed and

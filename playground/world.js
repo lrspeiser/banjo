@@ -1040,6 +1040,255 @@ async function throwIt() {
 // of placing anything by hand. Three lines to the axes say where it IS; a line
 // straight down, and a ring where that line lands, say where it WILL BE.
 
+// ---------------------------------------------------------------------------
+// Heat, fire and gas
+// ---------------------------------------------------------------------------
+//
+// Everything here is drawn from the "heat" block the engine puts on its step
+// replies -- what is hot, what is burning, what the gas is doing -- and nothing
+// on this page decides a temperature, a flame or a pressure. The glow, the
+// flames and the gas column are pictures OF those numbers. They are never the
+// source of any heat or force: a flame drawn here warms nothing, and the
+// panel says so.
+
+const heatGroup = new THREE.Group();
+scene.add(heatGroup);
+const heat = {
+  last: null,             // the last heat block, as the engine sent it
+  glowing: new Map(),     // body name -> the material of its own it glows with
+  flames: new Map(),      // body name -> { group, outer, inner, height, rx, rz }
+  columns: new Map(),     // gas region name -> the column drawn for it
+  burning: new Set(),     // what was burning at the last reply, to say when it changes
+};
+
+const FLAME_CONE = new THREE.ConeGeometry(1, 1, 16, 1, true);
+FLAME_CONE.translate(0, 0.5, 0);           // its base at the origin, its tip up
+const FLAME_OUTER = new THREE.MeshBasicMaterial({
+  color: 0xff7a24, transparent: true, opacity: 0.45, depthWrite: false,
+  blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+const FLAME_INNER = new THREE.MeshBasicMaterial({
+  color: 0xffd27a, transparent: true, opacity: 0.55, depthWrite: false,
+  blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+const COLUMN_BOX = new THREE.BoxGeometry(1, 1, 1);
+COLUMN_BOX.translate(0, 0.5, 0);            // from its base up the axis
+const GAS_COOL = new THREE.Color(0x6aa8ff), GAS_HOT = new THREE.Color(0xff5a1f);
+
+// The colour a surface at this temperature is drawn with.
+//
+// Below the Draper point, about 798 K, a surface gives off almost no light you
+// could see, so warming is shown as a faint heat TINT -- a picture of a number,
+// and the panel says it is one. From there up the colour follows incandescence
+// roughly: dull red, cherry, orange, towards yellow-white.
+function glowOf(tK, ambientK) {
+  if (!(tK > ambientK + 25)) return null;
+  if (tK < 798) {
+    const s = clamp((tK - ambientK - 25) / (798 - ambientK - 25), 0, 1);
+    return { color: new THREE.Color(0xff5a1f), intensity: 0.05 + 0.25 * s };
+  }
+  const s = clamp((tK - 798) / 900, 0, 1);
+  return { color: new THREE.Color().setHSL(0.015 + 0.12 * s, 1, 0.42 + 0.3 * s),
+           intensity: 0.7 + 2.3 * s };
+}
+
+function glow(name, tK) {
+  const entry = world.bodies.get(name);
+  const own = heat.glowing.get(name);
+  const g = entry ? glowOf(tK, heat.last ? heat.last.ambient_k : 293.15) : null;
+  if (!g) {
+    if (own) {
+      if (entry && entry.mesh.material === own) entry.mesh.material = look(entry.material);
+      own.dispose();
+      heat.glowing.delete(name);
+    }
+    return;
+  }
+  // A glowing thing needs a material of its own. The shared ones are shared by
+  // every body of that substance, and one burning log must not light them all.
+  let mine = own;
+  if (!mine || entry.mesh.material !== mine) {
+    if (mine) mine.dispose();
+    mine = look(entry.material).clone();
+    entry.mesh.material = mine;
+    heat.glowing.set(name, mine);
+  }
+  mine.emissive.copy(g.color);
+  mine.emissiveIntensity = g.intensity;
+}
+
+// A flame over whatever is releasing heat, sized by Heskestad's flame height,
+// L = 0.235 Q^(2/5) - 1.02 D, with Q in kW and D the burning area's equivalent
+// diameter: a correlation for real fires, used here only to DRAW one. The
+// engine has no flame and no hot gas above a fire; the heat it releases goes
+// where its heat paths say.
+function flameFor(name, powerW) {
+  const entry = world.bodies.get(name);
+  if (!entry || !(powerW > 300)) { dropFlame(name); return; }
+  const d = entry.dims || [0.2, 0.2, 0.2];
+  const across = Math.sqrt(4 * d[0] * d[2] / Math.PI);
+  const height = clamp(0.235 * Math.pow(powerW / 1000, 0.4) - 1.02 * across, 0.15, 2.5);
+  let flame = heat.flames.get(name);
+  if (!flame) {
+    const group = new THREE.Group();
+    const outer = new THREE.Mesh(FLAME_CONE, FLAME_OUTER);
+    const inner = new THREE.Mesh(FLAME_CONE, FLAME_INNER);
+    group.add(outer, inner);
+    heatGroup.add(group);
+    flame = { group, outer, inner, seed: Math.random() * 100 };
+    heat.flames.set(name, flame);
+  }
+  flame.height = height;
+  flame.rx = 0.45 * d[0];
+  flame.rz = 0.45 * d[2];
+}
+
+function dropFlame(name) {
+  const flame = heat.flames.get(name);
+  if (!flame) return;
+  heatGroup.remove(flame.group);
+  heat.flames.delete(name);
+}
+
+// The gas, as a column from where it starts to the piston it pushes on: blue
+// when cool, orange then red as it heats. Its height is the engine's volume
+// over its area, so the column rising is the gas's own state rising, and the
+// piston rides on it because that is where the force is.
+function gasColumn(region) {
+  let column = heat.columns.get(region.name);
+  if (!column) {
+    column = new THREE.Mesh(COLUMN_BOX, new THREE.MeshStandardMaterial({
+      color: GAS_COOL, transparent: true, opacity: 0.32, depthWrite: false,
+      roughness: 0.3, metalness: 0 }));
+    heatGroup.add(column);
+    heat.columns.set(region.name, column);
+  }
+  const side = Math.sqrt(Math.max(region.area_m2 || 0, 1e-6));
+  column.position.set(region.base_m[0], region.base_m[1], region.base_m[2]);
+  const axis = new THREE.Vector3(region.axis[0], region.axis[1], region.axis[2]);
+  if (axis.lengthSq() > 0) column.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0),
+                                                                axis.normalize());
+  column.scale.set(side, Math.max(region.height_m || 0, 1e-3), side);
+  const s = clamp((region.t_k - 293) / 300, 0, 1);
+  column.material.color.copy(GAS_COOL).lerp(GAS_HOT, s);
+  column.material.emissive.copy(GAS_HOT).multiplyScalar(0.4 * s);
+}
+
+// Said once when something catches and once when it goes out, with a gap
+// between the two thresholds so a fire hovering at the edge does not chatter.
+function narrateHeat(block) {
+  const now = new Set();
+  for (const b of block.bodies) {
+    const was = heat.burning.has(b.name);
+    if (b.reacting && b.power_w > (was ? 500 : 1500)) now.add(b.name);
+  }
+  for (const b of block.bodies) {
+    if (!now.has(b.name) || heat.burning.has(b.name)) continue;
+    say("world", `${b.name} has caught: its surface is at ${Math.round(b.t_k)} K and it is`
+      + ` releasing ${(b.power_w / 1000).toFixed(1)} kW.`
+      + (b.remaining_s ? ` At that rate its fuel would last about`
+                         + ` ${Math.round(b.remaining_s / 60)} min.` : ""));
+    remember(`${b.name} caught fire`);
+  }
+  for (const name of heat.burning) {
+    if (now.has(name)) continue;
+    say("world", `${name} is no longer burning.`);
+    remember(`${name} stopped burning`);
+  }
+  heat.burning = now;
+}
+
+function showHeat(block) {
+  const rows = [];
+  const row = (what, much) => {
+    const li = document.createElement("li");
+    const a = document.createElement("span");
+    a.className = "what";
+    a.textContent = what;
+    const b = document.createElement("span");
+    b.className = "much";
+    b.textContent = much;
+    li.append(a, b);
+    rows.push(li);
+  };
+  for (const b of block.bodies.slice(0, 8)) {
+    let text = `${Math.round(b.t_k)} K`;
+    if (b.reacting && b.power_w > 0) text += ` · ${(b.power_w / 1000).toFixed(1)} kW`;
+    if (b.reacting && b.power_w < 0) text += " · drying";
+    if (b.reacting && b.power_w > 0 && b.remaining_s)
+      text += ` · ~${Math.round(b.remaining_s / 60)} min at this rate`;
+    if (b.heater_w > 0) text += ` · heated ${(b.heater_w / 1000).toFixed(1)} kW`;
+    row(b.name, text);
+  }
+  for (const r of block.regions) {
+    let text = `${Math.round(r.t_k)} K · ${(r.p_pa / 1000).toFixed(1)} kPa`;
+    if (r.piston) text += ` · ${r.piston} ${r.stroke_m >= 0 ? "up" : "down"}`
+                       + ` ${Math.abs(Math.round(r.stroke_m * 1000))} mm`;
+    if (r.heater_w > 0) text += ` · heated ${(r.heater_w / 1000).toFixed(1)} kW`;
+    row(r.name, text);
+  }
+  $("heat-list").replaceChildren(...rows);
+  $("heat-note").textContent =
+    `unaccounted energy ${Number(block.ledger.residual_j).toExponential(1)} J`
+    + " · glow below 800 K is a tint, and flames are drawn from the heat released:"
+    + " pictures of these numbers, not sources of heat";
+  $("heat").hidden = rows.length === 0;
+}
+
+function drawHeat(block) {
+  if (!block) return;
+  heat.last = block;
+  const listed = new Set();
+  for (const b of block.bodies) {
+    listed.add(b.name);
+    glow(b.name, b.t_k);
+    flameFor(b.name, b.reacting ? b.power_w : 0);
+  }
+  // What has cooled back to the room is no longer listed: its glow and its
+  // flame go with it.
+  for (const name of [...heat.glowing.keys()]) if (!listed.has(name)) glow(name, 0);
+  for (const name of [...heat.flames.keys()]) if (!listed.has(name)) dropFlame(name);
+  const regions = new Set();
+  for (const r of block.regions) {
+    regions.add(r.name);
+    if (r.piston) gasColumn(r);
+  }
+  for (const [name, column] of heat.columns) {
+    if (regions.has(name)) continue;
+    heatGroup.remove(column);
+    column.material.dispose();
+    heat.columns.delete(name);
+  }
+  narrateHeat(block);
+  showHeat(block);
+}
+
+// Every frame: each flame sits on its body and flickers. The body's pose is
+// the engine's; the flicker is only drawing.
+function animateHeat(now) {
+  const t = now / 1000;
+  for (const [name, flame] of heat.flames) {
+    const entry = world.bodies.get(name);
+    if (!entry) { dropFlame(name); continue; }
+    const p = entry.mesh.position;
+    flame.group.position.set(p.x, p.y + 0.35 * (entry.dims ? entry.dims[1] : 0.1), p.z);
+    const flicker = 0.86 + 0.1 * Math.sin(t * 13 + flame.seed)
+                  + 0.06 * Math.sin(t * 29 + 2 * flame.seed);
+    flame.outer.scale.set(flame.rx, flame.height * flicker, flame.rz);
+    flame.inner.scale.set(0.55 * flame.rx, 0.6 * flame.height * flicker, 0.55 * flame.rz);
+  }
+}
+
+function clearHeat() {
+  heat.glowing.forEach((material) => material.dispose());
+  heat.glowing.clear();
+  heat.flames.forEach((flame) => heatGroup.remove(flame.group));
+  heat.flames.clear();
+  heat.columns.forEach((column) => { heatGroup.remove(column); column.material.dispose(); });
+  heat.columns.clear();
+  heat.burning = new Set();
+  heat.last = null;
+  $("heat").hidden = true;
+}
+
 const guides = new THREE.Group();
 scene.add(guides);
 const guideLine = (color) => {
@@ -1148,6 +1397,9 @@ async function tick() {
   // world.session to null on any failure, which landed a moment after the chat
   // had handed over the new world and left "the room stopped" on screen over a
   // castle gate that had just been built.
+  // Switching rooms does the same thing: a step for the old room comes
+  // back "that live world is no longer open", which is true of the OLD
+  // room only, and must not stop the new one.
   const driving = world.session;
   try {
     // Whatever was clicked for while the last step was in flight.
@@ -1241,6 +1493,7 @@ async function tick() {
 
     draw(state);
     drawRopes();
+    drawHeat(state.heat);
     if (state.joints) {
         const wasAttached = new Map(world.joints.map((p) => [p.id, p.attached]));
         for (const pin of state.joints) {
@@ -1369,6 +1622,7 @@ function frame() {
   walk(dt);
   updateGuides();
   fadePieces(now);
+  animateHeat(now);
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
@@ -1477,6 +1731,7 @@ $("ask").addEventListener("submit", async (e) => {
       world.joints = [];
       drawJoints(answer.state.joints || []);
       drawRopes();
+      clearHeat();
       if (answer.joint_problems && answer.joint_problems.length)
         say("bad", "Some joints would not hang: " + answer.joint_problems.join("; "));
       remember("the room was rebuilt: " + (answer.did || []).join(", "));
@@ -1488,6 +1743,48 @@ $("ask").addEventListener("submit", async (e) => {
 });
 
 $("reset").addEventListener("click", () => open());
+
+// A gas is seen through its window. The crosshair's first body is then the pane
+// of glass, but what the person is looking at -- and means to heat -- is the
+// column behind it; a cylinder with a window in front can otherwise only have
+// its gas heated by walking round to look down its open top. Only glass: through
+// concrete there is no gas to be seen.
+function gasBehindGlass(name) {
+  const entry = world.bodies.get(name);
+  if (!entry || entry.material !== "glass" || !heat.last || heat.columns.size === 0) return null;
+  const ray = new THREE.Raycaster(camera.position.clone(), forwardVector().normalize());
+  const hit = ray.intersectObjects([...heat.columns.values()], false)[0];
+  if (!hit) return null;
+  for (const [regionName, column] of heat.columns) {
+    if (column === hit.object) {
+      return (heat.last.regions || []).find((r) => r.name === regionName) || null;
+    }
+  }
+  return null;
+}
+
+// Heat what the crosshair is on: 10 kW for a minute, like a bundle of kindling
+// held to it -- or, when it is a piston or a window with gas behind it, the gas
+// at 800 W for half a minute. External work, and the engine counts it; whether
+// it lights anything is the engine's answer, and two presses are twice the heat.
+$("heat-it").addEventListener("click", async () => {
+  if (!world.session) return;
+  const name = world.held ? world.held.name : world.aim && world.aim.name;
+  if (!name) {
+    say("world", "Point the crosshair at something first: the heat goes into whatever it is on.");
+    return;
+  }
+  const region = heat.last && ((heat.last.regions || []).find((r) => r.piston === name)
+                               || (!world.held && gasBehindGlass(name)));
+  const target = region ? region.name : name;
+  const power = region ? 800 : 10000;
+  const seconds = region ? 30 : 60;
+  try {
+    await act("heat", { target, power_w: power, seconds });
+    say("you", `Heating ${target} at ${power / 1000} kW for ${seconds} s.`);
+    remember(`heated ${target} at ${power / 1000} kW for ${seconds} s`);
+  } catch (error) { say("bad", String(error.message || error)); }
+});
 $("scene").addEventListener("change", () => open());
 
 // ---------------------------------------------------------------------------
@@ -1509,6 +1806,7 @@ async function open() {
     draw(data);
     drawJoints(data.joints);
     drawRopes();
+    clearHeat();
     $("panel-state").textContent = "Live.";
     $("chat").replaceChildren();
     say("world",
@@ -1537,6 +1835,10 @@ window.banjoRoom = {
   // For measuring what a frame costs: building the meshes for a shattered pane
   // is the expensive part of a break, and it cannot be seen from outside.
   buildMesh, renderer, THREE, MATERIALS,
+  // What the heat drawing was last given, and what it drew from it.
+  heatState: () => heat.last,
+  heatDrawn: () => ({ glowing: [...heat.glowing.keys()], flames: [...heat.flames.keys()],
+                      columns: [...heat.columns.keys()] }),
 };
 
 // Reported on its own timer rather than from the frame loop, because a room

@@ -130,9 +130,42 @@ class InProcessSession:
                         for i in world.impacts()],
             "breakable": world.breakable(),
         }
+        heat = self._heat()
+        if heat is not None:
+            state["heat"] = heat
         if extra:
             state.update(extra)
         return state
+
+    def _heat(self) -> dict[str, Any] | None:
+        """The same trimmed heat block the subprocess lane puts on its replies."""
+        report = self._world.thermo_report()
+        if not report.get("bodies") and not report.get("regions"):
+            return None
+        ambient = report["ambient"]["temperature_k"]
+        bodies = [b for b in report["bodies"]
+                  if b["reacting"] or b["heater_w"] > 0 or abs(b["temperature_k"] - ambient) >= 1.0]
+        bodies.sort(key=lambda b: -(abs(b["temperature_k"] - ambient) + (1e4 if b["reacting"] else 0)))
+        return {"t": report["time_s"], "ambient_k": ambient,
+                "bodies": [{"name": b["name"], "t_k": round(b["temperature_k"], 1),
+                            "core_k": round(b["core_temperature_k"], 1),
+                            "fuel_kg": round(b["fuel_kg"], 4),
+                            "power_w": round(b["heat_release_w"]),
+                            "heater_w": round(b["heater_w"]),
+                            "remaining_s": (round(b["remaining_s"]) if b["remaining_s"] is not None
+                                            else None),
+                            "reacting": b["reacting"]} for b in bodies[:48]],
+                "regions": [{"name": r["name"], "piston": r["piston"],
+                             "t_k": round(r["temperature_k"], 1), "p_pa": round(r["pressure_pa"]),
+                             "v_m3": r["volume_m3"], "base_m": r["base_m"], "axis": r["axis"],
+                             "area_m2": r["area_m2"], "height_m": r["height_m"],
+                             "stroke_m": r["stroke_m"], "force_n": round(r["force_n"], 1),
+                             "work_j": round(r["work_to_bodies_j"], 2),
+                             "heater_w": round(r["heater_w"])} for r in report["regions"]],
+                "ledger": {"stored_j": round(report["ledger"]["stored_j"]),
+                           "residual_j": report["ledger"]["residual_j"],
+                           "heater_in_j": round(report["ledger"]["heater_in_j"]),
+                           "heat_out_j": round(report["ledger"]["heat_to_surroundings_j"])}}
 
     def send(self, **command: Any) -> dict[str, Any]:
         op = str(command.get("op", ""))
@@ -178,6 +211,18 @@ class InProcessSession:
                 return {"ok": True, "hit": found.hit, "name": found.name,
                         "distance_m": self._number(found.distance_m),
                         "point_m": [self._number(v) for v in found.point_m]}
+            elif op == "heat":
+                heater = world.heat(str(command.get("target", "")),
+                                    float(command.get("power_w", 0.0)),
+                                    float(command.get("seconds", 0.0)))
+                self.state = self._describe(extra={"heater": heater})
+                return self.state
+            elif op == "thermo":
+                report = world.thermo_report(bool(command.get("model", False)))
+                report["ledger"]["mechanical_j"] = world.energy().mechanical_j
+                return {"ok": True, "thermo": report}
+            elif op == "vent":
+                world.vent(str(command.get("region", "")), bool(command.get("open", True)))
             elif op != "poses":
                 raise ValueError(f"unknown live operation: {op}")
         except Exception as error:

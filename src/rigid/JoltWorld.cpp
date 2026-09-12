@@ -1617,6 +1617,18 @@ void JoltWorld::pushBody(MatterBodyId body_id, const Vec3 &force_n) {
     bodies.AddForce(found->second, toJolt(force_n));
 }
 
+void JoltWorld::setMass(MatterBodyId body_id, double mass_kg) {
+    const auto found = impl_->bodies_.find(body_id);
+    if (found == impl_->bodies_.end()) throw std::invalid_argument("rigid body is missing");
+    if (!(mass_kg > 0.0) || !std::isfinite(mass_kg))
+        throw std::invalid_argument("a body's mass is positive and finite");
+    JPH::BodyLockWrite lock(impl_->physics_->GetBodyLockInterface(), found->second);
+    if (!lock.Succeeded()) throw std::runtime_error("cannot lock a body to change its mass");
+    JPH::Body &body = lock.GetBody();
+    if (!body.IsDynamic()) return;
+    body.GetMotionProperties()->ScaleToMass(static_cast<float>(mass_kg));
+}
+
 void JoltWorld::wake(MatterBodyId body_id) {
     const auto found=impl_->bodies_.find(body_id);
     if(found==impl_->bodies_.end())throw std::invalid_argument("rigid body is missing");

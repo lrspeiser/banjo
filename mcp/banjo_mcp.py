@@ -161,9 +161,24 @@ def _scene(objects: Any, cell_m: float) -> dict[str, Any]:
         centre = _triple(item.get("position_m"), f"{name}: position_m", -50.0, 50.0)
         speed = _triple(item.get("velocity_m_s") or [0, 0, 0],
                         f"{name}: velocity_m_s", -200.0, 200.0)
-        bodies.append({"name": name, "shape": shape, "material": material,
-                       "dimensions_m": size, "center_m": centre, "velocity_m_s": speed,
-                       "anchored": bool(item.get("anchored"))})
+        body = {"name": name, "shape": shape, "material": material,
+                "dimensions_m": size, "center_m": centre, "velocity_m_s": speed,
+                "anchored": bool(item.get("anchored"))}
+        # What it contains and how hot it starts. Left out, a body is made of
+        # what its material is made of -- which for oak is dry wood, moisture
+        # and ash, and is the whole reason an oak log can burn.
+        if item.get("contents") is not None:
+            contents = item["contents"]
+            if not isinstance(contents, dict) or not contents:
+                raise Refused(f"{name}: contents are substances and mass fractions, like "
+                              f"{{\"dry wood\": 0.8, \"moisture\": 0.2}}. list_substances "
+                              f"says what there is.")
+            body["contents"] = {str(k): _number(v, f"{name}: contents {k}", 0.0, 1000.0)
+                                for k, v in contents.items()}
+        if item.get("temperature_k") is not None:
+            body["temperature_k"] = _number(item["temperature_k"], f"{name}: temperature_k",
+                                            1.0, 3000.0)
+        bodies.append(body)
     seen: set[str] = set()
     for body in bodies:
         if body["name"] in seen:
@@ -319,6 +334,9 @@ def tool_run(args: dict[str, Any]) -> dict[str, Any]:
     }
     if stopped_early:
         answer["stopped_early"] = stopped_early
+    heat = _heat_said(world, limit=10)
+    if heat is not None:
+        answer["heat"] = heat
     if not events and contacts:
         answer["why_nothing_happened"] = (
             "Every contact was under the speed it would have taken. Drop it from "
@@ -606,10 +624,24 @@ def tool_remove_object(args: dict[str, Any]) -> dict[str, Any]:
     # joint -- and is listed, so nothing disappears unannounced.
     held = _held_by(entry, name)
     joints = [r for r in entry["joints"] if r not in held]
-    lost = _rebuild(entry, dict(entry["scene"], bodies=kept), world_id, joints)
+    # A heater aimed at it, and a gas region that pushed on it, go with it --
+    # said, like the joints, rather than left to refuse the next rebuild.
+    block = _thermo_block(entry)
+    regions = [r for r in block.get("gas_regions", [])
+               if name in (r.get("piston"), r.get("container"))]
+    gone = {r["name"] for r in regions}
+    heaters = [h for h in block.get("heaters", [])
+               if h.get("target") == name or h.get("target") in gone]
+    block["gas_regions"] = [r for r in block.get("gas_regions", []) if r not in regions]
+    block["heaters"] = [h for h in block.get("heaters", []) if h not in heaters]
+    scene = _with_thermo(dict(entry["scene"], bodies=kept), block)
+    lost = _rebuild(entry, scene, world_id, joints)
     answer: dict[str, Any] = {"removed": name, "objects": _describe(entry["world"])}
     if held:
         answer["joints_removed_with_it"] = [_joint_words(r) for r in held]
+    if regions or heaters:
+        answer["heat_removed_with_it"] = ([f"gas region {r['name']}" for r in regions] +
+                                          [f"heater on {h['target']}" for h in heaters])
     if lost:
         answer["joints_lost"] = lost
     return answer
@@ -659,7 +691,9 @@ def tool_clear_world(args: dict[str, Any]) -> dict[str, Any]:
     count = len(entry["scene"]["bodies"])
     joints = len(entry.get("joints", []))
     old = entry.get("world")
-    entry["scene"] = dict(entry["scene"], bodies=[])
+    scene = dict(entry["scene"], bodies=[])
+    scene.pop("thermo", None)
+    entry["scene"] = scene
     entry["joints"] = []
     entry["world"] = None
     if old is not None:
@@ -976,6 +1010,215 @@ def tool_hinge_friction(args: dict[str, Any]) -> dict[str, Any]:
     return {"joint": joint, "friction": friction}
 
 
+# ---------------------------------------------------------------------------
+# Heat, chemistry and gas
+# ---------------------------------------------------------------------------
+#
+# Declared in the scene document -- "contents" on a body, gas regions and heaters
+# in a "thermo" block beside the bodies -- so a rebuild carries them the way it
+# carries everything else authored, and the playground's room gets them in the
+# spec it is opened from. What happens then is the engine's thermochemical
+# network: nothing here sets a temperature, a burn time or a speed.
+
+def _thermo_block(entry: dict[str, Any]) -> dict[str, Any]:
+    block = dict(entry["scene"].get("thermo") or {})
+    block["gas_regions"] = list(block.get("gas_regions") or [])
+    block["heaters"] = list(block.get("heaters") or [])
+    return block
+
+
+def _with_thermo(scene: dict[str, Any], block: dict[str, Any]) -> dict[str, Any]:
+    scene = dict(scene)
+    kept = {k: v for k, v in block.items() if v}
+    if kept:
+        scene["thermo"] = kept
+    else:
+        scene.pop("thermo", None)
+    return scene
+
+
+def _heat_said(world: banjo.World, limit: int = 0) -> dict[str, Any] | None:
+    """What is hot, what is burning, what the gas is doing -- or None if nothing."""
+    report = world.thermo_report()
+    ambient = (report.get("ambient") or {}).get("temperature_k", 293.15)
+    bodies = []
+    for b in sorted(report.get("bodies") or [],
+                    key=lambda b: (not b["reacting"], -abs(b["temperature_k"] - ambient))):
+        if not (b["reacting"] or b["heater_w"] > 0 or abs(b["temperature_k"] - ambient) > 1.0):
+            continue
+        said: dict[str, Any] = {"object": b["name"],
+                                "surface_k": round(b["temperature_k"], 1),
+                                "core_k": round(b["core_temperature_k"], 1),
+                                "burning": bool(b["reacting"] and b["heat_release_w"] > 0)}
+        # Drying takes heat rather than giving it: said as drying, because a
+        # negative "heat release" reads as a fire going backwards.
+        if b["reacting"] and b["heat_release_w"] >= 0.0:
+            said["heat_release_kw"] = round(b["heat_release_w"] / 1000.0, 2)
+        elif b["reacting"]:
+            said["drying_kw"] = round(-b["heat_release_w"] / 1000.0, 2)
+        if b["fuel_kg"] > 0:
+            said["fuel_left_kg"] = round(b["fuel_kg"], 3)
+        if b["reacting"] and b.get("remaining_s"):
+            said["would_last_min_at_this_rate"] = round(b["remaining_s"] / 60.0, 1)
+        if b["heater_w"] > 0:
+            said["being_heated_kw"] = round(b["heater_w"] / 1000.0, 2)
+        bodies.append(said)
+    if limit:
+        bodies = bodies[:limit]
+    gas = []
+    for r in report.get("regions") or []:
+        said = {"name": r["name"], "temperature_k": round(r["temperature_k"], 1),
+                "pressure_kpa": round(r["pressure_pa"] / 1000.0, 2),
+                "volume_litres": round(r["volume_m3"] * 1000.0, 2)}
+        if r.get("piston"):
+            said.update({"piston": r["piston"], "pushed_it_m": round(r["stroke_m"], 4),
+                         "force_on_it_n": round(r["force_n"], 1),
+                         "work_done_on_bodies_j": round(r["work_to_bodies_j"], 2)})
+        if r["heater_w"] > 0:
+            said["being_heated_kw"] = round(r["heater_w"] / 1000.0, 2)
+        gas.append(said)
+    if not bodies and not gas:
+        return None
+    ledger = report.get("ledger") or {}
+    return {"bodies": bodies, "gas": gas,
+            "energy": {"heat_put_in_kj": round(ledger.get("heater_in_j", 0.0) / 1000.0, 2),
+                       "heat_lost_to_surroundings_kj":
+                           round(ledger.get("heat_to_surroundings_j", 0.0) / 1000.0, 2),
+                       "unaccounted_j": ledger.get("residual_j", 0.0)}}
+
+
+def tool_list_substances(_args: dict[str, Any]) -> dict[str, Any]:
+    """What matter is made of, what reacts with what, and where the numbers came from."""
+    everything = banjo.thermo_model()
+    model = everything["model"]
+    return {
+        "substances": [{"name": s["id"], "phase": s["phase"],
+                        "numbers_are": s["provenance"], "note": s["note"]}
+                       for s in model["substances"]],
+        "reactions": [{"name": r["id"], "version": r["version"], "numbers_are": r["provenance"],
+                       "what_it_is": r["description"],
+                       "uses": {t["substance"]: f"{t['kg_per_kg']:g} kg, from {t['from']}"
+                                for t in r["reactants"]},
+                       "makes": {t["substance"]: f"{t['kg_per_kg']:g} kg, {t['goes']}"
+                                 for t in r["products"]},
+                       "releases_mj_per_kg": round(r["heat_released_j_per_kg_at_298k"] / 1e6, 3),
+                       "not_below_k": r["rate"]["minimum_temperature_k"]}
+                      for r in model["reactions"]],
+        "what_materials_are_made_of": model["compositions"],
+        "not_modelled": everything.get("limitations", []),
+        "note": "Burning is a result, not a property. A log burns because it contains dry "
+                "wood and is hot enough, with air around it; how long it lasts is its fuel "
+                "over the rate it burns, and that rate is the model's answer.",
+    }
+
+
+def tool_enclose_gas(args: dict[str, Any]) -> dict[str, Any]:
+    """Fill a space with gas that pushes on a body: a cylinder under a piston."""
+    world_id = str(args.get("world_id"))
+    entry = _world(world_id)
+    name = str(args.get("name") or "gas").strip()[:60]
+    bodies = {b["name"]: b for b in entry["scene"]["bodies"]}
+    block = _thermo_block(entry)
+    if name in bodies or any(r["name"] == name for r in block["gas_regions"]):
+        raise Refused(f"there is already something called {name!r} here; give the gas another name")
+    region: dict[str, Any] = {"name": name}
+    contents = args.get("contents") or {"argon": 1.0}
+    if not isinstance(contents, dict):
+        raise Refused("contents are gases and mass fractions, like {\"argon\": 1}")
+    region["contents"] = {str(k): _number(v, f"contents {k}", 0.0, 1000.0) for k, v in contents.items()}
+    piston = str(args.get("piston") or "")
+    if piston:
+        if piston not in bodies:
+            raise Refused(f"there is nothing called {piston!r} for the gas to push on")
+        if bodies[piston].get("anchored"):
+            raise Refused(f"{piston} is anchored, so the gas could never move it")
+        region["piston"] = piston
+    if args.get("height_m") is not None:
+        region["height_m"] = _number(args["height_m"], "height_m", 0.01, 20.0)
+    elif args.get("volume_m3") is not None:
+        region["volume_m3"] = _number(args["volume_m3"], "volume_m3", 1e-6, 100.0)
+    else:
+        raise Refused("say how tall the column of gas under the piston is (height_m), or its "
+                      "volume (volume_m3)")
+    if args.get("pressure_pa") is not None:
+        region["pressure_pa"] = _number(args["pressure_pa"], "pressure_pa", 100.0, 1.0e8)
+    elif piston:
+        region["balance"] = True
+    else:
+        raise Refused("a gas with nothing to push on needs a pressure (pressure_pa)")
+    if args.get("temperature_k") is not None:
+        region["temperature_k"] = _number(args["temperature_k"], "temperature_k", 1.0, 3000.0)
+    if args.get("axis") is not None:
+        region["axis"] = _triple(args["axis"], "axis", -1e6, 1e6)
+    for key, low, high in (("area_m2", 1e-6, 100.0), ("wall_conductance_w_k", 0.0, 1e6),
+                           ("vent_area_m2", 0.0, 10.0)):
+        if args.get(key) is not None:
+            region[key] = _number(args[key], key, low, high)
+    block["gas_regions"].append(region)
+    lost = _rebuild(entry, _with_thermo(entry["scene"], block), world_id)
+    entry["story"].append(f"filled {name} with gas" + (f" under {piston}" if piston else ""))
+    answer: dict[str, Any] = {"gas_region": name, "heat": _heat_said(entry["world"]),
+                              "note": "The world was opened again with the gas in it. Its "
+                                      "temperature and pressure are worked out from what it "
+                                      "holds and the space it has; heat it (`heat`) and it "
+                                      "pushes harder, lets it cool and what it holds up comes "
+                                      "back down."}
+    if lost:
+        answer["joints_lost"] = lost
+    return answer
+
+
+def tool_heat(args: dict[str, Any]) -> dict[str, Any]:
+    """Put heat into a body or a gas region, from outside: kindling, a torch, a stove."""
+    world_id = str(args.get("world_id"))
+    entry = _world(world_id)
+    target = str(args.get("target") or "")
+    block = _thermo_block(entry)
+    known = {b["name"] for b in entry["scene"]["bodies"]} | {r["name"] for r in block["gas_regions"]}
+    if target not in known:
+        raise Refused(f"there is nothing called {target!r} to heat. Heat a body by its name, or "
+                      f"a gas region made with enclose_gas.")
+    power = _number(args.get("power_w", 10000.0), "power_w", 1.0, 200000.0)
+    seconds = _number(args.get("seconds", 60.0), "seconds", 0.1, 3600.0)
+    start = _number(args.get("start_s", 0.0), "start_s", 0.0, 3600.0)
+    block["heaters"].append({"target": target, "power_w": power, "seconds": seconds,
+                             "start_s": start, "label": str(args.get("label") or "heater")[:40]})
+    lost = _rebuild(entry, _with_thermo(entry["scene"], block), world_id)
+    entry["story"].append(f"heating {target} at {power / 1000:g} kW for {seconds:g} s")
+    answer: dict[str, Any] = {
+        "heating": target, "power_w": power, "seconds": seconds, "from_s": start,
+        "note": "The world was opened again with this heat in it, from when the world starts. "
+                "Call run to see what it does -- it lights something only if it delivers "
+                "enough, and thermal_state says how hot everything is."}
+    if lost:
+        answer["joints_lost"] = lost
+    return answer
+
+
+def tool_thermal_state(args: dict[str, Any]) -> dict[str, Any]:
+    """How hot everything is, what is burning, what the gas is doing, and the ledger."""
+    entry = _world(args.get("world_id"))
+    world: banjo.World = _live(entry)
+    said = _heat_said(world) or {"bodies": [], "gas": []}
+    energy = world.energy()
+    said["energy"] = {
+        "stored_mj": round(energy.stored_j / 1e6, 4),
+        "of_which_chemical_mj": round(energy.chemical_j / 1e6, 4),
+        "of_which_thermal_mj": round(energy.thermal_j / 1e6, 4),
+        "heat_put_in_kj": round(energy.heater_in_j / 1000.0, 3),
+        "heat_lost_to_surroundings_kj": round(energy.heat_to_surroundings_j / 1000.0, 3),
+        "carried_in_by_air_kj": round(energy.matter_in_j / 1000.0, 3),
+        "carried_out_by_smoke_and_steam_kj": round(energy.matter_out_j / 1000.0, 3),
+        "work_done_on_bodies_j": round(energy.work_to_bodies_j, 3),
+        "unaccounted_j": energy.residual_j,
+    }
+    said["time_s"] = round(world.time_s, 3)
+    said["note"] = ("would_last_min_at_this_rate is the fuel left over the rate it is burning "
+                    "NOW: an estimate under current conditions, not a burn time. Chemical and "
+                    "thermal are two parts of one stored energy.")
+    return said
+
+
 def tool_close_world(args: dict[str, Any]) -> dict[str, Any]:
     world_id = str(args.get("world_id"))
     entry = _world(world_id)
@@ -1001,6 +1244,16 @@ OBJECT_SCHEMA = {
                                                  "it out to place it at rest."),
         "anchored": {"type": "boolean", "description": "True makes it scenery: it does "
                                                        "not move and cannot break."},
+        "contents": {"type": "object", "additionalProperties": {"type": "number"},
+                     "description": "What it is made of inside, by mass fraction of its own "
+                                    "mass, like {\"dry wood\": 0.8, \"moisture\": 0.18, "
+                                    "\"ash\": 0.02}. Leave it out and it is made of what its "
+                                    "material is made of: oak is dry wood, moisture and ash, "
+                                    "which is what lets an oak log burn. list_substances says "
+                                    "what there is."},
+        "temperature_k": {"type": "number",
+                          "description": "How hot it starts, in kelvin. Left out, it is at "
+                                         "room temperature, 293 K."},
     },
     "required": ["shape", "material", "size_m"],
 }
@@ -1335,6 +1588,65 @@ TOOLS = [
                      "properties": {
          "world_id": {"type": "string"}, "from_m": VECTOR, "direction": VECTOR,
          "max_m": {"type": "number"}}}},
+    {"name": "list_substances",
+     "description": "What matter is made of here: the substances, the reactions between them "
+                    "(with where every number came from -- most are demonstration values), and "
+                    "what each material is made of. Oak is dry wood, moisture and ash, which is "
+                    "why an oak log can burn; iron is iron and cannot. Read it before giving "
+                    "anything contents.",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "enclose_gas",
+     "description": "Fill a space with gas that pushes on a body: a cylinder under a piston. "
+                    "Build the cylinder from anchored walls, put a loose piston in it on a "
+                    "`slide`, then name the piston here and say how tall the column of gas "
+                    "under it is. The gas starts at the pressure that holds up the piston and "
+                    "whatever rests on it, unless you give pressure_pa. Its temperature and "
+                    "pressure are worked out from what it holds and the room it has: `heat` it "
+                    "and it pushes harder and lifts what is on it; as it cools the load comes "
+                    "back down and pushes on the gas. Nothing sets the piston's speed -- the "
+                    "force is pressure times area.",
+     "inputSchema": {"type": "object", "required": ["world_id", "name"], "properties": {
+         "world_id": {"type": "string"},
+         "name": {"type": "string", "description": "What to call the gas, like 'cylinder gas'."},
+         "piston": {"type": "string", "description": "The loose body it pushes on."},
+         "height_m": {"type": "number",
+                      "description": "How tall the column of gas is, from the floor of the "
+                                     "cylinder to the underside of the piston."},
+         "volume_m3": {"type": "number", "description": "Instead of height_m: its volume."},
+         "contents": {"type": "object", "additionalProperties": {"type": "number"},
+                      "description": "Which gas, by mass fraction. Argon by default: "
+                                     "{\"argon\": 1}. Air is nitrogen 0.755, oxygen 0.232, "
+                                     "argon 0.013."},
+         "pressure_pa": {"type": "number",
+                         "description": "Leave out to start balanced against what it holds up."},
+         "temperature_k": {"type": "number", "description": "Room temperature by default."},
+         "axis": dict(VECTOR, description="Which way the gas pushes the piston. Up by default."),
+         "area_m2": {"type": "number",
+                     "description": "The area it pushes on. The piston's own cross-section "
+                                    "by default."}}}},
+    {"name": "heat",
+     "description": "Put heat into a body or a gas region, from outside: kindling under a log, "
+                    "a torch, a stove under a cylinder. It runs from when the world starts (or "
+                    "start_s) for `seconds` at `power_w`, and the energy ledger counts it. "
+                    "Whether it lights anything is the engine's answer: two oak logs on a stone "
+                    "hearth light with about 10 kW under EACH for 90 s, and a log given much "
+                    "less warms, dries and goes out. A gas that is heated expands against its "
+                    "piston.",
+     "inputSchema": {"type": "object", "required": ["world_id", "target", "power_w", "seconds"],
+                     "properties": {
+         "world_id": {"type": "string"},
+         "target": {"type": "string", "description": "A body's name, or a gas region's."},
+         "power_w": {"type": "number", "description": "Watts. Kindling is about 10000."},
+         "seconds": {"type": "number", "description": "For how long."},
+         "start_s": {"type": "number", "description": "When, after the world starts. 0 by default."}}}},
+    {"name": "thermal_state",
+     "description": "How hot everything is and what is happening to it: surface and core "
+                    "temperatures, what is burning and how hard (kW), the fuel left, and an "
+                    "ESTIMATE of how long it would last at the rate it is burning now; each gas "
+                    "region's temperature, pressure and how far it has pushed its piston; and "
+                    "the energy ledger. Call run first: this reads the world as it stands.",
+     "inputSchema": {"type": "object", "required": ["world_id"],
+                     "properties": {"world_id": {"type": "string"}}}},
     {"name": "close_world",
      "description": "Close a world and free it. Each open world is a physics engine "
                     "with its scene resident in it.",
@@ -1523,6 +1835,10 @@ HANDLERS = {
     "hinge_friction": tool_hinge_friction,
     "unhinge": tool_unhinge,
     "cast_ray": tool_cast_ray,
+    "list_substances": tool_list_substances,
+    "enclose_gas": tool_enclose_gas,
+    "heat": tool_heat,
+    "thermal_state": tool_thermal_state,
     "close_world": tool_close_world,
 }
 

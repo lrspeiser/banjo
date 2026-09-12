@@ -150,6 +150,12 @@ public:
     // caller that wants a sustained push applies it every step -- which is what
     // a hand holding something does.
     void pushBody(MatterBodyId body_id, const Vec3 &force_n);
+    // Change what a body weighs without changing its shape: mass and inertia
+    // scale together. For matter that is used up or given off -- a log burning
+    // down loses its fuel as gas, and the rigid body has to weigh what is left
+    // or every momentum and energy it is part of is wrong. Scenery is left
+    // alone. Host thread, between steps; not part of a reversible trial.
+    void setMass(MatterBodyId body_id, double mass_kg);
     void addBall(const RigidBallDescription &description);
     void addBox(const RigidBoxDescription &description);
     // Bounded compound collision proxy with independent matter-derived inertia.

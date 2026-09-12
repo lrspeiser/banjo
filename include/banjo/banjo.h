@@ -74,8 +74,12 @@ extern "C" {
 
 /* The ABI version. Bumped when the meaning or layout of anything here changes.
  * Check it once at startup against banjo_abi_version(): a header and a library
- * that disagree will not tell you so any other way. */
-#define BANJO_ABI_VERSION 12
+ * that disagree will not tell you so any other way.
+ *
+ * 14 added heat, chemistry and gas. It skips 13, which another branch in
+ * flight has taken, so that the two can be merged without one number meaning
+ * two different headers. */
+#define BANJO_ABI_VERSION 14
 
 /* What a call reported. Anything below zero is a failure and leaves the world
  * unchanged; banjo_last_error() says what happened. */
@@ -677,6 +681,167 @@ BANJO_API int banjo_unhinge(banjo_world *world, unsigned joint);
 BANJO_API int banjo_pick_ray(const banjo_world *world, const double from_m[3],
                              const double direction[3], double max_m,
                              banjo_pick *out);
+
+/* ---- heat, chemistry and gas ------------------------------------------ */
+
+/* A world can hold matter that reacts, heat that moves, and gas that pushes.
+ *
+ * ONE ENERGY CONVENTION. Every substance has an internal energy per kilogram of
+ * u = u0 + cv * T, measured from 0 K: a reference part u0 and a sensible part.
+ * A body or a gas stores ONE internal energy, and its temperature is derived
+ * from it -- never assigned. "Chemical" and "thermal" below are the reference
+ * and the sensible parts of that one number, not two stores added together: a
+ * reaction heats what it happens in because its products' reference energies
+ * are lower, and nothing adds a separate heat of reaction on top.
+ *
+ * WHAT CONTAINS WHAT. A body is made of what its material is made of -- an oak
+ * log is dry wood, moisture and ash by default, which is what lets it burn --
+ * and a scene may say otherwise on the body ("contents": {"dry wood": 0.7,
+ * "moisture": 0.3}). A gas region is a volume of gas that can push on a body:
+ * a cylinder under a piston. Burning is a RESULT. Nothing has a burn time; a
+ * log lasts as long as its fuel does at the rate the model burns it, and
+ * banjo_body_heat.remaining_s is that estimate under current conditions.
+ *
+ * DECLARED, NOT VALIDATED. The wood model is a declared simplified model with
+ * demonstration parameters. banjo_thermo_report(world, 1) says where every
+ * number came from and what is not modelled.
+ *
+ * Declared in a scene (see banjo_open):
+ *
+ *   {"bodies": [{"name": "log", "material": "oak", ...,
+ *                "contents": {"dry wood": 0.8, "moisture": 0.18, "ash": 0.02},
+ *                "temperature_k": 293.15}],
+ *    "thermo": {"gas_regions": [{"name": "cylinder gas", "contents": {"argon": 1},
+ *                                "piston": "piston", "height_m": 0.4,
+ *                                "balance": true}],
+ *               "heaters": [{"target": "log", "power_w": 10000, "seconds": 60}]}}
+ *
+ * or into a running world with banjo_declare. */
+
+/* What one body holds and how hot it is. */
+typedef struct {
+    /* Valid until the next call on this world. */
+    const char *name;
+    const char *material;
+    /* The surface: what glows, radiates, burns and touches. */
+    double temperature_k;
+    /* The rest of it. The same as the surface for a body that conducts well
+     * enough to be one temperature throughout. */
+    double core_temperature_k;
+    double mass_kg;
+    /* What is left that a heat-releasing reaction can consume. */
+    double fuel_kg;
+    /* How fast reactions are releasing heat now, at their quoted heating value. */
+    double heat_release_w;
+    double fuel_use_kg_s;
+    /* Fuel over the rate it is being used now: what it would last if nothing
+     * about it changed. INFINITY when nothing is burning. */
+    double remaining_s;
+    double heater_w;
+    /* From other bodies, by contact and radiation; and to the surroundings. */
+    double gained_w;
+    double lost_w;
+    int reacting;
+    /* Its contents were declared, rather than taken from its material. */
+    int declared;
+} banjo_body_heat;
+
+/* A volume of gas, and the body it pushes on if it has one. */
+typedef struct {
+    const char *name;
+    /* "" for a region with nothing to push on. */
+    const char *piston;
+    double temperature_k;
+    double pressure_pa;
+    double volume_m3;
+    double mass_kg;
+    double moles;
+    /* Where the column starts, which way it grows, and its cross-section:
+     * enough to draw it. Its top is base + axis * height_m. */
+    double base_m[3];
+    double axis[3];
+    double area_m2;
+    double height_m;
+    /* How far the piston has moved since the region was declared. */
+    double stroke_m;
+    /* Net force on the piston: the gas's pressure less the surroundings'. */
+    double force_n;
+    /* Boundary work: delivered to bodies (net of the atmosphere), and done
+     * pushing the atmosphere back. Negative when bodies pushed on the gas. */
+    double work_to_bodies_j;
+    double work_to_atmosphere_j;
+    double heater_w;
+    double wall_loss_w;
+    int vent_open;
+} banjo_gas_region;
+
+/* The ledger: where the energy is, and everything that crossed the boundary.
+ *
+ *     stored_j - initial_j = heater_in_j - heat_to_surroundings_j
+ *                          + matter_in_j - matter_out_j + joined_j - left_j
+ *                          - work_to_bodies_j - work_to_atmosphere_j
+ *                          + numerical_j + residual_j
+ *
+ * Every term but the last is added up where it happens, so residual_j measures
+ * the arithmetic and nothing else. */
+typedef struct {
+    double chemical_j;
+    double thermal_j;
+    double stored_j;
+    double mass_kg;
+    double initial_j;
+    double heater_in_j;
+    double heat_to_surroundings_j;
+    double matter_in_j;
+    double matter_in_kg;
+    double matter_out_j;
+    double matter_out_kg;
+    /* Bodies drawn into the network by heat reaching them, and bodies that
+     * left the world (swept up) with what they held. */
+    double joined_j;
+    double left_j;
+    double work_to_bodies_j;
+    double work_to_atmosphere_j;
+    /* Energy the arithmetic had to add to keep something physical. Reported,
+     * never hidden; zero in every run so far. */
+    double numerical_j;
+    double residual_j;
+    double mass_residual_kg;
+    /* A separate view: the kinetic and gravitational energy of every body, from
+     * the solver's own masses. Boundary work is the link between the two. */
+    double mechanical_j;
+} banjo_energy;
+
+/* Declare into a running world:
+ *     {"contents": [{"body": "log", "contents": {"dry wood": 1}}],
+ *      "gas_regions": [...], "heaters": [...]}
+ * A heater declared here starts now. BANJO_BAD_ARGUMENT, with the reason, for
+ * anything the network refuses -- a key it does not know is refused by name. */
+BANJO_API int banjo_declare(banjo_world *world, const char *json);
+
+/* Heat a body or a gas region at `power_w` from now, for `seconds`: external
+ * work, counted in the ledger as heater_in_j. Enough of it lights a log and
+ * less does not. Returns the heater's id, above zero, or a negative status. */
+BANJO_API int banjo_heat(banjo_world *world, const char *target, double power_w,
+                         double seconds);
+
+/* Open or close a gas region's opening to the surroundings. */
+BANJO_API int banjo_vent(banjo_world *world, const char *region, int open);
+
+BANJO_API int banjo_body_heat_count(const banjo_world *world);
+/* Every body the network holds. Fills up to `max`, returns how many. */
+BANJO_API int banjo_bodies_heat(const banjo_world *world, banjo_body_heat *out, int max);
+BANJO_API int banjo_gas_region_count(const banjo_world *world);
+BANJO_API int banjo_gas_regions(const banjo_world *world, banjo_gas_region *out, int max);
+BANJO_API int banjo_energy_ledger(const banjo_world *world, banjo_energy *out);
+
+/* Everything above as JSON; with `with_model` nonzero, also every substance and
+ * reaction with where its numbers came from, and what is not modelled. Valid
+ * until the next call on this world. */
+BANJO_API const char *banjo_thermo_report(const banjo_world *world, int with_model);
+/* The substances, reactions and material compositions a world starts with, as
+ * JSON, without needing a world. Valid until the next call on this thread. */
+BANJO_API const char *banjo_thermo_model(void);
 
 #ifdef __cplusplus
 }

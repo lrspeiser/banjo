@@ -8,6 +8,7 @@ HERE, where the thing that made it can be told about it.
 from __future__ import annotations
 
 import math
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -21,6 +22,7 @@ import room_world        # noqa: E402
 import world_room        # noqa: E402
 
 ENGINE = next((p for p in [
+    *([Path(os.environ["BANJO_LIVE_ENGINE"])] if os.environ.get("BANJO_LIVE_ENGINE") else []),
     ROOT / "build/integration/Release/banjo_live_world_run.exe",
     ROOT / "build/integration/banjo_live_world_run",
 ] if p.is_file()), None)

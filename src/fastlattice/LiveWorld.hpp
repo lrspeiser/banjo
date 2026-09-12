@@ -1,6 +1,7 @@
 #pragma once
 
 #include "fastlattice/TileImpactScene.hpp"
+#include "thermo/ThermoWorld.hpp"
 
 #include <memory>
 #include <set>
@@ -590,7 +591,38 @@ public:
     // Take the pin out. What hung on it falls.
     void unhinge(unsigned joint);
 
+    // ---- heat, chemistry and gas ----------------------------------------
+    //
+    // The thermochemical network this world runs (thermo/ThermoWorld.hpp), or
+    // null when nothing in it has declared any. It steps with the world and
+    // its state is part of the reversible step: a step that is taken back
+    // takes back the fuel it burned, the gas it made and the heat it moved, or
+    // the retry would burn them twice. Pressure boundaries push on bodies
+    // inside the same trial and are charged exactly the work those pushes did.
+    [[nodiscard]] const thermo::ThermoWorld *thermo() const;
+    // Declare into the running world: {"contents": [{"body": ...}],
+    // "gas_regions": [...], "heaters": [...]} -- a heater's start is from now.
+    void declareThermo(const std::string &json);
+    // Heat a body or a gas region from now, for `seconds`. Returns its id.
+    unsigned heat(const std::string &target, double power_w, double seconds);
+    void setVent(const std::string &region, bool open);
+    // Bodies, regions and the ledger as JSON; with `with_model`, also every
+    // substance and reaction with its provenance, and what is not modelled.
+    [[nodiscard]] std::string thermoReport(bool with_model = false) const;
+    // The kinetic and gravitational energy of every body, from the solver's own
+    // masses: the mechanical view beside the thermochemical ledger. Boundary
+    // work is what passes between the two.
+    [[nodiscard]] double mechanicalEnergyJ() const;
+
 private:
+    // Every body as the network sees it: where it is, how it is turned, what
+    // it weighs and how much surface it has.
+    [[nodiscard]] std::vector<thermo::BodyShape> thermoShapes() const;
+    [[nodiscard]] double hullArea(std::size_t body) const;
+    thermo::ThermoWorld &ensureThermo();
+    // After an accepted step: the heat paths again at a stride, and the rigid
+    // bodies told what they weigh now.
+    void settleThermo();
     LiveWorld();
     // Reads the contacts of the step just taken and answers whether any of them
     // could break what it hit. Called inside a reversible trial, so it must not

@@ -188,3 +188,41 @@ button.quiet { background: transparent; }
 #stock-list .much { font-variant-numeric: tabular-nums; color: rgb(150 200 255 / 0.95); }
 /* A tally that just changed, so the eye is drawn to what was added. */
 #stock-list li.just-in .much { color: rgb(180 235 190); }
+
+/* Heat, fire and gas: top left, out of the way of the crosshair and of what is
+   carried. The numbers are the engine's; the glow and the flames in the room
+   are pictures of them. */
+#heat {
+  position: fixed;
+  left: 16px;
+  top: 16px;
+  min-width: 220px;
+  max-width: min(46ch, calc(100vw - 420px));
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgb(12 16 22 / 0.72);
+  border: 1px solid rgb(255 255 255 / 0.09);
+  backdrop-filter: blur(6px);
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 5;
+}
+#heat h2 {
+  margin: 0 0 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(255 180 120 / 0.8);
+}
+#heat-list { margin: 0; padding: 0; list-style: none; }
+#heat-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 2px 0;
+  color: rgb(233 237 243 / 0.92);
+}
+#heat-list .much { font-variant-numeric: tabular-nums; color: rgb(255 196 140 / 0.95);
+                   text-align: right; }
+#heat-note { margin: 6px 0 0; color: var(--dim); font-size: 11px; }

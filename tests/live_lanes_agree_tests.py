@@ -32,6 +32,7 @@ calls and assuming the clocks match.
 from __future__ import annotations
 
 import math
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -44,6 +45,7 @@ import live_inprocess        # noqa: E402
 import live_session          # noqa: E402
 
 ENGINE = next((p for p in [
+    *([Path(os.environ["BANJO_LIVE_ENGINE"])] if os.environ.get("BANJO_LIVE_ENGINE") else []),
     ROOT / "build/integration/Release/banjo_live_world_run.exe",
     ROOT / "build/integration/banjo_live_world_run",
     ROOT / "build/Release/banjo_live_world_run.exe",

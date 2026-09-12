@@ -136,6 +136,11 @@ struct TileImpactRequest {
     // keeps what the material declares, which is 0 (perfect plasticity) for
     // every catalog preset and the only value the network lane admits.
     double hardening_ratio{-1.0};
+    // What the scene says about heat, chemistry and gas -- its bodies'
+    // "contents" and the "thermo" block beside them -- as the scene document's
+    // own text, for the live world to read with thermo/ThermoJson.hpp. Empty
+    // when the scene declares none, and nothing about the batch lane reads it.
+    std::string thermo_scene_json;
     // Unloaded-shape probe. The reference material route compiles no bond
     // damping, so a plate that is struck and does not break rings for the whole
     // lattice phase and never settles: the permanent set cannot be read off a
