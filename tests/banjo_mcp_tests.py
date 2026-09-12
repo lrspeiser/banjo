@@ -196,6 +196,70 @@ class TheTools(unittest.TestCase):
                         "it was over the bar and still did not break, so the "
                         "explanation offered is the wrong one")
 
+    def test_something_already_there_can_be_picked_up_and_moved(self):
+        """Rearranging, rather than only adding.
+
+        Until this existed the only way to put an object somewhere was to drop a
+        NEW one from above: a model could add to a scene and never move anything
+        in it.
+        """
+        world_id = self.pane_world()
+        self.client.call("add_object", world_id=world_id,
+                         object={"name": "iron ball", "shape": "sphere",
+                                 "material": "iron", "size_m": [0.12] * 3,
+                                 "position_m": [2.0, 0.06, 0]})
+        held = self.client.call("pick_up", world_id=world_id, name="iron ball")
+        self.assertEqual(held["holding"], "iron ball")
+        self.client.call("place", world_id=world_id, to_m=[0, 3.0, 0])
+        answer = self.client.call("let_go", world_id=world_id)
+        self.assertEqual(answer["let_go_of"], "iron ball")
+        breaks = [e for e in answer["what_happened"] if e["what"] == "broke"]
+        self.assertTrue(breaks,
+                        f"carried over the pane and dropped 3 m, nothing broke: "
+                        f"{answer['what_happened']}")
+
+    def test_the_hand_refuses_clearly_rather_than_failing_quietly(self):
+        world_id = self.pane_world()
+        with self.assertRaises(Exception) as anchored:
+            self.client.call("pick_up", world_id=world_id, name="left pier")
+        self.assertIn("pier", str(anchored.exception),
+                      "a refusal that does not name what was refused is no use")
+        with self.assertRaises(Exception) as empty:
+            self.client.call("place", world_id=world_id, to_m=[0, 1, 0])
+        self.assertIn("pick_up", str(empty.exception),
+                      "a refusal should say what to do instead")
+
+    def test_the_floor_can_be_swept_and_the_haul_adds_up(self):
+        """Where raw materials come from, and how the world keeps working.
+
+        Past a couple of thousand bodies the reversible step a fracture needs
+        cannot run, and the room quietly stops being able to break anything. So
+        this is not tidying.
+        """
+        world_id = self.pane_world()
+        self.client.call("drop", world_id=world_id, fall_m=3.0, over_m=[0, 0, 0],
+                         object={"name": "iron ball", "shape": "sphere",
+                                 "material": "iron", "size_m": [0.12] * 3})
+        swept = self.client.call("collect", world_id=world_id,
+                                 near_m=[0, 0, 0], radius_m=4.0)
+        self.assertTrue(swept["picked_up"], "sweeping a shattered pane collected nothing")
+        lot = swept["picked_up"][0]
+        self.assertEqual(lot["material"], "glass")
+        self.assertGreater(lot["grams"], 0.0, "it was collected but weighs nothing")
+        self.assertGreater(lot["pieces"], 1)
+        self.assertLess(swept["objects_now"], swept["objects_before"],
+                        "a haul was reported but the world still holds the pieces")
+
+        # And it accumulates, because that is what it is for.
+        carried = self.client.call("carried", world_id=world_id)
+        self.assertIn("glass", carried["carried"])
+        self.assertAlmostEqual(carried["carried"]["glass"]["grams"], lot["grams"], places=1)
+        self.assertGreater(carried["total_kilograms"], 0.0)
+
+        again = self.client.call("collect", world_id=world_id,
+                                 near_m=[0, 0, 0], radius_m=4.0)
+        self.assertFalse(again["picked_up"], "the same debris was collected twice")
+
     def test_a_ray_says_what_is_under_something(self):
         world_id = self.pane_world()
         above = self.client.call("cast_ray", world_id=world_id,

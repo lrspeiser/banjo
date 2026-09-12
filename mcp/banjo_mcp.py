@@ -198,7 +198,11 @@ def tool_create_world(args: dict[str, Any]) -> dict[str, Any]:
     except banjo.BanjoError as error:
         raise Refused(str(error))
     world_id = uuid.uuid4().hex[:8]
-    WORLDS[world_id] = {"world": world, "scene": scene, "cell_m": cell_m, "story": []}
+    WORLDS[world_id] = {"world": world, "scene": scene, "cell_m": cell_m, "story": [],
+                        # What has been swept up here, by material. Kept on the
+                        # world because that is what it is a property of: the
+                        # matter came out of this room and not another.
+                        "carried": {}}
     return {"world_id": world_id, "cell_size_m": cell_m, "objects": _describe(world),
             "next": "Call run to let time pass. The floor is a plane at y = 0 and "
                     "gravity is on."}
@@ -340,6 +344,120 @@ def tool_drop(args: dict[str, Any]) -> dict[str, Any]:
     return answer
 
 
+def tool_pick_up(args: dict[str, Any]) -> dict[str, Any]:
+    """Take hold of something that is already in the world.
+
+    Until now the only way to put an object somewhere was to drop a NEW one from
+    above, which meant a model could add to a scene but never rearrange it.
+    """
+    entry = _world(args.get("world_id"))
+    world: banjo.World = entry["world"]
+    name = str(args.get("name", ""))
+    try:
+        world.grab(name)
+    except banjo.BanjoError as error:
+        # The engine's own wording, not wrapped in more of ours: it already says
+        # the name and what was wrong, and two layers of it read as a stutter.
+        raise Refused(str(error))
+    entry["story"].append(f"picked up {name}")
+    body = world.body(name)
+    return {"holding": name,
+            "at_m": [round(v, 3) for v in body.position_m] if body else None,
+            "next": "Call place to move it, then let_go. While it is held it is "
+                    "carried exactly where it is put and gravity does not act on "
+                    "it, but it still pushes whatever it runs into."}
+
+
+def tool_place(args: dict[str, Any]) -> dict[str, Any]:
+    """Move what is in the hand to a point, without letting go."""
+    entry = _world(args.get("world_id"))
+    world: banjo.World = entry["world"]
+    if not world.held:
+        raise Refused("nothing is being held. Call pick_up first.")
+    to = _triple(args.get("to_m") or [0, 1, 0], "to_m", -50.0, 50.0)
+    world.move_held(to)
+    # One step, so the world sees it where it now is rather than where it was.
+    world.step(1.0 / 240.0)
+    entry["story"].append(f"moved {world.held} to "
+                          f"[{to[0]:.2f}, {to[1]:.2f}, {to[2]:.2f}]")
+    return {"holding": world.held, "at_m": [round(v, 3) for v in to]}
+
+
+def tool_let_go(args: dict[str, Any]) -> dict[str, Any]:
+    """Let go. It rejoins the world from rest and falls from where it was left."""
+    entry = _world(args.get("world_id"))
+    world: banjo.World = entry["world"]
+    was = world.held
+    if not was:
+        raise Refused("nothing is being held.")
+    world.release()
+    entry["story"].append(f"let go of {was}")
+    # Long enough to land from a couple of metres and settle, and the run
+    # settles anything that breaks on the way.
+    answer = tool_run({"world_id": args.get("world_id"), "seconds": 2.0})
+    answer["let_go_of"] = was
+    return answer
+
+
+def tool_collect(args: dict[str, Any]) -> dict[str, Any]:
+    """Sweep up the loose pieces near a point and say what they were made of.
+
+    Two reasons this matters. It is where raw materials come from -- what comes
+    back is added up by material and by weight, which is the form anything built
+    out of them wants. And it is how a world that shatters keeps working: the
+    reversible step a fracture needs cannot run past a couple of thousand
+    bodies, and past that the room quietly stops being able to break anything.
+    """
+    entry = _world(args.get("world_id"))
+    world: banjo.World = entry["world"]
+    at = _triple(args.get("near_m") or [0, 0, 0], "near_m", -50.0, 50.0)
+    radius = _number(args.get("radius_m", 1.5), "radius_m", 0.05, 10.0)
+    before = len(world.bodies())
+    try:
+        haul = world.collect(at, radius_m=radius)
+    except banjo.BanjoError as error:
+        raise Refused(str(error))
+
+    carried: dict[str, Any] = entry["carried"]
+    picked = []
+    for lot in haul:
+        have = carried.setdefault(lot.material, {"kilograms": 0.0, "pieces": 0})
+        have["kilograms"] += lot.kilograms
+        have["pieces"] += lot.pieces
+        picked.append({"material": lot.material,
+                       "kilograms": round(lot.kilograms, 4),
+                       "grams": round(lot.kilograms * 1000.0, 1),
+                       "pieces": lot.pieces})
+    if picked:
+        entry["story"].append("swept up " + ", ".join(
+            f"{p['grams']:.0f} g of {p['material']}" for p in picked))
+    return {"picked_up": picked,
+            "objects_before": before,
+            "objects_now": len(world.bodies()),
+            "carried": {m: {"kilograms": round(v["kilograms"], 4),
+                            "grams": round(v["kilograms"] * 1000.0, 1),
+                            "pieces": v["pieces"]}
+                        for m, v in sorted(carried.items())},
+            "note": "Only pieces that came OFF something are swept up. Anchored "
+                    "scenery, whatever is in the hand, and anything still the "
+                    "object it always was -- including something merely DENTED "
+                    "-- stay where they are."
+                    if not picked else
+                    "Anchored scenery and anything still the object it always "
+                    "was stay where they are."}
+
+
+def tool_carried(args: dict[str, Any]) -> dict[str, Any]:
+    """What has been swept up in this world, by material."""
+    entry = _world(args.get("world_id"))
+    carried = entry["carried"]
+    return {"carried": {m: {"kilograms": round(v["kilograms"], 4),
+                            "grams": round(v["kilograms"] * 1000.0, 1),
+                            "pieces": v["pieces"]}
+                        for m, v in sorted(carried.items())},
+            "total_kilograms": round(sum(v["kilograms"] for v in carried.values()), 4)}
+
+
 def tool_add_object(args: dict[str, Any]) -> dict[str, Any]:
     entry = _world(args.get("world_id"))
     scene = dict(entry["scene"])
@@ -468,6 +586,42 @@ TOOLS = [
                     "opened again from its scene, so anything in flight starts over.",
      "inputSchema": {"type": "object", "required": ["world_id", "name"], "properties": {
          "world_id": {"type": "string"}, "name": {"type": "string"}}}},
+    {"name": "pick_up",
+     "description": "Take hold of something already in the world, so it can be "
+                    "moved. While held it goes exactly where it is put and "
+                    "gravity does not act on it, but it still pushes what it "
+                    "runs into. Anchored scenery refuses.",
+     "inputSchema": {"type": "object", "required": ["world_id", "name"],
+                     "properties": {"world_id": {"type": "string"},
+                                    "name": {"type": "string"}}}},
+    {"name": "place",
+     "description": "Move what is in the hand to a point, without letting go.",
+     "inputSchema": {"type": "object", "required": ["world_id", "to_m"],
+                     "properties": {"world_id": {"type": "string"},
+                                    "to_m": {"type": "array", "items": {"type": "number"},
+                                             "minItems": 3, "maxItems": 3}}}},
+    {"name": "let_go",
+     "description": "Let go of what is held. It falls from where it was left, "
+                    "and whatever breaks on the way is settled and reported.",
+     "inputSchema": {"type": "object", "required": ["world_id"],
+                     "properties": {"world_id": {"type": "string"}}}},
+    {"name": "collect",
+     "description": "Sweep up the loose pieces near a point and say what they "
+                    "were made of, by material and by weight. This is where raw "
+                    "materials come from, and it is also how a world that has "
+                    "shattered keeps working -- past a couple of thousand bodies "
+                    "the room quietly stops being able to break anything.",
+     "inputSchema": {"type": "object", "required": ["world_id", "near_m"],
+                     "properties": {"world_id": {"type": "string"},
+                                    "near_m": {"type": "array", "items": {"type": "number"},
+                                               "minItems": 3, "maxItems": 3},
+                                    "radius_m": {"type": "number",
+                                                 "description": "How far the sweep "
+                                                                "reaches. 1.5 m by default."}}}},
+    {"name": "carried",
+     "description": "What has been swept up in this world, by material.",
+     "inputSchema": {"type": "object", "required": ["world_id"],
+                     "properties": {"world_id": {"type": "string"}}}},
     {"name": "cast_ray",
      "description": "What a ray meets first, against the shapes the solver really "
                     "collides. Use it to ask what is above or below something, or what "
@@ -491,6 +645,11 @@ HANDLERS = {
     "describe_world": tool_describe_world,
     "add_object": tool_add_object,
     "remove_object": tool_remove_object,
+    "pick_up": tool_pick_up,
+    "place": tool_place,
+    "let_go": tool_let_go,
+    "collect": tool_collect,
+    "carried": tool_carried,
     "cast_ray": tool_cast_ray,
     "close_world": tool_close_world,
 }

@@ -56,6 +56,9 @@ broke.
 | `drop` | the common experiment: put an object a given distance above a point, let it fall, report. The height is measured from **what it lands on**, not from the floor. |
 | `describe_world` | every object, where it is, and what has happened to it |
 | `add_object` / `remove_object` | change a world |
+| `pick_up` / `place` / `let_go` | the hand: take hold of something already in the world and move it. Without this a model can only add new objects from above — it can build a scene but never rearrange one. |
+| `collect` | sweep up the loose pieces near a point and say what they were made of, by material and by weight |
+| `carried` | what has been swept up in this world so far |
 | `cast_ray` | what a ray meets first — what is above or below something, what is in the way |
 | `close_world` | free it |
 
@@ -99,6 +102,25 @@ actually happened.
 `bends_above_m_s` is `null` for the pane because glass is brittle: it has no
 speed at which it bends, which is a real answer rather than a missing one. The
 iron ball has one, because iron does.
+
+Then the follow-up nobody used to be able to ask:
+
+> **Sweep up the glass and tell me how much there is.**
+
+```
+collect → near [0,0,0], radius 4.0
+```
+
+```json
+{
+ "picked_up": [{"material": "glass", "grams": 2040.0, "pieces": 93}],
+ "objects_before": 109, "objects_now": 16,
+ "carried": {"glass": {"grams": 2040.0, "pieces": 93}}
+}
+```
+
+A hundred and nine bodies down to sixteen, which is the other half of why this
+exists: the next experiment in that world would have found the pane unbreakable.
 
 And when nothing happens, it says why:
 
@@ -158,17 +180,46 @@ These are worth putting in your system prompt if you are building on this:
 - **Mass does not help.** 111 kg and 0.9 kg at the same speed are judged the
   same.
 - **Iron is the hammer.** Aluminium is springy and transmits less of the blow.
+- **A world that shatters fills up, and a full world stops breaking.** Fracture
+  needs a step the engine can take back, and that cannot run past a couple of
+  thousand bodies. Past it the room keeps running perfectly and quietly stops
+  being able to break anything: the same iron ball onto the same 20 mm pane
+  broke it into 71 pieces in a room of 58 bodies and left it whole in a room of
+  430. One shattered pane is a hundred bodies, so this arrives sooner than
+  anyone expects. **Call `collect` between experiments.**
+- **A dented thing is not debris.** Something that bends is rebuilt from where
+  its matter ended up, which makes it the same kind of shape a shard is — but it
+  is still the object it was, and `collect` leaves it alone. So does anything
+  anchored, and whatever is in the hand.
+
+## Sweeping, and what it is for
+
+```
+collect(world_id, near_m=[0, 0, 0], radius_m=1.5)
+-> {"picked_up": [{"material": "glass", "grams": 2040.0, "pieces": 93}],
+    "objects_before": 109, "objects_now": 16,
+    "carried": {"glass": {"grams": 2040.0, "pieces": 93}}}
+```
+
+Added up by material rather than by shard, because that is the form anything
+built out of them wants: nobody needs ninety-three entries called
+`"glass pane piece 31"`, they need to know there are two kilograms of glass. The
+weight is the matter that was actually there — a piece's cells are its volume,
+and volume times the material's density is what has been carried away.
+
+`carried` accumulates per world, so a session can break several things and ask
+what it has.
 
 ## Implementation
 
-Roughly 500 lines of Python over the [C API](c-api.md), through
+Roughly 700 lines of Python over the [C API](c-api.md), through
 [the ctypes binding](../../bindings/python/banjo.py). It holds worlds by id,
 converts the engine's refusals into sentences a model can act on, and turns
 every non-finite number into `null` on the way out — infinity is a real answer
 here (a brittle material's bending threshold *is* infinite) and JSON has no way
 to write it.
 
-Twelve tests in [`tests/banjo_mcp_tests.py`](../../tests/banjo_mcp_tests.py)
+Fifteen tests in [`tests/banjo_mcp_tests.py`](../../tests/banjo_mcp_tests.py)
 drive it as a real subprocess through the real protocol, because calling the
 handlers directly would miss everything that goes wrong at a protocol
 boundary — a notification answered when it should not be, a schema a client will
