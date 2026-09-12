@@ -844,6 +844,13 @@ if(BANJO_BUILD_TESTS)
             banjo_enable_warnings(banjo_slider_tests)
             add_test(NAME banjo_slider_tests COMMAND banjo_slider_tests)
 
+            # Ropes and chains: a link that pulls and does not push, made of
+            # ordinary bodies tied to each other rather than a rope object.
+            add_executable(banjo_rope_tests tests/rope_tests.cpp)
+            target_link_libraries(banjo_rope_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_rope_tests)
+            add_test(NAME banjo_rope_tests COMMAND banjo_rope_tests)
+
             # Breaking a piece that has already broken: the trigger against its
             # own derivation, the state a fragment carries back into the
             # lattice, the conservation of the round trip, backend parity

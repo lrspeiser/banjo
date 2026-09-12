@@ -254,7 +254,38 @@ public:
     };
     [[nodiscard]] unsigned addSlider(const SliderDescription &description);
 
-    enum class JointKind : std::uint8_t { Hinge = 0, Slider = 1 };
+    // One link of a rope or a chain.
+    //
+    // Two points that may be any distance apart UP TO a limit, and no further.
+    // That one asymmetry is the whole of what makes a rope a rope: it pulls and
+    // it does not push. Slack costs nothing and is not a force; going taut is.
+    //
+    // A rope is made of these -- a run of small bodies, each linked to the
+    // next -- rather than being a special kind of object, so it hangs in a
+    // catenary because its own segments are heavy, it drapes over what it
+    // touches because its segments collide, and it can be cut anywhere along
+    // its length because every link is separately real.
+    //
+    // `breaking_tension_n` is what it takes to part it. Zero means it never
+    // parts; anything else is a rope that can be overloaded, which is the
+    // difference between a hoist you have to think about and one you do not.
+    // Read what a link is actually carrying with jointTension().
+    struct LinkDescription {
+        MatterBodyId a{kInvalidMatterBodyId};
+        MatterBodyId b{kInvalidMatterBodyId};
+        // Where the link is tied on each body, in world metres, as things stand
+        // right now. Kept in each body's own frame from then on, like a pin.
+        Vec3 point_a_world_m{};
+        Vec3 point_b_world_m{};
+        // How far apart they may get. Below this the link does nothing at all.
+        double length_m{0.1};
+        double breaking_tension_n{0.0};
+    };
+    [[nodiscard]] unsigned addLink(const LinkDescription &description);
+    // What this link is carrying, in newtons. Zero when it is slack.
+    [[nodiscard]] double jointTension(unsigned joint) const;
+
+    enum class JointKind : std::uint8_t { Hinge = 0, Slider = 1, Link = 2 };
 
     // Everything about a joint that a caller can see from outside.
     struct JointReport {

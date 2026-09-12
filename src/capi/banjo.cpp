@@ -455,6 +455,31 @@ int banjo_slide(banjo_world *world, const char *a, const char *b,
     });
 }
 
+int banjo_tie(banjo_world *world, const char *a, const char *b,
+              const double at_a_m[3], const double at_b_m[3],
+              double length_m, double breaking_tension_n) {
+    if (!world || !a || !b || !at_a_m || !at_b_m) {
+        setError("no world, no names, or nowhere to tie"); return BANJO_BAD_ARGUMENT;
+    }
+    if (!(length_m >= 0.0)) {
+        setError("a tie's length is zero (as they stand) or more"); return BANJO_BAD_ARGUMENT;
+    }
+    if (!(breaking_tension_n >= 0.0)) {
+        setError("breaking tension is newtons, zero (never parts) or more");
+        return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        const unsigned rope = world->world->tie(a, b, readVec(at_a_m), readVec(at_b_m),
+                                                length_m, breaking_tension_n);
+        if (rope == 0) {
+            setError(std::string("\"") + b + "\" cannot be tied to \"" + a +
+                     "\": one of them is not in the scene, or they are the same thing");
+            return static_cast<int>(BANJO_BAD_ARGUMENT);
+        }
+        return static_cast<int>(rope);
+    });
+}
+
 int banjo_joint_count(const banjo_world *world) {
     if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
     return guarded([&] {
@@ -475,13 +500,15 @@ int banjo_joints(const banjo_world *world, banjo_joint *out, int max) {
         const int count = std::min<int>(max, static_cast<int>(mutable_world->joints.size()));
         for (int i = 0; i < count; ++i) {
             const LiveJoint &joint = mutable_world->joints[static_cast<std::size_t>(i)];
-            const bool sliding = joint.kind == "slider";
+            const bool turning = joint.kind == "hinge";
             // Radians on the wire, degrees at the boundary -- but only for a
-            // pin. A slide is in metres and converting those would be a very
-            // quiet way to make a portcullis 57 times too tall.
-            const double scale = sliding ? 1.0 : kDegrees;
+            // pin. A slide and a link are in metres and converting those would
+            // be a very quiet way to make a portcullis 57 times too tall.
+            const double scale = turning ? kDegrees : 1.0;
             out[i].id = joint.id;
-            out[i].kind = sliding ? BANJO_JOINT_SLIDER : BANJO_JOINT_HINGE;
+            out[i].kind = joint.kind == "slider" ? BANJO_JOINT_SLIDER
+                          : joint.kind == "link" ? BANJO_JOINT_LINK
+                                                 : BANJO_JOINT_HINGE;
             out[i].a = joint.a.c_str();
             out[i].b = joint.b.c_str();
             out[i].at = joint.at * scale;
@@ -491,6 +518,8 @@ int banjo_joints(const banjo_world *world, banjo_joint *out, int max) {
             writeVec(joint.point_world_m, out[i].at_m);
             writeVec(joint.axis_world, out[i].axis);
             out[i].attached = joint.attached ? 1 : 0;
+            out[i].tension_n = joint.tension_n;
+            out[i].breaks_at_n = joint.breaks_at_n;
         }
         return count;
     });

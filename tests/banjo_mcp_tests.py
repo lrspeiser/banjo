@@ -302,6 +302,57 @@ class TheTools(unittest.TestCase):
         self.assertLess(down, 0.2,
                         f"the grate was let go {up} m up and is still at {down}")
 
+    def test_a_rope_pulls_but_does_not_push(self):
+        """The one asymmetry that makes a rope a rope, through the tools.
+
+        Tied under a beam the weight hangs. There is no tool for "make it
+        hang" -- it hangs because a link is pulling up on it, and if the same
+        link could push, the weight would be held out at arm's length instead
+        of swinging free.
+        """
+        world_id = self.client.call("create_world", cell_size_m=0.04, objects=[
+            {"name": "beam", "shape": "box", "material": "oak",
+             "size_m": [2.0, 0.2, 0.2], "position_m": [0, 4.0, 0], "anchored": True},
+            {"name": "weight", "shape": "box", "material": "iron",
+             "size_m": [0.2, 0.2, 0.2], "position_m": [0, 3.0, 0]},
+        ])["world_id"]
+        made = self.client.call("tie", world_id=world_id, a="beam", b="weight",
+                                at_a_m=[0, 3.9, 0], at_b_m=[0, 3.0, 0])
+        self.assertGreater(made["joint"], 0)
+        rope = self.client.call("joints", world_id=world_id)["joints"][0]
+        self.assertEqual(rope["kind"], "link")
+        # A link is reported in metres and newtons, and says so in the key.
+        self.assertIn("tension_n", rope)
+        self.assertNotIn("degrees", rope)
+
+        self.client.call("run", world_id=world_id, seconds=2.0)
+        held = self.client.call("describe_world", world_id=world_id)
+        weight = next(b for b in held["objects"] if b["name"] == "weight")
+        self.assertGreater(weight["position_m"][1], 2.9,
+                           "the weight fell through its own rope")
+        # 0.2 m of iron is 618 N, and that is what the rope should be carrying.
+        carrying = self.client.call("joints", world_id=world_id)["joints"][0]["tension_n"]
+        self.assertGreater(carrying, 300.0,
+                           f"the rope holds a 618 N weight and reports {carrying} N")
+
+    def test_a_rope_can_be_overloaded(self):
+        world_id = self.client.call("create_world", cell_size_m=0.04, objects=[
+            {"name": "beam", "shape": "box", "material": "oak",
+             "size_m": [2.0, 0.2, 0.2], "position_m": [0, 4.0, 0], "anchored": True},
+            {"name": "weight", "shape": "box", "material": "iron",
+             "size_m": [0.2, 0.2, 0.2], "position_m": [0, 3.0, 0]},
+        ])["world_id"]
+        self.client.call("tie", world_id=world_id, a="beam", b="weight",
+                         at_a_m=[0, 3.9, 0], at_b_m=[0, 3.0, 0],
+                         breaks_at_n=150.0)         # a 618 N weight on it
+        self.client.call("run", world_id=world_id, seconds=2.0)
+        rope = self.client.call("joints", world_id=world_id)["joints"][0]
+        self.assertFalse(rope["attached"], "the rope held four times its rating")
+        weight = next(b for b in self.client.call(
+            "describe_world", world_id=world_id)["objects"] if b["name"] == "weight")
+        self.assertLess(weight["position_m"][1], 2.0,
+                        "the rope parted but the weight did not fall")
+
     def test_a_pin_can_be_stiffened_and_taken_out(self):
         world_id = self.gateway()
         joint = self.client.call("hinge", world_id=world_id, a="post", b="gate",

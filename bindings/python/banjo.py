@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 # Bumped with the header: the world reports what made it wait.
-ABI_VERSION = 7
+ABI_VERSION = 8
 
 NOTHING, HELD, DENTED, BROKE = 0, 1, 2, 3
 OUTCOMES = {0: "nothing", 1: "held", 2: "dented", 3: "broke"}
@@ -81,6 +81,7 @@ class _Lot(ctypes.Structure):
 # What kind of joint, which is also the unit on its numbers.
 JOINT_HINGE = 0
 JOINT_SLIDER = 1
+JOINT_LINK = 2
 
 
 class _Joint(ctypes.Structure):
@@ -94,7 +95,9 @@ class _Joint(ctypes.Structure):
                 ("friction", ctypes.c_double),
                 ("at_m", ctypes.c_double * 3),
                 ("axis", ctypes.c_double * 3),
-                ("attached", ctypes.c_int)]
+                ("attached", ctypes.c_int),
+                ("tension_n", ctypes.c_double),
+                ("breaks_at_n", ctypes.c_double)]
 
 
 class _Pick(ctypes.Structure):
@@ -214,6 +217,11 @@ class Joint:
     at_m: tuple[float, float, float]
     axis: tuple[float, float, float]
     attached: bool
+    # For a link: what it is carrying, and what it takes to part it. Zero
+    # tension on a pin or a slide, which have no tension in any useful sense;
+    # zero breaking strength means a link that never parts.
+    tension_n: float = 0.0
+    breaks_at_n: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -315,6 +323,10 @@ def library(path: str | os.PathLike[str] | None = None) -> ctypes.CDLL:
                                 ctypes.c_double * 3, ctypes.c_double * 3,
                                 ctypes.c_double, ctypes.c_double, ctypes.c_double]
     lib.banjo_slide.restype = ctypes.c_int
+    lib.banjo_tie.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p,
+                              ctypes.c_double * 3, ctypes.c_double * 3,
+                              ctypes.c_double, ctypes.c_double]
+    lib.banjo_tie.restype = ctypes.c_int
     lib.banjo_joint_count.argtypes = [ctypes.c_void_p]
     lib.banjo_joint_count.restype = ctypes.c_int
     lib.banjo_joints.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Joint), ctypes.c_int]
@@ -565,6 +577,34 @@ class World:
                                   where, along, lower_m, upper_m, friction_n),
             f"putting {b!r} in a groove on {a!r}")
 
+    def tie(self, a: str, b: str, at_a_m: Any, at_b_m: Any,
+            length_m: float = 0.0, breaking_tension_n: float = 0.0) -> int:
+        """Tie one named thing to another: up to `length_m` apart and no further.
+
+        That one asymmetry is the whole of what makes a rope a rope: it PULLS
+        and it does not PUSH. Below the length the link does nothing at all, so
+        slack really is slack.
+
+        A rope or a chain is made of these -- a run of small bodies, each tied
+        to the next. There is no rope object and no rope solver, which is why it
+        hangs in a catenary (its segments are heavy), drapes over what it
+        touches (its segments collide), and can be cut anywhere along its length
+        with `unhinge`.
+
+        `length_m` of 0 means "as they stand": the distance between the two
+        points given. `breaking_tension_n` of 0 means it never parts; anything
+        else is a rope you can overload, and a parted link reports `attached`
+        False. Read what it is carrying from `Joint.tension_n`.
+
+        Returns the joint's id.
+        """
+        one = (ctypes.c_double * 3)(*(float(v) for v in at_a_m))
+        two = (ctypes.c_double * 3)(*(float(v) for v in at_b_m))
+        return self._check(
+            self._lib.banjo_tie(self._alive(), a.encode("utf-8"), b.encode("utf-8"),
+                                one, two, length_m, breaking_tension_n),
+            f"tying {b!r} to {a!r}")
+
     def joints(self) -> list[Joint]:
         """Every joint in the world, and where each has got to."""
         count = self._check(self._lib.banjo_joint_count(self._alive()),
@@ -574,8 +614,9 @@ class World:
         out = (_Joint * count)()
         written = self._check(self._lib.banjo_joints(self._alive(), out, count),
                               "reading the pins")
+        names = {JOINT_SLIDER: "slider", JOINT_LINK: "link", JOINT_HINGE: "hinge"}
         return [Joint(id=int(out[i].id),
-                      kind="slider" if out[i].kind == JOINT_SLIDER else "hinge",
+                      kind=names.get(out[i].kind, "hinge"),
                       a=(out[i].a or b"").decode("utf-8"),
                       b=(out[i].b or b"").decode("utf-8"),
                       at=out[i].at,
@@ -584,7 +625,9 @@ class World:
                       friction=out[i].friction,
                       at_m=tuple(out[i].at_m),
                       axis=tuple(out[i].axis),
-                      attached=bool(out[i].attached))
+                      attached=bool(out[i].attached),
+                      tension_n=out[i].tension_n,
+                      breaks_at_n=out[i].breaks_at_n)
                 for i in range(written)]
 
     def joint_friction(self, joint: int, friction: float) -> None:

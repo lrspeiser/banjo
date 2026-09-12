@@ -75,7 +75,7 @@ extern "C" {
 /* The ABI version. Bumped when the meaning or layout of anything here changes.
  * Check it once at startup against banjo_abi_version(): a header and a library
  * that disagree will not tell you so any other way. */
-#define BANJO_ABI_VERSION 7
+#define BANJO_ABI_VERSION 8
 
 /* What a call reported. Anything below zero is a failure and leaves the world
  * unchanged; banjo_last_error() says what happened. */
@@ -147,6 +147,11 @@ typedef struct {
     double at_m[3];
     double axis[3];
     int attached;
+    /* For a link: what it is carrying, in newtons, and what it takes to part
+     * it. Zero tension on a pin or a slide, which have no tension in any useful
+     * sense; zero breaking strength means a link that never parts. */
+    double tension_n;
+    double breaks_at_n;
 } banjo_joint;
 
 typedef struct {
@@ -455,7 +460,36 @@ BANJO_API int banjo_slide(banjo_world *world, const char *a, const char *b,
                           const double at_m[3], const double axis[3],
                           double lower_m, double upper_m, double friction_n);
 
-enum { BANJO_JOINT_HINGE = 0, BANJO_JOINT_SLIDER = 1 };
+enum { BANJO_JOINT_HINGE = 0, BANJO_JOINT_SLIDER = 1, BANJO_JOINT_LINK = 2 };
+
+/* Tie one named thing to another, so they may be up to `length_m` apart and no
+ * further.
+ *
+ * That one asymmetry is the whole of what makes a rope a rope: it PULLS and it
+ * does not PUSH. Below the length the link does nothing at all -- no force, no
+ * damping, no quiet stiffness -- so slack really is slack. A distance
+ * constraint with a minimum as well as a maximum is a rigid rod, and a rod
+ * pushes.
+ *
+ * A rope or a chain is made of these: a run of small bodies, each tied to the
+ * next. There is no rope object and no rope solver. Which means it hangs in a
+ * catenary because its own segments are heavy (measured: six segments over a
+ * 1 m gap with 1.4 m of rope sag 464 mm), drapes over what it touches because
+ * its segments collide, and can be cut anywhere along its length -- with
+ * banjo_unhinge -- because every link is separately real.
+ *
+ * `length_m` of 0 means "as they stand": the distance between the two points
+ * given, which is what you want when tying a rope that is already laid out.
+ *
+ * `breaking_tension_n` is what it takes to part it, and 0 means it never parts.
+ * A parted link reports `attached` as 0, the same as a gate off its hinges, and
+ * what was hanging on it falls. Read what a link is carrying from `tension_n`
+ * on banjo_joints -- measured against a 617.638 N weight, it reports 617.586.
+ *
+ * Returns the joint's id, always above zero, or a negative banjo_status. */
+BANJO_API int banjo_tie(banjo_world *world, const char *a, const char *b,
+                        const double at_a_m[3], const double at_b_m[3],
+                        double length_m, double breaking_tension_n);
 
 /* How many joints are in the world. */
 BANJO_API int banjo_joint_count(const banjo_world *world);

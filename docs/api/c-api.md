@@ -14,7 +14,7 @@ tell you any other way:
 if (banjo_abi_version() != BANJO_ABI_VERSION) { /* mismatch */ }
 ```
 
-Current ABI: **7**.
+Current ABI: **8**.
 
 ---
 
@@ -339,6 +339,39 @@ the constraint reporting `upper = 0.8` the whole way. So anything on a joint is
 pulled towards the hand along what the joint allows, and the mechanism decides
 where it ends up.
 
+### `int banjo_tie(banjo_world *world, const char *a, const char *b, const double at_a_m[3], const double at_b_m[3], double length_m, double breaking_tension_n)`
+
+Two points that may be any distance apart **up to** a limit and no further. That
+one asymmetry is the whole of what makes a rope a rope: it **pulls** and it does
+**not push**. Below the length the link does nothing at all — no force, no
+damping, no quiet stiffness — so slack really is slack. (A distance constraint
+with a minimum as well as a maximum is a rigid rod, and a rod pushes.)
+
+```c
+double top[3] = {0.0, 3.9, 0.0}, bottom[3] = {0.0, 3.0, 0.0};
+int rope = banjo_tie(w, "beam", "weight", top, bottom,
+                     0.0,        /* 0 = as they stand */
+                     2000.0);    /* and it parts above 2 kN */
+```
+
+**A rope is made of these, not of a rope object.** A chain is a run of small
+bodies each tied to the next — which is why it hangs in a catenary (its own
+segments are heavy), drapes over what it touches (its segments collide), and can
+be cut anywhere along its length with `banjo_unhinge`. Measured on eight links
+hanging from a beam, the tension down the chain was 632, 553, 474, 395, 316,
+237, 158, 79 N — a staircase whose every step is one link's weight, because each
+link carries everything below it.
+
+`length_m` of 0 means "as they stand": the distance between the two points
+given, which is what you want for a rope already laid out — and getting it wrong
+by a millimetre is either a rope taut at rest or one that sags.
+
+`breaking_tension_n` of 0 never parts. Anything else is a rope you can
+overload: a parted link reports `attached` as 0, the same as a gate off its
+hinges, and what was hanging on it falls. Read what a link is carrying from
+`tension_n` — measured against a 617.638 N weight it reports 617.586 N, and 0 N
+while the rope still has slack in it.
+
 ### `int banjo_joint_count(const banjo_world *world)`
 ### `int banjo_joints(const banjo_world *world, banjo_joint *out, int max)`
 
@@ -361,9 +394,13 @@ typedef struct {
 ```
 
 **`kind` is also the unit.** A hinge reports `at`, `lower` and `upper` in
-**degrees** and `friction` in newton metres; a slider reports them in **metres**
-and newtons. Reading a slider's `0.8` as degrees gives a portcullis fifty-seven
-times too tall.
+**degrees** and `friction` in newton metres; a slider and a link report them in
+**metres** and newtons. Reading a slider's `0.8` as degrees gives a portcullis
+fifty-seven times too tall.
+
+For a link, `at` is how far apart the two ends are, `upper` is the length it is
+tied to, and `lower` is 0 — because nought-to-length is exactly what a rope is.
+`tension_n` and `breaks_at_n` are meaningful only for links.
 
 `at_m` is worked out from the body the pin is in rather than remembered, so a
 gate carried across the room reports its hinge where the gate is.

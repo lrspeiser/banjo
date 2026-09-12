@@ -591,6 +591,11 @@ public:
         JointKind kind;
         JPH::Ref<JPH::TwoBodyConstraint> constraint;
     };
+    // How long the last step was. Only jointTension() needs it: Jolt reports a
+    // constraint's IMPULSE over the step, and an impulse divided by the step it
+    // was applied over is the force -- which is what anybody asking how hard a
+    // rope is pulling means.
+    double last_dt_s{0.0};
     std::unordered_map<unsigned,Joint> joints_;
     unsigned next_joint_{1};
     std::unordered_map<MatterBodyId, JPH::BodyID> bodies_;
@@ -1025,6 +1030,21 @@ JoltWorld::JointReport JoltWorld::jointState(unsigned joint) const {
     out.a = held.a;
     out.b = held.b;
     out.kind = held.kind;
+    if (held.kind == JointKind::Link) {
+        auto *link = static_cast<JPH::DistanceConstraint *>(held.constraint.GetPtr());
+        // How far apart the two ends actually are. Jolt does not offer that on
+        // a distance constraint, so it is measured -- which is the honest
+        // number anyway: a rope's state is its length, taut or slack.
+        const JPH::RVec3 a = impl_->physics_->GetBodyInterface()
+                                 .GetCenterOfMassPosition(impl_->bodies_.at(held.a));
+        const JPH::RVec3 b = impl_->physics_->GetBodyInterface()
+                                 .GetCenterOfMassPosition(impl_->bodies_.at(held.b));
+        out.at = static_cast<double>((b - a).Length());
+        out.lower = link->GetMinDistance();
+        out.upper = link->GetMaxDistance();
+        out.friction = 0.0;
+        return out;
+    }
     if (held.kind == JointKind::Slider) {
         auto *slide = static_cast<JPH::SliderConstraint *>(held.constraint.GetPtr());
         out.at = slide->GetCurrentPosition();
@@ -1045,12 +1065,68 @@ void JoltWorld::setJointFriction(unsigned joint, double friction) {
     if (!(friction >= 0.0) || !std::isfinite(friction))
         throw std::invalid_argument("joint friction must be zero or more");
     auto &held = impl_->joints_.at(joint);
+    // A rope has no friction to set. Rather than refusing -- which would make
+    // every caller special-case the kind before asking -- this does nothing,
+    // because nothing is the true answer.
+    if (held.kind == JointKind::Link) return;
     if (held.kind == JointKind::Slider)
         static_cast<JPH::SliderConstraint *>(held.constraint.GetPtr())
             ->SetMaxFrictionForce(static_cast<float>(friction));
     else
         static_cast<JPH::HingeConstraint *>(held.constraint.GetPtr())
             ->SetMaxFrictionTorque(static_cast<float>(friction));
+}
+
+unsigned JoltWorld::addLink(const LinkDescription &d) {
+    impl_->requireConfigurationMutable();
+    if (d.a == d.b || !contains(d.a) || !contains(d.b))
+        throw std::invalid_argument("a link needs two different bodies that are both in the world");
+    if (impl_->joints_.size() >= 4096)
+        throw std::invalid_argument("joint budget exceeded");
+    if (!(d.length_m > 0.0) || !std::isfinite(d.length_m))
+        throw std::invalid_argument("a link needs a positive length");
+    if (!(d.breaking_tension_n >= 0.0) || !std::isfinite(d.breaking_tension_n))
+        throw std::invalid_argument("breaking tension must be zero or more newtons");
+    for (const Vec3 &point : {d.point_a_world_m, d.point_b_world_m})
+        if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z))
+            throw std::invalid_argument("a link needs two points that are places");
+
+    JPH::DistanceConstraintSettings settings;
+    settings.mSpace = JPH::EConstraintSpace::WorldSpace;
+    settings.mPoint1 = toJoltPosition(d.point_a_world_m);
+    settings.mPoint2 = toJoltPosition(d.point_b_world_m);
+    // Nought to `length`, and that asymmetry is the rope. Inside that range the
+    // constraint does nothing at all -- no force, no damping, no quiet
+    // stiffness -- so slack really is slack; at the far end it goes taut and
+    // pulls. A distance constraint with min == max is a rigid rod, which is
+    // what this same class is used for elsewhere in this file, and a rod
+    // pushes.
+    settings.mMinDistance = 0.0f;
+    settings.mMaxDistance = static_cast<float>(d.length_m);
+
+    auto *raw = impl_->physics_->GetBodyInterface().CreateConstraint(
+        &settings, impl_->bodies_.at(d.a), impl_->bodies_.at(d.b));
+    if (!raw) throw std::runtime_error("link creation failed");
+    const auto id = impl_->next_joint_++;
+    impl_->joints_.emplace(id, Impl::Joint{d.a, d.b, JointKind::Link,
+                                           static_cast<JPH::TwoBodyConstraint *>(raw)});
+    impl_->physics_->AddConstraint(raw);
+    return id;
+}
+
+double JoltWorld::jointTension(unsigned joint) const {
+    const auto found = impl_->joints_.find(joint);
+    if (found == impl_->joints_.end()) return 0.0;
+    if (found->second.kind != JointKind::Link) return 0.0;
+    // Jolt reports the impulse the constraint applied over the last step, and
+    // an impulse over a step is a force. Negative would be a push, which this
+    // constraint cannot do, so the sign carries no information -- what a caller
+    // wants is how hard the rope is pulling.
+    const double impulse =
+        static_cast<JPH::DistanceConstraint *>(found->second.constraint.GetPtr())
+            ->GetTotalLambdaPosition();
+    const double dt = impl_->last_dt_s > 0.0 ? impl_->last_dt_s : 1.0 / 60.0;
+    return std::abs(impulse) / dt;
 }
 
 unsigned JoltWorld::addSlider(const SliderDescription &d) {
@@ -1662,6 +1738,7 @@ void JoltWorld::step(double fixed_dt_s) {
     if (fixed_dt_s <= 0.0) {
         throw std::invalid_argument("Jolt step must be positive");
     }
+    impl_->last_dt_s = fixed_dt_s;
     impl_->applyRollingResistance(fixed_dt_s);
     auto &collector=impl_->impact_collector_;collector.manifolds=0;collector.points=0;collector.speculative_manifolds=0;
     impl_->tick_.fetch_add(1U, std::memory_order_relaxed);

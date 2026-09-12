@@ -215,6 +215,35 @@ def courtyard() -> dict[str, Any]:
     add("iron portcullis", "box", "iron", [1280, 1200, 120],
         [PORT_X, 600, PORT_Z + 140])
 
+    # ---- a hanging sign ----------------------------------------------------
+    #
+    # A board on two ropes off a bracket. The goal names hanging signs, and they
+    # are the cheapest honest test of a rope: the board hangs because two links
+    # are pulling up on it, it swings when you push it because the links let it,
+    # and it is not attached to the bracket by anything else.
+    #
+    # The ropes are not drawn as segments here -- they are two direct ties, one
+    # to each corner -- because a two-link sign needs no catenary to be right. A
+    # rope with a shape in it is a run of segments; see the chain below.
+    SIGN_X, SIGN_Z = 1400, 900
+    add("sign bracket", "box", "oak", [160, 120, 640],
+        [SIGN_X, 2400, SIGN_Z - 200], anchored=True)
+    add("tavern sign", "box", "oak", [720, 480, 80], [SIGN_X, 1600, SIGN_Z - 440])
+
+    # ---- a chain, hanging from a beam --------------------------------------
+    #
+    # Eight links in a row, each an ordinary body tied to the next. This is what
+    # makes it a rope rather than a rope-shaped thing: every link is a body, so
+    # the chain hangs in a curve because its own links are heavy, swings where
+    # you push it, and drapes over whatever it touches. Take hold of the bottom
+    # one and the whole thing follows.
+    CHAIN_X, CHAIN_Z = -1000, 1400
+    add("chain beam", "box", "oak", [640, 160, 160], [CHAIN_X, 2600, CHAIN_Z],
+        anchored=True)
+    for i in range(8):
+        add(f"chain {i + 1}", "box", "iron", [80, 80, 80],
+            [CHAIN_X, 2360 - i * 160, CHAIN_Z])
+
     # Things to push with, and to wedge things open.
     add("iron ball", "sphere", "iron", [200, 200, 200], [-800, 100, 800])
     add("oak barrel", "box", "oak", [400, 480, 400], [400, 240, 1200])
@@ -248,7 +277,32 @@ def courtyard() -> dict[str, Any]:
             "lower_mm": 0,
             "upper_mm": 1200,
             "friction_n": 3000,
-        }],
+        }] + [{
+            # The sign, on two ropes. Tied where they actually meet each body,
+            # which is what makes it hang level rather than pivot on one point.
+            "kind": "link",
+            "a": "sign bracket",
+            "b": "tavern sign",
+            "at_mm": [SIGN_X + side * 280, 2340, SIGN_Z - 440],
+            "to_mm": [SIGN_X + side * 280, 1840, SIGN_Z - 440],
+            "length_mm": 0,             # as they stand
+            "breaks_at_n": 0,           # a sign is not a thing you overload
+        } for side in (-1, 1)] + [{
+            # The chain: beam to link 1, link 1 to link 2, and so on. Every one
+            # is the same joint as the sign's ropes.
+            "kind": "link",
+            "a": "chain beam" if i == 0 else f"chain {i}",
+            "b": f"chain {i + 1}",
+            # The upper end of link i is on the body ABOVE it -- the beam for
+            # the first, and link i itself for the rest. Written the long way
+            # because the short way was off by one: every link was tied to the
+            # beam's underside rather than to the link it hangs from, which is
+            # not a chain, it is eight things all nailed to the same spot.
+            "at_mm": [CHAIN_X, 2520 if i == 0 else 2360 - (i - 1) * 160, CHAIN_Z],
+            "to_mm": [CHAIN_X, 2360 - i * 160, CHAIN_Z],
+            "length_mm": 0,
+            "breaks_at_n": 0,
+        } for i in range(8)],
     }
 
 

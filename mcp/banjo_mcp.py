@@ -540,6 +540,12 @@ def _said(joint: banjo.Joint) -> dict[str, Any]:
               "at_m": [round(v, 4) for v in joint.at_m],
               "axis": [round(v, 4) for v in joint.axis],
               "attached": joint.attached}
+    if joint.kind == "link":
+        return {**common,
+                "apart_m": round(joint.at, 4),
+                "length_m": round(joint.upper, 4),
+                "tension_n": round(joint.tension_n, 2),
+                "parts_at_n": round(joint.breaks_at_n, 2)}
     if joint.kind == "slider":
         return {**common,
                 "moved_m": round(joint.at, 4),
@@ -575,6 +581,30 @@ def tool_slide(args: dict[str, Any]) -> dict[str, Any]:
             "note": f"{args.get('b')} now slides along a line in {args.get('a')}. "
                     "Nothing holds it there: if it can fall along that line, it "
                     "will, and it stops on whatever is under it."}
+
+
+def tool_tie(args: dict[str, Any]) -> dict[str, Any]:
+    """Tie one named thing to another with a rope.
+
+    It pulls and it does not push, which is the one asymmetry that makes a rope
+    a rope. A chain is a run of small bodies each tied to the next -- there is
+    no rope object here, which is why a chain hangs in a curve and can be cut
+    anywhere along its length.
+    """
+    world: banjo.World = _world(args.get("world_id"))["world"]
+    try:
+        joint = world.tie(
+            str(args.get("a", "")), str(args.get("b", "")),
+            _triple(args.get("at_a_m"), "at_a_m", -200.0, 200.0),
+            _triple(args.get("at_b_m"), "at_b_m", -200.0, 200.0),
+            _number(args.get("length_m", 0.0), "length_m", 0.0, 100.0),
+            _number(args.get("breaks_at_n", 0.0), "breaks_at_n", 0.0, 1e9))
+    except banjo.BanjoError as error:
+        raise Refused(str(error))
+    return {"joint": joint,
+            "note": f"{args.get('b')} is tied to {args.get('a')}. The rope pulls "
+                    "and cannot push, so it does nothing at all while there is "
+                    "slack. Read tension_n from `joints` to see what it carries."}
 
 
 def tool_joints(args: dict[str, Any]) -> dict[str, Any]:
@@ -803,6 +833,33 @@ TOOLS = [
          "friction_n": {"type": "number",
                         "description": "What it takes to start it moving, in "
                                        "newtons."}}}},
+    {"name": "tie",
+     "description": "Tie one named thing to another with a rope: they may be up "
+                    "to `length_m` apart and no further. A rope PULLS and does "
+                    "not PUSH -- below its length it does nothing at all, so "
+                    "slack is really slack. Build a chain or a rope by putting a "
+                    "run of small bodies in the world and tying each to the "
+                    "next; there is no rope object, which is why a chain hangs "
+                    "in a curve, drapes over what it touches, and can be cut "
+                    "anywhere along its length with `unhinge`. Give it "
+                    "`breaks_at_n` and it can be overloaded.",
+     "inputSchema": {"type": "object",
+                     "required": ["world_id", "a", "b", "at_a_m", "at_b_m"],
+                     "properties": {
+         "world_id": {"type": "string"},
+         "a": {"type": "string", "description": "One end, usually the anchored side."},
+         "b": {"type": "string", "description": "The other end."},
+         "at_a_m": dict(VECTOR, description="Where it is tied on `a`, in world metres."),
+         "at_b_m": dict(VECTOR, description="Where it is tied on `b`."),
+         "length_m": {"type": "number",
+                      "description": "How far apart they may get. 0 means 'as "
+                                     "they stand': the distance between the two "
+                                     "points given, which is what you want for a "
+                                     "rope already laid out."},
+         "breaks_at_n": {"type": "number",
+                         "description": "What it takes to part it, in newtons. 0 "
+                                        "never parts. A 200 mm iron cube weighs "
+                                        "618 N, so size it against the load."}}}},
     {"name": "joints",
      "description": "Every pin in the world and where each has turned to. The two "
                     "names a pin holds can change -- a pin whose wood is smashed "
@@ -853,6 +910,7 @@ HANDLERS = {
     "carried": tool_carried,
     "hinge": tool_hinge,
     "slide": tool_slide,
+    "tie": tool_tie,
     "joints": tool_joints,
     "hinge_friction": tool_hinge_friction,
     "unhinge": tool_unhinge,

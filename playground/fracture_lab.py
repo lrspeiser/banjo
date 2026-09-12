@@ -362,7 +362,7 @@ FIELDS = set(DEFAULT) | {"request_id"}
 
 
 # How far either way a pin may turn, in degrees, from where it is hung.
-JOINT_KINDS = ("hinge", "slider")
+JOINT_KINDS = ("hinge", "slider", "link")
 
 
 def normalise_joints(joints: Any, bodies: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -404,6 +404,25 @@ def normalise_joints(joints: Any, bodies: list[dict[str, Any]]) -> list[dict[str
         axis = [_number(v, -1e6, 1e6, f"joint {i} axis") for v in axis]
         if not any(abs(v) > 1e-9 for v in axis):
             raise ValueError(f"joint {i} has an axis with no direction")
+        if kind == "link":
+            # A link is tied at a place on EACH body. Every other joint is one
+            # point the two share, and this is the only one where "where is it"
+            # has two answers.
+            far = joint.get("to_mm")
+            if not isinstance(far, list) or len(far) != 3:
+                raise ValueError(f"joint {i} is a link and needs to_mm as three "
+                                 f"numbers: where it is tied on {b!r}")
+            far = [_number(v, -100000.0, 100000.0, f"joint {i} to_mm") for v in far]
+            # Zero means "as they stand", which is what you want for a rope that
+            # is already laid out -- and getting it wrong by a millimetre is
+            # either a rope taut at rest or one that sags.
+            span = _number(joint.get("length_mm", 0.0), 0.0, 100000.0,
+                           f"joint {i} length_mm")
+            breaks = _number(joint.get("breaks_at_n", 0.0), 0.0, 1e9,
+                             f"joint {i} breaks_at_n")
+            out.append({"kind": kind, "a": a, "b": b, "at_mm": at, "to_mm": far,
+                        "length_mm": span, "breaks_at_n": breaks})
+            continue
         if kind == "slider":
             # Travel in MILLIMETRES, like every other length in a room
             # document. A travel in metres sitting next to a size in

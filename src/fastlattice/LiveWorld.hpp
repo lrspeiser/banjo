@@ -117,6 +117,7 @@ struct LiveJoint {
     unsigned id{};
     // "hinge" -- a pin two things turn about.
     // "slider" -- a line two things move along.
+    // "link"   -- one link of a rope or chain: it pulls, and it does not push.
     //
     // This is also the unit on the three numbers below, because a joint with
     // one degree of freedom has one number and the only question is what it is
@@ -128,6 +129,11 @@ struct LiveJoint {
     double at{};
     double lower{}, upper{};
     double friction{};
+    // What a link is carrying, in newtons. Zero for a slack rope, and zero for
+    // a pin or a slide, which do not have a tension in any useful sense.
+    double tension_n{};
+    // What it takes to part a link. Zero means it never parts.
+    double breaks_at_n{};
     // Where it is now, in the world, for a host that wants to draw it. For a
     // slide, the point is where the travel is measured FROM -- where the thing
     // was built -- not where it has got to.
@@ -380,6 +386,31 @@ public:
                    const Vec3 &point_world_m, const Vec3 &axis_world,
                    double lower_m = -1.0, double upper_m = 1.0,
                    double friction_n = 0.0);
+
+    // Tie one named thing to another, so that they may be up to `length_m`
+    // apart and no further.
+    //
+    // That one asymmetry is the whole of what makes a rope a rope: it pulls
+    // and it does not push. Below the length the link does nothing at all, so
+    // slack really is slack.
+    //
+    // A rope or a chain is made of these -- a run of small bodies, each tied
+    // to the next -- rather than being a special kind of object. Which means it
+    // hangs in a catenary because its own segments are heavy, drapes over what
+    // it touches because its segments collide, and can be cut anywhere along
+    // its length, because every link is separately real.
+    //
+    // `breaking_tension_n` is what it takes to part it, and zero means it never
+    // parts. A link that parts is reported once with `attached` false, exactly
+    // like a gate coming off its hinges, because a host that drew a rope has to
+    // stop drawing it.
+    //
+    // `length_m` of zero means "as they stand": the distance between the two
+    // points given, which is what you want when tying a rope that is already
+    // laid out.
+    unsigned tie(const std::string &a, const std::string &b,
+                 const Vec3 &point_a_world_m, const Vec3 &point_b_world_m,
+                 double length_m = 0.0, double breaking_tension_n = 0.0);
     // Every pin in the scene, with where each has turned to.
     [[nodiscard]] std::vector<LiveJoint> joints() const;
     // How hard it is to move. A stiff hinge holds a door where it is left.
@@ -446,6 +477,13 @@ private:
     // along its joint if it is attached to something. See the definition; the
     // hand writes the world from two places and both have to agree.
     void carryOrHaul(double dt_s);
+    // Part every link carrying more than it can take.
+    //
+    // Checked after the step rather than inside it, because a link's tension is
+    // the impulse the solver just applied and that does not exist until the
+    // step has run. One step of overload before it parts is 4 ms at a live
+    // rate, which is not visible; a rope that never parts is.
+    void partOverloadedLinks();
     // Put the pins back after the body table has been rearranged.
     //
     // Every body in an island is destroyed and rebuilt when anything in it

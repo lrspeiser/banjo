@@ -224,6 +224,18 @@ used to say `"post"`. When there is no piece left around the pin, `attached` goe
 to 0 and what hung on it falls. Read that flag: it is the only way to find out a
 gate has come off its hinges.
 
+`banjo_tie` is the third: two points that may be up to a length apart and no
+further. It **pulls and does not push**, and below its length it does nothing at
+all, so slack is really slack.
+
+A rope or a chain is made of these rather than being a rope object — a run of
+small bodies, each tied to the next. That is why it hangs in a catenary (its own
+segments are heavy), drapes over what it touches (its segments collide), and can
+be cut anywhere along its length. Measured on eight links: tensions of 632, 553,
+474, 395, 316, 237, 158, 79 N down the chain, a staircase whose every step is
+one link's weight. Give a tie `breaking_tension_n` and it can be overloaded;
+read `tension_n` to see what it is carrying.
+
 Two pieces of geometry that each cost an afternoon: set the leaf **clear of its
 own frame** (a door sharing space with its post is jammed against it, and jammed
 looks exactly like a broken hinge), and hang it **clear of the floor** (a door

@@ -250,6 +250,11 @@ struct LiveWorld::Impl {
         Vec3 point_local_a{}, point_local_b{}, axis_local_a{};
         JoltWorld::JointKind kind{JoltWorld::JointKind::Hinge};
         double lower{}, upper{}, friction{};
+        // A link's second attachment, which a pin and a slide do not have: they
+        // are one point shared by two bodies, while a rope is tied at one place
+        // on each and the two are not the same place.
+        Vec3 point_local_b_tie{};
+        double breaks_at_n{};
         // How far it had got, last time anyone could ask. Kept up to date every
         // step because the thing that destroys the constraint is the same thing
         // that needs to know it -- once the wood is rebuilt there is nobody left
@@ -651,6 +656,7 @@ void LiveWorld::step(double dt_s) {
         }
         impl_->time_s += dt_s;
         impl_->rememberJointAngles(*impl_->world);
+        partOverloadedLinks();
         foresee();
         return;
     }
@@ -660,7 +666,42 @@ void LiveWorld::step(double dt_s) {
     (void)judgeStep();
     impl_->time_s += dt_s;
     impl_->rememberJointAngles(*impl_->world);
+    partOverloadedLinks();
     foresee();
+}
+
+// Part every link carrying more than it can take.
+//
+// A rope that cannot fail is a rope that will hold a cathedral up, and the
+// whole point of a hoist is that you have to think about what you hang on it.
+// So a link with a breaking tension is checked against what the solver actually
+// applied on the step just taken -- not against a guess from the load, which
+// would miss the shock of something being dropped on the end of it.
+//
+// The link goes, and says so: `attached` turns false and stays in the list for
+// one report, the same as a gate coming off its hinges, because a host that drew
+// a rope has to be told to stop drawing it. What was hanging on it falls.
+void LiveWorld::partOverloadedLinks() {
+    for (Impl::SceneJoint &joint : impl_->joints) {
+        if (joint.kind != JoltWorld::JointKind::Link) continue;
+        if (!joint.attached || joint.rigid == 0) continue;
+        if (!(joint.breaks_at_n > 0.0)) continue;
+        if (!impl_->world->hasJoint(joint.rigid)) continue;
+        const double carrying = impl_->world->jointTension(joint.rigid);
+        if (carrying <= joint.breaks_at_n) continue;
+        impl_->world->removeJoint(joint.rigid);
+        joint.rigid = 0;
+        joint.attached = false;
+        impl_->delays.push_back({impl_->time_s, joint.a + " to " + joint.b,
+                                 "parted", carrying, joint.breaks_at_n});
+        // Both ends have to wake or what was hanging there stays hanging in the
+        // air until something else disturbs it.
+        for (const std::string &side : {joint.a, joint.b}) {
+            const auto found = impl_->index_of.find(side);
+            if (found != impl_->index_of.end())
+                impl_->world->wake(impl_->body_of[found->second]);
+        }
+    }
 }
 
 double LiveWorld::time_s() const { return impl_->time_s; }
@@ -799,13 +840,69 @@ unsigned LiveWorld::slide(const std::string &a, const std::string &b,
     return impl_->joints.back().id;
 }
 
+unsigned LiveWorld::tie(const std::string &a, const std::string &b,
+                        const Vec3 &point_a_world_m, const Vec3 &point_b_world_m,
+                        double length_m, double breaking_tension_n) {
+    const auto first = impl_->index_of.find(a);
+    const auto second = impl_->index_of.find(b);
+    if (first == impl_->index_of.end() || second == impl_->index_of.end()) return 0;
+    if (first->second == second->second) return 0;
+
+    // "As they stand" is the ordinary case: a rope laid out and then tied does
+    // not want to be told its own length, and getting it wrong by a millimetre
+    // either way is either a rope under tension at rest or one that sags.
+    const double apart = length(point_b_world_m - point_a_world_m);
+    const double ties_at = length_m > 0.0 ? length_m : std::max(apart, 1e-4);
+
+    Impl::SceneJoint joint{};
+    joint.id = impl_->next_joint++;
+    joint.a = a;
+    joint.b = b;
+    joint.kind = JoltWorld::JointKind::Link;
+    joint.lower = 0.0;
+    joint.upper = ties_at;
+    joint.friction = 0.0;
+    joint.breaks_at_n = std::max(0.0, breaking_tension_n);
+
+    const RigidSnapshot one = impl_->world->snapshot(impl_->body_of[first->second]);
+    const RigidSnapshot two = impl_->world->snapshot(impl_->body_of[second->second]);
+    joint.point_local_a = conjugateOf(one.orientation_world)
+                              .rotate(point_a_world_m - one.center_of_mass_world_m);
+    joint.point_local_b_tie = conjugateOf(two.orientation_world)
+                                  .rotate(point_b_world_m - two.center_of_mass_world_m);
+    // A link has no axis. The end that follows its material still needs the
+    // other body's local point, and point_local_b is what rehangJoints reads.
+    joint.point_local_b = joint.point_local_b_tie;
+    joint.axis_local_a = Vec3{0.0, 1.0, 0.0};
+
+    try {
+        JoltWorld::LinkDescription rope{};
+        rope.a = impl_->body_of[first->second];
+        rope.b = impl_->body_of[second->second];
+        rope.point_a_world_m = point_a_world_m;
+        rope.point_b_world_m = point_b_world_m;
+        rope.length_m = ties_at;
+        rope.breaking_tension_n = joint.breaks_at_n;
+        joint.rigid = impl_->world->addLink(rope);
+    } catch (const std::exception &) {
+        return 0;
+    }
+    impl_->world->wake(impl_->body_of[first->second]);
+    impl_->world->wake(impl_->body_of[second->second]);
+    impl_->joints.push_back(std::move(joint));
+    return impl_->joints.back().id;
+}
+
 std::vector<LiveJoint> LiveWorld::joints() const {
     std::vector<LiveJoint> out;
     out.reserve(impl_->joints.size());
     for (const Impl::SceneJoint &joint : impl_->joints) {
         LiveJoint said{};
         said.id = joint.id;
-        said.kind = joint.kind == JoltWorld::JointKind::Slider ? "slider" : "hinge";
+        said.kind = joint.kind == JoltWorld::JointKind::Slider   ? "slider"
+                    : joint.kind == JoltWorld::JointKind::Link   ? "link"
+                                                                 : "hinge";
+        said.breaks_at_n = joint.breaks_at_n;
         said.a = joint.a;
         said.b = joint.b;
         said.lower = joint.lower;
@@ -818,6 +915,7 @@ std::vector<LiveJoint> LiveWorld::joints() const {
             said.lower = now.lower;
             said.upper = now.upper;
             said.friction = now.friction;
+            said.tension_n = impl_->world->jointTension(joint.rigid);
         }
         // Where the pin has got to, worked out from the body it is in rather
         // than remembered, so a gate that has been carried across the room
@@ -954,7 +1052,22 @@ void LiveWorld::rehangJoints() {
             // a portcullis hauled 1 m of its 2 has 1 m either way.
             const double got = std::max(joint.lower, std::min(joint.upper,
                                                               joint.at_when_hung));
-            if (joint.kind == JoltWorld::JointKind::Slider) {
+            if (joint.kind == JoltWorld::JointKind::Link) {
+                JoltWorld::LinkDescription rope{};
+                rope.a = impl_->body_of[side[0]];
+                rope.b = impl_->body_of[side[1]];
+                rope.point_a_world_m = point;
+                // The far end is tied somewhere else on the other body, so it
+                // has to be worked out from that body rather than shared. This
+                // is the one place a link differs from a pin: two points, not
+                // one.
+                const RigidSnapshot other = impl_->world->snapshot(impl_->body_of[side[1]]);
+                rope.point_b_world_m = other.center_of_mass_world_m +
+                                       other.orientation_world.rotate(joint.point_local_b_tie);
+                rope.length_m = joint.upper;
+                rope.breaking_tension_n = joint.breaks_at_n;
+                joint.rigid = impl_->world->addLink(rope);
+            } else if (joint.kind == JoltWorld::JointKind::Slider) {
                 JoltWorld::SliderDescription groove{};
                 groove.a = impl_->body_of[side[0]];
                 groove.b = impl_->body_of[side[1]];

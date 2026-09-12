@@ -207,11 +207,18 @@ class TheCourtyard(unittest.TestCase):
     """
 
     def test_the_courtyard_carries_its_own_joints(self):
+        # By KIND and by what each one holds, never by a total. Every increment
+        # adds mechanisms to this room, and an assertion that counts them is an
+        # assertion that fails on the next one for no reason -- which is what
+        # "2 != 12" was, twice.
         spec = fracture_lab.validate(world_room.courtyard())
-        by_kind = {joint["kind"]: joint for joint in spec["joints"]}
-        self.assertEqual(set(by_kind), {"hinge", "slider"})
+        by_kind: dict[str, list] = {}
+        for joint in spec["joints"]:
+            by_kind.setdefault(joint["kind"], []).append(joint)
+        self.assertLessEqual({"hinge", "slider", "link"}, set(by_kind),
+                             "the courtyard is missing a kind of mechanism")
 
-        pin = by_kind["hinge"]
+        pin = by_kind["hinge"][0]
         self.assertEqual((pin["a"], pin["b"]), ("gate jamb left", "oak gate"))
         # It opens outward only. A gate that swings both ways is a saloon door.
         self.assertEqual(pin["lower_deg"], 0.0)
@@ -219,7 +226,7 @@ class TheCourtyard(unittest.TestCase):
         # And it is stiff enough to stay where it is pushed.
         self.assertGreater(pin["friction_n_m"], 0.0)
 
-        groove = by_kind["slider"]
+        groove = by_kind["slider"][0]
         self.assertEqual((groove["a"], groove["b"]),
                          ("portcullis jamb left", "iron portcullis"))
         # It rests on the ground and can only go up.
@@ -232,6 +239,19 @@ class TheCourtyard(unittest.TestCase):
         self.assertLess(groove["friction_n"], 0.5 * weight_n,
                         "the portcullis holds itself up, so letting go of it "
                         "shows nothing")
+
+        # The chain: every link tied to the one above it, not all of them to the
+        # beam. That was an off-by-one once, and eight things nailed to the same
+        # spot looks like a chain until you pull on it.
+        chain = [j for j in by_kind["link"] if "chain" in j["a"] or "chain" in j["b"]]
+        self.assertGreaterEqual(len(chain), 4, "the chain is too short to hang")
+        hangs_from = {j["a"] for j in chain}
+        self.assertEqual(len(hangs_from), len(chain),
+                         "two links hang from the same thing, so it is not a chain")
+        for joint in chain:
+            # Each link is tied above where it hangs to.
+            self.assertGreater(joint["at_mm"][1], joint["to_mm"][1],
+                               f"{joint['b']} is tied to something below it")
 
     def test_the_portcullis_cannot_rise_through_its_own_arch(self):
         """Travel measured against the room, not guessed.
@@ -298,13 +318,17 @@ class TheCourtyard(unittest.TestCase):
                              f"the room could not hang its own gate: "
                              f"{opened.get('joint_problems')}")
             pins = opened.get("joints") or []
-            self.assertEqual(len(pins), 2,
-                             "the room's joints were not all made when it opened")
-            by_kind = {pin["kind"]: pin for pin in pins}
-            self.assertTrue(all(pin["attached"] for pin in pins))
-            self.assertAlmostEqual(by_kind["hinge"]["degrees"], 0.0, places=3,
+            asked = fracture_lab.validate(world_room.courtyard())["joints"]
+            self.assertEqual(len(pins), len(asked),
+                             "the room did not make every joint it asked for")
+            self.assertTrue(all(pin["attached"] for pin in pins),
+                            "something opened already detached")
+            by_kind: dict[str, list] = {}
+            for pin in pins:
+                by_kind.setdefault(pin["kind"], []).append(pin)
+            self.assertAlmostEqual(by_kind["hinge"][0]["degrees"], 0.0, places=3,
                                    msg="the gate did not open shut")
-            self.assertAlmostEqual(by_kind["slider"]["metres"], 0.0, places=3,
+            self.assertAlmostEqual(by_kind["slider"][0]["metres"], 0.0, places=3,
                                    msg="the portcullis did not open down")
 
             # And it swings when something is pushed into it -- which is the
@@ -340,6 +364,22 @@ class TheCourtyard(unittest.TestCase):
             self.assertLess(fell, 0.2,
                             f"the portcullis was let go {lifted} m up and is still "
                             f"at {fell} m")
+
+            # And the chain hangs: every link carries what is below it, so the
+            # tensions step DOWN the chain. That is the whole difference between
+            # a chain of bodies and a chain-shaped decoration.
+            for _ in range(240):
+                session.send(op="step", dt=1 / 240.0, n=4, moved=True)
+            links = [j for j in session.send(op="joints")["joints"]
+                     if j["kind"] == "link" and "chain" in j["a"] + j["b"]]
+            links.sort(key=lambda j: -j["at"][1])
+            carried = [j["tension_n"] for j in links]
+            self.assertTrue(carried, "the chain reported no links at all")
+            for upper, lower in zip(carried, carried[1:]):
+                self.assertGreater(
+                    upper, lower,
+                    f"a link lower down carries more than the one above it: "
+                    f"{carried}")
         finally:
             live.shutdown()
 

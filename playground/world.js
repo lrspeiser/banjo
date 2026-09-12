@@ -364,6 +364,34 @@ const PIN_GONE = new THREE.MeshStandardMaterial({
   color: 0xd06a4a, roughness: 0.6, metalness: 0.1,
   transparent: true, opacity: 0.55 });
 
+// A rope is drawn between the two things it ties, every frame, because unlike
+// a pin or a groove it MOVES: its whole point is that the two ends are somewhere
+// different from moment to moment. Kept as a separate list from the static
+// joint stubs so the per-frame work is only the ropes.
+const ropeGroup = new THREE.Group();
+scene.add(ropeGroup);
+const ROPE_MATERIAL = new THREE.LineBasicMaterial({ color: 0xd9c9a8 });
+const ROPE_PARTED = new THREE.LineBasicMaterial({ color: 0xd06a4a });
+
+function drawRopes() {
+  while (ropeGroup.children.length) {
+    const child = ropeGroup.children.pop();
+    child.geometry.dispose();
+  }
+  for (const joint of world.joints) {
+    if (joint.kind !== "link") continue;
+    if (!joint.attached) continue;    // parted: there is no rope to draw
+    const a = world.bodies.get(joint.a);
+    const b = world.bodies.get(joint.b);
+    if (!a || !b) continue;
+    const line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([a.mesh.position.clone(),
+                                                b.mesh.position.clone()]),
+      ROPE_MATERIAL);
+    ropeGroup.add(line);
+  }
+}
+
 function drawJoints(pins) {
   if (!pins) return;                  // not in this reply: nothing changed
   world.joints = pins;
@@ -372,6 +400,9 @@ function drawJoints(pins) {
     child.geometry.dispose();
   }
   for (const pin of pins) {
+    // A rope has no stub to draw: it is a line between two bodies and it is
+    // drawn every frame by drawRopes, because both of its ends move.
+    if (pin.kind === "link") continue;
     const at = pin.at || [0, 0, 0];
     const axis = pin.axis || [0, 1, 0];
     const along = new THREE.Vector3(axis[0], axis[1], axis[2]).normalize();
@@ -1049,10 +1080,18 @@ async function tick() {
     }
 
     draw(state);
+    drawRopes();
     if (state.joints) {
         const wasAttached = new Map(world.joints.map((p) => [p.id, p.attached]));
         for (const pin of state.joints) {
           if (wasAttached.get(pin.id) && !pin.attached) {
+            if (pin.kind === "link") {
+              const load = pin.tension_n ? ` at ${Math.round(pin.tension_n)} N` : "";
+              say("world", `the rope from ${pin.a} to ${pin.b} parted${load} —`
+                + ` it was rated for ${Math.round(pin.breaks_at_n || 0)} N.`);
+              remember(`the rope to ${pin.b} parted`);
+              continue;
+            }
             const how = pin.kind === "slider" ? "out of its groove" : "off its hinge";
             say("world", `${pin.b} has come ${how} — there is nothing left`
               + ` of ${pin.a} around the joint to hold it.`);
@@ -1239,6 +1278,7 @@ async function open() {
     world.joints = [];
     draw(data);
     drawJoints(data.joints);
+    drawRopes();
     $("panel-state").textContent = "Live.";
     $("chat").replaceChildren();
     say("world",

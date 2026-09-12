@@ -387,8 +387,169 @@ def a_slide_refuses_what_it_cannot_hold() -> None:
               "and backwards travel")
 
 
+def gantry() -> dict:
+    """A beam overhead with a weight a metre under it, and nothing between."""
+    return {
+        "bodies": [
+            {"name": "beam", "shape": "box", "material": "oak",
+             "dimensions_m": [2.0, 0.2, 0.2], "center_m": [0.0, 4.0, 0.0],
+             "anchored": True},
+            {"name": "weight", "shape": "box", "material": "iron",
+             "dimensions_m": [0.2, 0.2, 0.2], "center_m": [0.0, 3.0, 0.0]},
+        ],
+    }
+
+
+# 0.2 m of iron is 8 litres at 7,870 kg/m3: 63 kg and 618 N. Every rope below is
+# rated against that, because a rope's rating only means something next to what
+# it is asked to hold.
+WEIGHT_N = 0.2 ** 3 * 7870.0 * 9.81
+
+
+def rope_of(world: banjo.World, joint: int) -> banjo.Joint:
+    for held in world.joints():
+        if held.id == joint:
+            return held
+    raise SystemExit(f"[FAIL] there is no joint {joint}")
+
+
+def a_rope_pulls_but_does_not_push() -> None:
+    """The one asymmetry that makes a rope a rope.
+
+    Tied a metre under the beam it hangs -- so it pulls. Lifted up under the
+    beam it falls -- so it does not push. A rod would do the first and not the
+    second, and a rod is what a distance constraint is if you give it a minimum
+    as well as a maximum.
+    """
+    with banjo.World(gantry(), cell_size_m=CELL_M) as world:
+        rope = world.tie("beam", "weight", at_a_m=(0.0, 3.9, 0.0),
+                         at_b_m=(0.0, 3.0, 0.0))
+        require(rope > 0, "the weight would not tie to the beam")
+        require(rope_of(world, rope).kind == "link",
+                "a tie came back as the wrong kind of joint")
+        tick(world, 720)
+        hung = next(b for b in world.bodies() if b.name == "weight").position_m[1]
+        require(hung > 2.9, f"the weight fell through its own rope, to {hung}")
+
+        # Now lift it to just under the beam and let go.
+        world.grab("weight")
+        for i in range(1, 81):
+            world.move_held((0.0, 3.0 + 0.01 * i, 0.0))
+            tick(world)
+        lifted = next(b for b in world.bodies() if b.name == "weight").position_m[1]
+        world.release()
+        tick(world, 480)
+        fell = next(b for b in world.bodies() if b.name == "weight").position_m[1]
+        print(f"  tied a metre down it hangs at y={hung:.3f}; lifted to "
+              f"y={lifted:.3f} and released it falls back to y={fell:.3f}")
+        require(lifted > 3.6, "the lift did not happen")
+        require(fell < 3.1, "the weight did not fall: the rope is pushing it out")
+
+
+def slack_carries_nothing() -> None:
+    with banjo.World(gantry(), cell_size_m=CELL_M) as world:
+        rope = world.tie("beam", "weight", at_a_m=(0.0, 3.9, 0.0),
+                         at_b_m=(0.0, 3.0, 0.0), length_m=2.0)
+        tick(world, 60)
+        while_falling = rope_of(world, rope).tension_n
+        tick(world, 720)
+        caught = rope_of(world, rope)
+        print(f"  with 2 m of rope on a 0.9 m drop, it carried "
+              f"{while_falling:.2f} N on the way down and ended "
+              f"{caught.at:.3f} m from its anchor")
+        require(while_falling < 1.0,
+                "the rope was pulling while it still had slack, so slack is not slack")
+        require(abs(caught.at - 2.0) < 0.2,
+                "it ended somewhere other than the end of its rope")
+
+
+def tension_is_the_load() -> None:
+    with banjo.World(gantry(), cell_size_m=CELL_M) as world:
+        rope = world.tie("beam", "weight", at_a_m=(0.0, 3.9, 0.0),
+                         at_b_m=(0.0, 3.0, 0.0))
+        tick(world, 960)
+        carrying = rope_of(world, rope).tension_n
+        print(f"  the weight is {WEIGHT_N:.1f} N and the rope reports "
+              f"{carrying:.1f} N")
+        require(0.5 * WEIGHT_N < carrying < 2.0 * WEIGHT_N,
+                "a rope holding a 618 N weight is not reporting anything like 618 N")
+
+
+def a_rope_parts_when_overloaded() -> None:
+    with banjo.World(gantry(), cell_size_m=CELL_M) as world:
+        rope = world.tie("beam", "weight", at_a_m=(0.0, 3.9, 0.0),
+                         at_b_m=(0.0, 3.0, 0.0), breaking_tension_n=0.25 * WEIGHT_N)
+        tick(world, 480)
+        after = next(b for b in world.bodies() if b.name == "weight").position_m[1]
+        parted = rope_of(world, rope)
+        print(f"  a {WEIGHT_N:.0f} N weight on a rope rated for "
+              f"{0.25 * WEIGHT_N:.0f} N: it fell to y={after:.3f}, and the rope "
+              f"reports attached={parted.attached}")
+        require(after < 2.0, "the rope held four times what it was rated for")
+        require(not parted.attached, "the rope parted but still says it is holding")
+        require(parted.breaks_at_n > 0.0, "the rope forgot what it was rated for")
+
+
+def a_chain_carries_what_hangs_below_each_link() -> None:
+    """Eight links, and the tension is a staircase.
+
+    This is the test that says a chain is made of bodies rather than being a
+    chain-shaped object: each link carries everything below it, so the tensions
+    step down by exactly one link's weight all the way to the bottom.
+    """
+    scene = gantry()
+    for i in range(8):
+        scene["bodies"].append(
+            {"name": f"link {i + 1}", "shape": "box", "material": "iron",
+             "dimensions_m": [0.08, 0.08, 0.08],
+             "center_m": [0.5, 3.8 - 0.16 * i, 0.0]})
+    with banjo.World(scene, cell_size_m=0.04) as world:
+        ropes = []
+        for i in range(8):
+            above = "beam" if i == 0 else f"link {i}"
+            top = 3.9 if i == 0 else 3.8 - 0.16 * (i - 1)
+            ropes.append(world.tie(above, f"link {i + 1}",
+                                   at_a_m=(0.5, top, 0.0),
+                                   at_b_m=(0.5, 3.8 - 0.16 * i, 0.0)))
+        require(all(r > 0 for r in ropes), "the chain would not tie together")
+        tick(world, 960)
+        carried = [rope_of(world, r).tension_n for r in ropes]
+        print("  eight links, tension down the chain: "
+              + ", ".join(f"{t:.0f}" for t in carried) + " N")
+        for upper, lower in zip(carried, carried[1:]):
+            require(upper > lower,
+                    "a link lower down the chain is carrying more than the one "
+                    "above it, which is not how hanging works")
+        steps = [a - b for a, b in zip(carried, carried[1:])]
+        spread = max(steps) - min(steps)
+        require(spread < 0.15 * max(steps),
+                f"the steps between links are not even ({steps}), so the links "
+                f"are not each carrying one more link's weight")
+
+
+def a_tie_refuses_what_it_cannot_hold() -> None:
+    with banjo.World(gantry(), cell_size_m=CELL_M) as world:
+        for why, call in (
+            ("a body that does not exist",
+             lambda: world.tie("beam", "no such weight", (0, 3.9, 0), (0, 3, 0))),
+            ("a body tied to itself",
+             lambda: world.tie("weight", "weight", (0, 3.9, 0), (0, 3, 0))),
+            ("a negative breaking strength",
+             lambda: world.tie("beam", "weight", (0, 3.9, 0), (0, 3, 0),
+                               breaking_tension_n=-5.0)),
+        ):
+            try:
+                call()
+            except banjo.BanjoError:
+                continue
+            raise SystemExit(f"[FAIL] the engine accepted {why}")
+        require(world.joints() == [], "a refused tie was recorded anyway")
+        print("  a tie refuses a missing body, a body tied to itself, and a "
+              "negative strength")
+
+
 def main() -> int:
-    require(banjo.ABI_VERSION >= 7, "this test needs ABI 7 or later")
+    require(banjo.ABI_VERSION >= 8, "this test needs ABI 8 or later")
     for run, what in (
         (a_gate_hung_through_the_abi_swings, "a gate hung through the ABI swings"),
         (limits_are_degrees, "limits are degrees and they hold"),
@@ -404,6 +565,13 @@ def main() -> int:
          "a slide only moves along its own line"),
         (a_slide_refuses_what_it_cannot_hold,
          "a slide refuses what it cannot hold"),
+        (a_rope_pulls_but_does_not_push, "a rope pulls but does not push"),
+        (slack_carries_nothing, "slack carries nothing"),
+        (tension_is_the_load, "tension is the load"),
+        (a_rope_parts_when_overloaded, "a rope parts when it is overloaded"),
+        (a_chain_carries_what_hangs_below_each_link,
+         "a chain carries what hangs below each link"),
+        (a_tie_refuses_what_it_cannot_hold, "a tie refuses what it cannot hold"),
     ):
         run()
         print(f"[PASS] {what}")
