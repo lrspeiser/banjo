@@ -72,6 +72,28 @@ def mass(body: dict[str, Any] | None) -> float:
     return DENSITY.get(material(body), 1000.0) * v
 
 
+def weigh(world: abt.World, body: dict[str, Any] | None) -> float:
+    """What a live body weighs in the engine: its cells, times their volume,
+    times its density -- the ideal shape only if the engine will not say. They
+    differ for anything round, since a sphere a few cells across is built from
+    cubes, and the checks weigh what the engine weighs. The cells come with
+    `poses`, asked for once per world; an ordinary reply leaves them out."""
+    if not body:
+        return 0.0
+    count = len(body.get("cells_local_m") or [])
+    if not count:
+        shapes = getattr(world, "qa_cells", None)
+        if shapes is None:
+            reply = world.session.send(op="poses")
+            shapes = {b["name"]: len(b.get("cells_local_m") or []) for b in reply.get("bodies", [])}
+            world.qa_cells = shapes
+        count = shapes.get(str(body.get("name")), 0)
+    cell = float(world.session.state.get("cell_size_m") or 0.0)
+    if count and cell > 0.0:
+        return DENSITY.get(material(body), 1000.0) * count * cell ** 3
+    return mass(body)
+
+
 def velocity(body: dict[str, Any]) -> list[float]:
     """How fast an authored body was set going."""
     if body.get("velocity_m_s"):
@@ -241,7 +263,7 @@ def check_hoist(built: Built) -> Verdict:
                        {"joints": joints_in_words(joints)})
     rope = rove[0]
     # The load is the heavier end; the other is what a hand pulls.
-    load, handle = sorted((rope["a"], rope["b"]), key=lambda n: -mass(world.body(n)))
+    load, handle = sorted((rope["a"], rope["b"]), key=lambda n: -weigh(world,world.body(n)))
     ratio = float(rope.get("ratio") or 1.0)
     load_y, handle_y = world.body(load)["position_m"][1], world.body(handle)["position_m"][1]
     haul(world, handle, [0.0, -0.6, 0.0], seconds=2.0)
@@ -252,7 +274,7 @@ def check_hoist(built: Built) -> Verdict:
     expected = pulled / ratio if handle == rope["a"] else pulled * ratio
     world.session.send(op="release")
     world.seconds(1.0)
-    kg = mass(world.body(load))
+    kg = weigh(world,world.body(load))
     measured = {"load": load, "handle": handle, "ratio": ratio, "load_kg": round(kg, 1),
                 "handle_pulled_m": round(pulled, 3), "load_rose_m": round(rose, 3),
                 "rope_predicts_m": round(expected, 3)}
@@ -297,8 +319,8 @@ def check_counterweight(built: Built) -> Verdict:
         drifts.append(abs(coordinate(world.joint(pin["id"])) - left_at))
     ratio = float(rope.get("ratio") or 1.0)
     measured = {"grate": grate, "counterweight": other, "ratio": ratio,
-                "grate_kg": round(mass(world.body(grate)), 1),
-                "counterweight_kg": round(mass(world.body(other)), 1),
+                "grate_kg": round(weigh(world,world.body(grate)), 1),
+                "counterweight_kg": round(weigh(world,world.body(other)), 1),
                 "moved_m": [round(m, 3) for m in moves], "drift_m": [round(d, 3) for d in drifts],
                 "started_at_m": round(start, 3)}
     if max(moves) < 0.15:
@@ -330,10 +352,13 @@ def check_spring_weight(built: Built) -> Verdict:
         return Verdict(False, "no spring hangs anything from something fixed",
                        {"joints": joints_in_words(joints)})
     pin, weight = springs[0]
-    kg = mass(world.body(weight))
+    kg = weigh(world,world.body(weight))
     forces, lows = [], []
-    for _ in range(48):
-        world.seconds(1.0 / 12.0)
+    # Every 4 steps for 4 s. Sampled every 1/12 s, it read 130 N for a 166 N
+    # weight bouncing with a 0.41 s period: every fifth sample landed on the
+    # same part of the bounce, and the average was of that part.
+    for _ in range(240):
+        world.step(4)
         joint = world.joint(pin["id"])
         forces.append(abs(float((joint or {}).get("force_n") or 0.0)))
         lows.append(bottom(world.body(weight)))
@@ -374,7 +399,7 @@ def check_seesaw(built: Built) -> Verdict:
               and abs(b["position_m"][2] - body["position_m"][2]) <= size[2] / 2.0]
     if not riders:
         return Verdict(False, f"nothing rests on {plank}", {"plank": plank})
-    moment = sum(mass(b) * dot(sub(b["position_m"], pin["at"]), across) for b in riders + [body])
+    moment = sum(weigh(world,b) * dot(sub(b["position_m"], pin["at"]), across) for b in riders + [body])
     heavy = 1.0 if moment > 0 else -1.0
     reach = abs(dot([size[0] / 2.0, 0.0, size[2] / 2.0], [abs(across[0]), 0.0, abs(across[2])]))
     end = scale(across, heavy * reach)
@@ -522,7 +547,13 @@ def check_sliding(built: Built) -> Verdict:
         return math.hypot(p[0] - start[n][0], p[2] - start[n][2])
 
     di, do = slid(i), slid(o)
-    measured.update(ice_slid_m=round(di, 3), oak_slid_m=round(do, 3))
+    met = max((x.get("closing_speed_m_s", 0.0) for x in world.impacts
+               if {str(x.get("struck")), str(x.get("by"))} == {i, o}), default=0.0)
+    measured.update(ice_slid_m=round(di, 3), oak_slid_m=round(do, 3),
+                    ran_into_each_other_m_s=round(met, 2))
+    if met > 0.0 and di < 1.5 * do:
+        return Verdict(False, f"the ice ran into the oak at {met:.1f} m/s -- they were not side by "
+                              f"side -- so neither slid its own distance", measured)
     if di < 1.5 * do:
         return Verdict(False, f"from {vi:.1f} m/s the ice slid {di:.2f} m and the oak {do:.2f} m: "
                               f"ice, far more slippery, should go much further", measured)
@@ -609,11 +640,27 @@ def check_pendulum(built: Built) -> Verdict:
         if (s[k - 1] < 0.0) != (s[k] < 0.0):
             t0, t1 = track[k - 1][0], track[k][0]
             crossings.append(t0 + (t1 - t0) * (-s[k - 1]) / (s[k] - s[k - 1]))
+    length = sum(norm(sub(p, pivot)) for _, p in track) / len(track)
     if len(crossings) < 3:
+        struck = sorted({str(x.get("struck") if x.get("by") == bob else x.get("by"))
+                         for x in world.impacts if bob in (x.get("struck"), x.get("by"))} - {bob})
+        if struck:
+            return Verdict(False, f"{bob} strikes {struck[0]} as it swings: it hangs where "
+                                  f"{struck[0]} is in its way", {**measured, "strikes": struck})
+        # Nothing hit it hard enough to be reported. Then ask what occupies the
+        # point it would hang at, straight below its pivot.
+        hang = [pivot[0], pivot[1] - length, pivot[2]]
+        reach = max(world.body(bob)["dimensions_m"]) / 2.0
+        there = [b["name"] for b in world.bodies().values()
+                 if b.get("anchored") and b["name"] != bob
+                 and all(abs(hang[k] - b["position_m"][k]) < b["dimensions_m"][k] / 2.0 + reach
+                         for k in range(3))]
+        if there:
+            return Verdict(False, f"{bob} cannot swing through the point below its pivot: "
+                                  f"{there[0]} is there", {**measured, "in_the_way": there})
         return Verdict(False, f"{bob} did not swing through the middle often enough to time",
                        measured)
     period = 2.0 * (crossings[-1] - crossings[0]) / (len(crossings) - 1)
-    length = sum(norm(sub(p, pivot)) for _, p in track) / len(track)
     size = world.body(bob)["dimensions_m"]
     if world.body(bob).get("shape") == "sphere":
         k2 = 0.1 * size[0] ** 2                      # 2/5 r^2
@@ -689,7 +736,20 @@ def check_pane_breaks(built: Built) -> Verdict:
         return Verdict(False, "no glass hangs on a hinge from anything fixed",
                        {"joints": joints_in_words(joints)})
     pin, pane = pins[0]
-    world.seconds(3.0)
+    # Watched closely until it breaks, to see what is left at the pin at that
+    # moment, before any piece has fallen anywhere.
+    at_pin: list[tuple[float, int, str]] = []
+    while world.simulated_s < 3.0:
+        world.step(2)
+        if pieces_of(world, pane) or world.body(pane) is None:
+            for name in pieces_of(world, pane):
+                body = world.body(name)
+                gap = norm([max(0.0, abs(pin["at"][k] - body["position_m"][k])
+                                - body["dimensions_m"][k] / 2.0) for k in range(3)])
+                at_pin.append((gap, len(body.get("cells_local_m") or []), name))
+            at_pin.sort()
+            break
+    world.seconds(max(0.0, 3.0 - world.simulated_s))
     pieces = pieces_of(world, pane)
     measured = {"pane": pane, "pieces": len(pieces), "hardest_hit_m_s": round(hit_speed(world, [pane]), 2)}
     if not pieces and world.body(pane) is not None:
@@ -697,9 +757,18 @@ def check_pane_breaks(built: Built) -> Verdict:
                               f"{measured['hardest_hit_m_s']} m/s", measured)
     now = world.joint(pin["id"])
     measured["pin_holds"] = [now["a"], now["b"]] if now else None
+    measured["nearest_piece_to_pin"] = (
+        {"piece": at_pin[0][2], "cells": at_pin[0][1], "mm": round(at_pin[0][0] * 1000.0)}
+        if at_pin else None)
     if now is None or not now.get("attached"):
-        return Verdict(False, f"{pane} broke into {len(pieces)} pieces and the pin let go of all of "
-                              f"them", measured)
+        close = [p for p in at_pin if p[0] <= 0.04 and p[1] >= 4]
+        if close:
+            gap, cells, name = close[0]
+            return Verdict(False, f"{pane} broke into {len(pieces)} pieces and the pin let go, though "
+                                  f"{name} ({cells} cells) was {gap * 1000:.0f} mm from it: it should "
+                                  f"have followed that piece", measured)
+        return Verdict(True, f"{pane} broke into {len(pieces)} pieces and none of it was left at the "
+                             f"pin, so the pin let go, as it should", measured)
     holder = now["b"] if anchored.get(now["a"]) else now["a"]
     body = world.body(holder)
     if not holder.startswith(pane + " piece"):
@@ -735,7 +804,7 @@ def check_bridge_holds(built: Built) -> Verdict:
              and material(b) == "iron" and abs(bottom(b) - top) < 0.05]
     if not loads:
         return Verdict(False, f"nothing made of iron rests on {plank}", measured)
-    carried = sum(mass(b) for b in loads) * G
+    carried = sum(weigh(world,b) for b in loads) * G
     measured.update(carrying_n=round(carried), plank_bottom_m=round(bottom(body), 3))
     if over or broken:
         return Verdict(False, f"{', '.join(over or broken)} gave way under {carried:.0f} N", measured)
@@ -786,7 +855,7 @@ def check_bow(built: Built) -> Verdict:
     forward[long_axis] = 1.0
     if dot(sub(bodies[string]["position_m"], bodies[arrow]["position_m"]), forward) > 0.0:
         forward = scale(forward, -1.0)
-    kg = mass(bodies[arrow])
+    arrow_kg = weigh(world,bodies[arrow])
     s0, a0 = bodies[string]["position_m"], bodies[arrow]["position_m"]
     draw = 0.25
     world.session.send(op="grab", name=string)
@@ -818,9 +887,9 @@ def check_bow(built: Built) -> Verdict:
     world.seconds(1.0)
     a = world.body(arrow)
     flew = dot(sub(a["position_m"], a0), forward) if a else 0.0
-    energy = 0.5 * kg * peak * peak
+    energy = 0.5 * arrow_kg * peak * peak
     measured = {"arrow": arrow, "string": string, "drawn_m": round(drawn, 3),
-                "stored_j": round(stored, 2), "arrow_kg": round(kg, 3), "speed_m_s": round(peak, 2),
+                "stored_j": round(stored, 2), "arrow_kg": round(arrow_kg, 3), "speed_m_s": round(peak, 2),
                 "arrow_j": round(energy, 2), "flew_m": round(flew, 2)}
     if drawn < 0.1:
         return Verdict(False, f"the string came back only {drawn * 1000:.0f} mm under a hand's "
@@ -944,12 +1013,14 @@ def check_tether(built: Built) -> Verdict:
     out = world.body(block)["position_m"]
     haul(world, block, scale(away, -0.4), seconds=1.0)
     came = dot(sub(world.body(block)["position_m"], out), scale(away, -1.0))
-    slack = float((world.joint(rope["id"]) or {}).get("tension_n") or 0.0)
+    loose = world.joint(rope["id"]) or {}
+    slack = float(loose.get("tension_n") or 0.0)
+    closer = rope_span(world, ends) if ends else float(loose.get("metres") or 0.0)
     world.session.send(op="release")
     measured = {"block": block, "rope_m": round(length, 3), "pulled_to_m": round(reach, 3),
                 "joints_report_says_m": round(reported, 3),
                 "tension_n": round(tension, 1), "pushed_back_m": round(came, 3),
-                "slack_tension_n": round(slack, 1)}
+                "span_pushed_back_m": round(closer, 3), "slack_tension_n": round(slack, 1)}
     if length <= 0.0:
         return Verdict(False, "the rope has no length", measured)
     if reach > 1.05 * length + 0.02:
@@ -958,12 +1029,19 @@ def check_tether(built: Built) -> Verdict:
     if tension < 1.0:
         return Verdict(False, f"hauled {length + 1:.1f} m away, the rope carried nothing: {block} "
                               f"never reached its end", measured)
-    if came < 0.25:
-        return Verdict(False, f"pushed back towards the post, {block} moved only {came:.2f} m: the "
-                              f"rope is pushing", measured)
+    # Not pushing means SLACK once the ends are closer than the rope is long:
+    # nothing in it. How far the block came back is not the test -- a post or
+    # the ground can stop it first, and did, in a build whose rope was tied a
+    # metre up its post, where the block read 0.09 m back and 0 N in the rope.
+    if closer >= length - 0.01:
+        return Verdict(False, f"pushed back, {block} came only {came:.2f} m and the rope is still at "
+                              f"its full length, so whether it pushes could not be seen", measured)
+    if slack > 5.0:
+        return Verdict(False, f"with its ends {closer:.2f} m apart on a {length:.2f} m rope, the rope "
+                              f"still carries {slack:.0f} N: it is pushing", measured)
     return Verdict(True, f"hauled away, {block} stopped at {reach:.2f} m on its {length:.2f} m rope, "
-                         f"carrying {tension:.0f} N; pushed back it came {came:.2f} m, the rope "
-                         f"slack", measured)
+                         f"carrying {tension:.0f} N; pushed back to {closer:.2f} m, the rope went "
+                         f"slack ({slack:.0f} N)", measured)
 
 
 # ---------------------------------------------------------------------------

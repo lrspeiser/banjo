@@ -994,6 +994,15 @@ def run_trial(case: Case, trial: int, api_key: str, model: str,
         else:
             record["reason"] = "the agent changed nothing in the room"
         return record
+    return judge(case, room, before, str(answer.get("reply") or ""), record)
+
+
+def judge(case: Case, room: world_room.Room, before: set[str], reply: str,
+          record: dict[str, Any]) -> dict[str, Any]:
+    """Open the room the agent left in the real engine and USE it: the case's
+    check, then the room let come to rest, all of it held to the realtime rule.
+    Also how a finished run's rooms are judged again when a check is corrected
+    (tests/qa.py --recheck): the build is the agent's, unchanged."""
     checked = time.perf_counter()
     try:
         world = World(room.spec)
@@ -1005,7 +1014,7 @@ def run_trial(case: Case, trial: int, api_key: str, model: str,
         if problems:
             record["reason"] = f"joints that would not hang: {problems}"
             return record
-        verdict = case.check(Built(room, world, before, str(answer.get("reply") or "")))
+        verdict = case.check(Built(room, world, before, reply))
         record.update(passed=verdict.ok, reason=verdict.reason, measured=verdict.measured)
         record["rest"] = settle(world)
         record["realtime"] = timing(world, time.perf_counter() - checked)

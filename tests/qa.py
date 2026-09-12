@@ -500,6 +500,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--retry", metavar="RUN",
                         help="ask again, into the same run, for the trials that never reached "
                              "the model")
+    parser.add_argument("--recheck", metavar="RUN",
+                        help="judge a run again with the checks as they are now: recipes built "
+                             "again, the agent's rooms reopened from what it left -- no model")
     args = parser.parse_args(argv)
 
     wanted = [w.strip() for w in args.cases.split(",") if w.strip()]
@@ -512,6 +515,46 @@ def main(argv: list[str] | None = None) -> int:
                             CASES, data.get("started") or time.time())
         (folder / "summary.txt").write_text(
             summary_text(model, data["recipes"], data["trials"], CASES), encoding="utf-8")
+        print(f"report: {page}")
+        if args.share:
+            print(f"shareable: {share(folder) / 'index.html'}")
+        return 0
+    if args.recheck:
+        # The agent's builds are what they were; the checks are what they are
+        # now. Each saved room is opened again and judged, and each recipe built
+        # again. The pictures are kept: the rooms have not changed.
+        import world_room
+        folder = ROOT / "build" / "agent-regression" / args.recheck
+        data = json.loads((folder / "report.json").read_text(encoding="utf-8"))
+        model = data.get("model") or "recipes only"
+        ran = {r["case"] for r in data["recipes"] + data["trials"]}
+        recipes = run_recipes([c for c in CASES if c.id in ran], folder)
+        trials = []
+        for old in data["trials"]:
+            case = BY_ID.get(old["case"])
+            if case is None or not old.get("spec"):
+                trials.append(old)
+                continue
+            kept = json.loads((folder / f"{old['case']}-{old['trial']}.json").read_text(encoding="utf-8"))
+            room = world_room.Room(case.scene)
+            before = {b["name"] for b in room.bodies()}
+            room.spec = json.loads((folder / old["spec"]).read_text(encoding="utf-8"))
+            record = {k: v for k, v in old.items()
+                      if k not in ("passed", "reason", "measured", "rest", "realtime", "too_slow")}
+            record["passed"] = False
+            record = abt.judge(case, room, before, str((kept.get("answer") or {}).get("reply") or ""),
+                               record)
+            record["rechecked"] = True
+            trials.append(record)
+            print(f"  trial  {state_of(record):4s}  {case.id} #{record['trial']}: {record.get('reason')}",
+                  flush=True)
+        (folder / "report.json").write_text(json.dumps(
+            {**data, "recipes": recipes, "trials": trials, "rechecked": time.time()}, indent=1,
+            default=str), encoding="utf-8")
+        (folder / "summary.txt").write_text(summary_text(model, recipes, trials, CASES),
+                                            encoding="utf-8")
+        page = write_report(folder, model, recipes, trials, data.get("seen") or {}, CASES,
+                            data.get("started") or time.time())
         print(f"report: {page}")
         if args.share:
             print(f"shareable: {share(folder) / 'index.html'}")
