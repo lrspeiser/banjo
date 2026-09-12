@@ -604,6 +604,113 @@ class TheTools(unittest.TestCase):
         self.client.call("close_world", world_id=world_id)
         self.assertIn("no world", self.client.refuse("describe_world", world_id=world_id))
 
+    def gate_and_ball(self):
+        """A post and a gate beside it, clear of each other, and nothing joined."""
+        return self.client.call("create_world", cell_size_m=0.04, objects=[
+            {"name": "post", "shape": "box", "material": "concrete",
+             "size_m": [0.16, 2.0, 0.16], "position_m": [-0.08, 1.0, 0.0],
+             "anchored": True},
+            {"name": "gate", "shape": "box", "material": "oak",
+             "size_m": [1.2, 1.6, 0.08], "position_m": [0.6, 1.0, 0.12]},
+            {"name": "ball", "shape": "sphere", "material": "iron",
+             "size_m": [0.2, 0.2, 0.2], "position_m": [2.5, 0.1, 2.5]},
+        ])["world_id"]
+
+    def test_a_hinge_survives_the_world_being_opened_again(self):
+        """Adding an object reopens the world from its scene. The scene used to
+        hold bodies only, so the gate's hinge silently vanished at the next
+        edit and the gate fell over -- with nothing anywhere to say so."""
+        world_id = self.gate_and_ball()
+        pin = self.client.call("hinge", world_id=world_id, a="post", b="gate",
+                               at_m=[0.0, 1.0, 0.12], axis=[0, 1, 0])["joint"]
+        added = self.client.call("add_object", world_id=world_id, object={
+            "name": "second ball", "shape": "sphere", "material": "iron",
+            "size_m": [0.2, 0.2, 0.2], "position_m": [2.5, 0.1, -2.5]})
+        self.assertEqual(added["joints"], 1)
+        pins = self.client.call("joints", world_id=world_id)["joints"]
+        self.assertEqual([p["joint"] for p in pins], [pin],
+                         "the hinge did not come back, or came back under another id")
+        self.assertTrue(pins[0]["attached"])
+        # And it HOLDS: hung, the gate stays up; loose, it would fall and topple.
+        self.client.call("run", world_id=world_id, seconds=1.0)
+        gate = next(o for o in self.client.call("describe_world", world_id=world_id)
+                    ["objects"] if o["name"] == "gate")
+        self.assertGreater(gate["position_m"][1], 0.95,
+                           f"the gate is at {gate['position_m']}: nothing held it up")
+
+    def test_a_joint_keeps_its_id_and_its_settings_across_rebuilds(self):
+        """The id a caller was given still means the same pin after the world
+        has been opened again, and what was set on it is kept."""
+        world_id = self.gate_and_ball()
+        pin = self.client.call("hinge", world_id=world_id, a="post", b="gate",
+                               at_m=[0.0, 1.0, 0.12], axis=[0, 1, 0])["joint"]
+        self.client.call("hinge_friction", world_id=world_id, joint=pin,
+                         friction_n_m=40.0)
+        self.client.call("move_object", world_id=world_id, name="ball",
+                         position_m=[2.0, 0.1, 2.0])
+        again = self.client.call("joints", world_id=world_id)["joints"]
+        self.assertEqual(again[0]["joint"], pin)
+        self.assertAlmostEqual(again[0]["friction_n_m"], 40.0, places=1)
+        self.client.call("unhinge", world_id=world_id, joint=pin)
+        self.client.call("move_object", world_id=world_id, name="ball",
+                         position_m=[2.5, 0.1, 2.5])
+        self.assertEqual(self.client.call("joints", world_id=world_id)["joints"], [],
+                         "a pin that was taken out came back at the next rebuild")
+
+    def test_removing_a_thing_takes_its_joints_with_it_and_says_so(self):
+        world_id = self.gate_and_ball()
+        self.client.call("hinge", world_id=world_id, a="post", b="gate",
+                         at_m=[0.0, 1.0, 0.12], axis=[0, 1, 0])
+        removed = self.client.call("remove_object", world_id=world_id, name="gate")
+        self.assertEqual(len(removed["joints_removed_with_it"]), 1)
+        self.assertIn("hinge", removed["joints_removed_with_it"][0])
+        self.assertEqual(self.client.call("joints", world_id=world_id)["joints"], [])
+
+    def test_moving_is_an_edit_and_a_joined_thing_says_why_it_cannot(self):
+        """move_object re-authors the world; it is not a push. A joined thing
+        cannot be moved that way, because its joint is made at fixed points."""
+        world_id = self.gate_and_ball()
+        self.client.call("move_object", world_id=world_id, name="ball",
+                         position_m=[1.5, 0.1, 2.0])
+        ball = next(o for o in self.client.call("describe_world", world_id=world_id)
+                    ["objects"] if o["name"] == "ball")
+        for got, wanted in zip(ball["position_m"], [1.5, 0.1, 2.0]):
+            self.assertAlmostEqual(got, wanted, places=2)
+        self.client.call("hinge", world_id=world_id, a="post", b="gate",
+                         at_m=[0.0, 1.0, 0.12], axis=[0, 1, 0])
+        said = self.client.refuse("move_object", world_id=world_id, name="gate",
+                                  position_m=[3.0, 1.0, 0.0])
+        self.assertIn("unhinge", said)
+        self.assertIn("hinge", said)
+
+    def test_a_world_can_be_cleared_and_built_again(self):
+        world_id = self.gate_and_ball()
+        self.client.call("hinge", world_id=world_id, a="post", b="gate",
+                         at_m=[0.0, 1.0, 0.12], axis=[0, 1, 0])
+        cleared = self.client.call("clear_world", world_id=world_id)
+        self.assertEqual((cleared["cleared_objects"], cleared["cleared_joints"]), (3, 1))
+        self.assertEqual(self.client.call("describe_world", world_id=world_id)["objects"],
+                         [])
+        # Empty is a state with words for it, not a crash.
+        self.assertIn("empty", self.client.refuse("run", world_id=world_id, seconds=0.5))
+        self.assertIn("empty", self.client.refuse("pick_up", world_id=world_id,
+                                                  name="ball"))
+        self.client.call("add_object", world_id=world_id, object={
+            "name": "block", "shape": "box", "material": "oak",
+            "size_m": [0.2, 0.2, 0.2], "position_m": [0.0, 0.1, 0.0]})
+        self.client.call("run", world_id=world_id, seconds=0.5)
+        self.assertEqual([o["name"] for o in self.client.call(
+            "describe_world", world_id=world_id)["objects"]], ["block"])
+
+    def test_two_things_cannot_share_a_name(self):
+        """Joints and every later call find things by name, so a second "ball"
+        would quietly make the first one unreachable."""
+        world_id = self.gate_and_ball()
+        self.assertIn("already", self.client.refuse(
+            "add_object", world_id=world_id, object={
+                "name": "ball", "shape": "sphere", "material": "iron",
+                "size_m": [0.2, 0.2, 0.2], "position_m": [-2.0, 0.1, -2.0]}))
+
     def test_bad_input_is_refused_in_words_the_caller_can_act_on(self):
         world_id = self.pane_world()
         self.assertIn("cheese", self.client.refuse(

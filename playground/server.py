@@ -1052,9 +1052,18 @@ class Handler(BaseHTTPRequestHandler):
                 app=self.server.app
                 session=app.live.session
                 if session is None: raise ValueError("the room is not open")
-                answer=world_chat.ask(app.api_key,app.model,app.room,session.state,
-                                      str(body.get("message",""))[:2000],
-                                      [str(s)[:200] for s in (body.get("story") or [])][-24:])
+                message=str(body.get("message",""))[:2000]
+                trace=[]
+                from time import perf_counter as _now
+                began=_now()
+                try:
+                    answer=world_chat.ask(app.api_key,app.model,app.room,session.state,message,
+                                          [str(s)[:200] for s in (body.get("story") or [])][-24:],
+                                          trace=trace)
+                except Exception as failure:
+                    remember_chat(app,message,trace,None,failure,_now()-began)
+                    raise
+                remember_chat(app,message,trace,answer,None,_now()-began)
                 if answer.pop("changed",False):
                     if app.room.bodies():
                         # Objects cannot be added to or taken out of a running
@@ -1067,6 +1076,10 @@ class Handler(BaseHTTPRequestHandler):
                         answer["reopened"]=True
                         answer["session"]=opened["session"]
                         answer["state"]=opened
+                        # Joints that would not hang are said, not dropped: a
+                        # gate that does not swing reads as broken physics.
+                        if opened.get("joint_problems"):
+                            answer["joint_problems"]=opened["joint_problems"]
                     else:
                         # Nothing left to open, and a world needs at least one
                         # body. The running one stays up rather than being
@@ -1136,6 +1149,48 @@ def trace_line(report):
         parts.append(f"{len(slow)} slow frames, worst {worst.get('ms')} ms while "
                      f"{worst.get('doing')}")
     return "  ".join(str(p) for p in parts)
+
+
+def remember_chat(app, message, trace, answer, failure, wall_s):
+    """A chat turn, in the log and on disk.
+
+    A request that "did not make it" used to leave nothing behind: the model's
+    calls and the refusals it got back existed for one round trip and were
+    gone, so there was no way to say afterwards which of a dozen calls was
+    refused, or what for. Now every turn is one line in the log and one file
+    under build/playground-logs/chat/, with every call and every answer.
+    """
+    log = logging.getLogger("banjo")
+    calls = [c for r in trace for c in r.get("calls", [])]
+    refused = [c for c in calls
+               if isinstance(c.get("answer"), dict) and "error" in c["answer"]]
+    if failure is not None:
+        log.warning("chat: %r failed after %d rounds and %d calls: %s",
+                    message[:120], len(trace), len(calls), failure)
+    else:
+        usage = answer.get("usage") or {}
+        log.info("chat: %r -> %d rounds, %d calls, %d refused, %s changed, %s in / %s out "
+                 "tokens, %.1f s", message[:120], answer.get("rounds", len(trace)),
+                 len(calls), len(refused), "room" if answer.get("changed") else "nothing",
+                 usage.get("input_tokens"), usage.get("output_tokens"), wall_s)
+    for call in refused[:8]:
+        log.info("chat refused %s: %s", call.get("name"),
+                 str(call["answer"].get("error"))[:240])
+    try:
+        folder = ROOT / "build" / "playground-logs" / "chat"
+        folder.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        record = {"message": message, "wall_s": round(wall_s, 2),
+                  "failure": str(failure) if failure is not None else None,
+                  "reply": (answer or {}).get("reply"), "did": (answer or {}).get("did"),
+                  "usage": (answer or {}).get("usage"), "rounds": trace}
+        text = json.dumps(record, indent=1, default=str)
+        if app.api_key:
+            text = text.replace(app.api_key, "[redacted]")
+        (folder / f"{stamp}-{abs(hash(message)) % 10000:04d}.json").write_text(
+            text, encoding="utf-8")
+    except OSError as problem:
+        log.warning("chat: could not keep the transcript: %s", problem)
 
 
 def main():

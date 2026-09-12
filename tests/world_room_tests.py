@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT / "playground"))
 
 import fracture_lab      # noqa: E402
 import live_session      # noqa: E402
+import room_world        # noqa: E402
 import world_room        # noqa: E402
 
 ENGINE = next((p for p in [
@@ -101,67 +102,115 @@ class TheRoomAsAuthored(unittest.TestCase):
 
 
 class TheToolsThatChangeIt(unittest.TestCase):
+    """The chat's tools are the MCP's, run on the room held as an MCP world.
+
+    These were tests of a second tool set that lived in world_room. That set is
+    gone; the same promises are held here of the one that replaced it -- above
+    all that a change the room would refuse is refused AT THE CALL, where the
+    model that made it can be told, and the room is left as it was.
+    """
+
     def setUp(self):
         self.room = world_room.Room()
+        self.world_id = room_world.open_room(self.room.spec)
+        self.addCleanup(room_world.close_room, self.world_id)
+
+    def call(self, tool, **args):
+        return room_world.call(self.world_id, tool, args)
+
+    def objects(self):
+        return {o["name"] for o in self.call("describe_world")["objects"]}
 
     def test_adding_something_puts_it_there(self):
-        note = self.room.add_object(
-            {"name": "test ball", "shape": "sphere", "material": "glass",
-             "size_mm": [100, 100, 100], "position_mm": [0, 3000, -2500],
-             "velocity_m_s": [0, 0, 0], "anchored": False})
-        self.assertIn("glass", note)
-        self.assertIsNotNone(self.room.find("test ball"))
+        answer = self.call("add_object", object={
+            "name": "test ball", "shape": "sphere", "material": "glass",
+            "size_m": [0.1, 0.1, 0.1], "position_m": [0.0, 3.0, -2.5]})
+        self.assertNotIn("error", answer)
+        self.assertIn("test ball", self.objects())
+        # And what it cost: a model that knows how much room is left does not
+        # try to add something that will not fit.
+        self.assertGreater(answer["cells_left"], 0)
 
-    def test_a_change_the_engine_would_refuse_is_refused_here(self):
+    def test_a_change_the_room_would_refuse_is_refused_at_the_call(self):
         """And the room is left exactly as it was.
 
-        This is the whole point of checking inside the tool. A complaint raised
-        when the room is rebuilt arrives after the model's turn has ended: the
-        person reads a validator message about overlapping cells and the model,
-        which is the only thing that can move the object, never hears about it.
+        A complaint raised when the room is reopened arrives after the model's
+        turn has ended: the person reads a validator message about overlapping
+        cells and the model, the only thing that could move the object, never
+        hears of it.
         """
-        before = [dict(b) for b in self.room.bodies()]
-        with self.assertRaises(ValueError) as caught:
-            # Right on top of a plate that is already there. Found rather than
-            # written down, so the test does not quietly stop testing anything
-            # when the room is laid out differently.
-            plate = next(b for b in self.room.bodies() if "plate" in b["name"])
-            self.room.add_object(
-                {"name": "overlapping tile", "shape": "box", "material": "ceramic",
-                 "size_mm": list(plate["size_mm"]),
-                 "position_mm": list(plate["center_mm"]),
-                 "velocity_m_s": [0, 0, 0], "anchored": False})
-        self.assertIn("same cells", str(caught.exception))
-        self.assertEqual(self.room.bodies(), before, "the refused change was left behind")
+        before = self.objects()
+        # Right on top of a plate that is already there. Found rather than
+        # written down, so the test does not quietly stop testing anything when
+        # the room is laid out differently.
+        plate = next(b for b in self.room.bodies() if "plate" in b["name"])
+        answer = self.call("add_object", object={
+            "name": "overlapping tile", "shape": "box", "material": "ceramic",
+            "size_m": [v / 1000.0 for v in plate["size_mm"]],
+            "position_m": [v / 1000.0 for v in plate["center_mm"]]})
+        self.assertIn("same cells", answer.get("error", ""))
+        self.assertEqual(self.objects(), before, "the refused change was left behind")
 
     def test_a_bad_material_or_shape_is_refused_by_name(self):
-        for bad in ({"material": "cheese"}, {"shape": "dodecahedron"}):
-            args = {"name": "x", "shape": "box", "material": "glass",
-                    "size_mm": [100, 100, 100], "position_mm": [0, 2000, -3000],
-                    "velocity_m_s": [0, 0, 0], "anchored": False}
-            args.update(bad)
-            with self.assertRaises(ValueError):
-                self.room.add_object(args)
+        for bad, word in (({"material": "cheese"}, "cheese"),
+                          ({"shape": "dodecahedron"}, "dodecahedron")):
+            thing = {"name": "x", "shape": "box", "material": "glass",
+                     "size_m": [0.1, 0.1, 0.1], "position_m": [0.0, 2.0, -3.0]}
+            thing.update(bad)
+            self.assertIn(word, self.call("add_object", object=thing).get("error", ""))
 
     def test_clearing_and_rebuilding_works(self):
-        self.assertIn("emptied", self.room.clear_room({}))
-        self.assertEqual(self.room.bodies(), [])
-        # An empty room is not a broken one: emptying is the first half of
-        # "clear this and build me ...", and checking an empty scene asks the
-        # validator about a single-tile lane nobody mentioned.
-        self.room.add_object(
-            {"name": "lone plate", "shape": "box", "material": "glass",
-             "size_mm": [600, 20, 200], "position_mm": [0, 410, 900],
-             "velocity_m_s": [0, 0, 0], "anchored": False})
-        self.assertEqual(len(self.room.bodies()), 1)
+        self.assertNotIn("error", self.call("clear_world"))
+        self.assertEqual(self.objects(), set())
+        self.assertNotIn("error", self.call("add_object", object={
+            "name": "lone plate", "shape": "box", "material": "glass",
+            "size_m": [0.6, 0.02, 0.2], "position_m": [0.0, 0.41, 0.9]}))
+        self.assertEqual(self.objects(), {"lone plate"})
 
     def test_moving_and_removing_name_what_they_touched(self):
-        self.assertIn("iron ball", self.room.move_object(
-            {"name": "iron ball", "position_mm": [0, 2000, -3000]}))
-        self.assertIn("iron ball", self.room.remove_object({"name": "iron ball"}))
-        self.assertIsNone(self.room.find("iron ball"))
-        with self.assertRaises(ValueError):
-            self.room.remove_object({"name": "iron ball"})
+        self.assertEqual(self.call("move_object", name="iron ball",
+                                   position_m=[0.0, 2.0, -3.0]).get("moved"), "iron ball")
+        self.assertEqual(self.call("remove_object", name="iron ball").get("removed"),
+                         "iron ball")
+        self.assertNotIn("iron ball", self.objects())
+        self.assertIn("error", self.call("remove_object", name="iron ball"))
+
+    def test_the_courtyard_can_be_cleared_and_built_in(self):
+        """The failure this replaced: clearing the courtyard left its joints in
+        the spec naming bodies that were gone, and every add after that was
+        refused for them -- so "clear it and build me a gate" could not work."""
+        world_id = room_world.open_room(world_room.courtyard())
+        self.addCleanup(room_world.close_room, world_id)
+        self.assertNotIn("error", room_world.call(world_id, "clear_world", {}))
+        post = room_world.call(world_id, "add_object", {"object": {
+            "name": "post", "shape": "box", "material": "concrete",
+            "size_m": [0.16, 2.0, 0.16], "position_m": [-0.08, 1.0, 0.0],
+            "anchored": True}})
+        self.assertNotIn("error", post)
+        self.assertGreater(post["cells_left"], 15000)
+
+    def test_what_the_chat_leaves_behind_is_a_room_that_opens(self):
+        """The spec the live session is opened from, joints and all.
+
+        Small, because the bench is a 20 mm grid: a full-size gate there is
+        19,200 cells on its own, over the whole room's budget -- which the room
+        refuses, correctly, and which is exactly what the_room's cells_left is
+        there to tell a model before it tries.
+        """
+        self.call("clear_world")
+        self.assertNotIn("error", self.call("add_object", object={
+            "name": "post", "shape": "box", "material": "concrete",
+            "size_m": [0.08, 0.8, 0.08], "position_m": [-0.04, 0.4, 0.0],
+            "anchored": True}))
+        self.assertNotIn("error", self.call("add_object", object={
+            "name": "gate", "shape": "box", "material": "oak",
+            "size_m": [0.4, 0.6, 0.04], "position_m": [0.2, 0.4, 0.06]}))
+        self.assertNotIn("error", self.call("hinge", a="post", b="gate",
+                                            at_m=[0.0, 0.4, 0.06], axis=[0, 1, 0]))
+        spec = room_world.export_spec(room_world.entry_of(self.world_id))
+        checked = fracture_lab.validate(spec)
+        self.assertEqual([j["kind"] for j in checked["joints"]], ["hinge"])
+        self.assertEqual({b["name"] for b in checked["bodies"]}, {"post", "gate"})
 
 
 @unittest.skipUnless(ENGINE, "the live engine is not built")

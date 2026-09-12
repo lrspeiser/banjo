@@ -100,6 +100,21 @@ def _world(world_id: str) -> dict[str, Any]:
     return entry
 
 
+def _live(entry: dict[str, Any]) -> banjo.World:
+    """The running world, or a refusal that says why there is none.
+
+    A world can be emptied (clear_world) and built up again, and while it is
+    empty there is nothing to step, pick or hang anything on. Said in words,
+    because the alternative was an AttributeError on None reported as "the
+    engine failed".
+    """
+    world = entry.get("world")
+    if world is None:
+        raise Refused("this world is empty. Put something in it with add_object "
+                      "first.")
+    return world
+
+
 def _number(value: Any, what: str, low: float, high: float) -> float:
     try:
         out = float(value)
@@ -199,6 +214,9 @@ def tool_create_world(args: dict[str, Any]) -> dict[str, Any]:
         raise Refused(str(error))
     world_id = uuid.uuid4().hex[:8]
     WORLDS[world_id] = {"world": world, "scene": scene, "cell_m": cell_m, "story": [],
+                        # Every joint made in this world, as the call that made
+                        # it, so a rebuild can hang it again. See _rebuild.
+                        "joints": [], "next_joint": 1,
                         # What has been swept up here, by material. Kept on the
                         # world because that is what it is a property of: the
                         # matter came out of this room and not another.
@@ -210,9 +228,11 @@ def tool_create_world(args: dict[str, Any]) -> dict[str, Any]:
 
 def tool_describe_world(args: dict[str, Any]) -> dict[str, Any]:
     entry = _world(args.get("world_id"))
+    world = entry.get("world")
     return {"world_id": args.get("world_id"),
-            "time_s": round(entry["world"].time_s, 3),
-            "objects": _describe(entry["world"]),
+            "time_s": round(world.time_s, 3) if world is not None else 0.0,
+            "objects": _describe(world) if world is not None else [],
+            "joints": len(entry.get("joints", [])),
             "what_has_happened": entry["story"][-20:]}
 
 
@@ -220,7 +240,7 @@ def tool_run(args: dict[str, Any]) -> dict[str, Any]:
     """Let time pass, settling whatever wants to break, and say what happened."""
     import time as clock
     entry = _world(args.get("world_id"))
-    world: banjo.World = entry["world"]
+    world: banjo.World = _live(entry)
     seconds = _number(args.get("seconds", 2.0), "seconds", 0.001, MAX_RUN_S)
     dt = 1.0 / 480.0
     began = clock.perf_counter()
@@ -309,38 +329,37 @@ def tool_run(args: dict[str, Any]) -> dict[str, Any]:
 
 def tool_drop(args: dict[str, Any]) -> dict[str, Any]:
     """Put a new object above a point and let it fall. The common experiment."""
-    entry = _world(args.get("world_id"))
-    world: banjo.World = entry["world"]
+    world_id = str(args.get("world_id"))
+    entry = _world(world_id)
+    world = entry.get("world")
     fall = _number(args.get("fall_m", 2.0), "fall_m", 0.05, 40.0)
     over = _triple(args.get("over_m") or [0, 0, 0], "over_m", -50.0, 50.0)
     # What is under that point, and how far down, so the thing is placed to fall
-    # exactly `fall_m` onto it rather than `fall_m` above the floor.
-    found = world.pick([over[0], 40.0, over[2]], [0, -1, 0])
-    top = 40.0 - found.distance_m if found.hit else 0.0
+    # exactly `fall_m` onto it rather than `fall_m` above the floor. An empty
+    # world has nothing under anything: it lands on the floor.
+    found = world.pick([over[0], 40.0, over[2]], [0, -1, 0]) if world is not None else None
+    top = 40.0 - found.distance_m if found is not None and found.hit else 0.0
+    under = (found.name if found is not None and found.hit else "") or "the floor"
     item = dict(args.get("object") or {})
     size = _triple(item.get("size_m") or [0.1, 0.1, 0.1], "size_m", 0.005, 4.0)
     item["position_m"] = [over[0], top + size[1] / 2.0 + fall, over[2]]
     item.setdefault("name", f"{item.get('material', 'glass')} "
                             f"{'ball' if item.get('shape') == 'sphere' else 'block'}")
-    scene = dict(entry["scene"])
-    scene["bodies"] = list(entry["scene"]["bodies"]) + \
-        _scene([item], entry["cell_m"])["bodies"]
+    added = _scene([item], entry["cell_m"])["bodies"][0]
+    if any(b["name"] == added["name"] for b in entry["scene"]["bodies"]):
+        raise Refused(f"there is already something called {added['name']!r} here; "
+                      f"give the dropped thing another name")
     # A world is opened from a scene and that is the set of bodies it has, so
-    # adding one means opening it again. Everything in flight starts over.
-    try:
-        fresh = banjo.World(scene, cell_size_m=entry["cell_m"])
-    except banjo.BanjoError as error:
-        raise Refused(str(error))
-    entry["world"].close()
-    entry["world"] = fresh
-    entry["scene"] = scene
-    entry["story"].append(f"dropped {item['name']} {fall:.2f} m onto "
-                          f"{found.name or 'the floor'}")
+    # adding one means opening it again. Everything in flight starts over, and
+    # the joints are hung again.
+    _rebuild(entry, dict(entry["scene"], bodies=list(entry["scene"]["bodies"]) + [added]),
+             world_id)
+    entry["story"].append(f"dropped {item['name']} {fall:.2f} m onto {under}")
     # Long enough to land from that height, and then some to settle.
     answer = tool_run({"world_id": args.get("world_id"),
                        "seconds": math.sqrt(2 * fall / 9.81) + 1.5})
     answer["dropped"] = {"object": item["name"], "fall_m": round(fall, 3),
-                         "onto": found.name or "the floor"}
+                         "onto": under}
     return answer
 
 
@@ -351,7 +370,7 @@ def tool_pick_up(args: dict[str, Any]) -> dict[str, Any]:
     above, which meant a model could add to a scene but never rearrange it.
     """
     entry = _world(args.get("world_id"))
-    world: banjo.World = entry["world"]
+    world: banjo.World = _live(entry)
     name = str(args.get("name", ""))
     try:
         world.grab(name)
@@ -371,7 +390,7 @@ def tool_pick_up(args: dict[str, Any]) -> dict[str, Any]:
 def tool_place(args: dict[str, Any]) -> dict[str, Any]:
     """Move what is in the hand to a point, without letting go."""
     entry = _world(args.get("world_id"))
-    world: banjo.World = entry["world"]
+    world: banjo.World = _live(entry)
     if not world.held:
         raise Refused("nothing is being held. Call pick_up first.")
     to = _triple(args.get("to_m") or [0, 1, 0], "to_m", -50.0, 50.0)
@@ -386,7 +405,7 @@ def tool_place(args: dict[str, Any]) -> dict[str, Any]:
 def tool_let_go(args: dict[str, Any]) -> dict[str, Any]:
     """Let go. It rejoins the world from rest and falls from where it was left."""
     entry = _world(args.get("world_id"))
-    world: banjo.World = entry["world"]
+    world: banjo.World = _live(entry)
     was = world.held
     if not was:
         raise Refused("nothing is being held.")
@@ -409,7 +428,7 @@ def tool_collect(args: dict[str, Any]) -> dict[str, Any]:
     bodies, and past that the room quietly stops being able to break anything.
     """
     entry = _world(args.get("world_id"))
-    world: banjo.World = entry["world"]
+    world: banjo.World = _live(entry)
     at = _triple(args.get("near_m") or [0, 0, 0], "near_m", -50.0, 50.0)
     radius = _number(args.get("radius_m", 1.5), "radius_m", 0.05, 10.0)
     before = len(world.bodies())
@@ -458,41 +477,173 @@ def tool_carried(args: dict[str, Any]) -> dict[str, Any]:
             "total_kilograms": round(sum(v["kilograms"] for v in carried.values()), 4)}
 
 
-def tool_add_object(args: dict[str, Any]) -> dict[str, Any]:
-    entry = _world(args.get("world_id"))
-    scene = dict(entry["scene"])
-    scene["bodies"] = list(entry["scene"]["bodies"]) + \
-        _scene([args.get("object") or {}], entry["cell_m"])["bodies"]
-    try:
-        fresh = banjo.World(scene, cell_size_m=entry["cell_m"])
-    except banjo.BanjoError as error:
-        raise Refused(str(error))
-    entry["world"].close()
+def _joint_words(record: dict[str, Any]) -> str:
+    args = record["args"]
+    return f"joint {record['id']}, the {record['tool']} from {args.get('a')} to {args.get('b')}"
+
+
+def _rebuild(entry: dict[str, Any], scene: dict[str, Any], world_id: str,
+             joints: list[dict[str, Any]] | None = None) -> list[str]:
+    """Open the world again from `scene`, and hang its joints back on it.
+
+    A world is opened from a scene, so adding, moving or removing an object
+    means opening it again. The scene used to hold BODIES only -- so every
+    joint silently vanished at the next edit: hinge a gate, add a ball, and the
+    gate was lying loose on the floor with nothing to say it had ever been
+    hung. Joints are part of what was built. Each is recorded as the call that
+    made it and made again here, in order; one that cannot be made again is
+    dropped and SAID, in the list this returns.
+
+    Nothing is committed until the new world exists: a refused scene leaves the
+    old world, its scene and its joints exactly as they were.
+    """
+    joints = list(entry.get("joints", [])) if joints is None else list(joints)
+    # Whoever owns this world can add their own conditions -- the playground's
+    # room refuses what its lane could not open, so that the model is told at
+    # the call rather than the person at the reopen.
+    check = entry.get("check")
+    if check is not None:
+        try:
+            check(scene, joints)
+        except ValueError as problem:
+            raise Refused(str(problem)) from None
+    fresh = None
+    if scene["bodies"]:
+        try:
+            fresh = banjo.World(scene, cell_size_m=entry["cell_m"])
+        except banjo.BanjoError as error:
+            raise Refused(str(error))
+    old = entry.get("world")
     entry["world"], entry["scene"] = fresh, scene
-    return {"added": scene["bodies"][-1]["name"], "objects": _describe(fresh),
-            "note": "A world is opened from a scene, so adding an object opens it "
-                    "again from the start. Anything that was in flight is back where "
-                    "it was authored."}
+    if old is not None:
+        old.close()
+    kept: list[dict[str, Any]] = []
+    lost: list[str] = []
+    for record in joints:
+        if fresh is None:
+            lost.append(f"{_joint_words(record)}: the world is empty")
+            continue
+        try:
+            answer = MAKE_JOINT[record["tool"]]({**record["args"], "world_id": world_id})
+        except Refused as why:
+            lost.append(f"{_joint_words(record)}: {why}")
+            continue
+        record["live"] = answer["joint"]
+        kept.append(record)
+    entry["joints"] = kept
+    return lost
+
+
+def _held_by(entry: dict[str, Any], name: str) -> list[dict[str, Any]]:
+    return [r for r in entry.get("joints", [])
+            if name in (r["args"].get("a"), r["args"].get("b"))]
+
+
+def tool_add_object(args: dict[str, Any]) -> dict[str, Any]:
+    world_id = str(args.get("world_id"))
+    entry = _world(world_id)
+    added = _scene([args.get("object") or {}], entry["cell_m"])["bodies"][0]
+    # Names are how every joint and every later call finds a thing, so a second
+    # "oak gate" is refused rather than quietly shadowing the first.
+    if any(b["name"] == added["name"] for b in entry["scene"]["bodies"]):
+        raise Refused(f"there is already something called {added['name']!r} here. "
+                      f"Joints and every later call find things by name, so give it "
+                      f"another one.")
+    scene = dict(entry["scene"], bodies=list(entry["scene"]["bodies"]) + [added])
+    lost = _rebuild(entry, scene, world_id)
+    answer: dict[str, Any] = {
+        "added": added["name"], "objects": _describe(entry["world"]),
+        "joints": len(entry["joints"]),
+        "note": "A world is opened from a scene, so adding an object opens it again "
+                "from the start: anything in flight is back where it was authored, "
+                "and every joint is hung again."}
+    if lost:
+        answer["joints_lost"] = lost
+    return answer
 
 
 def tool_remove_object(args: dict[str, Any]) -> dict[str, Any]:
-    entry = _world(args.get("world_id"))
+    world_id = str(args.get("world_id"))
+    entry = _world(world_id)
     name = str(args.get("name", ""))
     kept = [b for b in entry["scene"]["bodies"] if b["name"] != name]
     if len(kept) == len(entry["scene"]["bodies"]):
         raise Refused(f"there is nothing called {name!r} in this world")
     if not kept:
-        raise Refused("that would empty the world, and a world needs something in it")
-    scene = dict(entry["scene"], bodies=kept)
-    fresh = banjo.World(scene, cell_size_m=entry["cell_m"])
-    entry["world"].close()
-    entry["world"], entry["scene"] = fresh, scene
-    return {"removed": name, "objects": _describe(fresh)}
+        raise Refused("that would empty the world. Use clear_world to start again "
+                      "from nothing.")
+    # What held it goes with it -- a hinge with nothing on one side is not a
+    # joint -- and is listed, so nothing disappears unannounced.
+    held = _held_by(entry, name)
+    joints = [r for r in entry["joints"] if r not in held]
+    lost = _rebuild(entry, dict(entry["scene"], bodies=kept), world_id, joints)
+    answer: dict[str, Any] = {"removed": name, "objects": _describe(entry["world"])}
+    if held:
+        answer["joints_removed_with_it"] = [_joint_words(r) for r in held]
+    if lost:
+        answer["joints_lost"] = lost
+    return answer
+
+
+def tool_move_object(args: dict[str, Any]) -> dict[str, Any]:
+    """Put an object somewhere else, at rest: an EDIT to the world, not a push.
+
+    Kept apart from pick_up / place / let_go on purpose. Those are a hand doing
+    things to the world, and they obey it -- a held body still shoves what it
+    runs into. This is the world being re-authored: the object is simply
+    somewhere else, as if it had been built there.
+    """
+    world_id = str(args.get("world_id"))
+    entry = _world(world_id)
+    name = str(args.get("name", ""))
+    body = next((b for b in entry["scene"]["bodies"] if b["name"] == name), None)
+    if body is None:
+        raise Refused(f"there is nothing called {name!r} in this world")
+    # A joint is made at points in the world, and those points belong to the
+    # bodies it joins. Moving one of them would leave the pin where it was, in
+    # mid-air -- a gate hinged to a post three metres away. Refused and said,
+    # with what to do instead.
+    held = _held_by(entry, name)
+    if held:
+        raise Refused(f"{name} is held by {len(held)} joint(s): "
+                      f"{'; '.join(_joint_words(r) for r in held)}. A joint is made at "
+                      f"fixed points, so moving it would leave them behind. unhinge "
+                      f"them first, or put things where they belong before joining "
+                      f"them.")
+    to = _triple(args.get("position_m"), "position_m", -50.0, 50.0)
+    moved = dict(body, center_m=to, velocity_m_s=[0.0, 0.0, 0.0])
+    scene = dict(entry["scene"], bodies=[moved if b is body else b
+                                         for b in entry["scene"]["bodies"]])
+    lost = _rebuild(entry, scene, world_id)
+    entry["story"].append(f"moved {name} to [{to[0]:.2f}, {to[1]:.2f}, {to[2]:.2f}]")
+    answer: dict[str, Any] = {"moved": name, "to_m": [round(v, 4) for v in to],
+                              "objects": _describe(entry["world"])}
+    if lost:
+        answer["joints_lost"] = lost
+    return answer
+
+
+def tool_clear_world(args: dict[str, Any]) -> dict[str, Any]:
+    """Empty a world of everything, joints and all, to build it again."""
+    entry = _world(args.get("world_id"))
+    count = len(entry["scene"]["bodies"])
+    joints = len(entry.get("joints", []))
+    old = entry.get("world")
+    entry["scene"] = dict(entry["scene"], bodies=[])
+    entry["joints"] = []
+    entry["world"] = None
+    if old is not None:
+        old.close()
+    entry["story"].append("cleared")
+    return {"cleared_objects": count, "cleared_joints": joints,
+            "note": "The world is empty and still open under the same id. add_object "
+                    "puts the first thing back; everything else needs something in "
+                    "it first."}
 
 
 def tool_cast_ray(args: dict[str, Any]) -> dict[str, Any]:
     entry = _world(args.get("world_id"))
-    found = entry["world"].pick(_triple(args.get("from_m"), "from_m", -200.0, 200.0),
+    found = _live(entry).pick(_triple(args.get("from_m"), "from_m", -200.0, 200.0),
                                 _triple(args.get("direction"), "direction", -1e6, 1e6),
                                 _number(args.get("max_m", 100.0), "max_m", 0.001, 500.0))
     if not found.hit:
@@ -513,7 +664,7 @@ def tool_hinge(args: dict[str, Any]) -> dict[str, Any]:
     for the gate to be moved.
     """
     entry = _world(args.get("world_id"))
-    world: banjo.World = entry["world"]
+    world: banjo.World = _live(entry)
     try:
         joint = world.hinge(
             str(args.get("a", "")), str(args.get("b", "")),
@@ -588,7 +739,7 @@ def tool_slide(args: dict[str, Any]) -> dict[str, Any]:
     is played: a grate hauled up and let go falls, and stops on whatever is
     under it at whatever height that thing happens to be.
     """
-    world: banjo.World = _world(args.get("world_id"))["world"]
+    world: banjo.World = _live(_world(args.get("world_id")))
     try:
         joint = world.slide(
             str(args.get("a", "")), str(args.get("b", "")),
@@ -613,7 +764,7 @@ def tool_tie(args: dict[str, Any]) -> dict[str, Any]:
     no rope object here, which is why a chain hangs in a curve and can be cut
     anywhere along its length.
     """
-    world: banjo.World = _world(args.get("world_id"))["world"]
+    world: banjo.World = _live(_world(args.get("world_id")))
     try:
         joint = world.tie(
             str(args.get("a", "")), str(args.get("b", "")),
@@ -636,7 +787,7 @@ def tool_reeve(args: dict[str, Any]) -> dict[str, Any]:
     pulley -- a relationship between cable lengths, with no wheel and no rope
     wrapping. `tie` is the physical alternative if the rope itself matters.
     """
-    world: banjo.World = _world(args.get("world_id"))["world"]
+    world: banjo.World = _live(_world(args.get("world_id")))
     try:
         joint = world.reeve(
             str(args.get("a", "")), str(args.get("b", "")),
@@ -659,7 +810,7 @@ def tool_reeve(args: dict[str, Any]) -> dict[str, Any]:
 
 def tool_overloaded(args: dict[str, Any]) -> dict[str, Any]:
     """Everything carrying more than it can hold up."""
-    world: banjo.World = _world(args.get("world_id"))["world"]
+    world: banjo.World = _live(_world(args.get("world_id")))
     sagging = world.overloaded()
     return {"overloaded": [
                 {"object": load.name,
@@ -677,7 +828,7 @@ def tool_overloaded(args: dict[str, Any]) -> dict[str, Any]:
 
 def tool_fix(args: dict[str, Any]) -> dict[str, Any]:
     """Fix one named thing to another: a peg, a bracket, a catch, a locking bar."""
-    world: banjo.World = _world(args.get("world_id"))["world"]
+    world: banjo.World = _live(_world(args.get("world_id")))
     try:
         joint = world.fix(
             str(args.get("a", "")), str(args.get("b", "")),
@@ -695,7 +846,7 @@ def tool_fix(args: dict[str, Any]) -> dict[str, Any]:
 
 def tool_spring(args: dict[str, Any]) -> dict[str, Any]:
     """Put an elastic element between two named things: a bow limb, a spring."""
-    world: banjo.World = _world(args.get("world_id"))["world"]
+    world: banjo.World = _live(_world(args.get("world_id")))
     try:
         joint = world.spring(
             str(args.get("a", "")), str(args.get("b", "")),
@@ -722,8 +873,21 @@ def tool_joints(args: dict[str, Any]) -> dict[str, Any]:
     and `attached` goes false when there is nothing left to hold it, which is a
     gate coming off its hinges.
     """
-    pins = _world(args.get("world_id"))["world"].joints()
-    return {"joints": [_said(pin) for pin in pins],
+    entry = _world(args.get("world_id"))
+    if entry.get("world") is None:
+        return {"joints": [], "note": "the world is empty"}
+    # The ids a caller was given, not the engine's. A rebuild hangs every joint
+    # again and the engine numbers them afresh, so the engine's id for the gate's
+    # hinge is not the one the caller was told -- and "unhinge joint 3" would
+    # take out whatever happened to be made third this time.
+    stable = {r["live"]: r["id"] for r in entry.get("joints", [])}
+    pins = entry["world"].joints()
+    said_now = []
+    for pin in pins:
+        said = _said(pin)
+        said["joint"] = stable.get(pin.id, pin.id)
+        said_now.append(said)
+    return {"joints": said_now,
             "note": "nothing here is animated: a joint is a constraint, and what "
                     "is on it moves when something pushes it or when gravity does"
                     if pins else "there are no joints in this world"}
@@ -731,12 +895,18 @@ def tool_joints(args: dict[str, Any]) -> dict[str, Any]:
 
 def tool_unhinge(args: dict[str, Any]) -> dict[str, Any]:
     """Take a pin out. What was hanging on it falls."""
-    world: banjo.World = _world(args.get("world_id"))["world"]
+    entry = _world(args.get("world_id"))
+    world: banjo.World = _live(entry)
     joint = int(_number(args.get("joint", 0), "joint", 1, 1e9))
+    record = next((r for r in entry.get("joints", []) if r["id"] == joint), None)
     try:
-        world.unhinge(joint)
+        world.unhinge(record["live"] if record is not None else joint)
     except banjo.BanjoError as error:
         raise Refused(str(error))
+    # Out of the record too: a pin taken out is not one to hang again at the
+    # next rebuild.
+    if record is not None:
+        entry["joints"].remove(record)
     return {"joint": joint, "note": "the pin is out; what hung on it is falling"}
 
 
@@ -748,14 +918,20 @@ def tool_hinge_friction(args: dict[str, Any]) -> dict[str, Any]:
     of newtons, while a door hinge wants tens of newton metres. One bound, wide
     enough for both, rather than a number that silently refuses a portcullis.
     """
-    world: banjo.World = _world(args.get("world_id"))["world"]
+    entry = _world(args.get("world_id"))
+    world: banjo.World = _live(entry)
     joint = int(_number(args.get("joint", 0), "joint", 1, 1e9))
     friction = _number(args.get("friction_n_m", args.get("friction_n", 0.0)),
                        "friction_n_m", 0.0, 1e9)
+    record = next((r for r in entry.get("joints", []) if r["id"] == joint), None)
     try:
-        world.joint_friction(joint, friction)
+        world.joint_friction(record["live"] if record is not None else joint, friction)
     except banjo.BanjoError as error:
         raise Refused(str(error))
+    # And kept, so the next rebuild hangs it as stiff as it was left.
+    if record is not None:
+        key = "friction_n" if record["tool"] == "slide" else "friction_n_m"
+        record["args"][key] = friction
     return {"joint": joint, "friction": friction}
 
 
@@ -834,14 +1010,35 @@ TOOLS = [
                      "properties": {"world_id": {"type": "string"}}}},
     {"name": "add_object",
      "description": "Put another object into a world. The world is opened again from "
-                    "its scene, so anything in flight starts over.",
+                    "its scene, so anything in flight starts over; every joint is "
+                    "hung again. Names must be different: joints and every later "
+                    "call find things by name.",
      "inputSchema": {"type": "object", "required": ["world_id", "object"], "properties": {
          "world_id": {"type": "string"}, "object": OBJECT_SCHEMA}}},
     {"name": "remove_object",
      "description": "Take an object out of a world. Like add_object, the world is "
-                    "opened again from its scene, so anything in flight starts over.",
+                    "opened again from its scene, so anything in flight starts over. "
+                    "Any joint that held it goes with it, and is listed.",
      "inputSchema": {"type": "object", "required": ["world_id", "name"], "properties": {
          "world_id": {"type": "string"}, "name": {"type": "string"}}}},
+    {"name": "move_object",
+     "description": "Put an object somewhere else, at rest. This EDITS the world -- "
+                    "the object is simply somewhere else, as if it had been built "
+                    "there -- and is not the same as pushing it: to move something "
+                    "by force, use pick_up, place and let_go. An object held by a "
+                    "joint cannot be moved this way, because a joint is made at "
+                    "fixed points; unhinge it first, or put things where they belong "
+                    "before joining them.",
+     "inputSchema": {"type": "object", "required": ["world_id", "name", "position_m"],
+                     "properties": {
+         "world_id": {"type": "string"}, "name": {"type": "string"},
+         "position_m": dict(VECTOR, description="Its new centre, in metres.")}}},
+    {"name": "clear_world",
+     "description": "Take everything out of a world, joints and all, to build it "
+                    "again from nothing. The world stays open under the same id; "
+                    "add_object puts the first thing back.",
+     "inputSchema": {"type": "object", "required": ["world_id"],
+                     "properties": {"world_id": {"type": "string"}}}},
     {"name": "pick_up",
      "description": "Take hold of something already in the world, so it can be "
                     "moved. While held it goes exactly where it is put and "
@@ -1104,6 +1301,44 @@ TOOLS = [
                      "properties": {"world_id": {"type": "string"}}}},
 ]
 
+# The calls that make joints, unwrapped: what a rebuild uses to hang a
+# recorded joint again on a fresh world.
+MAKE_JOINT = {"hinge": tool_hinge, "slide": tool_slide, "tie": tool_tie,
+              "reeve": tool_reeve, "fix": tool_fix, "spring": tool_spring}
+
+
+def _recorded(tool_name: str):
+    """The joining tool, keeping the call that made the joint.
+
+    So that it survives a rebuild (see _rebuild), and so that the caller's id
+    for it survives too: the engine numbers joints afresh in every world it
+    opens, and a caller holding "joint 3" should still be holding the same pin.
+    """
+    make = MAKE_JOINT[tool_name]
+
+    def record(args: dict[str, Any]) -> dict[str, Any]:
+        entry = _world(args.get("world_id"))
+        answer = make(args)
+        made = {"id": entry.get("next_joint", 1), "tool": tool_name,
+                "live": answer["joint"],
+                "args": {k: v for k, v in args.items() if k != "world_id"}}
+        entry["next_joint"] = made["id"] + 1
+        entry.setdefault("joints", []).append(made)
+        check = entry.get("check")
+        if check is not None:
+            try:
+                check(entry["scene"], entry["joints"])
+            except ValueError as problem:
+                entry["joints"].remove(made)
+                entry["world"].unhinge(made["live"])
+                raise Refused(str(problem)) from None
+        return {**answer, "joint": made["id"]}
+
+    record.__name__ = make.__name__
+    record.__doc__ = make.__doc__
+    return record
+
+
 HANDLERS = {
     "list_materials": tool_list_materials,
     "create_world": tool_create_world,
@@ -1112,17 +1347,19 @@ HANDLERS = {
     "describe_world": tool_describe_world,
     "add_object": tool_add_object,
     "remove_object": tool_remove_object,
+    "move_object": tool_move_object,
+    "clear_world": tool_clear_world,
     "pick_up": tool_pick_up,
     "place": tool_place,
     "let_go": tool_let_go,
     "collect": tool_collect,
     "carried": tool_carried,
-    "hinge": tool_hinge,
-    "slide": tool_slide,
-    "tie": tool_tie,
-    "reeve": tool_reeve,
-    "fix": tool_fix,
-    "spring": tool_spring,
+    "hinge": _recorded("hinge"),
+    "slide": _recorded("slide"),
+    "tie": _recorded("tie"),
+    "reeve": _recorded("reeve"),
+    "fix": _recorded("fix"),
+    "spring": _recorded("spring"),
     "overloaded": tool_overloaded,
     "joints": tool_joints,
     "hinge_friction": tool_hinge_friction,

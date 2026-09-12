@@ -1,0 +1,730 @@
+"""The chat agent, asked to build the playground, and the engine asked whether it works.
+
+Everything else in tests/ drives the physics directly, with scenes written by
+hand. This drives the MODEL. A sentence a person might type into the room goes
+to the real agent -- world_chat.ask, the function /api/world/ask calls, with the
+MCP's own tools -- usually in an empty yard. The room it leaves behind is opened
+in the real engine the way the server reopens it. And then the thing that was
+asked for is USED: a gate is shoved, a wheel is turned by its handle, a sign is
+left to hang, a grate is hauled up and let go. What happens is measured.
+
+Nothing is preloaded. The playground's own rooms were laid out by hand, which
+proves the engine CAN do a thing and says nothing about whether anyone can get
+it built by asking -- and asking is how the playground is used.
+
+A model is not deterministic, so a case can be tried several times and the
+answer is a rate.
+
+It costs money: every trial is a real conversation with the model named in the
+local .env (up to world_chat.MAX_ROUNDS round trips). So it is not in ctest or
+scripts/regression.sh. Run it on purpose:
+
+    python tests/agent_build_tests.py                  every case, once
+    python tests/agent_build_tests.py --trials 3       a pass rate per case
+    python tests/agent_build_tests.py --cases wheel    cases whose id contains it
+    python tests/agent_build_tests.py --list
+
+Each run writes build/agent-regression/<time>/: summary.txt for a person, and
+report.json with every tool call the model made, every answer it got back
+(refusals included -- they are usually the reason), what the engine measured,
+and why each check passed or failed.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import sys
+import threading
+import time
+import traceback
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Callable
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "playground"))
+
+import live_session  # noqa: E402
+import world_chat    # noqa: E402
+import world_room    # noqa: E402
+
+ENGINE = next((p for p in [
+    ROOT / "build/integration/Release/banjo_live_world_run.exe",
+    ROOT / "build/integration/banjo_live_world_run",
+] if p.is_file()), None)
+
+DT = 1 / 240.0              # what the room steps at
+
+# What counts as a mechanism having moved when it was worked by hand.
+HINGE_OPEN_DEG = 20.0
+SLIDE_OPEN_M = 0.15
+MOVE_OPEN_M = 0.20
+
+GATE_WORDS = ("gate", "door", "portcullis", "grate", "drawbridge", "bridge", "leaf",
+              "barrier", "hatch")
+WHEEL_WORDS = ("wheel", "winch", "windlass", "capstan", "crank", "drum", "spindle",
+               "reel", "tiller")
+HANDLE_WORDS = ("handle", "grip", "spoke", "peg", "knob", "lever")
+
+
+class App:
+    engine_path = ENGINE
+    runs_path = ROOT / "build/playground-runs"
+    live_inprocess = False
+
+
+# ---------------------------------------------------------------------------
+# Vectors, because a hand going round an axle is a rotation
+# ---------------------------------------------------------------------------
+
+def add(a, b):
+    return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+
+
+def sub(a, b):
+    return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+
+
+def scale(a, s):
+    return [a[0] * s, a[1] * s, a[2] * s]
+
+
+def dot(a, b):
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+def cross(a, b):
+    return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+
+
+def norm(a):
+    return math.sqrt(dot(a, a))
+
+
+def unit(a):
+    n = norm(a)
+    return scale(a, 1.0 / n) if n > 1e-12 else [0.0, 0.0, 0.0]
+
+
+def rotate(v, axis, degrees):
+    """Rodrigues: v turned about `axis` by `degrees`."""
+    k = unit(axis)
+    t = math.radians(degrees)
+    c, s = math.cos(t), math.sin(t)
+    return add(add(scale(v, c), scale(cross(k, v), s)), scale(k, dot(k, v) * (1.0 - c)))
+
+
+# ---------------------------------------------------------------------------
+# The room, as the server reopens it and the browser drives it
+# ---------------------------------------------------------------------------
+
+class World:
+    def __init__(self, spec: dict[str, Any]) -> None:
+        self.live = live_session.Live()
+        self.opened = self.live.open(App(), {"spec": spec})
+        self.session = self.live.session
+        self.impacts: list[dict[str, Any]] = []
+        self.finished: list[str] = []
+
+    def close(self) -> None:
+        try:
+            self.live.shutdown()
+        except Exception:
+            pass
+
+    def step(self, count: int = 1, hand: list[float] | None = None) -> None:
+        """Advance, ANSWERING the break handshake.
+
+        A step that would break something is taken back and the clock does not
+        move until the host says what to do. A stepper that never answers stops
+        the world at the first hard contact -- and a mechanism that is not moving
+        looks exactly like one that cannot.
+        """
+        done = 0
+        while done < count:
+            n = 1 if hand is not None else min(8, count - done)
+            extra = {"hand": [float(v) for v in hand]} if hand is not None else {}
+            state = self.session.send(op="step", dt=DT, n=n, moved=True, **extra)
+            self.impacts.extend(state.get("impacts") or [])
+            if state.get("finished"):
+                self.finished.append(str(state["finished"]))
+            for name in state.get("breakable") or []:
+                self.session.send(op="fracture", name=name, wait=False)
+            done += n
+
+    def seconds(self, s: float, hand: list[float] | None = None) -> None:
+        self.step(max(1, int(round(s / DT))), hand)
+
+    def bodies(self) -> dict[str, dict[str, Any]]:
+        return {b["name"]: b for b in self.session.state.get("bodies", [])}
+
+    def body(self, name: str) -> dict[str, Any] | None:
+        return self.bodies().get(name)
+
+    def joints(self) -> list[dict[str, Any]]:
+        return self.session.send(op="joints").get("joints") or []
+
+    def joint(self, joint_id: int) -> dict[str, Any] | None:
+        return next((j for j in self.joints() if j["id"] == joint_id), None)
+
+    def anchored(self) -> dict[str, bool]:
+        return {n: bool(b.get("anchored")) for n, b in self.bodies().items()}
+
+
+def coordinate(joint: dict[str, Any] | None) -> float:
+    """Degrees for a hinge, metres for anything else; 0 for a joint that is gone."""
+    if joint is None:
+        return 0.0
+    return float(joint.get("degrees" if joint["kind"] == "hinge" else "metres", 0.0) or 0.0)
+
+
+def moving_end(joint: dict[str, Any], anchored: dict[str, bool]) -> str | None:
+    """The end of a joint that can move, when the other end is fixed scenery."""
+    a, b = joint["a"], joint["b"]
+    if anchored.get(a) and not anchored.get(b):
+        return b
+    if anchored.get(b) and not anchored.get(a):
+        return a
+    return None
+
+
+def worded(name: str, words: tuple[str, ...]) -> bool:
+    lower = name.lower()
+    return any(w in lower for w in words)
+
+
+def volume(body: dict[str, Any] | None) -> float:
+    d = (body or {}).get("dimensions_m") or [0.0, 0.0, 0.0]
+    return d[0] * d[1] * d[2]
+
+
+def bottom(body: dict[str, Any]) -> float:
+    return body["position_m"][1] - (body.get("dimensions_m") or [0, 0, 0])[1] / 2.0
+
+
+def joints_in_words(joints: list[dict[str, Any]]) -> list[str]:
+    return [f"{j['kind']} {j['a']} -> {j['b']}{'' if j.get('attached') else ' (off)'}"
+            for j in joints]
+
+
+def connected(joints: list[dict[str, Any]], sources: set[str], target: str,
+              anchored: dict[str, bool]) -> bool:
+    """Is there a chain of joints from any source to target?
+
+    Not through fixed scenery: everything is connected through the ground, and
+    a wheel on one post and a gate on another are not driving each other.
+    """
+    seen, frontier = set(sources), list(sources)
+    while frontier:
+        here = frontier.pop()
+        for j in joints:
+            if not j.get("attached") or here not in (j["a"], j["b"]):
+                continue
+            there = j["b"] if j["a"] == here else j["a"]
+            if there == target:
+                return True
+            if there not in seen and not anchored.get(there):
+                seen.add(there)
+                frontier.append(there)
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Hands
+# ---------------------------------------------------------------------------
+
+def haul(world: World, name: str, towards: list[float], seconds: float = 1.5) -> None:
+    """Take hold of `name` and draw the hand `towards` from where it is, then hold."""
+    start = world.body(name)["position_m"]
+    world.session.send(op="grab", name=name)
+    steps = max(1, int(seconds / DT))
+    for i in range(1, steps + 1):
+        world.step(1, hand=add(start, scale(towards, i / steps)))
+    world.step(int(0.4 / DT), hand=add(start, towards))
+
+
+def turn(world: World, handle: str, pin: dict[str, Any], degrees: float, seconds: float,
+         watch: Callable[[], Any]) -> tuple[list[Any], float]:
+    """Take hold of `handle` and walk the hand round the pin's axle.
+
+    The hand pulls on the middle of what it holds, so this moves the hand along
+    the arc that middle would follow if the wheel turned -- which is what a
+    person turning a handle does. Returns what `watch` saw, and the radius the
+    hand was working at: nearly zero means the thing held is on the axle, and
+    nothing a hand does to it can turn anything.
+    """
+    axle, axis = pin["at"], unit(pin["axis"])
+    start = world.body(handle)["position_m"]
+    arm = sub(start, axle)
+    along = scale(axis, dot(arm, axis))
+    radial = sub(arm, along)
+    world.session.send(op="grab", name=handle)
+    steps = max(1, int(seconds / DT))
+    seen, target = [], start
+    for i in range(1, steps + 1):
+        target = add(add(axle, along), rotate(radial, axis, degrees * i / steps))
+        world.step(1, hand=target)
+        if i % 12 == 0:
+            seen.append(watch())
+    world.step(int(0.4 / DT), hand=target)
+    seen.append(watch())
+    return seen, norm(radial)
+
+
+# ---------------------------------------------------------------------------
+# What each request is checked against
+# ---------------------------------------------------------------------------
+
+@dataclass
+class Verdict:
+    ok: bool
+    reason: str
+    measured: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class Built:
+    room: world_room.Room
+    world: World
+    before: set[str]
+
+
+def check_hinged_gate(built: Built) -> Verdict:
+    world = built.world
+    world.seconds(1.0)
+    anchored = world.anchored()
+    joints = world.joints()
+    leaves = [(j, moving_end(j, anchored)) for j in joints
+              if j["kind"] == "hinge" and j.get("attached")]
+    leaves = [(j, m) for j, m in leaves if m]
+    if not leaves:
+        return Verdict(False, "nothing is on a hinge to anything anchored",
+                       {"joints": joints_in_words(joints)})
+    leaves.sort(key=lambda jm: (not worded(jm[1], GATE_WORDS), -volume(world.body(jm[1]))))
+    pin, leaf = leaves[0]
+    start = coordinate(world.joint(pin["id"]))
+    best = 0.0
+    for sign in (1.0, -1.0):
+        size = world.body(leaf).get("dimensions_m") or [1, 1, 1]
+        thin = [1.0, 0.0, 0.0] if size[0] <= size[2] else [0.0, 0.0, 1.0]
+        haul(world, leaf, scale(thin, 0.6 * sign))
+        world.session.send(op="release")
+        world.seconds(0.3)
+        best = max(best, abs(coordinate(world.joint(pin["id"])) - start))
+        if best >= HINGE_OPEN_DEG:
+            break
+    measured = {"leaf": leaf, "turned_deg": round(best, 1)}
+    if best >= HINGE_OPEN_DEG:
+        return Verdict(True, f"{leaf} swung {best:.0f} degrees when shoved", measured)
+    return Verdict(False, f"shoved both ways, {leaf} turned only {best:.1f} degrees",
+                   measured)
+
+
+def check_portcullis(built: Built) -> Verdict:
+    world = built.world
+    world.seconds(1.0)
+    anchored = world.anchored()
+    joints = world.joints()
+    slides = [(j, moving_end(j, anchored)) for j in joints
+              if j["kind"] == "slider" and j.get("attached")]
+    slides = [(j, m) for j, m in slides if m]
+    if not slides:
+        return Verdict(False, "nothing slides on anything anchored",
+                       {"joints": joints_in_words(joints)})
+    slides.sort(key=lambda jm: (not worded(jm[1], GATE_WORDS), -volume(world.body(jm[1]))))
+    pin, grate = slides[0]
+    start = coordinate(world.joint(pin["id"]))
+    axis = unit(pin["axis"])
+    up = axis if axis[1] >= 0 else scale(axis, -1.0)
+    haul(world, grate, scale(up, 0.6))
+    raised = abs(coordinate(world.joint(pin["id"])) - start)
+    # And down again: "up and down" is two directions, whatever friction the
+    # grooves were given.
+    haul(world, grate, scale(up, -0.6))
+    world.session.send(op="release")
+    world.seconds(1.5)
+    after = abs(coordinate(world.joint(pin["id"])) - start)
+    measured = {"grate": grate, "raised_m": round(raised, 3), "back_to_m": round(after, 3)}
+    if raised < SLIDE_OPEN_M:
+        return Verdict(False, f"hauled up, {grate} moved only {raised:.3f} m", measured)
+    if after > 0.5 * raised:
+        return Verdict(False, f"{grate} rose {raised:.2f} m and would not come back down "
+                              f"(still {after:.2f} m up)", measured)
+    return Verdict(True, f"{grate} rose {raised:.2f} m and came back down", measured)
+
+
+def check_hanging_sign(built: Built) -> Verdict:
+    world = built.world
+    world.seconds(2.0)
+    anchored = world.anchored()
+    joints = world.joints()
+    ropes = [j for j in joints if j["kind"] == "link" and j.get("attached")]
+    count: dict[str, int] = {}
+    for j in ropes:
+        for end in (j["a"], j["b"]):
+            if not anchored.get(end):
+                count[end] = count.get(end, 0) + 1
+    hung = [n for n, c in count.items() if c >= 2 and world.body(n)]
+    if not hung:
+        return Verdict(False, "nothing hangs from two ropes",
+                       {"joints": joints_in_words(joints)})
+    hung.sort(key=lambda n: ("sign" not in n.lower(), -volume(world.body(n))))
+    sign = hung[0]
+    body = world.body(sign)
+    carrying = [j for j in ropes if sign in (j["a"], j["b"])
+                and float(j.get("tension_n") or 0.0) > 1.0]
+    measured = {"sign": sign, "bottom_m": round(bottom(body), 3),
+                "ropes_carrying": len(carrying),
+                "tensions_n": [round(float(j.get("tension_n") or 0.0), 1) for j in ropes
+                               if sign in (j["a"], j["b"])]}
+    if bottom(body) < 0.1:
+        return Verdict(False, f"{sign} is down on the floor", measured)
+    if len(carrying) < 2:
+        return Verdict(False, f"only {len(carrying)} of the ropes on {sign} carry any "
+                              f"load, so something else is holding it up", measured)
+    return Verdict(True, f"{sign} hangs {bottom(body):.2f} m off the floor on "
+                         f"{len(carrying)} ropes", measured)
+
+
+def check_chain(built: Built) -> Verdict:
+    world = built.world
+    world.seconds(2.0)
+    anchored = world.anchored()
+    joints = world.joints()
+    ropes = [j for j in joints if j["kind"] == "link" and j.get("attached")]
+    near: dict[str, set[str]] = {}
+    for j in ropes:
+        near.setdefault(j["a"], set()).add(j["b"])
+        near.setdefault(j["b"], set()).add(j["a"])
+    best: list[str] = []
+
+    def walk(path: list[str]) -> None:
+        nonlocal best
+        if len(path) - 1 > len(best):
+            best = path[1:]
+        for there in near.get(path[-1], ()):
+            if there not in path and not anchored.get(there) and world.body(there):
+                walk(path + [there])
+
+    for fixed in [n for n in near if anchored.get(n)]:
+        walk([fixed])
+    measured = {"links_in_a_row": len(best), "chain": best}
+    if len(best) < 4:
+        return Verdict(False, f"the longest run of things tied one to the next and hung "
+                              f"from anything fixed is {len(best)}", measured)
+    lowest = min(bottom(world.body(n)) for n in best)
+    measured["lowest_m"] = round(lowest, 3)
+    if lowest < 0.02:
+        return Verdict(False, "the chain is lying on the floor", measured)
+    return Verdict(True, f"{len(best)} links hang in a row, the lowest {lowest:.2f} m "
+                         f"off the floor", measured)
+
+
+def check_loaded_shelf(built: Built) -> Verdict:
+    world = built.world
+    world.seconds(2.5)
+    reply = world.session.send(op="overloaded")
+    over = reply.get("overloaded") or []
+    names = [str(o.get("name") or o.get("object") or "") for o in over]
+    broke = list(world.finished)
+    here = set(world.bodies())
+    gone = [b["name"] for b in built.room.bodies()
+            if b["name"] not in here and any(k.startswith(b["name"] + " piece") for k in here)]
+    measured = {"overloaded": names, "fractured": broke, "in_pieces": gone}
+    if names or broke or gone:
+        what = names[0] if names else (broke[0] if broke else gone[0])
+        return Verdict(True, f"{what} is carrying more than it can hold", measured)
+    return Verdict(False, "after 2.5 s nothing reports being overloaded and nothing broke",
+                   measured)
+
+
+def check_drop_on_glass(built: Built) -> Verdict:
+    world = built.world
+    plate = "glass plate 20mm"
+    new = [b for b in built.room.bodies()
+           if b["name"] not in built.before and b["material"] == "iron"]
+    if not new:
+        return Verdict(False, "nothing new made of iron is in the room",
+                       {"new": [b["name"] for b in built.room.bodies()
+                                if b["name"] not in built.before]})
+    ball = new[0]["name"]
+    world.seconds(1.5)
+    hits = [i for i in world.impacts
+            if ball in (i.get("struck"), i.get("by"))
+            and any(str(x or "").startswith(plate) for x in (i.get("struck"), i.get("by")))]
+    measured = {"ball": ball, "impacts_with_the_plate": len(hits),
+                "fastest_m_s": round(max((i.get("closing_speed_m_s", 0) for i in hits),
+                                         default=0.0), 2)}
+    if hits or any(n.startswith(plate) for n in world.finished):
+        return Verdict(True, f"{ball} landed on the plate", measured)
+    return Verdict(False, f"{ball} never touched the 20 mm glass plate", measured)
+
+
+def check_castle_gate(built: Built) -> Verdict:
+    """Turn the wheel by its handle; the gate must open, and close again."""
+    world = built.world
+    world.seconds(1.0)
+    anchored = world.anchored()
+    joints = [j for j in world.joints() if j.get("attached")]
+    on_pins = [(j, moving_end(j, anchored)) for j in joints if j["kind"] == "hinge"]
+    on_pins = [(j, m) for j, m in on_pins if m]
+    wheels = [(j, m) for j, m in on_pins if worded(m, WHEEL_WORDS)]
+    base = {"joints": joints_in_words(joints)}
+    if not wheels:
+        return Verdict(False, "nothing that turns on a pin is a wheel, winch, windlass, "
+                              "capstan or crank",
+                       {**base, "on_pins": [m for _, m in on_pins]})
+    wheel_pin, wheel = wheels[0]
+    handles = [other for j in joints if j["kind"] == "fixing" and wheel in (j["a"], j["b"])
+               for other in (j["a"], j["b"]) if other != wheel and not anchored.get(other)]
+    handles.sort(key=lambda n: not worded(n, HANDLE_WORDS))
+    handle = handles[0] if handles else wheel
+    movers = [(j, moving_end(j, anchored)) for j in joints if j["kind"] in ("hinge", "slider")]
+    movers = [(j, m) for j, m in movers if m and m not in (wheel, handle)]
+    if not movers:
+        return Verdict(False, f"there is a wheel ({wheel}) but no gate: nothing else "
+                              f"moves on a hinge or a slide", base)
+    movers.sort(key=lambda jm: (not worded(jm[1], GATE_WORDS), -volume(world.body(jm[1]))))
+    gate_pin, gate = movers[0]
+    base.update({"wheel": wheel, "handle": handle, "gate": gate,
+                 "gate_moves_on": gate_pin["kind"]})
+    if not connected(joints, {wheel, handle}, gate, anchored):
+        return Verdict(False, f"nothing connects {wheel} to {gate}: turning it cannot "
+                              f"move the gate", base)
+
+    start = coordinate(world.joint(gate_pin["id"]))
+    centre = world.body(gate)["position_m"]
+    wheel_start = coordinate(world.joint(wheel_pin["id"]))
+
+    def watch():
+        body = world.body(gate)
+        return (abs(coordinate(world.joint(gate_pin["id"])) - start),
+                norm(sub(body["position_m"], centre)) if body else 0.0)
+
+    threshold = HINGE_OPEN_DEG if gate_pin["kind"] == "hinge" else SLIDE_OPEN_M
+    seen, radius = turn(world, handle, wheel_pin, 150.0, 3.0, watch)
+    most = max(s[0] for s in seen)
+    moved = max(s[1] for s in seen)
+    if most < threshold and moved < MOVE_OPEN_M:
+        more, _ = turn(world, handle, wheel_pin, -300.0, 5.0, watch)
+        most = max(most, max(s[0] for s in more))
+        moved = max(moved, max(s[1] for s in more))
+    wheel_turned = coordinate(world.joint(wheel_pin["id"])) - wheel_start
+    # Back to where the wheel started, let go, and let it all settle.
+    turn(world, handle, wheel_pin, -wheel_turned, 3.0, watch)
+    world.session.send(op="release")
+    world.seconds(2.0)
+    end, _ = watch()
+    unit_name = "degrees" if gate_pin["kind"] == "hinge" else "m"
+    measured = {**base, "handle_radius_m": round(radius, 3),
+                "wheel_turned_deg": round(wheel_turned, 1),
+                "gate_opened": round(most, 3), "gate_centre_moved_m": round(moved, 3),
+                "gate_after_turning_back": round(end, 3), "unit": unit_name}
+    if most < threshold and moved < MOVE_OPEN_M:
+        why = (f"turning {handle} round the axle moved {gate} only {most:.2f} {unit_name}"
+               f" (its centre {moved:.2f} m)")
+        if radius < 0.03:
+            why += (f"; what was held is on the axle itself ({radius * 1000:.0f} mm off "
+                    f"it), so pulling on it cannot turn the wheel -- it needs a handle")
+        elif abs(wheel_turned) < 20:
+            why += f"; the wheel itself turned only {wheel_turned:.0f} degrees"
+        return Verdict(False, why, measured)
+    if end > 0.5 * most and most >= threshold:
+        return Verdict(False, f"{gate} opened {most:.2f} {unit_name}, and with the wheel "
+                              f"turned back it stayed {end:.2f} {unit_name} open", measured)
+    return Verdict(True, f"turning {handle} opened {gate} {most:.2f} {unit_name}; turned "
+                         f"back, it closed to {end:.2f}", measured)
+
+
+@dataclass
+class Case:
+    id: str
+    scene: str
+    message: str
+    check: Callable[[Built], Verdict]
+    tests: str
+
+
+CASES = [
+    Case("hinged-gate", "yard", "Build a wooden gate on a hinge between two stone posts.",
+         check_hinged_gate, "a hinge placed so it can swing"),
+    Case("portcullis", "yard",
+         "Build a portcullis: an iron grate that slides up and down between two stone "
+         "posts.", check_portcullis, "a slide, with travel both ways"),
+    Case("hanging-sign", "yard", "Hang a wooden sign from a beam by two ropes.",
+         check_hanging_sign, "ropes that carry a load"),
+    Case("chain", "yard", "Hang a chain of six iron links from a wooden beam.",
+         check_chain, "a run of bodies, each tied to the next"),
+    Case("loaded-shelf", "yard",
+         "Build a thin stone shelf across two piers and stack enough iron on it that it "
+         "is carrying more than it can hold.", check_loaded_shelf,
+         "sustained load, found from statics rather than from a hit"),
+    Case("castle-gate", "yard", "Build a castle gate that opens and closes with a wheel.",
+         check_castle_gate, "the request that did not make it: a wheel that drives a gate"),
+    Case("castle-gate-courtyard", "courtyard",
+         "Build a castle gate that opens and closes with a wheel.", check_castle_gate,
+         "the same request in the courtyard, which is nearly full"),
+    Case("drop-on-glass", "bench",
+         "Drop an iron ball onto the 20 mm glass plate from two metres up.",
+         check_drop_on_glass, "placing something over a target"),
+]
+
+
+# ---------------------------------------------------------------------------
+# Running a trial
+# ---------------------------------------------------------------------------
+
+def refusals(trace: list[dict[str, Any]]) -> list[dict[str, str]]:
+    return [{"tool": c["name"], "error": str(c["answer"].get("error"))[:400]}
+            for r in trace for c in r.get("calls", [])
+            if isinstance(c.get("answer"), dict) and "error" in c["answer"]]
+
+
+def run_trial(case: Case, trial: int, api_key: str, model: str,
+              folder: Path) -> dict[str, Any]:
+    record: dict[str, Any] = {"case": case.id, "trial": trial, "scene": case.scene,
+                              "message": case.message, "passed": False}
+    room = world_room.Room(case.scene)
+    before = {b["name"] for b in room.bodies()}
+    trace: list[dict[str, Any]] = []
+    asked = time.perf_counter()
+    try:
+        # The room as the server has it when the person asks: open and running.
+        first = World(room.spec)
+        try:
+            first.seconds(0.25)
+            live_state = first.session.state
+            answer = world_chat.ask(api_key, model, room, live_state, case.message, [],
+                                    trace=trace)
+        finally:
+            first.close()
+    except Exception as failure:
+        record.update(reason=f"the agent failed: {failure}", trace=trace,
+                      refusals=refusals(trace), ask_s=round(time.perf_counter() - asked, 1))
+        return record
+    record.update(reply=answer.get("reply"), did=answer.get("did"),
+                  rounds=answer.get("rounds"), usage=answer.get("usage"),
+                  ask_s=round(time.perf_counter() - asked, 1), refusals=refusals(trace),
+                  calls=[c["name"] for r in trace for c in r.get("calls", [])])
+    (folder / f"{case.id}-{trial}.json").write_text(
+        json.dumps({"case": case.id, "trial": trial, "message": case.message,
+                    "answer": answer, "trace": trace}, indent=1, default=str),
+        encoding="utf-8")
+    if not answer.get("changed"):
+        record["reason"] = "the agent changed nothing in the room"
+        return record
+    checked = time.perf_counter()
+    try:
+        world = World(room.spec)
+    except Exception as failure:
+        record["reason"] = f"the room the agent left would not open: {failure}"
+        return record
+    try:
+        problems = world.opened.get("joint_problems")
+        if problems:
+            record["reason"] = f"joints that would not hang: {problems}"
+            return record
+        verdict = case.check(Built(room, world, before))
+        record.update(passed=verdict.ok, reason=verdict.reason, measured=verdict.measured)
+    except Exception:
+        record["reason"] = "the check itself failed: " + traceback.format_exc()[-800:]
+    finally:
+        world.close()
+        record["check_s"] = round(time.perf_counter() - checked, 1)
+    return record
+
+
+def summarise(records: list[dict[str, Any]], model: str) -> str:
+    lines = [f"agent build regression -- {model}", ""]
+    by_case: dict[str, list[dict[str, Any]]] = {}
+    for r in records:
+        by_case.setdefault(r["case"], []).append(r)
+    tokens_in = sum((r.get("usage") or {}).get("input_tokens", 0) for r in records)
+    tokens_out = sum((r.get("usage") or {}).get("output_tokens", 0) for r in records)
+    for case in CASES:
+        rows = by_case.get(case.id)
+        if not rows:
+            continue
+        passed = sum(1 for r in rows if r["passed"])
+        lines.append(f"{case.id:24s} {passed}/{len(rows)}   {case.tests}")
+        for r in rows:
+            mark = "pass" if r["passed"] else "FAIL"
+            lines.append(f"    trial {r['trial']}: {mark} -- {r.get('reason')}")
+            if not r["passed"]:
+                for refusal in (r.get("refusals") or [])[:4]:
+                    lines.append(f"        refused {refusal['tool']}: "
+                                 f"{refusal['error'][:200]}")
+                if r.get("reply"):
+                    lines.append(f"        said: {str(r['reply'])[:300]}")
+            lines.append(f"        {r.get('rounds')} rounds, "
+                         f"{len(r.get('calls') or [])} calls, {r.get('ask_s')} s asking, "
+                         f"{r.get('check_s', '-')} s checking")
+        lines.append("")
+    total = sum(1 for r in records if r["passed"])
+    lines.append(f"{total} of {len(records)} passed; {tokens_in} tokens in, "
+                 f"{tokens_out} out")
+    return "\n".join(lines)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser.add_argument("--cases", default="", help="comma-separated parts of case ids")
+    parser.add_argument("--trials", type=int, default=1)
+    parser.add_argument("--jobs", type=int, default=3)
+    parser.add_argument("--model", default=None, help="instead of OPENAI_MODEL")
+    parser.add_argument("--list", action="store_true")
+    args = parser.parse_args(argv)
+
+    wanted = [w.strip() for w in args.cases.split(",") if w.strip()]
+    cases = [c for c in CASES if not wanted or any(w in c.id for w in wanted)]
+    if args.list:
+        for c in cases:
+            print(f"{c.id:24s} [{c.scene}] {c.message}")
+        return 0
+    if ENGINE is None:
+        print("no live engine: build banjo_live_world_run into build/integration first")
+        return 2
+    import server   # the playground's own .env reader, so the same key and model
+    api_key, model = server.local_configuration()
+    model = args.model or model
+    if not api_key:
+        print("OPENAI_API_KEY is not configured in the local .env; these tests ask a "
+              "real model and cannot run without one")
+        return 2
+
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    folder = ROOT / "build" / "agent-regression" / stamp
+    folder.mkdir(parents=True, exist_ok=True)
+    print(f"{len(cases)} case(s) x {args.trials} trial(s) against {model}; "
+          f"writing {folder}", flush=True)
+    speaking = threading.Lock()
+    records: list[dict[str, Any]] = []
+    jobs = [(c, t) for c in cases for t in range(1, args.trials + 1)]
+    with ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool:
+        futures = {pool.submit(run_trial, c, t, api_key, model, folder): (c, t)
+                   for c, t in jobs}
+        for future in as_completed(futures):
+            case, trial = futures[future]
+            try:
+                record = future.result()
+            except Exception:
+                record = {"case": case.id, "trial": trial, "passed": False,
+                          "reason": traceback.format_exc()[-800:]}
+            records.append(record)
+            with speaking:
+                print(f"  {'pass' if record['passed'] else 'FAIL'}  {case.id} #{trial}: "
+                      f"{record.get('reason')}", flush=True)
+    records.sort(key=lambda r: ([c.id for c in CASES].index(r["case"]), r["trial"]))
+    summary = summarise(records, model)
+    (folder / "summary.txt").write_text(summary, encoding="utf-8")
+    (folder / "report.json").write_text(json.dumps(records, indent=1, default=str),
+                                        encoding="utf-8")
+    print()
+    print(summary)
+    return 0 if all(r["passed"] for r in records) else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

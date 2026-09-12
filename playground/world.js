@@ -1460,6 +1460,15 @@ $("ask").addEventListener("submit", async (e) => {
       world.sweptSince.clear();
       showStock();
       draw(answer.state);
+      // And its joints. The room that comes back can have hinges, ropes and
+      // springs the chat just made -- and the list held here is the OLD room's,
+      // naming bodies that may be gone. Without this a gate the chat hung is
+      // drawn with no pin, and a sign with no ropes.
+      world.joints = [];
+      drawJoints(answer.state.joints || []);
+      drawRopes();
+      if (answer.joint_problems && answer.joint_problems.length)
+        say("bad", "Some joints would not hang: " + answer.joint_problems.join("; "));
       remember("the room was rebuilt: " + (answer.did || []).join(", "));
     }
   } catch (error) {
