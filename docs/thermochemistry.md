@@ -206,6 +206,53 @@ V/V0 = T/T0 to 1%.
 | MCP | `list_substances`, `enclose_gas`, `heat`, `thermal_state`; `contents` / `temperature_k` on `add_object`; a heat summary on every `run` |
 | playground | built by the chat from the MCP's own tools; the room draws glow, flames and gas columns from the engine's numbers and has a **Heat it** button |
 
+## Seeing it in 3D
+
+Everything below was built by the playground's chat from the MCP's own tools --
+nothing preloaded -- and watched in the room on 2026-09-12. To repeat it, start
+the playground against this build:
+
+    python -u playground/server.py --port 8767 \
+        --engine <checkout>/build/thermo/Release/banjo_platform_cli.exe \
+        --studio <checkout>/build/thermo/Release/banjo_network_lab.exe
+
+and open http://127.0.0.1:8767/world.
+
+**A hearth.** Choose *An empty yard* and ask: *"Build a hearth of oak logs on a
+stone slab with an iron kettle beside it, and light it."* The chat places a
+concrete slab, three oak logs and an iron kettle, and puts 10 kW under each of
+the two lower logs for 90 s (11 rounds, 112,522 tokens in, 650 out, 21 s). In
+the room both logs catch about a minute in, at 664 K and 1.5 kW, and the Heat
+panel says so; they climb to 1046 K and 13.4 kW and then burn at 877-919 K and
+11.4-13.3 kW each, 76-92 minutes of fuel at the rate of the moment. The glow
+and the flames are drawn from those numbers. Over ten minutes the slab went
+from 293 to 378 K and the kettle to 314 K; the ledger's unaccounted energy
+stayed below 5e-5 J. Then, with the mouse:
+
+- aim at the top log and press **Heat it** (10 kW for 60 s): it caught at
+  654 K and reached 1100 K and 16.7 kW;
+- click it to pick it up, look away, and click to drop it on the floor 1.3 m
+  from the hearth: it keeps burning on its own, at 986 K and 14.1 kW, and its
+  flame goes with it.
+
+**A heated piston.** Choose *An empty yard* and ask: *"Build a cylinder with an
+iron piston in it and a weight on the piston, with gas under the piston, and
+heat the gas so it lifts the weight."* The chat builds a concrete cylinder with
+a glass window, an iron piston on a slide with an iron weight on it, and argon
+under it, and puts 800 W into the gas for 30 s (14 rounds, about 156,000 tokens
+in and 900 out, 27-29 s). In the room the gas column rises and carries the
+piston and the weight: 329 K and 46 mm at 1 s, 437 K and 196 mm at 10 s, 452 K
+and 216 mm at 20 s. When the heat stops they come back down: 293 K and 0 mm by
+60 s. Aim through the window at the gas below the piston and press **Heat it**:
+800 W for 30 s goes into the gas, and it rises again to 453 K and 218 mm. Aimed
+at the glass above the gas, the button heats the glass, which is what it is on.
+
+The chat's own account of the hearth used to end "not yet burning": one `run`
+is 20 s at most, the cap is silent, and the recipe asked for 120 s in one. The
+recipe now asks for six runs in one turn. On a paid trial the chat ran 100 s
+and reported both logs burning at about 991 K (174,397 tokens in, against
+112,592 before).
+
 ## The dependency decision
 
 Banjo-owned, built around the existing thermal kernel's convention. Cantera,
@@ -261,5 +308,5 @@ CMake switch with a pinned version.
 | `tests/thermochemistry_tests.cpp` | 16: the network on its own |
 | `tests/thermo_live_tests.cpp` | 4: the network in a live world |
 | `tests/thermo_ffi_tests.py` | 6: through the C library, from Python |
-| `tests/agent_build_tests.py` | cases and `--recipes` for `hearth` and `heated-piston` |
+| `tests/agent_build_tests.py` | cases and `--recipes` for `hearth` and `heated-piston`; paid on gpt-5-mini, both pass: 258,301 tokens in and 1,529 out for the two |
 | `tests/thermal_kernel_tests.cpp` | the original kernel's conservation tests, unchanged and passing |
