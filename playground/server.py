@@ -46,6 +46,43 @@ from banjo_authoring import EngineCLI, EngineError, write_package, validate_netw
 STATIC = Path(__file__).resolve().parent
 ACTIVE = {"planning", "validating", "running"}
 
+# Rooms the QA suite saved: every chat trial's finished room, as the spec a live
+# world is opened from, at <run>/<case>-<trial>.spec.json. Opened by id, so a
+# build the chat made can be looked at in 3D from a link: /world?qa=<id>.
+QA_ROOT = ROOT / "build" / "agent-regression"
+# fullmatch, and ASCII: `$` would also accept a trailing newline and `\d` any
+# Unicode digit. Nothing that is not exactly this ever becomes part of a path.
+QA_ID = re.compile(r"\d{8}-\d{6}/[a-z0-9-]+-\d+", re.ASCII)
+QA_SPEC_BYTES = 8 * 1024 * 1024
+
+
+def qa_path(qa_id):
+    """Where a QA trial's room is saved, for an id that is exactly one; else ValueError."""
+    if not isinstance(qa_id, str) or not QA_ID.fullmatch(qa_id):
+        raise ValueError(f"{str(qa_id)[:80]!r} is not a QA build: a QA build is named "
+                         "<run>/<case>-<trial>, like 20260912-101201/hinged-gate-1")
+    folder = QA_ROOT.resolve()
+    path = (folder / f"{qa_id}.spec.json").resolve()
+    # The pattern already rules out anything that could leave the folder. Checked
+    # again on the resolved path, because this is the one place a request names a file.
+    if folder not in path.parents:
+        raise ValueError(f"{qa_id!r} is not a QA build")
+    return path
+
+
+def qa_spec(qa_id):
+    """The room a QA trial saved, by its id; FileNotFoundError when there is none."""
+    path = qa_path(qa_id)
+    if not path.is_file():
+        raise FileNotFoundError(f"there is no saved QA build {qa_id}: "
+                                f"build/agent-regression/{qa_id}.spec.json does not exist")
+    if path.stat().st_size > QA_SPEC_BYTES:
+        raise ValueError(f"QA build {qa_id} is larger than a room can be")
+    spec = strict_json(path.read_text(encoding="utf-8"))
+    if not isinstance(spec, dict) or not isinstance(spec.get("bodies"), list):
+        raise ValueError(f"QA build {qa_id} is not a room: it has no list of bodies")
+    return spec
+
 
 def describe_failure(plan, error, limit=None):
     """Explain current and archived admission failures without rewriting the run.
@@ -1050,10 +1087,31 @@ class Handler(BaseHTTPRequestHandler):
                 # Starting again now replays the room as it was last authored,
                 # and the chat's changes ARE authoring; asking the chat to clear
                 # it is how to get the original back.
-                scene=str(body.get("scene","bench"))
-                if scene not in world_room.SCENES: scene="bench"
+                if not isinstance(body,dict): raise ValueError("Expected a JSON object")
                 rooms=getattr(app,"rooms",None)
                 if rooms is None: rooms=app.rooms={}
+                # Or a room a QA trial saved, by its id: {"qa": "<run>/<case>-<trial>"}.
+                # Kept like the others, under "qa:<id>", so a reload opens it as
+                # the chat has left it since; "fresh" reads the saved file again.
+                # Nothing is kept, and the room already open is left alone,
+                # unless the new world actually opens.
+                if "qa" in body:
+                    qa=body["qa"]
+                    qa_path(qa)   # anything that is not exactly an id stops here
+                    key="qa:"+qa
+                    room=None if body.get("fresh") else rooms.get(key)
+                    if room is None:
+                        try: spec=qa_spec(qa)
+                        except FileNotFoundError as missing: return self.send({"error":str(missing)},404)
+                        room=world_room.Room("yard")
+                        room.scene,room.spec=key,spec
+                    opened=app.live.open(app,{"spec":room.spec})
+                    rooms[key]=app.room=room
+                    opened["scene"]=key
+                    opened["scenes"]=sorted(world_room.SCENES)
+                    return self.send(opened)
+                scene=str(body.get("scene","bench"))
+                if scene not in world_room.SCENES: scene="bench"
                 if body.get("fresh") or scene not in rooms: rooms[scene]=world_room.Room(scene)
                 app.room=rooms[scene]
                 opened=app.live.open(app,{"spec":app.room.spec})

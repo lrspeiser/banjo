@@ -16,6 +16,18 @@ import * as THREE from "/vendor/three.module.js";
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
+// What has gone wrong on this page, for whoever checks it from outside
+// (banjoRoom.status()). A QA pass that photographs the room has to be able to
+// say a picture was taken over an error, not only that it was taken.
+const errorsSeen = [];
+function noteError(what) {
+  errorsSeen.push({ at_s: +(performance.now() / 1000).toFixed(2), what: String(what).slice(0, 400) });
+  if (errorsSeen.length > 40) errorsSeen.shift();
+}
+addEventListener("error", (e) => noteError(e.message || e.error || "an error"));
+addEventListener("unhandledrejection", (e) =>
+  noteError(`unhandled: ${(e.reason && e.reason.message) || e.reason}`));
+
 // ---------------------------------------------------------------------------
 // Talking to the engine
 // ---------------------------------------------------------------------------
@@ -76,6 +88,11 @@ const world = {
   // knows the word.
   drawn: null,            // { name, from: Vector3, latch, asked }
   loosing: null,          // { name, home: Vector3, latch, best }
+  // For banjoRoom.ready(): whether a room is being opened, why the last attempt
+  // failed, and how many frames have been drawn since one opened.
+  opening: false,
+  openError: null,
+  framesSinceOpen: 0,
 };
 
 function remember(what) {
@@ -92,6 +109,8 @@ async function act(op, extra) {
 // ---------------------------------------------------------------------------
 
 const canvas = $("stage");
+// A lost context never draws again, and nothing else on the page would say so.
+canvas.addEventListener("webglcontextlost", () => noteError("the WebGL context was lost"));
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 const scene = new THREE.Scene();
@@ -1551,6 +1570,7 @@ async function tick() {
   } catch (error) {
     if (world.session === driving) {
       $("panel-state").textContent = `The room stopped: ${error.message || error}`;
+      noteError(`the room stopped: ${error.message || error}`);
       world.session = null;
     }
   } finally { world.busy = false; }
@@ -1624,6 +1644,7 @@ function frame() {
   fadePieces(now);
   animateHeat(now);
   renderer.render(scene, camera);
+  world.framesSinceOpen++;
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -1633,6 +1654,7 @@ requestAnimationFrame(frame);
 // ---------------------------------------------------------------------------
 
 function say(who, text, did) {
+  if (who === "bad") noteError(text);
   const turn = document.createElement("div");
   turn.className = `turn ${who}`;
   const label = document.createElement("span");
@@ -1785,18 +1807,73 @@ $("heat-it").addEventListener("click", async () => {
     remember(`heated ${target} at ${power / 1000} kW for ${seconds} s`);
   } catch (error) { say("bad", String(error.message || error)); }
 });
-$("scene").addEventListener("change", () => open());
+$("scene").addEventListener("change", () => {
+  // Choosing a room leaves the QA build: the link stops naming it, so a reload
+  // opens the room that was chosen rather than the build again.
+  if ($("scene").value !== QA_OPTION && qaBuild() !== null) {
+    const url = new URL(location.href);
+    url.searchParams.delete("qa");
+    history.replaceState(history.state, "", url);
+    showBuild(null);
+  }
+  open();
+});
 
 // ---------------------------------------------------------------------------
 // Opening
 // ---------------------------------------------------------------------------
 
+// A saved build, by its QA id: /world?qa=20260912-101201/hinged-gate-1 opens the
+// room a QA trial left behind (build/agent-regression/<id>.spec.json) instead of
+// one of the authored rooms, so a build the chat made can be looked at in the
+// real engine by anyone with the link. Whether the id is one is the server's to
+// say; the page passes it on, and says which build is open.
+const QA_OPTION = "qa-build";
+function qaBuild() {
+  return new URLSearchParams(location.search).get("qa");
+}
+function qaParts(id) {
+  const m = /^(\d{8}-\d{6})\/([a-z0-9-]+)-(\d+)$/.exec(id || "");
+  return m ? { run: m[1], name: m[2], trial: m[3] } : null;
+}
+// Which build is open, in the panel and in the dropdown. Without an entry of its
+// own a QA build would sit under whichever room the dropdown last showed, and
+// choosing that room would then change nothing.
+function showBuild(id) {
+  const parts = qaParts(id);
+  const label = $("panel-build");
+  label.hidden = id === null;
+  label.textContent = id === null ? ""
+    : parts ? `QA build ${parts.name} #${parts.trial}, run ${parts.run}` : `QA build ${id}`;
+  let option = $("scene").querySelector(`option[value="${QA_OPTION}"]`);
+  if (id === null) {
+    if (option) option.remove();
+    return;
+  }
+  if (!option) {
+    option = document.createElement("option");
+    option.value = QA_OPTION;
+    $("scene").prepend(option);
+  }
+  option.textContent = parts ? `QA: ${parts.name} #${parts.trial}` : "QA build";
+  $("scene").value = QA_OPTION;
+}
+
 async function open() {
+  world.opening = true;
   $("panel-state").textContent = "Opening the room…";
+  const qa = qaBuild();
+  showBuild(qa);
   try {
-    const data = await api("/api/world/open", { scene: $("scene").value });
+    const data = await api("/api/world/open", qa !== null ? { qa } : { scene: $("scene").value });
     world.session = data.session;
+    world.scene = data.scene || null;   // what the server says it opened
+    world.openError = null;
     world.lastTick = 0;
+    // This room's own clock. Left at the last room's, the first frame report
+    // after a reopen measured one room's seconds against the other's.
+    world.clock = Number(data.t) || 0;
+    trace.startedWorld = world.clock;
     world.story = [];
     world.held = null;
     $("carry").hidden = true;
@@ -1807,6 +1884,7 @@ async function open() {
     drawJoints(data.joints);
     drawRopes();
     clearHeat();
+    world.framesSinceOpen = 0;
     $("panel-state").textContent = "Live.";
     $("chat").replaceChildren();
     say("world",
@@ -1814,9 +1892,23 @@ async function open() {
         [...new Set(data.bodies.map((b) => b.material).filter(Boolean))].join(", ")
       }. Click the room to look around, walk with W A S D, and click again to pick`
       + ` something up. Ask me to change anything.`);
+    // Said, not dropped, as when the chat rebuilds the room: a gate that does
+    // not swing reads as broken physics rather than as a pin in the wrong place.
+    if (data.joint_problems && data.joint_problems.length)
+      say("bad", "Some joints would not hang: " + data.joint_problems.join("; "));
   } catch (error) {
-    $("panel-state").textContent = `Could not open the room: ${error.message || error}`;
+    world.openError = String(error.message || error);
+    $("panel-state").textContent = `Could not open the room: ${world.openError}`;
+    noteError(`could not open the room: ${world.openError}`);
+  } finally {
+    world.opening = false;
   }
+}
+
+// Up and on screen: opened, its bodies drawn, and two frames rendered since.
+function roomReady() {
+  return !!world.session && !world.opening && !world.openError
+    && world.bodies.size > 0 && world.framesSinceOpen >= 2;
 }
 
 // One handle onto the running room, so that what is on screen can be checked
@@ -1839,6 +1931,24 @@ window.banjoRoom = {
   heatState: () => heat.last,
   heatDrawn: () => ({ glowing: [...heat.glowing.keys()], flames: [...heat.flames.keys()],
                       columns: [...heat.columns.keys()] }),
+  // Whether the room is up and on screen. Anything checking it from outside --
+  // tests/qa_browser.py photographs it -- waits on this rather than on a delay.
+  ready: roomReady,
+  // What the page knows, in one call: which world, how many bodies, the world
+  // clock, what the panel says, and every error it has seen.
+  status: () => ({
+    session: world.session,
+    scene: world.scene || null,
+    ready: roomReady(),
+    bodies: world.bodies.size,
+    time_s: world.clock,
+    frames: world.framesSinceOpen,
+    panel: $("panel-state").textContent,
+    build: $("panel-build").hidden ? null : $("panel-build").textContent,
+    said: [...$("chat").querySelectorAll(".turn")].slice(-6)
+      .map((turn) => (turn.querySelector("p") || turn).textContent),
+    errors: errorsSeen.slice(),
+  }),
 };
 
 // Reported on its own timer rather than from the frame loop, because a room
