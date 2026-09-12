@@ -379,16 +379,29 @@ function drawRopes() {
     child.geometry.dispose();
   }
   for (const joint of world.joints) {
-    if (joint.kind !== "link") continue;
     if (!joint.attached) continue;    // parted: there is no rope to draw
     const a = world.bodies.get(joint.a);
     const b = world.bodies.get(joint.b);
     if (!a || !b) continue;
-    const line = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints([a.mesh.position.clone(),
-                                                b.mesh.position.clone()]),
-      ROPE_MATERIAL);
-    ropeGroup.add(line);
+    if (joint.kind === "link") {
+      ropeGroup.add(new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([a.mesh.position.clone(),
+                                                  b.mesh.position.clone()]),
+        ROPE_MATERIAL));
+    } else if (joint.kind === "pulley") {
+      // Three runs, not one: up from the first body to its sheave, across
+      // between the sheaves, and down to the second. Drawing it as a straight
+      // line between the two bodies would show a rope passing through the
+      // lintel, which is the one thing a pulley exists to avoid.
+      const over = (p) => new THREE.Vector3(p[0], p[1], p[2]);
+      ropeGroup.add(new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([
+          a.mesh.position.clone(),
+          over(joint.over_a || [0, 0, 0]),
+          over(joint.over_b || [0, 0, 0]),
+          b.mesh.position.clone()]),
+        ROPE_MATERIAL));
+    }
   }
 }
 
@@ -402,7 +415,7 @@ function drawJoints(pins) {
   for (const pin of pins) {
     // A rope has no stub to draw: it is a line between two bodies and it is
     // drawn every frame by drawRopes, because both of its ends move.
-    if (pin.kind === "link") continue;
+    if (pin.kind === "link" || pin.kind === "pulley") continue;
     const at = pin.at || [0, 0, 0];
     const axis = pin.axis || [0, 1, 0];
     const along = new THREE.Vector3(axis[0], axis[1], axis[2]).normalize();
@@ -1085,7 +1098,7 @@ async function tick() {
         const wasAttached = new Map(world.joints.map((p) => [p.id, p.attached]));
         for (const pin of state.joints) {
           if (wasAttached.get(pin.id) && !pin.attached) {
-            if (pin.kind === "link") {
+            if (pin.kind === "link" || pin.kind === "pulley") {
               const load = pin.tension_n ? ` at ${Math.round(pin.tension_n)} N` : "";
               say("world", `the rope from ${pin.a} to ${pin.b} parted${load} —`
                 + ` it was rated for ${Math.round(pin.breaks_at_n || 0)} N.`);

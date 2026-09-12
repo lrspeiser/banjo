@@ -540,6 +540,14 @@ def _said(joint: banjo.Joint) -> dict[str, Any]:
               "at_m": [round(v, 4) for v in joint.at_m],
               "axis": [round(v, 4) for v in joint.axis],
               "attached": joint.attached}
+    if joint.kind == "pulley":
+        return {**common,
+                "rope_m": round(joint.at, 4),
+                "length_m": round(joint.upper, 4),
+                "tension_n": round(joint.tension_n, 2),
+                "ratio": round(joint.ratio, 4),
+                "over_a_m": [round(v, 4) for v in joint.over_a_m],
+                "over_b_m": [round(v, 4) for v in joint.over_b_m]}
     if joint.kind == "link":
         return {**common,
                 "apart_m": round(joint.at, 4),
@@ -605,6 +613,34 @@ def tool_tie(args: dict[str, Any]) -> dict[str, Any]:
             "note": f"{args.get('b')} is tied to {args.get('a')}. The rope pulls "
                     "and cannot push, so it does nothing at all while there is "
                     "slack. Read tension_n from `joints` to see what it carries."}
+
+
+def tool_reeve(args: dict[str, Any]) -> dict[str, Any]:
+    """Reeve a rope from one named thing, over two fixed points, to another.
+
+    A hoist: pull one end down and the other comes up. This is the ideal
+    pulley -- a relationship between cable lengths, with no wheel and no rope
+    wrapping. `tie` is the physical alternative if the rope itself matters.
+    """
+    world: banjo.World = _world(args.get("world_id"))["world"]
+    try:
+        joint = world.reeve(
+            str(args.get("a", "")), str(args.get("b", "")),
+            _triple(args.get("at_a_m"), "at_a_m", -200.0, 200.0),
+            _triple(args.get("at_b_m"), "at_b_m", -200.0, 200.0),
+            _triple(args.get("over_a_m"), "over_a_m", -200.0, 200.0),
+            _triple(args.get("over_b_m"), "over_b_m", -200.0, 200.0),
+            _number(args.get("ratio", 1.0), "ratio", 0.001, 100.0),
+            _number(args.get("length_m", 0.0), "length_m", 0.0, 500.0))
+    except banjo.BanjoError as error:
+        raise Refused(str(error))
+    ratio = float(args.get("ratio", 1.0))
+    return {"joint": joint,
+            "note": f"{args.get('a')} and {args.get('b')} are rove together. Pull "
+                    f"one end down and the other comes up. The advantage is on "
+                    f"{args.get('b')}'s side: it moves {1 / ratio:.3g} times as "
+                    f"far and feels {ratio:g} times the tension, so a "
+                    f"counterweight of load/{ratio:g} balances a load hung there."}
 
 
 def tool_joints(args: dict[str, Any]) -> dict[str, Any]:
@@ -860,6 +896,39 @@ TOOLS = [
                          "description": "What it takes to part it, in newtons. 0 "
                                         "never parts. A 200 mm iron cube weighs "
                                         "618 N, so size it against the load."}}}},
+    {"name": "reeve",
+     "description": "Reeve a rope from one named thing, over two fixed points, "
+                    "to another: a HOIST. Pull one end down and the other comes "
+                    "up, because the rope's length cannot change. This is the "
+                    "IDEAL pulley -- a relationship between cable lengths, with "
+                    "no wheel (so no wheel inertia or bearing friction) and no "
+                    "rope wrapping (so it cannot slip or come off). Use `tie` "
+                    "instead when the rope itself is what matters: a run of "
+                    "bodies draped over something has real wrap and real "
+                    "friction, at a body per segment. IMPORTANT: `ratio` applies "
+                    "to B's run, so b moves 1/ratio as far as a and feels ratio "
+                    "times the tension -- hang the LOAD at b and a counterweight "
+                    "of load/ratio balances it. The load at `a` needs ratio "
+                    "TIMES the weight, which is the same machine backwards.",
+     "inputSchema": {"type": "object",
+                     "required": ["world_id", "a", "b", "at_a_m", "at_b_m",
+                                  "over_a_m", "over_b_m"],
+                     "properties": {
+         "world_id": {"type": "string"},
+         "a": {"type": "string", "description": "One end. No advantage here."},
+         "b": {"type": "string", "description": "The other end, where the "
+                                                "mechanical advantage is."},
+         "at_a_m": dict(VECTOR, description="Where the rope is made off on `a`."),
+         "at_b_m": dict(VECTOR, description="Where it is made off on `b`."),
+         "over_a_m": dict(VECTOR, description="The sheave above `a`. A fixed "
+                                              "point in the world."),
+         "over_b_m": dict(VECTOR, description="The sheave above `b`."),
+         "ratio": {"type": "number",
+                   "description": "Mechanical advantage on b's side. 1 is a "
+                                  "plain redirect, 2 is a block and tackle."},
+         "length_m": {"type": "number",
+                      "description": "How long the rope is. 0 means 'as it is "
+                                     "rove': what the two runs add up to now."}}}},
     {"name": "joints",
      "description": "Every pin in the world and where each has turned to. The two "
                     "names a pin holds can change -- a pin whose wood is smashed "
@@ -911,6 +980,7 @@ HANDLERS = {
     "hinge": tool_hinge,
     "slide": tool_slide,
     "tie": tool_tie,
+    "reeve": tool_reeve,
     "joints": tool_joints,
     "hinge_friction": tool_hinge_friction,
     "unhinge": tool_unhinge,

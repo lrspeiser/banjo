@@ -118,6 +118,9 @@ struct LiveJoint {
     // "hinge" -- a pin two things turn about.
     // "slider" -- a line two things move along.
     // "link"   -- one link of a rope or chain: it pulls, and it does not push.
+    // "pulley" -- a rope rove over two fixed points: pull one end, the other
+    //             comes up. The IDEAL pulley -- a cable-length relationship,
+    //             not a wheel with a rope wrapped round it.
     //
     // This is also the unit on the three numbers below, because a joint with
     // one degree of freedom has one number and the only question is what it is
@@ -129,9 +132,14 @@ struct LiveJoint {
     double at{};
     double lower{}, upper{};
     double friction{};
-    // What a link is carrying, in newtons. Zero for a slack rope, and zero for
-    // a pin or a slide, which do not have a tension in any useful sense.
+    // What a link or a pulley is carrying, in newtons. Zero for slack, and
+    // zero for a pin or a slide, which have no tension in any useful sense.
     double tension_n{};
+    // A pulley's mechanical advantage. One for everything else.
+    double ratio{1.0};
+    // Where a pulley's rope runs over, in world metres. Both zero for every
+    // other kind, which has nothing of the sort.
+    Vec3 over_a_m{}, over_b_m{};
     // What it takes to part a link. Zero means it never parts.
     double breaks_at_n{};
     // Where it is now, in the world, for a host that wants to draw it. For a
@@ -411,6 +419,43 @@ public:
     unsigned tie(const std::string &a, const std::string &b,
                  const Vec3 &point_a_world_m, const Vec3 &point_b_world_m,
                  double length_m = 0.0, double breaking_tension_n = 0.0);
+
+    // Reeve a rope from one named thing, over two fixed points, to another.
+    //
+    // A hoist. Pull one end down and the other comes up.
+    //
+    // `ratio` applies to B'S RUN, and which end is not a detail: because b's
+    // length is what gets multiplied, b moves 1/ratio as far as a does and feels
+    // ratio times the cable tension. The advantage is on b's side --
+    //
+    //     hang the LOAD at b, and a counterweight of load/ratio balances it.
+    //
+    // At ratio 2 that is a block and tackle: half the weight holds the load and
+    // the load rises half as far as the counterweight falls. With the load at
+    // `a` you have the same machine backwards and need TWICE the weight, which
+    // is a real thing to build and a surprising thing to build by accident.
+    //
+    // This is the IDEAL pulley, and the difference matters enough to say out
+    // loud. What the engine holds is a relationship between lengths:
+    //
+    //     |a - over_a|  +  ratio * |b - over_b|  <=  length
+    //
+    // There is no wheel, so no wheel inertia and no bearing friction. There is
+    // no wrap, so the rope cannot slip, cannot come off its sheave, and does
+    // not rub. What you get is the mechanism working exactly.
+    //
+    // The physical alternative is already here and costs a body per segment: a
+    // run of things tied with tie(), draped over something solid. That one has
+    // real wrap, real friction and real slip. Reach for this when you want a
+    // hoist that works; reach for that when the rope itself is what is being
+    // watched.
+    //
+    // Like a rope it pulls and does not push -- slack on one side is just slack.
+    // `length_m` of zero means "as it is rove": what the two runs add up to now.
+    unsigned reeve(const std::string &a, const std::string &b,
+                   const Vec3 &point_a_world_m, const Vec3 &point_b_world_m,
+                   const Vec3 &over_a_world_m, const Vec3 &over_b_world_m,
+                   double ratio = 1.0, double length_m = 0.0);
     // Every pin in the scene, with where each has turned to.
     [[nodiscard]] std::vector<LiveJoint> joints() const;
     // How hard it is to move. A stiff hinge holds a door where it is left.

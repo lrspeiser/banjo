@@ -23,6 +23,7 @@
 #include <Jolt/Physics/Constraints/FixedConstraint.h>
 #include <Jolt/Physics/Constraints/DistanceConstraint.h>
 #include <Jolt/Physics/Constraints/HingeConstraint.h>
+#include <Jolt/Physics/Constraints/PulleyConstraint.h>
 #include <Jolt/Physics/Constraints/SliderConstraint.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/CastResult.h>
@@ -1030,6 +1031,16 @@ JoltWorld::JointReport JoltWorld::jointState(unsigned joint) const {
     out.a = held.a;
     out.b = held.b;
     out.kind = held.kind;
+    if (held.kind == JointKind::Pulley) {
+        auto *rove = static_cast<JPH::PulleyConstraint *>(held.constraint.GetPtr());
+        // The whole run: one side plus the ratio times the other, which is the
+        // quantity the constraint actually holds.
+        out.at = rove->GetCurrentLength();
+        out.lower = rove->GetMinLength();
+        out.upper = rove->GetMaxLength();
+        out.friction = 0.0;
+        return out;
+    }
     if (held.kind == JointKind::Link) {
         auto *link = static_cast<JPH::DistanceConstraint *>(held.constraint.GetPtr());
         // How far apart the two ends actually are. Jolt does not offer that on
@@ -1065,10 +1076,11 @@ void JoltWorld::setJointFriction(unsigned joint, double friction) {
     if (!(friction >= 0.0) || !std::isfinite(friction))
         throw std::invalid_argument("joint friction must be zero or more");
     auto &held = impl_->joints_.at(joint);
-    // A rope has no friction to set. Rather than refusing -- which would make
-    // every caller special-case the kind before asking -- this does nothing,
-    // because nothing is the true answer.
-    if (held.kind == JointKind::Link) return;
+    // A rope has no friction to set, and neither has an ideal pulley: it has
+    // no wheel to have a bearing. Rather than refusing -- which would make every
+    // caller special-case the kind before asking -- this does nothing, because
+    // nothing is the true answer.
+    if (held.kind == JointKind::Link || held.kind == JointKind::Pulley) return;
     if (held.kind == JointKind::Slider)
         static_cast<JPH::SliderConstraint *>(held.constraint.GetPtr())
             ->SetMaxFrictionForce(static_cast<float>(friction));
@@ -1117,6 +1129,13 @@ unsigned JoltWorld::addLink(const LinkDescription &d) {
 double JoltWorld::jointTension(unsigned joint) const {
     const auto found = impl_->joints_.find(joint);
     if (found == impl_->joints_.end()) return 0.0;
+    if (found->second.kind == JointKind::Pulley) {
+        const double impulse =
+            static_cast<JPH::PulleyConstraint *>(found->second.constraint.GetPtr())
+                ->GetTotalLambdaPosition();
+        const double dt = impl_->last_dt_s > 0.0 ? impl_->last_dt_s : 1.0 / 60.0;
+        return std::abs(impulse) / dt;
+    }
     if (found->second.kind != JointKind::Link) return 0.0;
     // Jolt reports the impulse the constraint applied over the last step, and
     // an impulse over a step is a force. Negative would be a push, which this
@@ -1127,6 +1146,51 @@ double JoltWorld::jointTension(unsigned joint) const {
             ->GetTotalLambdaPosition();
     const double dt = impl_->last_dt_s > 0.0 ? impl_->last_dt_s : 1.0 / 60.0;
     return std::abs(impulse) / dt;
+}
+
+unsigned JoltWorld::addPulley(const PulleyDescription &d) {
+    impl_->requireConfigurationMutable();
+    if (d.a == d.b || !contains(d.a) || !contains(d.b))
+        throw std::invalid_argument("a pulley needs two different bodies that are both in the world");
+    if (impl_->joints_.size() >= 4096)
+        throw std::invalid_argument("joint budget exceeded");
+    if (!(d.ratio > 0.0) || !std::isfinite(d.ratio))
+        throw std::invalid_argument("a pulley's ratio must be more than zero");
+    if (!(d.length_m >= 0.0) || !std::isfinite(d.length_m))
+        throw std::invalid_argument("a pulley's length is zero (as rove) or more");
+    for (const Vec3 &point : {d.point_a_world_m, d.point_b_world_m,
+                              d.over_a_world_m, d.over_b_world_m})
+        if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z))
+            throw std::invalid_argument("a pulley needs four points that are places");
+
+    JPH::PulleyConstraintSettings settings;
+    settings.mSpace = JPH::EConstraintSpace::WorldSpace;
+    settings.mBodyPoint1 = toJoltPosition(d.point_a_world_m);
+    settings.mFixedPoint1 = toJoltPosition(d.over_a_world_m);
+    settings.mBodyPoint2 = toJoltPosition(d.point_b_world_m);
+    settings.mFixedPoint2 = toJoltPosition(d.over_b_world_m);
+    settings.mRatio = static_cast<float>(d.ratio);
+    // Nought to the rope's length, for the same reason a link is: the rope
+    // pulls and does not push, so slack on one side must cost nothing. Bounding
+    // it below as well would be an inextensible ROD bent round two corners,
+    // which would hold a counterweight up in mid-air.
+    settings.mMinLength = 0.0f;
+    if (d.length_m > 0.0) {
+        settings.mMaxLength = static_cast<float>(d.length_m);
+    } else {
+        // -1 tells Jolt to measure it from where everything is standing, which
+        // is what "as it is rove" means.
+        settings.mMaxLength = -1.0f;
+    }
+
+    auto *raw = impl_->physics_->GetBodyInterface().CreateConstraint(
+        &settings, impl_->bodies_.at(d.a), impl_->bodies_.at(d.b));
+    if (!raw) throw std::runtime_error("pulley creation failed");
+    const auto id = impl_->next_joint_++;
+    impl_->joints_.emplace(id, Impl::Joint{d.a, d.b, JointKind::Pulley,
+                                           static_cast<JPH::TwoBodyConstraint *>(raw)});
+    impl_->physics_->AddConstraint(raw);
+    return id;
 }
 
 unsigned JoltWorld::addSlider(const SliderDescription &d) {

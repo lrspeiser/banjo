@@ -75,7 +75,7 @@ extern "C" {
 /* The ABI version. Bumped when the meaning or layout of anything here changes.
  * Check it once at startup against banjo_abi_version(): a header and a library
  * that disagree will not tell you so any other way. */
-#define BANJO_ABI_VERSION 8
+#define BANJO_ABI_VERSION 9
 
 /* What a call reported. Anything below zero is a failure and leaves the world
  * unchanged; banjo_last_error() says what happened. */
@@ -152,6 +152,11 @@ typedef struct {
      * sense; zero breaking strength means a link that never parts. */
     double tension_n;
     double breaks_at_n;
+    /* For a pulley: its mechanical advantage, and the two fixed points its rope
+     * runs over. 1 and zeroes for every other kind. */
+    double ratio;
+    double over_a_m[3];
+    double over_b_m[3];
 } banjo_joint;
 
 typedef struct {
@@ -460,7 +465,8 @@ BANJO_API int banjo_slide(banjo_world *world, const char *a, const char *b,
                           const double at_m[3], const double axis[3],
                           double lower_m, double upper_m, double friction_n);
 
-enum { BANJO_JOINT_HINGE = 0, BANJO_JOINT_SLIDER = 1, BANJO_JOINT_LINK = 2 };
+enum { BANJO_JOINT_HINGE = 0, BANJO_JOINT_SLIDER = 1, BANJO_JOINT_LINK = 2,
+       BANJO_JOINT_PULLEY = 3 };
 
 /* Tie one named thing to another, so they may be up to `length_m` apart and no
  * further.
@@ -490,6 +496,44 @@ enum { BANJO_JOINT_HINGE = 0, BANJO_JOINT_SLIDER = 1, BANJO_JOINT_LINK = 2 };
 BANJO_API int banjo_tie(banjo_world *world, const char *a, const char *b,
                         const double at_a_m[3], const double at_b_m[3],
                         double length_m, double breaking_tension_n);
+
+/* Reeve a rope from one named thing, over two fixed points, to another: a hoist.
+ *
+ * Pull one end down and the other comes up. This is the IDEAL pulley, and the
+ * difference is worth stating: what the engine holds is a relationship between
+ * lengths,
+ *
+ *     |a - over_a|  +  ratio * |b - over_b|  <=  length
+ *
+ * and nothing else. There is no wheel, so no wheel inertia and no bearing
+ * friction. There is no wrap, so the rope cannot slip, cannot come off its
+ * sheave, and does not rub. The physical alternative is banjo_tie: a run of
+ * bodies tied together and draped over something solid, which has real wrap and
+ * real friction and costs a body per segment. Reach for this when you want the
+ * hoist to work; reach for that when the rope itself is what is being watched.
+ *
+ * `ratio` applies to B'S RUN, and which end is not a detail. Because b's length
+ * is what gets multiplied, b moves 1/ratio as far as a does and feels ratio
+ * times the cable tension, so the mechanical advantage is on b's side:
+ *
+ *     hang the LOAD at b, and a counterweight of load/ratio balances it.
+ *
+ * Measured at ratio 2: a 617.6 N load held by a 308.8 N counterweight, and
+ * hauling the counterweight down 0.799541 m raised the load 0.39977 m. With the
+ * load at `a` instead you have the same machine backwards and need TWICE the
+ * weight -- a real thing to build, and a surprising one to build by accident.
+ *
+ * Like a rope it pulls and does not push: slack on one side is just slack, so a
+ * counterweight resting on the floor is not dragged anywhere when the other end
+ * is lifted (measured: it moved 1.5 nanometres).
+ *
+ * `length_m` of 0 means "as it is rove": what the two runs add up to now.
+ *
+ * Returns the joint's id, always above zero, or a negative banjo_status. */
+BANJO_API int banjo_reeve(banjo_world *world, const char *a, const char *b,
+                          const double at_a_m[3], const double at_b_m[3],
+                          const double over_a_m[3], const double over_b_m[3],
+                          double ratio, double length_m);
 
 /* How many joints are in the world. */
 BANJO_API int banjo_joint_count(const banjo_world *world);

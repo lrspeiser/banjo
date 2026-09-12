@@ -242,6 +242,26 @@ class Live:
                 problems.append("a joint that is not an object")
                 continue
             kind = str(pin.get("kind", "hinge"))
+            if kind == "pulley":
+                # Four places: where the rope is made off on each body, and the
+                # two sheaves it runs over.
+                try:
+                    answer = session.send(
+                        op="reeve", a=str(pin.get("a", "")), b=str(pin.get("b", "")),
+                        at_a=[float(v) / 1000.0 for v in (pin.get("at_mm") or [])],
+                        at_b=[float(v) / 1000.0 for v in (pin.get("to_mm") or [])],
+                        over_a=[float(v) / 1000.0 for v in (pin.get("over_a_mm") or [])],
+                        over_b=[float(v) / 1000.0 for v in (pin.get("over_b_mm") or [])],
+                        ratio=float(pin.get("ratio", 1.0)),
+                        length_m=float(pin.get("length_mm", 0.0)) / 1000.0)
+                except Exception as error:
+                    problems.append(f"{pin.get('a', '?')} and {pin.get('b', '?')} "
+                                    f"would not reeve: {error}")
+                    continue
+                pin["id"] = answer.get("joint")
+                if answer.get("joints") is not None:
+                    state["joints"] = answer["joints"]
+                continue
             if kind == "link":
                 # A tie is the one joint with TWO places -- one on each body --
                 # rather than one point the two share.
@@ -264,7 +284,7 @@ class Live:
                 if answer.get("joints") is not None:
                     state["joints"] = answer["joints"]
                 continue
-            if kind not in ("hinge", "slider"):
+            if kind not in ("hinge", "slider"):     # link and pulley handled above
                 problems.append(f"{kind!r} is not a kind of joint this room knows")
                 continue
             at = pin.get("at_mm")
@@ -435,6 +455,26 @@ class Live:
                                 b=str(body.get("b", "")), at_a=spot("at_a"),
                                 at_b=spot("at_b"), length_m=length,
                                 breaks_at_n=breaks)
+        if op == "reeve":
+            def spot(key: str) -> list[float]:
+                value = body.get(key)
+                if not isinstance(value, list) or len(value) != 3:
+                    raise LiveError(f"a pulley needs {key} as three numbers")
+                out = [float(v) for v in value]
+                if not all(math.isfinite(v) for v in out):
+                    raise LiveError(f"a pulley was given {key} that is not a number")
+                return out
+            ratio = float(body.get("ratio", 1.0))
+            if not 0.0 < ratio <= 100.0:
+                raise LiveError("a pulley's ratio is more than zero, up to 100")
+            length = float(body.get("length_m", 0.0))
+            if not 0.0 <= length <= 500.0:
+                raise LiveError("a pulley's length is zero (as rove) to 500 metres")
+            return session.send(op="reeve", a=str(body.get("a", "")),
+                                b=str(body.get("b", "")), at_a=spot("at_a"),
+                                at_b=spot("at_b"), over_a=spot("over_a"),
+                                over_b=spot("over_b"), ratio=ratio,
+                                length_m=length)
         if op == "unhinge":
             return session.send(op="unhinge", joint=int(body.get("joint", 0)))
         if op == "joint_friction":

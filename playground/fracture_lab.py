@@ -362,7 +362,7 @@ FIELDS = set(DEFAULT) | {"request_id"}
 
 
 # How far either way a pin may turn, in degrees, from where it is hung.
-JOINT_KINDS = ("hinge", "slider", "link")
+JOINT_KINDS = ("hinge", "slider", "link", "pulley")
 
 
 def normalise_joints(joints: Any, bodies: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -404,6 +404,31 @@ def normalise_joints(joints: Any, bodies: list[dict[str, Any]]) -> list[dict[str
         axis = [_number(v, -1e6, 1e6, f"joint {i} axis") for v in axis]
         if not any(abs(v) > 1e-9 for v in axis):
             raise ValueError(f"joint {i} has an axis with no direction")
+        if kind == "pulley":
+            # Four places: where the rope is made off on each body, and the two
+            # sheaves it runs over. The sheaves are points in the WORLD and stay
+            # there -- that is what makes them the fixed half of the length
+            # relationship.
+            def place(key: str) -> list[float]:
+                value = joint.get(key)
+                if not isinstance(value, list) or len(value) != 3:
+                    raise ValueError(f"joint {i} is a pulley and needs {key} as "
+                                     f"three numbers")
+                return [_number(v, -100000.0, 100000.0, f"joint {i} {key}")
+                        for v in value]
+            to = place("to_mm")
+            over_a = place("over_a_mm")
+            over_b = place("over_b_mm")
+            # The advantage is on B's side: b moves 1/ratio as far as a and
+            # feels ratio times the tension, so the LOAD goes at b and a
+            # counterweight of load/ratio balances it.
+            ratio = _number(joint.get("ratio", 1.0), 0.001, 100.0, f"joint {i} ratio")
+            span = _number(joint.get("length_mm", 0.0), 0.0, 500000.0,
+                           f"joint {i} length_mm")
+            out.append({"kind": kind, "a": a, "b": b, "at_mm": at, "to_mm": to,
+                        "over_a_mm": over_a, "over_b_mm": over_b,
+                        "ratio": ratio, "length_mm": span})
+            continue
         if kind == "link":
             # A link is tied at a place on EACH body. Every other joint is one
             # point the two share, and this is the only one where "where is it"

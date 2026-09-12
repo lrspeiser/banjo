@@ -51,8 +51,21 @@ done
 
 # Anything holding the binaries open makes the next build fail with LNK1104,
 # and a stale binary that still runs is worse than one that will not link.
+#
+# Including the TEST binaries. A sweep stopped part-way -- which is what happens
+# whenever the 30-minute suite is not worth waiting for -- leaves its test
+# process running and its .exe locked, and the next run fails to link a file
+# nobody has touched. That looked like a build problem for a while and is a
+# leftover process.
 taskkill //F //IM banjo_live_world_run.exe >/dev/null 2>&1
 taskkill //F //IM banjo_platform_cli.exe >/dev/null 2>&1
+# By PID, not by name: tasklist truncates the image name to 25 characters and
+# adds a dot, so "banjo_network_skin_tests.exe" comes back as
+# "banjo_network_skin_tests." and //IM matches nothing at all -- silently, which
+# is the worst way for a cleanup step to fail.
+for stuck in $(tasklist 2>/dev/null | awk '/^banjo_/ {print $2}'); do
+    taskkill //F //PID "$stuck" >/dev/null 2>&1
+done
 
 if [ "$list_only" = 1 ]; then
     ctest --test-dir "$BUILD" -C "$CONFIG" -N | sed -n 's/.*: //p'

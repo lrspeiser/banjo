@@ -215,7 +215,7 @@ class TheCourtyard(unittest.TestCase):
         by_kind: dict[str, list] = {}
         for joint in spec["joints"]:
             by_kind.setdefault(joint["kind"], []).append(joint)
-        self.assertLessEqual({"hinge", "slider", "link"}, set(by_kind),
+        self.assertLessEqual({"hinge", "slider", "link", "pulley"}, set(by_kind),
                              "the courtyard is missing a kind of mechanism")
 
         pin = by_kind["hinge"][0]
@@ -252,6 +252,35 @@ class TheCourtyard(unittest.TestCase):
             # Each link is tied above where it hangs to.
             self.assertGreater(joint["at_mm"][1], joint["to_mm"][1],
                                f"{joint['b']} is tied to something below it")
+
+    def test_the_winch_cannot_lift_the_portcullis_on_its_own(self):
+        """A hoist nobody has to operate is not a hoist.
+
+        The counterweight is deliberately lighter than the grate: haul on it and
+        the grate rises, let go and it settles back. If the weights were the
+        other way round the gateway would simply stand open and there would be
+        nothing to do.
+        """
+        spec = fracture_lab.validate(world_room.courtyard())
+        bodies = {body["name"]: body for body in spec["bodies"]}
+        DENSITY = {"iron": 7870.0, "concrete": 2400.0, "oak": 700.0}
+
+        def weight_n(name):
+            body = bodies[name]
+            volume = 1.0
+            for side in body["size_mm"]:
+                volume *= side / 1000.0
+            return volume * DENSITY[body["material"]] * 9.81
+
+        grate = weight_n("iron portcullis")
+        counter = weight_n("winch counterweight")
+        self.assertLess(counter, grate,
+                        f"the counterweight ({counter:.0f} N) outweighs the grate "
+                        f"({grate:.0f} N), so the gateway stands open by itself")
+        # And not so light that hauling is pointless either.
+        self.assertGreater(counter, 0.1 * grate,
+                           "the counterweight is so light that the rope might as "
+                           "well not be there")
 
     def test_the_portcullis_cannot_rise_through_its_own_arch(self):
         """Travel measured against the room, not guessed.
@@ -364,6 +393,30 @@ class TheCourtyard(unittest.TestCase):
             self.assertLess(fell, 0.2,
                             f"the portcullis was let go {lifted} m up and is still "
                             f"at {fell} m")
+
+            # The winch: haul the counterweight down and the grate comes up,
+            # because the rope's length cannot change. Nothing tells the grate
+            # to move.
+            def groove_at():
+                return next(j for j in session.send(op="joints")["joints"]
+                            if j["kind"] == "slider")["metres"]
+
+            session.send(op="grab", name="winch counterweight")
+            for i in range(1, 101):
+                session.send(op="step", dt=1 / 240.0, n=4, moved=True,
+                             hand=[-1.0, 1.6 - i * 0.01, 0.14])
+            hauled = groove_at()
+            session.send(op="release")
+            for _ in range(240):
+                session.send(op="step", dt=1 / 240.0, n=8, moved=True)
+            settled = groove_at()
+            self.assertGreater(hauled, 0.7,
+                               f"hauling the counterweight down a metre raised the "
+                               f"grate only {hauled} m")
+            self.assertLess(settled, 0.3,
+                            f"the grate stayed at {settled} m when the winch was "
+                            f"let go, so the counterweight is holding it up on "
+                            f"its own")
 
             # And the chain hangs: every link carries what is below it, so the
             # tensions step DOWN the chain. That is the whole difference between

@@ -255,6 +255,11 @@ struct LiveWorld::Impl {
         // on each and the two are not the same place.
         Vec3 point_local_b_tie{};
         double breaks_at_n{};
+        // A pulley's two fixed points and its advantage. The points are in the
+        // WORLD and stay there: a sheave bolted to a beam is the fixed half of
+        // the relationship, and making it follow a body would make it not fixed.
+        Vec3 over_a{}, over_b{};
+        double ratio{1.0};
         // How far it had got, last time anyone could ask. Kept up to date every
         // step because the thing that destroys the constraint is the same thing
         // that needs to know it -- once the wood is rebuilt there is nobody left
@@ -893,6 +898,60 @@ unsigned LiveWorld::tie(const std::string &a, const std::string &b,
     return impl_->joints.back().id;
 }
 
+unsigned LiveWorld::reeve(const std::string &a, const std::string &b,
+                          const Vec3 &point_a_world_m, const Vec3 &point_b_world_m,
+                          const Vec3 &over_a_world_m, const Vec3 &over_b_world_m,
+                          double ratio, double length_m) {
+    const auto first = impl_->index_of.find(a);
+    const auto second = impl_->index_of.find(b);
+    if (first == impl_->index_of.end() || second == impl_->index_of.end()) return 0;
+    if (first->second == second->second) return 0;
+    if (!(ratio > 0.0) || !(length_m >= 0.0)) return 0;
+
+    Impl::SceneJoint joint{};
+    joint.id = impl_->next_joint++;
+    joint.a = a;
+    joint.b = b;
+    joint.kind = JoltWorld::JointKind::Pulley;
+    joint.over_a = over_a_world_m;
+    joint.over_b = over_b_world_m;
+    joint.ratio = ratio;
+    joint.lower = 0.0;
+    joint.upper = length_m > 0.0
+                      ? length_m
+                      : length(point_a_world_m - over_a_world_m) +
+                            ratio * length(point_b_world_m - over_b_world_m);
+    joint.friction = 0.0;
+
+    const RigidSnapshot one = impl_->world->snapshot(impl_->body_of[first->second]);
+    const RigidSnapshot two = impl_->world->snapshot(impl_->body_of[second->second]);
+    joint.point_local_a = conjugateOf(one.orientation_world)
+                              .rotate(point_a_world_m - one.center_of_mass_world_m);
+    joint.point_local_b_tie = conjugateOf(two.orientation_world)
+                                  .rotate(point_b_world_m - two.center_of_mass_world_m);
+    joint.point_local_b = joint.point_local_b_tie;
+    joint.axis_local_a = Vec3{0.0, 1.0, 0.0};
+
+    try {
+        JoltWorld::PulleyDescription rove{};
+        rove.a = impl_->body_of[first->second];
+        rove.b = impl_->body_of[second->second];
+        rove.point_a_world_m = point_a_world_m;
+        rove.point_b_world_m = point_b_world_m;
+        rove.over_a_world_m = over_a_world_m;
+        rove.over_b_world_m = over_b_world_m;
+        rove.ratio = ratio;
+        rove.length_m = length_m;
+        joint.rigid = impl_->world->addPulley(rove);
+    } catch (const std::exception &) {
+        return 0;
+    }
+    impl_->world->wake(impl_->body_of[first->second]);
+    impl_->world->wake(impl_->body_of[second->second]);
+    impl_->joints.push_back(std::move(joint));
+    return impl_->joints.back().id;
+}
+
 std::vector<LiveJoint> LiveWorld::joints() const {
     std::vector<LiveJoint> out;
     out.reserve(impl_->joints.size());
@@ -901,8 +960,12 @@ std::vector<LiveJoint> LiveWorld::joints() const {
         said.id = joint.id;
         said.kind = joint.kind == JoltWorld::JointKind::Slider   ? "slider"
                     : joint.kind == JoltWorld::JointKind::Link   ? "link"
+                    : joint.kind == JoltWorld::JointKind::Pulley ? "pulley"
                                                                  : "hinge";
         said.breaks_at_n = joint.breaks_at_n;
+        said.ratio = joint.ratio;
+        said.over_a_m = joint.over_a;
+        said.over_b_m = joint.over_b;
         said.a = joint.a;
         said.b = joint.b;
         said.lower = joint.lower;
@@ -1052,7 +1115,23 @@ void LiveWorld::rehangJoints() {
             // a portcullis hauled 1 m of its 2 has 1 m either way.
             const double got = std::max(joint.lower, std::min(joint.upper,
                                                               joint.at_when_hung));
-            if (joint.kind == JoltWorld::JointKind::Link) {
+            if (joint.kind == JoltWorld::JointKind::Pulley) {
+                JoltWorld::PulleyDescription rove{};
+                rove.a = impl_->body_of[side[0]];
+                rove.b = impl_->body_of[side[1]];
+                rove.point_a_world_m = point;
+                const RigidSnapshot far = impl_->world->snapshot(impl_->body_of[side[1]]);
+                rove.point_b_world_m = far.center_of_mass_world_m +
+                                       far.orientation_world.rotate(joint.point_local_b_tie);
+                // The sheaves do not move with anything. They are points in the
+                // world, and re-making the constraint must not quietly relocate
+                // them onto whichever piece of beam survived.
+                rove.over_a_world_m = joint.over_a;
+                rove.over_b_world_m = joint.over_b;
+                rove.ratio = joint.ratio;
+                rove.length_m = joint.upper;
+                joint.rigid = impl_->world->addPulley(rove);
+            } else if (joint.kind == JoltWorld::JointKind::Link) {
                 JoltWorld::LinkDescription rope{};
                 rope.a = impl_->body_of[side[0]];
                 rope.b = impl_->body_of[side[1]];

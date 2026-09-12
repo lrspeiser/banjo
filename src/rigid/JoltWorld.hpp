@@ -282,10 +282,60 @@ public:
         double breaking_tension_n{0.0};
     };
     [[nodiscard]] unsigned addLink(const LinkDescription &description);
+
+    // A rope run over two fixed points, with what hangs on each end.
+    //
+    // This is the IDEAL pulley: a relationship between cable lengths, not a
+    // wheel with a rope wrapped round it. The engine holds
+    //
+    //     |a - over_a|  +  ratio * |b - over_b|  <=  length
+    //
+    // and nothing else. There is no wheel, so there is no wheel inertia and no
+    // bearing friction; there is no wrap, so the rope cannot slip, cannot come
+    // off, and does not rub. What it does give you is exactly what a hoist is
+    // for: pull one end down and the other end comes up.
+    //
+    // `ratio` applies to B'S RUN, and WHICH END is not a detail. Because b's
+    // length is what gets multiplied, b moves 1/ratio as far as a does, and
+    // feels ratio times the cable tension. So the advantage is on b's side:
+    //
+    //     hang the LOAD at b, and a counterweight of load/ratio balances it.
+    //
+    // At ratio 2 that is a block and tackle: half the weight holds the load, and
+    // the load rises half as far as the counterweight falls. Put the load at `a`
+    // instead and you have the same machine backwards -- it would then need
+    // TWICE the weight -- which is a real thing to build and a surprising thing
+    // to build by accident.
+    //
+    // The physical alternative is already here: a run of bodies tied with
+    // addLink, draped over something. That one has real wrap, real friction and
+    // real slip, and costs a body per segment. Use this when you want a hoist
+    // to work; use that when the rope itself is the thing being watched.
+    //
+    // Like a link it pulls and does not push: the sum is bounded above and free
+    // below, so slack on one side is just slack.
+    struct PulleyDescription {
+        MatterBodyId a{kInvalidMatterBodyId};
+        MatterBodyId b{kInvalidMatterBodyId};
+        // Where the rope is made off on each body, in world metres.
+        Vec3 point_a_world_m{};
+        Vec3 point_b_world_m{};
+        // The fixed points it runs over -- the sheaves. These do not move, ever:
+        // that is what makes them the fixed half of the relationship.
+        Vec3 over_a_world_m{};
+        Vec3 over_b_world_m{};
+        // Mechanical advantage on the second end.
+        double ratio{1.0};
+        // How long the rope is. Zero means "as it is rove": the length the two
+        // runs add up to right now, which is what you want for a rope already
+        // threaded.
+        double length_m{0.0};
+    };
+    [[nodiscard]] unsigned addPulley(const PulleyDescription &description);
     // What this link is carrying, in newtons. Zero when it is slack.
     [[nodiscard]] double jointTension(unsigned joint) const;
 
-    enum class JointKind : std::uint8_t { Hinge = 0, Slider = 1, Link = 2 };
+    enum class JointKind : std::uint8_t { Hinge = 0, Slider = 1, Link = 2, Pulley = 3 };
 
     // Everything about a joint that a caller can see from outside.
     struct JointReport {

@@ -851,6 +851,14 @@ if(BANJO_BUILD_TESTS)
             banjo_enable_warnings(banjo_rope_tests)
             add_test(NAME banjo_rope_tests COMMAND banjo_rope_tests)
 
+            # Pulleys and hoists: the IDEAL pulley, a cable-length relationship
+            # rather than a wheel with a rope wrapped round it. The physical
+            # alternative is in rope_tests -- bodies tied together and draped.
+            add_executable(banjo_pulley_tests tests/pulley_tests.cpp)
+            target_link_libraries(banjo_pulley_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_pulley_tests)
+            add_test(NAME banjo_pulley_tests COMMAND banjo_pulley_tests)
+
             # Breaking a piece that has already broken: the trigger against its
             # own derivation, the state a fragment carries back into the
             # lattice, the conservation of the round trip, backend parity

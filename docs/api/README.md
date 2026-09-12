@@ -236,6 +236,34 @@ be cut anywhere along its length. Measured on eight links: tensions of 632, 553,
 one link's weight. Give a tie `breaking_tension_n` and it can be overloaded;
 read `tension_n` to see what it is carrying.
 
+`banjo_reeve` is the fourth: a rope from one thing, over two fixed points, to
+another — a hoist. Pull one end down and the other comes up, because the rope's
+length cannot change.
+
+```c
+int winch = banjo_reeve(w, "grate", "counterweight",
+                        at_grate, at_weight, over_grate, over_weight,
+                        1.0, 0.0);   /* ratio 1, length as rove */
+```
+
+This is the **ideal** pulley: a relationship between cable lengths, with no
+wheel (so no wheel inertia or bearing friction) and no rope wrapping (so it
+cannot slip or come off). `banjo_tie` is the physical alternative — a run of
+bodies draped over something, with real wrap and real friction, at a body per
+segment. Both are here on purpose.
+
+**`ratio` applies to `b`'s run, and which end is not a detail.** `b` moves
+1/ratio as far as `a` and feels ratio times the tension, so the advantage is on
+`b`'s side: hang the **load at `b`** and a counterweight of load/ratio balances
+it. Measured at ratio 2 — a 617.6 N load held by a 308.8 N counterweight, and
+hauling that counterweight down 0.799541 m raised the load 0.39977 m. Put the
+load at `a` and you need *twice* the weight, which is the same machine
+backwards.
+
+Measured in the courtyard, a winch driving a portcullis in its grooves: at rest
+the rope carries 3,953 N (the counterweight's own weight, exactly), hauling it
+down 1 m raises the grate 1.005 m, and letting go settles it back.
+
 Two pieces of geometry that each cost an afternoon: set the leaf **clear of its
 own frame** (a door sharing space with its post is jammed against it, and jammed
 looks exactly like a broken hinge), and hang it **clear of the floor** (a door

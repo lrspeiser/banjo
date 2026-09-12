@@ -548,8 +548,112 @@ def a_tie_refuses_what_it_cannot_hold() -> None:
               "negative strength")
 
 
+def hoist(load_m=(0.2, 0.2, 0.2), weight_m=(0.2, 0.2, 0.2)) -> dict:
+    """A gantry with a load under one end and a counterweight under the other.
+
+    BOXES rather than cubes, because mass goes as the cube of a side and every
+    extent has to be a whole number of cells: a cube of half the mass has a side
+    of 3.17 cells and does not exist. Flattening one axis gives exact ratios --
+    4x4x4 is 64 cells and 4x2x4 is 32, which is exactly half however the engine
+    rounds.
+    """
+    return {
+        "bodies": [
+            {"name": "beam", "shape": "box", "material": "oak",
+             "dimensions_m": [3.0, 0.2, 0.2], "center_m": [0.0, 5.0, 0.0],
+             "anchored": True},
+            {"name": "load", "shape": "box", "material": "iron",
+             "dimensions_m": list(load_m), "center_m": [-1.0, 3.0, 0.0]},
+            {"name": "counterweight", "shape": "box", "material": "iron",
+             "dimensions_m": list(weight_m), "center_m": [1.0, 3.0, 0.0]},
+        ],
+    }
+
+
+OVER_LOAD = (-1.0, 4.9, 0.0)
+OVER_WEIGHT = (1.0, 4.9, 0.0)
+
+
+def a_hoist_lifts_the_other_end() -> None:
+    with banjo.World(hoist(), cell_size_m=0.05) as world:
+        rope = world.reeve("load", "counterweight", at_a_m=(-1.0, 3.0, 0.0),
+                           at_b_m=(1.0, 3.0, 0.0), over_a_m=OVER_LOAD,
+                           over_b_m=OVER_WEIGHT)
+        require(rope > 0, "the rope would not reeve")
+        held = next(j for j in world.joints() if j.id == rope)
+        require(held.kind == "pulley", "a pulley came back as the wrong kind")
+
+        load_was = next(b for b in world.bodies() if b.name == "load").position_m[1]
+        world.grab("counterweight")
+        for i in range(1, 81):
+            world.move_held((1.0, 3.0 - 0.01 * i, 0.0))
+            tick(world)
+        world.release()
+        tick(world, 120)
+        load_now = next(b for b in world.bodies() if b.name == "load").position_m[1]
+        rove = next(j for j in world.joints() if j.id == rope)
+        print(f"  hauled the counterweight down, the load rose "
+              f"{load_now - load_was:.3f} m; the rope is {rove.at:.3f} m of "
+              f"{rove.upper:.3f}")
+        require(load_now > load_was + 0.4, "the load did not come up")
+        require(rove.at <= rove.upper + 0.02,
+                "the rope got longer than it is, so the length relationship is "
+                "not being held")
+
+
+def mechanical_advantage_has_a_side() -> None:
+    """The ratio applies to B's run, so B is the end with the advantage.
+
+    Getting this backwards is easy and quiet: a 618 N load against a 309 N
+    counterweight "at a ratio of 2" fell 2.9 m the first time, because in that
+    arrangement the ratio asks for TWICE the weight rather than half.
+    """
+    # Load at b -- the advantaged end -- with half its weight opposing it.
+    with banjo.World(hoist(load_m=(0.2, 0.1, 0.2), weight_m=(0.2, 0.2, 0.2)),
+                     cell_size_m=0.05) as world:
+        # "load" is the light one here; the heavy body is at a. Name them by
+        # what they do rather than by the scene's labels.
+        rope = world.reeve("load", "counterweight", at_a_m=(-1.0, 3.0, 0.0),
+                           at_b_m=(1.0, 3.0, 0.0), over_a_m=OVER_LOAD,
+                           over_b_m=OVER_WEIGHT, ratio=2.0)
+        require(rope > 0, "the rope would not reeve")
+        heavy_was = next(b for b in world.bodies()
+                         if b.name == "counterweight").position_m[1]
+        tick(world, 960)
+        heavy_now = next(b for b in world.bodies()
+                         if b.name == "counterweight").position_m[1]
+        print(f"  a 618 N load at the advantaged end against a 309 N weight at "
+              f"the other, ratio 2: it moved {abs(heavy_now - heavy_was) * 1000:.0f} mm")
+        require(abs(heavy_now - heavy_was) < 0.08,
+                "half the weight did not balance the load at a ratio of two, so "
+                "the mechanical advantage is not there or is on the wrong side")
+
+
+def a_hoist_refuses_what_it_cannot_reeve() -> None:
+    with banjo.World(hoist(), cell_size_m=0.05) as world:
+        for why, call in (
+            ("a body that does not exist",
+             lambda: world.reeve("beam", "nothing", (0, 4, 0), (0, 3, 0),
+                                 OVER_LOAD, OVER_WEIGHT)),
+            ("a body rove to itself",
+             lambda: world.reeve("load", "load", (0, 4, 0), (0, 3, 0),
+                                 OVER_LOAD, OVER_WEIGHT)),
+            ("a ratio of zero",
+             lambda: world.reeve("load", "counterweight", (0, 4, 0), (0, 3, 0),
+                                 OVER_LOAD, OVER_WEIGHT, ratio=0.0)),
+        ):
+            try:
+                call()
+            except banjo.BanjoError:
+                continue
+            raise SystemExit(f"[FAIL] the engine accepted {why}")
+        require(world.joints() == [], "a refused pulley was recorded anyway")
+        print("  a pulley refuses a missing body, a body rove to itself, and a "
+              "ratio of zero")
+
+
 def main() -> int:
-    require(banjo.ABI_VERSION >= 8, "this test needs ABI 8 or later")
+    require(banjo.ABI_VERSION >= 9, "this test needs ABI 9 or later")
     for run, what in (
         (a_gate_hung_through_the_abi_swings, "a gate hung through the ABI swings"),
         (limits_are_degrees, "limits are degrees and they hold"),
@@ -572,6 +676,10 @@ def main() -> int:
         (a_chain_carries_what_hangs_below_each_link,
          "a chain carries what hangs below each link"),
         (a_tie_refuses_what_it_cannot_hold, "a tie refuses what it cannot hold"),
+        (a_hoist_lifts_the_other_end, "a hoist lifts the other end"),
+        (mechanical_advantage_has_a_side, "mechanical advantage has a side"),
+        (a_hoist_refuses_what_it_cannot_reeve,
+         "a hoist refuses what it cannot reeve"),
     ):
         run()
         print(f"[PASS] {what}")

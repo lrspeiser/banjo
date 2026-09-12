@@ -14,7 +14,7 @@ tell you any other way:
 if (banjo_abi_version() != BANJO_ABI_VERSION) { /* mismatch */ }
 ```
 
-Current ABI: **8**.
+Current ABI: **9**.
 
 ---
 
@@ -394,13 +394,16 @@ typedef struct {
 ```
 
 **`kind` is also the unit.** A hinge reports `at`, `lower` and `upper` in
-**degrees** and `friction` in newton metres; a slider and a link report them in
-**metres** and newtons. Reading a slider's `0.8` as degrees gives a portcullis
+**degrees** and `friction` in newton metres; a slider, a link and a pulley report
+them in **metres** and newtons. Reading a slider's `0.8` as degrees gives a portcullis
 fifty-seven times too tall.
 
 For a link, `at` is how far apart the two ends are, `upper` is the length it is
 tied to, and `lower` is 0 — because nought-to-length is exactly what a rope is.
-`tension_n` and `breaks_at_n` are meaningful only for links.
+For a pulley, `at` is the whole run (one side plus the ratio times the other),
+`upper` is the rope's length, and `ratio`, `over_a_m` and `over_b_m` describe
+the machine. `tension_n` is meaningful for links and pulleys; `breaks_at_n` only
+for links.
 
 `at_m` is worked out from the body the pin is in rather than remembered, so a
 gate carried across the room reports its hinge where the gate is.

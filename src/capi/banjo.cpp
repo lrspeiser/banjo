@@ -480,6 +480,33 @@ int banjo_tie(banjo_world *world, const char *a, const char *b,
     });
 }
 
+int banjo_reeve(banjo_world *world, const char *a, const char *b,
+                const double at_a_m[3], const double at_b_m[3],
+                const double over_a_m[3], const double over_b_m[3],
+                double ratio, double length_m) {
+    if (!world || !a || !b || !at_a_m || !at_b_m || !over_a_m || !over_b_m) {
+        setError("no world, no names, or nowhere to reeve"); return BANJO_BAD_ARGUMENT;
+    }
+    if (!(ratio > 0.0)) {
+        setError("a pulley's ratio must be more than zero"); return BANJO_BAD_ARGUMENT;
+    }
+    if (!(length_m >= 0.0)) {
+        setError("a pulley's length is zero (as rove) or more"); return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        const unsigned rove = world->world->reeve(a, b, readVec(at_a_m), readVec(at_b_m),
+                                                  readVec(over_a_m), readVec(over_b_m),
+                                                  ratio, length_m);
+        if (rove == 0) {
+            setError(std::string("\"") + a + "\" and \"" + b +
+                     "\" cannot be rove together: one of them is not in the scene, "
+                     "or they are the same thing");
+            return static_cast<int>(BANJO_BAD_ARGUMENT);
+        }
+        return static_cast<int>(rove);
+    });
+}
+
 int banjo_joint_count(const banjo_world *world) {
     if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
     return guarded([&] {
@@ -506,9 +533,10 @@ int banjo_joints(const banjo_world *world, banjo_joint *out, int max) {
             // be a very quiet way to make a portcullis 57 times too tall.
             const double scale = turning ? kDegrees : 1.0;
             out[i].id = joint.id;
-            out[i].kind = joint.kind == "slider" ? BANJO_JOINT_SLIDER
-                          : joint.kind == "link" ? BANJO_JOINT_LINK
-                                                 : BANJO_JOINT_HINGE;
+            out[i].kind = joint.kind == "slider"   ? BANJO_JOINT_SLIDER
+                          : joint.kind == "link"   ? BANJO_JOINT_LINK
+                          : joint.kind == "pulley" ? BANJO_JOINT_PULLEY
+                                                   : BANJO_JOINT_HINGE;
             out[i].a = joint.a.c_str();
             out[i].b = joint.b.c_str();
             out[i].at = joint.at * scale;
@@ -520,6 +548,9 @@ int banjo_joints(const banjo_world *world, banjo_joint *out, int max) {
             out[i].attached = joint.attached ? 1 : 0;
             out[i].tension_n = joint.tension_n;
             out[i].breaks_at_n = joint.breaks_at_n;
+            out[i].ratio = joint.ratio;
+            writeVec(joint.over_a_m, out[i].over_a_m);
+            writeVec(joint.over_b_m, out[i].over_b_m);
         }
         return count;
     });

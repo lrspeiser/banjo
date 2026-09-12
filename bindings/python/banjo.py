@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 # Bumped with the header: the world reports what made it wait.
-ABI_VERSION = 8
+ABI_VERSION = 9
 
 NOTHING, HELD, DENTED, BROKE = 0, 1, 2, 3
 OUTCOMES = {0: "nothing", 1: "held", 2: "dented", 3: "broke"}
@@ -82,6 +82,7 @@ class _Lot(ctypes.Structure):
 JOINT_HINGE = 0
 JOINT_SLIDER = 1
 JOINT_LINK = 2
+JOINT_PULLEY = 3
 
 
 class _Joint(ctypes.Structure):
@@ -97,7 +98,10 @@ class _Joint(ctypes.Structure):
                 ("axis", ctypes.c_double * 3),
                 ("attached", ctypes.c_int),
                 ("tension_n", ctypes.c_double),
-                ("breaks_at_n", ctypes.c_double)]
+                ("breaks_at_n", ctypes.c_double),
+                ("ratio", ctypes.c_double),
+                ("over_a_m", ctypes.c_double * 3),
+                ("over_b_m", ctypes.c_double * 3)]
 
 
 class _Pick(ctypes.Structure):
@@ -222,6 +226,11 @@ class Joint:
     # zero breaking strength means a link that never parts.
     tension_n: float = 0.0
     breaks_at_n: float = 0.0
+    # For a pulley: its mechanical advantage, and the two fixed points its rope
+    # runs over. 1 and zeroes for every other kind.
+    ratio: float = 1.0
+    over_a_m: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    over_b_m: tuple[float, float, float] = (0.0, 0.0, 0.0)
 
 
 @dataclass(frozen=True)
@@ -327,6 +336,11 @@ def library(path: str | os.PathLike[str] | None = None) -> ctypes.CDLL:
                               ctypes.c_double * 3, ctypes.c_double * 3,
                               ctypes.c_double, ctypes.c_double]
     lib.banjo_tie.restype = ctypes.c_int
+    lib.banjo_reeve.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p,
+                                ctypes.c_double * 3, ctypes.c_double * 3,
+                                ctypes.c_double * 3, ctypes.c_double * 3,
+                                ctypes.c_double, ctypes.c_double]
+    lib.banjo_reeve.restype = ctypes.c_int
     lib.banjo_joint_count.argtypes = [ctypes.c_void_p]
     lib.banjo_joint_count.restype = ctypes.c_int
     lib.banjo_joints.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Joint), ctypes.c_int]
@@ -605,6 +619,36 @@ class World:
                                 one, two, length_m, breaking_tension_n),
             f"tying {b!r} to {a!r}")
 
+    def reeve(self, a: str, b: str, at_a_m: Any, at_b_m: Any,
+              over_a_m: Any, over_b_m: Any, ratio: float = 1.0,
+              length_m: float = 0.0) -> int:
+        """Reeve a rope from one named thing, over two fixed points, to another.
+
+        A hoist: pull one end down and the other comes up.
+
+        This is the IDEAL pulley. What the engine holds is a relationship
+        between lengths -- |a - over_a| + ratio * |b - over_b| <= length -- and
+        nothing else. No wheel, so no wheel inertia and no bearing friction; no
+        wrap, so the rope cannot slip or come off. The physical alternative is
+        `tie`: a run of bodies draped over something, with real wrap and real
+        friction, at a body per segment.
+
+        `ratio` applies to B's RUN, and which end is not a detail. b moves
+        1/ratio as far as a and feels ratio times the tension, so the advantage
+        is on b's side: hang the LOAD at b and a counterweight of load/ratio
+        balances it. With the load at `a` you have the same machine backwards
+        and need TWICE the weight.
+
+        `length_m` of 0 means "as it is rove". Returns the joint's id.
+        """
+        def three(values: Any) -> Any:
+            return (ctypes.c_double * 3)(*(float(v) for v in values))
+        return self._check(
+            self._lib.banjo_reeve(self._alive(), a.encode("utf-8"), b.encode("utf-8"),
+                                  three(at_a_m), three(at_b_m),
+                                  three(over_a_m), three(over_b_m), ratio, length_m),
+            f"reeving {a!r} to {b!r}")
+
     def joints(self) -> list[Joint]:
         """Every joint in the world, and where each has got to."""
         count = self._check(self._lib.banjo_joint_count(self._alive()),
@@ -614,7 +658,8 @@ class World:
         out = (_Joint * count)()
         written = self._check(self._lib.banjo_joints(self._alive(), out, count),
                               "reading the pins")
-        names = {JOINT_SLIDER: "slider", JOINT_LINK: "link", JOINT_HINGE: "hinge"}
+        names = {JOINT_SLIDER: "slider", JOINT_LINK: "link",
+                 JOINT_PULLEY: "pulley", JOINT_HINGE: "hinge"}
         return [Joint(id=int(out[i].id),
                       kind=names.get(out[i].kind, "hinge"),
                       a=(out[i].a or b"").decode("utf-8"),
@@ -627,7 +672,10 @@ class World:
                       axis=tuple(out[i].axis),
                       attached=bool(out[i].attached),
                       tension_n=out[i].tension_n,
-                      breaks_at_n=out[i].breaks_at_n)
+                      breaks_at_n=out[i].breaks_at_n,
+                      ratio=out[i].ratio,
+                      over_a_m=tuple(out[i].over_a_m),
+                      over_b_m=tuple(out[i].over_b_m))
                 for i in range(written)]
 
     def joint_friction(self, joint: int, friction: float) -> None:

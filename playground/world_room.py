@@ -215,6 +215,23 @@ def courtyard() -> dict[str, Any]:
     add("iron portcullis", "box", "iron", [1280, 1200, 120],
         [PORT_X, 600, PORT_Z + 140])
 
+    # The winch: a rope from the top of the grate, over the lintel, out to a
+    # counterweight hanging beside the gateway.
+    #
+    # The grate is 1.28 x 1.2 x 0.12 m of iron -- 1,450 kg, 14.2 kN -- and the
+    # counterweight is 0.4 x 0.32 x 0.4 m of iron, which is 403 kg and 4.0 kN.
+    # Deliberately too light to lift the grate on its own: haul on it and the
+    # grate rises, let go and it settles back. A hoist that lifts its own load
+    # unaided is a hoist nobody has to operate.
+    #
+    # IRON, not stone, and that is a cell-budget decision rather than a
+    # metallurgical one. Concrete is a third the density, so the same mass in
+    # stone is a 640 mm block -- 4,096 cells of the room's 16,000 -- against 800
+    # for the iron. The first version of this put the room at 18,304 and it
+    # would not open at all.
+    add("winch counterweight", "box", "iron", [400, 320, 400],
+        [PORT_X + 1600, 1600, PORT_Z + 140])
+
     # ---- a hanging sign ----------------------------------------------------
     #
     # A board on two ropes off a bracket. The goal names hanging signs, and they
@@ -277,6 +294,27 @@ def courtyard() -> dict[str, Any]:
             "lower_mm": 0,
             "upper_mm": 1200,
             "friction_n": 3000,
+        }, {
+            # The winch. The rope runs from the top of the grate up over the
+            # lintel, across, and down to the counterweight.
+            #
+            # Both sheaves sit at the lintel's underside: one above the grate,
+            # one above the counterweight. They are points in the WORLD and stay
+            # there however the room is rearranged -- that is what makes them
+            # the fixed half of the length relationship.
+            #
+            # Ratio 1. The advantage would be on the counterweight's side here,
+            # which is the wrong way round for lifting a grate, and a courtyard
+            # is a worse place to learn that than a test is.
+            "kind": "pulley",
+            "a": "iron portcullis",
+            "b": "winch counterweight",
+            "at_mm": [PORT_X, 1200, PORT_Z + 140],
+            "to_mm": [PORT_X + 1600, 1760, PORT_Z + 140],
+            "over_a_mm": [PORT_X, 2400, PORT_Z + 140],
+            "over_b_mm": [PORT_X + 1600, 2400, PORT_Z + 140],
+            "ratio": 1,
+            "length_mm": 0,             # as it is rove
         }] + [{
             # The sign, on two ropes. Tied where they actually meet each body,
             # which is what makes it hang level rather than pivot on one point.

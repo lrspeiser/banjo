@@ -22,6 +22,9 @@
 //         "lower_m":0,"upper_m":2,"friction_n":40000}      put it in a groove
 //        {"op":"tie","a":"beam","b":"weight","at_a":[0,3.9,0],"at_b":[0,3,0],
 //         "length_m":0,"breaks_at_n":2000}     a rope: it pulls, it cannot push
+//        {"op":"reeve","a":"grate","b":"counterweight","at_a":[0,1,0.15],
+//         "at_b":[2,3.3,0],"over_a":[0,3.9,0],"over_b":[2,3.9,0],"ratio":1}
+//                                            a hoist: pull one end, the other rises
 //        {"op":"unhinge","joint":1}          take the pin out; it falls
 //        {"op":"joint_friction","joint":1,"friction_n_m":40}   stiffen it
 //   out  {"ok":true,"t":0.033,"stepped_back":false,
@@ -114,7 +117,16 @@ nlohmann::json jointsOf(const LiveWorld &world) {
                             {"at", vec(joint.point_world_m)},
                             {"axis", vec(joint.axis_world)},
                             {"attached", joint.attached}};
-        if (joint.kind == "link") {
+        if (joint.kind == "pulley") {
+            // The whole run: one side plus the ratio times the other, which is
+            // the quantity the constraint actually holds.
+            said["metres"] = tidy(joint.at);
+            said["length_m"] = tidy(joint.upper);
+            said["tension_n"] = tidy(joint.tension_n);
+            said["ratio"] = tidy(joint.ratio);
+            said["over_a"] = vec(joint.over_a_m);
+            said["over_b"] = vec(joint.over_b_m);
+        } else if (joint.kind == "link") {
             // A rope's state is its length and what it is carrying. It has no
             // friction and no travel in either direction -- it is nought to its
             // length, and the asymmetry IS the rope.
@@ -455,6 +467,21 @@ int main(int argc, char **argv) {
                     if (rope == 0)
                         throw std::invalid_argument("those two cannot be tied together");
                     reply["joint"] = rope;
+                } else if (op == "reeve") {
+                    // A hoist: a rope from one thing, over two fixed points, to
+                    // another. `ratio` applies to B's run, so b moves 1/ratio as
+                    // far and feels ratio times the tension -- hang the LOAD at
+                    // b and a counterweight of load/ratio balances it.
+                    const unsigned rove = world->reeve(
+                        command.at("a").get<std::string>(),
+                        command.at("b").get<std::string>(),
+                        readVec(command, "at_a"), readVec(command, "at_b"),
+                        readVec(command, "over_a"), readVec(command, "over_b"),
+                        command.value("ratio", 1.0),
+                        command.value("length_m", 0.0));
+                    if (rove == 0)
+                        throw std::invalid_argument("that rope cannot be rove");
+                    reply["joint"] = rove;
                 } else if (op == "unhinge") {
                     world->unhinge(command.at("joint").get<unsigned>());
                 } else if (op == "joint_friction") {
