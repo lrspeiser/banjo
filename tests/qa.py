@@ -215,8 +215,11 @@ def _pictures(shot: dict[str, Any] | None, folder: Path) -> list[tuple[str, str]
     found = []
     for key, value in shot.items():
         if isinstance(value, str) and value.lower().endswith(".png"):
-            path = Path(value)
-            name = path.name if (folder / path.name).is_file() else str(path)
+            # Linked from index.html, which sits in the run folder beside them.
+            try:
+                name = Path(os.path.relpath(value, folder)).as_posix()
+            except ValueError:
+                name = Path(value).as_uri()
             caption = "as it opened" if "start" in key else ("after it ran" if "later" in key else key)
             found.append((name, caption))
     found.sort(key=lambda p: 0 if p[1] == "as it opened" else 1)

@@ -883,6 +883,31 @@ def check_iron_wont_burn(built: Built) -> Verdict:
                    measured)
 
 
+def rope_ends(built: Built, record: dict[str, Any]) -> list[tuple[str, list[float]]] | None:
+    """Where a rope is tied on each of its two bodies, in that body's own frame
+    (bodies are built unturned, so that is the tie point less the centre)."""
+    ends = []
+    for name, key in ((record["a"], "at_mm"), (record["b"], "to_mm")):
+        body = next((b for b in built.room.bodies() if b["name"] == name), None)
+        if body is None or key not in record:
+            return None
+        ends.append((name, sub([v / 1000.0 for v in record[key]],
+                               [v / 1000.0 for v in body["center_mm"]])))
+    return ends
+
+
+def rope_span(world: abt.World, ends: list[tuple[str, list[float]]]) -> float:
+    """The rope's length now: tie point to tie point, each carried by its body."""
+    points = []
+    for name, offset in ends:
+        body = world.body(name)
+        if body is None:
+            return 0.0
+        points.append(add(body["position_m"],
+                          turn_by(body.get("orientation_wxyz") or [1.0, 0.0, 0.0, 0.0], offset)))
+    return norm(sub(points[1], points[0]))
+
+
 def check_tether(built: Built) -> Verdict:
     """A rope pulls and does not push: hauled away, the block stops at the
     rope's length; pushed back, the rope goes slack and lets it come."""
@@ -905,9 +930,15 @@ def check_tether(built: Built) -> Verdict:
     away = unit([here[0] - fixed[0], 0.0, here[2] - fixed[2]])
     if norm(away) == 0.0:
         away = [1.0, 0.0, 0.0]
+    ends = rope_ends(built, record) if record else None
     haul(world, block, scale(away, length + 1.0), seconds=2.5)
     taut = world.joint(rope["id"]) or {}
-    reach, tension = float(taut.get("metres") or 0.0), float(taut.get("tension_n") or 0.0)
+    tension = float(taut.get("tension_n") or 0.0)
+    # The rope's own length is tie point to tie point. The joints report's
+    # "metres" for a rope is not that: 1.27 m on this 1.00 m rope, pulled
+    # tight, is exactly the distance between the post's centre and the block's.
+    reported = float(taut.get("metres") or 0.0)
+    reach = rope_span(world, ends) if ends else reported
     world.session.send(op="release")
     world.seconds(0.5)
     out = world.body(block)["position_m"]
@@ -916,6 +947,7 @@ def check_tether(built: Built) -> Verdict:
     slack = float((world.joint(rope["id"]) or {}).get("tension_n") or 0.0)
     world.session.send(op="release")
     measured = {"block": block, "rope_m": round(length, 3), "pulled_to_m": round(reach, 3),
+                "joints_report_says_m": round(reported, 3),
                 "tension_n": round(tension, 1), "pushed_back_m": round(came, 3),
                 "slack_tension_n": round(slack, 1)}
     if length <= 0.0:

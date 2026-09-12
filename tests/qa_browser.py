@@ -105,15 +105,18 @@ def framing(focus: list[float], extent: float,
             azimuth_deg: float = 20.0) -> tuple[list[float], list[float]]:
     """Where to stand, and what to look at.
 
-    Back from the focus by 2.5 extents and a metre, on the +z side -- the side
+    Back from the focus by 1.3 extents and 0.6 m, on the +z side -- the side
     the room's own camera starts on, looking along -z -- turned a little round
     so that depth reads, with the eye above the focus looking down onto it.
     Kept inside the box the page lets an eye go (y 0.25..12 m, x and z 28 m).
+
+    It was 2.5 extents and a metre, and a build filled 1.4 to 3.2% of the
+    picture: visible, and too small to see what it was doing.
     """
-    back = 2.5 * float(extent) + 1.0
+    back = 1.3 * float(extent) + 0.6
     turn = math.radians(azimuth_deg)
     eye = [focus[0] + back * math.sin(turn),
-           focus[1] + max(0.6, 0.45 * back),
+           focus[1] + max(0.5, 0.4 * back),
            focus[2] + back * math.cos(turn)]
     eye = [min(27.5, max(-27.5, eye[0])), min(11.5, max(0.3, eye[1])),
            min(27.5, max(-27.5, eye[2]))]
