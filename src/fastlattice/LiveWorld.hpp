@@ -100,6 +100,36 @@ struct LiveImpact {
     bool would_dent{};
 };
 
+// A pin two named things turn about, as the scene sees it.
+//
+// The engine's hinge is between two bodies. This is between two NAMES, which is
+// a different thing and the reason this layer exists: bodies do not survive
+// breaking. Everything in an island is destroyed and rebuilt when anything in
+// it comes apart, so a hinge made against a body id is a hinge that lasts until
+// the first hard knock -- and a constraint holding a body that no longer exists
+// is not a bug that misbehaves, it is one that crashes.
+//
+// So a scene joint is remembered as: two names, and where the pin sits in each
+// body's OWN frame. The body-local part is what makes it survive: the whole
+// assembly can be picked up, carried, turned upside down, and the pin is still
+// in the same place in the wood, because that is how it was written down.
+struct LiveJoint {
+    unsigned id{};
+    std::string a, b;
+    // Where the pin has got to, in radians, from where it was made.
+    double angle_rad{};
+    double lower_rad{}, upper_rad{};
+    double friction_torque_n_m{};
+    // Where it is now, in the world, for a host that wants to draw it.
+    Vec3 point_world_m{};
+    Vec3 axis_world{};
+    // True while both ends are real and the pin is doing its job. A joint whose
+    // wood was smashed away is reported once, gone, rather than silently
+    // vanishing from the list -- a host that drew a gate wants to know the gate
+    // came off its hinges.
+    bool attached{true};
+};
+
 // A moment where the world was made to wait, or was saved from waiting.
 //
 // Working out a fracture costs between a third of a second and a second, and
@@ -303,6 +333,26 @@ public:
     [[nodiscard]] LivePick pick(const Vec3 &from_world_m,const Vec3 &direction,
                                 double max_distance_m = 1000.0) const;
 
+    // Hang one named thing off another on a pin.
+    //
+    // The pin is given where it is in the world, right now, and is kept in both
+    // bodies' own frames from then on. Limits are in degrees because that is
+    // how anybody describes a door -- "it opens ninety degrees" -- measured
+    // from where it is standing when the pin goes in, so a door built shut
+    // swings 0..90 and one built open swings -90..0.
+    //
+    // Returns 0 if either name is not there, or if they are the same thing.
+    unsigned hinge(const std::string &a, const std::string &b,
+                   const Vec3 &point_world_m, const Vec3 &axis_world,
+                   double lower_deg = -180.0, double upper_deg = 180.0,
+                   double friction_torque_n_m = 0.0);
+    // Every pin in the scene, with where each has turned to.
+    [[nodiscard]] std::vector<LiveJoint> joints() const;
+    // How hard it is to move. A stiff hinge holds a door where it is left.
+    void setJointFriction(unsigned joint, double friction_torque_n_m);
+    // Take the pin out. What hung on it falls.
+    void unhinge(unsigned joint);
+
 private:
     LiveWorld();
     // Reads the contacts of the step just taken and answers whether any of them
@@ -358,6 +408,19 @@ private:
     // apply destroys the body next door.
     void restackQueue(const std::vector<std::string> &before);
     void repin();
+    // Put the pins back after the body table has been rearranged.
+    //
+    // Every body in an island is destroyed and rebuilt when anything in it
+    // breaks, so the engine-level constraints are gone even for the bodies that
+    // came through whole -- and the ones that did break have new names. This
+    // finds each pin's wood again by NAME first and, failing that, by looking
+    // for the piece the pin is actually inside, which is the physically honest
+    // answer: the pin stays in whichever lump of door is still around it.
+    void rehangJoints();
+    // Which body, if any, holds this point in its matter. Used to follow a pin
+    // into the piece it ended up in.
+    [[nodiscard]] std::size_t bodyHolding(const Vec3 &point_world_m,
+                                          const std::string &was_called) const;
     // Take bodies out of the world and out of every table parallel to it,
     // fixing up the hand and any fracture holding an index.
     void dropBodies(const std::vector<std::size_t> &which);

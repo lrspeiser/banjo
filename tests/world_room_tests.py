@@ -196,5 +196,96 @@ class TheRoomActuallyOpens(unittest.TestCase):
             session.close()
 
 
+class TheCourtyard(unittest.TestCase):
+    """The room with things that swing.
+
+    A gate is not a prop here: it is a body on a pin, and it opens because
+    something is pushed into it. What these check is that the ROOM says so --
+    that a scene document can carry its own pins, that a pin naming something
+    which is not there is refused where the thing that wrote it can be told, and
+    that opening the room actually hangs them.
+    """
+
+    def test_the_courtyard_carries_its_own_pins(self):
+        spec = fracture_lab.validate(world_room.courtyard())
+        self.assertEqual(len(spec["joints"]), 1)
+        pin = spec["joints"][0]
+        self.assertEqual((pin["a"], pin["b"]), ("gate jamb left", "oak gate"))
+        # It opens outward only. A gate that swings both ways is a saloon door.
+        self.assertEqual(pin["lower_deg"], 0.0)
+        self.assertGreater(pin["upper_deg"], 45.0)
+        # And it is stiff enough to stay where it is pushed.
+        self.assertGreater(pin["friction_n_m"], 0.0)
+
+    def test_the_bench_room_still_has_none(self):
+        self.assertEqual(fracture_lab.validate(world_room.room())["joints"], [])
+
+    def test_a_pin_naming_nothing_is_refused_where_it_can_be_fixed(self):
+        """Refused HERE, not at the engine.
+
+        A pin the engine will not hang produces a gate that simply does not
+        swing, and from the outside that reads as the physics being broken
+        rather than as the room being wrong about where its own hinge is.
+        """
+        for why, wrong in (
+            ("a body that is not in the room",
+             {"kind": "hinge", "a": "gate jamb left", "b": "a gate nobody built",
+              "at_mm": [0, 1000, 120]}),
+            ("a body hung on itself",
+             {"kind": "hinge", "a": "oak gate", "b": "oak gate",
+              "at_mm": [0, 1000, 120]}),
+            ("an axis with no direction",
+             {"kind": "hinge", "a": "gate jamb left", "b": "oak gate",
+              "at_mm": [0, 1000, 120], "axis": [0, 0, 0]}),
+            ("a kind of joint that does not exist",
+             {"kind": "ball socket", "a": "gate jamb left", "b": "oak gate",
+              "at_mm": [0, 1000, 120]}),
+            ("limits the wrong way round",
+             {"kind": "hinge", "a": "gate jamb left", "b": "oak gate",
+              "at_mm": [0, 1000, 120], "lower_deg": 90, "upper_deg": -90}),
+            ("a pin with no place",
+             {"kind": "hinge", "a": "gate jamb left", "b": "oak gate"}),
+        ):
+            spec = world_room.courtyard()
+            spec["joints"] = [wrong]
+            with self.assertRaises(ValueError, msg=f"it accepted {why}"):
+                fracture_lab.validate(spec)
+
+    @unittest.skipIf(ENGINE is None, "no live engine built")
+    def test_opening_the_courtyard_hangs_the_gate(self):
+        live = live_session.Live()
+        try:
+            class App:
+                engine_path = ENGINE
+                runs_path = ROOT / "build/playground-runs"
+                live_inprocess = False
+            opened = live.open(App(), {"spec": world_room.courtyard()})
+            self.assertNotIn("joint_problems", opened,
+                             f"the room could not hang its own gate: "
+                             f"{opened.get('joint_problems')}")
+            pins = opened.get("joints") or []
+            self.assertEqual(len(pins), 1, "the gate was not hung when the room opened")
+            self.assertTrue(pins[0]["attached"])
+            self.assertAlmostEqual(pins[0]["degrees"], 0.0, places=3,
+                                   msg="the gate did not open shut")
+
+            # And it swings when something is pushed into it -- which is the
+            # whole claim. Nothing here asks for the gate to move.
+            session = live.session
+            session.send(op="grab", name="iron ball")
+            for i in range(141):
+                session.send(op="step", dt=1 / 240.0, n=4, moved=True,
+                             hand=[0.9, 1.0, 1.0 - i * 0.01])
+            session.send(op="release")
+            turned = session.send(op="joints")["joints"][0]["degrees"]
+            self.assertGreater(abs(turned), 10.0,
+                               f"the ball was walked through where the gate is and "
+                               f"the gate turned {turned} degrees")
+            self.assertLessEqual(abs(turned), 100.0,
+                                 "the gate went past the stop the room gave it")
+        finally:
+            live.shutdown()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

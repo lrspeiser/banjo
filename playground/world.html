@@ -57,6 +57,13 @@
     <button type="submit" id="ask-send">Send</button>
   </form>
   <footer>
+    <!-- Which room. The bench is the materials room; the courtyard has a gate
+         hung on a pin, which swings because it is pushed rather than because
+         anything plays an animation of a gate opening. -->
+    <select id="scene" class="quiet" aria-label="Which room">
+      <option value="bench">The bench</option>
+      <option value="courtyard">The courtyard</option>
+    </select>
     <button type="button" id="reset" class="quiet">Start the room again</button>
     <span id="panel-count"></span>
   </footer>

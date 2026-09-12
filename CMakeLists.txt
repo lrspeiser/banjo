@@ -396,6 +396,15 @@ if(BANJO_BUILD_HEADLESS)
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/banjo_ffi_tests.py)
         set_tests_properties(banjo_ffi_tests PROPERTIES
             ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
+        # Pins through the same boundary. An outside program holding nothing but
+        # banjo.h builds a gateway, hangs a gate on it, shoves it open and reads
+        # back where it got to -- which is the half of a playground people and
+        # programs can both build in that a browser test cannot cover.
+        add_test(NAME banjo_joint_binding_tests
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/joint_binding_tests.py)
+        set_tests_properties(banjo_joint_binding_tests PROPERTIES
+            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
         # The two ways the playground can hold a world, run against the same
         # scene and compared. Claiming they are interchangeable is easy; this
         # is the part that makes it true.
@@ -817,6 +826,14 @@ if(BANJO_BUILD_TESTS)
             target_link_libraries(banjo_live_world_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_live_world_tests)
             add_test(NAME banjo_live_world_tests COMMAND banjo_live_world_tests)
+
+            # Pins, as the scene sees them: a joint between two NAMES, which is
+            # what has to survive the bodies underneath being destroyed and
+            # rebuilt every time anything in their island breaks.
+            add_executable(banjo_scene_joint_tests tests/scene_joint_tests.cpp)
+            target_link_libraries(banjo_scene_joint_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_scene_joint_tests)
+            add_test(NAME banjo_scene_joint_tests COMMAND banjo_scene_joint_tests)
 
             # Breaking a piece that has already broken: the trigger against its
             # own derivation, the state a fragment carries back into the

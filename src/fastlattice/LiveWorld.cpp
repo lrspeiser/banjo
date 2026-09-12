@@ -236,6 +236,35 @@ struct LiveWorld::Impl {
     // contacts stop being hard enough to break it, which is what happens as
     // soon as the two bodies separate.
     std::set<std::string> held_through;
+
+    // Pins, by name. See LiveJoint in the header for why it is names and not
+    // bodies. `rigid` is the engine-level constraint that is currently standing
+    // in for it, remade every time the body table is rearranged.
+    struct SceneJoint {
+        unsigned id{};
+        std::string a, b;
+        // Where the pin sits inside each body's OWN matter, and which way it
+        // runs in the first one's. This is the part that survives: the assembly
+        // can be carried across the room or turned over and the pin is still in
+        // the same place in the wood.
+        Vec3 point_local_a{}, point_local_b{}, axis_local_a{};
+        double lower_rad{}, upper_rad{}, friction_torque_n_m{};
+        // How far it had turned, last time anyone could ask. Kept up to date
+        // every step because the thing that destroys the constraint is the same
+        // thing that needs to know this -- once the wood is rebuilt there is
+        // nobody left to ask, and a door that had swung 60 degrees would be
+        // re-hung as though it were shut.
+        double angle_when_hung{};
+        unsigned rigid{};        // 0 when the pin is not currently in anything
+        bool attached{true};
+    };
+    std::vector<SceneJoint> joints;
+    unsigned next_joint{1};
+    void rememberJointAngles(const JoltWorld &in) {
+        for (SceneJoint &joint : joints)
+            if (joint.rigid != 0 && in.hasJoint(joint.rigid))
+                joint.angle_when_hung = in.jointState(joint.rigid).angle_rad;
+    }
 };
 
 LiveWorld::LiveWorld() : impl_(std::make_unique<Impl>()) {}
@@ -628,6 +657,7 @@ void LiveWorld::step(double dt_s) {
             return;
         }
         impl_->time_s += dt_s;
+        impl_->rememberJointAngles(*impl_->world);
         foresee();
         return;
     }
@@ -636,6 +666,7 @@ void LiveWorld::step(double dt_s) {
     holdPending();
     (void)judgeStep();
     impl_->time_s += dt_s;
+    impl_->rememberJointAngles(*impl_->world);
     foresee();
 }
 
@@ -663,6 +694,235 @@ std::vector<LiveBodyPose> LiveWorld::poses(bool with_geometry) const {
         out[i].held = i == impl_->holding;
     }
     return out;
+}
+
+namespace {
+// A quaternion's conjugate, which is its inverse for the unit quaternions a
+// rigid body carries. Quat has rotate() but no inverse, and taking a world
+// vector into a body's own frame needs one on every call below.
+[[nodiscard]] Quat conjugateOf(const Quat &q) { return Quat{q.w, -q.x, -q.y, -q.z}; }
+} // namespace
+
+unsigned LiveWorld::hinge(const std::string &a, const std::string &b,
+                          const Vec3 &point_world_m, const Vec3 &axis_world,
+                          double lower_deg, double upper_deg,
+                          double friction_torque_n_m) {
+    const auto first = impl_->index_of.find(a);
+    const auto second = impl_->index_of.find(b);
+    if (first == impl_->index_of.end() || second == impl_->index_of.end()) return 0;
+    if (first->second == second->second) return 0;
+    const double reach = length(axis_world);
+    if (!(reach > 1e-9)) return 0;
+
+    constexpr double kPi = 3.14159265358979323846;
+    const double lower = std::max(-kPi, std::min(0.0, lower_deg * kPi / 180.0));
+    const double upper = std::min(kPi, std::max(0.0, upper_deg * kPi / 180.0));
+
+    Impl::SceneJoint joint{};
+    joint.id = impl_->next_joint++;
+    joint.a = a;
+    joint.b = b;
+    joint.lower_rad = lower;
+    joint.upper_rad = upper;
+    joint.friction_torque_n_m = std::max(0.0, friction_torque_n_m);
+
+    // Write the pin down in each body's own frame. Where they are standing at
+    // this moment is the only thing that ties the two together, and after this
+    // it never matters again.
+    const RigidSnapshot one = impl_->world->snapshot(impl_->body_of[first->second]);
+    const RigidSnapshot two = impl_->world->snapshot(impl_->body_of[second->second]);
+    joint.point_local_a = conjugateOf(one.orientation_world)
+                              .rotate(point_world_m - one.center_of_mass_world_m);
+    joint.point_local_b = conjugateOf(two.orientation_world)
+                              .rotate(point_world_m - two.center_of_mass_world_m);
+    joint.axis_local_a = conjugateOf(one.orientation_world).rotate((1.0 / reach) * axis_world);
+
+    try {
+        JoltWorld::HingeDescription pin{};
+        pin.a = impl_->body_of[first->second];
+        pin.b = impl_->body_of[second->second];
+        pin.point_world_m = point_world_m;
+        pin.axis_world = (1.0 / reach) * axis_world;
+        pin.lower_rad = lower;
+        pin.upper_rad = upper;
+        pin.friction_torque_n_m = joint.friction_torque_n_m;
+        joint.rigid = impl_->world->addHinge(pin);
+    } catch (const std::exception &) {
+        return 0;
+    }
+    // Two things hung on a pin are touching by definition -- that is what being
+    // hinged IS -- and a body that has been asleep does not notice a push.
+    impl_->world->wake(impl_->body_of[first->second]);
+    impl_->world->wake(impl_->body_of[second->second]);
+    impl_->joints.push_back(std::move(joint));
+    return impl_->joints.back().id;
+}
+
+std::vector<LiveJoint> LiveWorld::joints() const {
+    std::vector<LiveJoint> out;
+    out.reserve(impl_->joints.size());
+    for (const Impl::SceneJoint &joint : impl_->joints) {
+        LiveJoint said{};
+        said.id = joint.id;
+        said.a = joint.a;
+        said.b = joint.b;
+        said.lower_rad = joint.lower_rad;
+        said.upper_rad = joint.upper_rad;
+        said.friction_torque_n_m = joint.friction_torque_n_m;
+        said.attached = joint.attached && joint.rigid != 0;
+        if (joint.rigid != 0 && impl_->world->hasJoint(joint.rigid)) {
+            const JoltWorld::JointReport now = impl_->world->jointState(joint.rigid);
+            said.angle_rad = now.angle_rad;
+            said.lower_rad = now.lower_rad;
+            said.upper_rad = now.upper_rad;
+            said.friction_torque_n_m = now.friction_torque_n_m;
+        }
+        // Where the pin has got to, worked out from the body it is in rather
+        // than remembered, so a gate that has been carried across the room
+        // reports its hinge where the gate is.
+        const auto found = impl_->index_of.find(joint.a);
+        if (found != impl_->index_of.end()) {
+            const RigidSnapshot at = impl_->world->snapshot(impl_->body_of[found->second]);
+            said.point_world_m = at.center_of_mass_world_m +
+                                 at.orientation_world.rotate(joint.point_local_a);
+            said.axis_world = at.orientation_world.rotate(joint.axis_local_a);
+        }
+        out.push_back(std::move(said));
+    }
+    return out;
+}
+
+void LiveWorld::setJointFriction(unsigned joint, double friction_torque_n_m) {
+    for (Impl::SceneJoint &held : impl_->joints) {
+        if (held.id != joint) continue;
+        held.friction_torque_n_m = std::max(0.0, friction_torque_n_m);
+        if (held.rigid != 0 && impl_->world->hasJoint(held.rigid))
+            impl_->world->setJointFriction(held.rigid, held.friction_torque_n_m);
+        return;
+    }
+}
+
+void LiveWorld::unhinge(unsigned joint) {
+    for (std::size_t i = 0; i < impl_->joints.size(); ++i) {
+        if (impl_->joints[i].id != joint) continue;
+        if (impl_->joints[i].rigid != 0) impl_->world->removeJoint(impl_->joints[i].rigid);
+        // What was hanging on it is about to fall, and a body asleep on its pin
+        // would hang in the air until something else woke it.
+        for (const std::string &side : {impl_->joints[i].a, impl_->joints[i].b}) {
+            const auto found = impl_->index_of.find(side);
+            if (found != impl_->index_of.end()) impl_->world->wake(impl_->body_of[found->second]);
+        }
+        impl_->joints.erase(impl_->joints.begin() + static_cast<std::ptrdiff_t>(i));
+        return;
+    }
+}
+
+// Which body has this point in its matter.
+//
+// Asked of the cells rather than of the bounding box, because the pieces this
+// is chasing are hulls and a hull's box is mostly not the hull. Restricted to
+// bodies descended from the name the pin used to be in: a pin that loses its
+// wood should come out, not grab whatever happens to be lying against it.
+std::size_t LiveWorld::bodyHolding(const Vec3 &point_world_m,
+                                   const std::string &was_called) const {
+    const double near_enough = impl_->request.cell_size_m;
+    std::size_t best = static_cast<std::size_t>(-1);
+    double closest = near_enough;
+    for (std::size_t i = 0; i < impl_->described.size(); ++i) {
+        const std::string &name = impl_->described[i].name;
+        const bool descended = name == was_called ||
+                               name.rfind(was_called + " piece ", 0) == 0;
+        if (!descended) continue;
+        const RigidSnapshot at = impl_->world->snapshot(impl_->body_of[i]);
+        const Quat inverse = conjugateOf(at.orientation_world);
+        const Vec3 local = inverse.rotate(point_world_m - at.center_of_mass_world_m);
+        for (const std::uint32_t node : impl_->nodes_of[i]) {
+            if (node >= impl_->cell_offset_m.size()) continue;
+            const double gap = length(impl_->cell_offset_m[node] - local);
+            if (gap < closest) { closest = gap; best = i; }
+        }
+    }
+    return best;
+}
+
+// Put the pins back after the body table has been rearranged.
+//
+// Every body in an island is destroyed and rebuilt when anything in it breaks,
+// so every engine-level constraint touching it is gone -- including the ones on
+// bodies that came through the collision untouched. This is what puts them
+// back, and it is also where a pin decides what to do when its wood is no
+// longer there: it follows the piece it is inside, and if there is no such
+// piece, it comes out and what hung on it falls.
+void LiveWorld::rehangJoints() {
+    for (Impl::SceneJoint &joint : impl_->joints) {
+        if (!joint.attached) continue;
+        if (joint.rigid != 0 && impl_->world->hasJoint(joint.rigid)) continue;
+        joint.rigid = 0;
+
+        // Find each end again. By name if the name is still there -- which it is
+        // whenever a body came through whole -- and otherwise by following the
+        // pin into whichever piece of the old body now surrounds it.
+        std::size_t side[2] = {static_cast<std::size_t>(-1), static_cast<std::size_t>(-1)};
+        std::string *names[2] = {&joint.a, &joint.b};
+        Vec3 *locals[2] = {&joint.point_local_a, &joint.point_local_b};
+        // The pin's last known place in the world, taken from whichever end is
+        // still standing. Both ends cannot have moved without one of them being
+        // findable, because a joint with neither end left is simply gone.
+        bool have_point = false;
+        Vec3 point{};
+        for (int end = 0; end < 2 && !have_point; ++end) {
+            const auto found = impl_->index_of.find(*names[end]);
+            if (found == impl_->index_of.end()) continue;
+            const RigidSnapshot at = impl_->world->snapshot(impl_->body_of[found->second]);
+            point = at.center_of_mass_world_m + at.orientation_world.rotate(*locals[end]);
+            have_point = true;
+        }
+        for (int end = 0; end < 2; ++end) {
+            const auto found = impl_->index_of.find(*names[end]);
+            if (found != impl_->index_of.end()) { side[end] = found->second; continue; }
+            if (!have_point) break;
+            const std::size_t heir = bodyHolding(point, *names[end]);
+            if (heir == static_cast<std::size_t>(-1)) break;
+            // The pin is in this piece now. Re-write where it sits in the new
+            // body's frame -- the piece has its own centre of mass, nowhere near
+            // the one the parent had -- and rename the end to match, so the next
+            // break follows the piece's own pieces.
+            const RigidSnapshot at = impl_->world->snapshot(impl_->body_of[heir]);
+            *locals[end] = conjugateOf(at.orientation_world).rotate(point - at.center_of_mass_world_m);
+            *names[end] = impl_->described[heir].name;
+            side[end] = heir;
+            impl_->delays.push_back({impl_->time_s, *names[end], "rehung", 0.0, 0.0});
+        }
+        if (side[0] == static_cast<std::size_t>(-1) || side[1] == static_cast<std::size_t>(-1) ||
+            side[0] == side[1] || !have_point) {
+            // Nothing left to hang it on. The gate is off its hinges, which is
+            // the honest outcome -- and it is reported rather than dropped, so a
+            // host that drew a pin knows to stop drawing it.
+            joint.attached = false;
+            continue;
+        }
+        try {
+            const RigidSnapshot one = impl_->world->snapshot(impl_->body_of[side[0]]);
+            JoltWorld::HingeDescription pin{};
+            pin.a = impl_->body_of[side[0]];
+            pin.b = impl_->body_of[side[1]];
+            pin.point_world_m = point;
+            pin.axis_world = one.orientation_world.rotate(joint.axis_local_a);
+            // The limits were measured from where the door was standing when the
+            // pin went in, and it is not standing there now. Jolt measures a
+            // fresh hinge from where it finds the bodies, so the travel that is
+            // LEFT is what can be asked for: a door that has swung 30 of its 90
+            // degrees has 60 to go and 30 to come back.
+            const double turned = std::max(joint.lower_rad,
+                                           std::min(joint.upper_rad, joint.angle_when_hung));
+            pin.lower_rad = joint.lower_rad - turned;
+            pin.upper_rad = joint.upper_rad - turned;
+            pin.friction_torque_n_m = joint.friction_torque_n_m;
+            joint.rigid = impl_->world->addHinge(pin);
+        } catch (const std::exception &) {
+            joint.attached = false;
+        }
+    }
 }
 
 bool LiveWorld::grab(const std::string &name) {
@@ -1057,6 +1317,7 @@ void LiveWorld::dropBodies(const std::vector<std::size_t> &which) {
     impl_->index_of.clear();
     for (std::size_t i = 0; i < impl_->described.size(); ++i)
         impl_->index_of.emplace(impl_->described[i].name, i);
+    rehangJoints();
     repin();
 }
 
@@ -1894,6 +2155,10 @@ std::size_t LiveWorld::applyPending() {
     impl_->index_of.clear();
     for (std::size_t i = 0; i < impl_->described.size(); ++i)
         impl_->index_of.emplace(impl_->described[i].name, i);
+    // Every body in the island was destroyed and rebuilt above, so every pin
+    // touching any of them is holding nothing. This is where they find their
+    // wood again -- or find there is none left, and let go.
+    rehangJoints();
     // What happened to the body that was ASKED about, which is not the same as
     // what happened to the island. An island can come apart while the thing in
     // question survives whole -- a ball that cracked the pane it hit is one

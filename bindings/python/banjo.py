@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 # Bumped with the header: the world reports what made it wait.
-ABI_VERSION = 5
+ABI_VERSION = 6
 
 NOTHING, HELD, DENTED, BROKE = 0, 1, 2, 3
 OUTCOMES = {0: "nothing", 1: "held", 2: "dented", 3: "broke"}
@@ -76,6 +76,19 @@ class _Lot(ctypes.Structure):
                 ("kilograms", ctypes.c_double),
                 ("pieces", ctypes.c_int),
                 ("cells", ctypes.c_int)]
+
+
+class _Joint(ctypes.Structure):
+    _fields_ = [("id", ctypes.c_uint),
+                ("a", ctypes.c_char_p),
+                ("b", ctypes.c_char_p),
+                ("degrees", ctypes.c_double),
+                ("lower_deg", ctypes.c_double),
+                ("upper_deg", ctypes.c_double),
+                ("friction_n_m", ctypes.c_double),
+                ("at_m", ctypes.c_double * 3),
+                ("axis", ctypes.c_double * 3),
+                ("attached", ctypes.c_int)]
 
 
 class _Pick(ctypes.Structure):
@@ -163,6 +176,33 @@ class Lot:
     kilograms: float
     pieces: int
     cells: int
+
+
+@dataclass(frozen=True)
+class Joint:
+    """A pin two named things turn about.
+
+    Two NAMES rather than two bodies, because bodies do not survive breaking:
+    everything in an island is destroyed and rebuilt when anything in it comes
+    apart. A pin whose wood is smashed follows the piece it ends up inside, so
+    `a` and `b` do change -- a gate hung on "post" can find itself hung on
+    "post piece 3" -- and `attached` goes False when there is no wood left to
+    hold it, which is a gate coming off its hinges.
+    """
+    id: int
+    a: str
+    b: str
+    # Where it has turned to, from where it was hung.
+    degrees: float
+    lower_deg: float
+    upper_deg: float
+    friction_n_m: float
+    # Where the pin is and which way it runs, worked out from the body it is in
+    # rather than remembered -- so a gate carried across the room reports its
+    # hinge where the gate is.
+    at_m: tuple[float, float, float]
+    axis: tuple[float, float, float]
+    attached: bool
 
 
 @dataclass(frozen=True)
@@ -256,6 +296,18 @@ def library(path: str | os.PathLike[str] | None = None) -> ctypes.CDLL:
                                   ctypes.c_double, ctypes.c_int]
     lib.banjo_collected.restype = ctypes.c_int
     lib.banjo_collected.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Lot), ctypes.c_int]
+    lib.banjo_hinge.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p,
+                                ctypes.c_double * 3, ctypes.c_double * 3,
+                                ctypes.c_double, ctypes.c_double, ctypes.c_double]
+    lib.banjo_hinge.restype = ctypes.c_int
+    lib.banjo_joint_count.argtypes = [ctypes.c_void_p]
+    lib.banjo_joint_count.restype = ctypes.c_int
+    lib.banjo_joints.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Joint), ctypes.c_int]
+    lib.banjo_joints.restype = ctypes.c_int
+    lib.banjo_joint_friction.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_double]
+    lib.banjo_joint_friction.restype = ctypes.c_int
+    lib.banjo_unhinge.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+    lib.banjo_unhinge.restype = ctypes.c_int
     lib.banjo_decline_break.restype = ctypes.c_int
     lib.banjo_last_outcome.argtypes = [ctypes.c_void_p]
     lib.banjo_last_outcome.restype = ctypes.c_int
@@ -436,6 +488,67 @@ class World:
         """
         return self._check(self._lib.banjo_finish_fracture(self._alive()),
                            "collecting a fracture")
+
+    def hinge(self, a: str, b: str, at_m: Any, axis: Any = (0.0, 1.0, 0.0),
+              lower_deg: float = -180.0, upper_deg: float = 180.0,
+              friction_n_m: float = 0.0) -> int:
+        """Hang one named thing off another on a pin.
+
+        The pin is given where it is in the world RIGHT NOW and is kept in both
+        bodies' own frames from then on, which is what makes a mechanism go on
+        working when the whole assembly is carried somewhere else or turned
+        over.
+
+        A door swings because a push off its centre line makes a torque about
+        the pin, and stops because it meets its travel limit or runs out of
+        momentum. Nothing plays an animation of a door opening.
+
+        Limits are degrees either side of where it is hung: `lower_deg` from
+        -180 to 0 and `upper_deg` from 0 to 180, so a door built shut swings
+        0..90 and one built open swings -90..0. `friction_n_m` is what it takes
+        to start it turning -- a stiff old hinge holds a door where it is left.
+
+        Either end may be anchored scenery (a door on a wall is the ordinary
+        case) but not both, or there is nothing for the pin to move.
+
+        Returns the joint's id.
+        """
+        where = (ctypes.c_double * 3)(*(float(v) for v in at_m))
+        along = (ctypes.c_double * 3)(*(float(v) for v in axis))
+        return self._check(
+            self._lib.banjo_hinge(self._alive(), a.encode("utf-8"), b.encode("utf-8"),
+                                  where, along, lower_deg, upper_deg, friction_n_m),
+            f"hanging {b!r} on {a!r}")
+
+    def joints(self) -> list[Joint]:
+        """Every pin in the world, and where each has turned to."""
+        count = self._check(self._lib.banjo_joint_count(self._alive()),
+                            "counting the pins")
+        if count <= 0:
+            return []
+        out = (_Joint * count)()
+        written = self._check(self._lib.banjo_joints(self._alive(), out, count),
+                              "reading the pins")
+        return [Joint(id=int(out[i].id),
+                      a=(out[i].a or b"").decode("utf-8"),
+                      b=(out[i].b or b"").decode("utf-8"),
+                      degrees=out[i].degrees,
+                      lower_deg=out[i].lower_deg,
+                      upper_deg=out[i].upper_deg,
+                      friction_n_m=out[i].friction_n_m,
+                      at_m=tuple(out[i].at_m),
+                      axis=tuple(out[i].axis),
+                      attached=bool(out[i].attached))
+                for i in range(written)]
+
+    def joint_friction(self, joint: int, friction_n_m: float) -> None:
+        """How hard a pin is to turn, in newton metres."""
+        self._check(self._lib.banjo_joint_friction(self._alive(), joint, friction_n_m),
+                    "stiffening a pin")
+
+    def unhinge(self, joint: int) -> None:
+        """Take the pin out. What was hanging on it falls."""
+        self._check(self._lib.banjo_unhinge(self._alive(), joint), "taking a pin out")
 
     def collect(self, at_m: Any, radius_m: float = 1.0,
                 largest_cells: int = 0) -> list[Lot]:

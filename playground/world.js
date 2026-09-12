@@ -65,6 +65,12 @@ const world = {
   // contact is gone from the engine by then -- the body it was about has been
   // replaced by its pieces.
   why: new Map(),
+  // The pins in the room, as the engine last reported them. Only sent when the
+  // SET of them changes -- one hung, one taken out, one that came off because
+  // its wood was smashed -- because the angle is already in the bodies' poses
+  // and sending it again sixty times a second is the traffic that was trimmed
+  // out of the step reply in the first place.
+  joints: [],
 };
 
 function remember(what) {
@@ -340,6 +346,46 @@ function draw(state) {
     world.bodies.delete(name);
   }
   $("panel-count").textContent = `${world.bodies.size} objects`;
+}
+
+// The pins, drawn as pins.
+//
+// A hinge has no body of its own -- the gate's pose already carries where it
+// has swung to, and that is what you actually see. What you cannot see from the
+// bodies alone is the pin itself: where a thing is hung, which way its axis
+// runs, and, the moment it matters, that it has come OFF. A gate whose jamb was
+// smashed away stops being hinged and starts being a plank leaning on the
+// floor, and those two look identical for the second before it falls over.
+const pinGroup = new THREE.Group();
+scene.add(pinGroup);
+const PIN_SOLID = new THREE.MeshStandardMaterial({
+  color: 0x9fb4c4, roughness: 0.35, metalness: 0.8 });
+const PIN_GONE = new THREE.MeshStandardMaterial({
+  color: 0xd06a4a, roughness: 0.6, metalness: 0.1,
+  transparent: true, opacity: 0.55 });
+
+function drawJoints(pins) {
+  if (!pins) return;                  // not in this reply: nothing changed
+  world.joints = pins;
+  while (pinGroup.children.length) {
+    const child = pinGroup.children.pop();
+    child.geometry.dispose();
+  }
+  for (const pin of pins) {
+    const at = pin.at || [0, 0, 0];
+    const axis = pin.axis || [0, 1, 0];
+    // A stub of pin, long enough to read at arm's length and thin enough not
+    // to be mistaken for part of the gate.
+    const rod = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.028, 0.028, 0.34, 10),
+      pin.attached ? PIN_SOLID : PIN_GONE);
+    rod.position.set(at[0], at[1], at[2]);
+    // A cylinder is made standing up the y axis; point it along the pin.
+    rod.quaternion.setFromUnitVectors(
+      new THREE.Vector3(0, 1, 0),
+      new THREE.Vector3(axis[0], axis[1], axis[2]).normalize());
+    pinGroup.add(rod);
+  }
 }
 
 // How close you have to be, and how big a thing can be and still be debris.
@@ -907,18 +953,26 @@ async function tick() {
       else if (what === "drop") await dropIt();
       else if (what === "throw") await throwIt();
     }
-    // Carry first, so the object is where the hand is before the step runs.
+    // Where the hand is, sent WITH the step rather than before it.
+    //
+    // A round trip to the server is 14.9 ms and four steps of physics are
+    // 0.5 ms, so moving the hand in its own call pays the transport twice to do
+    // one frame's work -- which halved the frame rate for as long as you were
+    // carrying anything, which is the whole of pushing a gate open.
+    let hand = null;
     if (world.held) {
       const dir = forwardVector();
       const p = camera.position.clone().add(dir.multiplyScalar(world.held.distance));
-      await act("move", { to: [p.x, p.y, p.z] });
+      hand = [p.x, p.y, p.z];
     }
     const now = performance.now();
     const elapsed = world.lastTick ? (now - world.lastTick) / 1000 : LIVE_DT;
     world.lastTick = now;
     const steps = clamp(Math.round(elapsed / LIVE_DT), 1, MAX_STEPS);
     const asked = performance.now();
-    let state = await act("step", { dt: LIVE_DT, n: steps, moved: true });
+    let state = await act("step", hand
+      ? { dt: LIVE_DT, n: steps, moved: true, hand }
+      : { dt: LIVE_DT, n: steps, moved: true });
     trace.ticks.push(+(performance.now() - asked).toFixed(1));
     // Roughly, and without stringifying it twice: bodies are what a reply is
     // made of, and they are all about the same size.
@@ -982,6 +1036,20 @@ async function tick() {
     }
 
     draw(state);
+    if (state.joints) {
+        const wasAttached = new Map(world.joints.map((p) => [p.id, p.attached]));
+        for (const pin of state.joints) {
+          if (wasAttached.get(pin.id) && !pin.attached) {
+            say("world", `${pin.b} has come off its hinge — there is nothing left`
+              + ` of ${pin.a} around the pin to hold it.`);
+            remember(`${pin.b} came off its hinge`);
+          } else if (wasAttached.has(pin.id) && pin.b !== world.joints.find(
+                       (p) => p.id === pin.id).b) {
+            remember(`the pin moved into ${pin.b}`);
+          }
+        }
+        drawJoints(state.joints);
+    }
     // Past 250 bodies the engine stops using the reversible trial, and with it
     // goes the step-back that fracture depends on -- impacts are still
     // reported, but they describe collisions that have already been resolved
@@ -1137,6 +1205,7 @@ $("ask").addEventListener("submit", async (e) => {
 });
 
 $("reset").addEventListener("click", () => open());
+$("scene").addEventListener("change", () => open());
 
 // ---------------------------------------------------------------------------
 // Opening
@@ -1145,7 +1214,7 @@ $("reset").addEventListener("click", () => open());
 async function open() {
   $("panel-state").textContent = "Opening the room…";
   try {
-    const data = await api("/api/world/open", {});
+    const data = await api("/api/world/open", { scene: $("scene").value });
     world.session = data.session;
     world.lastTick = 0;
     world.story = [];
@@ -1153,7 +1222,9 @@ async function open() {
     $("carry").hidden = true;
     world.bodies.forEach((e) => forget(e.mesh));
     world.bodies.clear();
+    world.joints = [];
     draw(data);
+    drawJoints(data.joints);
     $("panel-state").textContent = "Live.";
     $("chat").replaceChildren();
     say("world",

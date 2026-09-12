@@ -199,7 +199,14 @@ class Live:
     def open(self, app: Any, body: Any) -> dict[str, Any]:
         if not isinstance(body, dict):
             raise LiveError("A live request must be an object")
+        # Pins are part of the ROOM rather than of the engine's scene request:
+        # a world is opened from a set of bodies and the pins go in afterwards,
+        # against the bodies that are now standing there. They travel in the
+        # spec all the same, so that saving a room and opening it again puts its
+        # gates back on their hinges -- and they are CHECKED by the validator
+        # alongside the bodies, where whoever wrote them can be told.
         spec = fracture_lab.validate(body.get("spec") or {})
+        pins = spec.get("joints") or []
         with self._lock:
             if self.session is not None:
                 self.session.close()
@@ -213,7 +220,53 @@ class Live:
             else:
                 session = Session(app.engine_path, spec, app.runs_path)
             self.session = session
-        return {"session": session.id, "spec": spec, **session.state}
+        hung = self._hang(session, pins)
+        return {"session": session.id, "spec": spec, **session.state, **hung}
+
+    @staticmethod
+    def _hang(session: "Session", pins: Any) -> dict[str, Any]:
+        """Put every pin the room asks for into the world that just opened.
+
+        A pin that will not hang is said out loud rather than dropped. Silence
+        here would be a gate that simply does not swing, which reads as the
+        physics being broken rather than as the room being wrong about where its
+        own hinge is -- and telling those two apart from the outside took a day
+        the last time something in this engine failed quietly.
+        """
+        if not isinstance(pins, list):
+            raise LiveError("a room's joints must be a list")
+        problems: list[str] = []
+        state: dict[str, Any] = {}
+        for pin in pins:
+            if not isinstance(pin, dict):
+                problems.append("a joint that is not an object")
+                continue
+            kind = str(pin.get("kind", "hinge"))
+            if kind != "hinge":
+                problems.append(f"{kind!r} is not a kind of joint this room knows")
+                continue
+            at = pin.get("at_mm")
+            if not isinstance(at, list) or len(at) != 3:
+                problems.append("a hinge needs at_mm as three numbers")
+                continue
+            try:
+                answer = session.send(
+                    op="hinge", a=str(pin.get("a", "")), b=str(pin.get("b", "")),
+                    at=[float(v) / 1000.0 for v in at],
+                    axis=[float(v) for v in (pin.get("axis") or [0, 1, 0])],
+                    lower_deg=float(pin.get("lower_deg", -180.0)),
+                    upper_deg=float(pin.get("upper_deg", 180.0)),
+                    friction_n_m=float(pin.get("friction_n_m", 0.0)))
+            except Exception as error:      # the engine refused it
+                problems.append(f"{pin.get('b', '?')} would not hang on "
+                                f"{pin.get('a', '?')}: {error}")
+                continue
+            pin["id"] = answer.get("joint")
+            if answer.get("joints") is not None:
+                state["joints"] = answer["joints"]
+        if problems:
+            state["joint_problems"] = problems
+        return state
 
     def _current(self, session_id: str) -> Session:
         session = self.session
@@ -234,8 +287,22 @@ class Live:
             # A host that draws the room asks for only what moved: it keeps
             # its own copy of the scene and merges. One that does not gets the
             # whole world, as it always did.
-            return session.send(op="step", dt=dt, n=count,
-                                moved=bool(body.get("moved", False)))
+            #
+            # `hand` carries where whatever is being held should be before the
+            # step runs. It is here rather than in its own `move` call because
+            # the round trip costs thirty times what the step does, so sending
+            # them separately halves the frame rate of anyone carrying anything.
+            step: dict[str, Any] = {"op": "step", "dt": dt, "n": count,
+                                    "moved": bool(body.get("moved", False))}
+            hand = body.get("hand")
+            if hand is not None:
+                if not isinstance(hand, list) or len(hand) != 3:
+                    raise LiveError("a step's hand needs three numbers")
+                spot = [float(v) for v in hand]
+                if not all(math.isfinite(v) for v in spot):
+                    raise LiveError("a step was given a hand that is not a number")
+                step["hand"] = spot
+            return session.send(**step)
         if op == "grab":
             return session.send(op="grab", name=str(body.get("name", "")))
         if op == "move":
@@ -260,8 +327,46 @@ class Live:
             if not 0.0 <= horizon <= 10.0:
                 raise LiveError("foresee needs a horizon between 0 and 10 seconds")
             return session.send(op="foresee", horizon_s=horizon)
-        if op in ("release", "poses"):
+        if op in ("release", "poses", "joints"):
             return session.send(op=op)
+        if op == "hinge":
+            # Hang one named thing off another on a pin. Everything is checked
+            # here rather than trusted: the engine refuses what it cannot hang,
+            # but a NaN axis reaches it as a direction and comes back as a
+            # constraint nobody can see.
+            def spot(key: str) -> list[float]:
+                value = body.get(key)
+                if not isinstance(value, list) or len(value) != 3:
+                    raise LiveError(f"a hinge needs {key} as three numbers")
+                out = [float(v) for v in value]
+                if not all(math.isfinite(v) for v in out):
+                    raise LiveError(f"a hinge was given {key} that is not a number")
+                return out
+            axis = spot("axis")
+            if not any(abs(v) > 1e-9 for v in axis):
+                raise LiveError("a hinge needs an axis with a direction")
+            lower = float(body.get("lower_deg", -180.0))
+            upper = float(body.get("upper_deg", 180.0))
+            if not -180.0 <= lower <= 0.0 <= upper <= 180.0:
+                raise LiveError(
+                    "hinge limits are degrees either side of where it is hung: "
+                    "a lower from -180 to 0 and an upper from 0 to 180")
+            friction = float(body.get("friction_n_m", 0.0))
+            if not 0.0 <= friction <= 1e6:
+                raise LiveError("hinge friction is newton metres, zero or more")
+            return session.send(op="hinge", a=str(body.get("a", "")),
+                                b=str(body.get("b", "")), at=spot("at"), axis=axis,
+                                lower_deg=lower, upper_deg=upper,
+                                friction_n_m=friction)
+        if op == "unhinge":
+            return session.send(op="unhinge", joint=int(body.get("joint", 0)))
+        if op == "joint_friction":
+            friction = float(body.get("friction_n_m", 0.0))
+            if not 0.0 <= friction <= 1e6:
+                raise LiveError("hinge friction is newton metres, zero or more")
+            return session.send(op="joint_friction",
+                                joint=int(body.get("joint", 0)),
+                                friction_n_m=friction)
         if op == "pick":
             # A ray in world metres. Costs no step and changes nothing, so it is
             # not bounded the way a step is -- but it is still checked, because

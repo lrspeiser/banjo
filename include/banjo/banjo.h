@@ -75,7 +75,7 @@ extern "C" {
 /* The ABI version. Bumped when the meaning or layout of anything here changes.
  * Check it once at startup against banjo_abi_version(): a header and a library
  * that disagree will not tell you so any other way. */
-#define BANJO_ABI_VERSION 5
+#define BANJO_ABI_VERSION 6
 
 /* What a call reported. Anything below zero is a failure and leaves the world
  * unchanged; banjo_last_error() says what happened. */
@@ -119,6 +119,31 @@ typedef struct {
     int held;
     unsigned rgba;
 } banjo_body;
+
+/* A pin two named things turn about.
+ *
+ * Two NAMES rather than two bodies, because bodies do not survive breaking:
+ * everything in an island is destroyed and rebuilt when anything in it comes
+ * apart. A pin whose wood is smashed follows the piece it ends up inside, so
+ * `a` and `b` do change -- a gate hung on "post" can find itself hung on
+ * "post piece 3" -- and `attached` goes to 0 when there is no wood left to hold
+ * it, which is a gate coming off its hinges. */
+typedef struct {
+    unsigned id;
+    const char *a;
+    const char *b;
+    /* Where it has turned to, in degrees, from where it was hung. */
+    double degrees;
+    double lower_deg;
+    double upper_deg;
+    double friction_n_m;
+    /* Where the pin is now and which way it runs, in world metres. Worked out
+     * from the body it is in rather than remembered, so a gate carried across
+     * the room reports its hinge where the gate is. */
+    double at_m[3];
+    double axis[3];
+    int attached;
+} banjo_joint;
 
 typedef struct {
     int hit;
@@ -374,6 +399,46 @@ BANJO_API int banjo_move_held(banjo_world *world, const double to_m[3]);
 BANJO_API int banjo_release(banjo_world *world);
 /* What is in the hand, or "" if nothing is. */
 BANJO_API const char *banjo_held(const banjo_world *world);
+
+/* ---- pins ------------------------------------------------------------ */
+
+/* Hang one named thing off another on a pin.
+ *
+ * The pin is given where it is in the world RIGHT NOW, and is kept in both
+ * bodies' own frames from then on -- which is what makes a mechanism go on
+ * working when the whole assembly is carried somewhere else or turned over.
+ *
+ * A door swings because a push off its centre line makes a torque about the
+ * pin, and stops because it meets its travel limit or runs out of momentum.
+ * Nothing plays an animation of a door opening.
+ *
+ * Limits are degrees either side of where it is hung: a `lower_deg` from -180
+ * to 0 and an `upper_deg` from 0 to 180, so a door built shut swings 0..90 and
+ * one built open swings -90..0. `friction_n_m` is what it takes to start it
+ * turning -- a stiff old hinge holds a door where it is left, and zero swings
+ * freely.
+ *
+ * Either end may be anchored scenery (a door on a wall is the ordinary case)
+ * but not both, or there is nothing for the pin to move.
+ *
+ * Returns the joint's id, which is always above zero, or a negative
+ * banjo_status. */
+BANJO_API int banjo_hinge(banjo_world *world, const char *a, const char *b,
+                          const double at_m[3], const double axis[3],
+                          double lower_deg, double upper_deg,
+                          double friction_n_m);
+
+/* How many pins are in the world. */
+BANJO_API int banjo_joint_count(const banjo_world *world);
+/* Fills up to `max` pins and returns how many were written, or a negative
+ * banjo_status. The strings belong to the world and stay good until the next
+ * call that changes it. */
+BANJO_API int banjo_joints(const banjo_world *world, banjo_joint *out, int max);
+/* How hard it is to turn, in newton metres. */
+BANJO_API int banjo_joint_friction(banjo_world *world, unsigned joint,
+                                   double friction_n_m);
+/* Take the pin out. What was hanging on it falls. */
+BANJO_API int banjo_unhinge(banjo_world *world, unsigned joint);
 
 /* ---- asking where things are ---------------------------------------- */
 

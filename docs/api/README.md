@@ -95,7 +95,7 @@ suite, so they cannot go stale:
 
 ---
 
-## Five things to know before you build anything
+## Six things to know before you build anything
 
 ### 1. Breaking is a conversation, not a property
 
@@ -182,6 +182,36 @@ it costs about a third of a millisecond per cell, so a fracture is worth
 announcing rather than hiding inside a frame that then takes half a second.
 `banjo_pick_ray` costs nothing at all — 0.02 ms measured — so ask it as often as
 you like.
+
+### 6. A mechanism is a pin, not an animation
+
+`banjo_hinge` hangs one named thing off another on a pin, and that is the whole
+of how a door, a gate, a hatch, a lever or a drawbridge works here. There is no
+"open the door" call. A door opens because you push something into it off its
+centre line and the pin turns that into a torque; it stops because it meets its
+travel limit, meets its frame, or runs out of momentum.
+
+```c
+double at[3] = {0.0, 1.0, 0.12}, up[3] = {0.0, 1.0, 0.0};
+int gate = banjo_hinge(w, "post", "gate", at, up, 0.0, 100.0, 12.0);
+```
+
+The pin is given where it is in the world right now and kept in both bodies'
+own frames, so the mechanism goes on working if the assembly is carried
+somewhere else or turned over.
+
+**A pin holds two names, and names change when things break.** Bodies do not
+survive breaking — everything in an island is destroyed and rebuilt when
+anything in it comes apart — so a pin whose wood is smashed follows the piece it
+ends up inside, and `banjo_joints` will start reporting `"post piece 3"` where it
+used to say `"post"`. When there is no piece left around the pin, `attached` goes
+to 0 and what hung on it falls. Read that flag: it is the only way to find out a
+gate has come off its hinges.
+
+Two pieces of geometry that each cost an afternoon: set the leaf **clear of its
+own frame** (a door sharing space with its post is jammed against it, and jammed
+looks exactly like a broken hinge), and hang it **clear of the floor** (a door
+resting on the ground is held by the ground).
 
 ---
 

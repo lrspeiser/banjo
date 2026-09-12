@@ -503,6 +503,81 @@ def tool_cast_ray(args: dict[str, Any]) -> dict[str, Any]:
             "point_m": [round(v, 4) for v in found.point_m]}
 
 
+def tool_hinge(args: dict[str, Any]) -> dict[str, Any]:
+    """Hang one named thing off another on a pin.
+
+    This is the difference between a scene and a mechanism. A door on a hinge
+    swings because a push off its centre line makes a torque about the pin, and
+    stops because it meets its travel limit or runs out of momentum -- so a
+    model that wants a gate to open pushes something into it, rather than asking
+    for the gate to be moved.
+    """
+    entry = _world(args.get("world_id"))
+    world: banjo.World = entry["world"]
+    try:
+        joint = world.hinge(
+            str(args.get("a", "")), str(args.get("b", "")),
+            _triple(args.get("at_m"), "at_m", -200.0, 200.0),
+            _triple(args.get("axis", [0.0, 1.0, 0.0]), "axis", -1e6, 1e6),
+            _number(args.get("lower_deg", -180.0), "lower_deg", -180.0, 0.0),
+            _number(args.get("upper_deg", 180.0), "upper_deg", 0.0, 180.0),
+            _number(args.get("friction_n_m", 0.0), "friction_n_m", 0.0, 1e6))
+    except banjo.BanjoError as error:
+        raise Refused(str(error))
+    return {"joint": joint,
+            "note": f"{args.get('b')} now turns about a pin in {args.get('a')}. "
+                    "Push something into it to open it; it will not move on its own."}
+
+
+def _said(pin: banjo.Joint) -> dict[str, Any]:
+    return {"joint": pin.id, "a": pin.a, "b": pin.b,
+            "degrees": round(pin.degrees, 3),
+            "opens_from_deg": round(pin.lower_deg, 1),
+            "opens_to_deg": round(pin.upper_deg, 1),
+            "friction_n_m": round(pin.friction_n_m, 3),
+            "at_m": [round(v, 4) for v in pin.at_m],
+            "axis": [round(v, 4) for v in pin.axis],
+            "attached": pin.attached}
+
+
+def tool_joints(args: dict[str, Any]) -> dict[str, Any]:
+    """Every pin in the world, and where each has turned to.
+
+    `a` and `b` do change. A pin whose wood is smashed follows the piece it ends
+    up inside, so a gate hung on "post" can find itself hung on "post piece 3" --
+    and `attached` goes false when there is nothing left to hold it, which is a
+    gate coming off its hinges.
+    """
+    pins = _world(args.get("world_id"))["world"].joints()
+    return {"joints": [_said(pin) for pin in pins],
+            "note": "nothing here is animated: a pin is a constraint and what "
+                    "hangs on it moves only when something pushes it"
+                    if pins else "there are no pins in this world"}
+
+
+def tool_unhinge(args: dict[str, Any]) -> dict[str, Any]:
+    """Take a pin out. What was hanging on it falls."""
+    world: banjo.World = _world(args.get("world_id"))["world"]
+    joint = int(_number(args.get("joint", 0), "joint", 1, 1e9))
+    try:
+        world.unhinge(joint)
+    except banjo.BanjoError as error:
+        raise Refused(str(error))
+    return {"joint": joint, "note": "the pin is out; what hung on it is falling"}
+
+
+def tool_hinge_friction(args: dict[str, Any]) -> dict[str, Any]:
+    """How hard a pin is to turn. A stiff old hinge holds a door where it is left."""
+    world: banjo.World = _world(args.get("world_id"))["world"]
+    joint = int(_number(args.get("joint", 0), "joint", 1, 1e9))
+    friction = _number(args.get("friction_n_m", 0.0), "friction_n_m", 0.0, 1e6)
+    try:
+        world.joint_friction(joint, friction)
+    except banjo.BanjoError as error:
+        raise Refused(str(error))
+    return {"joint": joint, "friction_n_m": friction}
+
+
 def tool_close_world(args: dict[str, Any]) -> dict[str, Any]:
     world_id = str(args.get("world_id"))
     entry = _world(world_id)
@@ -622,6 +697,56 @@ TOOLS = [
      "description": "What has been swept up in this world, by material.",
      "inputSchema": {"type": "object", "required": ["world_id"],
                      "properties": {"world_id": {"type": "string"}}}},
+    {"name": "hinge",
+     "description": "Hang one named thing off another on a pin, so it turns "
+                    "about that pin instead of being loose. A door, a gate, a "
+                    "hatch, a lever, a drawbridge. The pin is given where it is "
+                    "in the world right now and is kept in both bodies' own "
+                    "frames, so the mechanism goes on working if the assembly is "
+                    "moved or turned over. Either end may be anchored scenery -- "
+                    "a door on a wall is the ordinary case -- but not both. "
+                    "Nothing is animated: to open it, push something into it.",
+     "inputSchema": {"type": "object",
+                     "required": ["world_id", "a", "b", "at_m"],
+                     "properties": {
+         "world_id": {"type": "string"},
+         "a": {"type": "string", "description": "What it hangs FROM, usually the "
+                                                "anchored side."},
+         "b": {"type": "string", "description": "What swings."},
+         "at_m": dict(VECTOR, description="Where the pin is, in world metres."),
+         "axis": dict(VECTOR, description="Which way the pin runs. [0,1,0] for a "
+                                          "door, [1,0,0] or [0,0,1] for a hatch "
+                                          "or a drawbridge. Vertical by default."),
+         "lower_deg": {"type": "number",
+                       "description": "How far it may turn one way from where it "
+                                      "is hung: -180 to 0. Use 0 for a door that "
+                                      "only opens outward."},
+         "upper_deg": {"type": "number",
+                       "description": "How far the other way: 0 to 180."},
+         "friction_n_m": {"type": "number",
+                          "description": "What it takes to start it turning, in "
+                                         "newton metres. Zero swings freely; a "
+                                         "stiff hinge holds a door where it is "
+                                         "left instead of rocking for ever."}}}},
+    {"name": "joints",
+     "description": "Every pin in the world and where each has turned to. The two "
+                    "names a pin holds can change -- a pin whose wood is smashed "
+                    "follows the piece it ends up inside -- and it reports itself "
+                    "unattached when there is nothing left to hold it, which is a "
+                    "gate coming off its hinges.",
+     "inputSchema": {"type": "object", "required": ["world_id"],
+                     "properties": {"world_id": {"type": "string"}}}},
+    {"name": "hinge_friction",
+     "description": "Change how hard a pin is to turn, in newton metres.",
+     "inputSchema": {"type": "object", "required": ["world_id", "joint", "friction_n_m"],
+                     "properties": {"world_id": {"type": "string"},
+                                    "joint": {"type": "integer"},
+                                    "friction_n_m": {"type": "number"}}}},
+    {"name": "unhinge",
+     "description": "Take a pin out. What was hanging on it falls.",
+     "inputSchema": {"type": "object", "required": ["world_id", "joint"],
+                     "properties": {"world_id": {"type": "string"},
+                                    "joint": {"type": "integer"}}}},
     {"name": "cast_ray",
      "description": "What a ray meets first, against the shapes the solver really "
                     "collides. Use it to ask what is above or below something, or what "
@@ -650,6 +775,10 @@ HANDLERS = {
     "let_go": tool_let_go,
     "collect": tool_collect,
     "carried": tool_carried,
+    "hinge": tool_hinge,
+    "joints": tool_joints,
+    "hinge_friction": tool_hinge_friction,
+    "unhinge": tool_unhinge,
     "cast_ray": tool_cast_ray,
     "close_world": tool_close_world,
 }

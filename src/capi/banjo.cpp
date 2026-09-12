@@ -22,6 +22,7 @@ using banjo::fastlattice::LiveBodyPose;
 using banjo::fastlattice::LiveCollected;
 using banjo::fastlattice::LiveDelay;
 using banjo::fastlattice::LiveImpact;
+using banjo::fastlattice::LiveJoint;
 using banjo::fastlattice::LivePick;
 using banjo::fastlattice::LiveWorld;
 using banjo::fastlattice::TileImpactRequest;
@@ -64,6 +65,10 @@ struct banjo_world {
     // to fit in whatever buffer they brought. Sweeping REMOVES bodies, so a
     // result that did not fit would be matter that had simply vanished.
     std::vector<LiveCollected> collected;
+    // The pins, last time anyone asked. Held for the same reason as the poses:
+    // the names handed out point into here and have to stay good until the next
+    // call on this world.
+    std::vector<LiveJoint> joints;
 };
 
 namespace {
@@ -392,6 +397,86 @@ const char *banjo_held(const banjo_world *world) {
     auto *mutable_world = const_cast<banjo_world *>(world);
     mutable_world->held = world->world->held();
     return mutable_world->held.c_str();
+}
+
+int banjo_hinge(banjo_world *world, const char *a, const char *b,
+                const double at_m[3], const double axis[3],
+                double lower_deg, double upper_deg, double friction_n_m) {
+    if (!world || !a || !b || !at_m || !axis) {
+        setError("no world, no names, or no pin"); return BANJO_BAD_ARGUMENT;
+    }
+    if (!(lower_deg >= -180.0 && lower_deg <= 0.0 && upper_deg >= 0.0 && upper_deg <= 180.0)) {
+        setError("hinge limits are degrees either side of where it is hung: a lower "
+                 "from -180 to 0 and an upper from 0 to 180");
+        return BANJO_BAD_ARGUMENT;
+    }
+    if (!(friction_n_m >= 0.0)) {
+        setError("hinge friction is newton metres, zero or more"); return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        const unsigned pin = world->world->hinge(a, b, readVec(at_m), readVec(axis),
+                                                 lower_deg, upper_deg, friction_n_m);
+        if (pin == 0) {
+            setError(std::string("\"") + b + "\" cannot be hung on \"" + a +
+                     "\": one of them is not in the scene, they are the same thing, "
+                     "or the axis has no direction");
+            // Both arms of this lambda have to be the same type, and one of
+            // them is a joint id rather than a status.
+            return static_cast<int>(BANJO_BAD_ARGUMENT);
+        }
+        return static_cast<int>(pin);
+    });
+}
+
+int banjo_joint_count(const banjo_world *world) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        auto *mutable_world = const_cast<banjo_world *>(world);
+        mutable_world->joints = world->world->joints();
+        return static_cast<int>(mutable_world->joints.size());
+    });
+}
+
+int banjo_joints(const banjo_world *world, banjo_joint *out, int max) {
+    if (!world || (!out && max > 0) || max < 0) {
+        setError("no world or nowhere to write"); return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        constexpr double kDegrees = 180.0 / 3.14159265358979323846;
+        auto *mutable_world = const_cast<banjo_world *>(world);
+        mutable_world->joints = world->world->joints();
+        const int count = std::min<int>(max, static_cast<int>(mutable_world->joints.size()));
+        for (int i = 0; i < count; ++i) {
+            const LiveJoint &pin = mutable_world->joints[static_cast<std::size_t>(i)];
+            out[i].id = pin.id;
+            out[i].a = pin.a.c_str();
+            out[i].b = pin.b.c_str();
+            out[i].degrees = pin.angle_rad * kDegrees;
+            out[i].lower_deg = pin.lower_rad * kDegrees;
+            out[i].upper_deg = pin.upper_rad * kDegrees;
+            out[i].friction_n_m = pin.friction_torque_n_m;
+            writeVec(pin.point_world_m, out[i].at_m);
+            writeVec(pin.axis_world, out[i].axis);
+            out[i].attached = pin.attached ? 1 : 0;
+        }
+        return count;
+    });
+}
+
+int banjo_joint_friction(banjo_world *world, unsigned joint, double friction_n_m) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    if (!(friction_n_m >= 0.0)) {
+        setError("hinge friction is newton metres, zero or more"); return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        world->world->setJointFriction(joint, friction_n_m);
+        return BANJO_OK;
+    });
+}
+
+int banjo_unhinge(banjo_world *world, unsigned joint) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] { world->world->unhinge(joint); return BANJO_OK; });
 }
 
 int banjo_pick_ray(const banjo_world *world, const double from_m[3],

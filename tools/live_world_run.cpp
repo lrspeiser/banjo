@@ -8,12 +8,18 @@
 //
 //   in   {"op":"step","dt":0.0166,"n":2}
 //        {"op":"grab","name":"ball"}  {"op":"move","to":[0,1.2,0]}  {"op":"release"}
+//        {"op":"step","n":4,"hand":[0,1.2,0]}   move the hand, then step
 //        {"op":"fracture","name":"pane"}   {"op":"poses"}   {"op":"quit"}
 //        {"op":"fracture","name":"pane","wait":false}
 //        {"op":"step","dt":0.008,"n":4,"moved":true}   only what changed
 //        {"op":"collect","at":[0,1.6,0],"radius_m":1.2}   sweep up the pieces
 //        {"op":"foresee","horizon_s":2.5}   how far ahead to start runs (0 = off)
 //        {"op":"pick","from":[0,6,0],"dir":[0,-1,0],"max_m":1000}
+//        {"op":"hinge","a":"post","b":"gate","at":[0,1.2,0],"axis":[0,1,0],
+//         "lower_deg":0,"upper_deg":110,"friction_n_m":2}   hang it on a pin
+//        {"op":"joints"}                     every pin, and where each has got to
+//        {"op":"unhinge","joint":1}          take the pin out; it falls
+//        {"op":"joint_friction","joint":1,"friction_n_m":40}   stiffen it
 //   out  {"ok":true,"t":0.033,"stepped_back":false,
 //         "bodies":[{"name":"ball","shape":"sphere","dimensions_m":[...],
 //                    "position_m":[...],"orientation_wxyz":[...],"held":false,
@@ -76,9 +82,32 @@ using namespace banjo::fastlattice;
 //
 // One world to a process, so one cache.
 std::unordered_map<std::string, std::string> last_sent;
+// And what the pins looked like last time, for the same reason. See where this
+// is compared, below: the SET of pins is news, their angles are not.
+std::string last_joints;
 
 nlohmann::json vec(const Vec3 &v) {
     return nlohmann::json::array({tidy(v.x), tidy(v.y), tidy(v.z)});
+}
+
+// Every pin, as the host sees it. `a` and `b` are the names it holds, which do
+// change: a pin whose wood is smashed follows the piece it ends up inside, so a
+// gate that was hung on "post" can find itself hung on "post piece 3".
+nlohmann::json jointsOf(const LiveWorld &world) {
+    constexpr double kDegrees = 180.0 / 3.14159265358979323846;
+    nlohmann::json out = nlohmann::json::array();
+    for (const LiveJoint &pin : world.joints())
+        out.push_back({{"id", pin.id},
+                       {"a", pin.a},
+                       {"b", pin.b},
+                       {"degrees", tidy(pin.angle_rad * kDegrees)},
+                       {"lower_deg", tidy(pin.lower_rad * kDegrees)},
+                       {"upper_deg", tidy(pin.upper_rad * kDegrees)},
+                       {"friction_n_m", tidy(pin.friction_torque_n_m)},
+                       {"at", vec(pin.point_world_m)},
+                       {"axis", vec(pin.axis_world)},
+                       {"attached", pin.attached}});
+    return out;
 }
 
 // `only_moved` sends a body only if it is not identical to the last one sent
@@ -240,6 +269,16 @@ int main(int argc, char **argv) {
                 bool made_bodies = false;
                 if (op == "step") {
                     const double dt = command.value("dt", 1.0 / 60.0);
+                    // Where the hand is, if the caller is carrying something.
+                    //
+                    // Sent with the step rather than as its own command because
+                    // a round trip to this process is 14.9 ms and four steps of
+                    // physics are 0.5 ms -- so a host that moves the hand and
+                    // then steps pays TWICE the transport to do one frame's
+                    // work, and halves its frame rate for as long as it is
+                    // carrying anything. Measured, not guessed: the step itself
+                    // is 0.03 ms.
+                    if (command.contains("hand")) world->moveHeld(readVec(command, "hand"));
                     const int count = std::max(1, command.value("n", 1));
                     // A fresh batch: what follows is what this call reports.
                     world->forgetImpacts();
@@ -342,6 +381,35 @@ int main(int argc, char **argv) {
                             "nothing", "held", "dented", "broke"}
                             [static_cast<std::size_t>(world->lastOutcome())];
                     }
+                } else if (op == "hinge") {
+                    // Hang one named thing off another. The pin is given where
+                    // it is in the world right now and is kept in both bodies'
+                    // own frames from then on, so the mechanism goes on working
+                    // when the whole assembly is carried or turned over.
+                    const unsigned pin = world->hinge(
+                        command.at("a").get<std::string>(),
+                        command.at("b").get<std::string>(),
+                        readVec(command, "at"), readVec(command, "axis"),
+                        command.value("lower_deg", -180.0),
+                        command.value("upper_deg", 180.0),
+                        command.value("friction_n_m", 0.0));
+                    if (pin == 0)
+                        throw std::invalid_argument(
+                            "those two cannot be hung on a pin together");
+                    reply["joint"] = pin;
+                } else if (op == "unhinge") {
+                    world->unhinge(command.at("joint").get<unsigned>());
+                } else if (op == "joint_friction") {
+                    world->setJointFriction(command.at("joint").get<unsigned>(),
+                                            command.value("friction_n_m", 0.0));
+                } else if (op == "joints") {
+                    // Reports nothing about where the bodies are, so it answers
+                    // on its own like `pick` does.
+                    std::cout << nlohmann::json{{"ok", true},
+                                                {"joints", jointsOf(*world)}}
+                                     .dump()
+                              << std::endl;
+                    continue;
                 } else if (op == "pick") {
                     // Changes nothing and reports nothing about the world, so
                     // it answers on its own rather than through describe().
@@ -357,6 +425,10 @@ int main(int argc, char **argv) {
                 } else if (op != "poses") {
                     throw std::invalid_argument("unknown op: " + op);
                 }
+                // Pins travel with anything that rebuilt the room. A gate that
+                // came off its hinges when its post was smashed is exactly the
+                // sort of thing a host has to stop drawing, and it can only
+                // learn that here.
                 // Geometry travels with the opening state, with an explicit
                 // poses request, and after a fracture -- the three moments the
                 // set of bodies can have changed. A step never carries it.
@@ -364,6 +436,29 @@ int main(int argc, char **argv) {
                 // reply that carries geometry carries all of it regardless:
                 // that is the reply that rebuilds the scene.
                 const bool geometry = made_bodies || op == "poses" || op == "fracture";
+                // Pins travel when the SET of them changes -- one hung, one
+                // taken out, one that came off because its wood was smashed --
+                // and not on every tick. Their angles change every frame, but
+                // the host already gets each body's pose, which is the same
+                // fact in the form it actually draws; sending the pin's angle
+                // sixty times a second would put back a slice of exactly the
+                // traffic that trimming the step reply took out (259 KB to
+                // 0.2 KB median, 7.8 MB/s to 0.6). What a host cannot work out
+                // for itself is a gate coming off its hinges, so that is what
+                // this sends.
+                {
+                    nlohmann::json pins = jointsOf(*world);
+                    std::string shape;
+                    for (const auto &pin : pins)
+                        shape += std::to_string(pin.value("id", 0u)) + "/" +
+                                 pin.value("a", std::string{}) + "/" +
+                                 pin.value("b", std::string{}) + "/" +
+                                 (pin.value("attached", false) ? "1" : "0") + ";";
+                    if (shape != last_joints || geometry) {
+                        last_joints = shape;
+                        reply["joints"] = std::move(pins);
+                    }
+                }
                 nlohmann::json state = describe(*world, geometry,
                                                 !geometry && command.value("moved", false));
                 world->forgetDelays();

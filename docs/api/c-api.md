@@ -14,7 +14,7 @@ tell you any other way:
 if (banjo_abi_version() != BANJO_ABI_VERSION) { /* mismatch */ }
 ```
 
-Current ABI: **5**.
+Current ABI: **6**.
 
 ---
 
@@ -257,6 +257,88 @@ nobody wants forty entries called `"glass plate 20mm piece 31"`, they want to
 know they have 400 g of glass. The weight is the matter that was actually there
 — a piece's cells are its volume, and volume times the material's density is
 what has been carried away.
+
+---
+
+## Pins
+
+A pin is what turns a scene into a mechanism. A door swings because a push off
+its centre line makes a torque about its hinge, and stops because it meets its
+travel limit or runs out of momentum. There is no "open the door" call, and
+there is not going to be one: to open it, push something into it.
+
+```c
+double at[3]  = {0.0, 1.0, 0.12};      /* where the pin is, in the world */
+double axis[3] = {0.0, 1.0, 0.0};      /* which way it runs: up, for a door */
+int gate = banjo_hinge(w, "post", "gate", at, axis,
+                       0.0, 100.0,     /* opens outward, up to 100 degrees */
+                       12.0);          /* stiff enough to stay where it is put */
+if (gate < 0) { /* banjo_last_error() says why */ }
+```
+
+### `int banjo_hinge(banjo_world *world, const char *a, const char *b, const double at_m[3], const double axis[3], double lower_deg, double upper_deg, double friction_n_m)`
+
+Hangs `b` off `a`. Returns the joint's id, always above zero, or a negative
+`banjo_status`.
+
+The pin is given **where it is in the world right now**, and is kept in both
+bodies' own frames from then on. That is what makes a mechanism go on working
+when the whole assembly is carried across the room or turned upside down: the
+pin is a fact about the two bodies, not about where they happened to be standing.
+
+Limits are degrees **either side of where it is hung**: `lower_deg` from -180 to
+0, `upper_deg` from 0 to 180. A door built shut swings `0 .. 90`; one built open
+swings `-90 .. 0`. `friction_n_m` is what it takes to start it turning — zero
+swings freely, and a stiff old hinge holds a door where it is left instead of
+rocking back and forth.
+
+Either end may be anchored scenery — a door on a wall is the ordinary case — but
+not both, or there is nothing for the pin to move.
+
+Two things about the geometry that cost an afternoon each:
+
+- **Set the leaf clear of its own frame.** A door sharing space with its post is
+  jammed against it, and jammed is exactly what a working hinge looks like from
+  the outside: two degrees of swing and a long look at the constraint solver.
+- **Hang it clear of the floor.** A door resting on the ground is held by
+  friction with the ground and will not swing either.
+
+### `int banjo_joint_count(const banjo_world *world)`
+### `int banjo_joints(const banjo_world *world, banjo_joint *out, int max)`
+
+Fills up to `max` pins and returns how many were written. The strings belong to
+the world and stay good until the next call that changes it.
+
+```c
+typedef struct {
+    unsigned id;
+    const char *a;
+    const char *b;
+    double degrees;            /* where it has turned to, from where it was hung */
+    double lower_deg, upper_deg;
+    double friction_n_m;
+    double at_m[3];            /* where the pin is NOW */
+    double axis[3];
+    int attached;
+} banjo_joint;
+```
+
+`at_m` is worked out from the body the pin is in rather than remembered, so a
+gate carried across the room reports its hinge where the gate is.
+
+**`a` and `b` change when things break, and `attached` can go to 0.** A joint is
+between two NAMES rather than two bodies, because bodies do not survive breaking:
+everything in an island is destroyed and rebuilt when anything in it comes apart.
+So a pin whose wood is smashed follows the piece it ends up inside — a gate hung
+on `"post"` can find itself hung on `"post piece 3"` — and when there is no piece
+left around the pin, `attached` goes to 0 and what was hanging on it falls. That
+is a gate coming off its hinges, it is reported rather than silently dropped, and
+it is the one thing about a hinge a host cannot work out from the bodies alone.
+
+### `int banjo_joint_friction(banjo_world *world, unsigned joint, double friction_n_m)`
+### `int banjo_unhinge(banjo_world *world, unsigned joint)`
+
+Taking the pin out drops whatever was hanging on it.
 
 ---
 

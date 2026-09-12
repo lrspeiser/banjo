@@ -72,6 +72,13 @@ DEFAULT: dict[str, Any] = {
     # Empty means the plate-and-ball scene. A non-empty list is a many-object
     # scene and the plate and ball fields below are not read at all.
     "bodies": [],
+    # Pins: what is hung off what, so a scene can hold a gate rather than a
+    # plank leaning on a post. Not part of the engine's own scene request -- a
+    # world is opened from a set of bodies and the pins go in afterwards,
+    # against the bodies that are now standing there -- but part of the
+    # DOCUMENT, so that saving a room and opening it again puts its gates back
+    # on their hinges.
+    "joints": [],
     "striker": "iron",
     "plate_m": [0.25, 0.20, 0.01],
     "cell_m": 0.01,
@@ -352,6 +359,61 @@ LIMITS = {
 # in: the field existed on both sides and the whitelist in the middle did not
 # know about it, so a cut arrived as a solid box with no error anywhere.
 FIELDS = set(DEFAULT) | {"request_id"}
+
+
+# How far either way a pin may turn, in degrees, from where it is hung.
+JOINT_KINDS = ("hinge",)
+
+
+def normalise_joints(joints: Any, bodies: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Check every pin against the bodies it claims to hold.
+
+    Checked HERE, where whoever asked for it can be told, rather than when the
+    world is opened. A pin that will not hang produces a gate that simply does
+    not swing, and that reads as the physics being broken rather than as the
+    room being wrong about where its own hinge is. Telling those two apart from
+    the outside is most of a day.
+    """
+    if not isinstance(joints, list):
+        raise ValueError("joints must be a list")
+    if len(joints) > 256:
+        raise ValueError("a room may hold at most 256 joints")
+    named = {str(body.get("name", "")) for body in bodies}
+    out: list[dict[str, Any]] = []
+    for i, joint in enumerate(joints):
+        if not isinstance(joint, dict):
+            raise ValueError(f"joint {i} is not an object")
+        kind = str(joint.get("kind", "hinge"))
+        if kind not in JOINT_KINDS:
+            raise ValueError(f"joint {i}: {kind!r} is not a kind of joint "
+                             f"(one of {', '.join(JOINT_KINDS)})")
+        a, b = str(joint.get("a", "")), str(joint.get("b", ""))
+        for side in (a, b):
+            if side not in named:
+                raise ValueError(f"joint {i} hangs on {side!r}, which is not in "
+                                 f"this room")
+        if a == b:
+            raise ValueError(f"joint {i} hangs {a!r} on itself")
+        at = joint.get("at_mm")
+        if not isinstance(at, list) or len(at) != 3:
+            raise ValueError(f"joint {i} needs at_mm as three numbers")
+        at = [_number(v, -100000.0, 100000.0, f"joint {i} at_mm") for v in at]
+        axis = joint.get("axis", [0, 1, 0])
+        if not isinstance(axis, list) or len(axis) != 3:
+            raise ValueError(f"joint {i} needs axis as three numbers")
+        axis = [_number(v, -1e6, 1e6, f"joint {i} axis") for v in axis]
+        if not any(abs(v) > 1e-9 for v in axis):
+            raise ValueError(f"joint {i} has an axis with no direction")
+        lower = _number(joint.get("lower_deg", -180.0), -180.0, 0.0,
+                        f"joint {i} lower_deg")
+        upper = _number(joint.get("upper_deg", 180.0), 0.0, 180.0,
+                        f"joint {i} upper_deg")
+        friction = _number(joint.get("friction_n_m", 0.0), 0.0, 1e6,
+                           f"joint {i} friction_n_m")
+        out.append({"kind": kind, "a": a, "b": b, "at_mm": at, "axis": axis,
+                    "lower_deg": lower, "upper_deg": upper,
+                    "friction_n_m": friction})
+    return out
 
 
 def _number(value: Any, low: float, high: float, label: str) -> float:
@@ -978,6 +1040,7 @@ def validate(spec: Any) -> dict[str, Any]:
         # striker, and what falls is whatever object was given a velocity. The
         # plate and ball fields are not read.
         result["bodies"] = normalise_bodies(result["bodies"], result["cell_m"])
+        result["joints"] = normalise_joints(result["joints"], result["bodies"])
         result["duration_s"] = _number(result["duration_s"], LIMITS["duration_s"]["min"],
                                        LIMITS["duration_s"]["max"], "duration")
         result["seated"] = seat_bodies(result["bodies"], result["cell_m"])

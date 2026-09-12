@@ -1041,8 +1041,13 @@ class Handler(BaseHTTPRequestHandler):
             # lets go, or puts something back into the lattice to be broken.
             if path=="/api/world/open":
                 app=self.server.app
-                app.room=world_room.Room()
-                return self.send(app.live.open(app,{"spec":app.room.spec}))
+                # Which room. The bench is the materials room this playground
+                # opened with; the courtyard is the one with things that swing.
+                app.room=world_room.Room(str(body.get("scene","bench")))
+                opened=app.live.open(app,{"spec":app.room.spec})
+                opened["scene"]=app.room.scene
+                opened["scenes"]=sorted(world_room.SCENES)
+                return self.send(opened)
             if path=="/api/world/ask":
                 app=self.server.app
                 session=app.live.session

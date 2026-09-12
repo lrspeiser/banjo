@@ -218,6 +218,83 @@ class TheTools(unittest.TestCase):
                         f"carried over the pane and dropped 3 m, nothing broke: "
                         f"{answer['what_happened']}")
 
+    def gateway(self):
+        """A post with a gate beside it, and something to shove it with.
+
+        The gate is clear of the post in z rather than sharing its space: a leaf
+        overlapping its own frame is jammed against it, and jammed is exactly
+        what a working hinge looks like from the outside.
+        """
+        return self.client.call("create_world", cell_size_m=0.04, objects=[
+            {"name": "post", "shape": "box", "material": "concrete",
+             "size_m": [0.16, 2.0, 0.16], "position_m": [-0.08, 1.0, 0],
+             "anchored": True},
+            {"name": "gate", "shape": "box", "material": "oak",
+             "size_m": [1.2, 1.6, 0.08], "position_m": [0.6, 1.0, 0.12]},
+            {"name": "fist", "shape": "box", "material": "iron",
+             "size_m": [0.2, 0.2, 0.2], "position_m": [0.6, 1.0, 1.2]},
+        ])["world_id"]
+
+    def test_a_gate_hung_on_a_pin_swings_when_something_pushes_it(self):
+        """A mechanism, not a prop.
+
+        The gate opens because a body was pushed into it off its centre line and
+        the pin turned that into a torque. Nothing plays an animation, and there
+        is no tool for "open the gate" -- which is the point: a model that wants
+        it open has to push something into it.
+        """
+        world_id = self.gateway()
+        self.assertEqual(self.client.call("joints", world_id=world_id)["joints"], [])
+        hung = self.client.call("hinge", world_id=world_id, a="post", b="gate",
+                                at_m=[0.0, 1.0, 0.12], axis=[0, 1, 0],
+                                lower_deg=0.0, upper_deg=100.0)
+        self.assertGreater(hung["joint"], 0)
+
+        # Walk the fist into the gate a centimetre at a time. Further than the
+        # gate is thick in one move and it goes straight through: a carried body
+        # is placed, not swept.
+        self.client.call("pick_up", world_id=world_id, name="fist")
+        for i in range(1, 111):
+            self.client.call("place", world_id=world_id,
+                             to_m=[0.6, 1.0, 1.2 - i * 0.01])
+        self.client.call("let_go", world_id=world_id)
+
+        pins = self.client.call("joints", world_id=world_id)["joints"]
+        self.assertEqual(len(pins), 1)
+        self.assertTrue(pins[0]["attached"], "the gate came off its pin")
+        self.assertEqual((pins[0]["a"], pins[0]["b"]), ("post", "gate"))
+        self.assertGreater(abs(pins[0]["degrees"]), 10.0,
+                           f"shoved square in the face and the gate turned "
+                           f"{pins[0]['degrees']} degrees, so the pin is not a pin")
+        self.assertLessEqual(abs(pins[0]["degrees"]), 100.0,
+                             "the gate went past the stop it was given")
+
+    def test_a_pin_can_be_stiffened_and_taken_out(self):
+        world_id = self.gateway()
+        joint = self.client.call("hinge", world_id=world_id, a="post", b="gate",
+                                 at_m=[0.0, 1.0, 0.12])["joint"]
+        self.client.call("hinge_friction", world_id=world_id, joint=joint,
+                         friction_n_m=45.0)
+        pins = self.client.call("joints", world_id=world_id)["joints"]
+        self.assertAlmostEqual(pins[0]["friction_n_m"], 45.0, places=2)
+        self.client.call("unhinge", world_id=world_id, joint=joint)
+        self.assertEqual(self.client.call("joints", world_id=world_id)["joints"], [])
+
+    def test_a_pin_refuses_what_it_cannot_hold(self):
+        world_id = self.gateway()
+        for why, wrong in (
+            ("a body that is not there",
+             {"a": "post", "b": "nothing at all", "at_m": [0, 1, 0]}),
+            ("a body hung on itself",
+             {"a": "gate", "b": "gate", "at_m": [0, 1, 0]}),
+            ("an axis with no direction",
+             {"a": "post", "b": "gate", "at_m": [0, 1, 0.12], "axis": [0, 0, 0]}),
+        ):
+            with self.assertRaises(Exception, msg=f"it accepted {why}"):
+                self.client.call("hinge", world_id=world_id, **wrong)
+        self.assertEqual(self.client.call("joints", world_id=world_id)["joints"], [],
+                         "a refused pin was recorded anyway")
+
     def test_the_hand_refuses_clearly_rather_than_failing_quietly(self):
         world_id = self.pane_world()
         with self.assertRaises(Exception) as anchored:

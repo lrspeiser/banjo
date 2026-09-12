@@ -1257,6 +1257,13 @@ void JoltWorld::wake(MatterBodyId body_id) {
     const auto found=impl_->bodies_.find(body_id);
     if(found==impl_->bodies_.end())throw std::invalid_argument("rigid body is missing");
     auto &bodies=impl_->physics_->GetBodyInterface();
+    // Scenery has nothing to wake. ActivateBody already knows that and does
+    // nothing, but ResetSleepTimer goes straight through the body's motion
+    // properties -- which a static body does not have -- and takes the process
+    // down. Waking the floor is not an unreasonable thing for a caller to do:
+    // anything that hangs a door on a wall and then wakes both ends of the pin
+    // does it, and that is how this was found.
+    if(bodies.GetMotionType(found->second)==JPH::EMotionType::Static)return;
     bodies.ActivateBody(found->second);
     // Clearing the timer as well as activating: a body that is still against
     // the same contacts would otherwise be asleep again within a step or two,

@@ -126,6 +126,8 @@ def room() -> dict[str, Any]:
     return {
         "algorithm": "lattice",
         "cell_m": 0.02,
+        # Pins. None in this room; see courtyard().
+        "joints": [],
         # A dent needs a material that can hold a shape it was pushed into, and
         # that is off unless a scene asks for it. "on"/"off" is the panel's
         # spelling of it; scene_document turns it into the boolean the engine
@@ -133,6 +135,87 @@ def room() -> dict[str, Any]:
         "plasticity": "on",
         "bodies": bodies,
     }
+
+
+def courtyard() -> dict[str, Any]:
+    """A gateway you can push open, and a few things to push it with.
+
+    Built at 40 mm cells rather than 20. Cost goes as the cube of the cell, so a
+    gate that is 12,000 cells at 20 mm is 1,500 at 40 -- and this room is about
+    a thing that SWINGS, where what matters is the pin and the mass hanging off
+    it, not whether the leaf can be split into 60 mm splinters. The bench room
+    next door is where the fine grid earns its keep.
+
+    Nothing in here is animated. The gate is a body, the pin is a constraint,
+    and it opens because you put a force on something half a metre out from its
+    hinge. Break the jamb the pin is in and the pin follows whichever piece of
+    stone it ends up inside; break away all of it and the pin comes out and the
+    gate falls over.
+    """
+    bodies: list[dict[str, Any]] = []
+
+    def add(name, shape, material, size_mm, center_mm, **rest):
+        body = {"name": name, "shape": shape, "material": material,
+                "size_mm": list(size_mm), "center_mm": list(center_mm)}
+        body.update(rest)
+        bodies.append(body)
+
+    # Every side is a whole number of 40 mm cells.
+    #
+    # The opening is 1.2 m wide and 2 m tall, which is a real doorway: wide
+    # enough to walk through and small enough that the leaf is a mass you can
+    # feel. The jambs stand at x = 0 and x = 1520.
+    add("gate jamb left", "box", "concrete", [160, 2000, 160], [-80, 1000, 0],
+        anchored=True)
+    add("gate jamb right", "box", "concrete", [160, 2000, 160], [1600, 1000, 0],
+        anchored=True)
+    add("gate lintel", "box", "concrete", [1840, 160, 160], [760, 2080, 0],
+        anchored=True)
+
+    # The leaf, in FRONT of the jambs rather than between them.
+    #
+    # A leaf sharing space with its own frame is jammed against it, and jammed
+    # is exactly what a working hinge looks like from the outside -- two degrees
+    # of swing and an afternoon spent on the constraint solver. It also hangs
+    # 40 mm clear of the floor, because a gate resting on the ground is held by
+    # friction with the ground and will not swing either.
+    #
+    # 1.44 m x 1.76 m of 80 mm oak is 111 kg, which is what a real gate weighs
+    # and is most of why it takes a shove rather than a nudge.
+    add("oak gate", "box", "oak", [1440, 1760, 80], [720, 1000, 120])
+
+    # Things to push it with, and to wedge it open.
+    add("iron ball", "sphere", "iron", [200, 200, 200], [-800, 100, 800])
+    add("oak barrel", "box", "oak", [400, 480, 400], [400, 240, 1200])
+    add("stone block", "box", "concrete", [320, 320, 320], [1200, 160, 1200])
+
+    return {
+        "algorithm": "lattice",
+        "cell_m": 0.04,
+        "plasticity": "on",
+        "bodies": bodies,
+        # The gate swings outward only, up to 100 degrees, and carries enough
+        # friction to stay where it is pushed instead of swinging back and forth
+        # for ever like a saloon door. The pin is at the left jamb's inner face,
+        # at the leaf's own depth -- a hinge is where the two meet.
+        "joints": [{
+            "kind": "hinge",
+            "a": "gate jamb left",
+            "b": "oak gate",
+            "at_mm": [0, 1000, 120],
+            "axis": [0, 1, 0],
+            "lower_deg": 0,
+            "upper_deg": 100,
+            "friction_n_m": 12,
+        }],
+    }
+
+
+# Every room this playground can open, by the name a person would ask for.
+SCENES = {
+    "bench": room,
+    "courtyard": courtyard,
+}
 
 
 def describe(state: dict[str, Any]) -> list[dict[str, Any]]:
@@ -285,8 +368,9 @@ class Room:
     anyone means by "add a ball to it".
     """
 
-    def __init__(self) -> None:
-        self.spec = room()
+    def __init__(self, scene: str = "bench") -> None:
+        self.scene = scene if scene in SCENES else "bench"
+        self.spec = SCENES[self.scene]()
 
     def bodies(self) -> list[dict[str, Any]]:
         return self.spec["bodies"]
