@@ -406,9 +406,21 @@ Said plainly, because every one of these would change an answer:
   across the plane goes, which can be up to half a cell before the edge has
   swept the whole section; the energy consumed by then is correspondingly
   short of `R` times the full section, by at most half a cell in the depth.
+- **What is cut on the way out is paid on the way out -- if it can be.** In
+  the step the edge comes out of the far side everything it went through is
+  cut, and whatever that step's work did not cover is taken at once as one
+  impulse along the way the edge faced, bounded by the closing motion there.
+  An edge with less than that left in it -- one eased out of the far side by a
+  hand, say -- leaves the rest unpaid, and the cut trace says so ("unpaid").
+  In the armoury's strokes through the panel and the batten the last step's
+  own work covered what it cut, and nothing was owed.
 - **A partial kerf does not change the collision shape.** A notched plank
   still collides as its box; only its connectivity, its drawing and its load
   survey know about the notch.
+- **A swing is only as fast as the hand makes it.** The room's hand aims where
+  the view looks, and a view turn the browser delivers in one or two frames --
+  a 70 degree jump -- outruns the 60 N m wrist: the edge arrives turned and
+  glances. A turn spread over a tenth of a second or more is a swing.
 - **The kerf holds rigidly.** Sideways and twisting motion of an embedded
   blade is locked, not resisted by a crushing strength, so a blade cannot be
   levered through the side of its own kerf.
