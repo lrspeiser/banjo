@@ -560,16 +560,43 @@ within **90 micrometres** of where they started. So a smooth sphere was being
 replaced by a 136-cube staircase that showed no dent whatever -- and it cost the
 rolling too, because a hull of cells has a flat bottom.
 
-The deepest single bond is not the right question either. Many bonds each giving
-a little adds up along a chain: the same ball driven at 16 m/s loses **20 mm**
-off its width with no single bond anywhere near that. So what decides whether to
-redraw is the outline itself -- the extent the cells now occupy against the size
-it was authored at, with half a cell as the bar.
+### A sphere's cells never fill its sphere
 
-| | permanent set | outline | drawn as |
+The first answer here was to compare the extent of the cells against the size
+the body was **authored** at, and it was wrong in a way worth recording, because
+it looked right and had a test agreeing with it.
+
+A 140 mm ball voxelised at 20 mm has its outermost cell centres at 52 mm, so its
+cells span 124 mm before anything happens to it. Measuring that against 140 mm
+reports a 16 mm "change" that is nothing but the grid — so **every ball that so
+much as entered an island was redrawn as a blob.** Measured: an aluminium ball
+struck an ice plate at 8.75 m/s against a bending threshold of 58.2, took a
+permanent set of exactly zero, and came out a 168-cell hull.
+
+The same mistake was in the test that was supposed to catch it. It asserted a
+ball driven at 16 m/s had lost "20 mm off its width", and that 20 mm was the
+same voxelisation gap. The ball had not been squashed at all.
+
+What answers the question is the cells against **themselves**: how far the
+furthest one reaches from the middle of them now, against how far it reached
+when the body was made. Same measure, same cells, so the grid cancels — and it
+does not care how the body is turned, which an axis-aligned box would.
+
+### Nothing in this engine deforms visibly
+
+Once that was measured properly, dropped 20 m onto an iron anvil:
+
+| | outcome | permanent set | drawn as |
 |---|---|---|---|
-| dropped 12 m onto an anvil | 0.11 mm | unchanged | the sphere it is, with the depth reported |
-| driven at 16 m/s into an anvil | — | 100 mm → 80 mm | a hull of its cells |
+| iron ball | dented | 0.115 mm | the sphere it is |
+| aluminium ball | held | 0.093 mm | the sphere it is |
+| rubber ball, oak block, ceramic cup | nothing | 0 | as authored |
+| concrete brick | broke, 81 pieces | — | hulls of their cells |
+
+Every permanent set in the catalogue is a tenth of a millimetre. Things break,
+or they take a set too small to see; **nothing is squashed into a new outline.**
+The rule that would redraw a body whose cells have really moved is still there
+and still correct, and at present nothing reaches it.
 
 Below the bar the body keeps its shape and carries `dent_m` and `dent_at_m`
 instead: how deep the set is and where it is, in its own frame. The room presses

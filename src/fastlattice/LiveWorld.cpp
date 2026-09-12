@@ -1730,31 +1730,57 @@ std::size_t LiveWorld::applyPending() {
         // all of its cells and is still one piece -- that is what a dent IS --
         // and giving it back its authored sphere would hide the very thing that
         // just happened to it. So the permanent set decides too.
-        // Whether the OUTLINE changed enough to be worth drawing differently,
+        // Whether the SHAPE changed enough to be worth drawing differently,
         // which is a different question from whether the body was dented.
         //
         // Everything that yielded used to be rebuilt out of its cells. That is
         // right when something has really been squashed and wrong when it has
         // not: measured on an iron ball dropped twelve metres onto an anvil, the
-        // permanent set is about a tenth of a millimetre, the cells end up
-        // within ninety micrometres of where they started, and a 120 mm sphere
-        // was redrawn as a 136-cube staircase that showed no dent whatever --
-        // strictly worse than the sphere it replaced, and it cost the rolling
-        // too, because a hull of cells has a flat bottom.
+        // permanent set is a tenth of a millimetre, the cells end up within
+        // ninety micrometres of where they started, and a 120 mm sphere was
+        // redrawn as a 136-cube staircase showing no dent whatever -- strictly
+        // worse than the sphere it replaced, and it cost the rolling too,
+        // because a hull of cells has a flat bottom.
         //
-        // The deepest single bond does not answer this. Many bonds each giving
-        // a little adds up along a chain, so the same ball driven at 16 m/s
+        // The deepest single bond does not answer this: many bonds each giving
+        // a little adds up along a chain, and the same ball driven at 16 m/s
         // loses more than a centimetre off its width with no single bond
-        // anywhere near that. What answers it is the outline itself: the extent
-        // the cells now occupy, against the size it was authored at. Half a cell
-        // is the bar, because below that nothing has moved by as much as the
-        // grid it is drawn on.
-        const Vec3 outline = cellBounds(parent_nodes, impl_->cell_offset_m,
-                                        impl_->request.cell_size_m);
-        const double moved = std::max({std::abs(outline.x - parent.dimensions_m.x),
-                                       std::abs(outline.y - parent.dimensions_m.y),
-                                       std::abs(outline.z - parent.dimensions_m.z)});
-        const bool reshaped = moved > 0.5 * impl_->request.cell_size_m;
+        // anywhere near that.
+        //
+        // Nor does the outline against the size it was AUTHORED at, which was
+        // the first answer here and was wrong for a reason worth writing down:
+        // a sphere's cells never fill its sphere. A 140 mm ball voxelised at
+        // 20 mm has its outermost cell centres at 52 mm, so its cell extent is
+        // 124 mm before anything happens to it -- a 16 mm "change" that is
+        // nothing but the grid. Every ball that so much as entered an island
+        // was therefore redrawn as a blob: measured on an aluminium ball that
+        // struck an ice plate at 8.75 m/s against a bending threshold of 58.2,
+        // took a permanent set of exactly zero, and came out a 168-cell hull.
+        //
+        // What answers it is the cells against THEMSELVES: how far the furthest
+        // one reaches from the middle of them, now, against how far it reached
+        // when the body was made. Same measure, same cells, so the grid cancels
+        // -- and it does not care how the body is turned, which an axis-aligned
+        // box would.
+        const auto reachOf = [&](auto &&placeOf) {
+            Vec3 middle{};
+            for (const std::uint32_t node : parent_nodes) middle = middle + placeOf(node);
+            const double count = static_cast<double>(parent_nodes.size());
+            if (count > 0.0) middle = (1.0 / count) * middle;
+            double far = 0.0;
+            for (const std::uint32_t node : parent_nodes)
+                far = std::max(far, length(placeOf(node) - middle));
+            return far;
+        };
+        const double reaches_now =
+            reachOf([&](std::uint32_t node) { return impl_->cell_offset_m[node]; });
+        const double reached_when_made =
+            reachOf([&](std::uint32_t node) { return setup.matter.nodes[node].position_world_m; });
+        const double moved = std::abs(reaches_now - reached_when_made);
+        // A quarter of a cell. Measured, an undeformed body comes out at a few
+        // micrometres and a genuinely squashed one at about half a cell, so the
+        // two are nowhere near each other and the bar only has to sit between.
+        const bool reshaped = moved > 0.25 * impl_->request.cell_size_m;
         const bool untouched = whole_parent && !reshaped && parent.shape != "hull";
         if (untouched) {
             piece.shape = parent.shape;

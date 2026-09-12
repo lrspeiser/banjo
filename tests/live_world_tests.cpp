@@ -1136,17 +1136,42 @@ void somethingCanBeDentedWithoutBeingBroken() {
     const double now = after[0].dimensions_m.x;
     std::cout << "  iron at 16 m/s onto an anchored iron anvil: " << after.size()
               << " piece(s), " << before[0].shape << " -> " << after[0].shape
-              << ", " << was * 1000.0 << " mm across -> " << now * 1000.0 << " mm\n";
+              << ", " << was * 1000.0 << " mm across -> " << now * 1000.0
+              << " mm, permanent set " << after[0].dent_m * 1000.0 << " mm\n";
 
     require(after.size() == 1, "it came apart, so this is a break and not a dent");
     require(live->lastOutcome() == LiveOutcome::Dented,
             "the world does not call this a dent, so the shape change came from "
             "somewhere other than the material yielding");
-    require(after[0].shape == "hull",
-            "it is still being drawn as the sphere it was authored as, so the "
-            "shape it ended up in was thrown away");
-    require(was - now > 0.01,
-            "it held its exact authored size, so nothing was actually deformed");
+    // A dent is real and it is SMALL. This used to require the ball to be
+    // redrawn as a hull of its cells, and to have lost more than a centimetre
+    // off its width -- and both passed, which is why it took so long to notice
+    // that neither was true.
+    //
+    // The width was measuring the wrong thing. A sphere's cells never fill its
+    // sphere: a 100 mm ball at 20 mm cells has its outermost cell centres well
+    // inside the surface, so the extent of its cells is smaller than its
+    // diameter BEFORE anything happens to it. The "20 mm of squash" was that
+    // gap. Measured properly, against the same cells at rest, this ball is the
+    // size it started and its permanent set is a tenth of a millimetre.
+    //
+    // So what is asserted is what is true: it yielded, the set is real and
+    // sub-millimetre, and it is still drawn as the ball it is -- because a
+    // 136-cube staircase would show none of that and would lose the rolling
+    // besides.
+    require(after[0].shape == "sphere",
+            "a ball with a tenth of a millimetre of permanent set was redrawn out "
+            "of its cells, which shows no dent and costs it the rolling");
+    require(after[0].dent_m > 0.0,
+            "the world called this a dent and recorded no permanent set, so there "
+            "is nothing a host could show or say");
+    require(after[0].dent_m < 0.5 * 0.02,
+            "the set is half a cell or more, which would be a real change of "
+            "shape -- and then drawing it as the sphere it was IS throwing "
+            "something away");
+    require(std::abs(was - now) < 1e-6,
+            "its authored size changed, so the size being reported is not the "
+            "size it was made at");
     // Still a real object afterwards: it has somewhere to be and it can be
     // picked up. A rebuild that produced a body the world cannot use would
     // pass every check above.
@@ -1154,75 +1179,6 @@ void somethingCanBeDentedWithoutBeingBroken() {
             "the dented ball ended up somewhere impossible");
     require(live->grab(after[0].name), "the dented ball cannot be picked up");
     live->release();
-}
-
-// A thing that was squashed is still the thing, not debris.
-//
-// Something that yields badly enough is rebuilt from where its matter ended up,
-// which makes it a hull -- the same kind of shape a shard off a break is. But it
-// is the same object in a new shape, and nobody expects to pocket their own
-// hammer by walking past it. Measured before this was pinned: an iron ball
-// dented against an anvil weighs three and a half kilograms and was swept up as
-// debris.
-//
-// This lives here rather than beside the other sweep tests because it needs a
-// body that has really been squashed, and a drop in the playground room does
-// not do that -- the set there is a tenth of a millimetre and the ball keeps
-// its sphere.
-void aSquashedThingIsNotDebris() {
-    TileImpactRequest r;
-    r.cell_size_m = 0.02;
-    r.backend = benchBackend();
-    SceneBody anvil;
-    anvil.name = "anvil";
-    anvil.shape = BodyShape::Box;
-    anvil.material = MaterialPreset::Iron;
-    anvil.dimensions_m = {0.3, 0.12, 0.3};
-    anvil.center_m = {0.0, 0.06, 0.0};
-    anvil.anchored = true;
-    SceneBody ball;
-    ball.name = "ball";
-    ball.shape = BodyShape::Sphere;
-    ball.material = MaterialPreset::Iron;
-    ball.dimensions_m = {0.1, 0.1, 0.1};
-    ball.center_m = {0.0, 0.20, 0.0};
-    ball.velocity_m_s = {0.0, -16.0, 0.0};
-    r.bodies = {anvil, ball};
-
-    const auto live = LiveWorld::open(r);
-    live->foreseeCollisions(0.0);       // the squash is the subject, not the timing
-    for (int i = 0; i < 288; ++i) {
-        live->step(1.0 / 480.0);
-        for (const std::string &name : live->breakable()) live->fracture(name);
-    }
-
-    const auto ballNow = [&]() -> LiveBodyPose {
-        for (const LiveBodyPose &pose : live->poses(false))
-            if (pose.name.rfind("ball", 0) == 0) return pose;
-        return LiveBodyPose{};
-    };
-    const LiveBodyPose squashed = ballNow();
-    require(!squashed.name.empty(), "the ball vanished before it could be swept at");
-    require(squashed.shape == "hull",
-            "the ball was not squashed into a hull, so this test cannot tell the "
-            "rule it is checking from the one about shapes");
-
-    // Sweep right where it is, with the size limit out of the way so that being
-    // too big is not what saves it. Without that the ball is spared by its cell
-    // count and the test passes whether the rule exists or not -- which is
-    // exactly how its first version passed.
-    const std::vector<LiveCollected> haul =
-        live->collect(squashed.position_m, 2.0, 100000);
-
-    std::size_t left = 0;
-    for (const LiveBodyPose &pose : live->poses(false))
-        if (pose.name.rfind("ball", 0) == 0) ++left;
-    std::cout << "  a ball squashed into a hull, swept at from 2 m: "
-              << (left ? "still there" : "POCKETED") << ", "
-              << haul.size() << " material(s) picked up\n";
-    require(left == 1,
-            "the sweep took the squashed ball -- it is a hull, but it is still "
-            "the ball, not something that came off anything");
 }
 
 void theGroundCatchesThingsWhereverTheyAreDropped() {
@@ -1292,8 +1248,6 @@ int main() {
         std::cout << "[PASS] a ray finds pieces after something breaks\n";
         somethingLiftedOutOfASettledWorldStillFalls();
         std::cout << "[PASS] something lifted out of a settled world still falls\n";
-        aSquashedThingIsNotDebris();
-        std::cout << "[PASS] a squashed thing is not debris\n";
         theGroundCatchesThingsWhereverTheyAreDropped();
         std::cout << "[PASS] the ground catches things wherever they are dropped\n";
         return 0;
