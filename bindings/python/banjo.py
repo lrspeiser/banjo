@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 # Bumped with the header: the world reports what made it wait.
-ABI_VERSION = 4
+ABI_VERSION = 5
 
 NOTHING, HELD, DENTED, BROKE = 0, 1, 2, 3
 OUTCOMES = {0: "nothing", 1: "held", 2: "dented", 3: "broke"}
@@ -69,6 +69,13 @@ class _Delay(ctypes.Structure):
                 ("kind", ctypes.c_char_p),
                 ("lead_ms", ctypes.c_double),
                 ("cost_ms", ctypes.c_double)]
+
+
+class _Lot(ctypes.Structure):
+    _fields_ = [("material", ctypes.c_char_p),
+                ("kilograms", ctypes.c_double),
+                ("pieces", ctypes.c_int),
+                ("cells", ctypes.c_int)]
 
 
 class _Pick(ctypes.Structure):
@@ -127,10 +134,35 @@ class Delay:
     """A moment the world waited, or was spared waiting."""
     at_s: float
     object: str
-    # "blocked" | "foreseen" | "precomputed" | "held"
+    # "blocked"      the caller asked and waited for the whole run
+    # "foreseen"     a collision was seen coming (lead_ms is the warning); with
+    #                a cost, a run started early and was then used, and lead_ms
+    #                is how far out its predicted speed was, as a percentage
+    # "guessing"     a run was started for a collision that has not happened yet
+    # "guess-missed" what arrived was not what was guessed
+    # "guess-wasted" a run started early and was thrown away
+    # "queued"       a break arrived mid-run and was captured, not waited for
+    # "precomputed"  the answer was ready before it was asked for
+    # "held"         the pair was pinned while the answer was worked out
     kind: str
     lead_ms: float
+    # What the RUN cost, never what it spent waiting for a worker.
     cost_ms: float
+
+
+@dataclass(frozen=True)
+class Lot:
+    """One material's worth of what a sweep picked up.
+
+    Added up by material rather than by shard: nobody wants forty entries called
+    "glass plate 20mm piece 31", they want to know they have 400 g of glass.
+    """
+    material: str
+    # The matter that was actually there: a piece's cells are its volume, and
+    # volume times the material's density is what has been carried away.
+    kilograms: float
+    pieces: int
+    cells: int
 
 
 @dataclass(frozen=True)
@@ -209,6 +241,21 @@ def library(path: str | os.PathLike[str] | None = None) -> ctypes.CDLL:
     lib.banjo_fracture.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double]
     lib.banjo_fracture.restype = ctypes.c_int
     lib.banjo_decline_break.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+    lib.banjo_begin_fracture.restype = ctypes.c_int
+    lib.banjo_begin_fracture.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double]
+    lib.banjo_fracture_pending.restype = ctypes.c_int
+    lib.banjo_fracture_pending.argtypes = [ctypes.c_void_p]
+    lib.banjo_fracture_ready.restype = ctypes.c_int
+    lib.banjo_fracture_ready.argtypes = [ctypes.c_void_p]
+    lib.banjo_fracture_subject.restype = ctypes.c_char_p
+    lib.banjo_fracture_subject.argtypes = [ctypes.c_void_p]
+    lib.banjo_finish_fracture.restype = ctypes.c_int
+    lib.banjo_finish_fracture.argtypes = [ctypes.c_void_p]
+    lib.banjo_collect.restype = ctypes.c_int
+    lib.banjo_collect.argtypes = [ctypes.c_void_p, ctypes.c_double * 3,
+                                  ctypes.c_double, ctypes.c_int]
+    lib.banjo_collected.restype = ctypes.c_int
+    lib.banjo_collected.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Lot), ctypes.c_int]
     lib.banjo_decline_break.restype = ctypes.c_int
     lib.banjo_last_outcome.argtypes = [ctypes.c_void_p]
     lib.banjo_last_outcome.restype = ctypes.c_int
@@ -339,6 +386,84 @@ class World:
         return self._check(
             self._lib.banjo_fracture(self._alive(), name.encode("utf-8"), float(window_s)),
             f"breaking {name}")
+
+    def begin_fracture(self, name: str, window_s: float = 0.0) -> bool:
+        """Start working a break out without waiting for it.
+
+        `fracture` blocks for the whole run -- a third of a second to a second --
+        and because the caller drives time, the whole world stops with it. What
+        somebody watching sees is the room freezing at the instant of an impact.
+
+            if world.begin_fracture(name):
+                while not world.fracture_ready():
+                    world.step(dt)            # the world keeps running
+                pieces = world.finish_fracture()
+
+        The pair about to break is pinned while the answer is worked out: letting
+        it carry on means it bounces off something that is in fact shattering.
+
+        False means there was nothing to run -- anchored scenery, a name that is
+        not there, something in a hand. The contact was still answered, so time
+        can move; there is simply nothing to collect.
+        """
+        code = self._lib.banjo_begin_fracture(self._alive(), name.encode("utf-8"), window_s)
+        if code == 0:
+            return True
+        if code == -2:
+            return False
+        self._check(code, f"starting a fracture of {name!r}")
+        return False
+
+    def fracture_pending(self) -> bool:
+        """Whether something is being worked out. One at a time."""
+        return bool(self._check(self._lib.banjo_fracture_pending(self._alive()),
+                                "asking what is being worked out"))
+
+    def fracture_ready(self) -> bool:
+        """Whether the answer is in. Cheap, and safe to ask every step."""
+        return bool(self._check(self._lib.banjo_fracture_ready(self._alive()),
+                                "asking whether the answer is ready"))
+
+    def fracture_subject(self) -> str:
+        """What is being worked out, or "" if nothing is."""
+        got = self._lib.banjo_fracture_subject(self._alive())
+        return got.decode("utf-8") if got else ""
+
+    def finish_fracture(self) -> int:
+        """Take the answer and apply it, waiting only if it is not ready.
+
+        Returns the piece count, exactly as `fracture` does: 1 means it held.
+        """
+        return self._check(self._lib.banjo_finish_fracture(self._alive()),
+                           "collecting a fracture")
+
+    def collect(self, at_m: Any, radius_m: float = 1.0,
+                largest_cells: int = 0) -> list[Lot]:
+        """Sweep up the loose pieces near a point, and say what they were.
+
+        Only pieces -- a hull is what something becomes when it breaks or bends
+        -- so authored objects, anchored scenery and whatever is in the hand all
+        stay where they are. `largest_cells` is what counts as little (0 for the
+        default): a shard of nine cells is debris, half a pane is not.
+
+        This is also how a world that shatters keeps working: the reversible step
+        a fracture needs cannot run past a couple of thousand bodies, and a room
+        fills up faster than that.
+        """
+        place = (ctypes.c_double * 3)(*(float(v) for v in at_m))
+        count = self._check(
+            self._lib.banjo_collect(self._alive(), place, radius_m, largest_cells),
+            "sweeping the floor")
+        if count <= 0:
+            return []
+        out = (_Lot * count)()
+        written = self._check(self._lib.banjo_collected(self._alive(), out, count),
+                              "reading what was swept up")
+        return [Lot(material=(out[i].material or b"").decode("utf-8"),
+                    kilograms=out[i].kilograms,
+                    pieces=out[i].pieces,
+                    cells=out[i].cells)
+                for i in range(written)]
 
     @property
     def last_outcome(self) -> str:

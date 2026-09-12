@@ -28,6 +28,15 @@ struct LiveBodyPose {
     Vec3 velocity_m_s{};
     bool anchored{};
     bool held{};
+    // Whether this came OFF something, rather than being what it always was.
+    //
+    // A shape of "hull" is not the same question. A thing that bends takes a
+    // permanent set and is rebuilt from where its matter ended up, which makes
+    // it a hull too -- but it is still the same object, in a new shape, and
+    // nobody expects to pocket it by walking past. A dented iron ball weighs
+    // three and a half kilograms and had gone into somebody's pockets as
+    // "debris" before this existed.
+    bool fragment{};
     // Where this body's cells sit in its own frame. Only filled in when the
     // caller asks for geometry, because it does not change between steps and a
     // bowl has two thousand of them.

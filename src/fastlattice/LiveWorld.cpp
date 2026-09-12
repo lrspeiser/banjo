@@ -940,7 +940,9 @@ std::vector<LiveCollected> LiveWorld::collect(const Vec3 &at, double radius_m,
     std::vector<std::size_t> taking;
     for (std::size_t i = 0; i < impl_->described.size(); ++i) {
         const LiveBodyPose &body = impl_->described[i];
-        if (body.anchored || body.shape != "hull") continue;
+        // A hull is not enough: a dented whole object is a hull too, and it is
+        // still the object it was. Only what came off something is debris.
+        if (body.anchored || !body.fragment) continue;
         if (i == impl_->holding || spoken_for.count(i)) continue;
         if (i >= impl_->nodes_of.size() || impl_->nodes_of[i].size() > largest_cells) continue;
         if (!impl_->world->contains(impl_->body_of[i])) continue;
@@ -1671,6 +1673,9 @@ std::size_t LiveWorld::applyPending() {
                                       impl_->cellsOfPart(dominant);
         piece.name = whole_parent ? parent.name
                                   : parent.name + " piece " + std::to_string(++made);
+        // A piece that is still all of its parent is that parent, bent. Only
+        // something that actually came off is debris.
+        piece.fragment = !whole_parent || parent.fragment;
         // What it is made of is a property of the PART, not of whichever body
         // happened to be standing in as its parent. Asked of the scene, which
         // has known the answer since it opened. (The material definition has a

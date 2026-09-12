@@ -19,6 +19,7 @@
 using banjo::Vec3;
 using banjo::fastlattice::BackendKind;
 using banjo::fastlattice::LiveBodyPose;
+using banjo::fastlattice::LiveCollected;
 using banjo::fastlattice::LiveDelay;
 using banjo::fastlattice::LiveImpact;
 using banjo::fastlattice::LivePick;
@@ -58,6 +59,11 @@ struct banjo_world {
     std::string held;
     std::string picked;
     std::vector<LiveDelay> delays;
+    std::string subject;
+    // The last sweep, kept so the caller can read it without the sweep having
+    // to fit in whatever buffer they brought. Sweeping REMOVES bodies, so a
+    // result that did not fit would be matter that had simply vanished.
+    std::vector<LiveCollected> collected;
 };
 
 namespace {
@@ -184,6 +190,47 @@ int banjo_fracture(banjo_world *world, const char *name, double window_s) {
     return guarded([&] { return static_cast<int>(world->world->fracture(name, window_s)); });
 }
 
+int banjo_begin_fracture(banjo_world *world, const char *name, double window_s) {
+    if (!world || !name) { setError("no world or no name"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        // A window of 0 means the default, so a caller who does not want to
+        // think about it does not have to.
+        const bool started = window_s > 0.0 ? world->world->beginFracture(name, window_s)
+                                            : world->world->beginFracture(name);
+        // False means there was nothing to run -- anchored scenery, a name that
+        // is not there, something in a hand. It was answered, so the world is
+        // not wedged; there is simply nothing to collect.
+        if (!started) { setError("there was nothing to work out for that name"); return BANJO_BAD_ARGUMENT; }
+        return BANJO_OK;
+    });
+}
+
+int banjo_fracture_pending(const banjo_world *world) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] { return world->world->fracturePending() ? 1 : 0; });
+}
+
+int banjo_fracture_ready(const banjo_world *world) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] { return world->world->fractureReady() ? 1 : 0; });
+}
+
+const char *banjo_fracture_subject(const banjo_world *world) {
+    if (!world) return "";
+    auto *mutable_world = const_cast<banjo_world *>(world);
+    try {
+        mutable_world->subject = world->world->fractureSubject();
+    } catch (...) {
+        mutable_world->subject.clear();
+    }
+    return mutable_world->subject.c_str();
+}
+
+int banjo_finish_fracture(banjo_world *world) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] { return static_cast<int>(world->world->finishFracture()); });
+}
+
 int banjo_last_outcome(const banjo_world *world) {
     if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
     return static_cast<int>(world->world->lastOutcome());
@@ -291,6 +338,33 @@ int banjo_forget_delays(banjo_world *world) {
 int banjo_foresee(banjo_world *world, double horizon_s) {
     if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
     return guarded([&] { world->world->foreseeCollisions(horizon_s); return BANJO_OK; });
+}
+
+int banjo_collect(banjo_world *world, const double at_m[3], double radius_m,
+                  int largest_cells) {
+    if (!world || !at_m) { setError("no world or no place to sweep"); return BANJO_BAD_ARGUMENT; }
+    if (!(radius_m > 0.0)) { setError("a sweep needs a positive radius"); return BANJO_BAD_ARGUMENT; }
+    if (largest_cells < 0) { setError("largest_cells cannot be negative"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        const std::size_t biggest = largest_cells > 0
+                                        ? static_cast<std::size_t>(largest_cells) : 64;
+        world->collected = world->world->collect(
+            Vec3{at_m[0], at_m[1], at_m[2]}, radius_m, biggest);
+        return static_cast<int>(world->collected.size());
+    });
+}
+
+int banjo_collected(const banjo_world *world, banjo_lot *out, int max) {
+    if (!world || (!out && max > 0) || max < 0) { setError("no world or nowhere to write"); return BANJO_BAD_ARGUMENT; }
+    const int count = std::min<int>(max, static_cast<int>(world->collected.size()));
+    for (int i = 0; i < count; ++i) {
+        const LiveCollected &lot = world->collected[static_cast<std::size_t>(i)];
+        out[i].material = lot.material.c_str();
+        out[i].kilograms = lot.kilograms;
+        out[i].pieces = static_cast<int>(lot.pieces);
+        out[i].cells = static_cast<int>(lot.cells);
+    }
+    return count;
 }
 
 int banjo_grab(banjo_world *world, const char *name) {

@@ -75,7 +75,7 @@ extern "C" {
 /* The ABI version. Bumped when the meaning or layout of anything here changes.
  * Check it once at startup against banjo_abi_version(): a header and a library
  * that disagree will not tell you so any other way. */
-#define BANJO_ABI_VERSION 4
+#define BANJO_ABI_VERSION 5
 
 /* What a call reported. Anything below zero is a failure and leaves the world
  * unchanged; banjo_last_error() says what happened. */
@@ -214,10 +214,48 @@ BANJO_API const char *banjo_breakable_name(const banjo_world *world, int i);
  * a millisecond per cell, so it is worth telling the user it is happening. */
 BANJO_API int banjo_fracture(banjo_world *world, const char *name, double window_s);
 
-/* What the last banjo_fracture turned out to be, as a banjo_outcome. The piece
- * count it returns cannot tell "held exactly as it was" from "held, but bent
- * out of shape": both are one piece. */
+/* What the last fracture turned out to be, as a banjo_outcome. The piece count
+ * it returns cannot tell "held exactly as it was" from "held, but bent out of
+ * shape": both are one piece. */
 BANJO_API int banjo_last_outcome(const banjo_world *world);
+
+/* ---- working one out without waiting for it -------------------------- */
+
+/* banjo_fracture above blocks for the whole run -- a third of a second to a
+ * second -- and because the caller is the thing driving time, the whole world
+ * stops with it. Everything else carries on being drawn, so what somebody sees
+ * is the room freezing at the instant of an impact.
+ *
+ * These do the same work without anyone waiting for it:
+ *
+ *     if (banjo_begin_fracture(world, name, 0.0) == BANJO_OK) {
+ *         while (!banjo_fracture_ready(world))
+ *             banjo_step(world, dt);              // the world keeps running
+ *         int pieces = banjo_finish_fracture(world);
+ *     }
+ *
+ * The pair that is about to break is pinned where it is while the answer is
+ * worked out -- letting it carry on means it bounces off something that is in
+ * fact shattering, and has to be put back when the answer lands.
+ *
+ * A `window_s` of 0 means the default. */
+BANJO_API int banjo_begin_fracture(banjo_world *world, const char *name, double window_s);
+
+/* Whether something is being worked out right now. One at a time: a second
+ * request waits for the first, so a host that asks while this is true gets
+ * nothing back and should not ask. */
+BANJO_API int banjo_fracture_pending(const banjo_world *world);
+
+/* Whether the answer is in. Cheap, and safe to ask every step. */
+BANJO_API int banjo_fracture_ready(const banjo_world *world);
+
+/* What is being worked out, or "" if nothing is. */
+BANJO_API const char *banjo_fracture_subject(const banjo_world *world);
+
+/* Take the answer and apply it, waiting only if it is not ready. Returns the
+ * piece count, exactly as banjo_fracture does -- 1 means it held. Calling it
+ * when nothing is pending returns 0 and changes nothing. */
+BANJO_API int banjo_finish_fracture(banjo_world *world);
 
 /* Let this contact pass without breaking anything. Time can move again.
  * Answering is what matters, not which way you answer. */
@@ -245,13 +283,24 @@ BANJO_API int banjo_impacts(const banjo_world *world, double quiet_speed_m_s,
 typedef struct {
     double at_s;             /* when, in world time */
     const char *object;
-    /* "blocked"     the caller asked and waited for the whole run
-     * "foreseen"    a collision was spotted coming, with this much warning
-     * "precomputed" the answer was ready before it was asked for
-     * "held"        the pair was pinned while the answer was worked out */
+    /* "blocked"      the caller asked and waited for the whole run
+     * "foreseen"     a collision was spotted coming (lead_ms is the warning);
+     *                or, with a cost, a run started early and then used --
+     *                lead_ms is then how far out its predicted speed was, as a
+     *                percentage
+     * "guessing"     a run was started for a collision that has not happened
+     *                yet; lead_ms is the speed it expects
+     * "guess-missed" what turned up was not what was guessed: lead_ms is the
+     *                speed expected, cost_ms the speed that arrived
+     * "guess-wasted" a run started early and was thrown away
+     * "queued"       a break arrived while another was being worked out, and
+     *                was captured rather than waited for
+     * "precomputed"  the answer was ready before it was asked for; lead_ms is
+     *                how long it sat waiting for a worker
+     * "held"         the pair was pinned while the answer was worked out */
     const char *kind;
-    double lead_ms;          /* warning, for "foreseen" */
-    double cost_ms;          /* what it cost, for "blocked" and "precomputed" */
+    double lead_ms;
+    double cost_ms;          /* what the RUN cost, never what it spent queued */
 } banjo_delay;
 
 BANJO_API int banjo_delay_count(const banjo_world *world);
@@ -260,10 +309,58 @@ BANJO_API int banjo_delays(const banjo_world *world, banjo_delay *out, int max);
 BANJO_API int banjo_forget_delays(banjo_world *world);
 
 /* Look this far ahead for a collision that will need the lattice, so there is a
- * chance to work it out before it arrives. 0 turns the looking off; 2.0 is a
- * reasonable horizon, since a fall of two metres takes about 0.64 s and a run
- * costs about that. Costs one ray per moving body, asked at a stride. */
+ * chance to work it out before it arrives -- and the run is started there and
+ * then, from where the two things are going to be, so that by the time they
+ * touch the answer is already waiting.
+ *
+ * On by default at 2.5 s. 0 turns it off. Costs one ray per moving body, asked
+ * at a stride, and a run that turns out to be for a collision that did not
+ * happen is thrown away.
+ *
+ * The warning a fall gives can never be longer than the fall, so this cannot
+ * cover a short drop on its own -- what is in the hand is looked at too, and the
+ * run for a drop somebody is lining up starts before they let go. */
 BANJO_API int banjo_foresee(banjo_world *world, double horizon_s);
+
+/* ---- sweeping the floor ---------------------------------------------- */
+
+/* One material's worth of what a sweep picked up, added up by material rather
+ * than by shard: nobody
+ * wants forty entries called "glass plate 20mm piece 31", they want to know
+ * they now have four hundred grams of glass. */
+typedef struct {
+    /* Valid until the next call on this world. */
+    const char *material;
+    /* The matter that was actually there: a piece's cells are its volume, and
+     * volume times the material's density is what has been carried away. */
+    double kilograms;
+    int pieces;
+    int cells;
+} banjo_lot;
+
+/* Take the loose pieces within `radius_m` of a point out of the world.
+ *
+ * Only what came OFF something. Anchored scenery, whatever is in the hand, and
+ * anything that is still the object it always was all stay where they are --
+ * including a thing that has been DENTED, which is a BANJO_SHAPE_HULL like a
+ * shard is, but is the same object in a new shape. (A dented iron ball weighs
+ * three and a half kilograms and went into somebody's pockets as debris before
+ * that distinction was drawn.) `largest_cells` is what counts as little (0 means a
+ * sensible default): a shard of nine cells is debris, half a pane is not.
+ *
+ * This is also how a world that shatters stays inside the body budget, which is
+ * what breaking depends on: the reversible step that a fracture needs cannot run
+ * past a couple of thousand bodies, and a room fills up faster than that.
+ *
+ * The sweep HAPPENS on this call. It returns how many materials came back, and
+ * the result is held until the next sweep -- read it with banjo_collected().
+ * The body list has changed, so ask banjo_body_count() again. */
+BANJO_API int banjo_collect(banjo_world *world, const double at_m[3], double radius_m,
+                            int largest_cells);
+
+/* Fills up to `max` lots from the last banjo_collect and returns how many were
+ * written, or a negative banjo_status. */
+BANJO_API int banjo_collected(const banjo_world *world, banjo_lot *out, int max);
 
 /* ---- the hand -------------------------------------------------------- */
 

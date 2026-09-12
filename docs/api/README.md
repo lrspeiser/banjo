@@ -95,7 +95,7 @@ suite, so they cannot go stale:
 
 ---
 
-## Four things to know before you build anything
+## Five things to know before you build anything
 
 ### 1. Breaking is a conversation, not a property
 
@@ -117,7 +117,29 @@ wedged. Reach for `banjo_step` only when the decision about what may break is
 genuinely yours — a program that wants to *tell* the user what broke and how
 hard it was hit has to be the one deciding.
 
-### 2. A threshold is necessary, never sufficient
+**If a person is watching, do not use either of them to break something.** Both
+block for the whole run — a third of a second to a second — and because your
+loop is what drives time, the world stops with it. `banjo_begin_fracture` starts
+the run and comes straight back; you keep stepping and collect it with
+`banjo_finish_fracture` when `banjo_fracture_ready` says so. Most of the time
+the answer is already waiting, because the engine starts the run when it sees
+the collision coming — and, for a drop somebody is lining up, before they even
+let go.
+
+### 2. A world that shatters fills up, and a full world stops breaking
+
+Fracture needs a step it can take back, and that cannot run past a couple of
+thousand bodies. Past it the room keeps running perfectly and **quietly stops
+being able to break anything** — the same iron ball onto the same 20 mm pane
+broke it into 71 pieces in a room of 58 bodies and left it whole in a room of
+430, with nothing anywhere saying why.
+
+`banjo_collect` sweeps the loose pieces near a point out of the world and says
+what they were made of, by material and by weight. That is where raw materials
+come from if you are building something with them, and it is also the thing that
+keeps the world able to work.
+
+### 3. A threshold is necessary, never sufficient
 
 Every impact reports `threshold_speed_m_s` (the speed below which nothing *can*
 break) and `dent_speed_m_s` (below which nothing can take a permanent set).
@@ -135,7 +157,7 @@ Measured, on a 0.3 × 0.04 × 0.3 m glass pane with a 0.1 m iron ball:
 
 Only running the lattice says what actually happens.
 
-### 3. What is doing the hitting matters as much as how fast
+### 4. What is doing the hitting matters as much as how fast
 
 The threshold depends on the *impedance* of the striker. The same glass pane
 needs **4.5 m/s** from an iron ball and **6.7 m/s** from an aluminium one,
@@ -145,7 +167,7 @@ because aluminium is springier and transmits less of the blow.
 the same speed are judged identically, and both held. See
 [materials.md](materials.md) for why, and for the limit this implies.
 
-### 4. Cell size is the expensive number
+### 5. Cell size is the expensive number
 
 `cell_size_m` is how finely matter is divided, and it costs about `h^-4`:
 halving it gives eight times the cells, and the timestep has to halve with them

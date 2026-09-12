@@ -146,6 +146,83 @@ int main(int argc, char **argv) {
         }
     }
 
+    /* Working one out without the world waiting for it.
+     *
+     * banjo_advance above settles a break by blocking for the whole run -- a
+     * third of a second to a second -- and because this loop is what drives
+     * time, everything stops with it. That is fine for a program printing
+     * numbers and wrong for anything anybody watches, so here is the other way:
+     * start it, keep stepping, collect it when it is in. */
+    {
+        int started = 0, stepsWhileWorking = 0, pieces = 0;
+        for (i = 0; i < 2000; ++i) {
+            if (banjo_fracture_pending(world)) {
+                ++stepsWhileWorking;
+                if (banjo_fracture_ready(world)) { pieces = banjo_finish_fracture(world); break; }
+                banjo_step(world, 1.0 / 120.0);      /* the world carries on */
+                continue;
+            }
+            if (banjo_step(world, 1.0 / 120.0) != BANJO_BREAK_PENDING) continue;
+            if (banjo_breakable_count(world) < 1) continue;
+            {
+                const char *next = banjo_breakable_name(world, 0);
+                if (next && banjo_begin_fracture(world, next, 0.0) == BANJO_OK) {
+                    started = 1;
+                    printf("working out %s without waiting for it\n",
+                           banjo_fracture_subject(world));
+                } else if (next) {
+                    banjo_decline_break(world, next);   /* nothing to run; answer it */
+                }
+            }
+        }
+        if (started) {
+            printf("the world took %d steps while that was worked out, "
+                   "and it came to %d pieces\n", stepsWhileWorking, pieces);
+            check(stepsWhileWorking > 0,
+                  "the world took no steps while a fracture ran, so it waited after all");
+        }
+    }
+
+    /* Sweeping the floor.
+     *
+     * A world that shatters fills with debris, and the reversible step a
+     * fracture needs cannot run past a couple of thousand bodies -- so this is
+     * not tidying, it is how the world stays able to break things. What comes
+     * back is what the pieces were MADE of, which is the useful form. */
+    {
+        int count = banjo_body_count(world);
+        banjo_body *bodies = malloc((size_t)count * sizeof *bodies);
+        double where[3] = {0.0, 0.0, 0.0};
+        int found = 0;
+        count = banjo_bodies(world, bodies, count);
+        for (i = 0; i < count; ++i)
+            if (bodies[i].shape == BANJO_SHAPE_HULL && !bodies[i].anchored) {
+                where[0] = bodies[i].position_m[0];
+                where[1] = bodies[i].position_m[1];
+                where[2] = bodies[i].position_m[2];
+                found = 1;
+                break;
+            }
+        free(bodies);
+        if (found) {
+            const int before = banjo_body_count(world);
+            const int lots = banjo_collect(world, where, 5.0, 0);
+            check(lots >= 0, "sweeping the floor failed");
+            if (lots > 0) {
+                banjo_lot *haul = malloc((size_t)lots * sizeof *haul);
+                const int written = banjo_collected(world, haul, lots);
+                for (i = 0; i < written; ++i)
+                    printf("picked up %.0f g of %s (%d pieces)\n",
+                           haul[i].kilograms * 1000.0, haul[i].material, haul[i].pieces);
+                check(written > 0 && haul[0].kilograms > 0.0,
+                      "it was collected but weighs nothing");
+                free(haul);
+                check(banjo_body_count(world) < before,
+                      "a haul was reported but no bodies left the world");
+            }
+        }
+    }
+
     /* Anchored scenery is the world, not a prop, and says so rather than
      * failing silently. */
     check(banjo_grab(world, "no such thing") == BANJO_BAD_ARGUMENT,

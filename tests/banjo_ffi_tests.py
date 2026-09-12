@@ -91,6 +91,100 @@ class AWorldRunsFromPython(unittest.TestCase):
             self.assertEqual(pieces, present,
                              "fracture reported a different number than the world holds")
 
+    def test_a_break_can_be_worked_out_without_the_world_waiting_for_it(self):
+        """The thing that makes a live host usable, reachable from the library.
+
+        `fracture` blocks for the whole run -- a third of a second to a second --
+        and because the caller drives time, everything stops with it. For two
+        releases this was in the engine and not in the ABI, so anyone building on
+        banjo.h got the stall and no way round it.
+        """
+        with banjo.World(pane_and_ball(10.0)) as world:
+            started = False
+            steps_while_working = 0
+            pieces = 0
+            for _ in range(900):
+                if world.fracture_pending():
+                    steps_while_working += 1
+                    if world.fracture_ready():
+                        pieces = world.finish_fracture()
+                        break
+                    world.step(1 / 240)      # the world carries on
+                    continue
+                if world.step(1 / 240) != banjo.BREAK_PENDING:
+                    continue
+                waiting = world.breakable()
+                self.assertIn("pane", waiting)
+                started = world.begin_fracture("pane")
+                self.assertTrue(started, "the engine had nothing to work out for the pane")
+                self.assertEqual(world.fracture_subject(), "pane")
+
+            self.assertTrue(started, "the drop never produced a break to work out")
+            self.assertGreater(pieces, 1, "a 13.9 m/s iron ball did not break a glass pane")
+            self.assertFalse(world.fracture_pending(),
+                             "the answer was collected and something is still pending")
+            present = sum(1 for b in world.bodies() if b.name.startswith("pane"))
+            self.assertEqual(pieces, present,
+                             "the piece count reported is not the count in the world")
+
+    def test_nothing_to_work_out_is_said_rather_than_raised(self):
+        """Anchored scenery, and a name that is not there.
+
+        Both are answered -- the world is not left wedged -- and both come back
+        as False rather than an exception, because neither is the caller making
+        a mistake.
+        """
+        with banjo.World(pane_and_ball(10.0)) as world:
+            world.step(1 / 240)
+            self.assertFalse(world.begin_fracture("no such thing"))
+            self.assertFalse(world.fracture_pending())
+
+    def test_the_floor_can_be_swept_and_says_what_it_picked_up(self):
+        """Debris is what fills the body table, and a full body table is what
+        stops the step being taken back -- which is what breaking needs. So
+        sweeping is not a convenience, it is how a world that shatters keeps
+        working."""
+        with banjo.World(pane_and_ball(10.0)) as world:
+            for _ in range(900):
+                if world.step(1 / 240) != banjo.BREAK_PENDING:
+                    continue
+                if world.fracture("pane") > 1:
+                    break
+            shards = [b for b in world.bodies() if b.name.startswith("pane piece")]
+            self.assertGreater(len(shards), 5, "nothing shattered, so there is nothing to sweep")
+            before = len(world.bodies())
+
+            middle = shards[0].position_m
+            got = world.collect(middle, radius_m=5.0)
+            self.assertTrue(got, "standing in the debris collected nothing")
+            self.assertLess(len(world.bodies()), before,
+                            "the sweep reported a haul but took no bodies out of the world")
+            lot = got[0]
+            self.assertGreater(lot.kilograms, 0.0, "it was collected but weighs nothing")
+            self.assertGreater(lot.pieces, 0)
+            self.assertTrue(lot.material, "collected matter with no material is no use to anyone")
+            # The weight has to be the matter that was there, not a count of it.
+            expected = lot.cells * (0.02 ** 3) * 2500.0
+            self.assertLess(abs(lot.kilograms - expected) / expected, 0.3,
+                            f"{lot.kilograms:.3f} kg from {lot.cells} cells of glass is "
+                            f"not near the {expected:.3f} kg that much glass weighs")
+
+    def test_a_sweep_leaves_what_is_not_debris(self):
+        """The scene has to survive being walked through."""
+        with banjo.World(pane_and_ball(10.0)) as world:
+            for _ in range(900):
+                if world.step(1 / 240) != banjo.BREAK_PENDING:
+                    continue
+                if world.fracture("pane") > 1:
+                    break
+            anchored = {b.name for b in world.bodies() if b.anchored}
+            for body in list(world.bodies()):
+                world.collect(body.position_m, radius_m=3.0)
+            left = {b.name for b in world.bodies()}
+            self.assertFalse(anchored - left,
+                             f"sweeping took anchored scenery: {sorted(anchored - left)[:3]}")
+            self.assertIn("ball", left, "sweeping pocketed the ball that did the breaking")
+
     def test_the_threshold_is_necessary_and_not_sufficient(self):
         """1.5 m clears the bar and still holds. Reading the bar as a promise
         reads the derivation backwards, so this pins the distinction."""

@@ -14,7 +14,7 @@ tell you any other way:
 if (banjo_abi_version() != BANJO_ABI_VERSION) { /* mismatch */ }
 ```
 
-Current ABI: **3**.
+Current ABI: **5**.
 
 ---
 
@@ -130,6 +130,133 @@ What the last `banjo_fracture` turned out to be:
 
 The piece count alone cannot tell "held exactly as it was" from "held, but bent
 out of shape" — both are one piece — which is why this exists.
+
+---
+
+## Working a break out without waiting for it
+
+`banjo_fracture` above blocks for the whole run — a third of a second to a
+second — and because **your loop is what drives time**, the whole world stops
+with it. Everything else carries on being drawn, so what somebody watching sees
+is the room freezing at the instant of an impact. For anything with a person in
+front of it, use these instead.
+
+```c
+for (;;) {
+    if (banjo_fracture_pending(w)) {
+        if (banjo_fracture_ready(w)) {
+            int pieces = banjo_finish_fracture(w);
+            printf("%s came to %d pieces\n", name, pieces);
+            continue;
+        }
+        banjo_step(w, dt);          /* the world keeps running */
+        continue;
+    }
+    if (banjo_step(w, dt) != BANJO_BREAK_PENDING) continue;
+    const char *name = banjo_breakable_name(w, 0);
+    if (banjo_begin_fracture(w, name, 0.0) != BANJO_OK)
+        banjo_decline_break(w, name);   /* nothing to run; answer it anyway */
+}
+```
+
+### `int banjo_begin_fracture(banjo_world *world, const char *name, double window_s)`
+
+Start the run and come straight back. `window_s` of 0 means the default.
+
+The pair that is about to break is **pinned where it is** while the answer is
+worked out. Letting it carry on means it bounces off something that is in fact
+shattering and has to be put back when the answer lands — measured, an iron ball
+arcs half a metre into the air and comes down again in the time the run takes,
+which is a worse thing to watch than the wait it replaced.
+
+Returns `BANJO_BAD_ARGUMENT` when there was nothing to run — anchored scenery, a
+name that is not there, something in a hand. The contact was still answered, so
+time can move; there is simply nothing to collect.
+
+### `int banjo_fracture_pending(const banjo_world *world)`
+### `int banjo_fracture_ready(const banjo_world *world)`
+### `const char *banjo_fracture_subject(const banjo_world *world)`
+
+Whether something is being worked out, whether the answer is in, and what it is
+about. One at a time: a second request waits for the first, so do not ask while
+`banjo_fracture_pending` is true. Both tests are cheap enough to ask every step.
+
+### `int banjo_finish_fracture(banjo_world *world)`
+
+Take the answer and apply it, waiting only if it is not ready. Returns the piece
+count exactly as `banjo_fracture` does — 1 means it held — and
+`banjo_last_outcome` tells held from dented. Calling it with nothing pending
+returns 0 and changes nothing.
+
+### The engine does most of this for you
+
+`banjo_foresee` is on by default at 2.5 s. A collision seen coming has its run
+**started there and then**, from where the two things are going to be, so that
+by the time they touch the answer is usually already waiting. What is in the
+hand is looked at too: the run for a drop somebody is lining up starts before
+they let go, which matters because the warning a fall gives can never be longer
+than the fall, and a short drop is shorter than the run.
+
+Measured on a concrete pane, from the impact to the pieces: **856 ms** with none
+of this, **147 ms** with foresight on a 4 m drop, **43 ms** with the hold guess
+at any height. You still want `banjo_begin_fracture`, because a piece landing on
+a piece is exactly what a ray cannot see coming.
+
+---
+
+## Sweeping the floor
+
+A world that shatters fills with debris, and the reversible step a fracture
+needs cannot run past a couple of thousand bodies. Past that the room keeps
+running and **quietly stops being able to break anything** — measured, the same
+iron ball onto the same 20 mm pane broke it into 71 pieces in a room of 58
+bodies and left it whole in a room of 430. So sweeping is not tidying; it is how
+the world stays able to do the thing it is for.
+
+```c
+double where[3] = {x, y, z};
+int lots = banjo_collect(w, where, 1.2, 0);
+if (lots > 0) {
+    banjo_lot *haul = malloc((size_t)lots * sizeof *haul);
+    int n = banjo_collected(w, haul, lots);
+    for (int i = 0; i < n; ++i)
+        printf("%.0f g of %s (%d pieces)\n",
+               haul[i].kilograms * 1000.0, haul[i].material, haul[i].pieces);
+    free(haul);
+}
+```
+
+### `int banjo_collect(banjo_world *world, const double at_m[3], double radius_m, int largest_cells)`
+
+Takes the loose pieces within `radius_m` of a point out of the world. The sweep
+**happens on this call**; the result is held until the next one. Returns how
+many materials came back. `largest_cells` of 0 means a sensible default: a shard
+of nine cells is debris, half a pane is not.
+
+Only what came **off** something. Anchored scenery, whatever is in the hand, and
+anything that is still the object it always was all stay put — including a thing
+that has been **dented**, which is a `BANJO_SHAPE_HULL` like a shard is, but is
+the same object in a new shape. A dented iron ball weighs three and a half
+kilograms and went into somebody's pockets as debris before that line was drawn.
+
+The body list has changed afterwards, so ask `banjo_body_count` again.
+
+### `int banjo_collected(const banjo_world *world, banjo_lot *out, int max)`
+
+```c
+typedef struct {
+    const char *material;   /* valid until the next call on this world */
+    double kilograms;
+    int pieces;
+    int cells;
+} banjo_lot;
+```
+
+Added up by material rather than by shard, because that is the useful form:
+nobody wants forty entries called `"glass plate 20mm piece 31"`, they want to
+know they have 400 g of glass. The weight is the matter that was actually there
+— a piece's cells are its volume, and volume times the material's density is
+what has been carried away.
 
 ---
 
