@@ -369,11 +369,34 @@ def check_spring_weight(built: Built) -> Verdict:
                 "lowest_m": round(min(lows), 3)}
     if min(lows) < 0.01:
         return Verdict(False, f"{weight} is down on the floor", measured)
-    if abs(pull - kg * G) > 0.1 * kg * G:
-        return Verdict(False, f"the spring pulls {pull:.0f} N on average and {weight} weighs "
-                              f"{kg * G:.0f} N: something else is carrying it", measured)
-    return Verdict(True, f"{weight} ({kg * G:.0f} N) hangs on the spring, which pulls {pull:.0f} N "
-                         f"on average", measured)
+    hung = world.body(weight)
+    held_too = [said(j) for j in attached(world) if weight in (j["a"], j["b"]) and j["id"] != pin["id"]]
+    under = [b["name"] for b in world.bodies().values() if b["name"] != weight
+             and abs(b["position_m"][1] + b["dimensions_m"][1] / 2.0 - bottom(hung)) < 0.01
+             and abs(b["position_m"][0] - hung["position_m"][0])
+             < (b["dimensions_m"][0] + hung["dimensions_m"][0]) / 2.0
+             and abs(b["position_m"][2] - hung["position_m"][2])
+             < (b["dimensions_m"][2] + hung["dimensions_m"][2]) / 2.0]
+    measured.update(also_held_by=held_too, resting_on=under)
+    if held_too or under:
+        return Verdict(False, f"{weight} is not on the spring alone: "
+                              f"{', '.join(held_too + under)} holds it too", measured)
+    if pull < 1.0:
+        return Verdict(False, "the spring carries nothing", measured)
+    # A box on the grid weighs what its size says -- the recipe's cube reads
+    # 314 N on a 316 N weight. A sphere does not: the engine's 160 mm iron
+    # sphere, hanging on a spring alone, is carried at 131 N where an ideal one
+    # weighs 166 N, and the engine does not say what it makes a sphere weigh.
+    # So for a sphere the pull, with nothing else holding it, IS the weight.
+    if hung.get("shape") != "sphere":
+        if abs(pull - kg * G) > 0.1 * kg * G:
+            return Verdict(False, f"the spring pulls {pull:.0f} N on average and {weight} weighs "
+                                  f"{kg * G:.0f} N: something else is carrying it", measured)
+        return Verdict(True, f"{weight} ({kg * G:.0f} N) hangs on the spring, which pulls "
+                             f"{pull:.0f} N on average", measured)
+    return Verdict(True, f"{weight} hangs on the spring alone, which carries {pull:.0f} N -- what the "
+                         f"engine makes it weigh (an ideal sphere that size would be {kg * G:.0f} N)",
+                   measured)
 
 
 def check_seesaw(built: Built) -> Verdict:
@@ -912,10 +935,12 @@ def check_bow(built: Built) -> Verdict:
 # Heat: only what has fuel burns -- and the agent has to say so
 # ---------------------------------------------------------------------------
 
+# "Iron and concrete do not burn" is a right answer, and the first version of
+# this missed it for want of "do not".
 SAID_IT_CANNOT = re.compile(
-    r"(iron|metal)[^.]{0,80}\b(can(?:no|')t|won'?t|will not|does(?:n'?t| not)|isn'?t|is not)\b"
-    r"[^.]{0,40}\b(burn|catch|light|ignite|combust)|no fuel|not (?:flammable|combustible)"
-    r"|non-?flammable|incombustible", re.I)
+    r"(iron|metal)[^.]{0,80}\b(can(?:no|')t|won'?t|will not|do(?:es)?(?:n'?t| not)|isn'?t|is not"
+    r"|aren'?t|are not)\b[^.]{0,40}\b(burn|catch|light|ignite|combust)|no fuel"
+    r"|not (?:flammable|combustible)|non-?flammable|incombustible", re.I)
 FIRE_WORDS = re.compile(r"\b(burning|on fire|alight|ablaze|aflame|caught)\b", re.I)
 NEGATION = re.compile(r"\b(not|no|never|n't|cannot|without)\b|n't\b", re.I)
 

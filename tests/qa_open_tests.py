@@ -214,10 +214,29 @@ class FramingASavedBuild(unittest.TestCase):
 
     def test_the_eye_stands_back_and_above_and_looks_at_the_build(self):
         eye, look = qa_browser.framing([0.0, 1.0, 0.0], 2.0)
-        self.assertAlmostEqual(math.hypot(eye[0], eye[2]), 2.5 * 2.0 + 1.0, places=2)
+        # 1.3 extents and 0.6 m back (it was 2.5 and a metre, which left builds
+        # filling 1.4 to 3.2% of the picture).
+        self.assertAlmostEqual(math.hypot(eye[0], eye[2]), 1.3 * 2.0 + 0.6, places=2)
         self.assertGreater(eye[2], 0.0, "not on the side the room's camera faces from")
         self.assertGreater(eye[1], 1.0, "the eye is not above the focus")
         self.assertEqual(look, [0.0, 1.0, 0.0])
+
+    def test_the_frame_takes_in_where_loose_things_will_go(self):
+        # A ball two metres up and a block sent sliding at 3 m/s: the frame has
+        # to reach the floor under the ball and a second of the block's slide,
+        # and must not take in the marker stone five metres off.
+        room = {"bodies": [
+            {"name": "marker stone", "shape": "box", "material": "concrete",
+             "size_mm": [80, 80, 80], "center_mm": [-5000, 40, -5000], "anchored": True},
+            {"name": "ball", "shape": "sphere", "material": "rubber",
+             "size_mm": [200, 200, 200], "center_mm": [0, 2100, 0]},
+            {"name": "block", "shape": "box", "material": "ice", "size_mm": [240, 240, 240],
+             "center_mm": [0, 120, 400], "velocity_m_s": [3.0, 0.0, 0.0]}]}
+        focus, extent = qa_browser.motion_frame(room, [0.0, 2.1, 0.0], 0.3)
+        self.assertLessEqual(focus[1] - extent, 1e-6, "the floor under the ball is out of frame")
+        self.assertGreaterEqual(focus[0] + extent, 0.12 + 3.0 - 1e-6,
+                                "the block's slide is out of frame")
+        self.assertLess(extent, 5.0, "the marker stone was framed as part of the build")
 
     def test_a_run_is_one_build_for_each_saved_room(self):
         with tempfile.TemporaryDirectory() as folder, \

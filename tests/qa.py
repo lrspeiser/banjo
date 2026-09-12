@@ -257,7 +257,8 @@ def _entry(record: dict[str, Any], title: str, folder: Path, shots: dict[str, An
              f'{LABEL[state]}</span><span class="entry-title">{e(title)}</span>']
     if stem:
         link = f"{OWNER_PLAYGROUND}/world?qa={folder.name}/{stem}"
-        parts.append(f'<a class="open" href="{e(link)}">Open in your playground</a>')
+        parts.append(f'<a class="open" href="{e(link)}" target="_blank" rel="noopener">'
+                     f'Open in your playground</a>')
     parts.append("</div>")
     parts.append(f'<p class="reason">{e(str(record.get("reason") or ""))}</p>')
     line = _rest_line(record)
@@ -532,6 +533,17 @@ def main(argv: list[str] | None = None) -> int:
         trials = []
         for old in data["trials"]:
             case = BY_ID.get(old["case"])
+            if case is not None and not old.get("spec") and "changed nothing" in str(old.get("reason") or ""):
+                # Nothing was built, so there is no room to judge -- only what
+                # the agent said instead, which the case's rule reads again.
+                reply = str(old.get("reply") or "")
+                record = dict(old, rechecked=True)
+                if case.accept_no_change is not None and case.accept_no_change(reply):
+                    record.update(passed=True, reason="changed nothing, and said why: " + reply[:200])
+                else:
+                    record.update(passed=False, reason="the agent changed nothing in the room")
+                trials.append(record)
+                continue
             if case is None or not old.get("spec"):
                 trials.append(old)
                 continue
