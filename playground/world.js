@@ -71,6 +71,11 @@ const world = {
   // and sending it again sixty times a second is the traffic that was trimmed
   // out of the step reply in the first place.
   joints: [],
+  // What is being drawn, and what is being loosed. See "Latches" below: a
+  // thing held by ropes with a latch on it is a drawn bow, and nothing here
+  // knows the word.
+  drawn: null,            // { name, from: Vector3, latch, asked }
+  loosing: null,          // { name, home: Vector3, latch, best }
 };
 
 function remember(what) {
@@ -371,6 +376,10 @@ const PIN_GONE = new THREE.MeshStandardMaterial({
 const ropeGroup = new THREE.Group();
 scene.add(ropeGroup);
 const ROPE_MATERIAL = new THREE.LineBasicMaterial({ color: 0xd9c9a8 });
+// An elastic is not a rope and must not look like one: a rope goes slack and
+// does nothing, and this pushes as well as pulls. Drawn darker and warmer,
+// because what it is is a bent limb.
+const LIMB_MATERIAL = new THREE.LineBasicMaterial({ color: 0xc4703a });
 const ROPE_PARTED = new THREE.LineBasicMaterial({ color: 0xd06a4a });
 
 function drawRopes() {
@@ -388,6 +397,19 @@ function drawRopes() {
         new THREE.BufferGeometry().setFromPoints([a.mesh.position.clone(),
                                                   b.mesh.position.clone()]),
         ROPE_MATERIAL));
+    } else if (joint.kind === "elastic") {
+      // From where it is anchored on `a` -- which the engine reports, worked
+      // out from where `a` now stands -- to `b`'s middle. A bow limb is
+      // anchored to a point on the grip that is nowhere near the grip's own
+      // centre, and drawing it centre to centre would show a different machine
+      // from the one being simulated. The far end is `b`'s centre because that
+      // is what the joint report carries; when a spring is made off somewhere
+      // other than the middle of `b`, this line is short by that much.
+      const at = joint.at || [0, 0, 0];
+      ropeGroup.add(new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(at[0], at[1], at[2]), b.mesh.position.clone()]),
+        LIMB_MATERIAL));
     } else if (joint.kind === "pulley") {
       // Three runs, not one: up from the first body to its sheave, across
       // between the sheaves, and down to the second. Drawing it as a straight
@@ -414,8 +436,10 @@ function drawJoints(pins) {
   }
   for (const pin of pins) {
     // A rope has no stub to draw: it is a line between two bodies and it is
-    // drawn every frame by drawRopes, because both of its ends move.
-    if (pin.kind === "link" || pin.kind === "pulley") continue;
+    // drawn every frame by drawRopes, because both of its ends move. So is a
+    // limb, for the same reason and in a different colour.
+    if (pin.kind === "link" || pin.kind === "pulley" ||
+        pin.kind === "elastic") continue;
     const at = pin.at || [0, 0, 0];
     const axis = pin.axis || [0, 1, 0];
     const along = new THREE.Vector3(axis[0], axis[1], axis[2]).normalize();
@@ -694,6 +718,7 @@ addEventListener("keydown", (e) => {
   if (e.target instanceof HTMLInputElement) return;
   keys.add(e.code);
   if (e.code === "KeyF" && world.held) intend("throw");
+  if (e.code === "KeyR") unlatch();
   if (e.code === "KeyL") markLag();
   if (["KeyW","KeyA","KeyS","KeyD","KeyQ","KeyE","Space",
        "ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.code)) e.preventDefault();
@@ -701,8 +726,18 @@ addEventListener("keydown", (e) => {
 addEventListener("keyup", (e) => keys.delete(e.code));
 addEventListener("blur", () => keys.clear());
 
+// Right-click releases a latch on whatever is under the crosshair: the bar off
+// the gate, the nock off the string. On the mouse as well as on R because a
+// latch is a second thing to do to the object you are already pointing at, and
+// reaching for a key to do it is one hand too many.
+canvas.addEventListener("contextmenu", (e) => { e.preventDefault(); unlatch(); });
+
 let drag = null;
 canvas.addEventListener("pointerdown", (e) => {
+  // The LEFT button only. The right one releases a latch, and it used to do
+  // that and then pick the thing up as well, because a pointerup is a
+  // pointerup whichever button made it.
+  if (e.button !== 0) return;
   if (looking) return;           // captured: the move handler has it
   drag = { x: e.clientX, y: e.clientY, moved: false };
   canvas.setPointerCapture(e.pointerId);
@@ -715,6 +750,7 @@ canvas.addEventListener("pointermove", (e) => {
   turn(dx, dy);
 });
 canvas.addEventListener("pointerup", (e) => {
+  if (e.button !== 0) return;
   const was = drag;
   drag = null;
   try { canvas.releasePointerCapture(e.pointerId); } catch { /* already gone */ }
@@ -848,6 +884,61 @@ function intend(what) {
   else if (what === "throw") throwIt();
 }
 
+// ---------------------------------------------------------------------------
+// Latches, and letting one go
+// ---------------------------------------------------------------------------
+//
+// A fixing holds two things as one piece until somebody releases it. The gate's
+// locking bar is one; so is the nock that holds an arrow to a bowstring. There
+// is no bow here and no archery: what there is is a thing you can take hold of,
+// and a latch that may be on it.
+//
+// Releasing one is `unhinge`, which is a public call -- the same one the C API,
+// the bindings and the MCP server all offer. Nothing in this file is a
+// capability; it is a pair of hands deciding WHEN.
+
+function latchOn(name) {
+  return world.joints.find((j) => j.kind === "fixing" && j.attached &&
+                                  (j.a === name || j.b === name));
+}
+
+function ropedTo(name) {
+  return world.joints.some((j) => j.kind === "link" && j.attached &&
+                                  (j.a === name || j.b === name));
+}
+
+// Let go of a latch by hand: whatever is held, or whatever is under the
+// crosshair. This is how the bar comes off the gate.
+async function unlatch() {
+  const name = world.held ? world.held.name : world.aim && world.aim.name;
+  if (!name) return;
+  const latch = latchOn(name);
+  if (!latch) {
+    say("world", `nothing is latched to ${name}.`);
+    return;
+  }
+  try {
+    await act("unhinge", { joint: latch.id });
+    say("you", `Released the fixing between ${latch.a} and ${latch.b}.`);
+    remember(`released the fixing holding ${latch.b} to ${latch.a}`);
+  } catch (error) { say("bad", String(error.message || error)); }
+}
+
+// What the limbs are holding, in joules, asked for rather than pushed: joints
+// only come with a step when the SET of them changes, because sending every
+// angle sixty times a second is the traffic that was trimmed out of the reply
+// in the first place. Four times a second is enough to watch a draw.
+async function refreshJoints() {
+  const got = await act("joints", {});
+  if (got && got.joints) drawJoints(got.joints);
+  return got && got.joints;
+}
+
+function storedInElastics() {
+  return world.joints.reduce(
+    (sum, j) => sum + (j.kind === "elastic" && j.attached ? (j.stored_j || 0) : 0), 0);
+}
+
 async function pickUp() {
   if (!world.aim) return;
   const name = world.aim.name;
@@ -859,6 +950,29 @@ async function pickUp() {
   try {
     await act("grab", { name });
     world.held = { name, distance: clamp(world.aim.distance_m, 0.6, 4.0) };
+    // Where the hand is, relative to where the view says it is.
+    //
+    // The crosshair ray stops at a SURFACE and the hand pulls on a CENTRE OF
+    // MASS, so taking hold of anything put the hand a hand's width away from
+    // the thing it was holding -- and the hand pulls with everything it has at
+    // anything past 50 mm of error. On a gate that is a shove nobody asked for.
+    // On a bowstring it was 800 N of yank on 179 g: the arrow was flung
+    // backwards into the portcullis jamb at 16.5 m/s by the act of picking the
+    // string up. Remembering the offset means the hand starts exactly where
+    // the thing already is, and moves from there.
+    if (entry) {
+      const from = camera.position.clone()
+        .add(forwardVector().multiplyScalar(world.held.distance));
+      world.held.offset = entry.mesh.position.clone().sub(from);
+    }
+    // Taking hold of something that hangs on ropes AND carries a latch is
+    // taking hold of a drawn thing. Where it is NOW is where it comes back to,
+    // which is all the geometry the release needs to know -- no brace height,
+    // no bow, no names.
+    if (entry && latchOn(name) && ropedTo(name)) {
+      world.drawn = { name, from: entry.mesh.position.clone(),
+                      latch: latchOn(name).id, asked: 0 };
+    }
     $("crosshair").classList.add("holding");
     $("label").hidden = true;
     $("carry").hidden = false;
@@ -872,6 +986,20 @@ async function dropIt() {
   const name = world.held.name;
   const entry = world.bodies.get(name);
   const at = entry ? entry.mesh.position.clone() : null;
+  // Letting go of a drawn string. The latch comes off when the string gets
+  // back to where it was taken hold of, because that is where the string stops
+  // and the arrow does not -- which is where an arrow leaves a real one.
+  if (world.drawn && world.drawn.name === name) {
+    const stored = storedInElastics();
+    world.loosing = { name, home: world.drawn.from, latch: world.drawn.latch,
+                      best: 0, stored };
+    world.drawn = null;
+    if (stored > 0.05) {
+      say("you", `Loosed. The limbs were holding ${stored.toFixed(1)} J.`);
+      remember(`loosed ${name} with ${stored.toFixed(1)} J in the limbs`);
+    }
+  }
+  world.drawn = null;
   world.held = null;
   $("crosshair").classList.remove("holding");
   $("carry").hidden = true;
@@ -997,8 +1125,18 @@ function updateGuides() {
 // Time
 // ---------------------------------------------------------------------------
 
-const LIVE_DT = 1 / 120;
-const MAX_STEPS = 120;
+// A 240th, not a 120th, and it is a stiffness question rather than a taste
+// one. A bow limb here is a 45 g tip on a 6 kN/m spring, which rings at 58 Hz;
+// stepped at 120 that is above half the sample rate and the solver does not
+// damp it, it AMPLIFIES it. Watched in the room: a limb tip left the bow at
+// 92 m/s and hit the portcullis eight hundred millimetres away, out of an
+// assembly that was holding fifteen joules. At a 240th the same bow throws its
+// arrow at 3.7 m/s and the tips stay on.
+//
+// The cost is one more step per frame of a 36-body room, which is 0.03 ms of
+// physics against a 14.9 ms round trip. It was never the steps.
+const LIVE_DT = 1 / 240;
+const MAX_STEPS = 240;
 
 async function tick() {
   if (!world.session || world.busy) return;
@@ -1020,6 +1158,7 @@ async function tick() {
     if (world.held) {
       const dir = forwardVector();
       const p = camera.position.clone().add(dir.multiplyScalar(world.held.distance));
+      if (world.held.offset) p.add(world.held.offset);
       hand = [p.x, p.y, p.z];
     }
     const now = performance.now();
@@ -1133,6 +1272,10 @@ async function tick() {
     $("hud-clock").textContent = `${state.t.toFixed(1)} s · ${steps} steps`;
     $("panel-state").textContent = world.held
       ? `Holding ${world.held.name}.` : "Live.";
+    // After the line above, not before it: a draw has something better to say
+    // than "holding", and saying it first only to be overwritten is how it
+    // came to say "Holding bowstring." through an entire draw.
+    await watchTheDraw();
     if (world.held) {
       const entry = world.bodies.get(world.held.name);
       if (entry) askWhatIsBelow(entry.mesh.position, underside(entry));
@@ -1148,6 +1291,61 @@ async function tick() {
     $("panel-state").textContent = `The room stopped: ${error.message || error}`;
     world.session = null;
   } finally { world.busy = false; }
+}
+
+// A draw in progress, and a loose in flight.
+//
+// Both are hands rather than physics. The world does not know that a string is
+// being drawn: it knows a body is being hauled against whatever it is attached
+// to, and what makes that a draw is that the thing has ropes and a latch.
+async function watchTheDraw() {
+  // Drawing: ask what the limbs are holding, a few times a second, so the
+  // number on screen is the one the engine has rather than one worked out here.
+  if (world.drawn) {
+    const now = performance.now();
+    if (now - world.drawn.asked > 250) {
+      world.drawn.asked = now;
+      await refreshJoints();
+      const entry = world.bodies.get(world.drawn.name);
+      const back = entry
+        ? entry.mesh.position.distanceTo(world.drawn.from) : 0;
+      const stored = storedInElastics();
+      if (stored > 0.05)
+        $("panel-state").textContent =
+          `Drawing ${world.drawn.name} — ${(back * 1000).toFixed(0)} mm back,`
+          + ` ${stored.toFixed(1)} J in the limbs.`;
+    }
+    return;
+  }
+  if (!world.loosing) return;
+
+  // Loosed: the latch comes off when the string gets back to where it was
+  // taken hold of. Measured along the line it was drawn out on, so that a
+  // string swinging sideways is not mistaken for one coming home -- and with a
+  // stall as the other way out, because a limb tip that lags can stop the
+  // string short of its own brace and it is still the moment the arrow leaves.
+  const loose = world.loosing;
+  const entry = world.bodies.get(loose.name);
+  if (!entry) { world.loosing = null; return; }
+  const back = entry.mesh.position.distanceTo(loose.home);
+  loose.best = Math.max(loose.best, loose.was === undefined ? 0 : loose.was - back);
+  const closing = loose.was === undefined ? 0 : loose.was - back;
+  loose.was = back;
+  const home = back < 0.02;
+  const stalled = loose.best > 0.005 && closing < 0.2 * loose.best && back < 0.08;
+  if (!home && !stalled) return;
+  world.loosing = null;
+  try {
+    await act("unhinge", { joint: loose.latch });
+    const pins = await refreshJoints();
+    const off = (pins || []).find((p) => p.id === loose.latch);
+    say("world", `the nock let go ${(back * 1000).toFixed(0)} mm from brace.`
+      + ` Nothing chose a speed for what was on it: it left with whatever the`
+      + ` ${loose.stored.toFixed(1)} J in the limbs could give it, less what the`
+      + ` string and the tips kept.`);
+    remember(`the latch on ${loose.name} let go`);
+    if (off && off.attached) say("bad", "the latch would not come off.");
+  } catch (error) { say("bad", String(error.message || error)); }
 }
 
 let last = performance.now();
