@@ -123,6 +123,21 @@ def rotate(v, axis, degrees):
 # The room, as the server reopens it and the browser drives it
 # ---------------------------------------------------------------------------
 
+REALTIME_LIMIT = 1.1   # the owner's rule: no job more than 10% slower than it shows
+GRACE_S = 1.0          # what the first steps of a new world may cost on top
+
+
+class TooSlow(RuntimeError):
+    """The engine fell behind the realtime rule, so the job stops there."""
+
+    def __init__(self, simulated_s: float, stepping_s: float) -> None:
+        super().__init__(
+            f"the engine took {stepping_s:.1f} s to show {simulated_s:.2f} s "
+            f"({stepping_s / max(simulated_s, 1e-9):.1f}x realtime), and no job may run "
+            f"more than {REALTIME_LIMIT}x slower than what it shows")
+        self.simulated_s, self.stepping_s = simulated_s, stepping_s
+
+
 class World:
     def __init__(self, spec: dict[str, Any]) -> None:
         self.live = live_session.Live()
@@ -130,6 +145,11 @@ class World:
         self.session = self.live.session
         self.impacts: list[dict[str, Any]] = []
         self.finished: list[str] = []
+        # How much time the world was stepped through, and how long that took.
+        # The owner's rule: no job may take more than 10% longer than realtime
+        # of the interaction it runs, the settling down afterwards included.
+        self.simulated_s = 0.0
+        self.stepping_s = 0.0
 
     def close(self) -> None:
         try:
@@ -149,6 +169,7 @@ class World:
         while done < count:
             n = 1 if hand is not None else min(8, count - done)
             extra = {"hand": [float(v) for v in hand]} if hand is not None else {}
+            began = time.perf_counter()
             state = self.session.send(op="step", dt=DT, n=n, moved=True, **extra)
             self.impacts.extend(state.get("impacts") or [])
             if state.get("finished"):
@@ -156,6 +177,13 @@ class World:
             for name in state.get("breakable") or []:
                 self.session.send(op="fracture", name=name, wait=False)
             done += n
+            self.simulated_s += n * DT
+            self.stepping_s += time.perf_counter() - began
+            # The rule is enforced here, not just reported afterwards: a check
+            # that goes on running a world four times slower than it shows is
+            # itself the job the owner said never to run.
+            if self.stepping_s > REALTIME_LIMIT * self.simulated_s + GRACE_S:
+                raise TooSlow(self.simulated_s, self.stepping_s)
 
     def seconds(self, s: float, hand: list[float] | None = None) -> None:
         self.step(max(1, int(round(s / DT))), hand)
@@ -174,6 +202,47 @@ class World:
 
     def anchored(self) -> dict[str, bool]:
         return {n: bool(b.get("anchored")) for n, b in self.bodies().items()}
+
+
+REST_M_S = 0.05      # slower than this, nobody watching would call it moving
+ESCAPED_M = 30.0     # further out than this, it has left the room
+
+
+def settle(world: World, most_s: float = 10.0) -> dict[str, Any]:
+    """Let go, let the room finish, and say how it looks once it has.
+
+    The owner counts how everything looks at rest, when the interaction is
+    over, as part of the interaction. So every check ends here: how long until
+    nothing is moving, and whether anything has gone through the floor or off
+    into the distance -- the two ways a room can look wrong after the thing that
+    was asked for has been shown to work.
+    """
+    world.session.send(op="release")
+    waited, moving = 0.0, []
+    while True:
+        moving = sorted(((norm(b.get("velocity_m_s") or [0.0, 0.0, 0.0]), n)
+                         for n, b in world.bodies().items() if not b.get("anchored")),
+                        reverse=True)
+        moving = [(v, n) for v, n in moving if v > REST_M_S]
+        if not moving or waited >= most_s:
+            break
+        world.seconds(1.0)
+        waited += 1.0
+    bodies = list(world.bodies().values())
+    return {"at_rest": not moving, "waited_s": waited,
+            "still_moving": [[n, round(v, 3)] for v, n in moving[:3]],
+            "sunk": [b["name"] for b in bodies if b["position_m"][1] < -0.25],
+            "flew_off": [b["name"] for b in bodies
+                         if max(abs(b["position_m"][0]), abs(b["position_m"][2])) > ESCAPED_M]}
+
+
+def timing(world: World, check_s: float) -> dict[str, Any]:
+    """The realtime rule, measured: the wall time a check took against the time
+    it showed. Opening the engine counts; it is part of the job."""
+    shown = max(world.simulated_s, 1e-9)
+    return {"simulated_s": round(world.simulated_s, 2), "stepping_s": round(world.stepping_s, 2),
+            "check_s": round(check_s, 2), "ratio": round(check_s / shown, 3),
+            "within_rule": check_s <= 1.1 * shown}
 
 
 def coordinate(joint: dict[str, Any] | None) -> float:
@@ -292,6 +361,9 @@ class Built:
     room: world_room.Room
     world: World
     before: set[str]
+    # What the agent said it did. A check can hold it to the engine: a reply
+    # that says an iron bar is burning, over a room where nothing is, fails.
+    reply: str = ""
 
 
 def check_hinged_gate(built: Built) -> Verdict:
@@ -811,20 +883,35 @@ RECIPES: dict[str, tuple[str, list[tuple[str, dict[str, Any]]]]] = {
 }
 
 
-def run_recipe(recipe_id: str) -> dict[str, Any]:
-    """Build a recipe through the MCP, then give it the case's own check."""
+def run_recipe(recipe_id: str, recipes: dict[str, Any] | None = None,
+               cases: list[Case] | None = None, folder: Path | None = None) -> dict[str, Any]:
+    """Build a recipe through the MCP, then give it the case's own check.
+
+    A step is a tool call, or a function given the world's id, for a step that
+    has to look before it acts: taking a bar off a gate needs the bar's joint
+    id, which only the world knows. A recipe whose third element says
+    `keep_room` starts from the room as it stands instead of clearing it.
+    """
     import room_world
-    case_id, calls = RECIPES[recipe_id]
-    case = next(c for c in CASES if c.id == case_id)
-    record: dict[str, Any] = {"recipe": recipe_id, "case": case_id, "passed": False}
+    entry = (recipes or RECIPES)[recipe_id]
+    case_id, calls = entry[0], entry[1]
+    keep_room = len(entry) > 2 and bool(entry[2].get("keep_room"))
+    case = next(c for c in (cases or CASES) if c.id == case_id)
+    record: dict[str, Any] = {"recipe": recipe_id, "case": case_id, "scene": case.scene,
+                              "passed": False}
     room = world_room.Room(case.scene)
     before = {b["name"] for b in room.bodies()}
     world_id = room_world.open_room(room.spec)
     try:
-        room_world.call(world_id, "clear_world", {})
+        if not keep_room:
+            room_world.call(world_id, "clear_world", {})
         warnings = []
         for tool, args in calls:
-            answer = room_world.call(world_id, tool, args)
+            if callable(tool):
+                answer = tool(world_id)
+                tool = getattr(tool, "__name__", "a step")
+            else:
+                answer = room_world.call(world_id, tool, args)
             if "error" in answer:
                 record["reason"] = f"the recipe itself was refused at {tool}: {answer['error']}"
                 return record
@@ -833,10 +920,21 @@ def run_recipe(recipe_id: str) -> dict[str, Any]:
         room.spec = room_world.export_spec(room_world.entry_of(world_id))
     finally:
         room_world.close_room(world_id)
+    if folder is not None:
+        # Trial 0 is the recipe: the build the guide describes, kept so it can
+        # be opened in the playground beside what the agent built.
+        (folder / f"{recipe_id}-0.spec.json").write_text(json.dumps(room.spec), encoding="utf-8")
+        record["spec"] = f"{recipe_id}-0.spec.json"
+    began = time.perf_counter()
     world = World(room.spec)
     try:
         verdict = case.check(Built(room, world, before))
         record.update(passed=verdict.ok, reason=verdict.reason, measured=verdict.measured)
+        record["rest"] = settle(world)
+        record["realtime"] = timing(world, time.perf_counter() - began)
+    except TooSlow as slow:
+        record.update(passed=False, too_slow=True, reason=f"stopped: {slow}",
+                      realtime=timing(world, time.perf_counter() - began))
     finally:
         world.close()
     return record
@@ -882,6 +980,12 @@ def run_trial(case: Case, trial: int, api_key: str, model: str,
         json.dumps({"case": case.id, "trial": trial, "message": case.message,
                     "answer": answer, "trace": trace}, indent=1, default=str),
         encoding="utf-8")
+    if answer.get("changed"):
+        # The room as the agent left it, so it can be opened again -- in the
+        # playground, by anyone, to see and use what was built.
+        (folder / f"{case.id}-{trial}.spec.json").write_text(json.dumps(room.spec),
+                                                             encoding="utf-8")
+        record["spec"] = f"{case.id}-{trial}.spec.json"
     if not answer.get("changed"):
         reply = str(answer.get("reply") or "")
         if case.accept_no_change is not None and case.accept_no_change(reply):
@@ -901,8 +1005,13 @@ def run_trial(case: Case, trial: int, api_key: str, model: str,
         if problems:
             record["reason"] = f"joints that would not hang: {problems}"
             return record
-        verdict = case.check(Built(room, world, before))
+        verdict = case.check(Built(room, world, before, str(answer.get("reply") or "")))
         record.update(passed=verdict.ok, reason=verdict.reason, measured=verdict.measured)
+        record["rest"] = settle(world)
+        record["realtime"] = timing(world, time.perf_counter() - checked)
+    except TooSlow as slow:
+        record.update(passed=False, too_slow=True, reason=f"stopped: {slow}",
+                      realtime=timing(world, time.perf_counter() - checked))
     except Exception:
         record["reason"] = "the check itself failed: " + traceback.format_exc()[-800:]
     finally:
@@ -911,14 +1020,15 @@ def run_trial(case: Case, trial: int, api_key: str, model: str,
     return record
 
 
-def summarise(records: list[dict[str, Any]], model: str) -> str:
+def summarise(records: list[dict[str, Any]], model: str,
+              cases: list[Case] | None = None) -> str:
     lines = [f"agent build regression -- {model}", ""]
     by_case: dict[str, list[dict[str, Any]]] = {}
     for r in records:
         by_case.setdefault(r["case"], []).append(r)
     tokens_in = sum((r.get("usage") or {}).get("input_tokens", 0) for r in records)
     tokens_out = sum((r.get("usage") or {}).get("output_tokens", 0) for r in records)
-    for case in CASES:
+    for case in (cases or CASES):
         rows = by_case.get(case.id)
         if not rows:
             continue
@@ -936,6 +1046,16 @@ def summarise(records: list[dict[str, Any]], model: str) -> str:
             lines.append(f"        {r.get('rounds')} rounds, "
                          f"{len(r.get('calls') or [])} calls, {r.get('ask_s')} s asking, "
                          f"{r.get('check_s', '-')} s checking")
+            rest, clock = r.get("rest") or {}, r.get("realtime") or {}
+            if rest or clock:
+                lines.append(
+                    "        " + ("at rest" if rest.get("at_rest") else
+                                  f"STILL MOVING {rest.get('still_moving')}")
+                    + (f" after {rest['waited_s']:.0f} s" if rest.get("waited_s") else "")
+                    + (f"; SUNK {', '.join(rest['sunk'])}" if rest.get("sunk") else "")
+                    + (f"; FLEW OFF {', '.join(rest['flew_off'])}" if rest.get("flew_off") else "")
+                    + f"; {clock.get('check_s')} s to show {clock.get('simulated_s')} s"
+                    + ("" if clock.get("within_rule", True) else " -- SLOWER THAN THE REALTIME RULE"))
         lines.append("")
     total = sum(1 for r in records if r["passed"])
     lines.append(f"{total} of {len(records)} passed; {tokens_in} tokens in, "
