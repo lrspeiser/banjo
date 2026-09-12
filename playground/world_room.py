@@ -325,6 +325,124 @@ def courtyard() -> dict[str, Any]:
     add("stone shelf", "box", "concrete", [1200, 40, 240],
         [SHELF_X, 820, SHELF_Z])
 
+    # ---- a bow on a stand, and an arrow ------------------------------------
+    #
+    # There is no bow here. There is a grip, two limbs, a string and a nock, and
+    # every one of them is a joint this room already had before anyone said the
+    # word archery:
+    #
+    #   the grip     two anchored blocks with a gap between them for the arrow.
+    #                The lower one is also the arrow REST -- its top face is
+    #                exactly where the shaft lies.
+    #   the limbs    a HINGE at each root so a limb can only swing in the bow's
+    #                own plane, and an ELASTIC anchored forward of that root
+    #                which lengthens as the tip swings back. That is where the
+    #                energy goes.
+    #   the string   two LINKS, tip to nocking point, because a string pulls and
+    #                does not push and that is exactly what a link is
+    #   the nock     a FIXING between the string and the arrow, because what a
+    #                nock does is hold two things together until it is let go,
+    #                which is what a latch is
+    #
+    # So the arrow's speed is not a number anywhere. It is whatever the limbs
+    # are holding when the nock is let go, less what the string, the tips and
+    # the rest keep for themselves. Draw further, stiffen the limbs or nock a
+    # heavier arrow and the shot changes, because nothing else could happen.
+    #
+    # It faces the gate, 1.6 m away in +x, because an arrow that lands in an
+    # empty courtyard tells you less than one that swings a 111 kg gate.
+    # 1220 and not 1200, and the 20 mm is not taste. Matter here is built out of
+    # 40 mm cells laid on the world grid, so a 40 mm shaft centred on 1200
+    # straddles two rows of them and claims half of each -- which the placement
+    # check reads, correctly, as the arrow and the grip it rests on occupying
+    # the same cells. On 1220 the shaft is one clean row and the rest ends where
+    # the shaft begins.
+    BOW_X, BOW_Y, BOW_Z = -1600, 1220, 120
+    BRACE_X = BOW_X - 160           # the string, a brace height behind the grip
+    TIP_X, TIP_UP = BRACE_X, 400    # the tips, LEVEL with the string
+    ROOT_UP, SPRING_X = 120, BOW_X + 360
+    # The two grip blocks are NOT symmetric about the shaft, because the lower
+    # one has a second job: its top face is the arrow REST, set exactly at the
+    # underside of the shaft, while the upper one stands 40 mm clear above it.
+    #
+    # The rest is not decoration. The string hangs on two ropes and a rope end
+    # is a ball joint, so what holds the string against tipping nose-down is a
+    # second-order term and not much of one -- and an arrow whose weight sits
+    # 360 mm in front of the nock tips it. Taken away, the ropes went slack
+    # before anyone touched the bow and a 300 mm draw stored 3 J instead of 25.
+    # What stops it is the same thing that stops it on a real bow: the shaft is
+    # lying on something.
+    GRIP_Y = {1: BOW_Y + 180, -1: BOW_Y - 100}
+
+    # THE TIPS ARE LEVEL WITH THE STRING, and that is the whole of why this
+    # stands up. Set them forward of it, as the first version did, and the
+    # braced string is a V with the nocking point at its apex -- which is not an
+    # equilibrium at all: the two rope tensions no longer cancel, their
+    # resultant shoves the nock towards the bow, and the arrow's weight hanging
+    # 300 mm in front of the nock turns the whole assembly over. Measured, with
+    # nobody touching it: braced at x = -1.760, and one second later the string
+    # was at -1.385 and the arrow was pointing at the floor.
+    #
+    # On the line, the two tensions are equal and opposite and cancel exactly,
+    # which is what "braced" means on a real bow. Push the nock off that line in
+    # any direction and BOTH segments lengthen, the limbs bend, and it comes
+    # back. That is also, drawn far enough, the shot.
+    for side in (1, -1):
+        # An 80 mm window between them for the shaft to pass through. A single
+        # block would have the arrow running through the middle of the grip, and
+        # a narrow one has the shaft rubbing as it is drawn: measured with 40 mm
+        # of gap the bow reached 50 mm of draw and 0.7 J before it jammed.
+        #
+        # The pin sits INSIDE a block rather than at its middle. Where the pin
+        # is and where the block is are two questions.
+        add(f"bow grip {'upper' if side > 0 else 'lower'}", "box", "oak",
+            [40, 160, 120], [BOW_X, GRIP_Y[side], BOW_Z], anchored=True)
+        # SMALL tips -- one cell, which is as small as matter gets here. A tip
+        # is a mass the limb has to accelerate before any of the energy can
+        # reach the arrow, so whatever it weighs is taken out of the shot twice
+        # over: it keeps energy, and it LAGS. Measured at 80 mm, the two tips
+        # were 717 g against 851 g of arrow and string, and the string ran home
+        # to a brace the tips had not got back to yet -- the ropes went taut
+        # 62 mm short, stopped the arrow dead at 4.75 m/s, and the whole
+        # assembly sat there. At 40 mm they are 90 g and the string arrives at
+        # brace. Real bows are built the same way round and for the reason.
+        add(f"{'upper' if side > 0 else 'lower'} limb tip", "box", "oak",
+            [40, 40, 40], [TIP_X, BOW_Y + side * TIP_UP, BOW_Z])
+    # A LENGTH of string, not a point, and that is what makes the thing hold
+    # its shape. A rope end is a ball joint: two ropes made off at the same
+    # point leave the piece they hold free to spin there however it likes, and
+    # an arrow whose weight sits 300 mm in front of the nock spins it. Made off
+    # 160 mm apart, turning the string has to lengthen one of them, so it does
+    # not turn. It weighs 179 g, which is a quarter of the arrow and is taken
+    # out of every shot -- a real string is lighter, and a cell here is 40 mm.
+    # Two ropes made off 160 mm apart hold the string against turning end over
+    # end, which is what keeps the arrow level. What they do NOT hold is the
+    # string ROLLING about its own length -- both attachments are on that line,
+    # so the lever arm is exactly zero -- and rolling it swings the arrow
+    # sideways. Nothing drives that and nothing stopped it: measured, a drawn
+    # arrow had yawed and was pointing 240 mm out of the bow's plane.
+    #
+    # So the window has cheeks, 20 mm clear of the shaft on each side. That is
+    # an arrow rest with a side plate, and it is why real ones have them.
+    for side in (1, -1):
+        add(f"bow grip {'near' if side > 0 else 'far'} cheek", "box", "oak",
+            [40, 40, 40], [BOW_X, BOW_Y, BOW_Z + side * 60], anchored=True)
+    add("bowstring", "box", "oak", [40, 160, 40], [BRACE_X, BOW_Y, BOW_Z])
+    # Nocked, lying forward through the window in the grip and resting on the
+    # lower block. A cell CLEAR of the string rather than buried in it: two
+    # bodies sharing space fly apart the moment whatever held them together
+    # stops, and a nock holds two things in whatever pose they are in, touching
+    # or not.
+    #
+    # The REST is not decoration either. The nocking point is held by two ropes
+    # and a rope end is a ball joint, so nothing at all resists the string
+    # turning on the spot -- and an arrow whose weight sits 300 mm in front of
+    # the nock turns it. What stops that is the same thing that stops it on a
+    # real bow: the shaft is lying on something.
+    add("arrow", "box", "oak", [600, 40, 40], [BRACE_X + 360, BOW_Y, BOW_Z])
+    # And a spare on the ground, because retrieving what you shot is half of it.
+    add("spare arrow", "box", "oak", [600, 40, 40], [BOW_X, 20, BOW_Z + 400])
+
     # Things to push with, and to wedge things open.
     add("iron ball", "sphere", "iron", [200, 200, 200], [-800, 100, 800])
     add("oak barrel", "box", "oak", [400, 480, 400], [400, 240, 1200])
@@ -428,7 +546,78 @@ def courtyard() -> dict[str, Any]:
             "to_mm": [CHAIN_X, 2360 - i * 160, CHAIN_Z],
             "length_mm": 0,
             "breaks_at_n": 0,
-        } for i in range(8)],
+        } for i in range(8)] + [{
+            # The limb roots. A pin across the bow, so a limb can only swing in
+            # the bow's own plane -- without it the tip is free on a sphere and
+            # simply follows the string round, storing nothing.
+            #
+            # Sixty degrees each way and not a hundred and twenty: a limb that
+            # can fold right over is a limb that will, and a bow whose limbs turn
+            # inside out is not a bow.
+            "kind": "hinge",
+            "a": f"bow grip {'upper' if side > 0 else 'lower'}",
+            "b": f"{'upper' if side > 0 else 'lower'} limb tip",
+            "at_mm": [BOW_X, BOW_Y + side * ROOT_UP, BOW_Z],
+            "axis": [0, 0, 1],
+            "lower_deg": -60,
+            "upper_deg": 60,
+            "friction_n_m": 0,
+        } for side in (1, -1)] + [{
+            # The limbs themselves: elastic, anchored 360 mm FORWARD of the root
+            # so that swinging the tip back lengthens them. A lever with a spring
+            # on it -- a declared and ordinary way to model a limb, where the
+            # restoring torque is the spring force times the moment arm rather
+            # than a true bending stiffness.
+            #
+            # 6 kN/m against the 800 N a person has. A bow nobody can draw stores
+            # nothing either, and the hand here pulls with what it has rather
+            # than with whatever the bow demands. Stiffer is not simply better:
+            # a limb tip is 45 g, so at 40 kN/m the tips ring at 150 Hz and the
+            # world is stepped at 240 -- under two samples a cycle, which the
+            # solver damps into nonsense. Measured, the arrow leaves at 1.6 m/s
+            # at 3 kN/m, 3.1 at 6 and 4.9 at 10, and past that it stops meaning
+            # anything.
+            "kind": "elastic",
+            "a": f"bow grip {'upper' if side > 0 else 'lower'}",
+            "b": f"{'upper' if side > 0 else 'lower'} limb tip",
+            "at_mm": [SPRING_X, BOW_Y + side * ROOT_UP, BOW_Z],
+            "to_mm": [TIP_X, BOW_Y + side * TIP_UP, BOW_Z],
+            "rest_mm": 0,               # as it stands, which is braced
+            "stiffness_n_m": 6000,
+            # A DECLARED loss, and the only thing that should take energy out of
+            # the limbs. Zero gives 96% of it back and a bow that rings for ever
+            # after the shot; 20 settles them in about a second.
+            "damping_n_s_m": 20,
+        } for side in (1, -1)] + [{
+            # The string. Two links, because a string pulls and does not push,
+            # made off at the two ENDS of it rather than both at the nocking
+            # point -- see the body above for why that is the difference between
+            # a bow and a thing that falls over.
+            "kind": "link",
+            "a": f"{'upper' if side > 0 else 'lower'} limb tip",
+            "b": "bowstring",
+            "at_mm": [TIP_X, BOW_Y + side * TIP_UP, BOW_Z],
+            "to_mm": [BRACE_X, BOW_Y + side * 80, BOW_Z],
+            "length_mm": 0,             # as it is strung
+            "breaks_at_n": 0,           # a string somebody can snap is a later room
+        } for side in (1, -1)] + [{
+            # The nock: the arrow held to the string until it is let go. The
+            # same joint as the locking bar on the gate, and for the same
+            # reason -- releasing it is what changes what the assembly does.
+            #
+            # Let go by hand and not by being overloaded, and that is measured
+            # rather than chosen: a fixing reports the MAGNITUDE of the force
+            # along its axis, so a nock being shoved forward by the string reads
+            # the same as one being pulled apart. Given a strength it let go
+            # during the draw, at 2.5 kN, long before the string ever stopped.
+            "kind": "fixing",
+            "a": "bowstring",
+            "b": "arrow",
+            "at_mm": [BRACE_X, BOW_Y, BOW_Z],
+            "axis": [1, 0, 0],
+            "holds_tension_n": 0,
+            "holds_shear_n": 0,
+        }],
     }
 
 

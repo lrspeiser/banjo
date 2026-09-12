@@ -273,6 +273,18 @@ Releasing one with `banjo_unhinge` **changes what the assembly is**, and that is
 the whole difference between a latch and a very stiff hinge. Measured: the same
 shove on the same gate moved it 1.66° barred and 18.76° unbarred.
 
+`banjo_spring` is the sixth: an elastic element that stores energy by being
+deformed — a bow limb, a spring, a bent plank. A **declared** linear model,
+`force = stiffness × extension`, validated against the work actually done
+drawing it (98.06% of the stored energy comes back as motion). It pushes as well
+as pulls, which is what tells it from a rope.
+
+Together those six are enough to build a **bow** with no bow code anywhere: a
+hinge at each limb root, an elastic forward of it, links for the string, and a
+fixing for the nock that you `banjo_unhinge` to loose. The arrow's speed is not
+chosen — it comes out of the energy in the limbs and the mass of what is nocked,
+so changing the bow, the draw or the arrow changes the shot.
+
 Two pieces of geometry that each cost an afternoon: set the leaf **clear of its
 own frame** (a door sharing space with its post is jammed against it, and jammed
 looks exactly like a broken hinge), and hang it **clear of the floor** (a door

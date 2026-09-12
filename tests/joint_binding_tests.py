@@ -783,8 +783,75 @@ def a_latch_changes_what_the_assembly_is() -> None:
         require(world.joints() == [], "the released fixing is still listed")
 
 
+def a_spring_stores_what_a_known_load_does_to_it() -> None:
+    """The declared model, through the public ABI, against a load it did not pick.
+
+    The load is the block's own weight -- which the ABI never states, and this
+    test never needs. Hang the SAME block on two limbs and only the stiffness
+    differs, so the two readings have to agree in the two ways the declared
+    model says they must:
+
+        the force each holds is the same weight, whatever the stiffness
+        the extension goes as one over the stiffness
+
+    That is a harder thing to satisfy than `force_n == stiffness * extension`,
+    which is arithmetic on one reading and would pass on a limb that never
+    pushed the world at all.
+    """
+    def hung_on(stiffness_n_m: float) -> tuple[float, float, float]:
+        scene = {
+            "bodies": [
+                {"name": "post", "shape": "box", "material": "iron",
+                 "dimensions_m": [0.2, 0.2, 0.2], "center_m": [0.0, 3.0, 0.0],
+                 "anchored": True},
+                {"name": "block", "shape": "box", "material": "iron",
+                 "dimensions_m": [0.2, 0.2, 0.2], "center_m": [0.0, 2.0, 0.0]},
+            ],
+        }
+        with banjo.World(scene, cell_size_m=0.05) as world:
+            limb = world.spring("post", "block", at_a_m=(0.0, 2.9, 0.0),
+                                at_b_m=(0.0, 2.1, 0.0),
+                                stiffness_n_m=stiffness_n_m,
+                                damping_n_s_m=600.0)
+            require(limb > 0, "the spring would not go on")
+            hung = next(j for j in world.joints() if j.id == limb)
+            require(hung.kind == "elastic", "a spring came back as the wrong kind")
+            require(abs(hung.force_n) < 1.0,
+                    f"a spring built at its own rest length already holds "
+                    f"{hung.force_n:.1f} N")
+            require(hung.stored_j < 0.01,
+                    "a spring at rest is already storing energy")
+
+            tick(world, 1200)                       # five seconds, damped down
+            drawn = next(j for j in world.joints() if j.id == limb)
+            return drawn.at - drawn.rest_m, drawn.force_n, drawn.stored_j
+
+    soft_m, soft_n, soft_j = hung_on(2000.0)
+    stiff_m, stiff_n, stiff_j = hung_on(8000.0)
+    print(f"  the same block stretched 2 kN/m by {soft_m * 1000:.1f} mm holding "
+          f"{soft_n:.0f} N, and 8 kN/m by {stiff_m * 1000:.1f} mm holding "
+          f"{stiff_n:.0f} N")
+
+    require(soft_m > 0.05, "the block did not hang on the soft limb at all")
+    require(abs(stiff_n - soft_n) < 0.05 * soft_n,
+            f"the same block weighed {soft_n:.1f} N on one limb and "
+            f"{stiff_n:.1f} N on a stiffer one")
+    require(abs(stiff_m - soft_m / 4.0) < 0.06 * soft_m / 4.0,
+            f"four times the stiffness should be a quarter of the stretch: "
+            f"{soft_m * 1000:.1f} mm then {stiff_m * 1000:.1f} mm")
+
+    # And the energy it holds is half the work gravity did putting it there --
+    # k*x*x done, k*x*x/2 held -- which is the model's own statement, checked
+    # against a number the model did not produce.
+    for stretched, holds, stored in ((soft_m, soft_n, soft_j),
+                                     (stiff_m, stiff_n, stiff_j)):
+        require(abs(stored - 0.5 * holds * stretched) < 0.02 * stored + 0.005,
+                f"holding {holds:.0f} N at {stretched * 1000:.1f} mm it claims "
+                f"{stored:.3f} J, not {0.5 * holds * stretched:.3f}")
+
+
 def main() -> int:
-    require(banjo.ABI_VERSION >= 11, "this test needs ABI 11 or later")
+    require(banjo.ABI_VERSION >= 12, "this test needs ABI 12 or later")
     for run, what in (
         (a_gate_hung_through_the_abi_swings, "a gate hung through the ABI swings"),
         (limits_are_degrees, "limits are degrees and they hold"),
@@ -817,6 +884,8 @@ def main() -> int:
          "a fixing tells tension from shear"),
         (a_latch_changes_what_the_assembly_is,
          "a latch changes what the assembly is"),
+        (a_spring_stores_what_a_known_load_does_to_it,
+         "a spring stores what a known load does to it"),
     ):
         run()
         print(f"[PASS] {what}")

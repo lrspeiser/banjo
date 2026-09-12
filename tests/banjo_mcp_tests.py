@@ -391,6 +391,118 @@ class TheTools(unittest.TestCase):
         self.assertLess(dropped["position_m"][1], 1.0,
                         "releasing the fixing did not drop the bracket")
 
+    def test_a_hoist_lifts_the_other_end(self):
+        """A pulley through the tools, and the direction of its ratio.
+
+        The ratio multiplies B's run, so a counterweight at b arrives at a
+        DIVIDED by it -- which is the thing that is easy to get backwards and
+        expensive to discover in a courtyard.
+        """
+        world_id = self.client.call("create_world", cell_size_m=0.05, objects=[
+            {"name": "beam", "shape": "box", "material": "oak",
+             "size_m": [3.0, 0.2, 0.2], "position_m": [0, 5.0, 0], "anchored": True},
+            {"name": "load", "shape": "box", "material": "iron",
+             "size_m": [0.2, 0.2, 0.2], "position_m": [-1.0, 3.0, 0]},
+            {"name": "counterweight", "shape": "box", "material": "iron",
+             "size_m": [0.2, 0.2, 0.2], "position_m": [1.0, 3.0, 0]},
+        ])["world_id"]
+        made = self.client.call("reeve", world_id=world_id, a="load",
+                                b="counterweight",
+                                at_a_m=[-1.0, 3.0, 0.0], at_b_m=[1.0, 3.0, 0.0],
+                                over_a_m=[-1.0, 4.9, 0.0], over_b_m=[1.0, 4.9, 0.0],
+                                ratio=1.0)
+        self.assertGreater(made["joint"], 0)
+        rove = self.client.call("joints", world_id=world_id)["joints"][0]
+        self.assertEqual(rove["kind"], "pulley")
+        # Reported in metres, and it says so in the key.
+        self.assertIn("rope_m", rove)
+        self.assertIn("ratio", rove)
+
+        # Equal weights at 1:1 balance: neither end runs away.
+        was = next(b for b in self.client.call(
+            "describe_world", world_id=world_id)["objects"] if b["name"] == "load")
+        self.client.call("run", world_id=world_id, seconds=2.0)
+        now = next(b for b in self.client.call(
+            "describe_world", world_id=world_id)["objects"] if b["name"] == "load")
+        self.assertLess(abs(now["position_m"][1] - was["position_m"][1]), 0.1,
+                        "two equal weights on a 1:1 rope did not balance")
+        self.assertGreater(
+            self.client.call("joints", world_id=world_id)["joints"][0]["tension_n"],
+            100.0, "the rope is holding two 618 N weights and reports nothing")
+
+    def test_a_spring_stores_what_is_done_to_it(self):
+        """An elastic element through the tools, with its model reported.
+
+        There is no "shoot" tool and no arrow speed anywhere: what a spring
+        gives back is what was put into it, and `joints` reports both the model
+        it declares and what it currently holds.
+        """
+        world_id = self.client.call("create_world", cell_size_m=0.05, objects=[
+            {"name": "post", "shape": "box", "material": "iron",
+             "size_m": [0.2, 0.2, 0.2], "position_m": [0, 2.0, 0], "anchored": True},
+            {"name": "block", "shape": "box", "material": "iron",
+             "size_m": [0.2, 0.2, 0.2], "position_m": [1.0, 2.0, 0]},
+        ])["world_id"]
+        made = self.client.call("spring", world_id=world_id, a="post", b="block",
+                                at_a_m=[0.1, 2.0, 0.0], at_b_m=[0.9, 2.0, 0.0],
+                                stiffness_n_m=2000.0, damping_n_s_m=200.0)
+        self.assertGreater(made["joint"], 0)
+        limb = self.client.call("joints", world_id=world_id)["joints"][0]
+        self.assertEqual(limb["kind"], "elastic")
+        self.assertAlmostEqual(limb["stiffness_n_m"], 2000.0, places=2)
+        # Built at its own rest length, so it holds nothing yet.
+        self.assertLess(abs(limb["force_n"]), 1.0)
+        self.assertLess(limb["stored_j"], 0.01)
+
+        # Pull it out and it holds energy -- half k x squared, from the model.
+        self.client.call("pick_up", world_id=world_id, name="block")
+        for i in range(1, 61):
+            self.client.call("place", world_id=world_id,
+                             to_m=[1.0 + i * 0.005, 2.0, 0.0])
+        drawn = self.client.call("joints", world_id=world_id)["joints"][0]
+        stretched = drawn["length_m"] - drawn["rest_m"]
+        self.assertGreater(stretched, 0.05, "the spring was not drawn at all")
+        # Compared loosely on purpose: `length_m` comes back rounded to a tenth
+        # of a millimetre, and at this stiffness a tenth of a millimetre is
+        # 0.06 J. The tool rounds for the reader; the test must not then demand
+        # more places than it left.
+        self.assertAlmostEqual(drawn["stored_j"] / (0.5 * 2000.0 * stretched ** 2),
+                               1.0, places=3)
+        self.assertAlmostEqual(drawn["force_n"] / (2000.0 * stretched), 1.0, places=3)
+
+    def test_a_loaded_shelf_is_reported_without_being_struck(self):
+        """Sustained load through the tools.
+
+        Nothing strikes the shelf. It is asked about from statics, and it is the
+        only way a thing at rest under a pile is ever noticed.
+        """
+        objects = [
+            {"name": "left pier", "shape": "box", "material": "iron",
+             "size_m": [0.2, 0.4, 0.3], "position_m": [-0.6, 0.2, 0],
+             "anchored": True},
+            {"name": "right pier", "shape": "box", "material": "iron",
+             "size_m": [0.2, 0.4, 0.3], "position_m": [0.6, 0.2, 0],
+             "anchored": True},
+            {"name": "shelf", "shape": "box", "material": "concrete",
+             "size_m": [1.4, 0.1, 0.3], "position_m": [0, 0.45, 0]},
+        ]
+        for i in range(5):
+            objects.append(
+                {"name": f"crate {i + 1}", "shape": "box", "material": "iron",
+                 "size_m": [0.3, 0.3, 0.3], "position_m": [0, 0.5 + 0.3 * (0.5 + i), 0]})
+        world_id = self.client.call("create_world", cell_size_m=0.05,
+                                    objects=objects)["world_id"]
+        self.assertEqual(self.client.call("overloaded", world_id=world_id)["overloaded"],
+                         [], "a shelf was overloaded before anything settled on it")
+        self.client.call("run", world_id=world_id, seconds=2.0)
+        sagging = self.client.call("overloaded", world_id=world_id)["overloaded"]
+        self.assertEqual(len(sagging), 1, f"expected one overloaded thing: {sagging}")
+        self.assertEqual(sagging[0]["object"], "shelf")
+        self.assertGreater(sagging[0]["stress_mpa"], sagging[0]["holds_mpa"],
+                           "it was reported without being over its strength")
+        self.assertGreater(sagging[0]["carrying_n"], 1000.0)
+        self.assertGreater(sagging[0]["span_m"], 0.5)
+
     def test_a_pin_can_be_stiffened_and_taken_out(self):
         world_id = self.gateway()
         joint = self.client.call("hinge", world_id=world_id, a="post", b="gate",

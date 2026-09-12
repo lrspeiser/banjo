@@ -14,7 +14,7 @@ tell you any other way:
 if (banjo_abi_version() != BANJO_ABI_VERSION) { /* mismatch */ }
 ```
 
-Current ABI: **11**.
+Current ABI: **12**.
 
 ---
 
@@ -476,6 +476,96 @@ that shows: measured, a 5 kg oak bar on a 142 kg gate let it move as far as no
 bar at all, and a 60 kg iron bar — a mass ratio of two rather than thirty — held
 it. If a fixing seems soft, look at the mass ratio before looking at the
 constraint.
+
+### `int banjo_reeve(banjo_world *world, const char *a, const char *b, const double at_a_m[3], const double at_b_m[3], const double over_a_m[3], const double over_b_m[3], double ratio, double length_m)`
+
+A rope from one thing, over two fixed points, to another — a **hoist**. Pull one
+end down and the other comes up, because the rope's length cannot change.
+
+```c
+double at_grate[3] = {0.0, 1.04, 0.14}, at_weight[3] = {1.6, 2.16, 0.14};
+double over_grate[3] = {0.0, 2.4, 0.14}, over_weight[3] = {1.6, 2.4, 0.14};
+int winch = banjo_reeve(w, "grate", "counterweight",
+                        at_grate, at_weight, over_grate, over_weight,
+                        0.35, 0.0);
+```
+
+This is the **ideal** pulley: a relationship between cable lengths,
+
+    |a - over_a|  +  ratio * |b - over_b|  <=  length
+
+with no wheel (so no wheel inertia or bearing friction) and no rope wrapping (so
+it cannot slip or come off its sheave). `banjo_tie` is the physical alternative —
+a run of bodies draped over something, with real wrap and real friction, at a
+body per segment. Both are here on purpose; reach for this when you want the
+hoist to work, and for that when the rope itself is what is being watched.
+
+**`ratio` multiplies `b`'s run, and the direction is the thing to get right.**
+The constraint puts force `λ` on end `a` and `ratio × λ` on end `b`. So a
+counterweight hung at `b` arrives at `a` **divided by the ratio**:
+
+| you want | ratio |
+|---|---|
+| a light counterweight to balance a heavy load at `a` | **below 1** |
+| a plain redirect, 1:1 | 1 |
+| `b` to move further than `a`, for less force | above 1 |
+
+Measured, and this cost an afternoon: at a ratio of 3, a 3.95 kN counterweight
+showed a rope tension of **1.32 kN** — its own weight over three — and an 800 N
+heave could not shift a 12.3 kN portcullis at all. At **0.35** the same
+counterweight carries 11.29 kN, the grate sits down by 1.03 kN, and a person
+finishes the lift. What a low ratio costs is distance: the grate rises 0.35 m
+for every metre hauled.
+
+Like a rope it pulls and does not push, so a counterweight resting on the floor
+is not dragged anywhere when the other end is lifted. `length_m` of 0 means "as
+it is rove".
+
+### `int banjo_spring(banjo_world *world, const char *a, const char *b, const double at_a_m[3], const double at_b_m[3], double rest_m, double stiffness_n_m, double damping_n_s_m)`
+
+An elastic element between two points: a **bow limb**, a spring, a bent plank —
+anything that stores energy by being deformed and gives it back.
+
+```c
+double root[3] = {0.35, 2.1, 0.0}, tip[3] = {0.15, 2.4, 0.0};
+int limb = banjo_spring(w, "riser", "upper tip", root, tip,
+                        0.0,        /* rest: as it stands */
+                        4000.0,     /* newtons per metre */
+                        0.0);       /* the declared loss */
+```
+
+**This is a declared simplified model**, and which one matters:
+
+    force  = stiffness * (length - rest)
+    stored = stiffness * (length - rest)² / 2
+
+Hooke's law with viscous damping. It has no mass of its own, no internal stress,
+no yield, no hysteresis, and it does not care which way it bends. A real bow limb
+has all of those.
+
+**It is validated rather than asserted** — `tests/elastic_tests.cpp`:
+
+| check | result |
+|---|---|
+| a known load against the extension | 100 / 200 / 400 N settled at 49.94 / 99.88 / 199.75 mm (Hooke: 50 / 100 / 200) |
+| the work integral of a draw | 55.85 J against a claimed 55.60 |
+| energy back as motion | **98.06%** |
+| the declared loss | 400 N s/m turned 54.5 J of return into 14.2 |
+| four times the stiffness | 1.85× the speed (model: 2) |
+| eight times the mass | 2.70× slower (model: 2.83) |
+
+Hooke's law is checked with a **known load against the measured extension**, not
+force against extension — the latter would only restate the formula, because
+`force_n` is computed *from* the extension.
+
+**It pushes as well as pulls.** Leaned on with 300 N it squashed 149.8 mm and
+pushed back with 299.6 N. A thing that only pulls is a rope: use `banjo_tie`.
+
+`rest_m` of 0 means "as it stands". `damping_n_s_m` is the declared loss and
+should be the only thing that takes energy out.
+
+`banjo_joints` reports `rest_m`, `stiffness_n_m`, `damping_n_s_m`, `force_n` and
+`stored_j` for one of these, and `at` is its current length.
 
 ### `int banjo_joint_count(const banjo_world *world)`
 ### `int banjo_joints(const banjo_world *world, banjo_joint *out, int max)`
