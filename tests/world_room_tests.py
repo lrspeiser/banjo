@@ -7,6 +7,7 @@ HERE, where the thing that made it can be told about it.
 """
 from __future__ import annotations
 
+import math
 import sys
 import unittest
 from pathlib import Path
@@ -281,6 +282,54 @@ class TheCourtyard(unittest.TestCase):
         self.assertGreater(counter, 0.1 * grate,
                            "the counterweight is so light that the rope might as "
                            "well not be there")
+
+    def test_the_shelf_can_be_overloaded_by_what_is_in_the_room(self):
+        """A shelf nobody can overload demonstrates nothing.
+
+        Bending stress goes as one over the depth squared, so the slab's
+        thickness is what decides whether the things lying around this courtyard
+        are enough to break it. Checked here in newtons rather than discovered
+        by carrying blocks about: a 120 mm slab wants 3.7 kN, which is more than
+        everything loose in the room put together.
+        """
+        spec = fracture_lab.validate(world_room.courtyard())
+        bodies = {body["name"]: body for body in spec["bodies"]}
+        DENSITY = {"iron": 7870.0, "concrete": 2400.0, "oak": 700.0}
+
+        def weight_n(name):
+            body = bodies[name]
+            volume = 1.0
+            for side in body["size_mm"]:
+                volume *= side / 1000.0
+            # A sphere is not a box.
+            if body["shape"] == "sphere":
+                volume *= math.pi / 6.0
+            return volume * DENSITY[body["material"]] * 9.81
+
+        shelf = bodies["stone shelf"]
+        left = bodies["shelf pier left"]
+        right = bodies["shelf pier right"]
+        # The clear span: between the piers' inner faces.
+        span = ((right["center_mm"][0] - right["size_mm"][0] / 2)
+                - (left["center_mm"][0] + left["size_mm"][0] / 2)) / 1000.0
+        breadth = shelf["size_mm"][2] / 1000.0
+        depth = shelf["size_mm"][1] / 1000.0
+        # Simply supported, load in the middle: stress = 3 W L / (2 b d^2).
+        per_newton = 3.0 * span / (2.0 * breadth * depth * depth)
+        # Concrete's tensile strength, which is what a beam fails on.
+        breaks_at_n = 3.0e6 / per_newton
+
+        loose = sum(weight_n(name) for name in
+                    ("stone block", "iron ball", "oak barrel"))
+        self.assertLess(breaks_at_n, loose,
+                        f"the shelf needs {breaks_at_n:.0f} N to break and there "
+                        f"is only {loose:.0f} N loose in the whole courtyard, so "
+                        f"nobody can overload it")
+        # And not so weak that it fails under its own weight standing empty.
+        own = weight_n("stone shelf")
+        self.assertGreater(breaks_at_n, 2.0 * own,
+                           f"the shelf breaks at {breaks_at_n:.0f} N and weighs "
+                           f"{own:.0f} N itself, so it is barely standing up")
 
     def test_the_portcullis_cannot_rise_through_its_own_arch(self):
         """Travel measured against the room, not guessed.

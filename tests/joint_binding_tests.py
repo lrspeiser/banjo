@@ -652,8 +652,69 @@ def a_hoist_refuses_what_it_cannot_reeve() -> None:
               "ratio of zero")
 
 
+def loaded_shelf(crates: int, crate_m: float = 0.3) -> dict:
+    """A stone shelf on two piers with crates stacked in the middle.
+
+    Stone rather than oak: concrete takes 3 MPa in tension against oak's 90, so
+    a shelf you can overload with a handful of crates is a stone one. In oak the
+    same shelf would want eighteen tonnes.
+    """
+    scene = {
+        "bodies": [
+            {"name": "left pier", "shape": "box", "material": "iron",
+             "dimensions_m": [0.2, 0.4, 0.3], "center_m": [-0.6, 0.2, 0.0],
+             "anchored": True},
+            {"name": "right pier", "shape": "box", "material": "iron",
+             "dimensions_m": [0.2, 0.4, 0.3], "center_m": [0.6, 0.2, 0.0],
+             "anchored": True},
+            {"name": "shelf", "shape": "box", "material": "concrete",
+             "dimensions_m": [1.4, 0.1, 0.3], "center_m": [0.0, 0.45, 0.0]},
+        ],
+    }
+    for i in range(crates):
+        scene["bodies"].append(
+            {"name": f"crate {i + 1}", "shape": "box", "material": "iron",
+             "dimensions_m": [crate_m] * 3,
+             "center_m": [0.0, 0.5 + crate_m * (0.5 + i), 0.0]})
+    return scene
+
+
+def a_loaded_shelf_is_reported_without_being_struck() -> None:
+    """The one kind of break the contact ledger cannot see.
+
+    Nothing is dropped on the shelf. The crates are there when the world opens,
+    they settle, and then nothing happens at all -- which is exactly the problem
+    this answers: no contact, no impact, no reason for anything to ask.
+    """
+    with banjo.World(loaded_shelf(1, 0.2), cell_size_m=0.05) as world:
+        tick(world, 480)
+        require(world.overloaded() == [],
+                "a shelf holding one crate was called overloaded")
+
+    with banjo.World(loaded_shelf(5, 0.3), cell_size_m=0.05) as world:
+        tick(world, 480)
+        sagging = world.overloaded()
+        require(len(sagging) == 1, f"expected one overloaded thing, got {sagging}")
+        shelf = sagging[0]
+        print(f"  the shelf carries {shelf.carrying_n:.0f} N over "
+              f"{shelf.span_m:.2f} m: {shelf.stress_pa / 1e6:.2f} MPa against "
+              f"concrete's {shelf.strength_pa / 1e6:.0f}")
+        require(shelf.name == "shelf", "the wrong thing was reported")
+        require(shelf.stress_pa > shelf.strength_pa,
+                "it was reported without being over its strength")
+        # It is offered for breaking through the ordinary door.
+        require("shelf" in world.breakable(),
+                "the shelf is overloaded but was never offered for breaking")
+        # And it actually fails, with its load in the island.
+        pieces = world.fracture("shelf")
+        print(f"    put into the lattice under its load: {pieces} pieces")
+        require(pieces > 1,
+                "the lattice gave an overloaded shelf back whole, so the load is "
+                "not reaching the island")
+
+
 def main() -> int:
-    require(banjo.ABI_VERSION >= 9, "this test needs ABI 9 or later")
+    require(banjo.ABI_VERSION >= 10, "this test needs ABI 10 or later")
     for run, what in (
         (a_gate_hung_through_the_abi_swings, "a gate hung through the ABI swings"),
         (limits_are_degrees, "limits are degrees and they hold"),
@@ -680,6 +741,8 @@ def main() -> int:
         (mechanical_advantage_has_a_side, "mechanical advantage has a side"),
         (a_hoist_refuses_what_it_cannot_reeve,
          "a hoist refuses what it cannot reeve"),
+        (a_loaded_shelf_is_reported_without_being_struck,
+         "a loaded shelf is reported without being struck"),
     ):
         run()
         print(f"[PASS] {what}")

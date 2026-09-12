@@ -14,7 +14,7 @@ tell you any other way:
 if (banjo_abi_version() != BANJO_ABI_VERSION) { /* mismatch */ }
 ```
 
-Current ABI: **9**.
+Current ABI: **10**.
 
 ---
 
@@ -257,6 +257,72 @@ nobody wants forty entries called `"glass plate 20mm piece 31"`, they want to
 know they have 400 g of glass. The weight is the matter that was actually there
 — a piece's cells are its volume, and volume times the material's density is
 what has been carried away.
+
+---
+
+## Carrying too much
+
+There are two ways something breaks here, and this is the one the contact ledger
+cannot see.
+
+Every other break starts from a **blow** — a closing speed, an impedance, an
+energy. A shelf with too much stacked on it is struck by nothing at all.
+Measured: a plank bridging two piers with five iron crates on it reports **no
+contacts whatsoever** once everything has settled, because the contact ledger is
+a ledger of impacts. Load it until it should snap and nothing would ever ask.
+
+So it is asked separately, from statics: what is resting on it, how far apart its
+supports are, and what bending that puts in it.
+
+```c
+int count = banjo_overload_count(w);
+if (count > 0) {
+    banjo_overload *sagging = malloc(count * sizeof *sagging);
+    int n = banjo_overloaded(w, sagging, count);
+    /* sagging[i].name is also in banjo_breakable_name() */
+}
+```
+
+### `int banjo_overload_count(const banjo_world *world)`
+### `int banjo_overloaded(const banjo_world *world, banjo_overload *out, int max)`
+
+```c
+typedef struct {
+    const char *name;
+    double carrying_n;      /* stacked on it, not counting its own weight */
+    double span_m;          /* how far apart the things holding it up are */
+    double stress_pa;
+    double strength_pa;
+} banjo_overload;
+```
+
+For a simply supported span `L` of section `b × d`, under a central load `W` and
+its own weight `w` per metre:
+
+    stress = 3 W L / (2 b d²)  +  3 w L² / (4 b d²)
+
+Like every bound in this engine, past `strength_pa` is **necessary and not
+sufficient**: it says the lattice is worth running. The formula assumes the load
+is in the middle and the ends are free to rotate — the worst case for both — so
+it errs towards asking.
+
+**The span is what decides it.** A beam supported along its whole length has no
+span and cannot be bent, which is the honest reason a plate lying flat on the
+floor will not break however much is piled on it. Measured: the same five crates
+on the same plank, with a bench underneath, report nothing.
+
+**`banjo_fracture` on one of these puts it into the lattice *with its load on
+it*.** An island is normally built from the contact that caused the break, and a
+sustained load has no contact — so an overloaded shelf went into the lattice on
+its own, with nothing pressing on it, and came out whole however much was piled
+on. With its crates: a stone shelf at 5.46 MPa against concrete's 3 came out in
+**26 pieces**.
+
+**`banjo_decline_break` matters more here than for a blow.** A load does not go
+away by itself, so an undeclined shelf is offered on every survey for ever.
+
+The survey runs at a stride — four times a second, not sixty — because load does
+not change in a quarter of a second and the survey is O(bodies²).
 
 ---
 

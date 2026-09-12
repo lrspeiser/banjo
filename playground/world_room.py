@@ -261,6 +261,34 @@ def courtyard() -> dict[str, Any]:
         add(f"chain {i + 1}", "box", "iron", [80, 80, 80],
             [CHAIN_X, 2360 - i * 160, CHAIN_Z])
 
+    # ---- a stone shelf on two piers ----------------------------------------
+    #
+    # Somewhere to stack things, and the one thing in this room that can break
+    # WITHOUT being hit. A shelf at rest under a pile reports no contacts at
+    # all -- nothing strikes it -- so the load survey is the only thing that
+    # ever notices, and it notices from statics: what is on it, how far apart
+    # its piers are, and the bending that puts in it.
+    #
+    # A THIN slab, and the thinness is the point twice over.
+    #
+    # Bending stress goes as 1/depth squared, so 40 mm of stone over an 840 mm
+    # clear span is 3,281 Pa per newton on it. Concrete takes 3 MPa in tension --
+    # famously little, which is why real concrete is reinforced -- so about
+    # 914 N breaks it. The stone block in this room is 772 N and the iron ball
+    # is 324 N: either one alone is fine, and the two together are not. That is
+    # a shelf somebody can overload by hand, which is the whole idea.
+    #
+    # A 120 mm slab would have wanted 3.7 kN, which is more than everything
+    # loose in this courtyard put together, and it would have been a shelf that
+    # demonstrates nothing.
+    SHELF_X, SHELF_Z = 1400, -1600
+    add("shelf pier left", "box", "concrete", [160, 800, 160],
+        [SHELF_X - 500, 400, SHELF_Z], anchored=True)
+    add("shelf pier right", "box", "concrete", [160, 800, 160],
+        [SHELF_X + 500, 400, SHELF_Z], anchored=True)
+    add("stone shelf", "box", "concrete", [1200, 40, 240],
+        [SHELF_X, 820, SHELF_Z])
+
     # Things to push with, and to wedge things open.
     add("iron ball", "sphere", "iron", [200, 200, 200], [-800, 100, 800])
     add("oak barrel", "box", "oak", [400, 480, 400], [400, 240, 1200])

@@ -512,7 +512,10 @@ int main(int argc, char **argv) {
                                           {"point_m", vec(found.point_world_m)}};
                     std::cout << answer.dump() << std::endl;
                     continue;
-                } else if (op != "poses") {
+                } else if (op != "poses" && op != "overloaded") {
+                    // "overloaded" changes nothing and reports nothing about
+                    // where anything is; it falls through to the ordinary reply
+                    // below, which carries the survey whenever it has anything.
                     throw std::invalid_argument("unknown op: " + op);
                 }
                 // Pins travel with anything that rebuilt the room. A gate that
@@ -526,6 +529,21 @@ int main(int argc, char **argv) {
                 // reply that carries geometry carries all of it regardless:
                 // that is the reply that rebuilds the scene.
                 const bool geometry = made_bodies || op == "poses" || op == "fracture";
+                // Anything carrying more than it can hold up.
+                //
+                // Sent whenever there is something to send rather than on a
+                // cache, because the list is almost always empty and it is the
+                // one thing a host cannot work out for itself: a shelf at rest
+                // under a pile of crates reports no contacts at all, so nothing
+                // else in the reply hints that it is about to give.
+                nlohmann::json sagging = nlohmann::json::array();
+                for (const LiveOverload &load : world->overloaded())
+                    sagging.push_back({{"name", load.name},
+                                       {"carrying_n", tidy(load.carrying_n)},
+                                       {"span_m", tidy(load.span_m)},
+                                       {"stress_mpa", tidy(load.stress_pa / 1e6)},
+                                       {"holds_mpa", tidy(load.strength_pa / 1e6)}});
+                if (!sagging.empty()) reply["overloaded"] = std::move(sagging);
                 // Pins travel when the SET of them changes -- one hung, one
                 // taken out, one that came off because its wood was smashed --
                 // and not on every tick. Their angles change every frame, but

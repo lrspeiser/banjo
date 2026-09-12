@@ -643,6 +643,24 @@ def tool_reeve(args: dict[str, Any]) -> dict[str, Any]:
                     f"counterweight of load/{ratio:g} balances a load hung there."}
 
 
+def tool_overloaded(args: dict[str, Any]) -> dict[str, Any]:
+    """Everything carrying more than it can hold up."""
+    world: banjo.World = _world(args.get("world_id"))["world"]
+    sagging = world.overloaded()
+    return {"overloaded": [
+                {"object": load.name,
+                 "carrying_n": round(load.carrying_n, 1),
+                 "span_m": round(load.span_m, 3),
+                 "stress_mpa": round(load.stress_pa / 1e6, 3),
+                 "holds_mpa": round(load.strength_pa / 1e6, 3)}
+                for load in sagging],
+            "note": "nothing struck these -- they are carrying too much standing "
+                    "still. Break one with `drop`-style fracture and it comes "
+                    "apart under its own load; the threshold is necessary and "
+                    "not sufficient, as everywhere else here."
+                    if sagging else "nothing is carrying more than it can hold"}
+
+
 def tool_joints(args: dict[str, Any]) -> dict[str, Any]:
     """Every pin in the world, and where each has turned to.
 
@@ -929,6 +947,16 @@ TOOLS = [
          "length_m": {"type": "number",
                       "description": "How long the rope is. 0 means 'as it is "
                                      "rove': what the two runs add up to now."}}}},
+    {"name": "overloaded",
+     "description": "Everything in the world carrying more than its material can "
+                    "take, worked out from statics rather than from impacts. "
+                    "This is the ONLY way a loaded shelf is ever noticed: a "
+                    "thing at rest under a pile reports no contacts at all, so "
+                    "nothing strikes it and nothing else would ever ask. Says "
+                    "what it is carrying, how far apart its supports are, and "
+                    "the bending stress against what the material holds.",
+     "inputSchema": {"type": "object", "required": ["world_id"],
+                     "properties": {"world_id": {"type": "string"}}}},
     {"name": "joints",
      "description": "Every pin in the world and where each has turned to. The two "
                     "names a pin holds can change -- a pin whose wood is smashed "
@@ -981,6 +1009,7 @@ HANDLERS = {
     "slide": tool_slide,
     "tie": tool_tie,
     "reeve": tool_reeve,
+    "overloaded": tool_overloaded,
     "joints": tool_joints,
     "hinge_friction": tool_hinge_friction,
     "unhinge": tool_unhinge,

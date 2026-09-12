@@ -75,7 +75,7 @@ extern "C" {
 /* The ABI version. Bumped when the meaning or layout of anything here changes.
  * Check it once at startup against banjo_abi_version(): a header and a library
  * that disagree will not tell you so any other way. */
-#define BANJO_ABI_VERSION 9
+#define BANJO_ABI_VERSION 10
 
 /* What a call reported. Anything below zero is a failure and leaves the world
  * unchanged; banjo_last_error() says what happened. */
@@ -158,6 +158,35 @@ typedef struct {
     double over_a_m[3];
     double over_b_m[3];
 } banjo_joint;
+
+/* A thing carrying more than it can hold up.
+ *
+ * This is the OTHER way something breaks here, and it exists because the first
+ * way cannot see it. Every other break starts from a blow -- a closing speed, an
+ * impedance, an energy. A shelf with too much stacked on it is struck by
+ * nothing at all: measured, a plank bridging two piers with iron crates on it
+ * reports NO contacts whatsoever once everything has settled, because the
+ * contact ledger is a ledger of impacts.
+ *
+ * So this is asked separately, from statics: what is resting on it, how far
+ * apart its supports are, and what bending that puts in it --
+ *
+ *     stress = 3 W L / (2 b d^2)  +  3 w L^2 / (4 b d^2)
+ *
+ * for a simply supported span L of section b x d under a central load W and its
+ * own weight w per metre. Like every bound in this engine it is NECESSARY AND
+ * NOT SUFFICIENT: past it, the lattice is worth running. */
+typedef struct {
+    const char *name;
+    /* What is stacked on it, in newtons, not counting its own weight. */
+    double carrying_n;
+    /* How far apart the things holding it up are. A beam supported along its
+     * whole length has no span and cannot be bent, which is the honest reason a
+     * plate lying flat on the floor will not break however much is piled on. */
+    double span_m;
+    double stress_pa;
+    double strength_pa;
+} banjo_overload;
 
 typedef struct {
     int hit;
@@ -400,6 +429,21 @@ BANJO_API int banjo_collect(banjo_world *world, const double at_m[3], double rad
 /* Fills up to `max` lots from the last banjo_collect and returns how many were
  * written, or a negative banjo_status. */
 BANJO_API int banjo_collected(const banjo_world *world, banjo_lot *out, int max);
+
+/* How many things are carrying more than they can hold up. */
+BANJO_API int banjo_overload_count(const banjo_world *world);
+/* Fills up to `max` and returns how many were written, or a negative
+ * banjo_status. The names belong to the world and stay good until the next call
+ * that changes it.
+ *
+ * These names also appear in banjo_breakable_name(), because from the outside
+ * they are the same question -- this thing may come apart, do you want to know.
+ * banjo_fracture() on one puts it into the lattice WITH ITS LOAD on it, which is
+ * what makes it actually fail: measured, a stone shelf at 5.46 MPa against
+ * concrete's 3 came out in 26 pieces. banjo_decline_break() silences it, and
+ * that matters more here than for a blow -- a load does not go away by itself,
+ * so an undeclined shelf is offered on every survey for ever. */
+BANJO_API int banjo_overloaded(const banjo_world *world, banjo_overload *out, int max);
 
 /* ---- the hand -------------------------------------------------------- */
 

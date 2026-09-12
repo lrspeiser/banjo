@@ -379,7 +379,7 @@ class Live:
             if not 0.0 <= horizon <= 10.0:
                 raise LiveError("foresee needs a horizon between 0 and 10 seconds")
             return session.send(op="foresee", horizon_s=horizon)
-        if op in ("release", "poses", "joints"):
+        if op in ("release", "poses", "joints", "overloaded"):
             return session.send(op=op)
         if op == "hinge":
             # Hang one named thing off another on a pin. Everything is checked

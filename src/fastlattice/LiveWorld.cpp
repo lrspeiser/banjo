@@ -236,6 +236,20 @@ struct LiveWorld::Impl {
     // contacts stop being hard enough to break it, which is what happens as
     // soon as the two bodies separate.
     std::set<std::string> held_through;
+    // What is carrying more than it can hold up, from the last survey. Kept
+    // rather than recomputed on every ask, because a host reads it once a frame
+    // and the survey is a stride thing.
+    std::vector<LiveOverload> overloaded;
+    // For an overloaded body, the heaviest thing sitting on it.
+    //
+    // The island a fracture is run on is built from the CONTACT that caused it,
+    // and a sustained load has no contact -- so an overloaded shelf would go
+    // into the lattice on its own, with nothing pressing on it, and come out
+    // whole however much was piled on. This is what gives it its load back.
+    std::unordered_map<std::size_t, std::size_t> bearing_on;
+    // What each part is made of, in the engine's terms, so a survey can ask a
+    // body what it can take without going back through the scene.
+    std::vector<double> tensile_of;
 
     // Pins, by name. See LiveJoint in the header for why it is names and not
     // bodies. `rigid` is the engine-level constraint that is currently standing
@@ -384,6 +398,9 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request) {
         // Kept so a piece can say what it weighs. Its cells are its volume, and
         // volume times this is matter somebody can carry away.
         impl.density_of.push_back(definition->density_kg_m3);
+        // And what it can take in bending, for the load survey. A beam fails on
+        // the tension side, so this is the number that decides a loaded shelf.
+        impl.tensile_of.push_back(definition->tensile_strength_pa);
         if (!setup.part_of_node.empty()) {
             if (impl.material_of_part.size() < setup.part_bodies.size())
                 impl.material_of_part.resize(setup.part_bodies.size());
@@ -662,6 +679,9 @@ void LiveWorld::step(double dt_s) {
         impl_->time_s += dt_s;
         impl_->rememberJointAngles(*impl_->world);
         partOverloadedLinks();
+        // Load does not change in a quarter of a second, and the survey is
+        // O(bodies squared). Sixty times a second would be waste; four is not.
+        if (impl_->steps_taken % 60 == 0) surveyLoads();
         foresee();
         return;
     }
@@ -672,6 +692,7 @@ void LiveWorld::step(double dt_s) {
     impl_->time_s += dt_s;
     impl_->rememberJointAngles(*impl_->world);
     partOverloadedLinks();
+    if (impl_->steps_taken % 60 == 0) surveyLoads();
     foresee();
 }
 
@@ -1310,6 +1331,140 @@ std::vector<LiveImpact> LiveWorld::impacts(double quiet_speed_m_s) const {
 // Everything waiting on an answer stays where it is. Rebuilt rather than
 // patched, because there are five places that change what is waiting and a
 // pinned body that nobody unpins never moves again.
+// What everything is carrying, and whether it can hold it.
+//
+// Statics, not dynamics. Nothing here looks at a contact, because a thing at
+// rest reports none: a plank bridging two piers with an iron block on it comes
+// back with an empty contact ledger once it has settled, which is correct -- a
+// ledger of impacts has no impacts to report -- and is why a shelf could be
+// loaded until it should snap without anything ever asking.
+//
+// So it is asked from geometry. A sits on B when A's underside is within a
+// whisker of B's top and they overlap from above. That gives what is stacked on
+// what, and the weight follows from the cells and the density. O(bodies squared)
+// on axis-aligned boxes, which is nothing for a room -- and is why it runs at a
+// stride rather than every step.
+void LiveWorld::surveyLoads() {
+    impl_->overloaded.clear();
+    impl_->bearing_on.clear();
+    const std::size_t count = impl_->described.size();
+    if (count == 0) return;
+
+    const auto standing = poses();
+    std::vector<Vec3> middle(count), half(count);
+    std::vector<double> weight(count, 0.0);
+    for (std::size_t i = 0; i < count && i < standing.size(); ++i) {
+        middle[i] = standing[i].position_m;
+        half[i] = 0.5 * standing[i].dimensions_m;
+        const double cell = impl_->request.cell_size_m;
+        const double volume = static_cast<double>(impl_->nodes_of[i].size()) *
+                              cell * cell * cell;
+        const double density = i < impl_->density_of.size() ? impl_->density_of[i] : 0.0;
+        weight[i] = volume * density * 9.81;
+    }
+
+    // Who is sitting on whom. A whisker of slack because a body at rest sinks
+    // into its support by the solver's penetration allowance -- exactly zero
+    // would find nothing at all.
+    constexpr double kWhisker = 0.02;
+    const auto overlapsFromAbove = [&](std::size_t upper, std::size_t lower) {
+        return std::abs(middle[upper].x - middle[lower].x) <
+                   half[upper].x + half[lower].x &&
+               std::abs(middle[upper].z - middle[lower].z) <
+                   half[upper].z + half[lower].z;
+    };
+    const auto restsOn = [&](std::size_t upper, std::size_t lower) {
+        if (upper == lower) return false;
+        const double underside = middle[upper].y - half[upper].y;
+        const double top = middle[lower].y + half[lower].y;
+        return underside > top - kWhisker && underside < top + kWhisker &&
+               overlapsFromAbove(upper, lower);
+    };
+
+    // What each body carries: everything stacked above it, however deep. Walked
+    // upwards from each body rather than summed downwards, because a stack can
+    // fork and the same crate must not be counted twice on one shelf.
+    std::vector<double> carrying(count, 0.0);
+    for (std::size_t base = 0; base < count; ++base) {
+        if (impl_->described[base].anchored) continue;
+        std::vector<bool> counted(count, false);
+        std::vector<std::size_t> above;
+        for (std::size_t i = 0; i < count; ++i)
+            if (restsOn(i, base)) { above.push_back(i); counted[i] = true; }
+        for (std::size_t at = 0; at < above.size(); ++at) {
+            const std::size_t here = above[at];
+            carrying[base] += weight[here];
+            for (std::size_t i = 0; i < count; ++i)
+                if (!counted[i] && restsOn(i, here)) { above.push_back(i); counted[i] = true; }
+        }
+    }
+
+    for (std::size_t i = 0; i < count; ++i) {
+        if (impl_->described[i].anchored) continue;
+        if (i == impl_->holding) continue;             // in a hand, not on anything
+        if (!(carrying[i] > 0.0)) continue;            // nothing on it: nothing to do
+
+        // What is holding it up, and how far apart. A beam supported all along
+        // its length has no span and cannot be bent -- which is the honest
+        // reason a plate lying flat on the floor will not break however much is
+        // piled on it.
+        double leftmost = 1e30, rightmost = -1e30;
+        bool held = false;
+        for (std::size_t under = 0; under < count; ++under) {
+            if (!restsOn(i, under)) continue;
+            held = true;
+            leftmost = std::min(leftmost, middle[under].x - half[under].x);
+            rightmost = std::max(rightmost, middle[under].x + half[under].x);
+        }
+        if (!held) continue;                            // falling, not carrying
+        // The clear span: from the inner edge of one support to the inner edge
+        // of the other, capped at the beam itself.
+        double span = std::min(rightmost - leftmost, 2.0 * half[i].x);
+        // Supports that touch along the whole length leave no clear span.
+        double supported_length = 0.0;
+        for (std::size_t under = 0; under < count; ++under) {
+            if (!restsOn(i, under)) continue;
+            supported_length += std::min(2.0 * half[under].x, 2.0 * half[i].x);
+        }
+        span = std::max(0.0, span - supported_length);
+        if (!(span > 1e-3)) continue;                   // held everywhere: no bending
+
+        // Section: breadth across the span, depth in the direction it bends.
+        const double breadth = 2.0 * half[i].z;
+        const double depth = 2.0 * half[i].y;
+        if (!(breadth > 1e-6) || !(depth > 1e-6)) continue;
+
+        // Simply supported, point load in the middle, plus its own weight as a
+        // uniform load. The worst case for both, on purpose: this decides
+        // whether the lattice is worth running, and it is meant to err towards
+        // asking rather than towards silence.
+        const double own_per_m = weight[i] / std::max(span, 1e-6);
+        const double stress = 3.0 * carrying[i] * span / (2.0 * breadth * depth * depth) +
+                              3.0 * own_per_m * span * span / (4.0 * breadth * depth * depth);
+        const double strength = i < impl_->tensile_of.size() ? impl_->tensile_of[i] : 0.0;
+        if (!(strength > 0.0)) continue;
+        if (!(stress > strength)) continue;
+
+        impl_->overloaded.push_back(LiveOverload{impl_->described[i].name,
+                                                 carrying[i], span, stress, strength});
+        // And remember the heaviest thing sitting directly on it, so the
+        // fracture has something to press with. Directly on it rather than the
+        // heaviest in the whole stack: the lattice needs a body that is really
+        // touching, and what is above THAT presses on it in turn.
+        std::size_t heaviest = static_cast<std::size_t>(-1);
+        double most = 0.0;
+        for (std::size_t on_top = 0; on_top < count; ++on_top) {
+            if (!restsOn(on_top, i)) continue;
+            if (weight[on_top] <= most) continue;
+            most = weight[on_top];
+            heaviest = on_top;
+        }
+        if (heaviest != static_cast<std::size_t>(-1)) impl_->bearing_on[i] = heaviest;
+    }
+}
+
+std::vector<LiveOverload> LiveWorld::overloaded() const { return impl_->overloaded; }
+
 void LiveWorld::repin() {
     impl_->held_for_fracture.clear();
     const auto pin = [&](const Pending &job) {
@@ -1627,6 +1782,7 @@ void LiveWorld::dropBodies(const std::vector<std::size_t> &which) {
         };
         drop(impl_->described); drop(impl_->body_of); drop(impl_->nodes_of);
         drop(impl_->limits_of); drop(impl_->impedance_of); drop(impl_->density_of);
+        drop(impl_->tensile_of);
         if (impl_->holding != static_cast<std::size_t>(-1) && impl_->holding > body)
             --impl_->holding;
     }
@@ -1850,6 +2006,19 @@ std::vector<std::string> LiveWorld::breakable() const {
         if (std::find(out.begin(), out.end(), impact.struck) == out.end())
             out.push_back(impact.struck);
     }
+    // And anything carrying more than it can hold up. From the outside these
+    // are the same question -- this thing may come apart, do you want to know --
+    // and a host that only handled blows would never be offered a shelf.
+    //
+    // declineBreak silences them the same way it silences a contact, which
+    // matters more here than there: a load does not go away by itself, so an
+    // overloaded shelf would otherwise be offered on every survey for ever.
+    for (const LiveOverload &sagging : impl_->overloaded) {
+        if (impl_->held_through.count(sagging.name)) continue;
+        if (impl_->index_of.find(sagging.name) == impl_->index_of.end()) continue;
+        if (std::find(out.begin(), out.end(), sagging.name) == out.end())
+            out.push_back(sagging.name);
+    }
     return out;
 }
 
@@ -1913,7 +2082,16 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
             with = guess->striker;
         } else {
             const auto partner = impl_->partner_of.find(which);
-            if (partner != impl_->partner_of.end()) with = partner->second;
+            if (partner != impl_->partner_of.end()) {
+                with = partner->second;
+            } else {
+                // No contact caused this, so it is a load rather than a blow:
+                // the thing sitting on it is what it has to be run against. See
+                // Impl::bearing_on -- without this an overloaded shelf goes into
+                // the lattice with nothing on it and comes out whole.
+                const auto bearing = impl_->bearing_on.find(which);
+                if (bearing != impl_->bearing_on.end()) with = bearing->second;
+            }
         }
         // A held body is normally kept out of an island: it is in a hand, not in
         // a collision. A guess that names it is saying what will happen when it
@@ -2312,6 +2490,7 @@ std::size_t LiveWorld::applyPending() {
         };
         drop(impl_->described); drop(impl_->body_of); drop(impl_->nodes_of);
         drop(impl_->limits_of); drop(impl_->impedance_of); drop(impl_->density_of);
+        drop(impl_->tensile_of);
         if (impl_->holding != static_cast<std::size_t>(-1) && impl_->holding > body) --impl_->holding;
     }
 
@@ -2464,6 +2643,7 @@ std::size_t LiveWorld::applyPending() {
         impl_->impedance_of.push_back(
             acousticImpedance(material.density_kg_m3, material.young_modulus_pa));
         impl_->density_of.push_back(material.density_kg_m3);
+        impl_->tensile_of.push_back(material.tensile_strength_pa);
         impl_->nodes_of.push_back(std::move(parent_nodes));
         if (piece.shape == "hull")
             piece.dimensions_m = cellBounds(impl_->nodes_of.back(), impl_->cell_offset_m,

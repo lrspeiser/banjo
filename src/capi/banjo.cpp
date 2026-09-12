@@ -23,6 +23,7 @@ using banjo::fastlattice::LiveCollected;
 using banjo::fastlattice::LiveDelay;
 using banjo::fastlattice::LiveImpact;
 using banjo::fastlattice::LiveJoint;
+using banjo::fastlattice::LiveOverload;
 using banjo::fastlattice::LivePick;
 using banjo::fastlattice::LiveWorld;
 using banjo::fastlattice::TileImpactRequest;
@@ -69,6 +70,7 @@ struct banjo_world {
     // the names handed out point into here and have to stay good until the next
     // call on this world.
     std::vector<LiveJoint> joints;
+    std::vector<LiveOverload> overloaded;
 };
 
 namespace {
@@ -370,6 +372,36 @@ int banjo_collected(const banjo_world *world, banjo_lot *out, int max) {
         out[i].cells = static_cast<int>(lot.cells);
     }
     return count;
+}
+
+int banjo_overload_count(const banjo_world *world) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        auto *mutable_world = const_cast<banjo_world *>(world);
+        mutable_world->overloaded = world->world->overloaded();
+        return static_cast<int>(mutable_world->overloaded.size());
+    });
+}
+
+int banjo_overloaded(const banjo_world *world, banjo_overload *out, int max) {
+    if (!world || (!out && max > 0) || max < 0) {
+        setError("no world or nowhere to write"); return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        auto *mutable_world = const_cast<banjo_world *>(world);
+        mutable_world->overloaded = world->world->overloaded();
+        const int count = std::min<int>(max,
+                                        static_cast<int>(mutable_world->overloaded.size()));
+        for (int i = 0; i < count; ++i) {
+            const LiveOverload &load = mutable_world->overloaded[static_cast<std::size_t>(i)];
+            out[i].name = load.name.c_str();
+            out[i].carrying_n = load.carrying_n;
+            out[i].span_m = load.span_m;
+            out[i].stress_pa = load.stress_pa;
+            out[i].strength_pa = load.strength_pa;
+        }
+        return count;
+    });
 }
 
 int banjo_grab(banjo_world *world, const char *name) {

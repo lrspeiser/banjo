@@ -854,6 +854,14 @@ if(BANJO_BUILD_TESTS)
             # Pulleys and hoists: the IDEAL pulley, a cable-length relationship
             # rather than a wheel with a rope wrapped round it. The physical
             # alternative is in rope_tests -- bodies tied together and draped.
+            # Supports, beams and levers -- and above all SUSTAINED load,
+            # which the impact ledger cannot see: a plank at rest under a pile
+            # of crates reports no contacts at all.
+            add_executable(banjo_beam_tests tests/beam_tests.cpp)
+            target_link_libraries(banjo_beam_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_beam_tests)
+            add_test(NAME banjo_beam_tests COMMAND banjo_beam_tests)
+
             add_executable(banjo_pulley_tests tests/pulley_tests.cpp)
             target_link_libraries(banjo_pulley_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_pulley_tests)

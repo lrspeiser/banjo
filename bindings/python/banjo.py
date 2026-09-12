@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 # Bumped with the header: the world reports what made it wait.
-ABI_VERSION = 9
+ABI_VERSION = 10
 
 NOTHING, HELD, DENTED, BROKE = 0, 1, 2, 3
 OUTCOMES = {0: "nothing", 1: "held", 2: "dented", 3: "broke"}
@@ -102,6 +102,14 @@ class _Joint(ctypes.Structure):
                 ("ratio", ctypes.c_double),
                 ("over_a_m", ctypes.c_double * 3),
                 ("over_b_m", ctypes.c_double * 3)]
+
+
+class _Overload(ctypes.Structure):
+    _fields_ = [("name", ctypes.c_char_p),
+                ("carrying_n", ctypes.c_double),
+                ("span_m", ctypes.c_double),
+                ("stress_pa", ctypes.c_double),
+                ("strength_pa", ctypes.c_double)]
 
 
 class _Pick(ctypes.Structure):
@@ -234,6 +242,31 @@ class Joint:
 
 
 @dataclass(frozen=True)
+class Overload:
+    """A thing carrying more than it can hold up.
+
+    The OTHER way something breaks here, and it exists because the first way
+    cannot see it. Every other break starts from a blow; a shelf with too much
+    stacked on it is struck by nothing at all, and reports no contacts
+    whatsoever once it has settled. So this is asked from statics: what is
+    resting on it, how far apart its supports are, and what bending that puts in
+    it.
+
+    Like every bound in this engine, past `strength_pa` is NECESSARY AND NOT
+    SUFFICIENT -- it says the lattice is worth running.
+    """
+    name: str
+    # What is stacked on it, not counting its own weight.
+    carrying_n: float
+    # How far apart its supports are. A beam supported along its whole length
+    # has no span and cannot be bent -- the honest reason a plate lying flat on
+    # the floor will not break however much is piled on it.
+    span_m: float
+    stress_pa: float
+    strength_pa: float
+
+
+@dataclass(frozen=True)
 class Pick:
     hit: bool
     # Empty when the ray stopped on something that is not one of the scene's
@@ -341,6 +374,11 @@ def library(path: str | os.PathLike[str] | None = None) -> ctypes.CDLL:
                                 ctypes.c_double * 3, ctypes.c_double * 3,
                                 ctypes.c_double, ctypes.c_double]
     lib.banjo_reeve.restype = ctypes.c_int
+    lib.banjo_overload_count.argtypes = [ctypes.c_void_p]
+    lib.banjo_overload_count.restype = ctypes.c_int
+    lib.banjo_overloaded.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Overload),
+                                     ctypes.c_int]
+    lib.banjo_overloaded.restype = ctypes.c_int
     lib.banjo_joint_count.argtypes = [ctypes.c_void_p]
     lib.banjo_joint_count.restype = ctypes.c_int
     lib.banjo_joints.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Joint), ctypes.c_int]
@@ -648,6 +686,30 @@ class World:
                                   three(at_a_m), three(at_b_m),
                                   three(over_a_m), three(over_b_m), ratio, length_m),
             f"reeving {a!r} to {b!r}")
+
+    def overloaded(self) -> list[Overload]:
+        """Everything carrying more than its material can take.
+
+        From statics rather than impacts -- see `Overload`. These names also
+        turn up in `breakable()`, because from the outside they are the same
+        question. `fracture` on one puts it into the lattice WITH ITS LOAD on
+        it, which is what makes it actually fail; `decline_break` silences it,
+        and that matters more here than for a blow, because a load does not go
+        away by itself.
+        """
+        count = self._check(self._lib.banjo_overload_count(self._alive()),
+                            "asking what is overloaded")
+        if count <= 0:
+            return []
+        out = (_Overload * count)()
+        written = self._check(self._lib.banjo_overloaded(self._alive(), out, count),
+                              "reading what is overloaded")
+        return [Overload(name=(out[i].name or b"").decode("utf-8"),
+                         carrying_n=out[i].carrying_n,
+                         span_m=out[i].span_m,
+                         stress_pa=out[i].stress_pa,
+                         strength_pa=out[i].strength_pa)
+                for i in range(written)]
 
     def joints(self) -> list[Joint]:
         """Every joint in the world, and where each has got to."""

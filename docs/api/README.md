@@ -95,7 +95,7 @@ suite, so they cannot go stale:
 
 ---
 
-## Six things to know before you build anything
+## Seven things to know before you build anything
 
 ### 1. Breaking is a conversation, not a property
 
@@ -268,6 +268,27 @@ Two pieces of geometry that each cost an afternoon: set the leaf **clear of its
 own frame** (a door sharing space with its post is jammed against it, and jammed
 looks exactly like a broken hinge), and hang it **clear of the floor** (a door
 resting on the ground is held by the ground).
+
+### 7. Breaking has a second door, and it is not impacts
+
+`banjo_step` and the contact ledger only ever see **blows**. A shelf with too
+much stacked on it is struck by nothing: measured, a plank under five iron
+crates reports *no contacts at all* once it has settled.
+
+`banjo_overloaded` asks the other question, from statics — what is resting on
+it, how far apart its supports are, and the bending that puts in it. Those names
+also appear in `banjo_breakable_name`, because from the outside they are the same
+question: this may come apart, do you want to know.
+
+The **span** is what decides it. A beam supported along its whole length cannot
+be bent, which is why a plate lying flat on the floor will not break however much
+is piled on. And `banjo_fracture` on an overloaded body puts it into the lattice
+*with its load on it* — a stone shelf at 5.46 MPa against concrete's 3 came out
+in 26 pieces.
+
+Pick materials with this in mind. Oak takes 90 MPa in tension and concrete takes
+3, so a stone shelf is a thing you can overload by hand and an oak one of the
+same size wants eighteen tonnes.
 
 ---
 

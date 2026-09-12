@@ -154,6 +154,43 @@ struct LiveJoint {
     bool attached{true};
 };
 
+// A thing carrying more than it can hold up.
+//
+// This is the OTHER way something breaks here, and it exists because the first
+// way cannot see it. Every other break in this engine starts from a blow: a
+// closing speed, an impedance, an energy. A shelf with too much stacked on it
+// is not struck by anything at all -- measured, a plank bridging two piers with
+// an iron block sitting on it reports NO contacts whatsoever once everything
+// has come to rest, because the contact ledger is a ledger of impacts. Load it
+// until it should snap and nothing would ever ask.
+//
+// So this is asked separately, from statics rather than from dynamics: what is
+// resting on it, how far apart the things holding it up are, and what bending
+// that puts in it.
+//
+//     a simply supported beam, span L, section b x d
+//     carrying a point load W in the middle and its own weight w per metre
+//
+//     stress  =  3 W L / (2 b d^2)  +  3 w L^2 / (4 b d^2)
+//
+// Like every other bound in this engine, `stress_pa` past `strength_pa` is
+// NECESSARY AND NOT SUFFICIENT: it says the lattice is worth running, not that
+// the thing is going to come apart. The beam formula assumes the load is in the
+// middle and the ends are free to rotate, which is the worst case for both, so
+// it errs towards asking.
+struct LiveOverload {
+    std::string name;
+    // What is stacked on it, in newtons, not counting its own weight.
+    double carrying_n{};
+    // How far apart the things holding it up are. A beam held everywhere along
+    // its length has no span and cannot be bent -- which is why a plate lying
+    // flat on the floor will not break however hard it is loaded.
+    double span_m{};
+    // What that works out to, and what the material can take.
+    double stress_pa{};
+    double strength_pa{};
+};
+
 // A moment where the world was made to wait, or was saved from waiting.
 //
 // Working out a fracture costs between a third of a second and a second, and
@@ -256,7 +293,20 @@ public:
     void forgetImpacts();
 
     // What the last step hit hard enough to break, by name and once each.
+    //
+    // Includes anything carrying more than it can hold up -- see overloaded().
+    // A host answers both the same way, because from the outside they are the
+    // same question: this thing may come apart, do you want to know?
     [[nodiscard]] std::vector<std::string> breakable() const;
+
+    // Everything carrying more than its material can take, as statics rather
+    // than as impacts. See LiveOverload: this is the only way a shelf with too
+    // much on it ever gets noticed, because nothing strikes it.
+    //
+    // Surveyed at a stride rather than every step -- load does not change in a
+    // quarter of a second, and the survey is O(bodies^2) on axis-aligned boxes,
+    // which is nothing for a room and not nothing at sixty times a second.
+    [[nodiscard]] std::vector<LiveOverload> overloaded() const;
 
     // True when the last step was taken back because it would have broken
     // something. The world is one step short of that impact and the clock has
@@ -518,6 +568,8 @@ private:
     // apply destroys the body next door.
     void restackQueue(const std::vector<std::string> &before);
     void repin();
+    // Work out what everything is carrying and whether it can hold it.
+    void surveyLoads();
     // Where the hand puts what it is holding: carried if it is loose, hauled
     // along its joint if it is attached to something. See the definition; the
     // hand writes the world from two places and both have to agree.
