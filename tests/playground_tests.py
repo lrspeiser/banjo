@@ -432,17 +432,20 @@ class PlaygroundJobTests(PlaygroundTestCase):
                 app.submit({"message": "bounded", "request_id": request_id, "auto_open": False})
 
     def test_all_packages_validate_before_any_engine_run(self):
-        plan = plan_for(speeds_m_s=[2.0, 6.0], duration_s=0.1)
+        # The rigid control has no network cells, so the realtime gate admits
+        # it. The panel plan this test used before the gate existed is refused
+        # before any engine call; the next test pins that.
+        plan = plan_for("rigid_drop", heights_m=[0.25, 0.5], duration_s=0.1)
         planner = mock.Mock(return_value=(plan, {"model": "fake-model"}))
         app = self.make_app(planner)
         app.open_case = mock.Mock(side_effect=AssertionError("native window must not open"))
         result = app.submit({
-            "message": "compare two speeds",
+            "message": "compare two drop heights",
             "request_id": "request_0201",
             "auto_open": False,
         })
         job = app.get(result["job_id"])
-        self.assertEqual(job["status"], "complete")
+        self.assertEqual(job["status"], "complete", job["message"])
         self.assertEqual([call[0] for call in app.engine.call_order],
                          ["validate", "validate", "run", "run"])
         self.assertEqual([steps for _, steps in app.engine.run_calls], [48, 48])
@@ -456,6 +459,30 @@ class PlaygroundJobTests(PlaygroundTestCase):
         self.assertEqual(list(scene_directory.glob("report-*.json")), [])
         self.assertEqual(sorted(path.name for path in scene_directory.parent.glob("report-*.json")),
                          ["report-00.json", "report-01.json"])
+        app.open_case.assert_not_called()
+
+    def test_over_budget_plan_is_blocked_before_any_engine_call(self):
+        # The panel plan the test above used before the realtime gate existed.
+        # The cost model prices it far over REALTIME_LIMIT, so it must stop
+        # before a scene is written or the engine is touched.
+        plan = plan_for(speeds_m_s=[2.0, 6.0], duration_s=0.1)
+        planner = mock.Mock(return_value=(plan, {"model": "fake-model"}))
+        app = self.make_app(planner)
+        app.open_case = mock.Mock(side_effect=AssertionError("native window must not open"))
+        result = app.submit({
+            "message": "compare two speeds",
+            "request_id": "request_0202",
+            "auto_open": False,
+        })
+        job = app.get(result["job_id"])
+        directory = app.runs_path / result["job_id"]
+        events = [json.loads(line)["event"]
+                  for line in (directory / "events.jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(job["status"], "blocked", job["message"])
+        self.assertIn("realtime_refused", events)
+        self.assertEqual(app.engine.call_order, [])
+        self.assertEqual(job["cases"], [])
+        self.assertFalse((directory / "scenes").exists())
         app.open_case.assert_not_called()
 
     def test_worker_blocks_malformed_model_plan_before_files_or_engine(self):
