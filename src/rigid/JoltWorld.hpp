@@ -332,10 +332,48 @@ public:
         double length_m{0.0};
     };
     [[nodiscard]] unsigned addPulley(const PulleyDescription &description);
+
+    // A fixing: two bodies held together as one, until they are not.
+    //
+    // A peg, a bracket, a nail, a bolt, a door catch, a locking bar, a rope
+    // anchor. All six degrees of freedom are held, so the two move as one piece
+    // and whatever their relative pose is when the fixing is made is the pose it
+    // keeps. That is the "defined alignment": it is defined by where they are.
+    //
+    // What makes it a fixing rather than a weld is that it has a STRENGTH, and
+    // two of them, because a peg pulled straight out and a peg sheared sideways
+    // fail at different loads and it is rarely the same number. Tension is
+    // along the axis; shear is across it. Either one exceeded parts it.
+    //
+    // Zero means it never lets go on its own -- that is a weld, and welds are a
+    // real thing to want. Releasing it deliberately is removeJoint(), which is
+    // what a latch does.
+    struct FixingDescription {
+        MatterBodyId a{kInvalidMatterBodyId};
+        MatterBodyId b{kInvalidMatterBodyId};
+        // Where the fixing is, in world metres, as things stand.
+        Vec3 point_world_m{};
+        // Which way it points -- the direction a peg would be driven. Tension is
+        // along this and shear is across it.
+        Vec3 axis_world{0.0, 1.0, 0.0};
+        double holds_tension_n{0.0};
+        double holds_shear_n{0.0};
+    };
+    [[nodiscard]] unsigned addFixing(const FixingDescription &description);
+
+    // What a fixing is carrying, split along its axis and across it. Both zero
+    // for every other kind of joint, which has no axis to split along.
+    struct JointLoad {
+        double tension_n{};
+        double shear_n{};
+    };
+    [[nodiscard]] JointLoad jointLoad(unsigned joint, const Vec3 &axis_world) const;
     // What this link is carrying, in newtons. Zero when it is slack.
     [[nodiscard]] double jointTension(unsigned joint) const;
 
-    enum class JointKind : std::uint8_t { Hinge = 0, Slider = 1, Link = 2, Pulley = 3 };
+    enum class JointKind : std::uint8_t {
+        Hinge = 0, Slider = 1, Link = 2, Pulley = 3, Fixing = 4
+    };
 
     // Everything about a joint that a caller can see from outside.
     struct JointReport {

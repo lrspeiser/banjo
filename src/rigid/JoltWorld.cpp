@@ -22,6 +22,7 @@
 #include <Jolt/Physics/Collision/Shape/OffsetCenterOfMassShape.h>
 #include <Jolt/Physics/Constraints/FixedConstraint.h>
 #include <Jolt/Physics/Constraints/DistanceConstraint.h>
+#include <Jolt/Physics/Constraints/FixedConstraint.h>
 #include <Jolt/Physics/Constraints/HingeConstraint.h>
 #include <Jolt/Physics/Constraints/PulleyConstraint.h>
 #include <Jolt/Physics/Constraints/SliderConstraint.h>
@@ -1031,6 +1032,17 @@ JoltWorld::JointReport JoltWorld::jointState(unsigned joint) const {
     out.a = held.a;
     out.b = held.b;
     out.kind = held.kind;
+    if (held.kind == JointKind::Fixing) {
+        // A fixing holds everything, so there is no degree of freedom to
+        // report a position along. What it has instead is what it is carrying,
+        // and that is jointLoad's business -- it needs an axis, which only the
+        // scene above knows.
+        out.at = 0.0;
+        out.lower = 0.0;
+        out.upper = 0.0;
+        out.friction = 0.0;
+        return out;
+    }
     if (held.kind == JointKind::Pulley) {
         auto *rove = static_cast<JPH::PulleyConstraint *>(held.constraint.GetPtr());
         // The whole run: one side plus the ratio times the other, which is the
@@ -1080,7 +1092,8 @@ void JoltWorld::setJointFriction(unsigned joint, double friction) {
     // no wheel to have a bearing. Rather than refusing -- which would make every
     // caller special-case the kind before asking -- this does nothing, because
     // nothing is the true answer.
-    if (held.kind == JointKind::Link || held.kind == JointKind::Pulley) return;
+    if (held.kind == JointKind::Link || held.kind == JointKind::Pulley ||
+        held.kind == JointKind::Fixing) return;
     if (held.kind == JointKind::Slider)
         static_cast<JPH::SliderConstraint *>(held.constraint.GetPtr())
             ->SetMaxFrictionForce(static_cast<float>(friction));
@@ -1146,6 +1159,76 @@ double JoltWorld::jointTension(unsigned joint) const {
             ->GetTotalLambdaPosition();
     const double dt = impl_->last_dt_s > 0.0 ? impl_->last_dt_s : 1.0 / 60.0;
     return std::abs(impulse) / dt;
+}
+
+unsigned JoltWorld::addFixing(const FixingDescription &d) {
+    impl_->requireConfigurationMutable();
+    if (d.a == d.b || !contains(d.a) || !contains(d.b))
+        throw std::invalid_argument("a fixing needs two different bodies that are both in the world");
+    if (impl_->joints_.size() >= 4096)
+        throw std::invalid_argument("joint budget exceeded");
+    const double reach = length(d.axis_world);
+    if (!(reach > 1e-9) || !std::isfinite(reach))
+        throw std::invalid_argument("a fixing needs an axis with a direction");
+    if (!std::isfinite(d.point_world_m.x) || !std::isfinite(d.point_world_m.y) ||
+        !std::isfinite(d.point_world_m.z))
+        throw std::invalid_argument("a fixing needs a point that is a place");
+    if (!(d.holds_tension_n >= 0.0) || !std::isfinite(d.holds_tension_n) ||
+        !(d.holds_shear_n >= 0.0) || !std::isfinite(d.holds_shear_n))
+        throw std::invalid_argument("a fixing's strengths are newtons, zero (never "
+                                    "lets go) or more");
+
+    JPH::FixedConstraintSettings settings;
+    settings.mSpace = JPH::EConstraintSpace::WorldSpace;
+    // Their relative pose right now is the pose they keep. That is the whole of
+    // what "defined alignment" means here: it is defined by where they are when
+    // the peg goes in, which is also how a peg works.
+    settings.mAutoDetectPoint = false;
+    settings.mPoint1 = settings.mPoint2 = toJoltPosition(d.point_world_m);
+    const Vec3 along = (1.0 / reach) * d.axis_world;
+    const Vec3 away = std::abs(along.y) < 0.9 ? Vec3{0.0, 1.0, 0.0} : Vec3{1.0, 0.0, 0.0};
+    Vec3 across = cross(away, along);
+    const double sideways = length(across);
+    if (!(sideways > 1e-9)) throw std::runtime_error("could not square up a fixing axis");
+    across = (1.0 / sideways) * across;
+    settings.mAxisX1 = settings.mAxisX2 = toJolt(along);
+    settings.mAxisY1 = settings.mAxisY2 = toJolt(across);
+
+    auto *raw = impl_->physics_->GetBodyInterface().CreateConstraint(
+        &settings, impl_->bodies_.at(d.a), impl_->bodies_.at(d.b));
+    if (!raw) throw std::runtime_error("fixing creation failed");
+    const auto id = impl_->next_joint_++;
+    impl_->joints_.emplace(id, Impl::Joint{d.a, d.b, JointKind::Fixing,
+                                           static_cast<JPH::TwoBodyConstraint *>(raw)});
+    impl_->physics_->AddConstraint(raw);
+    return id;
+}
+
+JoltWorld::JointLoad JoltWorld::jointLoad(unsigned joint, const Vec3 &axis_world) const {
+    JointLoad out{};
+    const auto found = impl_->joints_.find(joint);
+    if (found == impl_->joints_.end()) return out;
+    if (found->second.kind != JointKind::Fixing) return out;
+    // Jolt reports the impulse the constraint applied over the step as a
+    // VECTOR, which is exactly what is needed: a peg pulled straight out and a
+    // peg sheared sideways fail at different loads, so the two have to be told
+    // apart rather than added into one magnitude.
+    const JPH::Vec3 impulse =
+        static_cast<JPH::FixedConstraint *>(found->second.constraint.GetPtr())
+            ->GetTotalLambdaPosition();
+    const double dt = impl_->last_dt_s > 0.0 ? impl_->last_dt_s : 1.0 / 60.0;
+    const Vec3 force{static_cast<double>(impulse.GetX()) / dt,
+                     static_cast<double>(impulse.GetY()) / dt,
+                     static_cast<double>(impulse.GetZ()) / dt};
+    const double reach = length(axis_world);
+    if (!(reach > 1e-9)) return out;
+    const Vec3 along = (1.0 / reach) * axis_world;
+    const double pulled = dot(force, along);
+    out.tension_n = std::abs(pulled);
+    // What is left once the along-axis part is taken out is across it.
+    const Vec3 sideways = force - pulled * along;
+    out.shear_n = length(sideways);
+    return out;
 }
 
 unsigned JoltWorld::addPulley(const PulleyDescription &d) {

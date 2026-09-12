@@ -121,6 +121,9 @@ struct LiveJoint {
     // "pulley" -- a rope rove over two fixed points: pull one end, the other
     //             comes up. The IDEAL pulley -- a cable-length relationship,
     //             not a wheel with a rope wrapped round it.
+    // "fixing" -- two things held together as one: a peg, a bracket, a catch, a
+    //             locking bar. It has a strength along its axis and another
+    //             across it, and either one exceeded parts it.
     //
     // This is also the unit on the three numbers below, because a joint with
     // one degree of freedom has one number and the only question is what it is
@@ -135,6 +138,11 @@ struct LiveJoint {
     // What a link or a pulley is carrying, in newtons. Zero for slack, and
     // zero for a pin or a slide, which have no tension in any useful sense.
     double tension_n{};
+    // For a fixing: what it is carrying along its axis and across it, and what
+    // it can take of each. A peg pulled straight out and a peg sheared sideways
+    // fail at different loads, so they are two numbers and not one.
+    double tension_n_now{}, shear_n_now{};
+    double holds_tension_n{}, holds_shear_n{};
     // A pulley's mechanical advantage. One for everything else.
     double ratio{1.0};
     // Where a pulley's rope runs over, in world metres. Both zero for every
@@ -502,6 +510,28 @@ public:
     //
     // Like a rope it pulls and does not push -- slack on one side is just slack.
     // `length_m` of zero means "as it is rove": what the two runs add up to now.
+    // Fix one named thing to another: a peg, a bracket, a nail, a door catch,
+    // a locking bar, a rope anchor.
+    //
+    // All six degrees of freedom are held, so the two move as one piece, and
+    // whatever their relative pose is right now is the pose they keep. That is
+    // what "defined alignment" means here -- it is defined by where they are
+    // when the peg goes in, which is how a peg works.
+    //
+    // Two strengths, because a peg pulled straight out and a peg sheared
+    // sideways fail at different loads and it is rarely the same number.
+    // `axis_world` is the direction the peg points: tension is along it, shear
+    // is across it. Either exceeded and the fixing parts, reported once with
+    // `attached` false, exactly like a rope.
+    //
+    // Zero means it never lets go on its own. That is a weld, and welds are a
+    // real thing to want. Releasing it on purpose is unhinge(), which is what a
+    // latch does -- and doing so changes what the assembly IS, which is the
+    // whole point of a latch.
+    unsigned fix(const std::string &a, const std::string &b,
+                 const Vec3 &point_world_m, const Vec3 &axis_world,
+                 double holds_tension_n = 0.0, double holds_shear_n = 0.0);
+
     unsigned reeve(const std::string &a, const std::string &b,
                    const Vec3 &point_a_world_m, const Vec3 &point_b_world_m,
                    const Vec3 &over_a_world_m, const Vec3 &over_b_world_m,

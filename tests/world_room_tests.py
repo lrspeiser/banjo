@@ -216,7 +216,8 @@ class TheCourtyard(unittest.TestCase):
         by_kind: dict[str, list] = {}
         for joint in spec["joints"]:
             by_kind.setdefault(joint["kind"], []).append(joint)
-        self.assertLessEqual({"hinge", "slider", "link", "pulley"}, set(by_kind),
+        self.assertLessEqual({"hinge", "slider", "link", "pulley", "fixing"},
+                             set(by_kind),
                              "the courtyard is missing a kind of mechanism")
 
         pin = by_kind["hinge"][0]
@@ -282,6 +283,53 @@ class TheCourtyard(unittest.TestCase):
         self.assertGreater(counter, 0.1 * grate,
                            "the counterweight is so light that the rope might as "
                            "well not be there")
+
+    @unittest.skipIf(ENGINE is None, "no live engine built")
+    def test_the_bar_is_what_keeps_the_gate_shut(self):
+        """A latch changes what the assembly IS.
+
+        The same gate, the same pin, the same shove. Barred, it does not move;
+        with the bar lifted off, it swings. Nothing about the gate changed --
+        which is the whole difference between a latch and a very stiff hinge.
+        """
+        def shoved(lift_the_bar: bool) -> float:
+            live = live_session.Live()
+            try:
+                class App:
+                    engine_path = ENGINE
+                    runs_path = ROOT / "build/playground-runs"
+                    live_inprocess = False
+                opened = live.open(App(), {"spec": world_room.courtyard()})
+                self.assertNotIn("joint_problems", opened,
+                                 f"the room would not build itself: "
+                                 f"{opened.get('joint_problems')}")
+                session = live.session
+                if lift_the_bar:
+                    for pin in session.send(op="joints")["joints"]:
+                        if pin["kind"] == "fixing":
+                            session.send(op="unhinge", joint=pin["id"])
+                    for _ in range(30):
+                        session.send(op="step", dt=1 / 240.0, n=8, moved=True)
+                # Walk the iron ball into the gate, square to its face.
+                session.send(op="grab", name="iron ball")
+                for i in range(1, 141):
+                    session.send(op="step", dt=1 / 240.0, n=4, moved=True,
+                                 hand=[0.9, 1.0, 1.0 - i * 0.01])
+                session.send(op="release")
+                for _ in range(60):
+                    session.send(op="step", dt=1 / 240.0, n=8, moved=True)
+                return abs(next(j for j in session.send(op="joints")["joints"]
+                                if j["kind"] == "hinge")["degrees"])
+            finally:
+                live.shutdown()
+
+        barred = shoved(False)
+        unbarred = shoved(True)
+        self.assertLess(barred, 5.0,
+                        f"a barred gate swung {barred} degrees")
+        self.assertGreater(unbarred, 10.0,
+                           f"the unbarred gate only moved {unbarred} degrees, so "
+                           f"the shove proves nothing either way")
 
     def test_the_shelf_can_be_overloaded_by_what_is_in_the_room(self):
         """A shelf nobody can overload demonstrates nothing.
@@ -411,7 +459,17 @@ class TheCourtyard(unittest.TestCase):
 
             # And it swings when something is pushed into it -- which is the
             # whole claim. Nothing here asks for the gate to move.
+            #
+            # The bar comes off first. A barred gate does not swing, which is
+            # the point of the bar and is exactly what this test measured when
+            # the bar was added: 4.26 degrees, which reads as a broken hinge and
+            # is a working latch.
             session = live.session
+            for pin in session.send(op="joints")["joints"]:
+                if pin["kind"] == "fixing":
+                    session.send(op="unhinge", joint=pin["id"])
+            for _ in range(30):
+                session.send(op="step", dt=1 / 240.0, n=8, moved=True)
             session.send(op="grab", name="iron ball")
             for i in range(141):
                 session.send(op="step", dt=1 / 240.0, n=4, moved=True,

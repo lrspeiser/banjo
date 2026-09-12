@@ -242,6 +242,22 @@ class Live:
                 problems.append("a joint that is not an object")
                 continue
             kind = str(pin.get("kind", "hinge"))
+            if kind == "fixing":
+                try:
+                    answer = session.send(
+                        op="fix", a=str(pin.get("a", "")), b=str(pin.get("b", "")),
+                        at=[float(v) / 1000.0 for v in (pin.get("at_mm") or [])],
+                        axis=[float(v) for v in (pin.get("axis") or [0, 1, 0])],
+                        holds_tension_n=float(pin.get("holds_tension_n", 0.0)),
+                        holds_shear_n=float(pin.get("holds_shear_n", 0.0)))
+                except Exception as error:
+                    problems.append(f"{pin.get('b', '?')} would not fix to "
+                                    f"{pin.get('a', '?')}: {error}")
+                    continue
+                pin["id"] = answer.get("joint")
+                if answer.get("joints") is not None:
+                    state["joints"] = answer["joints"]
+                continue
             if kind == "pulley":
                 # Four places: where the rope is made off on each body, and the
                 # two sheaves it runs over.
@@ -475,6 +491,26 @@ class Live:
                                 at_b=spot("at_b"), over_a=spot("over_a"),
                                 over_b=spot("over_b"), ratio=ratio,
                                 length_m=length)
+        if op == "fix":
+            def spot(key: str, fallback: Any = None) -> list[float]:
+                value = body.get(key, fallback)
+                if not isinstance(value, list) or len(value) != 3:
+                    raise LiveError(f"a fixing needs {key} as three numbers")
+                out = [float(v) for v in value]
+                if not all(math.isfinite(v) for v in out):
+                    raise LiveError(f"a fixing was given {key} that is not a number")
+                return out
+            axis = spot("axis", [0.0, 1.0, 0.0])
+            if not any(abs(v) > 1e-9 for v in axis):
+                raise LiveError("a fixing needs an axis with a direction")
+            holds = [float(body.get("holds_tension_n", 0.0)),
+                     float(body.get("holds_shear_n", 0.0))]
+            if not all(0.0 <= v <= 1e9 for v in holds):
+                raise LiveError("a fixing's strengths are newtons, zero (never "
+                                "lets go) or more")
+            return session.send(op="fix", a=str(body.get("a", "")),
+                                b=str(body.get("b", "")), at=spot("at"), axis=axis,
+                                holds_tension_n=holds[0], holds_shear_n=holds[1])
         if op == "unhinge":
             return session.send(op="unhinge", joint=int(body.get("joint", 0)))
         if op == "joint_friction":

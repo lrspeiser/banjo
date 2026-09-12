@@ -540,6 +540,12 @@ def _said(joint: banjo.Joint) -> dict[str, Any]:
               "at_m": [round(v, 4) for v in joint.at_m],
               "axis": [round(v, 4) for v in joint.axis],
               "attached": joint.attached}
+    if joint.kind == "fixing":
+        return {**common,
+                "tension_n": round(joint.tension_now_n, 2),
+                "shear_n": round(joint.shear_now_n, 2),
+                "holds_tension_n": round(joint.holds_tension_n, 2),
+                "holds_shear_n": round(joint.holds_shear_n, 2)}
     if joint.kind == "pulley":
         return {**common,
                 "rope_m": round(joint.at, 4),
@@ -659,6 +665,24 @@ def tool_overloaded(args: dict[str, Any]) -> dict[str, Any]:
                     "apart under its own load; the threshold is necessary and "
                     "not sufficient, as everywhere else here."
                     if sagging else "nothing is carrying more than it can hold"}
+
+
+def tool_fix(args: dict[str, Any]) -> dict[str, Any]:
+    """Fix one named thing to another: a peg, a bracket, a catch, a locking bar."""
+    world: banjo.World = _world(args.get("world_id"))["world"]
+    try:
+        joint = world.fix(
+            str(args.get("a", "")), str(args.get("b", "")),
+            _triple(args.get("at_m"), "at_m", -200.0, 200.0),
+            _triple(args.get("axis", [0.0, 1.0, 0.0]), "axis", -1e6, 1e6),
+            _number(args.get("holds_tension_n", 0.0), "holds_tension_n", 0.0, 1e9),
+            _number(args.get("holds_shear_n", 0.0), "holds_shear_n", 0.0, 1e9))
+    except banjo.BanjoError as error:
+        raise Refused(str(error))
+    return {"joint": joint,
+            "note": f"{args.get('b')} and {args.get('a')} are now one piece. "
+                    "Release it with `unhinge` -- that is what a latch is, and "
+                    "doing it changes what the assembly can do."}
 
 
 def tool_joints(args: dict[str, Any]) -> dict[str, Any]:
@@ -957,6 +981,34 @@ TOOLS = [
                     "the bending stress against what the material holds.",
      "inputSchema": {"type": "object", "required": ["world_id"],
                      "properties": {"world_id": {"type": "string"}}}},
+    {"name": "fix",
+     "description": "Fix one named thing to another so they move as ONE PIECE: a "
+                    "peg, a bracket, a nail, a door catch, a locking bar, a rope "
+                    "anchor. All six degrees of freedom are held, and whatever "
+                    "their relative pose is now is the pose they keep. Give it "
+                    "strengths and it can fail: tension is along `axis` (pulling "
+                    "the peg out) and shear is across it (a weight hanging on a "
+                    "bracket), and they are separate because they fail at "
+                    "different loads. Zero means a weld that never lets go on "
+                    "its own. Release it with `unhinge` -- that is what a LATCH "
+                    "is, and releasing one changes what the assembly can do.",
+     "inputSchema": {"type": "object",
+                     "required": ["world_id", "a", "b", "at_m"],
+                     "properties": {
+         "world_id": {"type": "string"},
+         "a": {"type": "string"},
+         "b": {"type": "string"},
+         "at_m": dict(VECTOR, description="Where the fixing is, in world metres."),
+         "axis": dict(VECTOR, description="The direction the peg points. Tension "
+                                          "is along it, shear across it."),
+         "holds_tension_n": {"type": "number",
+                             "description": "What it takes to pull it apart "
+                                            "along the axis, in newtons. 0 never "
+                                            "lets go."},
+         "holds_shear_n": {"type": "number",
+                           "description": "What it takes to shear it across the "
+                                          "axis. A 200 mm iron cube hanging on a "
+                                          "bracket is 618 N of pure shear."}}}},
     {"name": "joints",
      "description": "Every pin in the world and where each has turned to. The two "
                     "names a pin holds can change -- a pin whose wood is smashed "
@@ -1009,6 +1061,7 @@ HANDLERS = {
     "slide": tool_slide,
     "tie": tool_tie,
     "reeve": tool_reeve,
+    "fix": tool_fix,
     "overloaded": tool_overloaded,
     "joints": tool_joints,
     "hinge_friction": tool_hinge_friction,

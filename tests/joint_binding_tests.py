@@ -713,8 +713,78 @@ def a_loaded_shelf_is_reported_without_being_struck() -> None:
                 "not reaching the island")
 
 
+def bracket_on_a_wall(load_m=(0.2, 0.2, 0.2)) -> dict:
+    return {
+        "bodies": [
+            {"name": "wall", "shape": "box", "material": "oak",
+             "dimensions_m": [0.2, 3.0, 1.0], "center_m": [0.0, 1.5, 0.0],
+             "anchored": True},
+            {"name": "bracket", "shape": "box", "material": "iron",
+             "dimensions_m": list(load_m),
+             "center_m": [0.15 + load_m[0] / 2, 2.0, 0.0]},
+        ],
+    }
+
+
+def a_fixing_tells_tension_from_shear() -> None:
+    """The two are separate numbers because they fail at different loads.
+
+    A bracket hanging off a wall puts its whole weight ACROSS the peg and
+    nothing along it. So a peg with no tension strength at all holds it, and a
+    peg with no shear strength gives way -- which could not come out both ways
+    if the two were one number.
+    """
+    weight = 0.2 ** 3 * 7870.0 * 9.81      # 618 N of iron
+    with banjo.World(bracket_on_a_wall(), cell_size_m=0.05) as world:
+        peg = world.fix("wall", "bracket", at_m=(0.15, 2.0, 0.0),
+                        axis=(1.0, 0.0, 0.0),
+                        holds_tension_n=0.25 * weight, holds_shear_n=1.0e6)
+        require(peg > 0, "the bracket would not peg to the wall")
+        tick(world, 480)
+        held = next(j for j in world.joints() if j.id == peg)
+        print(f"  weak along the peg: it {'held' if held.attached else 'gave way'}, "
+              f"carrying {held.tension_now_n:.2g} N of tension and "
+              f"{held.shear_now_n:.1f} N of shear")
+        require(held.kind == "fixing", "a fixing came back as the wrong kind")
+        require(held.attached,
+                "a peg with no tension strength gave way to a load that is "
+                "entirely shear, so the two are not being told apart")
+        require(held.shear_now_n > 0.5 * weight,
+                "the peg is holding a 618 N bracket and reports almost no shear")
+
+    with banjo.World(bracket_on_a_wall(), cell_size_m=0.05) as world:
+        peg = world.fix("wall", "bracket", at_m=(0.15, 2.0, 0.0),
+                        axis=(1.0, 0.0, 0.0),
+                        holds_tension_n=1.0e6, holds_shear_n=0.25 * weight)
+        require(peg > 0, "the bracket would not peg to the wall")
+        tick(world, 480)
+        gone = next(j for j in world.joints() if j.id == peg)
+        fell = next(b for b in world.bodies() if b.name == "bracket").position_m[1]
+        print(f"    weak across it: it {'held' if gone.attached else 'gave way'}, "
+              f"and the bracket is at y={fell:.3f}")
+        require(not gone.attached, "a peg rated for a quarter of the load held it")
+        require(fell < 1.0, "the peg gave way but the bracket did not fall")
+
+
+def a_latch_changes_what_the_assembly_is() -> None:
+    """A weld holds, and letting it go is what makes it a latch."""
+    with banjo.World(bracket_on_a_wall(), cell_size_m=0.05) as world:
+        peg = world.fix("wall", "bracket", at_m=(0.15, 2.0, 0.0),
+                        axis=(1.0, 0.0, 0.0))        # a weld
+        tick(world, 480)
+        hung = next(b for b in world.bodies() if b.name == "bracket").position_m[1]
+        require(hung > 1.9, "the weld let go")
+        world.unhinge(peg)
+        tick(world, 480)
+        fell = next(b for b in world.bodies() if b.name == "bracket").position_m[1]
+        print(f"  a weld held the bracket at y={hung:.3f}; released, it fell to "
+              f"y={fell:.3f}")
+        require(fell < hung - 1.0, "releasing the fixing did not drop the bracket")
+        require(world.joints() == [], "the released fixing is still listed")
+
+
 def main() -> int:
-    require(banjo.ABI_VERSION >= 10, "this test needs ABI 10 or later")
+    require(banjo.ABI_VERSION >= 11, "this test needs ABI 11 or later")
     for run, what in (
         (a_gate_hung_through_the_abi_swings, "a gate hung through the ABI swings"),
         (limits_are_degrees, "limits are degrees and they hold"),
@@ -743,6 +813,10 @@ def main() -> int:
          "a hoist refuses what it cannot reeve"),
         (a_loaded_shelf_is_reported_without_being_struck,
          "a loaded shelf is reported without being struck"),
+        (a_fixing_tells_tension_from_shear,
+         "a fixing tells tension from shear"),
+        (a_latch_changes_what_the_assembly_is,
+         "a latch changes what the assembly is"),
     ):
         run()
         print(f"[PASS] {what}")

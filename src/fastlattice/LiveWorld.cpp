@@ -274,6 +274,10 @@ struct LiveWorld::Impl {
         // the relationship, and making it follow a body would make it not fixed.
         Vec3 over_a{}, over_b{};
         double ratio{1.0};
+        // A fixing's two strengths, and where its axis points in the first
+        // body's own frame -- so that tension and shear stay tension and shear
+        // when the whole assembly is carried somewhere else or turned over.
+        double holds_tension_n{}, holds_shear_n{};
         // How far it had got, last time anyone could ask. Kept up to date every
         // step because the thing that destroys the constraint is the same thing
         // that needs to know it -- once the wood is rebuilt there is nobody left
@@ -709,17 +713,43 @@ void LiveWorld::step(double dt_s) {
 // a rope has to be told to stop drawing it. What was hanging on it falls.
 void LiveWorld::partOverloadedLinks() {
     for (Impl::SceneJoint &joint : impl_->joints) {
-        if (joint.kind != JoltWorld::JointKind::Link) continue;
+        const bool a_link = joint.kind == JoltWorld::JointKind::Link;
+        const bool a_fixing = joint.kind == JoltWorld::JointKind::Fixing;
+        if (!a_link && !a_fixing) continue;
         if (!joint.attached || joint.rigid == 0) continue;
-        if (!(joint.breaks_at_n > 0.0)) continue;
         if (!impl_->world->hasJoint(joint.rigid)) continue;
-        const double carrying = impl_->world->jointTension(joint.rigid);
-        if (carrying <= joint.breaks_at_n) continue;
+
+        double carrying = 0.0, bar = 0.0;
+        if (a_fixing) {
+            // Two bounds, checked separately, because a peg pulled straight out
+            // and a peg sheared sideways fail at different loads. Whichever is
+            // the nearer to giving is the one that decides.
+            if (!(joint.holds_tension_n > 0.0) && !(joint.holds_shear_n > 0.0)) continue;
+            const auto found = impl_->index_of.find(joint.a);
+            const Vec3 along =
+                found != impl_->index_of.end()
+                    ? impl_->world->snapshot(impl_->body_of[found->second])
+                          .orientation_world.rotate(joint.axis_local_a)
+                    : joint.axis_local_a;
+            const JoltWorld::JointLoad load = impl_->world->jointLoad(joint.rigid, along);
+            const bool pulled_apart = joint.holds_tension_n > 0.0 &&
+                                      load.tension_n > joint.holds_tension_n;
+            const bool sheared = joint.holds_shear_n > 0.0 &&
+                                 load.shear_n > joint.holds_shear_n;
+            if (!pulled_apart && !sheared) continue;
+            carrying = pulled_apart ? load.tension_n : load.shear_n;
+            bar = pulled_apart ? joint.holds_tension_n : joint.holds_shear_n;
+        } else {
+            if (!(joint.breaks_at_n > 0.0)) continue;
+            carrying = impl_->world->jointTension(joint.rigid);
+            if (carrying <= joint.breaks_at_n) continue;
+            bar = joint.breaks_at_n;
+        }
         impl_->world->removeJoint(joint.rigid);
         joint.rigid = 0;
         joint.attached = false;
         impl_->delays.push_back({impl_->time_s, joint.a + " to " + joint.b,
-                                 "parted", carrying, joint.breaks_at_n});
+                                 a_fixing ? "gave way" : "parted", carrying, bar});
         // Both ends have to wake or what was hanging there stays hanging in the
         // air until something else disturbs it.
         for (const std::string &side : {joint.a, joint.b}) {
@@ -919,6 +949,52 @@ unsigned LiveWorld::tie(const std::string &a, const std::string &b,
     return impl_->joints.back().id;
 }
 
+unsigned LiveWorld::fix(const std::string &a, const std::string &b,
+                        const Vec3 &point_world_m, const Vec3 &axis_world,
+                        double holds_tension_n, double holds_shear_n) {
+    const auto first = impl_->index_of.find(a);
+    const auto second = impl_->index_of.find(b);
+    if (first == impl_->index_of.end() || second == impl_->index_of.end()) return 0;
+    if (first->second == second->second) return 0;
+    const double reach = length(axis_world);
+    if (!(reach > 1e-9)) return 0;
+    if (!(holds_tension_n >= 0.0) || !(holds_shear_n >= 0.0)) return 0;
+
+    Impl::SceneJoint joint{};
+    joint.id = impl_->next_joint++;
+    joint.a = a;
+    joint.b = b;
+    joint.kind = JoltWorld::JointKind::Fixing;
+    joint.holds_tension_n = holds_tension_n;
+    joint.holds_shear_n = holds_shear_n;
+
+    const RigidSnapshot one = impl_->world->snapshot(impl_->body_of[first->second]);
+    const RigidSnapshot two = impl_->world->snapshot(impl_->body_of[second->second]);
+    joint.point_local_a = conjugateOf(one.orientation_world)
+                              .rotate(point_world_m - one.center_of_mass_world_m);
+    joint.point_local_b = conjugateOf(two.orientation_world)
+                              .rotate(point_world_m - two.center_of_mass_world_m);
+    joint.point_local_b_tie = joint.point_local_b;
+    joint.axis_local_a = conjugateOf(one.orientation_world).rotate((1.0 / reach) * axis_world);
+
+    try {
+        JoltWorld::FixingDescription peg{};
+        peg.a = impl_->body_of[first->second];
+        peg.b = impl_->body_of[second->second];
+        peg.point_world_m = point_world_m;
+        peg.axis_world = (1.0 / reach) * axis_world;
+        peg.holds_tension_n = holds_tension_n;
+        peg.holds_shear_n = holds_shear_n;
+        joint.rigid = impl_->world->addFixing(peg);
+    } catch (const std::exception &) {
+        return 0;
+    }
+    impl_->world->wake(impl_->body_of[first->second]);
+    impl_->world->wake(impl_->body_of[second->second]);
+    impl_->joints.push_back(std::move(joint));
+    return impl_->joints.back().id;
+}
+
 unsigned LiveWorld::reeve(const std::string &a, const std::string &b,
                           const Vec3 &point_a_world_m, const Vec3 &point_b_world_m,
                           const Vec3 &over_a_world_m, const Vec3 &over_b_world_m,
@@ -982,7 +1058,10 @@ std::vector<LiveJoint> LiveWorld::joints() const {
         said.kind = joint.kind == JoltWorld::JointKind::Slider   ? "slider"
                     : joint.kind == JoltWorld::JointKind::Link   ? "link"
                     : joint.kind == JoltWorld::JointKind::Pulley ? "pulley"
+                    : joint.kind == JoltWorld::JointKind::Fixing ? "fixing"
                                                                  : "hinge";
+        said.holds_tension_n = joint.holds_tension_n;
+        said.holds_shear_n = joint.holds_shear_n;
         said.breaks_at_n = joint.breaks_at_n;
         said.ratio = joint.ratio;
         said.over_a_m = joint.over_a;
@@ -1000,6 +1079,21 @@ std::vector<LiveJoint> LiveWorld::joints() const {
             said.upper = now.upper;
             said.friction = now.friction;
             said.tension_n = impl_->world->jointTension(joint.rigid);
+            if (joint.kind == JoltWorld::JointKind::Fixing) {
+                const auto found = impl_->index_of.find(joint.a);
+                const Vec3 along =
+                    found != impl_->index_of.end()
+                        ? impl_->world->snapshot(impl_->body_of[found->second])
+                              .orientation_world.rotate(joint.axis_local_a)
+                        : joint.axis_local_a;
+                const JoltWorld::JointLoad carrying =
+                    impl_->world->jointLoad(joint.rigid, along);
+                said.tension_n_now = carrying.tension_n;
+                said.shear_n_now = carrying.shear_n;
+                // One number for a host that only wants "how hard is this
+                // working": whichever of the two is nearer its own limit.
+                said.tension_n = std::max(carrying.tension_n, carrying.shear_n);
+            }
         }
         // Where the pin has got to, worked out from the body it is in rather
         // than remembered, so a gate that has been carried across the room
@@ -1167,6 +1261,15 @@ void LiveWorld::rehangJoints() {
                 rope.length_m = joint.upper;
                 rope.breaking_tension_n = joint.breaks_at_n;
                 joint.rigid = impl_->world->addLink(rope);
+            } else if (joint.kind == JoltWorld::JointKind::Fixing) {
+                JoltWorld::FixingDescription peg{};
+                peg.a = impl_->body_of[side[0]];
+                peg.b = impl_->body_of[side[1]];
+                peg.point_world_m = point;
+                peg.axis_world = along;
+                peg.holds_tension_n = joint.holds_tension_n;
+                peg.holds_shear_n = joint.holds_shear_n;
+                joint.rigid = impl_->world->addFixing(peg);
             } else if (joint.kind == JoltWorld::JointKind::Slider) {
                 JoltWorld::SliderDescription groove{};
                 groove.a = impl_->body_of[side[0]];

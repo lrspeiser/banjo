@@ -14,7 +14,7 @@ tell you any other way:
 if (banjo_abi_version() != BANJO_ABI_VERSION) { /* mismatch */ }
 ```
 
-Current ABI: **10**.
+Current ABI: **11**.
 
 ---
 
@@ -438,6 +438,45 @@ hinges, and what was hanging on it falls. Read what a link is carrying from
 `tension_n` — measured against a 617.638 N weight it reports 617.586 N, and 0 N
 while the rope still has slack in it.
 
+### `int banjo_fix(banjo_world *world, const char *a, const char *b, const double at_m[3], const double axis[3], double holds_tension_n, double holds_shear_n)`
+
+Two bodies held together as **one piece**: a peg, a bracket, a nail, a bolt, a
+door catch, a locking bar, a rope anchor. All six degrees of freedom are held,
+and whatever their relative pose is when the fixing is made is the pose they
+keep — that is what "defined alignment" means here. It is defined by where they
+are when the peg goes in, which is how a peg works.
+
+```c
+double at[3] = {0.0, 1.4, 0.2}, along[3] = {1.0, 0.0, 0.0};
+int bar = banjo_fix(w, "jamb", "locking bar", at, along, 0.0, 0.0);
+/* ... later ... */
+banjo_unhinge(w, bar);          /* the latch is lifted */
+```
+
+**Two strengths, because they fail at different loads.** A peg pulled straight
+out and a peg sheared sideways are not the same test. `axis` is the direction
+the peg points: **tension is along it, shear is across it.** Either exceeded and
+the fixing parts, reported once with `attached` 0, exactly like a rope. Measured
+on a 618 N bracket hanging off a wall: `tension_now_n` of 6.5×10⁻¹⁷ and
+`shear_now_n` of 617.586 — a hanging weight is *entirely* shear, and a fixing
+with no tension strength at all holds it.
+
+Zero means it never lets go on its own. That is a **weld**, and welds are a real
+thing to want.
+
+**Releasing it changes what the assembly is**, and that is the difference between
+a latch and a very stiff hinge. Measured: the same shove on the same gate moved
+it **1.66 degrees** with a bar across it and **18.76** without. Nothing about the
+gate changed.
+
+One practical caution. A bar fixed to both a jamb and a gate that is itself
+hinged to that jamb is a **closed loop** of constraints, and an iterative solver
+splits its error around one. A light bar restraining a heavy gate is the case
+that shows: measured, a 5 kg oak bar on a 142 kg gate let it move as far as no
+bar at all, and a 60 kg iron bar — a mass ratio of two rather than thirty — held
+it. If a fixing seems soft, look at the mass ratio before looking at the
+constraint.
+
 ### `int banjo_joint_count(const banjo_world *world)`
 ### `int banjo_joints(const banjo_world *world, banjo_joint *out, int max)`
 
@@ -463,6 +502,10 @@ typedef struct {
 **degrees** and `friction` in newton metres; a slider, a link and a pulley report
 them in **metres** and newtons. Reading a slider's `0.8` as degrees gives a portcullis
 fifty-seven times too tall.
+
+A fixing holds every degree of freedom, so it has no `at`, `lower` or `upper` to
+report; what it has instead is `tension_now_n` and `shear_now_n` against
+`holds_tension_n` and `holds_shear_n`.
 
 For a link, `at` is how far apart the two ends are, `upper` is the length it is
 tied to, and `lower` is 0 — because nought-to-length is exactly what a rope is.

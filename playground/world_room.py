@@ -169,7 +169,9 @@ def courtyard() -> dict[str, Any]:
         anchored=True)
     add("gate jamb right", "box", "concrete", [160, 2000, 160], [1600, 1000, 0],
         anchored=True)
-    add("gate lintel", "box", "concrete", [1840, 160, 160], [760, 2080, 0],
+    # 120 mm rather than 160: cost goes as the cube of the cell and this room
+    # runs right up against the lane's 16,000. A lintel is scenery.
+    add("gate lintel", "box", "concrete", [1840, 120, 120], [760, 2060, 0],
         anchored=True)
 
     # The leaf, in FRONT of the jambs rather than between them.
@@ -183,6 +185,21 @@ def courtyard() -> dict[str, Any]:
     # 1.44 m x 1.76 m of 80 mm oak is 111 kg, which is what a real gate weighs
     # and is most of why it takes a shove rather than a nudge.
     add("oak gate", "box", "oak", [1440, 1760, 80], [720, 1000, 120])
+
+    # The locking bar. Fixed to the jamb at one end and to the gate at the
+    # other, which makes the two into ONE PIECE: barred, the gate does not
+    # swing however hard you shove it, and nothing about the gate itself has
+    # changed. Lift the bar off and it is a gate again.
+    #
+    # That is what a latch is for, and it is the reason a latch is not just a
+    # very stiff hinge: releasing it changes what the assembly can DO.
+    #
+    # IRON, and not for looks. The gate is 142 kg and a 5 kg oak bar restraining
+    # it through two fixed constraints is a mass ratio of thirty to one, which
+    # is where an iterative solver quietly gives up: measured, a shove that
+    # moved the unbarred gate 15 degrees moved the OAK-barred one 15 degrees
+    # too. A 60 kg iron bar is a ratio of two, which it holds.
+    add("locking bar", "box", "iron", [1200, 80, 80], [600, 1400, 240])
 
     # ---- a portcullis, in its own gateway ----------------------------------
     #
@@ -207,8 +224,8 @@ def courtyard() -> dict[str, Any]:
         [PORT_X - 720, 1200, PORT_Z], anchored=True)
     add("portcullis jamb right", "box", "concrete", [160, 2400, 160],
         [PORT_X + 720, 1200, PORT_Z], anchored=True)
-    add("portcullis lintel", "box", "concrete", [1600, 160, 160],
-        [PORT_X, 2480, PORT_Z], anchored=True)
+    add("portcullis lintel", "box", "concrete", [1600, 120, 120],
+        [PORT_X, 2460, PORT_Z], anchored=True)
     # In front of the jambs in z, and resting on the ground. Its 1.2 m of lift
     # puts its top at 2.4 m, exactly under the lintel -- a grate that would go
     # through its own arch is a grate whose travel was never measured.
@@ -322,6 +339,26 @@ def courtyard() -> dict[str, Any]:
             "lower_mm": 0,
             "upper_mm": 1200,
             "friction_n": 3000,
+        }, {
+            # The bar to the jamb. A peg driven along x, so pulling the bar
+            # straight off the jamb is tension and the gate shoving it sideways
+            # is shear. Both zero: a bar you can lift off but not break.
+            "kind": "fixing",
+            "a": "gate jamb left",
+            "b": "locking bar",
+            "at_mm": [0, 1400, 240],
+            "axis": [1, 0, 0],
+            "holds_tension_n": 0,
+            "holds_shear_n": 0,
+        }, {
+            # And the bar to the gate, across the other way.
+            "kind": "fixing",
+            "a": "locking bar",
+            "b": "oak gate",
+            "at_mm": [900, 1400, 200],
+            "axis": [0, 0, 1],
+            "holds_tension_n": 0,
+            "holds_shear_n": 0,
         }, {
             # The winch. The rope runs from the top of the grate up over the
             # lintel, across, and down to the counterweight.

@@ -75,7 +75,7 @@ extern "C" {
 /* The ABI version. Bumped when the meaning or layout of anything here changes.
  * Check it once at startup against banjo_abi_version(): a header and a library
  * that disagree will not tell you so any other way. */
-#define BANJO_ABI_VERSION 10
+#define BANJO_ABI_VERSION 11
 
 /* What a call reported. Anything below zero is a failure and leaves the world
  * unchanged; banjo_last_error() says what happened. */
@@ -157,6 +157,14 @@ typedef struct {
     double ratio;
     double over_a_m[3];
     double over_b_m[3];
+    /* For a fixing: what it is carrying along its axis and across it, and what
+     * it can take of each. A peg pulled straight out and a peg sheared sideways
+     * fail at different loads, so these are two numbers and not one. Zero for
+     * every other kind. */
+    double tension_now_n;
+    double shear_now_n;
+    double holds_tension_n;
+    double holds_shear_n;
 } banjo_joint;
 
 /* A thing carrying more than it can hold up.
@@ -510,7 +518,7 @@ BANJO_API int banjo_slide(banjo_world *world, const char *a, const char *b,
                           double lower_m, double upper_m, double friction_n);
 
 enum { BANJO_JOINT_HINGE = 0, BANJO_JOINT_SLIDER = 1, BANJO_JOINT_LINK = 2,
-       BANJO_JOINT_PULLEY = 3 };
+       BANJO_JOINT_PULLEY = 3, BANJO_JOINT_FIXING = 4 };
 
 /* Tie one named thing to another, so they may be up to `length_m` apart and no
  * further.
@@ -578,6 +586,31 @@ BANJO_API int banjo_reeve(banjo_world *world, const char *a, const char *b,
                           const double at_a_m[3], const double at_b_m[3],
                           const double over_a_m[3], const double over_b_m[3],
                           double ratio, double length_m);
+
+/* Fix one named thing to another: a peg, a bracket, a nail, a bolt, a door
+ * catch, a locking bar, a rope anchor.
+ *
+ * All six degrees of freedom are held, so the two move as one piece, and
+ * whatever their relative pose is when the fixing is made is the pose they keep.
+ * That is what "defined alignment" means here -- it is defined by where they are
+ * when the peg goes in, which is how a peg works.
+ *
+ * TWO strengths, because a peg pulled straight out and a peg sheared sideways
+ * fail at different loads and it is rarely the same number. `axis` is the
+ * direction the peg points: tension is along it, shear is across it. Either
+ * exceeded and it parts, reported once with `attached` 0, exactly like a rope.
+ * Measured on a bracket hanging off a wall: 6.5e-17 N of tension and 617.586 N
+ * of shear, because a hanging weight is entirely shear.
+ *
+ * Zero means it never lets go on its own -- that is a weld, and welds are a real
+ * thing to want. Releasing it on purpose is banjo_unhinge, which is what a latch
+ * does, and doing so changes what the assembly IS: measured, the same shove on
+ * the same gate moved it 1.66 degrees with a bar across it and 18.76 without.
+ *
+ * Returns the joint's id, always above zero, or a negative banjo_status. */
+BANJO_API int banjo_fix(banjo_world *world, const char *a, const char *b,
+                        const double at_m[3], const double axis[3],
+                        double holds_tension_n, double holds_shear_n);
 
 /* How many joints are in the world. */
 BANJO_API int banjo_joint_count(const banjo_world *world);

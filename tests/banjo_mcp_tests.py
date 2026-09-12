@@ -353,6 +353,44 @@ class TheTools(unittest.TestCase):
         self.assertLess(weight["position_m"][1], 2.0,
                         "the rope parted but the weight did not fall")
 
+    def test_a_fixing_holds_and_a_latch_lets_go(self):
+        """Two bodies as one piece, and then not.
+
+        There is no tool for "open the latch" -- the latch is a joint, and
+        letting it go is `unhinge`. What changes is what the assembly IS.
+        """
+        world_id = self.client.call("create_world", cell_size_m=0.05, objects=[
+            {"name": "wall", "shape": "box", "material": "oak",
+             "size_m": [0.2, 3.0, 1.0], "position_m": [0, 1.5, 0], "anchored": True},
+            {"name": "bracket", "shape": "box", "material": "iron",
+             "size_m": [0.2, 0.2, 0.2], "position_m": [0.25, 2.0, 0]},
+        ])["world_id"]
+        made = self.client.call("fix", world_id=world_id, a="wall", b="bracket",
+                                at_m=[0.15, 2.0, 0.0], axis=[1, 0, 0])
+        self.assertGreater(made["joint"], 0)
+        held = self.client.call("joints", world_id=world_id)["joints"][0]
+        self.assertEqual(held["kind"], "fixing")
+        # Tension and shear are separate keys, because they fail separately.
+        self.assertIn("tension_n", held)
+        self.assertIn("shear_n", held)
+
+        self.client.call("run", world_id=world_id, seconds=2.0)
+        hanging = next(b for b in self.client.call(
+            "describe_world", world_id=world_id)["objects"] if b["name"] == "bracket")
+        self.assertGreater(hanging["position_m"][1], 1.9,
+                           "the bracket fell off a weld")
+        # A hanging weight is entirely shear, so that is where the load shows.
+        carrying = self.client.call("joints", world_id=world_id)["joints"][0]
+        self.assertGreater(carrying["shear_n"], 300.0,
+                           f"a 618 N bracket reports {carrying['shear_n']} N of shear")
+
+        self.client.call("unhinge", world_id=world_id, joint=made["joint"])
+        self.client.call("run", world_id=world_id, seconds=2.0)
+        dropped = next(b for b in self.client.call(
+            "describe_world", world_id=world_id)["objects"] if b["name"] == "bracket")
+        self.assertLess(dropped["position_m"][1], 1.0,
+                        "releasing the fixing did not drop the bracket")
+
     def test_a_pin_can_be_stiffened_and_taken_out(self):
         world_id = self.gateway()
         joint = self.client.call("hinge", world_id=world_id, a="post", b="gate",

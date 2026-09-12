@@ -66,6 +66,17 @@ taskkill //F //IM banjo_platform_cli.exe >/dev/null 2>&1
 for stuck in $(tasklist 2>/dev/null | awk '/^banjo_/ {print $2}'); do
     taskkill //F //PID "$stuck" >/dev/null 2>&1
 done
+# And a BUILD that was interrupted. MSBuild keeps compiling after whatever
+# started it has gone, and it holds every .obj it is writing -- so the next run
+# fails with "Permission denied" on a dozen object files and a LNK1104, which
+# reads as a broken tree and is one orphaned compiler. Only cleared when no
+# build is wanted; see the guard, because this would otherwise shoot the build
+# this script is about to start.
+if [ "${BANJO_KEEP_BUILDERS:-0}" != "1" ]; then
+    for builder in $(tasklist 2>/dev/null | awk '/^(MSBuild|cl|link|mspdbsrv)\.exe/ {print $2}'); do
+        taskkill //F //PID "$builder" >/dev/null 2>&1
+    done
+fi
 
 if [ "$list_only" = 1 ]; then
     ctest --test-dir "$BUILD" -C "$CONFIG" -N | sed -n 's/.*: //p'

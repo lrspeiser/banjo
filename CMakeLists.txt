@@ -857,6 +857,14 @@ if(BANJO_BUILD_TESTS)
             # Supports, beams and levers -- and above all SUSTAINED load,
             # which the impact ledger cannot see: a plank at rest under a pile
             # of crates reports no contacts at all.
+            # Attachments and latches: pegs, brackets, catches, locking bars.
+            # A strength along the axis and another across it, because a peg
+            # pulled out and a peg sheared fail at different loads.
+            add_executable(banjo_fixing_tests tests/fixing_tests.cpp)
+            target_link_libraries(banjo_fixing_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_fixing_tests)
+            add_test(NAME banjo_fixing_tests COMMAND banjo_fixing_tests)
+
             add_executable(banjo_beam_tests tests/beam_tests.cpp)
             target_link_libraries(banjo_beam_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_beam_tests)

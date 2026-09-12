@@ -539,6 +539,29 @@ int banjo_reeve(banjo_world *world, const char *a, const char *b,
     });
 }
 
+int banjo_fix(banjo_world *world, const char *a, const char *b,
+              const double at_m[3], const double axis[3],
+              double holds_tension_n, double holds_shear_n) {
+    if (!world || !a || !b || !at_m || !axis) {
+        setError("no world, no names, or nowhere to fix"); return BANJO_BAD_ARGUMENT;
+    }
+    if (!(holds_tension_n >= 0.0) || !(holds_shear_n >= 0.0)) {
+        setError("a fixing's strengths are newtons, zero (never lets go) or more");
+        return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        const unsigned peg = world->world->fix(a, b, readVec(at_m), readVec(axis),
+                                               holds_tension_n, holds_shear_n);
+        if (peg == 0) {
+            setError(std::string("\"") + b + "\" cannot be fixed to \"" + a +
+                     "\": one of them is not in the scene, they are the same thing, "
+                     "or the axis has no direction");
+            return static_cast<int>(BANJO_BAD_ARGUMENT);
+        }
+        return static_cast<int>(peg);
+    });
+}
+
 int banjo_joint_count(const banjo_world *world) {
     if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
     return guarded([&] {
@@ -568,6 +591,7 @@ int banjo_joints(const banjo_world *world, banjo_joint *out, int max) {
             out[i].kind = joint.kind == "slider"   ? BANJO_JOINT_SLIDER
                           : joint.kind == "link"   ? BANJO_JOINT_LINK
                           : joint.kind == "pulley" ? BANJO_JOINT_PULLEY
+                          : joint.kind == "fixing" ? BANJO_JOINT_FIXING
                                                    : BANJO_JOINT_HINGE;
             out[i].a = joint.a.c_str();
             out[i].b = joint.b.c_str();
@@ -583,6 +607,10 @@ int banjo_joints(const banjo_world *world, banjo_joint *out, int max) {
             out[i].ratio = joint.ratio;
             writeVec(joint.over_a_m, out[i].over_a_m);
             writeVec(joint.over_b_m, out[i].over_b_m);
+            out[i].tension_now_n = joint.tension_n_now;
+            out[i].shear_now_n = joint.shear_n_now;
+            out[i].holds_tension_n = joint.holds_tension_n;
+            out[i].holds_shear_n = joint.holds_shear_n;
         }
         return count;
     });

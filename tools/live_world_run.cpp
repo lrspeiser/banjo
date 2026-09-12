@@ -25,6 +25,8 @@
 //        {"op":"reeve","a":"grate","b":"counterweight","at_a":[0,1,0.15],
 //         "at_b":[2,3.3,0],"over_a":[0,3.9,0],"over_b":[2,3.9,0],"ratio":1}
 //                                            a hoist: pull one end, the other rises
+//        {"op":"fix","a":"jamb","b":"bar","at":[0,1.4,0.2],"axis":[1,0,0],
+//         "holds_tension_n":0,"holds_shear_n":0}   a peg, a bracket, a latch
 //        {"op":"unhinge","joint":1}          take the pin out; it falls
 //        {"op":"joint_friction","joint":1,"friction_n_m":40}   stiffen it
 //   out  {"ok":true,"t":0.033,"stepped_back":false,
@@ -117,7 +119,14 @@ nlohmann::json jointsOf(const LiveWorld &world) {
                             {"at", vec(joint.point_world_m)},
                             {"axis", vec(joint.axis_world)},
                             {"attached", joint.attached}};
-        if (joint.kind == "pulley") {
+        if (joint.kind == "fixing") {
+            // Two loads and two bounds, because a peg pulled straight out and a
+            // peg sheared sideways fail at different loads.
+            said["tension_n"] = tidy(joint.tension_n_now);
+            said["shear_n"] = tidy(joint.shear_n_now);
+            said["holds_tension_n"] = tidy(joint.holds_tension_n);
+            said["holds_shear_n"] = tidy(joint.holds_shear_n);
+        } else if (joint.kind == "pulley") {
             // The whole run: one side plus the ratio times the other, which is
             // the quantity the constraint actually holds.
             said["metres"] = tidy(joint.at);
@@ -482,6 +491,19 @@ int main(int argc, char **argv) {
                     if (rove == 0)
                         throw std::invalid_argument("that rope cannot be rove");
                     reply["joint"] = rove;
+                } else if (op == "fix") {
+                    // A peg, a bracket, a catch, a locking bar. Two bodies held
+                    // as one, with a strength along the axis and another across
+                    // it. Release it with "unhinge" -- which is what a latch is.
+                    const unsigned peg = world->fix(
+                        command.at("a").get<std::string>(),
+                        command.at("b").get<std::string>(),
+                        readVec(command, "at"), readVec(command, "axis"),
+                        command.value("holds_tension_n", 0.0),
+                        command.value("holds_shear_n", 0.0));
+                    if (peg == 0)
+                        throw std::invalid_argument("those two cannot be fixed together");
+                    reply["joint"] = peg;
                 } else if (op == "unhinge") {
                     world->unhinge(command.at("joint").get<unsigned>());
                 } else if (op == "joint_friction") {

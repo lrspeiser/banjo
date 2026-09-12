@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 # Bumped with the header: the world reports what made it wait.
-ABI_VERSION = 10
+ABI_VERSION = 11
 
 NOTHING, HELD, DENTED, BROKE = 0, 1, 2, 3
 OUTCOMES = {0: "nothing", 1: "held", 2: "dented", 3: "broke"}
@@ -83,6 +83,7 @@ JOINT_HINGE = 0
 JOINT_SLIDER = 1
 JOINT_LINK = 2
 JOINT_PULLEY = 3
+JOINT_FIXING = 4
 
 
 class _Joint(ctypes.Structure):
@@ -101,7 +102,11 @@ class _Joint(ctypes.Structure):
                 ("breaks_at_n", ctypes.c_double),
                 ("ratio", ctypes.c_double),
                 ("over_a_m", ctypes.c_double * 3),
-                ("over_b_m", ctypes.c_double * 3)]
+                ("over_b_m", ctypes.c_double * 3),
+                ("tension_now_n", ctypes.c_double),
+                ("shear_now_n", ctypes.c_double),
+                ("holds_tension_n", ctypes.c_double),
+                ("holds_shear_n", ctypes.c_double)]
 
 
 class _Overload(ctypes.Structure):
@@ -239,6 +244,13 @@ class Joint:
     ratio: float = 1.0
     over_a_m: tuple[float, float, float] = (0.0, 0.0, 0.0)
     over_b_m: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    # For a fixing: what it is carrying along its axis and across it, and what
+    # it can take of each. A peg pulled straight out and a peg sheared sideways
+    # fail at different loads, so these are two numbers and not one.
+    tension_now_n: float = 0.0
+    shear_now_n: float = 0.0
+    holds_tension_n: float = 0.0
+    holds_shear_n: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -374,6 +386,10 @@ def library(path: str | os.PathLike[str] | None = None) -> ctypes.CDLL:
                                 ctypes.c_double * 3, ctypes.c_double * 3,
                                 ctypes.c_double, ctypes.c_double]
     lib.banjo_reeve.restype = ctypes.c_int
+    lib.banjo_fix.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p,
+                              ctypes.c_double * 3, ctypes.c_double * 3,
+                              ctypes.c_double, ctypes.c_double]
+    lib.banjo_fix.restype = ctypes.c_int
     lib.banjo_overload_count.argtypes = [ctypes.c_void_p]
     lib.banjo_overload_count.restype = ctypes.c_int
     lib.banjo_overloaded.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Overload),
@@ -687,6 +703,32 @@ class World:
                                   three(over_a_m), three(over_b_m), ratio, length_m),
             f"reeving {a!r} to {b!r}")
 
+    def fix(self, a: str, b: str, at_m: Any, axis: Any = (0.0, 1.0, 0.0),
+            holds_tension_n: float = 0.0, holds_shear_n: float = 0.0) -> int:
+        """Fix one named thing to another: a peg, a bracket, a catch, a bar.
+
+        All six degrees of freedom are held, so the two move as one piece, and
+        whatever their relative pose is now is the pose they keep -- which is
+        what "defined alignment" means here.
+
+        TWO strengths, because a peg pulled straight out and a peg sheared
+        sideways fail at different loads. `axis` is the direction the peg
+        points: tension is along it, shear is across it. Either exceeded and it
+        parts, reporting `attached` False.
+
+        Zero means it never lets go on its own -- a weld. Releasing it on
+        purpose is `unhinge`, which is what a latch does, and doing so changes
+        what the assembly IS.
+
+        Returns the joint's id.
+        """
+        where = (ctypes.c_double * 3)(*(float(v) for v in at_m))
+        along = (ctypes.c_double * 3)(*(float(v) for v in axis))
+        return self._check(
+            self._lib.banjo_fix(self._alive(), a.encode("utf-8"), b.encode("utf-8"),
+                                where, along, holds_tension_n, holds_shear_n),
+            f"fixing {b!r} to {a!r}")
+
     def overloaded(self) -> list[Overload]:
         """Everything carrying more than its material can take.
 
@@ -721,7 +763,8 @@ class World:
         written = self._check(self._lib.banjo_joints(self._alive(), out, count),
                               "reading the pins")
         names = {JOINT_SLIDER: "slider", JOINT_LINK: "link",
-                 JOINT_PULLEY: "pulley", JOINT_HINGE: "hinge"}
+                 JOINT_PULLEY: "pulley", JOINT_FIXING: "fixing",
+                 JOINT_HINGE: "hinge"}
         return [Joint(id=int(out[i].id),
                       kind=names.get(out[i].kind, "hinge"),
                       a=(out[i].a or b"").decode("utf-8"),
@@ -737,7 +780,11 @@ class World:
                       breaks_at_n=out[i].breaks_at_n,
                       ratio=out[i].ratio,
                       over_a_m=tuple(out[i].over_a_m),
-                      over_b_m=tuple(out[i].over_b_m))
+                      over_b_m=tuple(out[i].over_b_m),
+                      tension_now_n=out[i].tension_now_n,
+                      shear_now_n=out[i].shear_now_n,
+                      holds_tension_n=out[i].holds_tension_n,
+                      holds_shear_n=out[i].holds_shear_n)
                 for i in range(written)]
 
     def joint_friction(self, joint: int, friction: float) -> None:

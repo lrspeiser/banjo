@@ -264,6 +264,15 @@ Measured in the courtyard, a winch driving a portcullis in its grooves: at rest
 the rope carries 3,953 N (the counterweight's own weight, exactly), hauling it
 down 1 m raises the grate 1.005 m, and letting go settles it back.
 
+`banjo_fix` is the fifth and last: two bodies held as **one piece** — a peg, a
+bracket, a catch, a locking bar. Two strengths, because a peg pulled straight out
+and a peg sheared sideways fail at different loads: tension along the axis, shear
+across it. Zero is a weld.
+
+Releasing one with `banjo_unhinge` **changes what the assembly is**, and that is
+the whole difference between a latch and a very stiff hinge. Measured: the same
+shove on the same gate moved it 1.66° barred and 18.76° unbarred.
+
 Two pieces of geometry that each cost an afternoon: set the leaf **clear of its
 own frame** (a door sharing space with its post is jammed against it, and jammed
 looks exactly like a broken hinge), and hang it **clear of the floor** (a door

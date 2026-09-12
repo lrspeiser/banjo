@@ -362,7 +362,7 @@ FIELDS = set(DEFAULT) | {"request_id"}
 
 
 # How far either way a pin may turn, in degrees, from where it is hung.
-JOINT_KINDS = ("hinge", "slider", "link", "pulley")
+JOINT_KINDS = ("hinge", "slider", "link", "pulley", "fixing")
 
 
 def normalise_joints(joints: Any, bodies: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -404,6 +404,17 @@ def normalise_joints(joints: Any, bodies: list[dict[str, Any]]) -> list[dict[str
         axis = [_number(v, -1e6, 1e6, f"joint {i} axis") for v in axis]
         if not any(abs(v) > 1e-9 for v in axis):
             raise ValueError(f"joint {i} has an axis with no direction")
+        if kind == "fixing":
+            # Two strengths, because a peg pulled straight out and a peg sheared
+            # sideways fail at different loads. Zero means a weld.
+            holds_tension = _number(joint.get("holds_tension_n", 0.0), 0.0, 1e9,
+                                    f"joint {i} holds_tension_n")
+            holds_shear = _number(joint.get("holds_shear_n", 0.0), 0.0, 1e9,
+                                  f"joint {i} holds_shear_n")
+            out.append({"kind": kind, "a": a, "b": b, "at_mm": at, "axis": axis,
+                        "holds_tension_n": holds_tension,
+                        "holds_shear_n": holds_shear})
+            continue
         if kind == "pulley":
             # Four places: where the rope is made off on each body, and the two
             # sheaves it runs over. The sheaves are points in the WORLD and stay
