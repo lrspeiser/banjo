@@ -841,6 +841,14 @@ if(BANJO_BUILD_TESTS)
             banjo_enable_warnings(banjo_live_world_tests)
             add_test(NAME banjo_live_world_tests COMMAND banjo_live_world_tests)
 
+            # Heat, chemistry and gas inside a live world: a heated gas lifting
+            # a load through a real slide, a refused step taking its chemistry
+            # back, a burning plank breaking and sharing out what it held.
+            add_executable(banjo_thermo_live_tests tests/thermo_live_tests.cpp)
+            target_link_libraries(banjo_thermo_live_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_thermo_live_tests)
+            add_test(NAME banjo_thermo_live_tests COMMAND banjo_thermo_live_tests)
+
             # Pins, as the scene sees them: a joint between two NAMES, which is
             # what has to survive the bodies underneath being destroyed and
             # rebuilt every time anything in their island breaks.

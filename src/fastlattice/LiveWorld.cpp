@@ -8,6 +8,7 @@
 #include "fracture/FragmentGeometry.hpp"
 #include "material/MaterialCompiler.hpp"
 #include "rigid/JoltWorld.hpp"
+#include "thermo/ThermoJson.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -16,6 +17,8 @@
 #include <deque>
 #include <future>
 #include <map>
+#include <optional>
+#include <tuple>
 #include <set>
 #include <unordered_set>
 #include <unordered_map>
@@ -256,6 +259,11 @@ struct LiveWorld::Impl {
     // What each part is made of, in the engine's terms, so a survey can ask a
     // body what it can take without going back through the scene.
     std::vector<double> tensile_of;
+    // Heat, chemistry and gas (thermo/ThermoWorld.hpp). Null until something
+    // declares any, so a world without them pays nothing for them.
+    std::unique_ptr<thermo::ThermoWorld> thermo;
+    // A hull's surface, from its cells, worked out once per body.
+    mutable std::unordered_map<std::string, std::pair<std::size_t, double>> hull_area_of;
 
     // Pins, by name. See LiveJoint in the header for why it is names and not
     // bodies. `rigid` is the engine-level constraint that is currently standing
@@ -501,6 +509,13 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request) {
 
     for (std::size_t i = 0; i < impl.described.size(); ++i)
         impl.index_of.emplace(impl.described[i].name, i);
+    // What the scene declares about heat, chemistry and gas. A declaration the
+    // network refuses refuses the scene, with the network's own words, rather
+    // than opening a world that quietly lacks the fire it was asked for.
+    if (!r.thermo_scene_json.empty()) {
+        const thermo::Declarations declared = thermo::readSceneDeclarations(r.thermo_scene_json);
+        if (declared.any()) thermo::apply(live->ensureThermo(), declared);
+    }
     return live;
 }
 
@@ -659,13 +674,65 @@ void LiveWorld::step(double dt_s) {
     impl_->stepped_back = false;
     impl_->last_dt_s = dt_s;
     ++impl_->steps_taken;
+
+    // Heat, chemistry and gas step with the rigid world and on its clock.
+    //
+    // A pressure boundary pushes on its body INSIDE the trial, so a step that
+    // is taken back takes the push back with it -- Jolt's recorded state holds
+    // the force accumulator, and a push made outside would survive the rewind
+    // and be applied again on the retry. After the rigid step the network is
+    // advanced with how far each pushed body actually went, and charges the gas
+    // exactly that force times that displacement. And if the step is refused,
+    // the network is put back to where it was: the fuel the step would have
+    // burned, the gas it would have made, the heat it would have moved.
+    thermo::ThermoWorld *const network =
+        impl_->thermo && impl_->thermo->active() ? impl_->thermo.get() : nullptr;
+    std::optional<thermo::ThermoState> network_before;
+    if (network != nullptr) network_before = network->state();
+    struct Driven {
+        std::string body;
+        MatterBodyId id{};
+        Vec3 from{};
+    };
+    std::vector<Driven> driven;
+    const auto pushGas = [&]() {
+        driven.clear();
+        if (network == nullptr) return;
+        for (const thermo::Push &push : network->pushes()) {
+            const auto found = impl_->index_of.find(push.body);
+            if (found == impl_->index_of.end()) continue;
+            const MatterBodyId id = impl_->body_of[found->second];
+            if (!impl_->world->contains(id)) continue;
+            impl_->world->pushBody(id, push.force_n);
+            driven.push_back({push.body, id, impl_->world->snapshot(id).center_of_mass_world_m});
+        }
+    };
+    const auto advanceGas = [&]() {
+        if (network == nullptr) return;
+        std::vector<thermo::Moved> moved;
+        moved.reserve(driven.size());
+        for (const Driven &d : driven)
+            moved.push_back({d.body, impl_->world->snapshot(d.id).center_of_mass_world_m - d.from});
+        network->advance(dt_s, moved);
+    };
+
     if (impl_->body_of.size() + 8 <= 2000) {
-        const bool committed = impl_->world->runReversibleTrial([&]() {
-            impl_->world->step(dt_s);
-            holdStill();
-            holdPending();
-            return !judgeStep();
-        });
+        bool committed = false;
+        try {
+            committed = impl_->world->runReversibleTrial([&]() {
+                pushGas();
+                impl_->world->step(dt_s);
+                holdStill();
+                holdPending();
+                if (judgeStep()) return false;
+                advanceGas();
+                return true;
+            });
+        } catch (...) {
+            if (network != nullptr) network->restore(*network_before);
+            throw;
+        }
+        if (!committed && network != nullptr) network->restore(*network_before);
         impl_->stepped_back = !committed;
         // A step that was taken back did not happen, so the clock does not move
         // and the hold does not need re-asserting -- the world is as it was.
@@ -695,17 +762,21 @@ void LiveWorld::step(double dt_s) {
         // O(bodies squared). Sixty times a second would be waste; four is not.
         if (impl_->steps_taken % 60 == 0) surveyLoads();
         foresee();
+        settleThermo();
         return;
     }
+    pushGas();
     impl_->world->step(dt_s);
     holdStill();
     holdPending();
     (void)judgeStep();
+    advanceGas();
     impl_->time_s += dt_s;
     impl_->rememberJointAngles(*impl_->world);
     partOverloadedLinks();
     if (impl_->steps_taken % 60 == 0) surveyLoads();
     foresee();
+    settleThermo();
 }
 
 // Part every link carrying more than it can take.
@@ -2037,6 +2108,10 @@ std::vector<LiveCollected> LiveWorld::collect(const Vec3 &at, double radius_m,
 // worked out, and anything queued behind it. Missing one of those does not
 // crash, it silently moves somebody else's body, which is far worse.
 void LiveWorld::dropBodies(const std::vector<std::size_t> &which) {
+    // Whatever a body held leaves the world with it, and the ledger says so.
+    if (impl_->thermo)
+        for (const std::size_t body : which)
+            if (body < impl_->described.size()) impl_->thermo->remove(impl_->described[body].name);
     // What was where, so anything still holding an index can follow it.
     std::vector<std::string> before;
     before.reserve(impl_->described.size());
@@ -2751,6 +2826,21 @@ std::size_t LiveWorld::applyPending() {
     // into eight was reported as having held.
     const std::uint32_t asked_part =
         impl_->nodes_of[which].empty() ? 0 : setup.part_of_node[impl_->nodes_of[which].front()];
+    // Which body each cell came from, so that what a body HELD is shared out
+    // among its pieces by the cells each one took: a burning log that breaks
+    // gives every piece its share of the fuel, the moisture and the heat, and
+    // no piece gets any that was not there.
+    const bool thermal = impl_->thermo && impl_->thermo->active();
+    std::unordered_map<std::uint32_t, std::string> source_of_cell;
+    std::unordered_map<std::string, std::size_t> source_cells;
+    std::map<std::string, std::vector<std::pair<std::string, double>>> shares;
+    if (thermal)
+        for (const std::size_t body : island_bodies) {
+            const std::string &source = impl_->described[body].name;
+            if (!impl_->thermo->holds(source)) continue;
+            source_cells[source] = impl_->nodes_of[body].size();
+            for (const std::uint32_t node : impl_->nodes_of[body]) source_of_cell[node] = source;
+        }
 
     // Drop every body in the island and append what they became. A piece is a
     // hull: its cells ARE its surface now, so no authored primitive fits.
@@ -2806,6 +2896,15 @@ std::size_t LiveWorld::applyPending() {
                                       impl_->cellsOfPart(dominant);
         piece.name = whole_parent ? parent.name
                                   : parent.name + " piece " + std::to_string(++made);
+        if (!source_of_cell.empty()) {
+            std::unordered_map<std::string, std::size_t> from;
+            for (const std::uint32_t node : parent_nodes) {
+                const auto found = source_of_cell.find(node);
+                if (found != source_of_cell.end()) ++from[found->second];
+            }
+            for (const auto &[source, cells] : from)
+                shares[source].emplace_back(piece.name, static_cast<double>(cells));
+        }
         // A piece that is still all of its parent is that parent, bent. Only
         // something that actually came off is debris.
         piece.fragment = !whole_parent || parent.fragment;
@@ -2928,6 +3027,14 @@ std::size_t LiveWorld::applyPending() {
     impl_->index_of.clear();
     for (std::size_t i = 0; i < impl_->described.size(); ++i)
         impl_->index_of.emplace(impl_->described[i].name, i);
+    if (thermal) {
+        for (auto &[source, pieces] : shares) {
+            const double cells = static_cast<double>(source_cells[source]);
+            for (auto &piece : pieces) piece.second /= cells;
+            impl_->thermo->split(source, pieces);
+        }
+        impl_->thermo->refresh(thermoShapes(), setup.ground_y);
+    }
     // Every body in the island was destroyed and rebuilt above, so every pin
     // touching any of them is holding nothing. This is where they find their
     // wood again -- or find there is none left, and let go.
@@ -3089,6 +3196,127 @@ std::string LiveWorld::held() const {
     return impl_->holding == static_cast<std::size_t>(-1)
                ? std::string{}
                : impl_->described[impl_->holding].name;
+}
+
+// ---- heat, chemistry and gas ------------------------------------------------
+
+double LiveWorld::hullArea(std::size_t body) const {
+    const double cell = impl_->request.cell_size_m;
+    const std::vector<std::uint32_t> &nodes = impl_->nodes_of[body];
+    if (nodes.empty()) return 6.0 * cell * cell;
+    const std::string &name = impl_->described[body].name;
+    const auto cached = impl_->hull_area_of.find(name);
+    if (cached != impl_->hull_area_of.end() && cached->second.first == nodes.size())
+        return cached->second.second;
+    // A face is open when no cell of the same body sits against it. Cells lie
+    // on one grid, so their offsets differ by whole cells; rounding from the
+    // first one puts a bent body back on it too.
+    std::set<std::tuple<long, long, long>> at;
+    const Vec3 origin = impl_->cell_offset_m[nodes.front()];
+    for (const std::uint32_t node : nodes) {
+        const Vec3 o = (impl_->cell_offset_m[node] - origin) / cell;
+        at.insert({std::lround(o.x), std::lround(o.y), std::lround(o.z)});
+    }
+    std::size_t faces = 0;
+    for (const auto &[x, y, z] : at)
+        for (const auto &[dx, dy, dz] : {std::tuple{1L, 0L, 0L}, std::tuple{-1L, 0L, 0L},
+                                         std::tuple{0L, 1L, 0L}, std::tuple{0L, -1L, 0L},
+                                         std::tuple{0L, 0L, 1L}, std::tuple{0L, 0L, -1L}})
+            if (!at.count({x + dx, y + dy, z + dz})) ++faces;
+    const double area = static_cast<double>(faces) * cell * cell;
+    impl_->hull_area_of[name] = {nodes.size(), area};
+    return area;
+}
+
+std::vector<thermo::BodyShape> LiveWorld::thermoShapes() const {
+    constexpr double kPi = 3.14159265358979323846;
+    const double cell = impl_->request.cell_size_m;
+    std::vector<thermo::BodyShape> shapes;
+    shapes.reserve(impl_->described.size());
+    for (std::size_t i = 0; i < impl_->described.size(); ++i) {
+        const LiveBodyPose &body = impl_->described[i];
+        const MatterBodyId id = impl_->body_of[i];
+        if (!impl_->world->contains(id)) continue;
+        const RigidMechanicalState state = impl_->world->mechanicalState(id);
+        thermo::BodyShape shape;
+        shape.name = body.name;
+        shape.material = body.material;
+        shape.anchored = body.anchored;
+        shape.center_m = state.motion.center_of_mass_world_m;
+        const Vec3 d = body.dimensions_m;
+        const std::size_t cells = i < impl_->nodes_of.size() ? impl_->nodes_of[i].size() : 0;
+        const double matter = static_cast<double>(cells) * cell * cell * cell;
+        if (body.shape == "sphere") {
+            shape.area_m2 = kPi * d.x * d.x;
+            shape.volume_m3 = kPi * d.x * d.x * d.x / 6.0;
+        } else if (body.shape == "box") {
+            shape.area_m2 = 2.0 * (d.x * d.y + d.y * d.z + d.x * d.z);
+            shape.volume_m3 = d.x * d.y * d.z;
+        } else {
+            shape.area_m2 = hullArea(i);
+            shape.volume_m3 = matter > 0.0 ? matter : d.x * d.y * d.z;
+        }
+        // What it weighs now, which the network may itself have changed.
+        // Scenery is static to the solver and has no mass there, so its matter
+        // is counted from its cells.
+        const double density = i < impl_->density_of.size() ? impl_->density_of[i] : 0.0;
+        shape.mass_kg = state.mass_kg > 0.0 ? state.mass_kg : matter * density;
+        const Quat q = state.motion.orientation_world;
+        const Vec3 h = d * 0.5;
+        const Vec3 ax = q.rotate({1.0, 0.0, 0.0}), ay = q.rotate({0.0, 1.0, 0.0}),
+                   az = q.rotate({0.0, 0.0, 1.0});
+        shape.half_extent_m = {std::abs(ax.x) * h.x + std::abs(ay.x) * h.y + std::abs(az.x) * h.z,
+                               std::abs(ax.y) * h.x + std::abs(ay.y) * h.y + std::abs(az.y) * h.z,
+                               std::abs(ax.z) * h.x + std::abs(ay.z) * h.y + std::abs(az.z) * h.z};
+        shapes.push_back(std::move(shape));
+    }
+    return shapes;
+}
+
+thermo::ThermoWorld &LiveWorld::ensureThermo() {
+    if (!impl_->thermo) impl_->thermo = std::make_unique<thermo::ThermoWorld>();
+    impl_->thermo->refresh(thermoShapes(), impl_->setup->ground_y);
+    return *impl_->thermo;
+}
+
+void LiveWorld::settleThermo() {
+    thermo::ThermoWorld *network = impl_->thermo.get();
+    if (network == nullptr || !network->active()) return;
+    // Where things are changes slowly next to a step, so the heat paths are
+    // worked out again every eighth accepted step -- thirty times a second at
+    // the room's rate -- and whenever the body table changes.
+    if (impl_->steps_taken % 8 == 0) network->refresh(thermoShapes(), impl_->setup->ground_y);
+    // A body whose matter has been used up or given off weighs less, and the
+    // rigid body is told, so momentum and energy are about what is really there.
+    for (const auto &[name, kg] : network->massesToMirror(1.0e-3)) {
+        const auto found = impl_->index_of.find(name);
+        if (found == impl_->index_of.end() || impl_->described[found->second].anchored) continue;
+        const MatterBodyId id = impl_->body_of[found->second];
+        if (impl_->world->contains(id)) impl_->world->setMass(id, kg);
+    }
+}
+
+const thermo::ThermoWorld *LiveWorld::thermo() const { return impl_->thermo.get(); }
+
+void LiveWorld::declareThermo(const std::string &json) {
+    thermo::Declarations declared = thermo::readDeclarations(json);
+    thermo::ThermoWorld &network = ensureThermo();
+    // A heater declared into a running world starts from now.
+    for (thermo::HeaterDeclaration &heater : declared.heaters) heater.start_s += network.timeS();
+    thermo::apply(network, declared);
+}
+
+unsigned LiveWorld::heat(const std::string &target, double power_w, double seconds) {
+    thermo::ThermoWorld &network = ensureThermo();
+    return network.heat({target, power_w, network.timeS(), seconds, "heater"});
+}
+
+void LiveWorld::setVent(const std::string &region, bool open) { ensureThermo().setVent(region, open); }
+
+std::string LiveWorld::thermoReport(bool with_model) const {
+    if (impl_->thermo) return thermo::reportJson(*impl_->thermo, with_model);
+    const thermo::ThermoWorld nothing;
+    return thermo::reportJson(nothing, with_model);
 }
 
 } // namespace banjo::fastlattice
