@@ -1740,10 +1740,29 @@ $("ask").addEventListener("submit", async (e) => {
 
 $("reset").addEventListener("click", () => open());
 
+// A gas is seen through its window. The crosshair's first body is then the pane
+// of glass, but what the person is looking at -- and means to heat -- is the
+// column behind it; a cylinder with a window in front can otherwise only have
+// its gas heated by walking round to look down its open top. Only glass: through
+// concrete there is no gas to be seen.
+function gasBehindGlass(name) {
+  const entry = world.bodies.get(name);
+  if (!entry || entry.material !== "glass" || !heat.last || heat.columns.size === 0) return null;
+  const ray = new THREE.Raycaster(camera.position.clone(), forwardVector().normalize());
+  const hit = ray.intersectObjects([...heat.columns.values()], false)[0];
+  if (!hit) return null;
+  for (const [regionName, column] of heat.columns) {
+    if (column === hit.object) {
+      return (heat.last.regions || []).find((r) => r.name === regionName) || null;
+    }
+  }
+  return null;
+}
+
 // Heat what the crosshair is on: 10 kW for a minute, like a bundle of kindling
-// held to it -- or, when it is a piston, the gas under it at 800 W for half a
-// minute. External work, and the engine counts it; whether it lights anything
-// is the engine's answer, and two presses are twice the heat.
+// held to it -- or, when it is a piston or a window with gas behind it, the gas
+// at 800 W for half a minute. External work, and the engine counts it; whether
+// it lights anything is the engine's answer, and two presses are twice the heat.
 $("heat-it").addEventListener("click", async () => {
   if (!world.session) return;
   const name = world.held ? world.held.name : world.aim && world.aim.name;
@@ -1751,7 +1770,8 @@ $("heat-it").addEventListener("click", async () => {
     say("world", "Point the crosshair at something first: the heat goes into whatever it is on.");
     return;
   }
-  const region = heat.last && (heat.last.regions || []).find((r) => r.piston === name);
+  const region = heat.last && ((heat.last.regions || []).find((r) => r.piston === name)
+                               || (!world.held && gasBehindGlass(name)));
   const target = region ? region.name : name;
   const power = region ? 800 : 10000;
   const seconds = region ? 30 : 60;

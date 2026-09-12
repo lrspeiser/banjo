@@ -193,7 +193,10 @@ the kettle warms, and thermal_state estimates about an hour and a half):
   add_object log 3 oak [0.48, 0.12, 0.12] at [0, 0.26, 0]   (across the top)
   add_object kettle iron [0.16, 0.16, 0.16] at [0.36, 0.16, 0]
   heat log 1 10000 W for 90 s; heat log 2 10000 W for 90 s   (the kindling)
-  then run for 120 seconds and call thermal_state.
+  then run for 120 s -- one run does 20 s at most, so call run six times in
+  the same turn -- and call thermal_state. The logs catch about a minute into
+  their kindling: after only 20 s they are warming, not yet alight, and saying
+  "not burning" then is a report on the first 20 s, not on the fire.
 
 A heated piston lifting a weight (800 W for 30 s lifted it about 0.2 m; when
 the heat stopped it came back down):
