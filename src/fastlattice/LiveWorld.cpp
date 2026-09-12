@@ -393,6 +393,9 @@ struct LiveWorld::Impl {
     // of the target's matter: a blade still in its kerf, or lying between two
     // pieces it has just made.
     std::set<std::pair<unsigned, std::string>> exempt;
+    // Where the bodies a cut has just replaced were at that moment, so a joint
+    // can follow its own end into the piece that holds it. See rehangJoints.
+    std::unordered_map<std::string, RigidSnapshot> vanished;
     std::vector<LiveCut> cut_log;
     // Contacts that did not bite, still open, by (blade, target).
     std::map<std::pair<unsigned, std::string>, std::pair<std::size_t, std::uint64_t>> touching;
@@ -1423,15 +1426,29 @@ void LiveWorld::rehangJoints() {
         for (int end = 0; end < 2; ++end) {
             const auto found = impl_->index_of.find(*names[end]);
             if (found != impl_->index_of.end()) { side[end] = found->second; continue; }
-            if (!have_point) break;
-            const std::size_t heir = bodyHolding(point, *names[end]);
+            // Where THIS end was attached, if a cut has just replaced its body:
+            // a rope, a pulley or a spring is tied at two different points, and
+            // a rope's are a cell apart across the join -- searched for with the
+            // other end's point, the pieces had nothing within a cell of it, and
+            // the ties on both sides of a cut segment came off. A pin's two ends
+            // share one point, so for a pin this is the same place.
+            Vec3 own = point;
+            bool have_own = have_point;
+            if (const auto gone = impl_->vanished.find(*names[end]); gone != impl_->vanished.end()) {
+                own = gone->second.center_of_mass_world_m +
+                      gone->second.orientation_world.rotate(*locals[end]);
+                have_own = true;
+            }
+            if (!have_own) break;
+            const std::size_t heir = bodyHolding(own, *names[end]);
             if (heir == static_cast<std::size_t>(-1)) break;
             // The pin is in this piece now. Re-write where it sits in the new
             // body's frame -- the piece has its own centre of mass, nowhere near
             // the one the parent had -- and rename the end to match, so the next
             // break follows the piece's own pieces.
             const RigidSnapshot at = impl_->world->snapshot(impl_->body_of[heir]);
-            *locals[end] = conjugateOf(at.orientation_world).rotate(point - at.center_of_mass_world_m);
+            *locals[end] = conjugateOf(at.orientation_world).rotate(own - at.center_of_mass_world_m);
+            if (end == 1) joint.point_local_b_tie = *locals[end];
             *names[end] = impl_->described[heir].name;
             side[end] = heir;
             impl_->delays.push_back({impl_->time_s, *names[end], "rehung", 0.0, 0.0});
@@ -1447,6 +1464,10 @@ void LiveWorld::rehangJoints() {
         try {
             const RigidSnapshot one = impl_->world->snapshot(impl_->body_of[side[0]]);
             const Vec3 along = one.orientation_world.rotate(joint.axis_local_a);
+            // A rope, a pulley or a spring is tied at two points, and end a's is
+            // its own -- not the point a pin's two ends share.
+            const Vec3 point_a = one.center_of_mass_world_m +
+                                 one.orientation_world.rotate(joint.point_local_a);
             // The limits were measured from where the thing was standing when
             // the joint was made, and it is not standing there now. Jolt
             // measures a fresh constraint from where it finds the bodies, so
@@ -1459,7 +1480,7 @@ void LiveWorld::rehangJoints() {
                 JoltWorld::PulleyDescription rove{};
                 rove.a = impl_->body_of[side[0]];
                 rove.b = impl_->body_of[side[1]];
-                rove.point_a_world_m = point;
+                rove.point_a_world_m = point_a;
                 const RigidSnapshot far = impl_->world->snapshot(impl_->body_of[side[1]]);
                 rove.point_b_world_m = far.center_of_mass_world_m +
                                        far.orientation_world.rotate(joint.point_local_b_tie);
@@ -1475,7 +1496,7 @@ void LiveWorld::rehangJoints() {
                 JoltWorld::LinkDescription rope{};
                 rope.a = impl_->body_of[side[0]];
                 rope.b = impl_->body_of[side[1]];
-                rope.point_a_world_m = point;
+                rope.point_a_world_m = point_a;
                 // The far end is tied somewhere else on the other body, so it
                 // has to be worked out from that body rather than shared. This
                 // is the one place a link differs from a pin: two points, not
@@ -1490,7 +1511,7 @@ void LiveWorld::rehangJoints() {
                 JoltWorld::ElasticDescription limb{};
                 limb.a = impl_->body_of[side[0]];
                 limb.b = impl_->body_of[side[1]];
-                limb.point_a_world_m = point;
+                limb.point_a_world_m = point_a;
                 const RigidSnapshot far = impl_->world->snapshot(impl_->body_of[side[1]]);
                 limb.point_b_world_m = far.center_of_mass_world_m +
                                        far.orientation_world.rotate(joint.point_local_b_tie);
@@ -1629,13 +1650,23 @@ void LiveWorld::carryOrHaul(double dt_s) {
         const double strength = impl_->hand_strength_n;
         const double rate = std::min(kFastest, std::sqrt(strength / (0.05 * held.mass_kg)));
         const Mat3 feels = gripMassMatrix(held.mass_kg, held.inertia_world_kg_m2, arm);
-        // Its weight is carried too: a hand holding a sword out does not let it
-        // sag until the error pays for it.
-        Vec3 force = feels * ((rate * rate) * (impl_->held_at - grip) -
-                              (2.0 * kDamping * rate) * grip_velocity) -
-                     held.mass_kg * impl_->request.gravity_m_s2;
-        const double pull = length(force);
-        if (pull > strength && pull > 0.0) force = (strength / pull) * force;
+        // Its weight is carried first: a hand holding a sword out does not let
+        // it sag until the error pays for it, and does not stop carrying it
+        // because it is also swinging it. What the hand has left after the
+        // weight goes to moving it. (Capped as one vector, a hard swing spent
+        // the weight's share on the swing, and the sword dropped 100 mm and
+        // passed under the rope it had been aimed at.)
+        const Vec3 hold = -held.mass_kg * impl_->request.gravity_m_s2;
+        Vec3 track = feels * ((rate * rate) * (impl_->held_at - grip) -
+                              (2.0 * kDamping * rate) * grip_velocity);
+        const double spare = std::max(0.0, strength - length(hold));
+        const double pull = length(track);
+        if (pull > spare && pull > 0.0) track = (spare / pull) * track;
+        Vec3 force = hold + track;
+        // And never more than the hand has: a thing too heavy to hold up is
+        // held up as far as the strength goes.
+        const double total = length(force);
+        if (total > strength && total > 0.0) force = (strength / total) * force;
         // The wrist turns it towards where the hand wants it facing, and has to
         // answer the turn the grip force itself puts about the centre of mass:
         // what the wrist supplies is what is left after the grip's own moment.
@@ -4615,8 +4646,9 @@ void LiveWorld::settleCuts(double dt_s) {
         // hold, so what the steel is in is cut, at its declared cost. The
         // energy is the push's, delivered in the step that stopped the blade
         // and taken by the other contact; nothing moves now for an impulse to
-        // measure. A push short of R L -- a 219 N press on oak that resists
-        // with 300 -- cuts nothing this way.
+        // measure. A push short of R L -- the 181 N a 200 N hand has left after
+        // holding the blade up, on oak that resists with 300 -- cuts nothing
+        // this way.
         constexpr double kStill = 0.02;     // m/s
         const bool still = std::abs(e.vn_before) <= kStill && std::abs(vn_after) <= kStill;
         const bool overpowered =
@@ -4814,6 +4846,7 @@ std::size_t LiveWorld::splitCut(std::size_t which) {
     const MatterBodyId old_body = I.body_of[which];
     if (!I.world->contains(old_body) || nodes.empty()) return 1;
     const RigidSnapshot snap = I.world->snapshot(old_body);
+    I.vanished[parent.name] = snap;
 
     const MaterialDefinition *material = &setup.tile_material;
     if (setup.multi_body && !setup.part_of_node.empty()) {
@@ -4931,6 +4964,7 @@ std::size_t LiveWorld::splitCut(std::size_t which) {
     dropGuess("guess-wasted");
     restackQueue(before);
     rehangJoints();
+    I.vanished.clear();
     repin();
     I.held_through.erase(parent.name);
     I.partner_of.clear();

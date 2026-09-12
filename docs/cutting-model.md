@@ -110,7 +110,7 @@ iteration: after `N` iterations `(1 + m/M)^-N` of it has not been passed. So a
 new kerf's first step gets `ceil(ln 100 / ln(1 + m/M))` iterations, which pass
 all but 1% of it, up to 400; every later step gets 40. Measured: a 1.97 kg
 blade resting on a 28 g batten sank 1.2 mm into it in the first steps with 40
-iterations, and 0.017 mm with the 327 this gives.
+iterations, and 0.014 mm with the 327 this gives.
 
 **Fast strikes are not tunnels.** An edge crossing a thin rope at 10 m/s goes
 through it in less than one 1/240 s step. The engaged length is therefore not
@@ -189,8 +189,9 @@ in harder than `R L` has matter under its steel that cannot be what is holding
 it. That matter is cut, at its declared cost `R` per square metre: the energy
 is the push's, delivered in the step that stopped the blade and taken by the
 other contact, and with nothing moving there is no impulse left to measure it
-by. A push short of `R L` cuts nothing this way: a 219 N press on oak that
-resists with 300 N rests on it for as long as it is held there.
+by. A push short of `R L` cuts nothing this way: the 181 N a 200 N hand has
+left after holding the blade up rests on oak that resists with 300 N for as
+long as it is held there.
 
 ## 4. How a cut changes connectivity
 
@@ -231,8 +232,15 @@ fragment builder a fracture uses:
   cannot build that hull, as its cells);
 - every **joint** on the body follows the piece that holds its attachment
   point in its matter, and a joint whose matter has gone is reported detached.
-  A load hanging on a rope whose segment was cut in two falls with the lower
-  piece, because the link that held it is attached to that piece.
+  Each END follows its own point: a link is tied at two points, one either
+  side of a join, and the end on the cut body is found where that end was
+  tied, at the pose the body had when it came apart. Cut a segment through its
+  middle and the tie above stays on the upper piece, the tie below on the
+  lower. A load hanging on a rope whose segment was cut in two falls with the
+  lower piece, because the link that held it is attached to that piece. (The
+  first version looked for both ends at the one point a pin's ends share; a
+  rope's are a cell apart, nothing was found within a cell, and the ties both
+  sides of a cut segment came off -- seen in the room, and now checked.)
 
 Pieces are named `<body> piece N`, like the pieces of anything else that comes
 apart, and inherit the kerf that made them.
@@ -307,7 +315,8 @@ hand that has a bounded force and a bounded torque, and nothing else:
 ```
     M   = ( 1/m + [r]^T I^-1 [r] )^-1                   the grip's mass, by direction
     w'  = min(w, sqrt(strength / (50 mm * m)))
-    F   = M (w'^2 e - 2 z w' v_grip) + m g_up           |F|   <= strength   (800 N)
+    F   = m g_up + M (w'^2 e - 2 z w' v_grip)           the second part capped at
+                                                        strength - m g; |F| <= strength (800 N)
     tau = I (w^2 theta - 2 z w omega) - r x F           |tau| <= torque     (60 N m)
 ```
 
@@ -317,7 +326,10 @@ centre of mass to the grip, `w` = 100 rad/s and `z` = 0.9. The force acts AT
 the grip, so swinging a sword by its handle puts the swing into it the way a
 hand does, and the wrist supplies what is left of the turn after the grip
 force's own moment. The hand carries the body's weight (`m g_up`) so it does
-not sag until an error pays for it.
+not sag until an error pays for it -- and carries it FIRST: only what is left
+of its strength after the weight goes to moving the body. Capped as one
+vector instead, a hard swing spent the weight's share on the swing and the
+sword dropped 100 mm on the way through, under the rope it was aimed at.
 
 `M` is the grip's effective mass matrix. A force at the grip both moves the
 body and turns it, so across the arm the grip is lighter than the body -- a
@@ -405,10 +417,10 @@ passed.
 | the work is the energy lost | an iron blade into a free oak block at 6 m/s, no gravity, nothing else touching: the pair lost 5.079 J of kinetic energy, the kerf's measured work was 5.075 J (0.08% apart), and that bought 1127.8 mm^2 at R = 4.5 kJ/m^2 -- 11.3 mm deep |
 | a partial cut stays partial | the same block: 104 bonds severed, still 104 a second later, one body carrying one kerf |
 | pieces have their own mass and momentum | a 9 m/s chop through a 280 g batten: pieces of 200 and 200 cells, 140 g each; momentum along the strike -4.2498 kg m/s before, -4.2495 after |
-| a press short of R L cuts nothing | a 2 kg blade pushed onto 20 mm of oak with 200 N (219 N with its weight, against R L = 300 N) for a second: no bond severed, the edge 0.017 mm into the surface |
-| a press past R L cuts | the same blade, the same oak, 800 N: through in two pieces for 4.95 J, 83% of R times the section -- separation comes when the last row of bonds goes, three quarters of the way |
+| a press short of R L cuts nothing | a 2 kg blade in a hand of 200 N, which carries the blade's 19 N first and pushes with the 181 N left, onto 20 mm of oak that resists with R L = 300 N, for a second: no bond severed, the edge 0.014 mm into the surface |
+| a press past R L cuts | the same blade, the same oak, an 800 N hand: through in two pieces for 4.65 J, 78% of R times the section -- separation comes when the last row of bonds goes, three quarters of the way |
 | a slice cuts what a press cannot | the 200 N that could not press through, drawn along the edge: 24 bonds, two pieces |
-| an edge strike parts a rope | 16 m/s edge-first through a hanging rubber rope: 24 bonds, the segment in two, the weight falls from 0.69 m to the floor |
+| an edge strike parts a rope | 16 m/s edge-first through a hanging rubber rope: 24 bonds, the segment in two, the weight falls from 0.69 m to the floor; none of the rope's nine ties comes off -- the ones either side of the cut follow its two pieces |
 | the flat does not | the same strike with the flat leading: nothing cut, reported as a flat, the weight still hanging |
 | blunt and brittle | an iron edge pressed with 800 N onto iron ("blunt") and onto glass ("brittle"): nothing cut |
 | a notch changes what a plank supports | an oak batten 2 m across its piers carrying 170 N holds at 44 MPa; a blade dropped 233 mm onto it beside the load (4.5 J) chops a 10.9 mm notch, 27 bonds, and the same load is now 122.8 MPa at the notch against oak's 90: overloaded |

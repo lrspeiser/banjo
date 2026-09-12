@@ -1277,7 +1277,10 @@ async function tick() {
           if (wasAttached.get(pin.id) && !pin.attached) {
             if (pin.kind === "link" || pin.kind === "pulley") {
               const load = pin.tension_n ? ` at ${Math.round(pin.tension_n)} N` : "";
-              say("world", `the rope from ${pin.a} to ${pin.b} parted${load} —`
+              // A rope that can never part under load, and still came off, was
+              // cut -- saying it "parted, rated for 0 N" says the wrong thing.
+              if (!(pin.breaks_at_n > 0)) say("world", `the rope from ${pin.a} to ${pin.b} was cut through.`);
+              else say("world", `the rope from ${pin.a} to ${pin.b} parted${load} —`
                 + ` it was rated for ${Math.round(pin.breaks_at_n || 0)} N.`);
               remember(`the rope to ${pin.b} parted`);
               continue;

@@ -642,9 +642,18 @@ def armoury() -> dict[str, Any]:
     right, up), which is how a flat strike is made: the edge facing down, swung
     sideways, leads with the flat. Click again to let go.
 
-      the rope    front left. Twelve rubber segments tied end to end, 1 kg of
-                  iron on the bottom. Swing the edge through it fast: it parts
-                  and the weight falls. Swing the flat: it swings and holds.
+      the rope    front left. Six rubber segments tied end to end, 1 kg of
+                  iron on the bottom. To cut it: holding the sword, look level
+                  at the middle of the rope from a little to its right, clear
+                  of the panel, and wait a moment for the sword to come round.
+                  Then drag the view LEFT about 60 degrees (some 480 px) in a
+                  fifth of a second or less. The edge arrives at 10-13 m/s and
+                  goes through: that segment comes apart, its upper piece
+                  stays tied to the rope above and the lower piece falls with
+                  the rest of the rope and the weight. A slower drag reaches
+                  it slower and only notches it -- the slit is drawn, and it
+                  stays. The same drag with the edge turned down (one right-
+                  click) leads with the flat: the rope swings and holds.
       the panel   front right, hung from a lintel by its top edge. Drag the edge
                   across it: it resists, and a cut part way stays part way --
                   the slit is drawn. A cut all the way across drops the lower
@@ -678,22 +687,28 @@ def armoury() -> dict[str, Any]:
 
     # ---- a rope with a weight on it -------------------------------------------
     #
-    # Twelve rubber segments, 20 x 60 x 20 mm, each tied to the next where they
-    # meet. A rope made of bodies because a link on its own is a constraint with
-    # no matter in it, and nothing can cut what is not there. Rubber because the
+    # Six rubber segments, 20 x 120 x 20 mm, each tied to the next where they
+    # meet. A rope struck from the side is knocked away about as fast as it is
+    # cut, and how fast depends on how much rope the edge has to move: an edge
+    # gets through a segment before it gets away above about
+    # sqrt(2 R / (density x segment length)) -- 15 m/s for 60 mm of rubber,
+    # 10.6 for 120. A real rope is one piece and is harder still to knock
+    # aside; twelve short segments made it easier to push away than to cut.
+    # A rope made of bodies because a link on its own is a constraint with no
+    # matter in it, and nothing can cut what is not there. Rubber because the
     # catalogue has no fibre: it is a rubber cord, and says so.
     ROPE_X, ROPE_Z, BEAM_Y = -500, 1400, 2000
     add("rope beam", "box", "oak", [300, 40, 40], [ROPE_X, BEAM_Y + 20, ROPE_Z],
         anchored=True)
-    for k in range(12):
-        add(f"rope {k + 1}", "box", "rubber", [20, 60, 20],
-            [ROPE_X, BEAM_Y - 30 - 60 * k, ROPE_Z])
-    ROPE_END = BEAM_Y - 60 * 12
-    # A kilogram of iron, not eight. The rope is twelve 26 g segments, and a
-    # chain of light links under a load three hundred times heavier does not
-    # hold its length in an iterative solver: it hung 0.6 m long, with gaps
-    # between its segments that a blade went straight through without touching
-    # anything. At 38 to one it hangs as it was tied.
+    for k in range(6):
+        add(f"rope {k + 1}", "box", "rubber", [20, 120, 20],
+            [ROPE_X, BEAM_Y - 60 - 120 * k, ROPE_Z])
+    ROPE_END = BEAM_Y - 120 * 6
+    # A kilogram of iron, not eight. A chain of light links under a load three
+    # hundred times heavier does not hold its length in an iterative solver:
+    # the first rope hung 0.6 m long, with gaps between its segments that a
+    # blade went straight through without touching anything. Each segment here
+    # is 53 g, and at 19 to one the rope hangs as it was tied.
     add("weight", "box", "iron", [50, 50, 50], [ROPE_X, ROPE_END - 25, ROPE_Z])
 
     # ---- an oak panel hung from a lintel --------------------------------------
@@ -729,13 +744,13 @@ def armoury() -> dict[str, Any]:
                    "at_mm": [ROPE_X, BEAM_Y + 5, ROPE_Z],
                    "to_mm": [ROPE_X, BEAM_Y - 5, ROPE_Z],
                    "length_mm": 0, "breaks_at_n": 0})
-    for k in range(1, 12):
-        join = BEAM_Y - 60 * k
+    for k in range(1, 6):
+        join = BEAM_Y - 120 * k
         joints.append({"kind": "link", "a": f"rope {k}", "b": f"rope {k + 1}",
                        "at_mm": [ROPE_X, join + 5, ROPE_Z],
                        "to_mm": [ROPE_X, join - 5, ROPE_Z],
                        "length_mm": 0, "breaks_at_n": 0})
-    joints.append({"kind": "link", "a": "rope 12", "b": "weight",
+    joints.append({"kind": "link", "a": "rope 6", "b": "weight",
                    "at_mm": [ROPE_X, ROPE_END + 5, ROPE_Z],
                    "to_mm": [ROPE_X, ROPE_END - 5, ROPE_Z],
                    "length_mm": 0, "breaks_at_n": 0})

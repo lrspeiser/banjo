@@ -818,13 +818,15 @@ class TheArmoury(unittest.TestCase):
                         "does not matter, and it should")
 
     @unittest.skipUnless(ENGINE, "the live engine is not built")
-    def test_an_edge_parts_the_rope_and_its_flat_does_not(self):
-        """Through the same pipe the browser uses: the sword taken up, brought
-        round beside the rope, and swept through it -- edge leading, then the
-        same sweep turned a quarter so the flat leads. Nothing here says
-        "cut": the hand pulls, and what the edge meets is the engine's."""
-        root2 = math.sqrt(0.5)
-
+    def test_a_swing_parts_the_rope_and_its_flat_does_not(self):
+        """The room's own swing, through the same pipe the browser uses and with
+        the hand targets the page sends (playground/blades.js, transcribed):
+        stand where the room opens, take the sword up by its grip, look level at
+        the middle of the rope from a little to its right -- clear of the panel
+        -- and turn the view 450 px to the left in one go. Then the same swing
+        with the edge turned a quarter, so the flat leads. Nothing here says
+        "cut": the hand pulls with 800 N and 60 N m, and what the edge meets is
+        the engine's."""
         def qmul(a, b):
             aw, ax, ay, az = a
             bw, bx, by, bz = b
@@ -833,24 +835,78 @@ class TheArmoury(unittest.TestCase):
                     aw * by - ax * bz + ay * bw + az * bx,
                     aw * bz + ax * by - ay * bx + az * bw]
 
-        # The bar lies along x with its edge facing -z. Turned so it points
-        # away (-z) with the edge facing left (-x): a half turn about (x+z).
-        edge_left = [0.0, root2, 0.0, root2]
-        # A quarter turn about the way it points: the edge faces up, and a
-        # sweep to the left leads with the flat.
-        flat_left = qmul([root2, 0.0, 0.0, -root2], edge_left)
+        def qrot(q, v):
+            return qmul(qmul(q, [0.0] + list(v)), [q[0], -q[1], -q[2], -q[3]])[1:]
+
+        def qaxis(axis, angle):
+            s = math.sin(angle / 2)
+            return [math.cos(angle / 2), axis[0] * s, axis[1] * s, axis[2] * s]
+
+        def qfrom(m):
+            trace = m[0][0] + m[1][1] + m[2][2]
+            if trace > 0:
+                s = 0.5 / math.sqrt(trace + 1.0)
+                return [0.25 / s, (m[2][1] - m[1][2]) * s, (m[0][2] - m[2][0]) * s,
+                        (m[1][0] - m[0][1]) * s]
+            if m[0][0] > m[1][1] and m[0][0] > m[2][2]:
+                s = 2.0 * math.sqrt(1.0 + m[0][0] - m[1][1] - m[2][2])
+                return [(m[2][1] - m[1][2]) / s, 0.25 * s, (m[0][1] + m[1][0]) / s,
+                        (m[0][2] + m[2][0]) / s]
+            if m[1][1] > m[2][2]:
+                s = 2.0 * math.sqrt(1.0 + m[1][1] - m[0][0] - m[2][2])
+                return [(m[0][2] - m[2][0]) / s, (m[0][1] + m[1][0]) / s, 0.25 * s,
+                        (m[1][2] + m[2][1]) / s]
+            s = 2.0 * math.sqrt(1.0 + m[2][2] - m[0][0] - m[1][1])
+            return [(m[1][0] - m[0][1]) / s, (m[0][2] + m[2][0]) / s,
+                    (m[1][2] + m[2][1]) / s, 0.25 * s]
+
+        def norm(v):
+            size = math.sqrt(sum(x * x for x in v))
+            return [x / size for x in v]
+
+        def cross(a, b):
+            return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2],
+                    a[0] * b[1] - a[1] * b[0]]
+
+        def dot(a, b):
+            return sum(x * y for x, y in zip(a, b))
+
+        # blades.js: where the hand holds the grip in the view's frame, and
+        # which way the blade points from it.
+        eye = [0.0, 1.62, 2.6]
+        pointing = norm([-0.15, 0.22, -1.0])
+
+        def look(x, y, z):
+            to = [x - eye[0], y - eye[1], z - eye[2]]
+            return math.atan2(-to[0], -to[2]), math.atan2(to[1], math.hypot(to[0], to[2]))
+
+        def target(blade, yaw, pitch, reach, facing_view):
+            view = qmul(qaxis([0, 1, 0], yaw), qaxis([1, 0, 0], pitch))
+            along = norm([t - h for t, h in zip(blade["tip_local"], blade["heel_local"])])
+            faced = blade["facing_local"]
+            facing = norm([f - dot(faced, along) * a for f, a in zip(faced, along)])
+            flat = cross(along, facing)
+            want_facing = norm([w - dot(facing_view, pointing) * p
+                                for w, p in zip(facing_view, pointing)])
+            wanted = [pointing, want_facing, cross(pointing, want_facing)]
+            have = [along, facing, flat]
+            turn = qfrom([[sum(wanted[k][r] * have[k][c] for k in range(3)) for c in range(3)]
+                          for r in range(3)])
+            grip = [eye[i] + v for i, v in enumerate(qrot(view, [0.16, -0.24, -reach]))]
+            return grip, qmul(view, turn)
 
         class App:
             engine_path = ENGINE
             runs_path = ROOT / "build/playground-runs"
             live_inprocess = False
 
-        def sweep(facing):
+        def swing(facing_view):
             live = live_session.Live()
             try:
                 opened = live.open(App(), {"spec": world_room.armoury()})
                 self.assertNotIn("blade_problems", opened,
-                                 f"the sword would not take its edge: {opened.get('blade_problems')}")
+                                 f"the sword would not take its edge: "
+                                 f"{opened.get('blade_problems')}")
                 session = live.session
                 bodies = {b["name"]: b for b in opened["bodies"]}
                 cuts = []
@@ -865,43 +921,46 @@ class TheArmoury(unittest.TestCase):
                         session.send(op="fracture", name=coming, wait=False)
                     cuts.extend(c for c in state.get("cuts") or [] if not c["open"])
 
+                blade = session.send(op="blades")["blades"][0]
                 hung = bodies["weight"]["position_m"][1]
                 session.send(op="wield", name="sword")
-                start, rest = [0.0, 1.55, 1.95], [0.35, 1.005, 1.9]
-                for i in range(240):      # a second to bring it round, clear of the rope
-                    t = min(1.0, i / 180.0)
-                    turn = [(1 - t) * a + t * b for a, b in zip([1.0, 0.0, 0.0, 0.0], facing)]
-                    size = math.sqrt(sum(v * v for v in turn))
-                    step(hand=[r + (s - r) * t for r, s in zip(rest, start)],
-                         hand_q=[v / size for v in turn])
-                # The sweep: the hand's target at 12 m/s to x = -1, the speed a
-                # swing of the view gives the sword in the room (13 to 17 m/s
-                # measured). At 8 m/s a 26 g segment of free-hanging rope is
-                # knocked away about as fast as it is cut, and whether it parts
-                # is a close thing -- as it is.
-                for i in range(1, 21):
-                    step(hand=[start[0] - i / 20.0, start[1], start[2]], hand_q=facing)
-                for _ in range(360):      # and held, while whatever falls lands
-                    step(hand=[start[0] - 1.0, start[1], start[2]], hand_q=facing)
+                reach = 0.924            # how far off the sword was when it was clicked
+                first = look(0.0, 1.005, 1.9)
+                second = look(0.1, 1.62, 1.4)
+                grip = list(blade["grip"])
+                turn = list(bodies["sword"]["orientation_wxyz"])
+                ease = 1 - math.exp(-(1 / 240.0) / 0.25)
+                for i in range(360):     # take hold, then look past the rope's right
+                    yaw, pitch = first if i < 120 else second
+                    where, how = target(blade, yaw, pitch, reach, facing_view)
+                    grip = [g + ease * (w - g) for g, w in zip(grip, where)]
+                    if dot(turn, how) < 0:
+                        how = [-v for v in how]
+                    turn = norm([a + ease * (b - a) for a, b in zip(turn, how)])
+                    step(hand=grip, hand_q=turn)
+                where, how = target(blade, second[0] + 450 * 0.0022, second[1], reach,
+                                    facing_view)
+                for _ in range(600):     # the drag, all at once, and what follows
+                    step(hand=where, hand_q=how)
                 return hung, bodies, cuts
             finally:
                 live.shutdown()
 
-        hung, bodies, cuts = sweep(edge_left)
+        hung, bodies, cuts = swing((-1.0, 0.0, 0.0))       # the edge facing left
         on_rope = [c for c in cuts if c["target"].startswith("rope")]
-        bit = [c for c in on_rope if c["kind"] == "edge" and c["area_mm2"] > 0]
+        bit = [c for c in on_rope if c["kind"] in ("edge", "slice") and c["area_mm2"] > 0]
         self.assertTrue(bit, f"the edge did not bite the rope: {on_rope}")
-        through = [c for c in bit if c["separated"]]
+        through = [c for c in bit if c["separated"] or c["links"] > 0]
         self.assertTrue(through, f"the edge cut into the rope but not through it: {bit}")
         # Accounted work: what it cost is its area at the rubber's resistance.
-        for c in through:
+        for c in bit:
             self.assertAlmostEqual(c["work_j"] / (c["area_mm2"] * 1e-6),
                                    c["resistance_j_m2"], delta=0.01 * c["resistance_j_m2"])
         self.assertLess(bodies["weight"]["position_m"][1], 0.3,
                         f"the rope was cut and the weight is still at "
                         f"{bodies['weight']['position_m'][1]:.2f} m (it hung at {hung:.2f})")
 
-        hung, bodies, cuts = sweep(flat_left)
+        hung, bodies, cuts = swing((0.0, -1.0, 0.0))       # a quarter turned: edge down
         on_rope = [c for c in cuts if c["target"].startswith("rope")]
         self.assertFalse([c for c in on_rope if c["bonds"] > 0 or c["links"] > 0],
                          f"the flat cut the rope: {on_rope}")

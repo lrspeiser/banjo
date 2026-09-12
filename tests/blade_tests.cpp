@@ -390,6 +390,15 @@ void anEdgeStrikeCutsTheRopeAndTheWeightFalls() {
     // the weight is still on the bottom of the rope.
     require(attached(world, rope.top), "cutting the rope took it off the beam");
     require(attached(world, rope.bottom), "cutting the rope took the weight off its end");
+    // And the ties either side of the cut segment follow its two pieces -- the
+    // upper piece stays on the segment above it, the lower keeps the segment
+    // below. Only a tie the edge itself went through comes off.
+    std::size_t detached = 0;
+    for (const LiveJoint &joint : world.joints())
+        if (joint.kind == "link" && !joint.attached) ++detached;
+    std::cout << "  " << detached << " ties came off, " << parted
+              << " of them cut by the edge\n";
+    require(detached == parted, "a tie came off that the edge never went through");
 }
 
 void theFlatOfTheBladeDoesNotCutIt() {
