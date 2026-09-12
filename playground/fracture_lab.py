@@ -362,7 +362,7 @@ FIELDS = set(DEFAULT) | {"request_id"}
 
 
 # How far either way a pin may turn, in degrees, from where it is hung.
-JOINT_KINDS = ("hinge", "slider", "link", "pulley", "fixing")
+JOINT_KINDS = ("hinge", "slider", "link", "pulley", "fixing", "elastic")
 
 
 def normalise_joints(joints: Any, bodies: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -404,6 +404,24 @@ def normalise_joints(joints: Any, bodies: list[dict[str, Any]]) -> list[dict[str
         axis = [_number(v, -1e6, 1e6, f"joint {i} axis") for v in axis]
         if not any(abs(v) > 1e-9 for v in axis):
             raise ValueError(f"joint {i} has an axis with no direction")
+        if kind == "elastic":
+            # Two places, like a link: a spring pulls on a POINT, and a bow limb
+            # that pulled on the limb's centre would be a different machine.
+            far = joint.get("to_mm")
+            if not isinstance(far, list) or len(far) != 3:
+                raise ValueError(f"joint {i} is a spring and needs to_mm as three "
+                                 f"numbers: where it is attached on {b!r}")
+            far = [_number(v, -100000.0, 100000.0, f"joint {i} to_mm") for v in far]
+            rest = _number(joint.get("rest_mm", 0.0), 0.0, 100000.0,
+                           f"joint {i} rest_mm")
+            stiffness = _number(joint.get("stiffness_n_m", 1000.0), 0.001, 1e9,
+                                f"joint {i} stiffness_n_m")
+            damping = _number(joint.get("damping_n_s_m", 0.0), 0.0, 1e9,
+                              f"joint {i} damping_n_s_m")
+            out.append({"kind": kind, "a": a, "b": b, "at_mm": at, "to_mm": far,
+                        "rest_mm": rest, "stiffness_n_m": stiffness,
+                        "damping_n_s_m": damping})
+            continue
         if kind == "fixing":
             # Two strengths, because a peg pulled straight out and a peg sheared
             # sideways fail at different loads. Zero means a weld.

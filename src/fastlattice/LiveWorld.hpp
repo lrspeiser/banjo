@@ -124,6 +124,9 @@ struct LiveJoint {
     // "fixing" -- two things held together as one: a peg, a bracket, a catch, a
     //             locking bar. It has a strength along its axis and another
     //             across it, and either one exceeded parts it.
+    // "elastic"-- something that stores energy by being stretched or squashed: a
+    //             bow limb, a spring, a bent plank. It pushes as well as pulls,
+    //             which is what tells it from a rope.
     //
     // This is also the unit on the three numbers below, because a joint with
     // one degree of freedom has one number and the only question is what it is
@@ -143,6 +146,17 @@ struct LiveJoint {
     // fail at different loads, so they are two numbers and not one.
     double tension_n_now{}, shear_n_now{};
     double holds_tension_n{}, holds_shear_n{};
+    // For an elastic: the declared linear model, and what it currently holds.
+    //
+    //     force_n  = stiffness_n_m * (at - rest_m)
+    //     stored_j = stiffness_n_m * (at - rest_m)^2 / 2
+    //
+    // Both are the MODEL's numbers rather than something measured out of the
+    // solver, because the model is what was declared -- and whether the solver
+    // actually delivers them is the thing the tests check, by comparing the
+    // work put in against the kinetic energy that comes out.
+    double rest_m{}, stiffness_n_m{}, damping_n_s_m{};
+    double force_n{}, stored_j{};
     // A pulley's mechanical advantage. One for everything else.
     double ratio{1.0};
     // Where a pulley's rope runs over, in world metres. Both zero for every
@@ -404,6 +418,15 @@ public:
     // which is what makes dragging feel like holding rather than pushing.
     // Anchored scenery refuses to be picked up; it is the world, not a prop.
     [[nodiscard]] bool grab(const std::string &name);
+    // How hard the hand can pull on something that is attached to other things,
+    // in newtons. Everything an archer can do to a bow is bounded by this.
+    //
+    // A loose body is CARRIED and this does not apply to it: it goes exactly
+    // where the hand goes, which is what makes dragging feel like holding. A
+    // body on a joint is HAULED instead, and hauling is a force -- see
+    // carryOrHaul for why it cannot be anything else.
+    void setHandStrength(double newtons);
+    [[nodiscard]] double handStrength() const;
     void moveHeld(const Vec3 &to_world_m);
     // Let go. The object rejoins the simulation from rest, so it falls from
     // where it was left rather than carrying the hand's speed.
@@ -528,6 +551,30 @@ public:
     // real thing to want. Releasing it on purpose is unhinge(), which is what a
     // latch does -- and doing so changes what the assembly IS, which is the
     // whole point of a latch.
+    // Put an elastic element between two named things: a bow limb, a spring, a
+    // bent plank -- anything that stores energy by being deformed.
+    //
+    // A DECLARED SIMPLIFIED MODEL, and worth naming: an ideal linear spring.
+    //
+    //     force  = stiffness * (length - rest)
+    //     stored = stiffness * (length - rest)^2 / 2
+    //
+    // Hooke's law with viscous damping. It has no mass of its own, no internal
+    // stress, no yield, no hysteresis, and it does not care which way it bends;
+    // a real bow limb has all of those. What it does have is the property
+    // everything built on it depends on -- work in is energy stored, energy
+    // stored is energy back, minus what the damping takes -- and that is
+    // measured rather than asserted.
+    //
+    // It pushes as well as pulls. A thing that only pulls is a rope: use tie().
+    //
+    // `rest_m` of zero means "as it stands", which is what you want for
+    // something built already relaxed. `damping_n_s_m` is the declared loss.
+    unsigned spring(const std::string &a, const std::string &b,
+                    const Vec3 &point_a_world_m, const Vec3 &point_b_world_m,
+                    double rest_m = 0.0, double stiffness_n_m = 1000.0,
+                    double damping_n_s_m = 0.0);
+
     unsigned fix(const std::string &a, const std::string &b,
                  const Vec3 &point_world_m, const Vec3 &axis_world,
                  double holds_tension_n = 0.0, double holds_shear_n = 0.0);

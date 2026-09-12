@@ -540,6 +540,14 @@ def _said(joint: banjo.Joint) -> dict[str, Any]:
               "at_m": [round(v, 4) for v in joint.at_m],
               "axis": [round(v, 4) for v in joint.axis],
               "attached": joint.attached}
+    if joint.kind == "elastic":
+        return {**common,
+                "length_m": round(joint.at, 4),
+                "rest_m": round(joint.rest_m, 4),
+                "stiffness_n_m": round(joint.stiffness_n_m, 2),
+                "damping_n_s_m": round(joint.damping_n_s_m, 3),
+                "force_n": round(joint.force_n, 2),
+                "stored_j": round(joint.stored_j, 3)}
     if joint.kind == "fixing":
         return {**common,
                 "tension_n": round(joint.tension_now_n, 2),
@@ -683,6 +691,27 @@ def tool_fix(args: dict[str, Any]) -> dict[str, Any]:
             "note": f"{args.get('b')} and {args.get('a')} are now one piece. "
                     "Release it with `unhinge` -- that is what a latch is, and "
                     "doing it changes what the assembly can do."}
+
+
+def tool_spring(args: dict[str, Any]) -> dict[str, Any]:
+    """Put an elastic element between two named things: a bow limb, a spring."""
+    world: banjo.World = _world(args.get("world_id"))["world"]
+    try:
+        joint = world.spring(
+            str(args.get("a", "")), str(args.get("b", "")),
+            _triple(args.get("at_a_m"), "at_a_m", -200.0, 200.0),
+            _triple(args.get("at_b_m"), "at_b_m", -200.0, 200.0),
+            _number(args.get("rest_m", 0.0), "rest_m", 0.0, 100.0),
+            _number(args.get("stiffness_n_m", 1000.0), "stiffness_n_m", 0.001, 1e9),
+            _number(args.get("damping_n_s_m", 0.0), "damping_n_s_m", 0.0, 1e9))
+    except banjo.BanjoError as error:
+        raise Refused(str(error))
+    return {"joint": joint,
+            "note": "an ideal linear spring: force is stiffness times extension "
+                    "and stored energy is half that times the extension again. "
+                    "Read stored_j from `joints` to see what it is holding -- "
+                    "and anything you throw with it gets its speed from that, "
+                    "not from a number you choose."}
 
 
 def tool_joints(args: dict[str, Any]) -> dict[str, Any]:
@@ -1009,6 +1038,37 @@ TOOLS = [
                            "description": "What it takes to shear it across the "
                                           "axis. A 200 mm iron cube hanging on a "
                                           "bracket is 618 N of pure shear."}}}},
+    {"name": "spring",
+     "description": "Put an elastic element between two named things: a BOW LIMB, "
+                    "a spring, a bent plank -- anything that stores energy by "
+                    "being deformed and gives it back. A declared simplified "
+                    "model: an ideal linear spring, force = stiffness x "
+                    "extension, stored energy = half stiffness x extension "
+                    "squared. It has no mass, no yield and no hysteresis. It "
+                    "PUSHES as well as pulls, which is what tells it from a rope "
+                    "(`tie`). Draw it and `joints` reports stored_j; whatever it "
+                    "throws takes its speed from that energy and its own mass, "
+                    "so changing the stiffness, the draw or the mass changes the "
+                    "result.",
+     "inputSchema": {"type": "object",
+                     "required": ["world_id", "a", "b", "at_a_m", "at_b_m"],
+                     "properties": {
+         "world_id": {"type": "string"},
+         "a": {"type": "string"},
+         "b": {"type": "string"},
+         "at_a_m": dict(VECTOR, description="Where it attaches on `a`, in world "
+                                            "metres. A point, not a centre."),
+         "at_b_m": dict(VECTOR, description="Where it attaches on `b`."),
+         "rest_m": {"type": "number",
+                    "description": "The length at which it stores nothing. 0 "
+                                   "means 'as it stands'."},
+         "stiffness_n_m": {"type": "number",
+                           "description": "Newtons per metre. A 4 kN/m limb "
+                                          "drawn 250 mm holds 125 J."},
+         "damping_n_s_m": {"type": "number",
+                           "description": "The declared loss, in newton seconds "
+                                          "per metre. 0 gives 96% of the stored "
+                                          "energy back as motion."}}}},
     {"name": "joints",
      "description": "Every pin in the world and where each has turned to. The two "
                     "names a pin holds can change -- a pin whose wood is smashed "
@@ -1062,6 +1122,7 @@ HANDLERS = {
     "tie": tool_tie,
     "reeve": tool_reeve,
     "fix": tool_fix,
+    "spring": tool_spring,
     "overloaded": tool_overloaded,
     "joints": tool_joints,
     "hinge_friction": tool_hinge_friction,

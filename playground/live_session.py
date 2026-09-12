@@ -242,6 +242,24 @@ class Live:
                 problems.append("a joint that is not an object")
                 continue
             kind = str(pin.get("kind", "hinge"))
+            if kind == "elastic":
+                try:
+                    answer = session.send(
+                        op="spring", a=str(pin.get("a", "")), b=str(pin.get("b", "")),
+                        at_a=[float(v) / 1000.0 for v in (pin.get("at_mm") or [])],
+                        at_b=[float(v) / 1000.0 for v in (pin.get("to_mm") or [])],
+                        rest_m=float(pin.get("rest_mm", 0.0)) / 1000.0,
+                        stiffness_n_m=float(pin.get("stiffness_n_m", 1000.0)),
+                        damping_n_s_m=float(pin.get("damping_n_s_m", 0.0)))
+                except Exception as error:
+                    problems.append(f"a spring would not go between "
+                                    f"{pin.get('a', '?')} and {pin.get('b', '?')}: "
+                                    f"{error}")
+                    continue
+                pin["id"] = answer.get("joint")
+                if answer.get("joints") is not None:
+                    state["joints"] = answer["joints"]
+                continue
             if kind == "fixing":
                 try:
                     answer = session.send(
@@ -491,6 +509,28 @@ class Live:
                                 at_b=spot("at_b"), over_a=spot("over_a"),
                                 over_b=spot("over_b"), ratio=ratio,
                                 length_m=length)
+        if op == "spring":
+            def spot(key: str) -> list[float]:
+                value = body.get(key)
+                if not isinstance(value, list) or len(value) != 3:
+                    raise LiveError(f"a spring needs {key} as three numbers")
+                out = [float(v) for v in value]
+                if not all(math.isfinite(v) for v in out):
+                    raise LiveError(f"a spring was given {key} that is not a number")
+                return out
+            stiffness = float(body.get("stiffness_n_m", 1000.0))
+            if not 0.0 < stiffness <= 1e9:
+                raise LiveError("a spring's stiffness is newtons per metre, above zero")
+            damping = float(body.get("damping_n_s_m", 0.0))
+            if not 0.0 <= damping <= 1e9:
+                raise LiveError("spring damping is newton seconds per metre, zero or more")
+            rest = float(body.get("rest_m", 0.0))
+            if not 0.0 <= rest <= 100.0:
+                raise LiveError("a spring's rest length is zero (as it stands) to 100 m")
+            return session.send(op="spring", a=str(body.get("a", "")),
+                                b=str(body.get("b", "")), at_a=spot("at_a"),
+                                at_b=spot("at_b"), rest_m=rest,
+                                stiffness_n_m=stiffness, damping_n_s_m=damping)
         if op == "fix":
             def spot(key: str, fallback: Any = None) -> list[float]:
                 value = body.get(key, fallback)

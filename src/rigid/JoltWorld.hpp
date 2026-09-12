@@ -146,6 +146,10 @@ public:
     // Static, single-sided triangle support; winding points into free space.
     // Curved supports do not use the plane-only rolling-resistance approximation.
     void addTriangleSupport(const std::vector<std::array<Vec3,3>> &triangles,const MaterialDefinition &material);
+    // Push on a body for one step, in newtons. Cleared by the step, so a
+    // caller that wants a sustained push applies it every step -- which is what
+    // a hand holding something does.
+    void pushBody(MatterBodyId body_id, const Vec3 &force_n);
     void addBall(const RigidBallDescription &description);
     void addBox(const RigidBoxDescription &description);
     // Bounded compound collision proxy with independent matter-derived inertia.
@@ -361,6 +365,47 @@ public:
     };
     [[nodiscard]] unsigned addFixing(const FixingDescription &description);
 
+    // An elastic element between two points: a bow limb, a spring, a bent
+    // plank, anything that stores energy by being deformed and gives it back.
+    //
+    // This is a DECLARED SIMPLIFIED MODEL and it is worth being plain about
+    // which one. It is an ideal linear spring:
+    //
+    //     force  =  stiffness * (length - rest)        newtons
+    //     stored =  stiffness * (length - rest)^2 / 2  joules
+    //
+    // Hooke's law, in other words, with viscous damping proportional to the
+    // rate of change of length. What that is NOT: it has no mass of its own, no
+    // internal stress, no yield, no hysteresis, and it does not care which way
+    // it is bent. A real bow limb has all of those. What it does have is the
+    // property the rest of this depends on -- work put in is energy stored, and
+    // energy stored is energy given back, minus what the damping takes -- and
+    // that is checked rather than asserted: see tests/elastic_tests.cpp, where
+    // the work integral of the draw is compared against the kinetic energy that
+    // comes out the other end.
+    //
+    // Unlike a link it pushes AS WELL as pulling: compressed below its rest
+    // length it shoves back. A thing that only pulls is a rope, and there is
+    // already one of those.
+    struct ElasticDescription {
+        MatterBodyId a{kInvalidMatterBodyId};
+        MatterBodyId b{kInvalidMatterBodyId};
+        // Where it is attached on each body, in world metres. Points rather
+        // than centres, because a bow limb pulls on the END of the limb and a
+        // spring between two centres is a different machine.
+        Vec3 point_a_world_m{};
+        Vec3 point_b_world_m{};
+        // The length at which it stores nothing. Zero means "as it stands",
+        // which is what you want for something built already relaxed.
+        double rest_m{0.0};
+        double stiffness_n_m{1000.0};
+        // Newton seconds per metre. This is the DECLARED LOSS: everything the
+        // damping takes out is energy the spring will not give back, and it is
+        // the difference between the work put in and the work got out.
+        double damping_n_s_m{0.0};
+    };
+    [[nodiscard]] unsigned addElastic(const ElasticDescription &description);
+
     // What a fixing is carrying, split along its axis and across it. Both zero
     // for every other kind of joint, which has no axis to split along.
     struct JointLoad {
@@ -372,7 +417,7 @@ public:
     [[nodiscard]] double jointTension(unsigned joint) const;
 
     enum class JointKind : std::uint8_t {
-        Hinge = 0, Slider = 1, Link = 2, Pulley = 3, Fixing = 4
+        Hinge = 0, Slider = 1, Link = 2, Pulley = 3, Fixing = 4, Elastic = 5
     };
 
     // Everything about a joint that a caller can see from outside.

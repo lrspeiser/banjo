@@ -221,6 +221,12 @@ struct LiveWorld::Impl {
     // the hand does.
     Vec3 held_at{};
     Quat held_facing{};
+    // How hard the hand can pull on something attached to other things.
+    //
+    // 800 N is a hard two-handed heave -- enough to draw a stiff bow, work a
+    // winch or wrench a gate open, and not enough to tear the gate off its
+    // hinges, which is the line this number draws.
+    double hand_strength_n{800.0};
     // Bodies that were put back into the lattice for this contact and came
     // through it whole.
     //
@@ -278,6 +284,8 @@ struct LiveWorld::Impl {
         // body's own frame -- so that tension and shear stay tension and shear
         // when the whole assembly is carried somewhere else or turned over.
         double holds_tension_n{}, holds_shear_n{};
+        // An elastic's declared model.
+        double rest_m{}, stiffness_n_m{}, damping_n_s_m{};
         // How far it had got, last time anyone could ask. Kept up to date every
         // step because the thing that destroys the constraint is the same thing
         // that needs to know it -- once the wood is rebuilt there is nobody left
@@ -949,6 +957,56 @@ unsigned LiveWorld::tie(const std::string &a, const std::string &b,
     return impl_->joints.back().id;
 }
 
+unsigned LiveWorld::spring(const std::string &a, const std::string &b,
+                           const Vec3 &point_a_world_m, const Vec3 &point_b_world_m,
+                           double rest_m, double stiffness_n_m, double damping_n_s_m) {
+    const auto first = impl_->index_of.find(a);
+    const auto second = impl_->index_of.find(b);
+    if (first == impl_->index_of.end() || second == impl_->index_of.end()) return 0;
+    if (first->second == second->second) return 0;
+    if (!(stiffness_n_m > 0.0) || !(damping_n_s_m >= 0.0) || !(rest_m >= 0.0)) return 0;
+
+    const double apart = length(point_b_world_m - point_a_world_m);
+
+    Impl::SceneJoint joint{};
+    joint.id = impl_->next_joint++;
+    joint.a = a;
+    joint.b = b;
+    joint.kind = JoltWorld::JointKind::Elastic;
+    joint.rest_m = rest_m > 0.0 ? rest_m : std::max(apart, 1e-4);
+    joint.stiffness_n_m = stiffness_n_m;
+    joint.damping_n_s_m = damping_n_s_m;
+    joint.lower = joint.rest_m;
+    joint.upper = joint.rest_m;
+
+    const RigidSnapshot one = impl_->world->snapshot(impl_->body_of[first->second]);
+    const RigidSnapshot two = impl_->world->snapshot(impl_->body_of[second->second]);
+    joint.point_local_a = conjugateOf(one.orientation_world)
+                              .rotate(point_a_world_m - one.center_of_mass_world_m);
+    joint.point_local_b_tie = conjugateOf(two.orientation_world)
+                                  .rotate(point_b_world_m - two.center_of_mass_world_m);
+    joint.point_local_b = joint.point_local_b_tie;
+    joint.axis_local_a = Vec3{0.0, 1.0, 0.0};
+
+    try {
+        JoltWorld::ElasticDescription limb{};
+        limb.a = impl_->body_of[first->second];
+        limb.b = impl_->body_of[second->second];
+        limb.point_a_world_m = point_a_world_m;
+        limb.point_b_world_m = point_b_world_m;
+        limb.rest_m = joint.rest_m;
+        limb.stiffness_n_m = stiffness_n_m;
+        limb.damping_n_s_m = damping_n_s_m;
+        joint.rigid = impl_->world->addElastic(limb);
+    } catch (const std::exception &) {
+        return 0;
+    }
+    impl_->world->wake(impl_->body_of[first->second]);
+    impl_->world->wake(impl_->body_of[second->second]);
+    impl_->joints.push_back(std::move(joint));
+    return impl_->joints.back().id;
+}
+
 unsigned LiveWorld::fix(const std::string &a, const std::string &b,
                         const Vec3 &point_world_m, const Vec3 &axis_world,
                         double holds_tension_n, double holds_shear_n) {
@@ -1059,7 +1117,11 @@ std::vector<LiveJoint> LiveWorld::joints() const {
                     : joint.kind == JoltWorld::JointKind::Link   ? "link"
                     : joint.kind == JoltWorld::JointKind::Pulley ? "pulley"
                     : joint.kind == JoltWorld::JointKind::Fixing ? "fixing"
+                    : joint.kind == JoltWorld::JointKind::Elastic ? "elastic"
                                                                  : "hinge";
+        said.rest_m = joint.rest_m;
+        said.stiffness_n_m = joint.stiffness_n_m;
+        said.damping_n_s_m = joint.damping_n_s_m;
         said.holds_tension_n = joint.holds_tension_n;
         said.holds_shear_n = joint.holds_shear_n;
         said.breaks_at_n = joint.breaks_at_n;
@@ -1079,6 +1141,29 @@ std::vector<LiveJoint> LiveWorld::joints() const {
             said.upper = now.upper;
             said.friction = now.friction;
             said.tension_n = impl_->world->jointTension(joint.rigid);
+            if (joint.kind == JoltWorld::JointKind::Elastic) {
+                // How far apart the two ATTACHMENT POINTS are, worked out from
+                // where the bodies now stand. Not their centres: a bow limb
+                // pulls on the end of the limb, and using the centres would be
+                // a different machine reporting the same name.
+                const auto at_a = impl_->index_of.find(joint.a);
+                const auto at_b = impl_->index_of.find(joint.b);
+                if (at_a != impl_->index_of.end() && at_b != impl_->index_of.end()) {
+                    const RigidSnapshot one =
+                        impl_->world->snapshot(impl_->body_of[at_a->second]);
+                    const RigidSnapshot two =
+                        impl_->world->snapshot(impl_->body_of[at_b->second]);
+                    const Vec3 here = one.center_of_mass_world_m +
+                                      one.orientation_world.rotate(joint.point_local_a);
+                    const Vec3 there = two.center_of_mass_world_m +
+                                       two.orientation_world.rotate(joint.point_local_b_tie);
+                    said.at = length(there - here);
+                }
+                const double stretched = said.at - joint.rest_m;
+                said.force_n = joint.stiffness_n_m * stretched;
+                said.stored_j = 0.5 * joint.stiffness_n_m * stretched * stretched;
+                said.tension_n = std::abs(said.force_n);
+            }
             if (joint.kind == JoltWorld::JointKind::Fixing) {
                 const auto found = impl_->index_of.find(joint.a);
                 const Vec3 along =
@@ -1261,6 +1346,18 @@ void LiveWorld::rehangJoints() {
                 rope.length_m = joint.upper;
                 rope.breaking_tension_n = joint.breaks_at_n;
                 joint.rigid = impl_->world->addLink(rope);
+            } else if (joint.kind == JoltWorld::JointKind::Elastic) {
+                JoltWorld::ElasticDescription limb{};
+                limb.a = impl_->body_of[side[0]];
+                limb.b = impl_->body_of[side[1]];
+                limb.point_a_world_m = point;
+                const RigidSnapshot far = impl_->world->snapshot(impl_->body_of[side[1]]);
+                limb.point_b_world_m = far.center_of_mass_world_m +
+                                       far.orientation_world.rotate(joint.point_local_b_tie);
+                limb.rest_m = joint.rest_m;
+                limb.stiffness_n_m = joint.stiffness_n_m;
+                limb.damping_n_s_m = joint.damping_n_s_m;
+                joint.rigid = impl_->world->addElastic(limb);
             } else if (joint.kind == JoltWorld::JointKind::Fixing) {
                 JoltWorld::FixingDescription peg{};
                 peg.a = impl_->body_of[side[0]];
@@ -1351,6 +1448,11 @@ void LiveWorld::moveHeld(const Vec3 &to_world_m) {
 // constraint against a velocity written in from outside on every step is a tug
 // of war, and position correction does not win it -- that is where the 1.57 m
 // came from even after the pull became a velocity.
+void LiveWorld::setHandStrength(double newtons) {
+    impl_->hand_strength_n = std::max(0.0, newtons);
+}
+double LiveWorld::handStrength() const { return impl_->hand_strength_n; }
+
 void LiveWorld::carryOrHaul(double dt_s) {
     if (impl_->holding == static_cast<std::size_t>(-1)) return;
     if (!(dt_s > 0.0)) dt_s = 1.0 / 240.0;
@@ -1359,10 +1461,22 @@ void LiveWorld::carryOrHaul(double dt_s) {
 
     const std::string carrying = impl_->described[impl_->holding].name;
     const Impl::SceneJoint *on = nullptr;
-    for (const Impl::SceneJoint &joint : impl_->joints)
-        if (joint.attached && joint.rigid != 0 &&
-            (joint.a == carrying || joint.b == carrying))
-            on = &joint;
+    for (const Impl::SceneJoint &joint : impl_->joints) {
+        if (!joint.attached || joint.rigid == 0) continue;
+        if (joint.a != carrying && joint.b != carrying) continue;
+        // A SLIDER wins over anything else on the same body, because a slider
+        // is the joint that says where the thing may go at all -- and the hand
+        // can then ask for exactly the travel it has left, which is the one
+        // case that can be answered exactly rather than pulled towards.
+        //
+        // The courtyard's portcullis is on a slider AND on the winch's rope,
+        // and taking whichever came last in the list meant the hand treated it
+        // as a rope-and-pulley problem: a person heaving with 800 N against
+        // 14.2 kN of iron, which is honest arithmetic and is not what hauling a
+        // grate up its own grooves is.
+        if (on == nullptr || joint.kind == JoltWorld::JointKind::Slider) on = &joint;
+        if (joint.kind == JoltWorld::JointKind::Slider) break;
+    }
 
     if (on != nullptr) {
         constexpr double kFastestHaul = 6.0;   // a hard haul, not a teleport
@@ -1383,13 +1497,68 @@ void LiveWorld::carryOrHaul(double dt_s) {
             const double speed =
                 std::max(-kFastestHaul, std::min(kFastestHaul, wanted / dt_s));
             pull = speed * along;
-        } else {
-            const double far = length(gap);
-            if (far > 1e-9)
-                pull = (std::min(far / dt_s, kFastestHaul) / far) * gap;
+            state.linear_velocity_m_s = pull;
+            impl_->world->applyRigidState(id, state);
+            impl_->world->wake(id);
+            return;
         }
-        state.linear_velocity_m_s = pull;
-        impl_->world->applyRigidState(id, state);
+
+        // Everything else is PULLED, with a bounded force, and that is not the
+        // same as being moved and does not reduce to it.
+        //
+        // Setting a velocity towards the hand looks like it should work and
+        // does not, because a hard constraint cancels it inside the same step:
+        // the hand gets one step of authority, never accumulates any, and so
+        // can never win against anything stiff. Measured on a bow -- the hand
+        // asked for a 300 mm draw, the string went taut, and the nocking point
+        // moved 1.6 mm in fifty steps while the limbs stored a ten-thousandth
+        // of a joule. From the outside that is a bow that cannot be drawn.
+        //
+        // A force accumulates. An archer pulls with however many newtons they
+        // have and the bow yields until the two balance, which is what a draw
+        // IS -- and the same bound is why a hand can heave a gate open and
+        // cannot tear it off its hinges.
+        const double far = length(gap);
+        if (far > 1e-9) {
+            // Full strength towards where the hand wants it, and that is the
+            // whole of the rule.
+            //
+            // NOT "the force needed to close the gap this step, given this
+            // body's mass", which was the first version and is wrong for the
+            // reason a bowstring makes obvious: the thing in your fingers is a
+            // nocking point weighing 87 grams, and the force required to move
+            // IT is nothing like the force required to move what it is attached
+            // to. Measured, that formula asked for 1,512 N however strong the
+            // hand was declared to be, and a 16 kN/m bow would not draw with a
+            // 6 kN hand.
+            //
+            // A hand does not know what it is pulling on. It pulls with what it
+            // has, and the assembly yields or it does not.
+            // Pull towards the target, brake against the speed, and clamp the
+            // whole thing to what the hand has got. A hand that is not damped
+            // does not hold anything: it slams its target, overshoots, hauls
+            // back, and whatever it is attached to rings. Measured on a bow, an
+            // undamped 6 kN hand read a different stored energy every time it
+            // was asked, because the draw never settled.
+            //
+            // Full strength at 50 mm of error, and full braking at 8 m/s. Both
+            // are a hand's own scale rather than the held body's, which is the
+            // point: what the hand can do should not depend on the mass of the
+            // thing in its fingers.
+            //
+            // 8 m/s and not 2. At 2 the braking term reached full strength
+            // whenever the held thing was jostled at walking pace, cancelling
+            // the pull outright -- a bow that stored 170 J with a plain capped
+            // pull stored 7 with that hand, and drawing it further stored less.
+            // A hand that stops everything is not a steadier hand.
+            const RigidSnapshot now = impl_->world->snapshot(id);
+            const double strength = impl_->hand_strength_n;
+            Vec3 force = (strength / 0.05) * gap -
+                         (strength / 8.0) * now.linear_velocity_m_s;
+            const double push = length(force);
+            if (push > strength) force = (strength / push) * force;
+            impl_->world->pushBody(id, force);
+        }
         impl_->world->wake(id);
         return;
     }

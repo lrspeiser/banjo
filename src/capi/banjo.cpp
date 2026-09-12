@@ -562,6 +562,36 @@ int banjo_fix(banjo_world *world, const char *a, const char *b,
     });
 }
 
+int banjo_spring(banjo_world *world, const char *a, const char *b,
+                 const double at_a_m[3], const double at_b_m[3],
+                 double rest_m, double stiffness_n_m, double damping_n_s_m) {
+    if (!world || !a || !b || !at_a_m || !at_b_m) {
+        setError("no world, no names, or nowhere to spring"); return BANJO_BAD_ARGUMENT;
+    }
+    if (!(stiffness_n_m > 0.0)) {
+        setError("a spring needs a positive stiffness in newtons per metre");
+        return BANJO_BAD_ARGUMENT;
+    }
+    if (!(damping_n_s_m >= 0.0)) {
+        setError("spring damping is newton seconds per metre, zero or more");
+        return BANJO_BAD_ARGUMENT;
+    }
+    if (!(rest_m >= 0.0)) {
+        setError("a spring's rest length is zero (as it stands) or more");
+        return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        const unsigned limb = world->world->spring(a, b, readVec(at_a_m), readVec(at_b_m),
+                                                   rest_m, stiffness_n_m, damping_n_s_m);
+        if (limb == 0) {
+            setError(std::string("a spring cannot go between \"") + a + "\" and \"" +
+                     b + "\": one of them is not in the scene, or they are the same thing");
+            return static_cast<int>(BANJO_BAD_ARGUMENT);
+        }
+        return static_cast<int>(limb);
+    });
+}
+
 int banjo_joint_count(const banjo_world *world) {
     if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
     return guarded([&] {
@@ -592,7 +622,8 @@ int banjo_joints(const banjo_world *world, banjo_joint *out, int max) {
                           : joint.kind == "link"   ? BANJO_JOINT_LINK
                           : joint.kind == "pulley" ? BANJO_JOINT_PULLEY
                           : joint.kind == "fixing" ? BANJO_JOINT_FIXING
-                                                   : BANJO_JOINT_HINGE;
+                          : joint.kind == "elastic" ? BANJO_JOINT_ELASTIC
+                                                    : BANJO_JOINT_HINGE;
             out[i].a = joint.a.c_str();
             out[i].b = joint.b.c_str();
             out[i].at = joint.at * scale;
@@ -611,6 +642,11 @@ int banjo_joints(const banjo_world *world, banjo_joint *out, int max) {
             out[i].shear_now_n = joint.shear_n_now;
             out[i].holds_tension_n = joint.holds_tension_n;
             out[i].holds_shear_n = joint.holds_shear_n;
+            out[i].rest_m = joint.rest_m;
+            out[i].stiffness_n_m = joint.stiffness_n_m;
+            out[i].damping_n_s_m = joint.damping_n_s_m;
+            out[i].force_n = joint.force_n;
+            out[i].stored_j = joint.stored_j;
         }
         return count;
     });

@@ -276,9 +276,25 @@ class TheCourtyard(unittest.TestCase):
 
         grate = weight_n("iron portcullis")
         counter = weight_n("winch counterweight")
-        self.assertLess(counter, grate,
-                        f"the counterweight ({counter:.0f} N) outweighs the grate "
-                        f"({grate:.0f} N), so the gateway stands open by itself")
+        # Through the winch's ratio, because that is what the grate actually
+        # feels. The counterweight's own weight is not the number that decides
+        # whether the gateway stands open.
+        # DIVIDED by the ratio, because the constraint puts force `lambda` on
+        # end a and `ratio * lambda` on end b -- so what a counterweight at b is
+        # worth at the grate is its own weight over the ratio. Multiplying
+        # instead said a 3.95 kN counterweight was worth 1.38 kN and passed,
+        # while the real figure was 11.3 and the sums it was guarding were
+        # nonsense.
+        ratio = next(j["ratio"] for j in spec["joints"] if j["kind"] == "pulley")
+        at_the_grate = counter / ratio
+        self.assertLess(at_the_grate, grate,
+                        f"the counterweight ({counter:.0f} N over a ratio of "
+                        f"{ratio:g} is {at_the_grate:.0f} N at the grate) "
+                        f"outweighs the grate ({grate:.0f} N), so the gateway "
+                        f"stands open by itself")
+        self.assertGreater(at_the_grate, 0.5 * grate,
+                           "the counterweight is so light that nobody could "
+                           "finish the lift by hand")
         # And not so light that hauling is pointless either.
         self.assertGreater(counter, 0.1 * grate,
                            "the counterweight is so light that the rope might as "
@@ -486,20 +502,14 @@ class TheCourtyard(unittest.TestCase):
             # And the portcullis: hauled up and let go, it comes back down. The
             # grooves grip at a fifth of its weight, so nothing holds it.
             session.send(op="grab", name="iron portcullis")
-            for i in range(1, 101):
-                session.send(op="step", dt=1 / 240.0, n=4, moved=True,
-                             hand=[-2.6, 0.6 + i * 0.01, 0.14])
-            lifted = next(j for j in session.send(op="joints")["joints"]
-                          if j["kind"] == "slider")["metres"]
-            session.send(op="release")
-            for _ in range(180):
-                session.send(op="step", dt=1 / 240.0, n=4, moved=True)
-            fell = next(j for j in session.send(op="joints")["joints"]
-                        if j["kind"] == "slider")["metres"]
-            self.assertGreater(lifted, 0.7, "hauling did not lift the portcullis")
-            self.assertLess(fell, 0.2,
-                            f"the portcullis was let go {lifted} m up and is still "
-                            f"at {fell} m")
+            # Heaving on the grate ITSELF is not a thing worth asserting any
+            # more, and that is the winch's doing rather than a regression.
+            # Lifting the grate a metre needs the counterweight to rise 2.86,
+            # and it has 0.46 m of room under its sheave -- so the rope holds
+            # the grate almost still however hard anybody pulls on it directly,
+            # which is exactly what being roped to a counterweight means.
+            # Raising the gateway is the winch's job, and the winch is hauled
+            # and measured below.
 
             # The winch: haul the counterweight down and the grate comes up,
             # because the rope's length cannot change. Nothing tells the grate
@@ -509,16 +519,21 @@ class TheCourtyard(unittest.TestCase):
                             if j["kind"] == "slider")["metres"]
 
             session.send(op="grab", name="winch counterweight")
-            for i in range(1, 101):
+            for i in range(1, 121):
                 session.send(op="step", dt=1 / 240.0, n=4, moved=True,
-                             hand=[-1.0, 1.6 - i * 0.01, 0.14])
+                             hand=[-1.0, 2.0 - i * 0.015, 0.14])
             hauled = groove_at()
             session.send(op="release")
             for _ in range(240):
                 session.send(op="step", dt=1 / 240.0, n=8, moved=True)
             settled = groove_at()
-            self.assertGreater(hauled, 0.7,
-                               f"hauling the counterweight down a metre raised the "
+            # 0.4 m, not 0.7. The winch trades force for distance: at a ratio
+            # of 0.35 the grate rises 0.35 m for every metre hauled, so a 1.8 m
+            # pull is 0.63 m of gate. Asking for 0.7 was asking the geometry for
+            # something it does not have, which is a different complaint from
+            # the winch not working.
+            self.assertGreater(hauled, 0.4,
+                               f"hauling the counterweight down 1.8 m raised the "
                                f"grate only {hauled} m")
             self.assertLess(settled, 0.3,
                             f"the grate stayed at {settled} m when the winch was "

@@ -27,6 +27,8 @@
 //                                            a hoist: pull one end, the other rises
 //        {"op":"fix","a":"jamb","b":"bar","at":[0,1.4,0.2],"axis":[1,0,0],
 //         "holds_tension_n":0,"holds_shear_n":0}   a peg, a bracket, a latch
+//        {"op":"spring","a":"riser","b":"tip","at_a":[0,1,0],"at_b":[0,1.4,0],
+//         "rest_m":0,"stiffness_n_m":4000,"damping_n_s_m":5}   a bow limb
 //        {"op":"unhinge","joint":1}          take the pin out; it falls
 //        {"op":"joint_friction","joint":1,"friction_n_m":40}   stiffen it
 //   out  {"ok":true,"t":0.033,"stepped_back":false,
@@ -119,7 +121,15 @@ nlohmann::json jointsOf(const LiveWorld &world) {
                             {"at", vec(joint.point_world_m)},
                             {"axis", vec(joint.axis_world)},
                             {"attached", joint.attached}};
-        if (joint.kind == "fixing") {
+        if (joint.kind == "elastic") {
+            // The declared linear model, and what it currently holds.
+            said["metres"] = tidy(joint.at);
+            said["rest_m"] = tidy(joint.rest_m);
+            said["stiffness_n_m"] = tidy(joint.stiffness_n_m);
+            said["damping_n_s_m"] = tidy(joint.damping_n_s_m);
+            said["force_n"] = tidy(joint.force_n);
+            said["stored_j"] = tidy(joint.stored_j);
+        } else if (joint.kind == "fixing") {
             // Two loads and two bounds, because a peg pulled straight out and a
             // peg sheared sideways fail at different loads.
             said["tension_n"] = tidy(joint.tension_n_now);
@@ -504,6 +514,22 @@ int main(int argc, char **argv) {
                     if (peg == 0)
                         throw std::invalid_argument("those two cannot be fixed together");
                     reply["joint"] = peg;
+                } else if (op == "spring") {
+                    // An elastic element: a bow limb, a spring, a bent plank.
+                    // A DECLARED linear model -- force is stiffness times
+                    // extension, stored energy is half stiffness times
+                    // extension squared -- validated in tests/elastic_tests.cpp
+                    // against the work actually done drawing it.
+                    const unsigned limb = world->spring(
+                        command.at("a").get<std::string>(),
+                        command.at("b").get<std::string>(),
+                        readVec(command, "at_a"), readVec(command, "at_b"),
+                        command.value("rest_m", 0.0),
+                        command.value("stiffness_n_m", 1000.0),
+                        command.value("damping_n_s_m", 0.0));
+                    if (limb == 0)
+                        throw std::invalid_argument("a spring cannot go between those two");
+                    reply["joint"] = limb;
                 } else if (op == "unhinge") {
                     world->unhinge(command.at("joint").get<unsigned>());
                 } else if (op == "joint_friction") {

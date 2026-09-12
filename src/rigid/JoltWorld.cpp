@@ -1032,6 +1032,19 @@ JoltWorld::JointReport JoltWorld::jointState(unsigned joint) const {
     out.a = held.a;
     out.b = held.b;
     out.kind = held.kind;
+    if (held.kind == JointKind::Elastic) {
+        auto *spring = static_cast<JPH::DistanceConstraint *>(held.constraint.GetPtr());
+        // The rest length, which is what this layer knows. How far apart the
+        // two ATTACHMENT POINTS actually are is a different quantity from how
+        // far apart the bodies' centres are -- a bow limb pulls on the END of
+        // the limb -- and only the scene above knows where those points are, so
+        // it fills `at` in itself.
+        out.at = 0.0;
+        out.lower = spring->GetMinDistance();
+        out.upper = spring->GetMaxDistance();
+        out.friction = 0.0;
+        return out;
+    }
     if (held.kind == JointKind::Fixing) {
         // A fixing holds everything, so there is no degree of freedom to
         // report a position along. What it has instead is what it is carrying,
@@ -1093,7 +1106,7 @@ void JoltWorld::setJointFriction(unsigned joint, double friction) {
     // caller special-case the kind before asking -- this does nothing, because
     // nothing is the true answer.
     if (held.kind == JointKind::Link || held.kind == JointKind::Pulley ||
-        held.kind == JointKind::Fixing) return;
+        held.kind == JointKind::Fixing || held.kind == JointKind::Elastic) return;
     if (held.kind == JointKind::Slider)
         static_cast<JPH::SliderConstraint *>(held.constraint.GetPtr())
             ->SetMaxFrictionForce(static_cast<float>(friction));
@@ -1159,6 +1172,48 @@ double JoltWorld::jointTension(unsigned joint) const {
             ->GetTotalLambdaPosition();
     const double dt = impl_->last_dt_s > 0.0 ? impl_->last_dt_s : 1.0 / 60.0;
     return std::abs(impulse) / dt;
+}
+
+unsigned JoltWorld::addElastic(const ElasticDescription &d) {
+    impl_->requireConfigurationMutable();
+    if (d.a == d.b || !contains(d.a) || !contains(d.b))
+        throw std::invalid_argument("an elastic needs two different bodies that are both in the world");
+    if (impl_->joints_.size() >= 4096)
+        throw std::invalid_argument("joint budget exceeded");
+    if (!(d.stiffness_n_m > 0.0) || !std::isfinite(d.stiffness_n_m))
+        throw std::invalid_argument("an elastic needs a positive stiffness in newtons per metre");
+    if (!(d.damping_n_s_m >= 0.0) || !std::isfinite(d.damping_n_s_m))
+        throw std::invalid_argument("elastic damping is newton seconds per metre, zero or more");
+    if (!(d.rest_m >= 0.0) || !std::isfinite(d.rest_m))
+        throw std::invalid_argument("an elastic's rest length is zero (as it stands) or more");
+    for (const Vec3 &point : {d.point_a_world_m, d.point_b_world_m})
+        if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z))
+            throw std::invalid_argument("an elastic needs two points that are places");
+
+    const double apart = length(d.point_b_world_m - d.point_a_world_m);
+    const double rest = d.rest_m > 0.0 ? d.rest_m : std::max(apart, 1e-4);
+
+    JPH::DistanceConstraintSettings settings;
+    settings.mSpace = JPH::EConstraintSpace::WorldSpace;
+    settings.mPoint1 = toJoltPosition(d.point_a_world_m);
+    settings.mPoint2 = toJoltPosition(d.point_b_world_m);
+    // Min AND max at the rest length, with a spring on the limits: that is what
+    // makes it two-way. A rope is nought-to-length and pulls only; this is
+    // length-to-length and shoves back when it is squashed, which is what a bow
+    // limb does and is the whole reason it is a different kind of joint.
+    settings.mMinDistance = settings.mMaxDistance = static_cast<float>(rest);
+    settings.mLimitsSpringSettings = {JPH::ESpringMode::StiffnessAndDamping,
+                                      static_cast<float>(d.stiffness_n_m),
+                                      static_cast<float>(d.damping_n_s_m)};
+
+    auto *raw = impl_->physics_->GetBodyInterface().CreateConstraint(
+        &settings, impl_->bodies_.at(d.a), impl_->bodies_.at(d.b));
+    if (!raw) throw std::runtime_error("elastic creation failed");
+    const auto id = impl_->next_joint_++;
+    impl_->joints_.emplace(id, Impl::Joint{d.a, d.b, JointKind::Elastic,
+                                           static_cast<JPH::TwoBodyConstraint *>(raw)});
+    impl_->physics_->AddConstraint(raw);
+    return id;
 }
 
 unsigned JoltWorld::addFixing(const FixingDescription &d) {
@@ -1550,6 +1605,16 @@ RayHit JoltWorld::castRay(const Vec3 &from_world_m,const Vec3 &direction,
     for(const auto &[id,body]:impl_->bodies_)
         if(body==result.mBodyID){out.named=true;out.body_id=id;break;}
     return out;
+}
+
+void JoltWorld::pushBody(MatterBodyId body_id, const Vec3 &force_n) {
+    const auto found = impl_->bodies_.find(body_id);
+    if (found == impl_->bodies_.end()) throw std::invalid_argument("rigid body is missing");
+    auto &bodies = impl_->physics_->GetBodyInterface();
+    // Scenery cannot be pushed. Not an error: pushing a wall is a thing a
+    // caller does, and the answer is that nothing happens.
+    if (bodies.GetMotionType(found->second) == JPH::EMotionType::Static) return;
+    bodies.AddForce(found->second, toJolt(force_n));
 }
 
 void JoltWorld::wake(MatterBodyId body_id) {

@@ -860,6 +860,23 @@ if(BANJO_BUILD_TESTS)
             # Attachments and latches: pegs, brackets, catches, locking bars.
             # A strength along the axis and another across it, because a peg
             # pulled out and a peg sheared fail at different loads.
+            # Elastic elements, and the VALIDATION of the linear-spring model
+            # they declare: Hooke's law, the work integral against the stored
+            # energy, and the energy back out as motion.
+            # A bow, built out of parts that already existed: elastics for
+            # limbs, links for the string, a fixing for the nock. Nothing in the
+            # engine knows what a bow is, and the arrow's speed comes out of the
+            # stored energy rather than being chosen.
+            add_executable(banjo_bow_tests tests/bow_tests.cpp)
+            target_link_libraries(banjo_bow_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_bow_tests)
+            add_test(NAME banjo_bow_tests COMMAND banjo_bow_tests)
+
+            add_executable(banjo_elastic_tests tests/elastic_tests.cpp)
+            target_link_libraries(banjo_elastic_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_elastic_tests)
+            add_test(NAME banjo_elastic_tests COMMAND banjo_elastic_tests)
+
             add_executable(banjo_fixing_tests tests/fixing_tests.cpp)
             target_link_libraries(banjo_fixing_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_fixing_tests)

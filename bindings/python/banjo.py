@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 # Bumped with the header: the world reports what made it wait.
-ABI_VERSION = 11
+ABI_VERSION = 12
 
 NOTHING, HELD, DENTED, BROKE = 0, 1, 2, 3
 OUTCOMES = {0: "nothing", 1: "held", 2: "dented", 3: "broke"}
@@ -84,6 +84,7 @@ JOINT_SLIDER = 1
 JOINT_LINK = 2
 JOINT_PULLEY = 3
 JOINT_FIXING = 4
+JOINT_ELASTIC = 5
 
 
 class _Joint(ctypes.Structure):
@@ -106,7 +107,12 @@ class _Joint(ctypes.Structure):
                 ("tension_now_n", ctypes.c_double),
                 ("shear_now_n", ctypes.c_double),
                 ("holds_tension_n", ctypes.c_double),
-                ("holds_shear_n", ctypes.c_double)]
+                ("holds_shear_n", ctypes.c_double),
+                ("rest_m", ctypes.c_double),
+                ("stiffness_n_m", ctypes.c_double),
+                ("damping_n_s_m", ctypes.c_double),
+                ("force_n", ctypes.c_double),
+                ("stored_j", ctypes.c_double)]
 
 
 class _Overload(ctypes.Structure):
@@ -251,6 +257,14 @@ class Joint:
     shear_now_n: float = 0.0
     holds_tension_n: float = 0.0
     holds_shear_n: float = 0.0
+    # For an elastic: the declared linear model, and what it currently holds.
+    #     force_n  = stiffness_n_m * (at - rest_m)
+    #     stored_j = stiffness_n_m * (at - rest_m) ** 2 / 2
+    rest_m: float = 0.0
+    stiffness_n_m: float = 0.0
+    damping_n_s_m: float = 0.0
+    force_n: float = 0.0
+    stored_j: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -390,6 +404,10 @@ def library(path: str | os.PathLike[str] | None = None) -> ctypes.CDLL:
                               ctypes.c_double * 3, ctypes.c_double * 3,
                               ctypes.c_double, ctypes.c_double]
     lib.banjo_fix.restype = ctypes.c_int
+    lib.banjo_spring.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p,
+                                 ctypes.c_double * 3, ctypes.c_double * 3,
+                                 ctypes.c_double, ctypes.c_double, ctypes.c_double]
+    lib.banjo_spring.restype = ctypes.c_int
     lib.banjo_overload_count.argtypes = [ctypes.c_void_p]
     lib.banjo_overload_count.restype = ctypes.c_int
     lib.banjo_overloaded.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Overload),
@@ -729,6 +747,33 @@ class World:
                                 where, along, holds_tension_n, holds_shear_n),
             f"fixing {b!r} to {a!r}")
 
+    def spring(self, a: str, b: str, at_a_m: Any, at_b_m: Any,
+               rest_m: float = 0.0, stiffness_n_m: float = 1000.0,
+               damping_n_s_m: float = 0.0) -> int:
+        """Put an elastic element between two named things.
+
+        A bow limb, a spring, a bent plank -- anything that stores energy by
+        being deformed. This is a DECLARED simplified model: an ideal linear
+        spring, force = stiffness * (length - rest), stored = half of that times
+        the extension. No mass of its own, no yield, no hysteresis.
+
+        It is validated rather than asserted: tests/elastic_tests.cpp integrates
+        the work actually done drawing it against the energy claimed, and
+        measures what comes back. 95.86% with no damping declared.
+
+        It pushes as well as pulls; a thing that only pulls is `tie`.
+
+        `rest_m` of 0 means "as it stands". `damping_n_s_m` is the declared loss.
+
+        Returns the joint's id.
+        """
+        one = (ctypes.c_double * 3)(*(float(v) for v in at_a_m))
+        two = (ctypes.c_double * 3)(*(float(v) for v in at_b_m))
+        return self._check(
+            self._lib.banjo_spring(self._alive(), a.encode("utf-8"), b.encode("utf-8"),
+                                   one, two, rest_m, stiffness_n_m, damping_n_s_m),
+            f"springing {a!r} to {b!r}")
+
     def overloaded(self) -> list[Overload]:
         """Everything carrying more than its material can take.
 
@@ -764,7 +809,7 @@ class World:
                               "reading the pins")
         names = {JOINT_SLIDER: "slider", JOINT_LINK: "link",
                  JOINT_PULLEY: "pulley", JOINT_FIXING: "fixing",
-                 JOINT_HINGE: "hinge"}
+                 JOINT_ELASTIC: "elastic", JOINT_HINGE: "hinge"}
         return [Joint(id=int(out[i].id),
                       kind=names.get(out[i].kind, "hinge"),
                       a=(out[i].a or b"").decode("utf-8"),
@@ -784,7 +829,12 @@ class World:
                       tension_now_n=out[i].tension_now_n,
                       shear_now_n=out[i].shear_now_n,
                       holds_tension_n=out[i].holds_tension_n,
-                      holds_shear_n=out[i].holds_shear_n)
+                      holds_shear_n=out[i].holds_shear_n,
+                      rest_m=out[i].rest_m,
+                      stiffness_n_m=out[i].stiffness_n_m,
+                      damping_n_s_m=out[i].damping_n_s_m,
+                      force_n=out[i].force_n,
+                      stored_j=out[i].stored_j)
                 for i in range(written)]
 
     def joint_friction(self, joint: int, friction: float) -> None:

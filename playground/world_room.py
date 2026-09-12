@@ -229,25 +229,44 @@ def courtyard() -> dict[str, Any]:
     # In front of the jambs in z, and resting on the ground. Its 1.2 m of lift
     # puts its top at 2.4 m, exactly under the lintel -- a grate that would go
     # through its own arch is a grate whose travel was never measured.
-    add("iron portcullis", "box", "iron", [1280, 1200, 120],
-        [PORT_X, 600, PORT_Z + 140])
+    add("iron portcullis", "box", "iron", [1280, 1040, 120],
+        [PORT_X, 520, PORT_Z + 140])
 
     # The winch: a rope from the top of the grate, over the lintel, out to a
     # counterweight hanging beside the gateway.
     #
-    # The grate is 1.28 x 1.2 x 0.12 m of iron -- 1,450 kg, 14.2 kN -- and the
-    # counterweight is 0.4 x 0.32 x 0.4 m of iron, which is 403 kg and 4.0 kN.
-    # Deliberately too light to lift the grate on its own: haul on it and the
-    # grate rises, let go and it settles back. A hoist that lifts its own load
-    # unaided is a hoist nobody has to operate.
+    # The sums, because a winch either works or it is scenery.
+    #
+    #   grate          1.28 x 1.04 x 0.12 m of iron   1,257 kg   12.33 kN
+    #   counterweight  0.4 x 0.32 x 0.4 m of iron       403 kg    3.95 kN
+    #   through a ratio of 0.35, at the grate                     11.30 kN
+    #   grooves                                                    0.50 kN
+    #
+    # So the grate sits down by 1.03 kN and the grooves hold it with another
+    # 0.5 -- it does NOT lift itself, which is the point of a winch somebody has
+    # to work. A person heaving with their 800 N takes the counterweight side to
+    # 4.75 kN, which arrives at the grate as 13.58, and that lifts it with
+    # 0.75 kN to spare.
+    #
+    # RATIO BELOW ONE, and the direction is the thing to get right. The
+    # constraint puts force `lambda` on end a and `ratio * lambda` on end b, so
+    # a counterweight at b arrives at the grate DIVIDED by the ratio. Measured
+    # with a ratio of 3: a 3.95 kN counterweight showed a rope tension of
+    # 1.32 kN -- its own weight over three -- and an 800 N heave moved a 12.3 kN
+    # grate not at all, which is correct arithmetic and the wrong way round.
+    # Balance is at 0.32; anything above that and the grate stays down.
     #
     # IRON, not stone, and that is a cell-budget decision rather than a
     # metallurgical one. Concrete is a third the density, so the same mass in
     # stone is a 640 mm block -- 4,096 cells of the room's 16,000 -- against 800
     # for the iron. The first version of this put the room at 18,304 and it
     # would not open at all.
+    # Hung HIGH, because the ratio that gives the lift takes it back in
+    # distance: the grate rises 0.35 m for every metre the counterweight
+    # descends, so the counterweight needs room to fall. From 1.6 m it had
+    # 1.44 m of drop and could only ever raise the grate half a metre.
     add("winch counterweight", "box", "iron", [400, 320, 400],
-        [PORT_X + 1600, 1600, PORT_Z + 140])
+        [PORT_X + 1600, 2000, PORT_Z + 140])
 
     # ---- a hanging sign ----------------------------------------------------
     #
@@ -334,11 +353,15 @@ def courtyard() -> dict[str, Any]:
             "kind": "slider",
             "a": "portcullis jamb left",
             "b": "iron portcullis",
-            "at_mm": [PORT_X, 600, PORT_Z + 140],
+            "at_mm": [PORT_X, 520, PORT_Z + 140],
             "axis": [0, 1, 0],
             "lower_mm": 0,
             "upper_mm": 1200,
-            "friction_n": 3000,
+            # 500 N, not 3,000. The grooves have to grip enough to be grooves
+            # and not so much that they swallow the winch: the whole margin a
+            # person works with here is about 1.4 kN at the grate, and 3 kN of
+            # friction is twice that. A number chosen before the winch existed.
+            "friction_n": 500,
         }, {
             # The bar to the jamb. A peg driven along x, so pulling the bar
             # straight off the jamb is tension and the gate shoving it sideways
@@ -368,17 +391,17 @@ def courtyard() -> dict[str, Any]:
             # there however the room is rearranged -- that is what makes them
             # the fixed half of the length relationship.
             #
-            # Ratio 1. The advantage would be on the counterweight's side here,
-            # which is the wrong way round for lifting a grate, and a courtyard
-            # is a worse place to learn that than a test is.
+            # See the sums above the counterweight for why this is 0.35 and
+            # not 3: force at b is ratio times force at a, so a counterweight
+            # hung at b arrives at the grate DIVIDED by the ratio.
             "kind": "pulley",
             "a": "iron portcullis",
             "b": "winch counterweight",
-            "at_mm": [PORT_X, 1200, PORT_Z + 140],
-            "to_mm": [PORT_X + 1600, 1760, PORT_Z + 140],
+            "at_mm": [PORT_X, 1040, PORT_Z + 140],
+            "to_mm": [PORT_X + 1600, 2160, PORT_Z + 140],
             "over_a_mm": [PORT_X, 2400, PORT_Z + 140],
             "over_b_mm": [PORT_X + 1600, 2400, PORT_Z + 140],
-            "ratio": 1,
+            "ratio": 0.35,
             "length_mm": 0,             # as it is rove
         }] + [{
             # The sign, on two ropes. Tied where they actually meet each body,

@@ -75,7 +75,7 @@ extern "C" {
 /* The ABI version. Bumped when the meaning or layout of anything here changes.
  * Check it once at startup against banjo_abi_version(): a header and a library
  * that disagree will not tell you so any other way. */
-#define BANJO_ABI_VERSION 11
+#define BANJO_ABI_VERSION 12
 
 /* What a call reported. Anything below zero is a failure and leaves the world
  * unchanged; banjo_last_error() says what happened. */
@@ -165,6 +165,15 @@ typedef struct {
     double shear_now_n;
     double holds_tension_n;
     double holds_shear_n;
+    /* For an elastic: the declared linear model, and what it currently holds.
+     *     force_n  = stiffness_n_m * (at - rest_m)
+     *     stored_j = stiffness_n_m * (at - rest_m)^2 / 2
+     * Zero for every other kind. */
+    double rest_m;
+    double stiffness_n_m;
+    double damping_n_s_m;
+    double force_n;
+    double stored_j;
 } banjo_joint;
 
 /* A thing carrying more than it can hold up.
@@ -518,7 +527,7 @@ BANJO_API int banjo_slide(banjo_world *world, const char *a, const char *b,
                           double lower_m, double upper_m, double friction_n);
 
 enum { BANJO_JOINT_HINGE = 0, BANJO_JOINT_SLIDER = 1, BANJO_JOINT_LINK = 2,
-       BANJO_JOINT_PULLEY = 3, BANJO_JOINT_FIXING = 4 };
+       BANJO_JOINT_PULLEY = 3, BANJO_JOINT_FIXING = 4, BANJO_JOINT_ELASTIC = 5 };
 
 /* Tie one named thing to another, so they may be up to `length_m` apart and no
  * further.
@@ -611,6 +620,40 @@ BANJO_API int banjo_reeve(banjo_world *world, const char *a, const char *b,
 BANJO_API int banjo_fix(banjo_world *world, const char *a, const char *b,
                         const double at_m[3], const double axis[3],
                         double holds_tension_n, double holds_shear_n);
+
+/* Put an elastic element between two named things: a bow limb, a spring, a bent
+ * plank -- anything that stores energy by being deformed and gives it back.
+ *
+ * This is a DECLARED SIMPLIFIED MODEL, and which one matters, so here it is. An
+ * ideal linear spring:
+ *
+ *     force  = stiffness * (length - rest)
+ *     stored = stiffness * (length - rest)^2 / 2
+ *
+ * Hooke's law with viscous damping. It has no mass of its own, no internal
+ * stress, no yield, no hysteresis, and it does not care which way it bends; a
+ * real bow limb has all of those.
+ *
+ * It is VALIDATED rather than asserted -- tests/elastic_tests.cpp integrates the
+ * work actually done drawing it and compares that against the energy the model
+ * claims, then fires it and measures what comes back. Measured: 99.94 N where
+ * Hooke says 100; a work integral of 62.68 J against a claimed 62.43; and
+ * 95.86% of that back as kinetic energy with no damping declared. Four times
+ * the stiffness multiplied the speed by 1.963 where the model says 2, and eight
+ * times the mass divided it by 2.730 where the model says 2.83.
+ *
+ * It PUSHES as well as pulls -- squashed below its rest length it shoves back.
+ * A thing that only pulls is a rope: use banjo_tie.
+ *
+ * `rest_m` of 0 means "as it stands". `damping_n_s_m` is the declared loss and
+ * is the only thing that should take energy out: measured, 400 N s/m turned
+ * 59.85 J of return into 16.07.
+ *
+ * Returns the joint's id, always above zero, or a negative banjo_status. */
+BANJO_API int banjo_spring(banjo_world *world, const char *a, const char *b,
+                           const double at_a_m[3], const double at_b_m[3],
+                           double rest_m, double stiffness_n_m,
+                           double damping_n_s_m);
 
 /* How many joints are in the world. */
 BANJO_API int banjo_joint_count(const banjo_world *world);
