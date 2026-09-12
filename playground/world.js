@@ -1238,8 +1238,16 @@ async function tick() {
       const hit = (state.impacts || []).filter((i) => i.struck === name)
         .sort((a, b) => b.closing_speed_m_s - a.closing_speed_m_s)[0];
       if (hit) world.why.set(name, hit);
-      $("panel-state").textContent =
-        `${name} was hit hard enough to break — working it out…`;
+      // Offered because of what it is carrying rather than a blow -- a plank
+      // notched beside its load, say. Said as that, not as a hit.
+      const sagging = hit ? null : (state.overloaded || []).find((o) => o.name === name);
+      if (sagging) {
+        say("world", `${name} is carrying more than it can hold up: `
+          + `${Math.round(sagging.stress_mpa)} MPa where it can take ${Math.round(sagging.holds_mpa)}.`);
+      }
+      $("panel-state").textContent = sagging
+        ? `${name} is overloaded — working out whether it gives…`
+        : `${name} was hit hard enough to break — working it out…`;
       await act("fracture", { name, wait: false });
     }
     // The answer to one started earlier.

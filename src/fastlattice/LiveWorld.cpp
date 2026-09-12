@@ -343,15 +343,17 @@ struct LiveWorld::Impl {
     std::set<std::string> split_later;
     // A cut through one body, in that body's own frame. `u` runs along the
     // edge as it was when it bit, `v` the way it faced and `w` across its
-    // flats. What has been swept is kept per strip of `u` as the stretch of `v`
-    // the edge has been through -- exact for an edge that advances, which is
-    // what an edge does, and it costs one pair of numbers a strip.
+    // flats. What has been swept is kept per strip of `u` as the stretches of
+    // `v` the edge has been through. Stretches, not one: an edge that turns or
+    // slides as it cuts crosses each strip's matter somewhere new, and a strip
+    // kept as one stretch grown from its end refused a mark that did not touch
+    // it -- the matter stayed, and it held the pieces together.
     struct Kerf {
         unsigned blade{};
         Vec3 origin{}, u{}, v{}, w{};
         double strip{};
         double half_width{};
-        std::map<int, std::pair<double, double>> swept;
+        std::map<int, std::vector<std::pair<double, double>>> swept;
         // Every bond that crosses this kerf's plane, and where. A bond is
         // severed when the swept part of the plane reaches where it crosses.
         struct Crossing {
@@ -363,7 +365,48 @@ struct LiveWorld::Impl {
         [[nodiscard]] bool covers(double at_u, double at_v, double slack = 0.0) const {
             const auto found = swept.find(static_cast<int>(std::floor(at_u / strip)));
             if (found == swept.end()) return false;
-            return at_v >= found->second.first - slack && at_v <= found->second.second + slack;
+            for (const auto &span : found->second)
+                if (at_v >= span.first - slack && at_v <= span.second + slack) return true;
+            return false;
+        }
+        // How much of [low, high] strip `s` does not hold yet. Its stretches
+        // are kept apart and in order, so what they cover can be subtracted.
+        [[nodiscard]] double uncovered(int s, double low, double high) const {
+            double open = std::max(0.0, high - low);
+            const auto found = swept.find(s);
+            if (found == swept.end()) return open;
+            for (const auto &span : found->second)
+                open -= std::max(0.0, std::min(high, span.second) - std::max(low, span.first));
+            return std::max(0.0, open);
+        }
+        // [low, high] swept through strip `s`, joined to whatever it touches.
+        void add(int s, double low, double high, double join) {
+            if (!(high > low)) return;
+            auto &spans = swept[s];
+            spans.emplace_back(low, high);
+            std::sort(spans.begin(), spans.end());
+            std::vector<std::pair<double, double>> merged;
+            for (const auto &span : spans) {
+                if (!merged.empty() && span.first <= merged.back().second + join)
+                    merged.back().second = std::max(merged.back().second, span.second);
+                else
+                    merged.push_back(span);
+            }
+            spans = std::move(merged);
+        }
+        // Where the stretch that `at` is in ends, or `at` if it is in none.
+        [[nodiscard]] double throughTo(int s, double at) const {
+            const auto found = swept.find(s);
+            if (found == swept.end()) return at;
+            for (const auto &span : found->second)
+                if (span.first <= at + 1e-6 && span.second > at) return span.second;
+            return at;
+        }
+        [[nodiscard]] double area() const {
+            double total = 0.0;
+            for (const auto &entry : swept)
+                for (const auto &span : entry.second) total += std::max(0.0, span.second - span.first);
+            return total * strip;
         }
     };
     std::unordered_map<std::string, std::vector<Kerf>> kerfs;
@@ -383,6 +426,10 @@ struct LiveWorld::Impl {
         Vec3 n_world{}, t_world{};
         double vn_before{}, vt_before{};
         double touching_m{};
+        // What the edge cut on its way out of the far side that the step's
+        // work did not cover, m^2: taken at once from the closing motion
+        // (settleCuts, settleOwed), so no cut is left unpaid.
+        double owed_m2{};
         // The engaged part of the edge: each sample's place in the blade's own
         // frame and, at the start of the step, in the target's.
         std::vector<Vec3> sample_blade_local, sample_start_target_local;
@@ -918,9 +965,10 @@ std::vector<LiveBodyPose> LiveWorld::poses(bool with_geometry) const {
                 drawn.facing_local = kerf.v;
                 drawn.normal_local = kerf.w;
                 drawn.thickness_m = 2.0 * (kerf.half_width - 0.001);
-                for (const auto &[strip, span] : kerf.swept)
-                    drawn.strips.push_back({strip * kerf.strip, (strip + 1) * kerf.strip,
-                                            span.first, span.second});
+                for (const auto &[strip, spans] : kerf.swept)
+                    for (const auto &span : spans)
+                        drawn.strips.push_back({strip * kerf.strip, (strip + 1) * kerf.strip,
+                                                span.first, span.second});
                 out[i].kerfs.push_back(std::move(drawn));
             }
         }
@@ -4056,6 +4104,20 @@ void LiveWorld::prepareCuts(double dt_s) {
                 return out;
             };
 
+            // Whether a point is in the slit a kerf in this blade's own plane has
+            // already opened: the target's matter, cut, and cut the way this
+            // edge would cut it.
+            const auto inOwnSlit = [&](const Vec3 &p) {
+                if (kerfs_here == nullptr || !grid.holds(p)) return false;
+                for (const auto &kerf : *kerfs_here) {
+                    if (std::abs(dot(kerf.w, f_local)) < std::cos(5.0 * kPiBlade / 180.0)) continue;
+                    const Vec3 d = p - kerf.origin;
+                    if (std::abs(dot(d, kerf.w)) > kerf.half_width) continue;
+                    if (kerf.covers(dot(d, kerf.u), dot(d, kerf.v), 1e-9)) return true;
+                }
+                return false;
+            };
+
             // Each part of the edge: is it in the target's matter, against uncut
             // matter, and how much uncut matter will its path cross this step.
             double touching_m = 0.0, swept_area = 0.0, weight = 0.0;
@@ -4076,6 +4138,11 @@ void LiveWorld::prepareCuts(double dt_s) {
                 const Vec3 probe = p0 + 0.001 * n_local;
                 const bool touching = start_uncut || uncut(probe);
                 double in_len = 0.0;
+                // Coming back into its own kerf from outside the body. The body's
+                // rigid shape knows nothing of the slit, and met there it stopped
+                // a second stroke at the kerf's mouth: along a partial cut, the
+                // cut could never be carried on.
+                bool into_slit = false;
                 const double travel = length(d);
                 if (travel > 1e-12) {
                     const int steps = std::max(1, static_cast<int>(std::ceil(travel / (0.125 * cell))));
@@ -4083,6 +4150,7 @@ void LiveWorld::prepareCuts(double dt_s) {
                     Vec3 previous = p0;
                     for (int m = 0; m < steps; ++m) {
                         const Vec3 q = p0 + ((static_cast<double>(m) + 0.5) / steps) * d;
+                        if (!into_slit && !uncut(q) && inOwnSlit(q)) into_slit = true;
                         if (uncut(q)) {
                             in_len += travel / steps;
                             if (!entered) {
@@ -4115,7 +4183,7 @@ void LiveWorld::prepareCuts(double dt_s) {
                 if (touching) touching_m += ds;
                 if (travel > 1e-12 && in_len > 0.0)
                     swept_area += ds * (in_len / travel) * std::max(0.0, dot(d, n_local));
-                if (touching || in_len > 0.0 || inside) {
+                if (touching || in_len > 0.0 || inside || into_slit) {
                     contact_sum += pw;
                     weight += 1.0;
                     engaged_blade_local.push_back(to_blade.rotate(pw - bs.center_of_mass_world_m));
@@ -4361,17 +4429,17 @@ void LiveWorld::prepareCuts(double dt_s) {
                     v_low = std::min(v_low, v);
                     v_high = std::max(v_high, v);
                     const auto strip = kerf.swept.find(static_cast<int>(std::floor(dot(d, kerf.u) / kerf.strip)));
-                    if (strip != kerf.swept.end()) {
-                        front_low = std::min(front_low, strip->second.second);
-                        front_high = std::max(front_high, strip->second.second);
+                    if (strip != kerf.swept.end() && !strip->second.empty()) {
+                        front_low = std::min(front_low, strip->second.back().second);
+                        front_high = std::max(front_high, strip->second.back().second);
                     }
                 }
                 std::fprintf(stderr,
-                             "cut  t=%.4f %s>%s touch=%.4f swept=%.3g Leff=%.4f cn=%.3f ct=%.3f "
+                             "cut  t=%.4f %s>%s touch=%.4f swept=%.3g owed=%.3g Leff=%.4f cn=%.3f ct=%.3f "
                              "Fn=%.1f Ft=%.1f vn=%.4f vt=%.4f vf=%.4f emb=%d samples=%zu "
                              "edge_v=[%.5f,%.5f] front=[%.5f,%.5f]\n",
                              I.time_s, blade.body.c_str(), target_name.c_str(), touching_m,
-                             swept_area, length_eff, c_n, c_t, constraint.resist_facing_n,
+                             swept_area, e->owed_m2, length_eff, c_n, c_t, constraint.resist_facing_n,
                              constraint.resist_along_n, a_n, a_t, a_f, embedded ? 1 : 0,
                              e->sample_blade_local.size(), v_low, v_high, front_low, front_high);
             }
@@ -4462,6 +4530,50 @@ void LiveWorld::settleCuts(double dt_s) {
         }
     }
     if (I.engaged.empty()) return;
+
+    // What an engagement has cut and not yet paid for, paid now: one equal and
+    // opposite impulse along the way the edge faced, taken from how fast the
+    // two are closing there, so the work the cut cost is work the two bodies
+    // gave. Bounded by what that closing motion has: an edge with nothing left
+    // to give leaves the rest unpaid, and the trace says so.
+    const auto settleOwed = [&](Impl::Engagement &owing, Impl::Blade &cutter,
+                                MatterBodyId cutter_id, MatterBodyId owed_id) {
+        if (!(owing.owed_m2 > 0.0) || !(owing.resistance > 0.0)) return;
+        const RigidMechanicalState one = I.world->mechanicalState(cutter_id);
+        const RigidMechanicalState two = I.world->mechanicalState(owed_id);
+        const RigidSnapshot &a = one.motion, &b = two.motion;
+        const Vec3 at = a.center_of_mass_world_m + a.orientation_world.rotate(owing.point_blade_local);
+        const Vec3 closing =
+            (a.linear_velocity_m_s + cross(a.angular_velocity_rad_s, at - a.center_of_mass_world_m)) -
+            (b.linear_velocity_m_s + cross(b.angular_velocity_rad_s, at - b.center_of_mass_world_m));
+        const double v_n = dot(closing, owing.n_world);
+        const double due = owing.resistance * owing.owed_m2;
+        double took = 0.0;
+        if (v_n > 1e-6 && one.mass_kg > 0.0 && two.mass_kg > 0.0) {
+            const double reduced = one.mass_kg * two.mass_kg / (one.mass_kg + two.mass_kg);
+            const double impulse = std::min(due / v_n, reduced * v_n);
+            try {
+                const PairImpulseAudit audit = I.world->applyPairImpulse(
+                    cutter_id, owed_id, at, at, -impulse * owing.n_world, std::max(1e-3, 1e-4 * due));
+                took = std::max(0.0, -audit.impulse_work_j);
+            } catch (const std::exception &refused) {
+                if (cutTrace())
+                    std::fprintf(stderr, "unpaid t=%.4f %s owed=%.3g: %s\n", I.time_s,
+                                 owing.target.c_str(), owing.owed_m2, refused.what());
+            }
+        }
+        const double bought = took / owing.resistance;
+        cutter.cut_area += bought;
+        cutter.cut_work += took;
+        if (owing.cut < I.cut_log.size()) {
+            I.cut_log[owing.cut].area_m2 += bought;
+            I.cut_log[owing.cut].work_j += took;
+        }
+        if (cutTrace())
+            std::fprintf(stderr, "paid t=%.4f %s owed=%.3g due=%.4g took=%.4g J v_n=%.4f\n", I.time_s,
+                         owing.target.c_str(), owing.owed_m2, due, took, v_n);
+        owing.owed_m2 = std::max(0.0, owing.owed_m2 - bought);
+    };
 
     std::vector<std::string> to_split;
     for (Impl::Engagement &e : I.engaged) {
@@ -4611,32 +4723,49 @@ void LiveWorld::settleCuts(double dt_s) {
                     advance.gained += back;
                 }
             }
-            actual += e.sample_ds * advance.gained;
             advances.push_back(std::move(advance));
         }
-        // A strip is one interval, so a mark joins it only where it touches or
-        // overlaps what is there. Joined across a gap, the gap -- uncut matter
-        // nobody paid for -- is counted cut: two parts of an edge sharing a
-        // strip, one marking from the kerf's frontier and one from the surface
-        // of fresh matter, parted a batten's last row of bonds for nothing.
         // Touching means to within the resolution the path is followed at, an
-        // eighth of a cell: pieces of a path are that far apart. A wider gap is
-        // uncut matter.
+        // eighth of a cell: pieces of a path are that far apart.
         const double join = 0.125 * cell;
+        // Where the edge went through uncut matter this step, strip by strip.
+        // Each part of the edge covers a sample's width of the kerf -- several
+        // strips -- and its path is laid into every strip in that width that has
+        // matter in it: a part of the edge covers its width whether or not all
+        // of that is inside the body, and a strip beyond the body's face has
+        // nothing in it to cut or to pay for.
+        std::map<int, std::vector<std::pair<double, double>>> wanted;
+        for (const Advance &advance : advances) {
+            for (const auto &piece : advance.pieces) {
+                const int first = static_cast<int>(std::floor((piece[0] - 0.5 * e.sample_ds) / kerf.strip));
+                const int last = static_cast<int>(std::floor((piece[0] + 0.5 * e.sample_ds) / kerf.strip));
+                const double v_mid = 0.5 * (piece[1] + piece[2]);
+                for (int s = first; s <= last; ++s) {
+                    const double u_s = (static_cast<double>(s) + 0.5) * kerf.strip;
+                    if (!grid.holds(kerf.origin + u_s * kerf.u + v_mid * kerf.v)) continue;
+                    wanted[s].emplace_back(piece[1], piece[2]);
+                }
+            }
+        }
+        // What of it is new, merged where it touches.
+        for (auto &[s, spans] : wanted) {
+            std::sort(spans.begin(), spans.end());
+            std::vector<std::pair<double, double>> merged;
+            for (const auto &span : spans) {
+                if (!merged.empty() && span.first <= merged.back().second + join)
+                    merged.back().second = std::max(merged.back().second, span.second);
+                else
+                    merged.push_back(span);
+            }
+            spans = std::move(merged);
+            for (const auto &span : spans) actual += kerf.strip * kerf.uncovered(s, span.first, span.second);
+        }
+
         const auto mark = [&](double u_centre, double v_low, double v_high) {
             if (!(v_high > v_low)) return;
             const int first = static_cast<int>(std::floor((u_centre - 0.5 * e.sample_ds) / kerf.strip));
             const int last = static_cast<int>(std::floor((u_centre + 0.5 * e.sample_ds) / kerf.strip));
-            for (int s = first; s <= last; ++s) {
-                auto found = kerf.swept.find(s);
-                if (found == kerf.swept.end()) {
-                    kerf.swept.emplace(s, std::make_pair(v_low, v_high));
-                } else if (v_low <= found->second.second + join &&
-                           v_high >= found->second.first - join) {
-                    found->second.first = std::min(found->second.first, v_low);
-                    found->second.second = std::max(found->second.second, v_high);
-                }
-            }
+            for (int s = first; s <= last; ++s) kerf.add(s, v_low, v_high, join);
         };
         // What it bought: the area the work cuts at the declared resistance,
         // whatever the speed (docs/cutting-model.md section 3) -- and one case
@@ -4655,43 +4784,35 @@ void LiveWorld::settleCuts(double dt_s) {
             still && actual > 0.0 && e.push_n > e.resistance * e.touching_m;
         double work = work_measured;
         double area = overpowered ? std::max(work / e.resistance, actual) : work / e.resistance;
-        if (!(area > 0.0)) continue;
+        // Bought first, then cut, as far as the work goes -- every strip the
+        // same share of what the edge went through in it -- and what is not
+        // bought is still there under the steel for the next step to find and
+        // buy. Except in the step the edge comes out of the far side: no later
+        // step sweeps that matter again, so all of it is cut, and what this
+        // step's work did not cover is taken at once from the closing motion
+        // (settleOwed). Left standing, it was a strip at the far edge of an oak
+        // panel that held the two halves together.
+        bool leaving = !still;
+        for (std::size_t k = 0; leaving && k < e.sample_blade_local.size(); ++k) {
+            const Vec3 end = to_target.rotate(bs.center_of_mass_world_m +
+                                              bs.orientation_world.rotate(e.sample_blade_local[k]) -
+                                              ts.center_of_mass_world_m);
+            if (grid.holds(end)) leaving = false;
+        }
+        if (!leaving && !(area > 0.0)) continue;
         // What the kerf holds before this step's marks, so what they add can be
         // counted: an overpowered edge is charged for what it actually cut.
-        const auto sweptArea = [&kerf]() {
-            double total = 0.0;
-            for (const auto &strip : kerf.swept)
-                total += std::max(0.0, strip.second.second - strip.second.first);
-            return total * kerf.strip;
-        };
-        const double swept_before = overpowered ? sweptArea() : 0.0;
-        double marked = 0.0;
+        const auto sweptArea = [&kerf]() { return kerf.area(); };
+        const double swept_before = sweptArea();
         if (actual > 1e-15) {
-            const double scale = std::min(1.0, area / actual);
-            // Each part of the edge cuts its pieces in the order it crossed
-            // them, as far as what was bought takes it -- and all of them are
-            // laid down shallowest first, so every strip grows inward from the
-            // surface or the frontier whichever part of the edge reached it. A
-            // slicing edge hands a strip from one part of itself to the next
-            // part-way down; laid down part by part instead, the deeper half of
-            // a strip could arrive first and the shallower half be refused.
-            std::vector<std::array<double, 3>> bought;
-            for (const Advance &advance : advances) {
-                double budget = scale * advance.gained;
-                for (const auto &piece : advance.pieces) {
-                    if (!(budget > 0.0)) break;
-                    const double take = std::min(piece[2] - piece[1], budget);
-                    bought.push_back({piece[0], piece[1], piece[1] + take});
-                    budget -= take;
-                }
-            }
-            std::sort(bought.begin(), bought.end(),
-                      [](const std::array<double, 3> &a, const std::array<double, 3> &b) {
-                          return a[1] < b[1];
-                      });
-            for (const auto &piece : bought) mark(piece[0], piece[1], piece[2]);
-            marked = scale * actual;
+            const double scale = leaving || overpowered ? 1.0 : std::min(1.0, area / actual);
+            for (const auto &[s, spans] : wanted)
+                for (const auto &span : spans)
+                    kerf.add(s, span.first, span.first + scale * (span.second - span.first), join);
         }
+        const double marked = sweptArea() - swept_before;
+        const double remaining = area - marked;
+        e.owed_m2 = leaving ? std::max(0.0, marked - area) : 0.0;
         // What the friction took beyond what the edge was seen to sweep went
         // into the uncut matter just ahead of it. A friction limit in a velocity
         // solver can stop a body within one step, and a body stopped within a
@@ -4700,8 +4821,7 @@ void LiveWorld::settleCuts(double dt_s) {
         // is where the energy went. The cut goes where the energy went: from the
         // first uncut matter ahead of each engaged part of the edge, along the
         // way it faces, no further than it could have closed in the step.
-        const double remaining = area - marked;
-        if (remaining > 1e-9 * area) {
+        if (remaining > 1e-9 * std::max(area, 1e-12)) {
             const double reach = 2.0 * cell + (std::abs(e.vn_before) + std::abs(e.vt_before)) * dt_s;
             // Fine: the look starts AT the frontier and a coarse step past it
             // marks matter nobody paid for. (It was a sixteenth of a cell, and
@@ -4718,11 +4838,8 @@ void LiveWorld::settleCuts(double dt_s) {
                 // Uncut matter ahead begins at the kerf's frontier under this
                 // part of the edge if that is ahead of it, and where the edge is
                 // otherwise -- and it has to be matter.
-                double from = v_end;
-                const auto strip = kerf.swept.find(static_cast<int>(std::floor(u_here / kerf.strip)));
-                if (strip != kerf.swept.end() && strip->second.first <= v_end + 1e-6 &&
-                    strip->second.second > from)
-                    from = strip->second.second;
+                const double from =
+                    kerf.throughTo(static_cast<int>(std::floor(u_here / kerf.strip)), v_end);
                 for (int m = 0; m <= looks; ++m) {
                     const double v_try = from + reach * m / looks;
                     const Vec3 q = end + (v_try - v_end + 1e-7) * kerf.v;
@@ -4820,6 +4937,9 @@ void LiveWorld::settleCuts(double dt_s) {
                          I.time_s, e.target.c_str(), work, area, actual, marked, severed, parted,
                          impulse.facing_n_s, impulse.along_n_s, e.vn_before, vn_after,
                          e.vt_before, vt_after);
+        // Came out of the far side with more cut than paid for: paid now,
+        // while the two bodies it is owed between are still the two there are.
+        if (e.owed_m2 > 0.0) settleOwed(e, *blade, blade_id, target_id);
         if (severed > 0) to_split.push_back(e.target);
     }
 

@@ -8,7 +8,9 @@
 //  2. A partial cut stays partial: the bonds stay severed, the body stays one
 //     body, and it is drawn with its kerf.
 //  3. A cut all the way through makes pieces with the mass, inertia and
-//     momentum of their own cells.
+//     momentum of their own cells. And an edge that has paid for a whole
+//     section gets through it: nothing is left standing behind an edge that
+//     has come out of the far side.
 //  4. A slow press cuts only when it pushes harder than the material resists.
 //  5. Slicing cuts with a push that pressing alone cannot.
 //  6. An edge strike cuts a hanging rope, and the load falls; the rope's two
@@ -236,6 +238,70 @@ void aThroughCutMakesRealPieces() {
     const auto cuts = cutsOf(*world, "batten");
     require(!cuts.empty() && cuts.front().separated && cuts.front().pieces == 2,
             "the cut that separated it does not say so");
+}
+
+// An edge that has paid for a whole section gets through it: nothing is left
+// standing behind an edge that has come out of the far side. This is the clean
+// case -- a blade flying level and square across a hung oak panel, with a
+// little more energy than the section costs -- and it held before and after
+// the fix it stands beside. The case that broke was a stroke from the room's
+// own hand, turning as it cut, so that the parts of the edge inside the panel
+// changed from step to step: the account fell behind the edge a few per cent a
+// step, and a panel whose section had been paid for stayed whole with a 30 mm
+// strip at its far end. That is tests/world_room_tests.py, through the pipe.
+void anEdgeThatHasPaidForTheSectionGetsThroughIt() {
+    TileImpactRequest r = request();
+    r.gravity_m_s2 = {0.0, 0.0, 0.0};
+    // The armoury's panel in small: oak, 400 mm across and 20 mm thick, on two
+    // fixings to an anchored lintel. The blade is the sword's bar, flying level
+    // at the panel's +x edge with its own edge leading, 1 mm clear.
+    r.bodies = {box("lintel", MaterialPreset::Oak, {0.5, 0.04, 0.04}, {0.0, 0.52, 0.0}, true),
+                box("panel", MaterialPreset::Oak, {0.4, 0.3, 0.02}, {0.0, 0.35, 0.0}),
+                box("blade", MaterialPreset::Iron, {0.03, 0.01, 0.8}, {0.216, 0.35, 0.0}, false,
+                    {-12.1, 0.0, 0.0})};
+    const auto world = LiveWorld::open(r);
+    for (const double side : {-0.15, 0.15})
+        require(world->fix("lintel", "panel", {side, 0.495, 0.0}, {0.0, 1.0, 0.0}) != 0,
+                "the panel would not fix to its lintel");
+    // A working edge, 0.2 mm radius: R = 15 kJ/m^2 in oak, so the section --
+    // 400 mm by 20 -- costs 120 J, and the blade brings 138.
+    const unsigned id = world->blade("blade", {0.201, 0.35, -0.35}, {0.201, 0.35, 0.35},
+                                     {-1.0, 0.0, 0.0}, 0.01, 0.0002, 30.0, {0.216, 0.35, 0.39});
+    require(id != 0, "the blade would not take an edge");
+    const double resistance = 1000.0 + 35.0e6 * 2.0 * 0.0002;
+    const double section_m2 = 0.4 * 0.02;
+    const double blade_kg = 0.03 * 0.01 * 0.8 * 7870.0;
+    const double brought = 0.5 * blade_kg * 12.1 * 12.1;
+
+    run(*world, 240);
+    const auto poses = world->poses();
+    const double edge_x = named(poses, "blade").position_m.x - 0.015;
+    double far_face = 1e9;
+    for (const LiveBodyPose &pose : poses)
+        if (pose.name == "panel" || pose.name.rfind("panel piece ", 0) == 0)
+            far_face = std::min(far_face, pose.position_m.x - 0.5 * pose.dimensions_m.x);
+    double area = 0.0, work = 0.0;
+    bool separated = false;
+    for (const LiveCut &cut : cutsOf(*world, "panel")) {
+        area += cut.area_m2;
+        work += cut.work_j;
+        separated = separated || cut.separated;
+    }
+    const std::size_t pieces = piecesOf(poses, "panel");
+    std::cout << "  a blade bringing " << brought << " J across a hung oak panel whose section costs "
+              << resistance * section_m2 << " J: " << work << " J of cutting, "
+              << area * 1e6 << " mm^2 of its " << section_m2 * 1e6 << "; the edge is at x="
+              << edge_x << " against the far face at " << far_face << ", and the panel is in "
+              << (pieces == 0 ? std::string("one piece") : std::to_string(pieces) + " pieces") << "\n";
+    require(edge_x < far_face - 0.005,
+            "the blade stopped in the panel, so this does not test what it is for");
+    require(pieces == 2 && separated,
+            "the edge came out of the far side of the panel and left it in one piece: matter "
+            "was left standing behind the edge that nothing cut");
+    // The kerf is square to the panel -- the blade flies level with its edge
+    // along z -- so what it went through is exactly the section.
+    require(area <= 1.05 * section_m2,
+            "the cut was charged for more than the section it went through");
 }
 
 // -----------------------------------------------------------------------------
@@ -599,6 +665,8 @@ int main(int argc, char **argv) {
         {"the work a cut takes is the energy the bodies lost, and a partial cut stays partial",
          theCutCostsWhatItTook},
         {"a cut through makes pieces with their own mass and momentum", aThroughCutMakesRealPieces},
+        {"an edge that has paid for the section gets through it",
+         anEdgeThatHasPaidForTheSectionGetsThroughIt},
         {"a slow press cuts only when it pushes harder than the material resists",
          aPressCutsOnlyWhenItPushesHarderThanTheMaterial},
         {"a slice cuts with a push that cannot press through", aSliceCutsWhereAPressCannot},

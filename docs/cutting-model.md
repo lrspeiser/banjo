@@ -166,22 +166,38 @@ of a press before it is held, a step the solver did not quite finish); that
 matter is under the blade's own steel, found by walking back from the edge
 through uncut matter the blade is in, and it is paid for with what the edge
 sweeps next. Marking only from where a step's path met matter left a gap
-behind it, and the kerf, which is one interval per strip, then closed the gap
-for nothing: an 800 N press through a batten separated it for 3.75 J of a
-6 J section. For the same reason a strip takes a new mark only where it
-touches or overlaps what the strip already holds; two parts of an edge that
-share a strip, one at the frontier and one in fresh matter, would otherwise
-join across uncut matter. And each part of the edge's path is laid into the
-strips it actually crosses, piece by piece in the order it crossed them: an
-edge slicing along its own length crosses a strip every few millimetres, and
-laid down as one rectangle at the middle of its path, a 12 m/s slice through a
-rope booked 88% of the rope's section and severed four of its bonds. All the
-pieces a step buys are laid down shallowest first, so every strip grows inward
-from the surface or the frontier whichever part of the edge reached it, and
-"touches" means to within an eighth of a cell, the resolution the path is
-followed at; a slicing edge hands each strip from one part of itself to the
-next part-way down, and taken part by part the deeper half arrived first and
-the shallower half was refused.
+behind it, and a kerf kept as one interval per strip then closed the gap for
+nothing: an 800 N press through a batten separated it for 3.75 J of a 6 J
+section.
+
+Each part of the edge's path is laid into the strips it actually crosses,
+piece by piece: an edge slicing along its own length crosses a strip every few
+millimetres, and laid down as one rectangle at the middle of its path, a
+12 m/s slice through a rope booked 88% of the rope's section and severed four
+of its bonds. A part of the edge covers a sample's width of the kerf, several
+strips, and its path goes into every strip in that width that has matter in
+it -- and only those: a strip beyond the body's face has nothing to cut or to
+pay for. **A strip holds every stretch the edge has swept through it**, not
+one. An edge that turns or slides as it cuts -- which is what a swung edge
+does -- crosses each strip's matter somewhere new; kept as one stretch grown
+from its end, a strip refused a mark that did not touch it, the mark was
+counted as cut anyway, and the strip never caught up. In the armoury a flick
+across the oak panel left such strips every 12 mm along the kerf, and they
+held the panel together. Stretches closer than an eighth of a cell -- the
+resolution the path is followed at -- are one stretch; a wider gap is uncut
+matter and stays uncut.
+
+What a step buys is laid down as the same share of what the edge went through
+in every strip, so the strips go in together, and what it did not buy is
+still under the steel for the next step to find and pay for. The one
+exception is **the step in which the edge comes out of the far side**: no
+later step sweeps that matter again, so everything it went through in that
+step is cut, and whatever the step's work did not cover is taken there and
+then from the closing motion -- one equal and opposite impulse between blade
+and target along the way the edge faced, sized to the declared cost and
+audited by the solver, whose measured work is what is booked. Left standing,
+that last stretch was a strip at the far edge of a panel holding its halves
+together.
 
 **An edge overpowered at rest.** An edge held still by something ELSE -- a
 batten lying on the floor, pressed to it -- while the hand and gravity push it
@@ -199,9 +215,9 @@ Matter here is cells joined by bonds, and a body is whatever set of cells its
 live bonds hold together. Cutting is the removal of bonds, and nothing else.
 
 Each body keeps its **kerfs**: for each separate cut, the plane the blade
-passed through (in the body's own frame) and a map, at half a cell's
-resolution, of the part of that plane the edge has swept through the body's
-material. A bond is severed when it crosses a kerf's plane at a point the kerf
+passed through (in the body's own frame) and a map, in strips a quarter of a
+cell wide, of the part of that plane the edge has swept through the body's
+material -- every stretch of each strip it has been through. A bond is severed when it crosses a kerf's plane at a point the kerf
 has swept. Severed bonds are written into the scene's matter, which is the
 same record every later lattice run reads -- so a notch put into a plank is
 still there when the plank is later loaded, dropped or broken.
@@ -211,6 +227,12 @@ still there when the plank is later loaded, dropped or broken.
   collision shape, carrying a kerf. It is drawn with the kerf showing.
 - **Going back into an old kerf costs nothing**, because the material there is
   already cut: the resistance counts only uncut material ahead of the edge.
+  And an edge can come back into its own slit from outside the body: the
+  body's rigid shape knows nothing of the slit, so a path that runs into a
+  kerf in the blade's own plane is a meeting like any other -- the rigid
+  contact is suspended and the edge runs down the slit to where the last
+  stroke stopped. (Met at the mouth, a second stroke along a partial cut was
+  stopped there, and the cut could never be carried on.)
 - **A rope is cut where its links are, too.** A rope is a run of bodies tied
   by links. A link whose line crosses a kerf at a swept point INSIDE the
   matter of one of its two bodies is severed with the bonds -- the fibres
@@ -417,6 +439,7 @@ passed.
 | the work is the energy lost | an iron blade into a free oak block at 6 m/s, no gravity, nothing else touching: the pair lost 5.079 J of kinetic energy, the kerf's measured work was 5.075 J (0.08% apart), and that bought 1127.8 mm^2 at R = 4.5 kJ/m^2 -- 11.3 mm deep |
 | a partial cut stays partial | the same block: 104 bonds severed, still 104 a second later, one body carrying one kerf |
 | pieces have their own mass and momentum | a 9 m/s chop through a 280 g batten: pieces of 200 and 200 cells, 140 g each; momentum along the strike -4.2498 kg m/s before, -4.2495 after |
+| an edge that has paid for a section gets through it | the sword's bar, 1.9 kg, flying level at 12.1 m/s (138 J) into the edge of a hung oak panel 400 mm across and 20 mm thick; at R = 15 kJ/m^2 the section costs 120 J: 120.0 J of cutting for 8003 mm^2 of its 8000, and the panel in two pieces |
 | a press short of R L cuts nothing | a 2 kg blade in a hand of 200 N, which carries the blade's 19 N first and pushes with the 181 N left, onto 20 mm of oak that resists with R L = 300 N, for a second: no bond severed, the edge 0.014 mm into the surface |
 | a press past R L cuts | the same blade, the same oak, an 800 N hand: through in two pieces for 4.65 J, 78% of R times the section -- separation comes when the last row of bonds goes, three quarters of the way |
 | a slice cuts what a press cannot | the 200 N that could not press through, drawn along the edge: 24 bonds, two pieces |
@@ -432,5 +455,9 @@ does not, a wielded blade holds its height and turns 90 degrees to its aim,
 bad edges are refused), the MCP server (`tests/banjo_mcp_tests.py`: an 800 N
 press edge down goes through oak for 70-115% of the section's energy, flat
 down it cuts nothing; an edge off its body is refused), and the room itself
-(`tests/world_room_tests.py`: the armoury's statics, and a swing through the
-rope over the same pipe the browser uses, edge leading and flat leading).
+(`tests/world_room_tests.py`: the armoury's statics; a swing through the rope
+over the same pipe the browser uses, edge leading and flat leading; and
+strokes across the panel with the page's own hand -- one flick at 7.3 m/s
+parts it for 118.9 J of its 120, the upper piece still on both fixings and
+the lower on the floor, and a slow stroke that stops 27 mm in, drawn back and
+followed by a flick along the same cut, parts it too).

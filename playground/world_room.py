@@ -654,15 +654,25 @@ def armoury() -> dict[str, Any]:
                   it slower and only notches it -- the slit is drawn, and it
                   stays. The same drag with the edge turned down (one right-
                   click) leads with the flat: the rope swings and holds.
-      the panel   front right, hung from a lintel by its top edge. Drag the edge
-                  across it: it resists, and a cut part way stays part way --
-                  the slit is drawn. A cut all the way across drops the lower
-                  piece; the upper stays on its fixings.
+      the panel   front right, hung from a lintel by its top edge. Holding the
+                  sword, look up so the blade clears everything, walk to stand
+                  square in front of the panel with your eye at its middle,
+                  look a little right of it, and flick the view LEFT about 35
+                  degrees (some 270 px) in an eighth of a second: the edge
+                  goes through the 20 mm oak at 7-8 m/s for about 120 J, the
+                  lower piece falls and the upper stays on its fixings. A slow
+                  drag stops part way and the slit stays, drawn; drawn back
+                  and flicked again along the same cut, it carries on.
       the batten  straight ahead, low. Oak 20 mm deep and 30 mm wide across
                   two piers with 32 kg on its middle: 41 MPa of bending against
-                  oak's 90, so it holds.
-                  Chop a notch into it beside the load and the room says it is
-                  overloaded, and the lattice decides what it does about that.
+                  oak's 90, so it holds. Turn the edge down (one right-click),
+                  look up, stand over the batten a little right of the load,
+                  look level, and pitch the view DOWN about 25 degrees (some
+                  200 px) in a fifth of a second: the edge chops through and
+                  the load comes down with the pieces. A chop that stops part
+                  way leaves a notch, and a deep enough notch beside the load
+                  overloads what is left of the batten: the room says so, and
+                  the lattice decides what it does about that.
     """
     bodies: list[dict[str, Any]] = []
 

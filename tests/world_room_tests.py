@@ -750,6 +750,180 @@ class TheCourtyard(unittest.TestCase):
             live.shutdown()
 
 
+# ---- the page's hand, for the armoury ------------------------------------------
+#
+# playground/blades.js, transcribed. The grip is held a little right of and
+# below the eye, at the reach the sword was taken up at, and the blade points
+# forward from it, tipped up and in, with its edge facing the way the stance
+# says. Both are eased towards that in the VIEW's frame, so turning the view is
+# a swing at once -- as it is on the page. Nothing here says "cut": the hand
+# pulls with 800 N and 60 N m, and what the edge meets is the engine's.
+
+def _qmul(a, b):
+    aw, ax, ay, az = a
+    bw, bx, by, bz = b
+    return [aw * bw - ax * bx - ay * by - az * bz, aw * bx + ax * bw + ay * bz - az * by,
+            aw * by - ax * bz + ay * bw + az * bx, aw * bz + ax * by - ay * bx + az * bw]
+
+
+def _qconj(q):
+    return [q[0], -q[1], -q[2], -q[3]]
+
+
+def _qrot(q, v):
+    return _qmul(_qmul(q, [0.0] + list(v)), _qconj(q))[1:]
+
+
+def _qaxis(axis, angle):
+    s = math.sin(angle / 2)
+    return [math.cos(angle / 2), axis[0] * s, axis[1] * s, axis[2] * s]
+
+
+def _qslerp(a, b, t):
+    d = sum(x * y for x, y in zip(a, b))
+    if d < 0:
+        b, d = [-x for x in b], -d
+    if d > 0.9995:
+        out = [x + t * (y - x) for x, y in zip(a, b)]
+    else:
+        angle = math.acos(min(1.0, d))
+        s = math.sin(angle)
+        out = [(math.sin((1 - t) * angle) * x + math.sin(t * angle) * y) / s
+               for x, y in zip(a, b)]
+    size = math.sqrt(sum(x * x for x in out))
+    return [x / size for x in out]
+
+
+def _qfrom(m):
+    trace = m[0][0] + m[1][1] + m[2][2]
+    if trace > 0:
+        s = 0.5 / math.sqrt(trace + 1.0)
+        return [0.25 / s, (m[2][1] - m[1][2]) * s, (m[0][2] - m[2][0]) * s,
+                (m[1][0] - m[0][1]) * s]
+    if m[0][0] > m[1][1] and m[0][0] > m[2][2]:
+        s = 2.0 * math.sqrt(1.0 + m[0][0] - m[1][1] - m[2][2])
+        return [(m[2][1] - m[1][2]) / s, 0.25 * s, (m[0][1] + m[1][0]) / s,
+                (m[0][2] + m[2][0]) / s]
+    if m[1][1] > m[2][2]:
+        s = 2.0 * math.sqrt(1.0 + m[1][1] - m[0][0] - m[2][2])
+        return [(m[0][2] - m[2][0]) / s, (m[0][1] + m[1][0]) / s, 0.25 * s,
+                (m[1][2] + m[2][1]) / s]
+    s = 2.0 * math.sqrt(1.0 + m[2][2] - m[0][0] - m[1][1])
+    return [(m[1][0] - m[0][1]) / s, (m[0][2] + m[2][0]) / s,
+            (m[1][2] + m[2][1]) / s, 0.25 * s]
+
+
+def _unit(v):
+    size = math.sqrt(sum(x * x for x in v))
+    return [x / size for x in v]
+
+
+def _cross(a, b):
+    return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+
+
+def _dot(a, b):
+    return sum(x * y for x, y in zip(a, b))
+
+
+class _ArmouryHand:
+    """The armoury, opened as the page opens it, and a person in it: where
+    they stand, where they look, and the sword in their hand."""
+
+    GRIP = (0.16, -0.24)
+    POINTING = _unit([-0.15, 0.22, -1.0])
+    SETTLE_S = 0.25
+    STANCES = [(-1.0, 0.0, 0.0), (0.0, -1.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)]
+    DT = 1 / 240.0
+    TICK = 8                 # steps to a request: the page sends a target a frame
+
+    def __init__(self):
+        class App:
+            engine_path = ENGINE
+            runs_path = ROOT / "build/playground-runs"
+            live_inprocess = False
+
+        self.live = live_session.Live()
+        opened = self.live.open(App(), {"spec": world_room.armoury()})
+        self.problems = opened.get("blade_problems")
+        self.session = self.live.session
+        self.bodies = {b["name"]: b for b in opened["bodies"]}
+        self.cuts = []
+        self.eye = [0.0, 1.62, 2.6]  # where the room opens
+        self.yaw = self.pitch = 0.0
+        self.held = None
+        self.blade = None
+
+    def close(self):
+        self.live.shutdown()
+
+    def view(self):
+        return _qmul(_qaxis([0, 1, 0], self.yaw), _qaxis([1, 0, 0], self.pitch))
+
+    def stand(self, x, y, z):
+        self.eye = [x, y, z]
+
+    def look(self, x, y, z):
+        to = [x - self.eye[0], y - self.eye[1], z - self.eye[2]]
+        self.yaw = math.atan2(-to[0], -to[2])
+        self.pitch = math.atan2(to[1], math.hypot(to[0], to[2]))
+
+    def _stance(self):
+        blade = self.blade
+        along = _unit([t - h for t, h in zip(blade["tip_local"], blade["heel_local"])])
+        faced = blade["facing_local"]
+        facing = _unit([f - _dot(faced, along) * a for f, a in zip(faced, along)])
+        wish = self.STANCES[self.held["stance"] % 4]
+        want = _unit([w - _dot(wish, self.POINTING) * p for w, p in zip(wish, self.POINTING)])
+        wanted = [self.POINTING, want, _cross(self.POINTING, want)]
+        have = [along, facing, _cross(along, facing)]
+        return _qfrom([[sum(wanted[k][r] * have[k][c] for k in range(3)) for c in range(3)]
+                       for r in range(3)])
+
+    def wield(self, name, reach=0.924):
+        """Take it up where it is: a click on it, from where it is 0.92 m off."""
+        self.session.send(op="wield", name=name)
+        self.blade = self.session.send(op="blades")["blades"][0]
+        grip = self.blade["grip"]
+        inverse = _qconj(self.view())
+        self.held = {"reach": reach, "stance": 0,
+                     "grip": _qrot(inverse, [grip[i] - self.eye[i] for i in range(3)]),
+                     "turn": _qmul(inverse, self.bodies[name]["orientation_wxyz"])}
+
+    def step(self):
+        rest = {}
+        if self.held is not None:
+            ease = 1 - math.exp(-(self.TICK * self.DT) / self.SETTLE_S)
+            want = [self.GRIP[0], self.GRIP[1], -self.held["reach"]]
+            self.held["grip"] = [g + ease * (w - g) for g, w in zip(self.held["grip"], want)]
+            self.held["turn"] = _qslerp(self.held["turn"], self._stance(), ease)
+            view = self.view()
+            rest["hand"] = [self.eye[i] + v for i, v in enumerate(_qrot(view, self.held["grip"]))]
+            rest["hand_q"] = _qmul(view, self.held["turn"])
+        state = self.session.send(op="step", dt=self.DT, n=self.TICK, moved=True, **rest)
+        for b in state.get("bodies") or []:
+            self.bodies[b["name"]] = b
+        for name in state.get("gone") or []:
+            self.bodies.pop(name, None)
+        for coming in state.get("breakable") or []:
+            self.session.send(op="fracture", name=coming, wait=False)
+        self.cuts.extend(c for c in state.get("cuts") or [] if not c["open"])
+
+    def hold(self, seconds):
+        """Stand still and let the world run."""
+        for _ in range(max(1, round(seconds / (self.TICK * self.DT)))):
+            self.step()
+
+    def turn(self, dyaw, dpitch, seconds):
+        """Turn the view smoothly: left and up are positive."""
+        yaw, pitch = self.yaw, self.pitch
+        ticks = max(1, round(seconds / (self.TICK * self.DT)))
+        for k in range(1, ticks + 1):
+            self.yaw = yaw + dyaw * k / ticks
+            self.pitch = pitch + dpitch * k / ticks
+            self.step()
+
+
 class TheArmoury(unittest.TestCase):
     """The sword, and three things it can change. docs/cutting-model.md."""
 
@@ -968,6 +1142,63 @@ class TheArmoury(unittest.TestCase):
                         f"the flat met the rope and it was not called a flat: {on_rope}")
         self.assertGreater(bodies["weight"]["position_m"][1], hung - 0.3,
                            "the weight fell, so the flat took the rope apart")
+
+    @unittest.skipUnless(ENGINE, "the live engine is not built")
+    def test_strokes_across_the_panel_carry_one_cut_through_it(self):
+        """The panel, as a person in the room would cut it: stand before it
+        with the sword, wind up to the right of it, and flick the view left
+        through it; if it has not come apart, draw back along the cut and flick
+        again. Every stroke that reaches the panel bites -- one coming back
+        along a partial cut runs down its slit to where the last one stopped,
+        rather than being stopped at the slit's mouth -- and the panel ends in
+        two pieces: the upper still on both its fixings, the lower fallen."""
+        hand = _ArmouryHand()
+        try:
+            self.assertIsNone(hand.problems, f"the sword would not take its edge: {hand.problems}")
+            hand.look(0.0, 1.005, 1.9)
+            hand.hold(0.3)
+            hand.wield("sword")
+            hand.hold(0.6)
+            hand.look(0.0, 3.0, 1.9)        # the blade up, out of everything's way
+            hand.hold(1.0)
+            hand.stand(0.7, 1.71, 2.6)      # in front of the panel
+            hand.hold(1.0)
+            hand.look(1.15, 1.71, 1.3)      # wound up to the right of it
+            hand.hold(1.5)
+            strokes = []
+            for _ in range(3):
+                before = len(hand.cuts)
+                hand.turn(0.6, 0.0, 0.12)   # the flick: 34 degrees in an eighth of a second
+                hand.hold(2.0)
+                strokes.append([c for c in hand.cuts[before:]
+                                if c["target"].startswith("oak panel")])
+                if any(c["separated"] for c in strokes[-1]):
+                    break
+                hand.turn(-0.6, 0.0, 1.0)   # draw back along the cut
+                hand.hold(1.0)
+            joints = hand.session.send(op="joints")["joints"]
+            bodies = dict(hand.bodies)
+        finally:
+            hand.close()
+        for k, stroke in enumerate(strokes):
+            bit = [c for c in stroke if c["kind"] in ("edge", "slice") and c["area_mm2"] > 0]
+            self.assertTrue(bit, f"stroke {k + 1} reached the panel and did not bite: {stroke}")
+            for c in bit:
+                self.assertAlmostEqual(c["work_j"] / (c["area_mm2"] * 1e-6), c["resistance_j_m2"],
+                                       delta=0.01 * c["resistance_j_m2"])
+        self.assertTrue(any(c["separated"] for c in strokes[-1]),
+                        f"{len(strokes)} strokes and the panel is still whole: {strokes}")
+        pieces = sorted((name for name in bodies if name.startswith("oak panel piece")),
+                        key=lambda name: bodies[name]["position_m"][1])
+        self.assertEqual(len(pieces), 2, f"the panel came apart as {pieces}")
+        lower, upper = pieces
+        self.assertLess(bodies[lower]["position_m"][1], 1.0,
+                        f"the lower piece did not fall: it is at {bodies[lower]['position_m']}")
+        fixings = [j for j in joints if j["kind"] == "fixing"]
+        self.assertEqual(len(fixings), 2)
+        for j in fixings:
+            self.assertTrue(j["attached"], f"a fixing came off the panel: {j}")
+            self.assertEqual(j["b"], upper, f"a fixing is not on the upper piece: {j}")
 
     def test_the_batten_stands_its_load_without_balancing_it(self):
         """A 160 mm block on a 20 mm stick tips at 5.7 degrees of roll, and a
