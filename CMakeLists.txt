@@ -318,9 +318,23 @@ if(BANJO_BUILD_HEADLESS)
     add_executable(banjo_quasistatic_probe src/app/quasistatic_probe_main.cpp)
     target_link_libraries(banjo_quasistatic_probe PRIVATE banjo_runtime nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_quasistatic_probe)
+    # The thermochemical network: matter inventories, reactions, heat paths,
+    # gas regions and pressure boundaries, with one energy ledger. It owns no
+    # geometry and no motion -- the live world tells it where things are and
+    # applies the forces it asks for -- so it builds and tests on its own.
+    add_library(banjo_thermo src/thermo/Thermochemistry.cpp src/thermo/ThermoWorld.cpp
+                             src/thermo/ThermoJson.cpp)
+    target_link_libraries(banjo_thermo PUBLIC banjo_core PRIVATE nlohmann_json::nlohmann_json)
+    banjo_enable_warnings(banjo_thermo)
+    if(BANJO_BUILD_TESTS)
+        add_executable(banjo_thermochemistry_tests tests/thermochemistry_tests.cpp)
+        target_link_libraries(banjo_thermochemistry_tests PRIVATE banjo_thermo)
+        banjo_enable_warnings(banjo_thermochemistry_tests)
+        add_test(NAME banjo_thermochemistry_tests COMMAND banjo_thermochemistry_tests)
+    endif()
     add_library(banjo_fastlattice_scene src/fastlattice/TileImpactScene.cpp
                                        src/fastlattice/LiveWorld.cpp)
-    target_link_libraries(banjo_fastlattice_scene PUBLIC banjo_fastlattice banjo_runtime PRIVATE nlohmann_json::nlohmann_json)
+    target_link_libraries(banjo_fastlattice_scene PUBLIC banjo_fastlattice banjo_runtime banjo_thermo PRIVATE nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_fastlattice_scene)
     add_executable(banjo_fast_lattice_run tools/fast_lattice_run.cpp)
     target_link_libraries(banjo_fast_lattice_run PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
