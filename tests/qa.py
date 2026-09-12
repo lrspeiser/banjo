@@ -38,6 +38,7 @@ import argparse
 import html
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -99,11 +100,13 @@ def run_recipes(cases: list[abt.Case], folder: Path) -> list[dict[str, Any]]:
     return records
 
 
-def run_trials(cases: list[abt.Case], trials: int, api_key: str, model: str, folder: Path,
+UNREACHED = "could not be reached"
+
+
+def run_trials(work: list[tuple[abt.Case, int]], api_key: str, model: str, folder: Path,
                jobs: int) -> list[dict[str, Any]]:
     speaking = threading.Lock()
     records: list[dict[str, Any]] = []
-    work = [(c, t) for c in cases for t in range(1, trials + 1)]
     with ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
         futures = {pool.submit(abt.run_trial, c, t, api_key, model, folder): (c, t) for c, t in work}
         for future in as_completed(futures):
@@ -344,6 +347,7 @@ def write_report(folder: Path, model: str, recipes: list[dict[str, Any]],
              ("Tokens", f"{tokens_in:,} in, {tokens_out:,} out" if trials else "none")]
     page = f"""<title>Banjo QA {e(folder.name)}</title>
 <meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:wght@500;600&family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@500;600&display=swap">
 <style>
 :root {{
   --ground:#f3f4f0; --card:#fcfcfa; --ink:#1c211e; --muted:#5b655f; --line:#d8dcd4;
@@ -360,9 +364,9 @@ def write_report(folder: Path, model: str, recipes: list[dict[str, Any]],
   --slow:#e8c27a; --slow-bg:#352812; --idle:#b4bdb7; --idle-bg:#262b28; }}
 * {{ box-sizing:border-box; }}
 body {{ margin:0; background:var(--ground); color:var(--ink);
-  font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }}
+  font:15px/1.5 "IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif; }}
 main {{ max-width:1180px; margin:0 auto; padding:32px 24px 64px; }}
-h1,h2,h3 {{ font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+h1,h2,h3 {{ font-family:Spectral,"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
   font-weight:600; text-wrap:balance; margin:0; }}
 h1 {{ font-size:30px; letter-spacing:.01em; }}
 h2 {{ font-size:21px; margin:40px 0 12px; }}
@@ -372,7 +376,7 @@ h3 {{ font-size:18px; }}
   background:var(--line); border:1px solid var(--line); border-radius:6px; overflow:hidden; }}
 .stats div {{ background:var(--card); padding:12px 14px; }}
 .stats dt {{ color:var(--muted); font-size:12px; letter-spacing:.04em; text-transform:uppercase; }}
-.stats dd {{ margin:4px 0 0; font:600 17px/1.3 ui-monospace,"Cascadia Mono",Consolas,monospace;
+.stats dd {{ margin:4px 0 0; font:600 17px/1.3 "IBM Plex Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
   font-variant-numeric:tabular-nums; }}
 .matrix-wrap {{ overflow-x:auto; border:1px solid var(--line); border-radius:6px; background:var(--card); }}
 table {{ border-collapse:collapse; width:100%; min-width:760px; }}
@@ -432,6 +436,33 @@ A recipe is the same thing built by hand: if a recipe fails, the engine or the c
     return target
 
 
+def share(folder: Path) -> Path:
+    """A copy of the report small enough to send or publish: every picture an
+    800-pixel JPEG beside it. The playground links still point at the owner's
+    own playground, which is where a build can be tried by hand."""
+    from PIL import Image
+    out = folder / "share"
+    pictures = out / "pics"
+    pictures.mkdir(parents=True, exist_ok=True)
+
+    def swap(match: re.Match) -> str:
+        source = folder / match.group(1)
+        if not source.is_file():
+            return match.group(0)
+        target = pictures / (source.stem + ".jpg")
+        with Image.open(source) as image:
+            image = image.convert("RGB")
+            image.thumbnail((800, 800))
+            image.save(target, "JPEG", quality=80, optimize=True)
+        return f'src="pics/{target.name}"'
+
+    page = (folder / "index.html").read_text(encoding="utf-8")
+    page = re.sub(r'src="([^"]+\.png)"', swap, page)
+    page = re.sub(r"<title>.*?</title>", "<title>Banjo Playground QA</title>", page, count=1)
+    (out / "index.html").write_text(page, encoding="utf-8")
+    return out
+
+
 def summary_text(model: str, recipes: list[dict[str, Any]], trials: list[dict[str, Any]],
                  cases: list[abt.Case]) -> str:
     lines = [f"QA -- {model}", "", "recipes:"]
@@ -459,10 +490,66 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-3d", action="store_true")
     parser.add_argument("--port", type=int, default=8772, help="the playground the pictures use")
     parser.add_argument("--list", action="store_true")
+    parser.add_argument("--rebuild", metavar="RUN",
+                        help="write a run's report again from its report.json (a folder name "
+                             "under build/agent-regression)")
+    parser.add_argument("--share", action="store_true",
+                        help="also write <run>/share/: the report with small JPEG pictures")
+    parser.add_argument("--photos", metavar="RUN",
+                        help="photograph a finished run's builds again, and write its report again")
+    parser.add_argument("--retry", metavar="RUN",
+                        help="ask again, into the same run, for the trials that never reached "
+                             "the model")
     args = parser.parse_args(argv)
 
     wanted = [w.strip() for w in args.cases.split(",") if w.strip()]
     cases = [c for c in CASES if not wanted or any(w in c.id for w in wanted)]
+    if args.rebuild:
+        folder = ROOT / "build" / "agent-regression" / args.rebuild
+        data = json.loads((folder / "report.json").read_text(encoding="utf-8"))
+        model = data.get("model") or "recipes only"
+        page = write_report(folder, model, data["recipes"], data["trials"], data.get("seen") or {},
+                            CASES, data.get("started") or time.time())
+        (folder / "summary.txt").write_text(
+            summary_text(model, data["recipes"], data["trials"], CASES), encoding="utf-8")
+        print(f"report: {page}")
+        if args.share:
+            print(f"shareable: {share(folder) / 'index.html'}")
+        return 0
+    if args.photos or args.retry:
+        # A run finished, and one part of it done again: its pictures, or the
+        # trials a network failure kept from ever reaching the model -- which
+        # say nothing about the chat and should not count against it.
+        folder = ROOT / "build" / "agent-regression" / (args.photos or args.retry)
+        data = json.loads((folder / "report.json").read_text(encoding="utf-8"))
+        recipes, trials, shots = data["recipes"], data["trials"], data.get("seen") or {}
+        model = data.get("model") or ""
+        fresh = recipes + trials
+        if args.retry:
+            import server
+            api_key, configured = server.local_configuration()
+            model = args.model or model or configured
+            again = [(BY_ID[r["case"]], r["trial"]) for r in trials
+                     if UNREACHED in str(r.get("reason") or "") and r["case"] in BY_ID]
+            print(f"asking again for {len(again)} trial(s) that never reached the model", flush=True)
+            fresh = run_trials(again, api_key, model, folder, args.jobs)
+            redone = {(c.id, t) for c, t in again}
+            order = [c.id for c in CASES]
+            trials = sorted([r for r in trials if (r["case"], r["trial"]) not in redone] + fresh,
+                            key=lambda r: (order.index(r["case"]), r["trial"]))
+        if not args.no_3d:
+            shots.update(photograph(fresh, folder, args.port))
+        (folder / "report.json").write_text(json.dumps(
+            {**data, "model": model, "trials": trials, "seen": shots}, indent=1, default=str),
+            encoding="utf-8")
+        (folder / "summary.txt").write_text(summary_text(model, recipes, trials, CASES),
+                                            encoding="utf-8")
+        page = write_report(folder, model, recipes, trials, shots, CASES,
+                            data.get("started") or time.time())
+        print(f"report: {page}")
+        if args.share:
+            print(f"shareable: {share(folder) / 'index.html'}")
+        return 0
     if args.list:
         for c in cases:
             recipes = ", ".join(recipes_for([c])) or "-"
@@ -489,7 +576,8 @@ def main(argv: list[str] | None = None) -> int:
     trials: list[dict[str, Any]] = []
     if not args.recipes:
         print(f"{len(cases)} case(s) x {args.trials} trial(s) against {model}", flush=True)
-        trials = run_trials(cases, args.trials, api_key, model, folder, args.jobs)
+        trials = run_trials([(c, t) for c in cases for t in range(1, args.trials + 1)],
+                            api_key, model, folder, args.jobs)
     shots: dict[str, Any] = {}
     if not args.no_3d:
         try:
@@ -505,6 +593,8 @@ def main(argv: list[str] | None = None) -> int:
     print()
     print(summary)
     print(f"\nreport: {page}")
+    if args.share:
+        print(f"shareable: {share(folder) / 'index.html'}")
     return 0 if all(r.get("passed") for r in recipes + trials) else 1
 
 

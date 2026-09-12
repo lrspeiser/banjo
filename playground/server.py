@@ -987,6 +987,14 @@ class Playground:
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "BanjoPlayground/1"
+    # HTTP/1.1, so the page's connections stay open between steps. Under 1.0
+    # every reply closed its connection, and the room opened a new one for every
+    # step, many times a second. On Windows that ran the machine out of socket
+    # buffers during a long look -- net::ERR_NO_BUFFER_SPACE, "Failed to fetch"
+    # -- and the room stopped with a hearth halfway to catching. Every reply
+    # goes through send(), which always sets Content-Length, which is what
+    # keeping a connection open needs.
+    protocol_version = "HTTP/1.1"
     timeout = 5
     def log_message(self, *_): pass # No prompts, credentials or response bodies in access logs.
     def send(self, value, status=200, content_type="application/json; charset=utf-8"):

@@ -101,6 +101,38 @@ def frame_of(spec: dict[str, Any]) -> tuple[list[float], float]:
     return focus, round(0.5 * math.dist(lo, hi), 4)
 
 
+def motion_frame(spec: dict[str, Any], focus: list[float], extent: float,
+                 near_m: float = 2.0, ahead_s: float = 1.0) -> tuple[list[float], float]:
+    """The box to frame: what was asked for (focus and extent), whatever stands
+    within `near_m` of it, and where anything loose is going to go -- down to
+    the floor, and along its starting velocity for `ahead_s` -- so that a
+    dropped ball, a thrown one or a sliding block is still in the picture once
+    it has moved. The first pictures framed only where things started."""
+    lo = [focus[i] - extent for i in range(3)]
+    hi = [focus[i] + extent for i in range(3)]
+    for body in spec.get("bodies") or []:
+        if body.get("name") in NOT_THE_BUILD:
+            continue
+        centre = [float(v) / 1000.0 for v in body["center_mm"]]
+        half = [0.5 * float(v) / 1000.0 for v in body["size_mm"]]
+        if math.dist(centre, focus) > extent + near_m:
+            continue
+        box_lo = [centre[i] - half[i] for i in range(3)]
+        box_hi = [centre[i] + half[i] for i in range(3)]
+        if not body.get("anchored"):
+            box_lo[1] = 0.0
+            velocity = body.get("velocity_m_s") or [0.0, 0.0, 0.0]
+            for i in (0, 2):
+                reach = max(-4.0, min(4.0, float(velocity[i]) * ahead_s))
+                box_lo[i] = min(box_lo[i], box_lo[i] + reach)
+                box_hi[i] = max(box_hi[i], box_hi[i] + reach)
+        for i in range(3):
+            lo[i] = min(lo[i], box_lo[i])
+            hi[i] = max(hi[i], box_hi[i])
+    centre = [round(0.5 * (a + b), 4) for a, b in zip(lo, hi)]
+    return centre, round(0.5 * max(b - a for a, b in zip(lo, hi)), 4)
+
+
 def framing(focus: list[float], extent: float,
             azimuth_deg: float = 20.0) -> tuple[list[float], list[float]]:
     """Where to stand, and what to look at.
@@ -431,8 +463,16 @@ def _capture_one(page: DevTools, build: dict[str, Any], port: int, out: Path) ->
         spec = json.loads((QA_ROOT / f"{build['id']}.spec.json").read_text(encoding="utf-8"))
         focus, extent = frame_of(spec)
         build = {"focus_m": focus, "extent_m": extent, **build}
+    try:
+        spec = json.loads((QA_ROOT / f"{build['id']}.spec.json").read_text(encoding="utf-8"))
+        focus, extent = motion_frame(spec, list(build["focus_m"]), float(build["extent_m"]))
+        build = {**build, "focus_m": focus, "extent_m": extent}
+    except (OSError, ValueError, KeyError):
+        pass
     show_s = float(build.get("show_s", DEFAULT_SHOW_S))
-    url = f"http://127.0.0.1:{port}/world?qa={quote(build['id'], safe='/')}"
+    # Held until the first picture is taken, so that it shows the build as it
+    # starts rather than a second or two into it.
+    url = f"http://127.0.0.1:{port}/world?qa={quote(build['id'], safe='/')}&hold=1"
     record: dict[str, Any] = {"id": build["id"], "run": run, "case": case, "trial": int(trial),
                               "url": url, "ok": False, "problems": [], "show_s": show_s,
                               "start_png": None, "later_png": None}
@@ -470,9 +510,11 @@ def _capture_one(page: DevTools, build: dict[str, Any], port: int, out: Path) ->
     page.evaluate(TWO_FRAMES, await_promise=True)
 
     seen_start = page.evaluate(SEEN)
-    start = page.evaluate(STATUS)
-    wall_start = time.perf_counter()
     record["start_png"] = _shoot(page, out / f"{name}-start.png")
+    start = page.evaluate(STATUS)
+    # And now it runs. A page from before ?hold=1 was never held.
+    page.evaluate("banjoRoom.resume ? banjoRoom.resume() : true")
+    wall_start = time.perf_counter()
     # Real time: the room steps by the wall clock, so this is the build
     # running. Looked in on once a second, which also reads the page's events
     # as they come rather than letting them pile up in the socket.

@@ -1407,7 +1407,7 @@ const LIVE_DT = 1 / 240;
 const MAX_STEPS = 240;
 
 async function tick() {
-  if (!world.session || world.busy) return;
+  if (!world.session || world.busy || world.paused) return;
   world.busy = true;
   // Which world this tick is driving. The chat can rebuild the room while a
   // tick is in flight -- a rebuild opens a NEW world and closes the old one --
@@ -1832,6 +1832,11 @@ const QA_OPTION = "qa-build";
 function qaBuild() {
   return new URLSearchParams(location.search).get("qa");
 }
+// Held: the room opens and is drawn, and its clock waits until it is let go.
+// /world?qa=<id>&hold=1 is how the QA's pictures begin at the moment the build
+// does -- otherwise a ball dropped from two metres has landed before a camera
+// can be pointed at it.
+world.paused = new URLSearchParams(location.search).get("hold") === "1";
 function qaParts(id) {
   const m = /^(\d{8}-\d{6})\/([a-z0-9-]+)-(\d+)$/.exec(id || "");
   return m ? { run: m[1], name: m[2], trial: m[3] } : null;
@@ -1934,10 +1939,16 @@ window.banjoRoom = {
   // Whether the room is up and on screen. Anything checking it from outside --
   // tests/qa_browser.py photographs it -- waits on this rather than on a delay.
   ready: roomReady,
+  // Hold the room's clock, and let it go again (see ?hold=1). Letting go
+  // restarts the step timing, as opening a room does, so the room does not
+  // try to catch up on the time it was held.
+  hold() { world.paused = true; return true; },
+  resume() { world.paused = false; world.lastTick = 0; return true; },
   // What the page knows, in one call: which world, how many bodies, the world
   // clock, what the panel says, and every error it has seen.
   status: () => ({
     session: world.session,
+    paused: !!world.paused,
     scene: world.scene || null,
     ready: roomReady(),
     bodies: world.bodies.size,
