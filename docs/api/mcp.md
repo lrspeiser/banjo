@@ -68,6 +68,14 @@ broke.
 | `fix` / `spring` | a latch or bracket that holds two things as one piece; an elastic element that pushes and pulls |
 | `joints` / `hinge_friction` / `unhinge` | read them, stiffen them, take one out |
 | `overloaded` | what is carrying more than it can hold, worked out from statics — the only way a loaded shelf is ever noticed |
+| `list_substances` | what matter is made of: substances, reactions (with where every number came from) and the catalogue's compositions — oak is dry wood, moisture and ash, which is why an oak log can burn |
+| `enclose_gas` | a column of gas under a loose piston, starting at the pressure that holds the piston and its load up |
+| `heat` | heat from outside — kindling, a torch, a stove — into a body or a gas region, from when the world starts |
+| `thermal_state` | how hot everything is, what is burning and how hard, the fuel left and how long it would last at this rate, what the gas is doing, and the energy ledger |
+
+`add_object` also takes `contents` (what the object is made of inside, by mass
+fraction) and `temperature_k`. Every `run` carries a `heat` summary whenever
+anything is hot, burning or pushing.
 
 `run` holds the **break conversation** itself. That is the part of this engine a
 caller can get wrong: ignore it and the world freezes at the first impact for
@@ -253,6 +261,29 @@ and volume times the material's density is what has been carried away.
 `carried` accumulates per world, so a session can break several things and ask
 what it has.
 
+## Heat, fire and gas
+
+```
+add_object(object={"name": "log 1", "shape": "box", "material": "oak",
+                   "size_m": [0.12, 0.12, 0.48], "position_m": [-0.08, 0.14, 0]})
+heat(target="log 1", power_w=10000, seconds=90)
+run(seconds=120)
+-> "heat": {"bodies": [{"object": "log 1", "surface_k": 871.0, "burning": true,
+                        "heat_release_kw": 11.28, "fuel_left_kg": 4.12,
+                        "would_last_min_at_this_rate": 95.7}, ...]}
+```
+
+Declared in the scene document -- `contents` on the body, gas regions and
+heaters in a `thermo` block -- so every rebuild carries them the way it carries
+the objects, and the playground's room is handed them in its spec. A `heat` is
+authored: it runs from when the world starts. Removing an object takes the
+heaters aimed at it and the gas regions that pushed on it with it, and says so.
+
+Things a model gets wrong unless told, and the tool descriptions say so: one log
+beside a cold one on a stone slab does not light with the kindling that lights a
+log on its own -- the slab and the cold log take the margin -- and a piston must
+be loose, on a `slide`, a cell clear of its walls.
+
 ## Implementation
 
 Roughly 700 lines of Python over the [C API](c-api.md), through
@@ -262,7 +293,7 @@ every non-finite number into `null` on the way out — infinity is a real answer
 here (a brittle material's bending threshold *is* infinite) and JSON has no way
 to write it.
 
-Fifteen tests in [`tests/banjo_mcp_tests.py`](../../tests/banjo_mcp_tests.py)
+Thirty-one tests in [`tests/banjo_mcp_tests.py`](../../tests/banjo_mcp_tests.py)
 drive it as a real subprocess through the real protocol, because calling the
 handlers directly would miss everything that goes wrong at a protocol
 boundary — a notification answered when it should not be, a schema a client will

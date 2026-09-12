@@ -95,7 +95,7 @@ suite, so they cannot go stale:
 
 ---
 
-## Seven things to know before you build anything
+## Eight things to know before you build anything
 
 ### 1. Breaking is a conversation, not a property
 
@@ -310,6 +310,28 @@ in 26 pieces.
 Pick materials with this in mind. Oak takes 90 MPa in tension and concrete takes
 3, so a stone shelf is a thing you can overload by hand and an oak one of the
 same size wants eighteen tonnes.
+
+### 8. Heat is chemistry and inventory, and burning is a result
+
+Nothing here has a "burnable" flag or a burn time. A body holds a finite
+inventory -- an oak log is dry wood, moisture and ash by default -- and a
+declared reaction turns what is there into something else at a rate the model
+decides, releasing energy through the products' lower reference energies. Light
+a log with `banjo_heat` and it burns only if the heat is enough to win against
+what the log loses to the stone under it and the cold log beside it; how long it
+lasts is its fuel over the rate it burns, and `remaining_s` is that estimate
+under current conditions.
+
+A gas region pushes on a body: heat it and the piston rises with whatever rests
+on it; let it cool and the load comes back down and pushes on the gas. The force
+is pressure times area, pushed inside the reversible step, and the gas is
+charged exactly the work that force did -- so the boundary work and the
+mechanics cannot disagree.
+
+One ledger holds all of it, and `banjo_energy_ledger` says where every joule went.
+The wood model is a declared simplified model with demonstration parameters;
+`banjo_thermo_report(world, 1)` says which numbers are which. See
+[thermochemistry.md](../thermochemistry.md).
 
 ---
 

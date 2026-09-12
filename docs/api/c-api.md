@@ -14,7 +14,7 @@ tell you any other way:
 if (banjo_abi_version() != BANJO_ABI_VERSION) { /* mismatch */ }
 ```
 
-Current ABI: **12**.
+Current ABI: **14**. (14 added heat, chemistry and gas; it skips 13, which another branch in flight has taken.)
 
 ---
 
@@ -729,6 +729,98 @@ if (under.hit && under.name[0])
 
 ---
 
+## Heat, chemistry and gas
+
+A world can hold matter that reacts, heat that moves and gas that pushes. The
+design, the models and what was measured are in
+[thermochemistry.md](../thermochemistry.md); this is the interface.
+
+**One energy convention.** Every substance has `u = u0 + cv T` per kilogram,
+from 0 K. A body or a gas stores ONE internal energy and its temperature is
+derived from it, never set. `chemical_j` and `thermal_j` below are the reference
+and sensible parts of that one number -- two views, not two stores.
+
+**Burning is a result.** An oak log burns because oak is dry wood, moisture and
+ash (its material's composition) and it is hot enough with air around it.
+Nothing has a burn time: `remaining_s` is the fuel left over the rate it is used
+now, an estimate under current conditions.
+
+### `int banjo_declare(banjo_world *world, const char *json)`
+
+Declare into a running world. The same keys a scene's `thermo` block takes, plus
+`contents` as a list:
+
+```json
+{"contents": [{"body": "log", "contents": {"dry wood": 1}, "temperature_k": 900}],
+ "gas_regions": [{"name": "cylinder gas", "contents": {"argon": 1},
+                  "piston": "piston", "height_m": 0.4, "balance": true}],
+ "heaters": [{"target": "log", "power_w": 10000, "seconds": 60}]}
+```
+
+A heater declared here starts now. A key the network does not know is refused
+**by name** (`BANJO_BAD_ARGUMENT`) -- a misspelt `tempreature_k` silently ignored
+is a log at room temperature that somebody believes is alight.
+
+### `int banjo_heat(banjo_world *world, const char *target, double power_w, double seconds)`
+
+Heat a body or a gas region from now: external work, counted as `heater_in_j`.
+Returns the heater's id. Whether it lights anything is the model's answer -- on
+the demonstration model, 10 kW for a minute lights a lone oak log and 5 kW does
+not, and two logs on a stone hearth need about 10 kW under each for 90 s.
+
+### `int banjo_vent(banjo_world *world, const char *region, int open)`
+
+Open or close a gas region's opening to the surroundings.
+
+### `int banjo_body_heat_count(const banjo_world *world)`
+### `int banjo_bodies_heat(const banjo_world *world, banjo_body_heat *out, int max)`
+
+Every body the network holds: `temperature_k` (the surface -- what glows and
+burns), `core_temperature_k`, `mass_kg`, `fuel_kg`, `heat_release_w`,
+`fuel_use_kg_s`, `remaining_s` (`INFINITY` when nothing burns), `heater_w`,
+`gained_w` (from other bodies), `lost_w` (to the surroundings), `reacting`,
+`declared`. A body nothing has heated is not in the network and not listed.
+
+### `int banjo_gas_region_count(const banjo_world *world)`
+### `int banjo_gas_regions(const banjo_world *world, banjo_gas_region *out, int max)`
+
+Every gas region: derived `temperature_k` and `pressure_pa`, `volume_m3`,
+`mass_kg`, `moles`, the `piston` it pushes on, where its column starts
+(`base_m`), which way it grows (`axis`), `area_m2`, `height_m`, `stroke_m`,
+`force_n` (net of the surroundings' pressure), and the boundary work:
+`work_to_bodies_j` and `work_to_atmosphere_j`.
+
+**How the work is made to agree.** The force for a step is the pressure at its
+start times the area, pushed onto the body inside the step's reversible trial;
+after the step the gas is charged exactly that force times the displacement that
+happened. What the gas pays and what the body receives are the same product. A
+refused step takes the push, the fuel, the gas and the heat back with it.
+
+### `int banjo_energy_ledger(const banjo_world *world, banjo_energy *out)`
+
+```
+stored_j - initial_j = heater_in_j - heat_to_surroundings_j + matter_in_j - matter_out_j
+                     + joined_j - left_j - work_to_bodies_j - work_to_atmosphere_j
+                     + numerical_j + residual_j
+```
+
+Every term but `residual_j` is added up where it happens, so `residual_j` is
+rounding: 1.6e-11 J on a heated piston after 120 s, 8.7e-6 J on 1.8e8 J stored
+for a burning hearth. `numerical_j` is energy the arithmetic had to add to keep
+something physical -- reported, never hidden, and zero in every run so far.
+`mechanical_j` is a separate view: the solver's own kinetic and gravitational
+energy of every body.
+
+### `const char *banjo_thermo_report(const banjo_world *world, int with_model)`
+### `const char *banjo_thermo_model(void)`
+
+All of the above as JSON; with `with_model`, every substance and reaction with
+its **provenance** (`demonstration`, `reference-derived`, `experimentally
+validated`), the compositions of the catalogue's materials, and what is not
+modelled. `banjo_thermo_model` needs no world.
+
+---
+
 ## The scene format
 
 A JSON object. `bodies` is required; everything else has a default.
@@ -760,6 +852,8 @@ A JSON object. `bodies` is required; everything else has a default.
 | `velocity_m_s` | what it is already doing at t = 0 |
 | `anchored` | scenery: it does not move, cannot be picked up, and is never judged for breaking |
 | `rotation_deg` | optional, for a tilted body |
+| `contents` | optional: what it contains, by mass fraction of its own mass -- `{"dry wood": 0.7, "moisture": 0.3}`. Left out, it is made of what its material is made of. |
+| `temperature_k` | optional: how hot it starts. The surroundings' temperature (293.15 K) by default. |
 
 Scene-level settings, read from the same document:
 
@@ -767,6 +861,7 @@ Scene-level settings, read from the same document:
 |---|---|
 | `plasticity` | **off unless you ask.** Without it every bond springs back to its rest length, nothing can hold a shape it was pushed into, and nothing can dent. |
 | `hardening_ratio` | how much a material stiffens as it yields. 0 is perfect plasticity. |
+| `thermo` | heat, chemistry and gas that are not one body's: `gas_regions`, `heaters`, `ambient`. See [Heat, chemistry and gas](#heat-chemistry-and-gas). |
 
 Two mistakes worth naming because everyone makes them:
 
