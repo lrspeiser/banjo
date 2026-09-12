@@ -44,7 +44,13 @@ def main() -> int:
     assert exact["snapped"] is False and exact["cells"] == 500, exact
     near = lab.validate({"algorithm": "lattice", "plate_m": [0.25, 0.20, 0.01], "cell_m": 0.011})
     assert near["snapped"] is True and near["plate_m"][2] == 0.011, near
-    rejects({"algorithm": "lattice", "plate_m": [0.5, 0.5, 0.01], "cell_m": 0.01}, "instant-run cap")
+    # The lattice lane's instant-run cap is 16,000 cells, which fits the
+    # playground courtyard (15,364). A plate of exactly 16,000 cells runs, and
+    # one more row is refused by the cap's own message, not by another rule.
+    at_cap = lab.validate({"algorithm": "lattice", "plate_m": [1.60, 1.00, 0.01], "cell_m": 0.01})
+    assert at_cap["cells"] == 16000, at_cap["cells"]
+    rejects({"algorithm": "lattice", "plate_m": [1.61, 1.00, 0.01], "cell_m": 0.01},
+            "16100 cells exceeds this lane's instant-run cap of 16000")
     rejects({"algorithm": "algo3", "offset_m": [0.2, 0.0]}, "offset x")
     rejects({"algorithm": "algo3", "bogus": 1}, "Unknown fracture lab fields")
 
@@ -83,9 +89,11 @@ def main() -> int:
 
     meta = lab.describe(ENGINE)
     assert [a["id"] for a in meta["algorithms"]] == ["algo1", "algo2", "algo3", "lattice"], meta
-    assert meta["materials"] == ["glass", "oak", "iron"], meta
-    # A material claim needs all three under identical conditions, so the
-    # panel must offer all three on both sides of the impact.
+    # The panel offers every material the engine's catalogue carries
+    # (src/material/MaterialCatalog.cpp), not only the first three.
+    assert meta["materials"] == ["glass", "oak", "iron", "concrete", "ceramic", "ice", "aluminum", "rubber"], meta
+    # A material claim needs them under identical conditions, so the panel
+    # must offer every one on both sides of the impact.
     for material in meta["materials"]:
         spec = lab.validate({"algorithm": "lattice", "material": material, "striker": material})
         assert spec["material"] == material and spec["striker"] == material, spec
