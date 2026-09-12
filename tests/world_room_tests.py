@@ -750,5 +750,175 @@ class TheCourtyard(unittest.TestCase):
             live.shutdown()
 
 
+class TheArmoury(unittest.TestCase):
+    """The sword, and three things it can change. docs/cutting-model.md."""
+
+    DENSITY = {"iron": 7870.0, "oak": 700.0, "rubber": 1100.0}
+    OAK_TENSILE_PA = 90.0e6
+
+    def spec(self):
+        return fracture_lab.validate(world_room.armoury())
+
+    def kg(self, body):
+        volume = 1.0
+        for side in body["size_mm"]:
+            volume *= side / 1000.0
+        return volume * self.DENSITY[body["material"]]
+
+    def test_the_sword_has_one_edge_and_it_is_on_its_own_steel(self):
+        spec = self.spec()
+        self.assertEqual([b["body"] for b in spec["blades"]], ["sword"])
+        edge = spec["blades"][0]
+        sword = next(b for b in spec["bodies"] if b["name"] == "sword")
+        for end in ("heel_mm", "tip_mm", "grip_mm"):
+            for axis in range(3):
+                off = abs(edge[end][axis] - sword["center_mm"][axis])
+                self.assertLessEqual(off, sword["size_mm"][axis] / 2 + 1e-6,
+                                     f"the edge's {end} is off the bar it belongs to")
+
+    def test_the_rope_can_keep_its_length(self):
+        """A chain of light links under a load hundreds of times heavier does
+        not keep its length in an iterative solver. The first rope here hung
+        0.6 m long, with gaps between segments that a blade went straight
+        through without touching anything."""
+        bodies = {b["name"]: b for b in self.spec()["bodies"]}
+        ratio = self.kg(bodies["weight"]) / self.kg(bodies["rope 1"])
+        self.assertLess(ratio, 50.0,
+                        f"the weight is {ratio:.0f} times a rope segment")
+
+    def test_the_batten_holds_whole_and_not_notched_beside_its_load(self):
+        """What a plank can support, and what a notch does to it: the survey's
+        own statics, done here by hand before the room is ever opened."""
+        spec = self.spec()
+        bodies = {b["name"]: b for b in spec["bodies"]}
+        batten = bodies["oak batten"]
+        left, right = bodies["batten pier left"], bodies["batten pier right"]
+        clear = ((right["center_mm"][0] - right["size_mm"][0] / 2)
+                 - (left["center_mm"][0] + left["size_mm"][0] / 2)) / 1000.0
+        breadth = batten["size_mm"][2] / 1000.0
+        depth = batten["size_mm"][1] / 1000.0
+        cell = spec["cell_m"]
+        load_n = self.kg(bodies["iron load"]) * 9.81
+        whole = 3.0 * load_n * clear / (2.0 * breadth * depth * depth)
+        self.assertLess(whole, self.OAK_TENSILE_PA,
+                        f"the batten is overloaded before anyone touches it: {whole / 1e6:.0f} MPa")
+
+        def notched(x_m):
+            # A notch through the upper row of cells: one row is left, and the
+            # survey's ligament is one cell deep.
+            a = x_m + clear / 2.0
+            moment = 0.5 * load_n * min(a, clear - a)
+            return 6.0 * moment / (breadth * cell * cell)
+
+        self.assertGreater(notched(0.2), self.OAK_TENSILE_PA,
+                           f"a notch beside the load leaves it at {notched(0.2) / 1e6:.0f} MPa, "
+                           f"so cutting it changes nothing")
+        self.assertLess(notched(0.4), self.OAK_TENSILE_PA,
+                        "a notch far out by a pier overloads it too, so where it is cut "
+                        "does not matter, and it should")
+
+    @unittest.skipUnless(ENGINE, "the live engine is not built")
+    def test_an_edge_parts_the_rope_and_its_flat_does_not(self):
+        """Through the same pipe the browser uses: the sword taken up, brought
+        round beside the rope, and swept through it -- edge leading, then the
+        same sweep turned a quarter so the flat leads. Nothing here says
+        "cut": the hand pulls, and what the edge meets is the engine's."""
+        root2 = math.sqrt(0.5)
+
+        def qmul(a, b):
+            aw, ax, ay, az = a
+            bw, bx, by, bz = b
+            return [aw * bw - ax * bx - ay * by - az * bz,
+                    aw * bx + ax * bw + ay * bz - az * by,
+                    aw * by - ax * bz + ay * bw + az * bx,
+                    aw * bz + ax * by - ay * bx + az * bw]
+
+        # The bar lies along x with its edge facing -z. Turned so it points
+        # away (-z) with the edge facing left (-x): a half turn about (x+z).
+        edge_left = [0.0, root2, 0.0, root2]
+        # A quarter turn about the way it points: the edge faces up, and a
+        # sweep to the left leads with the flat.
+        flat_left = qmul([root2, 0.0, 0.0, -root2], edge_left)
+
+        class App:
+            engine_path = ENGINE
+            runs_path = ROOT / "build/playground-runs"
+            live_inprocess = False
+
+        def sweep(facing):
+            live = live_session.Live()
+            try:
+                opened = live.open(App(), {"spec": world_room.armoury()})
+                self.assertNotIn("blade_problems", opened,
+                                 f"the sword would not take its edge: {opened.get('blade_problems')}")
+                session = live.session
+                bodies = {b["name"]: b for b in opened["bodies"]}
+                cuts = []
+
+                def step(**rest):
+                    state = session.send(op="step", dt=1 / 240.0, n=1, moved=True, **rest)
+                    for b in state.get("bodies") or []:
+                        bodies[b["name"]] = b
+                    for name in state.get("gone") or []:
+                        bodies.pop(name, None)
+                    for coming in state.get("breakable") or []:
+                        session.send(op="fracture", name=coming, wait=False)
+                    cuts.extend(c for c in state.get("cuts") or [] if not c["open"])
+
+                hung = bodies["weight"]["position_m"][1]
+                session.send(op="wield", name="sword")
+                start, rest = [0.0, 1.55, 1.95], [0.35, 1.005, 1.9]
+                for i in range(240):      # a second to bring it round, clear of the rope
+                    t = min(1.0, i / 180.0)
+                    turn = [(1 - t) * a + t * b for a, b in zip([1.0, 0.0, 0.0, 0.0], facing)]
+                    size = math.sqrt(sum(v * v for v in turn))
+                    step(hand=[r + (s - r) * t for r, s in zip(rest, start)],
+                         hand_q=[v / size for v in turn])
+                # The sweep: the hand's target at 12 m/s to x = -1, the speed a
+                # swing of the view gives the sword in the room (13 to 17 m/s
+                # measured). At 8 m/s a 26 g segment of free-hanging rope is
+                # knocked away about as fast as it is cut, and whether it parts
+                # is a close thing -- as it is.
+                for i in range(1, 21):
+                    step(hand=[start[0] - i / 20.0, start[1], start[2]], hand_q=facing)
+                for _ in range(360):      # and held, while whatever falls lands
+                    step(hand=[start[0] - 1.0, start[1], start[2]], hand_q=facing)
+                return hung, bodies, cuts
+            finally:
+                live.shutdown()
+
+        hung, bodies, cuts = sweep(edge_left)
+        on_rope = [c for c in cuts if c["target"].startswith("rope")]
+        bit = [c for c in on_rope if c["kind"] == "edge" and c["area_mm2"] > 0]
+        self.assertTrue(bit, f"the edge did not bite the rope: {on_rope}")
+        through = [c for c in bit if c["separated"]]
+        self.assertTrue(through, f"the edge cut into the rope but not through it: {bit}")
+        # Accounted work: what it cost is its area at the rubber's resistance.
+        for c in through:
+            self.assertAlmostEqual(c["work_j"] / (c["area_mm2"] * 1e-6),
+                                   c["resistance_j_m2"], delta=0.01 * c["resistance_j_m2"])
+        self.assertLess(bodies["weight"]["position_m"][1], 0.3,
+                        f"the rope was cut and the weight is still at "
+                        f"{bodies['weight']['position_m'][1]:.2f} m (it hung at {hung:.2f})")
+
+        hung, bodies, cuts = sweep(flat_left)
+        on_rope = [c for c in cuts if c["target"].startswith("rope")]
+        self.assertFalse([c for c in on_rope if c["bonds"] > 0 or c["links"] > 0],
+                         f"the flat cut the rope: {on_rope}")
+        self.assertTrue(any(c["kind"] == "flat" for c in on_rope),
+                        f"the flat met the rope and it was not called a flat: {on_rope}")
+        self.assertGreater(bodies["weight"]["position_m"][1], hung - 0.3,
+                           "the weight fell, so the flat took the rope apart")
+
+    def test_the_batten_stands_its_load_without_balancing_it(self):
+        """A 160 mm block on a 20 mm stick tips at 5.7 degrees of roll, and a
+        press beside it rolled it off. Kept above 8."""
+        bodies = {b["name"]: b for b in self.spec()["bodies"]}
+        batten, load = bodies["oak batten"], bodies["iron load"]
+        half_width = batten["size_mm"][2] / 2.0
+        height = batten["size_mm"][1] + load["size_mm"][1] / 2.0
+        self.assertGreater(math.degrees(math.atan2(half_width, height)), 8.0)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

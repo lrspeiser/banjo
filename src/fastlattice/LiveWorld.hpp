@@ -50,6 +50,26 @@ struct LiveBodyPose {
     // the spot, and say a true depth next to it.
     double dent_m{};
     Vec3 dent_at_m{};
+    // The cuts this body carries, in its own frame. A kerf is where a blade has
+    // been THROUGH the matter: the bonds across it are severed, and a host
+    // draws it so a partial cut can be seen for what it is. Empty for anything
+    // no edge has been into. See docs/cutting-model.md.
+    struct Kerf {
+        // The plane the blade passed through: a point on it, the direction
+        // along the edge (`along`), the way the edge faced (`facing`) and the
+        // normal to the blade's flats (`normal`).
+        Vec3 point_local_m{};
+        Vec3 along_local{}, facing_local{}, normal_local{};
+        // What the edge has swept through matter, as strips along the edge:
+        // each is [along_from, along_to] x [facing_from, facing_to] in metres
+        // from the point, in the plane.
+        struct Strip {
+            double along_from{}, along_to{}, facing_from{}, facing_to{};
+        };
+        std::vector<Strip> strips;
+        double thickness_m{};
+    };
+    std::vector<Kerf> kerfs;
     // Where this body's cells sit in its own frame. Only filled in when the
     // caller asks for geometry, because it does not change between steps and a
     // bowl has two thousand of them.
@@ -211,6 +231,66 @@ struct LiveOverload {
     // What that works out to, and what the material can take.
     double stress_pa{};
     double strength_pa{};
+};
+
+// An edge on a body. See docs/cutting-model.md for the whole model; this is
+// what a host can see of one.
+//
+// A blade is declared ON a body that already exists -- the body supplies the
+// matter, the material, the mass and its distribution -- and the declaration
+// adds what cells cannot resolve: where the edge runs, which way it faces, how
+// thick and how sharp it is, and where a hand holds it.
+struct LiveBlade {
+    unsigned id{};
+    std::string body;
+    std::string material;
+    // Where it is now, in world metres: the edge heel to tip, the way it
+    // faces, the normal to its flats, and the grip.
+    Vec3 heel_m{}, tip_m{}, facing{}, flat{}, grip_m{};
+    // The same in the body's own frame, for a host that draws the edge riding
+    // on the body's pose rather than asking every frame.
+    Vec3 heel_local_m{}, tip_local_m{}, facing_local{}, grip_local_m{};
+    double thickness_m{}, edge_radius_m{}, bevel_deg{};
+    // What it has done. `cut_work_j` is measured from the solver's own
+    // friction impulses; `cut_area_m2` is the area that bought, at each
+    // material's declared resistance.
+    double cut_area_m2{}, cut_work_j{};
+    // What the edge is in right now, "" for nothing.
+    std::string cutting;
+    // False once the body carrying it has gone -- broken up, or swept away.
+    bool attached{true};
+};
+
+// One meeting between an edge and something else, from first touch until they
+// part. Every contact is reported, including the ones that cut nothing, because
+// "it did not cut because the flat hit it" is an answer a host has to be able
+// to give.
+struct LiveCut {
+    std::string blade;    // the body carrying the edge
+    std::string target;   // what it met, by the name it had when it was met
+    // "edge", "slice", "press": the edge bit, and how it was moving.
+    // "glancing", "flat", "point": it met the surface some other way and was
+    //                              an ordinary contact. See docs/cutting-model.md
+    //                              section 5 for the rules, which are geometry
+    //                              and motion, never names.
+    // "blunt": the target is as hard as the blade, or harder, and flattens
+    //          the edge rather than being cut.
+    // "brittle": the target has no yield point; it cracks, it is not cut.
+    std::string kind;
+    double at_s{};
+    // The relative motion of the edge at first contact, in the blade's axes:
+    // `into` along the facing, `along` the edge, `across` the flats.
+    double speed_m_s{}, into_m_s{}, along_m_s{}, across_m_s{};
+    // The material's resistance to this edge, R = G + H w, J/m^2 (= N per
+    // metre of engaged edge).
+    double resistance_j_m2{};
+    // What this contact has cut so far, and what that cost.
+    double area_m2{}, work_j{};
+    std::size_t bonds{};   // bonds severed
+    std::size_t links{};   // rope links severed
+    bool separated{};      // the target came apart
+    std::size_t pieces{};  // into how many, when it did
+    bool open{};           // still in contact
 };
 
 // A moment where the world was made to wait, or was saved from waiting.
@@ -590,8 +670,61 @@ public:
     // Take the pin out. What hung on it falls.
     void unhinge(unsigned joint);
 
+    // ---- Blades (docs/cutting-model.md) --------------------------------
+    //
+    // Give a body an edge. Everything is given where it is in the world RIGHT
+    // NOW and kept in the body's own frame from then on, like a pin:
+    //
+    //   heel, tip      the edge, a straight line, heel to point. Both ends must
+    //                  lie on the body's matter -- an edge floating in the air
+    //                  next to a body is refused.
+    //   facing         the way the edge faces: squared up against the edge
+    //                  line, so it only has to be roughly perpendicular.
+    //   thickness_m    across the flats
+    //   edge_radius_m  how sharp: the edge's contact width is twice this
+    //   bevel_deg      the included angle of the edge wedge
+    //   grip           where a hand holds it
+    //
+    // Returns the blade's id, or 0 if it cannot be made.
+    unsigned blade(const std::string &body, const Vec3 &heel_world_m,
+                   const Vec3 &tip_world_m, const Vec3 &facing_world,
+                   double thickness_m, double edge_radius_m, double bevel_deg,
+                   const Vec3 &grip_world_m);
+    [[nodiscard]] std::vector<LiveBlade> blades() const;
+    // Every edge contact since forgetCuts(), in the order they began. Open
+    // ones are still going and keep changing.
+    [[nodiscard]] std::vector<LiveCut> cuts() const;
+    void forgetCuts();
+
+    // Take hold of something the way a person holds a sword: at a point on
+    // it, with a hand whose force and torque are BOUNDED. See
+    // docs/cutting-model.md section 7. moveHeld() says where the grip should
+    // be and aimHeld() which way the body should face; the hand pulls and
+    // turns towards both with what it has, and what the body meets can slow
+    // it, turn it aside or stop it.
+    //
+    // This is not grab(). grab() carries a loose body exactly where it is put,
+    // which is placement -- an editor's move -- and stays exactly that.
+    [[nodiscard]] bool wield(const std::string &name, const Vec3 &grip_world_m);
+    void aimHeld(const Quat &orientation_world);
+    [[nodiscard]] bool wielding() const;
+    // The most torque the hand can put on what it wields, newton metres.
+    void setHandTorque(double newton_metres);
+    [[nodiscard]] double handTorque() const;
+
 private:
     LiveWorld();
+    // The cutting model, in the two halves a step has. Before it: find every
+    // edge about to meet or already in matter, decide what each meeting is,
+    // and put a kerf constraint where an edge has bitten. After it: read what
+    // each constraint took, advance the kerfs by exactly that much area, sever
+    // what they crossed, and replace whatever came apart with its pieces.
+    // Both run outside the reversible trial, because both change the world's
+    // configuration and a trial forbids that.
+    void prepareCuts(double dt_s);
+    void settleCuts(double dt_s);
+    // Replace a body whose severed bonds leave it in more than one piece.
+    std::size_t splitCut(std::size_t which);
     // Reads the contacts of the step just taken and answers whether any of them
     // could break what it hit. Called inside a reversible trial, so it must not
     // change the world.

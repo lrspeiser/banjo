@@ -32,8 +32,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterator
 
-# Bumped with the header: the world reports what made it wait.
-ABI_VERSION = 12
+# Bumped with the header: blades, the cuts they make, and a hand that grips.
+ABI_VERSION = 13
 
 NOTHING, HELD, DENTED, BROKE = 0, 1, 2, 3
 OUTCOMES = {0: "nothing", 1: "held", 2: "dented", 3: "broke"}
@@ -139,6 +139,98 @@ class _Impact(ctypes.Structure):
                 ("energy_j", ctypes.c_double),
                 ("would_break", ctypes.c_int),
                 ("would_dent", ctypes.c_int)]
+
+
+class _Blade(ctypes.Structure):
+    _fields_ = [("id", ctypes.c_uint),
+                ("body", ctypes.c_char_p),
+                ("material", ctypes.c_char_p),
+                ("heel_m", ctypes.c_double * 3),
+                ("tip_m", ctypes.c_double * 3),
+                ("facing", ctypes.c_double * 3),
+                ("flat", ctypes.c_double * 3),
+                ("grip_m", ctypes.c_double * 3),
+                ("thickness_m", ctypes.c_double),
+                ("edge_radius_m", ctypes.c_double),
+                ("bevel_deg", ctypes.c_double),
+                ("cut_area_m2", ctypes.c_double),
+                ("cut_work_j", ctypes.c_double),
+                ("cutting", ctypes.c_char_p),
+                ("attached", ctypes.c_int)]
+
+
+class _Cut(ctypes.Structure):
+    _fields_ = [("blade", ctypes.c_char_p),
+                ("target", ctypes.c_char_p),
+                ("kind", ctypes.c_char_p),
+                ("at_s", ctypes.c_double),
+                ("speed_m_s", ctypes.c_double),
+                ("into_m_s", ctypes.c_double),
+                ("along_m_s", ctypes.c_double),
+                ("across_m_s", ctypes.c_double),
+                ("resistance_j_m2", ctypes.c_double),
+                ("area_m2", ctypes.c_double),
+                ("work_j", ctypes.c_double),
+                ("bonds", ctypes.c_int),
+                ("links", ctypes.c_int),
+                ("separated", ctypes.c_int),
+                ("pieces", ctypes.c_int),
+                ("open", ctypes.c_int)]
+
+
+@dataclass(frozen=True)
+class Blade:
+    """An edge on a body, and what it has done. See docs/cutting-model.md.
+
+    Declared ON a body: the body supplies the matter, the material and where
+    the mass is; the blade adds the edge (heel to tip), the way it faces, how
+    thick and how sharp it is, and where it is held.
+    """
+    id: int
+    body: str
+    material: str
+    heel_m: tuple[float, float, float]
+    tip_m: tuple[float, float, float]
+    facing: tuple[float, float, float]
+    flat: tuple[float, float, float]
+    grip_m: tuple[float, float, float]
+    thickness_m: float
+    edge_radius_m: float
+    bevel_deg: float
+    # Everything it has cut, and what that cost as the solver applied it.
+    cut_area_m2: float
+    cut_work_j: float
+    # What the edge is in right now, "" for nothing.
+    cutting: str
+    attached: bool
+
+
+@dataclass(frozen=True)
+class Cut:
+    """One meeting between an edge and something, from first touch until they part.
+
+    `kind` comes from geometry and motion, never from names: "edge", "slice"
+    and "press" bit; "glancing", "flat" and "point" met the surface some other
+    way and were ordinary contacts; "blunt" means the target is at least as hard
+    as the blade, and "brittle" that it has no yield point and cracks instead.
+    """
+    blade: str
+    target: str
+    kind: str
+    at_s: float
+    speed_m_s: float
+    into_m_s: float
+    along_m_s: float
+    across_m_s: float
+    # R = G + H w for this edge in this material, J/m^2.
+    resistance_j_m2: float
+    area_m2: float
+    work_j: float
+    bonds: int
+    links: int
+    separated: bool
+    pieces: int
+    open: bool
 
 
 @dataclass(frozen=True)
@@ -456,6 +548,30 @@ def library(path: str | os.PathLike[str] | None = None) -> ctypes.CDLL:
     lib.banjo_forget_delays.restype = ctypes.c_int
     lib.banjo_foresee.argtypes = [ctypes.c_void_p, ctypes.c_double]
     lib.banjo_foresee.restype = ctypes.c_int
+
+    lib.banjo_make_blade.argtypes = [ctypes.c_void_p, ctypes.c_char_p,
+                                ctypes.c_double * 3, ctypes.c_double * 3, ctypes.c_double * 3,
+                                ctypes.c_double, ctypes.c_double, ctypes.c_double,
+                                ctypes.c_double * 3]
+    lib.banjo_make_blade.restype = ctypes.c_int
+    lib.banjo_blade_count.argtypes = [ctypes.c_void_p]
+    lib.banjo_blade_count.restype = ctypes.c_int
+    lib.banjo_blades.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Blade), ctypes.c_int]
+    lib.banjo_blades.restype = ctypes.c_int
+    lib.banjo_cut_count.argtypes = [ctypes.c_void_p]
+    lib.banjo_cut_count.restype = ctypes.c_int
+    lib.banjo_cuts.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Cut), ctypes.c_int]
+    lib.banjo_cuts.restype = ctypes.c_int
+    lib.banjo_forget_cuts.argtypes = [ctypes.c_void_p]
+    lib.banjo_forget_cuts.restype = ctypes.c_int
+    lib.banjo_wield.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double * 3]
+    lib.banjo_wield.restype = ctypes.c_int
+    lib.banjo_aim_held.argtypes = [ctypes.c_void_p, ctypes.c_double * 4]
+    lib.banjo_aim_held.restype = ctypes.c_int
+    lib.banjo_hand_strength.argtypes = [ctypes.c_void_p, ctypes.c_double]
+    lib.banjo_hand_strength.restype = ctypes.c_int
+    lib.banjo_hand_torque.argtypes = [ctypes.c_void_p, ctypes.c_double]
+    lib.banjo_hand_torque.restype = ctypes.c_int
 
     found = lib.banjo_abi_version()
     if found != ABI_VERSION:
@@ -964,6 +1080,89 @@ class World:
     @property
     def held(self) -> str:
         return (self._lib.banjo_held(self._alive()) or b"").decode("utf-8", "replace")
+
+    # -- blades (docs/cutting-model.md) -------------------------------------
+    def blade(self, body: str, heel_m: Any, tip_m: Any, facing: Any,
+              thickness_m: float, edge_radius_m: float = 0.0002,
+              bevel_deg: float = 30.0, grip_m: Any = None) -> int:
+        """Give a named body an edge. Returns the blade's id.
+
+        Everything is given where it is in the world RIGHT NOW and kept in the
+        body's own frame from then on. Both ends of the edge must lie on the
+        body's matter; `facing` is squared up against the edge, so roughly
+        perpendicular is enough. `edge_radius_m` is how sharp: 0.0002 is a
+        working sword edge, 0.00005 a keen one. The grip defaults to the heel.
+        """
+        grip = heel_m if grip_m is None else grip_m
+        return self._check(
+            self._lib.banjo_make_blade(self._alive(), body.encode("utf-8"), _triple(heel_m),
+                                  _triple(tip_m), _triple(facing), float(thickness_m),
+                                  float(edge_radius_m), float(bevel_deg), _triple(grip)),
+            f"giving {body!r} an edge")
+
+    def blades(self) -> list[Blade]:
+        count = self._check(self._lib.banjo_blade_count(self._alive()), "counting blades")
+        if count <= 0:
+            return []
+        out = (_Blade * count)()
+        written = self._check(self._lib.banjo_blades(self._alive(), out, count),
+                              "reading blades")
+        return [Blade(id=int(b.id), body=(b.body or b"").decode("utf-8"),
+                      material=(b.material or b"").decode("utf-8"),
+                      heel_m=tuple(b.heel_m), tip_m=tuple(b.tip_m),
+                      facing=tuple(b.facing), flat=tuple(b.flat), grip_m=tuple(b.grip_m),
+                      thickness_m=b.thickness_m, edge_radius_m=b.edge_radius_m,
+                      bevel_deg=b.bevel_deg, cut_area_m2=b.cut_area_m2,
+                      cut_work_j=b.cut_work_j, cutting=(b.cutting or b"").decode("utf-8"),
+                      attached=bool(b.attached))
+                for b in out[:written]]
+
+    def cuts(self) -> list[Cut]:
+        """Every edge contact since `forget_cuts`, including those that cut nothing."""
+        count = self._check(self._lib.banjo_cut_count(self._alive()), "counting cuts")
+        if count <= 0:
+            return []
+        out = (_Cut * count)()
+        written = self._check(self._lib.banjo_cuts(self._alive(), out, count), "reading cuts")
+        return [Cut(blade=(c.blade or b"").decode("utf-8"),
+                    target=(c.target or b"").decode("utf-8"),
+                    kind=(c.kind or b"").decode("utf-8"), at_s=c.at_s,
+                    speed_m_s=c.speed_m_s, into_m_s=c.into_m_s, along_m_s=c.along_m_s,
+                    across_m_s=c.across_m_s, resistance_j_m2=c.resistance_j_m2,
+                    area_m2=c.area_m2, work_j=c.work_j, bonds=int(c.bonds),
+                    links=int(c.links), separated=bool(c.separated),
+                    pieces=int(c.pieces), open=bool(c.open))
+                for c in out[:written]]
+
+    def forget_cuts(self) -> None:
+        self._check(self._lib.banjo_forget_cuts(self._alive()), "forgetting cuts")
+
+    # -- the grip ---------------------------------------------------------
+    def wield(self, name: str, grip_m: Any) -> None:
+        """Take hold of a body at a point on it, with a bounded force and torque.
+
+        Not `grab`: `grab` carries a loose body exactly where it is put, which is
+        placement. A wielded body is pulled and turned towards where the hand
+        wants it -- `move_held` and `aim_held` -- with what the hand has, and
+        what it meets can slow it, turn it aside or stop it.
+        """
+        self._check(self._lib.banjo_wield(self._alive(), name.encode("utf-8"), _triple(grip_m)),
+                    f"taking hold of {name}")
+
+    def aim_held(self, orientation_wxyz: Any) -> None:
+        values = [float(v) for v in orientation_wxyz]
+        if len(values) != 4:
+            raise BanjoError("an orientation is four numbers, w first")
+        self._check(self._lib.banjo_aim_held(self._alive(), (ctypes.c_double * 4)(*values)),
+                    "turning the hand")
+
+    def hand_strength(self, newtons: float) -> None:
+        self._check(self._lib.banjo_hand_strength(self._alive(), float(newtons)),
+                    "setting the hand's strength")
+
+    def hand_torque(self, newton_metres: float) -> None:
+        self._check(self._lib.banjo_hand_torque(self._alive(), float(newton_metres)),
+                    "setting the hand's torque")
 
     # -- asking where things are ------------------------------------------
     def pick(self, from_m: Any, direction: Any, max_m: float = 0.0) -> Pick:

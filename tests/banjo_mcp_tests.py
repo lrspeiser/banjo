@@ -599,6 +599,69 @@ class TheTools(unittest.TestCase):
                  self.client.call("describe_world", world_id=world_id)["objects"]}
         self.assertNotIn("marble", names)
 
+    def test_an_edge_presses_through_oak_and_a_flat_does_not(self):
+        """The distinction the cutting model rests on, through the tools: the
+        same iron plate, the same hand, the same oak. Edge down, the hand's
+        800 N is more than the 300 N the 20 mm batten resists with, and it goes
+        through. Flat down, the same push is an ordinary contact and nothing is
+        cut. docs/cutting-model.md."""
+        def press(edge_down: bool):
+            size = [0.01, 0.10, 0.25] if edge_down else [0.10, 0.01, 0.25]
+            world_id = self.client.call("create_world", cell_size_m=0.01, objects=[
+                {"name": "batten", "shape": "box", "material": "oak",
+                 "size_m": [0.2, 0.02, 0.02], "position_m": [0, 0.01, 0]},
+                {"name": "plate", "shape": "box", "material": "iron",
+                 "size_m": size, "position_m": [0, 0.02 + size[1] / 2, 0]},
+            ])["world_id"]
+            if edge_down:
+                edge = {"heel_m": [0, 0.02, -0.1], "tip_m": [0, 0.02, 0.1],
+                        "facing": [0, -1, 0], "grip_m": [0, 0.12, 0]}
+            else:
+                # The same edge along the plate's side, facing sideways: what
+                # meets the oak is a flat.
+                edge = {"heel_m": [0.05, 0.025, -0.1], "tip_m": [0.05, 0.025, 0.1],
+                        "facing": [1, 0, 0], "grip_m": [0, 0.025, 0]}
+            made = self.client.call("blade", world_id=world_id, body="plate",
+                                    thickness_m=0.01, edge_radius_m=0.0002, bevel_deg=30.0,
+                                    **edge)
+            self.assertGreater(made["blade"], 0)
+            self.client.call("wield", world_id=world_id, name="plate")
+            grip = edge["grip_m"]
+            return self.client.call("swing", world_id=world_id,
+                                    to_m=[grip[0], grip[1] - 0.2, grip[2]],
+                                    seconds=1.0, then_s=0.5)
+
+        edge = press(True)
+        names = {o["name"] for o in edge["objects"]}
+        self.assertTrue({"batten piece 1", "batten piece 2"} <= names,
+                        f"an 800 N press on the edge did not cut through: {sorted(names)}")
+        cuts = edge["cuts"] if isinstance(edge["cuts"], list) else []
+        bit = [c for c in cuts if c["met"].startswith("batten") and "cut_mm2" in c]
+        self.assertTrue(bit and bit[0]["kind"] == "press",
+                        f"a slow push was not reported as a press: {cuts}")
+        self.assertTrue(any(c.get("came_apart") for c in bit), f"no cut says it separated: {bit}")
+        # 20 mm of oak at R = 15 kJ/m^2 is 6 J; separation comes when the last
+        # row of bonds goes, which is from three quarters of the section.
+        work = sum(c["work_j"] for c in bit)
+        self.assertGreater(work, 0.7 * 6.0, f"it came apart for only {work} J")
+        self.assertLess(work, 1.15 * 6.0, f"it cost {work} J, more than the section")
+
+        flat = press(False)
+        names = {o["name"] for o in flat["objects"]}
+        self.assertIn("batten", names, "the flat of the plate cut the batten")
+        cuts = flat["cuts"] if isinstance(flat["cuts"], list) else []
+        self.assertFalse([c for c in cuts if c.get("bonds_severed")],
+                         f"the flat severed bonds: {cuts}")
+
+    def test_an_edge_that_is_not_on_its_body_is_refused(self):
+        world_id = self.client.call("create_world", cell_size_m=0.01, objects=[
+            {"name": "plate", "shape": "box", "material": "iron",
+             "size_m": [0.01, 0.10, 0.25], "position_m": [0, 0.05, 0]}])["world_id"]
+        said = self.client.refuse("blade", world_id=world_id, body="plate",
+                                  heel_m=[0, 0.5, -0.1], tip_m=[0, 0.5, 0.1],
+                                  facing=[0, -1, 0])
+        self.assertGreater(len(said), 10, "refused without saying why")
+
     def test_a_world_can_be_closed_and_is_then_gone(self):
         world_id = self.pane_world()
         self.client.call("close_world", world_id=world_id)

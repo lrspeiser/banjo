@@ -14,7 +14,10 @@ tell you any other way:
 if (banjo_abi_version() != BANJO_ABI_VERSION) { /* mismatch */ }
 ```
 
-Current ABI: **12**.
+Current ABI: **13**. 13 added blades -- `banjo_make_blade`, `banjo_blades`,
+`banjo_cuts`, `banjo_forget_cuts` -- and the bounded hand that swings them,
+`banjo_wield`, `banjo_aim_held`, `banjo_hand_strength` and `banjo_hand_torque`.
+Nothing that was in 12 changed.
 
 ---
 
@@ -694,6 +697,98 @@ refuses. Returns `BANJO_BAD_ARGUMENT` with a reason if it cannot be picked up.
 
 Letting go hands it back to gravity **from rest** — it falls from where it was
 left rather than carrying the hand's speed.
+
+---
+
+## Blades
+
+A blade is an ordinary body with a declared **edge**. There is no cutting power
+and nothing is destroyed on touch: what resists an edge is the target's own
+fracture energy and hardness, applied in the solver, and the only way the world
+changes is that bonds between cells are severed, each for the work it cost. The
+model, and what it does not capture, is [../cutting-model.md](../cutting-model.md).
+
+### `int banjo_make_blade(banjo_world *world, const char *body, const double heel_m[3], const double tip_m[3], const double facing[3], double thickness_m, double edge_radius_m, double bevel_deg, const double grip_m[3])`
+
+Give a named body an edge. Everything is given where it is in the world now and
+kept in the body's own frame from then on. Both ends of the edge must lie on the
+body's matter; `facing` is squared up against the edge, so roughly
+perpendicular is enough. `edge_radius_m` is how sharp it is — 0.0002 is a
+working sword edge, 0.00005 a keen one — and `bevel_deg` the included angle of
+the edge. Returns the blade's id, above zero, or a negative status.
+
+(`make_blade` because C will not let a function and a struct share a name.)
+
+### `int banjo_blade_count(const banjo_world *world)`
+### `int banjo_blades(const banjo_world *world, banjo_blade *out, int max)`
+
+```c
+typedef struct {
+    unsigned id;
+    const char *body;
+    const char *material;
+    double heel_m[3], tip_m[3];   /* the edge, heel to tip, in the world now */
+    double facing[3], flat[3];    /* the way it faces; the normal to its flats */
+    double grip_m[3];
+    double thickness_m, edge_radius_m, bevel_deg;
+    double cut_area_m2;           /* everything it has cut */
+    double cut_work_j;            /* and the work that cost, as the solver applied it */
+    const char *cutting;          /* what the edge is in right now, "" for nothing */
+    int attached;                 /* 0 once the body carrying it has gone */
+} banjo_blade;
+```
+
+### `int banjo_cut_count(const banjo_world *world)`
+### `int banjo_cuts(const banjo_world *world, banjo_cut *out, int max)`
+### `int banjo_forget_cuts(banjo_world *world)`
+
+Every meeting between an edge and something else, from first touch until they
+part — **including the ones that cut nothing**, because "the flat hit it" is an
+answer a host has to be able to give. `banjo_forget_cuts` drops the ones that
+are over; open ones stay.
+
+```c
+typedef struct {
+    const char *blade, *target, *kind;
+    double at_s;
+    double speed_m_s, into_m_s, along_m_s, across_m_s;  /* in the blade's axes */
+    double resistance_j_m2;   /* R = G + H w for this edge in this material */
+    double area_m2, work_j;   /* what it cut, and what that cost */
+    int bonds;                /* severed */
+    int links;                /* rope links severed */
+    int separated, pieces;    /* the target came apart, into how many */
+    int open;                 /* still in contact */
+} banjo_cut;
+```
+
+`kind` is decided from geometry and motion, never from names: `edge`, `slice`
+and `press` bit (mostly into the material, mostly along the edge, or slowly);
+`glancing`, `flat` and `point` met it some other way and were ordinary
+contacts; `blunt` means the target is at least as hard as the blade; `brittle`
+that it has no yield point, and cracks under a blow rather than being cut.
+`work_j` is always `area_m2` times `resistance_j_m2`.
+
+### `int banjo_wield(banjo_world *world, const char *name, const double grip_m[3])`
+### `int banjo_aim_held(banjo_world *world, const double orientation_wxyz[4])`
+### `int banjo_hand_strength(banjo_world *world, double newtons)`
+### `int banjo_hand_torque(banjo_world *world, double newton_metres)`
+
+Take hold of a body the way a person holds a sword: at a point on it, with a
+hand whose force and torque are **bounded** — 800 N and 60 N m unless told
+otherwise. `banjo_move_held` then says where the grip should be and
+`banjo_aim_held` which way the body should face; the hand pulls and turns
+towards both with what it has, and what the body meets can slow it, turn it
+aside or stop it. This is not `banjo_grab`, which carries a loose body exactly
+where it is put — placement, an editor's move — and stays exactly that.
+
+```c
+double heel[3] = {0.29, 1.005, 1.885}, tip[3] = {-0.405, 1.005, 1.885};
+double facing[3] = {0, 0, -1}, grip[3] = {0.35, 1.005, 1.9};
+int id = banjo_make_blade(w, "sword", heel, tip, facing, 0.01, 0.0002, 30.0, grip);
+banjo_wield(w, "sword", grip);
+banjo_move_held(w, (double[3]){-0.9, 1.5, 1.9});   /* the hand pulls; the world answers */
+for (int i = 0; i < 240; ++i) banjo_step(w, 1.0 / 240.0);
+```
 
 ---
 

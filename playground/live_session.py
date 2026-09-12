@@ -48,6 +48,16 @@ class LiveError(ValueError):
     """Something the caller can fix: a bad scene, a body that cannot be moved."""
 
 
+def _three(value: Any, what: str) -> list[float]:
+    """Three finite numbers, or a refusal that says which were wrong."""
+    if not isinstance(value, list) or len(value) != 3:
+        raise LiveError(f"{what} needs three numbers")
+    out = [float(v) for v in value]
+    if not all(math.isfinite(v) for v in out):
+        raise LiveError(f"{what} was given something that is not a number")
+    return out
+
+
 class Session:
     """One open world."""
 
@@ -221,7 +231,46 @@ class Live:
                 session = Session(app.engine_path, spec, app.runs_path)
             self.session = session
         hung = self._hang(session, pins)
-        return {"session": session.id, "spec": spec, **session.state, **hung}
+        # And the edges, on bodies that are now standing there, for the same
+        # reason the pins go in afterwards. docs/cutting-model.md.
+        armed = self._arm(session, spec.get("blades") or [])
+        return {"session": session.id, "spec": spec, **session.state, **hung, **armed}
+
+    @staticmethod
+    def _arm(session: "Session", blades: Any) -> dict[str, Any]:
+        """Give every body the room says is a blade its edge.
+
+        An edge that will not go on is said out loud, like a pin that will not
+        hang: a sword that silently does not cut reads as the physics failing.
+        """
+        if not isinstance(blades, list):
+            raise LiveError("a room's blades must be a list")
+        problems: list[str] = []
+        state: dict[str, Any] = {}
+        for blade in blades:
+            if not isinstance(blade, dict):
+                problems.append("a blade that is not an object")
+                continue
+            try:
+                answer = session.send(
+                    op="blade", body=str(blade.get("body", "")),
+                    heel=[float(v) / 1000.0 for v in (blade.get("heel_mm") or [])],
+                    tip=[float(v) / 1000.0 for v in (blade.get("tip_mm") or [])],
+                    facing=[float(v) for v in (blade.get("facing") or [0, 0, 1])],
+                    thickness_m=float(blade.get("thickness_mm", 10.0)) / 1000.0,
+                    edge_radius_m=float(blade.get("edge_radius_mm", 0.2)) / 1000.0,
+                    bevel_deg=float(blade.get("bevel_deg", 30.0)),
+                    grip=[float(v) / 1000.0
+                          for v in (blade.get("grip_mm") or blade.get("heel_mm") or [])])
+            except Exception as error:
+                problems.append(f"{blade.get('body', '?')} would not take its edge: {error}")
+                continue
+            blade["id"] = answer.get("blade")
+            if answer.get("blades") is not None:
+                state["blades"] = answer["blades"]
+        if problems:
+            state["blade_problems"] = problems
+        return state
 
     @staticmethod
     def _hang(session: "Session", pins: Any) -> dict[str, Any]:
@@ -388,7 +437,54 @@ class Live:
                 if not all(math.isfinite(v) for v in spot):
                     raise LiveError("a step was given a hand that is not a number")
                 step["hand"] = spot
+            # Which way a wielded body should face. The engine turns it there
+            # with the torque the hand has, so this is a wish, not a pose.
+            turn = body.get("hand_q")
+            if turn is not None:
+                if not isinstance(turn, list) or len(turn) != 4:
+                    raise LiveError("a step's hand_q needs four numbers, w first")
+                q = [float(v) for v in turn]
+                if not all(math.isfinite(v) for v in q) or sum(v * v for v in q) < 1e-12:
+                    raise LiveError("a step was given a hand_q that is not an orientation")
+                step["hand_q"] = q
             return session.send(**step)
+        if op == "wield":
+            # A grip, with a bounded force and torque -- not a carry. Without a
+            # grip given, a body with an edge is held where its blade says.
+            command: dict[str, Any] = {"op": "wield", "name": str(body.get("name", ""))}
+            if body.get("grip") is not None:
+                command["grip"] = _three(body.get("grip"), "wield's grip")
+            return session.send(**command)
+        if op == "hand":
+            command = {"op": "hand"}
+            if body.get("strength_n") is not None:
+                strength = float(body.get("strength_n"))
+                if not 0.0 <= strength <= 1e5:
+                    raise LiveError("the hand's strength is newtons, 0 to 100,000")
+                command["strength_n"] = strength
+            if body.get("torque_n_m") is not None:
+                torque = float(body.get("torque_n_m"))
+                if not 0.0 <= torque <= 1e4:
+                    raise LiveError("the hand's torque is newton metres, 0 to 10,000")
+                command["torque_n_m"] = torque
+            return session.send(**command)
+        if op == "blade":
+            thickness = float(body.get("thickness_m", 0.01))
+            radius = float(body.get("edge_radius_m", 0.0002))
+            bevel = float(body.get("bevel_deg", 30.0))
+            if not 0.0005 <= thickness <= 0.5:
+                raise LiveError("a blade's thickness is 0.5 mm to half a metre")
+            if not 1e-6 <= radius <= 0.01:
+                raise LiveError("an edge radius is a micrometre to 10 mm")
+            if not 1.0 <= bevel <= 179.0:
+                raise LiveError("a bevel is an angle between 1 and 179 degrees")
+            heel = _three(body.get("heel"), "a blade's heel")
+            return session.send(op="blade", body=str(body.get("body", "")), heel=heel,
+                                tip=_three(body.get("tip"), "a blade's tip"),
+                                facing=_three(body.get("facing"), "a blade's facing"),
+                                thickness_m=thickness, edge_radius_m=radius,
+                                bevel_deg=bevel,
+                                grip=_three(body.get("grip") or heel, "a blade's grip"))
         if op == "grab":
             return session.send(op="grab", name=str(body.get("name", "")))
         if op == "move":
@@ -413,7 +509,7 @@ class Live:
             if not 0.0 <= horizon <= 10.0:
                 raise LiveError("foresee needs a horizon between 0 and 10 seconds")
             return session.send(op="foresee", horizon_s=horizon)
-        if op in ("release", "poses", "joints", "overloaded"):
+        if op in ("release", "poses", "joints", "overloaded", "blades", "cuts"):
             return session.send(op=op)
         if op == "hinge":
             # Hang one named thing off another on a pin. Everything is checked

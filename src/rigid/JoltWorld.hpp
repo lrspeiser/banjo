@@ -150,6 +150,12 @@ public:
     // caller that wants a sustained push applies it every step -- which is what
     // a hand holding something does.
     void pushBody(MatterBodyId body_id, const Vec3 &force_n);
+    // The same push delivered AT a point on the body rather than at its centre
+    // of mass, so it turns the body as well as moving it -- a hand on the grip
+    // of a sword swings the blade, it does not slide it. Cleared by the step.
+    void pushBodyAt(MatterBodyId body_id, const Vec3 &force_n, const Vec3 &point_world_m);
+    // A torque for one step, in newton metres. Cleared by the step.
+    void twistBody(MatterBodyId body_id, const Vec3 &torque_n_m);
     void addBall(const RigidBallDescription &description);
     void addBox(const RigidBoxDescription &description);
     // Bounded compound collision proxy with independent matter-derived inertia.
@@ -417,8 +423,57 @@ public:
     [[nodiscard]] double jointTension(unsigned joint) const;
 
     enum class JointKind : std::uint8_t {
-        Hinge = 0, Slider = 1, Link = 2, Pulley = 3, Fixing = 4, Elastic = 5
+        Hinge = 0, Slider = 1, Link = 2, Pulley = 3, Fixing = 4, Elastic = 5,
+        // An edge in a cut. Not a joint anybody builds: the cutting model
+        // makes one while an edge is engaged and takes it away when it is
+        // not. See docs/cutting-model.md and KerfDescription below.
+        Kerf = 6
     };
+
+    // An edge engaged in matter, as the solver sees it.
+    //
+    // Everything the cutting model needs the solver to do is friction and
+    // locking, so it is one six-degree-of-freedom constraint between the blade
+    // and the thing it is cutting, in the BLADE's own axes:
+    //
+    //   along the facing    free, with a friction limit: the edge does not
+    //                       advance until it is pushed harder than the
+    //                       material resists, and then the material takes
+    //                       exactly the limit. That is the cut's resistance.
+    //   along the edge      free, with its own limit: what a slice costs.
+    //   across the flats    locked while `embedded` -- the kerf walls.
+    //   twist about the facing or the edge
+    //                       locked while `embedded`, for the same reason.
+    //   turning in the blade's own plane
+    //                       always free, which is how an edge follows a swing.
+    //
+    // Made fresh every step by the cutting model and read back after it: the
+    // friction impulses are the work the cut took, which is the whole of the
+    // energy account.
+    struct KerfDescription {
+        MatterBodyId blade{kInvalidMatterBodyId};
+        MatterBodyId target{kInvalidMatterBodyId};
+        Vec3 point_world_m{};
+        Vec3 facing_world{};   // the way the edge faces
+        Vec3 flat_world{};     // normal to the blade's flats
+        bool embedded{};
+        double resist_facing_n{};
+        double resist_along_n{};
+    };
+    [[nodiscard]] unsigned addKerf(const KerfDescription &description);
+    // Change what an engaged edge's constraint resists with, and keep it -- and
+    // with it the impulse it has built up, which the solver carries into the
+    // next step. That carried impulse is what lets a heavy blade pressed into a
+    // light plank lying on the floor actually be held.
+    void updateKerf(unsigned joint, double resist_facing_n, double resist_along_n);
+    // The friction impulses the last step applied, in newton seconds, along
+    // the facing and along the edge. Signed as Jolt applies them to the blade's
+    // constraint axes; the cutting model uses their size.
+    struct KerfImpulse {
+        double facing_n_s{};
+        double along_n_s{};
+    };
+    [[nodiscard]] KerfImpulse kerfImpulse(unsigned joint) const;
 
     // Everything about a joint that a caller can see from outside.
     struct JointReport {

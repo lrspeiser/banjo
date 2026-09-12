@@ -759,6 +759,162 @@ def tool_hinge_friction(args: dict[str, Any]) -> dict[str, Any]:
     return {"joint": joint, "friction": friction}
 
 
+def _cut_said(cut: banjo.Cut) -> dict[str, Any]:
+    """One meeting between an edge and something, in words a model can use."""
+    said: dict[str, Any] = {
+        "blade": cut.blade, "met": cut.target, "kind": cut.kind,
+        "at_s": round(cut.at_s, 3),
+        "speed_m_s": round(cut.speed_m_s, 2),
+        "into_m_s": round(cut.into_m_s, 2),
+        "along_edge_m_s": round(cut.along_m_s, 2),
+        "across_flats_m_s": round(cut.across_m_s, 2),
+        "still_touching": cut.open}
+    if cut.kind in ("edge", "slice", "press", "glancing") and cut.resistance_j_m2 > 0.0:
+        said.update({
+            "resistance_j_m2": round(cut.resistance_j_m2, 1),
+            "cut_mm2": round(cut.area_m2 * 1e6, 1),
+            "work_j": round(cut.work_j, 3),
+            "bonds_severed": cut.bonds,
+            "rope_links_cut": cut.links,
+            "came_apart": cut.separated,
+            "pieces": cut.pieces})
+    return said
+
+
+def _blade_said(blade: banjo.Blade) -> dict[str, Any]:
+    return {"blade": blade.id, "body": blade.body, "material": blade.material,
+            "heel_m": [round(v, 4) for v in blade.heel_m],
+            "tip_m": [round(v, 4) for v in blade.tip_m],
+            "facing": [round(v, 4) for v in blade.facing],
+            "grip_m": [round(v, 4) for v in blade.grip_m],
+            "thickness_mm": round(blade.thickness_m * 1000.0, 2),
+            "edge_radius_mm": round(blade.edge_radius_m * 1000.0, 4),
+            "bevel_deg": round(blade.bevel_deg, 1),
+            "cut_mm2": round(blade.cut_area_m2 * 1e6, 1),
+            "cut_work_j": round(blade.cut_work_j, 3),
+            "cutting": blade.cutting or None,
+            "attached": blade.attached}
+
+
+def tool_blade(args: dict[str, Any]) -> dict[str, Any]:
+    """Give a body an edge. docs/cutting-model.md is the declared model."""
+    world: banjo.World = _world(args.get("world_id"))["world"]
+    heel = _triple(args.get("heel_m"), "heel_m", -200.0, 200.0)
+    try:
+        blade = world.blade(
+            str(args.get("body", "")), heel,
+            _triple(args.get("tip_m"), "tip_m", -200.0, 200.0),
+            _triple(args.get("facing"), "facing", -1e6, 1e6),
+            _number(args.get("thickness_m", 0.01), "thickness_m", 0.0005, 0.5),
+            _number(args.get("edge_radius_m", 0.0002), "edge_radius_m", 1e-6, 0.01),
+            _number(args.get("bevel_deg", 30.0), "bevel_deg", 1.0, 179.0),
+            _triple(args.get("grip_m") or heel, "grip_m", -200.0, 200.0))
+    except banjo.BanjoError as error:
+        raise Refused(str(error))
+    return {"blade": blade,
+            "note": f"{args.get('body')} has an edge. It cuts what it bites into with "
+                    "the edge leading and pressed in, at a cost per square metre set by "
+                    "the target's own material; its flat and its point are ordinary "
+                    "contacts. Take hold of it with `wield` and move it with `swing`."}
+
+
+def tool_blades(args: dict[str, Any]) -> dict[str, Any]:
+    world: banjo.World = _world(args.get("world_id"))["world"]
+    blades = world.blades()
+    return {"blades": [_blade_said(blade) for blade in blades],
+            "note": "no body in this world has an edge" if not blades else
+                    "cut_work_j is measured from the solver's own friction impulses; "
+                    "cut_mm2 is the area that bought at each material's resistance"}
+
+
+def tool_cuts(args: dict[str, Any]) -> dict[str, Any]:
+    world: banjo.World = _world(args.get("world_id"))["world"]
+    cuts = world.cuts()
+    return {"cuts": [_cut_said(cut) for cut in cuts],
+            "note": "nothing has met an edge" if not cuts else
+                    "every meeting is listed, including the ones that cut nothing and why"}
+
+
+def tool_wield(args: dict[str, Any]) -> dict[str, Any]:
+    """Take hold of a body the way a person holds a sword."""
+    entry = _world(args.get("world_id"))
+    world: banjo.World = entry["world"]
+    name = str(args.get("name", ""))
+    grip = args.get("grip_m")
+    if grip is None:
+        blade = next((b for b in world.blades() if b.body == name and b.attached), None)
+        if blade is None:
+            raise Refused(f"give grip_m, or give {name!r} an edge with `blade` first -- a "
+                          f"blade knows where it is held")
+        grip = list(blade.grip_m)
+    grip = _triple(grip, "grip_m", -200.0, 200.0)
+    try:
+        world.wield(name, grip)
+    except banjo.BanjoError as error:
+        raise Refused(str(error))
+    entry["story"].append(f"took hold of {name}")
+    return {"wielding": name, "grip_m": [round(v, 4) for v in grip],
+            "note": "held at the grip by a hand with a bounded force (800 N) and a "
+                    "bounded torque (60 N m). Move it with `swing`: the hand pulls "
+                    "towards where it is sent and what the blade meets can slow it, "
+                    "turn it aside or stop it. `let_go` lets go."}
+
+
+def _step_answering(world: banjo.World, events: list[dict[str, Any]]) -> None:
+    """One step, settling anything that breaks on the way -- as `run` does."""
+    if world.step(1.0 / 240.0) != banjo.BREAK_PENDING:
+        return
+    for name in world.breakable():
+        pieces = world.fracture(name)
+        if world.last_outcome == "broke":
+            events.append({"what": "broke", "object": name, "into_pieces": pieces})
+
+
+def tool_swing(args: dict[str, Any]) -> dict[str, Any]:
+    """Move the hand along a straight line, turning if asked, and report the cuts."""
+    import time as clock
+    entry = _world(args.get("world_id"))
+    world: banjo.World = entry["world"]
+    held = world.held
+    if not held:
+        raise Refused("nothing is held. Call wield first.")
+    to = _triple(args.get("to_m"), "to_m", -50.0, 50.0)
+    seconds = _number(args.get("seconds", 0.25), "seconds", 0.02, 5.0)
+    settle = _number(args.get("then_s", 1.0), "then_s", 0.0, 5.0)
+    facing = args.get("facing_wxyz")
+    if facing is not None:
+        if not isinstance(facing, (list, tuple)) or len(facing) != 4:
+            raise Refused("facing_wxyz must be a quaternion of four numbers, w first")
+        world.aim_held([_number(v, "facing_wxyz", -1.0, 1.0) for v in facing])
+    blade = next((b for b in world.blades() if b.body == held and b.attached), None)
+    body = world.body(held)
+    start = list(blade.grip_m) if blade else list(body.position_m if body else to)
+    world.forget_cuts()
+    events: list[dict[str, Any]] = []
+    began = clock.perf_counter()
+    steps = max(1, int(round(seconds * 240.0)))
+    for i in range(1, steps + 1):
+        part = i / steps
+        world.move_held([start[k] + part * (to[k] - start[k]) for k in range(3)])
+        _step_answering(world, events)
+    for _ in range(int(round(settle * 240.0))):
+        if clock.perf_counter() - began > MAX_WALL_S:
+            break
+        _step_answering(world, events)
+    cuts = world.cuts()
+    cut_through = [c for c in cuts if c.separated or c.links > 0]
+    entry["story"].append(
+        f"swung {held} to [{to[0]:.2f}, {to[1]:.2f}, {to[2]:.2f}]"
+        + (": cut through " + ", ".join(sorted({c.target for c in cut_through}))
+           if cut_through else ""))
+    return {"swung": held, "to_m": to, "over_s": round(seconds, 3),
+            "cuts": [_cut_said(cut) for cut in cuts] or
+                    "the edge met nothing on the way",
+            "what_broke": events or None,
+            "objects": _describe(world),
+            "computing_took_s": round(clock.perf_counter() - began, 2)}
+
+
 def tool_close_world(args: dict[str, Any]) -> dict[str, Any]:
     world_id = str(args.get("world_id"))
     entry = _world(world_id)
@@ -1097,6 +1253,75 @@ TOOLS = [
                      "properties": {
          "world_id": {"type": "string"}, "from_m": VECTOR, "direction": VECTOR,
          "max_m": {"type": "number"}}}},
+    {"name": "blade",
+     "description": "Give a body an EDGE, so it cuts. There is no cutting power: what "
+                    "resists the edge is the target's own fracture energy and hardness, "
+                    "R = G + H x (2 x edge radius) per square metre, applied in the "
+                    "solver as friction. So an edge cuts only where it bites -- edge "
+                    "leading, steeper than its own bevel, pressed in -- and only as far "
+                    "as the push or the swing can pay for. A partial cut stays partial; "
+                    "a cut through makes pieces with their own mass and momentum that "
+                    "keep whatever joints they hold. The flat and the point are ordinary "
+                    "contacts. Glass, ceramic, ice and concrete are brittle and are not "
+                    "cut, and nothing as hard as the blade is. Ropes that can be cut are "
+                    "runs of small bodies tied with `tie`.",
+     "inputSchema": {"type": "object",
+                     "required": ["world_id", "body", "heel_m", "tip_m", "facing"],
+                     "properties": {
+         "world_id": {"type": "string"},
+         "body": {"type": "string", "description": "The body that carries the edge."},
+         "heel_m": dict(VECTOR, description="Where the edge starts, on the body's surface."),
+         "tip_m": dict(VECTOR, description="Where it ends: the point."),
+         "facing": dict(VECTOR, description="Which way the edge faces, out of the body, "
+                                            "roughly perpendicular to the edge."),
+         "thickness_m": {"type": "number", "description": "Across the flats."},
+         "edge_radius_m": {"type": "number",
+                           "description": "How sharp: 0.0002 is a working sword edge, "
+                                          "0.00005 a keen one, 0.001 blunt."},
+         "bevel_deg": {"type": "number", "description": "Included angle of the edge, "
+                                                        "30 by default."},
+         "grip_m": dict(VECTOR, description="Where a hand holds it.")}}},
+    {"name": "blades",
+     "description": "Every edge in the world: where it is, how sharp, what it has cut "
+                    "and what that cost, and what it is in right now.",
+     "inputSchema": {"type": "object", "required": ["world_id"],
+                     "properties": {"world_id": {"type": "string"}}}},
+    {"name": "cuts",
+     "description": "Every meeting between an edge and something since the last swing, "
+                    "INCLUDING the ones that cut nothing, with what kind each was: "
+                    "edge, slice or press (it bit), glancing, flat or point (an "
+                    "ordinary contact), blunt (the target is as hard as the blade) or "
+                    "brittle (it cracks instead).",
+     "inputSchema": {"type": "object", "required": ["world_id"],
+                     "properties": {"world_id": {"type": "string"}}}},
+    {"name": "wield",
+     "description": "Take hold of a body the way a person holds a sword: at its grip, "
+                    "with a hand whose force (800 N) and torque (60 N m) are bounded, so "
+                    "what it meets can slow it or stop it. Not `pick_up`, which carries "
+                    "a loose thing exactly where it is put. grip_m defaults to the "
+                    "blade's grip.",
+     "inputSchema": {"type": "object", "required": ["world_id", "name"],
+                     "properties": {"world_id": {"type": "string"},
+                                    "name": {"type": "string"},
+                                    "grip_m": VECTOR}}},
+    {"name": "swing",
+     "description": "Move the wielded thing's grip along a straight line to `to_m` over "
+                    "`seconds`, turning it to `facing_wxyz` if given, then let the world "
+                    "run `then_s` more. Report every edge contact on the way. The hand "
+                    "pulls with what it has, so a fast swing is a short `seconds` and "
+                    "a slow press is a long one.",
+     "inputSchema": {"type": "object", "required": ["world_id", "to_m"],
+                     "properties": {
+         "world_id": {"type": "string"},
+         "to_m": dict(VECTOR, description="Where the grip should end up."),
+         "seconds": {"type": "number", "description": "How long the hand takes. 0.25 "
+                                                      "by default."},
+         "then_s": {"type": "number", "description": "How long to let things settle "
+                                                     "after. 1 by default."},
+         "facing_wxyz": {"type": "array", "items": {"type": "number"},
+                         "minItems": 4, "maxItems": 4,
+                         "description": "Which way the held body should face, as a "
+                                        "quaternion, w first."}}}},
     {"name": "close_world",
      "description": "Close a world and free it. Each open world is a physics engine "
                     "with its scene resident in it.",
@@ -1128,6 +1353,11 @@ HANDLERS = {
     "hinge_friction": tool_hinge_friction,
     "unhinge": tool_unhinge,
     "cast_ray": tool_cast_ray,
+    "blade": tool_blade,
+    "blades": tool_blades,
+    "cuts": tool_cuts,
+    "wield": tool_wield,
+    "swing": tool_swing,
     "close_world": tool_close_world,
 }
 

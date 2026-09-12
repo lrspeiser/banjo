@@ -60,6 +60,11 @@ broke.
 | `collect` | sweep up the loose pieces near a point and say what they were made of, by material and by weight |
 | `carried` | what has been swept up in this world so far |
 | `cast_ray` | what a ray meets first — what is above or below something, what is in the way |
+| `blade` | give a body an **edge**: where it runs, which way it faces, how thick, how sharp (a radius) and its bevel, and where it is held. There is no cutting power: what resists the edge is the target's own fracture energy and hardness. [docs/cutting-model.md](../cutting-model.md) |
+| `blades` | every edge, what it has cut and what that cost |
+| `wield` | take hold of a body by its grip with a hand whose force (800 N) and torque (60 N m) are bounded — not `pick_up`, which places a thing exactly |
+| `swing` | move the wielded thing's grip along a line over a time, turning it if asked, and report every edge contact on the way: edge, slice or press (it bit), glancing, flat or point (an ordinary contact), blunt or brittle (it could not) |
+| `cuts` | every edge contact since the last swing, including the ones that cut nothing and why |
 | `close_world` | free it |
 
 `run` holds the **break conversation** itself. That is the part of this engine a
