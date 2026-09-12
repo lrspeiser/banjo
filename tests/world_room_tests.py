@@ -255,6 +255,197 @@ class TheCourtyard(unittest.TestCase):
             self.assertGreater(joint["at_mm"][1], joint["to_mm"][1],
                                f"{joint['b']} is tied to something below it")
 
+    def test_the_courtyard_carries_a_bow_made_of_ordinary_joints(self):
+        """A bow, and not one thing in it is a bow.
+
+        Two hinges, two elastics, two links and a fixing -- every one of them a
+        mechanism this room already had. What is checked here is the GEOMETRY,
+        because three of the four ways this fell over were geometry and none of
+        them looked like geometry from the outside.
+        """
+        spec = fracture_lab.validate(world_room.courtyard())
+        bodies = {b["name"]: b for b in spec["bodies"]}
+        for wanted in ("bow grip upper", "bow grip lower", "upper limb tip",
+                       "lower limb tip", "bowstring", "arrow", "spare arrow"):
+            self.assertIn(wanted, bodies, f"the bow has no {wanted}")
+
+        def joints_between(kind, a_part, b_part):
+            return [j for j in spec["joints"] if j["kind"] == kind
+                    and a_part in j["a"] and b_part in j["b"]]
+
+        roots = joints_between("hinge", "bow grip", "limb tip")
+        limbs = joints_between("elastic", "bow grip", "limb tip")
+        string = joints_between("link", "limb tip", "bowstring")
+        nock = joints_between("fixing", "bowstring", "arrow")
+        self.assertEqual(len(roots), 2, "a limb that is not pinned swings on a "
+                                        "sphere and stores nothing")
+        self.assertEqual(len(limbs), 2, "the bow has no limbs to store anything in")
+        self.assertEqual(len(string), 2, "a string is two ropes, one to each tip")
+        self.assertEqual(len(nock), 1, "nothing holds the arrow to the string")
+
+        # THE TIPS ARE LEVEL WITH THE STRING. Set them forward and the braced
+        # string is a V whose two rope tensions no longer cancel: their
+        # resultant shoves the nocking point at the bow, the arrow's weight
+        # turns the whole assembly over, and the bow has fallen down before
+        # anybody touches it. On the line the two tensions are equal and
+        # opposite, which is what braced means.
+        string_x = bodies["bowstring"]["center_mm"][0]
+        for tip in ("upper limb tip", "lower limb tip"):
+            self.assertAlmostEqual(
+                bodies[tip]["center_mm"][0], string_x, places=3,
+                msg=f"{tip} is not level with the string, so brace is not an "
+                    f"equilibrium and the bow falls over on its own")
+
+        # The limb's spring is anchored FORWARD of its pin, or drawing the
+        # string back shortens it instead of lengthening it and the bow pushes
+        # the arrow the wrong way.
+        for limb, root in zip(sorted(limbs, key=lambda j: j["a"]),
+                              sorted(roots, key=lambda j: j["a"])):
+            self.assertGreater(limb["at_mm"][0], root["at_mm"][0] + 100,
+                               f"the spring on {limb['b']} is anchored at its own "
+                               f"pin, which is a lever arm of nothing")
+            # And not collinear with the pin and the nocking point, which is the
+            # other lever arm of nothing: the string then pulls straight through
+            # the pivot and puts no torque on the limb at all.
+            pin = root["at_mm"]
+            tip = limb["to_mm"]
+            nocked = [string_x, bodies["bowstring"]["center_mm"][1], tip[2]]
+            cross = ((tip[0] - pin[0]) * (nocked[1] - pin[1]) -
+                     (tip[1] - pin[1]) * (nocked[0] - pin[0]))
+            self.assertGreater(abs(cross), 1000.0,
+                               f"the pin, {limb['b']} and the nocking point are in "
+                               f"a line, so the string exerts no torque on the limb")
+
+        # The shaft clears the grip it runs through, above and below. A shaft
+        # rubbing the grip is a shaft being drawn against friction: measured
+        # with 40 mm of window the bow reached 50 mm of draw before it jammed.
+        shaft = bodies["arrow"]
+        top = shaft["center_mm"][1] + shaft["size_mm"][1] / 2
+        for block, side in (("bow grip upper", 1), ("bow grip lower", -1)):
+            face = (bodies[block]["center_mm"][1]
+                    - side * bodies[block]["size_mm"][1] / 2)
+            self.assertGreaterEqual(
+                side * (face - (top if side > 0 else top - shaft["size_mm"][1])),
+                0.0, f"the shaft runs through {block} rather than past it")
+
+    @unittest.skipIf(ENGINE is None, "no live engine built")
+    def test_drawing_the_bow_stores_work_and_loosing_spends_it(self):
+        """The claim, end to end, through the same pipe the browser uses.
+
+        There is no arrow speed anywhere in this room. What the arrow leaves
+        with is what the limbs were holding, less what the string and the tips
+        keep -- so a longer draw has to be a faster arrow, and nothing else
+        could make it one.
+        """
+        live = live_session.Live()
+
+        class App:
+            engine_path = ENGINE
+            runs_path = ROOT / "build/playground-runs"
+            live_inprocess = False
+
+        def step(session, **rest):
+            # ANSWERING the handshake. A step that would break something is
+            # taken back and the clock stops until the host says what to do --
+            # so a test that only steps freezes the world at the first contact
+            # and reads as a bow that jams halfway through its draw.
+            state = session.send(op="step", dt=1 / 240.0, n=1, moved=True, **rest)
+            for coming in state.get("breakable") or []:
+                session.send(op="fracture", name=coming, wait=False)
+            return state
+
+        def body(session, name):
+            return next(b for b in session.state["bodies"] if b["name"] == name)
+
+        def stored(session):
+            return sum(j["stored_j"] for j in session.send(op="joints")["joints"]
+                       if j["kind"] == "elastic")
+
+        def shoot(draw_m):
+            opened = live.open(App(), {"spec": world_room.courtyard()})
+            self.assertNotIn("joint_problems", opened,
+                             f"the bow would not build: {opened.get('joint_problems')}")
+            session = live.session
+            nock = next(j for j in session.send(op="joints")["joints"]
+                        if j["kind"] == "fixing" and j["b"] == "arrow")
+            for _ in range(240):
+                step(session)
+            braced = body(session, "bowstring")["position_m"]
+            self.assertAlmostEqual(
+                braced[0], -1.76, places=2,
+                msg=f"the bow did not stay braced with nobody touching it: the "
+                    f"string is at {braced}")
+            self.assertLess(stored(session), 0.05,
+                            "a bow at brace is already holding energy")
+
+            session.send(op="grab", name="bowstring")
+            steps = int(draw_m / 0.002)
+            for i in range(1, steps + 1):
+                step(session, hand=[braced[0] - draw_m * i / steps,
+                                    braced[1], braced[2]])
+            # And HOLD at full draw. The hand pulls with a bounded force, so
+            # reaching full draw takes as long as it takes; without the hold a
+            # short draw simply runs out of steps before the force has finished
+            # working, and stores less for having been given fewer of them.
+            for _ in range(300):
+                step(session)
+            held = stored(session)
+            drawn = braced[0] - body(session, "bowstring")["position_m"][0]
+
+            session.send(op="release")
+            # The arrow leaves when the limbs STOP PUSHING, and that is read
+            # off the string's own acceleration rather than off any distance.
+            #
+            # Not "when the string gets back to brace", and not "when it stops":
+            # traced step by step, a 290 mm draw runs the string home to
+            # +5.25 m/s and then the ropes go taut 55 mm SHORT of brace, because
+            # the limb tips have not finished coming back. That stop takes ONE
+            # step, and a rule that waits to see it has already missed: at the
+            # step after, the nock -- which is a rigid weld until it is let go
+            # -- has hauled the arrow backwards at 2.13 m/s. Its acceleration,
+            # though, falls to nothing several steps before that, because the
+            # limbs are spent. That is the moment, and it is the same moment on
+            # a real bow.
+            away, fastest, best = False, 0.0, -99.0
+            went, gaining_best = 0.0, 0.0
+            for _ in range(600):
+                going = body(session, "bowstring")["velocity_m_s"][0]
+                gaining = going - went
+                gaining_best = max(gaining_best, gaining)
+                went = going
+                if not away and going > 0.5 and gaining < 0.15 * gaining_best:
+                    session.send(op="unhinge", joint=nock["id"])
+                    away = True
+                step(session)
+                if away:
+                    fastest = max(fastest,
+                                  body(session, "arrow")["velocity_m_s"][0])
+                best = max(best, body(session, "arrow")["position_m"][0])
+            self.assertTrue(away, "the string never came back to brace, so the "
+                                  "arrow was never loosed at all")
+            return drawn, held, fastest, best
+
+        try:
+            short = shoot(0.15)
+            long = shoot(0.30)
+        finally:
+            live.shutdown()
+
+        print(f"\n    drawn {short[0] * 1000:.0f} mm: {short[1]:.1f} J, away at "
+              f"{short[2]:.2f} m/s, reached x={short[3]:.2f}")
+        print(f"    drawn {long[0] * 1000:.0f} mm: {long[1]:.1f} J, away at "
+              f"{long[2]:.2f} m/s, reached x={long[3]:.2f}")
+
+        self.assertGreater(short[1], 0.2, "a 150 mm draw stored nothing at all")
+        self.assertGreater(long[1], 2.5 * short[1],
+                           "doubling the draw barely changed the energy, so the "
+                           "limbs are not what is storing it")
+        self.assertGreater(long[2], short[2],
+                           "the longer draw did not throw the arrow faster, so "
+                           "the shot is not coming from the limbs")
+        self.assertGreater(long[3], -1.0,
+                           "the arrow went nowhere: it starts at x = -1.4")
+
     def test_the_winch_cannot_lift_the_portcullis_on_its_own(self):
         """A hoist nobody has to operate is not a hoist.
 
