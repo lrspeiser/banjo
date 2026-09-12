@@ -96,7 +96,34 @@ html, body {
 .turn.you { border-left-color: var(--z); }
 .turn.world { border-left-color: var(--y); }
 .turn.bad { border-left-color: var(--x); }
-.turn.thinking { opacity: .6; }
+/* Waiting on the model.
+ *
+ * It was a line of static text reading "Thinking...", and the model takes the
+ * better part of half a minute when it looks around the room before answering.
+ * Nothing moved for twenty-six seconds, which reads as a page that has hung
+ * rather than one that is working. */
+.turn.thinking { opacity: .75; }
+.turn.thinking .who { color: var(--y); }
+.dots { display: inline-flex; gap: 4px; vertical-align: middle; margin-left: 2px; }
+.dots i {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--y); opacity: .25;
+  animation: pulse 1.25s infinite ease-in-out;
+}
+.dots i:nth-child(2) { animation-delay: .18s; }
+.dots i:nth-child(3) { animation-delay: .36s; }
+@keyframes pulse {
+  0%, 70%, 100% { opacity: .22; transform: translateY(0); }
+  35%           { opacity: 1;   transform: translateY(-3px); }
+}
+/* Somebody who does not want movement gets the text and no bouncing. */
+@media (prefers-reduced-motion: reduce) {
+  .dots i { animation: none; opacity: .6; }
+}
+/* How long it has been. A wait with a number on it is a wait; a wait with
+ * nothing on it is a hang. */
+.turn.thinking .waited { margin-left: 8px; font-size: 11px; color: var(--dim);
+                         font-variant-numeric: tabular-nums; }
 .turn .did { margin: 4px 0 0; font-size: 12px; color: var(--dim); }
 .turn .did code { color: var(--warm); font-size: 11px; }
 

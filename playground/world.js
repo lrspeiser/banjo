@@ -1042,15 +1042,51 @@ function say(who, text, did) {
   return turn;
 }
 
+// The room is working on it, and looks like it.
+//
+// The model takes anywhere from a couple of seconds to half a minute -- it
+// reads the room before it answers, and that is a round trip of its own. A
+// static line saying "Thinking..." for twenty-six seconds is indistinguishable
+// from a page that has stopped, so this moves, and past a few seconds it starts
+// saying how long it has been.
+function waitingFor(what) {
+  const turn = document.createElement("div");
+  turn.className = "turn world thinking";
+  const label = document.createElement("span");
+  label.className = "who";
+  label.textContent = "The room";
+  const body = document.createElement("p");
+  body.append(document.createTextNode(what));
+  const dots = document.createElement("span");
+  dots.className = "dots";
+  dots.append(document.createElement("i"), document.createElement("i"),
+              document.createElement("i"));
+  const waited = document.createElement("span");
+  waited.className = "waited";
+  body.append(dots, waited);
+  turn.append(label, body);
+  $("chat").append(turn);
+  $("chat").scrollTop = $("chat").scrollHeight;
+
+  const began = performance.now();
+  const tick = setInterval(() => {
+    const s = (performance.now() - began) / 1000;
+    // Nothing for the first few seconds: a number that appears instantly makes
+    // a fast answer look slow.
+    waited.textContent = s >= 3 ? `${s.toFixed(0)} s` : "";
+  }, 250);
+  return { turn, done() { clearInterval(tick); turn.remove(); } };
+}
+
 $("ask").addEventListener("submit", async (e) => {
   e.preventDefault();
   const input = $("ask-text");
   const text = input.value.trim();
   if (!text || !world.session) return;
   input.value = "";
+  // What was asked, said back straight away, before anything is waited on.
   say("you", text);
-  const waiting = say("world", "Thinking…");
-  waiting.classList.add("thinking");
+  const waiting = waitingFor("Reading the room and thinking it over");
   $("ask-send").disabled = true;
   try {
     const answer = await api("/api/world/ask", {
@@ -1060,7 +1096,7 @@ $("ask").addEventListener("submit", async (e) => {
       // cannot see has to be told what has happened in it.
       story: world.story.slice(-24),
     });
-    waiting.remove();
+    waiting.done();
     say("world", answer.reply || "(nothing to say)", answer.did);
     if (answer.reopened) {
       world.session = answer.session;
@@ -1075,7 +1111,7 @@ $("ask").addEventListener("submit", async (e) => {
       remember("the room was rebuilt: " + (answer.did || []).join(", "));
     }
   } catch (error) {
-    waiting.remove();
+    waiting.done();
     say("bad", String(error.message || error));
   } finally { $("ask-send").disabled = false; input.focus(); }
 });
