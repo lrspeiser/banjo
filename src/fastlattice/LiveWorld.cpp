@@ -17,6 +17,7 @@
 #include <future>
 #include <map>
 #include <set>
+#include <unordered_set>
 #include <unordered_map>
 
 namespace banjo::fastlattice {
@@ -79,6 +80,24 @@ struct LiveWorld::Pending {
     double yield_extension{};
     // Set when this run was started before the collision happened, so it can be
     // checked against the collision that actually turned up.
+    // The cells of the bodies that were ADMITTED for breaking at this contact.
+    //
+    // An island has to contain whatever struck the thing being broken -- a body
+    // entered alone is a free-flying object with no stress in it and cannot
+    // break however hard it was hit. But the striker is then in a lattice run
+    // that is not about it, and its own bonds can fail there: measured, an iron
+    // ball hit a glass plate at 11.5 m/s against its own breaking threshold of
+    // 25.03 m/s, with every contact reporting would_break false, and came out
+    // of the plate's run as twenty-nine pieces.
+    //
+    // A threshold is "the speed below which nothing CAN happen". A body that
+    // never cleared its own is not allowed to come apart in somebody else's
+    // island, so its cells are recorded here and its bonds are put back before
+    // the pieces are counted.
+    //
+    // Kept as cells rather than body numbers because cells are not renumbered
+    // by anything, and the body table is.
+    std::unordered_set<std::uint32_t> may_break;
     bool guessed{};
     std::string guessed_striker;
     double guessed_speed{};
@@ -1526,6 +1545,18 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
     job.snap = snap;
     job.struck_material = struck_material;
     job.yield_extension = settings.plastic_yield_stretch * impl_->request.cell_size_m;
+    // Who is allowed to come apart in this run. The body asked about, always;
+    // anything else in the island only if this contact cleared its own bar.
+    for (const std::size_t body : job.island_bodies) {
+        bool admitted = body == which;
+        if (!admitted)
+            for (const LiveImpact &impact : impl_->last_impacts)
+                admitted = admitted || (impact.struck == impl_->described[body].name &&
+                                        (impact.would_break || impact.would_dent));
+        if (!admitted) continue;
+        if (body < impl_->nodes_of.size())
+            for (const std::uint32_t node : impl_->nodes_of[body]) job.may_break.insert(node);
+    }
     job.began = std::chrono::steady_clock::now();
     job.started = job.began;
     if (guess) {
@@ -1562,6 +1593,31 @@ std::size_t LiveWorld::applyPending() {
     const RigidSnapshot &snap = job.snap;
     const TileImpactSetup &setup = *impl_->setup;
     writeBackLatticeState(island_state, island.schedule, island.matter);
+    // Put back every bond that belongs to a body which was never admitted for
+    // breaking at this contact. See Pending::may_break: the island must hold the
+    // striker for the collision to have any stress in it, and holding it must
+    // not be the same as condemning it.
+    if (!job.may_break.empty() && island.matter.asset != nullptr) {
+        std::size_t revived = 0;
+        for (std::size_t o = 0; o < island.matter.bonds.size() &&
+                                o < island.matter.asset->bonds.size(); ++o) {
+            if (island.matter.bonds[o].alive) continue;
+            const BondRest &rest = island.matter.asset->bonds[o];
+            if (rest.node_a >= island.parent_node.size() ||
+                rest.node_b >= island.parent_node.size()) continue;
+            const std::uint32_t a = island.parent_node[rest.node_a];
+            const std::uint32_t b = island.parent_node[rest.node_b];
+            // A bond inside a body that was allowed to break stays broken.
+            if (job.may_break.count(a) && job.may_break.count(b)) continue;
+            island.matter.bonds[o].alive = true;
+            island.matter.bonds[o].damage = 0.0;
+            island.matter.bonds[o].failure_mode = BondFailureMode::None;
+            ++revived;
+        }
+        if (revived > 0)
+            impl_->delays.push_back({impl_->time_s, name, "spared",
+                                     static_cast<double>(revived), 0.0});
+    }
     // The permanent set the run left behind: bond lengths the material will not
     // give back. This is a dent. It is carried out of the island and into the
     // parent's own record, so the next hit starts from the shape this one left

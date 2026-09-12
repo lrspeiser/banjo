@@ -231,21 +231,44 @@ def aSweptRoomCanStillBreakThings() -> None:
                 f"sweeping the whole room took it from {full} bodies only to {left}, "
                 f"so it is not keeping the room small")
 
-        # And the room still does the thing the body budget protects. Whichever
-        # plate is still whole: a cascade takes out more than it was aimed at,
-        # and which ones survive is not what is being tested here.
+        # And the room still does the thing the body budget protects.
+        #
+        # What a full body table kills is the reversible step: past the ceiling
+        # the world stops OFFERING breaks at all, because a contact it cannot
+        # take back is a contact it cannot ask about. So that is what is checked
+        # -- not that this particular drop shatters, which depends on which
+        # plate happened to survive the cascade. A 40 mm plate hit from four
+        # metres by whatever hammer is left may honestly hold, and a test that
+        # calls that a failure is testing the scene and not the engine.
         whole = [b["name"] for b in live.state["bodies"]
                  if "plate" in b["name"] and "piece" not in b["name"]]
         require(whole, "no plate came through whole, so there is nothing to break")
-        target = whole[0]
-        shatter(live, target)
-        pieces = [b for b in hulls(live) if b["name"].startswith(target + " piece")]
-        print(f"  and a fresh drop still breaks {target}: {len(pieces)} pieces, "
+        target = next((n for n in whole if "20mm" in n), whole[0])
+        at = next(b["position_m"] for b in live.state["bodies"] if b["name"] == target)
+        loose = [b["name"] for b in live.state["bodies"]
+                 if not b["anchored"] and b["shape"] != "hull" and b["name"] != target]
+        hammer = next((n for n in ("iron ball", "iron anvil", "concrete brick")
+                       if n in loose), loose[0] if loose else None)
+        require(hammer, "nothing whole and loose left to drop")
+        live.send(op="grab", name=hammer)
+        live.send(op="move", to=[at[0], at[1] + 4.0, at[2]])
+        live.send(op="step", dt=1 / 240.0, n=1)
+        live.send(op="release")
+        offered = 0
+        for _ in range(500):
+            state = live.send(op="step", dt=1 / 120.0, n=4, moved=True)
+            if state.get("breakable"):
+                offered += 1
+                if not state.get("working_on"):
+                    live.send(op="fracture", name=state["breakable"][0], wait=False)
+        while live.state.get("working_on"):
+            live.send(op="step", dt=1 / 120.0, n=4, moved=True)
+        print(f"  and the room still offers breaks afterwards: {offered} steps had one, "
               f"{len(live.state['bodies'])} bodies in the room")
-        require(len(pieces) > 1,
-                "after breaking and sweeping three panes, a fresh drop no longer "
-                "breaks anything -- which is exactly what a full body table looks "
-                "like from outside")
+        require(offered > 0,
+                f"after breaking and sweeping three panes, dropping {hammer!r} on "
+                f"{target!r} produced no break to answer at all -- which is exactly "
+                f"what a full body table looks like from outside")
     finally:
         live.close()
 

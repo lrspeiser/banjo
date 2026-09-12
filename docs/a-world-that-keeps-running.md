@@ -622,6 +622,31 @@ fall back to still refuses, and says so.
 Before this, one shard the builder could not handle threw out of the fracture,
 and from outside a break simply did not happen.
 
+## Holding a body in an island is not condemning it
+
+A lattice run has to contain whatever struck the thing being broken. A body
+entered alone is a free-flying object with no stress anywhere in it and cannot
+break however hard it was hit — that is why the island is the union of the two.
+
+But the striker is then inside a run that is not about it, and its own bonds can
+fail there. Measured: an iron ball hit a 20 mm glass plate at 11.5 m/s against
+its own breaking threshold of **25.03 m/s**, with every contact reporting
+`would_break` false, and came out of the plate's run with broken bonds it could
+never have earned.
+
+A threshold is *the speed below which nothing can happen*. So the cells of every
+body that was admitted at this contact are recorded when the run is prepared,
+and any bond that failed inside a body which was **not** admitted is put back
+before the pieces are counted. The bond between two bodies is not affected —
+there is none; an island's two halves are separate components from the start.
+
+Measured across fifteen drops of five strikers onto three targets, five of them
+had bonds put back: thirty in total. In those scenes the damage was latent — not
+enough to split anything — so it showed as a body quietly carrying weakness into
+its next hit rather than as pieces. `tests/threshold_tests.py` says which of its
+three checks guards the invariant and which one actually fails when the rule is
+removed, because two of them pass either way.
+
 ## Every wait is written down
 
 Anything the world waits on, or is spared waiting on, goes out in the reply's
