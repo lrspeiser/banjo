@@ -85,7 +85,8 @@
 //                                            reply's "hand" says how it is going
 //        {"op":"cancel_stroke"}              the host takes the hand back
 //        {"op":"preview_stroke", ...a stroke..., "horizon_s":4}   what it would do
-//                                            and where it would fly (a lean reply)
+//                                            and where it would fly (a lean reply);
+//                                            always a throw, let go of at the end
 //        {"op":"preview_flight","from":[..],"velocity":[..],"horizon_s":4,
 //         "ignoring":"ball"}                 gravity and the world's shapes (lean)
 //        {"op":"cuts"}                       every edge contact since the last reply
@@ -1239,11 +1240,20 @@ int main(int argc, char **argv) {
                 } else if (op == "cancel_stroke") {
                     world->cancelStroke();
                 } else if (op == "preview_stroke") {
-                    // What the stroke would do, and where the thing would fly.
+                    // What the throw would do, and where the thing would fly.
                     // Changes nothing, so it answers on its own, like `pick`.
+                    //
+                    // Always a THROW, whatever the line says about let_go, as
+                    // banjo_preview_stroke is: a hand that keeps hold at the end
+                    // has no flight. Read as a stroke, with stroke's default of
+                    // false, a line without let_go was previewed as a hand
+                    // slowing to arrive at the end, and the room drew its aim
+                    // from that -- measured, a ball the arc said would leave at
+                    // 4.7 m/s left at 14.7.
+                    LiveStroke asked = readStroke(command);
+                    asked.let_go_at_end = true;
                     const LiveStrokePreview seen = world->previewStroke(
-                        readStroke(command), command.value("dt", 1.0 / 240.0),
-                        command.value("horizon_s", 3.0));
+                        asked, command.value("dt", 1.0 / 240.0), command.value("horizon_s", 3.0));
                     nlohmann::json answer{{"ok", true}, {"possible", seen.possible},
                                           {"why", seen.why}, {"reaches_end", seen.reaches_end},
                                           {"stroke_s", tidy(seen.stroke_s)},

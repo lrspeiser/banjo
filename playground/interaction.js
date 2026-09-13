@@ -140,6 +140,12 @@ export function windUpReached(camera, grip, distance = HOLD_M) {
 // the last 0.3 m along the line of sight, so the thing leaves the way the
 // person is looking. From a wind-up that did not get behind that line, it is
 // one straight push.
+//
+// It lets go at the end, and says so here rather than where it is sent, so the
+// preview of it and the throw are the same stroke. Without let_go a stroke keeps
+// hold, and a hand that keeps hold slows to ARRIVE at the end: the aim arc was
+// drawn from exactly that, and measured, a rubber ball the arc said would leave
+// at 4.7 m/s left at 14.7.
 export function throwStroke(camera, grip, reached) {
   const f = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
   const release = inView(camera, RELEASE);
@@ -151,6 +157,7 @@ export function throwStroke(camera, grip, reached) {
     speed_m_s: THROW_SPEED.least + (THROW_SPEED.most - THROW_SPEED.least) * clamp01(reached),
     accel_m_s2: 2000,
     lead_m: 0.05,
+    let_go: true,
     give_up_s: 1.0,
   };
 }

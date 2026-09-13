@@ -86,7 +86,13 @@ the Python binding, the line protocol and both live sessions.
   go of, how fast that was going, and the work done on it by then.
 - **`preview_stroke`** — the held body alone, with its own mass and inertia,
   pulled along the path by the same hand law a step uses, then its flight. It
-  cannot know what the stroke would bump into on the way, and says so.
+  is always a preview of a *throw*: the hand opens as the grip reaches the end,
+  whatever the request says about `let_go`, because a hand that keeps hold has
+  no flight to show. (The line protocol once took `let_go` from the request,
+  with `stroke`'s default of false, and so previewed a hand slowing to arrive
+  at the end. The room drew its aim from that: a ball the arc said would leave
+  at 4.7 m/s left at 14.7.) It cannot know what the stroke would bump into on
+  the way, and says so.
 - **`preview_flight`** — stepped the way the solver steps a free body: gravity,
   then the body's own damping (every live body carries 0.02 a second on its
   speed and spin), then the move, at the world's own step. Checked every 1/60 s
@@ -110,6 +116,24 @@ throw to five figures, and the flight preview came down within 1.3 mm of the
 real ball over 11.5 m. Hauling a block against a spring, the draw stopped at
 199.98 mm on 4000 N/m and 99.99 mm on 8000 N/m, where 800 N balances them at 200
 and 100.
+
+**The aim arc is the throw** (playground/world.js). The page draws its arc from
+`preview_stroke` of exactly the stroke it would throw — `throwStroke` lets go at
+its end — and when the button comes up it throws the stroke the arc on screen
+was drawn from, not one made afresh: a preview is a fifth of a second old by
+then, and the engine starts the stroke from wherever the thing is when it is
+thrown. Measured on the page in the bench room, with the room's own requests and
+replies recorded: held steady at a full wind-up, a 0.25 kg iron marble, a
+3.27 kg rubber ball (twice), a 5.6 kg oak block and an 8.6 kg iron ball each
+left the hand at exactly the previewed velocity, and each centre line came down
+within 10 mm of the ring. Each first touched the floor its own size short of the
+ring (70 to 240 mm), because the ring marks where the centre line meets the
+ground. Let go halfway through the wind-up, the rubber ball came down 0.10 m
+along and 0.13 m across from the ring; with the view turned 12 degrees 60 ms
+before letting go, 0.40 m short and 0.13 m across. A throw made afresh came
+down 1.19 m past the ring and 2.25 m to the side of it, respectively. What a
+thing does once it is down is the floor's business: on the bench room's floor
+the balls went on rolling for 60 to 117 m and the block slid 7 m.
 
 **Status:** engine implemented on `agent/interaction`; the page's use of it is
 increment 1, below.

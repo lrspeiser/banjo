@@ -46,6 +46,29 @@ class TheLineWrittenToTheLog(unittest.TestCase):
         said = self.line(realtime_pct=38)
         self.assertIn("38% of realtime", said)
 
+    def test_a_clock_that_went_back_is_not_printed_as_a_percentage(self):
+        """A world's clock only runs forward.
+
+        Less than nothing means the report spanned two worlds: the room was
+        started again, or the chat rebuilt it, and a page that kept its old
+        baseline took the old world's clock from the new one's. The log said
+        "room: -358% of realtime", which reads as a measurement and is not one.
+        """
+        said = self.line(world_s=-14.33, realtime_pct=-358)
+        self.assertTrue(said.startswith("room: the world was replaced during this report"),
+                        f"the line begins {said[:60]!r}")
+        self.assertNotIn("-358", said)
+        self.assertNotIn("% of realtime", said)
+
+    def test_a_clock_that_went_back_a_little_is_not_a_stopped_one(self):
+        """A little less than nothing rounds to 0%, the figure for a stopped clock.
+
+        The seconds say which it was.
+        """
+        said = self.line(world_s=-0.01, realtime_pct=0)
+        self.assertIn("the world was replaced during this report", said)
+        self.assertNotIn("0% of realtime", said)
+
     def test_it_carries_the_worst_frame(self):
         said = self.line(frame_ms={"median": 16.6, "p95": 40.0, "worst": 310.0})
         self.assertIn("worst frame 310.0 ms", said)
@@ -92,6 +115,31 @@ class TheLineWrittenToTheLog(unittest.TestCase):
                         f"the line begins {said[:40]!r}, so the warning is not first")
         self.assertIn("mean nothing", said)
 
+    def test_a_lost_server_is_said_ahead_of_the_clocks(self):
+        """Nothing steps the world while the server cannot be reached.
+
+        A room that lost the server for a second reads, in every other number,
+        as a room running slow -- so that is said ahead of them, or the next
+        reader goes looking in the solver for a lag that was a connection.
+        """
+        said = self.line(realtime_pct=74, lost_link={
+            "times": 1, "longest_ms": 1052, "why": "Failed to fetch", "gave_up": False})
+        self.assertTrue(said.startswith("LOST THE SERVER 1x, longest 1052 ms"),
+                        f"the line begins {said[:40]!r}")
+        self.assertIn("Failed to fetch", said)
+        self.assertNotIn("GAVE UP", said)
+
+    def test_a_room_that_gave_up_on_the_server_says_so(self):
+        said = self.line(lost_link={"times": 1, "longest_ms": 1180,
+                                    "why": "Failed to fetch", "gave_up": True})
+        self.assertIn("GAVE UP", said)
+
+    def test_nothing_drawn_is_still_said_before_a_lost_server(self):
+        said = self.line(frames=0, fps=0.0, lost_link={
+            "times": 2, "longest_ms": 310, "why": "HTTP 503", "gave_up": False})
+        self.assertTrue(said.startswith("NOTHING WAS DRAWN"), f"the line begins {said[:40]!r}")
+        self.assertIn("LOST THE SERVER 2x", said)
+
 
 class TheEndpointThatReceivesThem(unittest.TestCase):
     class Fake:
@@ -125,6 +173,15 @@ class TheEndpointThatReceivesThem(unittest.TestCase):
         filed = (self.where / "room-frames.jsonl").read_text(encoding="utf-8").splitlines()
         self.assertEqual([json.loads(r)["objects"] for r in filed], [0, 1, 2])
 
+    def test_a_lost_server_goes_in_the_log_even_when_the_room_kept_up(self):
+        """A short outage leaves the room above 90% and would be filed quietly."""
+        with self.assertLogs(level="INFO") as logged:
+            self.send({"why": "routine", "watched": True, "frames": 240, "realtime_pct": 97,
+                       "frame_ms": {"worst": 20.0}, "objects": 5,
+                       "lost_link": {"times": 1, "longest_ms": 160,
+                                     "why": "Failed to fetch", "gave_up": False}})
+        self.assertTrue(any("LOST THE SERVER" in line for line in logged.output), logged.output)
+
     def test_it_refuses_what_is_not_a_report(self):
         with self.assertRaises(ValueError):
             self.send("frames were slow")
@@ -133,6 +190,26 @@ class TheEndpointThatReceivesThem(unittest.TestCase):
         """The page writes this, so it is capped like anything else the page sends."""
         with self.assertRaises(ValueError):
             self.send({"why": "routine", "slow_frames": ["x" * 200] * 1000})
+
+    def test_a_room_that_fell_behind_is_said_out_loud(self):
+        """Under 90% of realtime, while somebody was watching, is a lag."""
+        with self.assertLogs(level="INFO") as logged:
+            self.send({"why": "routine", "watched": True, "frames": 240, "realtime_pct": 74,
+                       "world_s": 2.96, "frame_ms": {"worst": 20.0}, "objects": 58})
+        self.assertTrue(any("74% of realtime" in line for line in logged.output), logged.output)
+
+    def test_a_replaced_world_is_not_said_out_loud_as_a_room_falling_behind(self):
+        """Less than nothing is not "under 90%": it is two worlds in one report.
+
+        It is filed like any other report, and kept out of the line that is
+        said out loud for a room that is really running slow -- which is where
+        "-358% of realtime" turned up.
+        """
+        with self.assertNoLogs(level="INFO"):
+            self.send({"why": "routine", "watched": True, "frames": 240, "realtime_pct": -358,
+                       "world_s": -14.33, "frame_ms": {"worst": 20.0}, "objects": 58})
+        filed = (self.where / "room-frames.jsonl").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(json.loads(filed[-1])["realtime_pct"], -358, "filed as it was sent")
 
 
 if __name__ == "__main__":

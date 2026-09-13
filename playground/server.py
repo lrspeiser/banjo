@@ -782,15 +782,20 @@ class Playground:
         if len(raw)>64*1024: raise ValueError("that frame report is too big")
         stamp=time.strftime("%Y-%m-%dT%H:%M:%S",time.gmtime())
         line=trace_line(body)
-        # Said out loud when somebody pressed L, or when the room was visibly
-        # not keeping up. Otherwise it is on the file and not in the way.
+        # Said out loud when somebody pressed L, when the room was visibly not
+        # keeping up, or when it lost the server for a moment. Otherwise it is
+        # on the file and not in the way.
         why=str(body.get("why","routine"))[:60]
         # Only a report from a room that was actually being drawn says anything
         # about how the room looked.
         watched=bool(body.get("frames")) and body.get("watched") is not False
-        behind=watched and isinstance(body.get("realtime_pct"),(int,float)) and body["realtime_pct"]<90
+        # And only a clock that ran forward says the room fell behind. One that
+        # went back is two worlds in one report (see clock_went_back), not a
+        # room running at less than nothing.
+        behind=(watched and not clock_went_back(body)
+                and isinstance(body.get("realtime_pct"),(int,float)) and body["realtime_pct"]<90)
         worst=((body.get("frame_ms") or {}).get("worst") or 0) if watched else 0
-        if why!="routine" or behind or (isinstance(worst,(int,float)) and worst>100):
+        if why!="routine" or behind or body.get("lost_link") or (isinstance(worst,(int,float)) and worst>100):
             logging.info("banjo room (%s): %s",why,line)
         else:
             logging.debug("banjo room: %s",line)
@@ -1002,6 +1007,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type",content_type)
         self.send_header("Content-Length",str(len(data)))
+        # Said when this is the last reply on the connection, so the other end
+        # does not send its next request down one that is being closed.
+        if self.close_connection: self.send_header("Connection","close")
         self.send_header("Cache-Control","no-store")
         self.send_header("X-Content-Type-Options","nosniff")
         self.send_header("Content-Security-Policy","default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'")
@@ -1050,6 +1058,11 @@ class Handler(BaseHTTPRequestHandler):
             self.send(file.read_bytes(),content_type=mime+"; charset=utf-8")
         except (ValueError,FileNotFoundError) as exc: self.send({"error":str(exc)},400)
     def do_POST(self):
+        # The connection is kept for another request only once this one's body
+        # has been read to its end. Refused before that, whatever is left of the
+        # body would be read as the next request, so the connection is closed.
+        keep=not self.close_connection
+        self.close_connection=True
         try:
             length=int(self.headers.get("Content-Length","0"))
             capture = urlsplit(self.path).path == "/api/capture"
@@ -1063,6 +1076,7 @@ class Handler(BaseHTTPRequestHandler):
             # application action invoked until origin/session checks pass.
             raw_body=self.rfile.read(length)
             if len(raw_body)!=length: raise ValueError("Incomplete request body")
+            self.close_connection=not keep
             self.trusted_host()
             if not secrets.compare_digest(self.headers.get("X-Banjo-Token",""),self.server.app.csrf_token):
                 return self.send({"error":"Missing or invalid local session token"},403)
@@ -1210,6 +1224,22 @@ class Handler(BaseHTTPRequestHandler):
             self.send({"error":"Not found"},404)
         except (ValueError,UnicodeError) as exc: self.send({"error":str(exc)},400)
 
+def clock_went_back(report):
+    """Whether the world's clock ran backwards inside one frame report.
+
+    A world's clock only runs forward. Less than nothing means the report
+    spanned two worlds: "Start the room again", or the chat rebuilding the room,
+    put in a new world whose clock started nearer zero, and a page that kept its
+    old baseline took the old world's clock from the new one's. That measures
+    neither world, and printed as a percentage it reads as a measurement:
+    "room: -358% of realtime". The seconds are checked as well as the
+    percentage, because a little less than nothing rounds to 0% -- the figure
+    that means the clock stopped.
+    """
+    return any(isinstance(report.get(key),(int,float)) and report.get(key)<0
+               for key in ("world_s","realtime_pct"))
+
+
 def trace_line(report):
     """One readable line for the log, out of a frame report from the room.
 
@@ -1221,10 +1251,20 @@ def trace_line(report):
     and the one no server-side measurement can see at all.
     """
     frame=report.get("frame_ms") or {}
-    parts=[f"room: {report.get('realtime_pct')}% of realtime",
+    clocks=("the world was replaced during this report" if clock_went_back(report)
+            else f"{report.get('realtime_pct')}% of realtime")
+    parts=[f"room: {clocks}",
            f"{report.get('fps')} fps",
            f"worst frame {frame.get('worst')} ms",
            f"{report.get('objects')} objects"]
+    # Ahead of the clocks, because it is what they mean: nothing steps the world
+    # while the server cannot be reached, and a room that was out of reach for
+    # a second reads in every other number as a room running slow.
+    lost=report.get("lost_link")
+    if isinstance(lost,dict) and lost.get("times"):
+        parts.insert(0,f"LOST THE SERVER {lost.get('times')}x, longest {lost.get('longest_ms')} ms"
+                       + (", and GAVE UP" if lost.get("gave_up") else "")
+                       + (f" ({str(lost.get('why'))[:80]})" if lost.get("why") else ""))
     # Said first, because it changes what every other number means.
     #
     # Nothing drawn at all is the honest test. `document.hidden` is the obvious

@@ -288,6 +288,105 @@ def whatASpringHoldsComesWithTheStep() -> None:
         live.shutdown()
 
 
+def aPreviewOfAThrowIsTheThrow() -> None:
+    """The aim arc is drawn from the preview, so the preview has to be the throw.
+
+    The room asked for its preview without saying let_go, and the line read that
+    the way it reads a stroke: one that keeps hold, whose hand slows to ARRIVE at
+    the end. The arc was drawn from that. Measured in the bench room, a rubber
+    ball the arc said would leave at 4.7 m/s left at 14.7 and came down metres
+    past the ring. This winds the ball back as the page does, asks for the
+    preview both ways a host can -- through the room's own path and straight
+    down the line -- neither saying let_go, then throws it, and holds each
+    preview's release and landing to the throw's, to the bounds the engine's own
+    test holds a preview to (tests/hand_stroke_tests.cpp).
+    """
+    live = live_session.Live()
+
+    class App:
+        engine_path = ENGINE
+        runs_path = (ROOT / "build" / "playground-runs").resolve()
+        live_inprocess = False
+
+    try:
+        opened = live.open(App(), {"spec": world_room.room()})
+        room = opened["session"]
+
+        def act(op: str, **rest) -> dict:
+            return live.act({"session": room, "op": op, **rest})
+
+        def ball(state: dict) -> dict:
+            return next(b for b in state["bodies"] if b["name"] == "rubber ball")
+
+        centre = ball(opened)["position_m"]
+        radius = 0.5 * ball(opened)["dimensions_m"][0]
+        act("wield", name="rubber ball", grip=centre)
+        # Stood a metre behind the ball, looking level along +z, as the page
+        # stands: wound back 0.22 m behind the eye, 0.34 m right and 0.12 m up,
+        # and let go 0.72 m ahead, 0.12 m right and 0.02 m down, the last 0.3 m
+        # of the way along the line of sight (playground/interaction.js).
+        eye = [centre[0], 1.62, centre[2] - 1.0]
+        wound = [eye[0] - 0.34, eye[1] + 0.12, eye[2] - 0.22]
+        on_line = [eye[0] - 0.12, eye[1] - 0.02, eye[2] + 0.42]
+        release = [eye[0] - 0.12, eye[1] - 0.02, eye[2] + 0.72]
+        state: dict = {}
+        for _ in range(60):   # two seconds, eight steps a call, as the page steps
+            state = act("step", dt=1 / 240.0, n=8, hand=wound)
+        grip = state["hand"]["grip_m"]
+        stroke = {"path": [grip, on_line, release], "speed_m_s": 20.0, "accel_m_s2": 2000.0,
+                  "lead_m": 0.05, "give_up_s": 1.0}
+        by_room = act("preview_stroke", horizon_s=4.0, **stroke)
+        by_line = live.session.send(op="preview_stroke", horizon_s=4.0, **stroke)
+
+        act("stroke", let_go=True, **stroke)
+        let_go = None
+        for _ in range(480):
+            state = act("step", dt=1 / 240.0, n=1)
+            let_go = (state.get("hand") or {}).get("let_go")
+            if let_go and let_go.get("body") == "rubber ball":
+                break
+        require(bool(let_go) and let_go.get("body") == "rubber ball",
+                "the throw never let go of the ball")
+        speed = sum(c * c for c in let_go["velocity_m_s"]) ** 0.5
+        let_go_at = ball(state)["position_m"]
+
+        # Fly it for real, and carry its last free state on to the ground the
+        # preview came down on, ballistically: the preview follows the centre
+        # line, and the ball touches down its own radius before that.
+        ground = by_room["flight"]["hit_point_m"][1] if by_room["flight"]["hit"] else 0.0
+        p, v = ball(state)["position_m"], ball(state)["velocity_m_s"]
+        for _ in range(2400):
+            now = ball(act("step", dt=1 / 240.0, n=1))
+            if now["position_m"][1] <= ground + radius + 0.003 or now["velocity_m_s"][1] > v[1] + 1.0:
+                break
+            p, v = now["position_m"], now["velocity_m_s"]
+        g = 9.80665
+        fall = (v[1] + (v[1] * v[1] + 2.0 * g * (p[1] - ground)) ** 0.5) / g
+        landed = (p[0] + v[0] * fall, p[2] + v[2] * fall)
+        reach = ((landed[0] - let_go_at[0]) ** 2 + (landed[1] - let_go_at[2]) ** 2) ** 0.5
+
+        for how, seen in (("through the room", by_room), ("down the line", by_line)):
+            previewed = sum(c * c for c in seen["let_go_velocity_m_s"]) ** 0.5
+            hit = seen["flight"]["hit_point_m"] if seen["flight"]["hit"] else None
+            off = (((landed[0] - hit[0]) ** 2 + (landed[1] - hit[2]) ** 2) ** 0.5
+                   if hit else float("inf"))
+            print(f"  previewed {how}: leaves at {previewed:.2f} m/s and comes down "
+                  f"{off:.3f} m from where the ball did; the throw left at {speed:.2f} m/s "
+                  f"and flew {reach:.2f} m")
+            require(seen["possible"] and seen["reaches_end"],
+                    f"the preview {how} said the throw could not be made: {seen.get('why')}")
+            require(abs(previewed - speed) <= 0.03 * speed + 0.05,
+                    f"the preview {how} has the ball leaving at {previewed:.2f} m/s; it left at "
+                    f"{speed:.2f}")
+            require(off <= 0.02 + 0.04 * reach,
+                    f"the preview {how} came down {off:.2f} m from where the ball did, over "
+                    f"{reach:.2f} m")
+        require(by_room["let_go_velocity_m_s"] == by_line["let_go_velocity_m_s"],
+                "the room and the line were told different throws from the same world")
+    finally:
+        live.shutdown()
+
+
 def main() -> int:
     if not ENGINE.exists():
         print(f"no engine at {ENGINE} -- build banjo_live_world_run first")
@@ -298,6 +397,7 @@ def main() -> int:
          aFullReplyToSomebodyElseDoesNotStrandTheRoom),
         ("the session still answers with everything", theSessionStillAnswersWithEverything),
         ("what a spring holds comes with the step", whatASpringHoldsComesWithTheStep),
+        ("a preview of a throw is the throw", aPreviewOfAThrowIsTheThrow),
     ]:
         try:
             test()
