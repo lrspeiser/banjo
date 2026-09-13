@@ -77,8 +77,8 @@ class PlaygroundRecordIntegrationTests(unittest.TestCase):
 
     # How long one native run is given. 180 s was set when the plate drop took
     # seconds; since the network lane runs on its own stability clock
-    # (5603b8a), recording its 480 steps took more than nine CPU-minutes on a
-    # fast desktop. So the check on every push runs the two quick cases (-k
+    # (5603b8a), recording its 480 steps took 2,904 s -- 48 minutes -- on a
+    # fast desktop, and completed. So the check on every push runs the two quick cases (-k
     # rigid -k output) and .github/workflows/long-physics.yml runs the plate
     # drop nightly, with this raised.
     timeout_s = float(os.environ.get("BANJO_RECORD_TIMEOUT_S", "180"))

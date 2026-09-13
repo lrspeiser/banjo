@@ -5,8 +5,9 @@ name: long-physics
 # lane's skin, runtime and adaptive suites, the material showcase, and the
 # contact capacity suite -- cost a quarter of an hour to an hour each on a fast
 # machine, and the skin suite ran past two hours on a Linux build. The record
-# suite's plate drop, through the same network lane, took more than nine
-# CPU-minutes on a fast desktop. ci.yml leaves all of these out; they run here,
+# suite's plate drop, through the same network lane, took 2,904 s -- 48
+# minutes, for two seconds of world -- on a fast desktop. ci.yml leaves all of
+# these out; they run here,
 # one job each so that no one of them waits on another.
 
 on:
