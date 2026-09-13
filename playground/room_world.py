@@ -65,7 +65,7 @@ NOT_FOR_THE_ROOM = {
 # A room is reopened for the person only if one of these ran; running the world,
 # picking something up or pulling on it changes the model's copy and nothing the
 # person will be handed.
-AUTHORING = {"add_object", "remove_object", "move_object", "clear_world", "drop",
+AUTHORING = {"add_object", "remove_object", "move_object", "turn_object", "clear_world", "drop",
              "hinge", "slide", "tie", "reeve", "fix", "spring", "unhinge",
              "hinge_friction", "enclose_gas", "heat", "blade",
              # How a person uses a thing is part of what the room IS: the page

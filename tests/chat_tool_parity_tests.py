@@ -100,6 +100,26 @@ class TheRoomIsToldWhereThePersonIs(unittest.TestCase):
         self.assertEqual(said["looking_at"], "the floor")
         self.assertEqual(said["looking_at_m"], [0.4, 0.0, 1.3])
 
+    def test_what_they_hold_is_this(self):
+        """"Turn this upright": the page says what is in their hand, and the chat
+        is told it by name, before anything they are looking at."""
+        said = world_chat.where_the_person_is({"standing_m": [0.0, 0.0, 2.0],
+                                               "facing": [0.0, 0.0, -1.0],
+                                               "holding": "stone pillar",
+                                               "holding_at_m": [0.4, 1.2, 1.5],
+                                               "looking_at": "oak crate"})
+        self.assertEqual(said["holding"], "stone pillar")
+        self.assertEqual(said["holding_at_m"], [0.4, 1.2, 1.5])
+        self.assertEqual(said["looking_at"], "oak crate")
+        self.assertEqual(said["one_metre_in_front_m"], [0.0, 1.0])
+        junk = world_chat.where_the_person_is({"standing_m": [0.0, 0.0, 2.0],
+                                               "facing": [0.0, 0.0, -1.0], "holding": 42,
+                                               "holding_at_m": ["a", 1, 2]})
+        self.assertNotIn("holding", junk)
+        self.assertNotIn("holding_at_m", junk)
+        for words in ("holding", "\"This\"", "turn_object", "one_metre_in_front_m"):
+            self.assertIn(words, world_chat.GUIDE)
+
     def test_what_is_not_a_place_is_dropped_not_guessed(self):
         for junk in (None, "here", {}, {"standing_m": [1, 2], "facing": [0, 0, -1]},
                      {"standing_m": [0, 0, 0], "facing": [0, 1, 0]},

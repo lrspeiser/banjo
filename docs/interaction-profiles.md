@@ -52,6 +52,10 @@ scheme for an object.
 | Secondary | right mouse | Lower the arm (cancel) | Let the string down |
 | More actions | Tab | Place, drop | Take the arrow off, release a latch |
 | Advanced | Alt + Interact | Grab exactly the part under the crosshair | Grab the bowstring itself |
+| Turn, tip | Z X; T G; C V | A loose thing: turn it about the vertical; tip it away or back; tip it sideways (section 7) | — |
+| Upright | U | Stand it on its longest side | — |
+| Reach | mouse wheel | Hold it further out or nearer | — |
+| Talk | / | Open the room's chat, which is told what you hold and look at | the same |
 
 E used to move the view up; up is Space (as it was already) and down is Q. Only
 the actions available **in the current state** are shown: an unloaded bow offers
@@ -116,8 +120,9 @@ A small vocabulary, combined per object:
 
 | Component | What the hand does | Meter (measured) | Aiming guide | Status |
 |---|---|---|---|---|
-| carry | places it where it is put (no force) | where it is, what is under it | drop line and landing ring | exists |
-| place | lowers it onto what is below with a stroke, then lets go | height above support | placement ghost and support | planned |
+| carry | places it where it is put (no force), beside the view | where it is, what is under it | drop line and landing ring | exists; held beside the view since section 7 |
+| place | lowers it onto what is below with a stroke that arrives, then lets go | height above support | drop line and landing ring; placement ghost later | section 7 |
+| turn | the wrist turns it towards what the keys ask, with at most 60 N m | how it stands | — | section 7 |
 | throw | winds up, then strokes forward and lets go at the end | wind-up reached; after: speed left with, work done | preview arc and first impact | increment 1 |
 | draw-and-release | hauls the draw point back; lets go to loose | draw reached; energy in this bow's own limbs; pull | aim line and predicted arrow flight (approximate) | increment 2 |
 | swing | a bounded grip swung by the view | edge speed | swept volume | exists as blades; profile later |
@@ -304,7 +309,89 @@ The first time it was asked, before `duplicate` existed, the chat built the
 copy from the recipe by hand, got the offsets wrong and stopped halfway with its
 parts overlapping ([api/mcp.md](api/mcp.md#things-a-person-uses)).
 
-## 7. Pose help
+## 7. Holding, turning and setting down
+
+The owner, 2026-09-13: a thing taken up could cover the whole view, and there
+was no way to change how it was held -- "I have a pillar and I want to make it
+stand up". Both of the options the owner named are built: the hand turns what
+it holds, from the keys, and "/" asks the room to.
+
+**Where it is held.** Beside the view, never in front of it: low and to the
+right, 27 degrees off the line of sight, at a distance that grows with the
+thing. A ball is held where a ball always was, 0.56 m out; a 0.8 m pillar 1.08 m
+out -- 2.6 times its bounding radius, which stops it 4 degrees short of the
+crosshair. The mouse wheel takes it further or nearer, 0.4 to 3 m, and the hand
+takes as long to get it there as its strength says. While it covers the middle
+of the view anyway -- a big crate brought in close -- it is *drawn* see-through:
+its material is swapped for the one frame it is drawn in, and the body in the
+world is the same body. While something is held the help sits to the left of
+the crosshair; at the bottom of the view it was covering what was held, and a
+pillar held lying down could not be seen at all.
+
+**Turning it.** Z X turn it about the vertical, T G tip it away or back, C V tip
+it sideways, and U stands it upright: its longest side vertical, by the smallest
+turn from how it is. The keys never turn the thing. They turn what the hand
+*wants* -- kept relative to the way the person faces, so a thing held across the
+view stays across it as they turn round -- and the hand asks the engine for that
+through `hand_q`, the wish its grip law turns towards with at most the wrist's
+60 N m: the same law that aims a sword. A loose thing a hand can hold up (under
+73 kg) is held by that grip; a heavier one is carried, which is placement, and
+cannot be turned by the hand -- a turn key says so, and offers the room.
+
+The pace of the wish is the one thing the page decides, and it is decided from
+the engine's numbers. The wrist is bounded, so a wish it cannot follow is an
+overshoot. Measured on the live engine: a 49 kg concrete pillar asked to stand up
+all at once swung 74 degrees past upright; asked at 1.2 to 3 rad/s, easing in over
+the last part, it stood up with no overshoot at all. A 74 kg pillar 1.2 m long --
+four times the inertia -- stood up at 1.2 rad/s, overshot by 14 degrees at 1.8
+and fell over at 3. So the page asks at sqrt(0.2 x 60 N m / the thing's largest
+moment of inertia), at most 2.5 rad/s, easing into the end over 0.3 s
+(`interaction.js`, turnPace).
+
+**Setting it down.** E lowers it with the hand's own stroke straight onto what is
+under it -- the drop line and its ring say where -- and the stroke now
+*arrives*: it slows as it comes to where the thing rests and keeps hold, and the
+page lets go once the engine says the stroke has reached its end. It used to let
+go on the way down, at 0.8 m/s, which drops a pillar onto its end. How far a
+thing reaches below its middle is worked out from how it is turned; it was half
+its own height whichever way up it was, so a pillar held on end was lowered as if
+it were still lying down. A carried thing, being placed, is placed lower and lower
+onto what is under it and let go of there, rather than dropped from wherever it
+was carried.
+
+**Asking the room.** "/" opens the room's chat from anywhere but a text box. What
+is sent carries what the person holds (`holding`), what they are looking at,
+where they stand and which way they face, and the chat's guide says "this" is
+what they hold, or else what they look at. The MCP's new `turn_object`
+([api/mcp.md](api/mcp.md#turning-a-thing)) stands a thing upright, or lays it
+down, at a point: an edit that the engine holds to what the world would do with
+it. Nothing may share its space, what is under it has to be under its middle
+and flat, and the world is run until it is still -- from a third of a degree off,
+so that a balance only an exact run could keep is found out -- and it has to be
+standing as it was put.
+
+**Measured in the page** (headless Chrome over CDP, the keys sent as keys, my
+server on port 8776, the room built by its own chat):
+
+| | Measured |
+|---|---|
+| "Put a stone pillar lying on the ground in front of me" | a concrete pillar 0.16 x 0.16 x 0.8 m, 49.2 kg, lying on the floor in front, in 12 s |
+| E, then Z held 0.5 s | taken by the grip, held 1.08 m out; turned 44 degrees about the vertical |
+| U | its long side 0.19 degrees from vertical, in the hand |
+| E | set down, at rest 1.0 s later, 0.19 degrees from vertical |
+| "/", then "Turn this vertical and set it in front of me", looking at it lying down | `turn_object`, answered in 8 s: at rest 1.00 m straight ahead of the camera, 0.00 degrees from vertical |
+| clock | the page's own frame reports, 99-101% of wall clock throughout |
+
+Through the live pipe (`tests/world_room_tests.py`, TheHandTurnsWhatItHolds): the
+pillar was held upright at 0.18 degrees with no overshoot, and set down and let
+go at 0.00 degrees, sliding nothing. Asked all at once it overshoots by more than
+20 degrees, which is the wrist being bounded.
+
+**Status:** built. Not yet: a placement ghost (where it will stand, drawn before
+it is put down); turning a thing too heavy to hold up, which a person does by
+walking one end up; anything on a joint, which turns the way its joints let it.
+
+## 8. Pose help
 
 A small rotatable demonstration of the **actual object**, fitted to its own
 geometry, with ghost hands in three stages: **Hold → Prepare → Release**. Ghost
@@ -313,7 +400,7 @@ blocked. Shown briefly on first use, and on the help key afterwards.
 
 **Status:** increment 4.
 
-## 8. Status and plan
+## 9. Status and plan
 
 1. **The throw** — the engine's stroke, hand work, hand mass and previews
    across every API; the page's input state machine, contextual help, wind-up
@@ -327,7 +414,14 @@ blocked. Shown briefly on first use, and on the help key afterwards.
    chat crafting a bow of a different stiffness -- `duplicate` of the
    courtyard's, its springs at 8 kN/m -- and QA through the chat in the page
    (section 6). Measured.
-4. **Pose help**, and the remaining components.
+4. **Holding, turning and setting down** — what is held is held beside the
+   view, further or nearer on the wheel, and drawn see-through only while it
+   covers the middle; the hand's wrist turns it from the keys, at a pace worked
+   out from its own inertia; U stands it upright; it is set down by a stroke
+   that arrives before the hand lets go; "/" opens the chat, which is told what
+   is held, and the MCP's `turn_object` stands a thing up at a point (section
+   7). Measured.
+5. **Pose help**, a placement ghost, and the remaining components.
 
 Acceptance, from the owner: a new player can pick up a ball or a bow and use it
 without asking the chat, and heavier balls and stiffer bows behave physically

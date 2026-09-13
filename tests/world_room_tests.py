@@ -177,6 +177,29 @@ class TheToolsThatChangeIt(unittest.TestCase):
         self.assertNotIn("iron ball", self.objects())
         self.assertIn("error", self.call("remove_object", name="iron ball"))
 
+    def test_a_pillar_stood_up_by_the_chat_is_standing_in_the_room_it_hands_back(self):
+        """"Turn this upright and set it in front of me", as the chat does it: the
+        room it hands back has the pillar standing, long side up, where it was
+        set -- with its new sides, so the room's own validator and the live
+        world agree about where every cell of it is."""
+        world_id = room_world.open_room(world_room.yard())
+        self.addCleanup(room_world.close_room, world_id)
+        self.assertNotIn("error", room_world.call(world_id, "add_object", {"object": {
+            "name": "stone pillar", "shape": "box", "material": "concrete",
+            "size_m": [0.16, 0.16, 0.8], "position_m": [0.0, 1.6]}}))
+        answer = room_world.call(world_id, "turn_object", {"name": "stone pillar",
+                                                            "at_m": [0.4, 1.0]})
+        self.assertNotIn("error", answer)
+        self.assertLess(answer["settled"]["long_side_from_vertical_deg"], 1.0)
+        self.assertIn("turn_object", room_world.AUTHORING, "the room would not be handed back")
+        spec = fracture_lab.validate(room_world.export_spec(room_world.entry_of(world_id)))
+        pillar = next(b for b in spec["bodies"] if b["name"] == "stone pillar")
+        self.assertEqual(pillar["size_mm"], [160.0, 800.0, 160.0])
+        self.assertEqual(pillar["rotation_deg"], [0.0, 0.0, 0.0])
+        self.assertAlmostEqual(pillar["center_mm"][0], 400.0, delta=1.0)
+        self.assertAlmostEqual(pillar["center_mm"][2], 1000.0, delta=1.0)
+        self.assertAlmostEqual(pillar["center_mm"][1], 402.0, delta=2.0)
+
     def test_the_courtyard_can_be_cleared_and_built_in(self):
         """The failure this replaced: clearing the courtyard left its joints in
         the spec naming bodies that were gone, and every add after that was
@@ -1053,6 +1076,124 @@ class TheCourtyard(unittest.TestCase):
 # says. Both are eased towards that in the VIEW's frame, so turning the view is
 # a swing at once -- as it is on the page. Nothing here says "cut": the hand
 # pulls with 800 N and 60 N m, and what the edge meets is the engine's.
+
+class TheHandTurnsWhatItHolds(unittest.TestCase):
+    """A pillar taken up the way the page takes a loose thing up -- a grip at its
+    middle, a bounded hand -- turned upright by the hand's WRIST through
+    `hand_q`, a wish the engine turns towards with at most 60 N m, then set
+    down by the hand's own stroke and let go. It stands. Through the same live
+    pipe the page uses, with the page's pace for the wish (interaction.js,
+    turnPace and askTowards)."""
+
+    PILLAR = {"name": "stone pillar", "shape": "box", "material": "concrete",
+              "size_mm": [160, 160, 800], "center_mm": [0, 82, -1000], "anchored": False}
+
+    def pace(self, body):
+        # interaction.js turnPace: sqrt(0.2 * wrist torque / largest inertia).
+        a, b, c = body["dimensions_m"]
+        inertia = body["mass_kg"] * max(a * a + b * b, b * b + c * c, a * a + c * c) / 12.0
+        return min(2.5, math.sqrt(0.2 * 60.0 / inertia)), 0.3
+
+    def hold_and_turn(self, eased):
+        """Take the pillar up, ask for it upright -- eased at the page's pace, or
+        all at once -- and return the room, the session, its worst overshoot
+        past upright and its tilt after three seconds."""
+        live = live_session.Live()
+        self.addCleanup(live.shutdown)
+
+        class App:
+            engine_path = ENGINE
+            runs_path = ROOT / "build/playground-runs"
+            live_inprocess = False
+
+        spec = world_room.yard()
+        spec["bodies"] = list(spec["bodies"]) + [dict(self.PILLAR)]
+        live.open(App(), {"spec": spec})
+        session = live.session
+
+        def step(**rest):
+            state = session.send(op="step", dt=1 / 240.0, n=8, moved=True, **rest)
+            for coming in state.get("breakable") or []:
+                session.send(op="fracture", name=coming, wait=False)
+            return state
+
+        def pillar():
+            return next(b for b in session.state["bodies"] if b["name"] == "stone pillar")
+
+        for _ in range(30):
+            step()
+        body = pillar()
+        start, q0 = list(body["position_m"]), list(body["orientation_wxyz"])
+        session.send(op="wield", name="stone pillar", grip=start)
+        # Its long side (z) up: the smallest turn, a quarter about x.
+        up = _qmul(_qaxis([1.0, 0.0, 0.0], -math.pi / 2), q0)
+        cap, ease_s = self.pace(body)
+        asked, hold, tick = list(q0), [start[0] + 0.3, 1.3, start[2]], 8 / 240.0
+        worst, t = 0.0, 0.0
+        while t < 3.5:
+            s = min(1.0, t / 0.35)
+            at = [p + (h - p) * s for p, h in zip(start, hold)]
+            if t >= 0.5:
+                gap = 2 * math.acos(min(1.0, abs(sum(x * y for x, y in zip(asked, up)))))
+                move = (min(cap * tick, gap * (1 - math.exp(-tick / ease_s))) if eased else gap)
+                asked = up if gap <= move or gap < 1e-9 else _qslerp(asked, up, move / gap)
+            step(hand=at, hand_q=asked)
+            t += tick
+            q = pillar()["orientation_wxyz"]
+            # How far it has turned about x, past the quarter it was asked for.
+            rel = _qmul(q, _qconj(q0))
+            turned = -math.degrees(2 * math.atan2(rel[1], rel[0])) if rel[0] >= 0 else \
+                -math.degrees(2 * math.atan2(-rel[1], -rel[0]))
+            worst = max(worst, turned - 90.0)
+        return session, step, pillar, worst, self.tilt(pillar())
+
+    @staticmethod
+    def tilt(body):
+        """Its long side's angle from vertical, degrees: the long side is its own
+        z, as built."""
+        axis = _qrot(body["orientation_wxyz"], [0.0, 0.0, 1.0])
+        return math.degrees(math.acos(min(1.0, abs(axis[1]))))
+
+    @unittest.skipIf(ENGINE is None, "no live engine built")
+    def test_the_wrist_stands_a_pillar_up_and_it_is_set_down_standing(self):
+        session, step, pillar, worst, held_tilt = self.hold_and_turn(eased=True)
+        self.assertLess(held_tilt, 2.0, "the wrist did not bring the pillar upright")
+        self.assertLess(worst, 3.0, f"asked at the page's pace it overshot by {worst:.1f} degrees")
+        # Put down: the hand's own stroke, straight down to where it rests, and
+        # it ARRIVES -- then the hand lets go, as the page does.
+        grip = session.send(op="hand")["hand"]["grip_m"]
+        session.send(op="stroke", path=[grip, [grip[0], 0.402, grip[2]]], speed_m_s=0.6,
+                     accel_m_s2=3.0, lead_m=0.05, let_go=False, give_up_s=4.0)
+        for _ in range(60):
+            if not (step().get("hand") or {}).get("stroking"):
+                break
+        ended = session.send(op="hand")["hand"]["stroke_ended"]
+        self.assertIn(ended, ("reached", "blocked"), f"the stroke ended {ended!r}")
+        set_at = list(pillar()["position_m"])
+        session.send(op="release")
+        for _ in range(90):
+            step()
+        body = pillar()
+        speed = math.sqrt(sum(v * v for v in body["velocity_m_s"]))
+        slid = math.dist(set_at[::2], body["position_m"][::2])
+        print(f"\n    held upright {held_tilt:.2f} deg (overshoot {worst:+.1f}); "
+              f"set down and let go: {self.tilt(body):.2f} deg from vertical, slid "
+              f"{slid * 1000:.1f} mm, {speed:.4f} m/s")
+        self.assertLess(self.tilt(body), 5.0, "the pillar did not stay standing")
+        self.assertAlmostEqual(body["position_m"][1], 0.4, delta=0.01)
+        self.assertLess(slid, 0.01)
+        self.assertLess(speed, 0.01)
+
+    @unittest.skipIf(ENGINE is None, "no live engine built")
+    def test_the_wrist_is_bounded_so_a_wish_all_at_once_overshoots(self):
+        """Why the page eases the wish: the wrist has 60 N m and no more, so a
+        49 kg pillar asked to be upright NOW swings well past it. Measured 74
+        degrees past, where the page's pace gives none."""
+        _, _, _, worst, _ = self.hold_and_turn(eased=False)
+        self.assertGreater(worst, 20.0,
+                           f"asked all at once it overshot by only {worst:.1f} degrees: the "
+                           f"wrist is not bounded the way this hand is supposed to be")
+
 
 def _qmul(a, b):
     aw, ax, ay, az = a

@@ -24,10 +24,34 @@ export const BINDINGS = {
   more:      { label: "Tab", keys: ["Tab"] },
   up:        { label: "Space", keys: ["Space"] },
   down:      { label: "Q", keys: ["KeyQ"] },
+  // Turning what the hand holds. Each asks the hand's wrist to turn it; the
+  // wrist does that with the torque it has (see "Turning what is held").
+  turnLeft:  { label: "Z", keys: ["KeyZ"] },
+  turnRight: { label: "X", keys: ["KeyX"] },
+  tipAway:   { label: "T", keys: ["KeyT"] },
+  tipBack:   { label: "G", keys: ["KeyG"] },
+  tipLeft:   { label: "C", keys: ["KeyC"] },
+  tipRight:  { label: "V", keys: ["KeyV"] },
+  upright:   { label: "U", keys: ["KeyU"] },
+  // How far out the hand holds it: the mouse wheel, away to push it further.
+  reach:     { label: "Mouse wheel" },
+  // The room's chat, as in a game: "/" and say what you want.
+  talk:      { label: "/", keys: ["Slash", "NumpadDivide"] },
 };
 export const keyOf = (action) => BINDINGS[action].label;
 export const isKey = (action, code) => (BINDINGS[action].keys || []).includes(code);
 export const isButton = (action, button) => BINDINGS[action].button === button;
+
+// The keys that turn what is held, and which way each turns it, in the frame
+// of where the person faces: x to their right, y up, z back towards them.
+export const TURNS = [
+  { action: "turnLeft", axis: [0, 1, 0], sign: 1 },
+  { action: "turnRight", axis: [0, 1, 0], sign: -1 },
+  { action: "tipAway", axis: [1, 0, 0], sign: -1 },
+  { action: "tipBack", axis: [1, 0, 0], sign: 1 },
+  { action: "tipLeft", axis: [0, 0, 1], sign: 1 },
+  { action: "tipRight", axis: [0, 0, 1], sign: -1 },
+];
 
 // The line along the bottom of the screen, written from the table.
 export function controlsHint() {
@@ -36,20 +60,33 @@ export function controlsHint() {
     + ` · <b>${keyOf("interact")}</b> or <b>click</b> take hold and put down`
     + ` · hold <b>${keyOf("primary")}</b> to wind up a throw, let go to throw`
     + ` · <b>${keyOf("secondary")}</b> cancel · <b>${keyOf("more")}</b> more`
+    + ` · holding something: <b>${keyOf("turnLeft")} ${keyOf("turnRight")}</b> turn,`
+    + ` <b>${keyOf("tipAway")} ${keyOf("tipBack")}</b> tip away or back,`
+    + ` <b>${keyOf("tipLeft")} ${keyOf("tipRight")}</b> tip sideways,`
+    + ` <b>${keyOf("upright")}</b> stand it upright, <b>wheel</b> further or nearer`
+    + ` · <b>${keyOf("talk")}</b> talk to the room`
     + ` · <b>R</b> release a latch · <b>L</b> if it lagged · <b>Esc</b> release the mouse`;
 }
 
 // ---------------------------------------------------------------------------
-// The throw
+// Where a thing is held
 // ---------------------------------------------------------------------------
 //
-// Where a right hand holds a thing it means to throw, how far back a full
-// wind-up takes it, and where it lets go -- in the view's own frame, metres.
-// These are a person's numbers, not the ball's: what the ball does with them
-// is up to its mass and the hand's 800 N.
+// Where a right hand holds a thing, how far back a full wind-up takes it, and
+// where it lets go -- in the view's own frame, metres. These are a person's
+// numbers, not the ball's: what the ball does with them is up to its mass and
+// the hand's 800 N.
+//
+// Held below and to the right of the middle of the view, never in front of
+// it. The direction is fixed; how far out is the person's (the mouse wheel),
+// and never so close that a big thing fills the middle of the view: a pillar
+// held where a ball is held covered the whole screen.
 const HOLD = { forward: 0.5, right: 0.2, up: -0.15 };
 const WOUND = { forward: -0.22, right: 0.34, up: 0.12 };
 const RELEASE = { forward: 0.72, right: 0.12, up: -0.02 };
+// A ball's hold, 0.56 m out: 27 degrees below and right of the line of sight.
+export const HOLD_M = Math.hypot(HOLD.forward, HOLD.right, HOLD.up);
+export const HOLD_RANGE_M = { least: 0.4, most: 3.0 };
 // A lob to a hard overarm throw: how fast the hand itself goes, across the
 // wind-up. 20 m/s is a hard throw by an ordinary adult -- a DEMONSTRATION
 // value. A light thing leaves at about this; a heavy one at what the hand's
@@ -66,16 +103,35 @@ function inView(camera, at) {
     .addScaledVector(r, at.right).addScaledVector(u, at.up);
 }
 
-export const holdPoint = (camera) => inView(camera, HOLD);
+// How far out a thing of this size is held, to start with. The hold is 27
+// degrees off the line of sight; a thing whose bounding radius is r, held d
+// away, reaches asin(r / d) round its middle -- so at 2.6 r it stops 4 degrees
+// short of the crosshair. A ball is held where a ball always was.
+export function holdDistanceFor(radius) {
+  return Math.max(HOLD_RANGE_M.least,
+                  Math.min(HOLD_RANGE_M.most, Math.max(HOLD_M, 2.6 * (radius || 0))));
+}
+
+// The bounding radius of a body the page has drawn.
+export function radiusOf(entry) {
+  const d = entry && entry.dims;
+  if (!d) return 0.05;
+  return entry.shape === "sphere" ? d[0] / 2 : Math.hypot(d[0], d[1], d[2]) / 2;
+}
+
+export function holdPoint(camera, distance = HOLD_M) {
+  const s = distance / HOLD_M;
+  return inView(camera, { forward: HOLD.forward * s, right: HOLD.right * s, up: HOLD.up * s });
+}
 
 // Where the hand wants the thing, `asked` of the way back.
-export const windUpPoint = (camera, asked) =>
-  holdPoint(camera).lerp(inView(camera, WOUND), clamp01(asked));
+export const windUpPoint = (camera, asked, distance = HOLD_M) =>
+  holdPoint(camera, distance).lerp(inView(camera, WOUND), clamp01(asked));
 
 // How far back the thing actually IS: its grip measured along the wind-up.
 // This is the meter -- a heavy thing winds up slower than it is asked to.
-export function windUpReached(camera, grip) {
-  const a = holdPoint(camera);
+export function windUpReached(camera, grip, distance = HOLD_M) {
+  const a = holdPoint(camera, distance);
   const d = inView(camera, WOUND).sub(a);
   return clamp01(grip.clone().sub(a).dot(d) / d.lengthSq());
 }
@@ -99,12 +155,15 @@ export function throwStroke(camera, grip, reached) {
   };
 }
 
-// Putting a thing down: lowered straight onto what is below it, slowly, and let
-// go of when it gets there. The same bounded hand; nothing is placed by fiat.
+// Putting a thing down: lowered straight onto what is below it and let go of
+// once it is there. The same bounded hand; nothing is placed by fiat. The hand
+// ARRIVES -- it slows as it comes to where the thing rests, and keeps hold --
+// and the page lets go when the engine says the stroke has reached its end: a
+// hand that let go on the way down, at speed, dropped a pillar onto its end.
 export function placeStroke(grip, restsAtY) {
   return {
     path: [[grip.x, grip.y, grip.z], [grip.x, Math.min(grip.y, restsAtY), grip.z]],
-    speed_m_s: 0.8, accel_m_s2: 4, lead_m: 0.05, give_up_s: 3.0, let_go: true,
+    speed_m_s: 0.6, accel_m_s2: 3, lead_m: 0.05, give_up_s: 4.0, let_go: false,
   };
 }
 
@@ -115,6 +174,70 @@ export function throwable(entry, onAJoint) {
   if (!entry || entry.anchored || onAJoint) return false;
   const kg = entry.mass || 0;
   return kg > 0 && kg * 9.80665 < 0.9 * HAND_STRENGTH_N;
+}
+
+// ---------------------------------------------------------------------------
+// Turning what is held
+// ---------------------------------------------------------------------------
+//
+// The keys and U say how the person WANTS it turned. The hand asks for that
+// at a pace its wrist can follow for this thing, and the engine turns it with
+// what the wrist has: 60 N m, the engine's own number, and no more. Nothing
+// here sets how anything is turned -- a turn the thing cannot make, because
+// it is against the floor or too heavy to swing round, is simply not made.
+//
+// The pace matters because the wrist is bounded. Measured on the live engine
+// (docs/interaction-profiles.md): a 49 kg concrete pillar asked to stand up
+// all at once overshot upright by 74 degrees; asked at 1.2 to 3 rad/s, easing
+// in over the last part, it stood up with no overshoot at all. A 74 kg pillar
+// 1.2 m long -- four times the inertia -- stood up at 1.2 rad/s, overshot by
+// 14 degrees at 1.8 and fell over at 3. So the pace is worked out from the
+// thing's own inertia and the wrist's torque: sqrt(0.2 * torque / inertia).
+export const HAND_TORQUE_N_M = 60;
+// How fast a held key turns the wish, radians a second.
+export const TURN_KEY_RATE = Math.PI / 2;
+const EASE_S = 0.3;
+
+// The most inertia a body has about any axis through its middle.
+function inertiaOf(entry) {
+  const kg = entry.mass || 0;
+  const d = entry.dims || [0.1, 0.1, 0.1];
+  if (entry.shape === "sphere") return 0.1 * kg * d[0] * d[0];
+  const [a, b, c] = d;
+  return kg * Math.max(a * a + b * b, b * b + c * c, a * a + c * c) / 12;
+}
+
+// How fast the hand asks this thing to turn, and how it eases into the end.
+export function turnPace(entry) {
+  const inertia = Math.max(1e-6, inertiaOf(entry));
+  return { cap: Math.min(2.5, Math.sqrt(0.2 * HAND_TORQUE_N_M / inertia)), ease_s: EASE_S };
+}
+
+// One tick of the hand's wish coming round to what is wanted: at the pace,
+// easing in over the last part. `asked` is changed in place.
+export function askTowards(asked, wanted, pace, dt) {
+  const gap = asked.angleTo(wanted);
+  if (gap < 1e-6) return asked.copy(wanted);
+  const step = Math.min(pace.cap * dt, gap * (1 - Math.exp(-dt / pace.ease_s)));
+  return asked.rotateTowards(wanted, step);
+}
+
+// The turn that stands a thing upright: its longest side vertical, by the
+// smallest turn from how it is -- so it keeps the way it faces. Between two
+// equally long sides, the one nearer vertical already. Null for a ball or a
+// cube, which have no long side to stand on.
+export function uprightTurn(q, dims, shape) {
+  if (shape === "sphere" || !dims) return null;
+  const longest = Math.max(...dims);
+  if (dims.every((v) => longest - v < 1e-6)) return null;
+  let axis = null;
+  for (let i = 0; i < 3; ++i) {
+    if (longest - dims[i] > 1e-6) continue;
+    const along = new THREE.Vector3().setComponent(i, 1).applyQuaternion(q);
+    if (!axis || Math.abs(along.y) > Math.abs(axis.y)) axis = along;
+  }
+  const up = new THREE.Vector3(0, axis.y >= 0 ? 1 : -1, 0);
+  return new THREE.Quaternion().setFromUnitVectors(axis, up).multiply(q);
 }
 
 // ---------------------------------------------------------------------------
@@ -138,12 +261,12 @@ function bowNote(use) {
 
 // Only what can be done in the state the hand is in is offered, in the player's
 // keys. `use` is the page's own record of the hand: { mode, name, kg, reached,
-// preview, result, more, bow }.
+// preview, result, more, bow, turnable, loose }.
 export function helpFor(use) {
   const k = (action) => `<kbd>${keyOf(action)}</kbd>`;
   const kg = use.kg ? ` · ${use.kg < 10 ? use.kg.toFixed(2) : use.kg.toFixed(1)} kg` : "";
   const title = `<b>${esc(use.name)}</b>${kg}`;
-  const out = { title, line: "", meter: null, note: "" };
+  const out = { title, line: "", meter: null, note: "", turn: "" };
   const preview = use.preview && use.preview.possible
     ? `this throw would leave your hand at ${use.preview.speed.toFixed(1)} m/s`
       + (use.preview.hitName ? ` and hit ${use.preview.hitName}` : use.preview.hit ? " and come down on the ground" : "")
@@ -201,6 +324,17 @@ export function helpFor(use) {
   if (use.more && (use.mode === "ready" || use.mode === "carrying" || use.mode === "blocked")) {
     out.line = `<kbd>1</kbd> let go of it here · <kbd>2</kbd> put it down gently`
       + (use.latched ? ` · <kbd>3</kbd> release its latch` : "") + ` · ${k("more")} back`;
+  }
+  // Turning it, and how far out it is held: offered for a loose thing in the
+  // hand. The wrist turns what the hand can hold up; what it cannot, it says,
+  // and the room can be asked instead.
+  if (use.turnable && (use.mode === "ready" || use.mode === "blocked")) {
+    out.turn = `${k("turnLeft")}${k("turnRight")} turn · ${k("tipAway")}${k("tipBack")} tip away or back`
+      + ` · ${k("tipLeft")}${k("tipRight")} tip sideways · ${k("upright")} stand it upright`
+      + ` · wheel further or nearer · ${k("talk")} ask the room`;
+  } else if (use.loose && use.mode === "carrying") {
+    out.turn = `Too heavy for your hand to turn · wheel further or nearer`
+      + ` · ${k("talk")} ask the room to turn it`;
   }
   return out;
 }

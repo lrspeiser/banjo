@@ -54,9 +54,10 @@ broke.
 | `create_world` | build a world from a list of objects; returns an id |
 | `run` | let time pass and say what happened: every break, every dent, and the hardest contacts with the speeds they would have needed; and which balls rolling resistance holds still, which are rolling against it, and the energy it took |
 | `drop` | the common experiment: put an object a given distance above a point, let it fall, report. The height is measured from **what it lands on**, not from the floor. |
-| `describe_world` | every object, where it is, and what has happened to it |
+| `describe_world` | every object, where it is, what it weighs (`mass_kg`, which every answer that lists `objects` carries: whether a person's 800 N hand can hold a thing up and turn it depends on it), and what has happened to it |
 | `add_object` / `remove_object` | change a world. It is opened again from its scene, so anything in flight starts over — and every joint is hung again. A removed object takes the joints that held it with it, and they are listed. `add_object` given `position_m` as **[x, z]** sets the thing down on whatever is under that point — the ground, the floor or the top of what is there — and says what in `set_down` — with `overhangs` when only part of it is over that, so it may tip; [x, y, z] puts it exactly there, and when that is in the air the answer's `in_the_air` says how far above what is under it the thing starts, and that it will fall unless a joint holds it — a thing about to be hung with `fix`, `hinge`, `slide`, `tie`, `reeve` or `spring` is meant to start there. On ground with water it says `in_water` when that is where it went. |
 | `move_object` | put an object somewhere else, at rest: an **edit**, not a push. Refused for a joined object, with the reason — a joint is made at fixed points |
+| `turn_object` | stand an object **upright** — its longest side vertical — or lay it down, its longest side level, and set it down at `at_m` [x, z] on whatever is under that point. An **edit**, like `move_object`, that the engine holds to what the world would do with it: it must not overlap anything, what is under it has to be under its middle on every side and flat (not the top of a ball), and the world is then **run** — from a third of a degree off how it was put, so a balance only an exact run could keep is found out — until it is still. Standing as it was put (moved under 20 mm, turned under 5 degrees) it is kept; otherwise it is refused with what happened and nothing changes. The answer says what it stands on and how far its long side came to rest from vertical. "Turn this upright and set it in front of me" is this call. [Turning a thing](#turning-a-thing) |
 | `clear_world` | empty a world, joints and all, to build it again. It stays open under the same id |
 | `pick_up` / `place` / `let_go` | the hand: take hold of something already in the world and move it. Without this a model can only add new objects from above — it can build a scene but never rearrange one. |
 | `collect` | sweep up the loose pieces near a point and say what they were made of, by material and by weight |
@@ -95,6 +96,52 @@ seats a thing on the ground under it and says whether it is in water, and every
 `run` holds the **break conversation** itself. That is the part of this engine a
 caller can get wrong: ignore it and the world freezes at the first impact for
 ever. Nothing using these tools has to know that.
+
+## Turning a thing
+
+`turn_object` is how a model stands a pillar up, or lays a plank down, when a
+person asks it to ("turn this upright and set it in front of me"). It is an edit,
+like `move_object`: the thing is standing there as if it had been built so. What
+makes it more than an edit is that the engine holds it to what the world would
+do with it, in four steps, and any one of them refuses it with the reason and
+leaves the world as it was:
+
+1. **Nothing shares its space.** Its box against every other box and ball as
+   built. What it stands on was looked at where it is now, settled a millimetre
+   or two in, so it is lifted clear of that; standing on a thing is never taken
+   for being in it. Where the world refuses overlaps (the playground's room
+   does) that check runs as well.
+2. **What is under it is under its middle, on every side.** Nine points of its
+   footprint, straight down. Half over an edge, or on the point of a post, it
+   is refused.
+3. **It rests on a face, not a point.** Opposite points of the footprint have to
+   average to the height under its middle, as they do on level or sloping
+   ground. On the top of a ball they are both lower, and the base would sit on
+   the point between them.
+4. **It stays as it was put.** The world is run until it is still, for up to
+   four seconds, from a third of a degree off how it was put, so that a balance
+   only an exact run could keep is found out. It has to end within 20 mm and 5
+   degrees of how it was put.
+
+A box is turned by giving it its new sides and a heading about the vertical,
+never a tilt: stood on end, a 0.16 × 0.16 × 0.8 m pillar is a 0.16 × 0.8 × 0.16 m
+one. Its own axes stay the world's up to one turn about the vertical, which keeps
+it clear of the one place the engine and the playground's cell count disagree: a
+`rotation_deg` about more than one axis. The engine builds z first
+(TileImpactScene's `rotationQuaternion` is qx qy qz); the cell count builds x
+first.
+
+**Measured** (`tests/banjo_mcp_tests.py`, the real engine):
+
+- A 49 kg concrete pillar lying on the floor, stood upright 1.2 m away, came to
+  rest in 0.53 s, 0.00 degrees from vertical, 2 mm from where it was put.
+- The same pillar asked onto a crate stood on the crate.
+- Asked onto a rubber ball it is refused. Before the flatness rule, a pillar
+  stood dead on top of a ball stayed there through the whole settling run,
+  exact start or not: rolling resistance held the ball still.
+- Asked onto the end of a plank balanced on a trestle, all of it over the
+  plank, the plank tipped in the settling run and the pillar fell. Refused, and
+  the pillar was back lying where it had been.
 
 ## A joint outlives the next edit
 

@@ -204,6 +204,10 @@ def _describe(world: banjo.World) -> list[dict[str, Any]]:
             "shape": body.shape,
             "position_m": [round(v, 4) for v in body.position_m],
             "size_m": [round(v, 4) for v in body.dimensions_m],
+            # What it weighs, from the engine: whether a person's 800 N hand can
+            # hold it up and turn it is decided by this, and a model building a
+            # thing for them to handle cannot see it any other way.
+            "mass_kg": round(body.mass_kg, 2),
             "speed_m_s": round(math.sqrt(sum(v * v for v in body.velocity_m_s)), 3),
             "anchored": body.anchored,
         })
@@ -727,6 +731,27 @@ def _held_by(entry: dict[str, Any], name: str) -> list[dict[str, Any]]:
             if name in (r["args"].get("a"), r["args"].get("b"))]
 
 
+# What one hand can take up and turn. The engine's hand pulls with 800 N
+# (LiveWorld's hand_strength_n) and has to hold a thing up with a tenth of that
+# still over to move it: the playground's own rule for what it takes by the grip
+# (playground/interaction.js, throwable). Heavier, a person can carry a thing --
+# which is placement -- and cannot turn it by hand. A model building something
+# for a person to handle cannot see its mass unless it is told; it was, in
+# objects, and still made a 73.7 kg pillar twice, so it is said at the call.
+HAND_STRENGTH_N = 800.0
+HAND_LIFTS_KG = 0.9 * HAND_STRENGTH_N / 9.80665
+
+
+def _by_hand(world: banjo.World | None, name: str) -> dict[str, Any] | None:
+    body = world.body(name) if world is not None else None
+    if body is None or body.anchored or body.mass_kg < HAND_LIFTS_KG:
+        return None
+    return {"mass_kg": round(body.mass_kg, 1), "a_hand_lifts_kg": round(HAND_LIFTS_KG, 1),
+            "note": "too heavy for a person's 800 N hand to hold up and turn: they can carry "
+                    "it, but not turn it by hand. If it is for them to pick up and handle, "
+                    "make it lighter."}
+
+
 def tool_add_object(args: dict[str, Any]) -> dict[str, Any]:
     world_id = str(args.get("world_id"))
     entry = _world(world_id)
@@ -776,6 +801,9 @@ def tool_add_object(args: dict[str, Any]) -> dict[str, Any]:
         answer["seated_on_the_ground"] = seated
     if held_up:
         answer["in_the_air"] = held_up
+    heavy = _by_hand(entry["world"], added["name"])
+    if heavy:
+        answer["too_heavy_for_a_hand"] = heavy
     if _has_terrain(entry):
         here = entry["world"].survey(added["center_m"][0], added["center_m"][2])
         if here.get("water"):
@@ -864,6 +892,366 @@ def tool_move_object(args: dict[str, Any]) -> dict[str, Any]:
     entry["story"].append(f"moved {name} to [{to[0]:.2f}, {to[1]:.2f}, {to[2]:.2f}]")
     answer: dict[str, Any] = {"moved": name, "to_m": [round(v, 4) for v in to],
                               "objects": _describe(entry["world"])}
+    if lost:
+        answer["joints_lost"] = lost
+    return answer
+
+
+# ---------------------------------------------------------------------------
+# Turning a thing: stood on end, or laid down
+# ---------------------------------------------------------------------------
+#
+# A pose EDIT, like move_object -- the thing is simply standing there, as if it
+# had been built so -- that the engine holds to what the world would do with
+# it: nothing may share its space, it is set on whatever is under it, and then
+# the world is RUN until it is still. It has to be standing as it was put when
+# it is. A pillar stood on a slope it cannot stand on, or half over an edge,
+# falls in that run, and the edit is taken back and said, with what happened.
+#
+# The thing is turned by giving it new sides and a heading, never a tilt: a
+# box stood on end is the same box with its long side up, and its own axes
+# stay the world's up to one turn about the vertical. That keeps it off the
+# one place two parts of this code disagree -- a rotation_deg about more than
+# one axis, which the engine builds z first (TileImpactScene's
+# rotationQuaternion is qx qy qz) and the playground's cell count x first.
+
+TURN_SETTLE_S = 4.0     # at most this long, world time, to come to rest
+TURN_STILL_S = 0.5      # still for this long is at rest
+TURN_STILL_M_S = 0.01   # ... moving slower than this
+TURN_STILL_RAD_S = 0.05  # ... and turning slower than this
+STAYS_M = 0.02          # where it was put: it moved less than this while it settled
+STAYS_DEG = 5.0         # ... and turned less than this
+TRY_TILT_DEG = 0.35     # the settling run starts this far off, about each level axis
+
+
+def _turn_matrix(rotation_deg: Any) -> list[list[float]]:
+    """A body's authored rotation as a matrix, the way the ENGINE builds it
+    (TileImpactScene's rotationQuaternion, qx * qy * qz: z turns first)."""
+    x, y, z = (math.radians(float(v)) for v in (rotation_deg or [0.0, 0.0, 0.0]))
+    cx, sx, cy, sy, cz, sz = (math.cos(x), math.sin(x), math.cos(y), math.sin(y),
+                              math.cos(z), math.sin(z))
+    rx = [[1.0, 0.0, 0.0], [0.0, cx, -sx], [0.0, sx, cx]]
+    ry = [[cy, 0.0, sy], [0.0, 1.0, 0.0], [-sy, 0.0, cy]]
+    rz = [[cz, -sz, 0.0], [sz, cz, 0.0], [0.0, 0.0, 1.0]]
+
+    def times(a: list[list[float]], b: list[list[float]]) -> list[list[float]]:
+        return [[sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
+
+    return times(rx, times(ry, rz))
+
+
+def _sides_now(body: dict[str, Any]) -> list[list[float]]:
+    """Which way each of a scene body's own sides points in the world."""
+    turn = _turn_matrix(body.get("rotation_deg"))
+    return [[turn[r][i] for r in range(3)] for i in range(3)]
+
+
+def _stood(body: dict[str, Any], stand: str, along: Any) -> tuple[list[float], float] | None:
+    """The sides and the heading (degrees about the vertical) that stand a box
+    on end, or lay it down. None for a cube, which has no long side.
+
+    Upright: its longest side up -- of two as long, the one nearer vertical
+    already -- and the other two as level as they were, so it keeps the way it
+    faces. Lying: its longest side level, along `along` or the way it runs now,
+    and its thinnest other side up, which is how a plank lies flat."""
+    dims = [float(v) for v in body["dimensions_m"]]
+    longest = max(dims)
+    if longest - min(dims) < 1e-6:
+        return None
+    sides = _sides_now(body)
+    level = lambda v: (v[0], v[2])                      # noqa: E731
+    size = lambda v: math.hypot(v[0], v[1])             # noqa: E731
+    longs = [i for i in range(3) if longest - dims[i] < 1e-6]
+    if stand == "upright":
+        up = max(longs, key=lambda i: abs(sides[i][1]))
+        a, b = (i for i in range(3) if i != up)
+        ha, hb = level(sides[a]), level(sides[b])
+        # The heading that keeps whichever of the two is more level where it is:
+        # the new x side along `a`, or the new z side along `b`.
+        heading = math.atan2(-ha[1], ha[0]) if size(ha) >= size(hb) else math.atan2(hb[0], hb[1])
+        return [dims[a], dims[up], dims[b]], math.degrees(heading)
+    long = min(longs, key=lambda i: abs(sides[i][1]))
+    thin, wide = sorted((i for i in range(3) if i != long), key=lambda i: dims[i])
+    if along is not None:
+        run = _triple(along, "along", -1e6, 1e6)
+        run = (run[0], run[2])
+    else:
+        run = level(sides[long]) if size(level(sides[long])) > 1e-3 else level(sides[wide])
+    if size(run) < 1e-6:
+        run = (1.0, 0.0)
+    return [dims[long], dims[thin], dims[wide]], math.degrees(math.atan2(-run[1], run[0]))
+
+
+def _half_up(dims: list[float], orientation_wxyz: Any) -> float:
+    """How far a box reaches below its middle, turned as it is."""
+    w, x, y, z = (float(v) for v in orientation_wxyz)
+    # Row y of the rotation matrix: how far up each of its own sides points.
+    row = [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)]
+    return sum(abs(r) * d / 2.0 for r, d in zip(row, dims))
+
+
+def _under_turned(entry: dict[str, Any], body: dict[str, Any],
+                  past: str) -> tuple[float, str, list[tuple[float, float, float]]]:
+    """The top of what is under a box turned to `heading`, what that is, and
+    each of nine points of its footprint as (across, along, height) -- looking
+    straight down past `past`, the thing being turned, which still stands
+    where it was."""
+    world = _live(entry)
+    half_x, half_z = body["dimensions_m"][0] / 2.0, body["dimensions_m"][2] / 2.0
+    heading = math.radians(body["rotation_deg"][1])
+    ex = (math.cos(heading), -math.sin(heading))     # its own x side, level
+    ez = (math.sin(heading), math.cos(heading))      # its own z side, level
+    x, _, z = body["center_m"]
+    old = world.body(past)
+    old_bottom = (old.position_m[1] - _half_up(list(old.dimensions_m), old.orientation_wxyz)
+                  if old is not None else None)
+    points: list[tuple[float, float, float, str]] = []
+    for a in (-0.9, 0.0, 0.9):
+        for b in (-0.9, 0.0, 0.9):
+            px = x + ex[0] * half_x * a + ez[0] * half_z * b
+            pz = z + ex[1] * half_x * a + ez[1] * half_z * b
+            top, found = SET_DOWN_FROM_M, world.pick([px, SET_DOWN_FROM_M, pz], [0.0, -1.0, 0.0])
+            if found.hit and found.name == past and old_bottom is not None:
+                # Through it: what is under it is what it stands on after.
+                top = old_bottom - 0.001
+                found = world.pick([px, top, pz], [0.0, -1.0, 0.0])
+            points.append((a, b, top - found.distance_m, found.name) if found.hit
+                          else (a, b, 0.0, ""))
+    _, _, top, name = max(points, key=lambda p: p[2])
+    under = name or ("the ground" if _has_terrain(entry) else "the floor")
+    return top, under, [(a, b, h) for a, b, h, _ in points]
+
+
+def _box_of(body: dict[str, Any]) -> tuple[list[float], list[list[float]], list[float]]:
+    return ([float(v) for v in body["center_m"]], _sides_now(body),
+            [float(v) / 2.0 for v in body["dimensions_m"]])
+
+
+def _dot3(a: Any, b: Any) -> float:
+    return sum(float(p) * float(q) for p, q in zip(a, b))
+
+
+def _overlap_depth(one: dict[str, Any], two: dict[str, Any]) -> float:
+    """How deep two scene bodies share space, metres; zero or less when they do
+    not. A box against a box by their fifteen separating axes, a ball by its
+    distance from a box's faces or from another ball."""
+    if one["shape"] == "sphere" and two["shape"] == "sphere":
+        return (one["dimensions_m"][0] + two["dimensions_m"][0]) / 2.0 - math.dist(
+            one["center_m"], two["center_m"])
+    if one["shape"] == "sphere" or two["shape"] == "sphere":
+        ball, box = (one, two) if one["shape"] == "sphere" else (two, one)
+        centre, sides, half = _box_of(box)
+        local = [_dot3([p - c for p, c in zip(ball["center_m"], centre)], s) for s in sides]
+        outside = math.sqrt(sum(max(0.0, abs(l) - h) ** 2 for l, h in zip(local, half)))
+        radius = ball["dimensions_m"][0] / 2.0
+        if outside > 0.0:
+            return radius - outside
+        return radius + min(h - abs(l) for l, h in zip(local, half))
+    c1, a1, h1 = _box_of(one)
+    c2, a2, h2 = _box_of(two)
+    gap = [q - p for p, q in zip(c1, c2)]
+    tests = a1 + a2 + [[u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2],
+                        u[0] * v[1] - u[1] * v[0]] for u in a1 for v in a2]
+    least = math.inf
+    for axis in tests:
+        n = math.sqrt(_dot3(axis, axis))
+        if n < 1e-9:
+            continue
+        axis = [v / n for v in axis]
+        reach = (sum(h * abs(_dot3(s, axis)) for h, s in zip(h1, a1)) +
+                 sum(h * abs(_dot3(s, axis)) for h, s in zip(h2, a2)))
+        depth = reach - abs(_dot3(gap, axis))
+        if depth <= 0.0:
+            return depth
+        least = min(least, depth)
+    return least
+
+
+def _settle(entry: dict[str, Any], name: str, put: dict[str, Any]) -> dict[str, Any]:
+    """Run the world until `name` is still, and say how far it went from where
+    it was put, and how far it turned."""
+    world = _live(entry)
+    heading = math.radians(put["rotation_deg"][1])
+    q_put = [math.cos(heading / 2.0), 0.0, math.sin(heading / 2.0), 0.0]
+    dt, per_look = 1.0 / 240.0, 4
+    events: list[dict[str, Any]] = []
+    t = still = 0.0
+    last = None
+    while t < TURN_SETTLE_S:
+        for _ in range(per_look):
+            _step_answering(world, events)
+        t += per_look * dt
+        body = world.body(name)
+        if body is None:
+            return {"stays": False, "after_s": round(t, 3), "why": f"{name} broke as it settled",
+                    "events": events}
+        q = list(body.orientation_wxyz)
+        spin = (2.0 * math.acos(min(1.0, abs(_dot3(q, last)))) / (per_look * dt)
+                if last is not None else math.inf)
+        last = q
+        speed = math.sqrt(_dot3(body.velocity_m_s, body.velocity_m_s))
+        still = still + per_look * dt if speed < TURN_STILL_M_S and spin < TURN_STILL_RAD_S else 0.0
+        if still >= TURN_STILL_S:
+            break
+    body = world.body(name)
+    q = list(body.orientation_wxyz)
+    moved = math.dist(body.position_m, put["center_m"])
+    turned = math.degrees(2.0 * math.acos(min(1.0, abs(_dot3(q, q_put)))))
+    w, x, y, z = q
+    up_now = [2 * (x * y - w * z), 1 - 2 * (x * x + z * z), 2 * (y * z + w * x)]   # its own y side
+    long_now = [1 - 2 * (y * y + z * z), 2 * (x * y + w * z), 2 * (x * z - w * y)]  # its own x side
+    said = {"after_s": round(t, 3), "at_rest": still >= TURN_STILL_S,
+            "moved_m": round(moved, 4), "turned_deg": round(turned, 2),
+            "position_m": [round(v, 4) for v in body.position_m]}
+    if put.get("_stand") == "upright":
+        said["long_side_from_vertical_deg"] = round(math.degrees(math.acos(min(1.0, abs(up_now[1])))), 2)
+    else:
+        said["long_side_from_level_deg"] = round(math.degrees(math.asin(min(1.0, abs(long_now[1])))), 2)
+    said["stays"] = said["at_rest"] and moved < STAYS_M and turned < STAYS_DEG
+    if events:
+        said["events"] = events
+    return said
+
+
+def tool_turn_object(args: dict[str, Any]) -> dict[str, Any]:
+    """Stand a thing on end, or lay it down, and set it down at a point -- an
+    edit the engine holds to what the world would do with it (see above)."""
+    world_id = str(args.get("world_id"))
+    entry = _world(world_id)
+    _live(entry)
+    name = str(args.get("name", ""))
+    body = next((b for b in entry["scene"]["bodies"] if b["name"] == name), None)
+    if body is None:
+        raise Refused(f"there is nothing called {name!r} in this world")
+    if body["shape"] != "box":
+        raise Refused(f"{name} is a ball: it has no long side to stand it on")
+    held = _held_by(entry, name)
+    if held:
+        raise Refused(f"{name} is held by {len(held)} joint(s): "
+                      f"{'; '.join(_joint_words(r) for r in held)}. A joint is made at "
+                      f"fixed points, so turning it would leave them behind. unhinge them "
+                      f"first, or stand things how they belong before joining them.")
+    if body.get("join"):
+        raise Refused(f"{name} is built into one piece with everything joined as "
+                      f"{body['join']!r}: it cannot be turned on its own")
+    if any(b.get("body") == name for b in entry["scene"].get("blades") or []):
+        raise Refused(f"{name} has an edge, and the edge is where it is on it: take it by "
+                      f"its grip with wield to hold it another way")
+    stand = str(args.get("stand") or "upright").strip().lower()
+    if stand not in ("upright", "lying"):
+        raise Refused(f"stand is 'upright' (its longest side vertical) or 'lying' (its "
+                      f"longest side level), not {stand!r}")
+    turned = _stood(body, stand, args.get("along"))
+    if turned is None:
+        raise Refused(f"{name} is a cube: every side is as long as the others, so it stands "
+                      f"the same whichever way up it is. move_object puts it somewhere else.")
+    dims, heading = turned
+    where = args.get("at_m")
+    if where is None:
+        x, z = float(body["center_m"][0]), float(body["center_m"][2])
+    else:
+        if not isinstance(where, (list, tuple)) or len(where) not in (2, 3):
+            raise Refused("at_m is where to set it down, [x, z]")
+        x = _number(where[0], "at_m", -50.0, 50.0)
+        z = _number(where[-1], "at_m", -50.0, 50.0)
+    put = dict(body, dimensions_m=dims, rotation_deg=[0.0, round(heading, 4), 0.0],
+               center_m=[x, 0.0, z], velocity_m_s=[0.0, 0.0, 0.0])
+    top, under, points = _under_turned(entry, put, name)
+    # What it stands on has to be under its middle on every side. A thing on
+    # the point of a ball, or half over an edge, is not standing on anything,
+    # whatever an exactly centred run makes of it: a pillar stood dead on top
+    # of a ball balanced there for the whole run, which no ball would allow.
+    # "On it" allows the tilt settling may have, STAYS_DEG across the footprint.
+    across = 1.8 * max(dims[0], dims[2]) / 2.0
+    on = [(a, b) for a, b, h in points
+          if h >= top - (0.01 + across * math.tan(math.radians(STAYS_DEG)))]
+    carried, of = len(on), len(points)
+    if not (any(a < 0 for a, _ in on) and any(a > 0 for a, _ in on)
+            and any(b < 0 for _, b in on) and any(b > 0 for _, b in on)):
+        raise Refused(f"{name} would not stand {stand} at [{x:.2f}, {z:.2f}]: only {carried} "
+                      f"of {of} points under it are on {under}, which is not under its "
+                      f"middle on every side, so it would tip off. Nothing was changed. Try "
+                      f"level ground, clear of edges -- survey says how steep the ground is.")
+    # And it has to rest on a FACE, not on a point or a ridge. Under a flat base
+    # on level or sloping ground, each two points opposite each other average to
+    # the height under its middle; on the top of a ball they are both lower, and
+    # the base would sit on the one point between them and tip off it -- which a
+    # run cannot always show: rolling resistance held a loose rubber ball still
+    # under a pillar started a third of a degree off, for the whole run.
+    height = {(a, b): h for a, b, h in points}
+    peak = max(height[(0.0, 0.0)] - (height[(-a, -b)] + height[(a, b)]) / 2.0
+               for a, b in ((0.9, 0.0), (0.0, 0.9), (0.9, 0.9), (0.9, -0.9)))
+    if peak > 0.003:
+        raise Refused(f"{name} would not stand {stand} at [{x:.2f}, {z:.2f}]: {under} rises "
+                      f"to a point or a ridge under its middle, {peak * 1000:.0f} mm above "
+                      f"either side of it, so it would rest on that and tip off. Nothing was "
+                      f"changed. Stand it on something flat.")
+    put["center_m"] = [x, round(top + dims[1] / 2.0 + 0.002, 4), z]
+    # What it stands on was looked at where it IS, settled a millimetre or two
+    # into what is under it; what is rebuilt is where it was BUILT. Lifted clear
+    # of that, so standing on a thing is never taken for being in it.
+    support = next((b for b in entry["scene"]["bodies"]
+                    if b["name"] == under and b is not body), None)
+    if support is not None:
+        depth = _overlap_depth(put, support)
+        if 0.0 < depth < 0.005:
+            put["center_m"][1] = round(put["center_m"][1] + depth + 0.001, 4)
+    # Nothing may share its space: every other thing in the world as built.
+    for other in entry["scene"]["bodies"]:
+        if other is body or other.get("subtract"):
+            continue
+        depth = _overlap_depth(put, other)
+        if depth > 0.001:
+            raise Refused(f"{name} would overlap {other['name']} by {depth * 1000:.0f} mm "
+                          f"standing there. Pick a point at least that much further from "
+                          f"it; nothing was changed.")
+    before = entry["scene"]
+    # Run from a hair off how it is put -- a third of a degree about each level
+    # axis -- so that a balance only an exactly centred run can keep is found
+    # out. A pillar stood dead on top of a ball stayed there for the whole of a
+    # run started exactly upright. A thing that stands rocks back and stays; one
+    # on a point falls, within about a second. What is written is the pose as
+    # put: the tilt is only where the run starts.
+    tried = dict(put, rotation_deg=[TRY_TILT_DEG, put["rotation_deg"][1], TRY_TILT_DEG])
+    scene = dict(before, bodies=[tried if b is body else b for b in before["bodies"]])
+    lost = _rebuild(entry, scene, world_id)
+    settled = _settle(entry, name, dict(put, _stand=stand))
+    if not settled["stays"]:
+        _rebuild(entry, before, world_id)
+        how = settled.get("why") or (
+            f"after {settled['after_s']} s it had moved {settled['moved_m']} m and turned "
+            f"{settled['turned_deg']} degrees from how it was put"
+            + ("" if settled["at_rest"] else ", and it was still moving"))
+        raise Refused(f"{name} would not stay {stand} on {under} at [{x:.2f}, {z:.2f}]: "
+                      f"{how}. It is back as it was. "
+                      + ("Only part of it was over what is under it. " if carried < of else "")
+                      + "Try level ground, clear of edges -- survey says how steep the "
+                        "ground is.")
+    # What the world IS from here: the pose as it was put, not the run's tilt --
+    # held to the world's own conditions as well (the playground's room checks
+    # every cell), since what they were asked about was the run's pose.
+    entry["scene"] = dict(entry["scene"], bodies=[put if b["name"] == name else b
+                                                  for b in entry["scene"]["bodies"]])
+    check = entry.get("check")
+    if check is not None:
+        try:
+            check(entry["scene"], entry.get("joints", []))
+        except ValueError as problem:
+            _rebuild(entry, before, world_id)
+            raise Refused(f"{problem}. It is back as it was.") from None
+    entry["story"].append(f"stood {name} {stand} at [{x:.2f}, {z:.2f}]")
+    answer: dict[str, Any] = {
+        "turned": name, "stands": stand,
+        "at_m": put["center_m"], "size_m_as_it_stands": dims,
+        "heading_deg": round(heading, 2), "on": under,
+        "settled": {k: v for k, v in settled.items() if k != "stays"},
+        "objects": _describe(entry["world"]),
+        "note": "An EDIT, like move_object: it is standing there as if it had been built "
+                "so. The world was then run until it was still, and it stayed as it was "
+                "put; anything else in flight started over, and every joint is hung again."}
+    if carried < of:
+        answer["overhangs"] = {"points_on_it": f"{carried} of {of}",
+                               "note": f"only part of it is over {under}"}
     if lost:
         answer["joints_lost"] = lost
     return answer
@@ -3059,6 +3447,32 @@ TOOLS = [
                      "properties": {
          "world_id": {"type": "string"}, "name": {"type": "string"},
          "position_m": dict(VECTOR, description="Its new centre, in metres.")}}},
+    {"name": "turn_object",
+     "description": "Stand an object upright -- its longest side vertical -- or lay it "
+                    "down with its longest side level, and set it down at at_m [x, z] on "
+                    "whatever is under that point (where it is, when at_m is left out). "
+                    "An EDIT, like move_object -- it stands there as if it had been built "
+                    "so -- that the engine holds to what the world would do with it: it "
+                    "must not overlap anything, it is set on what is under it, and the "
+                    "world is then run until it is still, and it must still stand as it "
+                    "was put. Stood on a slope it cannot stand on, or half over an edge, it "
+                    "falls in that run: the edit is refused with what happened and nothing "
+                    "changes. The answer says what it stands on and what the run measured: "
+                    "how far its long side is from vertical, and how far it moved. \"Turn "
+                    "this upright and set it in front of me\" is this call. A ball, a cube "
+                    "or anything held by a joint cannot be turned this way.",
+     "inputSchema": {"type": "object", "required": ["world_id", "name"], "properties": {
+         "world_id": {"type": "string"}, "name": {"type": "string"},
+         "stand": {"type": "string", "enum": ["upright", "lying"],
+                   "description": "upright (the default): its longest side vertical. "
+                                  "lying: its longest side level and its thinnest side up, "
+                                  "the way a plank lies flat."},
+         "at_m": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2,
+                  "description": "Where to set it down, [x, z]: on whatever is under that "
+                                 "point. Left out, where it is now."},
+         "along": dict(VECTOR, description="Lying only: the level direction its longest "
+                                           "side runs, like [1, 0, 0]. Left out, the way it "
+                                           "runs now.")}}},
     {"name": "clear_world",
      "description": "Take everything out of a world, joints and all, to build it "
                     "again from nothing. The world stays open under the same id; "
@@ -3912,6 +4326,7 @@ HANDLERS = {
     "add_object": tool_add_object,
     "remove_object": tool_remove_object,
     "move_object": tool_move_object,
+    "turn_object": tool_turn_object,
     "clear_world": tool_clear_world,
     "pick_up": tool_pick_up,
     "place": tool_place,
