@@ -99,6 +99,15 @@ def a_point_is_declared_and_reported_back() -> None:
                     f"a point facing in was refused without saying why: {refused}")
         else:
             require(False, "a point pointing back into its body was accepted")
+        try:
+            # The grip with its height and depth swapped, as the room's chat once
+            # gave one: in the air, where no hand could take hold of the pick.
+            world.tool_point("pick", (0.38, 1.12, 0.02), (0.0, -1.0, 0.0), grip_m=(-0.36, 0.02, 1.42))
+        except banjo.BanjoError as refused:
+            require("the grip is not on the body's matter" in str(refused),
+                    f"a grip off the body was refused without saying why: {refused}")
+        else:
+            require(False, "a grip off the body was accepted")
         print(f"  declared: point {p.id} on {p.body} ({p.material}), tip at "
               f"[{p.tip_m[0]:.2f}, {p.tip_m[1]:.2f}, {p.tip_m[2]:.2f}]")
 

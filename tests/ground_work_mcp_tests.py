@@ -80,6 +80,18 @@ class APickInTheClearing(unittest.TestCase):
              parts=["pick haft", "pick arm"], tool="pick haft", trial=False)
         self.assertNotIn("next", pointed(world_id), "a pick with its controls was told to add them")
 
+    def test_a_grip_off_the_tool_is_refused(self):
+        """The room's chat once gave the pick's grip with its height and depth
+        swapped -- 1.2 m above the haft -- and it was taken: the trial's hand held
+        a point in the air, and the pick's point met no ground. The grip is where
+        a hand closes on the tool, so it is on the tool, or refused."""
+        world_id = clearing_with_pick()
+        with self.assertRaises(banjo_mcp.Refused) as refused:
+            call("tool_point", world_id=world_id, body="pick arm",
+                 **dict(POINT, grip_m=[-0.36, 1.22, 0.02]))
+        self.assertIn("the grip is not on the body's matter", str(refused.exception))
+        self.assertEqual(banjo_mcp.WORLDS[world_id]["scene"].get("tool_points") or [], [])
+
     def test_it_is_tried_into_soil_levered_out_and_stopped_by_rock(self):
         world_id = clearing_with_pick()
         pointed(world_id)

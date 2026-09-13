@@ -176,6 +176,13 @@ unsigned ToolTerrain::declare(const ToolTerrainHost &host, const std::string &bo
         return refuse("there is no matter behind the tip: the pointing has to run out of the body at the tip");
     if (nearestCell(cells, made.tip_local + 0.5 * cell * made.pointing_local) < 0.45 * cell)
         return refuse("the pointing runs back into the body: it has to point out of it, the way the point goes in");
+    // And the grip is where a hand closes on it, so it is on the body as well.
+    // A grip in the air beside it has the hand holding nothing: every swing is
+    // made about a point the tool is not at, and its point meets no ground --
+    // measured, the room's chat gave a pick's grip with its height and depth
+    // swapped, 1.2 m above the haft, and its trial never reached the soil.
+    if (nearestCell(cells, made.grip_local) > 0.9 * cell)
+        return refuse("the grip is not on the body's matter: it has to be where a hand takes hold of it, on the body");
     // Which way its edge runs: square to the point and to the line from the
     // tip to the grip. For a pick that is across the swing, which is how a
     // pick's point is shaped to go into the ground.

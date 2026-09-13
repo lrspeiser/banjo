@@ -628,7 +628,8 @@ with a slab of bare rock 1.6 m by 1.2 m at [1.6, -1.2], 0.12 m proud of it.
   the hand's 60 N m wrist; iron of the same size is ten times the weight, and
   tool_point says when the wrist cannot hold a tool level.
 - tool_point's tip is at the very end of the arm, ON its end face, pointing
-  runs OUT of the arm there, and grip_m is near the far end of the haft.
+  runs OUT of the arm there, and grip_m is a point ON the haft near its far
+  end -- [x, y, z] like the tip, at the haft's own height and depth.
 A found oak pick lying on the soil in front of the person (tried, it went
 120 mm into the soil at 9.2 m/s, levered it broke out 5.6 L of soil, and the
 rock stopped it):

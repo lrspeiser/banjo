@@ -1209,7 +1209,8 @@ not cover -- rock under a point harder than it, wet ground -- is reported as
 
 Give a named body a point, everything where it is in the world now and kept
 in the body's own frame from then on; returns the point's id. The tip has to be
-at the end of the body's matter and `pointing` has to run out of it there;
+at the end of the body's matter and `pointing` has to run out of it there, and
+`grip_m` -- where a hand takes hold of it -- has to be on the body's matter too;
 refusals say which. From then on the body collides as its cells, so a pick's
 crook is open. `banjo_tool_point.in` is what the point is in right now
 ("soil", "sand", "loose soil" or "") and `depth_m` how far, along its axis.

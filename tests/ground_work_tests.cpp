@@ -450,6 +450,28 @@ void aPryBreaksGroundOutAndItIsCarried() {
     require(worst == 0.0, "the ground opened again from its edits does not have the same hole");
 }
 
+// ---- the grip ------------------------------------------------------------------
+
+// The grip is where a hand closes on the tool, so it is on the tool. The room's
+// chat once gave a pick's grip with its height and depth swapped, 1.2 m above
+// the haft, and it was taken: the hand held a point in the air, and the pick's
+// point met no ground.
+void aGripOffTheBodyIsRefused() {
+    const double top = 0.4;
+    Json scene{{"terrain", ground(top, 0.0)}, {"bodies", pick("oak", top)}};
+    auto live = open(scene);
+    const Vec3 tip{kTipX, top + 0.72, kTipZ};
+    const Vec3 on{kGripX, top + 1.02, kTipZ};
+    const Vec3 off{kGripX, top + 1.02 + 1.2, kTipZ};
+    require(live->toolPoint("pick", tip, {0.0, -1.0, 0.0}, 0.04, 0.04, 30.0, kPointLength, off) == 0,
+            "a grip 1.2 m above the haft was taken");
+    std::printf("  refused: %s\n", live->toolPointRefusal().c_str());
+    require(live->toolPointRefusal().find("the grip is not on the body's matter") != std::string::npos,
+            "a grip off the body was refused without saying why: " + live->toolPointRefusal());
+    require(live->toolPoint("pick", tip, {0.0, -1.0, 0.0}, 0.04, 0.04, 30.0, kPointLength, on) != 0,
+            "the same point with its grip on the haft was refused: " + live->toolPointRefusal());
+}
+
 } // namespace
 
 int main() {
@@ -459,6 +481,7 @@ int main() {
         {"the same swing is the same meeting", theSameSwingIsTheSameMeeting},
         {"soil against rock", soilAgainstRock},
         {"a pry breaks ground out, and it is carried", aPryBreaksGroundOutAndItIsCarried},
+        {"a grip off the body is refused", aGripOffTheBodyIsRefused},
     };
     int failed = 0;
     for (const auto &[name, check] : checks) {
