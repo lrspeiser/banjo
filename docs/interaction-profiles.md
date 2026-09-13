@@ -407,7 +407,9 @@ turn from how it is. The keys never turn the thing. They turn what the hand
 *wants* -- kept relative to the way the person faces, so a thing held across the
 view stays across it as they turn round -- and the hand asks the engine for that
 through `hand_q`, the wish its grip law turns towards with at most the wrist's
-60 N m: the same law that aims a sword. A loose thing a hand can hold up (under
+60 N m: the same law that aims a sword. It is asked in the frame the room is told
+the thing faces in, a turn it was built with (`rotation_deg`) included, so a wish
+that starts from how it is drawn holds it as it is. A loose thing a hand can hold up (under
 73 kg) is held by that grip; a heavier one is carried, which is placement, and
 cannot be turned by the hand -- a turn key says so, and offers the room.
 

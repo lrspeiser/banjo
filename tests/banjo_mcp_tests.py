@@ -10,6 +10,7 @@ answer.
 from __future__ import annotations
 
 import json
+import math
 import os
 import subprocess
 import sys
@@ -242,6 +243,51 @@ class TheTools(unittest.TestCase):
             {"name": "rubber ball", "shape": "sphere", "material": "rubber",
              "size_m": [0.2, 0.2, 0.2], "position_m": [-1.5, 0.102, 1.0]},
         ])["world_id"]
+
+    def test_a_plank_turned_about_two_axes_is_set_down_as_it_was_asked(self):
+        """rotation_deg is the engine's own: z first about the room's axes. Set
+        down with [x, z], a ramp turned about two axes rests its lowest corner on
+        the floor, and describe_world gives back the turn it stands at."""
+        world_id = self.client.call("create_world", cell_size_m=0.02, objects=[
+            {"name": "crate", "shape": "box", "material": "oak",
+             "size_m": [0.4, 0.4, 0.4], "position_m": [1.5, 0.202, 1.0]}])["world_id"]
+        added = self.client.call("add_object", world_id=world_id, object={
+            "name": "ramp", "shape": "box", "material": "oak", "size_m": [1.2, 0.04, 0.32],
+            "rotation_deg": [0, 30, 12], "anchored": True, "position_m": [0, 0]})
+        self.assertEqual(added["set_down"]["on"], "the floor")
+        # And the answer says how it stands, as a plank is described, so a model
+        # can see it is what was meant: its x side rises 12 and faces 30 round.
+        self.assertEqual(added["stands"], {"x_side_rises_deg": 12.0, "z_side_leans_deg": 0.0,
+                                           "x_side_faces_deg": 30.0})
+        # How far it reaches below its middle, turned the engine's way: row y of
+        # Rx Ry Rz against its half sizes.
+        a, b, c = (math.radians(v) for v in (0, 30, 12))
+        row = [math.cos(a) * math.sin(c) + math.sin(a) * math.sin(b) * math.cos(c),
+               math.cos(a) * math.cos(c) - math.sin(a) * math.sin(b) * math.sin(c),
+               -math.sin(a) * math.cos(b)]
+        below = sum(abs(r) * s / 2.0 for r, s in zip(row, [1.2, 0.04, 0.32]))
+        self.assertAlmostEqual(added["set_down"]["centre_y_m"], below + 0.002, delta=1e-4)
+        objects = {o["name"]: o for o in self.client.call("describe_world",
+                                                           world_id=world_id)["objects"]}
+        self.assertEqual(objects["ramp"]["rotation_deg"], [0.0, 30.0, 12.0])
+        self.assertNotIn("rotation_deg", objects["crate"], "a box square to the room is said so")
+
+    def test_a_pillar_lies_down_along_any_direction(self):
+        """Until the engine said which way a thing built with a heading faces,
+        the settling run read a pillar lying still along z as having turned 90
+        degrees and refused it: it lay down along x and nowhere else."""
+        for along, heading in (([0, 0, 1], -90.0), ([1, 0, 1], -45.0)):
+            with self.subTest(along=along):
+                world_id = self.pillar_world()
+                laid = self.client.call("turn_object", world_id=world_id, name="stone pillar",
+                                        stand="lying", along=along, at_m=[0, 0.4])
+                self.assertLess(laid["settled"]["turned_deg"], 1.0, laid["settled"])
+                self.assertLess(laid["settled"]["long_side_from_level_deg"], 1.0)
+                pillar = next(o for o in self.client.call("describe_world",
+                                                          world_id=world_id)["objects"]
+                              if o["name"] == "stone pillar")
+                self.assertEqual(pillar["size_m"], [0.8, 0.16, 0.16])
+                self.assertAlmostEqual(pillar["rotation_deg"][1], heading, delta=0.5)
 
     def test_a_pillar_lying_down_is_stood_upright_where_it_is_asked_for(self):
         """"Turn this upright and set it in front of me": an edit the engine

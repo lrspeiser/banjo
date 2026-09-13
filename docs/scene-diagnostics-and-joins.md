@@ -184,9 +184,11 @@ travels much further than it should before stopping.
 Asked to angle the floor towards the pins, and refused for a placement error.
 The refusal was right and three capabilities were missing behind it.
 
-- `rotation_deg` turns a body about its own centre. It is voxelised through the
-  rotation and collides as a rotated box, not as the staircase its cells make,
-  so a ball rolls down a ramp rather than bouncing on every step.
+- `rotation_deg` turns a body about its own centre: about its own x axis, then
+  its own y, then its own z, which is z, then y, then x about the world's axes.
+  It is voxelised through the rotation and collides as a rotated box, not as the
+  staircase its cells make, so a ball rolls down a ramp rather than bouncing on
+  every step.
 - `anchored` makes a body scenery. Without it the ramp fell to the floor in
   0.24 s and took the ball with it. An anchored body still collides and still
   breaks; it just does not move.

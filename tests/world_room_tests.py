@@ -238,6 +238,156 @@ class TheToolsThatChangeIt(unittest.TestCase):
         self.assertEqual({b["name"] for b in checked["bodies"]}, {"post", "gate"})
 
 
+@unittest.skipUnless(ENGINE, "the live engine is not built")
+class ABodyTurnedAboutTwoAxes(unittest.TestCase):
+    """A plank turned about two axes is counted, placed and said to face the way
+    the engine builds it. rotation_deg turns a body z first -- TileImpactScene's
+    rotationQuaternion is qx qy qz -- and was measured so: every cell, and every
+    ray cast onto its collision shape, to 0.0 mm. The playground counted and
+    seated it x first (at [30, 0, 45] it shared 1,178 of the engine's 2,490
+    cells), and the engine said a body built turned faced no way at all, so the
+    page drew it square while it collided turned."""
+
+    TURNS = ([30, 0, 45], [20, 35, -50], [-60, 25, 10])
+    # The line protocol rounds every number it sends to 1e-5 (live_world_run's
+    # tidy), which can move an orientation by 2e-5 rad, a thousandth of a
+    # degree. Ten times that.
+    WIRE_DEG = 0.01
+
+    @staticmethod
+    def degrees_apart(q1, q2):
+        """The turn between two orientations, each normalised first."""
+        n1, n2 = (math.sqrt(sum(v * v for v in q)) for q in (q1, q2))
+        dot = abs(sum(a * b for a, b in zip(q1, q2))) / (n1 * n2)
+        return math.degrees(2.0 * math.acos(min(1.0, dot)))
+
+    @staticmethod
+    def plank(turn, name="plank", **more):
+        return {"name": name, "shape": "box", "material": "oak", "size_mm": [1000, 100, 200],
+                "center_mm": [0, 1000, 0], "rotation_deg": list(turn), "anchored": True, **more}
+
+    @staticmethod
+    def session(bodies):
+        runs = ROOT / "build" / "playground-runs"
+        runs.mkdir(parents=True, exist_ok=True)
+        spec = fracture_lab.validate({"cell_m": 0.02, "bodies": bodies})
+        return spec, live_session.Session(ENGINE, spec, runs)
+
+    def test_the_playground_counts_and_places_the_cells_the_engine_builds(self):
+        for turn in self.TURNS:
+            with self.subTest(rotation_deg=turn):
+                # Joined to an identical twin it is drawn from its cells, so the
+                # engine sends them; the twin adds none of its own.
+                spec, session = self.session([self.plank(turn, join="p"),
+                                              self.plank(turn, "twin", join="p")])
+                try:
+                    body = session.state["bodies"][0]
+                    engine = {tuple(round((p + c) / 0.02 - 0.5) for p, c in zip(body["position_m"], cell))
+                              for cell in body["cells_local_m"]}
+                finally:
+                    session.close()
+                ours = fracture_lab.body_cell_set(self.plank(turn), 20.0)
+                self.assertEqual(spec["cells"], len(engine), "the cell count the cap is held to")
+                self.assertEqual({(i, k) for i, _, k in ours}, {(i, k) for i, _, k in engine},
+                                 "the footprint")
+                self.assertEqual(fracture_lab._lowest_cell_mm(self.plank(turn), 20.0),
+                                 min(j for _, j, _ in engine) * 20.0, "the lowest cell")
+                self.assertEqual(ours, engine, "every cell")
+
+    def test_the_room_is_told_the_turn_it_was_built_at(self):
+        mcp = room_world.banjo_mcp
+        for turn in self.TURNS:
+            with self.subTest(rotation_deg=turn):
+                _, session = self.session([self.plank(turn)])
+                try:
+                    said = next(b for b in session.state["bodies"]
+                                if b["name"] == "plank")["orientation_wxyz"]
+                finally:
+                    session.close()
+                built = mcp._turn_matrix(turn)
+                self.assertLess(self.degrees_apart(said, mcp._qfrom(built)), self.WIRE_DEG)
+                # The room's edges and the playground's cells turn it the same way.
+                self.assertEqual(room_world._authored_turn({"rotation_deg": turn}), built)
+                for axis in ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]):
+                    turned = fracture_lab._rotate(axis, turn)
+                    for i in range(3):
+                        self.assertAlmostEqual(turned[i], sum(built[i][k] * axis[k] for k in range(3)),
+                                               places=12)
+                # And what the chat is told it stands at is what it was built at.
+                self.assertEqual(mcp._turned("box", said), [float(a) for a in turn])
+
+    def test_a_plank_held_as_it_lies_is_not_turned(self):
+        """Taken hold of the way the page takes hold of it: a grip at its middle,
+        and the wrist's wish starting from the way the room says it faces
+        (world.js startTurning). Upside down and turned, it stays as it lies."""
+        _, session = self.session([self.plank([180, 35, 0], center_mm=[0, 52, -1000],
+                                              anchored=False)])
+        try:
+            def step(**rest):
+                state = session.send(op="step", dt=1 / 240.0, n=8, moved=True, **rest)
+                for coming in state.get("breakable") or []:
+                    session.send(op="fracture", name=coming, wait=False)
+                return state
+
+            def the_plank():
+                return next(b for b in session.state["bodies"] if b["name"] == "plank")
+
+            for _ in range(30):
+                step()
+            body = the_plank()
+            at, q0 = list(body["position_m"]), list(body["orientation_wxyz"])
+            session.send(op="wield", name="plank", grip=at)
+            for _ in range(30):
+                step(hand=[at[0], at[1] + 0.05, at[2]], hand_q=q0)
+            q = the_plank()["orientation_wxyz"]
+            turned = math.degrees(2 * math.acos(min(1.0, abs(sum(a * b for a, b in zip(q, q0))))))
+            self.assertLess(turned, 1.0, f"held as it lay, it turned {turned:.1f} degrees")
+        finally:
+            session.close()
+
+    def test_the_guides_say_the_order_the_engine_builds(self):
+        import scene_chat
+        import world_chat
+        said = {"the scene chat": scene_chat.SYSTEM, "the room's chat": world_chat.GUIDE,
+                "add_object": room_world.banjo_mcp.OBJECT_SCHEMA["properties"]["rotation_deg"]
+                ["description"]}
+        for who, text in said.items():
+            words = " ".join(text.split())
+            with self.subTest(who=who):
+                self.assertIn("x leans it about its x side, y turns it about the vertical and z "
+                              "tilts its x side up", words)
+                self.assertIn("about its own x axis first, then its own y", words)
+                self.assertIn("then y, then x about the room's fixed axes", words)
+                self.assertIn("[0, 30, 12] turns", words)
+                self.assertIn("30 degrees about the vertical and tilts its x side up 12 degrees", words)
+                self.assertIn("[10, 0, 15] leans it 10 degrees about its x side and then tilts "
+                              "that side up 15 degrees, so against the level it rises 14.8", words)
+                self.assertNotIn("x then y then z", words)
+
+        def sides(turn):
+            """Its own x and z sides in the room, as the engine builds it."""
+            _, session = self.session([self.plank(turn)])
+            try:
+                w, x, y, z = next(b for b in session.state["bodies"]
+                                  if b["name"] == "plank")["orientation_wxyz"]
+            finally:
+                session.close()
+            return ([1 - 2 * (y * y + z * z), 2 * (x * y + w * z), 2 * (x * z - w * y)],
+                    [2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y)])
+
+        # And the examples are what the engine builds: the ramp's x side rises
+        # 12 degrees heading 30 round; the leaning one's z side leans 10 and its
+        # x side rises 14.8 against the level.
+        along, _ = sides([0, 30, 12])
+        self.assertAlmostEqual(math.degrees(math.asin(along[1])), 12.0, delta=self.WIRE_DEG)
+        self.assertAlmostEqual(math.degrees(math.atan2(-along[2], along[0])), 30.0,
+                               delta=self.WIRE_DEG)
+        along, across = sides([10, 0, 15])
+        self.assertAlmostEqual(math.degrees(math.asin(abs(across[1]))), 10.0, delta=self.WIRE_DEG)
+        # The guide gives it to a tenth of a degree.
+        self.assertAlmostEqual(math.degrees(math.asin(along[1])), 14.8, delta=0.05)
+
+
 class TheWatershedRoom(unittest.TestCase):
     """The valley within a river network (docs/watershed.md) -- and the valley
     room left exactly as it was, since its numbers are the milestone's first

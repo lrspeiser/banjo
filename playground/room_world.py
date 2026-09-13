@@ -279,17 +279,11 @@ def export_spec(entry: dict[str, Any], scene: dict[str, Any] | None = None,
 
 
 def _authored_turn(body: dict[str, Any]) -> list[list[float]]:
-    """The rotation a document body is built with: x, then y, then z, degrees."""
-    x, y, z = (math.radians(float(v)) for v in (body.get("rotation_deg") or [0.0, 0.0, 0.0]))
-    cx, sx, cy, sy, cz, sz = math.cos(x), math.sin(x), math.cos(y), math.sin(y), math.cos(z), math.sin(z)
-    rx = [[1, 0, 0], [0, cx, -sx], [0, sx, cx]]
-    ry = [[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]]
-    rz = [[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]]
-
-    def times(a, b):
-        return [[sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
-
-    return times(rz, times(ry, rx))
+    """The rotation a document body is built with, as the engine builds it: the
+    MCP's _turn_matrix, z turning first. It was x first here, so an edge on a
+    body tilted about two axes went into the room turned a different way from
+    the body it was on."""
+    return banjo_mcp._turn_matrix(body.get("rotation_deg"))
 
 
 def blade_spec(record: dict[str, Any], body: dict[str, Any]) -> dict[str, Any]:

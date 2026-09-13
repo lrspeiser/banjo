@@ -120,6 +120,24 @@ heavy for their hand. Heavier than 73 kg they can carry it but not turn it by
 hand -- add_object's answer says too_heavy_for_a_hand -- so say so, and turn it
 for them with turn_object when they ask.
 
+AT AN ANGLE. A ramp, a leaning plank -- anything not square to the room -- is
+one object with rotation_deg [x, y, z] in degrees. On its own, x leans it about
+its x side, y turns it about the vertical and z tilts its x side up. Together
+they turn it about its own x axis first, then its own y as that has turned, then
+its own z; the same as z, then y, then x about the room's fixed axes. So give a
+thing its length along x: [0, 30, 12] turns it 30 degrees about the vertical and
+tilts its x side up 12 degrees, a ramp rising along its length, facing 30
+degrees round; [10, 0, 15] leans it 10 degrees about its x side and then tilts
+that side up 15 degrees, so against the level it rises 14.8. size_m is its size
+before it is turned. Set it down with position_m [x, z] and its lowest corner
+rests on what is under it. add_object's answer has stands: how far its x side
+rises, how far its z side leans and which way its x side faces, as it was built.
+Check that is what you meant before you say what you made, and if it is not,
+take it out and add it again. In objects and objects_now a box that is not
+square to the room has the rotation_deg it stands at now; one without is square.
+A tilted thing with nothing holding it slides or falls flat: anchor a ramp, or
+lean a plank on something that holds it.
+
 MATERIALS. There are eight: iron, aluminum, glass, ceramic, oak, rubber, ice
 and concrete (list_materials says what each does). Asked for anything else --
 gold, silver, steel, stone -- say it is not one of them and offer the nearest
@@ -659,13 +677,20 @@ def _now(live_state: dict[str, Any]) -> list[dict[str, Any]]:
     out = []
     for body in live_state.get("bodies", []):
         velocity = body.get("velocity_m_s") or [0, 0, 0]
-        out.append({"name": body.get("name", ""), "material": body.get("material", ""),
-                    "shape": body.get("shape", ""),
-                    "position_m": [round(v, 3) for v in (body.get("position_m") or [0, 0, 0])],
-                    "size_m": [round(v, 3) for v in (body.get("dimensions_m") or [0, 0, 0])],
-                    "mass_kg": round(float(body.get("mass_kg") or 0.0), 2),
-                    "anchored": bool(body.get("anchored")), "held": bool(body.get("held")),
-                    "moving_m_s": round(math.sqrt(sum(v * v for v in velocity)), 3)})
+        said = {"name": body.get("name", ""), "material": body.get("material", ""),
+                "shape": body.get("shape", ""),
+                "position_m": [round(v, 3) for v in (body.get("position_m") or [0, 0, 0])],
+                "size_m": [round(v, 3) for v in (body.get("dimensions_m") or [0, 0, 0])],
+                "mass_kg": round(float(body.get("mass_kg") or 0.0), 2),
+                "anchored": bool(body.get("anchored")), "held": bool(body.get("held")),
+                "moving_m_s": round(math.sqrt(sum(v * v for v in velocity)), 3)}
+        # How a box stands, when it is not square to the room: a plank the chat
+        # leaned, or a pillar that fell over.
+        turned = room_world.banjo_mcp._turned(said["shape"],
+                                              body.get("orientation_wxyz") or [1.0, 0.0, 0.0, 0.0])
+        if turned:
+            said["rotation_deg"] = turned
+        out.append(said)
     return out
 
 

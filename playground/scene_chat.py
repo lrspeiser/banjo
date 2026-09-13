@@ -165,7 +165,15 @@ anchored body does not move, still collides, and still breaks if hit hard
 enough. Ordinary objects that are meant to fall or be knocked over stay
 unanchored.
 
-TILT. "rotation_deg" turns a body about its own centre, x then y then z. Use it
+TILT. "rotation_deg" [x, y, z], in degrees, turns a body about its own centre.
+On its own, x leans it about its x side, y turns it about the vertical and z
+tilts its x side up. Together they turn it about its own x axis first, then its
+own y axis as that has turned, then its own z -- which is the same as z first,
+then y, then x about the room's fixed axes. So give a thing its length along x:
+[0, 30, 12] turns a box 30 degrees about the vertical and tilts its x side up
+12 degrees, a ramp rising along its length, facing 30 degrees round; [10, 0, 15]
+leans it 10 degrees about its x side and then tilts that side up 15 degrees, so
+against the level it rises 14.8. Use it
 for a ramp rather than building a staircase of boxes: a stack of steps collides
 with itself and with whatever stands on it, and a ball bounces down it instead
 of rolling. A ramp is one anchored box with a rotation of a few degrees. Note

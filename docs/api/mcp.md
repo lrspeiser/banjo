@@ -91,9 +91,14 @@ broke.
 | `set_river` | a river's discharge from now: a flood or a drought. Where the river comes down from a reservoir beyond the edge, what feeds the reservoir; a basin or spring out there by its own name |
 
 `add_object` also takes `contents` (what the object is made of inside, by mass
-fraction), `temperature_k`, and `join`: objects given the same join name are
-built as ONE piece, their cells unioned and bonded across the seam, named by the
-first of them -- a pick's haft and its arm. Every `run` carries a `heat` summary whenever
+fraction), `temperature_k`, `rotation_deg` and `join`. `rotation_deg` is how it
+is turned about its own centre, in degrees -- about its own x axis, then its own
+y, then its own z, which is z, then y, then x about the room's axes
+(`create_world`'s objects take it too), and `describe_world` gives every box that
+is not square to the room the `rotation_deg` it stands at now. Objects given the
+same `join` name are built as ONE piece, their cells unioned and bonded across
+the seam, named by the first of them -- a pick's haft and its arm. Every `run`
+carries a `heat` summary whenever
 anything is hot, burning or pushing. On ground that is not flat, `add_object`
 seats a thing on the ground under it and says whether it is in water, and every
 `run` carries a `water` summary.
@@ -130,11 +135,10 @@ leaves the world as it was:
 
 A box is turned by giving it its new sides and a heading about the vertical,
 never a tilt: stood on end, a 0.16 × 0.16 × 0.8 m pillar is a 0.16 × 0.8 × 0.16 m
-one. Its own axes stay the world's up to one turn about the vertical, which keeps
-it clear of the one place the engine and the playground's cell count disagree: a
-`rotation_deg` about more than one axis. The engine builds z first
-(TileImpactScene's `rotationQuaternion` is qx qy qz); the cell count builds x
-first.
+one, so its own axes stay the world's up to one turn about the vertical. It lies
+down along any direction. Until 2026-09-13 only along x: the engine reported a
+thing built with a heading as facing no way at all, so the settling run read a
+pillar lying still along z as having turned 90 degrees, and refused it.
 
 **Measured** (`tests/banjo_mcp_tests.py`, the real engine):
 
