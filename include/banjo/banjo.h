@@ -89,8 +89,18 @@ extern "C" {
  * banjo_water_info, banjo_dig, banjo_deposit, banjo_cut_block, banjo_set_discharge,
  * banjo_terrain_heights, banjo_water_surface, banjo_environment_report,
  * banjo_environment_state, banjo_survey, banjo_awake_bodies). Nothing that was
- * in 14 changed. */
-#define BANJO_ABI_VERSION 16
+ * in 14 changed.
+ *
+ * 16 added the hand's own motions: a stroke the engine makes at its own step,
+ * the work the hand does, and previews of a stroke and of a flight
+ * (banjo_hand_mass, banjo_stroke, banjo_cancel_stroke, banjo_hand_state,
+ * banjo_preview_stroke, banjo_preview_flight), and banjo_body.mass_kg, which
+ * changed that struct's layout.
+ *
+ * 17 added the one-way fixing -- an arrow's nock on a string -- as
+ * banjo_fix_one_way, and banjo_joint.comes_off_n, which changed that struct's
+ * layout. */
+#define BANJO_ABI_VERSION 17
 
 /* What a call reported. Anything below zero is a failure and leaves the world
  * unchanged; banjo_last_error() says what happened. */
@@ -193,6 +203,10 @@ typedef struct {
     double damping_n_s_m;
     double force_n;
     double stored_j;
+    /* For a fixing: above zero it is ONE-WAY along its axis, which points the
+     * way b comes off a, and this is the most it holds b with that way
+     * (banjo_fix_one_way). Zero for a two-way fixing and every other kind. */
+    double comes_off_n;
 } banjo_joint;
 
 /* A thing carrying more than it can hold up.
@@ -639,6 +653,27 @@ BANJO_API int banjo_reeve(banjo_world *world, const char *a, const char *b,
 BANJO_API int banjo_fix(banjo_world *world, const char *a, const char *b,
                         const double at_m[3], const double axis[3],
                         double holds_tension_n, double holds_shear_n);
+
+/* A ONE-WAY fixing: b sits on a the way an arrow's nock sits on a bowstring, or
+ * a sling's ring on its release pin. `axis` points the way b comes off a.
+ *
+ * Along the axis it is a seat and not a bond. Pushed back into a, b is in
+ * contact and takes whatever the push is -- the string drives the arrow as hard
+ * as the limbs drive the string. Pulled the other way it is held with up to
+ * `comes_off_n` newtons, the grip of a snap-on nock, and pulled harder it
+ * slides; once it has slid past the nock's throat, 5 mm, the fixing is gone,
+ * reported once with `attached` 0 and a delay of kind "came off". Nothing
+ * decides when: an arrow leaves the string at the step the string, slowing past
+ * brace, would have to pull it back harder than that.
+ *
+ * Across the axis, and against turning, it holds as banjo_fix does, up to
+ * `holds_shear_n` (0 never lets go). It has no tension strength -- what pulls
+ * it apart is `comes_off_n`, which must be above zero.
+ *
+ * Returns the joint's id, always above zero, or a negative banjo_status. */
+BANJO_API int banjo_fix_one_way(banjo_world *world, const char *a, const char *b,
+                                const double at_m[3], const double axis[3],
+                                double comes_off_n, double holds_shear_n);
 
 /* Put an elastic element between two named things: a bow limb, a spring, a bent
  * plank -- anything that stores energy by being deformed and gives it back.

@@ -121,9 +121,24 @@ export function throwable(entry, onAJoint) {
 // What to say
 // ---------------------------------------------------------------------------
 //
+// What a bow says under its controls: whether there is an arrow on the string,
+// what its own limbs hold, how hard the hand is pulling -- all measured -- and
+// where the shot would go, which is said to be approximate because it is.
+function bowNote(use) {
+  const b = use.bow || {};
+  const bits = [b.arrowReady ? "Arrow ready" : "No arrow on the string"];
+  if (b.storedJ > 0.01) bits.push(`its limbs hold ${b.storedJ.toFixed(1)} J`);
+  if (b.pullN > 1) bits.push(`your hand pulls ${Math.round(b.pullN)} N`);
+  if (b.blocked) bits.push("as far as your hand can draw it");
+  else if (b.full) bits.push("full draw");
+  if (use.preview && use.preview.possible && use.preview.text) bits.push(use.preview.text);
+  else if (b.noPreview) bits.push(b.noPreview);
+  return bits.join(" · ");
+}
+
 // Only what can be done in the state the hand is in is offered, in the player's
 // keys. `use` is the page's own record of the hand: { mode, name, kg, reached,
-// preview, result, more }.
+// preview, result, more, bow }.
 export function helpFor(use) {
   const k = (action) => `<kbd>${keyOf(action)}</kbd>`;
   const kg = use.kg ? ` · ${use.kg < 10 ? use.kg.toFixed(2) : use.kg.toFixed(1)} kg` : "";
@@ -158,7 +173,27 @@ export function helpFor(use) {
       out.line = `${k("primary")} or ${k("interact")} put it down · ${k("more")} more`;
       break;
     case "thrown":
+    case "loosed":
+    case "notice":
       out.line = esc(use.result);
+      break;
+    case "bow-ready":
+      out.line = use.bow && use.bow.strung === false
+        ? `The string is cut — it cannot be drawn · ${k("interact")} let go of the bow`
+        : `Hold ${k("primary")} to draw · let go to shoot · ${k("interact")} let go of the bow`;
+      out.note = bowNote(use);
+      break;
+    case "drawing": {
+      const b = use.bow || {};
+      const fraction = b.max > 0 ? Math.min(1, (b.drawn || 0) / b.max) : 0;
+      out.line = `Let go of ${k("primary")} to shoot · ${k("secondary")} let the string down`;
+      out.meter = { label: "Draw", fraction,
+                    value: `${Math.round(100 * fraction)}% · ${Math.round(1000 * (b.drawn || 0))} mm` };
+      out.note = bowNote(use);
+      break;
+    }
+    case "letting-down":
+      out.line = "Letting the string down…";
       break;
     default:
       out.line = "";

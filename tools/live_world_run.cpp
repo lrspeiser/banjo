@@ -218,6 +218,9 @@ nlohmann::json jointsOf(const LiveWorld &world) {
             said["shear_n"] = tidy(joint.shear_n_now);
             said["holds_tension_n"] = tidy(joint.holds_tension_n);
             said["holds_shear_n"] = tidy(joint.holds_shear_n);
+            // One-way: an arrow on a string. What it holds b with, along the
+            // axis that points the way b comes off.
+            if (joint.comes_off_n > 0.0) said["comes_off_n"] = tidy(joint.comes_off_n);
         } else if (joint.kind == "pulley") {
             // The whole run: one side plus the ratio times the other, which is
             // the quantity the constraint actually holds.
@@ -947,12 +950,22 @@ int main(int argc, char **argv) {
                     // A peg, a bracket, a catch, a locking bar. Two bodies held
                     // as one, with a strength along the axis and another across
                     // it. Release it with "unhinge" -- which is what a latch is.
+                    // With comes_off_n it is one-way instead, like an arrow on
+                    // a string: pushed freely, held lightly, off when pulled.
+                    const double tension = command.value("holds_tension_n", 0.0);
+                    const double comes_off = command.value("comes_off_n", 0.0);
+                    if (!(comes_off >= 0.0))
+                        throw std::invalid_argument(
+                            "comes_off_n is newtons, zero (two-way) or more");
+                    if (comes_off > 0.0 && tension > 0.0)
+                        throw std::invalid_argument(
+                            "a one-way fixing has no tension strength: what pulls it "
+                            "off is comes_off_n");
                     const unsigned peg = world->fix(
                         command.at("a").get<std::string>(),
                         command.at("b").get<std::string>(),
                         readVec(command, "at"), readVec(command, "axis"),
-                        command.value("holds_tension_n", 0.0),
-                        command.value("holds_shear_n", 0.0));
+                        tension, command.value("holds_shear_n", 0.0), comes_off);
                     if (peg == 0)
                         throw std::invalid_argument("those two cannot be fixed together");
                     reply["joint"] = peg;

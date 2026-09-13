@@ -37,7 +37,7 @@ from typing import Any, Iterator
 # branches so that, merged, one number means one header: a library at 14
 # carries both. 15 added terrain and water, on top of both. Checked for
 # equality below, so this has to match exactly.
-ABI_VERSION = 16
+ABI_VERSION = 17
 
 NOTHING, HELD, DENTED, BROKE = 0, 1, 2, 3
 OUTCOMES = {0: "nothing", 1: "held", 2: "dented", 3: "broke"}
@@ -117,7 +117,8 @@ class _Joint(ctypes.Structure):
                 ("stiffness_n_m", ctypes.c_double),
                 ("damping_n_s_m", ctypes.c_double),
                 ("force_n", ctypes.c_double),
-                ("stored_j", ctypes.c_double)]
+                ("stored_j", ctypes.c_double),
+                ("comes_off_n", ctypes.c_double)]
 
 
 class _Overload(ctypes.Structure):
@@ -499,6 +500,10 @@ class Joint:
     shear_now_n: float = 0.0
     holds_tension_n: float = 0.0
     holds_shear_n: float = 0.0
+    # Above zero, a ONE-WAY fixing: b sits on a the way an arrow's nock sits on
+    # a string, and this is the most it holds b with along the axis, which
+    # points the way b comes off. Zero for two-way fixings and other kinds.
+    comes_off_n: float = 0.0
     # For an elastic: the declared linear model, and what it currently holds.
     #     force_n  = stiffness_n_m * (at - rest_m)
     #     stored_j = stiffness_n_m * (at - rest_m) ** 2 / 2
@@ -858,6 +863,10 @@ def library(path: str | os.PathLike[str] | None = None) -> ctypes.CDLL:
                               ctypes.c_double * 3, ctypes.c_double * 3,
                               ctypes.c_double, ctypes.c_double]
     lib.banjo_fix.restype = ctypes.c_int
+    lib.banjo_fix_one_way.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p,
+                                      ctypes.c_double * 3, ctypes.c_double * 3,
+                                      ctypes.c_double, ctypes.c_double]
+    lib.banjo_fix_one_way.restype = ctypes.c_int
     lib.banjo_spring.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p,
                                  ctypes.c_double * 3, ctypes.c_double * 3,
                                  ctypes.c_double, ctypes.c_double, ctypes.c_double]
@@ -1269,7 +1278,8 @@ class World:
             f"reeving {a!r} to {b!r}")
 
     def fix(self, a: str, b: str, at_m: Any, axis: Any = (0.0, 1.0, 0.0),
-            holds_tension_n: float = 0.0, holds_shear_n: float = 0.0) -> int:
+            holds_tension_n: float = 0.0, holds_shear_n: float = 0.0,
+            comes_off_n: float = 0.0) -> int:
         """Fix one named thing to another: a peg, a bracket, a catch, a bar.
 
         All six degrees of freedom are held, so the two move as one piece, and
@@ -1285,10 +1295,27 @@ class World:
         purpose is `unhinge`, which is what a latch does, and doing so changes
         what the assembly IS.
 
+        With `comes_off_n` above zero it is ONE-WAY along `axis`, which then
+        points the way b comes off a: an arrow's nock on a string, a sling's
+        ring on its release pin. Pushed back into a, b is in contact and takes
+        whatever the push is; pulled along the axis it is held with up to
+        `comes_off_n` newtons, and pulled harder it slides off by itself and
+        the fixing reports `attached` False. It has no tension strength, so
+        `holds_tension_n` must be zero with it.
+
         Returns the joint's id.
         """
         where = (ctypes.c_double * 3)(*(float(v) for v in at_m))
         along = (ctypes.c_double * 3)(*(float(v) for v in axis))
+        if comes_off_n:
+            if holds_tension_n:
+                raise BanjoError("a one-way fixing has no tension strength: what pulls it "
+                                 "off is comes_off_n")
+            return self._check(
+                self._lib.banjo_fix_one_way(self._alive(), a.encode("utf-8"),
+                                            b.encode("utf-8"), where, along,
+                                            comes_off_n, holds_shear_n),
+                f"fixing {b!r} one way to {a!r}")
         return self._check(
             self._lib.banjo_fix(self._alive(), a.encode("utf-8"), b.encode("utf-8"),
                                 where, along, holds_tension_n, holds_shear_n),
@@ -1377,6 +1404,7 @@ class World:
                       shear_now_n=out[i].shear_now_n,
                       holds_tension_n=out[i].holds_tension_n,
                       holds_shear_n=out[i].holds_shear_n,
+                      comes_off_n=out[i].comes_off_n,
                       rest_m=out[i].rest_m,
                       stiffness_n_m=out[i].stiffness_n_m,
                       damping_n_s_m=out[i].damping_n_s_m,

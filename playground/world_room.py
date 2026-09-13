@@ -335,12 +335,13 @@ def courtyard() -> dict[str, Any]:
     #                energy goes.
     #   the string   two LINKS, tip to nocking point, because a string pulls and
     #                does not push and that is exactly what a link is
-    #   the nock     a FIXING between the string and the arrow, because what a
-    #                nock does is hold two things together until it is let go,
-    #                which is what a latch is
+    #   the nock     a ONE-WAY FIXING between the string and the arrow: the
+    #                string pushes the arrow as hard as it has to, and the arrow
+    #                comes off it by itself the moment the string, slowing at
+    #                brace, would have to pull it back
     #
     # So the arrow's speed is not a number anywhere. It is whatever the limbs
-    # are holding when the nock is let go, less what the string, the tips and
+    # are holding when the string is loosed, less what the string, the tips and
     # the rest keep for themselves. Draw further, stiffen the limbs or nock a
     # heavier arrow and the shot changes, because nothing else could happen.
     #
@@ -596,22 +597,49 @@ def courtyard() -> dict[str, Any]:
             "length_mm": 0,             # as it is strung
             "breaks_at_n": 0,           # a string somebody can snap is a later room
         } for side in (1, -1)] + [{
-            # The nock: the arrow held to the string until it is let go. The
-            # same joint as the locking bar on the gate, and for the same
-            # reason -- releasing it is what changes what the assembly does.
+            # The nock: ONE-WAY, as a real one is. Its axis points the way the
+            # arrow comes off the string -- down the range -- and along it the
+            # string pushes the arrow as hard as it has to, while the other way
+            # it holds the arrow with no more than 20 N: enough to bring 672 g
+            # of arrow back with the string as it is drawn, sliding on its
+            # rest -- measured, that takes 1 to 7 N at the page's draw. Past
+            # brace the string slows and the arrow does not, and the step the
+            # string would have to pull harder than that, the arrow slides off
+            # it: 65 to 97 mm past brace, measured. Nothing lets it go and
+            # nothing chooses when.
             #
-            # Let go by hand and not by being overloaded, and that is measured
-            # rather than chosen: a fixing reports the MAGNITUDE of the force
-            # along its axis, so a nock being shoved forward by the string reads
-            # the same as one being pulled apart. Given a strength it let go
-            # during the draw, at 2.5 kN, long before the string ever stopped.
+            # It used to be an ordinary fixing that the page unhinged when the
+            # string got home, and a page ticks at thirty a second: a string
+            # doing 8.6 m/s is 290 mm past brace and on its way back before the
+            # page has looked, and it took the arrow with it.
             "kind": "fixing",
             "a": "bowstring",
             "b": "arrow",
             "at_mm": [BRACE_X, BOW_Y, BOW_Z],
             "axis": [1, 0, 0],
-            "holds_tension_n": 0,
+            "comes_off_n": 20,
             "holds_shear_n": 0,
+        }],
+        # How a person uses the bow (docs/interaction-profiles.md): take it up
+        # by any of its parts, draw the string back along the shot, let go to
+        # loose. The hand draws with what it has and the bow decides how far it
+        # comes; nothing here is a speed -- what the arrow leaves with comes out
+        # of the limbs, less what the string and the tips keep.
+        "interactions": [{
+            "object": "the courtyard bow",
+            "template": "draw-and-release",
+            "parts": ["bow grip upper", "bow grip lower", "bow grip near cheek",
+                      "bow grip far cheek", "upper limb tip", "lower limb tip",
+                      "bowstring", "arrow"],
+            # The string, drawn back in -x: the arrow lies forward of it in +x.
+            # 450 mm is the most the hand ASKS for; an 800 N hand on these limbs
+            # stops where they balance it, which is the draw.
+            "draw": {"part": "bowstring", "axis": [-1, 0, 0], "max_mm": 450,
+                     "speed_mm_s": 400},
+            "nock": {"a": "bowstring", "b": "arrow"},
+            "limbs": [["bow grip upper", "upper limb tip"],
+                      ["bow grip lower", "lower limb tip"]],
+            "projectile": "arrow",
         }],
     }
 

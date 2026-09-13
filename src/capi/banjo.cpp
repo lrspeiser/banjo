@@ -617,6 +617,34 @@ int banjo_fix(banjo_world *world, const char *a, const char *b,
     });
 }
 
+int banjo_fix_one_way(banjo_world *world, const char *a, const char *b,
+                      const double at_m[3], const double axis[3],
+                      double comes_off_n, double holds_shear_n) {
+    if (!world || !a || !b || !at_m || !axis) {
+        setError("no world, no names, or nowhere to fix"); return BANJO_BAD_ARGUMENT;
+    }
+    if (!(comes_off_n > 0.0 && comes_off_n <= 1e9)) {
+        setError("a one-way fixing comes off at some pull, more than zero newtons; one "
+                 "that never comes off is banjo_fix");
+        return BANJO_BAD_ARGUMENT;
+    }
+    if (!(holds_shear_n >= 0.0)) {
+        setError("a fixing's shear strength is newtons, zero (never lets go) or more");
+        return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        const unsigned peg = world->world->fix(a, b, readVec(at_m), readVec(axis),
+                                               0.0, holds_shear_n, comes_off_n);
+        if (peg == 0) {
+            setError(std::string("\"") + b + "\" cannot be fixed to \"" + a +
+                     "\": one of them is not in the scene, they are the same thing, "
+                     "or the axis has no direction");
+            return static_cast<int>(BANJO_BAD_ARGUMENT);
+        }
+        return static_cast<int>(peg);
+    });
+}
+
 int banjo_spring(banjo_world *world, const char *a, const char *b,
                  const double at_a_m[3], const double at_b_m[3],
                  double rest_m, double stiffness_n_m, double damping_n_s_m) {
@@ -702,6 +730,7 @@ int banjo_joints(const banjo_world *world, banjo_joint *out, int max) {
             out[i].damping_n_s_m = joint.damping_n_s_m;
             out[i].force_n = joint.force_n;
             out[i].stored_j = joint.stored_j;
+            out[i].comes_off_n = joint.comes_off_n;
         }
         return count;
     });

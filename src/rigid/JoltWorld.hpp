@@ -401,6 +401,14 @@ public:
         Vec3 axis_world{0.0, 1.0, 0.0};
         double holds_tension_n{0.0};
         double holds_shear_n{0.0};
+        // Above zero the fixing is ONE-WAY along its axis, the way an arrow's
+        // nock sits on a string or a sling's ring on its release pin, and
+        // `axis_world` points the way b comes off a. Pushed back into a, b is
+        // in contact and takes whatever the push is. Pulled along the axis it
+        // is held with up to this many newtons, and pulled harder it slides
+        // off. Across the axis it holds like any fixing. It has no tension
+        // strength: what pulls it apart is this.
+        double comes_off_n{0.0};
     };
     [[nodiscard]] unsigned addFixing(const FixingDescription &description);
 
@@ -450,6 +458,10 @@ public:
     struct JointLoad {
         double tension_n{};
         double shear_n{};
+        // The along-axis force on b with its sign: positive pushes b along
+        // +axis, away from a, and negative pulls it back towards a. tension_n
+        // is its size.
+        double axial_n{};
     };
     [[nodiscard]] JointLoad jointLoad(unsigned joint, const Vec3 &axis_world) const;
     // What this link is carrying, in newtons. Zero when it is slack.

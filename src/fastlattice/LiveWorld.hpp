@@ -265,6 +265,10 @@ struct LiveJoint {
     // fail at different loads, so they are two numbers and not one.
     double tension_n_now{}, shear_n_now{};
     double holds_tension_n{}, holds_shear_n{};
+    // Above zero, a ONE-WAY fixing: b sits on a the way an arrow's nock sits on
+    // a string, pushed along the axis as hard as anything pushes it and held
+    // the other way with no more than this. Its axis points the way b comes off.
+    double comes_off_n{};
     // For an elastic: the declared linear model, and what it currently holds.
     //
     //     force_n  = stiffness_n_m * (at - rest_m)
@@ -754,9 +758,17 @@ public:
                     double rest_m = 0.0, double stiffness_n_m = 1000.0,
                     double damping_n_s_m = 0.0);
 
+    // A fixing: a peg, a bracket, a catch (LiveJoint). With comes_off_n above
+    // zero it is ONE-WAY along `axis_world`, which then points the way b comes
+    // off a -- an arrow on a string, a sling's ring on its release pin. Pushed
+    // back into a, b is in contact and takes whatever the push is; pulled along
+    // the axis it is held with up to comes_off_n, and pulled harder it slides
+    // off, reported once with `attached` false and a delay that says it "came
+    // off". It has no tension strength, so holds_tension_n must be zero with it.
     unsigned fix(const std::string &a, const std::string &b,
                  const Vec3 &point_world_m, const Vec3 &axis_world,
-                 double holds_tension_n = 0.0, double holds_shear_n = 0.0);
+                 double holds_tension_n = 0.0, double holds_shear_n = 0.0,
+                 double comes_off_n = 0.0);
 
     unsigned reeve(const std::string &a, const std::string &b,
                    const Vec3 &point_a_world_m, const Vec3 &point_b_world_m,

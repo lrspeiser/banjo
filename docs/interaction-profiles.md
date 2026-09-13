@@ -135,7 +135,7 @@ is written, and carried to the page with the room.
             "bowstring", "arrow"],
   "templates": ["draw-and-release"],
   "grips": {"draw": {"part": "bowstring", "at_mm": [0, 0, 0]}},
-  "bindings": {"draw_part": "bowstring", "latch": "the nock fixing",
+  "bindings": {"draw_part": "bowstring", "nock": "the one-way fixing the arrow sits on",
                "limbs": ["the upper limb", "the lower limb"],
                "projectile": "arrow", "draw_axis": [1, 0, 0], "max_draw_mm": 500},
   "preconditions": ["string attached", "arrow on the string"],
@@ -148,10 +148,72 @@ is written, and carried to the page with the room.
 Grip anchors are in the part's own coordinates, so they follow the part.
 Bindings name joints and parts; validation refuses a profile that names a part
 or joint that is not there, a template the engine cannot do, or a projectile
-that cannot sit on the latch. Every object without a profile keeps the generic
-**carry/place**, and every loose object a hand can lift gets **throw**.
+that is not what its nock lets go of. Every object without a profile keeps the
+generic **carry/place**, and every loose object a hand can lift gets **throw**.
 
-**Status:** schema and validation are increments 2 and 3.
+**Status:** increment 2, the bow, below. The courtyard's bow carries a
+`draw-and-release` profile, stored as `interactions` in the room and checked
+where the room is written. The checks are:
+
+- its parts are in the room;
+- the draw part is one of them;
+- the limbs are real elastics;
+- the nock is a real ONE-WAY fixing (`comes_off_n`), whose axis lets the
+  projectile off down the shot.
+
+A profile that names something that isn't there, or tries to state a speed, is
+refused.
+
+### The bow, measured
+
+A nock is one-way, and the engine now has one. The string pushes the arrow as
+hard as it has to, and holds it back with no more than the nock's grip. The
+arrow leaves at the step where keeping it on would take more than that grip,
+and nothing in the page lets it go. The page's earlier approach was to release a
+two-way fixing "at brace", but the page ticks thirty times a second. By the time
+it looked, a string doing 8.6 m/s was 290 mm past brace and on its way back, and
+the arrow went with it: it never got further than x = −1.30.
+
+In the page, headless Chrome against the live engine, the controls are: E on
+the string takes up the bow; hold the left mouse to draw; let go to shoot.
+
+| | Measured |
+|---|---|
+| draw, 2 s of left mouse | 436 mm; 42.2 J in the limbs; the hand pulling 214 N; the meter read off the engine |
+| loose | the page opens the hand and does nothing else; "arrow came off bowstring" |
+| the shot | left at 8.6 m/s, 58% of what the limbs held; flew 1.6 m down the range and bounced off the gate |
+| again, no arrow | "No arrow on the string"; drawn to 430 mm and let down with the right mouse |
+| clock | 2.28 s of room time over 2.25 s of wall clock |
+
+Through the same live pipe (`tests/world_room_tests.py`):
+
+- drawn 147 mm, the limbs held 2.3 J, and the arrow came off 65 mm past brace
+  at 1.89 m/s;
+- drawn 291 mm, they held 15.6 J, and it came off 97 mm past brace at 5.24 m/s.
+
+While drawn, the nock carried 1 to 7 N of its 20.
+
+Three things in the engine were found wanting on the way, and each was fixed in
+the engine rather than in the page:
+
+- **The one-way fixing.** `banjo_fix_one_way`, and `comes_off_n` on every
+  fixing API (see [api/c-api.md](api/c-api.md)).
+- **A stroke that keeps hold now arrives at its end.** It slows at the rate it
+  sped up. One that stopped dead at the end of a draw left the string ringing
+  from −0.38 to +0.24 to −1.57 m/s within nine steps.
+- **A taut rope stays taut.** Jolt's distance limit only engages when a rope is
+  at or beyond its length as the step starts. A rope pulled tight sits right on
+  that line, so being nudged a hair inside it made the rope do nothing for a
+  whole step. Measured: a string rope carrying 110.7 N read 0 for one step, and
+  the 45 g limb tip it held against a 307 N limb spring left at 6.8 m/s, every
+  few dozen steps, with nobody touching anything. The arrow used to be welded to
+  the string, and its mass hid this.
+
+In the engine, a 4 kN/m and an 8 kN/m bow drawn 200 mm with the same hand
+shoot the same arrow at 1.69 and 2.61 m/s. A 4.2 kg arrow leaves the 4 kN/m
+bow at 1.94 m/s, against 3.28 m/s for a 1.05 kg one, and carries more momentum.
+In the page there is one bow so far. A second stiffness is the crafting
+transaction's job (section 6).
 
 ## 6. The crafting transaction
 

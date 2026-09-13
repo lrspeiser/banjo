@@ -365,7 +365,8 @@ class Live:
                         at=[float(v) / 1000.0 for v in (pin.get("at_mm") or [])],
                         axis=[float(v) for v in (pin.get("axis") or [0, 1, 0])],
                         holds_tension_n=float(pin.get("holds_tension_n", 0.0)),
-                        holds_shear_n=float(pin.get("holds_shear_n", 0.0)))
+                        holds_shear_n=float(pin.get("holds_shear_n", 0.0)),
+                        comes_off_n=float(pin.get("comes_off_n", 0.0)))
                 except Exception as error:
                     problems.append(f"{pin.get('b', '?')} would not fix to "
                                     f"{pin.get('a', '?')}: {error}")
@@ -801,9 +802,19 @@ class Live:
             if not all(0.0 <= v <= 1e9 for v in holds):
                 raise LiveError("a fixing's strengths are newtons, zero (never "
                                 "lets go) or more")
+            # One-way, like an arrow on a string: no tension strength, because
+            # what pulls it off is comes_off_n.
+            comes_off = float(body.get("comes_off_n", 0.0))
+            if not 0.0 <= comes_off <= 1e9:
+                raise LiveError("a one-way fixing comes off at newtons, zero (two-way) "
+                                "or more")
+            if comes_off > 0.0 and holds[0] > 0.0:
+                raise LiveError("a one-way fixing has no tension strength: what pulls "
+                                "it off is comes_off_n")
             return session.send(op="fix", a=str(body.get("a", "")),
                                 b=str(body.get("b", "")), at=spot("at"), axis=axis,
-                                holds_tension_n=holds[0], holds_shear_n=holds[1])
+                                holds_tension_n=holds[0], holds_shear_n=holds[1],
+                                comes_off_n=comes_off)
         if op == "unhinge":
             return session.send(op="unhinge", joint=int(body.get("joint", 0)))
         if op == "joint_friction":

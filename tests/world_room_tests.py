@@ -306,6 +306,63 @@ class TheCourtyard(unittest.TestCase):
             self.assertGreater(joint["at_mm"][1], joint["to_mm"][1],
                                f"{joint['b']} is tied to something below it")
 
+    def test_the_bow_says_how_it_is_used_and_never_how_fast(self):
+        """docs/interaction-profiles.md: the bow carries a profile -- the parts
+        that are one object, the part the hand draws and which way, the joint
+        that lets go, the limbs that hold the draw -- and nothing in it is a
+        speed. The nock and the limbs are real joints of the room, and the
+        nock is one-way, letting the arrow off down the range."""
+        spec = fracture_lab.validate(world_room.courtyard())
+        profiles = [p for p in spec["interactions"] if p["template"] == "draw-and-release"]
+        self.assertEqual(len(profiles), 1, "the courtyard's bow has no profile")
+        bow = profiles[0]
+        self.assertEqual(bow["draw"]["part"], "bowstring")
+        self.assertEqual(bow["draw"]["axis"], [-1.0, 0.0, 0.0])
+        self.assertEqual((bow["nock"]["a"], bow["nock"]["b"]), ("bowstring", "arrow"))
+        self.assertEqual(bow["projectile"], "arrow")
+        fixings = {frozenset((j["a"], j["b"])): j for j in spec["joints"] if j["kind"] == "fixing"}
+        elastics = {frozenset((j["a"], j["b"])) for j in spec["joints"] if j["kind"] == "elastic"}
+        self.assertIn(frozenset(("bowstring", "arrow")), fixings)
+        nock = fixings[frozenset(("bowstring", "arrow"))]
+        self.assertGreater(nock.get("comes_off_n", 0.0), 0.0, "the nock holds both ways")
+        self.assertEqual(nock["axis"], [1, 0, 0], "the nock does not let the arrow off down the range")
+        for limb in bow["limbs"]:
+            self.assertIn(frozenset(limb), elastics)
+        said = repr(bow).lower()
+        self.assertNotIn("speed_m_s", said)
+        self.assertNotIn("velocity", said)
+
+    def test_a_profile_that_names_what_is_not_there_is_refused(self):
+        """Refused where whoever wrote it can be told, the way a pin naming
+        something missing is: a bow whose nock is named wrong cannot be loosed,
+        and that would read as the physics failing."""
+        def the_nock(room):
+            return next(j for j in room["joints"] if j["kind"] == "fixing"
+                        and {j["a"], j["b"]} == {"bowstring", "arrow"})
+
+        def two_way(room):
+            nock = the_nock(room)
+            nock.pop("comes_off_n")
+
+        cases = {
+            "fixing": lambda r: r["interactions"][0].update(nock={"a": "bowstring",
+                                                                  "b": "iron ball"}),
+            "elastic": lambda r: r["interactions"][0].update(limbs=[["bow grip upper",
+                                                                     "bowstring"]]),
+            "never what it does": lambda r: r["interactions"][0].update(arrow_speed_m_s=60.0),
+            "not in this room": lambda r: r["interactions"][0]["parts"].append("longbow"),
+            # A nock that holds both ways would carry the arrow home and keep it.
+            "one-way": two_way,
+            # And one that lets the arrow off backwards would throw it at the archer.
+            "the way it is shot": lambda r: the_nock(r).update(axis=[-1, 0, 0]),
+        }
+        for said, spoil in cases.items():
+            room = world_room.courtyard()
+            spoil(room)
+            with self.assertRaises(ValueError, msg=f"a profile with {said!r} wrong was accepted") as caught:
+                fracture_lab.validate(room)
+            self.assertIn(said, str(caught.exception))
+
     def test_the_courtyard_carries_a_bow_made_of_ordinary_joints(self):
         """A bow, and not one thing in it is a bow.
 
@@ -429,11 +486,26 @@ class TheCourtyard(unittest.TestCase):
             self.assertLess(stored(session), 0.05,
                             "a bow at brace is already holding energy")
 
+            def nocked(session):
+                return next(j for j in session.send(op="joints")["joints"]
+                            if j["id"] == nock["id"])["attached"]
+
             session.send(op="grab", name="bowstring")
-            steps = int(draw_m / 0.002)
-            for i in range(1, steps + 1):
-                step(session, hand=[braced[0] - draw_m * i / steps,
-                                    braced[1], braced[2]])
+            # Drawn the way the page draws it: the engine's own stroke of the
+            # bounded hand, back along the shot at 0.4 m/s and speeding up at
+            # no more than 2 m/s^2, until the limbs balance the hand.
+            #
+            # It used to move the hand 2 mm a step from here, which yanks the
+            # string from rest -- and a hand moved before every step pulls twice
+            # in it -- and a string yanked like that pulls the arrow off a nock
+            # that lets go. A person does not draw like that.
+            session.send(op="stroke",
+                         path=[braced, [braced[0] - draw_m, braced[1], braced[2]]],
+                         speed_m_s=0.4, accel_m_s2=2.0, lead_m=0.05, let_go=False,
+                         give_up_s=30)
+            for _ in range(240 * 10):
+                if not (step(session).get("hand") or {}).get("stroking"):
+                    break
             # And HOLD at full draw. The hand pulls with a bounded force, so
             # reaching full draw takes as long as it takes; without the hold a
             # short draw simply runs out of steps before the force has finished
@@ -442,39 +514,26 @@ class TheCourtyard(unittest.TestCase):
                 step(session)
             held = stored(session)
             drawn = braced[0] - body(session, "bowstring")["position_m"][0]
+            self.assertTrue(nocked(session), "the arrow came off the string while it "
+                                             "was being drawn")
 
             session.send(op="release")
-            # The arrow leaves when the limbs STOP PUSHING, and that is read
-            # off the string's own acceleration rather than off any distance.
-            #
-            # Not "when the string gets back to brace", and not "when it stops":
-            # traced step by step, a 290 mm draw runs the string home to
-            # +5.25 m/s and then the ropes go taut 55 mm SHORT of brace, because
-            # the limb tips have not finished coming back. That stop takes ONE
-            # step, and a rule that waits to see it has already missed: at the
-            # step after, the nock -- which is a rigid weld until it is let go
-            # -- has hauled the arrow backwards at 2.13 m/s. Its acceleration,
-            # though, falls to nothing several steps before that, because the
-            # limbs are spent. That is the moment, and it is the same moment on
-            # a real bow.
-            away, fastest, best = False, 0.0, -99.0
-            went, gaining_best = 0.0, 0.0
+            # And nothing lets the arrow go. The nock is one-way: the string
+            # pushes the arrow as hard as it has to, and the arrow comes off it
+            # by itself as the string slows at brace -- the engine's doing, at
+            # its own step. It used to be let go from here, by reading the
+            # string's acceleration off the replies, and a rule that waits to
+            # see the string stop has already missed it: the step after, a
+            # nock that holds both ways has hauled the arrow backwards.
+            fastest, best, off_at = 0.0, -99.0, None
             for _ in range(600):
-                going = body(session, "bowstring")["velocity_m_s"][0]
-                gaining = going - went
-                gaining_best = max(gaining_best, gaining)
-                went = going
-                if not away and going > 0.5 and gaining < 0.15 * gaining_best:
-                    session.send(op="unhinge", joint=nock["id"])
-                    away = True
                 step(session)
-                if away:
-                    fastest = max(fastest,
-                                  body(session, "arrow")["velocity_m_s"][0])
+                if off_at is None and not nocked(session):
+                    off_at = body(session, "bowstring")["position_m"][0] - braced[0]
+                fastest = max(fastest, body(session, "arrow")["velocity_m_s"][0])
                 best = max(best, body(session, "arrow")["position_m"][0])
-            self.assertTrue(away, "the string never came back to brace, so the "
-                                  "arrow was never loosed at all")
-            return drawn, held, fastest, best
+            self.assertIsNotNone(off_at, "the arrow never came off the string")
+            return drawn, held, fastest, best, off_at
 
         try:
             short = shoot(0.15)
@@ -482,10 +541,11 @@ class TheCourtyard(unittest.TestCase):
         finally:
             live.shutdown()
 
-        print(f"\n    drawn {short[0] * 1000:.0f} mm: {short[1]:.1f} J, away at "
-              f"{short[2]:.2f} m/s, reached x={short[3]:.2f}")
-        print(f"    drawn {long[0] * 1000:.0f} mm: {long[1]:.1f} J, away at "
-              f"{long[2]:.2f} m/s, reached x={long[3]:.2f}")
+        for drawn, held, fastest, best, off_at in (short, long):
+            print(f"\n    drawn {drawn * 1000:.0f} mm: {held:.1f} J, off the string "
+                  f"{off_at * 1000:+.0f} mm from brace, away at {fastest:.2f} m/s, "
+                  f"reached x={best:.2f}", end="")
+        print()
 
         self.assertGreater(short[1], 0.2, "a 150 mm draw stored nothing at all")
         self.assertGreater(long[1], 2.5 * short[1],

@@ -17,9 +17,9 @@ if (banjo_abi_version() != BANJO_ABI_VERSION) { /* mismatch */ }
 `const char *banjo_version_string(void)` says which library it is in words, for
 a log line. Never parse it: the number to compare is `banjo_abi_version()`.
 
-Current ABI: **16**. 13 and 14 were two additions made side by side and then
-merged, numbered apart so that one number never meant two headers; 15 and 16
-were added on top:
+Current ABI: **17**. 13 and 14 were two additions made side by side and then
+merged, numbered apart so that one number never meant two headers; 15, 16 and
+17 were added on top:
 
 - **13** added blades -- `banjo_make_blade`, `banjo_blades`, `banjo_cuts`,
   `banjo_forget_cuts` -- and the bounded hand that swings them, `banjo_wield`,
@@ -38,10 +38,13 @@ were added on top:
   `banjo_preview_stroke` (see [The hand's own motions](#the-hands-own-motions)) --
   and `mass_kg` at the END of `banjo_body`, which is the one change to something
   that was already there: a 15 caller's `banjo_body` array is too short for a 16
-  library, so rebuild against this header.
+  library, so rebuild against this header;
+- **17** added the one-way fixing, an arrow's nock on a string --
+  `banjo_fix_one_way` -- and `comes_off_n` at the END of `banjo_joint`, so a 16
+  caller's `banjo_joint` array is too short for a 17 library in the same way.
 
-A library at 16 has all four. Nothing that was in 12 changed, nothing that was
-in 14 changed in 15, and in 16 only `banjo_body` grew.
+A library at 17 has all five. Nothing that was in 12 changed, nothing that was
+in 14 changed in 15, in 16 only `banjo_body` grew, and in 17 only `banjo_joint`.
 
 ---
 
@@ -503,6 +506,19 @@ which is a different number whenever a rope is not tied at a middle: a 1.00 m
 rope from the foot of a post to the back of an iron block, hauled tight, read
 1.272 m. It now reads 1.000 m.
 
+**A taut rope stays taut.** The solver's distance limit only engages when the
+two ends are at or beyond the length as a step starts. A rope pulled tight sits
+right on that line, so it was nudged a hair inside by whatever else was being
+corrected, and then did nothing for the whole step. On the courtyard bow, a
+string rope carrying 110.7 N read 0 for one step, and the 45 g limb tip it held
+back against a 307 N limb spring left at 6.8 m/s, every few dozen steps. Now a
+rope that pulled on the last step, is within 1 mm of its length and is not
+being closed faster than 5 cm/s is held at its length for the step. If it has
+to push to do so, because its ends are really being brought together, that
+shows as a push in the step's impulse, and on the next step it is slack again.
+So a rope going slack goes slack at most a step late. A push is not tension:
+`tension_n` reads 0 for it.
+
 **`tension_n` is a force, and it is only the rope's.** It is the impulse the
 solver put through the link over the last step, divided by that step, so it is
 the same in newtons whatever the step: that 617.638 N weight reads 617.586,
@@ -557,6 +573,54 @@ that shows: measured, a 5 kg oak bar on a 142 kg gate let it move as far as no
 bar at all, and a 60 kg iron bar — a mass ratio of two rather than thirty — held
 it. If a fixing seems soft, look at the mass ratio before looking at the
 constraint.
+
+### `int banjo_fix_one_way(banjo_world *world, const char *a, const char *b, const double at_m[3], const double axis[3], double comes_off_n, double holds_shear_n)`
+
+A fixing that holds **one way**. b sits on a the way an arrow's nock sits on a
+bowstring, or a sling's ring on its release pin, and `axis` points the way b
+comes off.
+
+```c
+double at[3] = {-1.76, 1.22, 0.12}, down_range[3] = {1.0, 0.0, 0.0};
+int nock = banjo_fix_one_way(w, "bowstring", "arrow", at, down_range, 20.0, 0.0);
+```
+
+Along the axis it is a seat, not a bond. **Pushed** back into a, b is in contact
+and takes whatever the push is — the string drives the arrow as hard as the
+limbs drive the string. **Pulled** the other way it is held with up to
+`comes_off_n`, the grip of a snap-on nock, and pulled harder it slides. Once it
+has slid past the nock's throat, 5 mm, the fixing is gone. That is reported
+once, with `attached` 0 and a delay of kind `"came off"` that carries the pull
+it was holding and its rating. Nothing decides when an arrow leaves the
+string. It leaves at the step where keeping it on would take more than the
+nock holds with.
+
+Across the axis, and against turning, it holds as `banjo_fix` does, up to
+`holds_shear_n` (0 never lets go). It has no tension strength, because what
+pulls it apart is `comes_off_n`, which must be above zero. `banjo_joints`
+reports it as a fixing with `comes_off_n` set. For a one-way fixing,
+`tension_now_n` is the size of the force along the axis, whether push or pull.
+
+**Measured** (`tests/fixing_tests.cpp`), a 618 N iron bracket seated on a wall:
+
+| Seat | Result |
+|---|---|
+| comes off upwards at 1 N, so the weight pushes it in | held; moved 0.0004 mm in 3 s, carrying 617.6 N |
+| comes off downwards, rated 2,471 N | held; moved 0.0006 mm in 3 s, carrying 617.6 N |
+| comes off downwards, rated 154.4 N | came off holding 154.409 N, and the bracket fell |
+
+On a bow (`tests/bow_tests.cpp`), the same draw was loosed three ways:
+
+| Loosed by | Arrow speed |
+|---|---|
+| a latch the test let go of at the step the string crossed brace | 3.58 m/s |
+| a 5 N one-way nock | 3.50 m/s; the arrow left 81 mm past brace |
+| a 20 N one-way nock | 3.28 m/s; the arrow left 92 mm past brace |
+
+That string slows only as fast as its limbs can slow it. So an arrow rides it
+until keeping it on takes more than the nock holds with, and a firmer nock
+keeps more of the shot for itself. The draw itself put at most 3.5 N on
+either nock.
 
 ### `int banjo_reeve(banjo_world *world, const char *a, const char *b, const double at_a_m[3], const double at_b_m[3], const double over_a_m[3], const double over_b_m[3], double ratio, double length_m)`
 

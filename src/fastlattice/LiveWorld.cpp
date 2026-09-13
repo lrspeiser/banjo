@@ -121,7 +121,15 @@ struct StrokeHand {
                                            double along, double speed, double grip_along,
                                            double most_accel_m_s2, double dt_s) {
     const double accel = std::min(stroke.accel_m_s2, most_accel_m_s2);
-    const double wants = std::min(stroke.speed_m_s, speed + accel * dt_s);
+    double wants = std::min(stroke.speed_m_s, speed + accel * dt_s);
+    // A stroke that keeps hold at the end ARRIVES there: a hand slows down no
+    // faster than it speeds up. One that stopped dead at the end of a draw left
+    // the string doing 0.38 m/s a step later with its hand stood still, and the
+    // pull that brought it up short rang it -- measured, from -0.38 to +0.24 and
+    // back to -1.57 m/s inside nine steps, which snatched a 1 kg arrow off its
+    // nock. A throw lets go at the end at full speed, and that is its point.
+    if (!stroke.let_go_at_end)
+        wants = std::min(wants, std::sqrt(2.0 * accel * std::max(0.0, length_m - along)));
     const double next = std::max(0.0, std::min({along + wants * dt_s,
                                                 grip_along + stroke.lead_m, length_m}));
     const double went = std::max(0.0, next - along) / dt_s;
@@ -440,6 +448,8 @@ struct LiveWorld::Impl {
         // body's own frame -- so that tension and shear stay tension and shear
         // when the whole assembly is carried somewhere else or turned over.
         double holds_tension_n{}, holds_shear_n{};
+        // A one-way fixing's hold along its axis (LiveWorld::fix). Zero is two-way.
+        double comes_off_n{};
         // An elastic's declared model.
         double rest_m{}, stiffness_n_m{}, damping_n_s_m{};
         // How far it had got, last time anyone could ask. Kept up to date every
@@ -1250,6 +1260,10 @@ void LiveWorld::step(double dt_s) {
 // one report, the same as a gate coming off its hinges, because a host that drew
 // a rope has to be told to stop drawing it. What was hanging on it falls.
 void LiveWorld::partOverloadedLinks() {
+    // How far b can slide along a one-way fixing and still be on it. A nock's
+    // throat is a few millimetres deep; past that the string is out of it and
+    // there is nothing left of the fixing around what it held.
+    constexpr double kThroatM = 0.005;
     for (Impl::SceneJoint &joint : impl_->joints) {
         const bool a_link = joint.kind == JoltWorld::JointKind::Link;
         const bool a_fixing = joint.kind == JoltWorld::JointKind::Fixing;
@@ -1258,11 +1272,14 @@ void LiveWorld::partOverloadedLinks() {
         if (!impl_->world->hasJoint(joint.rigid)) continue;
 
         double carrying = 0.0, bar = 0.0;
+        const char *what = a_fixing ? "gave way" : "parted";
         if (a_fixing) {
             // Two bounds, checked separately, because a peg pulled straight out
             // and a peg sheared sideways fail at different loads. Whichever is
             // the nearer to giving is the one that decides.
-            if (!(joint.holds_tension_n > 0.0) && !(joint.holds_shear_n > 0.0)) continue;
+            const bool one_way = joint.comes_off_n > 0.0;
+            if (!one_way && !(joint.holds_tension_n > 0.0) && !(joint.holds_shear_n > 0.0))
+                continue;
             const auto found = impl_->index_of.find(joint.a);
             const Vec3 along =
                 found != impl_->index_of.end()
@@ -1274,9 +1291,31 @@ void LiveWorld::partOverloadedLinks() {
                                       load.tension_n > joint.holds_tension_n;
             const bool sheared = joint.holds_shear_n > 0.0 &&
                                  load.shear_n > joint.holds_shear_n;
-            if (!pulled_apart && !sheared) continue;
-            carrying = pulled_apart ? load.tension_n : load.shear_n;
-            bar = pulled_apart ? joint.holds_tension_n : joint.holds_shear_n;
+            // A one-way fixing is never overloaded along its axis, because it
+            // cannot be: it holds with up to comes_off_n and whatever pulls
+            // harder slides b off it. It is OFF once b has slid further than
+            // the throat -- measured between the two points it was made at.
+            bool came_off = false;
+            const auto other = impl_->index_of.find(joint.b);
+            if (one_way && !sheared && found != impl_->index_of.end() &&
+                other != impl_->index_of.end()) {
+                const RigidSnapshot one = impl_->world->snapshot(impl_->body_of[found->second]);
+                const RigidSnapshot two = impl_->world->snapshot(impl_->body_of[other->second]);
+                const Vec3 here = one.center_of_mass_world_m +
+                                  one.orientation_world.rotate(joint.point_local_a);
+                const Vec3 there = two.center_of_mass_world_m +
+                                   two.orientation_world.rotate(joint.point_local_b);
+                came_off = dot(there - here, along) > kThroatM;
+            }
+            if (!pulled_apart && !sheared && !came_off) continue;
+            if (came_off) {
+                what = "came off";
+                carrying = std::max(0.0, -load.axial_n);
+                bar = joint.comes_off_n;
+            } else {
+                carrying = pulled_apart ? load.tension_n : load.shear_n;
+                bar = pulled_apart ? joint.holds_tension_n : joint.holds_shear_n;
+            }
         } else {
             if (!(joint.breaks_at_n > 0.0)) continue;
             carrying = impl_->world->jointTension(joint.rigid);
@@ -1286,8 +1325,8 @@ void LiveWorld::partOverloadedLinks() {
         impl_->world->removeJoint(joint.rigid);
         joint.rigid = 0;
         joint.attached = false;
-        impl_->delays.push_back({impl_->time_s, joint.a + " to " + joint.b,
-                                 a_fixing ? "gave way" : "parted", carrying, bar});
+        impl_->delays.push_back({impl_->time_s, joint.a + " to " + joint.b, what,
+                                 carrying, bar});
         // Both ends have to wake or what was hanging there stays hanging in the
         // air until something else disturbs it.
         for (const std::string &side : {joint.a, joint.b}) {
@@ -1569,7 +1608,8 @@ unsigned LiveWorld::spring(const std::string &a, const std::string &b,
 
 unsigned LiveWorld::fix(const std::string &a, const std::string &b,
                         const Vec3 &point_world_m, const Vec3 &axis_world,
-                        double holds_tension_n, double holds_shear_n) {
+                        double holds_tension_n, double holds_shear_n,
+                        double comes_off_n) {
     const auto first = impl_->index_of.find(a);
     const auto second = impl_->index_of.find(b);
     if (first == impl_->index_of.end() || second == impl_->index_of.end()) return 0;
@@ -1577,6 +1617,9 @@ unsigned LiveWorld::fix(const std::string &a, const std::string &b,
     const double reach = length(axis_world);
     if (!(reach > 1e-9)) return 0;
     if (!(holds_tension_n >= 0.0) || !(holds_shear_n >= 0.0)) return 0;
+    // One-way, it has no tension strength: what pulls it apart is comes_off_n.
+    if (!(comes_off_n >= 0.0) || !std::isfinite(comes_off_n)) return 0;
+    if (comes_off_n > 0.0 && holds_tension_n > 0.0) return 0;
 
     Impl::SceneJoint joint{};
     joint.id = impl_->next_joint++;
@@ -1585,6 +1628,7 @@ unsigned LiveWorld::fix(const std::string &a, const std::string &b,
     joint.kind = JoltWorld::JointKind::Fixing;
     joint.holds_tension_n = holds_tension_n;
     joint.holds_shear_n = holds_shear_n;
+    joint.comes_off_n = comes_off_n;
 
     const RigidSnapshot one = impl_->world->snapshot(impl_->body_of[first->second]);
     const RigidSnapshot two = impl_->world->snapshot(impl_->body_of[second->second]);
@@ -1605,6 +1649,7 @@ unsigned LiveWorld::fix(const std::string &a, const std::string &b,
         peg.axis_world = (1.0 / reach) * axis_world;
         peg.holds_tension_n = holds_tension_n;
         peg.holds_shear_n = holds_shear_n;
+        peg.comes_off_n = comes_off_n;
         joint.rigid = impl_->world->addFixing(peg);
     } catch (const std::exception &) {
         return 0;
@@ -1688,6 +1733,7 @@ std::vector<LiveJoint> LiveWorld::joints() const {
         said.damping_n_s_m = joint.damping_n_s_m;
         said.holds_tension_n = joint.holds_tension_n;
         said.holds_shear_n = joint.holds_shear_n;
+        said.comes_off_n = joint.comes_off_n;
         said.breaks_at_n = joint.breaks_at_n;
         said.ratio = joint.ratio;
         said.over_a_m = joint.over_a;
@@ -1965,6 +2011,7 @@ void LiveWorld::rehangJoints() {
                 peg.axis_world = along;
                 peg.holds_tension_n = joint.holds_tension_n;
                 peg.holds_shear_n = joint.holds_shear_n;
+                peg.comes_off_n = joint.comes_off_n;
                 joint.rigid = impl_->world->addFixing(peg);
             } else if (joint.kind == JoltWorld::JointKind::Slider) {
                 JoltWorld::SliderDescription groove{};
@@ -2180,12 +2227,29 @@ void LiveWorld::carryOrHaul(double dt_s) {
             // A hand that stops everything is not a steadier hand.
             const RigidSnapshot now = impl_->world->snapshot(id);
             const double strength = impl_->hand_strength_n;
+            // And never stiffer or more damped than the step can integrate. This
+            // pull is pushed from outside the solver once a step, and an explicit
+            // push past about 2 steps' worth of damping or 4 of stiffness puts
+            // energy IN instead of taking it out. Bounded by the body's own mass
+            // -- the least it can present, which is what it presents across the
+            // way it is attached -- at 0.8 and 1.5 of those limits. Measured: a
+            // bare bowstring (0.18 kg, its arrow shot) was "held" at a full 800 N
+            // while it shook at brace, at 2.3 steps' worth of damping; and a
+            // 2 kN hand spun a drawn test bow's arrow round at 12 m/s. A body
+            // heavier than about half a kilogram is untouched by this: a gate is
+            // hauled exactly as before. The real fix is a hand that pulls inside
+            // the solver (docs/interaction-profiles.md).
+            const double mass = impl_->world->mechanicalState(id).mass_kg;
+            const double stiffness = mass > 0.0 ? std::min(strength / 0.05, 1.5 * mass / (dt_s * dt_s))
+                                                : strength / 0.05;
+            const double braking = mass > 0.0 ? std::min(strength / 8.0, 0.8 * mass / dt_s)
+                                              : strength / 8.0;
             //
             // The brake is against the speed RELATIVE to the hand's own, so a
             // stroke can haul at speed; held still, it is the plain brake it
             // always was.
-            Vec3 force = (strength / 0.05) * gap -
-                         (strength / 8.0) * (now.linear_velocity_m_s - impl_->held_velocity);
+            Vec3 force = stiffness * gap -
+                         braking * (now.linear_velocity_m_s - impl_->held_velocity);
             const double push = length(force);
             if (push > strength) force = (strength / push) * force;
             impl_->world->pushBody(id, force);
