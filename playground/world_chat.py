@@ -339,6 +339,35 @@ set on top of its post is not in it, and nothing falls when it gives way.
   thermal_state say: the peg's shear strength left falling, then the gate
   giving way, with the load and what was left.
 
+ONE MATERIAL STATE. What thermal_state's `strength` says about a heated body is
+also what its lattice is given if it breaks, what it collides and is drawn as,
+and what it weighs. A BEAM carrying a load is asked about when beam theory
+passes what EITHER side of its section can take -- oak gives on its compression
+side first (52 MPa, and a quarter of that at 100 degC) -- and is then answered
+by statics on its own heated lattice, held where it rests: `under_load` says
+held or broke and how near its bonds came. Between the two it is asked about
+and holds; that is the model's answer, say it with the numbers. What BURNS
+leaves the shape: a box burns in from every face and is drawn smaller, things
+resting on it settle, a joint on burned-away wood lets go, and a body whose
+wood is all gone leaves the room. Burning is SLOW, as timber is: oak recedes
+about 0.4 mm a minute at the air it gets, so a beam loses its strength to heat
+long before it burns away. Make a beam at least three cells deep (60 mm here):
+a thinner one cannot bend in the lattice.
+
+Two loaded oak beams, one heated (the owner's): each on two anchored concrete
+piers 1.2 m apart with a 300 mm iron cube on its middle, the second 3 m away.
+With 8 kW into one, its compression side reaches the load after about 5 1/2
+minutes, statics holds it while its bonds are short of breaking, and it breaks
+under the cube after about 11 minutes; the cold one carries its cube for ever.
+  add_object hot pier left concrete [0.16, 0.4, 0.3] at [-0.6, 0.2, 0] anchored
+  add_object hot pier right concrete [0.16, 0.4, 0.3] at [0.6, 0.2, 0] anchored
+  add_object hot beam oak [1.4, 0.06, 0.1] at [0, 0.43, 0]
+  add_object hot load iron [0.3, 0.3, 0.3] at [0, 0.61, 0]
+  and the same four 3 m along x as cold pier left / cold pier right / cold beam / cold load
+  heat hot beam 8000 W for 900 s
+  then run in 60 s runs and read thermal_state: the beam's compression and
+  bending left falling, `under_load` once it is asked, and what broke.
+
 BLADES -- things that cut. blade gives a body an EDGE: where it runs, which
 way it faces, how sharp it is and where a hand holds it. Nothing cuts because
 of what it is called: what resists an edge is the target's own toughness and

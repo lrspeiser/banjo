@@ -579,6 +579,13 @@ class TheTools(unittest.TestCase):
         strength = self.client.call("thermal_state", world_id=world_id)["strength"]
         peg = next(b for b in strength["bodies"] if b["object"] == "oak peg")
         self.assertGreater(peg["char_mm"], 0.0, "the peg's surface charred")
+        # One material state (ABI 19): what is left of it -- the size it collides
+        # and is drawn at, what it weighs, and what its lattice would be given.
+        self.assertEqual(peg["as_built_mm"], [40.0, 40.0, 160.0])
+        self.assertEqual(len(peg["now_mm"]), 3)
+        self.assertGreater(peg["mass_kg"], 0.0)
+        lattice = peg["lattice_tension_left_pct"]
+        self.assertTrue(0.0 <= lattice["weakest_bond"] <= lattice["mean"] <= 100.0)
         twin = next(a for a in strength["attachments"] if a["made_of"] == "cold oak peg")
         self.assertTrue(twin["attached"], "the unheated twin still holds its gate")
         joints = self.client.call("joints", world_id=world_id)["joints"]

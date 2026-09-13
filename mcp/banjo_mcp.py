@@ -2036,10 +2036,27 @@ def _strength_said(world: banjo.World) -> dict[str, Any] | None:
             "sound_section_mm": [round(1000.0 * v, 1) for v in m.sound_section_m],
             "of_section_mm": [round(1000.0 * v, 1) for v in m.section_m],
             "would_keep_if_cooled_pct": round(100.0 * min(m.tension_if_cooled,
-                                                          m.shear_if_cooled), 1)}
+                                                          m.shear_if_cooled), 1),
+            # What is left of it, from the same state (docs/thermal-mechanics.md,
+            # "One material state"): what collides and is drawn, what it weighs,
+            # its cells, and what a fracture run gives its lattice.
+            "now_mm": [round(1000.0 * v, 1) for v in m.remaining_m],
+            "as_built_mm": [round(1000.0 * v, 1) for v in m.reference_m],
+            "mass_kg": round(m.mass_kg, 3),
+            "cells": m.cells, "cells_burned_away": m.cells_burned,
+            "lattice_tension_left_pct": {"weakest_bond": round(100.0 * m.bond_tension_min, 1),
+                                         "mean": round(100.0 * m.bond_tension_mean, 1)}}
         if not m.supported:
             said["outside_what_the_law_supports"] = True
         bodies.append(said)
+    report = world.mechanics_report()
+    statics = [{"object": s["name"], "answer": s["stop"], "load_n": round(s["load_n"], 1),
+                "its_bonds_at_pct_of_what_breaks_them": round(100.0 * s["first_failure_ratio"], 1),
+                "bonds_broken": s["bonds_removed"], "pieces": s["pieces"]}
+               for s in report.get("statics", [])]
+    burned = [{"object": b["name"], "at_s": round(b["time_s"], 1),
+               "residue_kg": round(b["residue_kg"], 3), "why": b["why"]}
+              for b in report.get("burned_away", [])]
     held = []
     for j in world.joints():
         if not j.member:
@@ -2061,9 +2078,16 @@ def _strength_said(world: banjo.World) -> dict[str, Any] | None:
         if j.parted_because:
             said["why_it_let_go"] = j.parted_because
         held.append(said)
-    if not bodies and not held:
+    if not bodies and not held and not statics and not burned:
         return None
-    return {"bodies": bodies, "attachments": held}
+    out: dict[str, Any] = {"bodies": bodies, "attachments": held}
+    # What statics said about a body carrying a sustained load: offered by the
+    # survey (beam theory at the declared strength), answered by its lattice.
+    if statics:
+        out["under_load"] = statics
+    if burned:
+        out["burned_away"] = burned
+    return out
 
 
 def tool_joints(args: dict[str, Any]) -> dict[str, Any]:
@@ -3973,7 +3997,15 @@ TOOLS = [
                     "piston. Heat a body a joint is made of (its `member`) and what the joint "
                     "can take follows the body's material law: a 40 mm oak peg given 2 kW "
                     "chars and loses its shear strength within a minute, while an iron one "
-                    "given the same loses none below 400 degC.",
+                    "given the same loses none below 400 degC. A heated BEAM carrying a load "
+                    "is asked about when either side of its section can no longer take the "
+                    "bending (oak gives on its compression side first) and answered by statics "
+                    "on its own heated lattice: thermal_state's `strength.under_load` says held "
+                    "or broke and how near its bonds came. What burns leaves the shape: a box "
+                    "burns in from every face, what rests on it settles, a joint on burned-away "
+                    "wood lets go, and a body whose wood is all gone leaves the world. Oak burns "
+                    "away slowly -- about 0.4 mm a minute -- so a beam loses its strength to heat "
+                    "long before it burns through.",
      "inputSchema": {"type": "object", "required": ["world_id", "target", "power_w", "seconds"],
                      "properties": {
          "world_id": {"type": "string"},

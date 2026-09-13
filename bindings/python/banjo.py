@@ -39,7 +39,7 @@ from typing import Any, Iterator
 # strength; 17 the hand's own motions and the one-way fixing; 18 rolling
 # resistance (materials(), World.rolling_report(), the survey's share).
 # Checked for equality below, so this has to match exactly.
-ABI_VERSION = 18
+ABI_VERSION = 19
 
 NOTHING, HELD, DENTED, BROKE = 0, 1, 2, 3
 OUTCOMES = {0: "nothing", 1: "held", 2: "dented", 3: "broke"}
@@ -67,7 +67,8 @@ class _Body(ctypes.Structure):
                 ("anchored", ctypes.c_int),
                 ("held", ctypes.c_int),
                 ("rgba", ctypes.c_uint),
-                ("mass_kg", ctypes.c_double)]
+                ("mass_kg", ctypes.c_double),
+                ("revision", ctypes.c_int)]
 
 
 class _Delay(ctypes.Structure):
@@ -273,7 +274,19 @@ class _BodyMechanics(ctypes.Structure):
                 ("tension_if_cooled", ctypes.c_double),
                 ("shear_if_cooled", ctypes.c_double),
                 ("bending_if_cooled", ctypes.c_double),
-                ("supported", ctypes.c_int)]
+                ("supported", ctypes.c_int),
+                # ABI 19: what is left of it, from the same state.
+                ("reference_m", ctypes.c_double * 3),
+                ("remaining_m", ctypes.c_double * 3),
+                ("remaining_volume_m3", ctypes.c_double),
+                ("mass_kg", ctypes.c_double),
+                ("inertia_kg_m2", ctypes.c_double * 3),
+                ("cells", ctypes.c_int),
+                ("cells_burned", ctypes.c_int),
+                ("bond_tension_min", ctypes.c_double),
+                ("bond_tension_mean", ctypes.c_double),
+                ("bond_stiffness_mean", ctypes.c_double),
+                ("revision", ctypes.c_int)]
 
 
 class _Blade(ctypes.Structure):
@@ -384,6 +397,10 @@ class Body:
     # What it weighs now: what a hand has to hold up and a throw has to
     # accelerate. Zero for anchored scenery, which the solver never moves.
     mass_kg: float = 0.0
+    # How many times its shape has changed where it stands (ABI 19): burning
+    # takes a box or a sphere in from every face -- `dimensions_m` is then what
+    # is left -- and a piece whose cells burn away is rebuilt from the rest.
+    revision: int = 0
 
 
 @dataclass(frozen=True)
@@ -744,6 +761,23 @@ class BodyMechanics:
     shear_if_cooled: float
     bending_if_cooled: float
     supported: bool
+    # ---- ABI 19: one material state (docs/thermal-mechanics.md) ------------
+    # The box its matter is measured against (as authored; `dimensions_m` is
+    # this box) and the part of it not burned away, which is what collides and
+    # what is drawn; the rigid body it is now; its cells; and what a fracture
+    # run gives its lattice -- the weakest and mean tension factor over its
+    # bonds and their mean stiffness factor, 1 cold -- from the same state.
+    reference_m: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    remaining_m: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    remaining_volume_m3: float = 0.0
+    mass_kg: float = 0.0
+    inertia_kg_m2: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    cells: int = 0
+    cells_burned: int = 0
+    bond_tension_min: float = 1.0
+    bond_tension_mean: float = 1.0
+    bond_stiffness_mean: float = 1.0
+    revision: int = 0
 
 
 # ---- terrain and water (ABI 15) ---------------------------------------------
@@ -1639,7 +1673,7 @@ class World:
                      velocity_m_s=tuple(b.velocity_m_s),
                      dimensions_m=tuple(b.dimensions_m),
                      anchored=bool(b.anchored), held=bool(b.held), rgba=int(b.rgba),
-                     mass_kg=float(b.mass_kg))
+                     mass_kg=float(b.mass_kg), revision=int(b.revision))
                 for b in buffer[:written]]
 
     def body(self, name: str) -> Body | None:
@@ -2019,7 +2053,15 @@ class World:
                               tension=m.tension, compression=m.compression, shear=m.shear,
                               bending=m.bending, tension_if_cooled=m.tension_if_cooled,
                               shear_if_cooled=m.shear_if_cooled,
-                              bending_if_cooled=m.bending_if_cooled, supported=bool(m.supported))
+                              bending_if_cooled=m.bending_if_cooled, supported=bool(m.supported),
+                              reference_m=tuple(m.reference_m), remaining_m=tuple(m.remaining_m),
+                              remaining_volume_m3=m.remaining_volume_m3, mass_kg=m.mass_kg,
+                              inertia_kg_m2=tuple(m.inertia_kg_m2), cells=int(m.cells),
+                              cells_burned=int(m.cells_burned),
+                              bond_tension_min=m.bond_tension_min,
+                              bond_tension_mean=m.bond_tension_mean,
+                              bond_stiffness_mean=m.bond_stiffness_mean,
+                              revision=int(m.revision))
                 for m in buffer[:written]]
 
     def mechanics_report(self, with_laws: bool = False) -> dict[str, Any]:

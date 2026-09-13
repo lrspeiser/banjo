@@ -109,8 +109,16 @@ extern "C" {
  * 18 added rolling resistance: every round body rolling on anything is resisted
  * by the couple M = c N r at its contacts, and banjo_materials and
  * banjo_rolling_report say with what (the survey says the ground's share). No
- * struct or signature that was in 17 changed. */
-#define BANJO_ABI_VERSION 18
+ * struct or signature that was in 17 changed.
+ *
+ * 19 made one material state drive everything (docs/thermal-mechanics.md, "One
+ * material state"): the lattice a heated body is broken in carries the same
+ * law and state as its section; what burns away leaves its collision shape,
+ * its drawn shape, its mass, centre of mass and inertia; a joint on matter
+ * that has burned away lets go. banjo_body gained `revision` and
+ * banjo_body_mechanics the geometry of what is left, each at its END; no
+ * signature changed. A caller built against 18 must be rebuilt. */
+#define BANJO_ABI_VERSION 19
 
 /* What a call reported. Anything below zero is a failure and leaves the world
  * unchanged; banjo_last_error() says what happened. */
@@ -157,6 +165,12 @@ typedef struct {
      * has to accelerate. A body that burns gets lighter. Zero for anchored
      * scenery, which the solver never moves. */
     double mass_kg;
+    /* ---- ABI 19 ------------------------------------------------------------
+     * How many times its shape has been changed where it stands: burning takes
+     * a box or a sphere in from every face (dimensions_m is then what is left),
+     * and a piece whose cells burn away is rebuilt from the ones it has. Redraw
+     * it when this moves. Zero for anything nothing has happened to. */
+    int revision;
 } banjo_body;
 
 /* A pin two named things turn about.
@@ -1218,6 +1232,31 @@ typedef struct {
     /* 0 when its state is outside what the law supports (banjo_mechanics_report
      * says why): the answer is still given, and said to be outside. */
     int supported;
+    /* ---- ABI 19: one material state (docs/thermal-mechanics.md) -----------
+     * The box its matter is measured against -- as authored, or the cells' box
+     * a piece broke off as; dimensions_m above is this box -- and the part of it
+     * not burned away, which is what collides and what is drawn. The section
+     * is taken across the reference box with the burned depth inside it, so
+     * nothing is counted twice. */
+    double reference_m[3];
+    double remaining_m[3];
+    double remaining_volume_m3;
+    /* What it is as a rigid body now: its mass (scenery: its matter's) and its
+     * principal inertia about its own axes, from the matter left spread over
+     * the volume left. */
+    double mass_kg;
+    double inertia_kg_m2[3];
+    /* Its cells, and how many have burned away entirely. */
+    int cells;
+    int cells_burned;
+    /* What a fracture run gives its lattice, from the same state: over its
+     * bonds, the weakest and the mean tension factor, and the mean stiffness
+     * factor, against the same bonds cold. 1 cold. */
+    double bond_tension_min;
+    double bond_tension_mean;
+    double bond_stiffness_mean;
+    /* Times its shape has been changed where it stands (banjo_body.revision). */
+    int revision;
 } banjo_body_mechanics;
 
 /* Say which of a joint's two bodies it is made of: its strength (a fixing, a

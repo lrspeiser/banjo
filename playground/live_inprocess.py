@@ -108,6 +108,9 @@ class InProcessSession:
                 "mass_kg": self._number(body.mass_kg),
                 "anchored": body.anchored,
                 "held": body.held,
+                # Times its shape changed where it stands (burned smaller, or
+                # rebuilt from the cells it has left). Redraw when it moves.
+                "revision": body.revision,
                 "color_rgba": f"{body.rgba:08x}",
             })
         state: dict[str, Any] = {
@@ -165,7 +168,16 @@ class InProcessSession:
                            "burned_mm": rounded(1000.0 * m.consumed_m, 0.01),
                            "section_mm": [rounded(1000.0 * v, 0.1) for v in m.section_m],
                            "sound_mm": [rounded(1000.0 * v, 0.1) for v in m.sound_section_m],
-                           "supported": m.supported})
+                           "supported": m.supported,
+                           # The compression side of the bending, and what is
+                           # left of it (docs/thermal-mechanics.md, "One material
+                           # state") -- the subprocess lane's fields, one for one.
+                           "bending_compression": rounded(m.bending_compression, 1e-3),
+                           "now_mm": [rounded(1000.0 * v, 0.1) for v in m.remaining_m],
+                           "mass_kg": rounded(m.mass_kg, 1e-3),
+                           "cells": m.cells, "cells_burned": m.cells_burned,
+                           "bond_tension": rounded(m.bond_tension_mean, 1e-3),
+                           "revision": m.revision})
         held = []
         for j in self._world.joints():
             if not j.member:
@@ -192,9 +204,17 @@ class InProcessSession:
             if j.parted_because:
                 said["parted_because"] = j.parted_because
             held.append(said)
-        if not bodies and not held:
+        report = self._world.mechanics_report()
+        statics = [{"name": s["name"], "stop": s["stop"], "load_n": rounded(s["load_n"], 0.1),
+                    "ratio": rounded(s["first_failure_ratio"], 1e-3), "bonds": s["bonds_removed"],
+                    "pieces": s["pieces"], "t": rounded(s["time_s"], 0.01)}
+                   for s in report.get("statics", [])]
+        burned = [{"name": b["name"], "t": rounded(b["time_s"], 0.01),
+                   "residue_kg": rounded(b["residue_kg"], 1e-3), "why": b["why"]}
+                  for b in report.get("burned_away", [])]
+        if not bodies and not held and not statics and not burned:
             return None
-        return {"bodies": bodies, "attachments": held}
+        return {"bodies": bodies, "attachments": held, "statics": statics, "burned_away": burned}
 
     def _hand(self, hand: "banjo.Hand") -> dict[str, Any]:
         out: dict[str, Any] = {
