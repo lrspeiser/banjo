@@ -696,13 +696,16 @@ private:
     // breaks, so the engine-level constraints are gone even for the bodies that
     // came through whole -- and the ones that did break have new names. This
     // finds each pin's wood again by NAME first and, failing that, by looking
-    // for the piece the pin is actually inside, which is the physically honest
-    // answer: the pin stays in whichever lump of door is still around it.
+    // for the piece that now carries the pin, which is the physically honest
+    // answer: the pin stays with whichever lump of door is still at it --
+    // around it, or beside it when the pin was put on the face of the post.
     void rehangJoints();
-    // Which body, if any, holds this point in its matter. Used to follow a pin
-    // into the piece it ended up in.
+    // Which piece of a broken body, if any, now carries a pin: the nearest,
+    // provided it stands no further off than the body did. Used to follow a
+    // pin into the piece it ended up with. See the definition.
     [[nodiscard]] std::size_t bodyHolding(const Vec3 &point_world_m,
-                                          const std::string &was_called) const;
+                                          const std::string &was_called,
+                                          double &stand_off_m) const;
     // Take bodies out of the world and out of every table parallel to it,
     // fixing up the hand and any fracture holding an index.
     void dropBodies(const std::vector<std::size_t> &which);

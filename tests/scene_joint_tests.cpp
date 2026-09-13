@@ -16,12 +16,17 @@
 //    rebuilds bodies the door never touched.
 // 4. When the door's own wood is smashed, the pin follows the piece it is
 //    inside, and the joint is still a joint.
+// 4b. A pin need not be INSIDE what it holds: the playground's chat puts a
+//    pane's hinge on the face of its post, in the gap beside the pane. When
+//    that pane breaks, the pin follows the piece that carries it, and the
+//    piece goes on hanging.
 // 5. When there is no wood left to hold it, the pin comes out and says so,
 //    rather than being left attached to something that no longer exists.
 // 6. Taking the pin out on purpose drops what was hanging on it.
 
 #include "fastlattice/LiveWorld.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -320,6 +325,197 @@ void aPinFollowsTheWoodItIsIn() {
     }
 }
 
+// A glass pane hung on a stone post and struck, the way the playground's chat
+// builds one. Both are builds the QA saved (check_pane_breaks in
+// tests/qa_cases.py), in its millimetres turned into metres.
+struct PaneOnAPost {
+    TileImpactRequest request;
+    Vec3 pin{};
+    double lower_deg{}, upper_deg{}, friction{};
+};
+
+PaneOnAPost paneOnAPost(const Vec3 &post_size, const Vec3 &post_at, const Vec3 &pane_size,
+                        const Vec3 &pane_at, const Vec3 &ball_at, const Vec3 &ball_going) {
+    PaneOnAPost scene;
+    TileImpactRequest &r = scene.request;
+    r.cell_size_m = 0.04;
+    r.backend = BackendKind::CpuParallel;
+    r.plasticity = true;
+    SceneBody post;
+    post.name = "stone post";
+    post.shape = BodyShape::Box;
+    post.material = MaterialPreset::Concrete;
+    post.dimensions_m = post_size;
+    post.center_m = post_at;
+    post.anchored = true;
+    SceneBody pane;
+    pane.name = "glass pane";
+    pane.shape = BodyShape::Box;
+    pane.material = MaterialPreset::Glass;
+    pane.dimensions_m = pane_size;
+    pane.center_m = pane_at;
+    SceneBody ball;
+    ball.name = "iron ball";
+    ball.shape = BodyShape::Sphere;
+    ball.material = MaterialPreset::Iron;
+    ball.dimensions_m = {0.12, 0.12, 0.12};
+    ball.center_m = ball_at;
+    ball.velocity_m_s = ball_going;
+    // Rolling, as the room sends it: the playground gives any ball with a
+    // sideways speed "roll" (fracture_lab.py), which the engine turns into the
+    // spin of rolling without slipping. It matters -- without the spin, this
+    // same pane takes the same ball in one piece.
+    const double radius = 0.5 * ball.dimensions_m.x;
+    ball.spin_rad_s = {ball_going.z / radius, 0.0, -ball_going.x / radius};
+    r.bodies = {post, pane, ball};
+    return scene;
+}
+
+// pane-breaks-2. The pin on the post's FACE, 40 mm off the pane's edge -- 63 mm
+// from its nearest cell centre -- and the ball driven into the pane's free
+// edge. It broke into one 293-cell piece carrying the whole hinge edge and
+// seven single cells at the far end, and the pin let go of all of them,
+// because it would only follow a piece with a cell within one cell of it.
+PaneOnAPost paneOffThePostsFace() {
+    PaneOnAPost scene = paneOnAPost({0.08, 1.0, 0.08}, {-0.3, 0.5, 0.16}, {0.6, 0.8, 0.04},
+                                    {0.08, 0.44, 0.16}, {0.9, 0.44, 0.16}, {-12.0, 0.0, 0.0});
+    scene.pin = {-0.26, 0.44, 0.16};
+    scene.lower_deg = 0.0;
+    scene.upper_deg = 100.0;
+    scene.friction = 10.0;
+    return scene;
+}
+
+// pane-breaks-0. The pin exactly on the pane's edge, where the post's face
+// meets it, and the ball into the pane's face. This one always followed; it
+// is here so that it goes on doing so.
+PaneOnAPost paneAtThePostsEdge() {
+    PaneOnAPost scene = paneOnAPost({0.16, 1.6, 0.16}, {0.0, 0.8, 0.0}, {0.64, 0.64, 0.04},
+                                    {0.4, 1.0, 0.14}, {0.6, 1.2, 0.44}, {0.0, 0.0, -16.0});
+    scene.pin = {0.08, 1.0, 0.14};
+    scene.lower_deg = -90.0;
+    scene.upper_deg = 90.0;
+    scene.friction = 1.0;
+    return scene;
+}
+
+// A body's cells where they are in the world now. A piece IS its cells; its
+// box is mostly not the piece.
+std::vector<Vec3> cellsOf(const LiveBodyPose &body) {
+    const Quat turn{body.orientation_wxyz[0], body.orientation_wxyz[1],
+                    body.orientation_wxyz[2], body.orientation_wxyz[3]};
+    std::vector<Vec3> out;
+    out.reserve(body.cells_local_m.size());
+    for (const Vec3 &cell : body.cells_local_m) out.push_back(body.position_m + turn.rotate(cell));
+    return out;
+}
+
+double nearestCellTo(const LiveBodyPose &body, const Vec3 &point) {
+    double nearest = 1e30;
+    for (const Vec3 &cell : cellsOf(body)) nearest = std::min(nearest, length(cell - point));
+    return nearest;
+}
+
+// The rule a pin's names live by. A pin that has come out may go on naming what
+// it held -- that is how a host knows what came off -- but a pin that says it is
+// attached must be attached to bodies that are in the world.
+void namesAreReal(const LiveWorld &world) {
+    const auto poses = world.poses();
+    for (const LiveJoint &joint : world.joints()) {
+        if (!joint.attached) continue;
+        bool a = false, b = false;
+        for (const LiveBodyPose &pose : poses) {
+            a = a || pose.name == joint.a;
+            b = b || pose.name == joint.b;
+        }
+        require(a && b, "a pin says it holds \"" + joint.a + "\" and \"" + joint.b +
+                            "\", and one of them is not in the world");
+    }
+}
+
+std::string millimetres(double metres) {
+    return std::to_string(std::lround(metres * 1000.0)) + " mm";
+}
+
+void aPaneOnAPinFollowsThePieceThatCarriesIt(const PaneOnAPost &scene, const char *called) {
+    const auto world = LiveWorld::open(scene.request);
+    const unsigned pin = world->hinge("stone post", "glass pane", scene.pin, Vec3{0.0, 1.0, 0.0},
+                                      scene.lower_deg, scene.upper_deg, scene.friction);
+    require(pin != 0, "the pane would not hang on the post");
+
+    // Run to the break. The pane is broken when it asks; anything else is
+    // declined, so that the pane is all that changes.
+    std::size_t pieces = 0;
+    for (int i = 0; i < 480 && pieces < 2; ++i) {
+        world->step(1.0 / 240.0);
+        if (!world->steppedBack()) continue;
+        for (const std::string &name : world->breakable()) {
+            if (name != "glass pane") { world->declineBreak(name); continue; }
+            pieces = world->fracture(name);
+            break;
+        }
+    }
+    if (pieces <= 1) {
+        for (const LiveImpact &hit : world->impacts(0.5))
+            std::cout << "    " << hit.by << " -> " << hit.struck << " at "
+                      << hit.closing_speed_m_s << " against a bar of "
+                      << hit.threshold_speed_m_s << "\n";
+    }
+    require(pieces > 1, "the pane never broke, so there is nothing for the pin to follow");
+
+    // What is at the pin the moment the pane has broken, before anything has
+    // had time to fall anywhere.
+    const auto broken = world->poses(true);
+    std::string nearest;
+    double gap = 1e30;
+    std::size_t cells = 0, most = 0;
+    for (const LiveBodyPose &pose : broken) {
+        if (pose.name.rfind("glass pane piece ", 0) != 0) continue;
+        most = std::max(most, pose.cells_local_m.size());
+        const double off = nearestCellTo(pose, scene.pin);
+        if (off < gap) {
+            gap = off;
+            nearest = pose.name;
+            cells = pose.cells_local_m.size();
+        }
+    }
+    const LiveJoint joint = pinNumber(world->joints(), pin);
+    std::cout << "  " << called << ": the pane broke into " << pieces << "; nearest the pin is "
+              << nearest << " (" << cells << " cells, a cell " << millimetres(gap)
+              << " from it); the pin holds \"" << joint.b << "\", attached=" << joint.attached
+              << "\n";
+    // The break this was written for: nearly the whole pane, hinge edge and
+    // all, beside the pin. If the break ever stops looking like that, say so
+    // rather than quietly test something else.
+    require(!nearest.empty() && cells == most,
+            "the piece nearest the pin is not the bulk of the pane");
+    require(joint.attached, "the pin let go, though " + nearest + " (" + std::to_string(cells) +
+                                " cells) had a cell " + millimetres(gap) + " from it");
+    require(joint.a == "stone post", "the post end of the pin wandered");
+    require(joint.b == nearest,
+            "the pin holds " + joint.b + " rather than the piece nearest it, " + nearest);
+    namesAreReal(*world);
+
+    // And the piece goes on hanging from it. Turning about the pin keeps every
+    // cell the same distance from it; coming off it does not.
+    run(*world, 480);
+    const LiveJoint later = pinNumber(world->joints(), pin);
+    require(later.attached && later.b == joint.b, "the pin let go of " + joint.b + " as it hung");
+    const auto hanging = world->poses(true);
+    const LiveBodyPose &held = named(hanging, later.b);
+    const double still = nearestCellTo(held, scene.pin);
+    double bottom = 1e30;
+    for (const Vec3 &cell : cellsOf(held)) bottom = std::min(bottom, cell.y);
+    bottom -= 0.5 * world->cellSize();
+    std::cout << "    two seconds on, its nearest cell is " << millimetres(still)
+              << " from the pin and its lowest edge " << millimetres(bottom)
+              << " off the floor\n";
+    require(std::abs(still - gap) < 0.5 * world->cellSize(),
+            "the piece has shifted on its pin, so it is not hanging from it");
+    require(bottom > 0.02, "the piece the pin holds is lying on the floor");
+    namesAreReal(*world);
+}
+
 void aPinWithNoWoodLeftComesOut() {
     // The honest end of the same story: sweep every piece of the door away and
     // the pin has nothing to hold. It must say so rather than keep a constraint
@@ -411,6 +607,10 @@ int main() {
         std::cout << "[PASS] a pin survives something else in the room breaking\n";
         aPinFollowsTheWoodItIsIn();
         std::cout << "[PASS] a pin follows the wood it is in\n";
+        aPaneOnAPinFollowsThePieceThatCarriesIt(paneOffThePostsFace(), "pin on the post's face");
+        std::cout << "[PASS] a pin on a post's face follows the piece of pane that carries it\n";
+        aPaneOnAPinFollowsThePieceThatCarriesIt(paneAtThePostsEdge(), "pin on the pane's edge");
+        std::cout << "[PASS] a pin on the pane's edge still follows it through a face-on break\n";
         aPinWithNoWoodLeftComesOut();
         std::cout << "[PASS] a pin with no wood left comes out\n";
         takingThePinOutDropsIt();
