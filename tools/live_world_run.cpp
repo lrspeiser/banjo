@@ -90,7 +90,10 @@
 //                    "anchored":false,"color_rgba":"8a8f99ff"}],
 //         "impacts":[{"struck":"pane","by":"ball","closing_speed_m_s":13.9,
 //                     "threshold_speed_m_s":4.5,"would_break":true}],
-//         "breakable":["pane"]}
+//         "breakable":["pane"],
+//         "elastics":[{"id":7,"metres":0.093,"force_n":558,"stored_j":25.9}]}
+//                                            what each spring holds; a partial
+//                                            reply carries only those that changed
 //
 // Every reply carries the whole world. A scene of a dozen objects is about a
 // kilobyte, which is what drawing one authored body per object rather than one
@@ -151,6 +154,10 @@ std::unordered_map<std::string, std::string> last_sent;
 // And what the pins looked like last time, for the same reason. See where this
 // is compared, below: the SET of pins is news, their angles are not.
 std::string last_joints;
+// What each elastic said it held in the last reply that carried it, by joint
+// id (see describe()): unlike a pin's angle, that is news every step a spring
+// is being drawn.
+std::unordered_map<unsigned, std::string> last_elastics;
 
 nlohmann::json vec(const Vec3 &v) {
     return nlohmann::json::array({tidy(v.x), tidy(v.y), tidy(v.z)});
@@ -491,6 +498,34 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
         it = last_sent.erase(it);
     }
     if (!only_moved) last_sent.clear();
+    // What each elastic holds -- how far it is stretched, how hard it pulls and
+    // the energy in it: the declared model's numbers (LiveWorld::joints), which
+    // a host cannot work out from the poses without deciding physics itself.
+    // Sent like the bodies and on the same terms, all of them in a whole reply
+    // and in a partial one only those that changed: a bow being drawn, its two
+    // limbs every step; a spring at rest, nothing. The pins themselves travel
+    // only when their SET changes (the step's reply, below), and while these
+    // travelled with them the room asked for the whole list a few times a
+    // second instead: its bow meter read 16.4 J at 387 mm into a 0.4 m/s draw,
+    // where the engine held 32.0 J.
+    nlohmann::json elastics = nlohmann::json::array();
+    std::unordered_set<unsigned> springs;
+    for (const LiveJoint &joint : world.joints()) {
+        if (joint.kind != "elastic") continue;
+        springs.insert(joint.id);
+        nlohmann::json said = {{"id", joint.id}, {"metres", tidy(joint.at)},
+                               {"force_n", tidy(joint.force_n)},
+                               {"stored_j", tidy(joint.stored_j)}};
+        std::string written = said.dump();
+        std::string &remembered = last_elastics[joint.id];
+        const bool same = remembered == written;
+        remembered = std::move(written);
+        if (trim && same) continue;
+        elastics.push_back(std::move(said));
+    }
+    for (auto it = last_elastics.begin(); it != last_elastics.end();)
+        it = springs.count(it->first) ? std::next(it) : last_elastics.erase(it);
+    if (!only_moved) last_elastics.clear();
     nlohmann::json impacts = nlohmann::json::array();
     for (const LiveImpact &impact : world.impacts())
         impacts.push_back({{"struck", impact.struck}, {"by", impact.by},
@@ -512,6 +547,7 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
             // for a second fracture while one is running gets nothing, so it
             // needs to know.
             {"working_on", world.fracturePending() ? world.fractureSubject() : std::string{}}};
+    if (!elastics.empty()) state["elastics"] = std::move(elastics);
     // The hand, while it holds something and once a stroke has opened it.
     const LiveHand hand = world.hand();
     if (!hand.holding.empty() || hand.let_go_at_s >= 0.0 || !hand.stroke_ended.empty())

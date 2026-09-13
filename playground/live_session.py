@@ -201,6 +201,7 @@ class Session:
         the cost of running the room. Everything on this side -- the tools, the
         tests, anything asking what the world looks like -- still wants all of
         them, so the last full picture is kept here and the changes folded in.
+        What each elastic holds comes the same way: only the ones that changed.
         """
         if not reply.get("partial"):
             return reply
@@ -209,7 +210,13 @@ class Session:
             bodies.pop(name, None)
         for body in reply.get("bodies", ()):
             bodies[body["name"]] = body
-        return {**reply, "bodies": list(bodies.values()), "partial": False}
+        whole = {**reply, "bodies": list(bodies.values()), "partial": False}
+        springs = {e["id"]: e for e in (self.state or {}).get("elastics", ())}
+        for reading in reply.get("elastics") or ():
+            springs[reading["id"]] = reading
+        if springs:
+            whole["elastics"] = list(springs.values())
+        return whole
 
     def close(self) -> None:
         """Quit the engine and shut the pipes -- never underneath a call.

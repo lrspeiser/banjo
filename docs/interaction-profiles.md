@@ -304,6 +304,55 @@ The first time it was asked, before `duplicate` existed, the chat built the
 copy from the recipe by hand, got the offsets wrong and stopped halfway with its
 parts overlapping ([api/mcp.md](api/mcp.md#things-a-person-uses)).
 
+### The meter, read off the step
+
+The meter's draw is where the string is in each step's reply. Its joules were
+the limbs' `stored_j` from the list of joints, and a step carries that list only
+when the SET of joints changes, so the page asked for it at most four times a
+second while a bow was held. The joules trailed the millimetres by up to 250 ms,
+which is 100 mm at the page's 0.4 m/s, and a loose took its joules from the
+same stale read. Now each elastic's reading (`metres`, `force_n`, `stored_j`)
+comes with every step reply it changed in, trimmed the way the bodies are
+(`describe()` in `tools/live_world_run.cpp`). The page folds it into its joints
+before the meter or a loose reads them. Nothing on the page works out a joule.
+
+In the page, headless Chrome against the live engine, the courtyard's bow was
+drawn at 0.4 m/s. The meter's joules, against the MCP `interaction` trial's at
+the same draw:
+
+| drawn | the trial | the meter, before | the meter, after |
+|---|---|---|---|
+| 291 mm | 15.63 J | 4.98 J | 15.62 J |
+| 339 mm | 23.10 J | 16.36 J | 23.10 J |
+| 387 mm | 32.01 J | 16.36 J | 31.96 J |
+| 436 mm | 42.17 J | 33.71 J | 42.14 J |
+
+- **Every frame, after:** in two draws, every frame from 280 to 440 mm was
+  within 0.4% of the trial's curve.
+- **Loosed at full draw:** "The arrow left at 8.3 m/s — the limbs held 42.2 J
+  and 55% of it went into the arrow". The trial's share is 55.1%.
+- **Loosed mid-draw, before:** let go once the meter passed 350 mm, the string
+  was 357 mm back. The loose said the limbs held 12.5 J (the trial's curve
+  there: 26.3 J) and that 113% of it went into the arrow.
+- **Loosed mid-draw, after:** 26.58 J at 359 mm, the same to the last digit as
+  the engine's own reply to the release, and 54%.
+- **The string taken by itself (Alt+E) and hauled back:** its panel line said
+  "Drawing bowstring — N mm back, … J in the limbs" on 115 of 115 frames, within
+  1.4% of the trial's curve from 250 mm on. Before, it said so on 16 of 115,
+  and "Holding bowstring." between its polls.
+
+| clock and wire, draw and shot | before | after |
+|---|---|---|
+| room clock over wall clock | 0.991, 1.005 | 1.002, 1.003, 0.989 |
+| frames a second | 59.8 | 60.0 |
+| `joints` requests while drawing | 1.4 to 1.8 a second, 5.4 KB each | none |
+| step reply while drawing, median | about 2.3 KB | about 2.4 KB |
+
+On the runner's own pipe a step at brace is the same 192 bytes either way: a
+bow at rest sends no readings. `tests/live_wire_tests.py` draws the bow through
+the pipe and holds the room's folded readings to the engine's `joints` answer
+after every step.
+
 ## 7. Pose help
 
 A small rotatable demonstration of the **actual object**, fitted to its own
