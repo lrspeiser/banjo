@@ -30,6 +30,14 @@ MAX_BODIES = 250
 # How long to wait for one line back. A step is sub-millisecond and a fracture is
 # a few hundred milliseconds, so anything past this is a hang, not slowness.
 REPLY_TIMEOUT_S = 60.0
+# How long closing a world waits for a call already inside the engine to come
+# back. The server answers on many threads, so a call for the old room can still
+# be in flight when the page opens a new one. Past this the engine is taken to
+# be hung and is killed, which is what ends that call -- unbounded, one engine
+# that stopped answering would hold every room shut behind it.
+CLOSE_WAIT_S = 5.0
+# What a call to a world that has gone is told, however it went.
+_CLOSED = "this live world has closed; start a new one"
 # What a host may ask for in one call, so a slow client cannot ask for an hour of
 # simulated time in a single request. A call costs about 0.9 ms of round trip and
 # each step inside it about two microseconds, so this is a bound on how far the
@@ -85,6 +93,7 @@ class Session:
         scene.write_text(json.dumps(fracture_lab.scene_document(spec), indent=1),
                          encoding="utf-8")
         self._lock = threading.Lock()
+        self._closed = False
         self._process = subprocess.Popen(
             [str(exe), "--scene", str(scene), "--cell", f"{spec['cell_m']:.6g}"],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -107,13 +116,31 @@ class Session:
         return json.loads(line)
 
     def send(self, **command: Any) -> dict[str, Any]:
+        line = json.dumps(command) + "\n"
         with self._lock:
-            if self._process.poll() is not None:
-                raise LiveError("this live world has closed; start a new one")
+            if self._closed or self._process.poll() is not None:
+                raise LiveError(_CLOSED)
             assert self._process.stdin is not None
-            self._process.stdin.write(json.dumps(command) + "\n")
-            self._process.stdin.flush()
-            state = self._read(f"handling {command.get('op')}")
+            # The pipes can still go out from under a call that got past that
+            # check. An engine can die on its own; and close(), which takes this
+            # lock so that it never shuts the pipes under a call it is waiting
+            # for, frees one it has given up on by killing the engine. What that
+            # looks like here depends on the moment -- EINVAL or a broken pipe
+            # from the write, a ValueError from a file already shut, nothing or
+            # half a line from the read -- and none of it is a stack trace for
+            # the caller. Every caller already handles a world that has closed.
+            try:
+                self._process.stdin.write(line)
+                self._process.stdin.flush()
+                state = self._read(f"handling {command.get('op')}")
+            except (OSError, ValueError) as error:
+                # LiveError and a garbled reply are ValueErrors too, and each
+                # says something of its own -- unless the world was closed under
+                # this call, which is then the only thing worth saying.
+                if not self._closed and isinstance(error, (LiveError,
+                                                           json.JSONDecodeError)):
+                    raise
+                raise LiveError(_CLOSED) from error
         if not state.get("ok"):
             raise LiveError(state.get("error") or "the live world refused that")
         # Only a reply that describes the world replaces this side's picture of
@@ -172,18 +199,40 @@ class Session:
         return {**reply, "bodies": list(bodies.values()), "partial": False}
 
     def close(self) -> None:
-        if self._process.poll() is not None:
-            self._shut()
-            return
+        """Quit the engine and shut the pipes -- never underneath a call.
+
+        This takes the lock a call holds, so a call already inside the engine
+        is let finish first, and anything arriving after is told the world has
+        closed. Shutting the pipes without it turned a pick that was in flight
+        when the page opened another room into "OSError: [Errno 22] Invalid
+        argument" instead of a closed world.
+
+        The wait is bounded by CLOSE_WAIT_S, because Live.open holds its own
+        lock across this, and a call that a hung engine never answers would
+        otherwise keep every room shut behind it. Past the bound the engine is
+        killed, which is what brings that call back: its read comes up empty.
+        """
+        held = self._lock.acquire(timeout=CLOSE_WAIT_S)
         try:
-            assert self._process.stdin is not None
-            self._process.stdin.write('{"op":"quit"}\n')
-            self._process.stdin.flush()
-            self._process.wait(timeout=5)
-        except Exception:
-            self._process.kill()
+            already = self._closed
+            self._closed = True
+            if already or self._process.poll() is not None:
+                return
+            if not held:
+                # A quit would only queue up behind the call that is stuck.
+                self._process.kill()
+                return
+            try:
+                assert self._process.stdin is not None
+                self._process.stdin.write('{"op":"quit"}\n')
+                self._process.stdin.flush()
+                self._process.wait(timeout=5)
+            except Exception:
+                self._process.kill()
         finally:
             self._shut()
+            if held:
+                self._lock.release()
 
     def _shut(self) -> None:
         """Close the pipes. They do not close themselves when the child goes.
