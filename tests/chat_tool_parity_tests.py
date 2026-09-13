@@ -15,6 +15,7 @@ No model and no network: this is about what the model would be SENT.
 """
 from __future__ import annotations
 
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -80,6 +81,40 @@ class TheChatUsesTheMCP(unittest.TestCase):
             self.assertFalse(hasattr(world_room.Room, gone),
                              f"Room.{gone} is back: a second implementation of a tool "
                              f"the MCP already has")
+
+
+class TheRoomIsToldWhereThePersonIs(unittest.TestCase):
+    """The page says where the person stands and faces. The chat is told it in
+    words it can place things by, and nothing the page sent is taken on trust."""
+
+    def test_a_person_is_said_with_the_point_a_metre_in_front(self):
+        said = world_chat.where_the_person_is({"standing_m": [1.6, 0.0, 2.2],
+                                               "facing": [-4.0, 1.0, -3.0],
+                                               "looking_at": "the floor",
+                                               "looking_at_m": [0.4, 0.0, 1.3]})
+        self.assertEqual(said["facing"], [-0.8, 0.0, -0.6])
+        self.assertEqual(said["one_metre_in_front_m"], [0.8, 1.6])
+        # Facing (-0.8, -0.6): their left is (-0.6, +0.8), their right (+0.6, -0.8).
+        self.assertEqual(said["one_metre_to_the_left_m"], [1.0, 3.0])
+        self.assertEqual(said["one_metre_to_the_right_m"], [2.2, 1.4])
+        self.assertEqual(said["looking_at"], "the floor")
+        self.assertEqual(said["looking_at_m"], [0.4, 0.0, 1.3])
+
+    def test_what_is_not_a_place_is_dropped_not_guessed(self):
+        for junk in (None, "here", {}, {"standing_m": [1, 2], "facing": [0, 0, -1]},
+                     {"standing_m": [0, 0, 0], "facing": [0, 1, 0]},
+                     {"standing_m": [float("nan"), 0, 0], "facing": [0, 0, -1]},
+                     {"standing_m": ["a", 0, 0], "facing": [0, 0, -1]}):
+            self.assertIsNone(world_chat.where_the_person_is(junk), junk)
+
+    def test_the_guide_and_the_tool_say_how_to_put_a_thing_down(self):
+        for words in ("the_person", "one_metre_in_front_m", "position_m [x, z]", "in_water"):
+            self.assertIn(words, world_chat.GUIDE)
+        add = next(t for t in banjo_mcp.TOOLS if t["name"] == "add_object")
+        place = add["inputSchema"]["properties"]["object"]["properties"]["position_m"]
+        self.assertEqual((place["minItems"], place["maxItems"]), (2, 3))
+        offered = next(t for t in room_world.chat_tools() if t["name"] == "add_object")
+        self.assertIn("[x, z]", json.dumps(offered))
 
 
 if __name__ == "__main__":

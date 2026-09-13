@@ -48,10 +48,35 @@ break, bounce and carry load, and every joint is a real constraint. Nothing is
 animated. A gate opens because something pushes it; a grate rises because a
 rope pulls it.
 
-UNITS AND AXES. Metres. x runs left and right, y is up, z runs toward the
-person. The floor is y = 0 and objects rest ON it, so a thing standing on the
+UNITS AND AXES. Metres. x and z are level and y is up. A room starts the
+person at +z looking along -z, but they walk about: the_person says where they
+are now. The floor is y = 0 and objects rest ON it, so a thing standing on the
 floor has its centre at half its own height. In the valley the ground is not
 flat: see TERRAIN AND WATER.
+
+WHERE THE PERSON IS. the_person, when it is there, says where they stand
+(standing_m: the ground under their feet), which way they face (facing, a level
+direction), the point one_metre_in_front_m of them, and what the middle of
+their view is on (looking_at, and looking_at_m where it meets it). Something
+asked for "here", "near me", "in front of me" or "give me ..." goes where they
+can take it: about a metre in front of them, at one_metre_in_front_m -- never
+behind them and never where they stand. "There", "over there" and "that" mean
+what they are looking at. If the point in front of them is water or a steep
+bank, use one_metre_to_the_left_m or one_metre_to_the_right_m instead, whichever
+survey says is dry and level. Without the_person you do not know where they
+are: say where you put things.
+
+PUTTING THINGS DOWN. add_object with the object's position_m as [x, z] --
+inside object, like {"object": {"name": "ball", ..., "position_m": [x, z]}} --
+sets the thing down on whatever is under that point: the ground, the floor or
+the top of what is there. The answer's set_down says what it rests on. Use
+that for anything meant to rest somewhere. Give [x, y, z] only to hold a thing
+up in the air: to fall, or to hang from something. If an answer has in_water,
+the thing is in water: say so in your reply, and unless they asked for it in
+the water, take it out and set it down again on dry, level ground within their
+reach -- survey says where the ground is dry and how steep it is, and a ball
+on a slope rolls. A tool that answers with an error did nothing: never say it
+was done. Do what the error says and try again, or tell them what went wrong.
 
 THE GRID AND THE BUDGET. Matter is built from cubic cells; the_room says the
 cell size (usually 0.04 m) and how many cells are left. Every side is rounded
@@ -332,8 +357,9 @@ the_ground and the_water in your first message say where everything is.
   Survey ACROSS the river, along z, and the wet stretch is the river.
 - water_state: each pond's level, the river every 2 m along its course (x, z,
   level, depth, speed), what is in the water and whether it floats.
-- add_object on this ground: x and z where it goes, y roughly; a thing asked
-  for inside the ground is set on top of it, and the answer says so.
+- add_object on this ground: position_m [x, z] sets it down on the ground
+  there -- on the river's bed if that is water, and the answer says in_water.
+  A thing given [x, y, z] inside the ground is set on top of it instead.
 - dig(from_m, to_m, width_m, depth_m): a trench, or a pit at one point. What
   stood on the dug ground falls if nothing else holds it up, loose banks slump
   in, and water runs in if the trench is lower than the water. What comes out
@@ -478,10 +504,61 @@ def _did(name: str, args: dict[str, Any], answer: dict[str, Any]) -> str:
     return f"{name} {args.get('a')} to {args.get('b')}"
 
 
+REACH_M = 1.2   # how far the room's hand reaches: playground/world.js, REACH_M
+
+
+def where_the_person_is(raw: Any) -> dict[str, Any] | None:
+    """Where the person is, as the page says it, in the words the chat is given:
+    where they stand, which way they face, the point a metre in front of them,
+    and what the middle of their view is on. None when the page did not say, or
+    said something that is not a place -- it arrives over HTTP, so every number
+    is checked rather than trusted, and nothing is guessed."""
+    if not isinstance(raw, dict):
+        return None
+
+    def point(value: Any) -> list[float] | None:
+        if not isinstance(value, (list, tuple)) or len(value) != 3:
+            return None
+        try:
+            out = [float(v) for v in value]
+        except (TypeError, ValueError):
+            return None
+        if not all(v == v and abs(v) < 1000.0 for v in out):   # finite, and in a room
+            return None
+        return [round(v, 3) for v in out]
+
+    standing, facing = point(raw.get("standing_m")), point(raw.get("facing"))
+    if standing is None or facing is None:
+        return None
+    level = (facing[0] ** 2 + facing[2] ** 2) ** 0.5
+    if level < 1e-6:
+        return None
+    fx, fz = facing[0] / level, facing[2] / level
+    said: dict[str, Any] = {
+        "standing_m": standing,
+        "facing": [round(fx, 3), 0.0, round(fz, 3)],
+        "one_metre_in_front_m": [round(standing[0] + fx, 3), round(standing[2] + fz, 3)],
+        # Their left and right, for when what is in front of them is water.
+        "one_metre_to_the_left_m": [round(standing[0] + fz, 3), round(standing[2] - fx, 3)],
+        "one_metre_to_the_right_m": [round(standing[0] - fz, 3), round(standing[2] + fx, 3)],
+        "reach_m": REACH_M}
+    eyes = point(raw.get("eyes_m"))
+    if eyes is not None:
+        said["eyes_m"] = eyes
+    looking = raw.get("looking_at")
+    if isinstance(looking, str) and looking.strip():
+        said["looking_at"] = looking.strip()[:80]
+        at = point(raw.get("looking_at_m"))
+        if at is not None:
+            said["looking_at_m"] = at
+    return said
+
+
 def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
         message: str, story: list[str],
         trace: list[dict[str, Any]] | None = None,
-        water_state: dict[str, Any] | None = None) -> dict[str, Any]:
+        water_state: dict[str, Any] | None = None,
+        person: Any = None) -> dict[str, Any]:
     """One turn. Returns what to say, what was changed, and whether to reopen.
 
     `live_state` is the world as the ENGINE has it -- pieces, dents and all --
@@ -514,6 +591,11 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
                                 "cells_used": entry["cells"],
                                 "cells_left": max(0, entry["max_cells"] - entry["cells"]),
                                 "joints": len(entry["joints"])}}
+        # Where the person is: what "near me" and "over there" refer to. A
+        # model that cannot see the room has no other way to know.
+        person = where_the_person_is(person)
+        if person is not None:
+            opening["the_person"] = person
         if entry["scene"].get("terrain") and entry.get("world") is not None:
             # The ground and the water as they are now, so a dam or a channel
             # can be placed from the first round rather than after a survey.

@@ -172,6 +172,14 @@ can pick things up, pull on them and let time pass — and every turn is logged
 with the calls it made and anything that was refused, one file per turn under
 `build/playground-logs/chat/`.
 
+It is told where you are. Every request carries where you are standing, which
+way you face and what the crosshair is on, so "give me a ball" puts one within
+reach in front of you and "put it over there" goes where you are looking. And a
+thing it puts somewhere is set down on whatever is under that point — the
+ground, the floor or a table — rather than left in the air: the MCP's
+`add_object` takes `[x, z]` for that and works the height out itself, and says
+when what it set down is in water.
+
 Whether it can actually build things is measured by asking it — the QA suite:
 
 ```powershell
@@ -329,7 +337,7 @@ page from outside it.
 | `POST /api/jobs/{id}/rerun` | Apply `{case_index, action, value, request_id}` from a declared physical control; no model call |
 | `POST /api/jobs/{id}/open` | Open `{case_index}` in the native studio |
 | `POST /api/world/open` | Open the room on /world: `{scene}` (one of the rooms above) or `{qa: "<run>/<case>-<trial>"}` (a saved QA build); `fresh: true` builds it again from scratch |
-| `POST /api/world/ask` | One chat turn in the open room: `{message, story}`; a room the chat changed is opened again from what it left |
+| `POST /api/world/ask` | One chat turn in the open room: `{message, story, person}` — `person` is where you are (`standing_m`, `eyes_m`, `facing`, `looking_at`, `looking_at_m`), checked and passed to the chat as `the_person`; a room the chat changed is opened again from what it left |
 | `POST /api/live/act` | Step the open room, or take hold of, move, let go of or heat something in it. In a room with ground: `dig` and `deposit` change it (and are kept, so a reopened room still has them), `survey` says what is at a point, `discharge` sets the river, and `environment`, `environment_state` and `terrain` read the ground and the water |
 
 The server answers in HTTP/1.1 and keeps a connection open between requests.

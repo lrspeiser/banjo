@@ -55,7 +55,7 @@ broke.
 | `run` | let time pass and say what happened: every break, every dent, and the hardest contacts with the speeds they would have needed |
 | `drop` | the common experiment: put an object a given distance above a point, let it fall, report. The height is measured from **what it lands on**, not from the floor. |
 | `describe_world` | every object, where it is, and what has happened to it |
-| `add_object` / `remove_object` | change a world. It is opened again from its scene, so anything in flight starts over — and every joint is hung again. A removed object takes the joints that held it with it, and they are listed. |
+| `add_object` / `remove_object` | change a world. It is opened again from its scene, so anything in flight starts over — and every joint is hung again. A removed object takes the joints that held it with it, and they are listed. `add_object` given `position_m` as **[x, z]** sets the thing down on whatever is under that point — the ground, the floor or the top of what is there — and says what in `set_down`; [x, y, z] puts it exactly there. On ground with water it says `in_water` when that is where it went. |
 | `move_object` | put an object somewhere else, at rest: an **edit**, not a push. Refused for a joined object, with the reason — a joint is made at fixed points |
 | `clear_world` | empty a world, joints and all, to build it again. It stays open under the same id |
 | `pick_up` / `place` / `let_go` | the hand: take hold of something already in the world and move it. Without this a model can only add new objects from above — it can build a scene but never rearrange one. |

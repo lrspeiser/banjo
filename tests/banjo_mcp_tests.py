@@ -892,6 +892,72 @@ class TheTools(unittest.TestCase):
              "anchored": True}])["world_id"]
         return world_id, self.client.call("make_terrain", world_id=world_id, kind="valley")
 
+    def test_an_object_given_x_and_z_is_set_down_on_what_is_under_it(self):
+        """[x, z] is "put it there": on the floor, or on top of what is already
+        there, and it stays put. [x, y, z] is still exactly there."""
+        world_id = self.client.call("create_world", cell_size_m=0.04, objects=[
+            {"name": "table", "shape": "box", "material": "oak", "size_m": [0.8, 0.4, 0.8],
+             "position_m": [0.0, 0.2, 0.0], "anchored": True}])["world_id"]
+        floor = self.client.call("add_object", world_id=world_id, object={
+            "name": "crate", "shape": "box", "material": "oak", "size_m": [0.32, 0.32, 0.32],
+            "position_m": [1.5, -1.0]})
+        self.assertEqual(floor["set_down"]["on"], "the floor")
+        self.assertAlmostEqual(floor["set_down"]["centre_y_m"], 0.16, delta=0.005)
+        table = self.client.call("add_object", world_id=world_id, object={
+            "name": "ball", "shape": "sphere", "material": "rubber",
+            "size_m": [0.12, 0.12, 0.12], "position_m": [0.1, 0.1]})
+        self.assertEqual(table["set_down"]["on"], "table")
+        self.assertAlmostEqual(table["set_down"]["its_top_m"], 0.4, delta=0.005)
+        self.assertAlmostEqual(table["set_down"]["centre_y_m"], 0.46, delta=0.005)
+        self.client.call("run", world_id=world_id, seconds=1.0)
+        ball = next(o for o in self.client.call("describe_world", world_id=world_id)["objects"]
+                    if o["name"] == "ball")
+        self.assertAlmostEqual(ball["position_m"][1], 0.46, delta=0.01,
+                               msg="set down on the table, it should still be on it")
+        held_up = self.client.call("add_object", world_id=world_id, object={
+            "name": "held up", "shape": "sphere", "material": "rubber",
+            "size_m": [0.12, 0.12, 0.12], "position_m": [-1.5, 2.0, 0.0]})
+        self.assertNotIn("set_down", held_up)
+        self.assertEqual(next(o for o in held_up["objects"] if o["name"] == "held up")
+                         ["position_m"][1], 2.0)
+
+    def test_a_place_given_beside_the_object_is_taken_and_a_missing_one_explained(self):
+        """A model often puts position_m next to the object rather than in it. It
+        is taken from there; and with no place at all the refusal says where it
+        goes and in what form -- the old one said "three numbers", which sent a
+        model round in circles once [x, z] was allowed."""
+        world_id = self.client.call("create_world", cell_size_m=0.04, objects=[
+            {"name": "marker", "shape": "box", "material": "concrete",
+             "size_m": [0.08, 0.08, 0.08], "position_m": [3.0, 0.04, 3.0],
+             "anchored": True}])["world_id"]
+        beside = self.client.call("add_object", world_id=world_id, position_m=[0.5, -0.5],
+                                  object={"name": "ball", "shape": "sphere",
+                                          "material": "rubber", "size_m": [0.12, 0.12, 0.12]})
+        self.assertEqual(beside["set_down"]["on"], "the floor")
+        said = self.client.refuse("add_object", world_id=world_id, object={
+            "name": "crate", "shape": "box", "material": "oak", "size_m": [0.32, 0.32, 0.32]})
+        self.assertIn("inside object", said)
+        self.assertIn("[x, z]", said)
+
+    def test_on_the_valley_x_and_z_sets_a_thing_on_the_ground_and_says_water(self):
+        """On generated ground the height under a point is the one number a caller
+        cannot know: [x, z] finds it, dry or under the river, and says which."""
+        world_id, _ = self.valley()
+        dry = self.client.call("add_object", world_id=world_id, object={
+            "name": "ball", "shape": "sphere", "material": "rubber",
+            "size_m": [0.12, 0.12, 0.12], "position_m": [-9.12, 4.75]})
+        ground = self.client.call("survey", world_id=world_id, at_m=[-9.12, 4.75])
+        self.assertEqual(dry["set_down"]["on"], "the ground")
+        self.assertAlmostEqual(dry["set_down"]["its_top_m"], ground["ground_m"], delta=0.01)
+        self.assertNotIn("in_water", dry)
+        wet = self.client.call("add_object", world_id=world_id, object={
+            "name": "stone", "shape": "box", "material": "concrete",
+            "size_m": [0.16, 0.16, 0.16], "position_m": [3.0, 2.0]})
+        self.assertIn("in_water", wet, "set down in the river, and the answer did not say so")
+        self.assertGreater(wet["in_water"]["depth_m"], 0.1)
+        self.assertLess(wet["set_down"]["its_top_m"], wet["in_water"]["surface_m"],
+                        "it should rest on the river's bed, under the water")
+
     def test_a_river_backs_up_behind_a_dam_and_a_pond_drains_down_a_channel(self):
         """The ground and the water are physics a model can use: a survey finds
         the river, blocks set across it back it up, and a channel dug from the

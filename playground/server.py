@@ -1140,14 +1140,19 @@ class Handler(BaseHTTPRequestHandler):
                 # as a channel has let it fall -- and the room opened again
                 # afterwards on the same ground keeps the same water.
                 ground_was=json.dumps((app.room.spec.get("terrain") or {}).get("generate"),sort_keys=True)
+                # Where the person is standing and what they are looking at, so
+                # "near me" and "over there" mean somewhere. Checked, since it
+                # arrives over HTTP, and kept with the turn's log.
+                person=world_chat.where_the_person_is(body.get("person"))
                 try:
                     answer=world_chat.ask(app.api_key,app.model,app.room,session.state,message,
                                           [str(s)[:200] for s in (body.get("story") or [])][-24:],
-                                          trace=trace,water_state=live_water(session,app.room.spec))
+                                          trace=trace,water_state=live_water(session,app.room.spec),
+                                          person=person)
                 except Exception as failure:
-                    remember_chat(app,message,trace,None,failure,_now()-began)
+                    remember_chat(app,message,trace,None,failure,_now()-began,person)
                     raise
-                remember_chat(app,message,trace,answer,None,_now()-began)
+                remember_chat(app,message,trace,answer,None,_now()-began,person)
                 if answer.pop("changed",False):
                     if app.room.bodies():
                         # Objects cannot be added to or taken out of a running
@@ -1238,7 +1243,7 @@ def trace_line(report):
     return "  ".join(str(p) for p in parts)
 
 
-def remember_chat(app, message, trace, answer, failure, wall_s):
+def remember_chat(app, message, trace, answer, failure, wall_s, person=None):
     """A chat turn, in the log and on disk.
 
     A request that "did not make it" used to leave nothing behind: the model's
@@ -1270,7 +1275,8 @@ def remember_chat(app, message, trace, answer, failure, wall_s):
         record = {"message": message, "wall_s": round(wall_s, 2),
                   "failure": str(failure) if failure is not None else None,
                   "reply": (answer or {}).get("reply"), "did": (answer or {}).get("did"),
-                  "usage": (answer or {}).get("usage"), "rounds": trace}
+                  "usage": (answer or {}).get("usage"), "the_person": person,
+                  "rounds": trace}
         text = json.dumps(record, indent=1, default=str)
         if app.api_key:
             text = text.replace(app.api_key, "[redacted]")

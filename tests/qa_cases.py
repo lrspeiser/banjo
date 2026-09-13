@@ -1080,6 +1080,123 @@ def check_tether(built: Built) -> Verdict:
 # The cases
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Where the person is: "give me a ball" goes in front of them, on the ground
+# ---------------------------------------------------------------------------
+#
+# The page tells the chat where the person stands, which way they face and
+# what they are looking at. These cases stand the person somewhere the room did
+# not start them, ask for something plain, and measure where it went: resting
+# on what is under it, within reach, in front of them -- and not in the river
+# unless the reply says so. Nothing here asks what the model meant.
+#
+# Where each of them stands, surveyed: the knoll's top is level rock at 4.30 m
+# for 0.6 m round [-9.12, 4.75]. The far bank at [2.5, 4.0] is level sand (0.73
+# m, 3 degrees), and a metre south-east of it the bank drops at 34 to 45
+# degrees into the river, 0.24 m deep. The yard is flat and empty.
+KNOLL_PERSON = {"standing_m": [-9.12, 4.30, 5.75], "eyes_m": [-9.12, 5.92, 5.75],
+                "facing": [0.0, 0.0, -1.0], "looking_at": "the ground",
+                "looking_at_m": [-9.12, 4.30, 4.45]}
+BANK_PERSON = {"standing_m": [2.5, 0.73, 4.0], "eyes_m": [2.5, 2.35, 4.0],
+               "facing": [0.6, 0.0, -0.8], "looking_at": "the water",
+               "looking_at_m": [3.4, 0.43, 2.8]}
+YARD_PERSON = {"standing_m": [1.6, 0.0, 2.2], "eyes_m": [1.6, 1.62, 2.2],
+               "facing": [-0.8, 0.0, -0.6], "looking_at": "the floor",
+               "looking_at_m": [0.4, 0.0, 1.3]}
+
+WITHIN_REACH_M = 2.0   # the hand reaches 1.2 m; a step more is still "near me"
+RESTING_M = 0.03       # a bottom this close to what is under it rests on it
+
+
+def _under(world: abt.World, thing: dict[str, Any], terrain: bool) -> float:
+    """The top of what is under a body: the ground where there is ground, else
+    the floor -- or another body's top, if one is under it and below it."""
+    x, y, z = thing["position_m"]
+    top = abt._survey(world, x, z)["ground_m"] if terrain else 0.0
+    for other in world.bodies().values():
+        if other["name"] == thing["name"]:
+            continue
+        ox, oy, oz = other["position_m"]
+        s = size_m(other)
+        its_top = oy + s[1] / 2.0
+        if abs(ox - x) <= s[0] / 2.0 and abs(oz - z) <= s[2] / 2.0 and its_top <= y:
+            top = max(top, its_top)
+    return top
+
+
+def near_me(person: dict[str, Any], in_front: bool = True, terrain: bool = False):
+    """A check: what the chat put in the room rests on what is under it, within
+    reach of where the person stands, in front of them if `in_front`, not in
+    water unless the reply says so -- and still there to take 10 s later:
+    within reach and, set down dry, still dry."""
+    standing, facing = person["standing_m"], person["facing"]
+
+    def check(built: Built) -> Verdict:
+        world = built.world
+        new = [b for n, b in world.bodies().items()
+               if n not in built.before and not b.get("anchored")]
+        if not new:
+            return Verdict(False, "nothing new is in the room", {})
+        thing = min(new, key=lambda b: math.hypot(b["position_m"][0] - standing[0],
+                                                  b["position_m"][2] - standing[2]))
+        x, y, z = thing["position_m"]
+        half = size_m(thing)[1] / 2.0
+        support = _under(world, thing, terrain)
+        away = [x - standing[0], z - standing[2]]
+        distance = math.hypot(*away)
+        ahead = (away[0] * facing[0] + away[1] * facing[2]) / max(distance, 1e-9)
+        wet = ((abt._survey(world, x, z).get("water") or {}).get("depth_m", 0.0)
+               if terrain else 0.0)
+        measured = {"thing": thing["name"], "at_m": [round(x, 3), round(y, 3), round(z, 3)],
+                    "bottom_m": round(y - half, 3), "under_it_m": round(support, 3),
+                    "from_person_m": round(distance, 2), "ahead": round(ahead, 2),
+                    "water_depth_m": round(wet, 3)}
+        if abs((y - half) - support) > RESTING_M:
+            return Verdict(False, f"{thing['name']} was put with its bottom at {y - half:.2f} m "
+                                  f"over what is under it at {support:.2f} m: not resting on it",
+                           measured)
+        if distance > WITHIN_REACH_M:
+            return Verdict(False, f"{thing['name']} is {distance:.1f} m from where the person "
+                                  f"stands: not within reach", measured)
+        if distance < 0.25:
+            return Verdict(False, f"{thing['name']} was put where the person is standing",
+                           measured)
+        if in_front and ahead < 0.5:
+            return Verdict(False, f"{thing['name']} is not in front of the person "
+                                  f"(ahead {ahead:.2f})", measured)
+        if wet > 0.01 and not re.search(r"\b(water|river|stream|pond)\b", built.reply or "", re.I):
+            return Verdict(False, f"{thing['name']} was put in {wet:.2f} m of water and the "
+                                  f"reply did not say so", measured)
+        # And that it stays: a thing given to someone is still there to take.
+        # Measured, a ball set down dry on 2-degree sand rolled into the river
+        # in 4 s -- which a check of the first 2 s passed.
+        track = []
+        for _ in range(5):
+            world.seconds(2.0)
+            later = world.body(thing["name"]) or thing
+            track.append([round(v, 2) for v in later["position_m"]])
+        measured["every_2_s_m"] = track
+        lx, _, lz = track[-1]
+        gone = math.hypot(lx - standing[0], lz - standing[2])
+        measured["from_person_after_10_s_m"] = round(gone, 2)
+        if terrain and wet <= 0.01:
+            wet_later = (abt._survey(world, lx, lz).get("water") or {}).get("depth_m", 0.0)
+            measured["water_depth_after_10_s_m"] = round(wet_later, 3)
+            if wet_later > 0.01:
+                return Verdict(False, f"{thing['name']} was set down dry, and 10 s later it was "
+                                      f"in {wet_later:.2f} m of water", measured)
+        if gone > WITHIN_REACH_M:
+            return Verdict(False, f"{thing['name']} was set down {distance:.1f} m from the "
+                                  f"person, and 10 s later it was {gone:.1f} m away", measured)
+        where = (f", {'straight ' if ahead > 0.95 else ''}in front of them" if ahead > 0.5
+                 else ", beside them")
+        return Verdict(True, f"{thing['name']} rests on what is under it ({support:.2f} m), "
+                             f"{distance:.1f} m from the person{where}"
+                             + (", in the water, and the reply says so" if wet > 0.01 else ""),
+                       measured)
+    return check
+
+
 CASES = [
     Case("hoist", "yard",
          "Build a hoist: a rope over two pulleys on a high beam, with an iron weight on one end "
@@ -1138,6 +1255,20 @@ CASES = [
     Case("iron-wont-burn", "yard", "Put an iron bar on a stone slab and set it on fire.",
          check_iron_wont_burn, "only what has fuel burns -- and the reply has to say so",
          accept_no_change=lambda reply: bool(SAID_IT_CANNOT.search(reply))),
+    # Where the person is. The room started them elsewhere; the page says where
+    # they are now, and "give me" means in front of them, where they can take it.
+    Case("ball-near-me", "valley", "Give me a rubber ball.",
+         near_me(KNOLL_PERSON, in_front=True, terrain=True),
+         "the person's own place: in front of them, resting on the rock they stand on",
+         person=KNOLL_PERSON),
+    Case("ball-by-the-river", "valley", "Give me a rubber ball.",
+         near_me(BANK_PERSON, in_front=False, terrain=True),
+         "at the water's edge with the river a metre ahead: within reach on dry, level "
+         "ground, not in the river", person=BANK_PERSON),
+    Case("crate-in-front", "yard", "Put a wooden crate in front of me.",
+         near_me(YARD_PERSON, in_front=True),
+         "in front of the person wherever they stand, resting on the floor",
+         person=YARD_PERSON),
 ]
 
 
@@ -1306,6 +1437,22 @@ RECIPES: dict[str, tuple[Any, ...]] = {
         _box("iron bar", "iron", [0.48, 0.08, 0.08], [0.0, 0.12, 0.0]),
         ("heat", {"target": "iron bar", "power_w": 10000, "seconds": 60, "label": "a torch"}),
     ]),
+    # Where the person is: set down with [x, z], the MCP working out the height
+    # from what is under it. On the knoll a metre in front; by the river a
+    # metre in front is water or a 40-degree bank, so beside them on the level
+    # sand, 0.56 m away.
+    "ball-near-me": ("ball-near-me", [
+        ("add_object", {"object": {"name": "rubber ball", "shape": "sphere", "material": "rubber",
+                                   "size_m": [0.12, 0.12, 0.12], "position_m": [-9.12, 4.75]}}),
+    ], {"keep_room": True}),
+    "ball-by-the-river": ("ball-by-the-river", [
+        ("add_object", {"object": {"name": "rubber ball", "shape": "sphere", "material": "rubber",
+                                   "size_m": [0.12, 0.12, 0.12], "position_m": [2.0, 4.25]}}),
+    ], {"keep_room": True}),
+    "crate-in-front": ("crate-in-front", [
+        ("add_object", {"object": {"name": "wooden crate", "shape": "box", "material": "oak",
+                                   "size_m": [0.32, 0.32, 0.32], "position_m": [0.8, 1.6]}}),
+    ], {"keep_room": True}),
 }
 
 
@@ -1314,7 +1461,8 @@ RECIPES: dict[str, tuple[Any, ...]] = {
 SHOW_S = {"hearth": 80.0, "heated-piston": 20.0, "iron-wont-burn": 10.0, "dominoes": 6.0,
           "pendulum": 6.0, "sliding": 5.0, "bounce": 4.0, "ice-breaks": 4.0, "pane-breaks": 4.0,
           "drop-on-glass": 4.0, "dent": 3.0, "projectile": 3.0,
-          "dam-river": 20.0, "drain-pond": 20.0, "log-river": 10.0}
+          "dam-river": 20.0, "drain-pond": 20.0, "log-river": 10.0,
+          "ball-near-me": 3.0, "ball-by-the-river": 3.0, "crate-in-front": 3.0}
 
 # Cases whose room is right to be moving when the check is over, and why --
 # said in the report instead of being flagged as a room that will not settle.
@@ -1331,5 +1479,6 @@ GROUPS = [
     ("Heat, fire and gas", ["hearth", "heated-piston", "iron-wont-burn"]),
     ("Cutting", ["cut-rope", "cut-panel"]),
     ("Terrain and water", ["dam-river", "drain-pond", "log-river", "boulder-dug"]),
+    ("Where the person is", ["ball-near-me", "ball-by-the-river", "crate-in-front"]),
     ("Changing what is already there", ["courtyard-unbar"]),
 ]

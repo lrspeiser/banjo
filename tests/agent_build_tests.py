@@ -997,6 +997,10 @@ class Case:
     # count: the courtyard has no room for a gate, and an agent that says so is
     # doing better than one that clears a person's room unasked.
     accept_no_change: Callable[[str], bool] | None = None
+    # Where the person is standing when they ask, as the page says it
+    # (standing_m, facing, what they are looking at), for a request whose
+    # answer depends on it: "give me a ball" goes in front of them.
+    person: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -1540,7 +1544,7 @@ def run_trial(case: Case, trial: int, api_key: str, model: str,
             first.seconds(0.25)
             live_state = first.session.state
             answer = world_chat.ask(api_key, model, room, live_state, case.message, [],
-                                    trace=trace)
+                                    trace=trace, person=case.person)
         finally:
             first.close()
     except Exception as failure:

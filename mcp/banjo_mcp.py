@@ -627,7 +627,25 @@ def _held_by(entry: dict[str, Any], name: str) -> list[dict[str, Any]]:
 def tool_add_object(args: dict[str, Any]) -> dict[str, Any]:
     world_id = str(args.get("world_id"))
     entry = _world(world_id)
-    added = _scene([args.get("object") or {}], entry["cell_m"])["bodies"][0]
+    item = dict(args.get("object") or {})
+    # position_m belongs inside the object, but a model often puts it beside
+    # the object instead. What was meant is plain, so it is taken from there
+    # -- measured, the refusal it used to get sent the model round in circles.
+    if item.get("position_m") is None and args.get("position_m") is not None:
+        item["position_m"] = args["position_m"]
+    label = f"{str(item.get('name') or 'the object')[:60]}: position_m"
+    where = item.get("position_m")
+    if not isinstance(where, (list, tuple)) or len(where) not in (2, 3):
+        raise Refused(f"{label} is {'missing' if where is None else str(where)[:60]}. Give "
+                      f"it inside object: [x, z] sets the thing down on whatever is under "
+                      f"that point, [x, y, z] puts its centre exactly there.")
+    # [x, z] is "put it down there": its height is worked out below, once its
+    # size is known, from what is under that point. [x, y, z] is exactly there.
+    set_down = len(where) == 2
+    if set_down:
+        item["position_m"] = [_number(where[0], label, -50.0, 50.0), 0.0,
+                              _number(where[1], label, -50.0, 50.0)]
+    added = _scene([item], entry["cell_m"])["bodies"][0]
     # Names are how every joint and every later call finds a thing, so a second
     # "oak gate" is refused rather than quietly shadowing the first.
     if any(b["name"] == added["name"] for b in entry["scene"]["bodies"]):
@@ -638,7 +656,8 @@ def tool_add_object(args: dict[str, Any]) -> dict[str, Any]:
     # on top of it instead: the ground under a thing is the one height a caller
     # cannot work out for itself, and a body started inside a hill is thrown
     # out of it.
-    seated = _seat_on_ground(entry, added)
+    rests = _set_down(entry, added) if set_down else None
+    seated = None if set_down else _seat_on_ground(entry, added)
     scene = dict(entry["scene"], bodies=list(entry["scene"]["bodies"]) + [added])
     lost = _rebuild(entry, scene, world_id)
     answer: dict[str, Any] = {
@@ -647,6 +666,8 @@ def tool_add_object(args: dict[str, Any]) -> dict[str, Any]:
         "note": "A world is opened from a scene, so adding an object opens it again "
                 "from the start: anything in flight is back where it was authored, "
                 "and every joint is hung again."}
+    if rests:
+        answer["set_down"] = rests
     if seated:
         answer["seated_on_the_ground"] = seated
     if _has_terrain(entry):
@@ -654,7 +675,8 @@ def tool_add_object(args: dict[str, Any]) -> dict[str, Any]:
         if here.get("water"):
             answer["in_water"] = {"depth_m": round(here["water"]["depth_m"], 3),
                                   "surface_m": round(here["water"]["surface_m"], 3),
-                                  "flowing_m_s": round(here["water"]["speed_m_s"], 3)}
+                                  "flowing_m_s": round(here["water"]["speed_m_s"], 3),
+                                  "note": "it is in the water: say so, unless that was asked for"}
     if lost:
         answer["joints_lost"] = lost
     return answer
@@ -1763,6 +1785,37 @@ def _seat_on_ground(entry: dict[str, Any], body: dict[str, Any]) -> dict[str, An
                     "ground under it"}
 
 
+SET_DOWN_FROM_M = 60.0   # looked down from: above anything a room holds
+
+
+def _set_down(entry: dict[str, Any], body: dict[str, Any]) -> dict[str, Any]:
+    """Rest a body on whatever is under it: another object, the ground or the
+    floor. Found the way the engine sees the world -- straight down from above,
+    over the body's footprint -- so what it rests on is what it would land on.
+
+    A sphere touches only under its centre; a box anywhere under its bottom, so
+    the highest thing under nine points across its footprint carries it.
+    """
+    size = body["dimensions_m"]
+    half = [size[0] / 2.0] * 3 if body["shape"] == "sphere" else [v / 2.0 for v in size]
+    x, _, z = body["center_m"]
+    spots = [(0.0, 0.0)] if body["shape"] == "sphere" else [
+        (half[0] * a, half[2] * b) for a in (-0.9, 0.0, 0.9) for b in (-0.9, 0.0, 0.9)]
+    top, under = 0.0, "the floor"
+    world = entry.get("world")
+    if world is not None:
+        best: tuple[float, str] | None = None
+        for dx, dz in spots:
+            found = world.pick([x + dx, SET_DOWN_FROM_M, z + dz], [0.0, -1.0, 0.0])
+            if found.hit and (best is None or SET_DOWN_FROM_M - found.distance_m > best[0]):
+                best = (SET_DOWN_FROM_M - found.distance_m, found.name)
+        if best is not None:
+            top = best[0]
+            under = best[1] or ("the ground" if _has_terrain(entry) else "the floor")
+    body["center_m"] = [x, round(top + half[1] + 0.002, 4), z]
+    return {"on": under, "its_top_m": round(top, 4), "centre_y_m": body["center_m"][1]}
+
+
 def _river_said(path: list[dict[str, Any]], every: int = 2) -> list[list[float]]:
     """Where the river runs: [x, z, level, depth, speed] every few metres."""
     return [[round(p["x_m"], 2), round(p["z_m"], 2), round(p["level_m"], 3), round(p["depth_m"], 3),
@@ -2103,6 +2156,18 @@ OBJECT_SCHEMA = {
     "required": ["shape", "material", "size_m"],
 }
 
+# add_object's place: [x, z] puts a thing DOWN there, on whatever is under that
+# point; [x, y, z] puts its centre exactly there.
+PLACED_OBJECT_SCHEMA = dict(OBJECT_SCHEMA, properties=dict(
+    OBJECT_SCHEMA["properties"],
+    position_m={"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 3,
+                "description": "Where it goes. [x, z] sets it down on whatever is under "
+                               "that point -- the ground, the floor or the top of what is "
+                               "there -- and the answer's set_down says what it rests on: "
+                               "this is how to put something somewhere. [x, y, z] puts its "
+                               "centre exactly there instead, in the air if that is above "
+                               "what is under it, to fall."}))
+
 TOOLS = [
     {"name": "list_materials",
      "description": "The eight materials this engine has and what each one actually "
@@ -2148,12 +2213,14 @@ TOOLS = [
      "inputSchema": {"type": "object", "required": ["world_id"],
                      "properties": {"world_id": {"type": "string"}}}},
     {"name": "add_object",
-     "description": "Put another object into a world. The world is opened again from "
-                    "its scene, so anything in flight starts over; every joint is "
-                    "hung again. Names must be different: joints and every later "
-                    "call find things by name.",
+     "description": "Put another object into a world. position_m [x, z] sets it down on "
+                    "whatever is under that point -- the ground, the floor or the top of "
+                    "what is there -- and says what; [x, y, z] puts it exactly there. The "
+                    "world is opened again from its scene, so anything in flight starts "
+                    "over; every joint is hung again. Names must be different: joints and "
+                    "every later call find things by name.",
      "inputSchema": {"type": "object", "required": ["world_id", "object"], "properties": {
-         "world_id": {"type": "string"}, "object": OBJECT_SCHEMA}}},
+         "world_id": {"type": "string"}, "object": PLACED_OBJECT_SCHEMA}}},
     {"name": "remove_object",
      "description": "Take an object out of a world. Like add_object, the world is "
                     "opened again from its scene, so anything in flight starts over. "

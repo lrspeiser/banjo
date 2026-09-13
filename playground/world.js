@@ -2106,6 +2106,32 @@ function waitingFor(what) {
   return { turn, done() { clearInterval(tick); turn.remove(); } };
 }
 
+// Where the person is, for the chat: a model that cannot see the room has no
+// other way to know what "near me" or "over there" means. Where they stand
+// (the ground under their feet), where their eyes are, which way they face,
+// and what the crosshair is on -- the same answers the label shows.
+function whereIAm() {
+  const p = camera.position;
+  const f = forwardVector();
+  const level = new THREE.Vector3(f.x, 0, f.z);
+  if (level.lengthSq() < 1e-9) level.set(0, 0, -1);
+  level.normalize();
+  const r = (v) => Math.round(v * 1000) / 1000;
+  const person = { standing_m: [r(p.x), r(groundAt(p.x, p.z)), r(p.z)],
+                   eyes_m: [r(p.x), r(p.y), r(p.z)], facing: [r(level.x), 0, r(level.z)] };
+  if (world.aim && world.aim.name) {
+    person.looking_at = world.aim.name;
+    if (Array.isArray(world.aim.point_m)) person.looking_at_m = world.aim.point_m.map(r);
+  } else if (Array.isArray(world.groundAim)) {
+    const [x, , z] = world.groundAim;
+    const water = waterAt(x, z);
+    person.looking_at = !ground.grid ? "the floor"
+      : water && water.depth > 0.005 ? "the water" : "the ground";
+    person.looking_at_m = world.groundAim.map(r);
+  }
+  return person;
+}
+
 $("ask").addEventListener("submit", async (e) => {
   e.preventDefault();
   const input = $("ask-text");
@@ -2124,6 +2150,8 @@ $("ask").addEventListener("submit", async (e) => {
       // What the person has been doing. A model asked to change a room it
       // cannot see has to be told what has happened in it.
       story: world.story.slice(-24),
+      // And where they are: what "near me" and "over there" refer to.
+      person: whereIAm(),
     });
     waiting.done();
     say("world", answer.reply || "(nothing to say)", answer.did);

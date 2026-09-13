@@ -510,6 +510,9 @@ LEFT_OUT = {
     "drain-pond": "it is dug in the valley's ground, and the valley is a room of its own",
     "log-river": "it floats in the valley's river, and the valley is a room of its own",
     "boulder-dug": "it rests on the valley's bank, and the valley is a room of its own",
+    "ball-near-me": "it is put where the person stands, in the valley",
+    "ball-by-the-river": "it is put where the person stands, in the valley",
+    "crate-in-front": "it is put where the person stands",
 }
 # What stops a thing that would otherwise roll or fly on into the next build:
 # (centre, size) in metres in the recipe's own frame, anchored concrete.
@@ -616,6 +619,10 @@ def write_rooms() -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # The console may be cp1252: a reply with "≈" in it must not end the run
+    # before its summary is printed (it did, after the trials had all run).
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--cases", default="", help="comma-separated parts of case ids")
     parser.add_argument("--trials", type=int, default=2)
