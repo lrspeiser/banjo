@@ -608,6 +608,147 @@ void whatRestsOnTheBedToldOnlyWhereItChangedIsWhatItIs() {
     require(5 * changes_of.obstacleCellsChecked() < 600 * g.cells(), "far fewer columns worked out");
 }
 
+// ---- connections: another region's water on the far side of an edge --------
+
+// A reservoir as the coarse side of a connection sees it: a level pool, its
+// level its bed plus its volume over its area. What crosses is taken from it
+// exactly as the connection counted it, with the opposite sign.
+struct LevelPool {
+    double bed_m{}, area_m2{}, volume_m3{};
+    [[nodiscard]] double level() const { return bed_m + volume_m3 / area_m2; }
+};
+
+// 16. Still water against still water at the same level across a connection
+// stays exactly still -- not to rounding, bit for bit -- and nothing crosses.
+void stillWaterAcrossAConnectionStaysStill() {
+    Grid g{32, 16, 0.25, 0.0, 0.0};
+    std::vector<double> bed(g.cells());
+    for (int j = 0; j < g.nz; ++j)
+        for (int i = 0; i < g.nx; ++i) bed[g.at(i, j)] = 0.02 * i + 0.05 * std::sin(1.3 * j);
+    ShallowWater water(g, bed);
+    for (std::size_t c = 0; c < g.cells(); ++c) water.setSurface(c, 0.8);
+    const int west = water.addConnection({"the lake beyond", Edge::West, 0, g.nz - 1});
+    water.setFarSide(west, 0.8);
+    water.resetLedger();
+    std::vector<double> eta(g.cells());
+    for (std::size_t c = 0; c < g.cells(); ++c) eta[c] = water.surface(c);
+    int substeps = 0;
+    for (int k = 0; k < 100; ++k) substeps += water.advance(1.0 / 30.0);
+    require(substeps >= 100, "it was stepped");
+    for (std::size_t c = 0; c < g.cells(); ++c) {
+        require(water.surface(c) == eta[c], "a surface moved");
+        require(water.dischargeX(c) == 0.0 && water.dischargeZ(c) == 0.0, "the water moved");
+    }
+    require(water.takeCrossed(west) == 0.0, "and nothing crossed");
+}
+
+// 17. What crosses a connection is decided by the water on both sides: a far
+// side standing higher sends water in, one standing lower takes it out, and
+// the water's own ledger closes on what crossed.
+void waterCrossesAConnectionEitherWayByItsLevel() {
+    Grid g{32, 16, 0.25, 0.0, 0.0};
+    ShallowWater water(g, std::vector<double>(g.cells(), 0.0));
+    for (std::size_t c = 0; c < g.cells(); ++c) water.setSurface(c, 0.5);
+    const int west = water.addConnection({"beyond", Edge::West, 4, 11});
+    water.resetLedger();
+    water.setFarSide(west, 0.6);
+    for (int k = 0; k < 60; ++k) water.advance(1.0 / 60.0);
+    const double in = water.takeCrossed(west);
+    water.setFarSide(west, 0.3);
+    for (int k = 0; k < 60; ++k) water.advance(1.0 / 60.0);
+    const double out = water.takeCrossed(west);
+    std::cout << "    a far side 0.1 m higher sent " << in << " m^3 in over 1 s; one 0.2 m lower took "
+              << -out << " m^3 out; residual " << water.residual() << " m^3\n";
+    require(in > 0.0, "a higher far side sends water in");
+    require(out < 0.0, "a lower one takes it out");
+    near(water.ledger().across_m3, in + out, 1.0e-12 * water.volume(), "the ledger counts what crossed");
+    near(water.residual(), 0.0, 1.0e-12 * water.volume(), "and closes on it");
+}
+
+// 18. A reservoir and a channel joined by a connection keep their water between
+// them: the channel counts what crosses, the reservoir takes exactly that, and
+// their total is the same to rounding while the reservoir drains into the
+// channel and the channel fills.
+void aReservoirAndAChannelKeepTheirWaterBetweenThem() {
+    Channel ch;
+    ShallowWater water(ch.grid, ch.bed);
+    const int west = water.addConnection({"the reservoir", Edge::West, 4, 11});
+    LevelPool pool{0.9, 40.0, 40.0 * 0.4};
+    water.resetLedger();
+    const double level0 = pool.level();
+    const double total0 = water.volume() + pool.volume_m3;
+    for (int k = 0; k < 60 * 60; ++k) {
+        water.setFarSide(west, pool.level());
+        water.advance(1.0 / 60.0);
+        pool.volume_m3 -= water.takeCrossed(west);
+    }
+    const double total = water.volume() + pool.volume_m3;
+    std::cout << "    reservoir " << level0 << " -> " << pool.level() << " m over a minute; "
+              << water.volume() << " m^3 in the channel; total " << total0 << " -> " << total
+              << " m^3\n";
+    require(pool.level() < level0 - 0.05, "the reservoir drained into the channel");
+    near(total, total0, 1.0e-12 * total0, "and not a cubic metre was made or lost between them");
+    near(water.residual(), 0.0, 1.0e-12 * total0, "the channel's own ledger closes on what crossed");
+}
+
+// 19. A dam downstream backs the river up to the connection it is fed across,
+// and the reservoir on the far side, still fed from beyond the world, stands
+// higher than it would without the dam: what crosses is the water on both
+// sides, not a discharge written down. Two rivers, the same to the bit until
+// the dam goes into one of them, so the difference is the dam's and nothing
+// else's -- the reservoir is still filling towards its own level in both.
+struct FedValley {
+    ShallowWater water;
+    int west{};
+    LevelPool pool{0.95, 60.0, 60.0 * 0.15};
+    double fed{};
+    explicit FedValley(const Channel &ch) : water(ch.grid, ch.bed) {
+        west = water.addConnection({"the reservoir", Edge::West, 4, 11});
+        water.addOutflow({"mouth", Edge::East, 0, ch.grid.nz - 1});
+        water.resetLedger();
+    }
+    void run(double seconds, double feed_m3_s) {
+        for (int k = 0; k < static_cast<int>(std::lround(seconds * 60.0)); ++k) {
+            water.setFarSide(west, pool.level());
+            water.advance(1.0 / 60.0);
+            pool.volume_m3 += feed_m3_s / 60.0 - water.takeCrossed(west);
+            fed += feed_m3_s / 60.0;
+        }
+    }
+};
+
+void aDamBacksUpToTheConnectionAndTheReservoirFills() {
+    Channel ch;
+    const Grid &g = ch.grid;
+    const double feed = 0.12;   // m^3/s into each reservoir from beyond the world
+    FedValley dammed(ch), open(ch);
+    const double start = dammed.water.volume() + dammed.pool.volume_m3;
+    dammed.run(120.0, feed);
+    open.run(120.0, feed);
+    require(dammed.pool.level() == open.pool.level(), "the two are the same river until the dam goes in");
+    const double level_at_dam = dammed.pool.level(), crossing_at_dam = dammed.water.crossingRate(dammed.west);
+    std::vector<double> dam(g.cells(), -kInf);
+    for (int j = 0; j < g.nz; ++j)
+        for (int i = 50; i < 52; ++i) dam[g.at(i, j)] = dammed.water.terrain(g.at(i, j)) + 0.5;
+    dammed.water.setObstacles(dam);
+    dammed.run(120.0, feed);
+    open.run(120.0, feed);
+    const double crossing_dammed = dammed.water.crossingRate(dammed.west);
+    const double crossing_open = open.water.crossingRate(open.west);
+    std::cout << "    when the dam went in: reservoir " << level_at_dam << " m, " << crossing_at_dam
+              << " m^3/s across; two minutes later, dammed " << dammed.pool.level() << " m and "
+              << crossing_dammed << " m^3/s, without the dam " << open.pool.level() << " m and "
+              << crossing_open << " m^3/s\n";
+    require(dammed.pool.level() > open.pool.level() + 0.005,
+            "the reservoir behind the dam stands higher than the one without it");
+    require(crossing_dammed < crossing_open, "and less crosses once the river has backed up");
+    // One account: what is in the channel and the reservoir is what was there,
+    // plus what was fed, less what left by the mouth.
+    near(dammed.water.volume() + dammed.pool.volume_m3,
+         start + dammed.fed - dammed.water.ledger().outflow_m3, 1.0e-10 * start,
+         "every cubic metre accounted between the reservoir, the river and the mouth");
+}
+
 } // namespace
 
 int main() {
@@ -629,6 +770,12 @@ int main() {
          keepingTilesUpToDateIsTheSameWaterAsAskingEveryTile},
         {"what rests on the bed, told only where it changed, is what it is",
          whatRestsOnTheBedToldOnlyWhereItChangedIsWhatItIs},
+        {"still water across a connection stays still", stillWaterAcrossAConnectionStaysStill},
+        {"water crosses a connection either way by its level", waterCrossesAConnectionEitherWayByItsLevel},
+        {"a reservoir and a channel keep their water between them",
+         aReservoirAndAChannelKeepTheirWaterBetweenThem},
+        {"a dam backs up to the connection and the reservoir fills",
+         aDamBacksUpToTheConnectionAndTheReservoirFills},
     };
     unsigned failures = 0;
     for (const auto &[name, test] : tests) {

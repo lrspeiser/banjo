@@ -8,6 +8,9 @@ namespace banjo::water {
 namespace {
 
 constexpr double kNoObstacle = -std::numeric_limits<double>::infinity();
+// A boundary face's marker at or past this is a connection: the marker less
+// this is its index.
+constexpr int kConnectionFace = 1 << 20;
 
 // Depth-averaged velocity from discharge and depth, damped rather than divided
 // out in a film too thin to have one (Kurganov & Petrova 2007). For any column
@@ -293,6 +296,55 @@ void ShallowWater::addOutflow(const Outflow &outflow) {
     for (int k = outflow.from; k <= outflow.to; ++k) faces[static_cast<std::size_t>(k)] = marker;
 }
 
+int ShallowWater::addConnection(const Connection &connection) {
+    std::vector<int> &faces = edgeOf(connection.edge, west_, east_, south_, north_);
+    if (connection.from < 0 || connection.to < connection.from || connection.to >= static_cast<int>(faces.size()))
+        throw std::invalid_argument("a connection's cells are outside its edge");
+    for (int k = connection.from; k <= connection.to; ++k)
+        if (faces[static_cast<std::size_t>(k)] != 0)
+            throw std::invalid_argument("a connection's cells are already a source, a mouth or another connection");
+    const int index = static_cast<int>(connections_.size());
+    connections_.push_back(connection);
+    far_.emplace_back();
+    across_now_.push_back(0.0);
+    for (int k = connection.from; k <= connection.to; ++k) {
+        faces[static_cast<std::size_t>(k)] = kConnectionFace + index;
+        // Computed always, as a source is: water can arrive into a dry column.
+        const std::size_t tile = tileOfCell(edgeCell(connection.edge, k));
+        tile_always_[tile] = 1;
+        markDirtyTile(tile);
+    }
+    return index;
+}
+
+void ShallowWater::setFarSide(int connection, double surface_m, double u_across_m_s, double u_along_m_s) {
+    if (connection < 0 || connection >= static_cast<int>(far_.size()))
+        throw std::invalid_argument("there is no such connection");
+    if (std::isnan(surface_m) || !std::isfinite(u_across_m_s) || !std::isfinite(u_along_m_s))
+        throw std::invalid_argument("a connection's far side is not a number");
+    FarSide &far = far_[static_cast<std::size_t>(connection)];
+    far.known = true;
+    far.surface_m = surface_m;
+    far.u_across_m_s = u_across_m_s;
+    far.u_along_m_s = u_along_m_s;
+    speed_known_ = false;
+}
+
+double ShallowWater::takeCrossed(int connection) {
+    if (connection < 0 || connection >= static_cast<int>(far_.size()))
+        throw std::invalid_argument("there is no such connection");
+    FarSide &far = far_[static_cast<std::size_t>(connection)];
+    const double crossed = far.crossed_m3;
+    far.crossed_m3 = 0.0;
+    return crossed;
+}
+
+double ShallowWater::crossingRate(int connection) const {
+    if (connection < 0 || connection >= static_cast<int>(far_.size()))
+        throw std::invalid_argument("there is no such connection");
+    return far_[static_cast<std::size_t>(connection)].rate_m3_s;
+}
+
 bool ShallowWater::setInflow(const std::string &name, double discharge_m3_s) {
     if (!(discharge_m3_s >= 0.0) || !std::isfinite(discharge_m3_s)) return false;
     for (Inflow &inflow : inflows_)
@@ -321,6 +373,34 @@ void ShallowWater::markDirtyTile(std::size_t tile) {
 }
 
 void ShallowWater::markDirty(std::size_t cell) { markDirtyTile(tileOfCell(cell)); }
+
+std::size_t ShallowWater::edgeCell(Edge edge, int k) const {
+    switch (edge) {
+    case Edge::West: return grid_.at(0, k);
+    case Edge::East: return grid_.at(grid_.nx - 1, k);
+    case Edge::South: return grid_.at(k, 0);
+    case Edge::North: return grid_.at(k, grid_.nz - 1);
+    }
+    return 0;
+}
+
+// A far side standing over this side's bed sends a wave across as fast as that
+// depth and its own speed make it: the substep has to respect it before any
+// water has arrived to show it, as a source's arriving water does.
+double ShallowWater::farSideSpeed() const {
+    const double g = settings_.gravity_m_s2;
+    double fastest = 0.0;
+    for (std::size_t n = 0; n < connections_.size(); ++n) {
+        const FarSide &far = far_[n];
+        if (!far.known) continue;
+        const Connection &connection = connections_[n];
+        for (int k = connection.from; k <= connection.to; ++k) {
+            const double h = far.surface_m - bed_[edgeCell(connection.edge, k)];
+            if (h > settings_.dry_m) fastest = std::max(fastest, std::abs(far.u_across_m_s) + std::sqrt(g * h));
+        }
+    }
+    return fastest;
+}
 
 // A tile is computed when it or any tile touching it holds water -- water can
 // only arrive from next door -- or when a source is in it.
@@ -437,7 +517,7 @@ double ShallowWater::waveSpeed() const {
         const double h = std::cbrt(q * q / g);
         if (h > 0.0) fastest = std::max(fastest, q / h + std::sqrt(g * h));
     }
-    return fastest;
+    return std::max(fastest, farSideSpeed());
 }
 
 int ShallowWater::advance(double dt_s) {
@@ -510,12 +590,36 @@ void ShallowWater::substep(double dt) {
         }
 
     double came_in = 0.0, went_out = 0.0;   // per unit time, m^3/s
+    std::fill(across_now_.begin(), across_now_.end(), 0.0);
     // A boundary face. `inward` is +1 when the domain is on the high side of
     // the face (west and south edges), -1 when it is on the low side. The
     // state is the cell's; `qn` is its discharge along the axis through the
     // face and `qt` along the face.
     const auto boundary = [&](int marker, int inward, std::size_t c, double qn, double qt,
                               double &d_mass, double &d_n, double &d_t) {
+        if (marker >= kConnectionFace) {
+            const std::size_t k = static_cast<std::size_t>(marker - kConnectionFace);
+            const FarSide &far = far_[k];
+            if (far.known) {
+                // Another region's water on the far side: a column standing to
+                // its surface over this column's own bed -- the surface itself,
+                // not rebuilt from a depth, so the same level on both sides is
+                // exactly no flux -- and the flux every face gets.
+                const double eta_far = std::max(far.surface_m, bed_[c]);
+                const double h_far = eta_far - bed_[c];
+                const double qn_far = h_far * far.u_across_m_s, qt_far = h_far * far.u_along_m_s;
+                const Face f = inward > 0
+                    ? faceFlux(g, dry, film, eta_far, bed_[c], qn_far, qt_far, eta_[c], bed_[c], qn, qt)
+                    : faceFlux(g, dry, film, eta_[c], bed_[c], qn, qt, eta_far, bed_[c], qn_far, qt_far);
+                if (inward > 0) { d_mass -= f.mass; d_n -= f.right; d_t -= f.along; }
+                else { d_mass += f.mass; d_n += f.left; d_t += f.along; }
+                // f.mass runs along the axis: into this water through a west or
+                // south edge, out of it through an east or north one.
+                across_now_[k] += (inward > 0 ? f.mass : -f.mass) * dx;
+                return;
+            }
+            marker = 0;   // not told its far side yet: a wall
+        }
         const double h = eta_[c] - bed_[c];
         if (marker > 0) {
             const Inflow &in = inflows_[static_cast<std::size_t>(marker - 1)];
@@ -680,6 +784,11 @@ void ShallowWater::substep(double dt) {
 
     ledger_.inflow_m3 += came_in * dt;
     ledger_.outflow_m3 += went_out * dt;
+    for (std::size_t k = 0; k < far_.size(); ++k) {
+        ledger_.across_m3 += across_now_[k] * dt;
+        far_[k].crossed_m3 += across_now_[k] * dt;
+        far_[k].rate_m3_s = across_now_[k];
+    }
     inflow_rate_ = came_in;
     outflow_rate_ = went_out;
     stats_.time_s += dt;
@@ -715,6 +824,7 @@ void ShallowWater::substep(double dt) {
         const double h = std::cbrt(q * q / g);
         if (h > 0.0) speed_ = std::max(speed_, q / h + std::sqrt(g * h));
     }
+    speed_ = std::max(speed_, farSideSpeed());
     speed_known_ = true;
 }
 
@@ -738,7 +848,7 @@ double ShallowWater::residual() const { return residualFor(volume()); }
 
 double ShallowWater::residualFor(double volume_m3) const {
     return volume_m3 - (ledger_.initial_m3 + ledger_.inflow_m3 - ledger_.outflow_m3 +
-                        ledger_.numerical_m3);
+                        ledger_.across_m3 + ledger_.numerical_m3);
 }
 
 void ShallowWater::resetLedger() {

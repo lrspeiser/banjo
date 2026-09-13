@@ -105,6 +105,22 @@ struct Outflow {
     int to{};
 };
 
+// Part of an edge that is not the edge of the world but of this region: on its
+// far side is another region's water -- the next valley, a reservoir, a basin
+// downstream -- whose surface and velocity the host gives (setFarSide) and
+// keeps up to date. Each face there is a face like any other, with that water
+// as the column on its far side, so what crosses is decided by the water on
+// both sides and can run either way, and still water against still water at
+// the same level passes nothing, as between two columns of a lake at rest.
+// What crossed is counted (takeCrossed) for the far side to take, with the
+// opposite sign, once: computed once, applied twice.
+struct Connection {
+    std::string name;
+    Edge edge{Edge::West};
+    int from{};   // cells along that edge, inclusive
+    int to{};
+};
+
 struct Settings {
     double gravity_m_s2{9.81};
     double density_kg_m3{1000.0};
@@ -138,13 +154,16 @@ struct Settings {
 
 // Everything that crossed the boundary of the water, in cubic metres.
 //
-//     volume - initial = inflow - outflow + numerical + residual
+//     volume - initial = inflow - outflow + across + numerical + residual
 //
 // residual is what rounding did and nothing else.
 struct Ledger {
     double initial_m3{};
     double inflow_m3{};
     double outflow_m3{};
+    // Net water in across connections, from the regions on their far sides:
+    // negative when more went out than came in.
+    double across_m3{};
     // Water the arithmetic had to put back to keep a depth from going
     // negative. Reported, never hidden.
     double numerical_m3{};
@@ -228,6 +247,22 @@ public:
     // Change a source's discharge from now: a flood, a drought.
     bool setInflow(const std::string &name, double discharge_m3_s);
 
+    // A connection, and its index. Its faces are computed always, as a
+    // source's are: water can arrive across it into a dry column. Until its
+    // far side is given it is a wall.
+    int addConnection(const Connection &connection);
+    [[nodiscard]] const std::vector<Connection> &connections() const { return connections_; }
+    // The water on a connection's far side, until told again: its surface, and
+    // its velocity across the edge (along the axis through the faces, positive
+    // along +x or +z) and along it. A surface below the bed is a dry far side.
+    void setFarSide(int connection, double surface_m, double u_across_m_s = 0.0, double u_along_m_s = 0.0);
+    // Water that crossed a connection into this water since this was last
+    // asked (negative: out of it), cubic metres; asking zeroes it. For the far
+    // side to take with the opposite sign.
+    double takeCrossed(int connection);
+    // Into this water across a connection in the last substep, m^3/s.
+    [[nodiscard]] double crossingRate(int connection) const;
+
     // Momentum a body gave the water this step, newton seconds, horizontal.
     // Applied at the start of the next substep, to the column it was given to.
     void addImpulse(std::size_t cell, double jx_n_s, double jz_n_s);
@@ -290,6 +325,10 @@ private:
     // Whether these tiles, and each tile touching them, are computed now.
     void activateAround(const std::vector<std::size_t> &tiles);
     [[nodiscard]] std::uint8_t activeFor(int tx, int tz) const;
+    // The column at cell k along an edge.
+    [[nodiscard]] std::size_t edgeCell(Edge edge, int k) const;
+    // The fastest wave the far sides of the connections can send across.
+    [[nodiscard]] double farSideSpeed() const;
     [[nodiscard]] double waveSpeed() const;
     void displace(std::size_t cell, double volume_m3);
     [[nodiscard]] double faceArea() const { return grid_.dx * grid_.dx; }
@@ -303,8 +342,19 @@ private:
     bool impulses_pending_{};
     std::vector<Inflow> inflows_;
     std::vector<Outflow> outflows_;
-    // Per boundary face: 0 wall, 1 + inflow index, -(1 + outflow index).
+    // Per boundary face: 0 wall, 1 + inflow index, -(1 + outflow index), or
+    // kConnectionFace + connection index.
     std::vector<int> west_, east_, south_, north_;
+    std::vector<Connection> connections_;
+    struct FarSide {
+        bool known{};
+        double surface_m{};
+        double u_across_m_s{}, u_along_m_s{};
+        double crossed_m3{};
+        double rate_m3_s{};
+    };
+    std::vector<FarSide> far_;
+    std::vector<double> across_now_;   // per connection: m^3/s into this water, this substep
     int tiles_x_{}, tiles_z_{};
     std::vector<std::uint8_t> tile_wet_, tile_active_;
     // Tiles computed whether or not they hold water: the ones a source is in.
