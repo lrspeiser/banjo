@@ -14,6 +14,9 @@ tell you any other way:
 if (banjo_abi_version() != BANJO_ABI_VERSION) { /* mismatch */ }
 ```
 
+`const char *banjo_version_string(void)` says which library it is in words, for
+a log line. Never parse it: the number to compare is `banjo_abi_version()`.
+
 Current ABI: **14**, which carries two additions made side by side and then
 merged, numbered apart so that one number never meant two headers:
 
@@ -212,6 +215,37 @@ Measured on a concrete pane, from the impact to the pieces: **856 ms** with none
 of this, **147 ms** with foresight on a 4 m drop, **43 ms** with the hold guess
 at any height. You still want `banjo_begin_fracture`, because a piece landing on
 a piece is exactly what a ray cannot see coming.
+
+### What made the world wait
+
+### `int banjo_delay_count(const banjo_world *world)`
+### `int banjo_delays(const banjo_world *world, banjo_delay *out, int max)`
+### `int banjo_forget_delays(banjo_world *world)`
+
+Working a fracture out costs between a third of a second and a second, and
+every way of making the run shorter changes the answer; what is left is to not
+make anyone wait for it. Whether that is working is written down. Every time a
+break was waited for, seen coming, guessed at or queued is a `banjo_delay`,
+`{at_s, object, kind, lead_ms, cost_ms}`: the world time, the body, what
+happened, and two numbers whose meaning depends on the kind. `cost_ms` is what
+the run cost, never what it spent queued.
+
+| `kind` | what happened | `lead_ms` | `cost_ms` |
+|---|---|---|---|
+| `blocked` | the caller asked and waited for the whole run | | the run |
+| `foreseen` | a collision was spotted coming; with a cost, a run started early and then used | the warning; with a cost, how far out its predicted speed was, in per cent | the run |
+| `guessing` | a run was started for a collision that has not happened yet | the speed it expects | |
+| `guess-missed` | what turned up was not what was guessed | the speed expected | the speed that arrived |
+| `guess-wasted` | a run started early and was thrown away | | |
+| `queued` | a break arrived while another was being worked out, and was captured rather than waited for | | |
+| `precomputed` | the answer was ready before it was asked for | how long it sat waiting for a worker | |
+| `held` | the pair was pinned while the answer was worked out | | |
+
+`banjo_delay_count` says how many there are. `banjo_delays` writes at most
+`max` and returns how many it wrote; its strings stay good until the next
+`banjo_delay_count` or `banjo_delays`, or until the world closes.
+`banjo_forget_delays` starts a fresh record and returns `BANJO_OK`: call it once
+you have read what you need.
 
 ---
 

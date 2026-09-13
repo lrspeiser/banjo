@@ -445,6 +445,14 @@ if(BANJO_BUILD_HEADLESS)
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/banjo_mcp_tests.py)
         set_tests_properties(banjo_mcp_tests PROPERTIES
             ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
+        # The docs name everything the API has: every MCP tool in the table in
+        # docs/api/mcp.md, every banjo.h function in docs/api/c-api.md and in
+        # the Python binding.
+        add_test(NAME banjo_api_docs_tests
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/api_docs_tests.py)
+        set_tests_properties(banjo_api_docs_tests PROPERTIES
+            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
         add_test(NAME banjo_world_room_tests
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/world_room_tests.py)
