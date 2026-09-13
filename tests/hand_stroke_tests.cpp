@@ -329,6 +329,69 @@ void aPreviewChangesNothing() {
               << " after " << t << " s\n";
 }
 
+// A box thrown along a plank it is lying on slides along it. That is not a
+// promise anyone would think to make, and it was not being kept: Jolt sweeps a
+// fast body so that it cannot pass through things (EMotionQuality::LinearCast),
+// and it swept a square-edged box as itself, starting the sweep already
+// touching the plank under it. The sweep reported a hit along the way the box
+// was going, and the solver stopped it dead and threw it back -- from 7 m/s to
+// -4.6 in one step, measured; and the courtyard's arrow, sliding over its rest
+// as it was shot, the same way on 13 of 19 draws. Every moving box and hull now
+// has round edges -- 2 mm, or a tenth of its thinnest half if that is less --
+// inside its authored size (JoltWorld's kSweepRadiusM).
+void aBoxThrownAlongAPlankSlidesAlongIt() {
+    TileImpactRequest r;
+    r.cell_size_m = 0.04;
+    r.backend = BackendKind::CpuParallel;
+    SceneBody plank;
+    plank.name = "plank";
+    plank.shape = BodyShape::Box;
+    plank.material = MaterialPreset::Oak;
+    plank.dimensions_m = {1.6, 0.04, 0.12};
+    plank.center_m = {0.0, 1.10, 0.0};
+    plank.anchored = true;
+    SceneBody box = plank;
+    box.name = "box";
+    box.dimensions_m = {0.6, 0.04, 0.04};
+    box.center_m = {-0.4, 1.14, 0.0};
+    box.anchored = false;
+    r.bodies = {plank, box};
+    const auto live = LiveWorld::open(r);
+    for (int i = 0; i < 120; ++i) live->step(kDt);   // lying on it, as it would be
+
+    const Vec3 at = named(live->poses(), "box").position_m;
+    require(live->wield("box", at), "could not take hold of the box");
+    LiveStroke shove;
+    shove.path_m = {at, Vec3{at.x + 0.3, at.y, at.z}};
+    shove.speed_m_s = 7.0;
+    shove.accel_m_s2 = 5000.0;
+    shove.lead_m = kLead;
+    shove.let_go_at_end = true;
+    std::string why;
+    require(live->stroke(shove, why), "the box refused a shove: " + why);
+    for (int i = 0; i < 240 && live->held() == "box"; ++i) live->step(kDt);
+    require(live->held().empty(), "the hand never let the box go");
+
+    // Along the plank, until it reaches the end: friction takes 0.02 m/s a step
+    // off it at most. A step that takes a metre a second is not friction.
+    double was = named(live->poses(), "box").velocity_m_s.x, fastest = was, worst = 0.0;
+    for (int i = 0; i < 240; ++i) {
+        live->step(kDt);
+        const LiveBodyPose now = named(live->poses(), "box");
+        if (now.position_m.x > 0.45) break;
+        worst = std::max(worst, was - now.velocity_m_s.x);
+        require(now.velocity_m_s.x > 0.0,
+                "the box, sliding along the plank at " + std::to_string(was) +
+                    " m/s, turned round and went back the way it came");
+        was = now.velocity_m_s.x;
+    }
+    std::cout << "  let go at " << fastest << " m/s along the plank; the most one step took off "
+              << worst << " m/s\n";
+    require(fastest > 4.0, "the shove never got the box moving fast enough for the sweep");
+    require(worst < 1.0, "a step took " + std::to_string(worst) +
+                             " m/s off a box sliding along a plank: that is not friction");
+}
+
 } // namespace
 
 int main() {
@@ -340,6 +403,7 @@ int main() {
         {"a draw against a spring", drawingAgainstASpring},
         {"moving the hand takes it back", movingTheHandTakesItBack},
         {"a preview changes nothing", aPreviewChangesNothing},
+        {"a box thrown along a plank slides along it", aBoxThrownAlongAPlankSlidesAlongIt},
     };
     int failed = 0;
     for (const auto &[name, test] : tests) {

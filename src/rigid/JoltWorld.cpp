@@ -315,6 +315,31 @@ bool assertFailedImpl(
 }
 #endif
 
+// Every edge of a moving box or hull is made a little round: 2 mm, and never
+// more than a tenth of its thinnest half. Its outer size is its authored size
+// either way -- Jolt puts the radius inside the shape -- so nothing is bigger
+// or smaller for it. It is there because of how a fast body is kept from
+// passing through things: Jolt sweeps it (EMotionQuality::LinearCast) as its
+// shape shrunk by that radius, and a shape with none, lying on something,
+// starts its sweep already touching it. The sweep then reports a hit along the
+// way the body is going, and the solver stops it dead and bounces it back.
+// Measured: a 0.6 m oak box sliding along an oak plank it lay on went from
+// 5 m/s to -3.9 in one step, and from 9 to -5.8; the courtyard's arrow, lying
+// on its rest, from 5.87 to -2.45, on 13 of 19 draws and stiffnesses. With any
+// radius from 0.5 mm to 5 mm, none of them. Turning the sweep off did the same,
+// and would let a fast arrow through a plank.
+//
+// A tenth, and no more, for thin things. On a blade one 10 mm cell thick the
+// edge meeting the wood is the whole of what it does, and at two fifths -- 2 mm
+// there -- a sword's chop bounced off an oak batten at 1.71 m/s instead of 0.49
+// and left a notch the batten could still carry. At a tenth, 0.5 mm, it chops
+// as it did.
+constexpr float kSweepRadiusM = 0.002F;
+
+float sweepRadius(const JPH::Vec3 &half_extent_m) {
+    return std::min(kSweepRadiusM, 0.1F * half_extent_m.ReduceMin());
+}
+
 class ImpactCollector final : public JPH::ContactListener {
 public:
     bool detailed_observations{};
@@ -1273,7 +1298,7 @@ void JoltWorld::addBox(const RigidBoxDescription &description) {
         inverse_diagonal.GetX()<=0||inverse_diagonal.GetY()<=0||inverse_diagonal.GetZ()<=0))
         throw std::invalid_argument("box mass/inverse inertia is not representable");
     const auto contact=compileContactMaterial(description.material);
-    JPH::BodyCreationSettings settings(new JPH::BoxShape(toJolt(d/2),0.0F),
+    JPH::BodyCreationSettings settings(new JPH::BoxShape(toJolt(d/2),sweepRadius(toJolt(d/2))),
         toJoltPosition(s.center_of_mass_world_m),
         JPH::Quat(static_cast<float>(q.x),static_cast<float>(q.y),static_cast<float>(q.z),static_cast<float>(q.w)),
         description.fixed?JPH::EMotionType::Static:JPH::EMotionType::Dynamic,description.fixed?Layers::kNonMoving:Layers::kMoving);
@@ -1326,7 +1351,7 @@ void JoltWorld::addCompound(const RigidCompoundDescription &d){
     for(const auto &p:d.parts){if(!finite(p.center_local_m))throw std::invalid_argument("invalid compound point");
         JPH::RefConst<JPH::Shape> shape;
         if(p.geometry.kind==PrimitiveKind::Sphere){if(!std::isfinite(p.geometry.radius_m)||p.geometry.radius_m<=0)throw std::invalid_argument("invalid compound sphere");shape=new JPH::SphereShape(float(p.geometry.radius_m));}
-        else {auto v=p.geometry.dimensions_m;if(!finite(v)||std::min({v.x,v.y,v.z})<=0)throw std::invalid_argument("invalid compound box");shape=new JPH::BoxShape(toJolt(v/2),0);}
+        else {auto v=p.geometry.dimensions_m;if(!finite(v)||std::min({v.x,v.y,v.z})<=0)throw std::invalid_argument("invalid compound box");shape=new JPH::BoxShape(toJolt(v/2),sweepRadius(toJolt(v/2)));}
         compound.AddShape(toJolt(p.center_local_m),JPH::Quat::sIdentity(),shape.GetPtr());
     }
     auto built=compound.Create();if(built.HasError())throw std::invalid_argument(built.GetError().c_str());
@@ -2507,7 +2532,8 @@ void JoltWorld::addFragments(
                 authored = new JPH::SphereShape(
                     static_cast<float>(0.5 * fragment.primitive_dimensions_m.x));
             } else if (fragment.primitive == FragmentPrimitive::Box) {
-                authored = new JPH::BoxShape(toJolt(fragment.primitive_dimensions_m / 2), 0.0F);
+                const JPH::Vec3 half = toJolt(fragment.primitive_dimensions_m / 2);
+                authored = new JPH::BoxShape(half, sweepRadius(half));
             }
             // A tilted slab collides as a tilted slab, not as the staircase its
             // cells make, so a ball rolls down a ramp instead of bouncing on
@@ -2522,10 +2548,12 @@ void JoltWorld::addFragments(
                         authored);
                 }
             }
+            // Round like a box (kSweepRadiusM); Jolt takes less off a hull too
+            // thin for it.
             JPH::ConvexHullShapeSettings hull_settings(
                 hull_points.data(),
                 static_cast<int>(hull_points.size()),
-                0.0F);
+                kSweepRadiusM);
             const JPH::ShapeSettings::ShapeResult hull_result =
                 hull_settings.Create();
             // A hull that cannot be built is not the end of the matter.
