@@ -832,9 +832,19 @@ void theWorldKeepsRunningWhileAFractureIsWorkedOut() {
     // -- so a loop counted in steps finishes long before a run that takes a
     // quarter of a second. A live host paces on elapsed time and has no such
     // problem; a test stepping as fast as it can does.
-    for (int i = 0; i < 20000 && (!started || live->fracturePending()); ++i) {
+    //
+    // So once the run is going the loop is PACED, the way a host paces -- a
+    // step, then a wait -- and bounded by a minute of wall clock rather than by
+    // a count of steps. Spinning the world as fast as it would go took the
+    // cores the run needed: on GitHub's runner 19,811 steps went by with the
+    // run still going, and it read as a pane that would not break.
+    const auto give_up = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    for (int i = 0; (!started || live->fracturePending()) &&
+                    std::chrono::steady_clock::now() < give_up;
+         ++i) {
         live->step(1.0 / 240.0);
         if (!started) {
+            if (i > 20000) break;           // it was never going to break
             const std::vector<std::string> waiting = live->breakable();
             if (!waiting.empty()) {
                 started = live->beginFracture(waiting.front());
@@ -847,7 +857,10 @@ void theWorldKeepsRunningWhileAFractureIsWorkedOut() {
         }
         if (live->fracturePending()) {
             ++steps_while_working;
-            if (!live->fractureReady()) continue;
+            if (!live->fractureReady()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                continue;
+            }
             pinned_after = whereIs(live->fractureSubject());
             pieces = live->finishFracture();
         }
