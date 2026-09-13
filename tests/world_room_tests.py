@@ -512,6 +512,109 @@ class TheSpadeCarriesWhatItDigs(unittest.TestCase):
 
 
 @unittest.skipUnless(ENGINE, "the live engine is not built")
+class TheFoundPickDigs(unittest.TestCase):
+    """The pick in the clearing, through the pipe the page uses and the edits the
+    server keeps (docs/ground-work.md): the room opens with its ground and the
+    pick's point; a swing the page's way goes into the soil; a lever breaks the
+    soil out and the dig is reported; the server keeps it as a dig edit, and the
+    room opened again carries the same."""
+
+    SHOULDER = [0.0, 1.45, 2.2]
+
+    def spec(self):
+        spec = world_room.clearing()
+        spec["bodies"] = spec["bodies"] + [
+            {"name": "pick haft", "shape": "box", "material": "oak", "size_mm": [800, 40, 40],
+             "center_mm": [0, 23, 1220], "join": "pick"},
+            {"name": "pick arm", "shape": "box", "material": "oak", "size_mm": [40, 40, 280],
+             "center_mm": [380, 23, 1060], "join": "pick"}]
+        spec["tool_points"] = [{"body": "pick haft", "tip_mm": [380, 23, 920], "pointing": [0, 0, -1],
+                                "grip_mm": [-360, 23, 1220], "width_mm": 40, "thickness_mm": 40,
+                                "angle_deg": 30, "length_mm": 200}]
+        spec["interactions"] = [{"object": "the pick", "template": "swing-and-lever",
+                                 "parts": ["pick haft", "pick arm"], "tool": "pick haft"}]
+        return spec
+
+    def test_a_swing_and_a_lever_the_page_s_way_and_the_ground_keeps_the_hole(self):
+        import server as playground_server   # remember_ground: the edits the server keeps
+        live = live_session.Live()
+        self.addCleanup(live.shutdown)
+        spec = self.spec()
+
+        class Room:
+            pass
+
+        class App:
+            engine_path = ENGINE
+            runs_path = ROOT / "build/playground-runs"
+            live_inprocess = False
+            room = Room()
+
+        App.room.spec = spec
+        App.runs_path.mkdir(parents=True, exist_ok=True)
+        app = App()
+        met: list[dict] = []
+
+        def act(**body):
+            body["session"] = live.session.id
+            answer = live.act(body)
+            playground_server.remember_ground(app, body, answer)   # as /api/live/act does
+            met.extend(answer.get("ground_work") or [])
+            return answer
+
+        def stroke_out(most_s=6.0, hand=None):
+            """Step until the hand's stroke is over, as the page does: nothing
+            sent while the engine's hand makes it."""
+            answer, passed = {}, 0.0
+            while passed < most_s:
+                answer = act(op="step", dt=1 / 240.0, n=12)
+                passed += 12 / 240.0
+                if not (answer.get("hand") or {}).get("stroking"):
+                    break
+            return answer
+
+        opened = live.open(app, {"spec": spec})
+        # The ground, whole, as the page draws it -- and the pick's point.
+        self.assertIn("terrain", opened, "the room opened without its ground")
+        self.assertIn("heights_b64", opened["terrain"])
+        self.assertEqual([p["body"] for p in opened["tool_points"]], ["pick haft"])
+        # Taken by its grip and held ready in front of the shoulder.
+        act(op="wield", name="pick haft", grip=[-0.36, 0.023, 1.22])
+        for _ in range(10):
+            act(op="step", dt=1 / 240.0, n=24, hand=[0.0, 1.02, 1.66])
+        act(op="strike", at=[0.0, 0.0, 1.0], shoulder=self.SHOULDER, speed_m_s=4.0, raise_deg=110.0)
+        ended = stroke_out()
+        grip = ended["hand"]["grip_m"]
+        for _ in range(4):   # the page holds where the grip is once a blow has landed
+            act(op="step", dt=1 / 240.0, n=12, hand=grip)
+        into = [w for w in met if w["tool"] == "pick haft"][-1]
+        self.assertEqual(into["ground"], "soil")
+        self.assertTrue(into["open"], f"the point is not in the ground: {into}")
+        self.assertGreater(into["depth_m"], 0.01)
+        # Levered, as the page's right mouse button does, and drawn up if the
+        # lever's own lift did not bring the point out.
+        act(op="strike", lever=True, shoulder=self.SHOULDER, speed_m_s=1.2, lever_deg=40.0)
+        ended = stroke_out()
+        if [w for w in met if w["tool"] == "pick haft"][-1]["open"]:
+            grip = ended["hand"]["grip_m"]
+            act(op="stroke", path=[grip, [grip[0], grip[1] + 0.4, grip[2]]], speed_m_s=0.6,
+                accel_m_s2=4.0, lead_m=0.05, let_go=False, give_up_s=3.0)
+            stroke_out()
+        out = [w for w in met if w["tool"] == "pick haft" and not w["open"]]
+        self.assertTrue(out, "the point never came out of the ground")
+        self.assertEqual(out[-1]["kind"], "broke out")
+        loosened = out[-1]["loosened"]["soil_m3"]
+        self.assertGreater(loosened, 0.0)
+        self.assertIn("dug", out[-1])
+        # The server kept the dig as the edit it was; the room opened again from
+        # its edits carries exactly what the pry broke out.
+        edits = app.room.spec["terrain"]["edits"]
+        self.assertEqual([next(iter(e)) for e in edits], ["dig"])
+        again = live.open(app, {"spec": app.room.spec})["terrain"]["carried"]
+        self.assertAlmostEqual(again["soil_m3"], loosened, delta=1e-12)
+
+
+@unittest.skipUnless(ENGINE, "the live engine is not built")
 class TheRoomActuallyOpens(unittest.TestCase):
     def test_it_opens_and_every_body_says_what_it_is_made_of(self):
         runs = ROOT / "build" / "playground-runs"

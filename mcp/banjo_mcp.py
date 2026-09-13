@@ -3322,6 +3322,23 @@ def tool_tool_point(args: dict[str, Any]) -> dict[str, Any]:
              _number(args.get("length_m", 0.15), "length_m", 0.01, 1.0))
     had = [p for p in entry["scene"].get("tool_points") or [] if p.get("body") == name]
     others = [p for p in entry["scene"].get("tool_points") or [] if p.get("body") != name]
+    # How the things here are used, as they stand before this call. Taking the
+    # old point off opens the world again without it, and that rebuild holds
+    # every profile to what is built -- a pick with no point is no pick -- so
+    # it withdrew the pick's controls in the middle of giving it its new point.
+    # The tool is never without a point once this call is over, so that
+    # moment is not kept: the profiles are put back and held to what is built
+    # at the end.
+    uses_before = list(entry.get("interactions", []))
+    withdrawn_before = list(entry.get("withdrawn", []))
+
+    def uses_as_they_were() -> None:
+        entry["interactions"] = list(uses_before)
+        if withdrawn_before:
+            entry["withdrawn"] = list(withdrawn_before)
+        else:
+            entry.pop("withdrawn", None)
+
     if had:
         # One point to a tool: said again, it is what it says now. The old one
         # comes off by opening the world again without it.
@@ -3332,6 +3349,7 @@ def tool_tool_point(args: dict[str, Any]) -> dict[str, Any]:
     except banjo.BanjoError as error:
         if had:
             _rebuild(entry, dict(entry["scene"], tool_points=others + had), world_id)
+            uses_as_they_were()
         raise Refused(str(error)) from None
     record = _tool_point_record(entry, world, point_id)
     if record is not None:
@@ -3343,8 +3361,12 @@ def tool_tool_point(args: dict[str, Any]) -> dict[str, Any]:
             except ValueError as problem:
                 # The world has the point and the document must not.
                 _rebuild(entry, dict(entry["scene"], tool_points=others + had), world_id)
+                uses_as_they_were()
                 raise Refused(str(problem)) from None
         entry["scene"] = scene
+    if had:
+        uses_as_they_were()
+        _recheck_interactions(entry)
     entry["story"].append(f"gave {name} a point that can go into the ground")
     point = next(p for p in world.tool_points() if p.id == point_id)
     answer: dict[str, Any] = {"tool_point": point_id, **_tool_point_said(point)}
@@ -3364,6 +3386,21 @@ def tool_tool_point(args: dict[str, Any]) -> dict[str, Any]:
                 f"held level by its grip its weight pulls {about:.0f} N m, and the hand's wrist "
                 f"holds {HAND_TORQUE_N_M:g} N m with {HAND_STRENGTH_N:g} N: a swing would droop "
                 f"and miss. Make it lighter, or the haft shorter.")
+    # A point is not controls. Without a swing-and-lever profile the person can
+    # carry the tool and nothing more -- and the room's chat, measured, gave a
+    # pick its point, told the person they could swing it, and never declared
+    # how. So the one step left is said as the call to make.
+    if not any(p.get("template") == "swing-and-lever" and p.get("tool") == name
+               for p in entry.get("interactions", [])):
+        lead = next((b for b in entry["scene"]["bodies"] if b["name"] == name), None)
+        parts = ([b["name"] for b in entry["scene"]["bodies"]
+                  if lead is not None and lead.get("join") and b.get("join") == lead["join"]]
+                 or [name])
+        answer["next"] = (f"A person cannot swing it yet: a point is not controls. Give them its "
+                          f"controls now with interaction, object=\"<what it is called>\", "
+                          f"template=\"swing-and-lever\", parts={json.dumps(parts)}, "
+                          f"tool={json.dumps(name)} -- its trial swings it into soil and onto "
+                          f"rock, and its numbers are what to tell them.")
     answer["note"] = (f"{name} has a point. Swung point first into soil it goes in as far as the "
                       f"soil's bearing resistance lets the swing's energy take it; pried, it "
                       f"breaks the soil out, and what comes loose is carried. Rock at least as "

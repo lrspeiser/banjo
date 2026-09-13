@@ -299,13 +299,20 @@ class Live:
             else:
                 session = Session(app.engine_path, spec, app.runs_path)
             self.session = session
+        # What the world said as it opened. Only the opening carries the whole
+        # of the ground and the water; every call that puts a pin, an edge or a
+        # point in replaces the session's picture with its own reply, which
+        # carries neither. Returned from here without them, a room on ground
+        # with a pick in it opened with no ground drawn at all.
+        opening = dict(session.state)
         hung = self._hang(session, pins)
         # And the edges, on bodies that are now standing there, for the same
         # reason the pins go in afterwards. docs/cutting-model.md.
         armed = self._arm(session, spec.get("blades") or [])
         # And the points of tools that dig, likewise. docs/ground-work.md.
         tooled = self._point(session, spec.get("tool_points") or [])
-        return {"session": session.id, "spec": spec, **session.state, **hung, **armed, **tooled}
+        return {"session": session.id, "spec": spec, **opening, **session.state, **hung, **armed,
+                **tooled}
 
     @staticmethod
     def _point(session: "Session", points: Any) -> dict[str, Any]:

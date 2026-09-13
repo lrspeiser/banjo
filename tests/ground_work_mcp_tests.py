@@ -72,6 +72,13 @@ class APickInTheClearing(unittest.TestCase):
         self.assertLess(said["its_weight_about_the_grip_n_m"], banjo_mcp.HAND_TORQUE_N_M)
         scene = banjo_mcp.WORLDS[world_id]["scene"]
         self.assertEqual([p["body"] for p in scene["tool_points"]], ["pick haft"])
+        # A point is not controls: the answer says the one step left, as the
+        # call to make, with the whole piece's parts.
+        self.assertIn("swing-and-lever", said["next"])
+        self.assertIn('["pick haft", "pick arm"]', said["next"])
+        call("interaction", world_id=world_id, object="the pick", template="swing-and-lever",
+             parts=["pick haft", "pick arm"], tool="pick haft", trial=False)
+        self.assertNotIn("next", pointed(world_id), "a pick with its controls was told to add them")
 
     def test_it_is_tried_into_soil_levered_out_and_stopped_by_rock(self):
         world_id = clearing_with_pick()
