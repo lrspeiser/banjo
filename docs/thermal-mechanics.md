@@ -142,6 +142,18 @@ unchanged, it would get the same answer at the same cost. The answer, and how
 near its bonds came, is reported (`LiveStatics`, the MCP's `under_load`, the
 Heat panel).
 
+While statics works its answer out, the body is left as it is. A body something
+struck is held still until its answer comes, so that its pieces are put where it
+broke; a body at rest under its load has nothing to spring back from, and holding
+it -- its velocity zeroed and it woken after every step -- only upset the contact
+that carries the load. Found in the owner's room, where a host does not wait for
+an answer: each held answer left the 258 kg block about a millimetre deeper in
+the beam it rested on (4.1 mm to 9.3 mm over eight), and then the block fell
+through a beam that had not broken (`the owner's room, answers not waited for`).
+And an answer lasts as long as its load: once nothing rests on the body, statics'
+answer and its throttle go (`an answer goes with its load`); a body that broke
+keeps its last answer.
+
 It replaced a dynamic lattice run started from contact, which a sustained load
 does not have. Traced, what broke an overloaded shelf in that run was its
 crate's resting cells -- sunk millimetres into it by the rigid solver's contact
@@ -195,7 +207,14 @@ against 33.0, on its compression side (63.5% of it left).
 - **A box or a sphere** is cut again (`JoltWorld::reshapePrimitive`) every 0.2 mm
   of burning: the reference less the burned depth on every face, with the
   field's mass and inertia and its centre of mass at the box's centre. What rests
-  on it settles with it.
+  on it comes down with its top, and it comes down onto what it stands on, by
+  exactly what came off each face and without being woken (`planRecession`).
+  Woken at every cut and left to settle, the room's 258 kg block on its 80 mm
+  beam -- sunk a few millimetres into it, which Jolt allows up to 20 mm -- rolled
+  a little further each time it was awake: 0.14 degrees before the first cut,
+  1.9 after eight, 9.4 after eighteen, 28 mm to one side, and then off a beam
+  that had not broken. A stack with a joint in it, or anything standing on
+  something else as well, is left to the solver and woken as before.
 - **A piece** is its cells. A cell with less than 2% of its matter left is taken
   away and the piece is rebuilt from the cells it has left (`reformFromCells`):
   it keeps its name while they still join, comes apart into pieces when they do
@@ -257,8 +276,8 @@ three 20 mm cells deep, the least a lattice can bend -- on two concrete piers
 Followed through heating, the survey's question, statics' answer, the pieces,
 cooling and a second blow -- the same ball dropped 1.5 m onto what is left of
 each, 5.27 m/s. Nothing in the test sets a time, a temperature or a strength at
-which anything happens. `banjo_thermal_geometry_long_tests`, labelled long: 208 s
-for the four runs.
+which anything happens. `banjo_thermal_geometry_long_tests`, labelled long, runs
+it with the heater powers and the room's own build: 63 s on this build.
 
 ### Which heater lights it
 
@@ -280,17 +299,18 @@ stops (`measure: heater powers`):
 | as built | 1400 x 60 x 100 mm, 5.880 kg, inertia 0.0067 / 0.9653 / 0.9622 kg m2 | the same |
 | 61 s | surface 424 K; its moisture gone: 5.787 kg; bending 88.6% | |
 | offered, 336.5 s | 9.151 MPa by beam theory against the 9.148 its compression side had left (17.6% of 52 MPa). Surface 1029 K, core 374 K; bending 48.4%, tension 52.3%, compression 20.1%; its bonds' tension factor 0.502 on average, 0.347 at the weakest; 0.77 mm burned, 3.0 mm char; 1398.8 x 58.8 x 98.8 mm, 5.549 kg, inertia 0.0061 / 0.9092 / 0.9063 | never offered |
-| statics | held on every ask, the first with its bonds at 25.0% of the criterion, until 654.75 s, when they reached 100.76%: broke, 526 bonds, 30 pieces, 957 ms | |
-| last whole, 656 s | surface 1065 K, core 514 K; bending 12.1%, compression side 5.3%; 2.86 mm burned; 1394.4 x 54.4 x 94.4 mm, 4.916 kg, inertia 0.0049 / 0.8002 / 0.7978 | |
-| the pieces | the halves and the 212 kg cube fell, and statics answered for the pieces that still carried something: 158 bodies by the end of heating (720 s), the largest 2.29 kg. The last piece it was asked about was at 10.5 times its criterion, and pieces nearly charred through came apart in chunks of up to 9 cells (see *Not done*) | |
-| 6 minutes without the heater | still burning, so nothing cooled: the largest piece's surface 979 K and core 712 K at 1,081 s, 8.6 mm burned, 1.96 kg (see *Not done*) | 295 K -- it sees a little of the fire -- and bending 99.6% |
-| second blow, 5.27 m/s | on a piece charred through: no bond left to break, so its bar is infinite and the blow broke nothing; the pieces went from 157 to 227 in its 3 s | its bar 10.92 m/s: held |
-| cost | 1,080 s of world in 175.9 s, 6.1 times faster than real time; 154 lattice runs, 7.8 s in all, the costliest 957 ms (the break) | |
+| statics | held on every ask, the first with its bonds at 25.0% of the criterion, until 658.75 s, when they reached 100.08%: broke, 4,719 bonds, 20 pieces, 221 ms | |
+| last whole, 660 s | surface 1044 K, core 514 K; bending 12.1%, compression side 5.3%; 2.83 mm burned; 1394.4 x 54.4 x 94.4 mm, 4.926 kg, inertia 0.0049 / 0.8018 / 0.7994 | |
+| the pieces | the halves and the 212 kg cube fell: 20 bodies by the end of heating (720 s), the largest 2.35 kg | |
+| 6 minutes without the heater | still burning, so nothing cooled: the largest piece's surface 975 K and core 716 K at 1,081 s, 8.7 mm burned, 2.02 kg (see *Not done*) | 295 K -- it sees a little of the fire -- and bending 99.6% |
+| second blow, 5.27 m/s | on a piece charred through: no bond left to break, so its bar is infinite and the blow broke nothing | its bar 10.92 m/s: held |
+| cost | 1,080 s of world in 17.3 s, 62 times faster than real time; 137 lattice runs, 6.1 s in all, the costliest 221 ms (the break) | |
 
-Statics was asked 137 times in all, about the beam and later about its pieces.
-What the pieces do after the break is chaotic: an earlier build of the same scene
-ended heating with 136 bodies, and one of its lattice runs took 7.9 s (a
-half-beam struck by the falling cube, the cube's 3,375 cells in the run).
+Statics was asked 135 times in all, about the beam and later about its pieces.
+What the pieces do after the break is chaotic: builds in which the cube was woken
+to settle at every re-cut ended heating with 136 and 158 bodies, and one of their
+lattice runs took 7.9 s (a half-beam struck by the falling cube, the cube's
+3,375 cells in the run).
 
 ### Oak, 3 kW for 15 minutes, then 10 minutes without it
 
@@ -307,10 +327,30 @@ half-beam struck by the falling cube, the cube's 3,375 cells in the run).
 | | glass | oak | iron |
 |---|---|---|---|
 | law | none | EN 1995-1-2 softwood curves | EN 1993-1-2 carbon steel |
-| end of heating, 720 s | surface 540 K, core 446 K; 100% | broke at 654.75 s | 445 K; 100% of its strength |
+| end of heating, 720 s | surface 540 K, core 446 K; 100% | broke at 658.75 s | 445 K; 100% of its strength |
 | offered | never | 336.5 s | never |
 | second blow: heated / cold bar | 4.506 / 4.506 m/s; neither broke | charred piece, infinite / 10.92 m/s | 12.397 / 12.270 m/s; neither broke |
-| cost | 1,080 s in 4.5 s | 1,080 s in 175.9 s | 1,080 s in 4.5 s |
+| cost | 1,080 s in 4.5 s | 1,080 s in 17.3 s | 1,080 s in 4.4 s |
+
+### The room's own build, answered as the room answers
+
+The playground's yard has 40 mm cells, so the owner's beam is built 80 x 80 mm
+-- two cells deep -- and the 300 mm block is a 320 mm, 258 kg cube. And the room
+does not wait for an answer: it starts a fracture, steps on in batches of four
+and collects the answer when it is ready (`the owner's room, answers not waited
+for`, in the long suite). Measured: statics was asked 105 times; while the beam
+was whole the block, which rested 0.69 mm into it, was never more than 1.49 mm
+into it and never more than 0.19 degrees from level; statics broke the beam
+760.2 s into 8 kW with its bonds at 106.6% of the criterion -- 108 bonds, 7
+pieces -- and the block came down 442 mm (763 s of world in 2.4 s). Run again
+with the rest of the long suite: 107 answers, the block within 1.49 mm and 0.22
+degrees, and statics broke it 764.9 s in at 107.0%, 286 bonds, 8 pieces. An
+answer lands on the step after the worker has it, so which step varies.
+
+Before, this scene failed twice, in the page and then in this test: a body
+waiting on statics was held, and its block sank through it; and then the beam's
+re-cuts woke the block each time and it rolled off (*Sustained loads*, *What
+burns leaves the shape*). In neither case had the beam broken.
 
 ## The laws
 
@@ -549,12 +589,29 @@ and ask the chat:
 > put a 300 mm iron block in the middle of it. Build an identical one 3 m away,
 > and put an 8 kW heater on the first beam for 15 minutes.
 
-The chat builds it with the MCP's own tools (`add_object`, `heat`). In the room
-the heated beam tints, darkens as its layer chars, and is drawn smaller as it
-burns; the Heat panel shows its size now, its mass, its bending falling on both
-sides, and -- once the survey asks -- statics' answer under its load and how near
-its bonds came. About eleven minutes in the beam gives way under the block. The
-cold twin carries its block throughout.
+The chat builds it with the MCP's own tools (`add_object`, `heat`). The yard's
+cells are 40 mm, so what it builds is the room's own scene above: an 80 x 80 mm
+beam under a 320 mm, 258 kg block. In the room the heated beam tints, then burns,
+and is drawn smaller every 0.2 mm; the Heat panel shows its size now, its mass,
+its strength falling, and -- once the survey asks, about seven minutes in --
+statics' answer under its load and how near its bonds came. About twelve and a
+half minutes in, statics says its bonds have reached the criterion and it gives
+way under the block. The cold twin carries its block throughout.
+
+Measured in the real page, in headless Chrome over the DevTools protocol, on this
+branch's final build: the request above was typed into the room's own chat,
+which built both assemblies in one turn (32 s, gpt-5-mini). The room then ran at
+1.0007 of real time -- 777.3 s of world in 776.8 s, the worst minute 0.998, 60
+frames a second, no page errors. The heated beam was drawn smaller 17 times,
+from 1400 x 80 x 80 mm to 1393.2 x 73.2 x 73.2 mm and from 6.27 to 5.13 kg.
+Statics was first asked 420.8 s in, its bonds at 24.1% of the criterion, and
+asked again as the section fell, holding on every ask up to 97.4% at 742.8 s; at
+746.5 s they reached 100.5% -- broke, 110 bonds, 5 pieces -- and the halves
+folded down under the block between the piers, still burning. The cold twin
+carried its block throughout. Before the two fixes in *Sustained loads* and
+*What burns leaves the shape*, the same run ended with the block on the floor
+under a beam that had not broken, and the Heat panel saying "under its load:
+holds".
 
 ## What it keeps
 
@@ -624,7 +681,7 @@ again by every survey and need not be kept.
 * **Statics removes every bond past the criterion at once.** Near the criterion
   that is a crack growing round by round. At many times over -- a piece nearly
   charred through with something resting on it, asked about at 10.5 times its
-  criterion in the owner's scene -- it is most of its bonds, and the piece comes
+  criterion in an earlier build of the owner's scene -- it is most of its bonds, and the piece comes
   apart in chunks of a few cells instead of cracking through. Removing the worst
   first, one event at a time, would crack it through; not done.
 * **A lattice run with a heavy striker can be slow.** In one build of the

@@ -443,7 +443,13 @@ section a hundredth weaker than it held at, or a load a hundredth heavier. A
 load does not go away by itself, so without this an overloaded shelf would be
 asked about on every survey. That goes for any answer that leaves the body
 whole -- held, or a solve that did not converge: asked again unchanged, it
-would get the same answer at the same cost.
+would get the same answer at the same cost. **An answer lasts as long as its
+load**: once nothing rests on the body, the answer and its throttle go (a body
+that broke keeps its last answer). And a body statics is answering is not held
+still while it is worked out, as a struck body is: it is at rest under its load,
+and holding it upset the contact carrying the load -- in the owner's room, with
+answers not waited for, a block sank a millimetre deeper into its beam at each
+held answer and fell through a beam that had not broken.
 
 The survey runs at a stride — four times a second, not sixty — because load does
 not change in a quarter of a second and the survey is O(bodies²).
