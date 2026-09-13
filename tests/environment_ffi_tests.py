@@ -155,6 +155,92 @@ class TheGroundAndTheWaterThroughTheLibrary(unittest.TestCase):
             self.assertAlmostEqual(settled.deposited_m3, dug.sand_m3 + dug.soil_m3, delta=1e-12)
             self.assertLessEqual(abs(settled.residual_m3), 1e-9)
 
+    def test_what_is_dug_is_carried_and_a_heap_is_made_of_it(self):
+        """The ground keeps its own account of what came out of it: dug, less
+        heaped. Whoever dug it carries it -- the playground's Carried list, and
+        all the MCP's fill may heap -- and the ground plus what is carried is
+        the ground there was. A world opened again from the same edits carries
+        the same; a heap a scene declares is declared ground, owed by nobody."""
+        def carried(world):
+            return world.environment_report()["ground"]["carried"]
+
+        dig = {"from_m": [-3.0, 0.0], "to_m": [-1.0, 0.0], "width_m": 1.0, "depth_m": 0.4}
+        with banjo.World(scene(FLAT), cell_size_m=CELL) as world:
+            self.assertEqual((carried(world)["sand_m3"], carried(world)["soil_m3"]), (0.0, 0.0))
+            dug = world.dig(dig["from_m"], dig["to_m"], width_m=dig["width_m"], depth_m=dig["depth_m"])
+            have = carried(world)
+            self.assertEqual(have["sand_m3"], dug.sand_m3)
+            self.assertEqual(have["soil_m3"], dug.soil_m3)
+            self.assertAlmostEqual(have["sand_kg"] + have["soil_kg"], dug.mass_kg, delta=1e-9)
+            heap = {"at_m": [3.0, 2.0], "radius_m": 1.0,
+                    "sand_m3": dug.sand_m3 / 2, "soil_m3": dug.soil_m3 / 4}
+            world.deposit(heap["at_m"], radius_m=heap["radius_m"], sand_m3=heap["sand_m3"],
+                          soil_m3=heap["soil_m3"])
+            have = carried(world)
+            self.assertAlmostEqual(have["sand_m3"], dug.sand_m3 / 2, delta=1e-12)
+            self.assertAlmostEqual(have["soil_m3"], dug.soil_m3 * 3 / 4, delta=1e-12)
+            run(world, 2.0)   # the trench's sides slump and the heap settles: neither is carried
+            ground = world.environment_report()["ground"]
+            left = ground["carried"]
+            for kind in ("sand", "soil"):
+                # Rounding over the 48 m3 of this ground, and nothing else.
+                self.assertAlmostEqual(
+                    ground["volumes"][f"{kind}_m3"] + left[f"{kind}_m3"],
+                    ground["ledger"]["initial"][f"{kind}_m3"], delta=1e-9,
+                    msg=f"{kind}: the ground plus what is carried is not the ground there was")
+        # The same edits, replayed as a world opens: the same account.
+        edited = scene(FLAT)
+        edited["terrain"]["edits"] = [{"dig": dig}, {"deposit": heap}]
+        with banjo.World(edited, cell_size_m=CELL) as again:
+            self.assertAlmostEqual(carried(again)["sand_m3"], left["sand_m3"], delta=1e-12)
+            self.assertAlmostEqual(carried(again)["soil_m3"], left["soil_m3"], delta=1e-12)
+        # A heap declared with nothing dug is declared ground: nothing is owed,
+        # and what is dug afterwards is carried whole.
+        declared = scene(FLAT)
+        declared["terrain"]["edits"] = [{"deposit": {"at_m": [3.0, 2.0], "radius_m": 1.0, "soil_m3": 1.0}}]
+        with banjo.World(declared, cell_size_m=CELL) as heaped:
+            self.assertEqual(carried(heaped)["soil_m3"], 0.0)
+            more = heaped.dig((-3.0, -2.0), width_m=0.8, depth_m=0.3)
+            self.assertEqual(carried(heaped)["sand_m3"], more.sand_m3)
+            self.assertEqual(carried(heaped)["soil_m3"], more.soil_m3)
+
+    def test_a_world_opened_again_from_its_edits_is_the_ground_they_were_made_in(self):
+        """A world is opened again from its edits -- after the chat changes the
+        room, or on a reload -- each replayed and let come to rest before the
+        next, in the strides the running world settles in. So when each edit
+        had come to rest before the next was made, the world opened again is
+        the same ground to the bit: a second pit dug into the first one's
+        slumped sides takes what the slump left there. Replayed back to back
+        and settled once, the page's reload carried 7.8 litres more soil."""
+        first = {"from_m": [0.0, 0.0], "to_m": [0.0, 0.0], "width_m": 1.0, "depth_m": 0.5}
+        second = {"from_m": [0.4, 0.2], "to_m": [0.4, 0.2], "width_m": 1.0, "depth_m": 0.5}
+        heap = {"at_m": [2.5, -1.0], "radius_m": 0.8, "sand_m3": 0.05, "soil_m3": 0.05}
+        with banjo.World(scene(FLAT), cell_size_m=CELL) as world:
+            run(world, 1.0)
+            for edit, made in (("first dig", first), ("second dig", second), ("heap", heap)):
+                if edit != "heap":
+                    world.dig(made["from_m"], made["to_m"], width_m=made["width_m"],
+                              depth_m=made["depth_m"])
+                else:
+                    world.deposit(made["at_m"], radius_m=made["radius_m"],
+                                  sand_m3=made["sand_m3"], soil_m3=made["soil_m3"])
+                # Measured: the first pit's sides are at rest by 3.5 s (0.111
+                # of their 0.130 m3 in the first half second), the second pit,
+                # dug into the first, by 6.25 s; this heap holds at once.
+                run(world, 10.0)
+                self.assertEqual(world.environment_report()["ground"]["unsettled_columns"], 0,
+                                 f"the ground had not come to rest after the {edit}")
+            ground = world.environment_report()["ground"]
+            self.assertGreater(ground["ledger"]["slumped_m3"], 0.0,
+                               "nothing slumped between the digs, so this proves nothing")
+            heights, carried = world.terrain_heights(), ground["carried"]
+        edited = scene(FLAT)
+        edited["terrain"]["edits"] = [{"dig": first}, {"dig": second}, {"deposit": heap}]
+        with banjo.World(edited, cell_size_m=CELL) as again:
+            self.assertEqual(again.terrain_heights(), heights,
+                             "the ground opened again is not the ground the edits left")
+            self.assertEqual(again.environment_report()["ground"]["carried"], carried)
+
     def test_dug_from_under_a_block_it_falls_and_nothing_else_wakes(self):
         block = box("block", "concrete", (0.4, 0.4, 0.4), (2.0, 1.0, 1.0))
         with banjo.World(scene(FLAT, block), cell_size_m=CELL) as world:

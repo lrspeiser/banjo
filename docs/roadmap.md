@@ -261,7 +261,7 @@ Profile each stage and establish a reference machine and reproducible scenes. Ad
 
 **Exit:** many inactive objects stay cheap; impact cost follows the active region rather than total world volume; refinement does not change the material law or violate transfer accounting; frame/latency/memory percentiles and worst cases are measured. A target such as 60 Hz is not a completed benchmark until measured.
 
-**Terrain and water, milestone 1** ([checkpoint](terrain-and-water.md)): a valley whose cost follows what is changing -- an edit's recheck, the colliders it changed and what they held; the wet tiles of the water -- rather than the land and water that exist. Sixty seconds of the valley with bodies in it run at 0.078x realtime; a pit dug in one corner rebuilt 1 of 20 colliders and woke nothing. The coarse river network and coarse-to-fine transitions are milestone 2, not started.
+**Terrain and water, milestone 1** ([checkpoint](terrain-and-water.md)): a valley whose cost follows what is changing -- an edit's recheck, the colliders it changed and what they held; the wet tiles of the water -- rather than the land and water that exist. Sixty seconds of the valley with bodies in it run at 0.078x realtime; a pit dug in one corner rebuilt 1 of 20 colliders and woke nothing. The coarse river network and coarse-to-fine transitions are milestone 2, not started. Dug ground is carried from one account the ground keeps and heaped back only from it (**Heap here**, the MCP's `fill`), and a world opened again from its edits is the ground left whenever each edit had come to rest; carrying the ground itself across a reopen belongs to the world snapshot (review item 3).
 
 ## Gate 6 — validated precomputation and speculation
 

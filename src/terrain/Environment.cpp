@@ -75,6 +75,15 @@ Json volumesJson(const Volumes &v) {
     return {{"rock_m3", v.rock_m3}, {"soil_m3", v.soil_m3}, {"sand_m3", v.sand_m3}};
 }
 
+// What came out of the ground and has not gone back, and what it weighs: see
+// Environment::carried. Not rounded: a heap of all of it is asked for with
+// these very numbers.
+Json carriedJson(const Volumes &c) {
+    return {{"sand_m3", c.sand_m3}, {"soil_m3", c.soil_m3},
+            {"sand_kg", c.sand_m3 * sandMaterial().density_kg_m3},
+            {"soil_kg", c.soil_m3 * soilMaterial().density_kg_m3}};
+}
+
 double number(const Json &node, const char *key, double fallback, double low, double high) {
     if (!node.contains(key)) return fallback;
     if (!node.at(key).is_number())
@@ -289,6 +298,14 @@ Environment::~Environment() = default;
 void Environment::applyEdits(const std::string &edits_json) {
     const Json edits = Json::parse(edits_json);
     if (!edits.is_array()) throw std::invalid_argument("terrain.edits is a list");
+    // Let whatever is unsettled come to rest, in the strides the running world
+    // settles in (commit).
+    const auto settle = [this] {
+        for (int k = 0; k < 20000 && !terrain_->settled(); ++k) (void)terrain_->relax(kGroundStrideS);
+    };
+    // A room runs before anyone digs in it: the ground the first edit met had
+    // come to rest.
+    settle();
     for (const Json &edit : edits) {
         if (!edit.is_object() || edit.size() != 1)
             throw std::invalid_argument("each terrain edit is {\"dig\": ...}, {\"deposit\": ...} or {\"cut\": ...}");
@@ -304,15 +321,19 @@ void Environment::applyEdits(const std::string &edits_json) {
             onlyKeys(spec, {"from_m", "to_m", "width_m", "depth_m"}, "a dig");
             const auto a = pointXZ(spec, "from_m");
             const auto b = spec.contains("to_m") ? pointXZ(spec, "to_m") : a;
-            changed = terrain_->dig(a.first, a.second, b.first, b.second,
-                                    number(spec, "width_m", 1.0, 0.05, 50.0),
-                                    number(spec, "depth_m", 0.5, 0.01, 20.0)).cells;
+            const EditReport dug = terrain_->dig(a.first, a.second, b.first, b.second,
+                                                 number(spec, "width_m", 1.0, 0.05, 50.0),
+                                                 number(spec, "depth_m", 0.5, 0.01, 20.0));
+            carry(dug.moved);
+            changed = dug.cells;
         } else if (kind == "deposit") {
             onlyKeys(spec, {"at_m", "radius_m", "sand_m3", "soil_m3"}, "a deposit");
             const auto at = pointXZ(spec, "at_m");
+            const double sand = number(spec, "sand_m3", 0.0, 0.0, 1.0e5);
+            const double soil = number(spec, "soil_m3", 0.0, 0.0, 1.0e5);
             changed = terrain_->deposit(at.first, at.second, number(spec, "radius_m", 1.0, 0.05, 50.0),
-                                        number(spec, "sand_m3", 0.0, 0.0, 1.0e5),
-                                        number(spec, "soil_m3", 0.0, 0.0, 1.0e5)).cells;
+                                        sand, soil).cells;
+            putBack(sand, soil);
         } else if (kind == "cut") {
             onlyKeys(spec, {"at_m", "cells", "height_m"}, "a cut");
             const auto at = pointXZ(spec, "at_m");
@@ -328,10 +349,16 @@ void Environment::applyEdits(const std::string &edits_json) {
             throw std::invalid_argument("a terrain edit is dig, deposit or cut, not \"" + kind + "\"");
         }
         (void)changed;
+        // Each edit comes to rest before the next is made, in the strides the
+        // running world settles in (commit), so the world opened again is the
+        // one the edits were made in whenever each had come to rest before the
+        // next: a second pit dug into the first one's slumped sides digs what
+        // the slump left there. They used to be made back to back and settled
+        // once, and that second pit dug unslumped ground -- 7.8 litres more
+        // soil than the running room had, measured after a reload in the page.
+        // The scene is the ground as it WAS left.
+        settle();
     }
-    // The scene is the ground as it WAS left: whatever the edits unsettled has
-    // long since come to rest.
-    for (int k = 0; k < 20000 && !terrain_->settled(); ++k) (void)terrain_->relax(kGroundStrideS);
     std::vector<std::size_t> moved;
     for (std::size_t c = 0; c < landscape_.grid.cells(); ++c)
         if (terrain_->height(c) != water_->terrain(c)) moved.push_back(c);
@@ -519,16 +546,25 @@ void Environment::commit(JoltWorld &world, const std::vector<water::BodyInWater>
     // water's stride, and only of bodies the water reaches.
     if (water_ms > 0.0) wakeWhatTheWaterReached(world, bodies);
 
-    if (ground_behind_s_ >= kGroundStrideS) {
-        if (!terrain_->settled()) {
-            const Clock::time_point tg = Clock::now();
-            const Relaxed r = terrain_->relax(ground_behind_s_);
+    // The ground settles in whole strides of kGroundStrideS -- the strides a
+    // world opened again lets each replayed edit settle in (applyEdits) -- so
+    // that world is this one, edit for edit, whenever each edit had come to
+    // rest before the next was made. It used to be given however much time had
+    // gathered, 1/60 s or 5/240 s by how the room's steps added up, and a
+    // slump's path, and where it stopped, depended on which. Time short of a
+    // stride waits for the next; with nothing left to settle, none is owed.
+    if (terrain_->settled()) {
+        ground_behind_s_ = 0.0;
+    } else if (ground_behind_s_ >= kGroundStrideS) {
+        const Clock::time_point tg = Clock::now();
+        do {
+            const Relaxed r = terrain_->relax(kGroundStrideS);
+            ground_behind_s_ -= kGroundStrideS;
             syncWaterBed(r.changed);
             noteChanged(r.changed);
             stats_.ground_checked += r.checked;
-            stats_.ground_ms_total += msSince(tg);
-        }
-        ground_behind_s_ = 0.0;
+        } while (ground_behind_s_ >= kGroundStrideS && !terrain_->settled());
+        stats_.ground_ms_total += msSince(tg);
     }
     for (const int chunk : terrain_->takeDirtyChunks()) pending_chunks_.insert(chunk);
     if (!pending_chunks_.empty() && since_rebuild_s_ >= kRebuildStrideS) {
@@ -574,11 +610,24 @@ void Environment::wakeWhatTheWaterReached(JoltWorld &world, const std::vector<wa
 
 // ---- edits ------------------------------------------------------------------
 
+void Environment::carry(const Volumes &dug) {
+    carried_.sand_m3 += dug.sand_m3;
+    carried_.soil_m3 += dug.soil_m3;
+}
+
+void Environment::putBack(double sand_m3, double soil_m3) {
+    // Floored at nothing: a heap bigger than what is carried is one a scene
+    // declared, and the ground it adds is declared, not owed.
+    carried_.sand_m3 = std::max(0.0, carried_.sand_m3 - sand_m3);
+    carried_.soil_m3 = std::max(0.0, carried_.soil_m3 - soil_m3);
+}
+
 EditEffect Environment::dig(JoltWorld &world, double ax, double az, double bx, double bz,
                             double width_m, double depth_m) {
     EditEffect effect;
     terrain_->resetActivity();
     effect.edit = terrain_->dig(ax, az, bx, bz, width_m, depth_m);
+    carry(effect.edit.moved);
     for (const std::size_t c : effect.edit.cells) effect.water_columns_moved += water_->depth(c) > 0.0;
     syncWaterBed(effect.edit.cells);
     noteChanged(effect.edit.cells);
@@ -596,6 +645,7 @@ EditEffect Environment::deposit(JoltWorld &world, double x, double z, double rad
                                 double sand_m3, double soil_m3) {
     EditEffect effect;
     effect.edit = terrain_->deposit(x, z, radius_m, sand_m3, soil_m3);
+    putBack(sand_m3, soil_m3);
     for (const std::size_t c : effect.edit.cells) effect.water_columns_moved += water_->depth(c) > 0.0;
     syncWaterBed(effect.edit.cells);
     noteChanged(effect.edit.cells);
@@ -711,6 +761,7 @@ std::string Environment::reportJson(bool full) const {
                     {"ledger", {{"initial", volumesJson(gl.initial)}, {"dug", volumesJson(gl.dug)},
                                 {"cut", volumesJson(gl.cut)}, {"deposited", volumesJson(gl.deposited)},
                                 {"slumped_m3", gl.slumped_m3}, {"loosened_m3", gl.loosened_m3}}},
+                    {"carried", carriedJson(carried_)},
                     {"residual", volumesJson(residual)},
                     {"unsettled_columns", terrain_->unsettled()},
                     {"bare_rock", bare}}},

@@ -126,6 +126,15 @@ public:
     // A river's discharge, from now.
     bool setDischarge(const std::string &river, double discharge_m3_s);
 
+    // What has come out of the ground and not gone back: the sand and soil
+    // dug, less what was heaped from them. Whoever dug it carries it, and a
+    // heap made from what is carried can be no bigger (the host says which
+    // heaps those are). Counted through every edit -- a scene's own, replayed
+    // when a world opens, included -- so a world opened again from the same
+    // edits carries the same. A heap a scene declares beyond it is declared
+    // ground and leaves nothing owed; a cut leaves as a body, not carried.
+    [[nodiscard]] const Volumes &carried() const { return carried_; }
+
     [[nodiscard]] const TerrainField &terrain() const { return *terrain_; }
     [[nodiscard]] const water::ShallowWater *water() const { return water_.get(); }
     [[nodiscard]] const Landscape &landscape() const { return landscape_; }
@@ -169,6 +178,9 @@ private:
     void syncWaterBed(const std::vector<std::size_t> &cells);
     // Grow the rectangle of ground that bodies will be woken over.
     void noteChanged(const std::vector<std::size_t> &cells);
+    // The carried account: what a dig took out, and what a heap put back.
+    void carry(const Volumes &dug);
+    void putBack(double sand_m3, double soil_m3);
     // A sleeping body whose water has changed around it is woken.
     void wakeWhatTheWaterReached(JoltWorld &world, const std::vector<water::BodyInWater> &bodies);
     std::vector<float> chunkHeights(int chunk) const;
@@ -181,6 +193,7 @@ private:
     std::vector<water::BodyForce> forces_;
     std::vector<unsigned> patch_of_chunk_;
     bool attached_{};
+    Volumes carried_{};
     double time_s_{};
     double water_behind_s_{};     // world time the water has yet to catch up
     double ground_behind_s_{};

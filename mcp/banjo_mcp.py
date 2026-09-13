@@ -619,13 +619,21 @@ def tool_collect(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def tool_carried(args: dict[str, Any]) -> dict[str, Any]:
-    """What has been swept up in this world, by material."""
+    """What has been swept up in this world, by material, and the sand and soil
+    dug out of its ground and not put back."""
     entry = _world(args.get("world_id"))
-    carried = entry["carried"]
-    return {"carried": {m: {"kilograms": round(v["kilograms"], 4),
-                            "grams": round(v["kilograms"] * 1000.0, 1),
-                            "pieces": v["pieces"]}
-                        for m, v in sorted(carried.items())},
+    carried = _all_carried(entry)
+
+    def said(have: dict[str, float]) -> dict[str, Any]:
+        out: dict[str, Any] = {"kilograms": round(have["kilograms"], 4),
+                               "grams": round(have["kilograms"] * 1000.0, 1)}
+        if "pieces" in have:
+            out["pieces"] = have["pieces"]
+        if "cubic_metres" in have:
+            out["cubic_metres"] = round(have["cubic_metres"], 4)
+        return out
+
+    return {"carried": {m: said(v) for m, v in sorted(carried.items())},
             "total_kilograms": round(sum(v["kilograms"] for v in carried.values()), 4)}
 
 
@@ -2400,7 +2408,9 @@ def tool_swing(args: dict[str, Any]) -> dict[str, Any]:
 # does is the engine's: nothing here sets a level, a speed or a slope.
 
 TERRAIN_KINDS = ["valley", "basin", "channel", "flat"]
-GROUND_DENSITY = {"sand": 1600.0, "soil": 1600.0}
+# What a spade takes out of the ground and a heap puts back. How much of each is
+# carried is the ground's own account, kept by the engine: see _ground_carried.
+GROUND_MATERIALS = ("sand", "soil")
 PAIR = {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 3,
         "description": "[x, z] on the ground (or [x, y, z], y ignored)."}
 
@@ -2585,6 +2595,12 @@ def _ground_said(report: dict[str, Any]) -> dict[str, Any]:
             "looking_at": [round(v, 2) for v in report["view"]["look_m"]]}
     if ground.get("bare_rock"):
         said["bare_level_rock_at_m"] = [round(v, 2) for v in ground["bare_rock"]["at_m"]]
+    # Dug out and not yet put back, whoever dug it -- in the playground's room
+    # the person's own spade included: what fill can heap.
+    carried = ground.get("carried") or {}
+    have = {m: round(float(carried.get(f"{m}_m3", 0.0)), 3) for m in GROUND_MATERIALS}
+    if any(v > 0.0 for v in have.values()):
+        said["carried_m3"] = {m: v for m, v in have.items() if v > 0.0}
     return said
 
 
@@ -2715,11 +2731,26 @@ def _record_edit(entry: dict[str, Any], edit: dict[str, Any]) -> None:
     entry["scene"] = scene
 
 
-def _carry(entry: dict[str, Any], material: str, cubic_metres: float) -> None:
-    if cubic_metres <= 0.0:
-        return
-    have = entry["carried"].setdefault(material, {"kilograms": 0.0, "pieces": 0})
-    have["kilograms"] += cubic_metres * GROUND_DENSITY[material]
+def _ground_carried(entry: dict[str, Any]) -> dict[str, dict[str, float]]:
+    """The sand and soil out of this world's ground and not put back, as the
+    engine counts them: every dig among its edits, less every heap made from
+    them. A rebuild replays the edits, so it carries the same -- and a room
+    opened from the playground's spec carries what the person's spade dug."""
+    if entry.get("world") is None or not entry["scene"].get("terrain"):
+        return {}
+    carried = (entry["world"].environment_report().get("ground") or {}).get("carried") or {}
+    out: dict[str, dict[str, float]] = {}
+    for material in GROUND_MATERIALS:
+        cubic = float(carried.get(f"{material}_m3", 0.0))
+        if cubic > 0.0:
+            out[material] = {"cubic_metres": cubic,
+                             "kilograms": float(carried.get(f"{material}_kg", 0.0))}
+    return out
+
+
+def _all_carried(entry: dict[str, Any]) -> dict[str, dict[str, float]]:
+    """Everything carried here: what was swept up, by material, and the ground."""
+    return {**{m: dict(v) for m, v in entry["carried"].items()}, **_ground_carried(entry)}
 
 
 def tool_dig(args: dict[str, Any]) -> dict[str, Any]:
@@ -2736,14 +2767,12 @@ def tool_dig(args: dict[str, Any]) -> dict[str, Any]:
     except banjo.BanjoError as error:
         raise Refused(str(error))
     _record_edit(entry, {"dig": {"from_m": start, "to_m": end, "width_m": width, "depth_m": depth}})
-    _carry(entry, "sand", dug.sand_m3)
-    _carry(entry, "soil", dug.soil_m3)
     entry["story"].append(f"dug from {start} to {end}, {width:g} m wide and {depth:g} m deep")
     return {"dug_m3": round(dug.sand_m3 + dug.soil_m3, 3), "sand_m3": round(dug.sand_m3, 3),
             "soil_m3": round(dug.soil_m3, 3), "kilograms": round(dug.mass_kg, 1),
             "columns": dug.columns, "colliders_rebuilt": dug.chunks_rebuilt,
             "things_woken": dug.bodies_woken,
-            "carried": {m: round(v["kilograms"], 1) for m, v in sorted(entry["carried"].items())},
+            "carried": {m: round(v["kilograms"], 1) for m, v in sorted(_all_carried(entry).items())},
             "note": "The ground is lower there now. Whatever stood on it was woken and falls if "
                     "nothing is under it any more; loose sides slump into the trench over the next "
                     "second; water finds it if it is lower than the water. Call run to let all of "
@@ -2759,9 +2788,9 @@ def tool_fill(args: dict[str, Any]) -> dict[str, Any]:
     radius = _number(args.get("radius_m", 1.0), "radius_m", 0.25, 5.0)
     volume = _number(args.get("volume_m3", 0.5), "volume_m3", 0.01, 50.0)
     material = str(args.get("material") or "soil")
-    if material not in GROUND_DENSITY:
+    if material not in GROUND_MATERIALS:
         raise Refused("fill with soil or sand: what digging gives you")
-    have = entry["carried"].get(material, {}).get("kilograms", 0.0) / GROUND_DENSITY[material]
+    have = _ground_carried(entry).get(material, {}).get("cubic_metres", 0.0)
     if have + 1e-9 < volume:
         raise Refused(f"you are carrying {have:.3f} m^3 of {material}, and ground does not come from "
                       f"nowhere: dig {volume - have:.3f} m^3 more first, or fill with less")
@@ -2771,11 +2800,10 @@ def tool_fill(args: dict[str, Any]) -> dict[str, Any]:
     except banjo.BanjoError as error:
         raise Refused(str(error))
     _record_edit(entry, {"deposit": {"at_m": at, "radius_m": radius, "sand_m3": sand, "soil_m3": soil}})
-    entry["carried"][material]["kilograms"] -= volume * GROUND_DENSITY[material]
     entry["story"].append(f"heaped {volume:g} m^3 of {material} at {at}")
     return {"heaped_m3": round(volume, 3), "of": material, "columns": heaped.columns,
             "colliders_rebuilt": heaped.chunks_rebuilt,
-            "carried": {m: round(v["kilograms"], 1) for m, v in sorted(entry["carried"].items())},
+            "carried": {m: round(v["kilograms"], 1) for m, v in sorted(_all_carried(entry).items())},
             "note": "A heap settles to the steepest slope it can hold -- sand to about 32 degrees -- "
                     "over the next second: run to let it."}
 
@@ -3014,7 +3042,8 @@ TOOLS = [
                                                  "description": "How far the sweep "
                                                                 "reaches. 1.5 m by default."}}}},
     {"name": "carried",
-     "description": "What has been swept up in this world, by material.",
+     "description": "What has been swept up in this world, by material, and the sand and soil "
+                    "dug out of its ground and not put back (in cubic metres as well as kilograms).",
      "inputSchema": {"type": "object", "required": ["world_id"],
                      "properties": {"world_id": {"type": "string"}}}},
     {"name": "hinge",
@@ -3551,7 +3580,8 @@ TOOLS = [
                     "support and falls if nothing else holds it up, loose banks slump into the "
                     "trench, and water flows into it if it is lower than the water -- dig from a "
                     "pond or a dammed river to lower ground and it drains. What comes out is "
-                    "carried, and `fill` can put it back. Only the ground you dig, and what it "
+                    "carried -- the ground keeps the account, so opening the world again carries "
+                    "the same -- and `fill` can put it back. Only the ground you dig, and what it "
                     "was holding, is disturbed.",
      "inputSchema": {"type": "object", "required": ["world_id", "from_m"], "properties": {
          "world_id": {"type": "string"},
@@ -3565,7 +3595,8 @@ TOOLS = [
      "description": "Heap sand or soil you have dug on the ground: fill a trench, bank up an "
                     "earth dam, make a mound. It settles to the steepest slope it can hold. Ground "
                     "does not come from nowhere: you can only fill with what digging has given "
-                    "you (see the carried amounts dig reports).",
+                    "you (the carried amounts dig reports -- in the playground's room, what the "
+                    "person dug with their own spade too).",
      "inputSchema": {"type": "object", "required": ["world_id", "at_m", "volume_m3"], "properties": {
          "world_id": {"type": "string"},
          "at_m": dict(PAIR, description="The middle of the heap: [x, z]."),

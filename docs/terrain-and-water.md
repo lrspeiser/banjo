@@ -182,6 +182,21 @@ new world as `"water": {"state": ...}`, where each column keeps its water over
 whatever ground the new scene's edits leave. The reservoir behind a dam is
 still there when a log is added. A new valley is new water.
 
+**What is carried.** The ground keeps its own account of what has come out of
+it and not gone back -- `terrain::Environment::carried`: the sand and soil
+dug, less what was heaped from them -- counted through every edit, the scene's
+own edits replayed as a world opens included. So in every world the ground
+plus what is carried is the ground there was, and a world opened again from
+the same edits carries the same. The playground's room keeps the person's own
+digs and heaps among its edits (`remember_ground`), so what the spade dug is
+still carried after the chat changes the room or the page is reloaded, and the
+chat's `fill` heaps from the same account. A heap the person makes is made of
+what is carried -- the line protocol's `from_carried`, the MCP's `fill` -- and
+one bigger is refused before the ground is touched. A heap a scene declares
+with nothing dug is declared ground and leaves nothing owed; a cut block
+leaves as a body and is not carried. Heaped soil goes down loose: it lost its
+cohesion when it was dug.
+
 ## Measured
 
 The owner's acceptance tests (`tests/valley_live_tests.cpp`, in a live world on
@@ -198,6 +213,8 @@ the generated valley, and `tests/water_tests.cpp`, the solver alone):
 | a boulder falls when dug under | woken by the dig (1 body), fell 0.30 m |
 | a log floats and drifts | oak from x -12.8 to 2.5 m in 20 s (0.76 m/s), riding at y 0.421 m on a surface near 0.466 m; iron resting on the bed |
 | water carried into a reopened world | 29.3647 m3 carried, 29.3647 m3 in the new world |
+| what is dug is carried | a dig 1 m wide and 0.4 m deep on flat ground: carried equals dug to the bit; half its sand and a quarter of its soil heaped back, and carried falls to a half and three quarters of it to 1e-12 m3; once the sides and the heap settled, ground plus carried is the ground there was to 1e-9 m3; a heap declared with nothing dug leaves nothing owed (`environment_ffi_tests`) |
+| a world opened again is the ground left | two overlapping pits and a heap on flat ground, each let come to rest (3.5 s, 6.25 s, at once): opened again from the three edits, every height and the carried account identical to the bit (`environment_ffi_tests`); settled back to back instead, as before, the page's reload carried 7.8 litres (12.4 kg) more soil than the room it replaced |
 | realtime, worst step, active cells | see below |
 
 ## Realtime
@@ -217,13 +234,13 @@ run synchronously; the room asks for it in the background.
 
 | layer | what |
 |---|---|
-| engine | `terrain::Environment`; `LiveWorld::environment / dig / deposit / cutBlock / setDischarge / environmentReport / environmentState / survey / awakeBodies` |
+| engine | `terrain::Environment` (what is carried: `Environment::carried`); `LiveWorld::environment / dig / deposit / cutBlock / setDischarge / environmentReport / environmentState / survey / awakeBodies` |
 | C API (ABI 15) | `banjo_terrain_info`, `banjo_water_info`, `banjo_dig`, `banjo_deposit`, `banjo_cut_block`, `banjo_set_discharge`, `banjo_terrain_heights`, `banjo_water_surface`, `banjo_environment_report`, `banjo_environment_state`, `banjo_survey`, `banjo_awake_bodies` |
 | Python | `World.terrain / water / dig / deposit / cut_block / set_discharge / terrain_heights / water_surface / environment_report / environment_state / survey / awake_bodies` |
 | scene | `"terrain": {"generate": ..., "edits": [...]}`, `"water": {"discharge_m3_s" / "rivers", "state"}` |
-| line protocol | ops `dig`, `deposit`, `cut_block`, `discharge`, `survey`, `environment`, `environment_state`, `terrain`; the ground whole when a world opens and afterwards only the rectangle that changed (`terrain_changed`); the water's surface and flow four times a world second |
-| MCP | `make_terrain`, `survey`, `water_state`, `dig`, `fill` (only from what was dug), `cut_block`, `set_river`; `add_object` sets things on the ground and says if they are in water; every `run` carries a water summary |
-| playground | the valley room, built by the chat from the MCP's tools; the ground and the water drawn from the engine's own heights and depths; **Dig here**; a water panel |
+| line protocol | ops `dig`, `deposit` (`from_carried`: no bigger than what is carried), `cut_block`, `discharge`, `survey`, `environment`, `environment_state`, `terrain`; the ground whole when a world opens and afterwards only the rectangle that changed (`terrain_changed`); `carried` in the ground block and in every dig's and heap's reply; the water's surface and flow four times a world second |
+| MCP | `make_terrain`, `survey`, `water_state`, `dig`, `fill` (only from what is carried), `carried` (the ground's sand and soil with what was swept up), `cut_block`, `set_river`; `add_object` sets things on the ground and says if they are in water; every `run` carries a water summary; the room's opening message says what is carried (`the_ground.carried_m3`) |
+| playground | the valley room, built by the chat from the MCP's tools; the ground and the water drawn from the engine's own heights and depths; **Dig here**, **Heap here** and the **Carried** list; a water panel |
 
 ## Seeing it in 3D
 
@@ -257,9 +274,14 @@ and open http://127.0.0.1:8773/world.
    river bank, where I can dig the ground out from under it."* Aim at the
    ground right beside it -- the label says *the ground* -- and press **Dig
    here**: the pit takes the ground from under it and it falls in.
-6. **Digging.** **Dig here** anywhere on the ground digs a pit 0.8 m across
-   and 0.4 m deep; sandy sides slump into it, and the pit is still there when
-   the room is opened again.
+6. **Digging, carrying and heaping.** **Dig here** anywhere on the ground
+   digs a pit 0.8 m across and 0.4 m deep; sandy sides slump into it, and the
+   pit is still there when the room is opened again. What came out is carried:
+   the **Carried** list shows its sand and soil in kilograms, the engine's own
+   count. **Heap here** puts up to 0.2 m³ of it back where the crosshair meets
+   the ground, in the proportion it is carried, and the heap settles to the
+   slope it can hold. Ask the chat to *"bank up the soil I'm carrying"* and its
+   `fill` heaps from the same account.
 
 Built in that order the room holds 12,960 of its 16,000 cells: the dam
 10,368, the log 864, the boulder 1,728.
@@ -275,6 +297,15 @@ model, gpt-5-mini) and the room timed against the wall clock throughout:
 | the channel | the trench from the pond to the river, in 17 s | the room opened again with the dam's water carried into it; the pond fell from 0.846 to 0.514 m in 41 s | 40.15 s in 40.18 s |
 | the log | oak, 0.96 x 0.24 x 0.24 m, in the river at x -13, in 12 s | afloat, from x -12.96 to -8.24 m in 20 s -- slowly, because the dam has backed the river up there | 19.49 s in 19.53 s |
 | the boulder | concrete, 0.48 m, on the bank at [0.64, 1.04, 6.0], in 10 s | **Dig here** aimed at the ground 0.5 m beside it dug 0.23 m3 and rebuilt 1 collider; the boulder went down into the pit, y 1.016 -> 0.737 m, and 0.52 m sideways | -- |
+
+**Measured,** on 2026-09-13 on port 8772 in headless Chrome: **Dig here** on
+the sandy bank at [2.0, 4.18] carried 0.20 m³ -- 137.40 kg of sand and 182.60
+kg of soil -- and a second dig into the first pit's side 185.94 kg more;
+**Heap here** 2 m along the bank put 0.20 m³ (320.00 kg) back and the
+**Carried** list fell by exactly that, to 78.91 kg of sand and 107.03 kg of
+soil. The room kept 28.55 s of its clock in 28.54 s of wall clock. The page
+reloaded and the valley chosen again, the room opened from the edits the
+server kept and carried 78.91 and 107.03 kg: the same to the bit.
 
 The first time the dam was asked for, the chat was reading a guide that
 still gave 0.96 m blocks: it placed four, ran out of the room's cells, and
@@ -296,7 +327,19 @@ fits, and the second time it was built whole.
 - No three-dimensional water: no spray, splashing or pouring. The surface
   drawn is the depth-averaged solver's; the foam on it is carried by the
   engine's velocity field and is a picture of it, nothing more.
-- Dug material is a tally carried by whoever dug it, not a body.
+- Dug material is carried as a tally of sand and soil, not as bodies: it can
+  be heaped but not picked up and thrown. No bulking: a cubic metre dug is a
+  cubic metre heaped.
+- A world opened again replays the ground's edits, each let come to rest
+  before the next, in the same 1/60 s strides the running world settles in:
+  so it is the running world to the bit whenever each edit had come to rest
+  before the next was made. A spade pit's sides are at rest in about 3.5 s
+  (most of the slump in the first half second), and a second pit dug into the
+  first in about 6.25 s. An edit made while the last one was still settling is
+  replayed onto ground that had finished: a dig strips the same thickness from
+  the same columns, so it takes the same material unless one of the two
+  reaches rock where the other does not. The world snapshot (the owner's
+  review, item 3) is to carry the ground itself instead.
 - The in-process alternative to the live runner (`playground/live_inprocess.py`)
   has no terrain or water yet; the playground uses the runner.
 - **Milestone 2 is not started:** the coarse river network (rivers as a graph

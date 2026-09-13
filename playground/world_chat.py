@@ -425,7 +425,9 @@ the_ground and the_water in your first message say where everything is.
 - dig(from_m, to_m, width_m, depth_m): a trench, or a pit at one point. What
   stood on the dug ground falls if nothing else holds it up, loose banks slump
   in, and water runs in if the trench is lower than the water. What comes out
-  is carried; fill(at_m, volume_m3, material) heaps only that back.
+  is carried -- and so is what the person dug with their own spade (Dig here):
+  the_ground's carried_m3 says how much. fill(at_m, volume_m3, material) heaps
+  only what is carried.
 - cut_block(name, at_m, size_m): a block of stone out of bare level rock --
   the flat top of the knoll, at about [-9.1, 4.75] -- as a loose object.
 - set_river(discharge_m3_s): a flood or a drought, from now.

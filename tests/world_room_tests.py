@@ -216,6 +216,70 @@ class TheToolsThatChangeIt(unittest.TestCase):
 
 
 @unittest.skipUnless(ENGINE, "the live engine is not built")
+class TheSpadeCarriesWhatItDigs(unittest.TestCase):
+    """Dig here and Heap here, through the pipe the page uses and the edits the
+    server keeps: what the spade takes out is carried, a heap is made of it,
+    and the room opened again from its edits carries the same."""
+
+    def test_what_the_spade_digs_is_carried_and_a_heap_is_made_of_it(self):
+        import server as playground_server   # remember_ground: the edits the server keeps
+        live = live_session.Live()
+        self.addCleanup(live.shutdown)
+
+        class Room:
+            spec = world_room.valley()
+
+        class App:
+            engine_path = ENGINE
+            runs_path = ROOT / "build/playground-runs"
+            live_inprocess = False
+            room = Room()
+
+        App.runs_path.mkdir(parents=True, exist_ok=True)
+        app = App()
+
+        def act(**body):
+            body["session"] = live.session.id
+            answer = live.act(body)
+            playground_server.remember_ground(app, body)   # as /api/live/act does
+            return answer
+
+        start = live.open(app, {"spec": app.room.spec})["terrain"]["carried"]
+        self.assertEqual((start["sand_m3"], start["soil_m3"]), (0.0, 0.0))
+        dug = act(op="dig", **{"from": [2.0, 4.25], "to": [2.0, 4.25]}, width_m=0.8, depth_m=0.4)
+        have = dug["carried"]
+        for kind in ("sand", "soil"):
+            # The dig's own report is rounded to a hundredth of a litre; what
+            # is carried is not.
+            self.assertAlmostEqual(have[f"{kind}_m3"], dug["dug"][f"{kind}_m3"], delta=1e-5)
+        self.assertAlmostEqual(have["sand_kg"] + have["soil_kg"], dug["dug"]["kg"], delta=0.02)
+        self.assertGreater(have["sand_m3"] + have["soil_m3"], 0.1, "a spade's pit is about 0.2 m3")
+        # More than is carried is refused before the ground is touched.
+        with self.assertRaises(live_session.LiveError) as refused:
+            act(op="deposit", at=[-2.0, 4.0], radius_m=0.8, sand_m3=have["sand_m3"] + 0.01,
+                soil_m3=have["soil_m3"])
+        self.assertIn("nowhere", str(refused.exception))
+        # Half of it back where it came from, taken off exactly.
+        heaped = act(op="deposit", at=[2.0, 4.25], radius_m=0.8, sand_m3=have["sand_m3"] / 2,
+                     soil_m3=have["soil_m3"] / 2)
+        self.assertAlmostEqual(heaped["carried"]["sand_m3"], have["sand_m3"] / 2, delta=1e-12)
+        self.assertAlmostEqual(heaped["carried"]["soil_m3"], have["soil_m3"] / 2, delta=1e-12)
+        self.assertEqual([next(iter(edit)) for edit in app.room.spec["terrain"]["edits"]],
+                         ["dig", "deposit"], "the refused heap was kept, or a real edit lost")
+        # Opened again from the edits the server kept -- as after the chat
+        # changes something, or on a reload -- it carries the same, and the
+        # ground plus what is carried is the ground there was.
+        again = live.open(app, {"spec": app.room.spec})["terrain"]["carried"]
+        for kind in ("sand_m3", "soil_m3"):
+            self.assertAlmostEqual(again[kind], heaped["carried"][kind], delta=1e-12)
+        ground = live.act({"session": live.session.id, "op": "environment"})["environment"]["ground"]
+        for kind in ("sand", "soil"):
+            # Rounding over the valley's thousands of cubic metres, and nothing else.
+            self.assertAlmostEqual(ground["volumes"][f"{kind}_m3"] + ground["carried"][f"{kind}_m3"],
+                                   ground["ledger"]["initial"][f"{kind}_m3"], delta=1e-6)
+
+
+@unittest.skipUnless(ENGINE, "the live engine is not built")
 class TheRoomActuallyOpens(unittest.TestCase):
     def test_it_opens_and_every_body_says_what_it_is_made_of(self):
         runs = ROOT / "build" / "playground-runs"

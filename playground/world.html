@@ -36,13 +36,24 @@
   <div id="use-note"></div>
 </div>
 
+<!-- Bottom left, stacked: what is carried, above the clock and the keys. -->
+<div id="corner">
+<!-- What has been picked up off the floor, by what it is. Walking over
+     debris collects it, so this fills as the room gets tidier -- and the sand
+     and soil Dig here takes out of the ground, which Heap here puts back. -->
+<div id="stock" hidden>
+  <h2>Carried</h2>
+  <ul id="stock-list"></ul>
+</div>
+
 <div id="hud">
   <div id="hud-clock">—</div>
   <div id="hud-hint"><b>W A S D</b> walk · <b>Q E</b> up and down · <b>Shift</b> run
     · <b>drag</b> or <b>arrow keys</b> look · <b>click</b> pick up and drop · <b>F</b> throw
     · <b>right-click</b> or <b>R</b> release a latch · <b>Heat it</b> warms what the crosshair is on (through a window, the gas behind it)
-    · <b>Dig here</b> digs where the crosshair is on the ground
+    · <b>Dig here</b> digs where the crosshair is on the ground and carries what comes out; <b>Heap here</b> puts it back
     · <b>L</b> if it lagged · <b>Esc</b> release the mouse</div>
+</div>
 </div>
 
 <!-- Where the held thing is, in metres, and what is under it. Carrying
@@ -53,13 +64,6 @@
   <div class="carry-row"><span class="axis y">Y</span><output id="carry-y">0.00</output><span class="unit">m</span></div>
   <div class="carry-row"><span class="axis z">Z</span><output id="carry-z">0.00</output><span class="unit">m</span></div>
   <div class="carry-drop">drops onto <b id="carry-onto">the floor</b>, <output id="carry-fall">0.00</output> m below</div>
-</div>
-
-<!-- What has been picked up off the floor, by what it is. Walking over
-     debris collects it, so this fills as the room gets tidier. -->
-<div id="stock" hidden>
-  <h2>Carried</h2>
-  <ul id="stock-list"></ul>
 </div>
 
 <!-- The water, as the engine reports it: how much there is, what the river
@@ -112,7 +116,9 @@
       <option value="valley">A valley with a river</option>
     </select>
     <button type="button" id="dig-it" class="quiet"
-            title="Dig a pit 0.8 m across and 0.4 m deep where the crosshair is on the ground">Dig here</button>
+            title="Dig a pit 0.8 m across and 0.4 m deep where the crosshair is on the ground; what comes out is carried">Dig here</button>
+    <button type="button" id="heap-it" class="quiet"
+            title="Heap up to 0.2 m³ of the sand and soil you carry where the crosshair is on the ground">Heap here</button>
     <button type="button" id="heat-it" class="quiet"
             title="10 kW for a minute into what the crosshair is on; aimed at a piston, or through a window at the gas behind it, 800 W into the gas">Heat it</button>
     <button type="button" id="reset" class="quiet">Start the room again</button>

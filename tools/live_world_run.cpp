@@ -44,8 +44,13 @@
 //        {"op":"vent","region":"cylinder gas","open":true}
 //        {"op":"thermo","model":false}      heat, chemistry, gas and the ledger
 //        {"op":"dig","from":[x,z],"to":[x,z],"width_m":1,"depth_m":0.5}
-//                                            a trench (or a pit, from == to)
-//        {"op":"deposit","at":[x,z],"radius_m":1,"sand_m3":0.5,"soil_m3":0}
+//                                            a trench (or a pit, from == to);
+//                                            "carried" in the reply is the sand
+//                                            and soil out of the ground and not
+//                                            put back -- also in "terrain"
+//        {"op":"deposit","at":[x,z],"radius_m":1,"sand_m3":0.5,"soil_m3":0,
+//         "from_carried":true}               a heap; from_carried refuses one
+//                                            bigger than what is carried
 //        {"op":"cut_block","at":[x,z],"cells":[4,4],"height_m":0.4}  a block of rock
 //        {"op":"discharge","river":"the river","discharge_m3_s":0.5}
 //        {"op":"survey","at":[x,z]}          ground and water at a point
@@ -102,6 +107,7 @@
 #include <nlohmann/json.hpp>
 
 #include <cmath>
+#include <cstdio>
 #include <algorithm>
 #include <fstream>
 #include <array>
@@ -625,11 +631,28 @@ std::vector<float> sent_heights;
 double water_sent_at = -1.0e9;
 constexpr double kWaterEveryS = 0.25;
 
+// What the person carries out of the ground: the sand and soil dug, less what
+// went back (terrain::Environment::carried). Not rounded -- a heap of all of it
+// is asked for with these very numbers, and a heap bigger than what is carried
+// is refused.
+nlohmann::json carriedJson(const banjo::terrain::Environment &env) {
+    const banjo::terrain::Volumes &c = env.carried();
+    return {{"sand_m3", c.sand_m3}, {"soil_m3", c.soil_m3},
+            {"sand_kg", c.sand_m3 * banjo::terrain::sandMaterial().density_kg_m3},
+            {"soil_kg", c.soil_m3 * banjo::terrain::soilMaterial().density_kg_m3}};
+}
+
+// How far past what is carried a heap may go: a cubic millimetre, for a host
+// that added the numbers up another way. A heap of everything carried, asked
+// for with the numbers a reply gave, needs none.
+constexpr double kCarriedSlackM3 = 1.0e-9;
+
 nlohmann::json terrainBlock(const banjo::terrain::Environment &env, const std::vector<float> &heights) {
     const banjo::terrain::Grid &g = env.terrain().grid();
     const std::vector<std::uint8_t> ground = env.surfaces();
     const banjo::terrain::Landscape &land = env.landscape();
     return {{"kind", land.kind},
+            {"carried", carriedJson(env)},
             {"grid", {{"nx", g.nx}, {"nz", g.nz}, {"cell_m", g.dx}, {"x0_m", g.x0}, {"z0_m", g.z0}}},
             {"chunks", {env.terrain().chunksX(), env.terrain().chunksZ()}},
             {"heights_b64", banjo::terrain::encodeBase64(heights.data(), heights.size() * sizeof(float))},
@@ -1181,12 +1204,30 @@ int main(int argc, char **argv) {
                     reply["dug"] = dugJson(world->dig(a.first, a.second, b.first, b.second,
                                                       command.value("width_m", 1.0),
                                                       command.value("depth_m", 0.5)));
+                    // What came out is carried, and the reply says how much is.
+                    reply["carried"] = carriedJson(*world->environment());
                 } else if (op == "deposit") {
                     const auto at = readXZ(command, "at");
+                    const double sand = command.value("sand_m3", 0.0);
+                    const double soil = command.value("soil_m3", 0.0);
+                    // A heap a person makes is made of what they carry, and one
+                    // bigger is refused before the ground is touched. A host
+                    // building a scene heaps what it declares instead.
+                    const banjo::terrain::Environment *env = world->environment();
+                    if (env != nullptr && command.value("from_carried", false)) {
+                        const banjo::terrain::Volumes &have = env->carried();
+                        if (sand > have.sand_m3 + kCarriedSlackM3 || soil > have.soil_m3 + kCarriedSlackM3) {
+                            char why[240];
+                            std::snprintf(why, sizeof why,
+                                          "ground does not come from nowhere: %.3f m3 of sand and %.3f m3 of "
+                                          "soil are carried, and that heap is %.3f and %.3f",
+                                          have.sand_m3, have.soil_m3, sand, soil);
+                            throw std::invalid_argument(why);
+                        }
+                    }
                     reply["heaped"] = dugJson(world->deposit(at.first, at.second,
-                                                             command.value("radius_m", 1.0),
-                                                             command.value("sand_m3", 0.0),
-                                                             command.value("soil_m3", 0.0)));
+                                                             command.value("radius_m", 1.0), sand, soil));
+                    reply["carried"] = carriedJson(*world->environment());
                 } else if (op == "cut_block") {
                     // The ground loses the block now; the host adds it as a body
                     // in the scene it opens next.

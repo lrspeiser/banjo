@@ -1274,6 +1274,32 @@ class TheTools(unittest.TestCase):
         self.assertTrue(now["level_m"] is None or now["level_m"] < pond["level_m"] - 0.1,
                         f"the pond did not drain: {pond['level_m']} -> {now['level_m']}")
 
+    def test_what_is_dug_is_carried_through_a_rebuild_and_fill_heaps_only_that(self):
+        """The ground's own account, through the MCP: what is dug and not put
+        back is carried; a rebuild -- anything added -- replays the ground's
+        edits and carries the same; and fill heaps no more than is carried and
+        takes what it heaps off it."""
+        world_id, _ = self.valley()
+        dug = self.client.call("dig", world_id=world_id, from_m=[2.0, 4.25], width_m=0.8,
+                               depth_m=0.3)
+        carried = self.client.call("carried", world_id=world_id)["carried"]
+        out = {m: carried[m]["cubic_metres"] for m in ("sand", "soil") if m in carried}
+        self.assertAlmostEqual(sum(out.values()), dug["dug_m3"], delta=1e-3)
+        self.client.call("add_object", world_id=world_id, object={
+            "name": "rubber ball", "shape": "sphere", "material": "rubber",
+            "size_m": [0.12, 0.12, 0.12], "position_m": [-9.12, 4.75]})
+        self.assertEqual(self.client.call("carried", world_id=world_id)["carried"], carried,
+                         "opening the world again changed what is carried")
+        material = max(out, key=out.get)
+        self.assertIn("nowhere", self.client.refuse("fill", world_id=world_id, at_m=[2.0, 4.25],
+                                                    volume_m3=out[material] + 0.01,
+                                                    material=material))
+        half = round(out[material] / 2, 4)
+        self.client.call("fill", world_id=world_id, at_m=[2.0, 4.25], volume_m3=half,
+                         material=material)
+        left = self.client.call("carried", world_id=world_id)["carried"][material]
+        self.assertAlmostEqual(left["cubic_metres"], out[material] - half, delta=1e-4)
+
     def test_oak_in_the_river_floats_and_drifts_downstream(self):
         world_id, made = self.valley()
         x, z, level = made["water"]["the_river_runs"]["every_2_m"][3][:3]

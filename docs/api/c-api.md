@@ -1397,9 +1397,14 @@ A trench from `from_m` to `to_m` (x, z; the same point twice is a pit),
 first, then soil; a spade stops on rock. `out` says what came out (`sand_m3`,
 `soil_m3`, `mass_kg`), from how many `columns`, how many colliders were
 rebuilt and in how long, and how many bodies the changed ground woke -- dig
-under a boulder and it is one, and it falls. What came out is the caller's to
-carry: `banjo_deposit` heaps sand and soil round a point, and the heap settles
-to the slope it can hold.
+under a boulder and it is one, and it falls. What came out is carried: the
+ground keeps the account -- sand and soil dug, less what was heaped from them
+-- through every edit, a scene's own included, and the report says it
+(`ground.carried`, below). `banjo_deposit` heaps sand and soil round a point,
+and the heap settles to the slope it can hold. The library does not refuse a
+heap bigger than what is carried -- a host building a scene may declare
+ground, which leaves nothing owed -- but the playground's hand and the MCP's
+`fill` do.
 
 Whether a side stands is Mohr-Coulomb: dry sand slumps to its angle of repose
 (a pit settles to 33.6 degrees), firm soil holds a spade-deep wall -- a 0.5 m
@@ -1441,8 +1446,9 @@ uses -- and what is drawn is what things stand on.
 The report is all of the above as JSON, with the rivers, their mouths, the
 ponds and their levels, the river every 2 m along its course (level, depth,
 speed), and every body in the water with what the water lifts against what it
-weighs; with `full`, the model's parameters, where each came from, and what is
-not modelled. The state is the water as it stands, for `"water": {"state": ...}`
+weighs; the ground's ledger, and what is `carried` out of it (`sand_m3`,
+`soil_m3`, `sand_kg`, `soil_kg`: dug and not heaped back); with `full`, the
+model's parameters, where each came from, and what is not modelled. The state is the water as it stands, for `"water": {"state": ...}`
 in a scene opened again: the same water over whatever ground that scene's edits
 leave. The survey is one point: the ground's height, what it is made of there,
 its slope, the ground's own share of rolling resistance there

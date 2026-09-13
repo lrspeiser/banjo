@@ -67,6 +67,7 @@ const world = {
   fading: [],             // pieces on their way out, being collected
   stock: new Map(),       // material -> { kg, pieces }
   sweptSince: new Map(),  // material -> kg, waiting to be announced
+  carriedGround: null,    // sand and soil out of this room's ground: the engine's count
   workingOn: "",          // what the engine is working out, for the frame record
   held: null,             // { name, distance }
   aim: null,              // what the crosshair is on, from the engine
@@ -932,6 +933,28 @@ function showStock() {
     if (world.sweptSince.has(what)) li.className = "just-in";
     return li;
   }));
+}
+
+// The sand and soil dug out of this room's ground and not put back, as the
+// engine counts them. Set from its numbers every time and never added to here:
+// the ground and what is carried out of it are one account, kept by the engine
+// through every edit -- so the room opened again from the same edits, after the
+// chat changes it or on a reload, carries the same.
+function carryGround(carried) {
+  world.carriedGround = carried || null;
+  for (const what of ["sand", "soil"]) {
+    const kg = carried ? Number(carried[`${what}_kg`]) || 0 : 0;
+    if (kg > 0.0005) world.stock.set(what, { kg, pieces: 0 });
+    else world.stock.delete(what);
+  }
+  showStock();
+}
+
+function carriedSaid() {
+  const c = world.carriedGround || {};
+  const parts = ["sand", "soil"].filter((what) => Number(c[`${what}_kg`]) > 0.0005)
+    .map((what) => `${grams(Number(c[`${what}_kg`]))} of ${what}`);
+  return parts.length ? parts.join(" and ") : "no sand or soil";
 }
 
 // A piece being collected shrinks away over a quarter of a second rather than
@@ -2901,7 +2924,9 @@ $("ask").addEventListener("submit", async (e) => {
       world.fading.length = 0;
       world.stock.clear();
       world.sweptSince.clear();
-      showStock();
+      // ...but not what the spade dug: the ground keeps its edits, and the
+      // engine counts what came out of them all over again.
+      carryGround(answer.state.terrain ? answer.state.terrain.carried : null);
       draw(answer.state);
       braceProfiles();
       // And its joints. The room that comes back can have hinges, ropes and
@@ -3010,11 +3035,56 @@ $("dig-it").addEventListener("click", async () => {
   try {
     const answer = await digAt(at[0], at[2]);
     const d = answer.dug || {};
-    say("you", `Dug ${((d.sand_m3 || 0) + (d.soil_m3 || 0)).toFixed(2)} m³ at`
+    carryGround(answer.carried);
+    say("you", `Dug ${((d.sand_m3 || 0) + (d.soil_m3 || 0)).toFixed(2)} m³ (${grams(d.kg || 0)}) at`
       + ` [${at[0].toFixed(1)}, ${at[2].toFixed(1)}]: ${(d.sand_m3 || 0).toFixed(2)} of sand,`
       + ` ${(d.soil_m3 || 0).toFixed(2)} of soil; ${d.chunks_rebuilt} collider(s) rebuilt,`
-      + ` ${d.bodies_woken} thing(s) woken.`);
-    remember(`dug a pit at [${at[0].toFixed(1)}, ${at[2].toFixed(1)}]`);
+      + ` ${d.bodies_woken} thing(s) woken. Carrying ${carriedSaid()}.`);
+    remember(`dug a pit at [${at[0].toFixed(1)}, ${at[2].toFixed(1)}] and carried what came out`);
+  } catch (error) { say("bad", String(error.message || error)); }
+});
+
+// Heap here: the sand and soil the spade took out go back on the ground where
+// the crosshair meets it -- up to 0.2 m³ at a time, about what one Dig here
+// lifts, in the proportion they are carried. The engine refuses a heap bigger
+// than what is carried (ground does not come from nowhere), what it heaped
+// comes off the Carried list by its own numbers, and the heap settles to the
+// slope it can hold.
+const HEAP_M3 = 0.2;
+async function heapAt(x, z, sand, soil, radius = 0.8) {
+  const answer = await act("deposit", { at: [x, z], radius_m: radius, sand_m3: sand, soil_m3: soil });
+  draw(answer);
+  if (answer.terrain_changed) patchTerrain(answer.terrain_changed);
+  if (answer.water) drawWater(answer.water);
+  return answer;
+}
+$("heap-it").addEventListener("click", async () => {
+  if (!world.session) return;
+  if (!ground.grid) {
+    say("world", "This room's floor is flat concrete: there is no ground to heap on. The valley has ground.");
+    return;
+  }
+  const at = world.groundAim;
+  if (!at) {
+    say("world", "Point the crosshair at the ground first: the heap goes where it is.");
+    return;
+  }
+  const have = world.carriedGround || {};
+  const sand = Number(have.sand_m3) || 0;
+  const soil = Number(have.soil_m3) || 0;
+  if (sand + soil <= 1e-6) {
+    say("world", "You are carrying no sand or soil. Dig here first: what comes out is carried.");
+    return;
+  }
+  const share = Math.min(1, HEAP_M3 / (sand + soil));
+  try {
+    const answer = await heapAt(at[0], at[2], sand * share, soil * share);
+    const h = answer.heaped || {};
+    carryGround(answer.carried);
+    say("you", `Heaped ${((h.sand_m3 || 0) + (h.soil_m3 || 0)).toFixed(2)} m³ (${grams(h.kg || 0)}) at`
+      + ` [${at[0].toFixed(1)}, ${at[2].toFixed(1)}]: ${(h.sand_m3 || 0).toFixed(2)} of sand,`
+      + ` ${(h.soil_m3 || 0).toFixed(2)} of soil. Carrying ${carriedSaid()}.`);
+    remember(`heaped sand and soil at [${at[0].toFixed(1)}, ${at[2].toFixed(1)}]`);
   } catch (error) { say("bad", String(error.message || error)); }
 });
 
@@ -3102,6 +3172,10 @@ async function open() {
     } else {
       clearGround();
     }
+    // What this room's ground has had dug out of it and not put back: the
+    // engine's count, the room's own edits replayed. A room with no ground has
+    // none to carry.
+    carryGround(data.terrain ? data.terrain.carried : null);
     world.framesSinceOpen = 0;
     $("panel-state").textContent = "Live.";
     $("chat").replaceChildren();

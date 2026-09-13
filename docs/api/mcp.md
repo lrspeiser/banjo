@@ -60,7 +60,7 @@ broke.
 | `clear_world` | empty a world, joints and all, to build it again. It stays open under the same id |
 | `pick_up` / `place` / `let_go` | the hand: take hold of something already in the world and move it. Without this a model can only add new objects from above — it can build a scene but never rearrange one. |
 | `collect` | sweep up the loose pieces near a point and say what they were made of, by material and by weight |
-| `carried` | what has been swept up in this world so far |
+| `carried` | what has been swept up in this world so far, and the sand and soil dug out of its ground and not put back |
 | `cast_ray` | what a ray meets first — what is above or below something, what is in the way |
 | `blade` | give a body an **edge**: where it runs, which way it faces, how thick, how sharp (a radius) and its bevel, and where it is held. There is no cutting power: what resists the edge is the target's own fracture energy and hardness. [docs/cutting-model.md](../cutting-model.md) |
 | `blades` | every edge, what it has cut and what that cost |
@@ -82,7 +82,7 @@ broke.
 | `make_terrain` | ground that is not flat: a **valley** with a river along it and a pond beside it, made once by physics -- drainage decided where the river runs, erosion wore its channel -- and cached; or a basin holding a lake, a sloping channel with a stream, flat ground, or none. [docs/terrain-and-water.md](../terrain-and-water.md) |
 | `survey` | the ground and the water at a point or along a line: height, rock, soil or sand, slope, and the water's depth, level and speed. At a point it also gives the ground's rolling resistance and which materials of ball rest there and which roll away. How to find the river, and what to stand things on |
 | `water_state` | the rivers and ponds: how much water, what comes in and goes out, each pond's level, the river every 2 m along its course, what is in the water and whether it floats, and the water's ledger |
-| `dig` / `fill` | a trench or a pit, so wide and so deep below the ground as it stands; what comes out is carried, and `fill` heaps only what was carried |
+| `dig` / `fill` | a trench or a pit, so wide and so deep below the ground as it stands; what comes out is carried, and `fill` heaps only what was carried -- the ground's own account, so a rebuild carries the same, and in the playground's room it includes what the person dug with their own spade |
 | `cut_block` | a block of stone out of bare rock; the ground loses exactly that much and the block is an ordinary loose object |
 | `set_river` | a river's discharge from now: a flood or a drought |
 
@@ -487,7 +487,13 @@ it was generated from and every edit made to it since, and a `water` block with
 any change to its rivers -- so a rebuild makes the same ground again and the
 playground's room is handed it in its spec. `dig` and `cut_block` are edits and
 are recorded; what `dig` takes out is carried, and `fill` heaps only that back
-(`ground does not come from nowhere`). `cut_block` takes a stone block out of
+(`ground does not come from nowhere`). What is carried of the ground is the
+ground's own account, kept by the engine through every edit
+(`environment_report`'s `ground.carried`): a rebuild replays the edits and
+carries the same, and the playground's room -- opened from a spec that holds
+the person's own digs and heaps -- carries what their spade dug, so `fill`
+can heap it; `the_ground` in the room's opening message says how much
+(`carried_m3`). `cut_block` takes a stone block out of
 bare rock and adds it as an ordinary loose body. The water is carried across a
 rebuild: a reservoir filled behind a dam is still there when a log is added.
 

@@ -677,8 +677,10 @@ class Live:
             if not (0.1 <= radius <= 10.0 and 0.0 <= sand <= 100.0 and 0.0 <= soil <= 100.0
                     and sand + soil > 0.0):
                 raise LiveError("a heap is 0.1 to 10 m across and holds some sand or soil")
+            # Heaped by the person, so made of what they carry: the engine
+            # refuses a heap bigger than what has been dug and not put back.
             return session.send(op="deposit", at=xz("at"), radius_m=radius, sand_m3=sand,
-                                soil_m3=soil)
+                                soil_m3=soil, from_carried=True)
         if op == "survey":
             return session.send(op="survey", at=xz("at"))
         if op in ("environment", "environment_state", "terrain"):

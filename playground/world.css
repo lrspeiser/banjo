@@ -86,8 +86,14 @@ html, body {
 .use-bar i { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--warm); }
 #use-meter-value { min-width: 4ch; text-align: right; color: var(--ink); }
 
+/* Bottom left, stacked: what is carried above the clock and the keys, so a
+   long Carried list and a hint wrapped onto four lines never sit on each other
+   (they did, with the list pinned 92 px up and the clock under it). */
+#corner {
+  position: fixed; left: 16px; bottom: 16px; z-index: 5; pointer-events: none;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 10px;
+}
 #hud {
-  position: fixed; left: 18px; bottom: 16px; z-index: 5; pointer-events: none;
   max-width: min(52ch, calc(100vw - 420px));
 }
 #hud-clock { font-variant-numeric: tabular-nums; color: var(--dim); font-size: 12px; }
@@ -190,9 +196,6 @@ button.quiet { background: transparent; }
    Bottom left, opposite the carry readout, because both are about what you are
    holding and neither should be where the crosshair is. */
 #stock {
-  position: fixed;
-  left: 16px;
-  bottom: 92px;
   min-width: 168px;
   padding: 10px 12px;
   border-radius: 8px;
