@@ -53,6 +53,27 @@ The machine stops by itself when nobody is connected (`auto_stop_machines`) and
 starts on the next visit, which then takes a little longer. `fly scale count 0`
 stops it until you scale it back to 1.
 
+## Deploying to Render
+
+Render builds the same image: make a **Web Service** with the **Docker**
+runtime. Render's native Python runtime has no CMake to build the engine with.
+
+- **Source:** Render builds from a connected repository, or pulls an image
+  already built into a registry. Point it at the branch that has these files.
+- **Start command:** the image's own, so leave Render's *Docker Command* empty.
+  It is
+  `sh -c 'exec python3 -u playground/server.py --host 0.0.0.0 --port ${PORT:-8080} --engine /app/bin/banjo_platform_cli --studio /app/bin/banjo_network_lab --runs /data/runs --rooms /data/rooms'`,
+  which listens on the port Render hands it in `PORT`.
+- **Environment:** `OPENAI_API_KEY` and `BANJO_PASSWORD` as secret values, and
+  `BANJO_PUBLIC_HOST` set to the service's hostname, `<name>.onrender.com` (or
+  your own domain).
+- **Disk:** a persistent disk mounted at `/data`, so what is built is kept
+  across restarts and deploys. A service with a disk runs as one instance,
+  which is what one world wants.
+- **Health check path:** `/login`. Everything else asks for the password first.
+- **Instance:** as many CPUs as you will pay for. With fewer, a break takes
+  longer than the warning the engine gives, and the room waits for it.
+
 ## What it costs
 
 - **The machine:** 8 dedicated cores and 16 GB, billed while it runs (Fly's

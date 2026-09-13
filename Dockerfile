@@ -41,8 +41,7 @@ ENV BANJO_LIBRARY=/app/bin/libbanjo.so \
     BANJO_TERRAIN_CACHE=/data/terrain-cache \
     PYTHONUNBUFFERED=1
 EXPOSE 8080
-# The native studio windows are a desktop feature: not built here, and the
-# page says so if asked for one.
-CMD ["python3", "-u", "playground/server.py", "--host", "0.0.0.0", "--port", "8080", \
-     "--engine", "/app/bin/banjo_platform_cli", "--studio", "/app/bin/banjo_network_lab", \
-     "--runs", "/data/runs", "--rooms", "/data/rooms"]
+# On the port a host hands it in PORT -- Render sets one -- or else 8080, which
+# fly.toml forwards to. The native studio windows are a desktop feature: not
+# built here, and the page says so if asked for one.
+CMD ["sh", "-c", "exec python3 -u playground/server.py --host 0.0.0.0 --port \"${PORT:-8080}\" --engine /app/bin/banjo_platform_cli --studio /app/bin/banjo_network_lab --runs /data/runs --rooms /data/rooms"]
