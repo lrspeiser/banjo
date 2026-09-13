@@ -1227,6 +1227,158 @@ void theGroundCatchesThingsWhereverTheyAreDropped() {
     }
 }
 
+// A long plank, built turned, 1 m up, over nothing.
+TileImpactRequest turnedPlank(const Vec3 &rotation_deg, bool anchored) {
+    TileImpactRequest r;
+    r.cell_size_m = 0.02;
+    r.backend = benchBackend();
+    SceneBody plank;
+    plank.name = "plank";
+    plank.shape = BodyShape::Box;
+    plank.material = MaterialPreset::Oak;
+    plank.dimensions_m = {1.0, 0.1, 0.2};
+    plank.center_m = {0.0, 1.0, 0.0};
+    plank.rotation_deg = rotation_deg;
+    plank.anchored = anchored;
+    r.bodies = {plank};
+    return r;
+}
+
+Quat quatOf(const double wxyz[4]) { return Quat{wxyz[0], wxyz[1], wxyz[2], wxyz[3]}; }
+
+double degreesBetween(const Quat &a, const Quat &b) {
+    const double d = std::abs(a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z);
+    return 2.0 * std::acos(std::min(1.0, d)) * 180.0 / std::acos(-1.0);
+}
+
+// Where a ray straight down from (x, 5, z) meets the box of `dims` turned by
+// q about c, grown by `grow` on every side: its height, or NaN for a miss.
+double topOfBox(const Vec3 &c, const Vec3 &dims, const Quat &q, double x, double z,
+                double grow) {
+    const Quat back{q.w, -q.x, -q.y, -q.z};
+    const Vec3 o = back.rotate(Vec3{x, 5.0, z} - c);
+    const Vec3 d = back.rotate(Vec3{0.0, -1.0, 0.0});
+    const double half[3] = {0.5 * dims.x + grow, 0.5 * dims.y + grow, 0.5 * dims.z + grow};
+    const double from[3] = {o.x, o.y, o.z}, along[3] = {d.x, d.y, d.z};
+    double enter = -1.0e300, leave = 1.0e300;
+    for (int k = 0; k < 3; ++k) {
+        if (std::abs(along[k]) < 1e-12) {
+            if (std::abs(from[k]) > half[k]) return std::nan("");
+            continue;
+        }
+        const double t1 = (-half[k] - from[k]) / along[k], t2 = (half[k] - from[k]) / along[k];
+        enter = std::max(enter, std::min(t1, t2));
+        leave = std::min(leave, std::max(t1, t2));
+    }
+    return enter <= leave && leave >= 0.0 ? 5.0 - enter : std::nan("");
+}
+
+// A body built turned says so, and is where it says it is.
+//
+// rotation_deg turns a body z first (rotationQuaternion, qx qy qz), and its
+// cells and its collision shape were measured to agree with that exactly. But
+// the engine carries that turn inside the collision shape rather than in the
+// rigid pose, and until 2026-09-13 poses() said such a body faced no way at
+// all: a host drew a plank built at [30, 0, 45] square while it collided
+// turned.
+void aBodyBuiltTurnedSaysSoAndIsWhereItSays() {
+    const Vec3 turn{30.0, 0.0, 45.0};
+    const auto live = LiveWorld::open(turnedPlank(turn, true));
+    const LiveBodyPose plank = named(live->poses(), "plank");
+    double built[4];
+    rotationQuaternion(turn, built);
+    const Quat said = quatOf(plank.orientation_wxyz);
+    require(degreesBetween(said, quatOf(built)) < 1e-6,
+            "a plank built at [30, 0, 45] was not said to face that way");
+    // The box it says it is, is the box that collides: every ray straight down
+    // that meets the box shrunk by a millimetre meets the plank, none that
+    // misses the box grown by a millimetre does, and each meets it within a
+    // millimetre of that box's top.
+    int met = 0;
+    for (int a = -60; a <= 60; ++a)
+        for (int b = -60; b <= 60; ++b) {
+            const double x = 0.01 * a, z = 0.01 * b;
+            const LivePick hit = live->pick({x, 5.0, z}, {0.0, -1.0, 0.0}, 10.0);
+            const bool on = hit.hit && hit.name == "plank";
+            const double inner = topOfBox(plank.position_m, plank.dimensions_m, said, x, z, -0.001);
+            const double outer = topOfBox(plank.position_m, plank.dimensions_m, said, x, z, 0.001);
+            require(on || std::isnan(inner), "a ray missed the plank inside the box it says it is");
+            require(!on || !std::isnan(outer), "a ray met the plank outside the box it says it is");
+            if (!on) continue;
+            ++met;
+            const double top = topOfBox(plank.position_m, plank.dimensions_m, said, x, z, 0.0);
+            require(!std::isnan(top) && std::abs(5.0 - hit.distance_m - top) < 1e-3,
+                    "a ray met the plank away from the top of the box it says it is");
+        }
+    std::cout << "  " << met << " rays met the plank, each on the box it says it is\n";
+    require(met > 1000, "too few rays met the plank to say anything");
+}
+
+// A hand that asks a thing to face the way it is said to face leaves it be.
+//
+// aimHeld takes an orientation in the frame poses() reports; the hand turns
+// the body's rigid frame. Without taking the turn its shape carries off first,
+// holding a plank built 35 degrees round "as it is" swings it a further 35.
+void aHandHoldingATurnedThingAsItIsDoesNotTurnIt() {
+    TileImpactRequest r = turnedPlank({0.0, 35.0, 0.0}, false);
+    r.bodies[0].center_m = {0.0, 0.052, 0.0};   // lying flat on the floor
+    const auto live = LiveWorld::open(r);
+    for (int i = 0; i < 120; ++i) live->step(1.0 / 240.0);
+    const LiveBodyPose before = named(live->poses(), "plank");
+    const Quat facing = quatOf(before.orientation_wxyz);
+    require(live->wield("plank", before.position_m), "the plank could not be taken hold of");
+    live->aimHeld(facing);
+    live->moveHeld(before.position_m + Vec3{0.0, 0.05, 0.0});
+    for (int i = 0; i < 240; ++i) live->step(1.0 / 240.0);
+    const double turned = degreesBetween(quatOf(named(live->poses(), "plank").orientation_wxyz),
+                                         facing);
+    std::cout << "  held facing the way it was said to face, it turned " << turned
+              << " degrees\n";
+    require(turned < 1.0, "asked to face the way it was said to face, the plank turned");
+}
+
+// A box that comes through a run whole keeps its turn.
+//
+// A body that comes through the lattice whole is rebuilt facing the world's
+// own way, its cells where the run left them, and its box was put back square:
+// measured, an iron bar built 30 degrees round struck a pane that held and came
+// back at -0.8 degrees -- colliding, and drawn, square, with its cells at 30.
+void aTurnedBoxThatComesThroughARunKeepsItsTurn() {
+    TileImpactRequest r = ballOntoGlass(3.0);
+    SceneBody &bar = r.bodies[1];
+    bar.name = "bar";
+    bar.shape = BodyShape::Box;
+    bar.dimensions_m = {0.2, 0.06, 0.06};
+    bar.rotation_deg = {0.0, 30.0, 0.0};
+    const auto live = LiveWorld::open(r);
+    int runs = 0;
+    for (int i = 0; i < 720; ++i) {
+        live->step(1.0 / 240.0);
+        for (const std::string &name : live->breakable()) {
+            ++runs;
+            (void)live->fracture(name);
+        }
+    }
+    require(runs > 0, "the bar never struck the pane hard enough to be run");
+    const LiveBodyPose after = named(live->poses(), "bar");
+    require(after.shape == "box", "the bar did not come through whole");
+    const Vec3 along = quatOf(after.orientation_wxyz).rotate({1.0, 0.0, 0.0});
+    const double heading = std::atan2(-along.z, along.x) * 180.0 / std::acos(-1.0);
+    // Nine centimetres out along a bar heading 30 degrees is on it; nine out
+    // along x is not -- the bar is six across.
+    const auto onBar = [&](double degrees) {
+        const double h = degrees * std::acos(-1.0) / 180.0;
+        const Vec3 at = after.position_m + 0.09 * Vec3{std::cos(h), 0.0, -std::sin(h)};
+        const LivePick hit = live->pick({at.x, at.y + 1.0, at.z}, {0.0, -1.0, 0.0}, 2.0);
+        return hit.hit && hit.name == "bar";
+    };
+    std::cout << "  after " << runs << " run(s): said to head " << heading
+              << " degrees; its shape is " << (onBar(30.0) ? "" : "not ") << "along 30 and "
+              << (onBar(0.0) ? "" : "not ") << "along 0\n";
+    require(std::abs(heading - 30.0) < 5.0, "the bar was said to head another way after its run");
+    require(onBar(30.0) && !onBar(0.0), "the bar's collision shape came back square");
+}
+
 } // namespace
 
 int main() {
@@ -1269,6 +1421,12 @@ int main() {
         std::cout << "[PASS] something brittle has no bending range and says so\n";
         somethingCanBeDentedWithoutBeingBroken();
         std::cout << "[PASS] something can be dented without being broken\n";
+        aBodyBuiltTurnedSaysSoAndIsWhereItSays();
+        std::cout << "[PASS] a body built turned says which way it faces, and is where it says\n";
+        aHandHoldingATurnedThingAsItIsDoesNotTurnIt();
+        std::cout << "[PASS] a hand holding a turned thing as it is does not turn it\n";
+        aTurnedBoxThatComesThroughARunKeepsItsTurn();
+        std::cout << "[PASS] a turned box that comes through a run whole keeps its turn\n";
         whatAThingIsMadeOfDecidesHowItBounces();
         std::cout << "[PASS] what a thing is made of decides how it bounces\n";
         aRayFindsWhatItActuallyHits();

@@ -841,6 +841,16 @@ cells, which is enough to place a proxy but is not the real outline.
 A body that came through a collision whole keeps the shape it was authored as —
 a ball that cracked a pane is still a sphere.
 
+`orientation_wxyz` is which way the body faces: the box of `dimensions_m`,
+turned by it about `position_m`, is the box that collides. A body built with
+`rotation_deg` faces that way from the start. `rotation_deg` [x, y, z] turns it
+about its own x axis, then its own y, then its own z, which is z, then y, then x
+about the world's axes. Until 2026-09-13 a body built turned was reported as
+facing no way at all, because the engine carries that turn inside its collision
+shape: a host drew it square while it collided turned. `banjo_aim_held` takes an
+orientation in this same frame, so asking a held thing to face the way it is
+reported to face leaves it as it is.
+
 ### `int banjo_impact_count(const banjo_world *world, double quiet_speed_m_s)`
 ### `int banjo_impacts(const banjo_world *world, double quiet, banjo_impact *out, int max)`
 

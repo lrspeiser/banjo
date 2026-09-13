@@ -915,8 +915,15 @@ def _overlap_mm(a: dict[str, Any], b: dict[str, Any]) -> float:
 
 
 def _rotate(v: list[float], degrees: list[float], inverse: bool = False) -> list[float]:
-    """x then y then z, degrees. The inverse undoes them in the opposite order."""
-    order = [2, 1, 0] if inverse else [0, 1, 2]
+    """A body's rotation_deg applied to v, the way the engine turns it: about the
+    world's z axis first, then y, then x -- which is x, then y, then z about the
+    body's own axes as they turn (TileImpactScene's rotationQuaternion, qx qy qz).
+    The inverse undoes them in the opposite order.
+
+    It used to turn x first, and a body tilted about two axes was then counted,
+    seated and checked as a different body from the one the engine built: a
+    plank at [30, 0, 45] shared 1,178 of its 2,490 cells with the engine's."""
+    order = [0, 1, 2] if inverse else [2, 1, 0]
     p = list(v)
     for axis in order:
         a = math.radians(-degrees[axis] if inverse else degrees[axis])

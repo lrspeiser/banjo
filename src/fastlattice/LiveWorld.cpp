@@ -458,9 +458,20 @@ struct LiveWorld::Impl {
     // A broken piece's cells in its own frame, for the water to press on,
     // kept by name while its cell count stays the same.
     std::unordered_map<std::string, std::pair<std::size_t, std::vector<Vec3>>> water_cells_of;
-    // An authored box's own tilt, which lives in its collision shape rather
-    // than in its pose: the water has to press on the box that is there.
+    // The turn a whole box or ball carries INSIDE its collision shape, which its
+    // rigid pose does not: rotation_deg as rotationQuaternion builds it. The
+    // water has to press on the box that is there -- and everything said about
+    // the body has to be said of that box too: which way it faces, and where
+    // its dent, its cuts and its edge are in its own frame. See shapeTurn.
     std::unordered_map<std::string, Quat> tilt_of;
+    // What body `i`'s shape carries inside it (tilt_of), or no turn at all for
+    // a hull, whose cells are its shape and are kept in its rigid frame. Its
+    // rigid pose composed with this is which way the body faces.
+    [[nodiscard]] Quat shapeTurn(std::size_t i) const {
+        if (i >= described.size() || described[i].shape == "hull") return Quat{};
+        const auto found = tilt_of.find(described[i].name);
+        return found == tilt_of.end() ? Quat{} : found->second;
+    }
     // A hull's surface, from its cells, worked out once per body.
     mutable std::unordered_map<std::string, std::pair<std::size_t, double>> hull_area_of;
 
@@ -1484,9 +1495,34 @@ std::size_t LiveWorld::bodies() const { return impl_->described.size(); }
 
 double LiveWorld::cellSize() const { return impl_->request.cell_size_m; }
 
+namespace {
+// A quaternion's conjugate, which is its inverse for the unit quaternions a
+// rigid body carries. Quat has rotate() but no inverse, and taking a world
+// vector into a body's own frame needs one on every call below.
+[[nodiscard]] Quat conjugateOf(const Quat &q) { return Quat{q.w, -q.x, -q.y, -q.z}; }
+// b and then a: the Hamilton product a b, which turns a vector by b first.
+// Quat carries no product either.
+[[nodiscard]] Quat compose(const Quat &a, const Quat &b) {
+    return Quat{a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+                a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+                a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+                a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w};
+}
+} // namespace
+
 std::vector<LiveBodyPose> LiveWorld::poses(bool with_geometry) const {
     std::vector<LiveBodyPose> out = impl_->described;
     for (std::size_t i = 0; i < out.size(); ++i) {
+        // Said of the body that is there. A whole box or ball built turned
+        // carries its turn inside its collision shape and not in its rigid pose
+        // (Impl::shapeTurn), so which way it faces is that pose with the turn
+        // on top, and what is in its own frame -- its dent, its cuts -- comes
+        // off the rigid frame by the same turn. Until this, a box built at any
+        // rotation_deg was said to face no way at all: a host drew it square
+        // while it collided turned.
+        const Quat turn = impl_->shapeTurn(i);
+        const Quat back = conjugateOf(turn);
+        out[i].dent_at_m = back.rotate(out[i].dent_at_m);
         if (with_geometry && out[i].shape == "hull") {
             out[i].cells_local_m.reserve(impl_->nodes_of[i].size());
             for (const std::uint32_t node : impl_->nodes_of[i])
@@ -1498,10 +1534,10 @@ std::vector<LiveBodyPose> LiveWorld::poses(bool with_geometry) const {
             for (const Impl::Kerf &kerf : carried->second) {
                 if (kerf.swept.empty()) continue;
                 LiveBodyPose::Kerf drawn{};
-                drawn.point_local_m = kerf.origin;
-                drawn.along_local = kerf.u;
-                drawn.facing_local = kerf.v;
-                drawn.normal_local = kerf.w;
+                drawn.point_local_m = back.rotate(kerf.origin);
+                drawn.along_local = back.rotate(kerf.u);
+                drawn.facing_local = back.rotate(kerf.v);
+                drawn.normal_local = back.rotate(kerf.w);
                 drawn.thickness_m = 2.0 * (kerf.half_width - 0.001);
                 for (const auto &[strip, spans] : kerf.swept)
                     for (const auto &span : spans)
@@ -1513,10 +1549,11 @@ std::vector<LiveBodyPose> LiveWorld::poses(bool with_geometry) const {
         if (!impl_->world->contains(impl_->body_of[i])) continue;
         const RigidSnapshot snap = impl_->world->snapshot(impl_->body_of[i]);
         out[i].position_m = snap.center_of_mass_world_m;
-        out[i].orientation_wxyz[0] = snap.orientation_world.w;
-        out[i].orientation_wxyz[1] = snap.orientation_world.x;
-        out[i].orientation_wxyz[2] = snap.orientation_world.y;
-        out[i].orientation_wxyz[3] = snap.orientation_world.z;
+        const Quat facing = compose(snap.orientation_world, turn);
+        out[i].orientation_wxyz[0] = facing.w;
+        out[i].orientation_wxyz[1] = facing.x;
+        out[i].orientation_wxyz[2] = facing.y;
+        out[i].orientation_wxyz[3] = facing.z;
         out[i].velocity_m_s = snap.linear_velocity_m_s;
         out[i].mass_kg = out[i].anchored ? 0.0
                                          : impl_->world->mechanicalState(impl_->body_of[i]).mass_kg;
@@ -1524,13 +1561,6 @@ std::vector<LiveBodyPose> LiveWorld::poses(bool with_geometry) const {
     }
     return out;
 }
-
-namespace {
-// A quaternion's conjugate, which is its inverse for the unit quaternions a
-// rigid body carries. Quat has rotate() but no inverse, and taking a world
-// vector into a body's own frame needs one on every call below.
-[[nodiscard]] Quat conjugateOf(const Quat &q) { return Quat{q.w, -q.x, -q.y, -q.z}; }
-} // namespace
 
 unsigned LiveWorld::hinge(const std::string &a, const std::string &b,
                           const Vec3 &point_world_m, const Vec3 &axis_world,
@@ -3699,15 +3729,35 @@ std::size_t LiveWorld::applyPending() {
     // took an empty name and an empty material out of it: the room filled with
     // things called " piece 1 piece 1" made of nothing, and sweeping the floor
     // up reported "2,833 g of ".
+    // And which way each of them faced as its cells went into the island: the
+    // pose that placed them, with the turn its shape carried on top. A body
+    // that comes through whole is rebuilt facing the world's own way, its cells
+    // where the run left them, so its box has to be turned by this -- or it
+    // collides, and is drawn, square. Measured: an iron bar built 30 degrees
+    // round, and one turned 30 degrees by the wrist, each struck a pane that
+    // held and came back at -0.8 degrees while their cells lay at 30.
+    std::vector<RigidSnapshot> before_of_part(setup.part_bodies.size());
+    std::vector<Quat> facing_of_part(setup.part_bodies.size());
+    const auto beforeOf = [&](std::size_t body) {
+        const auto found = poses_before.find(body);
+        return found != poses_before.end() ? found->second
+                                           : impl_->world->snapshot(impl_->body_of[body]);
+    };
     for (const std::size_t body : island_bodies)
         for (const std::uint32_t node : impl_->nodes_of[body]) {
             const std::uint32_t part = setup.part_of_node[node];
-            if (part < parent_of_part.size() && parent_of_part[part].name.empty())
+            if (part < parent_of_part.size() && parent_of_part[part].name.empty()) {
                 parent_of_part[part] = impl_->described[body];
+                before_of_part[part] = beforeOf(body);
+                facing_of_part[part] = compose(before_of_part[part].orientation_world,
+                                               impl_->shapeTurn(body));
+            }
         }
     // And if a part still has nobody -- it was not in the island at all -- the
     // thing that was struck is the honest answer for whose piece this is.
     const LiveBodyPose fell_from = impl_->described[which];
+    const RigidSnapshot fell_before = beforeOf(which);
+    const Quat fell_facing = compose(fell_before.orientation_world, impl_->shapeTurn(which));
     // Read now, while the struck body is still in nodes_of. The drop loop below
     // erases it, and reading afterwards indexed off the end of the shortened
     // vector: the answer matched no piece, so a plate that had just come apart
@@ -3772,6 +3822,9 @@ std::size_t LiveWorld::applyPending() {
         const LiveBodyPose &parent = parent_of_part[dominant].name.empty()
                                          ? fell_from
                                          : parent_of_part[dominant];
+        const bool own = !parent_of_part[dominant].name.empty();
+        const RigidSnapshot &was = own ? before_of_part[dominant] : fell_before;
+        const Quat &faced = own ? facing_of_part[dominant] : fell_facing;
         const MaterialDefinition &material = dominant < setup.part_definitions.size()
                                                  ? setup.part_definitions[dominant]
                                                  : setup.tile_material;
@@ -3800,7 +3853,9 @@ std::size_t LiveWorld::applyPending() {
         // The deepest set it carries, and where. A piece keeps what its parent
         // had unless this run went deeper.
         piece.dent_m = parent.dent_m;
-        piece.dent_at_m = parent.dent_at_m;
+        // Kept in the rigid frame, and the piece is made facing the world's own
+        // way: what the parent faced comes into it, or the mark would move.
+        piece.dent_at_m = was.orientation_world.rotate(parent.dent_at_m);
         if (whole_parent && dent_m > piece.dent_m) {
             piece.dent_m = dent_m;
             piece.dent_at_m = dent_at - fragment.mass_properties.center_of_mass_world_m;
@@ -3895,6 +3950,22 @@ std::size_t LiveWorld::applyPending() {
             fragment.primitive_dimensions_m = parent.dimensions_m;
         } else {
             piece.shape = "hull";
+        }
+        // A box comes back turned the way it faced going in: the new body starts
+        // facing the world's own way, so the turn goes inside its shape -- where
+        // rotation_deg goes when a box is built turned -- and poses() puts it on
+        // top of the pose, as it does for that. A ball collides the same however
+        // it is turned, so its shape is left as it was; a hull's cells are its
+        // shape. For those nothing is carried under the name any more.
+        if (untouched && piece.shape == "box" &&
+            (faced.x != 0.0 || faced.y != 0.0 || faced.z != 0.0)) {
+            fragment.primitive_rotation_wxyz[0] = faced.w;
+            fragment.primitive_rotation_wxyz[1] = faced.x;
+            fragment.primitive_rotation_wxyz[2] = faced.y;
+            fragment.primitive_rotation_wxyz[3] = faced.z;
+            impl_->tilt_of[piece.name] = faced;
+        } else {
+            impl_->tilt_of.erase(piece.name);
         }
         piece.color_rgba = parent.color_rgba;
         impl_->limits_of.push_back(fragmentFractureLimits(
@@ -5101,17 +5172,21 @@ std::vector<LiveBlade> LiveWorld::blades() const {
         LiveBlade said{};
         said.id = blade.id;
         said.body = blade.body;
-        said.heel_local_m = blade.heel_local;
-        said.tip_local_m = blade.tip_local;
-        said.facing_local = blade.facing_local;
-        said.grip_local_m = blade.grip_local;
+        const auto found = I.index_of.find(blade.body);
+        // Kept in its body's rigid frame; said in the frame poses() says the
+        // body faces in, because a host draws the edge on the box it draws.
+        const Quat back =
+            conjugateOf(found != I.index_of.end() ? I.shapeTurn(found->second) : Quat{});
+        said.heel_local_m = back.rotate(blade.heel_local);
+        said.tip_local_m = back.rotate(blade.tip_local);
+        said.facing_local = back.rotate(blade.facing_local);
+        said.grip_local_m = back.rotate(blade.grip_local);
         said.thickness_m = blade.thickness;
         said.edge_radius_m = blade.edge_radius;
         said.bevel_deg = blade.bevel_deg;
         said.cut_area_m2 = blade.cut_area;
         said.cut_work_j = blade.cut_work;
         said.cutting = blade.cutting;
-        const auto found = I.index_of.find(blade.body);
         said.attached = blade.attached && found != I.index_of.end();
         if (said.attached && I.world->contains(I.body_of[found->second])) {
             const RigidSnapshot at = I.world->snapshot(I.body_of[found->second]);
@@ -5178,8 +5253,13 @@ void LiveWorld::aimHeld(const Quat &orientation_world) {
                                   orientation_world.y * orientation_world.y +
                                   orientation_world.z * orientation_world.z);
     if (!(size > 1e-9) || !std::isfinite(size)) return;
-    impl_->held_facing = Quat{orientation_world.w / size, orientation_world.x / size,
-                              orientation_world.y / size, orientation_world.z / size};
+    // Asked of the body as poses() says it faces. The hand turns its rigid
+    // frame, so the turn its shape carries (shapeTurn) comes off first:
+    // otherwise taking hold of a thing built turned and asking it to stay as it
+    // is would swing it round by its whole turn.
+    impl_->held_facing = compose(Quat{orientation_world.w / size, orientation_world.x / size,
+                                      orientation_world.y / size, orientation_world.z / size},
+                                 conjugateOf(impl_->shapeTurn(impl_->holding)));
 }
 
 bool LiveWorld::wielding() const {

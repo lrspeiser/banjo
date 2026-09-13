@@ -168,6 +168,13 @@ def _scene(objects: Any, cell_m: float) -> dict[str, Any]:
         body = {"name": name, "shape": shape, "material": material,
                 "dimensions_m": size, "center_m": centre, "velocity_m_s": speed,
                 "anchored": bool(item.get("anchored"))}
+        # How it is turned, as the engine turns it (_turn_matrix: z first about
+        # the room's axes). Any angle is taken, as the same turn within +-180.
+        if item.get("rotation_deg") is not None:
+            turn = [(a + 180.0) % 360.0 - 180.0 for a in
+                    _triple(item["rotation_deg"], f"{name}: rotation_deg", -1.0e6, 1.0e6)]
+            if any(abs(a) > 1e-9 for a in turn):
+                body["rotation_deg"] = [round(a, 6) for a in turn]
         # What it contains and how hot it starts. Left out, a body is made of
         # what its material is made of -- which for oak is dry wood, moisture
         # and ash, and is the whole reason an oak log can burn.
@@ -211,6 +218,11 @@ def _describe(world: banjo.World) -> list[dict[str, Any]]:
             "speed_m_s": round(math.sqrt(sum(v * v for v in body.velocity_m_s)), 3),
             "anchored": body.anchored,
         })
+        # How a box stands, when it is not square to the room: the rotation_deg
+        # that would build it so. A model that leaned a plank can see it did.
+        turned = _turned(body.shape, body.orientation_wxyz)
+        if turned:
+            out[-1]["rotation_deg"] = turned
     return out
 
 
@@ -802,6 +814,13 @@ def tool_add_object(args: dict[str, Any]) -> dict[str, Any]:
         answer["seated_on_the_ground"] = seated
     if held_up:
         answer["in_the_air"] = held_up
+    # How it stands as the engine built it, in the words a plank is asked for in.
+    # Measured, a model asked for a ramp "rising 15 degrees and leaning 10" gave
+    # rotation_deg [15, 10, 0] and said it had: the plank rose 2.6 and leaned 14.8.
+    built = entry["world"].body(added["name"])
+    stands = _stands(added["shape"], built.orientation_wxyz) if built is not None else None
+    if stands:
+        answer["stands"] = stands
     heavy = _by_hand(entry["world"], added["name"])
     if heavy:
         answer["too_heavy_for_a_hand"] = heavy
@@ -815,6 +834,25 @@ def tool_add_object(args: dict[str, Any]) -> dict[str, Any]:
     if lost:
         answer["joints_lost"] = lost
     return answer
+
+
+def _stands(shape: str, orientation_wxyz: Any) -> dict[str, float] | None:
+    """How a box stands, as a plank is described: how far its x side rises above
+    the level (its +x end up is positive), how far its z side leans (its +z edge
+    up is positive), and which way its x side faces about the vertical, as
+    rotation_deg's y turns it. None for a box square to the room, or a ball."""
+    if _turned(shape, orientation_wxyz) is None:
+        return None
+    w, x, y, z = (float(v) for v in orientation_wxyz)
+    along = [1 - 2 * (y * y + z * z), 2 * (x * y + w * z), 2 * (x * z - w * y)]    # its own x
+    across = [2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y)]   # its own z
+
+    def degrees(a: float) -> float:
+        return round(math.degrees(a), 1) + 0.0
+
+    return {"x_side_rises_deg": degrees(math.asin(max(-1.0, min(1.0, along[1])))),
+            "z_side_leans_deg": degrees(math.asin(max(-1.0, min(1.0, across[1])))),
+            "x_side_faces_deg": degrees(math.atan2(-along[2], along[0]))}
 
 
 def tool_remove_object(args: dict[str, Any]) -> dict[str, Any]:
@@ -911,10 +949,7 @@ def tool_move_object(args: dict[str, Any]) -> dict[str, Any]:
 #
 # The thing is turned by giving it new sides and a heading, never a tilt: a
 # box stood on end is the same box with its long side up, and its own axes
-# stay the world's up to one turn about the vertical. That keeps it off the
-# one place two parts of this code disagree -- a rotation_deg about more than
-# one axis, which the engine builds z first (TileImpactScene's
-# rotationQuaternion is qx qy qz) and the playground's cell count x first.
+# stay the world's up to one turn about the vertical.
 
 TURN_SETTLE_S = 4.0     # at most this long, world time, to come to rest
 TURN_STILL_S = 0.5      # still for this long is at rest
@@ -923,6 +958,7 @@ TURN_STILL_RAD_S = 0.05  # ... and turning slower than this
 STAYS_M = 0.02          # where it was put: it moved less than this while it settled
 STAYS_DEG = 5.0         # ... and turned less than this
 TRY_TILT_DEG = 0.35     # the settling run starts this far off, about each level axis
+SQUARE_DEG = 0.5        # a box turned less than this, about every axis, is square
 
 
 def _turn_matrix(rotation_deg: Any) -> list[list[float]]:
@@ -939,6 +975,36 @@ def _turn_matrix(rotation_deg: Any) -> list[list[float]]:
         return [[sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
 
     return times(rx, times(ry, rz))
+
+
+def _rotation_of(orientation_wxyz: Any) -> list[float]:
+    """The rotation_deg that turns a body to this orientation: _turn_matrix
+    undone. R = Rx Ry Rz has R[0][2] = sin y, R[1][2] = -sin x cos y,
+    R[2][2] = cos x cos y, R[0][1] = -cos y sin z and R[0][0] = cos y cos z."""
+    w, x, y, z = (float(v) for v in orientation_wxyz)
+    r00, r01, r02 = 1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)
+    r11, r12 = 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)
+    r21, r22 = 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)
+    cos_y = math.hypot(r00, r01)
+    if cos_y > math.sin(math.radians(SQUARE_DEG)):
+        turn = [math.atan2(-r12, r22), math.atan2(r02, cos_y), math.atan2(-r01, r00)]
+    else:
+        # Its own z within half a degree of the room's x -- a thing turned a
+        # quarter about the vertical, which is common. x and z are then one turn
+        # about the same axis, so all of it is put on x: a pillar laid along z
+        # reads [0, -90, 0], not something like [37, -89.99, -37].
+        turn = [math.atan2(r21, r11), math.copysign(math.pi / 2, r02), 0.0]
+    return [math.degrees(a) for a in turn]
+
+
+def _turned(shape: str, orientation_wxyz: Any) -> list[float] | None:
+    """How a box stands now, as the rotation_deg that would build it so, to a
+    tenth of a degree; None when it is square to the room (SQUARE_DEG) -- a box
+    that settles on the floor turns by hundredths -- and for a ball or a piece."""
+    if shape != "box":
+        return None
+    turn = [round(a, 1) + 0.0 for a in _rotation_of(orientation_wxyz)]
+    return turn if any(abs(a) >= SQUARE_DEG for a in turn) else None
 
 
 def _sides_now(body: dict[str, Any]) -> list[list[float]]:
@@ -2834,12 +2900,21 @@ def _ground_under(world: banjo.World, x: float, z: float, half_x: float, half_z:
     return top
 
 
+def _reach(body: dict[str, Any]) -> list[float]:
+    """How far a scene body reaches from its centre along each of the room's
+    axes, turned as it is built (rotation_deg): a ball, its radius every way."""
+    size = body["dimensions_m"]
+    if body["shape"] == "sphere":
+        return [size[0] / 2.0] * 3
+    turn = _turn_matrix(body.get("rotation_deg"))
+    return [sum(abs(turn[i][j]) * size[j] / 2.0 for j in range(3)) for i in range(3)]
+
+
 def _seat_on_ground(entry: dict[str, Any], body: dict[str, Any]) -> dict[str, Any] | None:
     """Lift a body asked for inside the ground to rest on top of it."""
     if not _has_terrain(entry):
         return None
-    size = body["dimensions_m"]
-    half = [size[0] / 2.0] * 3 if body["shape"] == "sphere" else [v / 2.0 for v in size]
+    half = _reach(body)
     x, y, z = body["center_m"]
     ground = _ground_under(entry["world"], x, z, half[0], half[2])
     if ground < -1.0e8 or y - half[1] >= ground + 0.002:
@@ -2858,8 +2933,8 @@ IN_THE_AIR_M = 0.05     # further than this above what is under it, a thing will
 
 
 def _half_height(body: dict[str, Any]) -> float:
-    size = body["dimensions_m"]
-    return size[0] / 2.0 if body["shape"] == "sphere" else size[1] / 2.0
+    """How far a body reaches below its centre, turned as it is built."""
+    return _reach(body)[1]
 
 
 def _under_footprint(entry: dict[str, Any],
@@ -2874,8 +2949,20 @@ def _under_footprint(entry: dict[str, Any],
     size = body["dimensions_m"]
     half = [size[0] / 2.0] * 3 if body["shape"] == "sphere" else [v / 2.0 for v in size]
     x, _, z = body["center_m"]
-    spots = [(0.0, 0.0)] if body["shape"] == "sphere" else [
-        (half[0] * a, half[2] * b) for a in (-0.9, 0.0, 0.9) for b in (-0.9, 0.0, 0.9)]
+    spots: list[tuple[float, float]] = [(0.0, 0.0)] if body["shape"] == "sphere" else []
+    if body["shape"] != "sphere":
+        # Points through the box as it is turned, seen from above: square to
+        # the room, the nine across its bottom; turned, up to 27, so that
+        # wherever any of it is over something, that is looked at.
+        turn = _turn_matrix(body.get("rotation_deg"))
+        for a in (-0.9, 0.0, 0.9):
+            for c in (-0.9, 0.0, 0.9):
+                for b in (-0.9, 0.0, 0.9):
+                    local = (half[0] * a, half[1] * c, half[2] * b)
+                    spot = (round(sum(turn[0][k] * local[k] for k in range(3)), 9),
+                            round(sum(turn[2][k] * local[k] for k in range(3)), 9))
+                    if spot not in spots:
+                        spots.append(spot)
     # What each point looks down on; a point that meets nothing is over the floor.
     heights: list[tuple[float, str]] = []
     world = entry.get("world")
@@ -3424,6 +3511,18 @@ OBJECT_SCHEMA = {
                                                  "it out to place it at rest."),
         "anchored": {"type": "boolean", "description": "True makes it scenery: it does "
                                                        "not move and cannot break."},
+        "rotation_deg": dict(VECTOR, description=(
+            "How it is turned about its own centre, degrees [x, y, z]. On its own, x leans "
+            "it about its x side, y turns it about the vertical and z tilts its x side up. "
+            "Together they turn it about its own x axis first, then its own y as that has "
+            "turned, then its own z -- the same as z, then y, then x about the room's fixed "
+            "axes. Leave it out for a thing square to the room. Give a thing its length "
+            "along x: [0, 30, 12] turns it 30 degrees about the vertical and tilts its x "
+            "side up 12 degrees, a ramp rising along its length, facing 30 degrees round; "
+            "[10, 0, 15] leans it 10 degrees about its x side and then tilts that side up "
+            "15 degrees, so against the level it rises 14.8. size_m is its own size, before "
+            "it is turned; set down with position_m [x, z], its lowest corner rests on what "
+            "is under it, and the answer's stands says how it stands as built.")),
         "contents": {"type": "object", "additionalProperties": {"type": "number"},
                      "description": "What it is made of inside, by mass fraction of its own "
                                     "mass, like {\"dry wood\": 0.8, \"moisture\": 0.18, "

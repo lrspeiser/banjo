@@ -219,7 +219,8 @@ Matter here is cells joined by bonds, and a body is whatever set of cells its
 live bonds hold together. Cutting is the removal of bonds, and nothing else.
 
 Each body keeps its **kerfs**: for each separate cut, the plane the blade
-passed through (in the body's own frame) and a map, in strips a quarter of a
+passed through (in the body's own frame, the one its reported orientation turns)
+and a map, in strips a quarter of a
 cell wide, of the part of that plane the edge has swept through the body's
 material -- every stretch of each strip it has been through. A bond is severed when it crosses a kerf's plane at a point the kerf
 has swept. Severed bonds are written into the scene's matter, which is the

@@ -64,8 +64,10 @@ struct SceneBody {
     // meant to roll has to be given the spin that goes with its speed,
     // which for rolling without slipping along +x is -v/radius about z.
     Vec3 spin_rad_s{};
-    // Rotation about the body's own centre at t = 0, degrees, applied x then y
-    // then z. Without it every object is axis aligned and a ramp has to be
+    // Rotation about the body's own centre at t = 0, degrees: about its own x
+    // axis, then its own y as that has turned, then its own z -- which is z,
+    // then y, then x about the world's fixed axes (rotationQuaternion, qx qy
+    // qz). Without it every object is axis aligned and a ramp has to be
     // built as a staircase of boxes, which collide with each other and with
     // whatever stands on them. A tilted body is voxelised through its rotation
     // and collides as a rotated box rather than as the staircase its cells make.

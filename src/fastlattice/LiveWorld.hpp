@@ -26,6 +26,11 @@ struct LiveBodyPose {
     Vec3 dimensions_m{};
     std::uint32_t color_rgba{};
     Vec3 position_m{};
+    // Which way it faces: the box or ball of dimensions_m, turned by this about
+    // position_m, is the one that collides, and whatever below is "in its own
+    // frame" (dent_at_m, kerfs) is in the frame this turns. A body built with
+    // rotation_deg faces that way from the start, although the engine carries
+    // that turn inside its collision shape rather than in its rigid pose.
     double orientation_wxyz[4]{1.0, 0.0, 0.0, 0.0};
     Vec3 velocity_m_s{};
     // What it weighs now, in kilograms: what the solver moves, and so what a
@@ -984,6 +989,8 @@ public:
     // This is not grab(). grab() carries a loose body exactly where it is put,
     // which is placement -- an editor's move -- and stays exactly that.
     [[nodiscard]] bool wield(const std::string &name, const Vec3 &grip_world_m);
+    // In the frame poses() reports: asking a thing to face the way it is said
+    // to face leaves it as it is, however it was built turned.
     void aimHeld(const Quat &orientation_world);
     [[nodiscard]] bool wielding() const;
     // The most torque the hand can put on what it wields, newton metres.

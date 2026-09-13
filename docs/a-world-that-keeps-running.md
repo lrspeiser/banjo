@@ -599,7 +599,8 @@ The rule that would redraw a body whose cells have really moved is still there
 and still correct, and at present nothing reaches it.
 
 Below the bar the body keeps its shape and carries `dent_m` and `dent_at_m`
-instead: how deep the set is and where it is, in its own frame. The room presses
+instead: how deep the set is and where it is, in its own frame -- the frame its
+`orientation_wxyz` turns, a turn it was built with included. The room presses
 a hollow into the mesh at that spot, deep enough to see, and the label says the
 true depth beside it — *"dented 0.12 mm (shown deeper than it is)"*. The picture
 is legible and the number is not exaggerated, which is the only honest way to
