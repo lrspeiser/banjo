@@ -1065,6 +1065,10 @@ private:
         std::size_t striker{static_cast<std::size_t>(-1)};
         RigidSnapshot striker_state{};
         double arrival_speed_m_s{};
+        // Whether that arrival clears the struck body's BREAKING bar and not just
+        // its denting one. The struck body may come apart in the run only if it
+        // does, as a body may at a contact only if the contact does.
+        bool would_break{};
     };
     void prepare(const std::string &name, double window_s);
     [[nodiscard]] std::unique_ptr<Pending> prepared(const std::string &name, double window_s,

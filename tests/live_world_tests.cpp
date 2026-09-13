@@ -1189,6 +1189,80 @@ void aDropBreaksThePlateWhateverThePhaseOfTheStep() {
     }
 }
 
+// A single cell of glass lying on the floor, and the room's iron ball above it.
+TileImpactRequest ballOverAChip(double drop_m) {
+    TileImpactRequest r;
+    r.cell_size_m = 0.02;
+    r.backend = benchBackend();
+    r.plasticity = true;
+    SceneBody chip;
+    chip.name = "chip";
+    chip.shape = BodyShape::Box;
+    chip.material = MaterialPreset::Glass;
+    chip.dimensions_m = {0.02, 0.02, 0.02};
+    chip.center_m = {0.0, 0.01, 0.0};
+    SceneBody ball;
+    ball.name = "ball";
+    ball.shape = BodyShape::Sphere;
+    ball.material = MaterialPreset::Iron;
+    ball.dimensions_m = {0.12, 0.12, 0.12};
+    ball.center_m = {0.0, 0.02 + 0.06 + drop_m, 0.0};
+    r.bodies = {chip, ball};
+    return r;
+}
+
+// A body asked about because a contact would only dent it comes out dented,
+// never in pieces.
+//
+// A single cell of glass has no bonds and cannot break, so on the floor it is a
+// punch. An iron ball driven onto one at 13.5 m/s is past its 10 m/s denting
+// bar against glass and short of its 25 m/s breaking one, so the ball is what
+// the world asks about -- and it was let come apart in its own run whatever it
+// had been asked about: twelve pieces here. That is the page's iron ball landing
+// on a shard of the plate it had just broken, which came out of its run in two
+// to eight pieces while the page said it breaks above 25 m/s. A threshold is
+// the speed below which nothing CAN happen (see LiveWorld::prepared).
+void aBodyAskedAboutForADentIsNotBroken() {
+    const auto live = LiveWorld::open(ballOverAChip(9.3));
+    // The chip's contact with the ball. The ball can meet the floor in the same
+    // step, at the same closing speed but against the floor's bars, and that is
+    // not the contact this is about.
+    LiveImpact hit{};
+    std::size_t asked = 0, answer = 0;
+    for (int i = 0; i < 960; ++i) {   // 4 s at 1/240
+        live->step(1.0 / 240.0);
+        for (const LiveImpact &impact : live->impacts())
+            if (impact.struck == "ball" && impact.by == "chip" &&
+                impact.closing_speed_m_s > hit.closing_speed_m_s)
+                hit = impact;
+        for (const std::string &name : live->breakable()) {
+            const std::size_t pieces = live->fracture(name);
+            if (name == "ball") { ++asked; answer = pieces; }
+        }
+    }
+    bool whole = false, broke = false;
+    for (const LiveBodyPose &pose : live->poses(false)) {
+        if (pose.name == "ball") whole = true;
+        if (pose.name.rfind("ball piece", 0) == 0) broke = true;
+    }
+    std::cout << "  iron ball onto a glass cell: hit at " << hit.closing_speed_m_s
+              << " m/s, dents above " << hit.dent_speed_m_s << ", breaks above "
+              << hit.threshold_speed_m_s << "; asked about " << asked << " time(s), last answer "
+              << answer << " piece(s); the ball " << (whole && !broke ? "whole" : "in pieces") << "\n";
+    // The premise: the chip hit the ball over its denting bar and under its
+    // breaking one, and the world asked about the ball.
+    require(hit.would_dent && !hit.would_break,
+            "the chip's contact with the ball was not a dent-only one (" +
+                std::to_string(hit.closing_speed_m_s) + " m/s, dents above " +
+                std::to_string(hit.dent_speed_m_s) + ", breaks above " +
+                std::to_string(hit.threshold_speed_m_s) + "), so this proves nothing");
+    require(asked > 0, "the ball was never asked about, so its own run never happened");
+    require(whole && !broke,
+            "the iron ball came apart on a contact under its own breaking bar (" +
+                std::to_string(hit.closing_speed_m_s) + " m/s against " +
+                std::to_string(hit.threshold_speed_m_s) + ")");
+}
+
 void landingOnTheFloorIsAnImpact() {
     const Landing hard = dropOnFloor(MaterialPreset::Glass, 20.0);
     std::cout << "  glass onto the floor at 20 m/s: hit at " << hard.hit
@@ -1390,6 +1464,8 @@ int main() {
         std::cout << "[PASS] the world sees a collision coming, with more warning than the run costs\n";
         aDropBreaksThePlateWhateverThePhaseOfTheStep();
         std::cout << "[PASS] a drop breaks the plate whatever the phase of the step it lands in\n";
+        aBodyAskedAboutForADentIsNotBroken();
+        std::cout << "[PASS] a body asked about for a dent is dented, never broken\n";
         landingOnTheFloorIsAnImpact();
         std::cout << "[PASS] landing on the floor is an impact and is judged like any other\n";
         aThingBendsBeforeItBreaks();

@@ -259,9 +259,11 @@ struct LiveWorld::Pending {
     // of the plate's run as twenty-nine pieces.
     //
     // A threshold is "the speed below which nothing CAN happen". A body that
-    // never cleared its own is not allowed to come apart in somebody else's
-    // island, so its cells are recorded here and its bonds are put back before
-    // the pieces are counted.
+    // never cleared its own breaking bar is not allowed to come apart in any
+    // island -- somebody else's, or its own when what it was asked about would
+    // only dent it (see prepared) -- so only the cells of the bodies that did
+    // are recorded here, and every other bond is put back before the pieces are
+    // counted.
     //
     // Kept as cells rather than body numbers because cells are not renumbered
     // by anything, and the body table is.
@@ -3140,6 +3142,7 @@ void LiveWorld::foresee() {
             guess.striker_state.center_of_mass_world_m =
                 now.center_of_mass_world_m + ahead.distance_m * heading;
             guess.striker_state.linear_velocity_m_s = arrival * heading;
+            guess.would_break = would.admitted();
             if (guess.struck != guess.striker) guessAhead(guess, about);
         }
         if (impl_->foreseen.count(about)) continue;   // already said
@@ -3224,6 +3227,7 @@ void LiveWorld::guessWhatIsHeld(std::set<std::string> &still_coming) {
     guess.striker_state.center_of_mass_world_m =
         now.center_of_mass_world_m + below.distance_m * down;
     guess.striker_state.linear_velocity_m_s = arrival * down;
+    guess.would_break = would.admitted();
     guessAhead(guess, about);
 }
 
@@ -3644,14 +3648,35 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
     job.snap = snap;
     job.struck_material = struck_material;
     job.yield_extension = settings.plastic_yield_stretch * impl_->request.cell_size_m;
-    // Who is allowed to come apart in this run. The body asked about, always;
-    // anything else in the island only if this contact cleared its own bar.
+    // Who is allowed to come apart in this run: a body that a contact drove past
+    // its own BREAKING bar. A dent needs no leave -- the permanent set a run
+    // leaves is carried out of it whatever happens -- but a body that has cleared
+    // only its denting bar has not reached the speed at which it can come apart,
+    // and a threshold is the speed below which nothing CAN happen. That holds for
+    // the body asked about as well. It used to be let come apart whatever it had
+    // been asked about, and a dent is one of the things it is asked about for:
+    // measured in the page, the iron ball that had just gone through the 20 mm
+    // glass plate met a shard bouncing off the floor at 13.7 m/s, over its 10 m/s
+    // denting bar and under its 25 m/s breaking one, and came out of its own run
+    // in two to eight pieces while the page said it breaks above 25 m/s.
+    //
+    // The body asked about with no contact to judge it by keeps the leave it
+    // always had: a load, which the survey found carrying more than it can hold,
+    // and a collision still coming, judged at the speed it will arrive at.
     for (const std::size_t body : job.island_bodies) {
-        bool admitted = body == which;
-        if (!admitted)
-            for (const LiveImpact &impact : impl_->last_impacts)
-                admitted = admitted || (impact.struck == impl_->described[body].name &&
-                                        (impact.would_break || impact.would_dent));
+        const std::string &called = impl_->described[body].name;
+        bool admitted = false, hit_here = false;
+        for (const LiveImpact &impact : impl_->last_impacts) {
+            if (impact.struck != called) continue;
+            hit_here = true;
+            admitted = admitted || impact.would_break;
+        }
+        if (body == which) {
+            if (guess) admitted = guess->would_break;
+            else if (!hit_here) admitted = true;
+            for (const LiveOverload &load : impl_->overloaded)
+                admitted = admitted || load.name == called;
+        }
         if (!admitted) continue;
         if (body < impl_->nodes_of.size())
             for (const std::uint32_t node : impl_->nodes_of[body]) job.may_break.insert(node);
@@ -3695,8 +3720,11 @@ std::size_t LiveWorld::applyPending() {
     // Put back every bond that belongs to a body which was never admitted for
     // breaking at this contact. See Pending::may_break: the island must hold the
     // striker for the collision to have any stress in it, and holding it must
-    // not be the same as condemning it.
-    if (!job.may_break.empty() && island.matter.asset != nullptr) {
+    // not be the same as condemning it. Every broken bond when nobody was
+    // admitted: a body asked about for a dent alone is not admitted either, and
+    // skipping that case, which used to be impossible, left an iron ball in
+    // twelve pieces on a contact under its breaking bar.
+    if (island.matter.asset != nullptr) {
         std::size_t revived = 0;
         for (std::size_t o = 0; o < island.matter.bonds.size() &&
                                 o < island.matter.asset->bonds.size(); ++o) {
