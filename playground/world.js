@@ -1872,11 +1872,13 @@ async function letFly() {
   if (!entry || use.mode !== "preparing") return;
   const grip = use.grip || entry.mesh.position.clone();
   const reached = use.reached || 0;
+  // The stroke the arc on screen was drawn from, if it is the one just shown;
+  // otherwise one made now (throwStroke lets go at its end either way).
+  const aimed = use.aimed && performance.now() - use.aimed.at < 500 ? use.aimed.stroke : null;
   use.mode = "throwing";
   showUse();
   try {
-    const reply = await act("stroke", Object.assign(throwStroke(camera, grip, reached),
-                                                    { let_go: true }));
+    const reply = await act("stroke", aimed || throwStroke(camera, grip, reached));
     // The work the hand does on the throw itself, not on the wind-up before it.
     use.workBefore = reply && reply.hand ? reply.hand.work_j : 0;
   } catch (error) {
@@ -2069,14 +2071,22 @@ async function previewThrow() {
   previewAt = now;
   previewBusy = true;
   try {
+    // The very stroke letFly would send now, let go of at its end.
     const stroke = throwStroke(camera, use.grip, use.mode === "preparing" ? use.reached || 0 : 0);
-    const seen = await act("preview_stroke", Object.assign(stroke, { horizon_s: 4 }));
+    const seen = await act("preview_stroke", Object.assign({ horizon_s: 4 }, stroke));
     if (world.use !== use || (use.mode !== "ready" && use.mode !== "preparing")) return;
     const v = seen.let_go_velocity_m_s || [0, 0, 0];
     use.preview = { possible: !!(seen.possible && seen.reaches_end), why: seen.why || "",
                     speed: Math.hypot(v[0], v[1], v[2]),
                     hit: !!(seen.flight && seen.flight.hit),
                     hitName: (seen.flight && seen.flight.hit_name) || "" };
+    // What is on screen is what letFly throws: this stroke, not one made afresh
+    // when the button comes up. A preview is a fifth of a second old by then,
+    // and measured on this page, a throw made afresh after turning 12 degrees
+    // came down 2.25 m to the side of the ring, and one let go halfway through
+    // the wind-up 1 m past it. The engine starts the stroke from wherever the
+    // thing is when it is thrown.
+    use.aimed = use.preview.possible ? { stroke, at: performance.now() } : null;
     if (use.preview.possible) aimArc.show(seen.flight); else aimArc.hide();
     showUse();
   } catch { /* the next tick asks again */ } finally { previewBusy = false; }
