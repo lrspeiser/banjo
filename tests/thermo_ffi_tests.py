@@ -52,10 +52,11 @@ def run(world, seconds):
 
 
 class HeatThroughTheLibrary(unittest.TestCase):
-    def test_the_library_speaks_abi_15(self):
-        # 14 added heat, chemistry and gas; 15 added terrain and water on top.
-        self.assertEqual(banjo.library().banjo_abi_version(), 15)
-        self.assertEqual(banjo.ABI_VERSION, 15)
+    def test_the_library_speaks_abi_16(self):
+        # 14 added heat, chemistry and gas; 15 added terrain and water on top;
+        # 16 made heat change what things can carry.
+        self.assertEqual(banjo.library().banjo_abi_version(), 16)
+        self.assertEqual(banjo.ABI_VERSION, 16)
 
     def test_the_model_is_readable_without_a_world(self):
         model = banjo.thermo_model()["model"]
@@ -119,6 +120,109 @@ class HeatThroughTheLibrary(unittest.TestCase):
             self.assertIn("tempreature", str(caught.exception))
             with self.assertRaises(banjo.BanjoError):
                 world.heat("nothing called this", 1000.0, 1.0)
+
+
+# ---- heat and strength (ABI 16, docs/thermal-mechanics.md) ------------------
+
+def peg_assembly(tag: str = "", x: float = 0.0, gate: bool = True) -> list[dict]:
+    """An anchored oak gatepost, a 40 mm oak peg standing 5 mm off its face, and
+    a 32 kg iron gate hanging 5 mm under the peg -- tests/thermal_mechanics_tests.cpp's."""
+    bodies = [box(f"{tag}post", "oak", (0.16, 1.6, 0.16), (x, 0.8, 0.0), True),
+              box(f"{tag}peg", "oak", (0.04, 0.04, 0.16), (x, 1.4, 0.165))]
+    if gate:
+        bodies.append(box(f"{tag}gate", "iron", (0.32, 0.32, 0.04), (x, 1.215, 0.205)))
+    return bodies
+
+
+def hang(world, tag: str = "", x: float = 0.0) -> int:
+    peg = world.fix(f"{tag}post", f"{tag}peg", (x, 1.4, 0.08), (0, 0, 1), 0.0, 800.0,
+                    member=f"{tag}peg")
+    world.fix(f"{tag}peg", f"{tag}gate", (x, 1.375, 0.205), (0, 1, 0))
+    return peg
+
+
+def joint(world, joint_id: int):
+    return next(j for j in world.joints() if j.id == joint_id)
+
+
+class StrengthThroughTheLibrary(unittest.TestCase):
+    def test_a_heated_peg_gives_way_under_its_gate_and_says_why(self):
+        scene = {"plasticity": True, "bodies": peg_assembly() + peg_assembly("cold ", 3.0)}
+        with banjo.World(scene, cell_size_m=0.04) as world:
+            hot, cold = hang(world), hang(world, "cold ", 3.0)
+            run(world, 3.0)
+            pin = joint(world, hot)
+            self.assertEqual(pin.member, "peg")
+            self.assertEqual(pin.rated_shear_n, 800.0)
+            self.assertEqual(pin.capacity_fraction, 1.0)
+            # The weld: nothing named, so exactly what was declared.
+            weld = next(j for j in world.joints() if j.b == "gate")
+            self.assertEqual(weld.member, "")
+            world.heat("peg", 2000.0, 300.0)
+            parted = None
+            for step in range(int(round(120.0 / DT))):
+                world.advance(DT)
+                if step % 24 == 0 and not joint(world, hot).attached:
+                    parted = joint(world, hot)
+                    break
+            self.assertIsNotNone(parted, "the heated peg gave way within 120 s of 2 kW")
+            self.assertGreater(parted.parted_load_n, parted.parted_capacity_n,
+                               "it let go because the load passed what was left")
+            self.assertIn("sheared", parted.parted_because)
+            self.assertIn("peg", parted.parted_because)
+            twin = joint(world, cold)
+            self.assertTrue(twin.attached)
+            self.assertGreater(twin.capacity_fraction, 0.99)
+            state = {m.name: m for m in world.body_mechanics()}
+            peg = state["peg"]
+            self.assertTrue(peg.tracked)
+            self.assertIn("EN 1995-1-2", peg.law)
+            self.assertEqual(peg.provenance, "reference-derived")
+            self.assertGreater(peg.char_m, 0.0, "its surface layer has charred")
+            self.assertLess(peg.shear, 0.5)
+            self.assertLessEqual(peg.shear_if_cooled, 1.0 - 0.9 * (1 - (0.034 * 0.034) / (0.04 * 0.04)),
+                                 "cooled, the char would stay")
+            self.assertEqual(peg.section_m, (0.04, 0.04))
+            report = world.mechanics_report(with_laws=True)
+            self.assertEqual({law["material"] for law in report["laws"]}, {"oak", "iron", "concrete"})
+            self.assertTrue(report["limitations"])
+            self.assertTrue(any(a["member"] == "peg" and not a["attached"] and a["parted_because"]
+                                for a in report["attachments"]))
+            # No spring was made of anything: nothing was handed over as heat.
+            self.assertEqual(world.energy().mechanical_in_j, 0.0)
+
+    def test_only_what_has_a_strength_can_be_made_of_something(self):
+        with banjo.World({"bodies": peg_assembly()}, cell_size_m=0.04) as world:
+            pin = world.hinge("post", "peg", (0, 1.4, 0.08), (0, 0, 1))
+            with self.assertRaises(banjo.BanjoError):
+                world.joint_member(pin, "peg")
+            fixing = world.fix("post", "peg", (0, 1.4, 0.08), (0, 0, 1), 0.0, 800.0)
+            with self.assertRaises(banjo.BanjoError):
+                world.joint_member(fixing, "gate")   # not one of its two ends
+            world.joint_member(fixing, "peg")
+            self.assertEqual(joint(world, fixing).member, "peg")
+            world.joint_member(fixing, "")           # back to the declared numbers
+            self.assertEqual(joint(world, fixing).member, "")
+            self.assertEqual(joint(world, fixing).holds_shear_n, 800.0)
+
+    def test_a_member_with_no_declared_strength_holds_its_own_section(self):
+        with banjo.World({"bodies": peg_assembly(gate=False)}, cell_size_m=0.04) as world:
+            fixing = world.fix("post", "peg", (0, 1.4, 0.08), (0, 0, 1), member="peg")
+            pin = joint(world, fixing)
+            # Oak's catalogue shear strength, 11 MPa, across 40 x 40 mm.
+            self.assertAlmostEqual(pin.rated_shear_n, 11.0e6 * 0.04 * 0.04, delta=1.0)
+            self.assertAlmostEqual(pin.rated_tension_n, 90.0e6 * 0.04 * 0.04, delta=1.0)
+
+    def test_the_laws_are_readable_without_a_world(self):
+        laws = banjo.thermo_model()["model"]["mechanical_laws"]
+        oak = next(law for law in laws if law["material"] == "oak")
+        self.assertAlmostEqual(oak["char_k"], 573.15)
+        self.assertIn("EN 1995-1-2", oak["source"])
+        self.assertEqual(oak["provenance"], "reference-derived")
+        iron = next(law for law in laws if law["material"] == "iron")
+        self.assertTrue(iron["recovers_on_cooling"])
+        concrete = next(law for law in laws if law["material"] == "concrete")
+        self.assertFalse(concrete["recovers_on_cooling"])
 
 
 if __name__ == "__main__":

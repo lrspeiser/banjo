@@ -196,6 +196,64 @@ struct LiveJoint {
     // vanishing from the list -- a host that drew a gate wants to know the gate
     // came off its hinges.
     bool attached{true};
+
+    // ---- heat and strength (docs/thermal-mechanics.md) ----------------------
+    //
+    // Which of the two things the joint is MADE of, when that was said: the peg
+    // of a fixing, the rope segment a link is tied through, a spring's limb. Its
+    // section carries the load, so the joint's strength (a fixing, a link) or
+    // its stiffness (an elastic) follows that body's material law, temperature
+    // and what is left of it. "" when nothing was named: the joint is then
+    // exactly the numbers that were declared, and heat changes nothing about it.
+    std::string member;
+    // What it could take cold -- declared, or worked out from the member's own
+    // section and material where the declared number was zero. holds_*,
+    // breaks_at_n and stiffness_n_m above are what it has NOW.
+    double rated_tension_n{}, rated_shear_n{}, rated_breaks_at_n{}, rated_stiffness_n_m{};
+    // The share of that it still has: 1 cold, falling as the member heats,
+    // chars and burns. For a fixing, the lower of its two.
+    double capacity_fraction{1.0};
+    // How many times a change in the member made the joint be asked again
+    // whether it holds -- with both ends woken, so the load is measured by the
+    // solver rather than remembered from before the change.
+    unsigned rechecks{};
+    // Why it let go, once it has: what it carried against what it could still
+    // take, and the state of what it was made of. Empty while it holds, and for
+    // a joint taken out on purpose.
+    std::string parted_because;
+    // The two numbers that decided it: the load the solver measured in the
+    // step it parted, and what it could still take at that moment. Zero while
+    // it holds.
+    double parted_load_n{}, parted_capacity_n{};
+};
+
+// What heat, composition and burning have done to what one body can carry.
+// See docs/thermal-mechanics.md and thermo/ThermalMechanics.hpp.
+struct LiveMaterialState {
+    std::string name;
+    std::string material;
+    // The law it follows, and where that law's numbers come from. Empty for a
+    // material with no law: heat does not change what it can carry, and that is
+    // said rather than implied.
+    std::string law;
+    std::string provenance;
+    // Whether the thermal network holds it. A body nothing has heated is
+    // exactly as it was: its factors are all one.
+    bool tracked{};
+    // Surface and core now, and the hottest each has been.
+    double surface_k{thermo::kReferenceTemperatureK};
+    double core_k{thermo::kReferenceTemperatureK};
+    double peak_surface_k{thermo::kReferenceTemperatureK};
+    double peak_core_k{thermo::kReferenceTemperatureK};
+    // How much of its load-bearing matter is left, and its load-bearing share
+    // when it was declared, against its material's own.
+    double remaining_fraction{1.0};
+    double composition_factor{1.0};
+    // Its box, and the section across its longest axis: what has burned, the
+    // char, what is still sound, and every factor against the same section cold
+    // -- now, and if it were cooled now.
+    Vec3 dimensions_m{};
+    thermo::SectionState section;
 };
 
 // A thing carrying more than it can hold up.
@@ -233,6 +291,12 @@ struct LiveOverload {
     // What that works out to, and what the material can take.
     double stress_pa{};
     double strength_pa{};
+    // What its section can still take, against the same beam cold: 1 for
+    // anything heat has not touched. strength_pa is already the material's
+    // strength times this, so stress_pa past strength_pa stays the whole test.
+    double capacity_fraction{1.0};
+    // Why, in words: the bending it carries and what is left to carry it.
+    std::string why;
 };
 
 // An edge on a body. See docs/cutting-model.md for the whole model; this is
@@ -695,6 +759,31 @@ public:
     // work is what passes between the two.
     [[nodiscard]] double mechanicalEnergyJ() const;
 
+    // ---- heat and strength (docs/thermal-mechanics.md) -------------------
+    //
+    // Temperature, composition and what has burned change what a body can
+    // carry, by a declared law per material (thermo/ThermalMechanics.hpp). The
+    // failures are the ones this world already had: a joint parts when the
+    // load the solver measures passes what it can still take, and a beam is
+    // offered as overloaded when the bending in it passes what its section can
+    // still take. Heat changing either is itself a reason to ask again, while
+    // nothing moves.
+    //
+    // What heat, composition and burning have done to each body the thermal
+    // network holds, and to every body a joint is made of.
+    [[nodiscard]] std::vector<LiveMaterialState> materialStates() const;
+    // Say which of a joint's two bodies it is made of (LiveJoint::member): its
+    // strength (a fixing, a link) or its stiffness (an elastic) follows that
+    // body's law from now on. A declared strength of zero becomes the member's
+    // own section times its material's strength. "" goes back to the declared
+    // numbers. False for a pin, a slide or a pulley, which have no strength to
+    // lose here, and for a name that is not one of the joint's two ends.
+    bool setJointMember(unsigned joint, const std::string &member);
+    // All of it as JSON: the bodies, every joint made of a member, what
+    // elastics have handed over as heat; with `with_laws`, the laws, where
+    // their numbers come from, and what is not modelled.
+    [[nodiscard]] std::string mechanicsReport(bool with_laws = false) const;
+
     // ---- terrain and water ------------------------------------------------
     //
     // The ground and the rivers on it (terrain/Environment.hpp), or null when
@@ -784,6 +873,14 @@ private:
     // After an accepted step: the heat paths again at a stride, and the rigid
     // bodies told what they weigh now.
     void settleThermo();
+    // What one body can carry across a load running along `load_world` -- its
+    // longest axis when null. See materialStates.
+    [[nodiscard]] LiveMaterialState materialStateOf(std::size_t body, const Vec3 *load_world) const;
+    // Every joint made of a member brought up to what its member is now, with
+    // a re-check (both ends woken) wherever that moved, and a survey asked for
+    // wherever a heated beam's section moved. Outside the reversible trial:
+    // it runs after a step has been accepted.
+    void refreshMechanics();
     LiveWorld();
     // The cutting model, in the two halves a step has. Before it: find every
     // edge about to meet or already in matter, decide what each meeting is,

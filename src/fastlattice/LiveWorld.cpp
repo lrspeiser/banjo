@@ -8,7 +8,10 @@
 #include "fracture/FragmentGeometry.hpp"
 #include "material/MaterialCompiler.hpp"
 #include "rigid/JoltWorld.hpp"
+#include "thermo/ThermalMechanics.hpp"
 #include "thermo/ThermoJson.hpp"
+
+#include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <array>
@@ -54,6 +57,40 @@ Vec3 cellBounds(const std::vector<std::uint32_t> &nodes,
 // How heavy a push at `arm` from the centre of mass feels, direction by
 // direction. Defined with the blades; the wielding hand is shaped by it.
 [[nodiscard]] Mat3 gripMassMatrix(double mass_kg, const Mat3 &inertia_world, const Vec3 &arm);
+
+// A force in the words a person reads it in.
+std::string newtons(double n) {
+    char text[48];
+    if (std::abs(n) >= 1000.0) std::snprintf(text, sizeof text, "%.2f kN", n / 1000.0);
+    else std::snprintf(text, sizeof text, "%.0f N", n);
+    return text;
+}
+
+std::string percent(double fraction) {
+    char text[24];
+    std::snprintf(text, sizeof text, "%.0f%%", 100.0 * fraction);
+    return text;
+}
+
+// What a member is now, in one line: the words a joint made of it parts with.
+std::string describeMember(const LiveMaterialState &m) {
+    char text[640];
+    const thermo::SectionState &s = m.section;
+    if (m.law.empty()) {
+        std::snprintf(text, sizeof text, "%s is %s, which has no law for heat: nothing about it changed",
+                      m.name.c_str(), m.material.c_str());
+        return text;
+    }
+    std::snprintf(text, sizeof text,
+                  "%s: surface %.0f K (hottest %.0f K), core %.0f K; %.1f mm burned away and %.1f mm "
+                  "char; %.0f x %.0f mm of its %.0f x %.0f mm section still sound; %s of its tension, "
+                  "%s of its shear and %s of its stiffness left",
+                  m.name.c_str(), m.surface_k, m.peak_surface_k, m.core_k, 1000.0 * s.consumed_m,
+                  1000.0 * s.char_m, 1000.0 * s.sound_breadth_m, 1000.0 * s.sound_depth_m,
+                  1000.0 * s.breadth_m, 1000.0 * s.depth_m, percent(s.tension).c_str(),
+                  percent(s.shear).c_str(), percent(s.axial_stiffness).c_str());
+    return text;
+}
 } // namespace
 
 // One fracture in progress: everything the three phases pass between them.
@@ -272,6 +309,17 @@ struct LiveWorld::Impl {
     // rather than recomputed on every ask, because a host reads it once a frame
     // and the survey is a stride thing.
     std::vector<LiveOverload> overloaded;
+    // Heat changed what something can carry since the last survey: survey
+    // again on the next step rather than at the stride. A load that has not
+    // moved does not need asking about -- a section that has shrunk under it
+    // does. See refreshMechanics.
+    bool survey_due{};
+    // The bending factor each heated body was last surveyed at.
+    std::unordered_map<std::string, double> bending_seen;
+    // What elastic elements have handed the thermal network as heat because
+    // their matter softened while stretched (negative when one stiffened again
+    // and took it back). The same number is a crossing in the network's ledger.
+    double elastic_to_heat_j{};
     // For an overloaded body, the heaviest thing sitting on it.
     //
     // The island a fracture is run on is built from the CONTACT that caused it,
@@ -339,6 +387,29 @@ struct LiveWorld::Impl {
         double at_when_hung{};
         unsigned rigid{};        // 0 when the pin is not currently in anything
         bool attached{true};
+        // ---- heat and strength (docs/thermal-mechanics.md) ----------------
+        // Which end the joint is made of: 0 for a, 1 for b, -1 for neither. An
+        // END rather than a name, so it follows its member into whichever
+        // piece carries the joint when the member breaks or is cut.
+        int member_end{-1};
+        // What was declared, kept the first time a member is named so that
+        // naming none goes back to it. holds_tension_n, holds_shear_n,
+        // breaks_at_n and stiffness_n_m above are what the joint has NOW, and
+        // are what a rehung joint is made again with.
+        double declared_tension_n{}, declared_shear_n{}, declared_breaks_at_n{};
+        double declared_stiffness_n_m{};
+        bool declared_kept{};
+        // What it could take cold: the declared numbers, or the member's own
+        // section times its material's strength where they were zero.
+        double rated_tension_n{}, rated_shear_n{}, rated_breaks_at_n{}, rated_stiffness_n_m{};
+        double capacity_fraction{1.0};
+        // The fraction the last re-check was asked at.
+        double checked_fraction{1.0};
+        unsigned rechecks{};
+        std::string parted_because;
+        double parted_load_n{}, parted_capacity_n{};
+        // The member as it was when last read, for the words it parts with.
+        std::string member_said;
     };
     std::vector<SceneJoint> joints;
     unsigned next_joint{1};
@@ -346,6 +417,30 @@ struct LiveWorld::Impl {
         for (SceneJoint &joint : joints)
             if (joint.rigid != 0 && in.hasJoint(joint.rigid))
                 joint.at_when_hung = in.jointState(joint.rigid).at;
+    }
+    // Which way a joint's load runs through its member: along a fixing's axis,
+    // or along the line between a link's or a spring's two ends. The member's
+    // section across that is what carries it. Zero when an end is missing.
+    [[nodiscard]] Vec3 loadDirection(const SceneJoint &joint) const {
+        const auto one = index_of.find(joint.a), two = index_of.find(joint.b);
+        if (one == index_of.end() || two == index_of.end()) return {};
+        const RigidSnapshot sa = world->snapshot(body_of[one->second]);
+        if (joint.kind == JoltWorld::JointKind::Fixing)
+            return sa.orientation_world.rotate(joint.axis_local_a);
+        const RigidSnapshot sb = world->snapshot(body_of[two->second]);
+        return (sb.center_of_mass_world_m + sb.orientation_world.rotate(joint.point_local_b_tie)) -
+               (sa.center_of_mass_world_m + sa.orientation_world.rotate(joint.point_local_a));
+    }
+    // How far apart a link's or a spring's two attachment points are now.
+    [[nodiscard]] double spanOf(const SceneJoint &joint) const { return length(loadDirection(joint)); }
+    // The material a body was built from, as the scene defined it.
+    [[nodiscard]] const MaterialDefinition &definitionOf(std::size_t body) const {
+        if (setup->multi_body && body < nodes_of.size() && !nodes_of[body].empty() &&
+            nodes_of[body].front() < setup->part_of_node.size()) {
+            const std::uint32_t part = setup->part_of_node[nodes_of[body].front()];
+            if (part < setup->part_definitions.size()) return setup->part_definitions[part];
+        }
+        return setup->tile_material;
     }
 
     // ---- Blades and cuts (docs/cutting-model.md) --------------------------
@@ -1078,7 +1173,13 @@ void LiveWorld::step(double dt_s) {
         partOverloadedLinks();
         // Load does not change in a quarter of a second, and the survey is
         // O(bodies squared). Sixty times a second would be waste; four is not.
-        if (impl_->steps_taken % 60 == 0) surveyLoads();
+        // Unless heat has changed what something can carry: then the load that
+        // has not moved is asked about again now, because the section under it
+        // has.
+        if (impl_->steps_taken % 60 == 0 || impl_->survey_due) {
+            impl_->survey_due = false;
+            surveyLoads();
+        }
         foresee();
         settleThermo();
         settleEnvironment();
@@ -1096,7 +1197,10 @@ void LiveWorld::step(double dt_s) {
     impl_->rememberJointAngles(*impl_->world);
     settleCuts(dt_s);
     partOverloadedLinks();
-    if (impl_->steps_taken % 60 == 0) surveyLoads();
+    if (impl_->steps_taken % 60 == 0 || impl_->survey_due) {
+        impl_->survey_due = false;
+        surveyLoads();
+    }
     foresee();
     settleThermo();
     settleEnvironment();
@@ -1114,19 +1218,27 @@ void LiveWorld::step(double dt_s) {
 // one report, the same as a gate coming off its hinges, because a host that drew
 // a rope has to be told to stop drawing it. What was hanging on it falls.
 void LiveWorld::partOverloadedLinks() {
+    // Less than this is not a load. A fixing at rest reports around 1e-17 N
+    // along an axis nothing pulls on, and a member burned to nothing -- which
+    // holds exactly zero -- must not part on that.
+    constexpr double kNoLoadN = 1.0e-6;
     for (Impl::SceneJoint &joint : impl_->joints) {
         const bool a_link = joint.kind == JoltWorld::JointKind::Link;
         const bool a_fixing = joint.kind == JoltWorld::JointKind::Fixing;
         if (!a_link && !a_fixing) continue;
         if (!joint.attached || joint.rigid == 0) continue;
         if (!impl_->world->hasJoint(joint.rigid)) continue;
+        // A joint made of a member can lose everything it held, and then zero
+        // is a strength -- it holds nothing -- not the weld a declared zero is.
+        const bool rated = joint.member_end >= 0;
 
-        double carrying = 0.0, bar = 0.0;
+        double carrying = 0.0, bar = 0.0, cold = 0.0;
+        const char *how = "pulled apart";
         if (a_fixing) {
             // Two bounds, checked separately, because a peg pulled straight out
             // and a peg sheared sideways fail at different loads. Whichever is
             // the nearer to giving is the one that decides.
-            if (!(joint.holds_tension_n > 0.0) && !(joint.holds_shear_n > 0.0)) continue;
+            if (!rated && !(joint.holds_tension_n > 0.0) && !(joint.holds_shear_n > 0.0)) continue;
             const auto found = impl_->index_of.find(joint.a);
             const Vec3 along =
                 found != impl_->index_of.end()
@@ -1134,22 +1246,37 @@ void LiveWorld::partOverloadedLinks() {
                           .orientation_world.rotate(joint.axis_local_a)
                     : joint.axis_local_a;
             const JoltWorld::JointLoad load = impl_->world->jointLoad(joint.rigid, along);
-            const bool pulled_apart = joint.holds_tension_n > 0.0 &&
+            const bool pulled_apart = (rated || joint.holds_tension_n > 0.0) &&
+                                      load.tension_n > kNoLoadN &&
                                       load.tension_n > joint.holds_tension_n;
-            const bool sheared = joint.holds_shear_n > 0.0 &&
+            const bool sheared = (rated || joint.holds_shear_n > 0.0) &&
+                                 load.shear_n > kNoLoadN &&
                                  load.shear_n > joint.holds_shear_n;
             if (!pulled_apart && !sheared) continue;
             carrying = pulled_apart ? load.tension_n : load.shear_n;
             bar = pulled_apart ? joint.holds_tension_n : joint.holds_shear_n;
+            cold = pulled_apart ? joint.rated_tension_n : joint.rated_shear_n;
+            how = pulled_apart ? "pulled out along its axis" : "sheared across its axis";
         } else {
-            if (!(joint.breaks_at_n > 0.0)) continue;
+            if (!rated && !(joint.breaks_at_n > 0.0)) continue;
             carrying = impl_->world->jointTension(joint.rigid);
-            if (carrying <= joint.breaks_at_n) continue;
+            if (!(carrying > kNoLoadN) || carrying <= joint.breaks_at_n) continue;
             bar = joint.breaks_at_n;
+            cold = joint.rated_breaks_at_n;
         }
         impl_->world->removeJoint(joint.rigid);
         joint.rigid = 0;
         joint.attached = false;
+        // Why, in the numbers that decided it: the load the solver measured
+        // against what the joint could still take -- and, for one made of a
+        // member, what heat had left of that member.
+        joint.parted_load_n = carrying;
+        joint.parted_capacity_n = bar;
+        joint.parted_because = std::string(how) + ": carrying " + newtons(carrying) + " against the " +
+                               newtons(bar) +
+                               (rated ? " it could still take (" + newtons(cold) + " cold) -- " +
+                                            joint.member_said
+                                      : std::string(" it was declared to hold"));
         impl_->delays.push_back({impl_->time_s, joint.a + " to " + joint.b,
                                  a_fixing ? "gave way" : "parted", carrying, bar});
         // Both ends have to wake or what was hanging there stays hanging in the
@@ -1616,6 +1743,17 @@ std::vector<LiveJoint> LiveWorld::joints() const {
                                  at.orientation_world.rotate(joint.point_local_a);
             said.axis_world = at.orientation_world.rotate(joint.axis_local_a);
         }
+        // What it is made of, what it could take cold, and what is left.
+        if (joint.member_end >= 0) said.member = joint.member_end == 0 ? joint.a : joint.b;
+        said.rated_tension_n = joint.rated_tension_n;
+        said.rated_shear_n = joint.rated_shear_n;
+        said.rated_breaks_at_n = joint.rated_breaks_at_n;
+        said.rated_stiffness_n_m = joint.rated_stiffness_n_m;
+        said.capacity_fraction = joint.member_end >= 0 ? joint.capacity_fraction : 1.0;
+        said.rechecks = joint.rechecks;
+        said.parted_because = joint.parted_because;
+        said.parted_load_n = joint.parted_load_n;
+        said.parted_capacity_n = joint.parted_capacity_n;
         out.push_back(std::move(said));
     }
     return out;
@@ -2256,15 +2394,43 @@ void LiveWorld::surveyLoads() {
                 }
             }
         }
-        const double strength = i < impl_->tensile_of.size() ? impl_->tensile_of[i] : 0.0;
+        const double material_strength = i < impl_->tensile_of.size() ? impl_->tensile_of[i] : 0.0;
+        // What heat has left of the section that carries the bending: the
+        // same beam's section, three rings of it (thermo/ThermalMechanics.hpp),
+        // with the span along x and the depth up, as the formula above has it.
+        // One for anything the thermal network does not hold, or whose material
+        // has no law -- then this is exactly the survey it always was.
+        double capacity = 1.0;
+        std::string heated;
+        if (impl_->thermo) {
+            const thermo::MechanicalLaw *law = thermo::lawFor(impl_->described[i].material);
+            const std::optional<thermo::MatterState> matter =
+                impl_->thermo->matter(impl_->described[i].name);
+            if (law != nullptr && matter) {
+                const thermo::SectionState section =
+                    thermo::evaluateSection(*law, *matter, 2.0 * half[i], 0, 1);
+                capacity = section.bending;
+                char text[320];
+                std::snprintf(text, sizeof text,
+                              "; heated: surface %.0f K, core %.0f K, %.1f mm burned away and %.1f mm "
+                              "char, so its section holds %s of what it did cold",
+                              matter->surface_k, matter->core_k, 1000.0 * section.consumed_m,
+                              1000.0 * section.char_m, percent(capacity).c_str());
+                heated = text;
+            }
+        }
+        const double strength = material_strength * capacity;
         if (traced)
             std::fprintf(stderr, "survey %s span=%.3f stress=%.3g Pa strength=%.3g Pa\n",
                          impl_->described[i].name.c_str(), span, stress, strength);
-        if (!(strength > 0.0)) continue;
+        if (!(material_strength > 0.0)) continue;
         if (!(stress > strength)) continue;
 
-        impl_->overloaded.push_back(LiveOverload{impl_->described[i].name,
-                                                 carrying[i], span, stress, strength});
+        char said[160];
+        std::snprintf(said, sizeof said, "bending %.3g MPa against the %.3g MPa it can take",
+                      stress / 1.0e6, strength / 1.0e6);
+        impl_->overloaded.push_back(LiveOverload{impl_->described[i].name, carrying[i], span, stress,
+                                                 strength, capacity, std::string(said) + heated});
         // And remember the heaviest thing sitting directly on it, so the
         // fracture has something to press with. Directly on it rather than the
         // heaviest in the whole stack: the lattice needs a body that is really
@@ -3772,6 +3938,8 @@ void LiveWorld::settleThermo() {
         const MatterBodyId id = impl_->body_of[found->second];
         if (impl_->world->contains(id)) impl_->world->setMass(id, kg);
     }
+    // And what the heat has done to what everything can carry.
+    refreshMechanics();
 }
 
 const thermo::ThermoWorld *LiveWorld::thermo() const { return impl_->thermo.get(); }
@@ -3799,6 +3967,333 @@ std::string LiveWorld::thermoReport(bool with_model) const {
 
 double LiveWorld::mechanicalEnergyJ() const {
     return impl_->world->mechanicalTotals(impl_->request.gravity_m_s2).mechanicalEnergy();
+}
+
+// ---- heat and strength (docs/thermal-mechanics.md) ------------------------------
+
+LiveMaterialState LiveWorld::materialStateOf(std::size_t body, const Vec3 *load_world) const {
+    LiveMaterialState out;
+    if (body >= impl_->described.size()) return out;
+    const LiveBodyPose &pose = impl_->described[body];
+    out.name = pose.name;
+    out.material = pose.material;
+    out.dimensions_m = pose.dimensions_m;
+    const Vec3 d = pose.dimensions_m;
+    // The axis of the body's own box the load runs along: the one the load's
+    // direction lies nearest, taken into the body's frame -- and into its
+    // shape's, for a box authored at a tilt, whose tilt lives in the shape.
+    // With no load given, its longest axis.
+    int along = d.x >= d.y && d.x >= d.z ? 0 : (d.y >= d.z ? 1 : 2);
+    const MatterBodyId id = impl_->body_of[body];
+    if (load_world != nullptr && length(*load_world) > 1e-12 && impl_->world->contains(id)) {
+        Vec3 local = conjugateOf(impl_->world->snapshot(id).orientation_world).rotate(*load_world);
+        if (const auto tilt = impl_->tilt_of.find(pose.name); tilt != impl_->tilt_of.end())
+            local = conjugateOf(tilt->second).rotate(local);
+        const double ax = std::abs(local.x), ay = std::abs(local.y), az = std::abs(local.z);
+        along = ax >= ay && ax >= az ? 0 : (ay >= az ? 1 : 2);
+    }
+    // Cold and whole unless the thermal network holds it.
+    thermo::MatterState matter;
+    matter.body = pose.name;
+    matter.material = pose.material;
+    if (impl_->thermo) {
+        if (const std::optional<thermo::MatterState> held = impl_->thermo->matter(pose.name)) {
+            matter = *held;
+            out.tracked = true;
+        }
+    }
+    out.surface_k = matter.surface_k;
+    out.core_k = matter.core_k;
+    out.peak_surface_k = matter.peak_surface_k;
+    out.peak_core_k = matter.peak_core_k;
+    out.remaining_fraction = 1.0 - matter.consumed_fraction;
+    out.composition_factor = matter.composition_factor;
+    if (const thermo::MechanicalLaw *law = thermo::lawFor(pose.material)) {
+        out.law = law->id;
+        out.provenance = std::string(thermo::provenanceName(law->provenance));
+        out.section = thermo::evaluateSection(*law, matter, d, along);
+    } else {
+        // No law: the section is as it was built, and every factor is one.
+        const auto side = [&](int k) { return k == 0 ? d.x : (k == 1 ? d.y : d.z); };
+        const double u = side((along + 1) % 3), v = side((along + 2) % 3);
+        out.section.breadth_m = std::min(u, v);
+        out.section.depth_m = std::max(u, v);
+        out.section.sound_breadth_m = out.section.breadth_m;
+        out.section.sound_depth_m = out.section.depth_m;
+    }
+    return out;
+}
+
+std::vector<LiveMaterialState> LiveWorld::materialStates() const {
+    std::set<std::size_t> listed;
+    if (impl_->thermo)
+        for (const thermo::BodyHeat &heat : impl_->thermo->bodies())
+            if (const auto found = impl_->index_of.find(heat.body); found != impl_->index_of.end())
+                listed.insert(found->second);
+    for (const Impl::SceneJoint &joint : impl_->joints) {
+        if (joint.member_end < 0 || !joint.attached) continue;
+        const auto found = impl_->index_of.find(joint.member_end == 0 ? joint.a : joint.b);
+        if (found != impl_->index_of.end()) listed.insert(found->second);
+    }
+    std::vector<LiveMaterialState> out;
+    out.reserve(listed.size());
+    for (const std::size_t body : listed) out.push_back(materialStateOf(body, nullptr));
+    return out;
+}
+
+bool LiveWorld::setJointMember(unsigned joint, const std::string &member) {
+    for (Impl::SceneJoint &j : impl_->joints) {
+        if (j.id != joint) continue;
+        const bool fixing = j.kind == JoltWorld::JointKind::Fixing;
+        const bool link = j.kind == JoltWorld::JointKind::Link;
+        const bool elastic = j.kind == JoltWorld::JointKind::Elastic;
+        // A pin, a slide and an ideal pulley have no strength here to lose.
+        if (!fixing && !link && !elastic) return false;
+        if (!member.empty() && member != j.a && member != j.b) return false;
+        if (!j.declared_kept) {
+            j.declared_tension_n = j.holds_tension_n;
+            j.declared_shear_n = j.holds_shear_n;
+            j.declared_breaks_at_n = j.breaks_at_n;
+            j.declared_stiffness_n_m = j.stiffness_n_m;
+            j.declared_kept = true;
+        }
+        const auto wakeEnds = [&]() {
+            for (const std::string &side : {j.a, j.b}) {
+                const auto found = impl_->index_of.find(side);
+                if (found != impl_->index_of.end()) impl_->world->wake(impl_->body_of[found->second]);
+            }
+        };
+        if (member.empty()) {
+            // Back to the numbers that were declared. A spring's stiffness goes
+            // back too, and what that does to the energy it holds is accounted
+            // for exactly as heat changing it would be.
+            if (elastic && j.rigid != 0 && impl_->world->hasJoint(j.rigid) &&
+                j.stiffness_n_m != j.declared_stiffness_n_m) {
+                const double stretched = impl_->spanOf(j) - j.rest_m;
+                const double stored_change =
+                    0.5 * (j.declared_stiffness_n_m - j.stiffness_n_m) * stretched * stretched;
+                impl_->world->updateElastic(j.rigid, j.declared_stiffness_n_m, j.damping_n_s_m);
+                if (stored_change != 0.0 && impl_->thermo && j.member_end >= 0)
+                    impl_->thermo->receiveMechanicalWork(j.member_end == 0 ? j.a : j.b, -stored_change);
+                if (j.member_end >= 0) impl_->elastic_to_heat_j -= stored_change;
+            }
+            j.member_end = -1;
+            j.holds_tension_n = j.declared_tension_n;
+            j.holds_shear_n = j.declared_shear_n;
+            j.breaks_at_n = j.declared_breaks_at_n;
+            j.stiffness_n_m = j.declared_stiffness_n_m;
+            j.rated_tension_n = j.rated_shear_n = j.rated_breaks_at_n = j.rated_stiffness_n_m = 0.0;
+            j.capacity_fraction = j.checked_fraction = 1.0;
+            j.member_said.clear();
+            wakeEnds();
+            return true;
+        }
+        const auto at = impl_->index_of.find(member);
+        if (at == impl_->index_of.end()) return false;
+        j.member_end = member == j.a ? 0 : 1;
+        // Cold, it holds what was declared -- or, where that was zero, what the
+        // member's own section can take in its own material: shear strength
+        // across it, tensile strength along it.
+        const Vec3 load = impl_->loadDirection(j);
+        const LiveMaterialState whole = materialStateOf(at->second, &load);
+        const double area = whole.section.breadth_m * whole.section.depth_m;
+        const MaterialDefinition &made_of = impl_->definitionOf(at->second);
+        if (fixing) {
+            j.rated_tension_n = j.declared_tension_n > 0.0 ? j.declared_tension_n
+                                                           : made_of.tensile_strength_pa * area;
+            j.rated_shear_n = j.declared_shear_n > 0.0 ? j.declared_shear_n
+                                                       : made_of.shear_strength_pa * area;
+        } else if (link) {
+            j.rated_breaks_at_n = j.declared_breaks_at_n > 0.0 ? j.declared_breaks_at_n
+                                                               : made_of.tensile_strength_pa * area;
+        } else {
+            j.rated_stiffness_n_m = j.declared_stiffness_n_m;
+        }
+        j.capacity_fraction = j.checked_fraction = 1.0;
+        wakeEnds();
+        refreshMechanics();
+        return true;
+    }
+    return false;
+}
+
+void LiveWorld::refreshMechanics() {
+    // A change of a fifth of a percent of what a joint could take cold is
+    // worth asking about again; less is the heat creeping on.
+    constexpr double kRecheck = 0.002;
+    // The least of its stiffness an elastic keeps: Jolt's spring needs some.
+    constexpr double kSoftest = 1.0e-3;
+    for (Impl::SceneJoint &j : impl_->joints) {
+        if (j.member_end < 0 || !j.attached || j.rigid == 0) continue;
+        if (!impl_->world->hasJoint(j.rigid)) continue;
+        const std::string member = j.member_end == 0 ? j.a : j.b;
+        const auto at = impl_->index_of.find(member);
+        if (at == impl_->index_of.end()) continue;
+        const Vec3 load = impl_->loadDirection(j);
+        const LiveMaterialState state = materialStateOf(at->second, &load);
+        const thermo::SectionState &s = state.section;
+        double fraction = 1.0;
+        if (j.kind == JoltWorld::JointKind::Fixing) {
+            j.holds_tension_n = j.rated_tension_n * s.tension;
+            j.holds_shear_n = j.rated_shear_n * s.shear;
+            fraction = std::min(s.tension, s.shear);
+        } else if (j.kind == JoltWorld::JointKind::Link) {
+            j.breaks_at_n = j.rated_breaks_at_n * s.tension;
+            fraction = s.tension;
+        } else if (j.kind == JoltWorld::JointKind::Elastic) {
+            fraction = s.axial_stiffness;
+            const double k = j.rated_stiffness_n_m * std::max(fraction, kSoftest);
+            if (std::abs(k - j.stiffness_n_m) > 1.0e-9 * j.rated_stiffness_n_m) {
+                // At the stretch it has now, the energy it holds changes by
+                // half the change in stiffness times the stretch squared. That
+                // energy is not made or lost: what a softening limb stops
+                // holding goes into its matter as heat, and what stiffening
+                // takes comes out of it -- a crossing in the thermal ledger.
+                const double stretched = impl_->spanOf(j) - j.rest_m;
+                const double stored_change = 0.5 * (k - j.stiffness_n_m) * stretched * stretched;
+                impl_->world->updateElastic(j.rigid, k, j.damping_n_s_m);
+                j.stiffness_n_m = k;
+                if (stored_change != 0.0 && impl_->thermo)
+                    impl_->thermo->receiveMechanicalWork(member, -stored_change);
+                impl_->elastic_to_heat_j -= stored_change;
+            }
+        }
+        j.capacity_fraction = fraction;
+        j.member_said = describeMember(state);
+        // Heat moved what it can take: ask again, now, whether it still holds.
+        // Both ends are woken so the next step's solve MEASURES the load -- a
+        // gate asleep on its peg carries its weight all the same, and the
+        // answer must come from the solver, not from before the change.
+        if (std::abs(fraction - j.checked_fraction) > kRecheck) {
+            j.checked_fraction = fraction;
+            ++j.rechecks;
+            for (const std::string &side : {j.a, j.b}) {
+                const auto found = impl_->index_of.find(side);
+                if (found != impl_->index_of.end()) impl_->world->wake(impl_->body_of[found->second]);
+            }
+            impl_->survey_due = true;
+        }
+    }
+    // Beams: a heated body whose bending section has moved is surveyed again
+    // on the next step. At the thermal network's own stride -- its heat paths
+    // are worked out every eighth step, and a section does not move faster.
+    if (impl_->thermo && impl_->steps_taken % 8 == 0) {
+        for (const thermo::BodyHeat &heat : impl_->thermo->bodies()) {
+            const thermo::MechanicalLaw *law = thermo::lawFor(heat.material);
+            if (law == nullptr) continue;
+            const auto found = impl_->index_of.find(heat.body);
+            if (found == impl_->index_of.end()) continue;
+            const std::optional<thermo::MatterState> matter = impl_->thermo->matter(heat.body);
+            if (!matter) continue;
+            const thermo::SectionState s = thermo::evaluateSection(
+                *law, *matter, impl_->described[found->second].dimensions_m, 0, 1);
+            double &seen = impl_->bending_seen.try_emplace(heat.body, 1.0).first->second;
+            if (std::abs(s.bending - seen) > kRecheck) {
+                seen = s.bending;
+                impl_->survey_due = true;
+            }
+        }
+    }
+}
+
+namespace {
+// What is not modelled about heat and strength, for anyone reporting on it.
+std::vector<std::string> mechanicsLimitations() {
+    return {
+        "A section is at most three rings -- what burned away, the surface layer, the core -- "
+        "each at one temperature: a thick member's char front is not resolved inside its core",
+        "Burning eats in from every face of a body's box alike (a declared approximation). What "
+        "burned is taken out of the load-bearing section and the mass, not yet out of the "
+        "collision shape, the drawn shape, the centre of mass or the inertia",
+        "A joint is weakened by heat only when it names the body it is made of (its member): its "
+        "declared strength is what that member carries cold, scaled by the share of the "
+        "member's section strength that remains",
+        "A fixing is checked against the force it carries, along its axis and across it, not "
+        "against a bending moment",
+        "The lattice a fracture is worked out in uses every material's room-temperature bonds: a "
+        "heated beam the load survey offers as overloaded is still broken with cold bonds",
+        "Thermal expansion is not modelled",
+        "Glass, aluminium, alumina ceramic, rubber and ice have no law: heat does not change what "
+        "they can carry"};
+}
+}  // namespace
+
+std::string LiveWorld::mechanicsReport(bool with_laws) const {
+    using json = nlohmann::json;
+    json bodies = json::array();
+    for (const LiveMaterialState &m : materialStates()) {
+        const thermo::SectionState &s = m.section;
+        bodies.push_back({{"name", m.name},
+                          {"material", m.material},
+                          {"law", m.law},
+                          {"provenance", m.provenance},
+                          {"tracked", m.tracked},
+                          {"surface_k", m.surface_k},
+                          {"core_k", m.core_k},
+                          {"peak_surface_k", m.peak_surface_k},
+                          {"peak_core_k", m.peak_core_k},
+                          {"remaining_fraction", m.remaining_fraction},
+                          {"composition_factor", m.composition_factor},
+                          {"dimensions_m", json::array({m.dimensions_m.x, m.dimensions_m.y, m.dimensions_m.z})},
+                          {"section", {{"breadth_m", s.breadth_m},
+                                       {"depth_m", s.depth_m},
+                                       {"consumed_m", s.consumed_m},
+                                       {"char_m", s.char_m},
+                                       {"layer_m", s.layer_m},
+                                       {"sound_breadth_m", s.sound_breadth_m},
+                                       {"sound_depth_m", s.sound_depth_m}}},
+                          {"factors", {{"stiffness", s.axial_stiffness},
+                                       {"tension", s.tension},
+                                       {"compression", s.compression},
+                                       {"shear", s.shear},
+                                       {"bending", s.bending}}},
+                          {"if_cooled", {{"stiffness", s.stiffness_if_cooled},
+                                         {"tension", s.tension_if_cooled},
+                                         {"shear", s.shear_if_cooled},
+                                         {"bending", s.bending_if_cooled}}},
+                          {"supported", s.supported},
+                          {"outside", s.outside}});
+    }
+    json attachments = json::array();
+    for (const LiveJoint &j : joints()) {
+        if (j.member.empty() && j.parted_because.empty()) continue;
+        json a = {{"joint", j.id},
+                  {"kind", j.kind},
+                  {"a", j.a},
+                  {"b", j.b},
+                  {"member", j.member},
+                  {"attached", j.attached},
+                  {"capacity_fraction", j.capacity_fraction},
+                  {"rechecks", j.rechecks},
+                  {"parted_because", j.parted_because}};
+        if (j.kind == "fixing") {
+            a["tension_n"] = j.tension_n_now;
+            a["shear_n"] = j.shear_n_now;
+            a["holds_tension_n"] = j.holds_tension_n;
+            a["holds_shear_n"] = j.holds_shear_n;
+            a["rated_tension_n"] = j.rated_tension_n;
+            a["rated_shear_n"] = j.rated_shear_n;
+        } else if (j.kind == "link") {
+            a["tension_n"] = j.tension_n;
+            a["breaks_at_n"] = j.breaks_at_n;
+            a["rated_breaks_at_n"] = j.rated_breaks_at_n;
+        } else if (j.kind == "elastic") {
+            a["force_n"] = j.force_n;
+            a["stored_j"] = j.stored_j;
+            a["stiffness_n_m"] = j.stiffness_n_m;
+            a["rated_stiffness_n_m"] = j.rated_stiffness_n_m;
+        }
+        attachments.push_back(std::move(a));
+    }
+    json out = {{"time_s", impl_->time_s},
+                {"bodies", std::move(bodies)},
+                {"attachments", std::move(attachments)},
+                {"elastic_to_heat_j", impl_->elastic_to_heat_j}};
+    if (with_laws) {
+        out["laws"] = json::parse(thermo::mechanicalLawsJson());
+        out["limitations"] = mechanicsLimitations();
+    }
+    return out.dump();
 }
 
 // ---- terrain and water --------------------------------------------------------

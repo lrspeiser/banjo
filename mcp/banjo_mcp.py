@@ -270,6 +270,10 @@ def tool_run(args: dict[str, Any]) -> dict[str, Any]:
     events: list[dict[str, Any]] = []
     hardest: dict[tuple[str, str], dict[str, Any]] = {}
     stopped_early = None
+    # Which joints were holding when the run began: one that lets go during it
+    # is something that happened, and says why (a fixing made of a member that
+    # heat weakened, a rope overloaded).
+    holding_at_start = {j.id for j in world.joints() if j.attached}
 
     while world.time_s - started_at < seconds:
         if clock.perf_counter() - began > MAX_WALL_S:
@@ -321,6 +325,13 @@ def tool_run(args: dict[str, Any]) -> dict[str, Any]:
                 }
             events.append(event)
 
+    stable = {r["live"]: r["id"] for r in entry.get("joints", [])}
+    for pin in world.joints():
+        if pin.id in holding_at_start and not pin.attached and pin.parted_because:
+            events.append({"what": "gave way", "object": f"{pin.b} from {pin.a}",
+                           "joint": stable.get(pin.id, pin.id),
+                           "because": pin.parted_because})
+
     for event in events:
         entry["story"].append(f"{event['object']} {event['what']}"
                               + (f" into {event['into_pieces']} pieces"
@@ -344,6 +355,9 @@ def tool_run(args: dict[str, Any]) -> dict[str, Any]:
     heat = _heat_said(world, limit=10)
     if heat is not None:
         answer["heat"] = heat
+    strength = _strength_said(world)
+    if strength is not None:
+        answer["strength"] = strength
     if _has_terrain(entry):
         water = _water_said(world)
         if water is not None:
@@ -837,6 +851,14 @@ def _said(joint: banjo.Joint) -> dict[str, Any]:
               "at_m": [round(v, 4) for v in joint.at_m],
               "axis": [round(v, 4) for v in joint.axis],
               "attached": joint.attached}
+    # What it is made of and how much of its cold strength is left, when it
+    # was made of something (docs/thermal-mechanics.md); and, once it has let
+    # go, why -- the load the solver measured against what it could still take.
+    if joint.member:
+        common["made_of"] = joint.member
+        common["strength_left_pct"] = round(100.0 * joint.capacity_fraction, 1)
+    if joint.parted_because:
+        common["why_it_let_go"] = joint.parted_because
     if joint.kind == "elastic":
         return {**common,
                 "length_m": round(joint.at, 4),
@@ -911,19 +933,24 @@ def tool_tie(args: dict[str, Any]) -> dict[str, Any]:
     anywhere along its length.
     """
     world: banjo.World = _live(_world(args.get("world_id")))
+    member = _member(args)
     try:
         joint = world.tie(
             str(args.get("a", "")), str(args.get("b", "")),
             _triple(args.get("at_a_m"), "at_a_m", -200.0, 200.0),
             _triple(args.get("at_b_m"), "at_b_m", -200.0, 200.0),
             _number(args.get("length_m", 0.0), "length_m", 0.0, 100.0),
-            _number(args.get("breaks_at_n", 0.0), "breaks_at_n", 0.0, 1e9))
+            _number(args.get("breaks_at_n", 0.0), "breaks_at_n", 0.0, 1e9),
+            member=member)
     except banjo.BanjoError as error:
         raise Refused(str(error))
-    return {"joint": joint,
-            "note": f"{args.get('b')} is tied to {args.get('a')}. The rope pulls "
-                    "and cannot push, so it does nothing at all while there is "
-                    "slack. Read tension_n from `joints` to see what it carries."}
+    answer = {"joint": joint,
+              "note": f"{args.get('b')} is tied to {args.get('a')}. The rope pulls "
+                      "and cannot push, so it does nothing at all while there is "
+                      "slack. Read tension_n from `joints` to see what it carries."}
+    if member:
+        answer["made_of"] = _made_of_said(world, joint, member)
+    return answer
 
 
 def tool_reeve(args: dict[str, Any]) -> dict[str, Any]:
@@ -974,7 +1001,11 @@ def tool_overloaded(args: dict[str, Any]) -> dict[str, Any]:
                  "carrying_n": round(load.carrying_n, 1),
                  "span_m": round(load.span_m, 3),
                  "stress_mpa": round(load.stress_pa / 1e6, 3),
-                 "holds_mpa": round(load.strength_pa / 1e6, 3)}
+                 "holds_mpa": round(load.strength_pa / 1e6, 3),
+                 # 100 for anything heat has not touched: what its heated section
+                 # can still take, against the same beam cold.
+                 "section_strength_left_pct": round(100.0 * load.capacity_fraction, 1),
+                 "why": load.why}
                 for load in sagging],
             "note": "nothing struck these -- they are carrying too much standing "
                     "still. Break one with `drop`-style fracture and it comes "
@@ -986,24 +1017,30 @@ def tool_overloaded(args: dict[str, Any]) -> dict[str, Any]:
 def tool_fix(args: dict[str, Any]) -> dict[str, Any]:
     """Fix one named thing to another: a peg, a bracket, a catch, a locking bar."""
     world: banjo.World = _live(_world(args.get("world_id")))
+    member = _member(args)
     try:
         joint = world.fix(
             str(args.get("a", "")), str(args.get("b", "")),
             _triple(args.get("at_m"), "at_m", -200.0, 200.0),
             _triple(args.get("axis", [0.0, 1.0, 0.0]), "axis", -1e6, 1e6),
             _number(args.get("holds_tension_n", 0.0), "holds_tension_n", 0.0, 1e9),
-            _number(args.get("holds_shear_n", 0.0), "holds_shear_n", 0.0, 1e9))
+            _number(args.get("holds_shear_n", 0.0), "holds_shear_n", 0.0, 1e9),
+            member=member)
     except banjo.BanjoError as error:
         raise Refused(str(error))
-    return {"joint": joint,
-            "note": f"{args.get('b')} and {args.get('a')} are now one piece. "
-                    "Release it with `unhinge` -- that is what a latch is, and "
-                    "doing it changes what the assembly can do."}
+    answer = {"joint": joint,
+              "note": f"{args.get('b')} and {args.get('a')} are now one piece. "
+                      "Release it with `unhinge` -- that is what a latch is, and "
+                      "doing it changes what the assembly can do."}
+    if member:
+        answer["made_of"] = _made_of_said(world, joint, member)
+    return answer
 
 
 def tool_spring(args: dict[str, Any]) -> dict[str, Any]:
     """Put an elastic element between two named things: a bow limb, a spring."""
     world: banjo.World = _live(_world(args.get("world_id")))
+    member = _member(args)
     try:
         joint = world.spring(
             str(args.get("a", "")), str(args.get("b", "")),
@@ -1011,15 +1048,112 @@ def tool_spring(args: dict[str, Any]) -> dict[str, Any]:
             _triple(args.get("at_b_m"), "at_b_m", -200.0, 200.0),
             _number(args.get("rest_m", 0.0), "rest_m", 0.0, 100.0),
             _number(args.get("stiffness_n_m", 1000.0), "stiffness_n_m", 0.001, 1e9),
-            _number(args.get("damping_n_s_m", 0.0), "damping_n_s_m", 0.0, 1e9))
+            _number(args.get("damping_n_s_m", 0.0), "damping_n_s_m", 0.0, 1e9),
+            member=member)
     except banjo.BanjoError as error:
         raise Refused(str(error))
-    return {"joint": joint,
-            "note": "an ideal linear spring: force is stiffness times extension "
-                    "and stored energy is half that times the extension again. "
-                    "Read stored_j from `joints` to see what it is holding -- "
-                    "and anything you throw with it gets its speed from that, "
-                    "not from a number you choose."}
+    answer = {"joint": joint,
+              "note": "an ideal linear spring: force is stiffness times extension "
+                      "and stored energy is half that times the extension again. "
+                      "Read stored_j from `joints` to see what it is holding -- "
+                      "and anything you throw with it gets its speed from that, "
+                      "not from a number you choose."}
+    if member:
+        answer["made_of"] = _made_of_said(world, joint, member)
+    return answer
+
+
+# ---------------------------------------------------------------------------
+# Heat and strength (docs/thermal-mechanics.md)
+# ---------------------------------------------------------------------------
+#
+# A fixing, a tie or a spring can say what it is MADE of -- one of its own two
+# ends -- and then heat changes what it can take, by that body's material law.
+# Nothing here decides a strength: the engine's law does, and the engine's
+# solver measures the load it is held against.
+
+def _member(args: dict[str, Any]) -> str | None:
+    """The `member` of a joining call: one of its own two ends, or nothing."""
+    member = str(args.get("member") or "").strip()
+    if not member:
+        return None
+    if member not in (str(args.get("a", "")), str(args.get("b", ""))):
+        raise Refused(f"a joint is made of one of the two things it holds: {member!r} is "
+                      f"neither {args.get('a')!r} nor {args.get('b')!r}")
+    return member
+
+
+def _made_of_said(world: banjo.World, joint: int, member: str) -> dict[str, Any]:
+    """What a joint made of a member can take cold, and what law decides it."""
+    pin = next((j for j in world.joints() if j.id == joint), None)
+    state = next((m for m in world.body_mechanics() if m.name == member), None)
+    said: dict[str, Any] = {"member": member}
+    if pin is not None:
+        if pin.kind == "fixing":
+            said.update({"holds_shear_n_cold": round(pin.rated_shear_n, 1),
+                         "holds_tension_n_cold": round(pin.rated_tension_n, 1)})
+        elif pin.kind == "link":
+            said["parts_at_n_cold"] = round(pin.rated_breaks_at_n, 1)
+        else:
+            said["stiffness_n_m_cold"] = round(pin.rated_stiffness_n_m, 1)
+    if state is not None and state.law:
+        said["law"] = f"{state.law} ({state.provenance})"
+    elif state is not None:
+        said["law"] = (f"none: {state.material} has no law for heat, so heat will not change "
+                       f"what this joint can take")
+    said["note"] = ("heat the member (`heat`) and what this joint can take follows its law as "
+                    "it heats, chars and burns; it parts when the load the solver measures "
+                    "passes what is left. A strength you left at 0 is the member's own "
+                    "section, not a weld.")
+    return said
+
+
+def _strength_said(world: banjo.World) -> dict[str, Any] | None:
+    """What heat has done to what things can carry: each heated body with a law,
+    and every joint made of a member, with its load against what it can take."""
+    bodies = []
+    for m in world.body_mechanics():
+        if not m.law or not m.tracked:
+            continue
+        said: dict[str, Any] = {
+            "object": m.name, "law": m.law,
+            "tension_left_pct": round(100.0 * m.tension, 1),
+            "shear_left_pct": round(100.0 * m.shear, 1),
+            "bending_left_pct": round(100.0 * m.bending, 1),
+            "stiffness_left_pct": round(100.0 * m.stiffness, 1),
+            "char_mm": round(1000.0 * m.char_m, 1),
+            "burned_away_mm": round(1000.0 * m.consumed_m, 2),
+            "sound_section_mm": [round(1000.0 * v, 1) for v in m.sound_section_m],
+            "of_section_mm": [round(1000.0 * v, 1) for v in m.section_m],
+            "would_keep_if_cooled_pct": round(100.0 * min(m.tension_if_cooled,
+                                                          m.shear_if_cooled), 1)}
+        if not m.supported:
+            said["outside_what_the_law_supports"] = True
+        bodies.append(said)
+    held = []
+    for j in world.joints():
+        if not j.member:
+            continue
+        said = {"joint": j.id, "kind": j.kind, "a": j.a, "b": j.b, "made_of": j.member,
+                "attached": j.attached, "strength_left_pct": round(100.0 * j.capacity_fraction, 1)}
+        if j.kind == "fixing":
+            said.update({"carrying_shear_n": round(j.shear_now_n, 1),
+                         "holds_shear_n": round(j.holds_shear_n, 1),
+                         "held_cold_shear_n": round(j.rated_shear_n, 1),
+                         "carrying_tension_n": round(j.tension_now_n, 1),
+                         "holds_tension_n": round(j.holds_tension_n, 1)})
+        elif j.kind == "link":
+            said.update({"carrying_n": round(j.tension_n, 1), "parts_at_n": round(j.breaks_at_n, 1),
+                         "parted_at_n_cold": round(j.rated_breaks_at_n, 1)})
+        else:
+            said.update({"stiffness_n_m": round(j.stiffness_n_m, 1),
+                         "stiffness_n_m_cold": round(j.rated_stiffness_n_m, 1)})
+        if j.parted_because:
+            said["why_it_let_go"] = j.parted_because
+        held.append(said)
+    if not bodies and not held:
+        return None
+    return {"bodies": bodies, "attachments": held}
 
 
 def tool_joints(args: dict[str, Any]) -> dict[str, Any]:
@@ -1187,6 +1321,14 @@ def tool_list_substances(_args: dict[str, Any]) -> dict[str, Any]:
                        "not_below_k": r["rate"]["minimum_temperature_k"]}
                       for r in model["reactions"]],
         "what_materials_are_made_of": model["compositions"],
+        # What heat does to what each material can CARRY: the law, its source,
+        # what does not come back when it cools, and where it stops applying.
+        "what_heat_does_to_strength": [
+            {"material": law["material"], "law": law["id"], "numbers_are": law["provenance"],
+             "from": law["source"], "chars_at_k": law["char_k"] or None,
+             "gets_its_strength_back_when_cooled": law["recovers_on_cooling"],
+             "supported_k": law["supported_k"], "not_modelled": law["not_modelled"]}
+            for law in model.get("mechanical_laws", [])],
         "not_modelled": everything.get("limitations", []),
         "note": "Burning is a result, not a property. A log burns because it contains dry "
                 "wood and is hot enough, with air around it; how long it lasts is its fuel "
@@ -1294,10 +1436,18 @@ def tool_thermal_state(args: dict[str, Any]) -> dict[str, Any]:
         "work_done_on_bodies_j": round(energy.work_to_bodies_j, 3),
         "unaccounted_j": energy.residual_j,
     }
+    said["energy"]["handed_over_by_softening_springs_j"] = round(energy.mechanical_in_j, 4)
+    strength = _strength_said(world)
+    if strength is not None:
+        said["strength"] = strength
     said["time_s"] = round(world.time_s, 3)
     said["note"] = ("would_last_min_at_this_rate is the fuel left over the rate it is burning "
                     "NOW: an estimate under current conditions, not a burn time. Chemical and "
-                    "thermal are two parts of one stored energy.")
+                    "thermal are two parts of one stored energy. `strength` is what heat has "
+                    "left of each heated body's section by its material's law (oak by EN "
+                    "1995-1-2's softwood curves, iron by EN 1993-1-2, concrete by EN 1992-1-2; "
+                    "other materials have none), and every joint made of a member with the "
+                    "load it carries against what it can still take.")
     return said
 
 
@@ -2171,6 +2321,16 @@ def tool_close_world(args: dict[str, Any]) -> dict[str, Any]:
 
 
 VECTOR = {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}
+# What a fixing, a tie or a spring is MADE of (docs/thermal-mechanics.md).
+MEMBER = {"type": "string",
+          "description": "Which of the two (`a` or `b`) it is MADE of: the peg, the rope "
+                         "segment, the limb. Heat that body and what the joint can take "
+                         "follows its material's law -- oak chars and loses its strength, "
+                         "iron keeps its below 400 degC, a material with no law is not "
+                         "changed -- and it gives way when the load passes what is left. "
+                         "With a member a strength left at 0 is the member's own section, "
+                         "not a weld. Leave it out and the joint is exactly the numbers you "
+                         "give it, whatever heats it."}
 OBJECT_SCHEMA = {
     "type": "object",
     "properties": {
@@ -2414,7 +2574,8 @@ TOOLS = [
          "breaks_at_n": {"type": "number",
                          "description": "What it takes to part it, in newtons. 0 "
                                         "never parts. A 200 mm iron cube weighs "
-                                        "618 N, so size it against the load."}}}},
+                                        "618 N, so size it against the load."},
+         "member": MEMBER}}},
     {"name": "reeve",
      "description": "Reeve a rope from one named thing, over two fixed points, "
                     "to another: a HOIST. Pull one end down and the other comes "
@@ -2468,7 +2629,14 @@ TOOLS = [
                     "bracket), and they are separate because they fail at "
                     "different loads. Zero means a weld that never lets go on "
                     "its own. Release it with `unhinge` -- that is what a LATCH "
-                    "is, and releasing one changes what the assembly can do.",
+                    "is, and releasing one changes what the assembly can do. "
+                    "Say what it is MADE of (`member`: the peg, the bracket) and "
+                    "heat changes what it can take: heat the member and its "
+                    "strength follows that material's law as it heats, chars "
+                    "and burns, and it gives way when the load the solver "
+                    "measures passes what is left -- not at a temperature, not "
+                    "on a timer. Rate it at least twice what it holds: a scene "
+                    "starts with every load suddenly applied.",
      "inputSchema": {"type": "object",
                      "required": ["world_id", "a", "b", "at_m"],
                      "properties": {
@@ -2485,7 +2653,8 @@ TOOLS = [
          "holds_shear_n": {"type": "number",
                            "description": "What it takes to shear it across the "
                                           "axis. A 200 mm iron cube hanging on a "
-                                          "bracket is 618 N of pure shear."}}}},
+                                          "bracket is 618 N of pure shear."},
+         "member": MEMBER}}},
     {"name": "spring",
      "description": "Put an elastic element between two named things: a BOW LIMB, "
                     "a spring, a bent plank -- anything that stores energy by "
@@ -2516,7 +2685,8 @@ TOOLS = [
          "damping_n_s_m": {"type": "number",
                            "description": "The declared loss, in newton seconds "
                                           "per metre. 0 gives 96% of the stored "
-                                          "energy back as motion."}}}},
+                                          "energy back as motion."},
+         "member": MEMBER}}},
     {"name": "joints",
      "description": "Every pin in the world and where each has turned to. The two "
                     "names a pin holds can change -- a pin whose wood is smashed "
@@ -2588,7 +2758,10 @@ TOOLS = [
                     "Whether it lights anything is the engine's answer: two oak logs on a stone "
                     "hearth light with about 10 kW under EACH for 90 s, and a log given much "
                     "less warms, dries and goes out. A gas that is heated expands against its "
-                    "piston.",
+                    "piston. Heat a body a joint is made of (its `member`) and what the joint "
+                    "can take follows the body's material law: a 40 mm oak peg given 2 kW "
+                    "chars and loses its shear strength within a minute, while an iron one "
+                    "given the same loses none below 400 degC.",
      "inputSchema": {"type": "object", "required": ["world_id", "target", "power_w", "seconds"],
                      "properties": {
          "world_id": {"type": "string"},
@@ -2600,8 +2773,12 @@ TOOLS = [
      "description": "How hot everything is and what is happening to it: surface and core "
                     "temperatures, what is burning and how hard (kW), the fuel left, and an "
                     "ESTIMATE of how long it would last at the rate it is burning now; each gas "
-                    "region's temperature, pressure and how far it has pushed its piston; and "
-                    "the energy ledger. Call run first: this reads the world as it stands.",
+                    "region's temperature, pressure and how far it has pushed its piston; the "
+                    "energy ledger; and STRENGTH -- what heat has left of each heated body's "
+                    "section (char, what burned away, the share of its tension, shear and "
+                    "bending strength left, and what it would keep if it cooled) and every "
+                    "joint made of a member with the load it carries against what it can "
+                    "still take. Call run first: this reads the world as it stands.",
      "inputSchema": {"type": "object", "required": ["world_id"],
                      "properties": {"world_id": {"type": "string"}}}},
     {"name": "blade",

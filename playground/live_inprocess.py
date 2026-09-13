@@ -133,9 +133,62 @@ class InProcessSession:
         heat = self._heat()
         if heat is not None:
             state["heat"] = heat
+        strength = self._mechanics()
+        if strength is not None:
+            state["mechanics"] = strength
         if extra:
             state.update(extra)
         return state
+
+    def _mechanics(self) -> dict[str, Any] | None:
+        """The same trimmed "mechanics" block the subprocess lane puts on its
+        replies: each heated body with a law, and every joint made of a member
+        with what it carries against what it can still take."""
+        def rounded(value: float, unit: float) -> float:
+            return round(value / unit) * unit if math.isfinite(value) else value
+
+        bodies = []
+        for m in self._world.body_mechanics():
+            if not m.law or not m.tracked or len(bodies) >= 24:
+                continue
+            bodies.append({"name": m.name, "tension": rounded(m.tension, 1e-3),
+                           "shear": rounded(m.shear, 1e-3), "bending": rounded(m.bending, 1e-3),
+                           "stiffness": rounded(m.stiffness, 1e-3),
+                           "if_cooled": rounded(min(m.tension_if_cooled, m.shear_if_cooled), 1e-3),
+                           "char_mm": rounded(1000.0 * m.char_m, 0.1),
+                           "burned_mm": rounded(1000.0 * m.consumed_m, 0.01),
+                           "section_mm": [rounded(1000.0 * v, 0.1) for v in m.section_m],
+                           "sound_mm": [rounded(1000.0 * v, 0.1) for v in m.sound_section_m],
+                           "supported": m.supported})
+        held = []
+        for j in self._world.joints():
+            if not j.member:
+                continue
+            said: dict[str, Any] = {"id": j.id, "kind": j.kind, "a": j.a, "b": j.b,
+                                    "member": j.member, "attached": j.attached,
+                                    "fraction": rounded(j.capacity_fraction, 1e-4)}
+            if j.kind == "fixing":
+                t = j.tension_now_n / j.holds_tension_n if j.holds_tension_n > 0 else 0.0
+                v = j.shear_now_n / j.holds_shear_n if j.holds_shear_n > 0 else 0.0
+                shear = v >= t
+                said.update({"mode": "shear" if shear else "tension",
+                             "load_n": rounded(j.shear_now_n if shear else j.tension_now_n, 0.1),
+                             "holds_n": rounded(j.holds_shear_n if shear else j.holds_tension_n, 0.1),
+                             "rated_n": rounded(j.rated_shear_n if shear else j.rated_tension_n, 0.1)})
+            elif j.kind == "link":
+                said.update({"mode": "tension", "load_n": rounded(j.tension_n, 0.1),
+                             "holds_n": rounded(j.breaks_at_n, 0.1),
+                             "rated_n": rounded(j.rated_breaks_at_n, 0.1)})
+            else:
+                said.update({"mode": "stiffness", "stiffness_n_m": rounded(j.stiffness_n_m, 0.1),
+                             "rated_stiffness_n_m": rounded(j.rated_stiffness_n_m, 0.1),
+                             "force_n": rounded(j.force_n, 0.1)})
+            if j.parted_because:
+                said["parted_because"] = j.parted_because
+            held.append(said)
+        if not bodies and not held:
+            return None
+        return {"bodies": bodies, "attachments": held}
 
     def _heat(self) -> dict[str, Any] | None:
         """The same trimmed heat block the subprocess lane puts on its replies."""
@@ -223,6 +276,27 @@ class InProcessSession:
                 return {"ok": True, "thermo": report}
             elif op == "vent":
                 world.vent(str(command.get("region", "")), bool(command.get("open", True)))
+            elif op == "fix":
+                # A peg, a bracket, a latch -- and with "member", MADE of one of
+                # its two ends, so heat changes what it can take.
+                member = str(command.get("member") or "")
+                a, b = str(command.get("a", "")), str(command.get("b", ""))
+                if member and member not in (a, b):
+                    raise ValueError(f"a joint is made of one of the two things it holds, and "
+                                     f"{member!r} is neither")
+                joint = world.fix(a, b, command.get("at") or [0.0, 0.0, 0.0],
+                                  command.get("axis") or [0.0, 1.0, 0.0],
+                                  float(command.get("holds_tension_n", 0.0)),
+                                  float(command.get("holds_shear_n", 0.0)),
+                                  member=member or None)
+                self.state = self._describe(extra={"joint": joint})
+                return self.state
+            elif op == "member":
+                world.joint_member(int(command.get("joint", 0)), str(command.get("member") or ""))
+            elif op == "mechanics":
+                # Moves nothing: answered on its own, like thermo.
+                return {"ok": True,
+                        "mechanics": world.mechanics_report(bool(command.get("laws", False)))}
             elif op != "poses":
                 raise ValueError(f"unknown live operation: {op}")
         except Exception as error:

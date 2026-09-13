@@ -70,13 +70,13 @@ broke.
 | `close_world` | free it |
 | `hinge` / `slide` | a pin or a groove: `b` turns about, or slides along, a line fixed in `a` |
 | `tie` / `reeve` | a rope between a point on each of two things, or one run over two fixed pulleys |
-| `fix` / `spring` | a latch or bracket that holds two things as one piece; an elastic element that pushes and pulls |
+| `fix` / `spring` | a latch or bracket that holds two things as one piece; an elastic element that pushes and pulls. `fix`, `spring` and `tie` take `member`: what the joint is MADE of, so heat changes what it can take ([Heat and strength](#heat-and-strength)) |
 | `joints` / `hinge_friction` / `unhinge` | read them, stiffen them, take one out |
 | `overloaded` | what is carrying more than it can hold, worked out from statics — the only way a loaded shelf is ever noticed |
 | `list_substances` | what matter is made of: substances, reactions (with where every number came from) and the catalogue's compositions — oak is dry wood, moisture and ash, which is why an oak log can burn |
 | `enclose_gas` | a column of gas under a loose piston, starting at the pressure that holds the piston and its load up |
 | `heat` | heat from outside — kindling, a torch, a stove — into a body or a gas region, from when the world starts |
-| `thermal_state` | how hot everything is, what is burning and how hard, the fuel left and how long it would last at this rate, what the gas is doing, and the energy ledger |
+| `thermal_state` | how hot everything is, what is burning and how hard, the fuel left and how long it would last at this rate, what the gas is doing, the energy ledger, and **strength**: what heat has left of each heated body and what every joint made of one carries against what it can still take |
 | `make_terrain` | ground that is not flat: a **valley** with a river along it and a pond beside it, made once by physics -- drainage decided where the river runs, erosion wore its channel -- and cached; or a basin holding a lake, a sloping channel with a stream, flat ground, or none. [docs/terrain-and-water.md](../terrain-and-water.md) |
 | `survey` | the ground and the water at a point or along a line: height, rock, soil or sand, slope, and the water's depth, level and speed. How to find the river, and what to stand things on |
 | `water_state` | the rivers and ponds: how much water, what comes in and goes out, each pond's level, the river every 2 m along its course, what is in the water and whether it floats, and the water's ledger |
@@ -313,6 +313,43 @@ Things a model gets wrong unless told, and the tool descriptions say so: one log
 beside a cold one on a stone slab does not light with the kindling that lights a
 log on its own -- the slab and the cold log take the margin -- and a piston must
 be loose, on a `slide`, a cell clear of its walls.
+
+## Heat and strength
+
+Heat changes what things can carry, by each material's declared law
+([thermal-mechanics.md](../thermal-mechanics.md)): oak by EN 1995-1-2's softwood
+curves (it has lost most of its shear strength by 200 degC and is char, carrying
+nothing, past 300), iron by EN 1993-1-2 (no loss below 400 degC), concrete by EN
+1992-1-2 (it does not come back when it cools). Glass, aluminium, ceramic,
+rubber and ice have no law and are not changed. `list_substances` lists every
+law with its source and what it does not model.
+
+```
+fix(a="gatepost", b="oak peg", at_m=[0, 1.4, 0.08], axis=[0, 0, 1],
+    holds_shear_n=800, member="oak peg")
+-> "made_of": {"member": "oak peg", "holds_shear_n_cold": 800.0,
+               "law": "timber, EN 1995-1-2 Annex B (reference-derived)", ...}
+heat(target="oak peg", power_w=2000, seconds=300)
+run(seconds=20) ... run(seconds=20)
+-> "what_happened": [{"what": "gave way", "object": "oak peg from gatepost",
+     "because": "sheared across its axis: carrying 318 N against the 318 N it could
+                 still take (800 N cold) -- oak peg: surface 1072 K ... 40% of its
+                 shear ... left"}]
+thermal_state()
+-> "strength": {"bodies": [{"object": "oak peg", "shear_left_pct": 40.0,
+                            "char_mm": 3.0, "burned_away_mm": 0.1, ...}],
+                "attachments": [{"made_of": "cold oak peg", "attached": true,
+                                 "carrying_shear_n": 317.5, "holds_shear_n": 800.0}]}
+```
+
+`member` is one of the joint's own two ends. It is recorded with the joint, so
+every rebuild -- including the one `heat` makes -- hangs it again made of the same
+thing. A joint without one is exactly the numbers it was given, whatever heats
+it. With one, a strength left at 0 is the member's own section, not a weld. A
+joint gives way when the load the solver measures passes what the law has left,
+never at a temperature or on a timer: an unloaded peg in the same fire does not
+drop anything, and a heavier gate gives way sooner. Rate a fixing at least twice
+what it holds -- a world starts with every load suddenly applied.
 
 ## Blades
 

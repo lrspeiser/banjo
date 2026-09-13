@@ -22,6 +22,7 @@
 // added up where it happens, so the residual measures the arithmetic and
 // nothing else.
 #include "core/Math.hpp"
+#include "thermo/ThermalMechanics.hpp"
 #include "thermo/Thermochemistry.hpp"
 
 #include <limits>
@@ -128,6 +129,17 @@ struct Lump {
     bool anchored{};
     int environment{-1};           // index of a gas region, or -1 for the open air
     double mirrored_mass_kg{};
+    // What the body held when it joined the network, substance by substance.
+    // How much of its load-bearing matter has been used is measured against
+    // this (thermo/ThermalMechanics.hpp), so it is shared out by share when the
+    // body breaks, like everything else it holds.
+    std::vector<double> initial_kg;
+    // The hottest each zone has ever been. What heat does to a material that
+    // does not come back when it cools -- char, what pyrolysis takes -- is
+    // decided by these. They only go up, and they are part of the state a
+    // refused step takes back.
+    double peak_surface_k{};
+    double peak_core_k{};
     // What happened over the last accepted step, for reporting.
     double heat_release_w{};
     double fuel_use_kg_s{};
@@ -197,6 +209,11 @@ struct Ledger {
     double left_j{}, left_kg{};
     double work_to_bodies_j{};
     double work_to_atmosphere_j{};
+    // Energy the mechanical side handed the network as heat: the elastic energy
+    // a spring stops holding when its matter softens at a fixed stretch -- and,
+    // negative, what one takes back when it stiffens again as it cools. A
+    // crossing like any other, so the ledger closes across a change of property.
+    double mechanical_in_j{};
     // Energy the arithmetic itself had to add to keep a parcel physical (a gas
     // expanded past absolute zero in one step, say). Not a crossing: an
     // explicitly REPORTED numerical error, and zero in every run so far.
@@ -207,7 +224,7 @@ struct Ledger {
     [[nodiscard]] double storedJ() const { return reference_j + sensible_j; }
     [[nodiscard]] double netInJ() const {
         return heater_in_j - heat_to_surroundings_j + matter_in_j - matter_out_j + joined_j -
-               left_j - work_to_bodies_j - work_to_atmosphere_j;
+               left_j - work_to_bodies_j - work_to_atmosphere_j + mechanical_in_j;
     }
     // What is left once every crossing and every reported correction is
     // accounted for: rounding, and nothing else.
@@ -326,6 +343,16 @@ public:
     [[nodiscard]] std::vector<BodyHeat> bodies() const;
     [[nodiscard]] std::vector<RegionState> regions() const;
     [[nodiscard]] Ledger ledger() const;
+    // What decides a body's strength (thermo/ThermalMechanics.hpp): its zones'
+    // temperatures now and at their hottest, its layer, how much of its
+    // load-bearing matter is gone, and its load-bearing share when it was
+    // declared. Empty when the network does not hold the body: nothing has
+    // heated it, so it is as it was.
+    [[nodiscard]] std::optional<MatterState> matter(const std::string &body) const;
+    // Heat handed to a body's matter by the mechanical side, counted as a
+    // crossing (Ledger::mechanical_in_j); negative takes it back out. A body the
+    // network does not hold is drawn in first. Between steps, like refresh().
+    void receiveMechanicalWork(const std::string &body, double joules);
     // Bodies whose matter has changed by more than `relative` since the host
     // last set their mass. Marks them set.
     [[nodiscard]] std::vector<std::pair<std::string, double>> massesToMirror(double relative = 1.0e-3);

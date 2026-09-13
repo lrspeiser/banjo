@@ -124,6 +124,49 @@ class TheTwoLanesDescribeTheSameWorld(unittest.TestCase):
         return (live_session.Session(ENGINE, dict(self.spec), self.runs),
                 live_inprocess.InProcessSession(dict(self.spec)))
 
+    def test_they_agree_on_what_heat_has_left_of_a_peg(self):
+        """docs/thermal-mechanics.md: the same heated oak peg, its fixing made of
+        it and rated 800 N, gives the same "mechanics" block from both lanes --
+        what is left of its section, and what the fixing carries against what it
+        can still take."""
+        spec = fracture_lab.validate({
+            "algorithm": "lattice", "cell_m": 0.04, "plasticity": "on",
+            "bodies": [
+                {"name": "post", "shape": "box", "material": "oak", "size_mm": [160, 1600, 160],
+                 "center_mm": [0, 800, 0], "anchored": True},
+                {"name": "peg", "shape": "box", "material": "oak", "size_mm": [40, 40, 160],
+                 "center_mm": [0, 1400, 165]},
+                {"name": "gate", "shape": "box", "material": "iron", "size_mm": [320, 320, 40],
+                 "center_mm": [0, 1215, 205]}],
+            "joints": [],
+            "thermo": {"heaters": [{"target": "peg", "power_w": 2000, "seconds": 300}]}})
+        out = live_session.Session(ENGINE, dict(spec), self.runs)
+        here = live_inprocess.InProcessSession(dict(spec))
+        try:
+            for lane in (out, here):
+                lane.send(op="fix", a="post", b="peg", at=[0, 1.4, 0.08], axis=[0, 0, 1],
+                          holds_tension_n=0.0, holds_shear_n=800.0, member="peg")
+                lane.send(op="fix", a="peg", b="gate", at=[0, 1.375, 0.205], axis=[0, 1, 0],
+                          holds_tension_n=0.0, holds_shear_n=0.0)
+            a, b = run_to(out, 12.0), run_to(here, 12.0)
+            left, right = a.get("mechanics"), b.get("mechanics")
+            self.assertIsNotNone(left, "the subprocess lane sent no mechanics block")
+            self.assertIsNotNone(right, "the in-process lane sent no mechanics block")
+            peg_l = next(m for m in left["bodies"] if m["name"] == "peg")
+            peg_r = next(m for m in right["bodies"] if m["name"] == "peg")
+            self.assertLess(peg_l["shear"], 0.999, "12 s of 2 kW has not weakened the peg (the premise)")
+            for key in ("tension", "shear", "bending", "stiffness", "if_cooled", "char_mm"):
+                self.assertAlmostEqual(peg_l[key], peg_r[key], delta=2e-3,
+                                       msg=f"the lanes disagree on the peg's {key}")
+            fix_l = next(j for j in left["attachments"] if j["member"] == "peg")
+            fix_r = next(j for j in right["attachments"] if j["member"] == "peg")
+            self.assertEqual(fix_l["mode"], fix_r["mode"])
+            self.assertAlmostEqual(fix_l["holds_n"], fix_r["holds_n"], delta=2.0)
+            self.assertAlmostEqual(fix_l["load_n"], fix_r["load_n"], delta=2.0)
+            self.assertEqual(fix_l["rated_n"], 800.0)
+        finally:
+            out.close(); here.close()
+
     def test_they_open_on_the_same_scene(self):
         out, here = self.lanes()
         try:

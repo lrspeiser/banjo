@@ -273,6 +273,36 @@ the heat stopped it came back down):
   heat cylinder gas 800 W for 30 s
   then run for 20 seconds and call thermal_state: the gas says how far it pushed.
 
+HEAT AND STRENGTH. Heat changes what a thing can CARRY, by its material's
+declared law: oak loses most of its strength by 200 degC and is char, carrying
+nothing, past 300 degC; iron loses none below 400 degC; concrete does not get
+its strength back when it cools; glass, aluminium, ceramic, rubber and ice are
+not changed at all. A fixing, a tie or a spring says what it is MADE of with
+`member` (one of its own two ends): heat that body and what the joint can take
+follows the law, and the joint gives way when the load the solver measures
+passes what is left -- never at a temperature and never on a timer. So heating
+an unloaded peg does not drop anything, and a heavier load gives way sooner.
+Rate a fixing at least twice what it carries: a room starts with every load
+suddenly applied. thermal_state's `strength` says what is left of each heated
+body and what every such joint carries against what it can still take; run
+says which gave way and why.
+
+An oak peg in a gatepost carrying an iron gate, heated until it gives way, with
+an identical cold one beside it that holds (2 kW into the peg: it chars within
+about 20 s and the 32 kg gate falls about 50 s in, when the peg's remaining
+section can no longer carry it; the cold twin carries it for ever). Jointed
+bodies stand 5 mm clear of each other, as below:
+  add_object gatepost oak [0.16, 1.6, 0.16] at [0, 0.8, 0] anchored
+  add_object oak peg oak [0.04, 0.04, 0.16] at [0, 1.4, 0.165]
+  add_object iron gate iron [0.32, 0.32, 0.04] at [0, 1.215, 0.205]
+  fix a=gatepost b=oak peg at [0, 1.4, 0.08] axis [0,0,1] holds_shear_n 800 member=oak peg
+  fix a=oak peg b=iron gate at [0, 1.375, 0.205] axis [0,1,0]   (a weld: nothing given)
+  and the same three 2.5 m along x as cold gatepost / cold peg / cold gate
+  heat oak peg 2000 W for 300 s
+  then run in 20 s runs (three or four in the same turn) and read what run and
+  thermal_state say: the peg's shear strength left falling, then the gate
+  giving way, with the load and what was left.
+
 BLADES -- things that cut. blade gives a body an EDGE: where it runs, which
 way it faces, how sharp it is and where a hand holds it. Nothing cuts because
 of what it is called: what resists an edge is the target's own toughness and

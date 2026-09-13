@@ -204,6 +204,8 @@ struct ThermoWorld::Impl {
             depth = ambient.film_coefficient_w_m2_k * characteristic / lump.conductivity_w_m_k > kThickBiot
                         ? kDefaultLayerM
                         : 0.0;
+        lump.initial_kg = kg;
+        lump.peak_surface_k = lump.peak_core_k = temperature_k;
         Parcel whole = parcelAt(model, std::move(kg), temperature_k);
         const double share = depth > 0.0 && depth < characteristic
                                  ? std::min(1.0, shape.area_m2 * depth / shape.volume_m3)
@@ -936,6 +938,12 @@ void ThermoWorld::advance(double dt_s, const std::vector<Moved> &moved) {
     }
     w.exchange(dt_s);
     w.s.time_s = to;
+    // The hottest each zone has been: what decides the damage that does not
+    // come back when it cools (thermo/ThermalMechanics.hpp).
+    for (Lump &l : w.s.lumps) {
+        if (massKg(l.surface) > 0.0) l.peak_surface_k = std::max(l.peak_surface_k, w.temperature(l.surface));
+        if (massKg(l.core) > 0.0) l.peak_core_k = std::max(l.peak_core_k, w.temperature(l.core));
+    }
 
     const auto outside = [&](const Parcel &p) {
         if (massKg(p) <= 0.0) return false;
@@ -963,6 +971,10 @@ void ThermoWorld::split(const std::string &body,
     Lump parent = std::move(w.s.lumps[index]);
     w.s.lumps.erase(w.s.lumps.begin() + static_cast<std::ptrdiff_t>(index));
     double left = 1.0;
+    // What the body started with goes the same way as what it holds now, so a
+    // piece has used up the same share of ITS load-bearing matter as the body
+    // had. The last piece takes what is left of it, like everything else.
+    std::vector<double> initial_left = parent.initial_kg;
     for (std::size_t k = 0; k < pieces.size(); ++k) {
         const double share = pieces[k].second / total;
         // The last piece takes whatever is left, so nothing is lost to rounding
@@ -978,12 +990,26 @@ void ThermoWorld::split(const std::string &body,
         piece.exposed_area_m2 = piece.area_m2;
         piece.volume_m3 = parent.volume_m3 * share;
         piece.mirrored_mass_kg = -1.0;   // the host has not set this mass yet
+        if (last) {
+            piece.initial_kg = initial_left;
+        } else {
+            for (std::size_t s = 0; s < piece.initial_kg.size(); ++s) {
+                piece.initial_kg[s] = parent.initial_kg[s] * share;
+                initial_left[s] -= piece.initial_kg[s];
+            }
+        }
         left -= share;
         const std::size_t existing = w.lumpOf(piece.body);
         if (existing != kNone) {
-            pour(w.s.lumps[existing].surface, piece.surface);
-            pour(w.s.lumps[existing].core, piece.core);
-            w.s.lumps[existing].mirrored_mass_kg = -1.0;
+            Lump &into = w.s.lumps[existing];
+            pour(into.surface, piece.surface);
+            pour(into.core, piece.core);
+            if (into.initial_kg.size() < piece.initial_kg.size())
+                into.initial_kg.resize(piece.initial_kg.size(), 0.0);
+            for (std::size_t s = 0; s < piece.initial_kg.size(); ++s) into.initial_kg[s] += piece.initial_kg[s];
+            into.peak_surface_k = std::max(into.peak_surface_k, piece.peak_surface_k);
+            into.peak_core_k = std::max(into.peak_core_k, piece.peak_core_k);
+            into.mirrored_mass_kg = -1.0;
         } else {
             w.s.lumps.push_back(std::move(piece));
         }
@@ -1105,6 +1131,52 @@ Ledger ThermoWorld::ledger() const {
     return ledger;
 }
 
+std::optional<MatterState> ThermoWorld::matter(const std::string &body) const {
+    const Impl &w = *impl_;
+    const std::size_t index = w.lumpOf(body);
+    if (index == kNone) return std::nullopt;
+    const Lump &l = w.s.lumps[index];
+    MatterState m;
+    m.body = l.body;
+    m.material = l.material;
+    m.surface_k = w.temperature(l.surface);
+    // A layered body whose core has all gone into the burning front is one
+    // zone again.
+    m.layered = l.layer_depth_m > 0.0 && massKg(l.core) > 0.0;
+    m.core_k = m.layered ? w.temperature(l.core) : m.surface_k;
+    m.peak_surface_k = std::max(l.peak_surface_k, m.surface_k);
+    m.peak_core_k = m.layered ? std::max(l.peak_core_k, m.core_k) : m.peak_surface_k;
+    m.layer_depth_m = m.layered ? l.layer_depth_m : 0.0;
+    const MechanicalLaw *law = lawFor(l.material);
+    if (law != nullptr && w.model.has(law->load_bearing)) {
+        const std::size_t x = w.model.index(law->load_bearing);
+        const double had = x < l.initial_kg.size() ? l.initial_kg[x] : 0.0;
+        double started = 0.0;
+        for (const double kg : l.initial_kg) started += kg;
+        const double now = (x < l.surface.kg.size() ? l.surface.kg[x] : 0.0) +
+                           (x < l.core.kg.size() ? l.core.kg[x] : 0.0);
+        m.consumed_fraction = had > 0.0 ? std::clamp(1.0 - now / had, 0.0, 1.0) : 0.0;
+        m.composition_factor = started > 0.0 && law->reference_fraction > 0.0
+                                   ? std::min(1.0, had / started / law->reference_fraction)
+                                   : 0.0;
+    }
+    return m;
+}
+
+void ThermoWorld::receiveMechanicalWork(const std::string &body, double joules) {
+    Impl &w = *impl_;
+    require(std::isfinite(joules), "work handed to the network is finite");
+    if (joules == 0.0) return;
+    std::size_t index = w.lumpOf(body);
+    if (index == kNone) {
+        index = w.activate(body);
+        require(index != kNone, body + " cannot take heat: the model has no composition for it");
+        w.couple();
+    }
+    w.s.lumps[index].surface.internal_energy_j += joules;
+    if (w.s.opened) w.s.ledger.mechanical_in_j += joules;
+}
+
 std::vector<std::pair<std::string, double>> ThermoWorld::massesToMirror(double relative) {
     std::vector<std::pair<std::string, double>> out;
     for (Lump &l : impl_->s.lumps) {
@@ -1134,8 +1206,16 @@ std::vector<std::string> ThermoWorld::limitations() {
         "Openings are incompressible orifices; choked flow is not modelled",
         "The wood model is a DECLARED SIMPLIFIED model with demonstration parameters: not "
         "validated against ventilation, moisture, geometry or heat-loss variations",
-        "Bodies do not shrink as they burn: mass and composition change, shape does not",
-        "Temperature does not yet change any mechanical property or cause any failure",
+        "Bodies do not shrink as they burn: what burned is taken out of the load-bearing "
+        "section (thermo/ThermalMechanics.hpp) and the mass follows it, but the collision "
+        "shape, the drawn shape, the centre of mass and the inertia do not yet",
+        "Mechanical properties follow a declared law per material (thermo/ThermalMechanics.hpp): "
+        "oak by EN 1995-1-2's softwood curves, iron by EN 1993-1-2's carbon-steel curves, "
+        "concrete by EN 1992-1-2; every other material has no law, and heat does not change "
+        "what it can carry",
+        "A section is at most three rings -- what burned away, the surface layer, the core -- "
+        "each at one temperature: a thick member's char front is not resolved inside its core",
+        "Thermal expansion is not modelled",
     };
 }
 

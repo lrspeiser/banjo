@@ -37,7 +37,7 @@ from typing import Any, Iterator
 # branches so that, merged, one number means one header: a library at 14
 # carries both. 15 added terrain and water, on top of both. Checked for
 # equality below, so this has to match exactly.
-ABI_VERSION = 15
+ABI_VERSION = 16
 
 NOTHING, HELD, DENTED, BROKE = 0, 1, 2, 3
 OUTCOMES = {0: "nothing", 1: "held", 2: "dented", 3: "broke"}
@@ -116,7 +116,18 @@ class _Joint(ctypes.Structure):
                 ("stiffness_n_m", ctypes.c_double),
                 ("damping_n_s_m", ctypes.c_double),
                 ("force_n", ctypes.c_double),
-                ("stored_j", ctypes.c_double)]
+                ("stored_j", ctypes.c_double),
+                # ABI 16: heat and strength
+                ("member", ctypes.c_char_p),
+                ("rated_tension_n", ctypes.c_double),
+                ("rated_shear_n", ctypes.c_double),
+                ("rated_breaks_at_n", ctypes.c_double),
+                ("rated_stiffness_n_m", ctypes.c_double),
+                ("capacity_fraction", ctypes.c_double),
+                ("rechecks", ctypes.c_uint),
+                ("parted_because", ctypes.c_char_p),
+                ("parted_load_n", ctypes.c_double),
+                ("parted_capacity_n", ctypes.c_double)]
 
 
 class _Overload(ctypes.Structure):
@@ -124,7 +135,9 @@ class _Overload(ctypes.Structure):
                 ("carrying_n", ctypes.c_double),
                 ("span_m", ctypes.c_double),
                 ("stress_pa", ctypes.c_double),
-                ("strength_pa", ctypes.c_double)]
+                ("strength_pa", ctypes.c_double),
+                ("capacity_fraction", ctypes.c_double),
+                ("why", ctypes.c_char_p)]
 
 
 class _Pick(ctypes.Structure):
@@ -188,7 +201,36 @@ class _Energy(ctypes.Structure):
         "chemical_j", "thermal_j", "stored_j", "mass_kg", "initial_j", "heater_in_j",
         "heat_to_surroundings_j", "matter_in_j", "matter_in_kg", "matter_out_j",
         "matter_out_kg", "joined_j", "left_j", "work_to_bodies_j", "work_to_atmosphere_j",
-        "numerical_j", "residual_j", "mass_residual_kg", "mechanical_j")]
+        "numerical_j", "residual_j", "mass_residual_kg", "mechanical_j", "mechanical_in_j")]
+
+
+class _BodyMechanics(ctypes.Structure):
+    _fields_ = [("name", ctypes.c_char_p),
+                ("material", ctypes.c_char_p),
+                ("law", ctypes.c_char_p),
+                ("provenance", ctypes.c_char_p),
+                ("tracked", ctypes.c_int),
+                ("surface_k", ctypes.c_double),
+                ("core_k", ctypes.c_double),
+                ("peak_surface_k", ctypes.c_double),
+                ("peak_core_k", ctypes.c_double),
+                ("remaining_fraction", ctypes.c_double),
+                ("composition_factor", ctypes.c_double),
+                ("dimensions_m", ctypes.c_double * 3),
+                ("section_m", ctypes.c_double * 2),
+                ("consumed_m", ctypes.c_double),
+                ("char_m", ctypes.c_double),
+                ("layer_m", ctypes.c_double),
+                ("sound_section_m", ctypes.c_double * 2),
+                ("stiffness", ctypes.c_double),
+                ("tension", ctypes.c_double),
+                ("compression", ctypes.c_double),
+                ("shear", ctypes.c_double),
+                ("bending", ctypes.c_double),
+                ("tension_if_cooled", ctypes.c_double),
+                ("shear_if_cooled", ctypes.c_double),
+                ("bending_if_cooled", ctypes.c_double),
+                ("supported", ctypes.c_int)]
 
 
 class _Blade(ctypes.Structure):
@@ -407,6 +449,25 @@ class Joint:
     damping_n_s_m: float = 0.0
     force_n: float = 0.0
     stored_j: float = 0.0
+    # ABI 16 -- heat and strength (docs/thermal-mechanics.md). Which of the two
+    # things the joint is MADE of (`World.joint_member`); "" when nothing was
+    # named, and the joint is then exactly the numbers it was declared with.
+    # With a member, holds_*, breaks_at_n and stiffness_n_m above are what it
+    # has NOW and these rated_* are what it had cold.
+    member: str = ""
+    rated_tension_n: float = 0.0
+    rated_shear_n: float = 0.0
+    rated_breaks_at_n: float = 0.0
+    rated_stiffness_n_m: float = 0.0
+    # The share of that it still has; for a fixing, the lower of its two.
+    capacity_fraction: float = 1.0
+    # How many times heat changing the member made it be asked again whether
+    # it holds, with both ends woken so the solver measured the load.
+    rechecks: int = 0
+    # Why it let go, once it has, and the two numbers that decided it.
+    parted_because: str = ""
+    parted_load_n: float = 0.0
+    parted_capacity_n: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -432,6 +493,11 @@ class Overload:
     span_m: float
     stress_pa: float
     strength_pa: float
+    # ABI 16. What its section can still take against the same beam cold -- 1
+    # for anything heat has not touched; strength_pa is already scaled by it --
+    # and why, in words.
+    capacity_fraction: float = 1.0
+    why: str = ""
 
 
 @dataclass(frozen=True)
@@ -526,6 +592,50 @@ class Energy:
     residual_j: float
     mass_residual_kg: float
     mechanical_j: float
+    # ABI 16. Energy the mechanical side handed the network as heat: the elastic
+    # energy a spring stopped holding when its member softened stretched. A
+    # crossing, added to the right-hand side of the balance above.
+    mechanical_in_j: float = 0.0
+
+
+@dataclass(frozen=True)
+class BodyMechanics:
+    """What heat, composition and burning have done to what one body can carry.
+
+    By a DECLARED LAW PER MATERIAL (docs/thermal-mechanics.md): oak by EN
+    1995-1-2's softwood curves, iron by EN 1993-1-2's carbon steel, concrete by
+    EN 1992-1-2; `law` is "" for a material with none, which heat does not
+    change. The section is across the body's longest axis, and at most three
+    rings: what burned away, the surface layer (char once past 300 degC), the
+    core. Every factor is against the same section cold -- 1 is as it was -- and
+    the *_if_cooled ones are what it would keep if it cooled now.
+    """
+    name: str
+    material: str
+    law: str
+    provenance: str
+    tracked: bool
+    surface_k: float
+    core_k: float
+    peak_surface_k: float
+    peak_core_k: float
+    remaining_fraction: float
+    composition_factor: float
+    dimensions_m: tuple[float, float, float]
+    section_m: tuple[float, float]
+    consumed_m: float
+    char_m: float
+    layer_m: float
+    sound_section_m: tuple[float, float]
+    stiffness: float
+    tension: float
+    compression: float
+    shear: float
+    bending: float
+    tension_if_cooled: float
+    shear_if_cooled: float
+    bending_if_cooled: float
+    supported: bool
 
 
 # ---- terrain and water (ABI 15) ---------------------------------------------
@@ -831,6 +941,16 @@ def library(path: str | os.PathLike[str] | None = None) -> ctypes.CDLL:
     lib.banjo_thermo_report.restype = ctypes.c_char_p
     lib.banjo_thermo_model.argtypes = []
     lib.banjo_thermo_model.restype = ctypes.c_char_p
+    # ABI 16: heat and strength
+    lib.banjo_joint_member.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_char_p]
+    lib.banjo_joint_member.restype = ctypes.c_int
+    lib.banjo_body_mechanics_count.argtypes = [ctypes.c_void_p]
+    lib.banjo_body_mechanics_count.restype = ctypes.c_int
+    lib.banjo_bodies_mechanics.argtypes = [ctypes.c_void_p, ctypes.POINTER(_BodyMechanics),
+                                           ctypes.c_int]
+    lib.banjo_bodies_mechanics.restype = ctypes.c_int
+    lib.banjo_mechanics_report.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    lib.banjo_mechanics_report.restype = ctypes.c_char_p
     lib.banjo_terrain_info.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Terrain)]
     lib.banjo_terrain_info.restype = ctypes.c_int
     lib.banjo_water_info.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Water)]
@@ -1089,7 +1209,8 @@ class World:
             f"putting {b!r} in a groove on {a!r}")
 
     def tie(self, a: str, b: str, at_a_m: Any, at_b_m: Any,
-            length_m: float = 0.0, breaking_tension_n: float = 0.0) -> int:
+            length_m: float = 0.0, breaking_tension_n: float = 0.0,
+            member: str | None = None) -> int:
         """Tie one named thing to another: up to `length_m` apart and no further.
 
         That one asymmetry is the whole of what makes a rope a rope: it PULLS
@@ -1107,14 +1228,20 @@ class World:
         else is a rope you can overload, and a parted link reports `attached`
         False. Read what it is carrying from `Joint.tension_n`.
 
+        `member`, one of the two names, says what the link is MADE of (see
+        `joint_member`): a rope segment that heat can burn through.
+
         Returns the joint's id.
         """
         one = (ctypes.c_double * 3)(*(float(v) for v in at_a_m))
         two = (ctypes.c_double * 3)(*(float(v) for v in at_b_m))
-        return self._check(
+        joint = self._check(
             self._lib.banjo_tie(self._alive(), a.encode("utf-8"), b.encode("utf-8"),
                                 one, two, length_m, breaking_tension_n),
             f"tying {b!r} to {a!r}")
+        if member:
+            self.joint_member(joint, member)
+        return joint
 
     def reeve(self, a: str, b: str, at_a_m: Any, at_b_m: Any,
               over_a_m: Any, over_b_m: Any, ratio: float = 1.0,
@@ -1147,7 +1274,8 @@ class World:
             f"reeving {a!r} to {b!r}")
 
     def fix(self, a: str, b: str, at_m: Any, axis: Any = (0.0, 1.0, 0.0),
-            holds_tension_n: float = 0.0, holds_shear_n: float = 0.0) -> int:
+            holds_tension_n: float = 0.0, holds_shear_n: float = 0.0,
+            member: str | None = None) -> int:
         """Fix one named thing to another: a peg, a bracket, a catch, a bar.
 
         All six degrees of freedom are held, so the two move as one piece, and
@@ -1163,18 +1291,26 @@ class World:
         purpose is `unhinge`, which is what a latch does, and doing so changes
         what the assembly IS.
 
+        `member`, one of the two names, says what the fixing is MADE of -- the
+        peg -- so heat changes what it can take (see `joint_member`). With a
+        member a strength of zero is the member's own section strength, not a
+        weld.
+
         Returns the joint's id.
         """
         where = (ctypes.c_double * 3)(*(float(v) for v in at_m))
         along = (ctypes.c_double * 3)(*(float(v) for v in axis))
-        return self._check(
+        joint = self._check(
             self._lib.banjo_fix(self._alive(), a.encode("utf-8"), b.encode("utf-8"),
                                 where, along, holds_tension_n, holds_shear_n),
             f"fixing {b!r} to {a!r}")
+        if member:
+            self.joint_member(joint, member)
+        return joint
 
     def spring(self, a: str, b: str, at_a_m: Any, at_b_m: Any,
                rest_m: float = 0.0, stiffness_n_m: float = 1000.0,
-               damping_n_s_m: float = 0.0) -> int:
+               damping_n_s_m: float = 0.0, member: str | None = None) -> int:
         """Put an elastic element between two named things.
 
         A bow limb, a spring, a bent plank -- anything that stores energy by
@@ -1190,14 +1326,21 @@ class World:
 
         `rest_m` of 0 means "as it stands". `damping_n_s_m` is the declared loss.
 
+        `member`, one of the two names, says what the limb is MADE of: its
+        stiffness then follows that body's modulus with temperature, and what
+        a softening limb stops holding goes to the thermal ledger as heat.
+
         Returns the joint's id.
         """
         one = (ctypes.c_double * 3)(*(float(v) for v in at_a_m))
         two = (ctypes.c_double * 3)(*(float(v) for v in at_b_m))
-        return self._check(
+        joint = self._check(
             self._lib.banjo_spring(self._alive(), a.encode("utf-8"), b.encode("utf-8"),
                                    one, two, rest_m, stiffness_n_m, damping_n_s_m),
             f"springing {a!r} to {b!r}")
+        if member:
+            self.joint_member(joint, member)
+        return joint
 
     def overloaded(self) -> list[Overload]:
         """Everything carrying more than its material can take.
@@ -1220,7 +1363,9 @@ class World:
                          carrying_n=out[i].carrying_n,
                          span_m=out[i].span_m,
                          stress_pa=out[i].stress_pa,
-                         strength_pa=out[i].strength_pa)
+                         strength_pa=out[i].strength_pa,
+                         capacity_fraction=out[i].capacity_fraction,
+                         why=(out[i].why or b"").decode("utf-8"))
                 for i in range(written)]
 
     def joints(self) -> list[Joint]:
@@ -1259,7 +1404,17 @@ class World:
                       stiffness_n_m=out[i].stiffness_n_m,
                       damping_n_s_m=out[i].damping_n_s_m,
                       force_n=out[i].force_n,
-                      stored_j=out[i].stored_j)
+                      stored_j=out[i].stored_j,
+                      member=(out[i].member or b"").decode("utf-8"),
+                      rated_tension_n=out[i].rated_tension_n,
+                      rated_shear_n=out[i].rated_shear_n,
+                      rated_breaks_at_n=out[i].rated_breaks_at_n,
+                      rated_stiffness_n_m=out[i].rated_stiffness_n_m,
+                      capacity_fraction=out[i].capacity_fraction,
+                      rechecks=int(out[i].rechecks),
+                      parted_because=(out[i].parted_because or b"").decode("utf-8"),
+                      parted_load_n=out[i].parted_load_n,
+                      parted_capacity_n=out[i].parted_capacity_n)
                 for i in range(written)]
 
     def joint_friction(self, joint: int, friction: float) -> None:
@@ -1560,6 +1715,55 @@ class World:
     def thermo_report(self, with_model: bool = False) -> dict[str, Any]:
         """Everything about heat, chemistry and gas, as the engine says it."""
         text = self._lib.banjo_thermo_report(self._alive(), int(bool(with_model))) or b"{}"
+        return json.loads(text.decode("utf-8"))
+
+    # -- heat and strength (ABI 16) ----------------------------------------
+    def joint_member(self, joint: int, member: str) -> None:
+        """Say which of a joint's two bodies it is MADE of.
+
+        Its strength (a fixing, a link) or stiffness (an elastic) then follows
+        that body's material law, temperature and what is left of it. A
+        declared strength of zero becomes the member's own section times its
+        material's strength -- so with a member, zero is no longer a weld. ""
+        goes back to the declared numbers. Refused for a pin, a slide or a
+        pulley, and for a name that is not one of the joint's two ends.
+        """
+        self._check(self._lib.banjo_joint_member(self._alive(), int(joint), member.encode("utf-8")),
+                    f"making joint {joint} of {member!r}")
+
+    def body_mechanics(self) -> list[BodyMechanics]:
+        """What heat has done to every body the thermal network holds, and to
+        every body a joint is made of. See `BodyMechanics`."""
+        handle = self._alive()
+        count = self._check(self._lib.banjo_body_mechanics_count(handle),
+                            "counting what heat has changed")
+        if count <= 0:
+            return []
+        buffer = (_BodyMechanics * count)()
+        written = self._check(self._lib.banjo_bodies_mechanics(handle, buffer, count),
+                              "reading what heat has changed")
+        return [BodyMechanics(name=(m.name or b"").decode("utf-8", "replace"),
+                              material=(m.material or b"").decode("utf-8", "replace"),
+                              law=(m.law or b"").decode("utf-8", "replace"),
+                              provenance=(m.provenance or b"").decode("utf-8", "replace"),
+                              tracked=bool(m.tracked), surface_k=m.surface_k, core_k=m.core_k,
+                              peak_surface_k=m.peak_surface_k, peak_core_k=m.peak_core_k,
+                              remaining_fraction=m.remaining_fraction,
+                              composition_factor=m.composition_factor,
+                              dimensions_m=tuple(m.dimensions_m), section_m=tuple(m.section_m),
+                              consumed_m=m.consumed_m, char_m=m.char_m, layer_m=m.layer_m,
+                              sound_section_m=tuple(m.sound_section_m), stiffness=m.stiffness,
+                              tension=m.tension, compression=m.compression, shear=m.shear,
+                              bending=m.bending, tension_if_cooled=m.tension_if_cooled,
+                              shear_if_cooled=m.shear_if_cooled,
+                              bending_if_cooled=m.bending_if_cooled, supported=bool(m.supported))
+                for m in buffer[:written]]
+
+    def mechanics_report(self, with_laws: bool = False) -> dict[str, Any]:
+        """Heat and strength as the engine says it: the bodies, every joint made
+        of a member with what it carries against what it can take, and with
+        `with_laws` the laws, their sources and what is not modelled."""
+        text = self._lib.banjo_mechanics_report(self._alive(), int(bool(with_laws))) or b"{}"
         return json.loads(text.decode("utf-8"))
 
     # -- terrain and water ------------------------------------------------

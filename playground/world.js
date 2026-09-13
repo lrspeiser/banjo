@@ -1439,6 +1439,12 @@ const heat = {
   flames: new Map(),      // body name -> { group, outer, inner, height, rx, rz }
   columns: new Map(),     // gas region name -> the column drawn for it
   burning: new Set(),     // what was burning at the last reply, to say when it changes
+  // What heat has done to what things can carry: the engine's "mechanics"
+  // block (docs/thermal-mechanics.md), and each body's share of section that is
+  // char or gone, which it is drawn darker by -- a picture of that number.
+  strength: null,
+  char: new Map(),        // body name -> share of its section char or burned away
+  weakest: new Map(),     // body name -> the lowest share of strength already said
 };
 
 const FLAME_CONE = new THREE.ConeGeometry(1, 1, 16, 1, true);
@@ -1470,11 +1476,16 @@ function glowOf(tK, ambientK) {
            intensity: 0.7 + 2.3 * s };
 }
 
+const CHARCOAL = new THREE.Color(0x1b1512);
+
 function glow(name, tK) {
   const entry = world.bodies.get(name);
   const own = heat.glowing.get(name);
   const g = entry ? glowOf(tK, heat.last ? heat.last.ambient_k : 293.15) : null;
-  if (!g) {
+  // Char stays when the glow goes: a body whose section is part char is drawn
+  // that much darker, whatever its temperature now.
+  const charred = entry ? (heat.char.get(name) || 0) : 0;
+  if (!g && !(charred > 0.001)) {
     if (own) {
       if (entry && entry.mesh.material === own) entry.mesh.material = look(entry.material);
       own.dispose();
@@ -1491,8 +1502,56 @@ function glow(name, tK) {
     entry.mesh.material = mine;
     heat.glowing.set(name, mine);
   }
-  mine.emissive.copy(g.color);
-  mine.emissiveIntensity = g.intensity;
+  mine.color.copy(look(entry.material).color).lerp(CHARCOAL, clamp(0.85 * charred, 0, 0.85));
+  if (g) {
+    mine.emissive.copy(g.color);
+    mine.emissiveIntensity = g.intensity;
+  } else {
+    mine.emissive.setRGB(0, 0, 0);
+    mine.emissiveIntensity = 0;
+  }
+}
+
+// The share of a body's section that is char or burned away: what it is drawn
+// darker by.
+function charShare(b) {
+  const [w, h] = b.section_mm || [0, 0];
+  const [sw, sh] = b.sound_mm || [w, h];
+  return w > 0 && h > 0 ? clamp(1 - (sw * sh) / (w * h), 0, 1) : 0;
+}
+
+// The engine's "mechanics" block: what heat has left of what each heated
+// body can carry, and every attachment made of one with what it carries
+// against what it can still take. Drawn as char and listed in the Heat panel;
+// nothing here decides a strength.
+function drawStrength(block) {
+  heat.strength = block || null;
+  const now = new Map();
+  for (const b of (block && block.bodies) || []) {
+    const share = charShare(b);
+    if (share > 0.001) now.set(b.name, share);
+  }
+  const touched = new Set([...heat.char.keys(), ...now.keys()]);
+  heat.char = now;
+  const hot = new Map(((heat.last && heat.last.bodies) || []).map((b) => [b.name, b.t_k]));
+  for (const name of touched) glow(name, hot.get(name) || 0);
+  // Said once each time an attachment's strength has fallen by another fifth.
+  for (const a of (block && block.attachments) || []) {
+    if (!a.attached) continue;
+    const said = heat.weakest.get(a.id) ?? 1;
+    const step = Math.floor(a.fraction * 5) / 5;
+    if (a.fraction < 0.999 && step < said) {
+      heat.weakest.set(a.id, step);
+      // "the oak peg in the gatepost": the member, in the other thing it
+      // joins -- which is how anyone names a peg, a bracket or a rope's end.
+      if (a.mode !== "stiffness")
+        say("world", `${a.member} in ${a.b === a.member ? a.a : a.b} has`
+          + ` ${Math.round(100 * a.fraction)}% of its strength left: it carries`
+          + ` ${Math.round(a.load_n)} N and can take ${Math.round(a.holds_n)} N`
+          + ` (${Math.round(a.rated_n)} N cold).`);
+    }
+  }
+  if (!heat.last && block) showHeat({ bodies: [], regions: [], ledger: { residual_j: 0 } });
 }
 
 // A flame over whatever is releasing heat, sized by Heskestad's flame height,
@@ -1589,6 +1648,15 @@ function showHeat(block) {
     li.append(a, b);
     rows.push(li);
   };
+  const strength = new Map(((heat.strength && heat.strength.bodies) || []).map((s) => [s.name, s]));
+  const strengthOf = (s) => {
+    if (!s) return "";
+    let text = ` · ${Math.round(100 * Math.min(s.tension, s.shear))}% strength left`;
+    if (s.char_mm > 0) text += `, ${s.char_mm.toFixed(1)} mm char`;
+    if (s.burned_mm >= 0.05) text += `, ${s.burned_mm.toFixed(1)} mm burned`;
+    return text;
+  };
+  const listed = new Set();
   for (const b of block.bodies.slice(0, 8)) {
     let text = `${Math.round(b.t_k)} K`;
     if (b.reacting && b.power_w > 0) text += ` · ${(b.power_w / 1000).toFixed(1)} kW`;
@@ -1596,7 +1664,24 @@ function showHeat(block) {
     if (b.reacting && b.power_w > 0 && b.remaining_s)
       text += ` · ~${Math.round(b.remaining_s / 60)} min at this rate`;
     if (b.heater_w > 0) text += ` · heated ${(b.heater_w / 1000).toFixed(1)} kW`;
+    text += strengthOf(strength.get(b.name));
+    listed.add(b.name);
     row(b.name, text);
+  }
+  // What heat has left of anything that has cooled again: the char stays.
+  for (const s of strength.values()) {
+    if (listed.has(s.name) || Math.min(s.tension, s.shear) > 0.999) continue;
+    row(s.name, `cooled${strengthOf(s)} · would keep ${Math.round(100 * s.if_cooled)}% cold`);
+  }
+  // Every attachment made of something heat can weaken, and what it carries.
+  for (const a of ((heat.strength && heat.strength.attachments) || []).slice(0, 6)) {
+    const other = a.b === a.member ? a.a : a.b;
+    if (!a.attached) { row(`${a.member} in ${other}`, "gave way"); continue; }
+    if (a.mode === "stiffness")
+      row(`${a.member} spring`, `${Math.round(a.stiffness_n_m)} of ${Math.round(a.rated_stiffness_n_m)} N/m`);
+    else
+      row(`${a.member} in ${other}`, `carries ${Math.round(a.load_n)} N of ${Math.round(a.holds_n)} N`
+        + ` (${Math.round(a.rated_n)} N cold)`);
   }
   for (const r of block.regions) {
     let text = `${Math.round(r.t_k)} K · ${(r.p_pa / 1000).toFixed(1)} kPa`;
@@ -1609,7 +1694,9 @@ function showHeat(block) {
   $("heat-note").textContent =
     `unaccounted energy ${Number(block.ledger.residual_j).toExponential(1)} J`
     + " · glow below 800 K is a tint, and flames are drawn from the heat released:"
-    + " pictures of these numbers, not sources of heat";
+    + " pictures of these numbers, not sources of heat"
+    + (heat.strength ? " · strength left is each material's law (oak EN 1995-1-2, iron EN"
+      + " 1993-1-2); char is drawn darker" : "");
   $("heat").hidden = rows.length === 0;
 }
 
@@ -1666,6 +1753,9 @@ function clearHeat() {
   heat.columns.clear();
   heat.burning = new Set();
   heat.last = null;
+  heat.strength = null;
+  heat.char = new Map();
+  heat.weakest = new Map();
   $("heat").hidden = true;
 }
 
@@ -1886,6 +1976,8 @@ async function tick() {
 
     draw(state);
     drawRopes();
+    // Strength before heat, so the panel drawHeat fills in says both.
+    drawStrength(state.mechanics);
     drawHeat(state.heat);
     narrateCuts(state.cuts, say, remember);
     if (state.terrain) drawTerrain(state.terrain);
@@ -1895,6 +1987,14 @@ async function tick() {
         const wasAttached = new Map(world.joints.map((p) => [p.id, p.attached]));
         for (const pin of state.joints) {
           if (wasAttached.get(pin.id) && !pin.attached) {
+            // A fixing that gave way under its load says why, in the numbers
+            // that decided it: the load the solver measured against what the
+            // joint could still take -- and what heat had left of its member.
+            if (pin.parted_because && pin.kind === "fixing") {
+              say("world", `${pin.b} gave way from ${pin.a}: ${pin.parted_because}.`);
+              remember(`${pin.b} gave way from ${pin.a}`);
+              continue;
+            }
             if (pin.kind === "link" || pin.kind === "pulley") {
               const load = pin.tension_n ? ` at ${Math.round(pin.tension_n)} N` : "";
               // A rope that can never part under load, and still came off, was
@@ -2409,6 +2509,8 @@ window.banjoRoom = {
   buildMesh, renderer, THREE, MATERIALS,
   // What the heat drawing was last given, and what it drew from it.
   heatState: () => heat.last,
+  // What heat has left of what things can carry, as the engine last said it.
+  strengthState: () => heat.strength,
   heatDrawn: () => ({ glowing: [...heat.glowing.keys()], flames: [...heat.flames.keys()],
                       columns: [...heat.columns.keys()] }),
   // The ground and the water as drawn, for checking what is on screen against

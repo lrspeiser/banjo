@@ -56,6 +56,19 @@ class LiveError(ValueError):
     """Something the caller can fix: a bad scene, a body that cannot be moved."""
 
 
+def _made_of(pin: Any) -> dict[str, Any]:
+    """What a fixing, a tie or a spring is MADE of, when it says: one of its two
+    ends, whose material and temperature then decide what it can take
+    (docs/thermal-mechanics.md). Checked here, where whoever asked can be told."""
+    member = str((pin or {}).get("member") or "")
+    if not member:
+        return {}
+    if member not in (str(pin.get("a", "")), str(pin.get("b", ""))):
+        raise LiveError(f"a joint is made of one of the two things it holds, and {member!r} "
+                        f"is neither")
+    return {"member": member}
+
+
 def _three(value: Any, what: str) -> list[float]:
     """Three finite numbers, or a refusal that says which were wrong."""
     if not isinstance(value, list) or len(value) != 3:
@@ -348,7 +361,8 @@ class Live:
                         at_b=[float(v) / 1000.0 for v in (pin.get("to_mm") or [])],
                         rest_m=float(pin.get("rest_mm", 0.0)) / 1000.0,
                         stiffness_n_m=float(pin.get("stiffness_n_m", 1000.0)),
-                        damping_n_s_m=float(pin.get("damping_n_s_m", 0.0)))
+                        damping_n_s_m=float(pin.get("damping_n_s_m", 0.0)),
+                        **_made_of(pin))
                 except Exception as error:
                     problems.append(f"a spring would not go between "
                                     f"{pin.get('a', '?')} and {pin.get('b', '?')}: "
@@ -365,7 +379,8 @@ class Live:
                         at=[float(v) / 1000.0 for v in (pin.get("at_mm") or [])],
                         axis=[float(v) for v in (pin.get("axis") or [0, 1, 0])],
                         holds_tension_n=float(pin.get("holds_tension_n", 0.0)),
-                        holds_shear_n=float(pin.get("holds_shear_n", 0.0)))
+                        holds_shear_n=float(pin.get("holds_shear_n", 0.0)),
+                        **_made_of(pin))
                 except Exception as error:
                     problems.append(f"{pin.get('b', '?')} would not fix to "
                                     f"{pin.get('a', '?')}: {error}")
@@ -407,7 +422,8 @@ class Live:
                         at_a=[float(v) / 1000.0 for v in (pin.get("at_mm") or [])],
                         at_b=[float(v) / 1000.0 for v in far],
                         length_m=float(pin.get("length_mm", 0.0)) / 1000.0,
-                        breaks_at_n=float(pin.get("breaks_at_n", 0.0)))
+                        breaks_at_n=float(pin.get("breaks_at_n", 0.0)),
+                        **_made_of(pin))
                 except Exception as error:
                     problems.append(f"{pin.get('b', '?')} would not tie to "
                                     f"{pin.get('a', '?')}: {error}")
@@ -578,6 +594,13 @@ class Live:
             # Everything about heat, chemistry and gas, and the ledger. Moves
             # nothing, so it answers on its own and carries no bodies.
             return session.send(op="thermo", model=bool(body.get("model", False)))
+        if op == "mechanics":
+            # What heat has done to what everything can carry. Moves nothing.
+            return session.send(op="mechanics", laws=bool(body.get("laws", False)))
+        if op == "member":
+            # Which of a joint's two ends it is made of; "" undoes it.
+            return session.send(op="member", joint=int(body.get("joint", 0)),
+                                member=str(body.get("member") or ""))
         # ---- the ground and the water ----------------------------------------
         def xz(key: str, fallback: Any = None) -> list[float]:
             value = body.get(key, fallback)
@@ -693,7 +716,7 @@ class Live:
             return session.send(op="tie", a=str(body.get("a", "")),
                                 b=str(body.get("b", "")), at_a=spot("at_a"),
                                 at_b=spot("at_b"), length_m=length,
-                                breaks_at_n=breaks)
+                                breaks_at_n=breaks, **_made_of(body))
         if op == "reeve":
             def spot(key: str) -> list[float]:
                 value = body.get(key)
@@ -735,7 +758,8 @@ class Live:
             return session.send(op="spring", a=str(body.get("a", "")),
                                 b=str(body.get("b", "")), at_a=spot("at_a"),
                                 at_b=spot("at_b"), rest_m=rest,
-                                stiffness_n_m=stiffness, damping_n_s_m=damping)
+                                stiffness_n_m=stiffness, damping_n_s_m=damping,
+                                **_made_of(body))
         if op == "fix":
             def spot(key: str, fallback: Any = None) -> list[float]:
                 value = body.get(key, fallback)
@@ -755,7 +779,8 @@ class Live:
                                 "lets go) or more")
             return session.send(op="fix", a=str(body.get("a", "")),
                                 b=str(body.get("b", "")), at=spot("at"), axis=axis,
-                                holds_tension_n=holds[0], holds_shear_n=holds[1])
+                                holds_tension_n=holds[0], holds_shear_n=holds[1],
+                                **_made_of(body))
         if op == "unhinge":
             return session.send(op="unhinge", joint=int(body.get("joint", 0)))
         if op == "joint_friction":

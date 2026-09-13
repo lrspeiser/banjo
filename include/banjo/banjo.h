@@ -89,8 +89,16 @@ extern "C" {
  * banjo_water_info, banjo_dig, banjo_deposit, banjo_cut_block, banjo_set_discharge,
  * banjo_terrain_heights, banjo_water_surface, banjo_environment_report,
  * banjo_environment_state, banjo_survey, banjo_awake_bodies). Nothing that was
- * in 14 changed. */
-#define BANJO_ABI_VERSION 15
+ * in 14 changed.
+ *
+ * 16 made heat change what things can carry (docs/thermal-mechanics.md): a
+ * declared law per material, a joint that names the body it is made of
+ * (banjo_joint_member), what heat has done to each body
+ * (banjo_body_mechanics_count, banjo_bodies_mechanics, banjo_mechanics_report),
+ * and new fields at the END of banjo_joint, banjo_overload and banjo_energy.
+ * Those three structs grew, so a caller built against 15 must be rebuilt;
+ * every field that was there keeps its place and its meaning. */
+#define BANJO_ABI_VERSION 16
 
 /* What a call reported. Anything below zero is a failure and leaves the world
  * unchanged; banjo_last_error() says what happened. */
@@ -189,6 +197,30 @@ typedef struct {
     double damping_n_s_m;
     double force_n;
     double stored_j;
+    /* ---- ABI 16: heat and strength (docs/thermal-mechanics.md) ----------
+     * Which of the two things the joint is MADE of -- the peg of a fixing, the
+     * rope segment a link is tied through, a spring's limb -- set with
+     * banjo_joint_member. "" when nothing was named: the joint is then exactly
+     * the numbers it was declared with, and heat changes nothing about it.
+     * With a member, holds_tension_n, holds_shear_n, breaks_at_n and
+     * stiffness_n_m above are what it has NOW, and these are what it had cold. */
+    const char *member;
+    double rated_tension_n;
+    double rated_shear_n;
+    double rated_breaks_at_n;
+    double rated_stiffness_n_m;
+    /* The share of that it still has: 1 cold. For a fixing, the lower of its
+     * two. */
+    double capacity_fraction;
+    /* How many times heat changing the member made the joint be asked again
+     * whether it holds, with both ends woken so the solver measured the load. */
+    unsigned rechecks;
+    /* Why it let go, once it has, and the two numbers that decided it: the
+     * load the solver measured in that step and what the joint could still take.
+     * "" and zeros while it holds, and for a joint taken out on purpose. */
+    const char *parted_because;
+    double parted_load_n;
+    double parted_capacity_n;
 } banjo_joint;
 
 /* A thing carrying more than it can hold up.
@@ -218,6 +250,11 @@ typedef struct {
     double span_m;
     double stress_pa;
     double strength_pa;
+    /* ABI 16. What its section can still take against the same beam cold: 1
+     * for anything heat has not touched. strength_pa is already the material's
+     * strength times this. And why, in words. */
+    double capacity_fraction;
+    const char *why;
 } banjo_overload;
 
 typedef struct {
@@ -944,6 +981,12 @@ typedef struct {
     /* A separate view: the kinetic and gravitational energy of every body, from
      * the solver's own masses. Boundary work is the link between the two. */
     double mechanical_j;
+    /* ABI 16. Energy the mechanical side handed the network as heat: the
+     * elastic energy a spring stopped holding when its member softened at a
+     * fixed stretch (negative when one stiffened again and took it back). A
+     * crossing, so it is in the balance at the top of this struct's comment as
+     * a term added to the right-hand side. */
+    double mechanical_in_j;
 } banjo_energy;
 
 /* Declare into a running world:
@@ -976,6 +1019,92 @@ BANJO_API const char *banjo_thermo_report(const banjo_world *world, int with_mod
 /* The substances, reactions and material compositions a world starts with, as
  * JSON, without needing a world. Valid until the next call on this thread. */
 BANJO_API const char *banjo_thermo_model(void);
+
+/* ---- heat and strength (ABI 16) ------------------------------------------ */
+
+/* Temperature, composition and what has burned change what a body can carry,
+ * by a DECLARED LAW PER MATERIAL -- never "hot means weak": oak by EN 1995-1-2's
+ * softwood curves (shear 0.40 of cold at 100 degC, nothing at 300 degC, char
+ * from there on), iron by EN 1993-1-2's carbon-steel curves (no loss of yield
+ * below 400 degC), concrete by EN 1992-1-2 (and it does not recover). Glass,
+ * aluminium, alumina ceramic, rubber and ice have no law and are not changed.
+ * banjo_mechanics_report(world, 1) says where every number came from and what
+ * is not modelled; docs/thermal-mechanics.md is the whole model.
+ *
+ * A section is at most three rings, because a body is one surface layer over
+ * one core in the thermal network: what burned away (gone), the surface layer
+ * (at its temperature; char once it has passed 300 degC) and the core. What
+ * does not come back when it cools -- char, what burned, what pyrolysis took --
+ * is decided by the hottest each zone has been.
+ *
+ * Failure is the engine's two existing paths, fed the new numbers: a joint made
+ * of a member parts when the load the solver measures passes what the member's
+ * law leaves it (banjo_joint.parted_because says so), and a beam is offered as
+ * overloaded when the bending in it passes what its section can still take.
+ * Heat changing either makes it be asked again at once, with the bodies woken,
+ * even while nothing is moving. */
+typedef struct {
+    const char *name;
+    const char *material;
+    /* The law, and where its numbers come from. "" for a material with none. */
+    const char *law;
+    const char *provenance;
+    /* Whether the thermal network holds it at all: nothing has heated a body
+     * it does not, and every factor is 1. */
+    int tracked;
+    double surface_k;
+    double core_k;
+    /* The hottest each zone has been. */
+    double peak_surface_k;
+    double peak_core_k;
+    /* How much of its load-bearing matter is left, and its load-bearing share
+     * when it was declared against its material's own (dry wood in oak). */
+    double remaining_fraction;
+    double composition_factor;
+    double dimensions_m[3];
+    /* The section across its longest axis: as built, how far burning has
+     * eaten in from every face, the char under that, the surface layer's
+     * depth, and what is still sound. */
+    double section_m[2];
+    double consumed_m;
+    double char_m;
+    double layer_m;
+    double sound_section_m[2];
+    /* Against the same section cold: 1 is as it was. */
+    double stiffness;
+    double tension;
+    double compression;
+    double shear;
+    double bending;
+    /* What it would keep if it cooled now. */
+    double tension_if_cooled;
+    double shear_if_cooled;
+    double bending_if_cooled;
+    /* 0 when its state is outside what the law supports (banjo_mechanics_report
+     * says why): the answer is still given, and said to be outside. */
+    int supported;
+} banjo_body_mechanics;
+
+/* Say which of a joint's two bodies it is made of: its strength (a fixing, a
+ * link) or its stiffness (an elastic) follows that body's law from now on. A
+ * declared strength of zero becomes the member's own section times its
+ * material's strength -- so with a member, zero is no longer a weld. "" goes
+ * back to the declared numbers. BANJO_BAD_ARGUMENT for a pin, a slide or a
+ * pulley, which have no strength to lose here, and for a name that is not one
+ * of the joint's two ends. A spring's stiffness changing stretched changes the
+ * energy it holds; that difference is handed to the thermal ledger as heat
+ * (banjo_energy.mechanical_in_j), never made or lost. */
+BANJO_API int banjo_joint_member(banjo_world *world, unsigned joint, const char *member);
+
+/* Every body the thermal network holds, and every body a joint is made of. */
+BANJO_API int banjo_body_mechanics_count(const banjo_world *world);
+BANJO_API int banjo_bodies_mechanics(const banjo_world *world, banjo_body_mechanics *out, int max);
+
+/* All of it as JSON: the bodies, every joint made of a member with what it
+ * carries against what it can take, and with `with_laws` nonzero the laws,
+ * their sources and what is not modelled. Valid until the next call on this
+ * world. */
+BANJO_API const char *banjo_mechanics_report(const banjo_world *world, int with_laws);
 
 /* ---- terrain and water (ABI 15) ---------------------------------------- */
 

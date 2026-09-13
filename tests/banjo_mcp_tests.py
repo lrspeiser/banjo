@@ -396,6 +396,58 @@ class TheTools(unittest.TestCase):
         self.assertLess(dropped["position_m"][1], 1.0,
                         "releasing the fixing did not drop the bracket")
 
+    def test_a_heated_peg_gives_way_under_its_load_and_says_why(self):
+        """Heat changes what a joint made of something can carry
+        (docs/thermal-mechanics.md). An oak peg's fixing, made of the peg and
+        rated 800 N, gives way under a 32 kg gate when the peg's law leaves it
+        less than the load; its unheated twin holds; and run says why, with the
+        numbers that decided it.
+        """
+        objects = []
+        for tag, x in (("", 0.0), ("cold ", 3.0)):
+            objects += [
+                {"name": f"{tag}gatepost", "shape": "box", "material": "oak",
+                 "size_m": [0.16, 1.6, 0.16], "position_m": [x, 0.8, 0], "anchored": True},
+                {"name": f"{tag}oak peg", "shape": "box", "material": "oak",
+                 "size_m": [0.04, 0.04, 0.16], "position_m": [x, 1.4, 0.165]},
+                {"name": f"{tag}iron gate", "shape": "box", "material": "iron",
+                 "size_m": [0.32, 0.32, 0.04], "position_m": [x, 1.215, 0.205]}]
+        world_id = self.client.call("create_world", cell_size_m=0.04, objects=objects)["world_id"]
+        refused = self.client.refuse("fix", world_id=world_id, a="gatepost", b="oak peg",
+                                     at_m=[0, 1.4, 0.08], axis=[0, 0, 1], holds_shear_n=800,
+                                     member="iron gate")
+        self.assertIn("neither", refused)
+        for tag, x in (("", 0.0), ("cold ", 3.0)):
+            made = self.client.call("fix", world_id=world_id, a=f"{tag}gatepost", b=f"{tag}oak peg",
+                                    at_m=[x, 1.4, 0.08], axis=[0, 0, 1], holds_shear_n=800,
+                                    member=f"{tag}oak peg")
+            self.assertEqual(made["made_of"]["holds_shear_n_cold"], 800.0)
+            self.assertIn("EN 1995-1-2", made["made_of"]["law"])
+            self.client.call("fix", world_id=world_id, a=f"{tag}oak peg", b=f"{tag}iron gate",
+                             at_m=[x, 1.375, 0.205], axis=[0, 1, 0])
+        # Heating opens the world again with the heater in it; the joints, with
+        # what they are made of, are hung again with it.
+        self.client.call("heat", world_id=world_id, target="oak peg", power_w=2000, seconds=300)
+        gave_way = []
+        for _ in range(6):
+            happened = self.client.call("run", world_id=world_id, seconds=20.0)["what_happened"]
+            if isinstance(happened, list):
+                gave_way += [e for e in happened if e["what"] == "gave way"]
+            if gave_way:
+                break
+        self.assertTrue(gave_way, "the heated peg gave way within two minutes of 2 kW")
+        self.assertIn("sheared", gave_way[0]["because"])
+        self.assertIn("oak peg", gave_way[0]["because"])
+        strength = self.client.call("thermal_state", world_id=world_id)["strength"]
+        peg = next(b for b in strength["bodies"] if b["object"] == "oak peg")
+        self.assertGreater(peg["char_mm"], 0.0, "the peg's surface charred")
+        twin = next(a for a in strength["attachments"] if a["made_of"] == "cold oak peg")
+        self.assertTrue(twin["attached"], "the unheated twin still holds its gate")
+        joints = self.client.call("joints", world_id=world_id)["joints"]
+        parted = next(j for j in joints if j.get("made_of") == "oak peg")
+        self.assertFalse(parted["attached"])
+        self.assertIn("could still take", parted["why_it_let_go"])
+
     def test_a_hoist_lifts_the_other_end(self):
         """A pulley through the tools, and the direction of its ratio.
 

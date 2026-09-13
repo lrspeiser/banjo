@@ -984,6 +984,74 @@ def check_iron_wont_burn(built: Built) -> Verdict:
                    measured)
 
 
+def check_burning_peg(built: Built) -> Verdict:
+    """A heated wooden support gives way under its load because its law says it
+    can no longer carry it -- and not before -- while its unheated twin holds.
+
+    docs/thermal-mechanics.md. Nothing here asks whether the peg "burned
+    through": it asks the engine what the fixing carried against what it could
+    still take at the moment it let go, and whether what it held then fell.
+    """
+    world = built.world
+    heated_names = {str(h.get("target")) for h in ((built.room.spec.get("thermo") or {})
+                                                   .get("heaters") or [])}
+    rated = [j for j in world.joints() if j.get("kind") == "fixing" and j.get("member")]
+    measured: dict[str, Any] = {"made_of": [[j["a"], j["b"], j["member"]] for j in rated],
+                                "heated": sorted(heated_names)}
+    if not rated:
+        return Verdict(False, "no fixing says what it is made of (member), so heat can change "
+                              "nothing about what it holds", measured)
+    heated = [j for j in rated if j["member"] in heated_names]
+    cold = [j for j in rated if j["member"] not in heated_names]
+    if not heated:
+        return Verdict(False, "no fixing's member is being heated", measured)
+    start_y = {j["id"]: (world.body(j["member"]) or {}).get("position_m", [0, 0, 0])[1]
+               for j in heated}
+    limit = max(120.0, _heater_end_s(built.room) if _heater_end_s(built.room) < 240.0 else 240.0)
+    gave_way: dict[int, dict[str, Any]] = {}
+    waited = 0.0
+    while waited < limit and len(gave_way) < len(heated):
+        world.seconds(1.0)
+        waited += 1.0
+        for j in world.joints():
+            if j["id"] in start_y and not j.get("attached") and j["id"] not in gave_way:
+                gave_way[j["id"]] = {"at_s": round(world.simulated_s, 2),
+                                     "load_n": j.get("parted_load_n"),
+                                     "could_take_n": j.get("parted_capacity_n"),
+                                     "cold_n": j.get("rated_shear_n"),
+                                     "why": j.get("parted_because", "")}
+    world.seconds(3.0)
+    measured["gave_way"] = list(gave_way.values())
+    after = {j["id"]: j for j in world.joints()}
+    for j in heated:
+        failed = gave_way.get(j["id"])
+        if failed is None:
+            now = after.get(j["id"]) or {}
+            return Verdict(False, f"{j['member']} was heated for {waited:.0f} s and still holds: "
+                                  f"it carries {now.get('shear_n')} N of the {now.get('holds_shear_n')} "
+                                  f"N it can take", measured)
+        if not failed["why"] or not (failed["load_n"] or 0) > (failed["could_take_n"] or 0):
+            return Verdict(False, f"{j['member']} let go without its load passing what it could "
+                                  f"take: {failed}", measured)
+        fell = start_y[j["id"]] - (world.body(j["member"]) or {}).get("position_m", [0, 0, 0])[1]
+        failed["fell_m"] = round(fell, 3)
+        if fell < 0.3:
+            return Verdict(False, f"{j['member']}'s fixing let go but what it held did not fall "
+                                  f"({fell:.3f} m)", measured)
+    for j in cold:
+        now = after.get(j["id"]) or {}
+        measured.setdefault("cold_twins", []).append(
+            [j["member"], now.get("attached"), now.get("capacity_fraction")])
+        if not now.get("attached") or (now.get("capacity_fraction") or 0) < 0.99:
+            return Verdict(False, f"{j['member']} was not heated and it did not hold: {now}", measured)
+    first = min(gave_way.values(), key=lambda f: f["at_s"])
+    return Verdict(True, f"the heated peg gave way {first['at_s']:.0f} s in, carrying "
+                         f"{first['load_n']:.0f} N against the {first['could_take_n']:.0f} N its law "
+                         f"left it ({first['cold_n']:.0f} N cold); "
+                         + (f"{len(cold)} unheated twin(s) held" if cold else "no unheated twin"),
+                   measured)
+
+
 def rope_ends(built: Built, record: dict[str, Any]) -> list[tuple[str, list[float]]] | None:
     """Where a rope is tied on each of its two bodies, in that body's own frame
     (bodies are built unturned, so that is the tie point less the centre)."""
@@ -1307,6 +1375,16 @@ CASES = [
     Case("iron-wont-burn", "yard", "Put an iron bar on a stone slab and set it on fire.",
          check_iron_wont_burn, "only what has fuel burns -- and the reply has to say so",
          accept_no_change=lambda reply: bool(SAID_IT_CANNOT.search(reply))),
+    # The owner's heated support (docs/thermal-mechanics.md): a wooden peg heats
+    # and chars, what is left of it can no longer carry the gate, and the gate
+    # falls -- because of the load and the law, beside a cold twin that holds.
+    Case("burning-peg", "yard",
+         "Hang an iron gate on an oak peg in an oak gatepost, with the peg rated to hold "
+         "800 N, and put a 2 kW torch on the peg until it gives way. Build an identical "
+         "one beside it that nobody heats.",
+         check_burning_peg,
+         "the heated peg gives way when the load passes what its law leaves it, and says so; "
+         "its cold twin holds"),
     # Where the person is. The room started them elsewhere; the page says where
     # they are now, and "give me" means in front of them, where they can take it.
     Case("ball-near-me", "valley", "Give me a rubber ball.",
@@ -1497,6 +1575,21 @@ RECIPES: dict[str, tuple[Any, ...]] = {
         _box("iron bar", "iron", [0.48, 0.08, 0.08], [0.0, 0.12, 0.0]),
         ("heat", {"target": "iron bar", "power_w": 10000, "seconds": 60, "label": "a torch"}),
     ]),
+    # A 40 mm oak peg 5 mm off its post's face, a 32 kg iron gate welded 5 mm
+    # under it, the peg's fixing rated 800 N and made of the peg; the same again
+    # 2.5 m along, unheated. 2 kW into the first peg: it gave way 46.8 s in, in
+    # tests/thermal_mechanics_tests.cpp's identical build.
+    "burning-peg": ("burning-peg", [
+        *[call for tag, x in (("", 0.0), ("cold ", 2.5)) for call in (
+            _box(f"{tag}gatepost", "oak", [0.16, 1.6, 0.16], [x, 0.8, 0.0], True),
+            _box(f"{tag}oak peg", "oak", [0.04, 0.04, 0.16], [x, 1.4, 0.165]),
+            _box(f"{tag}iron gate", "iron", [0.32, 0.32, 0.04], [x, 1.215, 0.205]),
+            ("fix", {"a": f"{tag}gatepost", "b": f"{tag}oak peg", "at_m": [x, 1.4, 0.08],
+                     "axis": [0, 0, 1], "holds_shear_n": 800, "member": f"{tag}oak peg"}),
+            ("fix", {"a": f"{tag}oak peg", "b": f"{tag}iron gate", "at_m": [x, 1.375, 0.205],
+                     "axis": [0, 1, 0]}))],
+        ("heat", {"target": "oak peg", "power_w": 2000, "seconds": 300, "label": "a torch"}),
+    ]),
     # Where the person is: set down with [x, z], the MCP working out the height
     # from what is under it. On the knoll a metre in front; by the river a
     # metre in front is water or a 40-degree bank, so beside them on the level
@@ -1526,7 +1619,8 @@ RECIPES: dict[str, tuple[Any, ...]] = {
 
 # How long the 3D pass lets each room run before its second picture: long
 # enough for the thing to have happened, and for a hearth to have caught.
-SHOW_S = {"hearth": 80.0, "heated-piston": 20.0, "iron-wont-burn": 10.0, "dominoes": 6.0,
+SHOW_S = {"hearth": 80.0, "heated-piston": 20.0, "iron-wont-burn": 10.0, "burning-peg": 70.0,
+          "dominoes": 6.0,
           "pendulum": 6.0, "sliding": 5.0, "bounce": 4.0, "ice-breaks": 4.0, "pane-breaks": 4.0,
           "drop-on-glass": 4.0, "dent": 3.0, "projectile": 3.0,
           "dam-river": 20.0, "drain-pond": 20.0, "log-river": 10.0,
@@ -1545,7 +1639,7 @@ GROUPS = [
     ("Breaking, bending and holding", ["loaded-shelf", "plank-bridge", "drop-on-glass",
                                        "ice-breaks", "dent", "pane-breaks"]),
     ("Contact and motion", ["tower", "dominoes", "bounce", "sliding", "projectile"]),
-    ("Heat, fire and gas", ["hearth", "heated-piston", "iron-wont-burn"]),
+    ("Heat, fire and gas", ["hearth", "heated-piston", "iron-wont-burn", "burning-peg"]),
     ("Cutting", ["cut-rope", "cut-panel"]),
     ("Terrain and water", ["dam-river", "drain-pond", "log-river", "boulder-dug"]),
     ("Where the person is", ["ball-near-me", "ball-by-the-river", "crate-in-front"]),

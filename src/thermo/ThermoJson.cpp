@@ -1,5 +1,7 @@
 #include "thermo/ThermoJson.hpp"
 
+#include "thermo/ThermalMechanics.hpp"
+
 #include <nlohmann/json.hpp>
 
 #include <cmath>
@@ -166,7 +168,37 @@ json contentsOf(const std::vector<std::pair<std::string, double>> &kg) {
     return out;
 }
 
+json curveOf(const ReductionCurve &curve) {
+    json out = json::array();
+    for (const auto &[k, factor] : curve.points) out.push_back(json::array({k, factor}));
+    return out;
+}
+
 } // namespace
+
+std::string mechanicalLawsJson() {
+    json laws = json::array();
+    for (const MechanicalLaw &law : mechanicalLaws())
+        laws.push_back({{"material", law.material},
+                        {"id", law.id},
+                        {"version", law.version},
+                        {"provenance", std::string(provenanceName(law.provenance))},
+                        {"source", law.source},
+                        {"load_bearing", law.load_bearing},
+                        {"reference_fraction", law.reference_fraction},
+                        {"factor_by_temperature_k", {{"stiffness", curveOf(law.stiffness)},
+                                                     {"tension", curveOf(law.tension)},
+                                                     {"compression", curveOf(law.compression)},
+                                                     {"shear", curveOf(law.shear)}}},
+                        {"char_k", law.char_k},
+                        {"lasting_by_peak_k", curveOf(law.permanent)},
+                        {"lasting_source", law.permanent_source},
+                        {"recovers_on_cooling", law.recovers},
+                        {"supported_k", json::array({law.supported_from_k, law.supported_to_k})},
+                        {"recovery_modelled_to_k", law.recovery_to_k},
+                        {"not_modelled", law.not_modelled}});
+    return laws.dump();
+}
 
 Declarations readSceneDeclarations(const std::string &scene_json) {
     const json document = parse(scene_json, "the scene");
@@ -265,6 +297,7 @@ std::string reportJson(const ThermoWorld &world, bool with_model) {
                    {"left_kg", l.left_kg},
                    {"work_to_bodies_j", l.work_to_bodies_j},
                    {"work_to_atmosphere_j", l.work_to_atmosphere_j},
+                   {"mechanical_in_j", l.mechanical_in_j},
                    {"numerical_j", l.numerical_j},
                    {"residual_j", l.residualJ()},
                    {"mass_residual_kg", l.massResidualKg()},
@@ -330,7 +363,10 @@ std::string reportJson(const ThermoWorld &world, bool with_model) {
                             "reference and sensible parts of one internal energy"},
                            {"substances", std::move(substances)},
                            {"reactions", std::move(reactions)},
-                           {"compositions", std::move(compositions)}};
+                           {"compositions", std::move(compositions)},
+                           // What heat does to what each material can carry,
+                           // and where every number came from.
+                           {"mechanical_laws", json::parse(mechanicalLawsJson())}};
         report["limitations"] = ThermoWorld::limitations();
     }
     return report.dump();
