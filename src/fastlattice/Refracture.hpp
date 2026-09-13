@@ -97,6 +97,12 @@ namespace banjo::fastlattice {
 
 // Everything about one fragment the trigger needs, computed once when the
 // fragment is created (O(live bonds), never per contact).
+// The smallest stretch at which a bond is removed in any of its three modes:
+// what fragmentFractureLimits takes the minimum of. Public so a caller that
+// has changed a bond -- heat weakens one (docs/thermal-mechanics.md) -- can ask
+// the same question of the bond as the lattice will be given it.
+[[nodiscard]] double bondRemovalStretch(const BondRest &bond);
+
 struct FragmentFractureLimits {
     double minimum_removal_stretch{};      // s_min over live bonds and modes
     double minimum_removal_energy_j{};     // U_min over live bonds

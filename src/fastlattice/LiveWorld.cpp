@@ -9,6 +9,7 @@
 #include "fracture/FragmentGeometry.hpp"
 #include "material/MaterialCompiler.hpp"
 #include "rigid/JoltWorld.hpp"
+#include "fracture/SustainedLoad.hpp"
 #include "thermo/ThermalMechanics.hpp"
 #include "thermo/ThermoJson.hpp"
 
@@ -270,6 +271,126 @@ struct LiveWorld::Pending {
     std::string guessed_striker;
     double guessed_speed{};
     Vec3 guessed_at{};
+    // A sustained load rather than a blow (fracture/SustainedLoad.hpp): the
+    // body alone, held up where it rests and loaded by the weight of what rests
+    // on it, solved for equilibrium rather than run through a few milliseconds
+    // of a wave. In the island's own node numbering.
+    bool sustained{};
+    SustainedLoadScene load{};
+    SustainedLoadResult statics{};
+    double load_n{};
+    std::size_t supported_cells{}, loaded_cells{};
+};
+
+// ---- one material state: shared rules (docs/thermal-mechanics.md) -----------
+namespace {
+// Below this share of a cell's matter, the cell has burned away.
+constexpr double kGoneShare = 0.02;
+// The softest a bond can be and still be one: below it, it carries nothing.
+constexpr double kSoftestBond = 1.0e-6;
+// A box or a sphere is cut again once its burned depth has moved this far.
+constexpr double kReviseDepthM = 2.0e-4;
+// A section a hundredth weaker than statics last held, or a load a hundredth
+// heavier, is a different question and is asked again.
+constexpr double kStaticsAskAgain = 0.01;
+
+bool wholeFactors(const thermo::ZoneFactors &f) {
+    return f.stiffness == 1.0 && f.tension == 1.0 && f.compression == 1.0 && f.shear == 1.0;
+}
+
+// A bond as heat has left it: its stiffness and each strength by the field's
+// factors, applied once. A damage threshold is a stretch, and a stretch is a
+// strength over a modulus, so each goes by its strength's factor over the
+// stiffness's -- and the force a bond fails at goes by its strength's factor
+// alone, which is the law. False when it carries nothing at all.
+bool weakenBond(BondRest &bond, const thermo::ZoneFactors &f) {
+    if (!(f.stiffness > kSoftestBond) || !(std::max({f.tension, f.compression, f.shear}) > 0.0)) return false;
+    bond.compliance /= f.stiffness;
+    const double t = f.tension / f.stiffness, c = f.compression / f.stiffness, s = f.shear / f.stiffness;
+    bond.damage_start_stretch *= t;
+    bond.damage_end_stretch *= t;
+    bond.compression_damage_start_strain *= c;
+    bond.compression_damage_end_strain *= c;
+    bond.shear_damage_start_strain *= s;
+    bond.shear_damage_end_strain *= s;
+    return true;
+}
+
+// A cell below kGoneShare that the revision has not yet taken out (it runs at
+// the network's stride) keeps that much, so nothing in a run has no mass.
+thermo::CellShare atLeast(thermo::CellShare share) {
+    const double left = share.remaining();
+    if (left >= kGoneShare) return share;
+    if (!(left > 0.0)) return {kGoneShare, 0.0};
+    const double scale = kGoneShare / left;
+    return {share.surface * scale, share.core * scale};
+}
+
+// Where a joint holds one of its ends, in that end's body: a pin's two ends
+// share a point, a rope's, a spring's and a pulley's are tied at their own.
+template <typename Joint>
+Vec3 &jointPoint(Joint &joint, int end) {
+    if (end == 0) return joint.point_local_a;
+    const bool tied = joint.kind == JoltWorld::JointKind::Link ||
+                      joint.kind == JoltWorld::JointKind::Elastic ||
+                      joint.kind == JoltWorld::JointKind::Pulley;
+    return tied ? joint.point_local_b_tie : joint.point_local_b;
+}
+
+Quat composeTurns(const Quat &a, const Quat &b) {
+    return {a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z, a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+            a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x, a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w};
+}
+
+// Defined with the blades, further down: every bond among these cells that
+// crosses a kerf's plane. A piece rebuilt because its cells burned away hands
+// its kerfs on exactly as a cut piece does.
+template <class KerfT>
+void findCrossings(KerfT &kerf, const std::vector<std::uint32_t> &nodes,
+                   const std::vector<Vec3> &offsets, const LatticeAsset &asset);
+}  // namespace
+
+// What a body's matter is measured against, and what has been done to its shape
+// because of it (docs/thermal-mechanics.md, "One material state").
+struct LiveWorld::MatterRecord {
+    // The reference box: as authored for a box or a sphere, the cells' box for
+    // anything else. Taken once and never again from what is left -- taking it
+    // from what is left would burn the same share away twice.
+    Vec3 box_m{};
+    // Its centre and axes in the body's own frame. An authored shape is centred
+    // on its centre of mass; a tilted box's axes are its tilt.
+    Vec3 centre_m{};
+    Quat turn{};
+    bool round{};
+    // The burned depth the collision shape was last cut to.
+    double applied_m{};
+    // Times the shape has been changed where it stands.
+    unsigned revision{};
+    // Cells whose matter burned away entirely, since this record was made.
+    std::size_t cells_burned{};
+    // As of the last revision: the volume left and the bond summary a fracture
+    // run would be given (LiveMaterialState).
+    double remaining_volume_m3{-1.0};
+    double bond_tension_min{1.0}, bond_tension_mean{1.0}, bond_stiffness_mean{1.0};
+    // The field those were worked out from. A bond summary is a sum over every
+    // bond of the body -- hundreds per cell's worth -- so it is worked out
+    // again only when the field has moved, not at every stride.
+    thermo::ZoneFactors seen_surface{}, seen_core{};
+    double seen_consumed_m{-1.0};
+    std::size_t seen_cells{};
+    // Whether the admission bound is the heated one, to put the cold one back
+    // when the body recovers.
+    bool limits_heated{};
+};
+
+// What heat has done to the cells a lattice run is about to be given.
+struct LiveWorld::HeatedCells {
+    // Per cell of a heated body: its factors against the same cell cold and
+    // whole, and what it weighs now.
+    std::unordered_map<std::uint32_t, thermo::ZoneFactors> factors;
+    std::unordered_map<std::uint32_t, double> mass_kg;
+    // Per heated body, the mean of its cells' factors.
+    std::unordered_map<std::string, thermo::ZoneFactors> mean;
 };
 
 struct LiveWorld::Impl {
@@ -446,9 +567,41 @@ struct LiveWorld::Impl {
     // into the lattice on its own, with nothing pressing on it, and come out
     // whole however much was piled on. This is what gives it its load back.
     std::unordered_map<std::size_t, std::size_t> bearing_on;
+    // For an overloaded body, from the same survey: what it rests on, and what
+    // rests on it with the weight each brings (its own and everything stacked
+    // above it). By name, because indices do not survive a break. This is what
+    // a sustained load's statics is set up from.
+    struct Sustained {
+        std::vector<std::string> on;
+        std::vector<std::pair<std::string, double>> loads_n;
+    };
+    std::unordered_map<std::string, Sustained> sustained_by;
+    // What statics last said about each body it was asked about, for reports.
+    struct SustainedAnswer {
+        double time_s{};
+        std::string stop;
+        double load_n{};
+        double first_failure_ratio{};
+        double deflection_m{};
+        std::size_t bonds_removed{}, rounds{}, solves{}, supported_cells{}, loaded_cells{}, pieces{};
+        double cost_ms{};
+    };
+    std::unordered_map<std::string, SustainedAnswer> sustained_answers;
+    // A body statics has just said holds, with the section and the load it
+    // held at. It is not offered again until one of them moves -- a load does
+    // not go away by itself, and asking the same question of the same answer
+    // every quarter of a second is waste and noise.
+    struct HeldAt {
+        double capacity_fraction{1.0};
+        double carrying_n{};
+    };
+    std::unordered_map<std::string, HeldAt> statics_held;
     // What each part is made of, in the engine's terms, so a survey can ask a
     // body what it can take without going back through the scene.
     std::vector<double> tensile_of;
+    // And in compression: a beam gives on whichever side of its section
+    // reaches its strength first. Zero where the material declares none.
+    std::vector<double> compressive_of;
     // Heat, chemistry and gas (thermo/ThermoWorld.hpp). Null until something
     // declares any, so a world without them pays nothing for them.
     std::unique_ptr<thermo::ThermoWorld> thermo;
@@ -463,6 +616,29 @@ struct LiveWorld::Impl {
     std::unordered_map<std::string, Quat> tilt_of;
     // A hull's surface, from its cells, worked out once per body.
     mutable std::unordered_map<std::string, std::pair<std::size_t, double>> hull_area_of;
+
+    // ---- one material state (docs/thermal-mechanics.md) ------------------
+    //
+    // What a body's matter is measured against, and what has been done to its
+    // shape because of it. The thermal network owns the state itself -- how
+    // hot, how charred, how much has burned; this owns WHERE: the reference box
+    // the network's state is laid over, and the geometry that follows from it.
+    // Keyed by name, like the kerfs. Everything here is a plain value, so it
+    // copies and restores with the rest of a world (listed in the doc). See
+    // LiveWorld::MatterRecord above.
+    //
+    // Mutable because it is filled in the first time anything asks, which can
+    // be a report; what it is filled with is the same whenever that happens.
+    mutable std::unordered_map<std::string, MatterRecord> matter_of;
+    // Bodies that burned away entirely, with what was left of them, in order.
+    struct BurnedAway {
+        std::string name;
+        std::string material;
+        double time_s{};
+        double residue_kg{};
+        std::string why;
+    };
+    std::vector<BurnedAway> burned_away;
 
     // Pins, by name. See LiveJoint in the header for why it is names and not
     // bodies. `rigid` is the engine-level constraint that is currently standing
@@ -886,6 +1062,7 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request) {
         // And what it can take in bending, for the load survey. A beam fails on
         // the tension side, so this is the number that decides a loaded shelf.
         impl.tensile_of.push_back(definition->tensile_strength_pa);
+        impl.compressive_of.push_back(definition->compressive_strength_pa);
         if (!setup.part_of_node.empty()) {
             if (impl.material_of_part.size() < setup.part_bodies.size())
                 impl.material_of_part.resize(setup.part_bodies.size());
@@ -2477,6 +2654,7 @@ std::vector<LiveImpact> LiveWorld::impacts(double quiet_speed_m_s) const {
 void LiveWorld::surveyLoads() {
     impl_->overloaded.clear();
     impl_->bearing_on.clear();
+    impl_->sustained_by.clear();
     const std::size_t count = impl_->described.size();
     if (count == 0) return;
 
@@ -2491,6 +2669,11 @@ void LiveWorld::surveyLoads() {
                               cell * cell * cell;
         const double density = i < impl_->density_of.size() ? impl_->density_of[i] : 0.0;
         weight[i] = volume * density * 9.81;
+        // What it weighs now, where the thermal network holds it: a crate that
+        // burns on a shelf gets lighter as it burns.
+        if (impl_->thermo)
+            if (const auto matter = impl_->thermo->matter(impl_->described[i].name))
+                weight[i] = (matter->surface_kg + matter->core_kg) * 9.81;
     }
 
     // Who is sitting on whom. A whisker of slack because a body at rest sinks
@@ -2564,9 +2747,13 @@ void LiveWorld::surveyLoads() {
         span = std::max(0.0, span - supported_length);
         if (!(span > 1e-3)) continue;                   // held everywhere: no bending
 
-        // Section: breadth across the span, depth in the direction it bends.
-        const double breadth = 2.0 * half[i].z;
-        const double depth = 2.0 * half[i].y;
+        // Section: breadth across the span, depth in the direction it bends --
+        // of the REFERENCE box, as authored. What has burned away is taken out
+        // once, by the section factor below (the field's rings); measuring the
+        // stress on what is left AND applying that factor would take it twice.
+        const Vec3 reference = referenceBoxOf(i);
+        const double breadth = reference.z;
+        const double depth = reference.y;
         if (!(breadth > 1e-6) || !(depth > 1e-6)) continue;
 
         // Simply supported, point load in the middle, plus its own weight as a
@@ -2638,41 +2825,59 @@ void LiveWorld::surveyLoads() {
                 }
             }
         }
-        const double material_strength = i < impl_->tensile_of.size() ? impl_->tensile_of[i] : 0.0;
-        // What heat has left of the section that carries the bending: the
-        // same beam's section, three rings of it (thermo/ThermalMechanics.hpp),
-        // with the span along x and the depth up, as the formula above has it.
-        // One for anything the thermal network does not hold, or whose material
-        // has no law -- then this is exactly the survey it always was.
-        double capacity = 1.0;
+        // A beam gives on whichever side of its section reaches its strength
+        // first: the tension side by the tensile strength, the compression side
+        // by the compressive one -- the lattice applies both, and so does this.
+        // Oak's 52 MPa in compression is below its 90 in tension, so for oak the
+        // compression side governs; a material that declares no compressive
+        // strength is asked about in tension alone.
+        const double tensile = i < impl_->tensile_of.size() ? impl_->tensile_of[i] : 0.0;
+        const double compressive = i < impl_->compressive_of.size() ? impl_->compressive_of[i] : 0.0;
+        const double cold_strength = compressive > 0.0 && compressive < tensile ? compressive : tensile;
+        // What heat has left of each side of the section that carries the
+        // bending: the same beam's section, three rings of it
+        // (thermo/ThermalMechanics.hpp), with the span along x and the depth up,
+        // as the formula above has it. One for anything the thermal network
+        // does not hold, or whose material has no law.
+        double tension_left = 1.0, compression_left = 1.0;
         std::string heated;
+        std::optional<thermo::SectionState> heated_section;
+        std::optional<thermo::MatterState> heated_matter;
         if (impl_->thermo) {
             const thermo::MechanicalLaw *law = thermo::lawFor(impl_->described[i].material);
             const std::optional<thermo::MatterState> matter =
                 impl_->thermo->matter(impl_->described[i].name);
             if (law != nullptr && matter) {
-                const thermo::SectionState section =
-                    thermo::evaluateSection(*law, *matter, 2.0 * half[i], 0, 1);
-                capacity = section.bending;
-                char text[320];
-                std::snprintf(text, sizeof text,
-                              "; heated: surface %.0f K, core %.0f K, %.1f mm burned away and %.1f mm "
-                              "char, so its section holds %s of what it did cold",
-                              matter->surface_k, matter->core_k, 1000.0 * section.consumed_m,
-                              1000.0 * section.char_m, percent(capacity).c_str());
-                heated = text;
+                heated_section = thermo::evaluateSection(*law, *matter, reference, 0, 1);
+                heated_matter = matter;
+                tension_left = heated_section->bending;
+                compression_left = heated_section->bending_compression;
             }
         }
-        const double strength = material_strength * capacity;
+        const double on_tension = tensile * tension_left;
+        const double on_compression =
+            compressive > 0.0 ? compressive * compression_left : std::numeric_limits<double>::infinity();
+        const double strength = std::min(on_tension, on_compression);
+        const bool compression_governs = on_compression < on_tension;
+        const double capacity = cold_strength > 0.0 ? strength / cold_strength : 1.0;
+        if (heated_section) {
+            char text[320];
+            std::snprintf(text, sizeof text,
+                          "; heated: surface %.0f K, core %.0f K, %.1f mm burned away and %.1f mm "
+                          "char, so its section holds %s of what it did cold",
+                          heated_matter->surface_k, heated_matter->core_k, 1000.0 * heated_section->consumed_m,
+                          1000.0 * heated_section->char_m, percent(capacity).c_str());
+            heated = text;
+        }
         if (traced)
             std::fprintf(stderr, "survey %s span=%.3f stress=%.3g Pa strength=%.3g Pa\n",
                          impl_->described[i].name.c_str(), span, stress, strength);
-        if (!(material_strength > 0.0)) continue;
+        if (!(cold_strength > 0.0)) continue;
         if (!(stress > strength)) continue;
 
-        char said[160];
-        std::snprintf(said, sizeof said, "bending %.3g MPa against the %.3g MPa it can take",
-                      stress / 1.0e6, strength / 1.0e6);
+        char said[200];
+        std::snprintf(said, sizeof said, "bending %.3g MPa against the %.3g MPa it can take on its %s side",
+                      stress / 1.0e6, strength / 1.0e6, compression_governs ? "compression" : "tension");
         impl_->overloaded.push_back(LiveOverload{impl_->described[i].name, carrying[i], span, stress,
                                                  strength, capacity, std::string(said) + heated});
         // And remember the heaviest thing sitting directly on it, so the
@@ -2688,6 +2893,14 @@ void LiveWorld::surveyLoads() {
             heaviest = on_top;
         }
         if (heaviest != static_cast<std::size_t>(-1)) impl_->bearing_on[i] = heaviest;
+        // And the whole of it, for statics: what it rests on, and every body
+        // directly on it with the weight that body brings down.
+        Impl::Sustained &sustained = impl_->sustained_by[impl_->described[i].name];
+        for (std::size_t under = 0; under < count; ++under)
+            if (restsOn(i, under)) sustained.on.push_back(impl_->described[under].name);
+        for (std::size_t on_top = 0; on_top < count; ++on_top)
+            if (restsOn(on_top, i))
+                sustained.loads_n.emplace_back(impl_->described[on_top].name, weight[on_top] + carrying[on_top]);
     }
 }
 
@@ -3008,13 +3221,14 @@ void LiveWorld::dropBodies(const std::vector<std::size_t> &which) {
         if (body >= impl_->body_of.size()) continue;
         if (impl_->world->contains(impl_->body_of[body]))
             impl_->world->removeAndDestroy(impl_->body_of[body]);
+        if (body < impl_->described.size()) impl_->matter_of.erase(impl_->described[body].name);
         const auto drop = [&](auto &vector) {
             if (body < vector.size())
                 vector.erase(vector.begin() + static_cast<std::ptrdiff_t>(body));
         };
         drop(impl_->described); drop(impl_->body_of); drop(impl_->nodes_of);
         drop(impl_->limits_of); drop(impl_->impedance_of); drop(impl_->density_of);
-        drop(impl_->tensile_of);
+        drop(impl_->tensile_of); drop(impl_->compressive_of);
         if (impl_->holding != static_cast<std::size_t>(-1) && impl_->holding > body)
             --impl_->holding;
     }
@@ -3251,6 +3465,12 @@ std::vector<std::string> LiveWorld::breakable() const {
     for (const LiveOverload &sagging : impl_->overloaded) {
         if (impl_->held_through.count(sagging.name)) continue;
         if (impl_->index_of.find(sagging.name) == impl_->index_of.end()) continue;
+        // Statics has answered this very load on this very section: it held.
+        // Asked again once heat has weakened the section or more is piled on.
+        if (const auto held = impl_->statics_held.find(sagging.name); held != impl_->statics_held.end() &&
+            sagging.capacity_fraction > held->second.capacity_fraction * (1.0 - kStaticsAskAgain) &&
+            sagging.carrying_n < held->second.carrying_n * (1.0 + kStaticsAskAgain))
+            continue;
         if (std::find(out.begin(), out.end(), sagging.name) == out.end())
             out.push_back(sagging.name);
     }
@@ -3323,11 +3543,21 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
             if (partner != impl_->partner_of.end()) {
                 with = partner->second;
                 struck = true;
+            } else if (impl_->sustained_by.count(name) != 0) {
+                // No contact caused this: it is a load rather than a blow, and
+                // statics answers it (fracture/SustainedLoad.hpp). The body goes
+                // in alone; what it rests on holds it up and what rests on it
+                // presses on it, as forces and supports rather than as matter.
+                //
+                // It used to go in with the heaviest thing sitting on it and
+                // nothing under it, for a few milliseconds of a wave: measured
+                // (tests/thermal_geometry_tests.cpp), plank and load then fell
+                // freely together and the plank broke -- or held -- on how far
+                // the load's cells had sunk into it, not on the load.
+                job.sustained = true;
             } else {
-                // No contact caused this, so it is a load rather than a blow:
-                // the thing sitting on it is what it has to be run against. See
-                // Impl::bearing_on -- without this an overloaded shelf goes into
-                // the lattice with nothing on it and comes out whole.
+                // No contact and no load the survey knows of: the body alone,
+                // as the host asked.
                 const auto bearing = impl_->bearing_on.find(which);
                 if (bearing != impl_->bearing_on.end()) with = bearing->second;
             }
@@ -3345,6 +3575,11 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
     }
     for (const std::size_t body : island_bodies)
         if (!impl_->world->contains(impl_->body_of[body])) { job.settled = true; job.answer = 0; return held; }
+    // What the island is, for anyone asking why a run said what it said.
+    // What heat has done to the matter in this island, read now: each body's
+    // cells are still in that body's own frame, and the loop below moves them
+    // into the struck body's. docs/thermal-mechanics.md, "One material state".
+    const std::unique_ptr<HeatedCells> heated = heatedCellsOf(island_bodies);
     // Where a body is, or -- for the one thing that has not arrived yet -- where
     // it is going to be. Everything below asks through this, so a run started
     // early is built from the collision as it is expected to happen.
@@ -3442,7 +3677,7 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
 
     // Every cell of every body in the island, in parent numbering. Each body's
     // cells are placed by ITS own rigid pose, which is what buildFragmentLattice
-    // does for one body -- so the offsets are rewritten here into the frame the
+    // does for one body -- so the offsets are rewritten into the frame the
     // island will be built in, one body at a time.
     //
     // Into a copy. The table is each body's own shape in its own frame, every
@@ -3526,6 +3761,10 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
         island.matter.nodes[local].velocity_m_s =
             pose.linear_velocity_m_s + cross(pose.angular_velocity_rad_s, arm);
     }
+    // A heated body's cells weigh what the network says is left, and its bonds
+    // carry what the law leaves them -- the same field its section, its shape
+    // and its report are read from. Nothing cold is touched.
+    heatIsland(island, *heated, name, true);
     LatticeState island_state = buildLatticeState(island.matter, island.schedule, island.origin);
     for (std::size_t k = 0; k < island_state.bond_count; ++k) {
         const std::uint32_t o = island.schedule.bond_order[k];
@@ -3556,6 +3795,14 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
                 yields ? own.yield_strength_pa / own.young_modulus_pa : 0.0;
             settings.plastic_hardening = yields ? std::max(0.0, own.hardening_ratio) : 0.0;
         }
+    }
+    // The solve takes one yield stretch, the struck body's: a yield strength
+    // over a modulus, so heat moves it by its strength's factor over its
+    // stiffness's, averaged over its cells (declared).
+    if (settings.plastic_yield_stretch > 0.0) {
+        const auto mean = heated->mean.find(impl_->described[which].name);
+        if (mean != heated->mean.end() && mean->second.stiffness > kSoftestBond)
+            settings.plastic_yield_stretch *= mean->second.tension / mean->second.stiffness;
     }
     // The scenery it was driven into, as the surface it is.
     //
@@ -3611,8 +3858,94 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
         return static_cast<std::uint64_t>(
             std::max<long long>(0, std::llround(seconds / setup.dt_s)));
     };
-    std::unique_ptr<LatticeBackend> backend = makeBackend(impl_->request, island.schedule);
-    backend->upload(island_state, settings, parked);
+    // A sustained load: supports and forces instead of a striker and a wave.
+    std::unique_ptr<LatticeBackend> backend;
+    // Char through: heat has left no bond in it carrying anything. Statics has
+    // no strength to say where such a body gives, and would hand back one piece
+    // per cell; said, and left as it is (docs/thermal-mechanics.md).
+    if (job.sustained &&
+        std::none_of(island.matter.bonds.begin(), island.matter.bonds.end(),
+                     [](const ActiveBondState &bond) { return bond.alive; })) {
+        impl_->delays.push_back({impl_->time_s, name, "char through", 0.0, 0.0});
+        Impl::SustainedAnswer &answer = impl_->sustained_answers[name];
+        answer = {};
+        answer.time_s = impl_->time_s;
+        answer.stop = "char through: no bond in it carries anything, so statics cannot say where it gives";
+        for (const LiveOverload &o : impl_->overloaded)
+            if (o.name == name) impl_->statics_held[name] = {o.capacity_fraction, o.carrying_n};
+        job.settled = true;
+        job.answer = 1;
+        return held;
+    }
+    if (job.sustained) {
+        const Impl::Sustained &sustained = impl_->sustained_by.at(name);
+        const double cell = impl_->request.cell_size_m;
+        const std::size_t count = island.matter.nodes.size();
+        job.load.loads_n.assign(count, Vec3{});
+        // Its own weight, cell by cell, each cell as heat has left it.
+        for (std::size_t local = 0; local < count; ++local)
+            job.load.loads_n[local] = island.matter.nodes[local].mass_kg * impl_->request.gravity_m_s2;
+        const Vec3 down = normalized(impl_->request.gravity_m_s2, Vec3{0.0, -1.0, 0.0});
+        // A body's box as it stands now -- what the survey measured from.
+        const auto boxOf = [&](const std::string &who, Vec3 &centre, Vec3 &half) {
+            const auto found = impl_->index_of.find(who);
+            if (found == impl_->index_of.end() || !impl_->world->contains(impl_->body_of[found->second]))
+                return false;
+            centre = impl_->world->snapshot(impl_->body_of[found->second]).center_of_mass_world_m;
+            half = 0.5 * impl_->described[found->second].dimensions_m;
+            return true;
+        };
+        // Held from below: its bottom cells over each thing it rests on.
+        std::set<std::uint32_t> holding_cells;
+        for (const std::string &under : sustained.on) {
+            Vec3 centre{}, half{};
+            if (!boxOf(under, centre, half)) continue;
+            const double top = centre.y + half.y;
+            for (std::size_t local = 0; local < count; ++local) {
+                const Vec3 p = island.matter.nodes[local].position_world_m;
+                if (std::abs(p.x - centre.x) > half.x || std::abs(p.z - centre.z) > half.z) continue;
+                if (p.y - top > cell || p.y < top - 0.5 * cell) continue;
+                holding_cells.insert(static_cast<std::uint32_t>(local));
+            }
+        }
+        job.load.supported_nodes.assign(holding_cells.begin(), holding_cells.end());
+        job.supported_cells = holding_cells.size();
+        // Pressed from above: the weight each thing on it brings down, shared
+        // among its top cells under that thing.
+        for (const auto &[over, newtons] : sustained.loads_n) {
+            Vec3 centre{}, half{};
+            if (!boxOf(over, centre, half)) continue;
+            const double bottom = centre.y - half.y;
+            std::vector<std::size_t> under_it;
+            for (std::size_t local = 0; local < count; ++local) {
+                const Vec3 p = island.matter.nodes[local].position_world_m;
+                if (std::abs(p.x - centre.x) > half.x || std::abs(p.z - centre.z) > half.z) continue;
+                if (p.y < bottom - cell) continue;
+                under_it.push_back(local);
+            }
+            if (under_it.empty()) continue;
+            for (const std::size_t local : under_it)
+                job.load.loads_n[local] += (newtons / static_cast<double>(under_it.size())) * down;
+            job.loaded_cells += under_it.size();
+            job.load_n += newtons;
+        }
+        if (job.load.supported_nodes.empty()) {
+            // Statics has no answer for a body nothing holds up: it would carry
+            // nothing and say it held. Said, not guessed.
+            impl_->delays.push_back({impl_->time_s, name, "no support", 0.0, 0.0});
+            Impl::SustainedAnswer &answer = impl_->sustained_answers[name];
+            answer = {};
+            answer.time_s = impl_->time_s;
+            answer.stop = "no support found under it";
+            answer.load_n = job.load_n;
+            job.settled = true;
+            job.answer = 1;
+            return held;
+        }
+    } else {
+        backend = makeBackend(impl_->request, island.schedule);
+        backend->upload(island_state, settings, parked);
+    }
     RunControl control{};
     // The window has to cover the rigid step that was taken back BEFORE it can
     // cover the impact: the world is one step short of contact, so a ball at
@@ -3671,6 +4004,22 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
 // The only part that takes any time, and the only part that touches nothing
 // shared. Safe to call from a worker.
 void LiveWorld::work(Pending &job) {
+    if (job.sustained) {
+        // Statics on the body's own lattice; then the state the apply reads,
+        // rebuilt from where equilibrium left it. Plastic set is carried
+        // through untouched: statics adds no flow.
+        job.statics = solveSustainedLoad(job.island.matter, job.load);
+        LatticeState solved = buildLatticeState(job.island.matter, job.island.schedule, job.island.origin);
+        solved.plastic_extension = job.state.plastic_extension;
+        solved.plastic_strain = job.state.plastic_strain;
+        job.state = std::move(solved);
+        job.status = RunStatus{};
+        job.status.broken_bonds = static_cast<std::uint32_t>(job.statics.bonds_removed);
+        job.cost_ms = 1000.0 * std::chrono::duration<double>(
+            std::chrono::steady_clock::now() - job.started).count();
+        job.worked = true;
+        return;
+    }
     job.status = job.backend->run(job.control);
     job.backend->download(job.state, job.parked);
     job.cost_ms = 1000.0 * std::chrono::duration<double>(
@@ -3682,6 +4031,32 @@ std::size_t LiveWorld::applyPending() {
     Pending &job = *impl_->pending;
     if (job.settled) return job.answer;
     const std::string &name = job.name;
+    // What statics said, for the reports and the log: how near its bonds came
+    // to the criterion under the load, and what that cost.
+    if (job.sustained) {
+        Impl::SustainedAnswer &answer = impl_->sustained_answers[name];
+        answer = {};
+        answer.time_s = impl_->time_s;
+        answer.stop = job.statics.stop;
+        answer.load_n = job.load_n;
+        answer.first_failure_ratio = job.statics.first_failure_ratio;
+        answer.deflection_m = job.statics.first_deflection_m;
+        answer.bonds_removed = job.statics.bonds_removed;
+        answer.rounds = job.statics.rounds;
+        answer.solves = job.statics.solves;
+        answer.supported_cells = job.supported_cells;
+        answer.loaded_cells = job.loaded_cells;
+        answer.pieces = 1;
+        answer.cost_ms = job.cost_ms;
+        impl_->delays.push_back({impl_->time_s, name, "statics", 100.0 * job.statics.first_failure_ratio,
+                                 job.cost_ms});
+        // It held: remember against what, so the same question is not asked
+        // again until heat weakens it or more is put on it.
+        impl_->statics_held.erase(name);
+        if (job.statics.stop == "held")
+            for (const LiveOverload &o : impl_->overloaded)
+                if (o.name == name) impl_->statics_held[name] = {o.capacity_fraction, o.carrying_n};
+    }
     const RunStatus &status = job.status;
     FragmentLattice &island = job.island;
     LatticeState &island_state = job.state;
@@ -3834,6 +4209,12 @@ std::size_t LiveWorld::applyPending() {
             for (const std::uint32_t node : impl_->nodes_of[body]) source_of_cell[node] = source;
         }
 
+    // What each body's matter was measured against (docs/thermal-mechanics.md).
+    // One that comes through whole in its authored shape keeps its record;
+    // anything rebuilt from cells starts a new one from the cells it has.
+    std::vector<std::string> island_names;
+    for (const std::size_t body : island_bodies) island_names.push_back(impl_->described[body].name);
+
     // Drop every body in the island and append what they became. A piece is a
     // hull: its cells ARE its surface now, so no authored primitive fits.
     std::vector<std::size_t> going = island_bodies;
@@ -3844,7 +4225,7 @@ std::size_t LiveWorld::applyPending() {
         };
         drop(impl_->described); drop(impl_->body_of); drop(impl_->nodes_of);
         drop(impl_->limits_of); drop(impl_->impedance_of); drop(impl_->density_of);
-        drop(impl_->tensile_of);
+        drop(impl_->tensile_of); drop(impl_->compressive_of);
         if (impl_->holding != static_cast<std::size_t>(-1) && impl_->holding > body) --impl_->holding;
     }
 
@@ -4008,6 +4389,7 @@ std::size_t LiveWorld::applyPending() {
             acousticImpedance(material.density_kg_m3, material.young_modulus_pa));
         impl_->density_of.push_back(material.density_kg_m3);
         impl_->tensile_of.push_back(material.tensile_strength_pa);
+        impl_->compressive_of.push_back(material.compressive_strength_pa);
         impl_->nodes_of.push_back(std::move(parent_nodes));
         if (piece.shape == "hull")
             piece.dimensions_m = cellBounds(impl_->nodes_of.back(), impl_->cell_offset_m,
@@ -4015,6 +4397,18 @@ std::size_t LiveWorld::applyPending() {
         impl_->described.push_back(std::move(piece));
         impl_->body_of.push_back(fragment.body_id);
         impl_->next_body_id = std::max(impl_->next_body_id, fragment.body_id + 1);
+    }
+    for (const std::string &was : island_names) {
+        const auto record = impl_->matter_of.find(was);
+        if (record == impl_->matter_of.end()) continue;
+        bool kept = false;
+        for (LiveBodyPose &pose : impl_->described) {
+            if (pose.name != was || pose.shape == "hull") continue;
+            pose.revision = record->second.revision;
+            kept = true;
+            break;
+        }
+        if (!kept) impl_->matter_of.erase(record);
     }
     impl_->world->addFragments(rebuilt.rigid_fragments);
     impl_->index_of.clear();
@@ -4046,6 +4440,7 @@ std::size_t LiveWorld::applyPending() {
     // same contact is offered again on the next step, dents it again, and the
     // world spends itself deforming one object for ever.
     if (impl_->index_of.find(name) == impl_->index_of.end()) impl_->held_through.erase(name);
+    if (job.sustained) impl_->sustained_answers[name].pieces = of_asked;
     return of_asked;
 }
 
@@ -4248,6 +4643,10 @@ std::vector<thermo::BodyShape> LiveWorld::thermoShapes() const {
         } else {
             shape.area_m2 = hullArea(i);
             shape.volume_m3 = matter > 0.0 ? matter : d.x * d.y * d.z;
+            // What is left of its cells, where some of their matter has burned.
+            if (const auto record = impl_->matter_of.find(body.name);
+                record != impl_->matter_of.end() && record->second.remaining_volume_m3 > 0.0)
+                shape.volume_m3 = record->second.remaining_volume_m3;
         }
         // What it weighs now, which the network may itself have changed.
         // Scenery is static to the solver and has no mass there, so its matter
@@ -4287,6 +4686,9 @@ void LiveWorld::settleThermo() {
         const MatterBodyId id = impl_->body_of[found->second];
         if (impl_->world->contains(id)) impl_->world->setMass(id, kg);
     }
+    // And where it is: the shape, the cells and the attachments of everything
+    // whose matter has burned, at the network's own stride.
+    if (impl_->steps_taken % 8 == 0) reviseMatter();
     // And what the heat has done to what everything can carry.
     refreshMechanics();
 }
@@ -4326,8 +4728,50 @@ LiveMaterialState LiveWorld::materialStateOf(std::size_t body, const Vec3 *load_
     const LiveBodyPose &pose = impl_->described[body];
     out.name = pose.name;
     out.material = pose.material;
-    out.dimensions_m = pose.dimensions_m;
-    const Vec3 d = pose.dimensions_m;
+    // The section is taken across the box its matter is measured against --
+    // as authored -- with what burned away inside it: once, never twice.
+    const Vec3 d = referenceBoxOf(body);
+    out.dimensions_m = d;
+    out.reference_m = d;
+    out.remaining_m = pose.dimensions_m;
+    {
+        const double cell = impl_->request.cell_size_m;
+        const std::size_t cells = body < impl_->nodes_of.size() ? impl_->nodes_of[body].size() : 0;
+        out.cells = cells;
+        const Vec3 &now = pose.dimensions_m;
+        double volume = pose.shape == "sphere" ? 3.14159265358979323846 * now.x * now.x * now.x / 6.0
+                      : pose.shape == "box"    ? now.x * now.y * now.z
+                                               : static_cast<double>(cells) * cell * cell * cell;
+        if (const auto record = impl_->matter_of.find(pose.name); record != impl_->matter_of.end()) {
+            const MatterRecord &r = record->second;
+            if (r.remaining_volume_m3 > 0.0) volume = r.remaining_volume_m3;
+            out.cells_burned = r.cells_burned;
+            out.revision = r.revision;
+            out.bond_tension_min = r.bond_tension_min;
+            out.bond_tension_mean = r.bond_tension_mean;
+            out.bond_stiffness_mean = r.bond_stiffness_mean;
+        }
+        out.remaining_volume_m3 = volume;
+        // What the solver moves, and its inertia about the body's own axes. The
+        // world holds the inertia in the world's frame; turned back here.
+        const MatterBodyId id = impl_->body_of[body];
+        if (impl_->world->contains(id)) {
+            const RigidMechanicalState held = impl_->world->mechanicalState(id);
+            out.mass_kg = held.mass_kg;
+            const Quat q = held.motion.orientation_world;
+            const Vec3 axes[3] = {q.rotate({1.0, 0.0, 0.0}), q.rotate({0.0, 1.0, 0.0}), q.rotate({0.0, 0.0, 1.0})};
+            out.inertia_kg_m2 = {dot(axes[0], held.inertia_world_kg_m2 * axes[0]),
+                                 dot(axes[1], held.inertia_world_kg_m2 * axes[1]),
+                                 dot(axes[2], held.inertia_world_kg_m2 * axes[2])};
+        }
+        // Scenery has no mass in the solver; its matter still has one.
+        if (!(out.mass_kg > 0.0)) {
+            const double density = body < impl_->density_of.size() ? impl_->density_of[body] : 0.0;
+            out.mass_kg = static_cast<double>(cells) * cell * cell * cell * density;
+            if (impl_->thermo)
+                if (const auto held = impl_->thermo->matter(pose.name)) out.mass_kg = held->surface_kg + held->core_kg;
+        }
+    }
     // The axis of the body's own box the load runs along: the one the load's
     // direction lies nearest, taken into the body's frame -- and into its
     // shape's, for a box authored at a tilt, whose tilt lives in the shape.
@@ -4534,15 +4978,627 @@ void LiveWorld::refreshMechanics() {
             if (found == impl_->index_of.end()) continue;
             const std::optional<thermo::MatterState> matter = impl_->thermo->matter(heat.body);
             if (!matter) continue;
-            const thermo::SectionState s = thermo::evaluateSection(
-                *law, *matter, impl_->described[found->second].dimensions_m, 0, 1);
+            const thermo::SectionState s =
+                thermo::evaluateSection(*law, *matter, referenceBoxOf(found->second), 0, 1);
+            // Either side of the bending moving is a reason to ask again.
+            const double side = std::min(s.bending, s.bending_compression);
             double &seen = impl_->bending_seen.try_emplace(heat.body, 1.0).first->second;
-            if (std::abs(s.bending - seen) > kRecheck) {
-                seen = s.bending;
+            if (std::abs(side - seen) > kRecheck) {
+                seen = side;
                 impl_->survey_due = true;
             }
         }
     }
+}
+
+// ---- one material state (docs/thermal-mechanics.md, "One material state") ------
+//
+// The thermal network owns the state of a body's matter -- how hot each zone is
+// and has been, how much of what it holds is left. Everything below lays that
+// state over the body's reference box, as the MaterialField, and reads it from
+// there and nowhere else: the lattice a fracture is run in, the collision shape,
+// the mass properties, the attachments and the reports.
+
+LiveWorld::MatterRecord &LiveWorld::recordOf(std::size_t body) const {
+    Impl &I = *impl_;
+    const LiveBodyPose &pose = I.described[body];
+    if (const auto found = I.matter_of.find(pose.name); found != I.matter_of.end()) return found->second;
+    MatterRecord record;
+    if (pose.shape == "box" || pose.shape == "sphere") {
+        // As authored. Nothing has cut it yet -- only a revision does, and a
+        // revision makes this record first -- so this is the box it was made as.
+        record.box_m = pose.dimensions_m;
+        record.round = pose.shape == "sphere";
+        if (const auto tilt = I.tilt_of.find(pose.name); tilt != I.tilt_of.end()) record.turn = tilt->second;
+    } else {
+        // The cells' own box, in the body's frame: a piece, a join, a cone.
+        const double cell = I.request.cell_size_m;
+        Vec3 low{}, high{};
+        bool first = true;
+        for (const std::uint32_t node : I.nodes_of[body]) {
+            const Vec3 &at = I.cell_offset_m[node];
+            if (first) { low = high = at; first = false; continue; }
+            low = {std::min(low.x, at.x), std::min(low.y, at.y), std::min(low.z, at.z)};
+            high = {std::max(high.x, at.x), std::max(high.y, at.y), std::max(high.z, at.z)};
+        }
+        record.box_m = high - low + Vec3{cell, cell, cell};
+        record.centre_m = 0.5 * (low + high);
+    }
+    return I.matter_of.emplace(pose.name, record).first->second;
+}
+
+Vec3 LiveWorld::referenceBoxOf(std::size_t body) const {
+    if (body >= impl_->described.size()) return {};
+    const auto found = impl_->matter_of.find(impl_->described[body].name);
+    return found != impl_->matter_of.end() ? found->second.box_m : impl_->described[body].dimensions_m;
+}
+
+Vec3 LiveWorld::inReference(std::size_t body, const Vec3 &local_m) const {
+    const MatterRecord &record = recordOf(body);
+    return conjugateOf(record.turn).rotate(local_m - record.centre_m);
+}
+
+std::optional<thermo::MaterialField> LiveWorld::fieldOf(std::size_t body) const {
+    if (!impl_->thermo || body >= impl_->described.size()) return std::nullopt;
+    const LiveBodyPose &pose = impl_->described[body];
+    const thermo::MechanicalLaw *law = thermo::lawFor(pose.material);
+    if (law == nullptr) return std::nullopt;
+    const std::optional<thermo::MatterState> matter = impl_->thermo->matter(pose.name);
+    if (!matter) return std::nullopt;
+    const MatterRecord &record = recordOf(body);
+    return thermo::materialField(law, *matter, record.box_m, record.round);
+}
+
+std::unique_ptr<LiveWorld::HeatedCells> LiveWorld::heatedCellsOf(const std::vector<std::size_t> &bodies) const {
+    auto out = std::make_unique<HeatedCells>();
+    const Impl &I = *impl_;
+    const double cell = I.request.cell_size_m;
+    for (const std::size_t body : bodies) {
+        if (body >= I.nodes_of.size() || I.nodes_of[body].empty()) continue;
+        const std::optional<thermo::MaterialField> field = fieldOf(body);
+        if (!field) continue;
+        const std::vector<std::uint32_t> &nodes = I.nodes_of[body];
+        std::vector<thermo::CellShare> shares;
+        shares.reserve(nodes.size());
+        double cold = 0.0, weighted = 0.0;
+        bool changed = false;
+        for (const std::uint32_t node : nodes) {
+            const thermo::CellShare share =
+                atLeast(thermo::cellShare(*field, inReference(body, I.cell_offset_m[node]), cell));
+            shares.push_back(share);
+            const double m0 = I.setup->matter.nodes[node].mass_kg;
+            cold += m0;
+            weighted += m0 * share.remaining();
+            changed = changed || !wholeFactors(thermo::cellFactors(*field, share));
+        }
+        const double lump = field->surface_kg + field->core_kg;
+        // Nothing has happened to it that a run could see: it is left exactly
+        // as it was built, bit for bit.
+        if (!changed && std::abs(lump - cold) <= 1.0e-9 * cold) continue;
+        thermo::ZoneFactors sum{0.0, 0.0, 0.0, 0.0};
+        for (std::size_t k = 0; k < nodes.size(); ++k) {
+            const std::uint32_t node = nodes[k];
+            const double m0 = I.setup->matter.nodes[node].mass_kg;
+            // The network's mass, spread over what is left: each cell's share is
+            // its cold mass times the share of it still there (declared).
+            out->mass_kg[node] = weighted > 0.0 ? lump * m0 * shares[k].remaining() / weighted : m0;
+            const thermo::ZoneFactors f = thermo::cellFactors(*field, shares[k]);
+            out->factors[node] = f;
+            sum.stiffness += f.stiffness;
+            sum.tension += f.tension;
+            sum.compression += f.compression;
+            sum.shear += f.shear;
+        }
+        const double n = static_cast<double>(nodes.size());
+        out->mean[I.described[body].name] = {sum.stiffness / n, sum.tension / n, sum.compression / n,
+                                             sum.shear / n};
+    }
+    return out;
+}
+
+void LiveWorld::heatIsland(FragmentLattice &island, const HeatedCells &heated, const std::string &name,
+                           bool bonds) {
+    if (heated.mass_kg.empty() || island.asset == nullptr) return;
+    double total = 0.0;
+    for (std::size_t local = 0; local < island.parent_node.size(); ++local) {
+        const auto mass = heated.mass_kg.find(island.parent_node[local]);
+        if (mass != heated.mass_kg.end()) island.matter.nodes[local].mass_kg = mass->second;
+        total += island.matter.nodes[local].mass_kg;
+    }
+    island.asset->total_mass_kg = total;
+    if (!bonds) return;
+    std::size_t weakened = 0, carries_nothing = 0;
+    double weakest = 1.0;
+    for (std::size_t k = 0; k < island.asset->bonds.size() && k < island.matter.bonds.size(); ++k) {
+        BondRest &bond = island.asset->bonds[k];
+        const auto a = heated.factors.find(island.parent_node[bond.node_a]);
+        const auto b = heated.factors.find(island.parent_node[bond.node_b]);
+        if (a == heated.factors.end() && b == heated.factors.end()) continue;
+        const thermo::ZoneFactors &fa = a != heated.factors.end() ? a->second : b->second;
+        const thermo::ZoneFactors &fb = b != heated.factors.end() ? b->second : a->second;
+        const thermo::ZoneFactors f = thermo::bondFactors(fa, fb);
+        if (wholeFactors(f) || !island.matter.bonds[k].alive) continue;
+        if (!weakenBond(bond, f)) {
+            island.matter.bonds[k].alive = false;
+            ++carries_nothing;
+            continue;
+        }
+        ++weakened;
+        weakest = std::min(weakest, f.tension);
+    }
+    // Said, like a spared bond: how many bonds heat changed, and the weakest
+    // tension factor among them. A bond that carries nothing is char or burned.
+    if (weakened + carries_nothing > 0)
+        impl_->delays.push_back({impl_->time_s, name, "heated", static_cast<double>(weakened + carries_nothing),
+                                 weakest});
+}
+
+void LiveWorld::refreshHeatedBonds(std::size_t body, const thermo::MaterialField &field) {
+    Impl &I = *impl_;
+    MatterRecord &record = recordOf(body);
+    const std::vector<std::uint32_t> &nodes = I.nodes_of[body];
+    const TileImpactSetup &setup = *I.setup;
+    if (setup.matter.asset == nullptr || nodes.empty()) return;
+    // Only when the field has moved since the last time -- a fifth of a percent
+    // in any factor, 0.1 mm of burning, or a cell gone.
+    const auto moved = [](const thermo::ZoneFactors &a, const thermo::ZoneFactors &b) {
+        return std::abs(a.stiffness - b.stiffness) > 2.0e-3 || std::abs(a.tension - b.tension) > 2.0e-3 ||
+               std::abs(a.compression - b.compression) > 2.0e-3 || std::abs(a.shear - b.shear) > 2.0e-3;
+    };
+    if (record.seen_consumed_m >= 0.0 && record.seen_cells == nodes.size() &&
+        std::abs(field.consumed_m - record.seen_consumed_m) < 1.0e-4 && !moved(field.surface, record.seen_surface) &&
+        !moved(field.core, record.seen_core))
+        return;
+    record.seen_surface = field.surface;
+    record.seen_core = field.core;
+    record.seen_consumed_m = field.consumed_m;
+    record.seen_cells = nodes.size();
+    const LatticeAsset &asset = *setup.matter.asset;
+    const double cell = I.request.cell_size_m;
+    std::unordered_map<std::uint32_t, thermo::ZoneFactors> factor;
+    factor.reserve(nodes.size());
+    for (const std::uint32_t node : nodes)
+        factor.emplace(node, thermo::cellFactors(field, atLeast(thermo::cellShare(
+                                                            field, inReference(body, I.cell_offset_m[node]), cell))));
+    std::size_t counted = 0, live = 0;
+    bool changed = false;
+    double tension_min = 1.0, tension_sum = 0.0, stiffness_sum = 0.0;
+    double stretch_min = std::numeric_limits<double>::infinity();
+    double energy_min = std::numeric_limits<double>::infinity();
+    for (const std::uint32_t node : nodes) {
+        if (node + 1U >= asset.adjacency_offsets.size()) continue;
+        for (std::uint32_t k = asset.adjacency_offsets[node]; k < asset.adjacency_offsets[node + 1U]; ++k) {
+            const std::uint32_t o = asset.adjacent_bond_indices[k];
+            const BondRest &rest = asset.bonds[o];
+            if (rest.node_a != node) continue;   // each bond once, from its first end
+            const auto other = factor.find(rest.node_b);
+            if (other == factor.end() || o >= setup.matter.bonds.size() || !setup.matter.bonds[o].alive) continue;
+            const thermo::ZoneFactors f = thermo::bondFactors(factor.at(node), other->second);
+            ++counted;
+            tension_min = std::min(tension_min, f.tension);
+            tension_sum += f.tension;
+            stiffness_sum += f.stiffness;
+            changed = changed || !wholeFactors(f);
+            BondRest given = rest;
+            if (!wholeFactors(f) && !weakenBond(given, f)) continue;
+            ++live;
+            const double stretch = bondRemovalStretch(given);
+            if (!std::isfinite(stretch) || !(stretch > 0.0)) continue;
+            stretch_min = std::min(stretch_min, stretch);
+            if (given.compliance > 0.0) {
+                const double extension = stretch * given.rest_length_m;
+                energy_min = std::min(energy_min, 0.5 * extension * extension / given.compliance);
+            }
+        }
+    }
+    const double count = static_cast<double>(counted);
+    record.bond_tension_min = counted > 0 ? tension_min : 1.0;
+    record.bond_tension_mean = counted > 0 ? tension_sum / count : 1.0;
+    record.bond_stiffness_mean = counted > 0 ? stiffness_sum / count : 1.0;
+    // The admission bound -- the speed below which a blow CANNOT break this --
+    // follows the same bonds, or a heated body would only ever be offered for
+    // blows that would have broken it cold. Left as it was built while nothing
+    // has happened to it, and put back as it was built when it recovers.
+    if (body >= I.limits_of.size()) return;
+    const MaterialDefinition &made_of = I.definitionOf(body);
+    if (!changed) {
+        if (record.limits_heated) {
+            I.limits_of[body] = fragmentFractureLimits(setup.matter, nodes, made_of.density_kg_m3,
+                                                       made_of.young_modulus_pa, made_of.yield_strength_pa);
+            if (body < I.impedance_of.size())
+                I.impedance_of[body] = acousticImpedance(made_of.density_kg_m3, made_of.young_modulus_pa);
+            record.limits_heated = false;
+        }
+        return;
+    }
+    record.limits_heated = true;
+    const double volume = record.remaining_volume_m3 > 0.0
+                              ? record.remaining_volume_m3
+                              : static_cast<double>(nodes.size()) * cell * cell * cell;
+    const double mass = field.surface_kg + field.core_kg;
+    const double density = volume > 0.0 && mass > 0.0 ? mass / volume : made_of.density_kg_m3;
+    const double modulus = made_of.young_modulus_pa * record.bond_stiffness_mean;
+    FragmentFractureLimits &limits = I.limits_of[body];
+    limits.cells = nodes.size();
+    limits.live_bonds = live;
+    limits.bar_wave_speed_m_s = density > 0.0 && modulus > 0.0 ? std::sqrt(modulus / density) : 0.0;
+    limits.acoustic_impedance_pa_s_m = acousticImpedance(density, modulus);
+    limits.minimum_removal_stretch = stretch_min;
+    limits.minimum_removal_energy_j = std::isfinite(energy_min) ? energy_min : 0.0;
+    limits.yield_stretch = made_of.yield_strength_pa > 0.0 && made_of.young_modulus_pa > 0.0 &&
+                                   record.bond_stiffness_mean > kSoftestBond
+                               ? made_of.yield_strength_pa / made_of.young_modulus_pa *
+                                     record.bond_tension_mean / record.bond_stiffness_mean
+                               : 0.0;
+    if (body < I.impedance_of.size()) I.impedance_of[body] = limits.acoustic_impedance_pa_s_m;
+}
+
+void LiveWorld::reviseMatter() {
+    Impl &I = *impl_;
+    thermo::ThermoWorld *network = I.thermo.get();
+    if (network == nullptr || !network->active()) return;
+    const double cell = I.request.cell_size_m;
+    // Whatever an unfinished fracture holds an index to waits for the next pass.
+    const auto busy = [&](std::size_t body) {
+        const auto holds = [&](const Pending &job) {
+            if (job.which == body || job.anvil == body) return true;
+            return std::find(job.island_bodies.begin(), job.island_bodies.end(), body) != job.island_bodies.end();
+        };
+        if (I.pending && holds(*I.pending)) return true;
+        if (I.guessing && holds(*I.guessing)) return true;
+        for (const auto &job : I.queued)
+            if (holds(*job)) return true;
+        return std::find(I.held_for_fracture.begin(), I.held_for_fracture.end(), body) !=
+               I.held_for_fracture.end();
+    };
+    // Anything that might have been resting on or against a body whose shape
+    // has changed is woken: a crate asleep on a plank that burns thinner would
+    // otherwise hang in the air where the plank's top used to be.
+    const auto wakeAround = [&](std::size_t body) {
+        if (!I.world->contains(I.body_of[body])) return;
+        const Vec3 at = I.world->snapshot(I.body_of[body]).center_of_mass_world_m;
+        const double reach = 0.5 * length(referenceBoxOf(body)) + 0.05;
+        for (std::size_t j = 0; j < I.described.size(); ++j) {
+            if (I.described[j].anchored || !I.world->contains(I.body_of[j])) continue;
+            const Vec3 there = I.world->snapshot(I.body_of[j]).center_of_mass_world_m;
+            if (length(there - at) <= reach + 0.5 * length(I.described[j].dimensions_m)) I.world->wake(I.body_of[j]);
+        }
+    };
+    // A joint holds what it was fixed to until that has burned away from under
+    // its point by more than it grips -- half a cell, declared: the joint model
+    // has no embedment depth of its own.
+    const auto partBurnedJoints = [&](std::size_t body, const thermo::MaterialField &field) {
+        const std::string &name = I.described[body].name;
+        const double grip = 0.5 * cell;
+        for (Impl::SceneJoint &joint : I.joints) {
+            if (!joint.attached) continue;
+            for (int end = 0; end < 2 && joint.attached; ++end) {
+                if ((end == 0 ? joint.a : joint.b) != name) continue;
+                const Vec3 at = inReference(body, jointPoint(joint, end));
+                const double gone = thermo::outsideRemainingM(field, at) - thermo::outsideReferenceM(field, at);
+                if (!(gone > grip)) continue;
+                if (joint.rigid != 0 && I.world->hasJoint(joint.rigid)) I.world->removeJoint(joint.rigid);
+                joint.rigid = 0;
+                joint.attached = false;
+                char text[400];
+                std::snprintf(text, sizeof text,
+                              "the %s it was fixed to has burned away under it: %.1f mm of it gone from where "
+                              "the joint held, more than the %.1f mm a joint grips (half a cell)",
+                              name.c_str(), 1000.0 * gone, 1000.0 * grip);
+                joint.parted_because = text;
+                for (const std::string &side : {joint.a, joint.b})
+                    if (const auto found = I.index_of.find(side); found != I.index_of.end())
+                        I.world->wake(I.body_of[found->second]);
+                I.delays.push_back({I.time_s, name, "burned off", 1000.0 * gone, 0.0});
+            }
+        }
+    };
+
+    std::vector<std::pair<std::string, std::string>> going;
+    std::vector<std::string> reform;
+    for (const thermo::BodyHeat &heat : network->bodies()) {
+        const auto found = I.index_of.find(heat.body);
+        if (found == I.index_of.end()) continue;
+        const std::size_t i = found->second;
+        const std::optional<thermo::MaterialField> field = fieldOf(i);
+        if (!field) continue;
+        MatterRecord &record = recordOf(i);
+        LiveBodyPose &pose = I.described[i];
+        const bool primitive = pose.shape == "box" || pose.shape == "sphere";
+        // Nothing has burned: no cell can have gone and no shape has moved, so
+        // only its bonds -- heat alone -- can need working out again.
+        if (!(field->consumed_m > 0.0)) {
+            refreshHeatedBonds(i, *field);
+            continue;
+        }
+        // Cells whose matter has all burned away leave the body.
+        std::vector<std::uint32_t> kept;
+        kept.reserve(I.nodes_of[i].size());
+        double volume = 0.0;
+        for (const std::uint32_t node : I.nodes_of[i]) {
+            const thermo::CellShare share = thermo::cellShare(*field, inReference(i, I.cell_offset_m[node]), cell);
+            if (share.remaining() < kGoneShare) continue;
+            kept.push_back(node);
+            volume += share.remaining() * cell * cell * cell;
+        }
+        const double left = primitive ? thermo::remainingVolumeM3(*field) : volume;
+        if (kept.empty() || !(left > 0.0)) {
+            if (!busy(i)) {
+                char why[200];
+                const std::optional<thermo::MatterState> matter = network->matter(pose.name);
+                std::snprintf(why, sizeof why, "%.1f%% of its load-bearing matter burned: nothing left to hold a shape",
+                              100.0 * (matter ? matter->consumed_fraction : 1.0));
+                going.emplace_back(pose.name, why);
+            }
+            continue;
+        }
+        const std::size_t burned_now = I.nodes_of[i].size() - kept.size();
+        if (burned_now > 0 && !busy(i)) {
+            I.nodes_of[i] = std::move(kept);
+            record.cells_burned += burned_now;
+            I.hull_area_of.erase(pose.name);
+            I.water_cells_of.erase(pose.name);
+            if (!primitive) reform.push_back(pose.name);
+        }
+        record.remaining_volume_m3 = left;
+        // A box or a sphere is cut to what is left of it where it stands: every
+        // face in by the burned depth, the centre of mass where it was, and the
+        // mass and inertia of the matter left spread over the volume left.
+        if (primitive && std::abs(field->consumed_m - record.applied_m) >= kReviseDepthM &&
+            I.world->contains(I.body_of[i])) {
+            const Vec3 box = thermo::remainingBox(*field);
+            if (box.x > 0.0 && box.y > 0.0 && box.z > 0.0) {
+                const thermo::FieldMassProperties mass = thermo::massProperties(*field);
+                const double turn[4] = {record.turn.w, record.turn.x, record.turn.y, record.turn.z};
+                I.world->reshapePrimitive(I.body_of[i], record.round, box, turn, mass.mass_kg, mass.inertia_kg_m2);
+                pose.dimensions_m = record.round ? Vec3{box.x, box.x, box.x} : box;
+                record.applied_m = field->consumed_m;
+                pose.revision = ++record.revision;
+                wakeAround(i);
+                I.survey_due = true;
+            }
+        }
+        refreshHeatedBonds(i, *field);
+        partBurnedJoints(i, *field);
+    }
+    for (const auto &[name, why] : going)
+        if (const auto found = I.index_of.find(name); found != I.index_of.end()) burnAway(found->second, why);
+    for (const std::string &name : reform)
+        if (const auto found = I.index_of.find(name); found != I.index_of.end()) (void)reformFromCells(found->second);
+}
+
+void LiveWorld::burnAway(std::size_t body, const std::string &why) {
+    Impl &I = *impl_;
+    if (body >= I.described.size()) return;
+    const std::string name = I.described[body].name;
+    double residue = 0.0;
+    if (I.thermo)
+        if (const auto matter = I.thermo->matter(name)) residue = matter->surface_kg + matter->core_kg;
+    if (I.holding == body) release();
+    // Everything fixed to it comes off, and says why.
+    for (Impl::SceneJoint &joint : I.joints) {
+        if (!joint.attached || (joint.a != name && joint.b != name)) continue;
+        if (joint.rigid != 0 && I.world->hasJoint(joint.rigid)) I.world->removeJoint(joint.rigid);
+        joint.rigid = 0;
+        joint.attached = false;
+        joint.parted_because = "the " + name + " it was fixed to burned away";
+        for (const std::string &side : {joint.a, joint.b})
+            if (const auto found = I.index_of.find(side); found != I.index_of.end() && side != name)
+                I.world->wake(I.body_of[found->second]);
+    }
+    // And what rested on it falls.
+    if (I.world->contains(I.body_of[body])) {
+        const Vec3 at = I.world->snapshot(I.body_of[body]).center_of_mass_world_m;
+        const double reach = 0.5 * length(referenceBoxOf(body)) + 0.05;
+        for (std::size_t j = 0; j < I.described.size(); ++j) {
+            if (j == body || I.described[j].anchored || !I.world->contains(I.body_of[j])) continue;
+            const Vec3 there = I.world->snapshot(I.body_of[j]).center_of_mass_world_m;
+            if (length(there - at) <= reach + 0.5 * length(I.described[j].dimensions_m)) I.world->wake(I.body_of[j]);
+        }
+    }
+    I.burned_away.push_back({name, I.described[body].material, I.time_s, residue, why});
+    I.delays.push_back({I.time_s, name, "burned away", 1000.0 * residue, 0.0});
+    // What it still held -- its ash, the last of its moisture -- leaves the
+    // thermal network with it, as a crossing the ledger counts (left_kg).
+    dropBodies({body});
+}
+
+std::size_t LiveWorld::reformFromCells(std::size_t which) {
+    Impl &I = *impl_;
+    TileImpactSetup &setup = *I.setup;
+    if (which >= I.described.size() || which >= I.nodes_of.size()) return 0;
+    const LiveBodyPose parent = I.described[which];
+    const std::vector<std::uint32_t> nodes = I.nodes_of[which];
+    const MatterBodyId old_body = I.body_of[which];
+    if (parent.anchored || nodes.empty() || !I.world->contains(old_body)) return 1;
+    const RigidSnapshot snap = I.world->snapshot(old_body);
+    const MaterialDefinition material = I.definitionOf(which);
+    const std::unique_ptr<HeatedCells> heated = heatedCellsOf({which});
+    std::optional<MatterRecord> record;
+    if (const auto found = I.matter_of.find(parent.name); found != I.matter_of.end()) record = found->second;
+
+    // Its cells as they are, moving as it moves.
+    FragmentLattice island = buildFragmentLattice(
+        setup.matter, nodes, I.cell_offset_m,
+        FragmentPose{snap.center_of_mass_world_m, snap.orientation_world, snap.linear_velocity_m_s,
+                     snap.angular_velocity_rad_s},
+        I.plastic_extension_m, I.plastic_strain_m);
+    // Weighed as what is left of them, so the rebuilt body's mass, centre of
+    // mass and inertia are the matter's. Its bonds are left alone: char holds
+    // its place until something tests it.
+    heatIsland(island, *heated, parent.name, false);
+    const auto components = findConnectedComponents(island.matter);
+    if (components.empty()) return 0;
+    const bool whole = components.size() == 1;
+
+    const CombinedContactMaterial against_ground = combineContactMaterials(
+        compileContactMaterial(material), compileContactMaterial(setup.ground_material));
+    const double rolling = compileContactMaterial(material).rolling_resistance;
+    std::vector<RigidFragmentDescription> fragments;
+    fragments.reserve(components.size());
+    for (const FragmentComponent &component : components) {
+        FragmentBuildResult built = buildFragmentRepresentations(
+            island.matter, std::span<const FragmentComponent>(&component, 1),
+            {.first_body_id = I.next_body_id++,
+             .maximum_rigid_fragments = 1,
+             .minimum_nodes_per_rigid_fragment = 1,
+             .maximum_collision_points = 192,
+             .friction = against_ground.dynamic_friction,
+             .restitution = against_ground.restitution,
+             .rolling_resistance = rolling});
+        if (built.rigid_fragments.empty()) return 1;
+        fragments.push_back(std::move(built.rigid_fragments.front()));
+    }
+
+    std::vector<std::string> before;
+    before.reserve(I.described.size());
+    for (const LiveBodyPose &pose : I.described) before.push_back(pose.name);
+
+    // Where its joints hold it, in the world, before it is rebuilt.
+    struct Pinned {
+        Impl::SceneJoint *joint;
+        int end;
+        Vec3 world;
+        Vec3 world_b;   // end b of a pin also keeps point_local_b in step
+    };
+    std::vector<Pinned> pinned;
+    for (Impl::SceneJoint &joint : I.joints) {
+        if (!joint.attached) continue;
+        for (int end = 0; end < 2; ++end) {
+            if ((end == 0 ? joint.a : joint.b) != parent.name) continue;
+            const Vec3 world = snap.center_of_mass_world_m + snap.orientation_world.rotate(jointPoint(joint, end));
+            const Vec3 world_b = snap.center_of_mass_world_m + snap.orientation_world.rotate(joint.point_local_b);
+            pinned.push_back({&joint, end, world, world_b});
+        }
+    }
+    // The kerfs it carried, in the world, to hand on.
+    std::vector<Impl::Kerf> handed;
+    if (const auto carried = I.kerfs.find(parent.name); carried != I.kerfs.end()) {
+        for (Impl::Kerf kerf : carried->second) {
+            kerf.origin = snap.center_of_mass_world_m + snap.orientation_world.rotate(kerf.origin);
+            kerf.u = snap.orientation_world.rotate(kerf.u);
+            kerf.v = snap.orientation_world.rotate(kerf.v);
+            kerf.w = snap.orientation_world.rotate(kerf.w);
+            handed.push_back(std::move(kerf));
+        }
+        I.kerfs.erase(carried);
+    }
+
+    I.world->removeAndDestroy(old_body);
+    const auto drop = [&](auto &vector) {
+        if (which < vector.size()) vector.erase(vector.begin() + static_cast<std::ptrdiff_t>(which));
+    };
+    drop(I.described); drop(I.body_of); drop(I.nodes_of);
+    drop(I.limits_of); drop(I.impedance_of); drop(I.density_of); drop(I.tensile_of);
+    drop(I.compressive_of);
+    if (I.holding == which) {
+        I.holding = static_cast<std::size_t>(-1);
+        I.wielding = false;
+    } else if (I.holding != static_cast<std::size_t>(-1) && I.holding > which) {
+        --I.holding;
+    }
+
+    std::vector<std::string> made;
+    for (std::size_t k = 0; k < components.size(); ++k) {
+        const RigidFragmentDescription &fragment = fragments[k];
+        std::vector<std::uint32_t> parent_nodes;
+        parent_nodes.reserve(components[k].node_indices.size());
+        for (const std::uint32_t local : components[k].node_indices) {
+            const std::uint32_t node = island.parent_node[local];
+            parent_nodes.push_back(node);
+            I.cell_offset_m[node] =
+                island.matter.nodes[local].position_world_m - fragment.mass_properties.center_of_mass_world_m;
+        }
+        LiveBodyPose piece{};
+        piece.name = whole ? parent.name : parent.name + " piece " + std::to_string(k + 1);
+        piece.material = parent.material;
+        piece.color_rgba = parent.color_rgba;
+        piece.fragment = !whole || parent.fragment;
+        piece.shape = "hull";
+        if (whole) {
+            piece.dent_m = parent.dent_m;
+            piece.dent_at_m = snap.center_of_mass_world_m + snap.orientation_world.rotate(parent.dent_at_m) -
+                              fragment.mass_properties.center_of_mass_world_m;
+            piece.revision = (record ? record->revision : parent.revision) + 1;
+        }
+        I.limits_of.push_back(fragmentFractureLimits(setup.matter, parent_nodes, material.density_kg_m3,
+                                                     material.young_modulus_pa, material.yield_strength_pa));
+        I.impedance_of.push_back(acousticImpedance(material.density_kg_m3, material.young_modulus_pa));
+        I.density_of.push_back(material.density_kg_m3);
+        I.tensile_of.push_back(material.tensile_strength_pa);
+        I.compressive_of.push_back(material.compressive_strength_pa);
+        I.nodes_of.push_back(std::move(parent_nodes));
+        piece.dimensions_m = cellBounds(I.nodes_of.back(), I.cell_offset_m, I.request.cell_size_m);
+        made.push_back(piece.name);
+        I.described.push_back(std::move(piece));
+        I.body_of.push_back(fragment.body_id);
+        I.next_body_id = std::max(I.next_body_id, fragment.body_id + 1);
+    }
+    I.world->addFragments(fragments);
+    I.index_of.clear();
+    for (std::size_t i = 0; i < I.described.size(); ++i) I.index_of.emplace(I.described[i].name, i);
+
+    // Still one body: it measures its matter against the same box as before,
+    // carried into its new frame (a rebuilt body faces the world's way, about
+    // its new centre of mass). In pieces: each measures against its own cells.
+    if (whole && record) {
+        MatterRecord moved = *record;
+        const Vec3 centre = snap.center_of_mass_world_m + snap.orientation_world.rotate(record->centre_m);
+        moved.centre_m = centre - fragments.front().mass_properties.center_of_mass_world_m;
+        moved.turn = composeTurns(snap.orientation_world, record->turn);
+        moved.revision = record->revision + 1;
+        I.matter_of[parent.name] = moved;
+    } else {
+        I.matter_of.erase(parent.name);
+    }
+    // Its joints: still one body, the same points in its new frame; in pieces,
+    // rehangJoints follows each to the piece that carries it.
+    if (whole) {
+        const Vec3 origin = fragments.front().mass_properties.center_of_mass_world_m;
+        for (const Pinned &p : pinned) {
+            jointPoint(*p.joint, p.end) = p.world - origin;
+            if (p.end == 1) p.joint->point_local_b = p.world_b - origin;
+            if (p.end == 0) p.joint->axis_local_a = snap.orientation_world.rotate(p.joint->axis_local_a);
+            p.joint->rigid = 0;
+        }
+    } else {
+        I.vanished[parent.name] = snap;
+    }
+    // What it held, shared out by cells, exactly as a cut shares it.
+    if (I.thermo && I.thermo->active()) {
+        if (!whole && I.thermo->holds(parent.name)) {
+            std::vector<std::pair<std::string, double>> shares;
+            const double all = static_cast<double>(nodes.size());
+            for (std::size_t k = 0; k < made.size(); ++k)
+                shares.emplace_back(made[k], static_cast<double>(components[k].node_indices.size()) / all);
+            I.thermo->split(parent.name, shares);
+        }
+        I.thermo->refresh(thermoShapes(), setup.ground_y);
+    }
+    for (std::size_t k = 0; k < made.size(); ++k) {
+        const Vec3 centre = fragments[k].mass_properties.center_of_mass_world_m;
+        const std::size_t index = I.index_of[made[k]];
+        for (Impl::Kerf kerf : handed) {
+            kerf.origin = kerf.origin - centre;
+            findCrossings(kerf, I.nodes_of[index], I.cell_offset_m, setup.asset);
+            I.kerfs[made[k]].push_back(std::move(kerf));
+        }
+    }
+    dropGuess("guess-wasted");
+    restackQueue(before);
+    rehangJoints();
+    I.vanished.clear();
+    repin();
+    I.held_through.erase(parent.name);
+    I.partner_of.clear();
+    I.survey_due = true;
+    // Its bonds and its admission bound follow the field at once.
+    for (const std::string &name : made)
+        if (const auto found = I.index_of.find(name); found != I.index_of.end())
+            if (const auto field = fieldOf(found->second)) refreshHeatedBonds(found->second, *field);
+    I.delays.push_back({I.time_s, parent.name, whole ? "burned smaller" : "burned apart",
+                        static_cast<double>(components.size()), 0.0});
+    return components.size();
 }
 
 namespace {
@@ -4551,16 +5607,38 @@ std::vector<std::string> mechanicsLimitations() {
     return {
         "A section is at most three rings -- what burned away, the surface layer, the core -- "
         "each at one temperature: a thick member's char front is not resolved inside its core",
-        "Burning eats in from every face of a body's box alike (a declared approximation). What "
-        "burned is taken out of the load-bearing section and the mass, not yet out of the "
-        "collision shape, the drawn shape, the centre of mass or the inertia",
+        "One material field per body (docs/thermal-mechanics.md, \"One material state\"): burned "
+        "away within the burned depth of its reference box's faces, then the surface layer, then "
+        "the core. The section, the lattice a fracture is run in, the collision shape, the drawn "
+        "shape, the mass, centre of mass and inertia and the attachments all read it, and nothing "
+        "else",
+        "Burning eats in from every face of a body's box alike (a declared approximation), so its "
+        "centre of mass stays at its box's centre; the network does know that a face against the "
+        "floor or another body does not burn (it takes it out of the area that reacts) but the "
+        "burned depth is not yet shared out by face",
+        "A lattice cell carries the field averaged over its own cube, zone by zone (a declared rule "
+        "of mixtures); a bond is its two half-cells in series for stiffness and as strong as its "
+        "weaker end. The failure thresholds are stretches, so each goes by its strength's factor "
+        "over the stiffness's; the fracture energy has no law of its own and is not changed",
+        "A cell is taken out once less than 2% of its matter is left, and a piece is then rebuilt "
+        "from the cells it has; between cells, a piece's hull keeps the burned part of a cell until "
+        "the whole cell has gone. A box or a sphere is cut to what is left every 0.2 mm",
+        "The matter left is spread evenly over the volume left for mass, centre of mass and "
+        "inertia: the network knows each zone's mass, not how it is spread within the zone",
+        "A body whose load-bearing matter has all burned away leaves the world; its residue (ash, "
+        "the last moisture) is not modelled as a body and leaves the thermal network with it, on "
+        "the ledger",
+        "A joint lets go of matter burned away from under its point by more than half a cell "
+        "(declared: the joint model has no embedment depth of its own)",
+        "A sustained load is answered by statics on the body's own lattice "
+        "(fracture/SustainedLoad.hpp): unilateral supports under it, the weight of what rests on it "
+        "on its top cells, the shared failure criterion at constant load. No creep, no dynamic "
+        "amplification, and the load does not follow the body as it sags",
         "A joint is weakened by heat only when it names the body it is made of (its member): its "
         "declared strength is what that member carries cold, scaled by the share of the "
         "member's section strength that remains",
         "A fixing is checked against the force it carries, along its axis and across it, not "
         "against a bending moment",
-        "The lattice a fracture is worked out in uses every material's room-temperature bonds: a "
-        "heated beam the load survey offers as overloaded is still broken with cold bonds",
         "Thermal expansion is not modelled",
         "Glass, aluminium, alumina ceramic, rubber and ice have no law: heat does not change what "
         "they can carry"};
@@ -4601,8 +5679,42 @@ std::string LiveWorld::mechanicsReport(bool with_laws) const {
                                          {"shear", s.shear_if_cooled},
                                          {"bending", s.bending_if_cooled}}},
                           {"supported", s.supported},
-                          {"outside", s.outside}});
+                          {"outside", s.outside},
+                          // What is left of it, from the same field.
+                          {"reference_m", json::array({m.reference_m.x, m.reference_m.y, m.reference_m.z})},
+                          {"remaining_m", json::array({m.remaining_m.x, m.remaining_m.y, m.remaining_m.z})},
+                          {"remaining_volume_m3", m.remaining_volume_m3},
+                          {"mass_kg", m.mass_kg},
+                          {"inertia_kg_m2", json::array({m.inertia_kg_m2.x, m.inertia_kg_m2.y, m.inertia_kg_m2.z})},
+                          {"cells", m.cells},
+                          {"cells_burned", m.cells_burned},
+                          {"bonds", {{"tension_min", m.bond_tension_min},
+                                     {"tension_mean", m.bond_tension_mean},
+                                     {"stiffness_mean", m.bond_stiffness_mean}}},
+                          {"revision", m.revision}});
     }
+    json statics_json = json::array();
+    for (const LiveStatics &s : statics())
+        statics_json.push_back({{"name", s.name},
+                                {"time_s", s.time_s},
+                                {"stop", s.stop},
+                                {"load_n", s.load_n},
+                                {"first_failure_ratio", s.first_failure_ratio},
+                                {"deflection_mm", 1000.0 * s.deflection_m},
+                                {"bonds_removed", s.bonds_removed},
+                                {"rounds", s.rounds},
+                                {"solves", s.solves},
+                                {"supported_cells", s.supported_cells},
+                                {"loaded_cells", s.loaded_cells},
+                                {"pieces", s.pieces},
+                                {"cost_ms", s.cost_ms}});
+    json burned_json = json::array();
+    for (const LiveBurnedAway &b : burnedAway())
+        burned_json.push_back({{"name", b.name},
+                               {"material", b.material},
+                               {"time_s", b.time_s},
+                               {"residue_kg", b.residue_kg},
+                               {"why", b.why}});
     json attachments = json::array();
     for (const LiveJoint &j : joints()) {
         if (j.member.empty() && j.parted_because.empty()) continue;
@@ -4637,12 +5749,32 @@ std::string LiveWorld::mechanicsReport(bool with_laws) const {
     json out = {{"time_s", impl_->time_s},
                 {"bodies", std::move(bodies)},
                 {"attachments", std::move(attachments)},
+                {"statics", std::move(statics_json)},
+                {"burned_away", std::move(burned_json)},
                 {"elastic_to_heat_j", impl_->elastic_to_heat_j}};
     if (with_laws) {
         out["laws"] = json::parse(thermo::mechanicalLawsJson());
         out["limitations"] = mechanicsLimitations();
     }
     return out.dump();
+}
+
+std::vector<LiveStatics> LiveWorld::statics() const {
+    std::vector<LiveStatics> out;
+    out.reserve(impl_->sustained_answers.size());
+    for (const auto &[name, a] : impl_->sustained_answers)
+        out.push_back({name, a.time_s, a.stop, a.load_n, a.first_failure_ratio, a.deflection_m, a.bonds_removed,
+                       a.rounds, a.solves, a.supported_cells, a.loaded_cells, a.pieces, a.cost_ms});
+    std::sort(out.begin(), out.end(), [](const LiveStatics &a, const LiveStatics &b) { return a.name < b.name; });
+    return out;
+}
+
+std::vector<LiveBurnedAway> LiveWorld::burnedAway() const {
+    std::vector<LiveBurnedAway> out;
+    out.reserve(impl_->burned_away.size());
+    for (const Impl::BurnedAway &b : impl_->burned_away)
+        out.push_back({b.name, b.material, b.time_s, b.residue_kg, b.why});
+    return out;
 }
 
 // ---- rolling resistance ---------------------------------------------------------
@@ -6938,6 +8070,9 @@ std::size_t LiveWorld::splitCut(std::size_t which) {
     };
     drop(I.described); drop(I.body_of); drop(I.nodes_of);
     drop(I.limits_of); drop(I.impedance_of); drop(I.density_of); drop(I.tensile_of);
+    drop(I.compressive_of);
+    // Its pieces measure their matter against their own cells' boxes.
+    I.matter_of.erase(parent.name);
     if (I.holding == which) {
         I.holding = static_cast<std::size_t>(-1);
         I.wielding = false;
@@ -6970,6 +8105,7 @@ std::size_t LiveWorld::splitCut(std::size_t which) {
         I.impedance_of.push_back(acousticImpedance(material->density_kg_m3, material->young_modulus_pa));
         I.density_of.push_back(material->density_kg_m3);
         I.tensile_of.push_back(material->tensile_strength_pa);
+        I.compressive_of.push_back(material->compressive_strength_pa);
         I.nodes_of.push_back(std::move(parent_nodes));
         piece.dimensions_m = cellBounds(I.nodes_of.back(), I.cell_offset_m, I.request.cell_size_m);
         made_names.push_back(piece.name);

@@ -139,6 +139,22 @@ struct ThermoWorld::Impl {
         return found == shape_of.end() ? nullptr : &shapes[found->second];
     }
 
+    // A body that has left the world, or been replaced by its pieces, is not
+    // among the shapes the host last gave any more. Left there, the coupling
+    // pass that follows finds a hot neighbour touching it and brings it back as
+    // a fresh lump at room temperature -- joining its matter to the network a
+    // second time and drawing heat from its neighbours -- until the host's next
+    // refresh forgets it and counts it leaving twice. Found by the ledger: a
+    // burned-away slat's residue left the network as 0.315 kg when it held
+    // 0.158 kg, and joined_kg rose by 0.158 kg as it went.
+    void forgetShape(const std::string &name) {
+        const auto found = shape_of.find(name);
+        if (found == shape_of.end()) return;
+        shapes.erase(shapes.begin() + static_cast<std::ptrdiff_t>(found->second));
+        shape_of.clear();
+        for (std::size_t i = 0; i < shapes.size(); ++i) shape_of.emplace(shapes[i].name, i);
+    }
+
     [[nodiscard]] double temperature(const Parcel &p) const { return temperatureK(model, p); }
     [[nodiscard]] double capacity(const Parcel &p) const { return heatCapacityJK(model, p); }
     [[nodiscard]] double fuelIn(const Parcel &p) const {
@@ -1031,11 +1047,16 @@ void ThermoWorld::split(const std::string &body,
         if (region.piston->body == body) region.piston->body = heir;
         if (region.piston->container == body) region.piston->container = heir;
     }
+    // The whole is not a shape any more; its pieces' shapes come with the
+    // host's next refresh (Impl::forgetShape).
+    w.forgetShape(body);
     w.couple();
 }
 
 void ThermoWorld::remove(const std::string &body) {
     Impl &w = *impl_;
+    // It has left the world, so it has left the shapes too (Impl::forgetShape).
+    w.forgetShape(body);
     const std::size_t index = w.lumpOf(body);
     if (index == kNone) return;
     w.leave(w.s.lumps[index]);
@@ -1147,6 +1168,9 @@ std::optional<MatterState> ThermoWorld::matter(const std::string &body) const {
     m.peak_surface_k = std::max(l.peak_surface_k, m.surface_k);
     m.peak_core_k = m.layered ? std::max(l.peak_core_k, m.core_k) : m.peak_surface_k;
     m.layer_depth_m = m.layered ? l.layer_depth_m : 0.0;
+    // A body that is one lump again holds everything in its surface parcel.
+    m.surface_kg = massKg(l.surface) + (m.layered ? 0.0 : massKg(l.core));
+    m.core_kg = m.layered ? massKg(l.core) : 0.0;
     const MechanicalLaw *law = lawFor(l.material);
     if (law != nullptr && w.model.has(law->load_bearing)) {
         const std::size_t x = w.model.index(law->load_bearing);
@@ -1206,9 +1230,10 @@ std::vector<std::string> ThermoWorld::limitations() {
         "Openings are incompressible orifices; choked flow is not modelled",
         "The wood model is a DECLARED SIMPLIFIED model with demonstration parameters: not "
         "validated against ventilation, moisture, geometry or heat-loss variations",
-        "Bodies do not shrink as they burn: what burned is taken out of the load-bearing "
-        "section (thermo/ThermalMechanics.hpp) and the mass follows it, but the collision "
-        "shape, the drawn shape, the centre of mass and the inertia do not yet",
+        "Bodies shrink as they burn (thermo/ThermalMechanics.hpp MaterialField): what burned "
+        "leaves the load-bearing section, the mass, the collision shape, the drawn shape and the "
+        "inertia together, every face of the body's box alike; a body's area and volume here "
+        "follow what is left",
         "Mechanical properties follow a declared law per material (thermo/ThermalMechanics.hpp): "
         "oak by EN 1995-1-2's softwood curves, iron by EN 1993-1-2's carbon-steel curves, "
         "concrete by EN 1992-1-2; every other material has no law, and heat does not change "

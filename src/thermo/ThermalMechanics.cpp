@@ -209,6 +209,181 @@ double recessionDepthM(const Vec3 &box_m, double consumed_fraction) {
     return 0.5 * (low + high);
 }
 
+MaterialField materialField(const MechanicalLaw *law, const MatterState &matter, const Vec3 &box_m,
+                            bool round) {
+    MaterialField f;
+    f.box_m = round ? Vec3{box_m.x, box_m.x, box_m.x} : box_m;
+    f.round = round;
+    f.surface_kg = matter.surface_kg;
+    f.core_kg = matter.core_kg;
+    f.layered = matter.layered;
+    f.layer_m = matter.layered ? std::max(0.0, matter.layer_depth_m) : 0.0;
+    if (law == nullptr) return f;   // every factor one, nothing burned: as it was built
+    f.has_law = true;
+    const double composition = std::clamp(matter.composition_factor, 0.0, 1.0);
+    // A sphere's volume goes as its diameter cubed exactly as its box's does,
+    // so the same depth takes the same share of either.
+    f.consumed_m = recessionDepthM(f.box_m, matter.consumed_fraction);
+    f.surface = zone(*law, matter.surface_k, matter.peak_surface_k, composition);
+    f.core = matter.layered ? zone(*law, matter.core_k, matter.peak_core_k, composition) : f.surface;
+    f.surface_cooled = zone(*law, kReferenceTemperatureK, matter.peak_surface_k, composition);
+    f.core_cooled = matter.layered
+                        ? zone(*law, kReferenceTemperatureK, matter.peak_core_k, composition)
+                        : f.surface_cooled;
+    // Char: the layer once its hottest passed the char point, the whole of what
+    // is left once the core's has.
+    f.surface_char = law->char_k > 0.0 && matter.peak_surface_k >= law->char_k;
+    f.core_char = law->char_k > 0.0 &&
+                  (matter.layered ? matter.peak_core_k : matter.peak_surface_k) >= law->char_k;
+    return f;
+}
+
+namespace {
+// Half extents of the reference box inset by `depth` on every face.
+Vec3 insetHalf(const MaterialField &f, double depth) {
+    return {std::max(0.0, 0.5 * f.box_m.x - depth), std::max(0.0, 0.5 * f.box_m.y - depth),
+            std::max(0.0, 0.5 * f.box_m.z - depth)};
+}
+double overlap(double centre, double half_cube, double half_box) {
+    return std::max(0.0, std::min(centre + half_cube, half_box) - std::max(centre - half_cube, -half_box));
+}
+// The volume a cube shares with a box centred at the origin: separable, so exact.
+double cubeInBox(const Vec3 &at, double cell, const Vec3 &half) {
+    const double h = 0.5 * cell;
+    return overlap(at.x, h, half.x) * overlap(at.y, h, half.y) * overlap(at.z, h, half.z);
+}
+constexpr double kPiValue = 3.14159265358979323846;
+}  // namespace
+
+Vec3 remainingBox(const MaterialField &f) { return 2.0 * insetHalf(f, f.consumed_m); }
+
+double remainingVolumeM3(const MaterialField &f) {
+    const Vec3 d = remainingBox(f);
+    return f.round ? kPiValue * d.x * d.x * d.x / 6.0 : d.x * d.y * d.z;
+}
+
+double coreVolumeM3(const MaterialField &f) {
+    if (!f.layered) return 0.0;
+    const Vec3 d = 2.0 * insetHalf(f, f.consumed_m + f.layer_m);
+    return f.round ? kPiValue * d.x * d.x * d.x / 6.0 : d.x * d.y * d.z;
+}
+
+CellShare cellShare(const MaterialField &f, const Vec3 &at, double cell_m) {
+    CellShare share;
+    if (!(cell_m > 0.0)) return share;
+    if (!f.round) {
+        // Against what the cell held cold: the part of it inside the box as it
+        // was. So a cell nothing has happened to is exactly whole, whatever the
+        // grid made of the box's edge.
+        const double cold = cubeInBox(at, cell_m, insetHalf(f, 0.0));
+        if (cold > 0.0) {
+            const double left = f.consumed_m > 0.0 ? cubeInBox(at, cell_m, insetHalf(f, f.consumed_m)) : cold;
+            const double core =
+                f.layered ? cubeInBox(at, cell_m, insetHalf(f, f.consumed_m + f.layer_m)) : 0.0;
+            const double remaining = left >= cold ? 1.0 : left / cold;
+            share.core = std::min(remaining, core / cold);
+            share.surface = remaining - share.core;
+            return share;
+        }
+    }
+    // A sphere, or a cell the box does not reach: sampled, 4 x 4 x 4 points,
+    // against the same count cold. Radial depth for a sphere.
+    constexpr int kSamples = 4;
+    const double radius = 0.5 * f.box_m.x;
+    const Vec3 half = insetHalf(f, 0.0);
+    int cold = 0, left = 0, core = 0;
+    for (int i = 0; i < kSamples; ++i)
+        for (int j = 0; j < kSamples; ++j)
+            for (int k = 0; k < kSamples; ++k) {
+                const Vec3 p = at + cell_m * Vec3{(i + 0.5) / kSamples - 0.5, (j + 0.5) / kSamples - 0.5,
+                                                  (k + 0.5) / kSamples - 0.5};
+                const double depth =
+                    f.round ? radius - length(p)
+                            : std::min({half.x - std::abs(p.x), half.y - std::abs(p.y), half.z - std::abs(p.z)});
+                if (depth < 0.0) continue;
+                ++cold;
+                if (depth < f.consumed_m) continue;
+                ++left;
+                if (f.layered && depth >= f.consumed_m + f.layer_m) ++core;
+            }
+    if (cold == 0) {
+        // A cell wholly outside the reference: judged by its centre alone.
+        const double depth = f.round ? radius - length(at)
+                                     : std::min({half.x - std::abs(at.x), half.y - std::abs(at.y),
+                                                 half.z - std::abs(at.z)});
+        const bool gone = depth < f.consumed_m && f.consumed_m > 0.0;
+        const bool deep = f.layered && depth >= f.consumed_m + f.layer_m;
+        share.surface = gone || deep ? 0.0 : 1.0;
+        share.core = !gone && deep ? 1.0 : 0.0;
+        return share;
+    }
+    share.core = static_cast<double>(core) / cold;
+    share.surface = static_cast<double>(left - core) / cold;
+    return share;
+}
+
+ZoneFactors cellFactors(const MaterialField &f, const CellShare &share) {
+    const auto mix = [&](double on_surface, double in_core) {
+        if (on_surface == in_core) return on_surface * share.remaining();
+        return on_surface * share.surface + in_core * share.core;
+    };
+    return {mix(f.surface.stiffness, f.core.stiffness), mix(f.surface.tension, f.core.tension),
+            mix(f.surface.compression, f.core.compression), mix(f.surface.shear, f.core.shear)};
+}
+
+double cellMassKg(const MaterialField &f, const CellShare &share, double cell_m) {
+    // What is left is spread evenly over the volume left (declared): the
+    // network knows how much each zone holds, not how it is spread inside it.
+    const double volume = remainingVolumeM3(f);
+    const double mass = f.surface_kg + f.core_kg;
+    if (!(volume > 0.0)) return 0.0;
+    return mass / volume * share.remaining() * cell_m * cell_m * cell_m;
+}
+
+ZoneFactors bondFactors(const ZoneFactors &a, const ZoneFactors &b) {
+    const auto series = [](double x, double y) {
+        if (x == y) return x;
+        return x > 0.0 && y > 0.0 ? 2.0 * x * y / (x + y) : 0.0;
+    };
+    return {series(a.stiffness, b.stiffness), std::min(a.tension, b.tension),
+            std::min(a.compression, b.compression), std::min(a.shear, b.shear)};
+}
+
+FieldMassProperties massProperties(const MaterialField &f) {
+    FieldMassProperties out;
+    out.mass_kg = f.surface_kg + f.core_kg;
+    const Vec3 d = remainingBox(f);
+    if (f.round) {
+        const double r = 0.5 * d.x;
+        const double i = 0.4 * out.mass_kg * r * r;
+        out.inertia_kg_m2 = {i, i, i};
+    } else {
+        const double k = out.mass_kg / 12.0;
+        out.inertia_kg_m2 = {k * (d.y * d.y + d.z * d.z), k * (d.x * d.x + d.z * d.z),
+                             k * (d.x * d.x + d.y * d.y)};
+    }
+    return out;
+}
+
+double outsideRemainingM(const MaterialField &f, const Vec3 &at) {
+    const Vec3 half = insetHalf(f, f.consumed_m);
+    if (f.round) return std::max(0.0, length(at) - half.x);
+    const double dx = std::max(0.0, std::abs(at.x) - half.x), dy = std::max(0.0, std::abs(at.y) - half.y),
+                 dz = std::max(0.0, std::abs(at.z) - half.z);
+    // A box burned to nothing along one axis is gone however near the point is.
+    if (!(half.x > 0.0) || !(half.y > 0.0) || !(half.z > 0.0))
+        return std::max({dx, dy, dz, 1.0e-3});
+    return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+double outsideReferenceM(const MaterialField &f, const Vec3 &at) {
+    const Vec3 half = insetHalf(f, 0.0);
+    if (f.round) return std::max(0.0, length(at) - half.x);
+    const double dx = std::max(0.0, std::abs(at.x) - half.x), dy = std::max(0.0, std::abs(at.y) - half.y),
+                 dz = std::max(0.0, std::abs(at.z) - half.z);
+    return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
 SectionState evaluateSection(const MechanicalLaw &law, const MatterState &matter, const Vec3 &box_m,
                              int length_axis, int depth_axis) {
     SectionState s;
@@ -219,17 +394,17 @@ SectionState evaluateSection(const MechanicalLaw &law, const MatterState &matter
     const int breadth = depth == u ? v : u;
     s.breadth_m = std::max(0.0, component(box_m, breadth));
     s.depth_m = std::max(0.0, component(box_m, depth));
-    const double composition = std::clamp(matter.composition_factor, 0.0, 1.0);
 
-    s.layer_m = matter.layered ? std::max(0.0, matter.layer_depth_m) : 0.0;
-    s.consumed_m = recessionDepthM(box_m, matter.consumed_fraction);
-    s.surface = zone(law, matter.surface_k, matter.peak_surface_k, composition);
-    s.core = matter.layered ? zone(law, matter.core_k, matter.peak_core_k, composition) : s.surface;
-    const ZoneFactors surface_cooled =
-        zone(law, kReferenceTemperatureK, matter.peak_surface_k, composition);
-    const ZoneFactors core_cooled =
-        matter.layered ? zone(law, kReferenceTemperatureK, matter.peak_core_k, composition)
-                       : surface_cooled;
+    // The section is the material field integrated over a rectangle across the
+    // load: the same field a lattice cell averages over its cube and the
+    // collision shape is cut from. Nothing below reads the state any other way.
+    const MaterialField field = materialField(&law, matter, box_m, false);
+    s.layer_m = field.layer_m;
+    s.consumed_m = field.consumed_m;
+    s.surface = field.surface;
+    s.core = field.core;
+    const ZoneFactors surface_cooled = field.surface_cooled;
+    const ZoneFactors core_cooled = field.core_cooled;
 
     // The rings. What burned is gone; inside it the surface layer; inside
     // that, when there is one, the core.
@@ -254,16 +429,17 @@ SectionState evaluateSection(const MechanicalLaw &law, const MatterState &matter
     s.compression = areal(s.surface.compression, s.core.compression);
     s.shear = areal(s.surface.shear, s.core.shear);
     s.bending = bent(s.surface.tension, s.core.tension);
+    s.bending_compression = bent(s.surface.compression, s.core.compression);
     s.stiffness_if_cooled = areal(surface_cooled.stiffness, core_cooled.stiffness);
     s.tension_if_cooled = areal(surface_cooled.tension, core_cooled.tension);
     s.shear_if_cooled = areal(surface_cooled.shear, core_cooled.shear);
     s.bending_if_cooled = bent(surface_cooled.tension, core_cooled.tension);
+    s.bending_compression_if_cooled = bent(surface_cooled.compression, core_cooled.compression);
 
     // Char: the layer once its hottest passed the char point, the whole of
     // what is left once the core's has.
-    const bool charred_layer = law.char_k > 0.0 && matter.peak_surface_k >= law.char_k;
-    const bool charred_core =
-        law.char_k > 0.0 && (matter.layered ? matter.peak_core_k : matter.peak_surface_k) >= law.char_k;
+    const bool charred_layer = field.surface_char;
+    const bool charred_core = field.core_char;
     const double half = 0.5 * std::min(B1, H1);
     if (charred_core) s.char_m = half;
     else if (charred_layer) s.char_m = std::min(s.layer_m, half);

@@ -194,13 +194,42 @@ void theSpanIsWhatDecidesIt() {
             "the span is not being taken into account");
 }
 
+LiveStatics staticsOf(LiveWorld &world, const std::string &name) {
+    for (const LiveStatics &s : world.statics())
+        if (s.name == name) return s;
+    throw std::runtime_error("statics said nothing about " + name);
+}
+
 void whatIsReportedCanActuallyBreak() {
-    const auto world = LiveWorld::open(shelf(5, 0.3));
+    // Loaded past the lattice's own criterion, it breaks.
+    //
+    // This test used to load the shelf with five 300 mm crates and put it into
+    // a few milliseconds of the DYNAMIC lattice with the bottom crate and
+    // nothing under it -- no pier -- and it came out in 19 pieces. Traced
+    // (tests/thermal_geometry_tests.cpp, BANJO_ISLAND_TRACE): shelf and crate
+    // fell freely together there, and what broke the shelf was the crate's
+    // resting cells, sunk millimetres into it by the rigid solver's contact
+    // allowance, being pushed out -- not the load. A load is now answered by
+    // statics (fracture/SustainedLoad.hpp): the shelf on its piers under the
+    // crates' weight, with the lattice's one failure criterion, which removes a
+    // bond at the catalogue's break multiplier (2) times its strength's strain.
+    // And this shelf is two cells deep (100 mm at 50 mm cells): its outer cells
+    // sit a quarter of the depth from the middle, where the strain is half the
+    // surface's, so statics needs 2 x 2 = 4 times the load beam theory says
+    // 3 MPa takes. Measured: 16.5 kN (2.84 times) puts its bonds at 71% of the
+    // criterion. So this is loaded well past it: five 450 mm crates, 35 kN, six
+    // times. The other side of the line is the next test.
+    const auto world = LiveWorld::open(shelf(5, 0.45));
     run(*world, 480);
     require(sagging(*world, "shelf"), "the shelf was not reported in the first place");
+    const LiveOverload plank = loadOn(*world, "shelf");
     const std::size_t pieces = world->fracture("shelf");
-    std::cout << "  put into the lattice under its load, the shelf came out in "
-              << pieces << " pieces\n";
+    const LiveStatics s = staticsOf(*world, "shelf");
+    std::cout << "  " << plank.carrying_n << " N on it, " << plank.stress_pa / 1e6 << " MPa by beam theory against "
+              << plank.strength_pa / 1e6 << " MPa: statics " << s.stop << " (its bonds at "
+              << s.first_failure_ratio * 100.0 << "% of the criterion before anything failed, " << s.bonds_removed
+              << " bonds in " << s.rounds << " rounds, " << s.cost_ms << " ms); the shelf came out in " << pieces
+              << " pieces\n";
     // It has to actually FAIL, not merely be offered. Detecting an overload and
     // then being unable to do anything about it is half a capability.
     //
@@ -212,6 +241,33 @@ void whatIsReportedCanActuallyBreak() {
     require(pieces > 1,
             "the lattice was offered an overloaded shelf and gave it back whole, "
             "so the load is not reaching the island");
+}
+
+void whatTheSurveyOffersTheLatticeMayHold() {
+    // The line between the two. Five 300 mm crates, 10.4 kN: the survey offers
+    // the shelf -- 5.5 MPa by beam theory against concrete's declared 3 MPa --
+    // and statics holds it, because the lattice removes a bond only at twice
+    // the strain that strength gives (the catalogue's break multiplier). They
+    // are two questions: where the declared strength is passed, and where the
+    // lattice's criterion is. The answer is statics', and its margin is said;
+    // the survey is what makes it worth asking.
+    const auto world = LiveWorld::open(shelf(5, 0.3));
+    run(*world, 480);
+    require(sagging(*world, "shelf"), "the shelf was not reported in the first place");
+    const LiveOverload plank = loadOn(*world, "shelf");
+    const std::size_t pieces = world->fracture("shelf");
+    const LiveStatics s = staticsOf(*world, "shelf");
+    std::cout << "  " << plank.carrying_n << " N on it, " << plank.stress_pa / 1e6 << " MPa by beam theory against "
+              << plank.strength_pa / 1e6 << " MPa: statics " << s.stop << ", its bonds at "
+              << s.first_failure_ratio * 100.0 << "% of the criterion, deflection " << s.deflection_m * 1000.0
+              << " mm, " << pieces << " piece(s)\n";
+    require(pieces == 1 && s.stop == "held", "statics broke a shelf its own criterion says holds");
+    require(s.first_failure_ratio < 1.0, "and its bonds stayed short of the criterion");
+    // Asked once: the same load on the same section is not offered again.
+    run(*world, 240);
+    const auto offered = world->breakable();
+    require(std::find(offered.begin(), offered.end(), "shelf") == offered.end(),
+            "the same load on the same shelf was offered again after statics had answered it");
 }
 
 void loadTransfersThroughAStack() {
@@ -372,6 +428,8 @@ int main() {
         std::cout << "[PASS] the span is what decides it\n";
         whatIsReportedCanActuallyBreak();
         std::cout << "[PASS] what is reported can actually break\n";
+        whatTheSurveyOffersTheLatticeMayHold();
+        std::cout << "[PASS] what the survey offers, statics may hold, and says by how much\n";
         loadTransfersThroughAStack();
         std::cout << "[PASS] load transfers through a stack\n";
         aSeesawRespondsToWhereTheLoadIs();

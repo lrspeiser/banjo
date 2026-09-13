@@ -23,7 +23,15 @@ struct LiveBodyPose {
     // "hull" is a piece that broke off something, whose cells are its real
     // surface -- there is no primitive for it and the host draws its cells.
     std::string shape{"hull"};
+    // What it measures NOW. For a box or a sphere that has burned, the part of
+    // it not burned away: what collides and what is drawn. The box its matter
+    // is measured against stays in LiveMaterialState::reference_m.
     Vec3 dimensions_m{};
+    // How many times its shape has been changed where it stands -- burning
+    // takes a box in from every face, and a piece whose cells burn away is
+    // rebuilt from the ones left. A host that drew it redraws it when this
+    // moves. Zero for anything nothing has happened to.
+    unsigned revision{};
     std::uint32_t color_rgba{};
     Vec3 position_m{};
     double orientation_wxyz[4]{1.0, 0.0, 0.0, 0.0};
@@ -355,6 +363,32 @@ struct LiveMaterialState {
     // -- now, and if it were cooled now.
     Vec3 dimensions_m{};
     thermo::SectionState section;
+
+    // ---- what is left of it (docs/thermal-mechanics.md, "One material state")
+    //
+    // The box its material is measured against -- as authored, or the cells'
+    // box a piece broke off as -- and the part of that box not burned away,
+    // which is what collides and what is drawn. The section above is taken
+    // across the reference box with the burned depth inside it, so nothing is
+    // counted twice. Equal while nothing has burned.
+    Vec3 reference_m{};
+    Vec3 remaining_m{};
+    double remaining_volume_m3{};
+    // The rigid body it is now: what it weighs and its principal inertia about
+    // its own axes, from the matter left spread over the volume left.
+    double mass_kg{};
+    Vec3 inertia_kg_m2{};
+    // Its cells: how many it has, and how many burned away entirely.
+    std::size_t cells{};
+    std::size_t cells_burned{};
+    // What a fracture run would give its lattice: over its bonds, the weakest
+    // and the mean tension factor and the mean stiffness factor, against the
+    // same bonds cold. The same field the section integrates. 1 cold.
+    double bond_tension_min{1.0};
+    double bond_tension_mean{1.0};
+    double bond_stiffness_mean{1.0};
+    // Times its collision shape has been changed where it stands.
+    unsigned revision{};
 };
 
 // A thing carrying more than it can hold up.
@@ -397,6 +431,37 @@ struct LiveOverload {
     // strength times this, so stress_pa past strength_pa stays the whole test.
     double capacity_fraction{1.0};
     // Why, in words: the bending it carries and what is left to carry it.
+    std::string why;
+};
+
+// What statics said about a body answered for a sustained load rather than a
+// blow (fracture/SustainedLoad.hpp): the body's own lattice, as heat has left
+// it, solved for equilibrium under its weight and what rests on it, held up
+// where it rests, with the shared failure criterion applied until nothing more
+// fails. One per body, the latest.
+struct LiveStatics {
+    std::string name;
+    double time_s{};
+    // "held", "broke", or why it could not say: "no support found under it",
+    // "did not converge", "round limit".
+    std::string stop;
+    double load_n{};
+    // The largest ratio of any bond's strain to its removal threshold under
+    // the load, before anything failed: below 1 it carries it.
+    double first_failure_ratio{};
+    double deflection_m{};
+    std::size_t bonds_removed{}, rounds{}, solves{}, supported_cells{}, loaded_cells{}, pieces{};
+    double cost_ms{};
+};
+
+// A body whose load-bearing matter burned away entirely: it left the world,
+// and what it still held -- its ash, the last of its moisture -- left the
+// thermal network with it, on the ledger (left_kg).
+struct LiveBurnedAway {
+    std::string name;
+    std::string material;
+    double time_s{};
+    double residue_kg{};
     std::string why;
 };
 
@@ -881,6 +946,10 @@ public:
     // What heat, composition and burning have done to each body the thermal
     // network holds, and to every body a joint is made of.
     [[nodiscard]] std::vector<LiveMaterialState> materialStates() const;
+    // What statics said, latest per body (LiveStatics), and the bodies that
+    // burned away entirely, in order (LiveBurnedAway).
+    [[nodiscard]] std::vector<LiveStatics> statics() const;
+    [[nodiscard]] std::vector<LiveBurnedAway> burnedAway() const;
     // Say which of a joint's two bodies it is made of (LiveJoint::member): its
     // strength (a fixing, a link) or its stiffness (an elastic) follows that
     // body's law from now on. A declared strength of zero becomes the member's
@@ -1025,6 +1094,43 @@ private:
     // What one body can carry across a load running along `load_world` -- its
     // longest axis when null. See materialStates.
     [[nodiscard]] LiveMaterialState materialStateOf(std::size_t body, const Vec3 *load_world) const;
+
+    // ---- one material state (docs/thermal-mechanics.md) --------------------
+    //
+    // A body's material field: the thermal network's state for it, laid over
+    // its reference box. Empty when the network does not hold it or its
+    // material has no law -- it is then exactly as it was built.
+    [[nodiscard]] std::optional<thermo::MaterialField> fieldOf(std::size_t body) const;
+    // What a body's matter is measured against, and what has been done to its
+    // shape because of it (defined in LiveWorld.cpp). Made the first time
+    // anything asks, from the body as it is then, and kept.
+    struct MatterRecord;
+    MatterRecord &recordOf(std::size_t body) const;
+    // The box the field is measured against, for the survey and the section:
+    // as authored, never what is left of it.
+    [[nodiscard]] Vec3 referenceBoxOf(std::size_t body) const;
+    // A point in the body's own frame, in its reference box's frame.
+    [[nodiscard]] Vec3 inReference(std::size_t body, const Vec3 &local_m) const;
+    // Give an island's cells and bonds the field of the body each belongs to.
+    // Called in prepared() before its cells are moved into the island's frame.
+    struct HeatedCells;
+    [[nodiscard]] std::unique_ptr<HeatedCells> heatedCellsOf(const std::vector<std::size_t> &bodies) const;
+    // `bonds` false weighs the cells and leaves the bonds as they were: a body
+    // rebuilt because cells burned away keeps its char in place until
+    // something actually tests it.
+    void heatIsland(FragmentLattice &island, const HeatedCells &heated, const std::string &name,
+                    bool bonds);
+    // Make every heated body's shape, mass, cells and attachments follow what
+    // is left of its matter. At the thermal network's stride.
+    void reviseMatter();
+    // A body whose load-bearing matter is gone: it leaves the world, and what
+    // it held (its residue) leaves the thermal network with it, on the ledger.
+    void burnAway(std::size_t body, const std::string &why);
+    // A piece whose cells have burned away is rebuilt from the cells it has
+    // left -- as more than one if they no longer join. Returns how many.
+    std::size_t reformFromCells(std::size_t body);
+    // The bond summary and admission limits of a heated body, from its field.
+    void refreshHeatedBonds(std::size_t body, const thermo::MaterialField &field);
     // Every joint made of a member brought up to what its member is now, with
     // a re-check (both ends woken) wherever that moved, and a survey asked for
     // wherever a heated beam's section moved. Outside the reversible trial:
