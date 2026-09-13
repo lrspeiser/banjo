@@ -433,6 +433,14 @@ the_ground and the_water in your first message say where everything is.
 - set_river(discharge_m3_s): a flood or a drought, from now.
 Water takes time. Run 20 s, and again for a pond to empty, and read
 water_state before and after: that is how a level rising or falling is seen.
+In the watershed room the valley is not the whole world: beyond its west edge
+stands the upstream reservoir the river is fed from, and beyond its east edge
+the downstream basin the river pours into, which lets water go over its own
+outlet. Each is held as a level pool, and what crosses between it and the
+valley is the difference in level, either way: dam the river and it backs up
+towards the reservoir, less crosses, and the reservoir fills while the basin
+downstream falls. water_state's beyond_the_edges gives their levels, volumes
+and what is crossing; set_river there sets what feeds the reservoir.
 
 A dam that backs the river up (3 m upstream of it the river rose from 0.49 to
 0.69 m in 30 s, and the blocks held):

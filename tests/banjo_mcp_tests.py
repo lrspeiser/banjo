@@ -1129,6 +1129,36 @@ class TheTools(unittest.TestCase):
              "anchored": True}])["world_id"]
         return world_id, self.client.call("make_terrain", world_id=world_id, kind="valley")
 
+    def test_a_valley_between_a_reservoir_and_a_basin(self):
+        """make_terrain(beyond_the_edges): the river crosses from a reservoir
+        beyond where it comes in and into a basin beyond its mouth, by the
+        difference in level (docs/watershed.md). water_state says so, set_river
+        feeds the reservoir, every cubic metre is on one account, and ground
+        with no river coming in and going out is refused before it is touched."""
+        world_id = self.client.call("create_world", cell_size_m=0.04, objects=[
+            {"name": "marker stone", "shape": "box", "material": "concrete",
+             "size_m": [0.08, 0.08, 0.08], "position_m": [-18, -2.6, -14],
+             "anchored": True}])["world_id"]
+        made = self.client.call("make_terrain", world_id=world_id, kind="valley", beyond_the_edges=True)
+        self.assertEqual({b["name"] for b in made["water"]["beyond_the_edges"]["basins"]},
+                         {"the upstream reservoir", "the downstream basin"})
+        self.client.call("run", world_id=world_id, seconds=10)
+        now = self.client.call("water_state", world_id=world_id)["beyond_the_edges"]
+        basins = {b["name"]: b for b in now["basins"]}
+        self.assertGreater(basins["the upstream reservoir"]["sending_into_the_valley_m3_s"], 0.0,
+                           "the reservoir feeds the river")
+        self.assertLess(basins["the downstream basin"]["sending_into_the_valley_m3_s"], 0.0,
+                        "the river pours into the basin")
+        self.assertLess(abs(now["unaccounted_m3"]), 1e-6, "every cubic metre accounted")
+        self.client.call("set_river", world_id=world_id, discharge_m3_s=0.6)
+        fed = {b["name"]: b for b in self.client.call("water_state", world_id=world_id)
+               ["beyond_the_edges"]["basins"]}
+        self.assertEqual(fed["the upstream reservoir"]["fed_m3_s"], 0.6, "set_river feeds the reservoir")
+        self.assertIn("no river", self.client.refuse("make_terrain", world_id=world_id, kind="basin",
+                                                     beyond_the_edges=True))
+        still = self.client.call("water_state", world_id=world_id)
+        self.assertIn("beyond_the_edges", still, "the refused request changed the ground")
+
     def test_an_object_given_x_and_z_is_set_down_on_what_is_under_it(self):
         """[x, z] is "put it there": on the floor, or on top of what is already
         there, and it stays put. [x, y, z] is still exactly there."""

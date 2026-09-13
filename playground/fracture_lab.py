@@ -872,12 +872,21 @@ def normalise_water(water: Any) -> dict[str, Any]:
         return {}
     if not isinstance(water, dict):
         raise ValueError("water must be an object")
-    unknown = set(water) - {"discharge_m3_s", "rivers", "state"}
+    unknown = set(water) - {"discharge_m3_s", "rivers", "state", "watershed"}
     if unknown:
-        raise ValueError(f"water cannot say {sorted(unknown)}: it holds discharge_m3_s, rivers and state")
+        raise ValueError(f"water cannot say {sorted(unknown)}: it holds discharge_m3_s, rivers, state "
+                         f"and watershed")
     out = dict(water)
     if "discharge_m3_s" in out:
         out["discharge_m3_s"] = _number(out["discharge_m3_s"], 0.0, 20.0, "water discharge_m3_s")
+    if "watershed" in out:
+        # The regions beyond the edges (docs/watershed.md): basins and the
+        # connections to them. Their shape here; the engine checks the rest.
+        shed = out["watershed"]
+        if (not isinstance(shed, dict) or not isinstance(shed.get("basins", []), list)
+                or not isinstance(shed.get("connections", []), list)):
+            raise ValueError("water watershed is an object holding a list of basins and a list of "
+                             "connections")
     return out
 
 

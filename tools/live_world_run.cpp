@@ -43,6 +43,10 @@
 //        {"op":"declare","json":{"gas_regions":[...],"heaters":[...]}}
 //        {"op":"vent","region":"cylinder gas","open":true}
 //        {"op":"thermo","model":false}      heat, chemistry, gas and the ledger
+//        (a ground block carries "beyond": where each connection meets the
+//         basin beyond an edge, {basin, edge, from_m, to_m}; the water block,
+//         "basins": {name, level_m, volume_m3, fed_m3_s, out_m3_s,
+//         across_m3_s} and "all_unaccounted_m3" -- docs/watershed.md)
 //        {"op":"dig","from":[x,z],"to":[x,z],"width_m":1,"depth_m":0.5}
 //                                            a trench (or a pit, from == to);
 //                                            "carried" in the reply is the sand
@@ -646,11 +650,40 @@ nlohmann::json carriedJson(const banjo::terrain::Environment &env) {
 // for with the numbers a reply gave, needs none.
 constexpr double kCarriedSlackM3 = 1.0e-9;
 
+// Where each connection meets the basin beyond it: the two end columns of its
+// span, in world metres, and which edge -- for a picture of the water standing
+// beyond the ground (docs/watershed.md).
+nlohmann::json beyondBlock(const banjo::terrain::Environment &env) {
+    nlohmann::json beyond = nlohmann::json::array();
+    if (env.water() == nullptr) return beyond;
+    const banjo::terrain::Grid &g = env.terrain().grid();
+    static constexpr const char *kEdge[] = {"west", "east", "south", "north"};
+    for (const auto &link : env.links()) {
+        const banjo::water::Connection &span =
+            env.water()->connections()[static_cast<std::size_t>(link.connection)];
+        const auto at = [&](int k) -> std::array<double, 2> {
+            switch (span.edge) {
+            case banjo::water::Edge::West: return {g.x0, g.z0 + k * g.dx};
+            case banjo::water::Edge::East: return {g.x0 + (g.nx - 1) * g.dx, g.z0 + k * g.dx};
+            case banjo::water::Edge::South: return {g.x0 + k * g.dx, g.z0};
+            case banjo::water::Edge::North: return {g.x0 + k * g.dx, g.z0 + (g.nz - 1) * g.dx};
+            }
+            return {0.0, 0.0};
+        };
+        const auto a = at(span.from), b = at(span.to);
+        beyond.push_back({{"basin", env.basins()[link.basin].name},
+                          {"edge", kEdge[static_cast<int>(span.edge)]},
+                          {"from_m", {a[0], a[1]}}, {"to_m", {b[0], b[1]}}});
+    }
+    return beyond;
+}
+
 nlohmann::json terrainBlock(const banjo::terrain::Environment &env, const std::vector<float> &heights) {
     const banjo::terrain::Grid &g = env.terrain().grid();
     const std::vector<std::uint8_t> ground = env.surfaces();
     const banjo::terrain::Landscape &land = env.landscape();
     return {{"kind", land.kind},
+            {"beyond", beyondBlock(env)},
             {"carried", carriedJson(env)},
             {"grid", {{"nx", g.nx}, {"nz", g.nz}, {"cell_m", g.dx}, {"x0_m", g.x0}, {"z0_m", g.z0}}},
             {"chunks", {env.terrain().chunksX(), env.terrain().chunksZ()}},
@@ -674,6 +707,23 @@ nlohmann::json waterBlock(const banjo::terrain::Environment &env, double t) {
                           {"wet_cells", box.wet_cells}, {"active_cells", w.stats().active_cells},
                           {"in_m3_s", tidy(w.inflowRate())}, {"out_m3_s", tidy(w.outflowRate())},
                           {"residual_m3", w.residualFor(volume)}};
+    if (!env.basins().empty()) {
+        // The basins beyond the edges, and one account for all the water: this
+        // region's and theirs, against what was there plus everything fed
+        // from beyond the world less everything let go to it.
+        nlohmann::json basins = nlohmann::json::array();
+        const banjo::water::Ledger &wl = w.ledger();
+        double held = volume, expected = wl.initial_m3 + wl.inflow_m3 - wl.outflow_m3 + wl.numerical_m3;
+        for (const auto &b : env.basins()) {
+            basins.push_back({{"name", b.name}, {"level_m", tidy(b.level())}, {"volume_m3", tidy(b.volume_m3)},
+                              {"fed_m3_s", tidy(b.fed_m3_s)}, {"out_m3_s", tidy(b.out_rate_m3_s)},
+                              {"across_m3_s", tidy(b.across_rate_m3_s)}});
+            held += b.volume_m3;
+            expected += b.initial_m3 + b.fed_m3 - b.out_m3;
+        }
+        out["basins"] = basins;
+        out["all_unaccounted_m3"] = held - expected;
+    }
     if (box.ni == 0) {
         out["box"] = {0, 0, 0, 0};
         return out;

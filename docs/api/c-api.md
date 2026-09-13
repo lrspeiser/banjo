@@ -1454,7 +1454,24 @@ and where the bookkeeping looked (`costs`, among them
 with the size of a quiet valley); with `full`, the model's parameters, where
 each came from, and what is not modelled. The state is the water as it stands, for `"water": {"state": ...}`
 in a scene opened again: the same water over whatever ground that scene's edits
-leave. The survey is one point: the ground's height, what it is made of there,
+leave -- with the basins beyond the edges, by name, when there are any.
+
+**Regions beyond the edges** ([the watershed](../watershed.md)). A scene's
+water block may declare `"watershed": {"basins": [...], "connections": [...]}`.
+A basin is another region's water held as a level pool: `name`, `bed_m`,
+`area_m2`, `level_m`, and optionally `fed_m3_s` (from beyond the world) and
+`outlet` (`crest_m`, `width_m`: a weir to beyond the world). A connection,
+`{"basin": ..., "instead_of": ...}`, takes over a river's source or mouth by
+name: its faces then see the basin's level, and what crosses is the water on
+both sides, either way. A replaced source's own discharge feeds its basin
+unless the basin says otherwise, and `banjo_set_discharge` with the river's
+name feeds it too. The report's `watershed` block lists each basin (level,
+volume, feed, outlet and crossing rates, its own ledger) and each connection
+(`into_this_region_m3_s`), with `water_held_m3` and `unaccounted_m3`: one
+account for this region's water and the basins', against what was there plus
+everything fed less everything let go. The water's own ledger gains
+`across_m3`, net water in across connections. No ABI change: it is the scene
+and the report. The survey is one point: the ground's height, what it is made of there,
 its slope, the ground's own share of rolling resistance there
 (`rolling_resistance`), and the water's depth, surface and velocity.
 

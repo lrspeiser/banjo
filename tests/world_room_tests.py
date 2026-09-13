@@ -215,6 +215,41 @@ class TheToolsThatChangeIt(unittest.TestCase):
         self.assertEqual({b["name"] for b in checked["bodies"]}, {"post", "gate"})
 
 
+class TheWatershedRoom(unittest.TestCase):
+    """The valley between a reservoir and a basin (docs/watershed.md) -- and the
+    valley room left exactly as it was, since its numbers are the milestone's
+    first acceptance test."""
+
+    def test_the_valley_room_keeps_its_own_river(self):
+        self.assertNotIn("water", world_room.valley(), "the valley room's river is handed in and let go as before")
+        shed = fracture_lab.validate(world_room.watershed())["water"]["watershed"]
+        self.assertEqual([c["instead_of"] for c in shed["connections"]], ["the river", "the river's mouth"])
+
+    @unittest.skipUnless(ENGINE, "the live engine is not built")
+    def test_the_river_crosses_from_the_reservoir_and_into_the_basin(self):
+        runs = ROOT / "build/playground-runs"
+        runs.mkdir(parents=True, exist_ok=True)
+        session = live_session.Session(ENGINE, fracture_lab.validate(world_room.watershed()), runs)
+        try:
+            beyond = {b["basin"]: b for b in session.state["terrain"]["beyond"]}
+            self.assertEqual(beyond["the upstream reservoir"]["edge"], "west")
+            self.assertEqual(beyond["the downstream basin"]["edge"], "east")
+            water = session.state["water"]
+            for _ in range(60):
+                state = session.send(op="step", dt=1 / 60.0, n=10)
+                for coming in state.get("breakable") or []:
+                    session.send(op="fracture", name=coming, wait=False)
+                water = state.get("water") or water
+            basins = {b["name"]: b for b in water["basins"]}
+            self.assertLess(basins["the upstream reservoir"]["across_m3_s"], 0.0, "the reservoir feeds the river")
+            self.assertGreater(basins["the downstream basin"]["across_m3_s"], 0.0,
+                               "the river pours into the basin")
+            # Rounding over the valley's 29 m3 and the basins' 600-odd, nothing more.
+            self.assertLess(abs(water["all_unaccounted_m3"]), 1e-6, "every cubic metre accounted")
+        finally:
+            session.close()
+
+
 @unittest.skipUnless(ENGINE, "the live engine is not built")
 class TheSpadeCarriesWhatItDigs(unittest.TestCase):
     """Dig here and Heap here, through the pipe the page uses and the edits the

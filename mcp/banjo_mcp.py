@@ -2572,6 +2572,21 @@ def _water_said(world: banjo.World, full: bool = False) -> dict[str, Any] | None
                           "water_lifts_n": round(b["buoyancy_n"], 1),
                           "weighs_n": round(b["weight_n"], 1)} for b in water["bodies_in_water"]],
     }
+    shed = report.get("watershed")
+    if shed:
+        # The regions beyond the edges: the reservoir the river is fed from and
+        # the basin it pours into, each held as a level pool, and what crosses
+        # to and from each -- decided by the water on both sides, either way.
+        said["beyond_the_edges"] = {
+            "basins": [{"name": b["name"], "level_m": round(b["level_m"], 3),
+                        "volume_m3": round(b["volume_m3"], 2), "fed_m3_s": round(b["fed_m3_s"], 3),
+                        "let_out_m3_s": round(b["out_m3_s"], 3),
+                        "sending_into_the_valley_m3_s": round(-b["across_m3_s"], 3)}
+                       for b in shed["basins"]],
+            "connections": [{"at": c["name"], "to": c["basin"],
+                             "into_this_valley_m3_s": round(c["into_this_region_m3_s"], 3)}
+                            for c in shed["connections"]],
+            "unaccounted_m3": shed["unaccounted_m3"]}
     if full:
         said["the_river_runs"] = {"columns": ["x_m", "z_m", "level_m", "depth_m", "speed_m_s"],
                                   "every_2_m": _river_said(water["river_path"], 1)}
@@ -2604,6 +2619,29 @@ def _ground_said(report: dict[str, Any]) -> dict[str, Any]:
     return said
 
 
+def _watershed_for(report: dict[str, Any]) -> dict[str, Any] | None:
+    """The regions beyond a ground's edges, from its own report: a reservoir
+    beyond where its river comes in -- 6 cm above the river there, so it feeds
+    it, on a bed 25 cm below the river's, fed at the river's own discharge --
+    and a basin beyond its mouth, starting at the mouth's lowest bed and
+    letting water go over a 3 m weir 4 cm above it. None for ground with no
+    river coming in and going out."""
+    water = report.get("water") or {}
+    rivers, mouths = water.get("rivers") or [], water.get("mouths") or []
+    path = [p for p in (water.get("river_path") or []) if p.get("level_m") is not None]
+    if not rivers or not mouths or len(path) < 2:
+        return None
+    first, last = path[0], path[-1]
+    return {"basins": [
+                {"name": "the upstream reservoir", "bed_m": round(first["bed_m"] - 0.25, 3),
+                 "area_m2": 400.0, "level_m": round(first["level_m"] + 0.06, 3)},
+                {"name": "the downstream basin", "bed_m": round(last["bed_m"] - 0.6, 3),
+                 "area_m2": 600.0, "level_m": round(last["bed_m"], 3),
+                 "outlet": {"crest_m": round(last["bed_m"] + 0.04, 3), "width_m": 3.0}}],
+            "connections": [{"basin": "the upstream reservoir", "instead_of": rivers[0]["name"]},
+                            {"basin": "the downstream basin", "instead_of": mouths[0]["name"]}]}
+
+
 def tool_make_terrain(args: dict[str, Any]) -> dict[str, Any]:
     """Give the world ground that is not flat -- a valley with a river -- or take it away."""
     world_id = str(args.get("world_id"))
@@ -2619,6 +2657,9 @@ def tool_make_terrain(args: dict[str, Any]) -> dict[str, Any]:
                {"ground": "flat, at y = 0, with no water"}
     if kind not in TERRAIN_KINDS:
         raise Refused(f"kind is one of {', '.join(TERRAIN_KINDS)} or none, not {kind!r}")
+    if args.get("beyond_the_edges") and kind not in ("valley", "channel"):
+        raise Refused(f"a {kind} has no river coming in and going out for regions beyond its edges "
+                      f"to stand at: make a valley or a channel")
     generate: Any = kind
     extra: dict[str, Any] = {}
     if args.get("seed") is not None:
@@ -2632,6 +2673,17 @@ def tool_make_terrain(args: dict[str, Any]) -> dict[str, Any]:
         raise Refused("a world is opened from its objects and this one has none: add_object "
                       "something first (a marker stone out of the way will do)")
     lost = _rebuild(entry, scene, world_id)
+    if args.get("beyond_the_edges"):
+        # The regions beyond its edges (docs/watershed.md), placed from where
+        # this ground's own river comes in and leaves -- read off the engine,
+        # not written down -- and the world opened again with them.
+        shed = _watershed_for(entry["world"].environment_report())
+        if shed is None:
+            raise Refused(f"a {kind} has no river coming in and going out for regions beyond its "
+                          f"edges to stand at: make a valley or a channel")
+        lost = _rebuild(entry, dict(entry["scene"], water={"watershed": shed}), world_id) or lost
+        entry["story"].append("stood a reservoir beyond where the river comes in and a basin beyond "
+                              "its mouth")
     entry["story"].append(f"made the ground a {kind}")
     report = entry["world"].environment_report()
     answer: dict[str, Any] = {"ground": _ground_said(report)}
@@ -2850,6 +2902,10 @@ def tool_set_river(args: dict[str, Any]) -> dict[str, Any]:
     world = _require_terrain(entry)
     report = world.environment_report()
     rivers = [r["name"] for r in report["water"]["rivers"]]
+    # A river whose source became a connection to a reservoir beyond the edge
+    # is fed through that reservoir: its name still sets the discharge, and the
+    # engine says no to a mouth's (docs/watershed.md).
+    rivers += [c["name"] for c in (report.get("watershed") or {}).get("connections", [])]
     if not rivers:
         raise Refused("this ground has no river")
     river = str(args.get("river") or rivers[0])
@@ -3550,7 +3606,16 @@ TOOLS = [
          "seed": {"type": "integer", "description": "A different valley for a different number."},
          "discharge_m3_s": {"type": "number",
                             "description": "What the river brings in, cubic metres a second. "
-                                           "0.35 by default: a stream about 2 m wide."}}}},
+                                           "0.35 by default: a stream about 2 m wide."},
+         "beyond_the_edges": {"type": "boolean",
+                              "description": "A valley or a channel only. Instead of the river being "
+                                             "handed its discharge at the west edge and let go over the "
+                                             "east one, stand an upstream reservoir beyond where it comes "
+                                             "in (fed at the river's own discharge) and a downstream basin "
+                                             "beyond its mouth (letting water go over its own weir). What "
+                                             "crosses each is the difference in level, either way: dam "
+                                             "the river and the reservoir fills. water_state reports them "
+                                             "under beyond_the_edges; set_river sets the reservoir's feed."}}}},
     {"name": "survey",
      "description": "The ground and the water at a point, or along a line between two points: "
                     "how high the ground is, what it is made of (rock, soil, sand) and how steep, "

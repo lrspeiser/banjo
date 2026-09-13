@@ -497,6 +497,21 @@ can heap it; `the_ground` in the room's opening message says how much
 bare rock and adds it as an ordinary loose body. The water is carried across a
 rebuild: a reservoir filled behind a dam is still there when a log is added.
 
+**Regions beyond the edges** ([the watershed](../watershed.md)).
+`make_terrain(kind="valley" or "channel", beyond_the_edges=true)` stands an
+upstream reservoir beyond where the river comes in and a downstream basin
+beyond its mouth, placed from the ground's own report: the reservoir 6 cm
+above the river where it enters, fed at the river's own discharge, and the
+basin at the mouth's lowest bed, letting water go over a 3 m weir. What
+crosses each is the difference in level, either way: dam the river and the
+reservoir fills while the basin falls. `water_state` then carries
+`beyond_the_edges` -- each basin's level, volume, feed, what it lets out and
+what it is sending into the valley, each connection's rate, and
+`unaccounted_m3` for all the water together -- and `set_river` sets the
+reservoir's feed. Ground with no river coming in and going out is refused
+before it is touched. The playground's watershed room is the valley declared
+this way.
+
 Two things a model got wrong in the room, and what now says so. Objects on this
 ground are **set on it**: asked for inside the ground, a block is lifted to rest
 on the highest point under it and the answer says `seated_on_the_ground`, so y

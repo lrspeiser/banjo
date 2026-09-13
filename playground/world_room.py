@@ -874,6 +874,38 @@ def valley() -> dict[str, Any]:
     }
 
 
+def watershed() -> dict[str, Any]:
+    """The valley, and the regions beyond its edges (docs/watershed.md).
+
+    The same ground as the valley room -- which is left exactly as it is: its
+    numbers are what the milestone has to keep -- but the river is no longer
+    handed a discharge at the west edge and let go over the east one. Beyond
+    the west edge stands a reservoir the river is fed from, and beyond the east
+    edge a basin it pours into, which lets water go over its own outlet. Each
+    is a level pool, and what crosses between it and the valley is the water
+    on both sides, either way: dam the river and the reservoir fills.
+
+    From the valley itself (its engine's own report): the river comes in over
+    a bed of 0.44 m standing 0.69 to 0.74 m, at 0.35 m3/s, and leaves across a
+    mouth whose bed falls to 0.01 m. So the reservoir is fed at the river's own
+    0.35 m3/s and starts a little above the river where it comes in, at
+    0.80 m, so it feeds it; and the basin starts below the mouth's lowest bed
+    and lets water go over a 3 m weir at 0.05 m, which passes 0.35 m3/s
+    standing about 0.22 m -- a little way up the mouth, so the river meets it
+    rather than falling off an edge.
+    """
+    spec = valley()
+    spec["water"] = {"watershed": {
+        "basins": [
+            {"name": "the upstream reservoir", "bed_m": 0.2, "area_m2": 400.0, "level_m": 0.8},
+            {"name": "the downstream basin", "bed_m": -0.6, "area_m2": 600.0, "level_m": 0.0,
+             "outlet": {"crest_m": 0.05, "width_m": 3.0}}],
+        "connections": [
+            {"basin": "the upstream reservoir", "instead_of": "the river"},
+            {"basin": "the downstream basin", "instead_of": "the river's mouth"}]}}
+    return spec
+
+
 # Every test's own build, side by side, to walk round and try: written by
 # `python tests/qa.py --rooms` from the recipes the QA proves, each part named
 # after its case. Three rooms, because together they hold more cells than a
@@ -897,6 +929,7 @@ SCENES = {
     "yard": yard,
     "armoury": armoury,
     "valley": valley,
+    "watershed": watershed,
 }
 
 
