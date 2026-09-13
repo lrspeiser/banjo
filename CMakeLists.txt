@@ -23,6 +23,12 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+# The C API (banjo_c) is a shared library built out of the engine's static
+# libraries, and on Linux everything linked into a shared object must be
+# position-independent. MSVC never needed it, so every Windows build linked
+# while CI on Ubuntu stopped at libbanjo.so ("recompile with -fPIC"). Set
+# before any target and any fetched dependency, so Jolt gets it too.
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 function(banjo_enable_warnings target)
     if(MSVC)
