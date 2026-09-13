@@ -61,6 +61,8 @@ jobs:
           python3 tests/playground_archive_tests.py -v
           python3 tests/playground_logging_tests.py -v
           python3 tests/server_failure_detail_tests.py -v
+          python3 tests/room_trace_tests.py -v
+          python3 tests/playground_connection_tests.py -v
           # The plate drop (-k plate) took 48 minutes through the network lane
           # on a fast desktop and runs in long-physics.yml; these are the two
           # quick cases.

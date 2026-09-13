@@ -448,6 +448,15 @@ immediately, so there is a report in the log lining up with what was just seen.
 Routine reports go out every four seconds and stay at debug level unless the
 room was visibly behind; anything marked by hand is said out loud.
 
+**A lost server is said ahead of the clocks.** Nothing steps the world while the
+page cannot reach the server, and a room that was out of reach for a second
+reads, in every other number, as a room running slow. So the page counts each
+spell -- a request that got no answer, or a 5xx -- and the report carries it as
+`lost_link` (`times`, `longest_ms`, `why`, `gave_up`), which the log puts first
+and always says out loud: `LOST THE SERVER 1x, longest 498 ms (Failed to fetch)`.
+The room tries again 150, 300 and 600 ms apart before it stops and says why, and
+a report that could not be sent while the server was away goes with the next.
+
 ### Nothing drawn is not the same as slow
 
 A browser throttles a tab it is not showing to about one frame a second. In the

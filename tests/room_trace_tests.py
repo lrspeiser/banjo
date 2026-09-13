@@ -92,6 +92,31 @@ class TheLineWrittenToTheLog(unittest.TestCase):
                         f"the line begins {said[:40]!r}, so the warning is not first")
         self.assertIn("mean nothing", said)
 
+    def test_a_lost_server_is_said_ahead_of_the_clocks(self):
+        """Nothing steps the world while the server cannot be reached.
+
+        A room that lost the server for a second reads, in every other number,
+        as a room running slow -- so that is said ahead of them, or the next
+        reader goes looking in the solver for a lag that was a connection.
+        """
+        said = self.line(realtime_pct=74, lost_link={
+            "times": 1, "longest_ms": 1052, "why": "Failed to fetch", "gave_up": False})
+        self.assertTrue(said.startswith("LOST THE SERVER 1x, longest 1052 ms"),
+                        f"the line begins {said[:40]!r}")
+        self.assertIn("Failed to fetch", said)
+        self.assertNotIn("GAVE UP", said)
+
+    def test_a_room_that_gave_up_on_the_server_says_so(self):
+        said = self.line(lost_link={"times": 1, "longest_ms": 1180,
+                                    "why": "Failed to fetch", "gave_up": True})
+        self.assertIn("GAVE UP", said)
+
+    def test_nothing_drawn_is_still_said_before_a_lost_server(self):
+        said = self.line(frames=0, fps=0.0, lost_link={
+            "times": 2, "longest_ms": 310, "why": "HTTP 503", "gave_up": False})
+        self.assertTrue(said.startswith("NOTHING WAS DRAWN"), f"the line begins {said[:40]!r}")
+        self.assertIn("LOST THE SERVER 2x", said)
+
 
 class TheEndpointThatReceivesThem(unittest.TestCase):
     class Fake:
@@ -124,6 +149,15 @@ class TheEndpointThatReceivesThem(unittest.TestCase):
             self.send({"why": "routine", "objects": i})
         filed = (self.where / "room-frames.jsonl").read_text(encoding="utf-8").splitlines()
         self.assertEqual([json.loads(r)["objects"] for r in filed], [0, 1, 2])
+
+    def test_a_lost_server_goes_in_the_log_even_when_the_room_kept_up(self):
+        """A short outage leaves the room above 90% and would be filed quietly."""
+        with self.assertLogs(level="INFO") as logged:
+            self.send({"why": "routine", "watched": True, "frames": 240, "realtime_pct": 97,
+                       "frame_ms": {"worst": 20.0}, "objects": 5,
+                       "lost_link": {"times": 1, "longest_ms": 160,
+                                     "why": "Failed to fetch", "gave_up": False}})
+        self.assertTrue(any("LOST THE SERVER" in line for line in logged.output), logged.output)
 
     def test_it_refuses_what_is_not_a_report(self):
         with self.assertRaises(ValueError):

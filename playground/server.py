@@ -782,15 +782,16 @@ class Playground:
         if len(raw)>64*1024: raise ValueError("that frame report is too big")
         stamp=time.strftime("%Y-%m-%dT%H:%M:%S",time.gmtime())
         line=trace_line(body)
-        # Said out loud when somebody pressed L, or when the room was visibly
-        # not keeping up. Otherwise it is on the file and not in the way.
+        # Said out loud when somebody pressed L, when the room was visibly not
+        # keeping up, or when it lost the server for a moment. Otherwise it is
+        # on the file and not in the way.
         why=str(body.get("why","routine"))[:60]
         # Only a report from a room that was actually being drawn says anything
         # about how the room looked.
         watched=bool(body.get("frames")) and body.get("watched") is not False
         behind=watched and isinstance(body.get("realtime_pct"),(int,float)) and body["realtime_pct"]<90
         worst=((body.get("frame_ms") or {}).get("worst") or 0) if watched else 0
-        if why!="routine" or behind or (isinstance(worst,(int,float)) and worst>100):
+        if why!="routine" or behind or body.get("lost_link") or (isinstance(worst,(int,float)) and worst>100):
             logging.info("banjo room (%s): %s",why,line)
         else:
             logging.debug("banjo room: %s",line)
@@ -1002,6 +1003,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type",content_type)
         self.send_header("Content-Length",str(len(data)))
+        # Said when this is the last reply on the connection, so the other end
+        # does not send its next request down one that is being closed.
+        if self.close_connection: self.send_header("Connection","close")
         self.send_header("Cache-Control","no-store")
         self.send_header("X-Content-Type-Options","nosniff")
         self.send_header("Content-Security-Policy","default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'")
@@ -1050,6 +1054,11 @@ class Handler(BaseHTTPRequestHandler):
             self.send(file.read_bytes(),content_type=mime+"; charset=utf-8")
         except (ValueError,FileNotFoundError) as exc: self.send({"error":str(exc)},400)
     def do_POST(self):
+        # The connection is kept for another request only once this one's body
+        # has been read to its end. Refused before that, whatever is left of the
+        # body would be read as the next request, so the connection is closed.
+        keep=not self.close_connection
+        self.close_connection=True
         try:
             length=int(self.headers.get("Content-Length","0"))
             capture = urlsplit(self.path).path == "/api/capture"
@@ -1063,6 +1072,7 @@ class Handler(BaseHTTPRequestHandler):
             # application action invoked until origin/session checks pass.
             raw_body=self.rfile.read(length)
             if len(raw_body)!=length: raise ValueError("Incomplete request body")
+            self.close_connection=not keep
             self.trusted_host()
             if not secrets.compare_digest(self.headers.get("X-Banjo-Token",""),self.server.app.csrf_token):
                 return self.send({"error":"Missing or invalid local session token"},403)
@@ -1225,6 +1235,14 @@ def trace_line(report):
            f"{report.get('fps')} fps",
            f"worst frame {frame.get('worst')} ms",
            f"{report.get('objects')} objects"]
+    # Ahead of the clocks, because it is what they mean: nothing steps the world
+    # while the server cannot be reached, and a room that was out of reach for
+    # a second reads in every other number as a room running slow.
+    lost=report.get("lost_link")
+    if isinstance(lost,dict) and lost.get("times"):
+        parts.insert(0,f"LOST THE SERVER {lost.get('times')}x, longest {lost.get('longest_ms')} ms"
+                       + (", and GAVE UP" if lost.get("gave_up") else "")
+                       + (f" ({str(lost.get('why'))[:80]})" if lost.get("why") else ""))
     # Said first, because it changes what every other number means.
     #
     # Nothing drawn at all is the honest test. `document.hidden` is the obvious
