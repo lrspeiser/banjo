@@ -3634,8 +3634,12 @@ TOOLS = [
      "description": "The rivers and ponds: how much water there is, what is coming in and going "
                     "out, each pond's level, where the river runs (every 2 m along it: x, z, "
                     "level, depth, speed), what is in the water and whether it floats, and the "
-                    "water's ledger (in, out, and what is unaccounted for). Call run first to let "
-                    "time pass; call this before and after to see a level rise or fall.",
+                    "water's ledger (in, out, and what is unaccounted for). Where water crosses "
+                    "the ground's edges to regions beyond them -- a reservoir upstream, a basin "
+                    "downstream -- also each one's level, volume, feed, what it lets out and what "
+                    "it sends into the valley (below zero when it takes from it), under "
+                    "beyond_the_edges. Call run first to let time pass; call this before and "
+                    "after to see a level rise or fall.",
      "inputSchema": {"type": "object", "required": ["world_id"],
                      "properties": {"world_id": {"type": "string"}}}},
     {"name": "dig",
