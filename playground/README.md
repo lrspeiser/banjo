@@ -255,12 +255,14 @@ the left in 0.15 s took the armoury's iron sword through the rope edge-first at
 9.8 m/s, and the weight fell to the floor.
 
 The test room's two swords are the QA recipes' — 40 mm aluminium bars, the
-thinnest a 40 mm room makes — and they do not behave like the armoury's. A
-steady push through the rope has cut it (edge-first at 0.7 m/s, the weight on
-the floor); the same 0.15 s flick glanced off one segment and then led with
-the flat, and the rope held. The QA cuts it with the engine's own hand, a
-scripted 100 degree swing in 0.13 s at 13 m/s; a flick of the view is not that
-swing, and for these bars it is not yet a way to cut.
+thinnest a 40 mm room makes — and where you stand matters as much as how fast
+you turn. From the armoury test's own stance, moved to the test room's rope —
+0.5 m to its right and 1.2 m back, eye 1.62 m up, looking level at a point
+0.6 m right of the rope — the same 0.15 s flick took the bar through the rope
+edge-first at 10.3 m/s, and the weight fell. From 1.15 m, aimed 30 degrees
+right of the rope with the eye at 1.81 m, it glanced off one segment and then
+led with the flat, and the rope held. A steady push through the rope cuts it
+too, edge-first at 0.7 m/s.
 
 ### Opening a saved build
 
