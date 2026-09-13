@@ -102,7 +102,9 @@ ShallowWater::ShallowWater(Grid grid, std::vector<double> terrain_m, Settings se
     tile_wet_.assign(tiles, 0);
     tile_active_.assign(tiles, 0);
     tile_always_.assign(tiles, 0);
+    tile_dirty_.assign(tiles, 0);
     stats_.tiles = tiles;
+    all_tiles_dirty_ = true;
     refreshTiles();
 }
 
@@ -117,14 +119,14 @@ double ShallowWater::velocityZ(std::size_t cell) const {
 void ShallowWater::setDepth(std::size_t cell, double depth_m) {
     eta_[cell] = bed_[cell] + std::max(0.0, depth_m);
     if (!(depth_m > 0.0)) { qx_[cell] = 0.0; qz_[cell] = 0.0; }
-    tiles_dirty_ = true;
+    markDirty(cell);
     speed_known_ = false;
 }
 
 void ShallowWater::setSurface(std::size_t cell, double surface_m) {
     eta_[cell] = std::max(bed_[cell], surface_m);
     if (!(eta_[cell] > bed_[cell])) { qx_[cell] = 0.0; qz_[cell] = 0.0; }
-    tiles_dirty_ = true;
+    markDirty(cell);
     speed_known_ = false;
 }
 
@@ -157,12 +159,12 @@ void ShallowWater::displace(std::size_t cell, double volume_m3) {
             }
         if (best != cell) {
             eta_[best] += volume_m3 / faceArea();
-            tiles_dirty_ = true;
+            markDirty(best);
             return;
         }
     }
     eta_[cell] += volume_m3 / faceArea();
-    tiles_dirty_ = true;
+    markDirty(cell);
 }
 
 namespace {
@@ -203,29 +205,45 @@ void ShallowWater::setTerrain(std::size_t cell, double terrain_m) {
     const double target = std::max(terrain_m, obstacle_[cell]);
     const double spill = moveBed(eta_[cell], bed_[cell], qx_[cell], qz_[cell], target);
     if (spill > 0.0) displace(cell, spill * faceArea());
-    tiles_dirty_ = true;
+    markDirty(cell);
     speed_known_ = false;
 }
 
 void ShallowWater::setObstacles(const std::vector<double> &top_m) {
     if (top_m.size() != grid_.cells()) throw std::invalid_argument("one obstacle top per cell");
+    // A column whose top is what it was has nothing to do: its bed is already
+    // max(ground, top), so sweeping it moved nothing even when every column
+    // was swept.
+    std::vector<std::pair<std::size_t, double>> changes;
+    for (std::size_t c = 0; c < top_m.size(); ++c)
+        if (!(top_m[c] == obstacle_[c])) changes.emplace_back(c, top_m[c]);
+    setObstacleTops(changes);
+    speed_known_ = false;
+}
+
+void ShallowWater::setObstacleTops(const std::vector<std::pair<std::size_t, double>> &changes) {
     // Every obstacle first, then the water: displaced water must not be sent
     // into a column that is about to be filled by another block of the same
-    // dam.
+    // dam. In cell order, the order the whole grid used to be swept in.
     std::vector<std::size_t> raised;
-    for (std::size_t c = 0; c < top_m.size(); ++c) {
-        obstacle_[c] = top_m[c];
-        const double target = std::max(terrain_[c], top_m[c]);
+    for (std::size_t k = 0; k < changes.size(); ++k) {
+        const std::size_t c = changes[k].first;
+        const double top = changes[k].second;
+        if (c >= grid_.cells() || (k > 0 && c <= changes[k - 1].first))
+            throw std::invalid_argument("obstacle tops are for cells of the grid, in cell order, once each");
+        obstacle_[c] = top;
+        const double target = std::max(terrain_[c], top);
         if (target > bed_[c]) raised.push_back(c);
         else if (target < bed_[c]) (void)moveBed(eta_[c], bed_[c], qx_[c], qz_[c], target);
+        markDirty(c);
     }
     for (const std::size_t c : raised) {
         const double target = std::max(terrain_[c], obstacle_[c]);
         const double spill = moveBed(eta_[c], bed_[c], qx_[c], qz_[c], target);
         if (spill > 0.0) displace(c, spill * faceArea());
     }
-    tiles_dirty_ = true;
-    speed_known_ = false;
+    stats_.obstacle_cells_changed += changes.size();
+    if (!changes.empty()) speed_known_ = false;
 }
 
 namespace {
@@ -259,10 +277,11 @@ void ShallowWater::addInflow(const Inflow &inflow) {
         case Edge::South: i = k; j = 0; break;
         case Edge::North: i = k; j = grid_.nz - 1; break;
         }
-        tile_always_[static_cast<std::size_t>(j / settings_.tile) * static_cast<std::size_t>(tiles_x_) +
-                     static_cast<std::size_t>(i / settings_.tile)] = 1;
+        const std::size_t tile = static_cast<std::size_t>(j / settings_.tile) * static_cast<std::size_t>(tiles_x_) +
+                                 static_cast<std::size_t>(i / settings_.tile);
+        tile_always_[tile] = 1;
+        markDirtyTile(tile);
     }
-    tiles_dirty_ = true;
 }
 
 void ShallowWater::addOutflow(const Outflow &outflow) {
@@ -289,7 +308,60 @@ void ShallowWater::addImpulse(std::size_t cell, double jx_n_s, double jz_n_s) {
     impulses_pending_ = true;
 }
 
-void ShallowWater::refreshTiles() {
+std::size_t ShallowWater::tileOfCell(std::size_t cell) const {
+    const std::size_t nx = static_cast<std::size_t>(grid_.nx);
+    const std::size_t t = static_cast<std::size_t>(settings_.tile);
+    return (cell / nx / t) * static_cast<std::size_t>(tiles_x_) + (cell % nx) / t;
+}
+
+void ShallowWater::markDirtyTile(std::size_t tile) {
+    if (tile_dirty_[tile]) return;
+    tile_dirty_[tile] = 1;
+    dirty_tiles_.push_back(tile);
+}
+
+void ShallowWater::markDirty(std::size_t cell) { markDirtyTile(tileOfCell(cell)); }
+
+// A tile is computed when it or any tile touching it holds water -- water can
+// only arrive from next door -- or when a source is in it.
+std::uint8_t ShallowWater::activeFor(int tx, int tz) const {
+    std::uint8_t on = tile_always_[static_cast<std::size_t>(tz) * static_cast<std::size_t>(tiles_x_) +
+                                   static_cast<std::size_t>(tx)];
+    for (int dz = -1; dz <= 1 && !on; ++dz)
+        for (int dx = -1; dx <= 1 && !on; ++dx) {
+            const int x = tx + dx, z = tz + dz;
+            if (x < 0 || z < 0 || x >= tiles_x_ || z >= tiles_z_) continue;
+            on = tile_wet_[static_cast<std::size_t>(z) * static_cast<std::size_t>(tiles_x_) +
+                           static_cast<std::size_t>(x)];
+        }
+    return on;
+}
+
+void ShallowWater::activateAround(const std::vector<std::size_t> &tiles) {
+    for (const std::size_t tile : tiles) {
+        const int tx = static_cast<int>(tile % static_cast<std::size_t>(tiles_x_));
+        const int tz = static_cast<int>(tile / static_cast<std::size_t>(tiles_x_));
+        for (int dz = -1; dz <= 1; ++dz)
+            for (int dx = -1; dx <= 1; ++dx) {
+                const int x = tx + dx, z = tz + dz;
+                if (x < 0 || z < 0 || x >= tiles_x_ || z >= tiles_z_) continue;
+                const std::size_t n = static_cast<std::size_t>(z) * static_cast<std::size_t>(tiles_x_) +
+                                      static_cast<std::size_t>(x);
+                ++stats_.tile_checks;
+                const std::uint8_t on = activeFor(x, z);
+                if (on == tile_active_[n]) continue;
+                tile_active_[n] = on;
+                const auto at = std::lower_bound(active_list_.begin(), active_list_.end(), n);
+                if (on) active_list_.insert(at, n);
+                else active_list_.erase(at);
+            }
+    }
+    stats_.active_tiles = active_list_.size();
+}
+
+// Every tile's wetness read again and every tile asked whether it is computed:
+// at the start, after a restore, and always for the reference.
+void ShallowWater::refreshAllTiles() {
     const int t = settings_.tile;
     std::fill(tile_wet_.begin(), tile_wet_.end(), std::uint8_t{0});
     for (int j = 0; j < grid_.nz; ++j)
@@ -297,36 +369,55 @@ void ShallowWater::refreshTiles() {
             if (eta_[grid_.at(i, j)] - bed_[grid_.at(i, j)] > settings_.dry_m)
                 tile_wet_[static_cast<std::size_t>(j / t) * static_cast<std::size_t>(tiles_x_) +
                           static_cast<std::size_t>(i / t)] = 1;
-    // A tile is computed when it or any tile touching it holds water: water
-    // can only arrive from next door.
-    std::size_t active = 0;
+    stats_.tile_cells_scanned += grid_.cells();
+    active_list_.clear();
     for (int tz = 0; tz < tiles_z_; ++tz)
         for (int tx = 0; tx < tiles_x_; ++tx) {
-            std::uint8_t on = tile_always_[static_cast<std::size_t>(tz) * static_cast<std::size_t>(tiles_x_) +
-                                           static_cast<std::size_t>(tx)];
-            for (int dz = -1; dz <= 1 && !on; ++dz)
-                for (int dx = -1; dx <= 1 && !on; ++dx) {
-                    const int x = tx + dx, z = tz + dz;
-                    if (x < 0 || z < 0 || x >= tiles_x_ || z >= tiles_z_) continue;
-                    on = tile_wet_[static_cast<std::size_t>(z) * static_cast<std::size_t>(tiles_x_) +
-                                   static_cast<std::size_t>(x)];
-                }
-            tile_active_[static_cast<std::size_t>(tz) * static_cast<std::size_t>(tiles_x_) +
-                         static_cast<std::size_t>(tx)] = on;
-            active += on;
+            const std::size_t tile = static_cast<std::size_t>(tz) * static_cast<std::size_t>(tiles_x_) +
+                                     static_cast<std::size_t>(tx);
+            ++stats_.tile_checks;
+            tile_active_[tile] = activeFor(tx, tz);
+            if (tile_active_[tile]) active_list_.push_back(tile);
         }
-    stats_.active_tiles = active;
-    tiles_dirty_ = false;
+    stats_.active_tiles = active_list_.size();
+    for (const std::size_t tile : dirty_tiles_) tile_dirty_[tile] = 0;
+    dirty_tiles_.clear();
+    all_tiles_dirty_ = false;
+}
+
+// Only the tiles a column was changed in are read again, and only they and the
+// tiles touching them are asked whether they are computed.
+void ShallowWater::refreshTiles() {
+    if (all_tiles_dirty_ || !settings_.incremental_tiles) {
+        refreshAllTiles();
+        return;
+    }
+    if (dirty_tiles_.empty()) return;
+    const int t = settings_.tile;
+    for (const std::size_t tile : dirty_tiles_) {
+        const int tx = static_cast<int>(tile % static_cast<std::size_t>(tiles_x_));
+        const int tz = static_cast<int>(tile / static_cast<std::size_t>(tiles_x_));
+        const int i1 = std::min(grid_.nx, (tx + 1) * t), j1 = std::min(grid_.nz, (tz + 1) * t);
+        std::uint8_t any = 0;
+        for (int j = tz * t; j < j1 && !any; ++j)
+            for (int i = tx * t; i < i1 && !any; ++i) {
+                ++stats_.tile_cells_scanned;
+                if (eta_[grid_.at(i, j)] - bed_[grid_.at(i, j)] > settings_.dry_m) any = 1;
+            }
+        tile_wet_[tile] = any;
+    }
+    activateAround(dirty_tiles_);
+    for (const std::size_t tile : dirty_tiles_) tile_dirty_[tile] = 0;
+    dirty_tiles_.clear();
 }
 
 double ShallowWater::waveSpeed() const {
     const double g = settings_.gravity_m_s2;
     const int t = settings_.tile;
     double fastest = 0.0;
-    for (int tz = 0; tz < tiles_z_; ++tz)
-        for (int tx = 0; tx < tiles_x_; ++tx) {
-            if (!tile_active_[static_cast<std::size_t>(tz) * static_cast<std::size_t>(tiles_x_) +
-                              static_cast<std::size_t>(tx)]) continue;
+    for (const std::size_t tile : active_list_) {
+            const int tx = static_cast<int>(tile % static_cast<std::size_t>(tiles_x_));
+            const int tz = static_cast<int>(tile / static_cast<std::size_t>(tiles_x_));
             const int i1 = std::min(grid_.nx, (tx + 1) * t), j1 = std::min(grid_.nz, (tz + 1) * t);
             for (int j = tz * t; j < j1; ++j)
                 for (int i = tx * t; i < i1; ++i) {
@@ -351,7 +442,7 @@ double ShallowWater::waveSpeed() const {
 
 int ShallowWater::advance(double dt_s) {
     if (!(dt_s > 0.0) || !std::isfinite(dt_s)) return 0;
-    if (tiles_dirty_) refreshTiles();
+    if (all_tiles_dirty_ || !dirty_tiles_.empty() || !settings_.incremental_tiles) refreshTiles();
     double remaining = dt_s;
     int taken = 0;
     while (remaining > 0.0) {
@@ -405,10 +496,9 @@ void ShallowWater::substep(double dt) {
     }
 
     // Accumulators, zeroed where they will be written.
-    for (int tz = 0; tz < tiles_z_; ++tz)
-        for (int tx = 0; tx < tiles_x_; ++tx) {
-            if (!tile_active_[static_cast<std::size_t>(tz) * static_cast<std::size_t>(tiles_x_) +
-                              static_cast<std::size_t>(tx)]) continue;
+    for (const std::size_t tile : active_list_) {
+            const int tx = static_cast<int>(tile % static_cast<std::size_t>(tiles_x_));
+            const int tz = static_cast<int>(tile / static_cast<std::size_t>(tiles_x_));
             const int i1 = std::min(nx, (tx + 1) * t), j1 = std::min(nz, (tz + 1) * t);
             for (int j = tz * t; j < j1; ++j)
                 for (int i = tx * t; i < i1; ++i) {
@@ -488,10 +578,9 @@ void ShallowWater::substep(double dt) {
     };
 
     std::size_t computed = 0;
-    for (int tz = 0; tz < tiles_z_; ++tz)
-        for (int tx = 0; tx < tiles_x_; ++tx) {
-            if (!tile_active_[static_cast<std::size_t>(tz) * static_cast<std::size_t>(tiles_x_) +
-                              static_cast<std::size_t>(tx)]) continue;
+    for (const std::size_t tile : active_list_) {
+            const int tx = static_cast<int>(tile % static_cast<std::size_t>(tiles_x_));
+            const int tz = static_cast<int>(tile / static_cast<std::size_t>(tiles_x_));
             const int i1 = std::min(nx, (tx + 1) * t), j1 = std::min(nz, (tz + 1) * t);
             for (int j = tz * t; j < j1; ++j)
                 for (int i = tx * t; i < i1; ++i) {
@@ -538,11 +627,9 @@ void ShallowWater::substep(double dt) {
     const double cap = settings_.max_speed_m_s;
     double fastest = 0.0;
     std::size_t wet = 0;
-    for (int tz = 0; tz < tiles_z_; ++tz)
-        for (int tx = 0; tx < tiles_x_; ++tx) {
-            const std::size_t tile = static_cast<std::size_t>(tz) * static_cast<std::size_t>(tiles_x_) +
-                                     static_cast<std::size_t>(tx);
-            if (!tile_active_[tile]) continue;
+    for (const std::size_t tile : active_list_) {
+            const int tx = static_cast<int>(tile % static_cast<std::size_t>(tiles_x_));
+            const int tz = static_cast<int>(tile / static_cast<std::size_t>(tiles_x_));
             std::uint8_t any = 0;
             const int i1 = std::min(nx, (tx + 1) * t), j1 = std::min(nz, (tz + 1) * t);
             for (int j = tz * t; j < j1; ++j)
@@ -587,6 +674,7 @@ void ShallowWater::substep(double dt) {
                     }
                     fastest = std::max(fastest, std::max(std::abs(u), std::abs(v)) + std::sqrt(g * h));
                 }
+            if (tile_wet_[tile] != any) flipped_.push_back(tile);
             tile_wet_[tile] = any;
         }
 
@@ -600,24 +688,25 @@ void ShallowWater::substep(double dt) {
     stats_.active_cells = computed;
     stats_.wet_cells = wet;
     stats_.max_speed_m_s = fastest;
-    // Tiles again: water may have reached a tile that was dry.
-    std::size_t active = 0;
-    for (int tz = 0; tz < tiles_z_; ++tz)
-        for (int tx = 0; tx < tiles_x_; ++tx) {
-            std::uint8_t on = tile_always_[static_cast<std::size_t>(tz) * static_cast<std::size_t>(tiles_x_) +
-                                           static_cast<std::size_t>(tx)];
-            for (int dz = -1; dz <= 1 && !on; ++dz)
-                for (int ddx = -1; ddx <= 1 && !on; ++ddx) {
-                    const int x = tx + ddx, z = tz + dz;
-                    if (x < 0 || z < 0 || x >= tiles_x_ || z >= tiles_z_) continue;
-                    on = tile_wet_[static_cast<std::size_t>(z) * static_cast<std::size_t>(tiles_x_) +
-                                   static_cast<std::size_t>(x)];
-                }
-            tile_active_[static_cast<std::size_t>(tz) * static_cast<std::size_t>(tiles_x_) +
-                         static_cast<std::size_t>(tx)] = on;
-            active += on;
-        }
-    stats_.active_tiles = active;
+    // Tiles again: water may have reached a tile that was dry, or left one.
+    // Only a tile whose wetness changed can change which tiles are computed:
+    // it and the tiles touching it are asked, and no others.
+    if (!settings_.incremental_tiles) {
+        // The reference: every tile asked again.
+        active_list_.clear();
+        for (int tz = 0; tz < tiles_z_; ++tz)
+            for (int tx = 0; tx < tiles_x_; ++tx) {
+                const std::size_t tile = static_cast<std::size_t>(tz) * static_cast<std::size_t>(tiles_x_) +
+                                         static_cast<std::size_t>(tx);
+                ++stats_.tile_checks;
+                tile_active_[tile] = activeFor(tx, tz);
+                if (tile_active_[tile]) active_list_.push_back(tile);
+            }
+        stats_.active_tiles = active_list_.size();
+    } else if (!flipped_.empty()) {
+        activateAround(flipped_);
+    }
+    flipped_.clear();
     // The inflows' arriving water sets a floor on the wave speed too.
     speed_ = fastest;
     for (const Inflow &inflow : inflows_) {
@@ -645,9 +734,11 @@ std::size_t ShallowWater::wetCells() const {
 
 double ShallowWater::wetArea() const { return static_cast<double>(wetCells()) * faceArea(); }
 
-double ShallowWater::residual() const {
-    return volume() - (ledger_.initial_m3 + ledger_.inflow_m3 - ledger_.outflow_m3 +
-                       ledger_.numerical_m3);
+double ShallowWater::residual() const { return residualFor(volume()); }
+
+double ShallowWater::residualFor(double volume_m3) const {
+    return volume_m3 - (ledger_.initial_m3 + ledger_.inflow_m3 - ledger_.outflow_m3 +
+                        ledger_.numerical_m3);
 }
 
 void ShallowWater::resetLedger() {
@@ -681,7 +772,7 @@ void ShallowWater::restore(const State &state) {
     }
     ledger_ = state.ledger;
     stats_.time_s = state.time_s;
-    tiles_dirty_ = true;
+    all_tiles_dirty_ = true;
     speed_known_ = false;
 }
 

@@ -42,6 +42,7 @@
 #include <cstddef>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace banjo::water {
@@ -106,6 +107,19 @@ public:
     // The solid tops that bodies resting on the bed put under the water, one
     // per cell, -infinity where there is none.
     std::vector<double> obstacleTops(const ShallowWater &water, const std::vector<BodyInWater> &bodies) const;
+    // What changed in the solid tops since the last call, as (cell, top)
+    // pairs in cell order, for ShallowWater::setObstacleTops: only the columns
+    // under a body that arrived, left, moved, or started or stopped holding
+    // water back, and under ground that changed -- each worked out from every
+    // body over it, lowest first, exactly as obstacleTops works out every
+    // column. With nothing moved, no column is looked at.
+    std::vector<std::pair<std::size_t, double>> obstacleChanges(const ShallowWater &water,
+                                                                 const std::vector<BodyInWater> &bodies);
+    // The ground under these columns changed: whether water gets under what
+    // rests there is asked again at the next obstacleChanges.
+    void groundChanged(const std::vector<std::size_t> &cells);
+    // Columns obstacleChanges has worked out, since the start.
+    [[nodiscard]] std::uint64_t obstacleCellsChecked() const { return obstacle_cells_checked_; }
     [[nodiscard]] const CouplingSettings &settings() const { return settings_; }
     void setSettings(const CouplingSettings &settings) { settings_ = settings; patches_.clear(); }
     // Is this body something the water treats as part of the bed?
@@ -123,6 +137,28 @@ public:
 private:
     CouplingSettings settings_{};
     std::unordered_map<std::string, std::vector<Patch>> patches_;
+    // Where each body was when obstacleChanges last looked, by the rigid
+    // world's id, and the columns it could have been over.
+    struct Footprint {
+        bool known{};
+        bool obstacle{};
+        Vec3 com{};
+        Quat orientation{};
+        Vec3 dimensions{};
+        BodyInWater::Shape shape{BodyInWater::Shape::Box};
+        const std::vector<Vec3> *cells{};
+        std::size_t cell_count{};
+        double cell_m{};
+        double reach{};
+        int i0{0}, i1{-1}, j0{0}, j1{-1};
+        std::uint64_t seen{};
+    };
+    std::unordered_map<std::uint64_t, Footprint> footprints_;
+    std::vector<std::uint8_t> flag_;     // one per column, all zero between calls
+    std::vector<double> scratch_;        // one per column, read only where flagged
+    std::vector<std::size_t> ground_changed_;
+    std::uint64_t pass_{};
+    std::uint64_t obstacle_cells_checked_{};
 };
 
 } // namespace banjo::water

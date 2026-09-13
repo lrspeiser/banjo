@@ -1447,8 +1447,12 @@ The report is all of the above as JSON, with the rivers, their mouths, the
 ponds and their levels, the river every 2 m along its course (level, depth,
 speed), and every body in the water with what the water lifts against what it
 weighs; the ground's ledger, and what is `carried` out of it (`sand_m3`,
-`soil_m3`, `sand_kg`, `soil_kg`: dug and not heaped back); with `full`, the
-model's parameters, where each came from, and what is not modelled. The state is the water as it stands, for `"water": {"state": ...}`
+`soil_m3`, `sand_kg`, `soil_kg`: dug and not heaped back); what the steps cost
+and where the bookkeeping looked (`costs`, among them
+`water_tile_cells_scanned`, `water_tile_checks`, `obstacle_cells_checked` and
+`obstacle_cells_changed`, counted since the world opened: none of them grows
+with the size of a quiet valley); with `full`, the model's parameters, where
+each came from, and what is not modelled. The state is the water as it stands, for `"water": {"state": ...}`
 in a scene opened again: the same water over whatever ground that scene's edits
 leave. The survey is one point: the ground's height, what it is made of there,
 its slope, the ground's own share of rolling resistance there

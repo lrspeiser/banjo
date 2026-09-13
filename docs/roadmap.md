@@ -291,6 +291,31 @@ Add persistent procedural worlds and sparse damage state, versioned universe pac
 
 **Exit:** publish, load and modify a bounded world without losing material history or changing laws silently; untrusted packages respect permissions and resources; a published object declares its required physics capabilities. This is the publishing milestone, distinct from a good destruction demo.
 
+## The owner's review of 2026-09-13: what is next, and in what order
+
+Recorded so the whole review lives here rather than in a conversation. Every
+row is a plan, not a claim: an item moves to the development status only with
+its own tests, a 3D check in the playground and green CI.
+
+| # | area | the gap | lane and status |
+|---|---|---|---|
+| 1 | heat, failure and geometry | the heated lattice uses room-temperature bonds; consumed material changes mass but not the collision shape, the rendering, the centre of mass or the inertia. One material state must drive them all, with no double weakening. Acceptance: a heated and a cold loaded beam through failure, cooling and a second impact | in progress, branch `agent/heat-geometry` |
+| 2 | thin structures | beams and rods (stretch, bend, twist, shear, buckling), shells and plates, membranes and cloth, from material and cross-section. Acceptance: cantilever, supported beam, torsion, buckling and a thin panel, each at several discretisations | after 1 |
+| 3 | the running world kept through edits | a versioned world snapshot and an atomic runtime-edit API: bodies and motion, geometry revisions, damage, cuts, joints, thermochemical inventories, gas regions, water and terrain. "Copy a recipe" is kept apart from "copy physical state". Acceptance: burn a log, notch a plank, loose an arrow, half-drain a pond, add a crate, save, reload, and all four go on from where they were | with the watershed's persistence (W5) |
+| 4 | penetration and embedding | a reusable penetrating-tip contact: resistance, work, depth, target motion, partial embedding, withdrawal, failure of either side. An embedded thing is bound to the material around it, not to a body's name. It serves arrows, nails, stakes, spears and pointed tools; blades add wedging, side friction, grain and wear. Acceptance: identical projectiles into different materials, thicknesses, orientations and moving targets, followed through the target's fracture | after 1 |
+| 5 | structural joints and masonry | attachments as regions with force and moment capacity; dry contact, mortar (compression, tension, shear, opening, rotation) and block failure told apart; collision filtering for connected parts as a construction policy. Acceptance: a bracket at several lever arms, a dry-stack wall, a mortared wall, and a small arch with its supports changed | after 1 |
+| 6 | finite liquids, and water with heat | containers holding liquid mass, volume, temperature, a free surface and its centre of mass. Leaks and transfers between river, bucket, spill and vapour neither duplicate nor lose it, and it heats, cools, evaporates, wets and extinguishes. Acceptance: fill a bucket from the river, lift it on a pulley, pour it into a kettle, heat it and break the kettle, on one mass and energy account | after the watershed |
+| 7 | pressure-driven mechanisms and gas boundaries | pressure on enclosing surfaces with reaction loads, changing volumes, connected gas regions, and declared flow regimes and operating limits. The cannon is a finite-inventory reaction in the same system. Acceptance: a contained-gas mechanism driven by heating, then by a declared synthetic reaction, its accounting against the mechanical work | not started; a lane of its own |
+| 8 | cloth, air and cables | heavy-load cables with collision along them, and bending and twisting where needed; sheaves, bearing resistance, routing and winches; cloth with two-way attachments and tearing (Jolt's soft bodies have no soft-soft collision and no ordinary constraints on soft bodies); declared wind and shape-dependent aerodynamic force. Result: banners pull on their supports, sails load a mast, a canopy sags, and ropes stay usable without heavy segments | not started; a lane of its own |
+| -- | the watershed (terrain and water milestone 2) | three connected regions over the existing terrain and water; a coarse river network with head-driven two-way exchange; conservative coarse-detailed coupling; locality; instrumentation; nine acceptance tests | in progress: W1, locality |
+
+Retained in the backlog, not yet placed in a lane:
+
+- **Thermal expansion and more materials.** Expansion is not modelled. The heat-dependent mechanical laws cover oak, iron and concrete, and none yet exists for glass, aluminium, ceramic, rubber or ice.
+- **Wet soil and ongoing erosion.** No infiltration, pore pressure, wet-soil weakening or sediment moving while anyone is in the valley. Dug ground is carried as a tally of sand and soil, not as physical loose material.
+- **Spatial heat and atmosphere.** Bodies hold lumped or surface-and-core temperatures, and heat paths use bounding boxes. There is no resolved temperature field inside a body, no plume and no smoke transport.
+- **Complete interaction cycles.** The profile system reaches drawing and loosing. Physical placement, general rotation, sliding and activation, blade profiles, reusable load-operate-unload cycles and pose help remain; [the interaction profiles](interaction-profiles.md) lists the components.
+
 ## Keep the project on track
 
 Every checkpoint should state: source commit/branch; implemented change; reproducible tests; quantitative result and tolerance; numerical/model limitations; measured performance; remaining work; and main-versus-experimental status. Update the status document and property coverage matrix when features move between categories. Do not call a gate complete merely because its types, menu items, or future enum values exist.

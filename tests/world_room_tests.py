@@ -244,10 +244,17 @@ class TheSpadeCarriesWhatItDigs(unittest.TestCase):
             playground_server.remember_ground(app, body)   # as /api/live/act does
             return answer
 
-        start = live.open(app, {"spec": app.room.spec})["terrain"]["carried"]
+        opened = live.open(app, {"spec": app.room.spec})
+        start, grid = opened["terrain"]["carried"], opened["terrain"]["grid"]
         self.assertEqual((start["sand_m3"], start["soil_m3"]), (0.0, 0.0))
         dug = act(op="dig", **{"from": [2.0, 4.25], "to": [2.0, 4.25]}, width_m=0.8, depth_m=0.4)
         have = dug["carried"]
+        # The page is sent the ground that changed, as a rectangle round it.
+        box = dug["terrain_changed"]["box"]
+        i = round((2.0 - grid["x0_m"]) / grid["cell_m"])
+        j = round((4.25 - grid["z0_m"]) / grid["cell_m"])
+        self.assertTrue(box[0] <= i < box[0] + box[2] and box[1] <= j < box[1] + box[3],
+                        f"the dug column [{i}, {j}] is not in the ground sent, {box}")
         for kind in ("sand", "soil"):
             # The dig's own report is rounded to a hundredth of a litre; what
             # is carried is not.
@@ -266,6 +273,12 @@ class TheSpadeCarriesWhatItDigs(unittest.TestCase):
         self.assertAlmostEqual(heaped["carried"]["soil_m3"], have["soil_m3"] / 2, delta=1e-12)
         self.assertEqual([next(iter(edit)) for edit in app.room.spec["terrain"]["edits"]],
                          ["dig", "deposit"], "the refused heap was kept, or a real edit lost")
+        # Once the pit's sides and the heap have come to rest (3.5 s for a
+        # spade pit), a step sends no ground at all: nothing changed.
+        for _ in range(45):
+            act(op="step", dt=1 / 60.0, n=10)
+        self.assertNotIn("terrain_changed", act(op="step", dt=1 / 60.0, n=1),
+                         "the ground was sent again with nothing in it changing")
         # Opened again from the edits the server kept -- as after the chat
         # changes something, or on a reload -- it carries the same, and the
         # ground plus what is carried is the ground there was.

@@ -4686,6 +4686,10 @@ std::vector<water::BodyInWater> LiveWorld::waterBodies() {
 
 const terrain::Environment *LiveWorld::environment() const { return impl_->environment.get(); }
 
+terrain::TerrainField::Rect LiveWorld::takeChangedGround() {
+    return impl_->environment ? impl_->environment->takeChangedGround() : terrain::TerrainField::Rect{};
+}
+
 namespace {
 terrain::Environment &requireEnvironment(const std::unique_ptr<terrain::Environment> &environment) {
     if (!environment) throw std::invalid_argument("this world has no terrain: its scene declares none");

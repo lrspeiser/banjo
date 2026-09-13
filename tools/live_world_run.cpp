@@ -627,7 +627,6 @@ std::pair<double, double> readXZ(const nlohmann::json &node, const char *key) {
 // the smallest box holding all the water, a few times a world-second: the wire
 // is where this room's stutters have been found before, and a river's surface
 // does not need to be sent at 240 Hz to be seen moving.
-std::vector<float> sent_heights;
 double water_sent_at = -1.0e9;
 constexpr double kWaterEveryS = 0.25;
 
@@ -663,71 +662,52 @@ nlohmann::json terrainBlock(const banjo::terrain::Environment &env, const std::v
 
 nlohmann::json waterBlock(const banjo::terrain::Environment &env, double t) {
     const banjo::water::ShallowWater &w = *env.water();
-    const banjo::water::Grid &g = w.grid();
-    const double base = env.terrain().lowest() - 1.0;
-    const std::vector<std::uint16_t> surface = env.waterSurfaceMm(base);
-    const std::vector<std::int8_t> flow = env.waterFlow();
-    int i0 = g.nx, j0 = g.nz, i1 = -1, j1 = -1;
-    for (int j = 0; j < g.nz; ++j)
-        for (int i = 0; i < g.nx; ++i)
-            if (surface[g.at(i, j)] != 0) {
-                i0 = std::min(i0, i); i1 = std::max(i1, i);
-                j0 = std::min(j0, j); j1 = std::max(j1, j);
-            }
-    nlohmann::json out = {{"t", t}, {"base_m", base}, {"volume_m3", tidy(w.volume())},
-                          {"wet_cells", w.wetCells()}, {"active_cells", w.stats().active_cells},
+    // Surfaces are sent in millimetres above the floor under all the rock: it
+    // never moves, so nothing is scanned to find it (the lowest ground was
+    // looked for across the whole valley, four times a second).
+    const double base = env.terrain().floor();
+    // Only the columns that hold water are looked at for the picture; the
+    // volume, which the ledger needs exact, is summed once, not twice.
+    const banjo::terrain::Environment::WaterBox box = env.waterBox(base);
+    const double volume = w.volume();
+    nlohmann::json out = {{"t", t}, {"base_m", base}, {"volume_m3", tidy(volume)},
+                          {"wet_cells", box.wet_cells}, {"active_cells", w.stats().active_cells},
                           {"in_m3_s", tidy(w.inflowRate())}, {"out_m3_s", tidy(w.outflowRate())},
-                          {"residual_m3", w.residual()}};
-    if (i1 < 0) {
+                          {"residual_m3", w.residualFor(volume)}};
+    if (box.ni == 0) {
         out["box"] = {0, 0, 0, 0};
         return out;
     }
-    const int ni = i1 - i0 + 1, nj = j1 - j0 + 1;
-    std::vector<std::uint16_t> box_surface(static_cast<std::size_t>(ni) * nj);
-    std::vector<std::int8_t> box_flow(2 * static_cast<std::size_t>(ni) * nj);
-    for (int j = 0; j < nj; ++j)
-        for (int i = 0; i < ni; ++i) {
-            const std::size_t from = g.at(i0 + i, j0 + j);
-            const std::size_t to = static_cast<std::size_t>(j) * ni + i;
-            box_surface[to] = surface[from];
-            box_flow[2 * to] = flow[2 * from];
-            box_flow[2 * to + 1] = flow[2 * from + 1];
-        }
-    out["box"] = {i0, j0, ni, nj};
-    out["surface_mm_b64"] = banjo::terrain::encodeBase64(box_surface.data(), box_surface.size() * 2);
-    out["flow_b64"] = banjo::terrain::encodeBase64(box_flow.data(), box_flow.size());
+    out["box"] = {box.i0, box.j0, box.ni, box.nj};
+    out["surface_mm_b64"] = banjo::terrain::encodeBase64(box.surface_mm.data(), box.surface_mm.size() * 2);
+    out["flow_b64"] = banjo::terrain::encodeBase64(box.flow.data(), box.flow.size());
     return out;
 }
 
 // The ground and the water into a reply. `whole` sends the ground whole and the
 // water regardless of when it last went.
-void addEnvironment(const LiveWorld &world, nlohmann::json &reply, bool whole) {
+void addEnvironment(LiveWorld &world, nlohmann::json &reply, bool whole) {
     const banjo::terrain::Environment *env = world.environment();
     if (env == nullptr) return;
-    const std::vector<float> heights = env->heights();
-    if (whole || sent_heights.size() != heights.size()) {
-        reply["terrain"] = terrainBlock(*env, heights);
-        sent_heights = heights;
+    // The ground whole when a world opens; afterwards only the rectangle an
+    // edit or a slump changed since the last reply, as the ground itself
+    // keeps it -- nothing copied or compared when nothing changed. Every reply
+    // used to copy all of the valley's heights and compare them.
+    const banjo::terrain::TerrainField::Rect changed = world.takeChangedGround();
+    if (whole) {
+        reply["terrain"] = terrainBlock(*env, env->heights());
     } else {
-        const banjo::terrain::Grid &g = env->terrain().grid();
-        int i0 = g.nx, j0 = g.nz, i1 = -1, j1 = -1;
-        for (int j = 0; j < g.nz; ++j)
-            for (int i = 0; i < g.nx; ++i)
-                if (heights[g.at(i, j)] != sent_heights[g.at(i, j)]) {
-                    i0 = std::min(i0, i); i1 = std::max(i1, i);
-                    j0 = std::min(j0, j); j1 = std::max(j1, j);
-                }
-        if (i1 >= 0) {
-            const int ni = i1 - i0 + 1, nj = j1 - j0 + 1;
-            const std::vector<std::uint8_t> ground = env->surfaces();
+        const banjo::terrain::TerrainField &field = env->terrain();
+        const banjo::terrain::Grid &g = field.grid();
+        const int i0 = changed.i0, j0 = changed.j0, ni = changed.ni, nj = changed.nj;
+        if (ni > 0 && nj > 0) {
             std::vector<float> rect(static_cast<std::size_t>(ni) * nj);
             std::vector<std::uint8_t> rect_ground(rect.size());
             for (int j = 0; j < nj; ++j)
                 for (int i = 0; i < ni; ++i) {
                     const std::size_t c = g.at(i0 + i, j0 + j);
-                    rect[static_cast<std::size_t>(j) * ni + i] = heights[c];
-                    rect_ground[static_cast<std::size_t>(j) * ni + i] = ground[c];
-                    sent_heights[c] = heights[c];
+                    rect[static_cast<std::size_t>(j) * ni + i] = static_cast<float>(field.height(c));
+                    rect_ground[static_cast<std::size_t>(j) * ni + i] = static_cast<std::uint8_t>(field.surface(c));
                 }
             reply["terrain_changed"] = {
                 {"box", {i0, j0, ni, nj}},

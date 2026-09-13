@@ -230,6 +230,54 @@ not terrain or water but a lattice run working out whether the boulder dug out
 from under, landing in its pit, breaks (it does not). The test asks for that
 run synchronously; the room asks for it in the background.
 
+### Only what changes is looked at (milestone 2, W1)
+
+The water and the ground used to be swept whole on a clock, whatever was
+happening:
+- Which tiles to compute was decided by asking all 320 tiles again after every
+  substep.
+- The solid tops of what rests on the bed were worked out for all 19,500
+  columns and compared sixty times a second.
+- The runner copied and compared every height of the valley on every reply.
+
+Each is now kept up to date only where something changed, and each is checked
+against the whole sweep:
+
+| what | kept up to date | measured against the whole sweep |
+|---|---|---|
+| which tiles the water computes | the tiles a column was changed in, and the tiles touching one whose wetness changed in a substep; the computed tiles kept as a list in tile order, so every sum is made in the order it always was | 60 s of a fed channel dammed, dug under, poured on and let go: the same water to the bit; 1,839 columns read and 210 tiles asked, against 5,531,136 and 172,824 (`water_tests`) |
+| the tops of what rests on the bed | the columns under a body that arrived, left, moved, or started or stopped holding water back, and under ground that changed | 600 strides of a dam, a block walked across the river, one lifted off and put back, a drifting oak log, a falling iron block, a block taken away and ground dug from under a dam block: the same tops and the same water to the bit; 10,010 columns worked out against 921,600; 100 strides with nothing moving looked at no column (`water_tests`) |
+| the ground sent to the page | the rectangle an edit or a slump changed, as the ground itself keeps it; nothing when nothing changed | a spade pit sends a rectangle holding the dug column, and once the ground is at rest a step sends no ground (`world_room_tests`) |
+| the water sent to the page, four times a second | the box round the columns holding water, found from the tiles the water computes; the volume summed once for both the report and the ledger's residual; the surface measured from the rock floor rather than from the lowest ground found by a scan | -- |
+
+**In the live runner.** The valley with a dam of seven concrete blocks seated
+across the river at x 0.64, stepped the way the page steps it -- four steps of
+1/240 s a call, answering the engine whenever it asks whether something may
+break -- for 15 s of world time; the same scene and the same calls on main
+before this change and after it:
+
+| | before | after |
+|---|---|---|
+| wall clock for 15 s of world | 1.489 s | 1.191 s |
+| reply, p50 / p95 / mean | 0.872 / 1.195 / 1.653 ms | 0.785 / 1.057 / 1.323 ms |
+| the water's worst stride | 0.76 ms | 0.70 ms |
+| the river 3 m upstream of the dam | 0.4954 -> 0.6217 m | 0.4954 -> 0.6217 m |
+
+The worst reply in each, 630 and 411 ms, is a fracture trial the engine asked
+for as a block settled, not water or ground. Over the 15 s the tops were worked
+out for 157,336 columns (8,935 of them changed as the blocks settled and the
+water rocked them), where the whole sweep works out 17.5 million.
+
+`environment_report`'s `costs` say where the bookkeeping looked since the world
+opened: `water_tile_cells_scanned`, `water_tile_checks`,
+`obstacle_cells_checked` and `obstacle_cells_changed`.
+
+Still swept whole:
+- the water's volume for its ledger, four times a second for the report;
+- the full report itself, on request;
+- the state carried into a reopened world;
+- the page's drawing of the water.
+
 ## Where it is reachable
 
 | layer | what |

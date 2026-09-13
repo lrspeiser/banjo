@@ -53,6 +53,7 @@
 #include <cstdint>
 #include <limits>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace banjo::water {
@@ -128,6 +129,11 @@ struct Settings {
     // neighbours, hold no water. Small, because a river is narrow and the
     // one-tile halo around it is what a big tile wastes.
     int tile{8};
+    // Which tiles are computed is kept up to date by looking only where a
+    // column changed, rather than at every tile. false asks every tile again
+    // before and after every substep: the reference the incremental way has
+    // to match to the bit (tests/water_tests.cpp).
+    bool incremental_tiles{true};
 };
 
 // Everything that crossed the boundary of the water, in cubic metres.
@@ -161,6 +167,13 @@ struct Stats {
     std::size_t active_tiles{};
     std::uint64_t speed_capped{};
     std::uint64_t clamped{};      // depths rounding took below zero
+    // Where the bookkeeping looked, since the start: columns read again to
+    // decide which tiles are computed, and tiles asked whether they are.
+    // Neither grows with the size of a quiet grid.
+    std::uint64_t tile_cells_scanned{};
+    std::uint64_t tile_checks{};
+    // Columns whose solid top changed: a block arriving, moving, leaving.
+    std::uint64_t obstacle_cells_changed{};
 };
 
 class ShallowWater {
@@ -203,6 +216,10 @@ public:
     // surface drops into the space.
     void setObstacles(const std::vector<double> &top_m);
     [[nodiscard]] const std::vector<double> &obstacles() const { return obstacle_; }
+    // The same, told only where a top changed: (cell, top) pairs in cell
+    // order, each cell once, every other cell's top as it was. What a moving
+    // block costs is the columns under it, not the grid.
+    void setObstacleTops(const std::vector<std::pair<std::size_t, double>> &changes);
 
     void addInflow(const Inflow &inflow);
     void addOutflow(const Outflow &outflow);
@@ -229,6 +246,21 @@ public:
     // Starts the ledger from the water as it stands.
     void resetLedger();
     [[nodiscard]] const Stats &stats() const { return stats_; }
+    // The residual for a volume already summed, so a report that wants both
+    // sums the grid once.
+    [[nodiscard]] double residualFor(double volume_m3) const;
+    // The tiles computed, in tile order, and their size: every column with any
+    // water in it is in one of them. A tile's columns run from
+    // (tx * tile, tz * tile) to the grid's edge or one tile further.
+    [[nodiscard]] const std::vector<std::size_t> &activeTiles() const { return active_list_; }
+    [[nodiscard]] int tileSize() const { return settings_.tile; }
+    [[nodiscard]] int tilesX() const { return tiles_x_; }
+    // Tiles a column was changed in since the last substep -- their wetness is
+    // read again before the next -- and whether nothing has been read yet (the
+    // start, a restore). With the tiles computed: every column that may hold
+    // water.
+    [[nodiscard]] const std::vector<std::size_t> &changedTiles() const { return dirty_tiles_; }
+    [[nodiscard]] bool tilesUnread() const { return all_tiles_dirty_; }
     // What is crossing the edges right now, cubic metres per second, from the
     // last substep.
     [[nodiscard]] double inflowRate() const { return inflow_rate_; }
@@ -251,6 +283,13 @@ public:
 private:
     void substep(double dt);
     void refreshTiles();
+    void refreshAllTiles();
+    [[nodiscard]] std::size_t tileOfCell(std::size_t cell) const;
+    void markDirty(std::size_t cell);
+    void markDirtyTile(std::size_t tile);
+    // Whether these tiles, and each tile touching them, are computed now.
+    void activateAround(const std::vector<std::size_t> &tiles);
+    [[nodiscard]] std::uint8_t activeFor(int tx, int tz) const;
     [[nodiscard]] double waveSpeed() const;
     void displace(std::size_t cell, double volume_m3);
     [[nodiscard]] double faceArea() const { return grid_.dx * grid_.dx; }
@@ -270,7 +309,18 @@ private:
     std::vector<std::uint8_t> tile_wet_, tile_active_;
     // Tiles computed whether or not they hold water: the ones a source is in.
     std::vector<std::uint8_t> tile_always_;
-    bool tiles_dirty_{true};
+    // Tiles whose wetness has to be read again before the next substep: the
+    // ones a column was changed in from outside -- a dig, a block arriving,
+    // water put in or pushed aside. All of them at the start and after a
+    // restore.
+    std::vector<std::size_t> dirty_tiles_;
+    std::vector<std::uint8_t> tile_dirty_;
+    bool all_tiles_dirty_{true};
+    // The tiles computed, in tile order, kept up to date rather than found by
+    // asking every tile each substep. Tile order is the order the whole grid
+    // used to be swept in, so every sum is made in the same order as before.
+    std::vector<std::size_t> active_list_;
+    std::vector<std::size_t> flipped_;   // tiles whose wetness changed in a substep
     Ledger ledger_;
     Stats stats_;
     double inflow_rate_{}, outflow_rate_{};

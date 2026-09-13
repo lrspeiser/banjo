@@ -15,6 +15,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <initializer_list>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -461,6 +462,152 @@ void onlySinkersRestingOnTheBedHoldWaterBack() {
     require(!std::isfinite(topAt(9.0, 3.0)), "and water gets under a block standing 0.2 m clear");
 }
 
+// The river of the channel, fed and drained, once for each way of stepping it.
+void feed(std::initializer_list<ShallowWater *> waters, const Grid &g) {
+    for (ShallowWater *w : waters) {
+        w->addInflow({"river", Edge::West, 4, 11, 0.12});
+        w->addOutflow({"mouth", Edge::East, 0, g.nz - 1});
+        w->resetLedger();
+    }
+}
+
+void sameWater(const ShallowWater &a, const ShallowWater &b, std::string_view when) {
+    const Grid &g = a.grid();
+    for (std::size_t c = 0; c < g.cells(); ++c)
+        if (a.surface(c) != b.surface(c) || a.dischargeX(c) != b.dischargeX(c) ||
+            a.dischargeZ(c) != b.dischargeZ(c) || a.bed(c) != b.bed(c))
+            throw std::runtime_error(std::string(when) + ": the water differs at column " + std::to_string(c));
+}
+
+// 14. Which tiles are computed is kept up to date by looking only where a
+// column changed -- and it is the same water, to the bit, as asking every tile
+// again before and after every substep. A river fed and drained, dammed, dug
+// under, poured on and let go.
+void keepingTilesUpToDateIsTheSameWaterAsAskingEveryTile() {
+    Settings asking;
+    asking.incremental_tiles = false;
+    Channel ch;
+    const Grid &g = ch.grid;
+    ShallowWater kept(g, ch.bed), asked(g, ch.bed, asking);
+    feed({&kept, &asked}, g);
+    const auto run = [&](double seconds) {
+        for (int k = 0; k < static_cast<int>(std::lround(seconds * 60.0)); ++k) {
+            kept.advance(1.0 / 60.0);
+            asked.advance(1.0 / 60.0);
+            require(kept.stats().active_tiles == asked.stats().active_tiles, "the same tiles computed");
+        }
+    };
+    run(20.0);
+    sameWater(kept, asked, "fed for 20 s");
+    std::vector<double> tops(g.cells(), -kInf);
+    std::vector<std::pair<std::size_t, double>> dam, gone;
+    for (int j = 0; j < g.nz; ++j)
+        for (int i = 50; i < 52; ++i) tops[g.at(i, j)] = kept.terrain(g.at(i, j)) + 0.5;
+    for (std::size_t c = 0; c < g.cells(); ++c)
+        if (std::isfinite(tops[c])) {
+            dam.emplace_back(c, tops[c]);
+            gone.emplace_back(c, -kInf);
+        }
+    kept.setObstacleTops(dam);
+    asked.setObstacles(tops);
+    sameWater(kept, asked, "dammed");
+    run(10.0);
+    sameWater(kept, asked, "dammed for 10 s");
+    for (int j = 2; j < 6; ++j)
+        for (int i = 70; i < 74; ++i)
+            for (ShallowWater *w : {&kept, &asked}) w->setTerrain(g.at(i, j), w->terrain(g.at(i, j)) - 0.3);
+    for (int j = 12; j < 14; ++j)
+        for (int i = 20; i < 22; ++i)
+            for (ShallowWater *w : {&kept, &asked}) w->setDepth(g.at(i, j), 0.3);
+    run(10.0);
+    sameWater(kept, asked, "dug under and poured on, 10 s later");
+    kept.setObstacleTops(gone);
+    asked.setObstacles(std::vector<double>(g.cells(), -kInf));
+    run(20.0);
+    sameWater(kept, asked, "let go, 20 s later");
+    std::cout << "    kept up to date: " << kept.stats().tile_cells_scanned << " columns read and "
+              << kept.stats().tile_checks << " tiles asked; asking every tile: "
+              << asked.stats().tile_cells_scanned << " and " << asked.stats().tile_checks << "\n";
+    require(10 * kept.stats().tile_checks < asked.stats().tile_checks, "far fewer tiles asked");
+    require(10 * kept.stats().tile_cells_scanned < asked.stats().tile_cells_scanned, "far fewer columns read");
+}
+
+// 15. What rests on the bed, told only where it changed, is what it is: a dam of
+// stone blocks across the river, a block walked across it, one lifted off the
+// bed and put back, an oak log drifting, an iron block falling in, a block
+// taken away and the ground dug from under a dam block. Stride by stride the
+// tops the water is told -- and so the water -- are the same to the bit as
+// working every column out every stride, and a stride in which nothing moves
+// looks at no column at all.
+void whatRestsOnTheBedToldOnlyWhereItChangedIsWhatItIs() {
+    Channel ch;
+    const Grid &g = ch.grid;
+    ShallowWater told(g, ch.bed), worked(g, ch.bed);
+    feed({&told, &worked}, g);
+    for (int k = 0; k < 60 * 20; ++k) {
+        told.advance(1.0 / 60.0);
+        worked.advance(1.0 / 60.0);
+    }
+    WaterCoupling changes_of, tops_of;
+    const auto bedAt = [&](double x, double z) {
+        return told.terrain(g.at(static_cast<int>(std::lround(x / g.dx)), static_cast<int>(std::lround(z / g.dx))));
+    };
+    std::vector<BodyInWater> bodies;
+    std::uint64_t next_id = 1;
+    const auto add = [&](BodyInWater b) {
+        b.body_id = next_id++;
+        bodies.push_back(b);
+        return bodies.size() - 1;
+    };
+    for (int k = 0; k < 4; ++k) {
+        const double z = 0.375 + 0.75 * k;
+        (void)add(box("dam " + std::to_string(k), {0.5, 0.8, 0.75}, {12.5, bedAt(12.5, z) + 0.4, z}, 2400.0));
+    }
+    const std::size_t walker = add(box("walker", {0.5, 0.6, 0.5}, {16.0, bedAt(16.0, 0.3) + 0.3, 0.3}, 2400.0));
+    const std::size_t lifted = add(box("lifted", {0.5, 0.6, 0.5}, {19.0, bedAt(19.0, 1.875) + 0.3, 1.875}, 2400.0));
+    const std::size_t oak = add(box("oak", {1.2, 0.24, 0.24}, {6.0, 1.2, 1.875}, 700.0));
+    const std::size_t iron = add(box("iron", {0.4, 0.4, 0.4}, {9.0, 2.0, 1.875}, 7870.0));
+    (void)add(box("taken", {0.5, 0.6, 0.5}, {21.0, bedAt(21.0, 1.875) + 0.3, 1.875}, 2400.0));
+    int still_strides = 0;
+    for (int k = 0; k < 600; ++k) {
+        if (k < 500) {
+            BodyInWater &w = bodies[walker];
+            w.com_m.z = std::min(3.4, w.com_m.z + 0.01);
+            w.com_m.y = bedAt(w.com_m.x, w.com_m.z) + 0.3;
+            bodies[oak].com_m.x += 0.02;
+            bodies[iron].com_m.y = std::max(bedAt(9.0, 1.875) + 0.2, bodies[iron].com_m.y - 0.02);
+        }
+        if (k == 200) bodies[lifted].com_m.y += 1.0;
+        if (k == 300) bodies[lifted].com_m.y -= 1.0;
+        if (k == 400) bodies.pop_back();   // the block "taken"
+        if (k == 450) {
+            // The ground dug 0.3 m from under the third dam block.
+            std::vector<std::size_t> dug;
+            for (int j = 6; j <= 9; ++j)
+                for (int i = 49; i <= 51; ++i) dug.push_back(g.at(i, j));
+            for (const std::size_t c : dug)
+                for (ShallowWater *w : {&told, &worked}) w->setTerrain(c, w->terrain(c) - 0.3);
+            changes_of.groundChanged(dug);
+        }
+        const std::uint64_t before = changes_of.obstacleCellsChecked();
+        const auto changes = changes_of.obstacleChanges(told, bodies);
+        if (!changes.empty()) told.setObstacleTops(changes);
+        const std::vector<double> tops = tops_of.obstacleTops(worked, bodies);
+        if (tops != worked.obstacles()) worked.setObstacles(tops);
+        if (told.obstacles() != worked.obstacles())
+            throw std::runtime_error("stride " + std::to_string(k) + ": the tops told are not the tops worked out");
+        if (k >= 500 && changes_of.obstacleCellsChecked() == before) ++still_strides;
+        told.advance(1.0 / 60.0);
+        worked.advance(1.0 / 60.0);
+        if (k % 50 == 49) sameWater(told, worked, "stride " + std::to_string(k));
+    }
+    std::cout << "    told only where it changed: " << changes_of.obstacleCellsChecked()
+              << " columns worked out in 600 strides, against " << 600 * g.cells()
+              << " working out every column; " << told.stats().obstacle_cells_changed << " tops changed\n";
+    require(still_strides == 100, "with nothing moving, no column is looked at");
+    require(5 * changes_of.obstacleCellsChecked() < 600 * g.cells(), "far fewer columns worked out");
+}
+
 } // namespace
 
 int main() {
@@ -478,6 +625,10 @@ int main() {
         {"a dam block carries the difference of its two sides", aDamBlockCarriesTheDifferenceOfItsTwoSides},
         {"drag is relative motion", dragIsRelativeMotion},
         {"only sinkers resting on the bed hold water back", onlySinkersRestingOnTheBedHoldWaterBack},
+        {"keeping tiles up to date is the same water as asking every tile",
+         keepingTilesUpToDateIsTheSameWaterAsAskingEveryTile},
+        {"what rests on the bed, told only where it changed, is what it is",
+         whatRestsOnTheBedToldOnlyWhereItChangedIsWhatItIs},
     };
     unsigned failures = 0;
     for (const auto &[name, test] : tests) {

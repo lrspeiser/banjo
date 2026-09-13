@@ -411,10 +411,15 @@ double Environment::rollingResistanceAt(double x_m, double z_m) const {
 }
 
 void Environment::syncWaterBed(const std::vector<std::size_t> &cells) {
+    std::vector<std::size_t> moved;
     for (const std::size_t c : cells) {
         const double h = terrain_->height(c);
-        if (water_->terrain(c) != h) water_->setTerrain(c, h);
+        if (water_->terrain(c) == h) continue;
+        water_->setTerrain(c, h);
+        moved.push_back(c);
     }
+    // Whether water gets under what rests there is a question of the ground.
+    if (!moved.empty()) coupling_.groundChanged(moved);
 }
 
 void Environment::rebuildChunks(JoltWorld &world, const std::set<int> &chunks, EditEffect *effect) {
@@ -531,9 +536,12 @@ void Environment::commit(JoltWorld &world, const std::vector<water::BodyInWater>
     double water_ms = 0.0;
     if (water_behind_s_ >= kWaterStrideS) {
         const Clock::time_point tw = Clock::now();
-        // What rests on the bed is the bed, as far as the water is concerned.
-        std::vector<double> tops = coupling_.obstacleTops(*water_, bodies);
-        if (tops != water_->obstacles()) water_->setObstacles(tops);
+        // What rests on the bed is the bed, as far as the water is concerned:
+        // told only where it changed -- the columns under what moved, arrived
+        // or left, and under ground that changed. It used to be worked out for
+        // every column of the valley and compared, sixty times a second.
+        const std::vector<std::pair<std::size_t, double>> changes = coupling_.obstacleChanges(*water_, bodies);
+        if (!changes.empty()) water_->setObstacleTops(changes);
         water_->advance(water_behind_s_);
         water_behind_s_ = 0.0;
         water_ms = msSince(tw);
@@ -574,6 +582,10 @@ void Environment::commit(JoltWorld &world, const std::vector<water::BodyInWater>
     }
 
     const water::Stats &ws = water_->stats();
+    stats_.water_tile_cells_scanned = ws.tile_cells_scanned;
+    stats_.water_tile_checks = ws.tile_checks;
+    stats_.obstacle_cells_changed = ws.obstacle_cells_changed;
+    stats_.obstacle_cells_checked = coupling_.obstacleCellsChecked();
     stats_.water_active_cells = ws.active_cells;
     stats_.water_wet_cells = ws.wet_cells;
     stats_.water_substeps = ws.substeps;
@@ -787,6 +799,10 @@ std::string Environment::reportJson(bool full) const {
                    {"chunks_rebuilt", stats_.chunks_rebuilt}, {"bodies_woken_by_ground", stats_.bodies_woken},
                    {"step_ms_last", stats_.step_ms_last}, {"step_ms_worst", stats_.step_ms_worst},
                    {"bodies_in_water", stats_.bodies_in_water},
+                   {"water_tile_cells_scanned", stats_.water_tile_cells_scanned},
+                   {"water_tile_checks", stats_.water_tile_checks},
+                   {"obstacle_cells_checked", stats_.obstacle_cells_checked},
+                   {"obstacle_cells_changed", stats_.obstacle_cells_changed},
                    {"ground_columns_checked", stats_.ground_checked}}},
         {"generation", {{"from_cache", landscape_.report.from_cache},
                         {"cache_path", landscape_.report.cache_path},
@@ -916,6 +932,65 @@ std::vector<std::int8_t> Environment::waterFlow() const {
         out[2 * c] = static_cast<std::int8_t>(std::clamp(std::round(water_->velocityX(c) / 0.05), -127.0, 127.0));
         out[2 * c + 1] = static_cast<std::int8_t>(std::clamp(std::round(water_->velocityZ(c) / 0.05), -127.0, 127.0));
     }
+    return out;
+}
+
+Environment::WaterBox Environment::waterBox(double base_m, double shown_m) const {
+    WaterBox out;
+    const water::ShallowWater &w = *water_;
+    const water::Grid &g = w.grid();
+    const double dry = w.settings().dry_m;
+    const int t = w.tileSize();
+    const std::size_t across = static_cast<std::size_t>(w.tilesX());
+    // Every column that may hold water: the tiles computed, and the tiles a
+    // column was changed in since the last substep -- or all of them, before
+    // any has been read.
+    std::vector<std::size_t> tiles;
+    if (w.tilesUnread()) {
+        tiles.resize(across * static_cast<std::size_t>((g.nz + t - 1) / t));
+        for (std::size_t k = 0; k < tiles.size(); ++k) tiles[k] = k;
+    } else {
+        tiles = w.activeTiles();
+        tiles.insert(tiles.end(), w.changedTiles().begin(), w.changedTiles().end());
+        std::sort(tiles.begin(), tiles.end());
+        tiles.erase(std::unique(tiles.begin(), tiles.end()), tiles.end());
+    }
+    int i0 = g.nx, j0 = g.nz, i1 = -1, j1 = -1;
+    for (const std::size_t tile : tiles) {
+        const int tx = static_cast<int>(tile % across), tz = static_cast<int>(tile / across);
+        const int ie = std::min(g.nx, (tx + 1) * t), je = std::min(g.nz, (tz + 1) * t);
+        for (int j = tz * t; j < je; ++j)
+            for (int i = tx * t; i < ie; ++i) {
+                const double h = w.depth(g.at(i, j));
+                if (h > dry) ++out.wet_cells;
+                if (!(h > shown_m)) continue;
+                i0 = std::min(i0, i); i1 = std::max(i1, i);
+                j0 = std::min(j0, j); j1 = std::max(j1, j);
+            }
+    }
+    if (i1 < 0) return out;
+    out.i0 = i0;
+    out.j0 = j0;
+    out.ni = i1 - i0 + 1;
+    out.nj = j1 - j0 + 1;
+    const std::size_t n = static_cast<std::size_t>(out.ni) * static_cast<std::size_t>(out.nj);
+    out.surface_mm.assign(n, 0);
+    out.flow.assign(2 * n, 0);
+    for (int j = 0; j < out.nj; ++j)
+        for (int i = 0; i < out.ni; ++i) {
+            const std::size_t c = g.at(i0 + i, j0 + j);
+            const std::size_t k = static_cast<std::size_t>(j) * static_cast<std::size_t>(out.ni) +
+                                  static_cast<std::size_t>(i);
+            const double h = w.depth(c);
+            if (h > shown_m) {
+                const double mm = std::round((w.surface(c) - base_m) * 1000.0);
+                out.surface_mm[k] = static_cast<std::uint16_t>(std::clamp(mm, 1.0, 65535.0));
+            }
+            if (h > 0.003) {
+                out.flow[2 * k] = static_cast<std::int8_t>(std::clamp(std::round(w.velocityX(c) / 0.05), -127.0, 127.0));
+                out.flow[2 * k + 1] = static_cast<std::int8_t>(std::clamp(std::round(w.velocityZ(c) / 0.05), -127.0, 127.0));
+            }
+        }
     return out;
 }
 

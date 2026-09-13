@@ -916,6 +916,10 @@ public:
     // back; the water, the ground's settling and its colliders are brought up
     // to the world's clock after the step is accepted.
     [[nodiscard]] const terrain::Environment *environment() const;
+    // The rectangle of ground points an edit or a slump has changed since this
+    // was last asked, for a host that sends a picture of the ground: nothing
+    // when nothing changed, and nothing in a world without ground.
+    terrain::TerrainField::Rect takeChangedGround();
     // Dig a trench from a to b (x, z), `width_m` wide and `depth_m` below the
     // ground as it stands. Rebuilds exactly the colliders it changed and wakes
     // exactly what they held up, here, between steps.

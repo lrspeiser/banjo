@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <functional>
 #include <limits>
 #include <optional>
 #include <set>
@@ -175,6 +176,39 @@ std::optional<std::pair<double, double>> verticalSpan(const BodyInWater &b, doub
     }
     if (!(lo <= hi)) return std::nullopt;
     return std::make_pair(lo, hi);
+}
+
+// Lowest first, so a block stacked on another finds the one under it; at the
+// same height by the rigid world's id and then the order given, so the order
+// is the same every time it is asked.
+void lowestFirst(std::vector<std::pair<const BodyInWater *, double>> &resting) {
+    std::sort(resting.begin(), resting.end(), [](const auto &a, const auto &b) {
+        const double ka = a.first->com_m.y - a.second, kb = b.first->com_m.y - b.second;
+        if (ka != kb) return ka < kb;
+        if (a.first->body_id != b.first->body_id) return a.first->body_id < b.first->body_id;
+        return std::less<const BodyInWater *>()(a.first, b.first);
+    });
+}
+
+// The columns a body could be over, from its reach.
+void boxOf(const BodyInWater &b, double reach, const Grid &g, int &i0, int &i1, int &j0, int &j1) {
+    i0 = std::max(0, static_cast<int>(std::floor((b.com_m.x - reach - g.x0) / g.dx)));
+    i1 = std::min(g.nx - 1, static_cast<int>(std::ceil((b.com_m.x + reach - g.x0) / g.dx)));
+    j0 = std::max(0, static_cast<int>(std::floor((b.com_m.z - reach - g.z0) / g.dx)));
+    j1 = std::min(g.nz - 1, static_cast<int>(std::ceil((b.com_m.z + reach - g.z0) / g.dx)));
+}
+
+// One body's share of one column's solid top, given the top of whatever is
+// already under it there.
+void addTop(const BodyInWater &b, const ShallowWater &water, int i, int j, double seal_gap_m, double &top) {
+    const Grid &g = water.grid();
+    const auto span = verticalSpan(b, g.xOf(i), g.zOf(j));
+    if (!span) return;
+    const double ground = water.terrain(g.at(i, j));
+    const double under = std::isfinite(top) ? std::max(ground, top) : ground;
+    if (span->first > under + seal_gap_m) return;   // water gets under it
+    if (span->second <= ground + 0.01) return;      // buried: nothing to add
+    top = std::max(top, span->second);
 }
 
 } // namespace
@@ -368,32 +402,130 @@ std::vector<double> WaterCoupling::obstacleTops(const ShallowWater &water,
                                                 const std::vector<BodyInWater> &bodies) const {
     const Grid &g = water.grid();
     std::vector<double> tops(g.cells(), kNoTop);
-    std::vector<const BodyInWater *> resting;
+    std::vector<std::pair<const BodyInWater *, double>> resting;   // each with its reach
     for (const BodyInWater &b : bodies)
-        if (isObstacle(b, water.settings().density_kg_m3)) resting.push_back(&b);
-    // Lowest first, so a block stacked on another finds the one under it.
-    std::sort(resting.begin(), resting.end(), [](const BodyInWater *a, const BodyInWater *b) {
-        return a->com_m.y - reachOf(*a) < b->com_m.y - reachOf(*b);
-    });
-    for (const BodyInWater *b : resting) {
-        const double reach = reachOf(*b);
-        const int i0 = std::max(0, static_cast<int>(std::floor((b->com_m.x - reach - g.x0) / g.dx)));
-        const int i1 = std::min(g.nx - 1, static_cast<int>(std::ceil((b->com_m.x + reach - g.x0) / g.dx)));
-        const int j0 = std::max(0, static_cast<int>(std::floor((b->com_m.z - reach - g.z0) / g.dx)));
-        const int j1 = std::min(g.nz - 1, static_cast<int>(std::ceil((b->com_m.z + reach - g.z0) / g.dx)));
+        if (isObstacle(b, water.settings().density_kg_m3)) resting.emplace_back(&b, reachOf(b));
+    lowestFirst(resting);
+    for (const auto &[b, reach] : resting) {
+        int i0 = 0, i1 = -1, j0 = 0, j1 = -1;
+        boxOf(*b, reach, g, i0, i1, j0, j1);
         for (int j = j0; j <= j1; ++j)
-            for (int i = i0; i <= i1; ++i) {
-                const auto span = verticalSpan(*b, g.xOf(i), g.zOf(j));
-                if (!span) continue;
-                const std::size_t c = g.at(i, j);
-                const double ground = water.terrain(c);
-                const double under = std::isfinite(tops[c]) ? std::max(ground, tops[c]) : ground;
-                if (span->first > under + settings_.seal_gap_m) continue;   // water gets under it
-                if (span->second <= ground + 0.01) continue;                // buried: nothing to add
-                tops[c] = std::max(tops[c], span->second);
-            }
+            for (int i = i0; i <= i1; ++i) addTop(*b, water, i, j, settings_.seal_gap_m, tops[g.at(i, j)]);
     }
     return tops;
+}
+
+void WaterCoupling::groundChanged(const std::vector<std::size_t> &cells) {
+    ground_changed_.insert(ground_changed_.end(), cells.begin(), cells.end());
+}
+
+std::vector<std::pair<std::size_t, double>> WaterCoupling::obstacleChanges(
+    const ShallowWater &water, const std::vector<BodyInWater> &bodies) {
+    const Grid &g = water.grid();
+    const double density = water.settings().density_kg_m3;
+    if (flag_.size() != g.cells()) {
+        flag_.assign(g.cells(), 0);
+        scratch_.assign(g.cells(), kNoTop);
+        footprints_.clear();
+    }
+    std::vector<std::size_t> dirty;
+    const auto mark = [&](std::size_t c) {
+        if (flag_[c]) return;
+        flag_[c] = 1;
+        dirty.push_back(c);
+    };
+    const auto markBox = [&](const Footprint &f) {
+        for (int j = f.j0; j <= f.j1; ++j)
+            for (int i = f.i0; i <= f.i1; ++i) mark(g.at(i, j));
+    };
+    for (const std::size_t c : ground_changed_)
+        if (c < g.cells()) mark(c);
+    ground_changed_.clear();
+
+    // Which bodies are not where they were: only their columns, before and
+    // after, can have a different top. A body is known by its id; two bodies
+    // given the same id cannot be told apart, and then every column is worked
+    // out again, as obstacleTops would.
+    ++pass_;
+    bool duplicate = false;
+    for (const BodyInWater &b : bodies) {
+        Footprint &f = footprints_[b.body_id];
+        if (f.seen == pass_) { duplicate = true; break; }
+        const bool obstacle = isObstacle(b, density);
+        const std::size_t count = b.cells_local_m ? b.cells_local_m->size() : 0;
+        if (f.known && f.obstacle == obstacle && f.com.x == b.com_m.x && f.com.y == b.com_m.y &&
+            f.com.z == b.com_m.z && f.orientation.w == b.orientation.w && f.orientation.x == b.orientation.x &&
+            f.orientation.y == b.orientation.y && f.orientation.z == b.orientation.z &&
+            f.dimensions.x == b.dimensions_m.x && f.dimensions.y == b.dimensions_m.y &&
+            f.dimensions.z == b.dimensions_m.z && f.shape == b.shape && f.cells == b.cells_local_m &&
+            f.cell_count == count && f.cell_m == b.cell_m) {
+            f.seen = pass_;
+            continue;
+        }
+        if (f.known && f.obstacle) markBox(f);
+        f.known = true;
+        f.obstacle = obstacle;
+        f.com = b.com_m;
+        f.orientation = b.orientation;
+        f.dimensions = b.dimensions_m;
+        f.shape = b.shape;
+        f.cells = b.cells_local_m;
+        f.cell_count = count;
+        f.cell_m = b.cell_m;
+        f.reach = reachOf(b);
+        boxOf(b, f.reach, g, f.i0, f.i1, f.j0, f.j1);
+        f.seen = pass_;
+        if (obstacle) markBox(f);
+    }
+    if (duplicate) {
+        footprints_.clear();
+        for (std::size_t c = 0; c < g.cells(); ++c) mark(c);
+    } else {
+        // Bodies gone since the last look: their columns lose them.
+        for (auto it = footprints_.begin(); it != footprints_.end();) {
+            if (it->second.seen == pass_) { ++it; continue; }
+            if (it->second.known && it->second.obstacle) markBox(it->second);
+            it = footprints_.erase(it);
+        }
+    }
+    if (dirty.empty()) return {};
+
+    // Those columns' tops, from every body that holds water back over them,
+    // lowest first -- column by column what obstacleTops does.
+    std::sort(dirty.begin(), dirty.end());
+    int di0 = g.nx, di1 = -1, dj0 = g.nz, dj1 = -1;
+    for (const std::size_t c : dirty) {
+        scratch_[c] = kNoTop;
+        const int i = static_cast<int>(c % static_cast<std::size_t>(g.nx));
+        const int j = static_cast<int>(c / static_cast<std::size_t>(g.nx));
+        di0 = std::min(di0, i); di1 = std::max(di1, i);
+        dj0 = std::min(dj0, j); dj1 = std::max(dj1, j);
+    }
+    std::vector<std::pair<const BodyInWater *, double>> resting;
+    for (const BodyInWater &b : bodies) {
+        if (!isObstacle(b, density)) continue;
+        resting.emplace_back(&b, duplicate ? reachOf(b) : footprints_.at(b.body_id).reach);
+    }
+    lowestFirst(resting);
+    for (const auto &[b, reach] : resting) {
+        int i0 = 0, i1 = -1, j0 = 0, j1 = -1;
+        boxOf(*b, reach, g, i0, i1, j0, j1);
+        i0 = std::max(i0, di0); i1 = std::min(i1, di1);
+        j0 = std::max(j0, dj0); j1 = std::min(j1, dj1);
+        for (int j = j0; j <= j1; ++j)
+            for (int i = i0; i <= i1; ++i) {
+                const std::size_t c = g.at(i, j);
+                if (!flag_[c]) continue;
+                ++obstacle_cells_checked_;
+                addTop(*b, water, i, j, settings_.seal_gap_m, scratch_[c]);
+            }
+    }
+    std::vector<std::pair<std::size_t, double>> changes;
+    for (const std::size_t c : dirty) {
+        if (!(scratch_[c] == water.obstacles()[c])) changes.emplace_back(c, scratch_[c]);
+        flag_[c] = 0;
+    }
+    return changes;
 }
 
 } // namespace banjo::water

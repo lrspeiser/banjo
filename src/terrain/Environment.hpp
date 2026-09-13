@@ -91,6 +91,14 @@ struct EnvironmentStats {
     double commit_ms_total{};
     double water_ms_total{};
     double ground_ms_total{};
+    // Where the water's bookkeeping looked, since the world opened: columns
+    // read to decide which tiles are computed, tiles asked whether they are,
+    // columns whose solid top was worked out again, and columns whose top
+    // changed. None of them grows with the size of a quiet valley.
+    std::uint64_t water_tile_cells_scanned{};
+    std::uint64_t water_tile_checks{};
+    std::uint64_t obstacle_cells_checked{};
+    std::uint64_t obstacle_cells_changed{};
 };
 
 class Environment {
@@ -169,6 +177,18 @@ public:
     [[nodiscard]] std::vector<std::uint8_t> surfaces() const;
     [[nodiscard]] std::vector<std::uint16_t> waterSurfaceMm(double base_m, double shown_m = 0.003) const;
     [[nodiscard]] std::vector<std::int8_t> waterFlow() const;
+    // The same pictures for the columns that hold water and no others: the
+    // smallest box round every column deeper than `shown_m`, its surface in
+    // millimetres above `base_m` and its flow, and how many columns hold any
+    // water at all -- found from the tiles the water computes (and any a
+    // column was changed in since), not from every column of the valley.
+    struct WaterBox {
+        int i0{}, j0{}, ni{}, nj{};
+        std::vector<std::uint16_t> surface_mm;
+        std::vector<std::int8_t> flow;
+        std::size_t wet_cells{};
+    };
+    [[nodiscard]] WaterBox waterBox(double base_m, double shown_m = 0.003) const;
     // The rectangle of ground points changed since last asked.
     [[nodiscard]] TerrainField::Rect takeChangedGround() { return terrain_->takeChangedRect(); }
 
