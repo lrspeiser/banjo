@@ -590,6 +590,9 @@ rock stopped it):
     grip [-0.36, 0.02, 1.22] width 0.04 thickness 0.04 angle 30 length 0.2
   interaction object="the pick" template=swing-and-lever
     parts=[pick haft, pick arm] tool=pick haft
+A pick is not the person's to swing until interaction declares it: tool_point
+gives it a point, not controls, and without the interaction they can only carry
+it. Always finish a pick with interaction, in the same turn.
 Its trial swings it into the nearest level soil, levers it out, and swings it at
 the nearest bare rock: say how deep it went, what came loose and what stopped
 it, in its numbers. Do not strike in your copy unless they ask: what a pick
