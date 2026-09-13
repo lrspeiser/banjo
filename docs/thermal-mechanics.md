@@ -266,6 +266,19 @@ the start until 12 s after the gate had come to rest; the log said the peg was
 under 80, 60 and 40% of its strength as it went; the fixing gave way about 47 s
 in, carrying 318 N against the 318 N it could still take.
 
+And on the chat's own build (run 20260913-022827, burning-peg #1: gpt-5-mini
+built both assemblies itself from the message above), measured the same way:
+0.9992 of real time at 60 frames a second from the start until 12 s after the
+gate had come to rest, with no page errors. The heated fixing could take 615 N
+at 15 s (the peg's surface at 445 K) and 444 N at 35 s (859 K), and gave way 47 s
+in with its surface at 1072 K, carrying 318 N against the 318 N left; the cold
+twin carried 317.5 N of its 800 N throughout (799.9 N at the end, warmed a
+little by the fire). The paid trial before it failed: add_object told the chat
+the hung peg "will fall", so the chat set it down on top of its post, where
+nothing falls when it gives way. add_object now says that a joint made next is
+what holds a hung thing up, and `fix` warns when its point is off one of its
+bodies.
+
 ## Where it is reachable
 
 | layer | what |
