@@ -150,6 +150,39 @@ public:
     // caller that wants a sustained push applies it every step -- which is what
     // a hand holding something does.
     void pushBody(MatterBodyId body_id, const Vec3 &force_n);
+    // The same push delivered AT a point on the body rather than at its centre
+    // of mass, so it turns the body as well as moving it -- a hand on the grip
+    // of a sword swings the blade, it does not slide it. Cleared by the step.
+    void pushBodyAt(MatterBodyId body_id, const Vec3 &force_n, const Vec3 &point_world_m);
+    // A torque for one step, in newton metres. Cleared by the step.
+    void twistBody(MatterBodyId body_id, const Vec3 &torque_n_m);
+    // ---- the ground as a height field --------------------------------------
+    //
+    // A patch of terrain: a square of `count` x `count` heights, `spacing_m`
+    // apart, its first point at (origin_x_m, origin_z_m), heights absolute y.
+    // A non-finite height is a hole. Static: it collides and never moves, and
+    // every patch answers to kGroundPatchMatterId, so a contact with it is a
+    // contact with "the ground". Returns the patch's number, from 1.
+    //
+    // Heights are stored to within `max_error_m` (Jolt compresses them per
+    // block against the block's own range).
+    unsigned addGroundPatch(const std::vector<float> &heights, unsigned count, double spacing_m,
+                            double origin_x_m, double origin_z_m, const MaterialDefinition &material,
+                            double max_error_m = 0.002);
+    // New heights for a patch, applied by building a new shape and swapping it
+    // in between steps -- never by rewriting the one the solver may be reading,
+    // which Jolt warns against. Host thread, between steps. Nothing is woken:
+    // see wakeBodiesIn.
+    void replaceGroundPatch(unsigned patch, const std::vector<float> &heights,
+                            double max_error_m = 0.002);
+    [[nodiscard]] std::size_t groundPatchCount() const;
+    // Put back into the step every body overlapping a box: what a changed
+    // patch of ground was holding up has to find out whether it still is.
+    // Returns how many were asleep and are now awake.
+    unsigned wakeBodiesIn(const Vec3 &low_world_m, const Vec3 &high_world_m);
+    // How many bodies the solver is stepping right now, and whether one is.
+    [[nodiscard]] unsigned awakeBodies() const;
+    [[nodiscard]] bool isAwake(MatterBodyId body_id) const;
     // Change what a body weighs without changing its shape: mass and inertia
     // scale together. For matter that is used up or given off -- a log burning
     // down loses its fuel as gas, and the rigid body has to weigh what is left

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "fastlattice/TileImpactScene.hpp"
+#include "terrain/Environment.hpp"
 #include "thermo/ThermoWorld.hpp"
 
 #include <memory>
@@ -614,7 +615,42 @@ public:
     // work is what passes between the two.
     [[nodiscard]] double mechanicalEnergyJ() const;
 
+    // ---- terrain and water ------------------------------------------------
+    //
+    // The ground and the rivers on it (terrain/Environment.hpp), or null when
+    // the scene declares neither. The water's pressure and drag are pushed
+    // onto bodies inside the reversible step, so a step taken back takes them
+    // back; the water, the ground's settling and its colliders are brought up
+    // to the world's clock after the step is accepted.
+    [[nodiscard]] const terrain::Environment *environment() const;
+    // Dig a trench from a to b (x, z), `width_m` wide and `depth_m` below the
+    // ground as it stands. Rebuilds exactly the colliders it changed and wakes
+    // exactly what they held up, here, between steps.
+    terrain::EditEffect dig(double ax, double az, double bx, double bz, double width_m, double depth_m);
+    // Heap material up around a point; it settles to the slope it can hold.
+    terrain::EditEffect deposit(double x, double z, double radius_m, double sand_m3, double soil_m3);
+    // Cut a block out of bare rock, `height_m` tall (rounded to whole cells).
+    // The ground loses it now; the host adds it as a body in the scene it
+    // opens next -- a body cannot join a running world -- and until then the
+    // ledger has it as cut. Its sides must be whole cells, so the footprint
+    // is refused, with the sizes that would do, when they are not.
+    std::optional<terrain::CutBlock> cut(double x, double z, int cells_x, int cells_z, double height_m,
+                                         std::string *why = nullptr);
+    // A river's discharge, from now: a flood, a drought.
+    bool setDischarge(const std::string &river, double discharge_m3_s);
+    // Everything about the ground and the water as JSON, with `full` adding
+    // the model's provenance and what is not modelled.
+    [[nodiscard]] std::string environmentReport(bool full = false) const;
+    // The water as it stands, for carrying into a world opened again.
+    [[nodiscard]] std::string environmentState() const;
+    // Ground and water at a point.
+    [[nodiscard]] std::string survey(double x, double z) const;
+    // How many bodies the rigid solver is stepping right now.
+    [[nodiscard]] unsigned awakeBodies() const;
+
 private:
+    // Every body as the water sees it: shape, where it is, how it moves.
+    [[nodiscard]] std::vector<water::BodyInWater> waterBodies();
     // Every body as the network sees it: where it is, how it is turned, what
     // it weighs and how much surface it has.
     [[nodiscard]] std::vector<thermo::BodyShape> thermoShapes() const;

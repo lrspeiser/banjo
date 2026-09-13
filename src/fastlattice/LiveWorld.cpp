@@ -262,6 +262,15 @@ struct LiveWorld::Impl {
     // Heat, chemistry and gas (thermo/ThermoWorld.hpp). Null until something
     // declares any, so a world without them pays nothing for them.
     std::unique_ptr<thermo::ThermoWorld> thermo;
+    // Terrain and water (terrain/Environment.hpp). Null unless the scene
+    // declares them, so a room without them pays nothing.
+    std::unique_ptr<terrain::Environment> environment;
+    // A broken piece's cells in its own frame, for the water to press on,
+    // kept by name while its cell count stays the same.
+    std::unordered_map<std::string, std::pair<std::size_t, std::vector<Vec3>>> water_cells_of;
+    // An authored box's own tilt, which lives in its collision shape rather
+    // than in its pose: the water has to press on the box that is there.
+    std::unordered_map<std::string, Quat> tilt_of;
     // A hull's surface, from its cells, worked out once per body.
     mutable std::unordered_map<std::string, std::pair<std::size_t, double>> hull_area_of;
 
@@ -328,6 +337,14 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request) {
     impl.setup = buildTileImpactSetup(impl.request);
     TileImpactSetup &setup = *impl.setup;
     const TileImpactRequest &r = impl.request;
+    // Terrain and water. With ground that is not flat, the flat floor the
+    // setup assumes goes under all of it -- to the rock's own floor -- where it
+    // is a safety net and not a surface: the floor under a lattice run and the
+    // plane heat conducts into both follow it there.
+    if (!r.environment_scene_json.empty()) {
+        impl.environment = terrain::Environment::fromScene(r.environment_scene_json);
+        if (impl.environment) setup.ground_y = std::min(setup.ground_y, impl.environment->floorY());
+    }
 
     // The setup leaves its matter in the frame of the scene's own origin. The
     // batch lane only ever sees world coordinates because its lattice phase
@@ -396,6 +413,11 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request) {
                                              : FragmentPrimitive::Box;
                     fragment.primitive_dimensions_m = lead.dimensions_m;
                     rotationQuaternion(lead.rotation_deg, fragment.primitive_rotation_wxyz);
+                    if (lead.rotation_deg.x != 0.0 || lead.rotation_deg.y != 0.0 || lead.rotation_deg.z != 0.0)
+                        impl.tilt_of[lead.name] = Quat{fragment.primitive_rotation_wxyz[0],
+                                                       fragment.primitive_rotation_wxyz[1],
+                                                       fragment.primitive_rotation_wxyz[2],
+                                                       fragment.primitive_rotation_wxyz[3]};
                     described.shape = lead.shape == BodyShape::Sphere ? "sphere" : "box";
                     described.dimensions_m = lead.dimensions_m;
                 }
@@ -500,6 +522,7 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request) {
         .half_length_bitangent_m = kLiveGroundHalfSpanM,
         .thickness_m = 0.5,
     });
+    if (impl.environment) impl.environment->attach(*impl.world);
     MatterBodyId next_static = 900;
     for (const StaticBox &ledge : setup.ledges)
         impl.world->addBox({.body_id = next_static++, .dimensions_m = ledge.dimensions_m,
@@ -544,9 +567,18 @@ bool LiveWorld::judgeStep() {
             const bool both = a_known && b_known;
             if (which == 1 && !both) break;
             if (impl_->described[struck].anchored) continue;
+            // The ground is what it is made of where it was hit: a stone that
+            // lands on sand meets soft ground, and one that lands on bare rock
+            // meets stone. Judging every landing against the flat floor's
+            // concrete shattered a boulder that rolled into a hole in sand.
+            const bool on_terrain = impl_->environment &&
+                                    (event.body_a == kGroundPatchMatterId || event.body_b == kGroundPatchMatterId);
+            const double ground_impedance =
+                on_terrain ? impl_->environment->contactImpedanceAt(event.contact_point_world_m)
+                           : impl_->ground_impedance;
             const double other_impedance = both && other != struck
                                                ? impl_->impedance_of[other]
-                                               : impl_->ground_impedance;
+                                               : ground_impedance;
             const RefractureAdmission admission = admitRefracture(
                 impl_->limits_of[struck], other_impedance,
                 event.closing_speed_m_s, event.available_normal_energy_j);
@@ -715,12 +747,23 @@ void LiveWorld::step(double dt_s) {
             moved.push_back({d.body, impl_->world->snapshot(d.id).center_of_mass_world_m - d.from});
         network->advance(dt_s, moved);
     };
+    // Terrain and water, the same way round: the water's pressure and drag are
+    // pushed inside the trial, so a refused step takes them back; the water,
+    // the ground and its colliders move on only once the step is accepted.
+    terrain::Environment *const environment = impl_->environment.get();
+    const auto pushWater = [&]() {
+        if (environment != nullptr) environment->push(*impl_->world, waterBodies());
+    };
+    const auto settleEnvironment = [&]() {
+        if (environment != nullptr) environment->commit(*impl_->world, waterBodies(), dt_s);
+    };
 
     if (impl_->body_of.size() + 8 <= 2000) {
         bool committed = false;
         try {
             committed = impl_->world->runReversibleTrial([&]() {
                 pushGas();
+                pushWater();
                 impl_->world->step(dt_s);
                 holdStill();
                 holdPending();
@@ -763,9 +806,11 @@ void LiveWorld::step(double dt_s) {
         if (impl_->steps_taken % 60 == 0) surveyLoads();
         foresee();
         settleThermo();
+        settleEnvironment();
         return;
     }
     pushGas();
+    pushWater();
     impl_->world->step(dt_s);
     holdStill();
     holdPending();
@@ -777,6 +822,7 @@ void LiveWorld::step(double dt_s) {
     if (impl_->steps_taken % 60 == 0) surveyLoads();
     foresee();
     settleThermo();
+    settleEnvironment();
 }
 
 // Part every link carrying more than it can take.
@@ -2218,9 +2264,12 @@ void LiveWorld::foresee() {
             for (std::size_t k = 0; k < impl_->body_of.size(); ++k)
                 if (impl_->body_of[k] == ahead.body_id) { struck = impl_->limits_of[k]; break; }
         } else {
-            // The floor. Nothing of ours is struck, so ask about the mover.
+            // The floor. Nothing of ours is struck, so ask about the mover --
+            // against the ground that is actually there: sand where the ray
+            // came down on sand, rock on rock.
             struck = impl_->limits_of[i];
-            other = impl_->ground_impedance;
+            other = impl_->environment ? impl_->environment->contactImpedanceAt(ahead.point_world_m)
+                                       : impl_->ground_impedance;
         }
         const RefractureAdmission would = admitRefracture(struck, other, arrival,
                                                           std::numeric_limits<double>::max());
@@ -3322,5 +3371,135 @@ std::string LiveWorld::thermoReport(bool with_model) const {
 double LiveWorld::mechanicalEnergyJ() const {
     return impl_->world->mechanicalTotals(impl_->request.gravity_m_s2).mechanicalEnergy();
 }
+
+// ---- terrain and water --------------------------------------------------------
+
+std::vector<water::BodyInWater> LiveWorld::waterBodies() {
+    constexpr double kPi = 3.14159265358979323846;
+    std::vector<water::BodyInWater> out;
+    out.reserve(impl_->described.size());
+    const double cell = impl_->request.cell_size_m;
+    for (std::size_t i = 0; i < impl_->described.size(); ++i) {
+        const MatterBodyId id = impl_->body_of[i];
+        if (!impl_->world->contains(id)) continue;
+        const LiveBodyPose &pose = impl_->described[i];
+        const RigidSnapshot snap = impl_->world->snapshot(id);
+        water::BodyInWater b;
+        b.index = out.size();
+        b.body_id = id;
+        b.name = pose.name;
+        b.com_m = snap.center_of_mass_world_m;
+        b.orientation = snap.orientation_world;
+        b.velocity_m_s = snap.linear_velocity_m_s;
+        b.angular_velocity_rad_s = snap.angular_velocity_rad_s;
+        b.density_kg_m3 = i < impl_->density_of.size() ? impl_->density_of[i] : 1000.0;
+        b.anchored = pose.anchored;
+        b.held = i == impl_->holding;
+        b.awake = impl_->world->isAwake(id);
+        b.cell_m = cell;
+        b.dimensions_m = pose.dimensions_m;
+        const std::size_t cells = i < impl_->nodes_of.size() ? impl_->nodes_of[i].size() : 0;
+        if (pose.shape == "sphere") {
+            b.shape = water::BodyInWater::Shape::Sphere;
+            b.volume_m3 = kPi / 6.0 * pose.dimensions_m.x * pose.dimensions_m.x * pose.dimensions_m.x;
+        } else if (pose.shape == "box") {
+            b.shape = water::BodyInWater::Shape::Box;
+            b.volume_m3 = pose.dimensions_m.x * pose.dimensions_m.y * pose.dimensions_m.z;
+            // A box authored tilted carries its tilt in its shape, not in its
+            // pose: the box the water meets is the pose turned by the tilt.
+            if (const auto tilt = impl_->tilt_of.find(pose.name); tilt != impl_->tilt_of.end()) {
+                const Quat &p = b.orientation, &q = tilt->second;
+                b.orientation = Quat{p.w * q.w - p.x * q.x - p.y * q.y - p.z * q.z,
+                                     p.w * q.x + p.x * q.w + p.y * q.z - p.z * q.y,
+                                     p.w * q.y - p.x * q.z + p.y * q.w + p.z * q.x,
+                                     p.w * q.z + p.x * q.y - p.y * q.x + p.z * q.w};
+            }
+        } else {
+            // A piece, a join or a cone: its cells are its matter and its
+            // surface.
+            b.shape = water::BodyInWater::Shape::Cells;
+            auto &cached = impl_->water_cells_of[pose.name];
+            if (cached.first != cells || cached.second.size() != cells) {
+                cached.first = cells;
+                cached.second.clear();
+                cached.second.reserve(cells);
+                for (const std::uint32_t node : impl_->nodes_of[i]) cached.second.push_back(impl_->cell_offset_m[node]);
+            }
+            b.cells_local_m = &cached.second;
+            b.volume_m3 = static_cast<double>(cells) * cell * cell * cell;
+        }
+        b.mass_kg = b.density_kg_m3 * b.volume_m3;
+        out.push_back(std::move(b));
+    }
+    return out;
+}
+
+const terrain::Environment *LiveWorld::environment() const { return impl_->environment.get(); }
+
+namespace {
+terrain::Environment &requireEnvironment(const std::unique_ptr<terrain::Environment> &environment) {
+    if (!environment) throw std::invalid_argument("this world has no terrain: its scene declares none");
+    return *environment;
+}
+} // namespace
+
+terrain::EditEffect LiveWorld::dig(double ax, double az, double bx, double bz, double width_m,
+                                   double depth_m) {
+    return requireEnvironment(impl_->environment).dig(*impl_->world, ax, az, bx, bz, width_m, depth_m);
+}
+
+terrain::EditEffect LiveWorld::deposit(double x, double z, double radius_m, double sand_m3, double soil_m3) {
+    return requireEnvironment(impl_->environment).deposit(*impl_->world, x, z, radius_m, sand_m3, soil_m3);
+}
+
+std::optional<terrain::CutBlock> LiveWorld::cut(double x, double z, int cells_x, int cells_z,
+                                                double height_m, std::string *why) {
+    terrain::Environment &environment = requireEnvironment(impl_->environment);
+    // The block has to be something the world can build: matter here is cubic
+    // cells, so every side of it is a whole number of them. Said with the
+    // nearest sizes that are, rather than refused bare.
+    const double cell = impl_->request.cell_size_m;
+    const double column = environment.terrain().grid().dx;
+    const auto whole = [&](double length) {
+        const double n = length / cell;
+        return std::abs(n - std::round(n)) < 1.0e-6;
+    };
+    if (!whole(cells_x * column) || !whole(cells_z * column)) {
+        int fits = 1;
+        while (fits < 64 && !whole(fits * column)) ++fits;
+        if (why) {
+            char text[240];
+            std::snprintf(text, sizeof text,
+                          "a block is a whole number of %.3g m cells on every side, and the ground's "
+                          "columns are %.3g m: cut %d columns at a time (%.3g m) each way",
+                          cell, column, fits, fits * column);
+            *why = text;
+        }
+        return std::nullopt;
+    }
+    const double cells_tall = std::max(1.0, std::round(height_m / cell));
+    return environment.cut(*impl_->world, x, z, cells_x, cells_z, cells_tall * cell, why);
+}
+
+bool LiveWorld::setDischarge(const std::string &river, double discharge_m3_s) {
+    return requireEnvironment(impl_->environment).setDischarge(river, discharge_m3_s);
+}
+
+std::string LiveWorld::environmentReport(bool full) const {
+    if (!impl_->environment) return "{}";
+    return impl_->environment->reportJson(full);
+}
+
+std::string LiveWorld::environmentState() const {
+    if (!impl_->environment) return "{}";
+    return impl_->environment->stateJson();
+}
+
+std::string LiveWorld::survey(double x, double z) const {
+    if (!impl_->environment) return R"({"on_the_ground":false})";
+    return impl_->environment->surveyJson(x, z);
+}
+
+unsigned LiveWorld::awakeBodies() const { return impl_->world->awakeBodies(); }
 
 } // namespace banjo::fastlattice

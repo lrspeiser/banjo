@@ -17,6 +17,7 @@
 #include <Jolt/Physics/Collision/TransformedShape.h>
 #include <Jolt/Physics/Constraints/ContactConstraintManager.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
+#include <Jolt/Physics/Collision/Shape/HeightFieldShape.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
 #include <Jolt/Physics/Collision/Shape/OffsetCenterOfMassShape.h>
@@ -391,7 +392,8 @@ private:
         // in LiveWorld that names an impact's other side "the ground" could not
         // be reached at all.
         const bool surface_contact =
-            (id1 == kSupportSurfaceMatterId || id2 == kSupportSurfaceMatterId) &&
+            (id1 == kSupportSurfaceMatterId || id2 == kSupportSurfaceMatterId ||
+             id1 == kGroundPatchMatterId || id2 == kGroundPatchMatterId) &&
             !surface_observations;
         if(!observations_enabled&&!event.response_deferred_to_material)return;
         if (!event.response_deferred_to_material && (!record_impact || surface_contact) && !detailed_observations) return;
@@ -486,6 +488,10 @@ public:
             if (!floor_id_.IsInvalid()) {
                 body_interface.RemoveBody(floor_id_);
                 body_interface.DestroyBody(floor_id_);
+            }
+            for (const GroundPatch &patch : ground_) {
+                body_interface.RemoveBody(patch.body);
+                body_interface.DestroyBody(patch.body);
             }
         }
 
@@ -604,7 +610,43 @@ public:
     RigidContactDiagnostics contact_diagnostics_;
     std::optional<RigidSurfaceDescription> support_surface_;
     Vec3 gravity_m_s2_{0.0, -9.81, 0.0};
+    // Patches of height-field ground, in the order they were added.
+    struct GroundPatch {
+        JPH::BodyID body;
+        unsigned count{};
+        double spacing{}, origin_x{}, origin_z{};
+    };
+    std::vector<GroundPatch> ground_;
 };
+
+namespace {
+// A patch of ground as a Jolt height field: absolute heights, holes where a
+// height is not finite, compressed to within `max_error`.
+JPH::RefConst<JPH::Shape> groundShape(const std::vector<float> &heights, unsigned count,
+                                      double spacing, double origin_x, double origin_z,
+                                      double max_error) {
+    if (count < 4 || heights.size() != static_cast<std::size_t>(count) * count || !(spacing > 0.0))
+        throw std::invalid_argument("a ground patch needs count x count heights, count >= 4, and a spacing");
+    std::vector<float> samples(heights);
+    for (float &h : samples)
+        if (!std::isfinite(h)) h = JPH::HeightFieldShapeConstants::cNoCollisionValue;
+    JPH::HeightFieldShapeSettings settings(samples.data(),
+                                           JPH::Vec3(static_cast<float>(origin_x), 0.0F,
+                                                     static_cast<float>(origin_z)),
+                                           JPH::Vec3(static_cast<float>(spacing), 1.0F,
+                                                     static_cast<float>(spacing)),
+                                           count);
+    settings.mBlockSize = (count % 4 == 0 && count / 4 >= 2) ? 4 : 2;
+    settings.mBitsPerSample = std::max<JPH::uint32>(
+        1, settings.CalculateBitsPerSampleForError(static_cast<float>(max_error)));
+    const JPH::ShapeSettings::ShapeResult made = settings.Create();
+    if (made.HasError()) {
+        const JPH::String &error = made.GetError();
+        throw std::runtime_error("Jolt could not build a ground patch: " + std::string(error.begin(), error.end()));
+    }
+    return made.Get();
+}
+} // namespace
 
 JoltWorld::JoltWorld() : impl_(std::make_unique<Impl>()) {}
 JoltWorld::JoltWorld(unsigned workers) {
@@ -1615,6 +1657,74 @@ void JoltWorld::pushBody(MatterBodyId body_id, const Vec3 &force_n) {
     // caller does, and the answer is that nothing happens.
     if (bodies.GetMotionType(found->second) == JPH::EMotionType::Static) return;
     bodies.AddForce(found->second, toJolt(force_n));
+}
+
+void JoltWorld::pushBodyAt(MatterBodyId body_id, const Vec3 &force_n, const Vec3 &point_world_m) {
+    const auto found = impl_->bodies_.find(body_id);
+    if (found == impl_->bodies_.end()) throw std::invalid_argument("rigid body is missing");
+    auto &bodies = impl_->physics_->GetBodyInterface();
+    if (bodies.GetMotionType(found->second) == JPH::EMotionType::Static) return;
+    bodies.AddForce(found->second, toJolt(force_n), toJoltPosition(point_world_m));
+}
+
+void JoltWorld::twistBody(MatterBodyId body_id, const Vec3 &torque_n_m) {
+    const auto found = impl_->bodies_.find(body_id);
+    if (found == impl_->bodies_.end()) throw std::invalid_argument("rigid body is missing");
+    auto &bodies = impl_->physics_->GetBodyInterface();
+    if (bodies.GetMotionType(found->second) == JPH::EMotionType::Static) return;
+    bodies.AddTorque(found->second, toJolt(torque_n_m));
+}
+
+unsigned JoltWorld::addGroundPatch(const std::vector<float> &heights, unsigned count, double spacing_m,
+                                   double origin_x_m, double origin_z_m,
+                                   const MaterialDefinition &material, double max_error_m) {
+    impl_->requireConfigurationMutable();
+    const JPH::RefConst<JPH::Shape> shape =
+        groundShape(heights, count, spacing_m, origin_x_m, origin_z_m, max_error_m);
+    const CompiledContactMaterial contact = compileContactMaterial(material);
+    JPH::BodyCreationSettings settings(shape.GetPtr(), JPH::RVec3::sZero(), JPH::Quat::sIdentity(),
+                                       JPH::EMotionType::Static, Layers::kNonMoving);
+    settings.mFriction = static_cast<float>(contact.dynamic_friction);
+    settings.mRestitution = static_cast<float>(contact.restitution);
+    settings.mUserData = kGroundPatchMatterId;
+    const JPH::BodyID id =
+        impl_->physics_->GetBodyInterface().CreateAndAddBody(settings, JPH::EActivation::DontActivate);
+    if (id.IsInvalid()) throw std::runtime_error("Jolt could not create a ground patch");
+    impl_->ground_.push_back({id, count, spacing_m, origin_x_m, origin_z_m});
+    impl_->contact_states_[kGroundPatchMatterId] = {contact, 0.0, 0.0, false};
+    return static_cast<unsigned>(impl_->ground_.size());
+}
+
+void JoltWorld::replaceGroundPatch(unsigned patch, const std::vector<float> &heights, double max_error_m) {
+    impl_->requireConfigurationMutable();
+    if (patch == 0 || patch > impl_->ground_.size()) throw std::invalid_argument("there is no such ground patch");
+    const Impl::GroundPatch &ground = impl_->ground_[patch - 1];
+    const JPH::RefConst<JPH::Shape> shape =
+        groundShape(heights, ground.count, ground.spacing, ground.origin_x, ground.origin_z, max_error_m);
+    // A new shape swapped in whole: the old one is released when nothing holds
+    // it any more, so a query that had it keeps a shape that is still valid.
+    impl_->physics_->GetBodyInterface().SetShape(ground.body, shape.GetPtr(), false,
+                                                 JPH::EActivation::DontActivate);
+}
+
+std::size_t JoltWorld::groundPatchCount() const { return impl_->ground_.size(); }
+
+unsigned JoltWorld::wakeBodiesIn(const Vec3 &low_world_m, const Vec3 &high_world_m) {
+    const JPH::uint32 before = impl_->physics_->GetNumActiveBodies(JPH::EBodyType::RigidBody);
+    impl_->physics_->GetBodyInterface().ActivateBodiesInAABox(
+        JPH::AABox(toJolt(low_world_m), toJolt(high_world_m)), {}, {});
+    const JPH::uint32 after = impl_->physics_->GetNumActiveBodies(JPH::EBodyType::RigidBody);
+    return after > before ? after - before : 0U;
+}
+
+unsigned JoltWorld::awakeBodies() const {
+    return impl_->physics_->GetNumActiveBodies(JPH::EBodyType::RigidBody);
+}
+
+bool JoltWorld::isAwake(MatterBodyId body_id) const {
+    const auto found = impl_->bodies_.find(body_id);
+    if (found == impl_->bodies_.end()) return false;
+    return impl_->physics_->GetBodyInterface().IsActive(found->second);
 }
 
 void JoltWorld::setMass(MatterBodyId body_id, double mass_kg) {

@@ -141,6 +141,11 @@ struct TileImpactRequest {
     // own text, for the live world to read with thermo/ThermoJson.hpp. Empty
     // when the scene declares none, and nothing about the batch lane reads it.
     std::string thermo_scene_json;
+    // What the scene says about terrain and water -- its "terrain" and "water"
+    // blocks -- as the scene document's own text, for the live world to read
+    // with terrain/Environment.hpp. Empty when it declares neither, and nothing
+    // about the batch lane reads it.
+    std::string environment_scene_json;
     // Unloaded-shape probe. The reference material route compiles no bond
     // damping, so a plate that is struck and does not break rings for the whole
     // lattice phase and never settles: the permanent set cannot be read off a

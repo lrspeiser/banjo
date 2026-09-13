@@ -141,6 +141,9 @@ void readSceneSettings(const std::string &text, TileImpactRequest &request) {
                 break;
             }
     if (thermal) request.thermo_scene_json = text;
+    // Terrain and water: read by the live world with the environment's own
+    // reader, for the same reason.
+    if (document.contains("terrain") || document.contains("water")) request.environment_scene_json = text;
 }
 
 std::vector<SceneBody> readSceneJson(const std::string &text) {

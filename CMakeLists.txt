@@ -332,9 +332,35 @@ if(BANJO_BUILD_HEADLESS)
         banjo_enable_warnings(banjo_thermochemistry_tests)
         add_test(NAME banjo_thermochemistry_tests COMMAND banjo_thermochemistry_tests)
     endif()
+    # Terrain and water: the ground as material held still, and rivers and
+    # lakes as columns of water on it, run where they are changing rather than
+    # everywhere they exist (docs/terrain-and-water.md). The water solver owns
+    # no bodies; the environment is where it meets the rigid world.
+    add_library(banjo_water src/water/ShallowWater.cpp src/water/WaterCoupling.cpp)
+    target_link_libraries(banjo_water PUBLIC banjo_core)
+    banjo_enable_warnings(banjo_water)
+    if(BANJO_BUILD_TESTS)
+        add_executable(banjo_water_tests tests/water_tests.cpp)
+        target_link_libraries(banjo_water_tests PRIVATE banjo_water)
+        banjo_enable_warnings(banjo_water_tests)
+        add_test(NAME banjo_water_tests COMMAND banjo_water_tests)
+    endif()
+    add_library(banjo_terrain src/terrain/TerrainField.cpp src/terrain/TerrainGenerator.cpp)
+    target_link_libraries(banjo_terrain PUBLIC banjo_core banjo_water)
+    banjo_enable_warnings(banjo_terrain)
+    if(BANJO_BUILD_TESTS)
+        add_executable(banjo_terrain_tests tests/terrain_tests.cpp)
+        target_link_libraries(banjo_terrain_tests PRIVATE banjo_terrain)
+        banjo_enable_warnings(banjo_terrain_tests)
+        add_test(NAME banjo_terrain_tests COMMAND banjo_terrain_tests)
+    endif()
+    add_library(banjo_environment src/terrain/Environment.cpp)
+    target_link_libraries(banjo_environment PUBLIC banjo_terrain banjo_water banjo_runtime
+                                            PRIVATE nlohmann_json::nlohmann_json)
+    banjo_enable_warnings(banjo_environment)
     add_library(banjo_fastlattice_scene src/fastlattice/TileImpactScene.cpp
                                        src/fastlattice/LiveWorld.cpp)
-    target_link_libraries(banjo_fastlattice_scene PUBLIC banjo_fastlattice banjo_runtime banjo_thermo PRIVATE nlohmann_json::nlohmann_json)
+    target_link_libraries(banjo_fastlattice_scene PUBLIC banjo_fastlattice banjo_runtime banjo_thermo banjo_environment PRIVATE nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_fastlattice_scene)
     add_executable(banjo_fast_lattice_run tools/fast_lattice_run.cpp)
     target_link_libraries(banjo_fast_lattice_run PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
@@ -861,6 +887,16 @@ if(BANJO_BUILD_TESTS)
             target_link_libraries(banjo_thermo_live_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_thermo_live_tests)
             add_test(NAME banjo_thermo_live_tests COMMAND banjo_thermo_live_tests)
+
+            # Terrain and water in a live world: the owner's acceptance tests
+            # for the valley -- conservation, a lake at rest, a dam, an outlet,
+            # a cut block, a dig that stays local, a boulder undermined, a log
+            # drifting, water carried into a reopened world, and the realtime
+            # rule (docs/terrain-and-water.md).
+            add_executable(banjo_valley_live_tests tests/valley_live_tests.cpp)
+            target_link_libraries(banjo_valley_live_tests PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
+            banjo_enable_warnings(banjo_valley_live_tests)
+            add_test(NAME banjo_valley_live_tests COMMAND banjo_valley_live_tests)
 
             # Pins, as the scene sees them: a joint between two NAMES, which is
             # what has to survive the bodies underneath being destroyed and

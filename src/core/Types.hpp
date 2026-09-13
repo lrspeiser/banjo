@@ -14,6 +14,10 @@ inline constexpr MatterBodyId kInvalidMatterBodyId = 0;
 // needs to be able to recognise it.
 inline constexpr MatterBodyId kSupportSurfaceMatterId =
     std::numeric_limits<MatterBodyId>::max() - 1U;
+// The terrain: every patch of the height-field ground answers to this one id,
+// so contacts with it read as "the ground" exactly as the floor's do.
+inline constexpr MatterBodyId kGroundPatchMatterId =
+    std::numeric_limits<MatterBodyId>::max() - 2U;
 inline constexpr MaterialId kInvalidMaterialId = std::numeric_limits<MaterialId>::max();
 
 enum class MatterMode : std::uint8_t {
