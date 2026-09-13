@@ -1001,6 +1001,9 @@ class Case:
     # (standing_m, facing, what they are looking at), for a request whose
     # answer depends on it: "give me a ball" goes in front of them.
     person: dict[str, Any] | None = None
+    # What the person said first, turn by turn, before `message`: a case can be
+    # a conversation, whose last line means something only with what went before.
+    before: list[str] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -1537,16 +1540,23 @@ def run_trial(case: Case, trial: int, api_key: str, model: str,
     before = {b["name"] for b in room.bodies()}
     trace: list[dict[str, Any]] = []
     asked = time.perf_counter()
+    history: list[dict[str, Any]] = []
     try:
-        # The room as the server has it when the person asks: open and running.
-        first = World(room.spec)
-        try:
-            first.seconds(0.25)
-            live_state = first.session.state
-            answer = world_chat.ask(api_key, model, room, live_state, case.message, [],
-                                    trace=trace, person=case.person)
-        finally:
-            first.close()
+        # A conversation: each turn asked of the room as it then stands, and
+        # kept -- as the server keeps them -- for the turns after it.
+        for message in (case.before or []) + [case.message]:
+            # The room as the server has it when the person asks: open and running.
+            first = World(room.spec)
+            try:
+                first.seconds(0.25)
+                live_state = first.session.state
+                answer = world_chat.ask(api_key, model, room, live_state, message, [],
+                                        trace=trace, person=case.person, history=history)
+            finally:
+                first.close()
+            world_chat.remember_turn(history, message, answer)
+        if case.before:
+            record["conversation"] = history
     except Exception as failure:
         record.update(reason=f"the agent failed: {failure}", trace=trace,
                       refusals=refusals(trace), ask_s=round(time.perf_counter() - asked, 1))

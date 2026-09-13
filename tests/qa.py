@@ -513,6 +513,7 @@ LEFT_OUT = {
     "ball-near-me": "it is put where the person stands, in the valley",
     "ball-by-the-river": "it is put where the person stands, in the valley",
     "crate-in-front": "it is put where the person stands",
+    "crates-how-many": "it is put where the person stands, after a conversation",
 }
 # What stops a thing that would otherwise roll or fly on into the next build:
 # (centre, size) in metres in the recipe's own frame, anchored concrete.

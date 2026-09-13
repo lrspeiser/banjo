@@ -920,6 +920,11 @@ class TheTools(unittest.TestCase):
         self.assertNotIn("set_down", held_up)
         self.assertEqual(next(o for o in held_up["objects"] if o["name"] == "held up")
                          ["position_m"][1], 2.0)
+        # And it is told it will fall, and how far: a caller that meant [x, z]
+        # and wrote [x, z, 0] finds out from the answer, not from the room.
+        self.assertAlmostEqual(held_up["in_the_air"]["above_m"], 1.94, delta=0.01)
+        self.assertEqual(held_up["in_the_air"]["over"], "the floor")
+        self.assertNotIn("in_the_air", table)
 
     def test_a_place_given_beside_the_object_is_taken_and_a_missing_one_explained(self):
         """A model often puts position_m next to the object rather than in it. It

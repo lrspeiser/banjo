@@ -180,6 +180,12 @@ ground, the floor or a table — rather than left in the air: the MCP's
 `add_object` takes `[x, z]` for that and works the height out itself, and says
 when what it set down is in water.
 
+It remembers the conversation. Each room keeps what was said in it — what you
+asked, what it answered and what it did — and the last twelve turns go with
+every request, so "yes", "three" or "the last one" answer what it asked. The
+conversation belongs to the room, like what it built: switch rooms and you
+switch conversations, and a fresh room starts a new one.
+
 Whether it can actually build things is measured by asking it — the QA suite:
 
 ```powershell

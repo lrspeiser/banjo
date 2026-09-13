@@ -658,6 +658,7 @@ def tool_add_object(args: dict[str, Any]) -> dict[str, Any]:
     # out of it.
     rests = _set_down(entry, added) if set_down else None
     seated = None if set_down else _seat_on_ground(entry, added)
+    held_up = None if set_down else _held_up(entry, added)
     scene = dict(entry["scene"], bodies=list(entry["scene"]["bodies"]) + [added])
     lost = _rebuild(entry, scene, world_id)
     answer: dict[str, Any] = {
@@ -670,6 +671,8 @@ def tool_add_object(args: dict[str, Any]) -> dict[str, Any]:
         answer["set_down"] = rests
     if seated:
         answer["seated_on_the_ground"] = seated
+    if held_up:
+        answer["in_the_air"] = held_up
     if _has_terrain(entry):
         here = entry["world"].survey(added["center_m"][0], added["center_m"][2])
         if here.get("water"):
@@ -1788,10 +1791,18 @@ def _seat_on_ground(entry: dict[str, Any], body: dict[str, Any]) -> dict[str, An
 SET_DOWN_FROM_M = 60.0   # looked down from: above anything a room holds
 
 
-def _set_down(entry: dict[str, Any], body: dict[str, Any]) -> dict[str, Any]:
-    """Rest a body on whatever is under it: another object, the ground or the
-    floor. Found the way the engine sees the world -- straight down from above,
-    over the body's footprint -- so what it rests on is what it would land on.
+IN_THE_AIR_M = 0.05     # further than this above what is under it, a thing will fall
+
+
+def _half_height(body: dict[str, Any]) -> float:
+    size = body["dimensions_m"]
+    return size[0] / 2.0 if body["shape"] == "sphere" else size[1] / 2.0
+
+
+def _under_footprint(entry: dict[str, Any], body: dict[str, Any]) -> tuple[float, str]:
+    """The top of what is under a body, and what that is: another object, the
+    ground or the floor. Found the way the engine sees the world -- straight
+    down from above, over the body's footprint -- so it is what it would land on.
 
     A sphere touches only under its centre; a box anywhere under its bottom, so
     the highest thing under nine points across its footprint carries it.
@@ -1812,8 +1823,29 @@ def _set_down(entry: dict[str, Any], body: dict[str, Any]) -> dict[str, Any]:
         if best is not None:
             top = best[0]
             under = best[1] or ("the ground" if _has_terrain(entry) else "the floor")
-    body["center_m"] = [x, round(top + half[1] + 0.002, 4), z]
+    return top, under
+
+
+def _set_down(entry: dict[str, Any], body: dict[str, Any]) -> dict[str, Any]:
+    """Rest a body on whatever is under it (_under_footprint)."""
+    top, under = _under_footprint(entry, body)
+    x, _, z = body["center_m"]
+    body["center_m"] = [x, round(top + _half_height(body) + 0.002, 4), z]
     return {"on": under, "its_top_m": round(top, 4), "centre_y_m": body["center_m"][1]}
+
+
+def _held_up(entry: dict[str, Any], body: dict[str, Any]) -> dict[str, Any] | None:
+    """How far above what is under it a body given [x, y, z] starts -- said, so
+    a caller that meant it to rest finds out it will fall. Measured, a model
+    gave [x, z, 0] for [x, z]: three crates started 1.5 m up at the wrong place,
+    and its reply said they were resting on the floor."""
+    top, under = _under_footprint(entry, body)
+    gap = body["center_m"][1] - _half_height(body) - top
+    if gap <= IN_THE_AIR_M:
+        return None
+    return {"above_m": round(gap, 3), "over": under,
+            "note": "it starts that far above what is under it and will fall; to set it "
+                    "down there instead, give position_m as [x, z]"}
 
 
 def _river_said(path: list[dict[str, Any]], every: int = 2) -> list[list[float]]:

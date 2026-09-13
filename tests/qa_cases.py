@@ -1197,6 +1197,41 @@ def near_me(person: dict[str, Any], in_front: bool = True, terrain: bool = False
     return check
 
 
+def several_near_me(person: dict[str, Any], count: int):
+    """A check: exactly `count` new things, each resting on what is under it,
+    within reach of where the person stands and in front of them."""
+    standing, facing = person["standing_m"], person["facing"]
+
+    def check(built: Built) -> Verdict:
+        world = built.world
+        new = [b for n, b in world.bodies().items()
+               if n not in built.before and not b.get("anchored")]
+        measured: dict[str, Any] = {"new": sorted(b["name"] for b in new)}
+        if len(new) != count:
+            return Verdict(False, f"{len(new)} new things in the room, not {count}", measured)
+        for thing in new:
+            x, y, z = thing["position_m"]
+            half = size_m(thing)[1] / 2.0
+            support = _under(world, thing, False)
+            away = [x - standing[0], z - standing[2]]
+            distance = math.hypot(*away)
+            ahead = (away[0] * facing[0] + away[1] * facing[2]) / max(distance, 1e-9)
+            measured[thing["name"]] = {"at_m": [round(x, 3), round(y, 3), round(z, 3)],
+                                       "bottom_m": round(y - half, 3),
+                                       "under_it_m": round(support, 3),
+                                       "from_person_m": round(distance, 2), "ahead": round(ahead, 2)}
+            if abs((y - half) - support) > RESTING_M:
+                return Verdict(False, f"{thing['name']} is not resting on what is under it", measured)
+            if distance > WITHIN_REACH_M:
+                return Verdict(False, f"{thing['name']} is {distance:.1f} m from the person", measured)
+            if ahead < 0.3:
+                return Verdict(False, f"{thing['name']} is not in front of the person", measured)
+        world.seconds(2.0)
+        return Verdict(True, f"{count} new things, each resting on what is under it, within reach "
+                             f"in front of the person", measured)
+    return check
+
+
 CASES = [
     Case("hoist", "yard",
          "Build a hoist: a rope over two pulleys on a high beam, with an iron weight on one end "
@@ -1269,6 +1304,14 @@ CASES = [
          near_me(YARD_PERSON, in_front=True),
          "in front of the person wherever they stand, resting on the floor",
          person=YARD_PERSON),
+    # A conversation: "Three." means nothing without the turn before it. The
+    # chat has to have asked, not built, and then build exactly that many.
+    Case("crates-how-many", "yard", "Three.",
+         several_near_me(YARD_PERSON, 3),
+         "a conversation: asked to ask how many first, then told only 'Three.'",
+         person=YARD_PERSON,
+         before=["I'd like some wooden crates in front of me. Ask me how many before you "
+                 "put any down."]),
 ]
 
 
@@ -1453,6 +1496,14 @@ RECIPES: dict[str, tuple[Any, ...]] = {
         ("add_object", {"object": {"name": "wooden crate", "shape": "box", "material": "oak",
                                    "size_m": [0.32, 0.32, 0.32], "position_m": [0.8, 1.6]}}),
     ], {"keep_room": True}),
+    # Three crates in a row a metre in front of the person, 0.45 m apart along
+    # their left-right, so each is within reach and none touches the next.
+    "crates-how-many": ("crates-how-many", [
+        ("add_object", {"object": {"name": f"wooden crate {k + 1}", "shape": "box",
+                                   "material": "oak", "size_m": [0.32, 0.32, 0.32],
+                                   "position_m": at}})
+        for k, at in enumerate([[0.53, 1.96], [0.8, 1.6], [1.07, 1.24]])
+    ], {"keep_room": True}),
 }
 
 
@@ -1462,7 +1513,8 @@ SHOW_S = {"hearth": 80.0, "heated-piston": 20.0, "iron-wont-burn": 10.0, "domino
           "pendulum": 6.0, "sliding": 5.0, "bounce": 4.0, "ice-breaks": 4.0, "pane-breaks": 4.0,
           "drop-on-glass": 4.0, "dent": 3.0, "projectile": 3.0,
           "dam-river": 20.0, "drain-pond": 20.0, "log-river": 10.0,
-          "ball-near-me": 3.0, "ball-by-the-river": 3.0, "crate-in-front": 3.0}
+          "ball-near-me": 3.0, "ball-by-the-river": 3.0, "crate-in-front": 3.0,
+          "crates-how-many": 3.0}
 
 # Cases whose room is right to be moving when the check is over, and why --
 # said in the report instead of being flagged as a room that will not settle.
@@ -1480,5 +1532,6 @@ GROUPS = [
     ("Cutting", ["cut-rope", "cut-panel"]),
     ("Terrain and water", ["dam-river", "drain-pond", "log-river", "boulder-dug"]),
     ("Where the person is", ["ball-near-me", "ball-by-the-river", "crate-in-front"]),
+    ("A conversation", ["crates-how-many"]),
     ("Changing what is already there", ["courtyard-unbar"]),
 ]

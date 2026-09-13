@@ -1144,14 +1144,20 @@ class Handler(BaseHTTPRequestHandler):
                 # "near me" and "over there" mean somewhere. Checked, since it
                 # arrives over HTTP, and kept with the turn's log.
                 person=world_chat.where_the_person_is(body.get("person"))
+                # The conversation so far in this room goes with the request, so
+                # "confirmed" answers what the room asked; this turn is kept for
+                # the next, failed or not.
+                room=app.room
                 try:
-                    answer=world_chat.ask(app.api_key,app.model,app.room,session.state,message,
+                    answer=world_chat.ask(app.api_key,app.model,room,session.state,message,
                                           [str(s)[:200] for s in (body.get("story") or [])][-24:],
-                                          trace=trace,water_state=live_water(session,app.room.spec),
-                                          person=person)
+                                          trace=trace,water_state=live_water(session,room.spec),
+                                          person=person,history=room.chat)
                 except Exception as failure:
+                    world_chat.remember_turn(room.chat,message,None,failure=str(failure)[:300])
                     remember_chat(app,message,trace,None,failure,_now()-began,person)
                     raise
+                world_chat.remember_turn(room.chat,message,answer)
                 remember_chat(app,message,trace,answer,None,_now()-began,person)
                 if answer.pop("changed",False):
                     if app.room.bodies():

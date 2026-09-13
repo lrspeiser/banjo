@@ -66,17 +66,32 @@ bank, use one_metre_to_the_left_m or one_metre_to_the_right_m instead, whichever
 survey says is dry and level. Without the_person you do not know where they
 are: say where you put things.
 
+THE CONVERSATION. The turns before this one come before it: what the person
+said and what you answered, with what you did. A short answer -- "yes",
+"confirmed", "three", "the last one" -- answers what you last asked or
+offered: do that, as you said you would. What is in the room now is
+objects_now, not what an earlier turn says was built; if something you built
+is gone, say so.
+
 PUTTING THINGS DOWN. add_object with the object's position_m as [x, z] --
 inside object, like {"object": {"name": "ball", ..., "position_m": [x, z]}} --
 sets the thing down on whatever is under that point: the ground, the floor or
 the top of what is there. The answer's set_down says what it rests on. Use
 that for anything meant to rest somewhere. Give [x, y, z] only to hold a thing
-up in the air: to fall, or to hang from something. If an answer has in_water,
+up in the air: to fall, or to hang from something; then the answer's
+in_the_air says how far it will fall, and if you meant it to rest, take it out
+and add it again with [x, z]. If an answer has in_water,
 the thing is in water: say so in your reply, and unless they asked for it in
 the water, take it out and set it down again on dry, level ground within their
 reach -- survey says where the ground is dry and how steep it is, and a ball
 on a slope rolls. A tool that answers with an error did nothing: never say it
 was done. Do what the error says and try again, or tell them what went wrong.
+
+MATERIALS. There are eight: iron, aluminum, glass, ceramic, oak, rubber, ice
+and concrete (list_materials says what each does). Asked for anything else --
+gold, silver, steel, stone -- say it is not one of them and offer the nearest
+that is (iron is the densest; concrete stands in for stone), and name a thing
+for what it is made of: an iron bar is not a gold bar.
 
 THE GRID AND THE BUDGET. Matter is built from cubic cells; the_room says the
 cell size (usually 0.04 m) and how many cells are left. Every side is rounded
@@ -504,6 +519,41 @@ def _did(name: str, args: dict[str, Any], answer: dict[str, Any]) -> str:
     return f"{name} {args.get('a')} to {args.get('b')}"
 
 
+# The conversation. The model is sent the turns before this one, so an answer
+# to its own question -- "confirmed", "three", "the last one" -- means
+# something. Sent only the newest message, a room asked "which pit, and how
+# many bars?" was answered "confirmed", described the room and built nothing.
+KEEP_TURNS = 40        # turns a room remembers
+SEND_TURNS = 12        # of those, how many go to the model with each request
+SAID_CHARS = 2000      # a turn's words are cut to this, each way
+
+
+def remember_turn(history: list[dict[str, Any]], message: str,
+                  answer: dict[str, Any] | None, failure: str | None = None) -> None:
+    """Keep one turn with the room it was said in: what was asked, what the room
+    answered -- or that the request failed -- and what it did."""
+    replied = (str((answer or {}).get("reply") or "") if failure is None
+               else f"(that request failed: {failure})")
+    history.append({"asked": str(message)[:SAID_CHARS],
+                    "replied": replied[:SAID_CHARS] or "(nothing said)",
+                    "did": [str(d) for d in list((answer or {}).get("did") or [])[:20]]})
+    del history[:-KEEP_TURNS]
+
+
+def _earlier_turns(history: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """The turns before this one, as the model's own conversation: what the
+    person said, then what the room answered and did."""
+    messages: list[dict[str, Any]] = []
+    for turn in (history or [])[-SEND_TURNS:]:
+        did = turn.get("did") or []
+        messages.append({"role": "user", "content": str(turn.get("asked") or "")[:SAID_CHARS]
+                                                    or "(nothing)"})
+        messages.append({"role": "assistant",
+                         "content": (str(turn.get("replied") or "(nothing said)")[:SAID_CHARS]
+                                     + (f" [did: {', '.join(did)}]" if did else ""))})
+    return messages
+
+
 REACH_M = 1.2   # how far the room's hand reaches: playground/world.js, REACH_M
 
 
@@ -558,7 +608,8 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
         message: str, story: list[str],
         trace: list[dict[str, Any]] | None = None,
         water_state: dict[str, Any] | None = None,
-        person: Any = None) -> dict[str, Any]:
+        person: Any = None,
+        history: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """One turn. Returns what to say, what was changed, and whether to reopen.
 
     `live_state` is the world as the ENGINE has it -- pieces, dents and all --
@@ -605,7 +656,9 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
                 opening["the_water"] = room_world.banjo_mcp._water_said(entry["world"], full=True)
             except Exception:   # noqa: BLE001 - a summary; the tools say it all again
                 pass
-        conversation: list[dict[str, Any]] = [
+        # The turns before this one, then this one: "three" answers a question
+        # only if the question is there to answer.
+        conversation: list[dict[str, Any]] = _earlier_turns(history) + [
             {"role": "user", "content": json.dumps(opening, allow_nan=False)}]
         did: list[str] = []
         changed = False

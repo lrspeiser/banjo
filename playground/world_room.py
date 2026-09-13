@@ -903,6 +903,10 @@ class Room:
     def __init__(self, scene: str = "bench") -> None:
         self.scene = scene if scene in SCENES else "bench"
         self.spec = SCENES[self.scene]()
+        # What has been said in this room, turn by turn: kept with the room, as
+        # what the chat built is, so a room switched back to picks its
+        # conversation up again, and a fresh room starts a new one.
+        self.chat: list[dict[str, Any]] = []
 
     def bodies(self) -> list[dict[str, Any]]:
         return self.spec["bodies"]
