@@ -205,8 +205,8 @@ void whatIsReportedCanActuallyBreak() {
     //
     // This test used to load the shelf with five 300 mm crates and put it into
     // a few milliseconds of the DYNAMIC lattice with the bottom crate and
-    // nothing under it -- no pier -- and it came out in 19 pieces. Traced
-    // (tests/thermal_geometry_tests.cpp, BANJO_ISLAND_TRACE): shelf and crate
+    // nothing under it -- no pier -- and it came out in 19 pieces. Traced with
+    // a print of every island's bodies (since removed): shelf and crate
     // fell freely together there, and what broke the shelf was the crate's
     // resting cells, sunk millimetres into it by the rigid solver's contact
     // allowance, being pushed out -- not the load. A load is now answered by

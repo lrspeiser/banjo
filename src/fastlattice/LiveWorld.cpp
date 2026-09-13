@@ -4050,10 +4050,12 @@ std::size_t LiveWorld::applyPending() {
         answer.cost_ms = job.cost_ms;
         impl_->delays.push_back({impl_->time_s, name, "statics", 100.0 * job.statics.first_failure_ratio,
                                  job.cost_ms});
-        // It held: remember against what, so the same question is not asked
-        // again until heat weakens it or more is put on it.
+        // Still whole -- it held, or statics could not say (a solve that did not
+        // converge, a round limit): remember against what, so the same question
+        // is not asked again until heat weakens it or more is put on it. Asked
+        // again unchanged, it would get the same answer at the same cost.
         impl_->statics_held.erase(name);
-        if (job.statics.stop == "held")
+        if (job.statics.stop != "broke")
             for (const LiveOverload &o : impl_->overloaded)
                 if (o.name == name) impl_->statics_held[name] = {o.capacity_fraction, o.carrying_n};
     }

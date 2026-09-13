@@ -17,8 +17,9 @@
 // it, held up where it rests on something; the ONE shared failure criterion
 // (fracture/BondFailure.hpp, unchanged) is applied to the strain that gives;
 // every bond past it is removed, the lattice is solved again, and so on until
-// nothing more fails. Pieces are what is left connected. Nothing is precut,
-// animated or pushed.
+// nothing more fails or it breaks through between its supports. Pieces are
+// what is left connected.
+// Nothing is precut, animated or pushed.
 //
 // What statics cannot say, it says it cannot: supports are unilateral (a piece
 // that would have to be pulled down to stay put is let go, and rigid modes it
@@ -53,9 +54,13 @@ struct SustainedLoadSettings {
 
 struct SustainedLoadResult {
     bool converged{};
-    // "held" (nothing reached the criterion), "broke" (bonds were removed and
-    // the rest then held), "fell apart" (a piece lost every support), or why
-    // it stopped: "no support", "did not converge", "round limit".
+    // "held": nothing more reaches the criterion at this load and it is still
+    // in the pieces it was given (bonds_removed says whether it cracked);
+    // "broke": it came apart -- statics stops as soon as the supports it bears
+    // on are in different pieces, because what they do next is motion, and a
+    // chip that comes off without parting them is solved on without; or why it
+    // stopped: "supports did not settle", "did not converge" (with the solver's
+    // reason), "round limit".
     std::string stop;
     unsigned rounds{};
     unsigned solves{};

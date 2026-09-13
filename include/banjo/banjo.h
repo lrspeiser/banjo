@@ -1233,7 +1233,13 @@ typedef struct {
      * says why): the answer is still given, and said to be outside. */
     int supported;
     /* ---- ABI 19: one material state (docs/thermal-mechanics.md) -----------
-     * The box its matter is measured against -- as authored, or the cells' box
+     * Bending on the compression side of the section, now and if it cooled
+     * now. The load survey takes the weaker side, and oak gives on its
+     * compression side first (0.25 of it at 100 degC against 0.65 in
+     * tension); bending and bending_if_cooled above are the tension side. */
+    double bending_compression;
+    double bending_compression_if_cooled;
+    /* The box its matter is measured against -- as authored, or the cells' box
      * a piece broke off as; dimensions_m above is this box -- and the part of it
      * not burned away, which is what collides and what is drawn. The section
      * is taken across the reference box with the burned depth inside it, so

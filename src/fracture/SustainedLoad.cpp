@@ -61,7 +61,31 @@ SustainedLoadResult solveSustainedLoad(ActiveMatter &matter, const SustainedLoad
 
     StaticLatticeSolver solver(matter);
     std::vector<std::uint32_t> component_of = componentOfNode(matter);
+    const auto piecesIn = [](const std::vector<std::uint32_t> &of) {
+        return of.empty() ? std::size_t{0}
+                          : static_cast<std::size_t>(*std::max_element(of.begin(), of.end())) + 1;
+    };
+    // What it came in as: a lattice its dead bonds already part (char carries
+    // nothing) is not broken again by being asked.
+    const std::size_t pieces_given = piecesIn(component_of);
     std::vector<std::uint32_t> supports = scene.supported_nodes;
+    // Whether the supports it bears on are in more than one piece: the load
+    // path between them has been cut.
+    const auto supportsParted = [&](const std::vector<std::uint32_t> &of) {
+        bool seen = false;
+        std::uint32_t first = 0;
+        for (const std::uint32_t node : supports) {
+            if (node >= of.size()) continue;
+            if (!seen) {
+                first = of[node];
+                seen = true;
+            } else if (of[node] != first) {
+                return true;
+            }
+        }
+        return false;
+    };
+    const bool parted_given = supportsParted(component_of);
     StaticSolveSettings solve_settings;
     solve_settings.relative_tolerance = settings.relative_tolerance;
     solve_settings.maximum_iterations = settings.maximum_iterations;
@@ -133,14 +157,31 @@ SustainedLoadResult solveSustainedLoad(ActiveMatter &matter, const SustainedLoad
             modes.push_back(damage.mode);
         }
         if (failing.empty()) {
+            // Nothing more fails at this load. It held -- cracked on the way
+            // (bonds_removed) or not -- unless pieces came off it as it went.
             out.converged = true;
-            out.stop = out.bonds_removed > 0 ? "broke" : "held";
+            out.stop = piecesIn(component_of) > pieces_given ? "broke" : "held";
             break;
         }
         (void)removeBondsAtCurrentState(matter, failing, modes);
         out.bonds_removed += failing.size();
         solver.rebuild();
         component_of = componentOfNode(matter);
+        // Broken through between its supports. What its pieces do from here is
+        // motion, which the rigid world answers; went on, statics would keep the
+        // load where it was on pieces that are falling. It did, once: a concrete
+        // shelf under five 450 mm iron crates was in 70 pieces after three
+        // rounds, and a fourth solve on those pieces spent 840 ms running out of
+        // its iteration budget and said "did not converge" over a shelf in
+        // pieces. A chip that comes off without parting the supports is not
+        // that: the rest still spans between them and is solved again without
+        // it. (Stopping at the first chip instead left the owner's heated beam
+        // 7 cells lighter and carrying its 212 kg cube on a section that read 0%.)
+        if (!parted_given && supportsParted(component_of)) {
+            out.converged = true;
+            out.stop = "broke";
+            break;
+        }
         if (round + 1 == settings.maximum_rounds) out.stop = "round limit";
     }
     place();

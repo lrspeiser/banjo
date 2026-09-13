@@ -1230,7 +1230,10 @@ int banjo_bodies_mechanics(const banjo_world *world, banjo_body_mechanics *out, 
             o.shear_if_cooled = s.shear_if_cooled;
             o.bending_if_cooled = s.bending_if_cooled;
             o.supported = s.supported ? 1 : 0;
-            // ABI 19: what is left of it, from the same state.
+            // ABI 19: the compression side of the section, and what is left of
+            // it, from the same state.
+            o.bending_compression = s.bending_compression;
+            o.bending_compression_if_cooled = s.bending_compression_if_cooled;
             writeVec(m.reference_m, o.reference_m);
             writeVec(m.remaining_m, o.remaining_m);
             o.remaining_volume_m3 = m.remaining_volume_m3;

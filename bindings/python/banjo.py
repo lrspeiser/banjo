@@ -275,7 +275,10 @@ class _BodyMechanics(ctypes.Structure):
                 ("shear_if_cooled", ctypes.c_double),
                 ("bending_if_cooled", ctypes.c_double),
                 ("supported", ctypes.c_int),
-                # ABI 19: what is left of it, from the same state.
+                # ABI 19: the compression side of the section, and what is
+                # left of it, from the same state.
+                ("bending_compression", ctypes.c_double),
+                ("bending_compression_if_cooled", ctypes.c_double),
                 ("reference_m", ctypes.c_double * 3),
                 ("remaining_m", ctypes.c_double * 3),
                 ("remaining_volume_m3", ctypes.c_double),
@@ -767,6 +770,10 @@ class BodyMechanics:
     # what is drawn; the rigid body it is now; its cells; and what a fracture
     # run gives its lattice -- the weakest and mean tension factor over its
     # bonds and their mean stiffness factor, 1 cold -- from the same state.
+    # bending_compression is the compression side of the section, which the
+    # load survey reads beside the tension side (`bending`): the weaker governs.
+    bending_compression: float = 1.0
+    bending_compression_if_cooled: float = 1.0
     reference_m: tuple[float, float, float] = (0.0, 0.0, 0.0)
     remaining_m: tuple[float, float, float] = (0.0, 0.0, 0.0)
     remaining_volume_m3: float = 0.0
@@ -2054,6 +2061,8 @@ class World:
                               bending=m.bending, tension_if_cooled=m.tension_if_cooled,
                               shear_if_cooled=m.shear_if_cooled,
                               bending_if_cooled=m.bending_if_cooled, supported=bool(m.supported),
+                              bending_compression=m.bending_compression,
+                              bending_compression_if_cooled=m.bending_compression_if_cooled,
                               reference_m=tuple(m.reference_m), remaining_m=tuple(m.remaining_m),
                               remaining_volume_m3=m.remaining_volume_m3, mass_kg=m.mass_kg,
                               inertia_kg_m2=tuple(m.inertia_kg_m2), cells=int(m.cells),
