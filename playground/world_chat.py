@@ -50,7 +50,8 @@ rope pulls it.
 
 UNITS AND AXES. Metres. x runs left and right, y is up, z runs toward the
 person. The floor is y = 0 and objects rest ON it, so a thing standing on the
-floor has its centre at half its own height.
+floor has its centre at half its own height. In the valley the ground is not
+flat: see TERRAIN AND WATER.
 
 THE GRID AND THE BUDGET. Matter is built from cubic cells; the_room says the
 cell size (usually 0.04 m) and how many cells are left. Every side is rounded
@@ -318,6 +319,64 @@ turns the edge a quarter turn; facing down, the same drag leads with the
 flat, and the rope swings and holds. Click again to let go. Tell them this
 in your answer.
 
+TERRAIN AND WATER. The valley is real ground -- rock, soil and sand, made once
+by physics -- with a river running along it from west to east (along +x, from
+x -19 to x 19) and a pond beside it. There y = 0 is not the floor: the ground
+is where survey says it is. The water is real too: it flows downhill, fills
+what it can, rises behind what is in its way, and lifts and carries what is in
+it. Whether a thing floats is its density against the water's: oak (700
+kg/m3) floats with 70% of itself under water; concrete, iron and glass sink.
+the_ground and the_water in your first message say where everything is.
+- survey(at_m [x, z]), or survey(from_m, to_m, every_m) along a line: the
+  ground's height, what it is made of, and the water's depth, level and speed.
+  Survey ACROSS the river, along z, and the wet stretch is the river.
+- water_state: each pond's level, the river every 2 m along its course (x, z,
+  level, depth, speed), what is in the water and whether it floats.
+- add_object on this ground: x and z where it goes, y roughly; a thing asked
+  for inside the ground is set on top of it, and the answer says so.
+- dig(from_m, to_m, width_m, depth_m): a trench, or a pit at one point. What
+  stood on the dug ground falls if nothing else holds it up, loose banks slump
+  in, and water runs in if the trench is lower than the water. What comes out
+  is carried; fill(at_m, volume_m3, material) heaps only that back.
+- cut_block(name, at_m, size_m): a block of stone out of bare level rock --
+  the flat top of the knoll, at about [-9.1, 4.75] -- as a loose object.
+- set_river(discharge_m3_s): a flood or a drought, from now.
+Water takes time. Run 20 s, and again for a pond to empty, and read
+water_state before and after: that is how a level rising or falling is seen.
+
+A dam that backs the river up (3 m upstream of it the river rose from 0.49 to
+0.69 m in 30 s, and the blocks held):
+  survey from_m [0.64, 0.24] to_m [0.64, 6.24] every_m 0.24: at x 0.64 the
+    river is wet from z 1.5 to z 4.5, about 0.27 m deep
+  add_object dam stone 1 to dam stone 9, each concrete [0.32, 0.48, 0.48], at
+    [0.64, 0.5, z] for z = 1.04, 1.52, 2.0, 2.48, 2.96, 3.44, 3.92, 4.4, 4.88:
+    side by side across the whole wet stretch and onto each bank. Each is set
+    on the bed or the bank under it. Centres on the 0.04 m grid, 0.48 m apart,
+    so neighbours touch and do not share a cell -- at z 1.02 and 1.5 they do,
+    and the room refuses them. Nine of these are 10,368 cells of the room's
+    16,000; nine 0.96 m tall would be twice what the room may hold.
+  run 20 s twice, then water_state: the level upstream of the dam has risen.
+
+A channel that drains the pond (its level fell 0.35 m in 30 s):
+  water_state: the pond is at [4.77, -2.73], its level 0.86 m
+  dig from_m [4.77, -2.73] to_m [4.77, 2.27] width_m 0.8 depth_m 0.7: from the
+    middle of the pond north to the low ground by the river, below the pond's
+    level all the way
+  run 20 s twice, then water_state: the pond's level has fallen.
+
+A log that floats down the river (it drifted 11.9 m downstream in 15 s, and
+water_state said it floats):
+  add_object oak log oak [0.96, 0.24, 0.24] at [-13, 0.92, 2.24]: in the river
+    where water_state's every_2_m says it runs, a little above the water
+  run 15 s: it floats east with the current, and water_state says it floats.
+
+A boulder to dig out from under (dug under, it fell 0.32 m into the pit):
+  add_object boulder concrete [0.48, 0.48, 0.48] at [0.64, 1.04, 6.0]: on the
+    sand of the bank, 1.5 m from the water
+  then tell the person: aim at the ground right beside it and press Dig here,
+  and the pit takes the ground from under it. Do not dig it yourself unless
+  they ask: a pit you dig is dug in their room too.
+
 TRY IT BEFORE YOU SAY IT WORKS. The world you build in is a real engine world.
 Use the mechanism the way a person would: pick_up the handle (or the leaf, or
 the grate), place it where a hand would pull it -- a quarter turn round the
@@ -406,12 +465,23 @@ def _did(name: str, args: dict[str, Any], answer: dict[str, Any]) -> str:
                 f"for {args.get('seconds')} s")
     if name == "blade":
         return f"gave {args.get('body')} an edge"
+    if name == "make_terrain":
+        return f"made the ground: {args.get('kind') or 'valley'}"
+    if name == "dig":
+        return f"dug {answer.get('dug_m3')} m3 out at {args.get('from_m')}"
+    if name == "fill":
+        return f"heaped {answer.get('heaped_m3')} m3 of {answer.get('of')} at {args.get('at_m')}"
+    if name == "cut_block":
+        return f"cut {answer.get('cut')} out of the rock"
+    if name == "set_river":
+        return f"set {answer.get('river')} to {answer.get('discharge_m3_s')} m3/s"
     return f"{name} {args.get('a')} to {args.get('b')}"
 
 
 def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
         message: str, story: list[str],
-        trace: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        trace: list[dict[str, Any]] | None = None,
+        water_state: dict[str, Any] | None = None) -> dict[str, Any]:
     """One turn. Returns what to say, what was changed, and whether to reopen.
 
     `live_state` is the world as the ENGINE has it -- pieces, dents and all --
@@ -424,13 +494,16 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
     tool it called with its arguments, and the answer it got back. The answers
     are the part worth having -- a refusal is the only record of WHY a request
     did not make it into the room.
+
+    `water_state` is the running room's water, when it stands on ground: the
+    model's copy of the room then holds the water as the person sees it.
     """
     if not api_key:
         raise ValueError("OPENAI_API_KEY is not set in the local .env, so the room has "
                          "nobody to talk to. Add it and restart the server. Everything "
                          "else on this page works without it.")
 
-    world_id = room_world.open_room(room.spec)
+    world_id = room_world.open_room(room.spec, water_state=water_state)
     entry = room_world.entry_of(world_id)
     started = time.perf_counter()
     try:
@@ -441,6 +514,15 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
                                 "cells_used": entry["cells"],
                                 "cells_left": max(0, entry["max_cells"] - entry["cells"]),
                                 "joints": len(entry["joints"])}}
+        if entry["scene"].get("terrain") and entry.get("world") is not None:
+            # The ground and the water as they are now, so a dam or a channel
+            # can be placed from the first round rather than after a survey.
+            try:
+                opening["the_ground"] = room_world.banjo_mcp._ground_said(
+                    entry["world"].environment_report())
+                opening["the_water"] = room_world.banjo_mcp._water_said(entry["world"], full=True)
+            except Exception:   # noqa: BLE001 - a summary; the tools say it all again
+                pass
         conversation: list[dict[str, Any]] = [
             {"role": "user", "content": json.dumps(opening, allow_nan=False)}]
         did: list[str] = []

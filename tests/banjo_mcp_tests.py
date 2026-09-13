@@ -884,6 +884,68 @@ class TheTools(unittest.TestCase):
         # And the server is still answering afterwards.
         self.assertTrue(self.client.call("describe_world", world_id=world_id)["objects"])
 
+    def valley(self):
+        """A world with the generated valley under it: made once, cached."""
+        world_id = self.client.call("create_world", cell_size_m=0.04, objects=[
+            {"name": "marker stone", "shape": "box", "material": "concrete",
+             "size_m": [0.08, 0.08, 0.08], "position_m": [-18, -2.6, -14],
+             "anchored": True}])["world_id"]
+        return world_id, self.client.call("make_terrain", world_id=world_id, kind="valley")
+
+    def test_a_river_backs_up_behind_a_dam_and_a_pond_drains_down_a_channel(self):
+        """The ground and the water are physics a model can use: a survey finds
+        the river, blocks set across it back it up, and a channel dug from the
+        pond lets it out. Every level here is the engine's."""
+        world_id, made = self.valley()
+        self.assertEqual(made["ground"]["kind"], "valley")
+        pond = made["water"]["ponds"][0]
+        across = self.client.call("survey", world_id=world_id, from_m=[0.62, 0.25],
+                                  to_m=[0.62, 6.25], every_m=0.25)
+        wet = [row for row in across["along"] if row[4] > 0.02]
+        self.assertTrue(wet, "no river where the valley says it runs")
+
+        def upstream(state):
+            return min(state["the_river_runs"]["every_2_m"], key=lambda p: abs(p[0] + 2.38))[2]
+
+        before = upstream(self.client.call("water_state", world_id=world_id))
+        z, k = wet[0][1] - 0.48, 0
+        while z <= wet[-1][1] + 0.48:
+            k += 1
+            placed = self.client.call("add_object", world_id=world_id, object={
+                "name": f"dam stone {k}", "shape": "box", "material": "concrete",
+                "size_m": [0.48, 0.96, 0.48], "position_m": [0.62, 0.5, z]})
+            self.assertIn("seated_on_the_ground", placed, "a block asked for inside the ground")
+            z += 0.48
+        self.client.call("run", world_id=world_id, seconds=20)
+        after = self.client.call("water_state", world_id=world_id)
+        self.assertGreater(upstream(after) - before, 0.05, "the river did not back up behind the dam")
+        self.assertLess(abs(after["ledger"]["unaccounted_m3"]), 1e-6)
+
+        # Ground does not come from nowhere: nothing has been dug yet.
+        self.assertIn("nowhere", self.client.refuse("fill", world_id=world_id, at_m=[5, 5],
+                                                    volume_m3=0.5, material="soil"))
+        dug = self.client.call("dig", world_id=world_id, from_m=pond["at_m"],
+                               to_m=[pond["at_m"][0], pond["at_m"][1] + 5.0], width_m=0.8,
+                               depth_m=0.7)
+        self.assertGreater(dug["dug_m3"], 1.0)
+        ran = self.client.call("run", world_id=world_id, seconds=20)
+        now = ran["water"]["ponds"][0]
+        self.assertTrue(now["level_m"] is None or now["level_m"] < pond["level_m"] - 0.1,
+                        f"the pond did not drain: {pond['level_m']} -> {now['level_m']}")
+
+    def test_oak_in_the_river_floats_and_drifts_downstream(self):
+        world_id, made = self.valley()
+        x, z, level = made["water"]["the_river_runs"]["every_2_m"][3][:3]
+        added = self.client.call("add_object", world_id=world_id, object={
+            "name": "oak log", "shape": "box", "material": "oak",
+            "size_m": [0.96, 0.24, 0.24], "position_m": [x, level + 0.3, z]})
+        self.assertIn("in_water", added)
+        ran = self.client.call("run", world_id=world_id, seconds=15)
+        log = next(o for o in ran["objects"] if o["name"] == "oak log")
+        self.assertGreater(log["position_m"][0] - x, 1.0, "the current did not carry it")
+        held = {w["object"]: w for w in ran["water"]["in_the_water"]}
+        self.assertTrue(held["oak log"]["floats"], held["oak log"])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

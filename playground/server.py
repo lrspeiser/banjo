@@ -1135,10 +1135,15 @@ class Handler(BaseHTTPRequestHandler):
                 trace=[]
                 from time import perf_counter as _now
                 began=_now()
+                # The ground the room stands on now, and the water on it: the
+                # chat builds in a copy of the room as it IS -- the pond as low
+                # as a channel has let it fall -- and the room opened again
+                # afterwards on the same ground keeps the same water.
+                ground_was=json.dumps((app.room.spec.get("terrain") or {}).get("generate"),sort_keys=True)
                 try:
                     answer=world_chat.ask(app.api_key,app.model,app.room,session.state,message,
                                           [str(s)[:200] for s in (body.get("story") or [])][-24:],
-                                          trace=trace)
+                                          trace=trace,water_state=live_water(session,app.room.spec))
                 except Exception as failure:
                     remember_chat(app,message,trace,None,failure,_now()-began)
                     raise
@@ -1151,7 +1156,7 @@ class Handler(BaseHTTPRequestHandler):
                         # room again from what it has become. Everything in
                         # flight lands back where it was authored to; that is
                         # the cost, and it is said out loud rather than hidden.
-                        opened=app.live.open(app,{"spec":app.room.spec})
+                        opened=app.live.open(app,{"spec":with_water(session,app.room.spec,ground_was)})
                         answer["reopened"]=True
                         answer["session"]=opened["session"]
                         answer["state"]=opened
@@ -1170,7 +1175,10 @@ class Handler(BaseHTTPRequestHandler):
                                          " be added and it will be built.").strip()
                 return self.send(answer)
             if path=="/api/live/open": return self.send(self.server.app.live.open(self.server.app,body))
-            if path=="/api/live/act": return self.send(self.server.app.live.act(body))
+            if path=="/api/live/act":
+                answer=self.server.app.live.act(body)
+                remember_ground(self.server.app,body)
+                return self.send(answer)
             # Save the frame the 3D viewer is showing. The page cannot write
             # a file and cannot reach any other origin, so the one way a
             # result leaves the tab it was rendered in is through here.
@@ -1272,6 +1280,67 @@ def remember_chat(app, message, trace, answer, failure, wall_s):
         log.warning("chat: could not keep the transcript: %s", problem)
 
 
+def live_water(session,spec):
+    """The water in the running room, for the next world opened on the same
+    ground: the chat's copy, or the room opened again after the chat. None
+    when the room has no ground or its water cannot be read."""
+    if not isinstance(spec,dict) or not spec.get("terrain") or session is None: return None
+    try:
+        state=session.send(op="environment_state").get("state")
+    except Exception as problem:
+        log.warning("water: could not read the running room's water: %s",problem)
+        return None
+    return state if isinstance(state,dict) and state.get("depth_b64") else None
+
+
+def with_water(session,spec,ground_was):
+    """The room's spec with the running room's water in it, when the world is
+    about to open on the ground that water stands on -- a new valley is new
+    water. Handed to the world being opened and never kept in the room: what
+    the room IS is its ground and what stands on it."""
+    if json.dumps((spec.get("terrain") or {}).get("generate"),sort_keys=True)!=ground_was: return spec
+    state=live_water(session,spec)
+    if state is None: return spec
+    return dict(spec,water=dict(spec.get("water") or {},state=state))
+
+
+# As many as a room's terrain may hold; see fracture_lab.normalise_terrain.
+MAX_GROUND_EDITS=400
+
+
+def remember_ground(app,body):
+    """A spade in the person's hand changes the ground for good.
+
+    The ground is part of what the room IS, not something in flight in it: a
+    pit dug with Dig here is still a pit when the room is opened again -- after
+    the chat changes something, or on a reload -- and the chat's own copy of the
+    room has it too. So a dig or a heap the engine made is written into the
+    room's terrain edits, as the engine was asked for it. Asking the chat to
+    make the valley again gives the untouched ground back."""
+    if not isinstance(body,dict) or body.get("op") not in ("dig","deposit"): return
+    room=getattr(app,"room",None)
+    spec=getattr(room,"spec",None)
+    if not isinstance(spec,dict) or not spec.get("terrain"): return
+    terrain=dict(spec["terrain"])
+    edits=list(terrain.get("edits") or [])
+    if len(edits)>=MAX_GROUND_EDITS:
+        log.warning("ground: the room already holds %d edits; this one stays in the running world only",
+                    len(edits))
+        return
+    def xz(key,default=None):
+        value=body.get(key,default)
+        return [float(value[0]),float(value[-1])]
+    if body["op"]=="dig":
+        start=xz("from")
+        edits.append({"dig":{"from_m":start,"to_m":xz("to",start),
+                             "width_m":float(body.get("width_m",1.0)),"depth_m":float(body.get("depth_m",0.5))}})
+    else:
+        edits.append({"deposit":{"at_m":xz("at"),"radius_m":float(body.get("radius_m",1.0)),
+                                 "sand_m3":float(body.get("sand_m3",0.0)),"soil_m3":float(body.get("soil_m3",0.0))}})
+    terrain["edits"]=edits
+    room.spec=dict(spec,terrain=terrain)
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port",type=int,default=8765)
@@ -1289,6 +1358,10 @@ def main():
                         help="drive live worlds through the C library in this process")
     args=parser.parse_args()
     if not 1024<=args.port<=65535: parser.error("Use a port in 1024..65535")
+    # The valley is made once by physics and kept: every world that opens on it
+    # -- the room's and the chat's -- reads the same saved ground rather than
+    # making it again. Under build/, beside everything else this server writes.
+    os.environ.setdefault("BANJO_TERRAIN_CACHE",str(ROOT/"build"/"terrain-cache"))
     # Whatever the engine says it waited on goes to the log, at the level the
     # rest of the server uses.
     logging.basicConfig(level=logging.INFO,format="%(asctime)s %(message)s")

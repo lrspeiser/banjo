@@ -506,6 +506,10 @@ LEFT_OUT = {
     "loaded-shelf": "it slows any room it is in to a crawl while the engine works out its "
                     "break; the realtime rule stops it in every run",
     "courtyard-unbar": "it is an edit to the courtyard, which is a room of its own",
+    "dam-river": "it is built in the valley's river, and the valley is a room of its own",
+    "drain-pond": "it is dug in the valley's ground, and the valley is a room of its own",
+    "log-river": "it floats in the valley's river, and the valley is a room of its own",
+    "boulder-dug": "it rests on the valley's bank, and the valley is a room of its own",
 }
 # What stops a thing that would otherwise roll or fly on into the next build:
 # (centre, size) in metres in the recipe's own frame, anchored concrete.

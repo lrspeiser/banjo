@@ -996,6 +996,196 @@ class Case:
     accept_no_change: Callable[[str], bool] | None = None
 
 
+# ---------------------------------------------------------------------------
+# Terrain and water: what the valley does with what was built in it
+# ---------------------------------------------------------------------------
+#
+# Every number here is the engine's: the river's level along its course, a
+# pond's depth, what the water lifts against what a thing weighs. Nothing asks
+# whether something "is a dam"; it asks whether the water rose behind it.
+
+WATER_KG_M3 = 1000.0
+MATERIAL_KG_M3 = {"iron": 7870.0, "aluminum": 2700.0, "glass": 2500.0, "ceramic": 3900.0,
+                  "oak": 700.0, "rubber": 1100.0, "ice": 917.0, "concrete": 2400.0}
+
+
+def _environment(world: World) -> dict[str, Any]:
+    return world.session.send(op="environment")["environment"]
+
+
+def _survey(world: World, x: float, z: float) -> dict[str, Any]:
+    return world.session.send(op="survey", at=[x, z])["survey"]
+
+
+def _river_at(report: dict[str, Any], x: float) -> dict[str, Any] | None:
+    path = report["water"]["river_path"]
+    return min(path, key=lambda p: abs(p["x_m"] - x)) if path else None
+
+
+def _water_closes(report: dict[str, Any]) -> bool:
+    """Mass conserved to rounding: volume - initial = in - out + numerical + residual,
+    with the residual what is left once everything else is counted."""
+    water = report["water"]
+    return abs(water["residual_m3"]) <= 1.0e-9 * max(1.0, water["volume_m3"])
+
+
+def check_dam(built: Built) -> Verdict:
+    """Water rises behind a dam of ordinary things standing in the river."""
+    world = built.world
+    report = _environment(world)
+    if not report or not report["water"]["river_path"]:
+        return Verdict(False, "there is no river in this room", {})
+
+    def in_river(body: dict[str, Any]) -> bool:
+        x, _, z = body["position_m"]
+        at = _river_at(report, x)
+        return (abs(at["x_m"] - x) <= 1.5
+                and at["wet_from_z_m"] - 0.75 <= z <= at["wet_to_z_m"] + 0.75)
+
+    dam = [b for b in world.bodies().values()
+           if not b.get("anchored") and MATERIAL_KG_M3.get(b.get("material"), 0.0) > WATER_KG_M3
+           and in_river(b)]
+    if not dam:
+        return Verdict(False, "nothing that sinks stands in the river",
+                       {"river_at_x0": _river_at(report, 0.0)})
+    x_dam = sum(b["position_m"][0] for b in dam) / len(dam)
+    up = _river_at(report, x_dam - 3.0)
+    start = {b["name"]: list(b["position_m"]) for b in dam}
+    world.seconds(30.0)
+    after = _environment(world)
+    up_after = min(after["water"]["river_path"], key=lambda p: abs(p["x_m"] - up["x_m"]))
+    moved = max(norm(sub(world.body(n)["position_m"], start[n])) for n in start if world.body(n))
+    rose = up_after["level_m"] - up["level_m"]
+    measured = {"dam": sorted(start), "dam_x_m": round(x_dam, 2), "upstream_x_m": round(up["x_m"], 2),
+                "upstream_level_m": [round(up["level_m"], 3), round(up_after["level_m"], 3)],
+                "blocks_moved_most_m": round(moved, 3),
+                "in_out_m3_s": [round(after["water"]["inflow_m3_s"], 3),
+                                round(after["water"]["outflow_m3_s"], 3)],
+                "unaccounted_m3": after["water"]["residual_m3"]}
+    if not _water_closes(after):
+        return Verdict(False, "the water's ledger does not close", measured)
+    if rose < 0.05:
+        return Verdict(False, f"3 m upstream of the dam the river rose only {rose * 1000:.0f} mm "
+                              f"in 30 s", measured)
+    return Verdict(True, f"3 m upstream of the {len(dam)}-piece dam the river rose from "
+                         f"{up['level_m']:.2f} to {up_after['level_m']:.2f} m in 30 s", measured)
+
+
+def _pond_level(world: World, pond: dict[str, Any]) -> tuple[float | None, float]:
+    """A pond's level: the highest standing water within 1.5 m of its middle,
+    and the lowest ground there, for a pond that has gone dry. Its middle alone
+    will not do: a channel dug through it is deeper than the pond round it, and
+    the water in it is the lowest, not the pond's level."""
+    cx, cz = pond["at_m"]
+    points = [(cx, cz)] + [(cx + r * math.cos(k * math.pi / 4.0), cz + r * math.sin(k * math.pi / 4.0))
+                           for r in (0.75, 1.5) for k in range(8)]
+    level, ground = None, math.inf
+    for x, z in points:
+        here = _survey(world, x, z)
+        if not here.get("on_the_ground"):
+            continue
+        ground = min(ground, here["ground_m"])
+        water = here.get("water") or {}
+        if water.get("depth_m", 0.0) > 0.01:
+            level = water["surface_m"] if level is None else max(level, water["surface_m"])
+    return level, ground
+
+
+def check_pond_drains(built: Built) -> Verdict:
+    """A channel dug from a pond to lower ground lets the pond out."""
+    world = built.world
+    report = _environment(world)
+    ponds = [p for p in (report or {}).get("water", {}).get("ponds", [])
+             if p.get("depth_now_m", 0.0) > 0.05]
+    if not ponds:
+        return Verdict(False, "there is no pond with water in it", {})
+    before = {p["name"]: _pond_level(world, p) for p in ponds}
+    world.seconds(30.0)
+    after_report = _environment(world)
+    after = {p["name"]: _pond_level(world, p) for p in ponds}
+
+    def fall(name: str) -> float:
+        (was, _), (now, ground) = before[name], after[name]
+        return 0.0 if was is None else was - (now if now is not None else ground)
+
+    fell = {n: fall(n) for n in before}
+    best = max(fell, key=fell.get)
+    measured = {"pond_level_m": {n: [before[n][0] and round(before[n][0], 3),
+                                     after[n][0] and round(after[n][0], 3)] for n in before},
+                "out_m3_s": round(after_report["water"]["outflow_m3_s"], 3),
+                "unaccounted_m3": after_report["water"]["residual_m3"]}
+    if not _water_closes(after_report):
+        return Verdict(False, "the water's ledger does not close", measured)
+    if fell[best] < 0.1:
+        return Verdict(False, f"in 30 s {best} went down only {fell[best] * 1000:.0f} mm", measured)
+    return Verdict(True, f"{best} went down {fell[best]:.2f} m in 30 s", measured)
+
+
+def check_log_floats(built: Built) -> Verdict:
+    """Oak in the river floats and the current carries it: buoyancy from what it
+    displaces, drag from how the water moves past it."""
+    world = built.world
+    logs = [b for b in world.bodies().values() if b.get("material") == "oak" and not b.get("anchored")]
+    wet = []
+    for b in logs:
+        here = _survey(world, b["position_m"][0], b["position_m"][2])
+        if (here.get("water") or {}).get("depth_m", 0.0) > 0.05:
+            wet.append(b)
+    if not wet:
+        return Verdict(False, "no oak is in the water", {"oak": [b["name"] for b in logs]})
+    start = {b["name"]: list(b["position_m"]) for b in wet}
+    world.seconds(15.0)
+    report = _environment(world)
+    held = {a["name"]: a for a in report["water"]["bodies_in_water"]}
+    drift = {n: world.body(n)["position_m"][0] - start[n][0] for n in start if world.body(n)}
+    best = max(drift, key=drift.get)
+    measured = {"start_m": start, "drifted_downstream_m": {n: round(d, 2) for n, d in drift.items()},
+                "lifted_n_of_weight_n": {n: [round(held[n]["buoyancy_n"], 1), round(held[n]["weight_n"], 1)]
+                                         for n in start if n in held}}
+    if best not in held or not held[best]["floats"]:
+        return Verdict(False, f"{best} is not floating", measured)
+    if drift[best] < 1.0:
+        return Verdict(False, f"{best} floats but went only {drift[best]:.2f} m downstream in 15 s",
+                       measured)
+    return Verdict(True, f"{best} floats -- the water holds up {held[best]['buoyancy_n']:.0f} N of "
+                         f"its {held[best]['weight_n']:.0f} N -- and went {drift[best]:.1f} m "
+                         f"downstream in 15 s", measured)
+
+
+def check_boulder_falls(built: Built) -> Verdict:
+    """Dig the ground from under a boulder and it falls: the changed ground's
+    collider is rebuilt and what it held up is woken. The dig is the person's,
+    made the way Dig here makes it: through the room, while it runs."""
+    world = built.world
+    world.seconds(2.0)   # let it come to rest where it was put
+    resting = []
+    for b in world.bodies().values():
+        if b.get("anchored") or MATERIAL_KG_M3.get(b.get("material"), 0.0) <= WATER_KG_M3:
+            continue
+        here = _survey(world, b["position_m"][0], b["position_m"][2])
+        if not here.get("on_the_ground") or (here.get("water") or {}).get("depth_m", 0.0) > 0.0:
+            continue
+        if abs(bottom(b) - here["ground_m"]) > 0.1:
+            continue
+        resting.append((volume(b) * MATERIAL_KG_M3[b["material"]], b))
+    if not resting:
+        return Verdict(False, "nothing heavy rests on dry ground", {})
+    _, boulder = max(resting, key=lambda pair: pair[0])
+    name = boulder["name"]
+    x, y0, z = boulder["position_m"]
+    width = max(boulder["dimensions_m"][0], boulder["dimensions_m"][2]) + 0.4
+    dug = world.session.send(op="dig", **{"from": [x, z], "to": [x, z], "width_m": width,
+                                          "depth_m": 0.5}).get("dug") or {}
+    world.seconds(4.0)
+    y1 = world.body(name)["position_m"][1]
+    measured = {"boulder": name, "dug_m3": round(dug.get("sand_m3", 0.0) + dug.get("soil_m3", 0.0), 3),
+                "colliders_rebuilt": dug.get("chunks_rebuilt"), "woken": dug.get("bodies_woken"),
+                "fell_m": round(y0 - y1, 3)}
+    if y0 - y1 < 0.15:
+        return Verdict(False, f"dug under, {name} went down only {(y0 - y1) * 1000:.0f} mm", measured)
+    return Verdict(True, f"dug under, {name} fell {y0 - y1:.2f} m into the pit", measured)
+
+
 CASES = [
     Case("hinged-gate", "yard", "Build a wooden gate on a hinge between two stone posts.",
          check_hinged_gate, "a hinge placed so it can swing"),
@@ -1042,6 +1232,15 @@ CASES = [
          "so I can cut the panel in two.",
          check_cut_panel, "a cut all the way through that makes pieces, with the fixings "
          "staying on the piece that holds them"),
+    Case("dam-river", "valley", "Dam the river with stone blocks so the water backs up behind them.",
+         check_dam, "a dam of ordinary objects backing a river up, with its water accounted for"),
+    Case("drain-pond", "valley", "Dig a channel to drain the pond.",
+         check_pond_drains, "a dug channel letting standing water out"),
+    Case("log-river", "valley", "Put an oak log in the river.",
+         check_log_floats, "floating by displaced volume, and drifting by drag"),
+    Case("boulder-dug", "valley",
+         "Put a big stone boulder on the river bank, where I can dig the ground out from under it.",
+         check_boulder_falls, "ground dug from under something, and only what it held woken"),
 ]
 
 
@@ -1210,6 +1409,32 @@ RECIPES: dict[str, tuple[str, list[tuple[str, dict[str, Any]]]]] = {
                    "facing": [0, 0, -1], "thickness_m": 0.04, "edge_radius_m": 0.00005,
                    "bevel_deg": 30, "grip_m": [0.28, 1.02, 1.9]}),
     ]),
+    # The valley's own room, kept as it is: its ground and its river are the
+    # generation call's, and what goes in them is these calls.
+    #
+    # A dam: nine concrete blocks side by side across the river at x 0.64,
+    # where a survey finds it wet from z 1.5 to 4.5, and onto each bank. Each is
+    # set on the bed or the bank under it. A block twelve cells wide has its
+    # centre on the 0.04 m grid, so blocks 0.48 m apart touch and do not share
+    # a cell: at 1.02 and 1.5 they did, and the room refused them. And 0.48 m
+    # tall and 0.32 m through, 1,152 cells each: nine blocks 0.96 m tall are
+    # 31,000 cells, twice what a room may hold and still run at realtime.
+    "dam-river": ("dam-river", [
+        _box(f"dam stone {k + 1}", "concrete", [0.32, 0.48, 0.48], [0.64, 0.5, round(1.04 + 0.48 * k, 2)])
+        for k in range(9)], {"keep_room": True}),
+    # A channel from the middle of the pond north to the low ground by the
+    # river, 0.8 m wide and 0.7 m deep: below the pond's level all the way.
+    "drain-pond": ("drain-pond", [
+        ("dig", {"from_m": [4.77, -2.73], "to_m": [4.77, 2.27], "width_m": 0.8, "depth_m": 0.7}),
+    ], {"keep_room": True}),
+    # An oak log in the river where it runs at x -13, a little above the water.
+    "log-river": ("log-river", [
+        _box("oak log", "oak", [0.96, 0.24, 0.24], [-13.0, 0.92, 2.24]),
+    ], {"keep_room": True}),
+    # A concrete boulder on the sand of the bank, 1.5 m from the water.
+    "boulder-dug": ("boulder-dug", [
+        _box("boulder", "concrete", [0.48, 0.48, 0.48], [0.64, 1.04, 6.0]),
+    ], {"keep_room": True}),
 }
 
 

@@ -1313,7 +1313,8 @@ RECIPES: dict[str, tuple[Any, ...]] = {
 # enough for the thing to have happened, and for a hearth to have caught.
 SHOW_S = {"hearth": 80.0, "heated-piston": 20.0, "iron-wont-burn": 10.0, "dominoes": 6.0,
           "pendulum": 6.0, "sliding": 5.0, "bounce": 4.0, "ice-breaks": 4.0, "pane-breaks": 4.0,
-          "drop-on-glass": 4.0, "dent": 3.0, "projectile": 3.0}
+          "drop-on-glass": 4.0, "dent": 3.0, "projectile": 3.0,
+          "dam-river": 20.0, "drain-pond": 20.0, "log-river": 10.0}
 
 # Cases whose room is right to be moving when the check is over, and why --
 # said in the report instead of being flagged as a room that will not settle.
@@ -1329,5 +1330,6 @@ GROUPS = [
     ("Contact and motion", ["tower", "dominoes", "bounce", "sliding", "projectile"]),
     ("Heat, fire and gas", ["hearth", "heated-piston", "iron-wont-burn"]),
     ("Cutting", ["cut-rope", "cut-panel"]),
+    ("Terrain and water", ["dam-river", "drain-pond", "log-river", "boulder-dug"]),
     ("Changing what is already there", ["courtyard-unbar"]),
 ]

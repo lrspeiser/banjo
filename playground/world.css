@@ -142,7 +142,8 @@ button:hover { background: #24323e; }
 button:disabled { opacity: .5; cursor: default; }
 button.quiet { background: transparent; }
 
-#panel footer { display: flex; justify-content: space-between; align-items: center;
+/* Wraps, so every button stays on the panel however many a room has. */
+#panel footer { display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: center;
                 gap: 8px; padding: 10px 16px; border-top: 1px solid var(--edge);
                 color: var(--dim); font-size: 12px; }
 
@@ -227,3 +228,33 @@ button.quiet { background: transparent; }
 #heat-list .much { font-variant-numeric: tabular-nums; color: rgb(255 196 140 / 0.95);
                    text-align: right; }
 #heat-note { margin: 6px 0 0; color: var(--dim); font-size: 11px; }
+
+/* The water: top left, where the heat panel goes -- which moves down under
+   it when a room has both. The surface drawn in the room is a picture of
+   these numbers. */
+#water {
+  position: fixed;
+  left: 16px;
+  top: 16px;
+  min-width: 220px;
+  max-width: min(46ch, calc(100vw - 420px));
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgb(12 16 22 / 0.72);
+  border: 1px solid rgb(255 255 255 / 0.09);
+  backdrop-filter: blur(6px);
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 5;
+}
+#water h2 {
+  margin: 0 0 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(140 205 235 / 0.85);
+}
+#water p { margin: 2px 0; color: rgb(233 237 243 / 0.92); font-variant-numeric: tabular-nums; }
+#water-cost { color: var(--dim); font-size: 11px; }
+#water:not([hidden]) ~ #heat { top: 104px; }

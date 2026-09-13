@@ -1952,8 +1952,11 @@ async function tick() {
     // While another room is being opened the server closes this one, and a
     // step already on its way comes back "no longer open": that is the switch
     // happening, not the room stopping, and open() is about to hand over the
-    // new world.
-    if (world.session === driving && !world.opening) {
+    // new world. The same while the chat is answering: when it has changed
+    // the room, the server opens it again before the answer arrives with the
+    // new world in it. A world that really stopped is still said, by the
+    // first step after.
+    if (world.session === driving && !world.opening && !world.asking) {
       $("panel-state").textContent = `The room stopped: ${error.message || error}`;
       noteError(`the room stopped: ${error.message || error}`);
       world.session = null;
@@ -2113,6 +2116,7 @@ $("ask").addEventListener("submit", async (e) => {
   say("you", text);
   const waiting = waitingFor("Reading the room and thinking it over");
   $("ask-send").disabled = true;
+  world.asking = true;
   try {
     const answer = await api("/api/world/ask", {
       session: world.session,
@@ -2156,7 +2160,7 @@ $("ask").addEventListener("submit", async (e) => {
   } catch (error) {
     waiting.done();
     say("bad", String(error.message || error));
-  } finally { $("ask-send").disabled = false; input.focus(); }
+  } finally { world.asking = false; $("ask-send").disabled = false; input.focus(); }
 });
 
 $("reset").addEventListener("click", () => open());
