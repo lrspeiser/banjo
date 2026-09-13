@@ -93,7 +93,7 @@ const world = {
   // What is being drawn, and what is being loosed. See "Latches" below: a
   // thing held by ropes with a latch on it is a drawn bow, and nothing here
   // knows the word.
-  drawn: null,            // { name, from: Vector3, latch, asked }
+  drawn: null,            // { name, from: Vector3, latch }
   loosing: null,          // { name, home: Vector3, latch, best }
   // For banjoRoom.ready(): whether a room is being opened, why the last attempt
   // failed, and how many frames have been drawn since one opened.
@@ -1595,14 +1595,32 @@ async function unlatch() {
   } catch (error) { say("bad", String(error.message || error)); }
 }
 
-// What the limbs are holding, in joules, asked for rather than pushed: joints
-// only come with a step when the SET of them changes, because sending every
-// angle sixty times a second is the traffic that was trimmed out of the reply
-// in the first place. Four times a second is enough to watch a draw.
+// Every joint, asked for: a step carries the list only when the SET of them
+// changes, because sending every angle sixty times a second is the traffic
+// that was trimmed out of the reply in the first place. What each elastic
+// holds is the exception, and comes with the step itself (takeElastics).
 async function refreshJoints() {
   const got = await act("joints", {});
   if (got && got.joints) drawJoints(got.joints);
   return got && got.joints;
+}
+
+// What each elastic holds -- its stretch, its pull and the energy in it -- as
+// the engine worked it out for the reply that has just come back. A step
+// carries a reading for every spring that changed in it, so a draw brings its
+// limbs' joules with every step, folded into the joints the page already
+// holds, by id. Everything that reads world.joints then reads this step's
+// numbers: the bow's meter, what a loose says the limbs held, the drawn
+// string's panel line. Asked for four times a second instead, the meter
+// trailed the draw by 100 mm at 0.4 m/s: 16.4 J shown at 387 mm, where the
+// engine's own trial holds 32.0 J.
+function takeElastics(readings) {
+  if (!readings || !readings.length) return;
+  const now = new Map(readings.map((r) => [r.id, r]));
+  for (const joint of world.joints) {
+    const reading = now.get(joint.id);
+    if (reading) Object.assign(joint, reading);
+  }
 }
 
 // What the elastics of ONE mechanism hold: those joined to the thing being drawn
@@ -1712,7 +1730,7 @@ async function pickUp() {
     // no bow, no names.
     if (entry && latchOn(name) && ropedTo(name)) {
       world.drawn = { name, from: entry.mesh.position.clone(),
-                      latch: latchOn(name).id, asked: 0 };
+                      latch: latchOn(name).id };
     }
     $("crosshair").classList.add("holding");
     $("label").hidden = true;
@@ -2147,6 +2165,9 @@ async function loose() {
   const use = world.use;
   const profile = world.held && world.held.bow;
   if (!profile || use.mode !== "drawing") return;
+  // What the limbs hold as the hand opens: the last step's reading, and no
+  // step runs between that reply and this release -- a loose asked for while a
+  // step is in flight waits for the next tick, and runs before its step.
   const state = bowState(profile);
   world.held = null;
   $("crosshair").classList.remove("holding");
@@ -2188,7 +2209,8 @@ async function letDown() {
 
 // After every step: how far back the string actually is, what this bow's limbs
 // hold, how hard the hand pulls -- and, once loosed, how fast the arrow went.
-let bowJointsAt = 0;
+// The draw and the joules come from the same reply, so the meter says one
+// instant's numbers.
 function followTheBow(state) {
   const use = world.use;
   const now = performance.now();
@@ -2229,7 +2251,6 @@ function followTheBow(state) {
   }
   const profile = world.held && world.held.bow;
   if (!profile) return;
-  if (now - bowJointsAt > 250) { bowJointsAt = now; refreshJoints().catch(() => {}); }
   const entry = world.bodies.get(profile.draw.part);
   if (!entry || !use.brace) return;
   const s = bowState(profile);
@@ -2825,6 +2846,8 @@ async function tick() {
     // made of, and they are all about the same size.
     trace.bytes.push(200 + (state.bodies ? state.bodies.length * 190 : 0));
     world.workingOn = state.working_on || "";
+    // What the springs hold after this step, before anything below reads them.
+    takeElastics(state.elastics);
 
     // Anything loose underfoot comes with you. Done after the step so it acts
     // on where things have just landed, and before draw so the pieces it takes
@@ -3002,22 +3025,19 @@ async function tick() {
 // being drawn: it knows a body is being hauled against whatever it is attached
 // to, and what makes that a draw is that the thing has ropes and a latch.
 async function watchTheDraw() {
-  // Drawing: ask what the limbs are holding, a few times a second, so the
+  // Drawing: what the limbs are holding, as this step's reply said it, so the
   // number on screen is the one the engine has rather than one worked out here.
+  // Said every tick: it used to be asked for four times a second, and the
+  // ticks in between said "Holding ..." over the draw.
   if (world.drawn) {
-    const now = performance.now();
-    if (now - world.drawn.asked > 250) {
-      world.drawn.asked = now;
-      await refreshJoints();
-      const entry = world.bodies.get(world.drawn.name);
-      const back = entry
-        ? entry.mesh.position.distanceTo(world.drawn.from) : 0;
-      const stored = storedInElastics(world.drawn.name);
-      if (stored > 0.05)
-        $("panel-state").textContent =
-          `Drawing ${world.drawn.name} — ${(back * 1000).toFixed(0)} mm back,`
-          + ` ${stored.toFixed(1)} J in the limbs.`;
-    }
+    const entry = world.bodies.get(world.drawn.name);
+    const back = entry
+      ? entry.mesh.position.distanceTo(world.drawn.from) : 0;
+    const stored = storedInElastics(world.drawn.name);
+    if (stored > 0.05)
+      $("panel-state").textContent =
+        `Drawing ${world.drawn.name} — ${(back * 1000).toFixed(0)} mm back,`
+        + ` ${stored.toFixed(1)} J in the limbs.`;
     return;
   }
   if (!world.loosing) return;

@@ -201,6 +201,93 @@ def theSessionStillAnswersWithEverything() -> None:
         live.close()
 
 
+def whatASpringHoldsComesWithTheStep() -> None:
+    """What a spring holds comes with the step, and it is the engine's reading.
+
+    The pins travel only when their SET changes. What an elastic holds changes
+    with every step it is drawn through, and the room used to ask for the whole
+    list four times a second to find out -- so the bow's meter trailed the draw
+    by about 100 mm at the page's 0.4 m/s. Each reading that changed now comes
+    on the step's reply. This draws the courtyard's bow the way the page does,
+    keeps what the room would have from those readings alone -- folded in by
+    id, as world.js does, while somebody else asks the same world for all of
+    it now and then -- and holds that to the engine's own `joints` answer
+    after every step.
+    """
+    wire = raw_replies()
+    live = live_session.Live()
+
+    class App:
+        engine_path = ENGINE
+        runs_path = (ROOT / "build" / "playground-runs").resolve()
+        live_inprocess = False
+
+    try:
+        opened = live.open(App(), {"spec": world_room.courtyard()})
+        require(not opened.get("joint_problems"),
+                f"the bow would not build: {opened.get('joint_problems')}")
+        session = live.session
+        room = {j["id"]: dict(j) for j in opened["joints"]}
+
+        def step() -> dict:
+            state = session.send(op="step", dt=1 / 240.0, n=8, moved=True)
+            reply = wire[-1]
+            if reply.get("joints") is not None:
+                room.clear()
+                room.update({j["id"]: dict(j) for j in reply["joints"]})
+            for reading in reply.get("elastics") or ():
+                room[reading["id"]].update(reading)
+            # Answered, as the room answers it, or the world waits at the step.
+            for coming in state.get("breakable") or ():
+                session.send(op="fracture", name=coming, wait=False)
+            return reply
+
+        def agrees(when: str) -> float:
+            truth = {j["id"]: j for j in session.send(op="joints")["joints"]
+                     if j["kind"] == "elastic"}
+            require(len(truth) == 2, f"the courtyard's bow has {len(truth)} limbs, not two")
+            folded = {e["id"]: e for e in session.state.get("elastics") or ()}
+            for joint_id, limb in truth.items():
+                for key in ("metres", "force_n", "stored_j"):
+                    require(room[joint_id][key] == limb[key],
+                            f"{when}: the room has limb {joint_id}'s {key} at "
+                            f"{room[joint_id][key]}, the engine at {limb[key]}")
+                    require(folded.get(joint_id, {}).get(key) == limb[key],
+                            f"{when}: the session has limb {joint_id}'s {key} at "
+                            f"{folded.get(joint_id, {}).get(key)}, the engine at {limb[key]}")
+            return sum(limb["stored_j"] for limb in truth.values())
+
+        # Standing, as a room has stood before anyone walks up to it.
+        for _ in range(30):
+            step()
+        quiet = sum(1 for _ in range(30) if not step().get("elastics"))
+        agrees("at brace")
+
+        braced = next(b for b in session.state["bodies"] if b["name"] == "bowstring")["position_m"]
+        session.send(op="grab", name="bowstring")
+        # Drawn the way the page draws it: the engine's own stroke of the
+        # bounded hand, back along the shot at 0.4 m/s.
+        session.send(op="stroke", path=[braced, [braced[0] - 0.45, braced[1], braced[2]]],
+                     speed_m_s=0.4, accel_m_s2=2.0, lead_m=0.05, let_go=False, give_up_s=30)
+        carried, held = 0, 0.0
+        for i in range(60):
+            reply = step()
+            carried += bool(reply.get("partial") and reply.get("elastics"))
+            held = agrees(f"{8 * (i + 1)} steps into the draw")
+            if i % 9 == 4:
+                # Somebody else -- the chat -- asks the same world for all of it.
+                session.send(op="poses")
+        print(f"  {held:.1f} J in the limbs after 2 s of drawing; {carried} trimmed replies "
+              f"carried the limbs' readings; {quiet} of 30 replies at brace said nothing")
+        require(held > 30.0, f"the draw stored only {held:.1f} J, so the bow was barely drawn")
+        require(carried > 20, "the readings came only on whole replies, so nothing shows "
+                              "that they survive trimming")
+        require(quiet > 20, "a bow standing at brace sent its limbs' readings with almost "
+                            "every step")
+    finally:
+        live.shutdown()
+
+
 def main() -> int:
     if not ENGINE.exists():
         print(f"no engine at {ENGINE} -- build banjo_live_world_run first")
@@ -210,6 +297,7 @@ def main() -> int:
         ("a full reply to somebody else does not strand the room",
          aFullReplyToSomebodyElseDoesNotStrandTheRoom),
         ("the session still answers with everything", theSessionStillAnswersWithEverything),
+        ("what a spring holds comes with the step", whatASpringHoldsComesWithTheStep),
     ]:
         try:
             test()
