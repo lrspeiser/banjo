@@ -104,6 +104,14 @@
     <div class="inv-row"><span class="inv-label">Carrying</span><ul id="inv-carrying"></ul></div>
     <div class="inv-row"><span class="inv-label">To use</span><ul id="inv-tools"></ul></div>
   </section>
+  <!-- What can be done right now, each with the key that does it, and the tool
+       to use when there is one (the owner: prompts that show what you can do, "in
+       a box to the side", recommending "what tool you should use with a hot key
+       to use it"). Filled by showActions() in world.js. -->
+  <section id="actions" aria-label="What you can do">
+    <ul id="actions-list"></ul>
+    <p id="actions-tip" hidden></p>
+  </section>
   <div id="chat" role="log" aria-live="polite"></div>
   <form id="ask">
     <input id="ask-text" type="text" autocomplete="off" spellcheck="false"

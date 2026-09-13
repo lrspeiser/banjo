@@ -1,5 +1,16 @@
 # Development status and handoff
 
+**The panel says what can be done right now, with the key that does it, and which tool to use.** Branch `agent/discovery` from `4cc0cf5`, step 3 of the interface refresh. The owner asked for prompts that show what you can do, "in a box to the side", that "recommend what tool you should use with a hot key to use it". Under what the person has, a box now lists what they can do, one line to a key, from what the page already knows: what is in the hand and the state it is in, what the crosshair is on, what is carried, and what in the room can be used. Where one fits, it names the tool:
+- looking at soil with a pick in the room: the pick, and how to take it up;
+- with no tool: ask the room for one;
+- holding the pick over rock: rock stops an oak point.
+
+Dig here, Heap here and Heat it had only buttons; they now have keys (F, H, B) in the one key table (interaction.js `BINDINGS`), and the controls line names them. Measured in the page on 8781, with no page errors:
+- Looking at soil empty-handed, the box offered F, H and / and named the pick.
+- F dug 0.21 m³ (332.80 kg) there, and the carried soil went from 341.45 to 674.25 kg.
+- On the pick: E to take it up by its grip, and B to heat it.
+- Holding it: the swing, and E to put it down; over the rock, "Rock stops an oak point: aim at the soil to dig."
+
 **The side panel keeps the conversation and says what the person has; a room switch leaves no pins behind.** Branch `agent/panel` from `ce780a8`, step 2 of the interface refresh. The panel has a section, always shown, of what the person has: what is in their hand, with its weight; what they carry, by material (the corner list is hidden); and what in the room can be used, with the keys that use it. The page tells the chat what they carry. The conversation is no longer emptied when a room opens: the open's reply carries the last 20 turns the room keeps, and a room opened after the server started again says so. Opening a room whose reply names no joints drew none of its own but kept the last room's pins, so grey rods floated over the clearing after the gates room. It now clears them, as the chat's rebuild already did (`banjoRoom.pinsDrawn`). Measured in the page on 8781:
 - The chat's pick is listed to use with its keys, and holding it reads "pick haft 1.21 kg".
 - A lever raised the carried soil from 332.80 to 341.45 kg.

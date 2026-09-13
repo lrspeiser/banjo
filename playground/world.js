@@ -1158,6 +1158,84 @@ function showInventory() {
 }
 setInterval(showInventory, 250);
 
+// What the ground under a point is made of, from the engine's own map of its
+// surface -- as the label says it. Null off the ground, or in a room without.
+function groundMadeOf(at) {
+  if (!Array.isArray(at) || !ground.grid || !ground.surfaces) return null;
+  const g = ground.grid;
+  const i = Math.round((at[0] - g.x0) / g.dx), j = Math.round((at[2] - g.z0) / g.dx);
+  if (i < 0 || j < 0 || i >= g.nx) return null;
+  return ["rock", "soil", "sand"][ground.surfaces[j * g.nx + i]] || null;
+}
+
+// What the person can do right now, under what they have in the panel (the
+// owner: prompts that show what you can do, "in a box to the side", that
+// "recommend what tool you should use with a hot key to use it"). From what the
+// page already knows -- what is in the hand and the state it is in, what the
+// crosshair is on, what is carried, what in this room can be used -- as one
+// line to a key. It says only what the engine has shown: rock stops an oak
+// point, so on rock the pick is not offered.
+let actionsSaid = "";
+function showActions() {
+  const k = (action) => keyOf(action);
+  const rows = [];
+  let tip = "";
+  const held = world.held, use = world.use || {};
+  const on = !held && world.aim && world.aim.name ? world.aim.name : null;
+  const underfoot = !held && !on ? groundMadeOf(world.groundAim) : null;
+  const tool = (world.tools || [])[0] || null;
+  if (held && held.pick) {
+    if (use.mode === "pick-in") rows.push([k("secondary"), `lever ${held.pick.object} out`]);
+    else if (use.mode === "pick-ready")
+      rows.push([k("primary"), `swing ${held.pick.object} at the ground under the crosshair`]);
+    rows.push([k("interact"), `put ${held.pick.object} down`]);
+    if (use.mode === "pick-ready" && groundMadeOf(world.groundAim) === "rock")
+      tip = "Rock stops an oak point: aim at the soil to dig.";
+  } else if (held && held.bow) {
+    rows.push([k("primary"), "hold to draw, let go to shoot"]);
+    rows.push([k("interact"), "let go of the bow"]);
+  } else if (held) {
+    if (held.throwable) rows.push([k("primary"), "hold to wind up, let go to throw"]);
+    rows.push([k("interact"), `put ${held.name} down`]);
+    rows.push([k("talk"), `ask the room to turn or move ${held.name}`]);
+  } else if (on) {
+    const entry = world.bodies.get(on);
+    const pick = picks.profileOf(on), bow = profileOf(on);
+    if (pick) rows.push([k("interact"), `take up ${pick.object} by its grip`]);
+    else if (bow) rows.push([k("interact"), `take up ${bow.object}`]);
+    else if (bladeFor(on)) rows.push(["click", `take ${on} by the grip`]);
+    else if (entry && throwable(entry, onAJoint(on))) rows.push([k("interact"), `take hold of ${on}`]);
+    rows.push([k("heat"), `heat ${on}`]);
+  } else if (underfoot) {
+    if (underfoot !== "rock") rows.push([k("dig"), `dig here, in the ${underfoot}`]);
+    const carried = world.carriedGround
+      ? (Number(world.carriedGround.soil_kg) || 0) + (Number(world.carriedGround.sand_kg) || 0) : 0;
+    if (carried > 0.0005) rows.push([k("heap"), "heap what you carry here"]);
+    if (underfoot === "rock") {
+      if (tool) tip = `Bare rock: it stops the oak point of ${tool.object}.`;
+    } else {
+      tip = tool
+        ? `The tool for this ground: ${tool.object}. Look at it and press ${k("interact")} to take it`
+          + ` up, then ${k("primary")} to swing it.`
+        : `No tool here to dig with: press ${k("talk")} and ask the room to make you a pick.`;
+    }
+  }
+  rows.push([k("talk"), "ask the room to build or change anything"]);
+  const said = JSON.stringify([rows, tip]);
+  if (said === actionsSaid) return;
+  actionsSaid = said;
+  $("actions-list").replaceChildren(...rows.map(([key, words]) => {
+    const li = document.createElement("li");
+    const kbd = document.createElement("kbd");
+    kbd.textContent = key;
+    li.append(kbd, document.createTextNode(words));
+    return li;
+  }));
+  $("actions-tip").textContent = tip;
+  $("actions-tip").hidden = !tip;
+}
+setInterval(showActions, 250);
+
 // The sand and soil dug out of this room's ground and not put back, as the
 // engine counts them. Set from its numbers every time and never added to here:
 // the ground and what is carried out of it are one account, kept by the engine
@@ -1418,6 +1496,11 @@ addEventListener("keydown", (e) => {
   if (TURNS.some((t) => isKey(t.action, e.code))) turnKeyPressed();
   if (e.code === "KeyR") unlatch();
   if (e.code === "KeyL") markLag();
+  // The panel's buttons from the keyboard (interaction.js BINDINGS), so what the
+  // actions box offers, it offers with the key that does it.
+  if (isKey("dig", e.code)) $("dig-it").click();
+  if (isKey("heap", e.code)) $("heap-it").click();
+  if (isKey("heat", e.code)) $("heat-it").click();
   if (["KeyW","KeyA","KeyS","KeyD","KeyQ","KeyE","Space",
        "ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.code)) e.preventDefault();
 });

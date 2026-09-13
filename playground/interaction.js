@@ -37,6 +37,11 @@ export const BINDINGS = {
   reach:     { label: "Mouse wheel" },
   // The room's chat, as in a game: "/" and say what you want.
   talk:      { label: "/", keys: ["Slash", "NumpadDivide"] },
+  // The panel's buttons, from the keyboard: dig where the crosshair meets the
+  // ground, heap what is carried there, and heat what the crosshair is on.
+  dig:       { label: "F", keys: ["KeyF"] },
+  heap:      { label: "H", keys: ["KeyH"] },
+  heat:      { label: "B", keys: ["KeyB"] },
 };
 export const keyOf = (action) => BINDINGS[action].label;
 export const isKey = (action, code) => (BINDINGS[action].keys || []).includes(code);
@@ -65,6 +70,7 @@ export function controlsHint() {
     + ` <b>${keyOf("tipLeft")} ${keyOf("tipRight")}</b> tip sideways,`
     + ` <b>${keyOf("upright")}</b> stand it upright, <b>wheel</b> further or nearer`
     + ` · <b>${keyOf("talk")}</b> talk to the room`
+    + ` · <b>${keyOf("dig")}</b> dig here · <b>${keyOf("heap")}</b> heap here · <b>${keyOf("heat")}</b> heat it`
     + ` · <b>R</b> release a latch · <b>L</b> if it lagged · <b>Esc</b> release the mouse`;
 }
 
