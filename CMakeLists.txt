@@ -329,7 +329,7 @@ if(BANJO_BUILD_HEADLESS)
     # geometry and no motion -- the live world tells it where things are and
     # applies the forces it asks for -- so it builds and tests on its own.
     add_library(banjo_thermo src/thermo/Thermochemistry.cpp src/thermo/ThermoWorld.cpp
-                             src/thermo/ThermoJson.cpp)
+                             src/thermo/ThermoJson.cpp src/thermo/ThermalMechanics.cpp)
     target_link_libraries(banjo_thermo PUBLIC banjo_core PRIVATE nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_thermo)
     if(BANJO_BUILD_TESTS)
@@ -916,6 +916,17 @@ if(BANJO_BUILD_TESTS)
             target_link_libraries(banjo_thermo_live_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_thermo_live_tests)
             add_test(NAME banjo_thermo_live_tests COMMAND banjo_thermo_live_tests)
+
+            # Heat changing what things can carry (docs/thermal-mechanics.md):
+            # a heated oak peg gives way under its gate when the load passes
+            # what its law leaves it, and not before; its cold twin, an
+            # unloaded peg and an iron one hold; cooling gives back only what
+            # was reversible; a refused step, a split and a restore keep the
+            # history; a softening spring's energy goes to the ledger.
+            add_executable(banjo_thermal_mechanics_tests tests/thermal_mechanics_tests.cpp)
+            target_link_libraries(banjo_thermal_mechanics_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_thermal_mechanics_tests)
+            add_test(NAME banjo_thermal_mechanics_tests COMMAND banjo_thermal_mechanics_tests)
 
             # Terrain and water in a live world: the owner's acceptance tests
             # for the valley -- conservation, a lake at rest, a dam, an outlet,

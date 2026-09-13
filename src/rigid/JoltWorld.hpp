@@ -444,6 +444,13 @@ public:
         double damping_n_s_m{0.0};
     };
     [[nodiscard]] unsigned addElastic(const ElasticDescription &description);
+    // Retune an elastic element's spring in place: what a limb's stiffness
+    // becomes when its matter softens, or stiffens again, with temperature. The
+    // constraint and its attachment points are kept; only the law changes, so
+    // whoever calls this owns the energy that change puts in or takes out of
+    // the spring (LiveWorld hands it to the thermal ledger). Host thread,
+    // between steps -- never inside a reversible trial.
+    void updateElastic(unsigned joint, double stiffness_n_m, double damping_n_s_m);
 
     // What a fixing is carrying, split along its axis and across it. Both zero
     // for every other kind of joint, which has no axis to split along.

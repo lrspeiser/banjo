@@ -79,7 +79,8 @@ Fractions are of the body's own mass -- the rigid body stays the one owner of
 how much matter there is. As fuel is used and gas leaves, the network tells the
 rigid body its new mass (`JoltWorld::setMass`, Jolt's `ScaleToMass`), so
 momentum and energy are about what is really there. Bodies do not shrink as
-they burn (declared).
+they burn (declared): what burned is taken out of the load-bearing section --
+docs/thermal-mechanics.md -- but not yet out of the collision or drawn shape.
 
 A body that conducts too poorly to be one temperature (Biot number above 0.1
 against the film coefficient) is a **3 mm surface layer over a core**: the
@@ -305,7 +306,11 @@ CMake switch with a pinned version.
 - gas regions are zero-dimensional; openings are incompressible orifices
   (choked flow is not modelled); a region's pressure does not yet act on its
   container's walls;
-- temperature does not yet change any mechanical property or cause failure.
+- temperature, composition and what has burned now change what things can
+  carry and cause failure through the engine's own overload and attachment
+  paths -- see [thermal-mechanics.md](thermal-mechanics.md) for the laws, what
+  they do not cover, and what is still to come (burned material leaving the
+  collision shape; thermal expansion).
 
 ## Milestones
 
@@ -315,7 +320,7 @@ CMake switch with a pinned version.
 | 2. A fuel-fed hearth | done: a declared wood model, oxygen from the air, heat to physical objects, a predicted burn time; move, add, remove and break burning fuel with its state |
 | 3. Gas state and mechanical work | done: gas regions, openings, a piston on a real body, compression returning work, boundary work agreeing with the mechanics |
 | 4. Reaction-driven motion | not started: the rapid reaction exists and is closed-tested in a sealed chamber; it has not been put on a piston, and there is no cannon |
-| 5. Coupled material changes | not started |
+| 5. Coupled material changes | increment 1 done on `agent/thermal-mechanics` ([thermal-mechanics.md](thermal-mechanics.md)): temperature, composition and burning change stiffness and strength by a declared law per material, feed the attachment and overload checks, and re-check a loaded thing while it stands still. Burned material leaving the collision shape, and thermal expansion, are still to come |
 
 ## Tests
 

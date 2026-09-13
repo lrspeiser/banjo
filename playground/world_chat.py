@@ -82,8 +82,10 @@ must be at least half of each one's width apart, added together -- two 0.4 m
 crates, 0.4 m -- or [x, z] sets the second on top of the first; set_down's
 overhangs says when a thing is only partly on what is under it and may tip. Give [x, y, z] only to hold a thing
 up in the air: to fall, or to hang from something; then the answer's
-in_the_air says how far it will fall, and if you meant it to rest, take it out
-and add it again with [x, z]. If an answer has in_water,
+in_the_air says how far it would fall if nothing held it: if you are about to
+hang it with a joint (fix, hinge, slide, tie, reeve or spring), leave it there,
+because the joint holds it; only if you meant it to rest, take it out and add
+it again with [x, z]. If an answer has in_water,
 the thing is in water: say so in your reply, and unless they asked for it in
 the water, take it out and set it down again on dry, level ground within their
 reach -- survey says where the ground is dry and how steep it is, and a ball
@@ -272,6 +274,39 @@ the heat stopped it came back down):
   enclose_gas name=cylinder gas piston=piston height_m=0.4 contents {"argon": 1}
   heat cylinder gas 800 W for 30 s
   then run for 20 seconds and call thermal_state: the gas says how far it pushed.
+
+HEAT AND STRENGTH. Heat changes what a thing can CARRY, by its material's
+declared law: oak loses most of its strength by 200 degC and is char, carrying
+nothing, past 300 degC; iron loses none below 400 degC; concrete does not get
+its strength back when it cools; glass, aluminium, ceramic, rubber and ice are
+not changed at all. A fixing, a tie or a spring says what it is MADE of with
+`member` (one of its own two ends): heat that body and what the joint can take
+follows the law, and the joint gives way when the load the solver measures
+passes what is left -- never at a temperature and never on a timer. So heating
+an unloaded peg does not drop anything, and a heavier load gives way sooner.
+Rate a fixing at least twice what it carries: a room starts with every load
+suddenly applied. thermal_state's `strength` says what is left of each heated
+body and what every such joint carries against what it can still take; run
+says which gave way and why.
+
+An oak peg in a gatepost carrying an iron gate, heated until it gives way, with
+an identical cold one beside it that holds (2 kW into the peg: it chars within
+about 20 s and the 32 kg gate falls about 50 s in, when the peg's remaining
+section can no longer carry it; the cold twin carries it for ever). Jointed
+bodies stand 5 mm clear of each other, as below. The peg and the gate HANG, so
+they are given [x, y, z]: add_object answers in_the_air for both, and that is
+right -- the two fixes hold them there. Never set either down with [x, z]: a peg
+set on top of its post is not in it, and nothing falls when it gives way.
+  add_object gatepost oak [0.16, 1.6, 0.16] at [0, 0.8, 0] anchored
+  add_object oak peg oak [0.04, 0.04, 0.16] at [0, 1.4, 0.165]
+  add_object iron gate iron [0.32, 0.32, 0.04] at [0, 1.215, 0.205]
+  fix a=gatepost b=oak peg at [0, 1.4, 0.08] axis [0,0,1] holds_shear_n 800 member=oak peg
+  fix a=oak peg b=iron gate at [0, 1.375, 0.205] axis [0,1,0]   (a weld: nothing given)
+  and the same three 2.5 m along x as cold gatepost / cold peg / cold gate
+  heat oak peg 2000 W for 300 s
+  then run in 20 s runs (three or four in the same turn) and read what run and
+  thermal_state say: the peg's shear strength left falling, then the gate
+  giving way, with the load and what was left.
 
 BLADES -- things that cut. blade gives a body an EDGE: where it runs, which
 way it faces, how sharp it is and where a hand holds it. Nothing cuts because

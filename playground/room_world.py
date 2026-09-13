@@ -106,10 +106,13 @@ def joint_call(pin: dict[str, Any]) -> tuple[str, dict[str, Any]]:
                          "lower_m": pin.get("lower_mm", 0.0) / 1000.0,
                          "upper_m": pin.get("upper_mm", 0.0) / 1000.0,
                          "friction_n": pin.get("friction_n", 0.0)}
+    # What a fixing, a tie or a spring is MADE of, when the room says (see
+    # docs/thermal-mechanics.md): heat then changes what it can take.
+    made = {"member": pin["member"]} if pin.get("member") else {}
     if kind == "link":
         return "tie", {**ends, "at_a_m": _m(pin["at_mm"]), "at_b_m": _m(pin["to_mm"]),
                        "length_m": pin.get("length_mm", 0.0) / 1000.0,
-                       "breaks_at_n": pin.get("breaks_at_n", 0.0)}
+                       "breaks_at_n": pin.get("breaks_at_n", 0.0), **made}
     if kind == "pulley":
         return "reeve", {**ends, "at_a_m": _m(pin["at_mm"]), "at_b_m": _m(pin["to_mm"]),
                          "over_a_m": _m(pin["over_a_mm"]), "over_b_m": _m(pin["over_b_mm"]),
@@ -118,12 +121,12 @@ def joint_call(pin: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     if kind == "fixing":
         return "fix", {**ends, "at_m": _m(pin["at_mm"]), "axis": list(pin["axis"]),
                        "holds_tension_n": pin.get("holds_tension_n", 0.0),
-                       "holds_shear_n": pin.get("holds_shear_n", 0.0)}
+                       "holds_shear_n": pin.get("holds_shear_n", 0.0), **made}
     if kind == "elastic":
         return "spring", {**ends, "at_a_m": _m(pin["at_mm"]), "at_b_m": _m(pin["to_mm"]),
                           "rest_m": pin.get("rest_mm", 0.0) / 1000.0,
                           "stiffness_n_m": pin.get("stiffness_n_m", 1000.0),
-                          "damping_n_s_m": pin.get("damping_n_s_m", 0.0)}
+                          "damping_n_s_m": pin.get("damping_n_s_m", 0.0), **made}
     raise ValueError(f"{kind!r} is not a kind of joint the room knows")
 
 
@@ -131,6 +134,9 @@ def joint_spec(record: dict[str, Any]) -> dict[str, Any]:
     """An MCP joint record (the call that made it, in metres) as a room joint."""
     tool, args = record["tool"], record["args"]
     ends = {"kind": KIND_OF[tool], "a": str(args.get("a", "")), "b": str(args.get("b", ""))}
+    # What it is made of travels with it, for the three kinds that have one.
+    if args.get("member") and tool in ("fix", "tie", "spring"):
+        ends["member"] = str(args["member"])
     if tool == "hinge":
         return {**ends, "at_mm": _mm(args["at_m"]), "axis": list(args.get("axis", [0, 1, 0])),
                 "lower_deg": args.get("lower_deg", -180.0),

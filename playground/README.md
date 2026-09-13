@@ -251,6 +251,32 @@ are the four valley builds — the dam, the drained pond, the log and the dug-ou
 boulder — which are built in the valley, a room of its own (below). Run
 `--rooms` again whenever a recipe changes.
 
+### Heat and strength
+
+Heat changes what things can carry, by each material's declared law
+([docs/thermal-mechanics.md](../docs/thermal-mechanics.md)): oak chars and loses
+its strength, iron keeps its below 400 degC, and a material with no law is not
+changed. A fixing, a tie or a spring that says what it is made of (the MCP's
+`member`) is weakened by heat in its member, and gives way when the load the
+solver measures passes what the law has left -- never at a temperature and never
+on a timer.
+
+In **an empty yard**, ask:
+
+> Hang an iron gate on an oak peg in an oak gatepost, with the peg rated to hold
+> 800 N, and put a 2 kW torch on the peg until it gives way. Build an identical
+> one beside it that nobody heats.
+
+The chat builds both with `add_object`, `fix` (with `member`) and `heat`. In the
+room the heated peg tints, then darkens as its surface chars -- the darkening is
+the share of its section that is char or gone, a picture of that number like
+the glow -- and the Heat panel lists what strength it has left and what its
+fixing carries against what it can still take ("oak peg in gatepost: carries
+317 N of 402 N (800 N cold)"). About 50 s in, the gate gives way: the log says
+why, in the numbers that decided it, and the gate falls through the rigid world.
+The cold twin hangs where it was. The whole thing runs far inside the realtime
+rule; the 50 s is the peg's own physics at 2 kW, not a setting.
+
 ### Taking up a sword
 
 A body with an edge declared on it — the MCP's `blade` tool,

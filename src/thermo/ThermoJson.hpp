@@ -50,4 +50,9 @@ void apply(ThermoWorld &world, const Declarations &declarations);
 // reaction with where its numbers came from, and what is not modelled.
 [[nodiscard]] std::string reportJson(const ThermoWorld &world, bool with_model = false);
 
+// Every mechanical law (thermo/ThermalMechanics.hpp) as a JSON array: its
+// curves, what is irreversible, where it is supported, where its numbers came
+// from and what it does not model.
+[[nodiscard]] std::string mechanicalLawsJson();
+
 } // namespace banjo::thermo

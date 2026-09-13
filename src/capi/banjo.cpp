@@ -28,6 +28,7 @@ using banjo::fastlattice::LiveCollected;
 using banjo::fastlattice::LiveDelay;
 using banjo::fastlattice::LiveImpact;
 using banjo::fastlattice::LiveJoint;
+using banjo::fastlattice::LiveMaterialState;
 using banjo::fastlattice::LiveOverload;
 using banjo::fastlattice::LivePick;
 using banjo::fastlattice::LiveWorld;
@@ -81,6 +82,9 @@ struct banjo_world {
     std::vector<banjo::thermo::BodyHeat> heats;
     std::vector<banjo::thermo::RegionState> gases;
     std::string report;
+    // What heat has done to what each body can carry, last time anyone asked.
+    std::vector<LiveMaterialState> mechanics;
+    std::string mechanics_report;
     // Blades and their cuts, for the same reason: names handed out point in here.
     std::vector<LiveBlade> blades;
     std::vector<LiveCut> cut_list;
@@ -416,6 +420,8 @@ int banjo_overloaded(const banjo_world *world, banjo_overload *out, int max) {
             out[i].span_m = load.span_m;
             out[i].stress_pa = load.stress_pa;
             out[i].strength_pa = load.strength_pa;
+            out[i].capacity_fraction = load.capacity_fraction;
+            out[i].why = load.why.c_str();
         }
         return count;
     });
@@ -664,6 +670,16 @@ int banjo_joints(const banjo_world *world, banjo_joint *out, int max) {
             out[i].damping_n_s_m = joint.damping_n_s_m;
             out[i].force_n = joint.force_n;
             out[i].stored_j = joint.stored_j;
+            out[i].member = joint.member.c_str();
+            out[i].rated_tension_n = joint.rated_tension_n;
+            out[i].rated_shear_n = joint.rated_shear_n;
+            out[i].rated_breaks_at_n = joint.rated_breaks_at_n;
+            out[i].rated_stiffness_n_m = joint.rated_stiffness_n_m;
+            out[i].capacity_fraction = joint.capacity_fraction;
+            out[i].rechecks = joint.rechecks;
+            out[i].parted_because = joint.parted_because.c_str();
+            out[i].parted_load_n = joint.parted_load_n;
+            out[i].parted_capacity_n = joint.parted_capacity_n;
         }
         return count;
     });
@@ -976,8 +992,88 @@ int banjo_energy_ledger(const banjo_world *world, banjo_energy *out) {
         out->residual_j = l.residualJ();
         out->mass_residual_kg = l.massResidualKg();
         out->mechanical_j = world->world->mechanicalEnergyJ();
+        out->mechanical_in_j = l.mechanical_in_j;
         return static_cast<int>(BANJO_OK);
     });
+}
+
+int banjo_joint_member(banjo_world *world, unsigned joint, const char *member) {
+    if (!world || !member) {
+        setError("no world, or no member (\"\" goes back to the declared numbers)");
+        return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        if (!world->world->setJointMember(joint, member)) {
+            setError("joint " + std::to_string(joint) + " cannot be made of \"" + member +
+                     "\": there is no such joint, the name is not one of its two ends, or it is "
+                     "a pin, a slide or a pulley, which have no strength here to lose");
+            return static_cast<int>(BANJO_BAD_ARGUMENT);
+        }
+        return static_cast<int>(BANJO_OK);
+    });
+}
+
+int banjo_body_mechanics_count(const banjo_world *world) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        auto *mutable_world = const_cast<banjo_world *>(world);
+        mutable_world->mechanics = world->world->materialStates();
+        return static_cast<int>(mutable_world->mechanics.size());
+    });
+}
+
+int banjo_bodies_mechanics(const banjo_world *world, banjo_body_mechanics *out, int max) {
+    if (!world || (!out && max > 0) || max < 0) { setError("no world or nowhere to write"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        auto *mutable_world = const_cast<banjo_world *>(world);
+        mutable_world->mechanics = world->world->materialStates();
+        const int count = std::min<int>(max, static_cast<int>(mutable_world->mechanics.size()));
+        for (int i = 0; i < count; ++i) {
+            const LiveMaterialState &m = mutable_world->mechanics[static_cast<std::size_t>(i)];
+            const banjo::thermo::SectionState &s = m.section;
+            banjo_body_mechanics &o = out[i];
+            o.name = m.name.c_str();
+            o.material = m.material.c_str();
+            o.law = m.law.c_str();
+            o.provenance = m.provenance.c_str();
+            o.tracked = m.tracked ? 1 : 0;
+            o.surface_k = m.surface_k;
+            o.core_k = m.core_k;
+            o.peak_surface_k = m.peak_surface_k;
+            o.peak_core_k = m.peak_core_k;
+            o.remaining_fraction = m.remaining_fraction;
+            o.composition_factor = m.composition_factor;
+            writeVec(m.dimensions_m, o.dimensions_m);
+            o.section_m[0] = s.breadth_m;
+            o.section_m[1] = s.depth_m;
+            o.consumed_m = s.consumed_m;
+            o.char_m = s.char_m;
+            o.layer_m = s.layer_m;
+            o.sound_section_m[0] = s.sound_breadth_m;
+            o.sound_section_m[1] = s.sound_depth_m;
+            o.stiffness = s.axial_stiffness;
+            o.tension = s.tension;
+            o.compression = s.compression;
+            o.shear = s.shear;
+            o.bending = s.bending;
+            o.tension_if_cooled = s.tension_if_cooled;
+            o.shear_if_cooled = s.shear_if_cooled;
+            o.bending_if_cooled = s.bending_if_cooled;
+            o.supported = s.supported ? 1 : 0;
+        }
+        return count;
+    });
+}
+
+const char *banjo_mechanics_report(const banjo_world *world, int with_laws) {
+    if (!world) return "";
+    auto *mutable_world = const_cast<banjo_world *>(world);
+    try {
+        mutable_world->mechanics_report = world->world->mechanicsReport(with_laws != 0);
+    } catch (...) {
+        mutable_world->mechanics_report.clear();
+    }
+    return mutable_world->mechanics_report.c_str();
 }
 
 const char *banjo_thermo_report(const banjo_world *world, int with_model) {

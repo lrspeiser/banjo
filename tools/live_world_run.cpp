@@ -27,6 +27,13 @@
 //                                            a hoist: pull one end, the other rises
 //        {"op":"fix","a":"jamb","b":"bar","at":[0,1.4,0.2],"axis":[1,0,0],
 //         "holds_tension_n":0,"holds_shear_n":0}   a peg, a bracket, a latch
+//        {"op":"fix",...,"member":"bar"}     ... MADE of the bar: heat changes what
+//                                            it can take (fix, tie and spring all
+//                                            take "member"; docs/thermal-mechanics.md)
+//        {"op":"member","joint":1,"member":"bar"}   the same, afterwards ("" undoes it)
+//        {"op":"mechanics","laws":false}    what heat has done to what things can
+//                                            carry; replies that describe the world
+//                                            carry a trimmed "mechanics" block too
 //        {"op":"spring","a":"riser","b":"tip","at_a":[0,1,0],"at_b":[0,1.4,0],
 //         "rest_m":0,"stiffness_n_m":4000,"damping_n_s_m":5}   a bow limb
 //        {"op":"unhinge","joint":1}          take the pin out; it falls
@@ -188,9 +195,92 @@ nlohmann::json jointsOf(const LiveWorld &world) {
             said["upper_deg"] = tidy(joint.upper * kDegrees);
             said["friction_n_m"] = tidy(joint.friction);
         }
+        // What it is made of, what it could take cold and what is left -- only
+        // for a joint with a member (docs/thermal-mechanics.md) -- and, for one
+        // that let go, why, in the numbers that decided it.
+        if (!joint.member.empty()) {
+            said["member"] = joint.member;
+            said["capacity_fraction"] = tidy(joint.capacity_fraction);
+            said["rechecks"] = joint.rechecks;
+            if (joint.kind == "fixing") {
+                said["rated_tension_n"] = tidy(joint.rated_tension_n);
+                said["rated_shear_n"] = tidy(joint.rated_shear_n);
+            } else if (joint.kind == "link") {
+                said["rated_breaks_at_n"] = tidy(joint.rated_breaks_at_n);
+            } else if (joint.kind == "elastic") {
+                said["rated_stiffness_n_m"] = tidy(joint.rated_stiffness_n_m);
+            }
+        }
+        if (!joint.parted_because.empty()) {
+            said["parted_because"] = joint.parted_because;
+            said["parted_load_n"] = tidy(joint.parted_load_n);
+            said["parted_capacity_n"] = tidy(joint.parted_capacity_n);
+        }
         out.push_back(std::move(said));
     }
     return out;
+}
+
+// A number rounded to what can be seen.
+[[nodiscard]] double roundTo(double v, double unit) {
+    return std::isfinite(v) ? std::round(v / unit) * unit : v;
+}
+
+// What heat has done to what things can carry, for a host that draws it
+// (docs/thermal-mechanics.md): each heated body with a law -- what is left of
+// its section and how much of it is char -- and every joint made of a member,
+// with the load it carries against what it can still take. Empty when there is
+// neither; small when there is, like the heat block beside it.
+nlohmann::json mechanicsSummary(const LiveWorld &world) {
+    nlohmann::json bodies = nlohmann::json::array();
+    for (const LiveMaterialState &m : world.materialStates()) {
+        if (m.law.empty() || !m.tracked || bodies.size() >= 24) continue;
+        const banjo::thermo::SectionState &s = m.section;
+        bodies.push_back({{"name", m.name},
+                          {"tension", roundTo(s.tension, 1e-3)},
+                          {"shear", roundTo(s.shear, 1e-3)},
+                          {"bending", roundTo(s.bending, 1e-3)},
+                          {"stiffness", roundTo(s.axial_stiffness, 1e-3)},
+                          {"if_cooled", roundTo(std::min(s.tension_if_cooled, s.shear_if_cooled), 1e-3)},
+                          {"char_mm", roundTo(1000.0 * s.char_m, 0.1)},
+                          {"burned_mm", roundTo(1000.0 * s.consumed_m, 0.01)},
+                          {"section_mm", nlohmann::json::array({roundTo(1000.0 * s.breadth_m, 0.1),
+                                                                roundTo(1000.0 * s.depth_m, 0.1)})},
+                          {"sound_mm", nlohmann::json::array({roundTo(1000.0 * s.sound_breadth_m, 0.1),
+                                                              roundTo(1000.0 * s.sound_depth_m, 0.1)})},
+                          {"supported", s.supported}});
+    }
+    nlohmann::json held = nlohmann::json::array();
+    for (const LiveJoint &j : world.joints()) {
+        if (j.member.empty()) continue;
+        nlohmann::json said{{"id", j.id}, {"kind", j.kind}, {"a", j.a}, {"b", j.b},
+                            {"member", j.member}, {"attached", j.attached},
+                            {"fraction", roundTo(j.capacity_fraction, 1e-4)}};
+        if (j.kind == "fixing") {
+            // The one of its two nearer to giving.
+            const double t = j.holds_tension_n > 0.0 ? j.tension_n_now / j.holds_tension_n : 0.0;
+            const double v = j.holds_shear_n > 0.0 ? j.shear_n_now / j.holds_shear_n : 0.0;
+            const bool shear = v >= t;
+            said["mode"] = shear ? "shear" : "tension";
+            said["load_n"] = roundTo(shear ? j.shear_n_now : j.tension_n_now, 0.1);
+            said["holds_n"] = roundTo(shear ? j.holds_shear_n : j.holds_tension_n, 0.1);
+            said["rated_n"] = roundTo(shear ? j.rated_shear_n : j.rated_tension_n, 0.1);
+        } else if (j.kind == "link") {
+            said["mode"] = "tension";
+            said["load_n"] = roundTo(j.tension_n, 0.1);
+            said["holds_n"] = roundTo(j.breaks_at_n, 0.1);
+            said["rated_n"] = roundTo(j.rated_breaks_at_n, 0.1);
+        } else {
+            said["mode"] = "stiffness";
+            said["stiffness_n_m"] = roundTo(j.stiffness_n_m, 0.1);
+            said["rated_stiffness_n_m"] = roundTo(j.rated_stiffness_n_m, 0.1);
+            said["force_n"] = roundTo(j.force_n, 0.1);
+        }
+        if (!j.parted_because.empty()) said["parted_because"] = j.parted_because;
+        held.push_back(std::move(said));
+    }
+    if (bodies.empty() && held.empty()) return nullptr;
+    return {{"bodies", std::move(bodies)}, {"attachments", std::move(held)}};
 }
 
 // Every edge in the room. Sent when the SET of them changes, like the pins: the
@@ -428,6 +518,19 @@ Vec3 readVec(const nlohmann::json &node, const char *key) {
     const auto &v = node.at(key);
     if (!v.is_array() || v.size() != 3) throw std::invalid_argument(std::string(key) + " needs three numbers");
     return Vec3{v[0].get<double>(), v[1].get<double>(), v[2].get<double>()};
+}
+
+// A joint's "member", when it has one: which of its two ends it is MADE of
+// (docs/thermal-mechanics.md). Checked before the joint is made, so a joint is
+// never left standing without the member it was asked to be made of.
+std::string madeOf(const nlohmann::json &command) {
+    if (!command.contains("member") || command.at("member").is_null()) return {};
+    const std::string member = command.at("member").get<std::string>();
+    if (member.empty()) return {};
+    if (member != command.at("a").get<std::string>() && member != command.at("b").get<std::string>())
+        throw std::invalid_argument("a joint is made of one of the two things it holds, and \"" + member +
+                                    "\" is neither");
+    return member;
 }
 
 // A point on the ground: [x, z], or [x, y, z] with y ignored.
@@ -820,6 +923,7 @@ int main(int argc, char **argv) {
                     // A rope. It pulls and it does not push, which is the one
                     // asymmetry that makes a rope a rope: below its length it
                     // does nothing at all, so slack is really slack.
+                    const std::string member = madeOf(command);
                     const unsigned rope = world->tie(
                         command.at("a").get<std::string>(),
                         command.at("b").get<std::string>(),
@@ -828,6 +932,7 @@ int main(int argc, char **argv) {
                         command.value("breaks_at_n", 0.0));
                     if (rope == 0)
                         throw std::invalid_argument("those two cannot be tied together");
+                    if (!member.empty()) (void)world->setJointMember(rope, member);
                     reply["joint"] = rope;
                 } else if (op == "reeve") {
                     // A hoist: a rope from one thing, over two fixed points, to
@@ -848,6 +953,9 @@ int main(int argc, char **argv) {
                     // A peg, a bracket, a catch, a locking bar. Two bodies held
                     // as one, with a strength along the axis and another across
                     // it. Release it with "unhinge" -- which is what a latch is.
+                    // With "member", one of the two names: what it is MADE of,
+                    // so heat changes what it can take (docs/thermal-mechanics.md).
+                    const std::string member = madeOf(command);
                     const unsigned peg = world->fix(
                         command.at("a").get<std::string>(),
                         command.at("b").get<std::string>(),
@@ -856,6 +964,7 @@ int main(int argc, char **argv) {
                         command.value("holds_shear_n", 0.0));
                     if (peg == 0)
                         throw std::invalid_argument("those two cannot be fixed together");
+                    if (!member.empty()) (void)world->setJointMember(peg, member);
                     reply["joint"] = peg;
                 } else if (op == "spring") {
                     // An elastic element: a bow limb, a spring, a bent plank.
@@ -863,6 +972,7 @@ int main(int argc, char **argv) {
                     // extension, stored energy is half stiffness times
                     // extension squared -- validated in tests/elastic_tests.cpp
                     // against the work actually done drawing it.
+                    const std::string member = madeOf(command);
                     const unsigned limb = world->spring(
                         command.at("a").get<std::string>(),
                         command.at("b").get<std::string>(),
@@ -872,7 +982,25 @@ int main(int argc, char **argv) {
                         command.value("damping_n_s_m", 0.0));
                     if (limb == 0)
                         throw std::invalid_argument("a spring cannot go between those two");
+                    if (!member.empty()) (void)world->setJointMember(limb, member);
                     reply["joint"] = limb;
+                } else if (op == "member") {
+                    // Say which of a joint's two bodies it is made of, or ""
+                    // to go back to the numbers it was declared with.
+                    if (!world->setJointMember(command.at("joint").get<unsigned>(),
+                                               command.value("member", std::string{})))
+                        throw std::invalid_argument(
+                            "a joint is made of one of its own two ends, and only a fixing, a "
+                            "tie or a spring has a strength or a stiffness for heat to change");
+                } else if (op == "mechanics") {
+                    // What heat has done to what everything can carry, answered
+                    // on its own like `thermo`: it moves nothing.
+                    std::cout << nlohmann::json{{"ok", true},
+                                                {"mechanics", nlohmann::json::parse(world->mechanicsReport(
+                                                                  command.value("laws", false)))}}
+                                     .dump()
+                              << std::endl;
+                    continue;
                 } else if (op == "unhinge") {
                     world->unhinge(command.at("joint").get<unsigned>());
                 } else if (op == "joint_friction") {
@@ -1015,11 +1143,16 @@ int main(int argc, char **argv) {
                                        {"carrying_n", tidy(load.carrying_n)},
                                        {"span_m", tidy(load.span_m)},
                                        {"stress_mpa", tidy(load.stress_pa / 1e6)},
-                                       {"holds_mpa", tidy(load.strength_pa / 1e6)}});
+                                       {"holds_mpa", tidy(load.strength_pa / 1e6)},
+                                       {"capacity_fraction", tidy(load.capacity_fraction)},
+                                       {"why", load.why}});
                 if (!sagging.empty()) reply["overloaded"] = std::move(sagging);
                 if (const banjo::thermo::ThermoWorld *network = world->thermo();
                     network != nullptr && network->active())
                     reply["heat"] = heatSummary(*network);
+                // And what that heat has done to what things can carry.
+                if (nlohmann::json strength = mechanicsSummary(*world); !strength.is_null())
+                    reply["mechanics"] = std::move(strength);
                 // Pins travel when the SET of them changes -- one hung, one
                 // taken out, one that came off because its wood was smashed --
                 // and not on every tick. Their angles change every frame, but

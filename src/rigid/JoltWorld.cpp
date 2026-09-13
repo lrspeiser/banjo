@@ -1283,6 +1283,22 @@ unsigned JoltWorld::addElastic(const ElasticDescription &d) {
     return id;
 }
 
+void JoltWorld::updateElastic(unsigned joint, double stiffness_n_m, double damping_n_s_m) {
+    impl_->requireConfigurationMutable();
+    const auto found = impl_->joints_.find(joint);
+    if (found == impl_->joints_.end()) throw std::invalid_argument("there is no such joint");
+    if (found->second.kind != JointKind::Elastic)
+        throw std::invalid_argument("only an elastic has a stiffness to change");
+    if (!(stiffness_n_m > 0.0) || !std::isfinite(stiffness_n_m))
+        throw std::invalid_argument("an elastic needs a positive stiffness in newtons per metre");
+    if (!(damping_n_s_m >= 0.0) || !std::isfinite(damping_n_s_m))
+        throw std::invalid_argument("elastic damping is newton seconds per metre, zero or more");
+    auto *spring = static_cast<JPH::DistanceConstraint *>(found->second.constraint.GetPtr());
+    spring->SetLimitsSpringSettings({JPH::ESpringMode::StiffnessAndDamping,
+                                     static_cast<float>(stiffness_n_m),
+                                     static_cast<float>(damping_n_s_m)});
+}
+
 unsigned JoltWorld::addFixing(const FixingDescription &d) {
     impl_->requireConfigurationMutable();
     if (d.a == d.b || !contains(d.a) || !contains(d.b))
@@ -1319,6 +1335,66 @@ unsigned JoltWorld::addFixing(const FixingDescription &d) {
     auto *raw = impl_->physics_->GetBodyInterface().CreateConstraint(
         &settings, impl_->bodies_.at(d.a), impl_->bodies_.at(d.b));
     if (!raw) throw std::runtime_error("fixing creation failed");
+    // A LIGHT BODY HELD BETWEEN A HEAVY ONE AND ITS SUPPORT: a 32 kg iron gate
+    // welded under a 180 g oak peg that is itself fixed into an anchored post.
+    // An iterative solver passes an impulse through a light body held between a
+    // heavy one and its support at about the ratio of their masses per
+    // iteration -- after N the part not yet passed is (1 + m/M)^-N, the same
+    // arithmetic as the kerf below -- and with the default ten, measured, that
+    // peg sagged 13 degrees under its gate and the load it read was the weight
+    // times the cosine of the sag. So when a fixing makes that arrangement --
+    // either end of it, in whichever order the two were fixed -- its island gets
+    // enough iterations to pass all but 1% of the heavy body's impulse through
+    // the light one, up to what Jolt can be asked for (its override is 8 bits).
+    //
+    // ONLY that arrangement. A light body between two moving ones is left at
+    // the default: a bow's nocking point sits between its string and a heavier
+    // arrow, and the bow's limbs are soft springs whose behaviour depends on how
+    // many times they are iterated -- raising the island's count changed what
+    // the bow threw (tests/bow_tests.cpp), which is the bow's own calibration
+    // and not this fixing's business.
+    {
+        const auto inverseMass = [&](MatterBodyId body) {
+            JPH::BodyLockRead lock(impl_->physics_->GetBodyLockInterface(), impl_->bodies_.at(body));
+            if (!lock.Succeeded() || !lock.GetBody().IsDynamic()) return 0.0;
+            return static_cast<double>(lock.GetBody().GetMotionProperties()->GetInverseMass());
+        };
+        // What a moving body is already joined to: whether any of it does not
+        // move, and the heaviest of what does (as its inverse mass).
+        const auto joinedTo = [&](MatterBodyId body, double &heaviest_inverse, bool &supported) {
+            for (const auto &[id, held] : impl_->joints_) {
+                if (held.a != body && held.b != body) continue;
+                const double other = inverseMass(held.a == body ? held.b : held.a);
+                if (!(other > 0.0)) supported = true;
+                else heaviest_inverse = std::min(heaviest_inverse, other);
+            }
+        };
+        const double ia = inverseMass(d.a), ib = inverseMass(d.b);
+        double light_over_heavy = 1.0;   // m / M of the light body and the heavy one it carries
+        if (ia > 0.0 && ib > 0.0) {
+            // Two moving bodies: it matters if the lighter is held by a support.
+            const double light = std::max(ia, ib);
+            double heaviest = std::min(ia, ib);
+            bool supported = false;
+            joinedTo(ia >= ib ? d.a : d.b, heaviest, supported);
+            if (supported) light_over_heavy = heaviest / light;
+        } else if (ia > 0.0 || ib > 0.0) {
+            // A moving body onto a support: it matters if it already carries
+            // something heavier than itself.
+            const double light = std::max(ia, ib);
+            double heaviest = light;
+            bool supported = true;
+            joinedTo(ia > 0.0 ? d.a : d.b, heaviest, supported);
+            light_over_heavy = heaviest / light;
+        }
+        if (light_over_heavy < 1.0) {
+            const int steps = static_cast<int>(std::ceil(std::log(100.0) / std::log1p(light_over_heavy)));
+            if (steps > 10) {
+                raw->SetNumVelocityStepsOverride(static_cast<JPH::uint>(std::min(steps, 255)));
+                raw->SetNumPositionStepsOverride(static_cast<JPH::uint>(std::min(std::max(steps / 10, 2), 32)));
+            }
+        }
+    }
     const auto id = impl_->next_joint_++;
     impl_->joints_.emplace(id, Impl::Joint{d.a, d.b, JointKind::Fixing,
                                            static_cast<JPH::TwoBodyConstraint *>(raw)});

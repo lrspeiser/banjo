@@ -420,6 +420,19 @@ def normalise_joints(joints: Any, bodies: list[dict[str, Any]]) -> list[dict[str
         axis = [_number(v, -1e6, 1e6, f"joint {i} axis") for v in axis]
         if not any(abs(v) > 1e-9 for v in axis):
             raise ValueError(f"joint {i} has an axis with no direction")
+        # What a fixing, a link or a spring is MADE of, when the room says: one
+        # of its own two ends, whose material and temperature then decide what
+        # it can take (docs/thermal-mechanics.md). Kept on the joint below.
+        made: dict[str, Any] = {}
+        if joint.get("member"):
+            member = str(joint["member"])
+            if kind not in ("fixing", "link", "elastic"):
+                raise ValueError(f"joint {i}: only a fixing, a link or a spring is made of "
+                                 f"something heat can change, not a {kind}")
+            if member not in (a, b):
+                raise ValueError(f"joint {i} is made of {member!r}, which is neither of the "
+                                 f"two things it holds ({a!r} and {b!r})")
+            made["member"] = member
         if kind == "elastic":
             # Two places, like a link: a spring pulls on a POINT, and a bow limb
             # that pulled on the limb's centre would be a different machine.
@@ -436,7 +449,7 @@ def normalise_joints(joints: Any, bodies: list[dict[str, Any]]) -> list[dict[str
                               f"joint {i} damping_n_s_m")
             out.append({"kind": kind, "a": a, "b": b, "at_mm": at, "to_mm": far,
                         "rest_mm": rest, "stiffness_n_m": stiffness,
-                        "damping_n_s_m": damping})
+                        "damping_n_s_m": damping, **made})
             continue
         if kind == "fixing":
             # Two strengths, because a peg pulled straight out and a peg sheared
@@ -447,7 +460,7 @@ def normalise_joints(joints: Any, bodies: list[dict[str, Any]]) -> list[dict[str
                                   f"joint {i} holds_shear_n")
             out.append({"kind": kind, "a": a, "b": b, "at_mm": at, "axis": axis,
                         "holds_tension_n": holds_tension,
-                        "holds_shear_n": holds_shear})
+                        "holds_shear_n": holds_shear, **made})
             continue
         if kind == "pulley":
             # Four places: where the rope is made off on each body, and the two
@@ -491,7 +504,7 @@ def normalise_joints(joints: Any, bodies: list[dict[str, Any]]) -> list[dict[str
             breaks = _number(joint.get("breaks_at_n", 0.0), 0.0, 1e9,
                              f"joint {i} breaks_at_n")
             out.append({"kind": kind, "a": a, "b": b, "at_mm": at, "to_mm": far,
-                        "length_mm": span, "breaks_at_n": breaks})
+                        "length_mm": span, "breaks_at_n": breaks, **made})
             continue
         if kind == "slider":
             # Travel in MILLIMETRES, like every other length in a room
