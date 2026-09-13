@@ -988,6 +988,23 @@ void ThermoWorld::split(const std::string &body,
             w.s.lumps.push_back(std::move(piece));
         }
     }
+    // What was attached to the body goes with its largest piece: a heater under
+    // a log keeps heating what is left of the log, and a gas pushing on a piston
+    // keeps pushing on it. Left naming a body that is gone, a heater stopped
+    // heating and a gas stopped pushing the moment a blade parted what they were
+    // on. Neither says WHERE on the body it acts, so which piece takes it is a
+    // declared choice, and it is the largest.
+    std::size_t largest = 0;
+    for (std::size_t k = 1; k < pieces.size(); ++k)
+        if (pieces[k].second > pieces[largest].second) largest = k;
+    const std::string heir = pieces[largest].first;
+    for (Heater &heater : w.s.heaters)
+        if (heater.what.target == body) heater.what.target = heir;
+    for (GasRegion &region : w.s.regions) {
+        if (!region.piston) continue;
+        if (region.piston->body == body) region.piston->body = heir;
+        if (region.piston->container == body) region.piston->container = heir;
+    }
     w.couple();
 }
 
