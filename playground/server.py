@@ -32,6 +32,7 @@ import live_session
 import live_inprocess
 import world_chat
 import world_room
+import room_store
 import scene_chat
 import network_admission
 from network_admission import Inadmissible, LIMITS, describe_package
@@ -1135,11 +1136,33 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(opened)
                 scene=str(body.get("scene","bench"))
                 if scene not in world_room.SCENES: scene="bench"
-                if body.get("fresh") or scene not in rooms: rooms[scene]=world_room.Room(scene)
-                app.room=rooms[scene]
-                opened=app.live.open(app,{"spec":app.room.spec})
+                # Kept on disk as well (room_store): a room this server has not
+                # opened since it started is read back as it was left, so a
+                # restart -- the sims are restarted whenever work lands -- keeps
+                # what anyone built. Fresh is the room as first made, kept as
+                # that once it has opened, so a fresh room that will not open
+                # never costs the one that was kept.
+                room,kept=room_store.room_for(app,scene,rooms.get(scene),bool(body.get("fresh")))
+                rooms[scene]=app.room=room
+                try:
+                    opened=app.live.open(app,{"spec":room.spec})
+                except Exception as problem:
+                    if not kept: raise
+                    # A kept room that no longer opens -- kept by an older build,
+                    # say -- is set aside, never deleted, and the room opens as
+                    # it was first made.
+                    app.store.set_aside(scene,str(problem)[:300])
+                    room,kept=world_room.Room(scene),False
+                    rooms[scene]=app.room=room
+                    opened=app.live.open(app,{"spec":room.spec})
+                    opened["kept_problem"]=(f"the room kept from before would not open "
+                                            f"({str(problem)[:200]}); it was set aside and the "
+                                            f"room opened as first made")
+                if body.get("fresh"): room_store.keep(app,room)
                 opened["scene"]=app.room.scene
                 opened["scenes"]=sorted(world_room.SCENES)
+                opened["kept"]=kept
+                if kept: opened["kept_since_unix_s"]=getattr(room,"kept_since",None)
                 return self.send(opened)
             if path=="/api/world/ask":
                 app=self.server.app
@@ -1169,9 +1192,13 @@ class Handler(BaseHTTPRequestHandler):
                                           person=person,history=room.chat)
                 except Exception as failure:
                     world_chat.remember_turn(room.chat,message,None,failure=str(failure)[:300])
+                    room_store.keep(app,room)
                     remember_chat(app,message,trace,None,failure,_now()-began,person)
                     raise
                 world_chat.remember_turn(room.chat,message,answer)
+                # What the chat built is in room.spec now (export_spec) and the
+                # turn is in room.chat: both are kept, so a restart has them.
+                room_store.keep(app,room)
                 remember_chat(app,message,trace,answer,None,_now()-began,person)
                 if answer.pop("changed",False):
                     if app.room.bodies():
@@ -1406,6 +1433,8 @@ def remember_ground(app,body,answer=None):
         if not new: return
     terrain["edits"]=edits+new
     room.spec=dict(spec,terrain=terrain)
+    # The ground is part of what the room is, so it is kept with it (room_store).
+    room_store.keep(app,room)
 
 
 def main():
@@ -1415,6 +1444,10 @@ def main():
     parser.add_argument("--engine",type=Path,default=binary/"banjo_platform_cli.exe")
     parser.add_argument("--studio",type=Path,default=binary/"banjo_network_lab.exe")
     parser.add_argument("--runs",type=Path,default=ROOT/"build/playground-runs")
+    # Where this server keeps its rooms (room_store): a folder to a port by
+    # default, because the three sims share one checkout.
+    parser.add_argument("--rooms",type=Path,default=None,
+                        help="where rooms are kept (default build/playground-rooms/<port>)")
     # Hold the world in this process, through the C library, instead of in a
     # subprocess speaking the line protocol. Same engine, same scenes, same
     # replies -- one process boundary fewer. Off by default because a world that
@@ -1433,6 +1466,8 @@ def main():
     # rest of the server uses.
     logging.basicConfig(level=logging.INFO,format="%(asctime)s %(message)s")
     app=Playground(args.engine,args.studio,args.runs)
+    app.store=room_store.RoomStore(args.rooms or ROOT/"build"/"playground-rooms"/str(args.port))
+    print(f"rooms are kept in {app.store.folder}",flush=True)
     app.live_inprocess=args.live_inprocess
     if args.live_inprocess:
         ok,why=live_inprocess.available()
