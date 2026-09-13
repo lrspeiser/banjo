@@ -46,6 +46,29 @@ class TheLineWrittenToTheLog(unittest.TestCase):
         said = self.line(realtime_pct=38)
         self.assertIn("38% of realtime", said)
 
+    def test_a_clock_that_went_back_is_not_printed_as_a_percentage(self):
+        """A world's clock only runs forward.
+
+        Less than nothing means the report spanned two worlds: the room was
+        started again, or the chat rebuilt it, and a page that kept its old
+        baseline took the old world's clock from the new one's. The log said
+        "room: -358% of realtime", which reads as a measurement and is not one.
+        """
+        said = self.line(world_s=-14.33, realtime_pct=-358)
+        self.assertTrue(said.startswith("room: the world was replaced during this report"),
+                        f"the line begins {said[:60]!r}")
+        self.assertNotIn("-358", said)
+        self.assertNotIn("% of realtime", said)
+
+    def test_a_clock_that_went_back_a_little_is_not_a_stopped_one(self):
+        """A little less than nothing rounds to 0%, the figure for a stopped clock.
+
+        The seconds say which it was.
+        """
+        said = self.line(world_s=-0.01, realtime_pct=0)
+        self.assertIn("the world was replaced during this report", said)
+        self.assertNotIn("0% of realtime", said)
+
     def test_it_carries_the_worst_frame(self):
         said = self.line(frame_ms={"median": 16.6, "p95": 40.0, "worst": 310.0})
         self.assertIn("worst frame 310.0 ms", said)
@@ -133,6 +156,26 @@ class TheEndpointThatReceivesThem(unittest.TestCase):
         """The page writes this, so it is capped like anything else the page sends."""
         with self.assertRaises(ValueError):
             self.send({"why": "routine", "slow_frames": ["x" * 200] * 1000})
+
+    def test_a_room_that_fell_behind_is_said_out_loud(self):
+        """Under 90% of realtime, while somebody was watching, is a lag."""
+        with self.assertLogs(level="INFO") as logged:
+            self.send({"why": "routine", "watched": True, "frames": 240, "realtime_pct": 74,
+                       "world_s": 2.96, "frame_ms": {"worst": 20.0}, "objects": 58})
+        self.assertTrue(any("74% of realtime" in line for line in logged.output), logged.output)
+
+    def test_a_replaced_world_is_not_said_out_loud_as_a_room_falling_behind(self):
+        """Less than nothing is not "under 90%": it is two worlds in one report.
+
+        It is filed like any other report, and kept out of the line that is
+        said out loud for a room that is really running slow -- which is where
+        "-358% of realtime" turned up.
+        """
+        with self.assertNoLogs(level="INFO"):
+            self.send({"why": "routine", "watched": True, "frames": 240, "realtime_pct": -358,
+                       "world_s": -14.33, "frame_ms": {"worst": 20.0}, "objects": 58})
+        filed = (self.where / "room-frames.jsonl").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(json.loads(filed[-1])["realtime_pct"], -358, "filed as it was sent")
 
 
 if __name__ == "__main__":
