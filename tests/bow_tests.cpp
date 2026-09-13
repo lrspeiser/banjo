@@ -34,6 +34,7 @@
 #include "fastlattice/LiveWorld.hpp"
 
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -78,21 +79,27 @@ double speedOf(LiveWorld &world, const std::string &what) {
 // The bow is built lying along x. The archer is at -x, the target at +x: the
 // string is drawn back in -x and the arrow flies in +x.
 //
-// THE TIPS SIT FORWARD OF THE GRIP, and that is not decoration. The first
-// version of this put them directly above and below it, and the bow stored
-// exactly nothing however far it was drawn -- because a tip directly above the
-// grip swings on an ARC AT CONSTANT RADIUS, so the grip-to-tip distance the
-// limb spring measures never changes at all. Set forward, drawing the string
-// pulls each tip backward and inward and that line SHORTENS, which is where the
-// energy goes. (A real limb stores it by bending; this stores it by being
-// compressed along its length. Same energy, declared differently -- see
-// tests/elastic_tests.cpp for what the model is and is not.)
+// THE TIPS ARE LEVEL WITH THE STRING, as on the courtyard's bow and for its
+// reason. They used to sit 300 mm forward of it, and the braced string was then
+// a V with the nocking point at its apex: push the nock towards the bow and BOTH
+// segments go slack, so nothing brings it back, and brace was not an equilibrium
+// at all. What decided where the string ended up was rounding. Measured, the
+// same bow drawn 100 mm held 22.5 J built by MSVC and 1.3 J built by GCC; loosed
+// with no arrow, the string ran on to x = +0.62 on one and never came back to
+// brace on the other. With the tips level, moving the nock off the line between
+// them in ANY direction lengthens both segments, and it comes back.
 //
-// So: grip at x = 0, tips 150 mm forward of it and 400 mm out, string behind at
-// a brace of -150 mm.
-constexpr double kTipX = 0.15;      // how far forward of the grip the tips sit
+// (A limb is a hinge at the root and an elastic from a point forward of it --
+// see below -- so drawing swings each tip back and inward about its root and
+// lengthens that elastic, which is where the energy goes. A real limb stores it
+// by bending; this declares it as a lever with a spring on it. Same energy,
+// declared differently -- tests/elastic_tests.cpp says what the model is.)
+//
+// So: grip at x = 0, the string a brace height of 160 mm behind it, and the tips
+// level with the string, 400 mm out.
+constexpr double kBrace = -0.16;    // where the string sits, unshot
+constexpr double kTipX = kBrace;    // the tips, level with the string
 constexpr double kTipUp = 0.40;     // how far out along the limb
-constexpr double kBrace = -0.15;    // where the string sits, unshot
 
 // A limb is ROOTED, and getting that wrong cost two geometries.
 //
@@ -130,27 +137,61 @@ struct Bow {
 
 // Where the limbs are rooted on the riser, and where their springs are anchored.
 //
-// kRootUp is 100 mm and not 200, and that is not a free choice. At 200 the
-// root, the tip and the nocking point came out COLLINEAR -- (0, 2.2), (0.15,
-// 2.4) and (-0.15, 2.0) are on one line -- so the string pulled straight
-// through the pivot and exerted no torque on the limb whatsoever. The hand
-// heaved with its full 800 N and the bow did not move, which looks exactly like
-// a hand that is too weak and is a lever arm of zero.
-constexpr double kRootUp = 0.10;
-constexpr double kSpringX = 0.35;
+// The string must never pull straight through a root: with the tips forward of
+// it, a root 200 mm out put the root, the tip and the nocking point on one line,
+// the string exerted no torque on the limb at all, and the hand heaved with its
+// full 800 N at a bow that did not move -- which looks exactly like a hand that
+// is too weak and is a lever arm of zero. With the tips level with the string
+// the braced string runs straight up and down 160 mm behind the roots, so that
+// lever arm is the brace height whatever the root. 120 mm out, and the springs
+// anchored 360 mm forward of the grip: the courtyard's bow.
+constexpr double kRootUp = 0.12;
+constexpr double kSpringX = 0.36;
+
+// A DECLARED loss in the limbs, as the courtyard's bow has, and for its reason.
+// Undamped, the limbs rang for ever, so what they held after a fixed number of
+// steps was a snapshot of an oscillation at whatever phase it had reached --
+// the same bow drawn 100 mm read 18.9 J built by MSVC and 30.8 J built by GCC,
+// and which bow of two "stored more" came down to that phase.
+constexpr double kLimbDamping = 20.0;   // N s/m
 
 TileImpactRequest bowScene(Vec3 arrow_m, bool with_gravity) {
     TileImpactRequest r;
     r.cell_size_m = 0.05;
     r.backend = BackendKind::CpuParallel;
     if (!with_gravity) r.gravity_m_s2 = {0.0, 0.0, 0.0};
+    // The riser is TWO blocks with a window between them for the arrow, as the
+    // courtyard's bow is. It was one block, and the arrow was built running
+    // straight through the middle of it: a dynamic body inside an anchored one
+    // from the first step, pushed out by whatever the contact solver made of
+    // that. The result depended on the compiler -- drawn 100/200 mm the same bow
+    // held 7.3/103 J built by MSVC and 28.9/58.7 J built by GCC, and on Linux
+    // the stiffer bow threw slower -- which is a measurement of the overlap, not
+    // of a bow. The window is 200 mm, from y = 1.9 to 2.1: the heavy arrow is
+    // 100 mm across, and a box here is a whole number of 50 mm cells. The limb
+    // roots stay where they were, at 2.1 and 1.9 -- now on the blocks' faces.
     SceneBody riser;
-    riser.name = "riser";
+    riser.name = "riser upper";
     riser.shape = BodyShape::Box;
     riser.material = MaterialPreset::Oak;
-    riser.dimensions_m = {0.1, 0.4, 0.1};
-    riser.center_m = {0.0, 2.0, 0.0};
+    riser.dimensions_m = {0.1, 0.1, 0.1};
+    riser.center_m = {0.0, 2.15, 0.0};
     riser.anchored = true;              // the grip: a hand that does not move
+    SceneBody riser_lower = riser;
+    riser_lower.name = "riser lower";
+    riser_lower.center_m = {0.0, 1.85, 0.0};
+    // Cheeks either side of the window, 25 mm clear of the heaviest arrow: an
+    // arrow rest's side plates. Made off at its two ends (see the string),
+    // nothing resists the nocking point ROLLING about the string's own length,
+    // and rolling it swings the arrow out of the bow's plane. The courtyard's
+    // bow has them for that reason, and so do real ones.
+    SceneBody cheek = riser;
+    cheek.name = "cheek near";
+    cheek.dimensions_m = {0.05, 0.05, 0.05};
+    cheek.center_m = {0.0, 2.0, 0.1};
+    SceneBody cheek_far = cheek;
+    cheek_far.name = "cheek far";
+    cheek_far.center_m = {0.0, 2.0, -0.1};
     SceneBody upper;
     upper.name = "upper tip";
     upper.shape = BodyShape::Box;
@@ -167,11 +208,14 @@ TileImpactRequest bowScene(Vec3 arrow_m, bool with_gravity) {
     SceneBody lower = upper;
     lower.name = "lower tip";
     lower.center_m = {kTipX, 2.0 - kTipUp, 0.0};
+    // A LENGTH of string, 150 mm of it, not a nocking POINT: see the string's
+    // links. A 50 mm one let the arrow's weight turn it, and with gravity on the
+    // arrow was hanging nearly straight down from the nock when it was loosed.
     SceneBody nock;
     nock.name = "nocking point";
     nock.shape = BodyShape::Box;
     nock.material = MaterialPreset::Oak;
-    nock.dimensions_m = {0.05, 0.05, 0.05};
+    nock.dimensions_m = {0.05, 0.15, 0.05};
     nock.center_m = {kBrace, 2.0, 0.0};
     SceneBody arrow;
     arrow.name = "arrow";
@@ -180,7 +224,7 @@ TileImpactRequest bowScene(Vec3 arrow_m, bool with_gravity) {
     arrow.dimensions_m = arrow_m;
     // Its back end at the nocking point, so it lies forward along the shot.
     arrow.center_m = {kBrace + arrow_m.x / 2, 2.0, 0.0};
-    r.bodies = {riser, upper, lower, nock, arrow};
+    r.bodies = {riser, riser_lower, cheek, cheek_far, upper, lower, nock, arrow};
     return r;
 }
 
@@ -189,22 +233,29 @@ TileImpactRequest bowScene(Vec3 arrow_m, bool with_gravity) {
 Bow buildBow(double stiffness_n_m = 4000.0,
              Vec3 arrow_m = Vec3{0.6, 0.05, 0.05},
              bool with_gravity = false,
-             double hand_n = 2000.0) {
+             double hand_n = 800.0) {
     Bow bow{};
     bow.world = LiveWorld::open(bowScene(arrow_m, with_gravity));
     LiveWorld &w = *bow.world;
-    // A BENCH hand: 2 kN, against the 800 N an ordinary archer has.
+    // The ordinary hand: 800 N, what a person has and what the playground uses.
     //
-    // The hand pulls with a bounded force, so a person simply cannot draw a very
-    // stiff bow as far -- which is true, and is tested on its own below. It is
-    // not what the stiffness comparison is about, though: measured with an 800 N
-    // hand, a 16 kN/m bow threw the arrow SLOWER than a 4 kN/m one, not because
-    // stiffness does not help but because the archer could not get it back.
+    // This was a 2 kN "bench" hand, and at 2 kN the hand's pull is not a hand at
+    // all: it is pushed as an explicit force once a step, at strength/0.05 N/m
+    // and strength/8 N s/m, and across the string -- where the string and the
+    // arrow fixed to it are a 0.3 kg thing on a lever -- 2 kN's worth of that is
+    // past what a 240 Hz step can integrate (damping 3.5 and stiffness 2.3 of a
+    // step's worth, against a limit of 2). Held still at full draw, the string
+    // spun the arrow round sideways at 12 m/s for ten seconds, and which way it
+    // spun was rounding: MSVC and GCC builds of the same bow disagreed fourteen
+    // times over, and "a stiffer bow throws faster" passed on one and failed on
+    // the other. The "6 kN demolished the bow" this used to warn about was the
+    // same thing. At 800 N the same bow comes to rest, and the two builds agree
+    // to three figures.
     //
-    // And not more than 2 kN either. At 6 kN the hand simply demolished the bow:
-    // the upper limb folded to -120 degrees and the string came out 36% longer
-    // than it is. A hand strong enough to break the thing it is holding is not a
-    // more useful hand.
+    // The fix for the hand itself is to pull INSIDE the solver -- a force-bounded
+    // constraint, not a force pushed from outside -- which is stable for any mass
+    // and any strength (docs/interaction-profiles.md). Until then, a bow is
+    // drawn with the hand people actually have.
     w.setHandStrength(hand_n);
 
     // The limbs. Elastic, from the grip out to each tip -- drawing the string
@@ -215,26 +266,31 @@ Bow buildBow(double stiffness_n_m = 4000.0,
     // right over is a limb that WILL: heaved at with 6 kN the upper limb went
     // to -120 degrees, which put its tip below the grip, and the string came out
     // 36% longer than it is. A bow whose limbs can turn inside out is not a bow.
-    bow.upper_root = w.hinge("riser", "upper tip", Vec3{0.0, 2.0 + kRootUp, 0.0},
+    bow.upper_root = w.hinge("riser upper", "upper tip", Vec3{0.0, 2.0 + kRootUp, 0.0},
                              Vec3{0.0, 0.0, 1.0}, -60.0, 60.0);
-    bow.lower_root = w.hinge("riser", "lower tip", Vec3{0.0, 2.0 - kRootUp, 0.0},
+    bow.lower_root = w.hinge("riser lower", "lower tip", Vec3{0.0, 2.0 - kRootUp, 0.0},
                              Vec3{0.0, 0.0, 1.0}, -60.0, 60.0);
     require(bow.upper_root != 0 && bow.lower_root != 0,
             "the limbs would not root to the riser");
 
     // And the elastic that resists the swing, anchored forward of the root so
     // that swinging back lengthens it.
-    bow.upper_limb = w.spring("riser", "upper tip", Vec3{kSpringX, 2.0 + kRootUp, 0.0},
-                              Vec3{kTipX, 2.0 + kTipUp, 0.0}, 0.0, stiffness_n_m, 0.0);
-    bow.lower_limb = w.spring("riser", "lower tip", Vec3{kSpringX, 2.0 - kRootUp, 0.0},
-                              Vec3{kTipX, 2.0 - kTipUp, 0.0}, 0.0, stiffness_n_m, 0.0);
+    bow.upper_limb = w.spring("riser upper", "upper tip", Vec3{kSpringX, 2.0 + kRootUp, 0.0},
+                              Vec3{kTipX, 2.0 + kTipUp, 0.0}, 0.0, stiffness_n_m, kLimbDamping);
+    bow.lower_limb = w.spring("riser lower", "lower tip", Vec3{kSpringX, 2.0 - kRootUp, 0.0},
+                              Vec3{kTipX, 2.0 - kTipUp, 0.0}, 0.0, stiffness_n_m, kLimbDamping);
     require(bow.upper_limb != 0 && bow.lower_limb != 0, "the limbs would not go on");
 
-    // The string. Links, because a string pulls and does not push.
+    // The string. Links, because a string pulls and does not push -- made off at
+    // the string's two ENDS, 150 mm apart, not both at its middle. Two ropes made
+    // off at one point are a ball joint: the string, and the arrow fixed 300 mm
+    // in front of it, were free to turn about it with nothing to stop them. Made
+    // off apart, turning the string has to lengthen one of them. The courtyard's
+    // bow learned the same thing and is strung the same way.
     bow.upper_string = w.tie("upper tip", "nocking point",
-                             Vec3{kTipX, 2.0 + kTipUp, 0.0}, Vec3{kBrace, 2.0, 0.0});
+                             Vec3{kTipX, 2.0 + kTipUp, 0.0}, Vec3{kBrace, 2.075, 0.0});
     bow.lower_string = w.tie("lower tip", "nocking point",
-                             Vec3{kTipX, 2.0 - kTipUp, 0.0}, Vec3{kBrace, 2.0, 0.0});
+                             Vec3{kTipX, 2.0 - kTipUp, 0.0}, Vec3{kBrace, 1.925, 0.0});
     require(bow.upper_string != 0 && bow.lower_string != 0,
             "the string would not go on");
 
@@ -267,8 +323,53 @@ double drawBack(Bow &bow, double by_m) {
     // working: 0.027 J at 100 mm and 207 at 300, from the same bow, because the
     // long draw happened to be given three times as many steps to get there.
     // Drawing and holding is also what an archer does.
-    for (int i = 0; i < 300; ++i) tick(w);
+    //
+    // Held until it has STOPPED -- the string still for a quarter of a second
+    // -- and not for a fixed count of steps, which read limbs still ringing.
+    for (int i = 0, still = 0; i < 2400 && still < 60; ++i) {
+        tick(w);
+        still = speedOf(w, "nocking point") < 0.001 ? still + 1 : 0;
+    }
     return storedInLimbs(bow);
+}
+
+// How far back the string actually is: the hand pulls with what it has, so a
+// stiff bow is not always drawn as far as the hand went.
+double drawnTo(Bow &bow) {
+    return kBrace - named(bow.world->poses(), "nocking point").position_m.x;
+}
+
+// Everything the bow is doing, for comparing one build of the engine with
+// another. BANJO_BOW_TRACE=1 prints it; it changes nothing.
+void dumpBow(Bow &bow, const std::string &label) {
+    static const bool on = std::getenv("BANJO_BOW_TRACE") != nullptr;
+    if (!on) return;
+    const auto joints = bow.world->joints();
+    const auto poses = bow.world->poses();
+    const auto joint = [&](const char *what, unsigned id) {
+        const LiveJoint j = jointNumber(joints, id);
+        std::cout << "    " << what << ": at " << j.at << " tension " << j.tension_n
+                  << " force " << j.force_n << " stored " << j.stored_j << "\n";
+    };
+    const auto body = [&](const char *name) {
+        const LiveBodyPose &p = named(poses, name);
+        std::cout << "    " << name << ": at (" << p.position_m.x << ", " << p.position_m.y
+                  << ", " << p.position_m.z << ") q (" << p.orientation_wxyz[0] << ", "
+                  << p.orientation_wxyz[1] << ", " << p.orientation_wxyz[2] << ", "
+                  << p.orientation_wxyz[3] << ") v (" << p.velocity_m_s.x << ", "
+                  << p.velocity_m_s.y << ", " << p.velocity_m_s.z << ")\n";
+    };
+    std::cout << "  [" << label << "]\n";
+    joint("upper root", bow.upper_root);
+    joint("lower root", bow.lower_root);
+    joint("upper limb", bow.upper_limb);
+    joint("lower limb", bow.lower_limb);
+    joint("upper string", bow.upper_string);
+    joint("lower string", bow.lower_string);
+    body("upper tip");
+    body("lower tip");
+    body("nocking point");
+    body("arrow");
 }
 
 // Loose. Returns the fastest the arrow ever goes.
@@ -312,6 +413,7 @@ void drawingStoresEnergy() {
     for (int i = 0; i < 3; ++i) {
         Bow bow = buildBow();
         held[i] = drawBack(bow, draws[i]);
+        dumpBow(bow, "drawn " + std::to_string(static_cast<int>(draws[i] * 1000.0)) + " mm");
     }
     std::cout << "  drawn 100/200/300 mm: " << held[0] << " / " << held[1] << " / "
               << held[2] << " J in the limbs\n";
@@ -349,20 +451,25 @@ void theArrowLeavesWithTheLimbsEnergy() {
 void aStifferBowThrowsItFaster() {
     double away[2] = {0.0, 0.0};
     double held[2] = {0.0, 0.0};
-    // Twice the stiffness, at a 200 mm draw, with the ordinary bench hand.
+    // Twice the stiffness, at a 200 mm draw, with the ordinary hand -- which
+    // draws both bows almost all the way (197 and 195 mm, measured).
     //
     // Not four times at 300 mm: that needs about four times the force, and a
     // 6 kN hand drove the limb hard into its 60-degree stop, where the energy
     // goes into the stop rather than the spring. The same 4 kN/m bow then read
     // 38 J where a 2 kN hand had read 161, which is a measurement of the stop.
     const double stiffness[2] = {4000.0, 8000.0};
+    double drawn[2] = {0.0, 0.0};
     for (int i = 0; i < 2; ++i) {
         Bow bow = buildBow(stiffness[i]);
         held[i] = drawBack(bow, 0.2);
+        drawn[i] = drawnTo(bow);
+        dumpBow(bow, std::to_string(static_cast<int>(stiffness[i])) + " N/m drawn 200 mm");
         away[i] = loose(bow);
     }
-    std::cout << "  4 kN/m holds " << held[0] << " J and throws it at " << away[0]
-              << " m/s; 16 kN/m holds " << held[1] << " J and throws it at "
+    std::cout << "  4 kN/m drawn " << drawn[0] * 1000.0 << " mm holds " << held[0]
+              << " J and throws it at " << away[0] << " m/s; 8 kN/m drawn "
+              << drawn[1] * 1000.0 << " mm holds " << held[1] << " J and throws it at "
               << away[1] << "\n";
     require(held[1] > held[0],
             "the stiffer bow did not even store more energy at the same draw");
