@@ -32,8 +32,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterator
 
-# Bumped with the header: heat, chemistry and gas. (13 is another branch's.)
-ABI_VERSION = 14
+# Bumped with the header: heat, chemistry and gas (14), terrain and water (15).
+# (13 is another branch's.)
+ABI_VERSION = 15
 
 NOTHING, HELD, DENTED, BROKE = 0, 1, 2, 3
 OUTCOMES = {0: "nothing", 1: "held", 2: "dented", 3: "broke"}
@@ -432,6 +433,134 @@ class Energy:
     mechanical_j: float
 
 
+# ---- terrain and water (ABI 15) ---------------------------------------------
+
+class _Terrain(ctypes.Structure):
+    _fields_ = [("nx", ctypes.c_int), ("nz", ctypes.c_int),
+                ("cell_m", ctypes.c_double), ("origin_m", ctypes.c_double * 2),
+                ("chunks_x", ctypes.c_int), ("chunks_z", ctypes.c_int),
+                ("lowest_m", ctypes.c_double), ("highest_m", ctypes.c_double),
+                ("floor_m", ctypes.c_double),
+                ("rock_m3", ctypes.c_double), ("soil_m3", ctypes.c_double),
+                ("sand_m3", ctypes.c_double),
+                ("dug_m3", ctypes.c_double), ("cut_m3", ctypes.c_double),
+                ("deposited_m3", ctypes.c_double), ("slumped_m3", ctypes.c_double),
+                ("residual_m3", ctypes.c_double),
+                ("unsettled_columns", ctypes.c_int), ("chunks_rebuilt", ctypes.c_int),
+                ("rebuild_ms_worst", ctypes.c_double)]
+
+
+class _Water(ctypes.Structure):
+    _fields_ = [("time_s", ctypes.c_double),
+                ("volume_m3", ctypes.c_double), ("wet_area_m2", ctypes.c_double),
+                ("cells", ctypes.c_int), ("wet_cells", ctypes.c_int),
+                ("active_cells", ctypes.c_int),
+                ("inflow_m3_s", ctypes.c_double), ("outflow_m3_s", ctypes.c_double),
+                ("initial_m3", ctypes.c_double), ("inflow_m3", ctypes.c_double),
+                ("outflow_m3", ctypes.c_double), ("numerical_m3", ctypes.c_double),
+                ("residual_m3", ctypes.c_double),
+                ("substeps", ctypes.c_double), ("last_substep_s", ctypes.c_double),
+                ("wave_speed_m_s", ctypes.c_double),
+                ("bodies_in_water", ctypes.c_int),
+                ("water_ms_worst", ctypes.c_double), ("coupling_ms_worst", ctypes.c_double),
+                ("step_ms_worst", ctypes.c_double)]
+
+
+class _Dug(ctypes.Structure):
+    _fields_ = [("sand_m3", ctypes.c_double), ("soil_m3", ctypes.c_double),
+                ("mass_kg", ctypes.c_double), ("columns", ctypes.c_int),
+                ("chunks_rebuilt", ctypes.c_int), ("rebuild_ms", ctypes.c_double),
+                ("bodies_woken", ctypes.c_int)]
+
+
+class _Block(ctypes.Structure):
+    _fields_ = [("center_m", ctypes.c_double * 3), ("size_m", ctypes.c_double * 3),
+                ("volume_m3", ctypes.c_double), ("mass_kg", ctypes.c_double)]
+
+
+@dataclass(frozen=True)
+class Terrain:
+    """The ground: its grid, what it is made of, and what has crossed its boundary."""
+    nx: int
+    nz: int
+    cell_m: float
+    origin_m: tuple[float, float]
+    chunks_x: int
+    chunks_z: int
+    lowest_m: float
+    highest_m: float
+    floor_m: float
+    rock_m3: float
+    soil_m3: float
+    sand_m3: float
+    dug_m3: float
+    cut_m3: float
+    deposited_m3: float
+    slumped_m3: float
+    residual_m3: float
+    unsettled_columns: int
+    chunks_rebuilt: int
+    rebuild_ms_worst: float
+
+
+@dataclass(frozen=True)
+class Water:
+    """The water: how much, where, what crosses its edges, and what it costs.
+
+    volume - initial = inflow - outflow + numerical + residual."""
+    time_s: float
+    volume_m3: float
+    wet_area_m2: float
+    cells: int
+    wet_cells: int
+    active_cells: int
+    inflow_m3_s: float
+    outflow_m3_s: float
+    initial_m3: float
+    inflow_m3: float
+    outflow_m3: float
+    numerical_m3: float
+    residual_m3: float
+    substeps: float
+    last_substep_s: float
+    wave_speed_m_s: float
+    bodies_in_water: int
+    water_ms_worst: float
+    coupling_ms_worst: float
+    step_ms_worst: float
+
+
+@dataclass(frozen=True)
+class Dug:
+    """What a dig or a heap moved, and what it cost the world."""
+    sand_m3: float
+    soil_m3: float
+    mass_kg: float
+    columns: int
+    chunks_rebuilt: int
+    rebuild_ms: float
+    bodies_woken: int
+
+
+@dataclass(frozen=True)
+class Block:
+    """A block cut out of bare rock: the box and the matter it is."""
+    center_m: tuple[float, float, float]
+    size_m: tuple[float, float, float]
+    volume_m3: float
+    mass_kg: float
+
+
+def _xz(point: Any) -> ctypes.Array:
+    """A point on the ground: [x, z], or [x, y, z] with y ignored."""
+    seq = [float(v) for v in point]
+    if len(seq) == 2:
+        return (ctypes.c_double * 2)(seq[0], seq[1])
+    if len(seq) == 3:
+        return (ctypes.c_double * 2)(seq[0], seq[2])
+    raise BanjoError("a point on the ground needs [x, z] or [x, y, z]")
+
+
 def _find_library(explicit: str | os.PathLike[str] | None = None) -> Path:
     """The built or installed library, wherever it is.
 
@@ -607,6 +736,33 @@ def library(path: str | os.PathLike[str] | None = None) -> ctypes.CDLL:
     lib.banjo_thermo_report.restype = ctypes.c_char_p
     lib.banjo_thermo_model.argtypes = []
     lib.banjo_thermo_model.restype = ctypes.c_char_p
+    lib.banjo_terrain_info.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Terrain)]
+    lib.banjo_terrain_info.restype = ctypes.c_int
+    lib.banjo_water_info.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Water)]
+    lib.banjo_water_info.restype = ctypes.c_int
+    lib.banjo_dig.argtypes = [ctypes.c_void_p, ctypes.c_double * 2, ctypes.c_double * 2,
+                              ctypes.c_double, ctypes.c_double, ctypes.POINTER(_Dug)]
+    lib.banjo_dig.restype = ctypes.c_int
+    lib.banjo_deposit.argtypes = [ctypes.c_void_p, ctypes.c_double * 2, ctypes.c_double,
+                                  ctypes.c_double, ctypes.c_double, ctypes.POINTER(_Dug)]
+    lib.banjo_deposit.restype = ctypes.c_int
+    lib.banjo_cut.argtypes = [ctypes.c_void_p, ctypes.c_double * 2, ctypes.c_int, ctypes.c_int,
+                              ctypes.c_double, ctypes.POINTER(_Block)]
+    lib.banjo_cut.restype = ctypes.c_int
+    lib.banjo_set_discharge.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double]
+    lib.banjo_set_discharge.restype = ctypes.c_int
+    lib.banjo_terrain_heights.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_float), ctypes.c_int]
+    lib.banjo_terrain_heights.restype = ctypes.c_int
+    lib.banjo_water_surface.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_double), ctypes.c_int]
+    lib.banjo_water_surface.restype = ctypes.c_int
+    lib.banjo_environment_report.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    lib.banjo_environment_report.restype = ctypes.c_char_p
+    lib.banjo_environment_state.argtypes = [ctypes.c_void_p]
+    lib.banjo_environment_state.restype = ctypes.c_char_p
+    lib.banjo_survey.argtypes = [ctypes.c_void_p, ctypes.c_double, ctypes.c_double]
+    lib.banjo_survey.restype = ctypes.c_char_p
+    lib.banjo_awake_bodies.argtypes = [ctypes.c_void_p]
+    lib.banjo_awake_bodies.restype = ctypes.c_int
 
     found = lib.banjo_abi_version()
     if found != ABI_VERSION:
@@ -1204,6 +1360,95 @@ class World:
         """Everything about heat, chemistry and gas, as the engine says it."""
         text = self._lib.banjo_thermo_report(self._alive(), int(bool(with_model))) or b"{}"
         return json.loads(text.decode("utf-8"))
+
+    # -- terrain and water ------------------------------------------------
+    def terrain(self) -> Terrain:
+        """The ground: grid, volumes by material, and its ledger."""
+        out = _Terrain()
+        self._check(self._lib.banjo_terrain_info(self._alive(), ctypes.byref(out)), "reading the ground")
+        fields = {name: getattr(out, name) for name, _ in _Terrain._fields_}
+        fields["origin_m"] = tuple(out.origin_m)
+        return Terrain(**fields)
+
+    def water(self) -> Water:
+        """The water: volume, where it is, what crosses its edges, what it costs."""
+        out = _Water()
+        self._check(self._lib.banjo_water_info(self._alive(), ctypes.byref(out)), "reading the water")
+        return Water(**{name: getattr(out, name) for name, _ in _Water._fields_})
+
+    @staticmethod
+    def _dug(out: "_Dug") -> Dug:
+        return Dug(**{name: getattr(out, name) for name, _ in _Dug._fields_})
+
+    def dig(self, from_m: Any, to_m: Any | None = None, width_m: float = 1.0,
+            depth_m: float = 0.5) -> Dug:
+        """Dig a trench from one point to another ([x, z] or [x, y, z]), or a pit.
+
+        Loose material first, then soil; a spade stops on rock. Only the
+        colliders that changed are rebuilt, and whatever they held up is woken.
+        """
+        out = _Dug()
+        self._check(self._lib.banjo_dig(self._alive(), _xz(from_m), _xz(to_m if to_m is not None else from_m),
+                                        float(width_m), float(depth_m), ctypes.byref(out)), "digging")
+        return self._dug(out)
+
+    def deposit(self, at_m: Any, radius_m: float = 1.0, sand_m3: float = 0.0,
+                soil_m3: float = 0.0) -> Dug:
+        """Heap sand and soil around a point; it settles to what it can hold."""
+        out = _Dug()
+        self._check(self._lib.banjo_deposit(self._alive(), _xz(at_m), float(radius_m), float(sand_m3),
+                                            float(soil_m3), ctypes.byref(out)), "heaping")
+        return self._dug(out)
+
+    def cut(self, at_m: Any, cells: tuple[int, int] = (4, 4), height_m: float = 0.4) -> Block:
+        """Cut a block `height_m` tall out of bare rock. The ground loses it now;
+        add it as a body -- with {"cut": {"at_m", "cells", "height_m"}} in the
+        scene's edits -- in the world opened next."""
+        out = _Block()
+        self._check(self._lib.banjo_cut(self._alive(), _xz(at_m), int(cells[0]), int(cells[1]),
+                                        float(height_m), ctypes.byref(out)), "cutting")
+        return Block(center_m=tuple(out.center_m), size_m=tuple(out.size_m),
+                     volume_m3=out.volume_m3, mass_kg=out.mass_kg)
+
+    def set_discharge(self, river: str, discharge_m3_s: float) -> None:
+        """A river's discharge from now: a flood, a drought."""
+        self._check(self._lib.banjo_set_discharge(self._alive(), river.encode("utf-8"),
+                                                  float(discharge_m3_s)), f"changing {river!r}")
+
+    def terrain_heights(self) -> list[float]:
+        """The ground's heights, nx * nz, row by row (j outer)."""
+        info = self.terrain()
+        buffer = (ctypes.c_float * (info.nx * info.nz))()
+        written = self._check(self._lib.banjo_terrain_heights(self._alive(), buffer, len(buffer)),
+                              "reading the ground's heights")
+        return list(buffer[:written])
+
+    def water_surface(self) -> list[float | None]:
+        """The water's surface, nx * nz, None where a column is dry."""
+        info = self.terrain()
+        buffer = (ctypes.c_double * (info.nx * info.nz))()
+        written = self._check(self._lib.banjo_water_surface(self._alive(), buffer, len(buffer)),
+                              "reading the water's surface")
+        return [v if v == v else None for v in buffer[:written]]
+
+    def environment_report(self, full: bool = False) -> dict[str, Any]:
+        """Everything about the ground and the water, as the engine says it."""
+        text = self._lib.banjo_environment_report(self._alive(), int(bool(full))) or b"{}"
+        return json.loads(text.decode("utf-8"))
+
+    def environment_state(self) -> dict[str, Any]:
+        """The water as it stands, for "water": {"state": ...} in a scene opened again."""
+        text = self._lib.banjo_environment_state(self._alive()) or b"{}"
+        return json.loads(text.decode("utf-8"))
+
+    def survey(self, x_m: float, z_m: float) -> dict[str, Any]:
+        """Ground and water at a point."""
+        text = self._lib.banjo_survey(self._alive(), float(x_m), float(z_m)) or b"{}"
+        return json.loads(text.decode("utf-8"))
+
+    def awake_bodies(self) -> int:
+        """How many bodies the rigid solver is stepping right now."""
+        return self._check(self._lib.banjo_awake_bodies(self._alive()), "counting awake bodies")
 
 
 def version() -> str:

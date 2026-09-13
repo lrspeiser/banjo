@@ -79,6 +79,10 @@ struct banjo_world {
     std::vector<banjo::thermo::BodyHeat> heats;
     std::vector<banjo::thermo::RegionState> gases;
     std::string report;
+    // Terrain and water, last time anyone asked.
+    std::string environment_report;
+    std::string environment_state;
+    std::string survey;
 };
 
 namespace {
@@ -844,6 +848,214 @@ const char *banjo_thermo_model(void) {
         model.clear();
     }
     return model.c_str();
+}
+
+// ---- terrain and water ---------------------------------------------------------
+
+namespace {
+const banjo::terrain::Environment *environmentOf(const banjo_world *world) {
+    const banjo::terrain::Environment *environment = world->world->environment();
+    if (environment == nullptr)
+        throw std::invalid_argument("this world has no terrain: its scene declares none");
+    return environment;
+}
+
+void writeDug(const banjo::terrain::EditEffect &effect, banjo_dug *out) {
+    if (out == nullptr) return;
+    *out = banjo_dug{};
+    out->sand_m3 = effect.edit.moved.sand_m3;
+    out->soil_m3 = effect.edit.moved.soil_m3;
+    out->mass_kg = effect.edit.mass_kg;
+    out->columns = static_cast<int>(effect.edit.cells.size());
+    out->chunks_rebuilt = static_cast<int>(effect.chunks_rebuilt);
+    out->rebuild_ms = effect.rebuild_ms;
+    out->bodies_woken = static_cast<int>(effect.bodies_woken);
+}
+} // namespace
+
+int banjo_terrain_info(const banjo_world *world, banjo_terrain *out) {
+    if (!world || !out) { setError("no world or nowhere to write"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        const banjo::terrain::Environment *environment = environmentOf(world);
+        const banjo::terrain::TerrainField &ground = environment->terrain();
+        const banjo::terrain::Grid &g = ground.grid();
+        const banjo::terrain::Volumes v = ground.volumes();
+        const banjo::terrain::Ledger &l = ground.ledger();
+        const banjo::terrain::Volumes r = ground.residual();
+        *out = banjo_terrain{};
+        out->nx = g.nx;
+        out->nz = g.nz;
+        out->cell_m = g.dx;
+        out->origin_m[0] = g.x0;
+        out->origin_m[1] = g.z0;
+        out->chunks_x = ground.chunksX();
+        out->chunks_z = ground.chunksZ();
+        out->lowest_m = ground.lowest();
+        out->highest_m = ground.highest();
+        out->floor_m = ground.floor();
+        out->rock_m3 = v.rock_m3;
+        out->soil_m3 = v.soil_m3;
+        out->sand_m3 = v.sand_m3;
+        out->dug_m3 = l.dug.total();
+        out->cut_m3 = l.cut.total();
+        out->deposited_m3 = l.deposited.total();
+        out->slumped_m3 = l.slumped_m3;
+        out->residual_m3 = r.total();
+        out->unsettled_columns = static_cast<int>(ground.unsettled());
+        out->chunks_rebuilt = static_cast<int>(environment->stats().chunks_rebuilt);
+        out->rebuild_ms_worst = environment->stats().rebuild_ms_worst;
+        return static_cast<int>(BANJO_OK);
+    });
+}
+
+int banjo_water_info(const banjo_world *world, banjo_water *out) {
+    if (!world || !out) { setError("no world or nowhere to write"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        const banjo::terrain::Environment *environment = environmentOf(world);
+        const banjo::water::ShallowWater &w = *environment->water();
+        const banjo::water::Stats &s = w.stats();
+        const banjo::water::Ledger &l = w.ledger();
+        const banjo::terrain::EnvironmentStats &e = environment->stats();
+        *out = banjo_water{};
+        out->time_s = s.time_s;
+        out->volume_m3 = w.volume();
+        out->wet_area_m2 = w.wetArea();
+        out->cells = static_cast<int>(w.grid().cells());
+        out->wet_cells = static_cast<int>(s.wet_cells);
+        out->active_cells = static_cast<int>(s.active_cells);
+        out->inflow_m3_s = w.inflowRate();
+        out->outflow_m3_s = w.outflowRate();
+        out->initial_m3 = l.initial_m3;
+        out->inflow_m3 = l.inflow_m3;
+        out->outflow_m3 = l.outflow_m3;
+        out->numerical_m3 = l.numerical_m3;
+        out->residual_m3 = w.residual();
+        out->substeps = static_cast<double>(s.substeps);
+        out->last_substep_s = s.last_substep_s;
+        out->wave_speed_m_s = s.max_speed_m_s;
+        out->bodies_in_water = static_cast<int>(e.bodies_in_water);
+        out->water_ms_worst = e.water_ms_worst;
+        out->coupling_ms_worst = e.coupling_ms_worst;
+        out->step_ms_worst = e.step_ms_worst;
+        return static_cast<int>(BANJO_OK);
+    });
+}
+
+int banjo_dig(banjo_world *world, const double from_m[2], const double to_m[2], double width_m,
+              double depth_m, banjo_dug *out) {
+    if (!world || !from_m) { setError("no world or nowhere to dig"); return BANJO_BAD_ARGUMENT; }
+    if (!(width_m > 0.0) || !(depth_m > 0.0)) {
+        setError("a dig needs a positive width and a positive depth, in metres");
+        return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        const double *to = to_m ? to_m : from_m;
+        writeDug(world->world->dig(from_m[0], from_m[1], to[0], to[1], width_m, depth_m), out);
+        return static_cast<int>(BANJO_OK);
+    });
+}
+
+int banjo_deposit(banjo_world *world, const double at_m[2], double radius_m, double sand_m3,
+                  double soil_m3, banjo_dug *out) {
+    if (!world || !at_m) { setError("no world or nowhere to heap"); return BANJO_BAD_ARGUMENT; }
+    if (!(radius_m > 0.0) || !(sand_m3 >= 0.0) || !(soil_m3 >= 0.0) || !(sand_m3 + soil_m3 > 0.0)) {
+        setError("a heap needs a positive radius and some sand or soil, in cubic metres");
+        return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        writeDug(world->world->deposit(at_m[0], at_m[1], radius_m, sand_m3, soil_m3), out);
+        return static_cast<int>(BANJO_OK);
+    });
+}
+
+int banjo_cut(banjo_world *world, const double at_m[2], int cells_x, int cells_z, double height_m,
+              banjo_block *out) {
+    if (!world || !at_m || !out) { setError("no world, no place, or nowhere to write"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        std::string why;
+        const auto block = world->world->cut(at_m[0], at_m[1], cells_x, cells_z, height_m, &why);
+        if (!block) {
+            setError(why.empty() ? std::string("that block cannot be cut") : why);
+            return static_cast<int>(BANJO_BAD_ARGUMENT);
+        }
+        writeVec(block->center_m, out->center_m);
+        writeVec(block->size_m, out->size_m);
+        out->volume_m3 = block->volume_m3;
+        out->mass_kg = block->mass_kg;
+        return static_cast<int>(BANJO_OK);
+    });
+}
+
+int banjo_set_discharge(banjo_world *world, const char *river, double discharge_m3_s) {
+    if (!world || !river) { setError("no world or no river"); return BANJO_BAD_ARGUMENT; }
+    if (!(discharge_m3_s >= 0.0)) { setError("a discharge is zero or more cubic metres a second"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        if (!world->world->setDischarge(river, discharge_m3_s)) {
+            setError(std::string("there is no river called \"") + river + "\"");
+            return static_cast<int>(BANJO_BAD_ARGUMENT);
+        }
+        return static_cast<int>(BANJO_OK);
+    });
+}
+
+int banjo_terrain_heights(const banjo_world *world, float *out, int max) {
+    if (!world || (!out && max > 0) || max < 0) { setError("no world or nowhere to write"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        const std::vector<float> heights = environmentOf(world)->heights();
+        const int count = std::min<int>(max, static_cast<int>(heights.size()));
+        std::copy_n(heights.begin(), count, out);
+        return count;
+    });
+}
+
+int banjo_water_surface(const banjo_world *world, double *out, int max) {
+    if (!world || (!out && max > 0) || max < 0) { setError("no world or nowhere to write"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        const banjo::water::ShallowWater &w = *environmentOf(world)->water();
+        const int count = std::min<int>(max, static_cast<int>(w.grid().cells()));
+        for (int c = 0; c < count; ++c)
+            out[c] = w.depth(static_cast<std::size_t>(c)) > 0.003 ? w.surface(static_cast<std::size_t>(c))
+                                                                 : std::nan("");
+        return count;
+    });
+}
+
+const char *banjo_environment_report(const banjo_world *world, int full) {
+    if (!world) return "";
+    auto *mutable_world = const_cast<banjo_world *>(world);
+    try {
+        mutable_world->environment_report = world->world->environmentReport(full != 0);
+    } catch (...) {
+        mutable_world->environment_report.clear();
+    }
+    return mutable_world->environment_report.c_str();
+}
+
+const char *banjo_environment_state(const banjo_world *world) {
+    if (!world) return "";
+    auto *mutable_world = const_cast<banjo_world *>(world);
+    try {
+        mutable_world->environment_state = world->world->environmentState();
+    } catch (...) {
+        mutable_world->environment_state.clear();
+    }
+    return mutable_world->environment_state.c_str();
+}
+
+const char *banjo_survey(const banjo_world *world, double x_m, double z_m) {
+    if (!world) return "";
+    auto *mutable_world = const_cast<banjo_world *>(world);
+    try {
+        mutable_world->survey = world->world->survey(x_m, z_m);
+    } catch (...) {
+        mutable_world->survey.clear();
+    }
+    return mutable_world->survey.c_str();
+}
+
+int banjo_awake_bodies(const banjo_world *world) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] { return static_cast<int>(world->world->awakeBodies()); });
 }
 
 } // extern "C"

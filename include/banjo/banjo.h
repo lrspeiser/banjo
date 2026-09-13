@@ -78,8 +78,12 @@ extern "C" {
  *
  * 14 added heat, chemistry and gas. It skips 13, which another branch in
  * flight has taken, so that the two can be merged without one number meaning
- * two different headers. */
-#define BANJO_ABI_VERSION 14
+ * two different headers.
+ *
+ * 15 added terrain and water: a ground of rock, soil and sand held as a height
+ * field, rivers and ponds as columns of water on it, digging, heaping and
+ * cutting, and bodies that float, drift and dam. Nothing earlier changed. */
+#define BANJO_ABI_VERSION 15
 
 /* What a call reported. Anything below zero is a failure and leaves the world
  * unchanged; banjo_last_error() says what happened. */
@@ -842,6 +846,152 @@ BANJO_API const char *banjo_thermo_report(const banjo_world *world, int with_mod
 /* The substances, reactions and material compositions a world starts with, as
  * JSON, without needing a world. Valid until the next call on this thread. */
 BANJO_API const char *banjo_thermo_model(void);
+
+/* ---- terrain and water (ABI 15) ---------------------------------------- */
+
+/* Physics decides what changes; nothing re-simulates what has not.
+ *
+ * THE GROUND is columns of rock, soil and sand held still as a height field --
+ * a static collider in chunks of 31 x 31 cells -- until something changes it.
+ * A spade (banjo_dig) takes material out; the columns it touched and their
+ * neighbours are asked whether they still stand (Mohr-Coulomb: sand slumps to
+ * its angle of repose, firm soil holds a spade-deep wall, rock never slumps),
+ * whatever fails flows down at the speed a granular layer of that thickness
+ * can, and only the chunks that changed get new colliders. Whatever those
+ * chunks were holding up is woken to find out whether it still is: dig under
+ * a boulder and it falls.
+ *
+ * THE WATER is a shallow-water solver on the same grid: a column of water per
+ * cell, its surface and its sideways velocity, conserving mass and momentum,
+ * well balanced (a lake at rest stays exactly at rest), wet and dry, on its own
+ * clock inside its stability limit. A river comes in at one edge and leaves at
+ * another. Bodies are pressed on by the water over their own surface --
+ * buoyancy is the pressure on the underside, from density and displaced
+ * volume, so oak floats 70% under and iron sinks -- and dragged by it
+ * relative to their motion; the drag goes back into the water. Something that
+ * sinks and rests on the bed is, to the water, part of the bed: a row of
+ * blocks is a dam.
+ *
+ * DECLARED in a scene (see banjo_open):
+ *
+ *   "terrain": {"generate": "valley",
+ *               "edits": [{"dig": {"from_m": [x, z], "to_m": [x, z],
+ *                                  "width_m": 1, "depth_m": 0.5}},
+ *                         {"deposit": {"at_m": [x, z], "radius_m": 1,
+ *                                      "sand_m3": 0.5, "soil_m3": 0}},
+ *                         {"cut": {"at_m": [x, z], "cells": [4, 4],
+ *                                  "height_m": 0.4}}]},
+ *   "water": {"discharge_m3_s": 0.35, "state": <banjo_environment_state()>}
+ *
+ * "generate" is "valley" (made once by drainage and erosion and cached on
+ * disk under BANJO_TERRAIN_CACHE), "basin", "channel" or "flat", or an object
+ * {"kind": ..., ...} with its parameters. Edits are applied in order when the
+ * world opens, and whatever they unsettle has come to rest by the time it
+ * does. A world with none of this is unchanged and pays nothing for it. */
+
+typedef struct {
+    int nx, nz;                 /* points; point (i, j) is at origin + (i, j) * cell */
+    double cell_m;
+    double origin_m[2];         /* x and z of point (0, 0) */
+    int chunks_x, chunks_z;     /* colliders */
+    double lowest_m, highest_m;
+    double floor_m;             /* the rock goes down to here; nothing is dug below it */
+    double rock_m3, soil_m3, sand_m3;
+    /* What has crossed the ground's boundary since it was made: dug out, cut
+     * out as blocks, heaped up. Slumping moves matter between columns and is
+     * counted apart. residual_m3 is now - (initial - dug - cut + deposited),
+     * summed over the kinds: rounding and nothing else. */
+    double dug_m3, cut_m3, deposited_m3, slumped_m3;
+    double residual_m3;
+    int unsettled_columns;      /* still being asked whether they stand */
+    int chunks_rebuilt;         /* colliders rebuilt since the world opened */
+    double rebuild_ms_worst;
+} banjo_terrain;
+
+typedef struct {
+    double time_s;
+    double volume_m3, wet_area_m2;
+    int cells, wet_cells;
+    int active_cells;           /* computed in the last substep: only water costs */
+    double inflow_m3_s, outflow_m3_s;
+    /* volume - initial = inflow - outflow + numerical + residual */
+    double initial_m3, inflow_m3, outflow_m3, numerical_m3, residual_m3;
+    double substeps;
+    double last_substep_s;      /* within the stability limit, always */
+    double wave_speed_m_s;
+    int bodies_in_water;
+    double water_ms_worst, coupling_ms_worst, step_ms_worst;
+} banjo_water;
+
+/* What a dig or a heap moved, and what it cost the world. */
+typedef struct {
+    double sand_m3, soil_m3, mass_kg;
+    int columns;
+    int chunks_rebuilt;
+    double rebuild_ms;
+    int bodies_woken;           /* what the changed ground was holding up */
+} banjo_dug;
+
+/* A block cut out of bare rock: a box of the same footprint and volume as the
+ * rock that left, at the rock's own density. */
+typedef struct {
+    double center_m[3];
+    double size_m[3];
+    double volume_m3;
+    double mass_kg;
+} banjo_block;
+
+/* BANJO_BAD_ARGUMENT, with a reason, for a world whose scene declares no
+ * terrain. */
+BANJO_API int banjo_terrain_info(const banjo_world *world, banjo_terrain *out);
+BANJO_API int banjo_water_info(const banjo_world *world, banjo_water *out);
+
+/* Dig a trench from `from_m` to `to_m` (x, z; the same point for a pit),
+ * `width_m` wide, `depth_m` below the ground as it stands. Loose material
+ * first, then soil; a spade stops on rock. What came out is the caller's --
+ * carry it, heap it somewhere with banjo_deposit -- and the ledger says so.
+ * Water over the dug ground keeps its volume: digging makes none. */
+BANJO_API int banjo_dig(banjo_world *world, const double from_m[2], const double to_m[2],
+                        double width_m, double depth_m, banjo_dug *out);
+/* Heap sand and soil up around a point; it settles to the slope it can hold. */
+BANJO_API int banjo_deposit(banjo_world *world, const double at_m[2], double radius_m,
+                            double sand_m3, double soil_m3, banjo_dug *out);
+/* Cut a block `height_m` tall (rounded to whole cells) out of bare rock,
+ * `cells_x` by `cells_z` columns centred on `at_m`. The cut is a flat plane
+ * that height below the rock's mean top there, so exactly the block's volume
+ * leaves the ground. The ground loses it NOW; a body cannot join a running
+ * world, so the caller adds the block as a body in the scene it opens next --
+ * with {"cut": {"at_m", "cells", "height_m"}} in that scene's "edits" -- and
+ * the two together are exactly the rock there was. Every side of a body is a
+ * whole number of cells, so a footprint that is not is refused with the size
+ * that would do (with 0.25 m columns and 0.04 m cells, 4 columns: 1 m).
+ * BANJO_BAD_ARGUMENT, with the reason, also where there is soil over the rock
+ * or the rock is too uneven for a block that shallow. */
+BANJO_API int banjo_cut(banjo_world *world, const double at_m[2], int cells_x, int cells_z,
+                        double height_m, banjo_block *out);
+/* A river's discharge from now, by the name the scene or the valley gave it. */
+BANJO_API int banjo_set_discharge(banjo_world *world, const char *river, double discharge_m3_s);
+
+/* The ground's heights, nx * nz floats, row by row (j outer). Returns how many
+ * were written. */
+BANJO_API int banjo_terrain_heights(const banjo_world *world, float *out, int max);
+/* The water's surface, nx * nz doubles, NaN where a column is dry. */
+BANJO_API int banjo_water_surface(const banjo_world *world, double *out, int max);
+
+/* Everything about the ground and the water as JSON; `full` nonzero adds the
+ * model's parameters, where they came from, and what is not modelled. */
+BANJO_API const char *banjo_environment_report(const banjo_world *world, int full);
+/* The water as it stands, as JSON, for "water": {"state": ...} in the scene a
+ * world is opened again from: the same water, over whatever ground that
+ * scene's edits leave. */
+BANJO_API const char *banjo_environment_state(const banjo_world *world);
+/* Ground and water at a point: height, what it is made of, slope, depth,
+ * surface and flow. JSON. */
+BANJO_API const char *banjo_survey(const banjo_world *world, double x_m, double z_m);
+/* How many bodies the rigid solver is stepping right now. A body at rest is
+ * asleep and costs nothing; this is how to see that digging one corner did
+ * not wake the valley. */
+BANJO_API int banjo_awake_bodies(const banjo_world *world);
 
 #ifdef __cplusplus
 }

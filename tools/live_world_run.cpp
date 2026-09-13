@@ -36,6 +36,15 @@
 //        {"op":"declare","json":{"gas_regions":[...],"heaters":[...]}}
 //        {"op":"vent","region":"cylinder gas","open":true}
 //        {"op":"thermo","model":false}      heat, chemistry, gas and the ledger
+//        {"op":"dig","from":[x,z],"to":[x,z],"width_m":1,"depth_m":0.5}
+//                                            a trench (or a pit, from == to)
+//        {"op":"deposit","at":[x,z],"radius_m":1,"sand_m3":0.5,"soil_m3":0}
+//        {"op":"cut","at":[x,z],"cells":[4,4],"height_m":0.4}  a block of rock
+//        {"op":"discharge","river":"the river","discharge_m3_s":0.5}
+//        {"op":"survey","at":[x,z]}          ground and water at a point
+//        {"op":"environment","full":false}   the ground, the water, their ledgers
+//        {"op":"environment_state"}          the water, for carrying into a reopen
+//        {"op":"terrain"}                    the whole ground again, for drawing
 //   out  {"ok":true,"t":0.033,"stepped_back":false,
 //         "bodies":[{"name":"ball","shape":"sphere","dimensions_m":[...],
 //                    "position_m":[...],"orientation_wxyz":[...],"held":false,
@@ -338,6 +347,128 @@ Vec3 readVec(const nlohmann::json &node, const char *key) {
     return Vec3{v[0].get<double>(), v[1].get<double>(), v[2].get<double>()};
 }
 
+// A point on the ground: [x, z], or [x, y, z] with y ignored.
+std::pair<double, double> readXZ(const nlohmann::json &node, const char *key) {
+    const auto &v = node.at(key);
+    if (!v.is_array() || (v.size() != 2 && v.size() != 3))
+        throw std::invalid_argument(std::string(key) + " needs [x, z] or [x, y, z]");
+    return {v[0].get<double>(), v[v.size() - 1].get<double>()};
+}
+
+// ---- the ground and the water, for a host that draws them ----------------------
+//
+// The ground is sent whole once -- float32 heights and one byte per column for
+// what it is made of -- and after that only the rectangle that changed, found by
+// comparing with what was last sent, so a bank slumping into a trench is caught
+// as surely as the trench. The water's surface goes as whole millimetres over
+// the smallest box holding all the water, a few times a world-second: the wire
+// is where this room's stutters have been found before, and a river's surface
+// does not need to be sent at 240 Hz to be seen moving.
+std::vector<float> sent_heights;
+double water_sent_at = -1.0e9;
+constexpr double kWaterEveryS = 0.25;
+
+nlohmann::json terrainBlock(const banjo::terrain::Environment &env, const std::vector<float> &heights) {
+    const banjo::terrain::Grid &g = env.terrain().grid();
+    const std::vector<std::uint8_t> ground = env.surfaces();
+    const banjo::terrain::Landscape &land = env.landscape();
+    return {{"kind", land.kind},
+            {"grid", {{"nx", g.nx}, {"nz", g.nz}, {"cell_m", g.dx}, {"x0_m", g.x0}, {"z0_m", g.z0}}},
+            {"chunks", {env.terrain().chunksX(), env.terrain().chunksZ()}},
+            {"heights_b64", banjo::terrain::encodeBase64(heights.data(), heights.size() * sizeof(float))},
+            {"ground_b64", banjo::terrain::encodeBase64(ground.data(), ground.size())},
+            {"view", {{"eye_m", {land.eye_m[0], land.eye_m[1], land.eye_m[2]}},
+                      {"look_m", {land.look_m[0], land.look_m[1], land.look_m[2]}}}}};
+}
+
+nlohmann::json waterBlock(const banjo::terrain::Environment &env, double t) {
+    const banjo::water::ShallowWater &w = *env.water();
+    const banjo::water::Grid &g = w.grid();
+    const double base = env.terrain().lowest() - 1.0;
+    const std::vector<std::uint16_t> surface = env.waterSurfaceMm(base);
+    const std::vector<std::int8_t> flow = env.waterFlow();
+    int i0 = g.nx, j0 = g.nz, i1 = -1, j1 = -1;
+    for (int j = 0; j < g.nz; ++j)
+        for (int i = 0; i < g.nx; ++i)
+            if (surface[g.at(i, j)] != 0) {
+                i0 = std::min(i0, i); i1 = std::max(i1, i);
+                j0 = std::min(j0, j); j1 = std::max(j1, j);
+            }
+    nlohmann::json out = {{"t", t}, {"base_m", base}, {"volume_m3", tidy(w.volume())},
+                          {"wet_cells", w.stats().wet_cells}, {"active_cells", w.stats().active_cells},
+                          {"in_m3_s", tidy(w.inflowRate())}, {"out_m3_s", tidy(w.outflowRate())},
+                          {"residual_m3", w.residual()}};
+    if (i1 < 0) {
+        out["box"] = {0, 0, 0, 0};
+        return out;
+    }
+    const int ni = i1 - i0 + 1, nj = j1 - j0 + 1;
+    std::vector<std::uint16_t> box_surface(static_cast<std::size_t>(ni) * nj);
+    std::vector<std::int8_t> box_flow(2 * static_cast<std::size_t>(ni) * nj);
+    for (int j = 0; j < nj; ++j)
+        for (int i = 0; i < ni; ++i) {
+            const std::size_t from = g.at(i0 + i, j0 + j);
+            const std::size_t to = static_cast<std::size_t>(j) * ni + i;
+            box_surface[to] = surface[from];
+            box_flow[2 * to] = flow[2 * from];
+            box_flow[2 * to + 1] = flow[2 * from + 1];
+        }
+    out["box"] = {i0, j0, ni, nj};
+    out["surface_mm_b64"] = banjo::terrain::encodeBase64(box_surface.data(), box_surface.size() * 2);
+    out["flow_b64"] = banjo::terrain::encodeBase64(box_flow.data(), box_flow.size());
+    return out;
+}
+
+// The ground and the water into a reply. `whole` sends the ground whole and the
+// water regardless of when it last went.
+void addEnvironment(const LiveWorld &world, nlohmann::json &reply, bool whole) {
+    const banjo::terrain::Environment *env = world.environment();
+    if (env == nullptr) return;
+    const std::vector<float> heights = env->heights();
+    if (whole || sent_heights.size() != heights.size()) {
+        reply["terrain"] = terrainBlock(*env, heights);
+        sent_heights = heights;
+    } else {
+        const banjo::terrain::Grid &g = env->terrain().grid();
+        int i0 = g.nx, j0 = g.nz, i1 = -1, j1 = -1;
+        for (int j = 0; j < g.nz; ++j)
+            for (int i = 0; i < g.nx; ++i)
+                if (heights[g.at(i, j)] != sent_heights[g.at(i, j)]) {
+                    i0 = std::min(i0, i); i1 = std::max(i1, i);
+                    j0 = std::min(j0, j); j1 = std::max(j1, j);
+                }
+        if (i1 >= 0) {
+            const int ni = i1 - i0 + 1, nj = j1 - j0 + 1;
+            const std::vector<std::uint8_t> ground = env->surfaces();
+            std::vector<float> rect(static_cast<std::size_t>(ni) * nj);
+            std::vector<std::uint8_t> rect_ground(rect.size());
+            for (int j = 0; j < nj; ++j)
+                for (int i = 0; i < ni; ++i) {
+                    const std::size_t c = g.at(i0 + i, j0 + j);
+                    rect[static_cast<std::size_t>(j) * ni + i] = heights[c];
+                    rect_ground[static_cast<std::size_t>(j) * ni + i] = ground[c];
+                    sent_heights[c] = heights[c];
+                }
+            reply["terrain_changed"] = {
+                {"box", {i0, j0, ni, nj}},
+                {"heights_b64", banjo::terrain::encodeBase64(rect.data(), rect.size() * sizeof(float))},
+                {"ground_b64", banjo::terrain::encodeBase64(rect_ground.data(), rect_ground.size())}};
+        }
+    }
+    const double t = world.time_s();
+    if (whole || t - water_sent_at >= kWaterEveryS - 1.0e-9) {
+        reply["water"] = waterBlock(*env, t);
+        water_sent_at = t;
+    }
+}
+
+nlohmann::json dugJson(const banjo::terrain::EditEffect &effect) {
+    return {{"sand_m3", tidy(effect.edit.moved.sand_m3)}, {"soil_m3", tidy(effect.edit.moved.soil_m3)},
+            {"kg", tidy(effect.edit.mass_kg)}, {"columns", effect.edit.cells.size()},
+            {"chunks_rebuilt", effect.chunks_rebuilt}, {"rebuild_ms", tidy(effect.rebuild_ms)},
+            {"bodies_woken", effect.bodies_woken}};
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -373,8 +504,13 @@ int main(int argc, char **argv) {
         if (request.bodies.empty()) throw std::invalid_argument("a live world needs --scene");
 
         std::unique_ptr<LiveWorld> world = LiveWorld::open(request);
-        // The opening state, so a host can draw the scene before it moves.
-        std::cout << describe(*world, true).dump() << std::endl;
+        // The opening state, so a host can draw the scene before it moves --
+        // the ground and the water whole, if it has them.
+        {
+            nlohmann::json opening = describe(*world, true);
+            addEnvironment(*world, opening, true);
+            std::cout << opening.dump() << std::endl;
+        }
         world->forgetDelays();
 
         std::string line;
@@ -644,6 +780,66 @@ int main(int argc, char **argv) {
                     std::cout << nlohmann::json{{"ok", true}, {"thermo", std::move(report)}}.dump()
                               << std::endl;
                     continue;
+                } else if (op == "dig") {
+                    // A trench, or a pit. The ground loses what comes out and
+                    // the reply says what it was; the colliders it changed are
+                    // rebuilt now, and whatever they held up is woken.
+                    const auto a = readXZ(command, "from");
+                    const auto b = command.contains("to") ? readXZ(command, "to") : a;
+                    reply["dug"] = dugJson(world->dig(a.first, a.second, b.first, b.second,
+                                                      command.value("width_m", 1.0),
+                                                      command.value("depth_m", 0.5)));
+                } else if (op == "deposit") {
+                    const auto at = readXZ(command, "at");
+                    reply["heaped"] = dugJson(world->deposit(at.first, at.second,
+                                                             command.value("radius_m", 1.0),
+                                                             command.value("sand_m3", 0.0),
+                                                             command.value("soil_m3", 0.0)));
+                } else if (op == "cut") {
+                    // The ground loses the block now; the host adds it as a body
+                    // in the scene it opens next.
+                    const auto at = readXZ(command, "at");
+                    int cx = 4, cz = 4;
+                    if (command.contains("cells")) {
+                        cx = command.at("cells").at(0).get<int>();
+                        cz = command.at("cells").at(1).get<int>();
+                    }
+                    std::string why;
+                    const auto block = world->cut(at.first, at.second, cx, cz,
+                                                  command.value("height_m", 0.4), &why);
+                    if (!block) throw std::invalid_argument(why.empty() ? "that block cannot be cut" : why);
+                    reply["block"] = {{"center_m", vec(block->center_m)}, {"size_m", vec(block->size_m)},
+                                      {"volume_m3", block->volume_m3}, {"kg", block->mass_kg}};
+                } else if (op == "discharge") {
+                    if (!world->setDischarge(command.at("river").get<std::string>(),
+                                             command.value("discharge_m3_s", 0.0)))
+                        throw std::invalid_argument("there is no river by that name");
+                } else if (op == "survey") {
+                    // Answers on its own, like `pick`: it changes nothing.
+                    const auto at = readXZ(command, "at");
+                    std::cout << nlohmann::json{{"ok", true},
+                                                {"survey", nlohmann::json::parse(world->survey(at.first, at.second))}}
+                                     .dump()
+                              << std::endl;
+                    continue;
+                } else if (op == "environment") {
+                    std::cout << nlohmann::json{{"ok", true},
+                                                {"environment", nlohmann::json::parse(world->environmentReport(
+                                                                    command.value("full", false)))}}
+                                     .dump()
+                              << std::endl;
+                    continue;
+                } else if (op == "environment_state") {
+                    std::cout << nlohmann::json{{"ok", true},
+                                                {"state", nlohmann::json::parse(world->environmentState())}}
+                                     .dump()
+                              << std::endl;
+                    continue;
+                } else if (op == "terrain") {
+                    nlohmann::json out{{"ok", true}};
+                    addEnvironment(*world, out, true);
+                    std::cout << out.dump() << std::endl;
+                    continue;
                 } else if (op != "poses" && op != "overloaded") {
                     // "overloaded" changes nothing and reports nothing about
                     // where anything is; it falls through to the ordinary reply
@@ -704,6 +900,9 @@ int main(int argc, char **argv) {
                 }
                 nlohmann::json state = describe(*world, geometry,
                                                 !geometry && command.value("moved", false));
+                // The ground whole only when the host asks for the scene whole;
+                // otherwise only what changed, and the water at its stride.
+                addEnvironment(*world, state, op == "poses");
                 world->forgetDelays();
                 for (auto &[key, value] : reply.items()) state[key] = value;
                 std::cout << state.dump() << std::endl;
