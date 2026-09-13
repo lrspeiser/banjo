@@ -1,5 +1,7 @@
 #include "terrain/TerrainField.hpp"
 
+#include "material/MaterialCatalog.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -32,19 +34,45 @@ double TerrainField::stableDrop(const GroundMaterial &material, double run_m) {
 const GroundMaterial &rockMaterial() {
     // Rock does not slump. The friction angle is the reason the stability
     // check skips it, not a number anybody should read as a measurement.
-    static const GroundMaterial rock{"rock", 2400.0, 90.0, 1.0e7};
+    // Rolling on it is rolling on the engine's stone: the concrete preset's
+    // own share, taken from there so the two cannot drift apart.
+    static const GroundMaterial rock{
+        "rock", 2400.0, 90.0, 1.0e7,
+        makeReferenceMaterial(MaterialPreset::Concrete, 0).rolling_resistance,
+        rollingResistanceSource(MaterialPreset::Concrete).sourced,
+        "the engine's stone, concrete: a bicycle tyre on concrete is 0.002 in all "
+        "(Engineering ToolBox). A natural rock surface's roughness is not modelled"};
     return rock;
 }
 const GroundMaterial &soilMaterial() {
     // A firm loam: bulk density with its pore space, a friction angle of 30
     // degrees and a little cohesion, enough to hold a spade-deep trench.
-    static const GroundMaterial soil{"soil", 1600.0, 30.0, 2000.0};
+    // Rolling: a car tyre on medium-hard soil is 0.04-0.08, and a 19th-century
+    // stagecoach on a dirt road 0.04-0.07 (docs/rolling-resistance.md).
+    static const GroundMaterial soil{
+        "soil", 1600.0, 30.0, 2000.0, 0.06, true,
+        "a car tyre on medium-hard soil 0.04-0.08 (Engineering ToolBox); a stagecoach on a "
+        "dirt road 0.0385-0.073 (Baker 1914)"};
     return soil;
 }
 const GroundMaterial &sandMaterial() {
-    // Dry sand: no cohesion, and the angle a heap of it stands at.
-    static const GroundMaterial sand{"sand", 1600.0, 32.0, 0.0};
+    // Dry sand: no cohesion, and the angle a heap of it stands at. Rolling: a
+    // car tyre on loose sand is 0.2-0.4 (0.30 in Gillespie's table), and
+    // glass and steel spheres on loose quartz sand measured 0.43-0.67 (de
+    // Blasio & Saeter 2009): a ball sinks in and ploughs.
+    static const GroundMaterial sand{
+        "sand", 1600.0, 32.0, 0.0, 0.30, true,
+        "a car tyre on loose sand 0.2-0.4 (Engineering ToolBox), 0.30 (Gillespie 1992, p. 117); "
+        "glass and steel spheres on loose quartz sand 0.43-0.67 (de Blasio & Saeter 2009)"};
     return sand;
+}
+const GroundMaterial &groundMaterialOf(Surface surface) {
+    switch (surface) {
+    case Surface::Rock: return rockMaterial();
+    case Surface::Soil: return soilMaterial();
+    case Surface::Sand: return sandMaterial();
+    }
+    return soilMaterial();
 }
 
 TerrainField::TerrainField(Grid grid, std::vector<double> rock_top_m, std::vector<double> soil_m,

@@ -144,7 +144,7 @@ public:
     void addFloor();
     void addSupportSurface(const RigidSurfaceDescription &description);
     // Static, single-sided triangle support; winding points into free space.
-    // Curved supports do not use the plane-only rolling-resistance approximation.
+    // A ball rolling on it is resisted like a ball rolling on anything else.
     void addTriangleSupport(const std::vector<std::array<Vec3,3>> &triangles,const MaterialDefinition &material);
     // Push on a body for one step, in newtons. Cleared by the step, so a
     // caller that wants a sustained push applies it every step -- which is what
@@ -177,6 +177,55 @@ public:
     // How many bodies the solver is stepping right now, and whether one is.
     [[nodiscard]] unsigned awakeBodies() const;
     [[nodiscard]] bool isAwake(MatterBodyId body_id) const;
+
+    // ---- rolling resistance -------------------------------------------------
+    //
+    // A round body rolling on something is resisted by a couple at each of its
+    // contacts, M = c N r, against its turning about axes in the contact plane:
+    // c the pair's coefficient of rolling resistance (the ball's own plus the
+    // surface's, since both are deformed), N the normal force the solver put
+    // through that contact, r the ball's radius. It stops a rolling ball over
+    // a distance v^2 / (2 * 5/7 c g) on the level, and holds one still on any
+    // slope whose tangent is below c: within a step the couple takes the
+    // rolling to zero and never past it. Balls only -- a box does not roll,
+    // and a broken piece's rolling is its own shape's business. See
+    // docs/rolling-resistance.md.
+    //
+    // The ground's patches are one body with one material, but what the ground
+    // is made of changes from place to place: sand holds a ball that rock lets
+    // roll. This says what the ground's own coefficient is at (x, z). Unset,
+    // the patch material's stands for all of it.
+    void setGroundRollingResistance(std::function<double(double x_m, double z_m)> surface_at);
+    // What the rolling resistance did in the last step, one entry per contact
+    // of a round body -- with the normal force the solver applied at that
+    // contact in the step before, which is the N it used.
+    struct RollingContactReport {
+        MatterBodyId sphere{kInvalidMatterBodyId};
+        // What it touches: a body, or kSupportSurfaceMatterId / kGroundPatchMatterId.
+        MatterBodyId other{kInvalidMatterBodyId};
+        Vec3 normal_world{};        // out of what it touches, into the ball
+        Vec3 point_world_m{};
+        double normal_force_n{};    // the solver's normal impulse there over the step, per second
+        // False when Jolt's contact cache could not be read and the ball's own
+        // change of momentum stood in (exact only for a ball touching one thing).
+        bool from_solver{};
+        double coefficient{};       // the ball's own plus the surface's
+        double limit_n_m{};         // c N r: the most the couple can be
+        double applied_n_m{};       // what it was in the step (this contact's share)
+        // The rolling it had to stop was within the limit, and it stopped: a
+        // ball held still on a slope, or one brought to rest.
+        bool held{};
+        // What the couple took out of the motion in the step, joules: its work
+        // against the turning it resisted. Holding a ball still takes none.
+        double loss_j{};
+    };
+    [[nodiscard]] std::vector<RollingContactReport> rollingContacts() const;
+    // Everything rolling resistance has taken out of the motion since the
+    // world was made, in joules, and one body's share of it. A declared loss,
+    // like the work a cut takes: kinetic energy lost to it is accounted, not
+    // unexplained.
+    [[nodiscard]] double rollingLossJ() const;
+    [[nodiscard]] double rollingLossJ(MatterBodyId body_id) const;
     // Change what a body weighs without changing its shape: mass and inertia
     // scale together. For matter that is used up or given off -- a log burning
     // down loses its fuel as gas, and the rigid body has to weigh what is left

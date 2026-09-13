@@ -2,6 +2,7 @@
 #include "fracture/ActivationPolicy.hpp"
 #include "physics/RigidAttachment.hpp"
 
+#include "material/MaterialCatalog.hpp"
 #include "material/MaterialCompiler.hpp"
 
 #include <Jolt/Jolt.h>
@@ -11,8 +12,11 @@
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyLock.h>
+#include <Jolt/Physics/StateRecorder.h>
 #include <Jolt/Physics/StateRecorderImpl.h>
+#include <Jolt/Physics/Body/BodyPair.h>
 #include <Jolt/Physics/Collision/ContactListener.h>
+#include <Jolt/Physics/Collision/Shape/SubShapeIDPair.h>
 #include <Jolt/Physics/Collision/EstimateCollisionResponse.h>
 #include <Jolt/Physics/Collision/TransformedShape.h>
 #include <Jolt/Physics/Constraints/ContactConstraintManager.h>
@@ -40,6 +44,7 @@
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
+#include <cstring>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -176,13 +181,111 @@ struct BodyContactState {
     std::optional<MaterialDefinition> activation_material;
 };
 
+// ---- rolling resistance: what is carried from one step to the next ----------
+
+// Below this sideways speed at the contact a ball is rolling rather than
+// sliding: the same line the contact callback draws between static and
+// dynamic friction.
+constexpr double kRollingSlipMS = 0.05;
+// A ball further than this from where the last step left it has been moved by
+// the host (set down, carried, placed), and is not touching what it touched.
+constexpr double kRollingMovedM = 1.0e-3;
+
+// A contact touching a round body, as the narrow phase found it in one step.
+// Kept for the next: the solver's normal impulse through it is read once the
+// step is over, and the couple it sets is applied before the next step.
+struct RollingContact {
+    JPH::SubShapeIDPair key;              // the manifold, by Jolt's own name for it
+    JPH::BodyID sphere_body;
+    JPH::BodyID other_body;
+    MatterBodyId sphere{kInvalidMatterBodyId};
+    MatterBodyId other{kInvalidMatterBodyId};
+    Vec3 normal{};                        // world: out of the other body, into the ball
+    Vec3 point_world_m{};
+    Vec3 sphere_at_m{};                   // the ball's centre when the step ended
+    double normal_force_n{};              // over the step it was found in
+    bool from_solver{};
+};
+
+// Jolt keeps, for warm starting, the total normal impulse its solver applied
+// at every contact point in the last update, and the only public way to read
+// it is the state recorder. This reads the contact section that
+// PhysicsSystem::SaveState(EStateRecorderState::Contacts) writes -- Jolt
+// 5.6.0's ContactConstraintManager::ManifoldCache::SaveState, field by field --
+// and adds up each manifold's normal impulse. It has to account for every byte:
+// a layout that does not add up is refused rather than misread, and the caller
+// then falls back to the ball's own change of momentum.
+bool readContactImpulses(const std::string &data,
+                         std::vector<std::pair<JPH::SubShapeIDPair, double>> &out) {
+    std::size_t at = 0;
+    const auto take = [&](void *into, std::size_t bytes) {
+        if (bytes > data.size() - at) return false;
+        std::memcpy(into, data.data() + at, bytes);
+        at += bytes;
+        return true;
+    };
+    const auto skip = [&](std::size_t bytes) {
+        if (bytes > data.size() - at) return false;
+        at += bytes;
+        return true;
+    };
+    JPH::uint8 state = 0;
+    if (!take(&state, sizeof state) ||
+        state != static_cast<JPH::uint8>(JPH::EStateRecorderState::Contacts))
+        return false;
+    JPH::uint32 pairs = 0;
+    if (!take(&pairs, sizeof pairs)) return false;
+    for (JPH::uint32 p = 0; p < pairs; ++p) {
+        // The body pair's key, and its cached relative position and rotation.
+        if (!skip(sizeof(JPH::BodyPair) + 2 * sizeof(JPH::Float3))) return false;
+        JPH::uint32 manifolds = 0;
+        if (!take(&manifolds, sizeof manifolds)) return false;
+        for (JPH::uint32 m = 0; m < manifolds; ++m) {
+            JPH::SubShapeIDPair key;
+            JPH::uint16 points = 0;
+            if (!take(&key, sizeof key) || !take(&points, sizeof points)) return false;
+            // The normal (in body 2's frame), two friction impulses, the twist.
+            if (!skip(sizeof(JPH::Float3) + 3 * sizeof(float))) return false;
+            double impulse = 0.0;
+            for (JPH::uint16 k = 0; k < points; ++k) {
+                float lambda = 0.0F;
+                // The point on each body, then the normal impulse through it.
+                if (!skip(2 * sizeof(JPH::Float3)) || !take(&lambda, sizeof lambda)) return false;
+                impulse += static_cast<double>(lambda);
+            }
+            out.emplace_back(key, impulse);
+        }
+    }
+    JPH::uint32 swept = 0;   // manifolds only reported by the swept pass: keys alone
+    if (!take(&swept, sizeof swept)) return false;
+    return data.size() - at == static_cast<std::size_t>(swept) * sizeof(JPH::SubShapeIDPair);
+}
+
+// Saves only the contact pairs a round body is in, so reading the impulses
+// costs what the balls cost, not what the whole room does.
+class RoundBodyContacts final : public JPH::StateRecorderFilter {
+public:
+    explicit RoundBodyContacts(std::vector<JPH::BodyID> balls) : balls_(std::move(balls)) {
+        std::sort(balls_.begin(), balls_.end());
+        balls_.erase(std::unique(balls_.begin(), balls_.end()), balls_.end());
+    }
+    [[nodiscard]] bool ShouldSaveContact(const JPH::BodyID &a, const JPH::BodyID &b) const override {
+        return std::binary_search(balls_.begin(), balls_.end(), a) ||
+               std::binary_search(balls_.begin(), balls_.end(), b);
+    }
+
+private:
+    std::vector<JPH::BodyID> balls_;
+};
+
 [[nodiscard]] CompiledContactMaterial legacyFragmentContact(
     double friction,
-    double restitution) {
+    double restitution,
+    double rolling_resistance) {
     CompiledContactMaterial contact;
     contact.static_friction = std::max(0.0, friction);
     contact.dynamic_friction = std::max(0.0, friction);
-    contact.rolling_resistance = 0.001;
+    contact.rolling_resistance = std::clamp(rolling_resistance, 0.0, 1.0);
     contact.restitution = std::clamp(restitution, 0.0, 1.0);
     contact.contact_damping_ratio =
         dampingRatioFromCoefficientOfRestitution(contact.restitution);
@@ -257,6 +360,17 @@ public:
         result.swap(events_);
         return result;
     }
+    // The round bodies' contacts the last step found, taken.
+    [[nodiscard]] std::vector<RollingContact> takeRolling() {
+        std::scoped_lock lock(rolling_mutex_);
+        std::vector<RollingContact> result;
+        result.swap(rolling_);
+        return result;
+    }
+    void dropRolling() {
+        std::scoped_lock lock(rolling_mutex_);
+        rolling_.clear();
+    }
 
 private:
     void processContact(
@@ -309,6 +423,22 @@ private:
         settings.mCombinedFriction = static_cast<float>(applied_friction);
         settings.mCombinedRestitution =
             static_cast<float>(combined.restitution);
+
+        // A round body's contacts are kept for its rolling resistance: which
+        // manifold, which way its normal points and where it is. The solver's
+        // impulse through each is read once the step is over.
+        const bool round1 = state1->second.is_sphere && body1.IsDynamic();
+        const bool round2 = state2->second.is_sphere && body2.IsDynamic();
+        if (round1 || round2) {
+            const JPH::SubShapeIDPair key(body1.GetID(), manifold.mSubShapeID1,
+                                          body2.GetID(), manifold.mSubShapeID2);
+            // Jolt's normal is the way body 2 moves out of body 1.
+            const Vec3 normal = normalized(fromJoltVector(manifold.mWorldSpaceNormal));
+            const Vec3 point = fromJoltPosition(contact_point);
+            std::scoped_lock lock(rolling_mutex_);
+            if (round1) rolling_.push_back({key, body1.GetID(), body2.GetID(), id1, id2, -normal, point});
+            if (round2) rolling_.push_back({key, body2.GetID(), body1.GetID(), id2, id1, normal, point});
+        }
 
         if (id1 == kInvalidMatterBodyId || id2 == kInvalidMatterBodyId) {
             return;
@@ -408,6 +538,8 @@ private:
     const std::set<std::pair<MatterBodyId,MatterBodyId>> &external_pairs_;
     std::mutex mutex_;
     std::vector<ImpactEvent> events_;
+    std::mutex rolling_mutex_;
+    std::vector<RollingContact> rolling_;
 };
 
 // Factory/type registration belongs to the process, not an individual world.
@@ -501,66 +633,316 @@ public:
         temp_allocator_.reset();
     }
 
-    void applyRollingResistance(double fixed_dt_s) {
-        if (!support_surface_) {
-            return;
+    // ---- rolling resistance (docs/rolling-resistance.md) ------------------
+    //
+    // Before a step, every round body that ended the last one touching
+    // something is resisted at each contact by the couple M = c N r, against
+    // its turning about axes in the contact plane: c the ball's own
+    // coefficient plus the surface's, N the normal force the solver put
+    // through that contact over the last step, r the radius. Jolt's own
+    // friction then carries the couple into the ball's travel, which is what
+    // slows a ball on the level at 5/7 c g.
+    //
+    // This replaces a version that acted only on the one flat support plane,
+    // with N taken as m g n: a live world's bodies are all fragments, never
+    // marked round, and the valley's ground is not a plane, so nothing in the
+    // playground was ever resisted.
+    void applyRollingResistance(double dt) {
+        rolling_report_.clear();
+        before_step_.clear();
+        if (rolling_.empty()) return;
+        std::vector<const RollingContact *> order;
+        order.reserve(rolling_.size());
+        for (const RollingContact &contact : rolling_) order.push_back(&contact);
+        std::stable_sort(order.begin(), order.end(),
+                         [](const RollingContact *a, const RollingContact *b) { return a->sphere < b->sphere; });
+        std::vector<std::pair<JPH::BodyID, Vec3>> pushes;
+        std::vector<JPH::BodyID> rolling_balls, not_at_rest;
+        for (std::size_t first = 0; first < order.size();) {
+            std::size_t last = first + 1;
+            while (last < order.size() && order[last]->sphere == order[first]->sphere) ++last;
+            resistBall(std::vector<const RollingContact *>(
+                           order.begin() + static_cast<std::ptrdiff_t>(first),
+                           order.begin() + static_cast<std::ptrdiff_t>(last)),
+                       dt, pushes, rolling_balls, not_at_rest);
+            first = last;
         }
-        const auto surface_state = contact_states_.find(kSupportSurfaceMatterId);
-        if (surface_state == contact_states_.end()) {
-            return;
-        }
+        JPH::BodyInterface &bodies = physics_->GetBodyInterface();
+        for (const auto &[body, impulse] : pushes) bodies.AddAngularImpulse(body, toJolt(impulse));
+        // Where a ball touches is not a point of the ball: it is wherever the
+        // ball is lowest, whichever part of it is there. Jolt's body-pair cache
+        // reuses last step's contact while two bodies have moved less than a
+        // millimetre and turned less than two degrees, and it carries the
+        // contact point round WITH the ball -- so a ball rolling slower than
+        // about a quarter of a metre a second is pushed on at a point up to a
+        // millimetre behind the one it rests on, a couple that drives it on
+        // (N times the lag: 0.008 in coefficient on a 120 mm ball, more than an
+        // iron ball's whole rolling resistance). Measured before this: a rubber
+        // ball rolled 8% past v^2/2a and an iron one never stopped. So a rolling
+        // ball's contacts are found afresh every step.
+        for (const JPH::BodyID ball : rolling_balls) bodies.InvalidateContactCache(ball);
+        // And a ball the law says is not at rest -- on a slope steeper than
+        // atan(c), or rolling on the level -- is not frozen by the solver's
+        // sleep rule (still for half a second under 3 cm/s): that stopped a
+        // ball just over atan(c) 8 mm down a ramp it should have rolled down.
+        for (const JPH::BodyID ball : not_at_rest) bodies.ResetSleepTimer(ball);
+    }
 
-        JPH::BodyInterface &body_interface = physics_->GetBodyInterface();
-        const SupportPlaneFrame &plane = support_surface_->frame;
-        const double normal_gravity =
-            std::max(0.0, -dot(gravity_m_s2_, plane.normal_world));
-        if (normal_gravity <= 0.0) {
-            return;
-        }
-
-        for (const auto &[logical_id, body_id] : bodies_) {
-            const auto body_state = contact_states_.find(logical_id);
-            if (body_state == contact_states_.end() ||
-                !body_state->second.is_sphere ||
-                body_state->second.radius_m <= 0.0) {
-                continue;
+    // After a step: the normal force the solver put through every contact of
+    // a round body, for the couple the next step applies.
+    void measureRolling(double dt) {
+        std::vector<RollingContact> found = impact_collector_.takeRolling();
+        rolling_.clear();
+        if (found.empty()) return;
+        // One entry per manifold and ball: a body fast enough for the swept
+        // test can be reported by both the discrete and the swept pass.
+        std::sort(found.begin(), found.end(), [](const RollingContact &a, const RollingContact &b) {
+            return a.sphere != b.sphere ? a.sphere < b.sphere : a.key < b.key;
+        });
+        found.erase(std::unique(found.begin(), found.end(),
+                                [](const RollingContact &a, const RollingContact &b) {
+                                    return a.sphere == b.sphere && a.key == b.key;
+                                }),
+                    found.end());
+        std::vector<std::pair<JPH::SubShapeIDPair, double>> impulses;
+        bool read = false;
+        if (cache_readable_) {
+            std::vector<JPH::BodyID> balls;
+            balls.reserve(found.size());
+            for (const RollingContact &contact : found) balls.push_back(contact.sphere_body);
+            const RoundBodyContacts filter(std::move(balls));
+            JPH::StateRecorderImpl recorder;
+            physics_->SaveState(recorder, JPH::EStateRecorderState::Contacts, &filter);
+            read = !recorder.IsFailed() && readContactImpulses(recorder.GetData(), impulses);
+            if (!read) {
+                cache_readable_ = false;
+                std::cerr << "[Jolt] rolling resistance: the contact cache does not read as Jolt 5.6 "
+                             "writes it; from now on N is each ball's own change of momentum\n";
             }
-
-            const CombinedContactMaterial combined = combineContactMaterials(
-                body_state->second.contact, surface_state->second.contact);
-            if (combined.rolling_resistance <= 0.0) {
-                continue;
-            }
-
-            const Vec3 center = fromJoltPosition(
-                body_interface.GetCenterOfMassPosition(body_id));
-            const double distance = signedDistanceToPlane(plane, center);
-            const double contact_tolerance =
-                std::max(0.001, 0.01 * body_state->second.radius_m);
-            if (std::abs(distance - body_state->second.radius_m) >
-                contact_tolerance) {
-                continue;
-            }
-
-            if (!insideSupportFootprint(plane, center,
-                    support_surface_->half_length_tangent_m,
-                    support_surface_->half_length_bitangent_m)) continue;
-            const Vec3 linear = fromJoltVector(body_interface.GetLinearVelocity(body_id));
-            if (std::abs(dot(linear, plane.normal_world)) > 0.1) continue;
-            const Vec3 angular = fromJoltVector(body_interface.GetAngularVelocity(body_id));
-            const Vec3 rolling_spin = projectVectorOntoPlane(plane, angular);
-            const double speed = length(rolling_spin);
-            if (speed <= 1.0e-10) continue;
-            const double mass = body_state->second.mass_kg;
-            const double radius = body_state->second.radius_m;
-            const double inertia = body_state->second.sphere_inertia_factor * mass * radius * radius;
-            // tau_rr = mu_rr * N * radius. Static contact friction in Jolt,
-            // not a velocity overwrite here, determines rolling vs. sliding.
-            const double angular_impulse = std::min(inertia * speed,
-                combined.rolling_resistance * mass * normal_gravity * radius * fixed_dt_s);
-            body_interface.AddAngularImpulse(body_id,
-                toJolt((-angular_impulse / speed) * rolling_spin));
         }
+        const JPH::BodyInterface &bodies = physics_->GetBodyInterface();
+        for (RollingContact &contact : found) {
+            contact.sphere_at_m = fromJoltPosition(bodies.GetCenterOfMassPosition(contact.sphere_body));
+            if (read) {
+                double impulse = 0.0;
+                for (const auto &[key, total] : impulses)
+                    if (key == contact.key) {
+                        impulse = total;
+                        break;
+                    }
+                contact.normal_force_n = std::max(0.0, impulse) / dt;
+                contact.from_solver = true;
+            } else if (const auto before = before_step_.find(contact.sphere);
+                       before != before_step_.end()) {
+                // What everything touching it gave the ball over the step, less
+                // gravity and the pushes, along this contact's normal: exact for
+                // a ball touching one thing, and blind to two things pressing
+                // it from opposite sides.
+                const Vec3 after = fromJoltVector(bodies.GetLinearVelocity(contact.sphere_body));
+                const Vec3 given = before->second.mass * (after - before->second.v) -
+                                   dt * (before->second.mass * gravity_m_s2_ + before->second.force);
+                contact.normal_force_n = std::max(0.0, dot(given, contact.normal)) / dt;
+            }
+        }
+        rolling_ = std::move(found);
+    }
+
+    struct BallState {
+        Vec3 x{}, v{}, w{}, force{}, torque{};
+        double mass{};
+        Mat3 inverse_inertia{}, inertia{};
+    };
+    [[nodiscard]] bool readBall(JPH::BodyID id, BallState &out) const {
+        JPH::BodyLockRead lock(physics_->GetBodyLockInterface(), id);
+        if (!lock.Succeeded()) return false;
+        const JPH::Body &body = lock.GetBody();
+        // Asleep, it is at rest and there is nothing to resist; held, or
+        // scenery, it is not free to roll.
+        if (!body.IsDynamic() || !body.IsActive()) return false;
+        const float inverse_mass = body.GetMotionProperties()->GetInverseMass();
+        if (!(inverse_mass > 0.0F)) return false;
+        out.x = fromJoltPosition(body.GetCenterOfMassPosition());
+        out.v = fromJoltVector(body.GetLinearVelocity());
+        out.w = fromJoltVector(body.GetAngularVelocity());
+        out.force = fromJoltVector(body.GetAccumulatedForce());
+        out.torque = fromJoltVector(body.GetAccumulatedTorque());
+        out.mass = 1.0 / static_cast<double>(inverse_mass);
+        const JPH::Mat44 inverse = body.GetInverseInertia();
+        for (JPH::uint row = 0; row < 3; ++row)
+            for (JPH::uint column = 0; column < 3; ++column)
+                out.inverse_inertia.m[row][column] = static_cast<double>(inverse(row, column));
+        const std::optional<Mat3> inertia = out.inverse_inertia.inverse(0.0);
+        if (!inertia) return false;
+        out.inertia = *inertia;
+        return true;
+    }
+    struct TouchedState {
+        bool found{}, moving{}, dynamic{};
+        Vec3 w{};
+        Mat3 inverse_inertia{};
+    };
+    [[nodiscard]] TouchedState readTouched(JPH::BodyID id) const {
+        TouchedState out;
+        JPH::BodyLockRead lock(physics_->GetBodyLockInterface(), id);
+        if (!lock.Succeeded()) return out;
+        const JPH::Body &body = lock.GetBody();
+        out.found = true;
+        out.moving = !body.IsStatic();
+        out.dynamic = body.IsDynamic();
+        if (out.moving) out.w = fromJoltVector(body.GetAngularVelocity());
+        if (out.dynamic) {
+            const JPH::Mat44 inverse = body.GetInverseInertia();
+            for (JPH::uint row = 0; row < 3; ++row)
+                for (JPH::uint column = 0; column < 3; ++column)
+                    out.inverse_inertia.m[row][column] = static_cast<double>(inverse(row, column));
+        }
+        return out;
+    }
+    // The surface's own share of the coefficient: the ground's, by what it is
+    // made of where the ball touches it; anything else, by its material.
+    [[nodiscard]] double surfaceRolling(const RollingContact &contact) const {
+        if (contact.other == kGroundPatchMatterId && ground_rolling_at_)
+            return ground_rolling_at_(contact.point_world_m.x, contact.point_world_m.z);
+        const auto found = contact_states_.find(contact.other);
+        return found == contact_states_.end() ? 0.0 : found->second.contact.rolling_resistance;
+    }
+
+    // One ball and everything it touched in the last step.
+    void resistBall(const std::vector<const RollingContact *> &contacts, double dt,
+                    std::vector<std::pair<JPH::BodyID, Vec3>> &pushes,
+                    std::vector<JPH::BodyID> &rolling_balls, std::vector<JPH::BodyID> &not_at_rest) {
+        const RollingContact &lead = *contacts.front();
+        const auto state = contact_states_.find(lead.sphere);
+        if (state == contact_states_.end() || !state->second.is_sphere ||
+            !(state->second.radius_m > 0.0))
+            return;
+        BallState ball;
+        if (!readBall(lead.sphere_body, ball)) return;
+        rolling_balls.push_back(lead.sphere_body);
+        if (!cache_readable_) before_step_[lead.sphere] = {ball.v, ball.force, ball.mass};
+        // Moved by the host since the step ended: it is not where it touched.
+        if (length(ball.x - lead.sphere_at_m) > kRollingMovedM) return;
+        const double r = state->second.radius_m;
+        const double own = state->second.contact.rolling_resistance;
+        std::vector<double> coefficient(contacts.size(), 0.0);
+        std::vector<TouchedState> touched(contacts.size());
+        std::vector<bool> fixed(contacts.size(), false);
+        // What it rests on that does not move -- the floor, the ground,
+        // anchored scenery -- is taken together as one support: its normal the
+        // force-weighted mean of theirs, its limit the sum of theirs.
+        Vec3 weighted{};
+        double limit = 0.0;
+        for (std::size_t k = 0; k < contacts.size(); ++k) {
+            const RollingContact &contact = *contacts[k];
+            coefficient[k] = std::clamp(own + surfaceRolling(contact), 0.0, 1.0);
+            touched[k] = readTouched(contact.other_body);
+            if (!touched[k].found || touched[k].moving || !(contact.normal_force_n > 0.0)) continue;
+            fixed[k] = true;
+            weighted += contact.normal_force_n * contact.normal;
+            limit += coefficient[k] * contact.normal_force_n * r;
+        }
+        Vec3 impulse{};
+        double applied = 0.0;
+        double work = 0.0;
+        bool held = false;
+        bool supported = false;
+        for (const bool on_fixed : fixed) supported = supported || on_fixed;
+        if (supported) {
+            const Vec3 n = normalized(weighted, lead.normal);
+            const double most = limit * dt;
+            const Vec3 arm = r * n;                          // from the contact to the centre
+            const Vec3 slip = ball.v - cross(ball.w, arm);   // the ball's surface at the contact
+            if (length(slip - dot(slip, n) * n) < kRollingSlipMS) {
+                // Rolling, or at rest. What turns a ball about the point it
+                // touches is its own angular momentum about that point and
+                // what gravity and any push add to it over the step -- the
+                // contact's forces act AT the point and add nothing. Stop all
+                // of that if the couple can: that is a ball staying where it
+                // was put on a slope gentler than atan(c). Otherwise take off
+                // all the couple can.
+                const Vec3 about = ball.inertia * ball.w + cross(arm, ball.mass * ball.v);
+                const Vec3 turning = ball.torque + cross(arm, ball.mass * gravity_m_s2_ + ball.force);
+                const Vec3 would = about + dt * turning;
+                const Vec3 rolling = would - dot(would, n) * n;
+                const double need = length(rolling);
+                // Turning slower than a ten-thousandth of a radian a second
+                // about the point it touches is at rest.
+                const double rest = 1.0e-4 * (ball.mass * r * r +
+                                              (ball.inertia.m[0][0] + ball.inertia.m[1][1] +
+                                               ball.inertia.m[2][2]) / 3.0);
+                held = need <= std::max(most, rest);
+                if (need > 1.0e-15 && most > 0.0) {
+                    applied = std::min(most, need);
+                    impulse -= (applied / need) * rolling;
+                    // Its work against the rolling it resisted: the couple
+                    // times the mean rate over the step, about the point the
+                    // ball turns on. Holding a ball still does none.
+                    const Vec3 axis = rolling / need;
+                    const double about_point = dot(axis, ball.inertia * axis) + ball.mass * r * r;
+                    const Vec3 had = about - dot(about, n) * n;
+                    const double before = std::max(0.0, dot(had, axis)) / about_point;
+                    const double after = (need - applied) / about_point;
+                    work = applied * 0.5 * (before + after);
+                }
+            } else {
+                // Sliding. The couple still resists the turning it has, and
+                // never turns it the other way; friction does the rest.
+                const Vec3 spin = ball.w - dot(ball.w, n) * n;
+                const double rate = length(spin);
+                if (rate > 1.0e-12 && most > 0.0) {
+                    const Vec3 axis = spin / rate;
+                    const double give = dot(axis, ball.inverse_inertia * axis);
+                    if (give > 0.0) {
+                        applied = std::min(most, rate / give);
+                        impulse -= applied * axis;
+                        work = applied * 0.5 * (rate + std::max(0.0, rate - applied * give));
+                    }
+                }
+            }
+            if (!held) not_at_rest.push_back(lead.sphere_body);
+        }
+        // Something that moves under it: the couple acts on both, against how
+        // the two turn relative to each other, and turns neither the other way.
+        std::vector<double> applied_moving(contacts.size(), 0.0);
+        std::vector<double> work_moving(contacts.size(), 0.0);
+        for (std::size_t k = 0; k < contacts.size(); ++k) {
+            const RollingContact &contact = *contacts[k];
+            if (!touched[k].found || !touched[k].moving || !(contact.normal_force_n > 0.0)) continue;
+            const Vec3 relative = ball.w - touched[k].w;
+            const Vec3 spin = relative - dot(relative, contact.normal) * contact.normal;
+            const double rate = length(spin);
+            if (!(rate > 1.0e-12)) continue;
+            const Vec3 axis = spin / rate;
+            double give = dot(axis, ball.inverse_inertia * axis);
+            if (touched[k].dynamic) give += dot(axis, touched[k].inverse_inertia * axis);
+            if (!(give > 0.0)) continue;
+            applied_moving[k] = std::min(coefficient[k] * contact.normal_force_n * r * dt, rate / give);
+            impulse -= applied_moving[k] * axis;
+            work_moving[k] = applied_moving[k] * 0.5 * (rate + std::max(0.0, rate - applied_moving[k] * give));
+            if (touched[k].dynamic) pushes.emplace_back(contact.other_body, applied_moving[k] * axis);
+        }
+        if (lengthSquared(impulse) > 0.0) pushes.emplace_back(lead.sphere_body, impulse);
+        for (std::size_t k = 0; k < contacts.size(); ++k) {
+            const RollingContact &contact = *contacts[k];
+            JoltWorld::RollingContactReport said;
+            said.sphere = contact.sphere;
+            said.other = contact.other;
+            said.normal_world = contact.normal;
+            said.point_world_m = contact.point_world_m;
+            said.normal_force_n = contact.normal_force_n;
+            said.from_solver = contact.from_solver;
+            said.coefficient = coefficient[k];
+            said.limit_n_m = coefficient[k] * contact.normal_force_n * r;
+            said.applied_n_m = fixed[k] ? (limit > 0.0 ? (applied / dt) * (said.limit_n_m / limit) : 0.0)
+                                        : applied_moving[k] / dt;
+            said.held = fixed[k] && held;
+            said.loss_j = fixed[k] ? (limit > 0.0 ? work * (said.limit_n_m / limit) : 0.0) : work_moving[k];
+            rolling_report_.push_back(said);
+        }
+        double taken = work;
+        for (const double moving_work : work_moving) taken += moving_work;
+        rolling_loss_j_ += taken;
+        rolling_loss_of_[lead.sphere] += taken;
     }
 
     void requireConfigurationMutable() const {
@@ -618,6 +1000,24 @@ public:
         double spacing{}, origin_x{}, origin_z{};
     };
     std::vector<GroundPatch> ground_;
+    // Rolling resistance: the ground's own coefficient by place; the contacts
+    // of round bodies the last step found, each with the solver's normal
+    // force; what the couple did with them; and each ball's velocity and push
+    // just before the step, for the momentum estimate that stands in if
+    // Jolt's contact cache stops reading.
+    std::function<double(double, double)> ground_rolling_at_;
+    std::vector<RollingContact> rolling_;
+    std::vector<JoltWorld::RollingContactReport> rolling_report_;
+    struct BeforeStep {
+        Vec3 v{};
+        Vec3 force{};
+        double mass{};
+    };
+    std::unordered_map<MatterBodyId, BeforeStep> before_step_;
+    bool cache_readable_{true};
+    // What rolling resistance has taken out of the motion, in all and by body.
+    double rolling_loss_j_{};
+    std::unordered_map<MatterBodyId, double> rolling_loss_of_;
 };
 
 namespace {
@@ -683,17 +1083,11 @@ void JoltWorld::setGravity(const Vec3 &gravity_m_s2) {
 
 void JoltWorld::addFloor() {
     impl_->requireConfigurationMutable();
-    MaterialDefinition concrete;
+    // The catalogue's concrete -- the same friction, damping and stiffness this
+    // floor always had -- so it also rolls a ball the way concrete does
+    // everywhere else in the engine (docs/rolling-resistance.md).
+    MaterialDefinition concrete = makeReferenceMaterial(MaterialPreset::Concrete, 0);
     concrete.name = "default_concrete_surface";
-    concrete.density_kg_m3 = 2400.0;
-    concrete.young_modulus_pa = 30.0e9;
-    concrete.poisson_ratio = 0.20;
-    concrete.static_friction = 0.75;
-    concrete.dynamic_friction = 0.62;
-    concrete.friction = concrete.dynamic_friction;
-    concrete.rolling_resistance = 0.015;
-    concrete.contact_damping_ratio = 0.30;
-    concrete.derive_restitution_from_damping = true;
     addSupportSurface({
         .frame = makeSupportPlane({}, {0.0, 1.0, 0.0}),
         .material = concrete,
@@ -1872,6 +2266,21 @@ bool JoltWorld::isAwake(MatterBodyId body_id) const {
     return impl_->physics_->GetBodyInterface().IsActive(found->second);
 }
 
+void JoltWorld::setGroundRollingResistance(std::function<double(double, double)> surface_at) {
+    impl_->ground_rolling_at_ = std::move(surface_at);
+}
+
+std::vector<JoltWorld::RollingContactReport> JoltWorld::rollingContacts() const {
+    return impl_->rolling_report_;
+}
+
+double JoltWorld::rollingLossJ() const { return impl_->rolling_loss_j_; }
+
+double JoltWorld::rollingLossJ(MatterBodyId body_id) const {
+    const auto found = impl_->rolling_loss_of_.find(body_id);
+    return found == impl_->rolling_loss_of_.end() ? 0.0 : found->second;
+}
+
 void JoltWorld::setMass(MatterBodyId body_id, double mass_kg) {
     const auto found = impl_->bodies_.find(body_id);
     if (found == impl_->bodies_.end()) throw std::invalid_argument("rigid body is missing");
@@ -1931,6 +2340,9 @@ void JoltWorld::addFragments(
         Vec3 linear_velocity_m_s{};
         Vec3 angular_velocity_rad_s{};
         CompiledContactMaterial contact{};
+        bool round{};
+        double radius_m{};
+        double mass_kg{};
     };
 
     JPH::BodyInterface &body_interface = impl_->physics_->GetBodyInterface();
@@ -2063,7 +2475,13 @@ void JoltWorld::addFragments(
                 new JPH::OffsetCenterOfMassShape(
                     inner_shape.GetPtr(), -inner_shape->GetCenterOfMass());
             const CompiledContactMaterial contact = legacyFragmentContact(
-                fragment.friction, fragment.restitution);
+                fragment.friction, fragment.restitution, fragment.rolling_resistance);
+            // A whole ball is round: it rolls, and rolling resistance acts on
+            // it (docs/rolling-resistance.md). Nothing else is -- a box does
+            // not roll, and a broken piece is a hull whose rolling is its own
+            // shape's business: it has to lift itself over each edge.
+            const bool round = fragment.primitive == FragmentPrimitive::Sphere &&
+                               !fragment.anchored && fragment.primitive_dimensions_m.x > 0.0;
 
             JPH::BodyCreationSettings settings(
                 centered_shape.GetPtr(),
@@ -2080,8 +2498,12 @@ void JoltWorld::addFragments(
                 static_cast<float>(contact.dynamic_friction);
             settings.mRestitution =
                 static_cast<float>(contact.restitution);
-            settings.mLinearDamping = 0.02F;
-            settings.mAngularDamping = 0.02F;
+            // A whole ball carries no velocity damping. Rolling resistance is
+            // what stops it now, and 0.02/s of damping was a drag of 0.02 v on
+            // it besides: a quarter of a rubber ball's rolling resistance at
+            // 1 m/s on the floor, and twice an iron ball's.
+            settings.mLinearDamping = round ? 0.0F : 0.02F;
+            settings.mAngularDamping = round ? 0.0F : 0.02F;
             // Jolt caps angular velocity at 0.25 * pi * 60 = 47.12 rad/s unless
             // told otherwise, and a rolling ball goes past that at walking pace:
             // 6 m/s on a 60 mm radius needs 100 rad/s. The cap was silently
@@ -2112,6 +2534,9 @@ void JoltWorld::addFragments(
                 fragment.mass_properties.linear_velocity_m_s,
                 fragment.mass_properties.angular_velocity_rad_s,
                 contact,
+                round,
+                0.5 * fragment.primitive_dimensions_m.x,
+                fragment.mass_properties.mass_kg,
             });
             body_ids.push_back(body->GetID());
         }
@@ -2133,7 +2558,8 @@ void JoltWorld::addFragments(
             impl_->bodies_.emplace(body.logical_id, body.body_id);
             impl_->contact_states_.emplace(
                 body.logical_id,
-                BodyContactState{body.contact, 0.0, 0.0, false});
+                BodyContactState{body.contact, body.round ? body.radius_m : 0.0, 0.4,
+                                 body.round, body.mass_kg, std::nullopt});
         }
     } catch (...) {
         for (const PendingBody &body : pending) {
@@ -2156,12 +2582,19 @@ bool JoltWorld::runReversibleTrial(const std::function<bool()> &trial) {
         throw std::runtime_error("cannot capture bounded Jolt trial state");
     auto events=impl_->impact_collector_.capture();const auto tick=impl_->tick_.load(std::memory_order_relaxed);
     const auto diagnostics=impl_->contact_diagnostics_;
+    // What rolling resistance carries into the next step goes back with the
+    // world: a step taken back found none of the contacts it recorded.
+    auto rolling=impl_->rolling_;auto rolling_report=impl_->rolling_report_;
+    const double rolling_loss=impl_->rolling_loss_j_;auto rolling_loss_of=impl_->rolling_loss_of_;
     const auto restore=[&] {
         recorder.Rewind();
         if(!impl_->physics_->RestoreState(recorder)||recorder.IsFailed())
             throw std::runtime_error("Jolt trial restore failed; discard this world");
         impl_->tick_.store(tick,std::memory_order_relaxed);impl_->impact_collector_.restore(std::move(events));
         impl_->contact_diagnostics_=diagnostics;
+        impl_->rolling_=std::move(rolling);impl_->rolling_report_=std::move(rolling_report);
+        impl_->rolling_loss_j_=rolling_loss;impl_->rolling_loss_of_=std::move(rolling_loss_of);
+        impl_->impact_collector_.dropRolling();
     };
     ++impl_->trial_depth_;bool accepted=false;
     try {accepted=trial();}catch(...) {--impl_->trial_depth_;restore();throw;}
@@ -2200,6 +2633,10 @@ bool JoltWorld::runSpringTrial(const std::function<bool()> &trial) {
     const auto tick=impl_->tick_.load(std::memory_order_relaxed);
     const auto diagnostics=impl_->contact_diagnostics_;
     const auto next_spring=impl_->next_spring_;
+    auto rolling=impl_->rolling_;
+    auto rolling_report=impl_->rolling_report_;
+    const double rolling_loss=impl_->rolling_loss_j_;
+    auto rolling_loss_of=impl_->rolling_loss_of_;
 
     const auto restore=[&] {
         // Remove/add is intentionally done for the whole list: Jolt removes by
@@ -2222,6 +2659,11 @@ bool JoltWorld::runSpringTrial(const std::function<bool()> &trial) {
         impl_->tick_.store(tick,std::memory_order_relaxed);
         impl_->impact_collector_.restore(std::move(events));
         impl_->contact_diagnostics_=diagnostics;
+        impl_->rolling_=std::move(rolling);
+        impl_->rolling_report_=std::move(rolling_report);
+        impl_->rolling_loss_j_=rolling_loss;
+        impl_->rolling_loss_of_=std::move(rolling_loss_of);
+        impl_->impact_collector_.dropRolling();
     };
 
     ++impl_->spring_trial_depth_;bool accepted=false;
@@ -2242,6 +2684,7 @@ void JoltWorld::step(double fixed_dt_s) {
         1,
         impl_->temp_allocator_.get(),
         impl_->job_system_.get());
+    impl_->measureRolling(fixed_dt_s);
     auto &diagnostics=impl_->contact_diagnostics_;
     diagnostics.last_manifolds=collector.manifolds.load(std::memory_order_relaxed);
     diagnostics.last_points=collector.points.load(std::memory_order_relaxed);
@@ -2369,6 +2812,7 @@ void JoltWorld::removeAndDestroy(MatterBodyId body_id) {
     // is no longer hinged to it.
     for (const unsigned id : jointsOn(body_id)) removeJoint(id);
     std::erase_if(impl_->external_pairs_,[&](const auto &pair){return pair.first==body_id||pair.second==body_id;});
+    std::erase_if(impl_->rolling_,[&](const RollingContact &c){return c.sphere==body_id||c.other==body_id;});
     JPH::BodyInterface &body_interface = impl_->physics_->GetBodyInterface();
     body_interface.RemoveBody(found->second);
     body_interface.DestroyBody(found->second);

@@ -43,7 +43,10 @@ MaterialDefinition groundContact() {
     soil.static_friction = 0.7;
     soil.dynamic_friction = 0.6;
     soil.friction = soil.dynamic_friction;
-    soil.rolling_resistance = 0.05;
+    // The patch's own, for anywhere the ground cannot say: attach() tells the
+    // world what the ground is made of at each point, and that is what a ball
+    // rolling on it meets.
+    soil.rolling_resistance = soilMaterial().rolling_resistance;
     soil.contact_damping_ratio = 0.6;
     soil.derive_restitution_from_damping = true;
     return soil;
@@ -360,8 +363,18 @@ void Environment::attach(JoltWorld &world) {
             g.x0 + cx * TerrainField::kChunkCells * g.dx, g.z0 + cz * TerrainField::kChunkCells * g.dx,
             contact);
     }
+    // One collider material for all of it, but not one ground: a ball on the
+    // sand is held where one on the rock rolls. Asked where each contact is,
+    // so a dig, a slump or a heap of sand changes it as it changes the ground.
+    world.setGroundRollingResistance([this](double x, double z) { return rollingResistanceAt(x, z); });
     attached_ = true;
     (void)terrain_->takeDirtyChunks();
+}
+
+double Environment::rollingResistanceAt(double x_m, double z_m) const {
+    const auto cell = terrain_->cellAt(x_m, z_m);
+    if (!cell) return soilMaterial().rolling_resistance;
+    return groundMaterialOf(terrain_->surface(*cell)).rolling_resistance;
 }
 
 void Environment::syncWaterBed(const std::vector<std::size_t> &cells) {
@@ -741,7 +754,8 @@ std::string Environment::reportJson(bool full) const {
         for (const GroundMaterial *m : {&rockMaterial(), &soilMaterial(), &sandMaterial()})
             materials.push_back({{"name", m->name}, {"density_kg_m3", m->density_kg_m3},
                                  {"friction_angle_deg", m->friction_angle_deg},
-                                 {"cohesion_pa", m->cohesion_pa}});
+                                 {"cohesion_pa", m->cohesion_pa},
+                                 {"rolling_resistance", m->rolling_resistance}});
         report["model"] = {
             {"ground", {{"materials", materials}, {"stop_layer_m", TerrainField::kStopLayerM},
                         {"provenance", "declared: textbook ranges for dry ground, not a calibration; rock "
@@ -799,7 +813,12 @@ std::string Environment::surveyJson(double x, double z) const {
     Json out = {{"on_the_ground", true}, {"x_m", x}, {"z_m", z}, {"ground_m", terrain_->heightAt(x, z)},
                 {"rock_top_m", terrain_->rockTop(c)}, {"soil_m", terrain_->soil(c)},
                 {"sand_m", terrain_->sand(c)}, {"loose_soil_m", terrain_->looseSoil(c)},
-                {"surface", surfaceName(terrain_->surface(c))}, {"slope_deg", terrain_->slopeDeg(c)}};
+                {"surface", surfaceName(terrain_->surface(c))},
+                // The ground's own share of a ball's rolling resistance here;
+                // the ball adds its own, and it rests on a slope whose tangent
+                // is below the sum.
+                {"rolling_resistance", groundMaterialOf(terrain_->surface(c)).rolling_resistance},
+                {"slope_deg", terrain_->slopeDeg(c)}};
     if (water_->wet(c) && water_->depth(c) > 0.003) {
         const double u = water_->velocityX(c), w = water_->velocityZ(c);
         out["water"] = {{"depth_m", water_->depth(c)}, {"surface_m", water_->surface(c)},

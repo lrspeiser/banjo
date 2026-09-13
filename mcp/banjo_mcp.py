@@ -210,12 +210,52 @@ def _describe(world: banjo.World) -> list[dict[str, Any]]:
 # The tools
 # ---------------------------------------------------------------------------
 
+def _engine_materials() -> dict[str, Any]:
+    """What the engine says each material and surface rolls like -- asked of the
+    engine (banjo_materials), not written down here a second time."""
+    try:
+        said = banjo.materials()
+    except Exception:   # no library: the notes above still stand on their own
+        return {"materials": {}, "surfaces": [], "law": {}}
+    return {"materials": {m["name"]: m for m in said.get("materials", [])},
+            "surfaces": said.get("surfaces", []), "law": said.get("rolling_resistance", {})}
+
+
+def _rolling_said(entry: dict[str, Any]) -> dict[str, Any]:
+    """One material's or surface's rolling resistance, and whether a table or a
+    measurement gives it or it is a demonstration value."""
+    return {"rolling_resistance": entry["rolling_resistance"],
+            "rolling_resistance_is": ("sourced" if entry.get("rolling_resistance_sourced")
+                                      else "a demonstration value"),
+            "rolling_resistance_basis": entry.get("rolling_resistance_basis", "")}
+
+
 def tool_list_materials(_args: dict[str, Any]) -> dict[str, Any]:
-    return {"materials": [{"name": m, "behaviour": MATERIAL_NOTES[m]} for m in MATERIALS],
-            "note": "Every speed above was measured by dropping a 100 mm ball of that "
-                    "material onto a concrete floor. A threshold is the speed below "
-                    "which nothing CAN happen; above it, it is possible and not "
-                    "certain, and only running it says."}
+    engine = _engine_materials()
+    materials = []
+    for m in MATERIALS:
+        said: dict[str, Any] = {"name": m, "behaviour": MATERIAL_NOTES[m]}
+        if m in engine["materials"]:
+            said.update(_rolling_said(engine["materials"][m]))
+        materials.append(said)
+    answer: dict[str, Any] = {
+        "materials": materials,
+        "note": "Every speed above was measured by dropping a 100 mm ball of that "
+                "material onto a concrete floor. A threshold is the speed below "
+                "which nothing CAN happen; above it, it is possible and not "
+                "certain, and only running it says."}
+    if engine["surfaces"]:
+        answer["surfaces"] = [dict(name=s["name"], made_of=s["made_of"], **_rolling_said(s))
+                              for s in engine["surfaces"]]
+        answer["rolling"] = (
+            "A ball is resisted by a couple M = c N r at what it rolls on: c is the ball's own "
+            "rolling resistance PLUS the surface's. It stays put on any slope whose tangent is "
+            "below c, rolls down any steeper one, and on the level slows at 5/7 c g, stopping "
+            "in v^2 / (2 * 5/7 c g): a rubber ball rolled at 1 m/s runs about 6.5 m on the "
+            "floor (c = 0.011) and stops within 0.2 m on sand (c = 0.31), which holds it on "
+            "slopes up to 17 degrees; an iron ball on the floor (c = 0.0015) runs about 50 m. "
+            "Boxes do not roll. run and describe_world say what it took, in joules.")
+    return answer
 
 
 def tool_create_world(args: dict[str, Any]) -> dict[str, Any]:
@@ -258,6 +298,32 @@ def tool_describe_world(args: dict[str, Any]) -> dict[str, Any]:
     return said
 
 
+def _rolling_loss(world: banjo.World) -> float:
+    try:
+        return float(world.rolling_report().get("loss_j", 0.0))
+    except banjo.BanjoError:
+        return 0.0
+
+
+def _rolling_now(world: banjo.World, since_j: float = 0.0) -> dict[str, Any] | None:
+    """What rolling resistance is doing: which balls it holds still, which are
+    rolling against it, and the energy it has taken -- a declared loss, like a
+    cut's work. None when nothing round is touching anything."""
+    try:
+        report = world.rolling_report()
+    except banjo.BanjoError:
+        return None
+    contacts = report.get("contacts") or []
+    taken = float(report.get("loss_j", 0.0)) - since_j
+    if not contacts and taken <= 1e-9:
+        return None
+    held = sorted({c["ball"] for c in contacts if c.get("held")})
+    return {"held_still": held,
+            "rolling_against_it": sorted({c["ball"] for c in contacts if c["ball"] not in held}),
+            "on": {c["ball"]: {"what": c["on"], "c": round(c["coefficient"], 4)} for c in contacts},
+            "took_j": round(taken, 4)}
+
+
 def tool_run(args: dict[str, Any]) -> dict[str, Any]:
     """Let time pass, settling whatever wants to break, and say what happened."""
     import time as clock
@@ -267,6 +333,7 @@ def tool_run(args: dict[str, Any]) -> dict[str, Any]:
     dt = 1.0 / 480.0
     began = clock.perf_counter()
     started_at = world.time_s
+    rolling_before = _rolling_loss(world)
     events: list[dict[str, Any]] = []
     hardest: dict[tuple[str, str], dict[str, Any]] = {}
     stopped_early = None
@@ -341,6 +408,9 @@ def tool_run(args: dict[str, Any]) -> dict[str, Any]:
     }
     if stopped_early:
         answer["stopped_early"] = stopped_early
+    rolling = _rolling_now(world, since_j=rolling_before)
+    if rolling is not None:
+        answer["rolling_resistance"] = rolling
     heat = _heat_said(world, limit=10)
     if heat is not None:
         answer["heat"] = heat
@@ -2004,6 +2074,18 @@ def tool_survey(args: dict[str, Any]) -> dict[str, Any]:
             "slope_deg": round(here["slope_deg"], 1),
             "layers_m": {"sand": round(here["sand_m"], 3), "soil": round(here["soil_m"] + here["loose_soil_m"], 3),
                          "rock_starts_at_m": round(here["rock_top_m"], 3)}}
+    if "rolling_resistance" in here:
+        # The ground's own share; a ball adds its own, and rests here when the
+        # sum is more than the tangent of the slope.
+        ground = here["rolling_resistance"]
+        steep = math.tan(math.radians(here["slope_deg"]))
+        own = {m: e["rolling_resistance"] for m, e in _engine_materials()["materials"].items()}
+        said["rolling_resistance"] = ground
+        said["a_ball_rests_here"] = {
+            "if": f"its own rolling resistance plus the ground's {ground:g} is more than "
+                  f"tan(slope) = {steep:.3f}",
+            **({"these_rest": sorted(m for m, c in own.items() if c + ground > steep),
+                "these_roll": sorted(m for m, c in own.items() if c + ground <= steep)} if own else {})}
     if here.get("water"):
         w = here["water"]
         said["water"] = {"depth_m": round(w["depth_m"], 3), "level_m": round(w["surface_m"], 3),

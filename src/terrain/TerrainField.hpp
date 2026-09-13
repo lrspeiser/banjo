@@ -80,10 +80,20 @@ struct GroundMaterial {
     double density_kg_m3{};
     double friction_angle_deg{};
     double cohesion_pa{};
+    // The ground's own share of the coefficient c in the rolling-resistance
+    // couple M = c N r on a ball rolling over it (the ball adds its own). What
+    // keeps a ball set down on a gentle sandy bank where it was put, and lets
+    // one roll on across bare rock. Sources and uncertainty:
+    // docs/rolling-resistance.md.
+    double rolling_resistance{};
+    // Whether a table or a measurement gives it, and which.
+    bool rolling_sourced{};
+    const char *rolling_basis{};
 };
 [[nodiscard]] const GroundMaterial &rockMaterial();
 [[nodiscard]] const GroundMaterial &soilMaterial();
 [[nodiscard]] const GroundMaterial &sandMaterial();
+[[nodiscard]] const GroundMaterial &groundMaterialOf(Surface surface);
 
 // Matter by kind, in cubic metres.
 struct Volumes {

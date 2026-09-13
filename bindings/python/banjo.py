@@ -35,9 +35,10 @@ from typing import Any, Iterator
 # Bumped with the header. 13 added blades, the cuts they make and a hand that
 # grips; 14 added heat, chemistry and gas. They were numbered apart on two
 # branches so that, merged, one number means one header: a library at 14
-# carries both. 15 added terrain and water, on top of both. Checked for
-# equality below, so this has to match exactly.
-ABI_VERSION = 15
+# carries both. 15 added terrain and water, on top of both. 16 added rolling
+# resistance (materials(), World.rolling_report(), the survey's share).
+# Checked for equality below, so this has to match exactly.
+ABI_VERSION = 16
 
 NOTHING, HELD, DENTED, BROKE = 0, 1, 2, 3
 OUTCOMES = {0: "nothing", 1: "held", 2: "dented", 3: "broke"}
@@ -856,6 +857,10 @@ def library(path: str | os.PathLike[str] | None = None) -> ctypes.CDLL:
     lib.banjo_environment_state.restype = ctypes.c_char_p
     lib.banjo_survey.argtypes = [ctypes.c_void_p, ctypes.c_double, ctypes.c_double]
     lib.banjo_survey.restype = ctypes.c_char_p
+    lib.banjo_materials.argtypes = []
+    lib.banjo_materials.restype = ctypes.c_char_p
+    lib.banjo_rolling_report.argtypes = [ctypes.c_void_p]
+    lib.banjo_rolling_report.restype = ctypes.c_char_p
     lib.banjo_awake_bodies.argtypes = [ctypes.c_void_p]
     lib.banjo_awake_bodies.restype = ctypes.c_int
     lib.banjo_make_blade.argtypes = [ctypes.c_void_p, ctypes.c_char_p,
@@ -1648,6 +1653,14 @@ class World:
         text = self._lib.banjo_survey(self._alive(), float(x_m), float(z_m)) or b"{}"
         return json.loads(text.decode("utf-8"))
 
+    def rolling_report(self) -> dict[str, Any]:
+        """What rolling resistance is doing: every contact of a round body in the
+        last step, with the solver's normal force, the pair's coefficient and
+        whether the ball is held still, and the energy it has taken out of the
+        motion, in all ("loss_j") and by ball."""
+        text = self._lib.banjo_rolling_report(self._alive()) or b"{}"
+        return json.loads(text.decode("utf-8"))
+
     def awake_bodies(self) -> int:
         """How many bodies the rigid solver is stepping right now."""
         return self._check(self._lib.banjo_awake_bodies(self._alive()), "counting awake bodies")
@@ -1661,3 +1674,11 @@ def thermo_model() -> dict[str, Any]:
     """The substances, reactions and compositions a world starts with, and
     where every number came from -- without opening a world."""
     return json.loads((library().banjo_thermo_model() or b"{}").decode("utf-8"))
+
+
+def materials() -> dict[str, Any]:
+    """The materials, the floor and the ground's surfaces, each with its friction
+    and its own share of rolling resistance (a ball on a surface is resisted
+    with its own share plus the surface's), whether that is sourced or a
+    demonstration value, and where it came from -- without opening a world."""
+    return json.loads((library().banjo_materials() or b"{}").decode("utf-8"))

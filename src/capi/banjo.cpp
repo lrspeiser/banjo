@@ -88,6 +88,8 @@ struct banjo_world {
     std::string environment_report;
     std::string environment_state;
     std::string survey;
+    // What rolling resistance is doing, last time anyone asked.
+    std::string rolling;
 };
 
 namespace {
@@ -1211,6 +1213,27 @@ const char *banjo_survey(const banjo_world *world, double x_m, double z_m) {
         mutable_world->survey.clear();
     }
     return mutable_world->survey.c_str();
+}
+
+const char *banjo_materials(void) {
+    thread_local std::string materials;
+    try {
+        materials = LiveWorld::materialsJson();
+    } catch (...) {
+        materials.clear();
+    }
+    return materials.c_str();
+}
+
+const char *banjo_rolling_report(const banjo_world *world) {
+    if (!world) return "";
+    auto *mutable_world = const_cast<banjo_world *>(world);
+    try {
+        mutable_world->rolling = world->world->rollingReport();
+    } catch (...) {
+        mutable_world->rolling.clear();
+    }
+    return mutable_world->rolling.c_str();
 }
 
 int banjo_awake_bodies(const banjo_world *world) {

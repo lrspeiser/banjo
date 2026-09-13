@@ -953,6 +953,11 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
             for (const std::uint32_t node : component.node_indices)
                 if (setup.part_of_node[node] != part) { whole = false; break; }
             if (!whole) continue;
+            // What it is made of decides how it rolls, and how a ball rolls on
+            // it (docs/rolling-resistance.md).
+            if (part < setup.part_definitions.size())
+                fragment.rolling_resistance =
+                    compileContactMaterial(setup.part_definitions[part]).rolling_resistance;
             // Anchoring belongs to the group, however many shapes made it: a
             // bowl is three shapes joined and is still scenery. Only the
             // authored collision primitive needs a single shape, because a

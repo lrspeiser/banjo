@@ -136,6 +136,11 @@ public:
     // acoustic impedance sqrt(rho E) that decides whether an impact can break
     // anything -- a stone dropped on sand is not a stone dropped on stone.
     [[nodiscard]] double contactImpedanceAt(const Vec3 &point_m) const;
+    // What the ground adds to a ball's rolling resistance at a point: rock's,
+    // soil's or sand's own share, by what is on top there -- the reason a ball
+    // set down on a sandy bank stays put and one let go on bare rock rolls.
+    // Off the ground, soil's. See docs/rolling-resistance.md.
+    [[nodiscard]] double rollingResistanceAt(double x_m, double z_m) const;
 
     // Everything, as JSON: the ground and its ledger, the water and its
     // ledger, rivers and ponds, the costs. `full` adds the model's provenance

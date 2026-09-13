@@ -921,6 +921,16 @@ if(BANJO_BUILD_TESTS)
             banjo_enable_warnings(banjo_valley_live_tests)
             add_test(NAME banjo_valley_live_tests COMMAND banjo_valley_live_tests)
 
+            # Rolling resistance, M = c N r at every contact of a round body
+            # (docs/rolling-resistance.md): the level deceleration 5/7 c g
+            # against a zero-resistance control, the energy it takes, the
+            # slope a ball rests on, N as the solver's own contact force, and
+            # the ball by the river in the valley.
+            add_executable(banjo_rolling_resistance_tests tests/rolling_resistance_tests.cpp)
+            target_link_libraries(banjo_rolling_resistance_tests PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
+            banjo_enable_warnings(banjo_rolling_resistance_tests)
+            add_test(NAME banjo_rolling_resistance_tests COMMAND banjo_rolling_resistance_tests)
+
             # Where cutting meets heat: a burning log cut in two keeps its fuel
             # and its fire, a refused step mid-cut changes nothing, and a hand
             # pushes once per step however the step is retried.

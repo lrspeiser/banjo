@@ -22,6 +22,13 @@ MaterialDefinition baseMaterial(
     return material;
 }
 
+// rolling_resistance is the material's OWN share of the coefficient c in the
+// rolling-resistance couple M = c N r: a ball of this material rolling on a
+// surface of that one is resisted with c = own + surface's, because both are
+// deformed at the contact. Each value, its source and its uncertainty are in
+// docs/rolling-resistance.md; the pair values in the tables there (steel on
+// steel about 0.001, a rubber tyre on concrete 0.010-0.015) are what these
+// add up to.
 void setContact(
     MaterialDefinition &material,
     double static_friction,
@@ -72,7 +79,9 @@ MaterialDefinition makeReferenceMaterial(MaterialPreset preset, std::uint64_t se
         material.hardness_pa = 1.5e9;
         material.fracture_energy_j_m2 = 100000.0;
         material.damping_ratio = 0.015;
-        setContact(material, 0.60, 0.45, 0.002, 0.18);
+        // Half of steel on steel: 0.0010-0.0015 for hardened ball bearings,
+        // 0.0010-0.0024 for a rail wheel on its rail.
+        setContact(material, 0.60, 0.45, 0.0005, 0.18);
         break;
     case MaterialPreset::Aluminum:
         material = baseMaterial(
@@ -84,7 +93,9 @@ MaterialDefinition makeReferenceMaterial(MaterialPreset preset, std::uint64_t se
         material.hardness_pa = 950.0e6;
         material.fracture_energy_j_m2 = 25000.0;
         material.damping_ratio = 0.02;
-        setContact(material, 0.61, 0.47, 0.003, 0.16);
+        // No table value: iron's, scaled by elastic hysteresis for a third of
+        // the stiffness and a little more internal loss (about twice).
+        setContact(material, 0.61, 0.47, 0.001, 0.16);
         break;
     case MaterialPreset::Glass:
         material = baseMaterial(
@@ -107,7 +118,8 @@ MaterialDefinition makeReferenceMaterial(MaterialPreset preset, std::uint64_t se
         // laboratory glass data.
         material.calibration.damage_strain_multiplier = 1.0;
         material.calibration.break_strain_multiplier = 2.0;
-        setContact(material, 0.45, 0.35, 0.001, 0.08);
+        // Hard, elastic and smooth: as iron.
+        setContact(material, 0.45, 0.35, 0.0005, 0.08);
         break;
     case MaterialPreset::Ceramic:
         material = baseMaterial(
@@ -122,7 +134,8 @@ MaterialDefinition makeReferenceMaterial(MaterialPreset preset, std::uint64_t se
         material.calibration.activation_energy_scale = 2.0;
         material.calibration.damage_strain_multiplier = 6.0;
         material.calibration.break_strain_multiplier = 12.0;
-        setContact(material, 0.50, 0.38, 0.001, 0.06);
+        // Stiffer than steel and less lossy: below iron.
+        setContact(material, 0.50, 0.38, 0.0003, 0.06);
         break;
     case MaterialPreset::Oak:
         material = baseMaterial("oak", MaterialModel::RigidOnly, 700.0, 12.0e9, 0.35);
@@ -134,7 +147,10 @@ MaterialDefinition makeReferenceMaterial(MaterialPreset preset, std::uint64_t se
         material.fracture_energy_j_m2 = 1000.0;
         material.damping_ratio = 0.04;
         material.anisotropy_ratio = 8.0;
-        setContact(material, 0.62, 0.42, 0.010, 0.24);
+        // A smooth wooden track adds at most 0.001 under a bicycle tyre; a
+        // seventeenth of steel's stiffness and more internal loss put oak
+        // above iron.
+        setContact(material, 0.62, 0.42, 0.002, 0.24);
         break;
     case MaterialPreset::Rubber:
         material = baseMaterial(
@@ -146,7 +162,9 @@ MaterialDefinition makeReferenceMaterial(MaterialPreset preset, std::uint64_t se
         material.hardness_pa = 6.0e6;
         material.fracture_energy_j_m2 = 5000.0;
         material.damping_ratio = 0.18;
-        setContact(material, 1.00, 0.80, 0.025, 0.05);
+        // A rubber tyre on concrete is 0.010-0.015, nearly all of it the
+        // rubber's own hysteresis.
+        setContact(material, 1.00, 0.80, 0.010, 0.05);
         break;
     case MaterialPreset::Ice:
         material = baseMaterial("freshwater_ice", MaterialModel::BrittleBond, 917.0, 9.0e9, 0.33);
@@ -160,7 +178,9 @@ MaterialDefinition makeReferenceMaterial(MaterialPreset preset, std::uint64_t se
         material.calibration.activation_energy_scale = 1.5;
         material.calibration.damage_strain_multiplier = 5.0;
         material.calibration.break_strain_multiplier = 10.0;
-        setContact(material, 0.10, 0.03, 0.001, 0.12);
+        // No measurement found: iron's, scaled by elastic hysteresis for ice's
+        // stiffness and loss (about four to five times).
+        setContact(material, 0.10, 0.03, 0.002, 0.12);
         break;
     case MaterialPreset::Concrete:
         material = baseMaterial("concrete", MaterialModel::RigidOnly, 2400.0, 30.0e9, 0.20);
@@ -170,11 +190,45 @@ MaterialDefinition makeReferenceMaterial(MaterialPreset preset, std::uint64_t se
         material.hardness_pa = 100.0e6;
         material.fracture_energy_j_m2 = 100.0;
         material.damping_ratio = 0.04;
-        setContact(material, 0.75, 0.62, 0.015, 0.30);
+        // Stone. A bicycle tyre on concrete is 0.002 in all, so concrete's own
+        // share is at most that. The floor of every room is this, and so is
+        // the valley's rock.
+        setContact(material, 0.75, 0.62, 0.001, 0.30);
         break;
     }
     material.seed = seed;
     return material;
+}
+
+RollingResistanceSource rollingResistanceSource(MaterialPreset preset) {
+    switch (preset) {
+    case MaterialPreset::Iron:
+        return {true, "half of steel on steel: hardened steel ball bearings 0.0010-0.0015 "
+                      "(Hibbeler 2007), a rail wheel on its rail 0.0010-0.0024 (Hay 1982)"};
+    case MaterialPreset::Aluminum:
+        return {false, "demonstration: no table value; iron's, scaled by elastic hysteresis "
+                       "(Johnson 1985) for 69 GPa against 211 and a little more internal loss"};
+    case MaterialPreset::Glass:
+        return {false, "demonstration: no table value for a glass ball; hard, elastic and "
+                       "smooth, so taken as iron"};
+    case MaterialPreset::Ceramic:
+        return {false, "demonstration: no table value; iron's, scaled by elastic hysteresis "
+                       "for alumina's 300 GPa and lower internal loss"};
+    case MaterialPreset::Oak:
+        return {false, "demonstration: no table value for oak; a smooth wooden track adds at "
+                       "most 0.001 under a bicycle tyre (Engineering ToolBox), and iron's "
+                       "scaled by elastic hysteresis gives 0.0035; taken between"};
+    case MaterialPreset::Rubber:
+        return {true, "a rubber tyre on concrete 0.010-0.015 (Gillespie 1992, p. 117; "
+                      "Engineering ToolBox), nearly all of it the rubber's own hysteresis"};
+    case MaterialPreset::Ice:
+        return {false, "demonstration: no measurement found; iron's, scaled by elastic "
+                       "hysteresis for ice's 9 GPa and loss"};
+    case MaterialPreset::Concrete:
+        return {true, "a bicycle tyre on concrete is 0.002 in all (Engineering ToolBox), so "
+                      "concrete's own share is at most that"};
+    }
+    return {false, "unknown material"};
 }
 
 MaterialPreset materialPresetFromOrdinal(unsigned ordinal) {

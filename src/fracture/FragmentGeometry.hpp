@@ -42,6 +42,11 @@ struct RigidFragmentDescription {
     double voxel_size_m{};
     double friction{0.35};
     double restitution{0.08};
+    // The body's OWN share of the rolling-resistance coefficient (the surface
+    // it rolls on adds its own). Used when the body is round and rolls, and
+    // when something round rolls on it. 0.001 is what every piece had before
+    // bodies said what they were made of.
+    double rolling_resistance{0.001};
     std::size_t source_node_count{};
     // Set only where the fragment is exactly one whole authored object. Box
     // uses all three extents; Sphere uses x as the diameter.
@@ -70,6 +75,7 @@ struct FragmentBuildSettings {
     std::size_t maximum_collision_points{192};
     double friction{0.35};
     double restitution{0.08};
+    double rolling_resistance{0.001};
 };
 
 struct FragmentBuildResult {

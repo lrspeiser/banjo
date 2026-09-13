@@ -695,6 +695,21 @@ public:
     // work is what passes between the two.
     [[nodiscard]] double mechanicalEnergyJ() const;
 
+    // ---- rolling resistance (docs/rolling-resistance.md) ------------------
+    //
+    // What rolling resistance is doing, as JSON: every contact of a round body
+    // in the last step -- the ball, what it rolls on, the solver's normal
+    // force there, the pair's coefficient, the most the couple can be and what
+    // it was, whether the ball is held still -- and the energy it has taken
+    // out of the motion, in all and by ball: a declared loss, like a cut's
+    // work, so the kinetic energy a rolling ball loses is accounted for.
+    [[nodiscard]] std::string rollingReport() const;
+    [[nodiscard]] double rollingLossJ() const;
+    // The materials, the floor and the ground's surfaces, each with its
+    // friction and its own share of rolling resistance, marked sourced or a
+    // demonstration value and saying where it came from. Needs no world.
+    [[nodiscard]] static std::string materialsJson();
+
     // ---- terrain and water ------------------------------------------------
     //
     // The ground and the rivers on it (terrain/Environment.hpp), or null when
