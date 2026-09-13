@@ -1733,11 +1733,50 @@ def _saying_what_was_withdrawn(handler: Any) -> Any:
     return run
 
 
+# The fields only one kind of use has. A caller that fills in every field it is
+# offered -- a model whose function calls carry every property, blank where it
+# has nothing to say -- sends the other kind's as placeholders: an empty string,
+# zeros, an empty list. Measured in the room: asked for a pick, the chat sent a
+# swing-and-lever with a blank draw, nock, limbs and projectile, twelve times,
+# and was refused every time; a bow would have come with a blank tool. Blanks
+# say nothing and are dropped. A field that says something is still held to
+# the rules, and refused.
+_ONLY_IN = {"draw-and-release": ("draw", "nock", "limbs", "projectile"),
+            "swing-and-lever": ("tool",)}
+
+
+def _blank(value: Any) -> bool:
+    if value is None or (isinstance(value, bool) and not value):
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value == 0
+    if isinstance(value, (list, tuple)):
+        return all(_blank(v) for v in value)
+    if isinstance(value, dict):
+        return all(_blank(v) for v in value.values())
+    return False
+
+
+def _without_blanks(profile: dict[str, Any]) -> dict[str, Any]:
+    """A profile less the other kind's fields where they are only placeholders."""
+    out = dict(profile)
+    for kind, fields in _ONLY_IN.items():
+        if kind != out.get("template"):
+            for field in fields:
+                if field in out and _blank(out[field]):
+                    del out[field]
+    return out
+
+
 def tool_interaction(args: dict[str, Any]) -> dict[str, Any]:
     """Say how a person uses a thing, hold it to what is built, and try it."""
     entry = _world(args.get("world_id"))
     profile = {k: v for k, v in args.items() if k not in ("world_id", "trial")}
-    profile.setdefault("template", "draw-and-release")
+    if not profile.get("template"):
+        profile["template"] = "draw-and-release"
+    profile = _without_blanks(profile)
     try:
         checked = _profile_checked(entry, profile)
     except ValueError as problem:

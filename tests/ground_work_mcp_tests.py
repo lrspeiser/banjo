@@ -138,6 +138,31 @@ class APickInTheClearing(unittest.TestCase):
                      "size_m": [0.08, 0.08, 0.08], "position_m": [-2.0, -2.0]})
         self.assertEqual(banjo_mcp._ground_carried(entry)["soil"]["cubic_metres"], carried)
 
+    def test_a_caller_that_fills_every_field_is_not_refused_for_blanks(self):
+        """The room's chat sends every property a tool has, blank where it has
+        nothing to say. Asked for a pick, it sent this swing-and-lever -- with a
+        blank draw, nock, limbs and projectile -- twelve times, and was refused
+        every time. Blanks say nothing; a field that says something is still
+        refused."""
+        world_id = clearing_with_pick()
+        pointed(world_id)
+        blanks = {"draw": {"part": "", "axis": [0, 0, 0], "max_m": 0.0, "speed_m_s": 0.0},
+                  "nock": {"a": "", "b": ""}, "limbs": [], "projectile": ""}
+        said = call("interaction", world_id=world_id, object="the pick", template="swing-and-lever",
+                    parts=["pick haft", "pick arm"], tool="pick haft", trial=False, **blanks)
+        self.assertEqual((said["template"], said["tool"]), ("swing-and-lever", "pick haft"))
+        with self.assertRaises(banjo_mcp.Refused):
+            call("interaction", world_id=world_id, object="the pick", template="swing-and-lever",
+                 parts=["pick haft", "pick arm"], tool="pick haft", trial=False,
+                 **dict(blanks, projectile="pick arm"))
+
+    def test_a_bow_sent_with_a_blank_tool_is_still_a_bow(self):
+        world_id = room_world.open_room(world_room.courtyard())
+        profile = room_world.mcp_profile(world_room.courtyard()["interactions"][0])
+        said = call("interaction", world_id=world_id, trial=False, tool="", **profile)
+        self.assertEqual(said["template"], "draw-and-release")
+        self.assertNotIn("tool", said)
+
     def test_the_room_is_handed_the_point_and_the_profile(self):
         world_id = clearing_with_pick()
         pointed(world_id)
