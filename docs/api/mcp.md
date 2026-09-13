@@ -130,6 +130,23 @@ call it makes runs these handlers, on the person's room held as an MCP world
 `tests/chat_tool_parity_tests.py` fails if one does not and no reason is
 written down.
 
+## What `joints` says about a rope
+
+For a `tie`, `apart_m` is how long the rope is now: the distance between the two
+points it was tied at (`at_a_m` and `at_b_m`), each carried with its object as the
+object moves and turns. A taut rope reads its own `length_m` and a slack one
+reads less. It used to be the distance between the two objects' centres, which is
+a different number whenever a rope is not tied at a middle: a 1 m rope hauled
+tight from the foot of a post to the back of an iron block read 1.27 m. For a
+`reeve`, `rope_m` is the whole run, measured the same way.
+
+`tension_n` is newtons: the force the rope carried over the last step, and only
+that. A hanging weight reads its weight at any step size, and held down by the
+hand, which pulls with 800 N, its weight plus 800 N. `place` moves the hand once
+and then lets the world run, so that is what a rope held against it carries. A
+host driving the engine directly that moves the hand before every step pulls
+twice as hard; see `tension_n` in [c-api.md](c-api.md).
+
 ## What a session looks like
 
 > **Build a glass pane on two piers and drop an iron ball on it from three

@@ -490,6 +490,29 @@ hinges, and what was hanging on it falls. Read what a link is carrying from
 `tension_n` — measured against a 617.638 N weight it reports 617.586 N, and 0 N
 while the rope still has slack in it.
 
+**`at` is the rope's length now, tie point to tie point:** the two points it was
+tied at, each carried with its body as that body moves and turns. So a taut rope
+reads its own length. It used to be measured between the two bodies' *centres*,
+which is a different number whenever a rope is not tied at a middle: a 1.00 m
+rope from the foot of a post to the back of an iron block, hauled tight, read
+1.272 m. It now reads 1.000 m.
+
+**`tension_n` is a force, and it is only the rope's.** It is the impulse the
+solver put through the link over the last step, divided by that step, so it is
+the same in newtons whatever the step: that 617.638 N weight reads 617.586,
+617.535 and 617.432 N at 240, 120 and 60 Hz. Position correction is solved
+separately and never enters it. Held down by the 800 N hand, the same weight
+reads 1,417.5 N — the weight and the hand, and nothing else.
+
+**A hand moved before every step pulls twice as hard.** `banjo_move_held` pulls
+on anything held on a joint, `banjo_step` pulls on it again while it is held, and
+both pulls land in the same step. A host that calls `banjo_move_held` before
+every `banjo_step` therefore pulls with 1,600 N from an 800 N hand, and whatever
+holds against it carries that. It is what the QA's tether check measured: 1,406 N
+in a rope held against the hand, which is 1,600 N of pull less what friction under
+the block took. With the hand left where it was, the same rope read 798 N. The
+reading was right; the pull had doubled.
+
 ### `int banjo_fix(banjo_world *world, const char *a, const char *b, const double at_m[3], const double axis[3], double holds_tension_n, double holds_shear_n)`
 
 Two bodies held together as **one piece**: a peg, a bracket, a nail, a bolt, a
@@ -649,12 +672,15 @@ A fixing holds every degree of freedom, so it has no `at`, `lower` or `upper` to
 report; what it has instead is `tension_now_n` and `shear_now_n` against
 `holds_tension_n` and `holds_shear_n`.
 
-For a link, `at` is how far apart the two ends are, `upper` is the length it is
-tied to, and `lower` is 0 — because nought-to-length is exactly what a rope is.
-For a pulley, `at` is the whole run (one side plus the ratio times the other),
-`upper` is the rope's length, and `ratio`, `over_a_m` and `over_b_m` describe
-the machine. `tension_n` is meaningful for links and pulleys; `breaks_at_n` only
-for links.
+For a link, `at` is how far apart its two tie points are — where it was tied on
+each body, carried with that body as it moves and turns, **not** the bodies'
+centres — so a taut rope reads its own length. `upper` is the length it is tied
+to, and `lower` is 0 — because nought-to-length is exactly what a rope is. For a
+pulley, `at` is the whole run (one side plus the ratio times the other), measured
+the same way from the points it is made off at; `upper` is the rope's length, and
+`ratio`, `over_a_m` and `over_b_m` describe the machine. `tension_n` is
+meaningful for links and pulleys — newtons over the last step, see `banjo_tie` —
+and `breaks_at_n` only for links.
 
 `at_m` is worked out from the body the pin is in rather than remembered, so a
 gate carried across the room reports its hinge where the gate is.
@@ -746,6 +772,11 @@ refuses. Returns `BANJO_BAD_ARGUMENT` with a reason if it cannot be picked up.
 
 Letting go hands it back to gravity **from rest** — it falls from where it was
 left rather than carrying the hand's speed.
+
+Something held on a joint is not carried but **pulled** towards the hand, with
+at most 800 N (see `banjo_slide`). The pull is made when the hand is moved and
+again by every step while it is held, so moving it before every step pulls with
+twice that — see `tension_n` under `banjo_tie`.
 
 ---
 
