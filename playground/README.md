@@ -264,6 +264,13 @@ right of the rope with the eye at 1.81 m, it glanced off one segment and then
 led with the flat, and the rope held. A steady push through the rope cuts it
 too, edge-first at 0.7 m/s.
 
+The panel beside it cuts the same way. From the armoury's panel stance moved to
+it — the blade lifted clear first, then 1.3 m in front of the panel with the
+eye 0.14 m above its middle, looking level at a point 0.45 m to its right — one
+flick of 34 degrees in 0.12 s took the bar through the 40 mm oak edge-first at
+7.3 m/s, 12,516 mm² for 56 J: the lower piece fell to the floor and the upper
+still hangs from the lintel.
+
 ### Opening a saved build
 
 `/world?qa=<run>/<case>-<trial>` opens any build a run saved, as a room of its
