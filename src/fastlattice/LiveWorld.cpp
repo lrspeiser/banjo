@@ -211,6 +211,20 @@ struct LiveWorld::Impl {
     // the same array the batch lane keeps, because buildFragmentLattice reads
     // it that way. Rewritten whenever a body is replaced by its pieces.
     std::vector<Vec3> cell_offset_m;
+    // How far a point in a body's own frame stands off that body's matter: the
+    // distance to its nearest cell centre. Next to nothing for a pin through
+    // the middle of a cell, half a cell for one on a face -- and for a pin put
+    // on the face of something ELSE, beside the body, whatever gap was left
+    // between the two, which is where the playground's chat puts a hinge.
+    [[nodiscard]] double standOff(std::size_t body, const Vec3 &local) const {
+        double nearest = -1.0;
+        for (const std::uint32_t node : nodes_of[body]) {
+            if (node >= cell_offset_m.size()) continue;
+            const double gap = length(cell_offset_m[node] - local);
+            if (nearest < 0.0 || gap < nearest) nearest = gap;
+        }
+        return std::max(0.0, nearest);
+    }
     // Permanent extension a bond carries. Zero in a world that has not broken
     // anything yet; a piece that has flowed comes back having flowed.
     std::vector<double> plastic_extension_m, plastic_strain_m;
@@ -294,6 +308,11 @@ struct LiveWorld::Impl {
         // can be carried across the room or turned over and the pin is still in
         // the same place in the wood.
         Vec3 point_local_a{}, point_local_b{}, axis_local_a{};
+        // How far each of those points stood off its own body's matter
+        // (Impl::standOff). A pin is not always IN what it holds: one put on a
+        // post's face stands in the gap beside the pane it carries. When a body
+        // breaks, this is how near a piece of it has to be to carry the pin.
+        double stand_off_a{}, stand_off_b{};
         JoltWorld::JointKind kind{JoltWorld::JointKind::Hinge};
         double lower{}, upper{}, friction{};
         // A link's second attachment, which a pin and a slide do not have: they
@@ -1228,6 +1247,10 @@ unsigned LiveWorld::hinge(const std::string &a, const std::string &b,
     joint.point_local_b = conjugateOf(two.orientation_world)
                               .rotate(point_world_m - two.center_of_mass_world_m);
     joint.axis_local_a = conjugateOf(one.orientation_world).rotate((1.0 / reach) * axis_world);
+    // And how far it stands off each body's matter, which is what the pieces
+    // of either are measured against if it breaks (bodyHolding).
+    joint.stand_off_a = impl_->standOff(first->second, joint.point_local_a);
+    joint.stand_off_b = impl_->standOff(second->second, joint.point_local_b);
 
     try {
         JoltWorld::HingeDescription pin{};
@@ -1277,6 +1300,8 @@ unsigned LiveWorld::slide(const std::string &a, const std::string &b,
     joint.point_local_b = conjugateOf(two.orientation_world)
                               .rotate(point_world_m - two.center_of_mass_world_m);
     joint.axis_local_a = conjugateOf(one.orientation_world).rotate((1.0 / reach) * axis_world);
+    joint.stand_off_a = impl_->standOff(first->second, joint.point_local_a);
+    joint.stand_off_b = impl_->standOff(second->second, joint.point_local_b);
 
     try {
         JoltWorld::SliderDescription groove{};
@@ -1331,6 +1356,8 @@ unsigned LiveWorld::tie(const std::string &a, const std::string &b,
     // other body's local point, and point_local_b is what rehangJoints reads.
     joint.point_local_b = joint.point_local_b_tie;
     joint.axis_local_a = Vec3{0.0, 1.0, 0.0};
+    joint.stand_off_a = impl_->standOff(first->second, joint.point_local_a);
+    joint.stand_off_b = impl_->standOff(second->second, joint.point_local_b);
 
     try {
         JoltWorld::LinkDescription rope{};
@@ -1380,6 +1407,8 @@ unsigned LiveWorld::spring(const std::string &a, const std::string &b,
                                   .rotate(point_b_world_m - two.center_of_mass_world_m);
     joint.point_local_b = joint.point_local_b_tie;
     joint.axis_local_a = Vec3{0.0, 1.0, 0.0};
+    joint.stand_off_a = impl_->standOff(first->second, joint.point_local_a);
+    joint.stand_off_b = impl_->standOff(second->second, joint.point_local_b);
 
     try {
         JoltWorld::ElasticDescription limb{};
@@ -1427,6 +1456,8 @@ unsigned LiveWorld::fix(const std::string &a, const std::string &b,
                               .rotate(point_world_m - two.center_of_mass_world_m);
     joint.point_local_b_tie = joint.point_local_b;
     joint.axis_local_a = conjugateOf(one.orientation_world).rotate((1.0 / reach) * axis_world);
+    joint.stand_off_a = impl_->standOff(first->second, joint.point_local_a);
+    joint.stand_off_b = impl_->standOff(second->second, joint.point_local_b);
 
     try {
         JoltWorld::FixingDescription peg{};
@@ -1479,6 +1510,8 @@ unsigned LiveWorld::reeve(const std::string &a, const std::string &b,
                                   .rotate(point_b_world_m - two.center_of_mass_world_m);
     joint.point_local_b = joint.point_local_b_tie;
     joint.axis_local_a = Vec3{0.0, 1.0, 0.0};
+    joint.stand_off_a = impl_->standOff(first->second, joint.point_local_a);
+    joint.stand_off_b = impl_->standOff(second->second, joint.point_local_b);
 
     try {
         JoltWorld::PulleyDescription rove{};
@@ -1613,17 +1646,29 @@ void LiveWorld::unhinge(unsigned joint) {
     }
 }
 
-// Which body has this point in its matter.
+// Which piece of a broken body now carries a pin.
 //
 // Asked of the cells rather than of the bounding box, because the pieces this
 // is chasing are hulls and a hull's box is mostly not the hull. Restricted to
 // bodies descended from the name the pin used to be in: a pin that loses its
 // wood should come out, not grab whatever happens to be lying against it.
-std::size_t LiveWorld::bodyHolding(const Vec3 &point_world_m,
-                                   const std::string &was_called) const {
-    const double near_enough = impl_->request.cell_size_m;
+//
+// The NEAREST such piece -- not one the pin has to be inside, because a pin is
+// often not inside what it holds. The playground's chat hangs a pane on the
+// face of its post, which leaves the pin in the gap between them: 63 mm from
+// the pane's nearest cell centre in the build that found this. This used to ask
+// for a piece within one cell of the pin, so that pin let go when the pane
+// broke -- though the piece carrying the whole hinge edge, 293 of its 300
+// cells, was 49 mm away. A piece now carries the pin if it stands no further
+// off than the body did when the pin went in, `stand_off_m`, plus a cell for
+// what the break moved it: the lattice run knows nothing of pins, and in that
+// build it carried the piece 14 mm nearer. Further off than that, nothing of
+// the body is left at the pin, and it comes out. `stand_off_m` comes back as
+// the piece's own, which is what its next break is measured against.
+std::size_t LiveWorld::bodyHolding(const Vec3 &point_world_m, const std::string &was_called,
+                                   double &stand_off_m) const {
     std::size_t best = static_cast<std::size_t>(-1);
-    double closest = near_enough;
+    double closest = stand_off_m + impl_->request.cell_size_m;
     for (std::size_t i = 0; i < impl_->described.size(); ++i) {
         const std::string &name = impl_->described[i].name;
         const bool descended = name == was_called ||
@@ -1638,6 +1683,7 @@ std::size_t LiveWorld::bodyHolding(const Vec3 &point_world_m,
             if (gap < closest) { closest = gap; best = i; }
         }
     }
+    if (best != static_cast<std::size_t>(-1)) stand_off_m = closest;
     return best;
 }
 
@@ -1647,8 +1693,8 @@ std::size_t LiveWorld::bodyHolding(const Vec3 &point_world_m,
 // so every engine-level constraint touching it is gone -- including the ones on
 // bodies that came through the collision untouched. This is what puts them
 // back, and it is also where a pin decides what to do when its wood is no
-// longer there: it follows the piece it is inside, and if there is no such
-// piece, it comes out and what hung on it falls.
+// longer there: it follows the piece that carries it, and if nothing of the
+// body is left near it, it comes out and what hung on it falls.
 void LiveWorld::rehangJoints() {
     for (Impl::SceneJoint &joint : impl_->joints) {
         if (!joint.attached) continue;
@@ -1657,10 +1703,11 @@ void LiveWorld::rehangJoints() {
 
         // Find each end again. By name if the name is still there -- which it is
         // whenever a body came through whole -- and otherwise by following the
-        // pin into whichever piece of the old body now surrounds it.
+        // pin into whichever piece of the old body now carries it.
         std::size_t side[2] = {static_cast<std::size_t>(-1), static_cast<std::size_t>(-1)};
         std::string *names[2] = {&joint.a, &joint.b};
         Vec3 *locals[2] = {&joint.point_local_a, &joint.point_local_b};
+        double *stand_offs[2] = {&joint.stand_off_a, &joint.stand_off_b};
         // The pin's last known place in the world, taken from whichever end is
         // still standing. Both ends cannot have moved without one of them being
         // findable, because a joint with neither end left is simply gone.
@@ -1690,9 +1737,12 @@ void LiveWorld::rehangJoints() {
                 have_own = true;
             }
             if (!have_own) break;
-            const std::size_t heir = bodyHolding(own, *names[end]);
+            // Measured from this end's own point, against how far that same
+            // point stood off the body's matter when the joint was made: the
+            // stand-offs are recorded per end, from each end's own point.
+            const std::size_t heir = bodyHolding(own, *names[end], *stand_offs[end]);
             if (heir == static_cast<std::size_t>(-1)) break;
-            // The pin is in this piece now. Re-write where it sits in the new
+            // This piece carries the pin now. Re-write where it sits in the new
             // body's frame -- the piece has its own centre of mass, nowhere near
             // the one the parent had -- and rename the end to match, so the next
             // break follows the piece's own pieces.
