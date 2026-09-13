@@ -1173,6 +1173,9 @@ class Handler(BaseHTTPRequestHandler):
                 opened["scenes"]=sorted(world_room.SCENES)
                 opened["kept"]=kept
                 if kept: opened["kept_since_unix_s"]=getattr(room,"kept_since",None)
+                # The conversation so far in this room, so the page shows it again
+                # rather than a blank panel beside a room the chat has built in.
+                opened["chat"]=room.chat[-20:]
                 return self.send(opened)
             if path=="/api/world/ask":
                 app=self.server.app

@@ -132,6 +132,8 @@ class ARoomOutlivesItsServer(KeptRoomsTestCase):
         self.assertIn("oak crate", names(again.live.opened[-1]), "the restart lost the crate")
         # And what was said, so "confirmed" still answers what the room asked.
         self.assertEqual([turn["asked"] for turn in again.room.chat], ["an oak crate, please"])
+        # And the page is handed it, to show the conversation again.
+        self.assertEqual([turn["asked"] for turn in opened["chat"]], ["an oak crate, please"])
 
     def test_a_pit_dug_by_hand_is_there_after_a_restart(self):
         first = self.start()

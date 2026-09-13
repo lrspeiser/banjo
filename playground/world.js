@@ -1108,22 +1108,55 @@ function grams(kg) {
 }
 
 function showStock() {
-  const list = $("stock-list");
-  const rows = [...world.stock].sort((a, b) => b[1].kg - a[1].kg);
-  $("stock").hidden = rows.length === 0;
-  list.replaceChildren(...rows.map(([what, have]) => {
-    const li = document.createElement("li");
-    const name = document.createElement("span");
-    name.className = "what";
-    name.textContent = what;
-    const much = document.createElement("span");
-    much.className = "much";
-    much.textContent = grams(have.kg);
-    li.append(name, much);
-    if (world.sweptSince.has(what)) li.className = "just-in";
-    return li;
-  }));
+  // What is carried is shown in the panel now, with everything else the person
+  // has (showInventory); the corner list stays hidden.
+  $("stock").hidden = true;
+  showInventory();
 }
+
+// What the person has, always in the panel beside the conversation: what is in
+// their hand, what they carry, and what in this room can be used, with the keys
+// that use it. Built from what the page already knows, and redrawn only when
+// that changes.
+let inventorySaid = "";
+function showInventory() {
+  const held = world.held && world.held.name;
+  const entry = held ? world.bodies.get(held) : null;
+  const holding = held ? `${held}${entry && entry.mass ? ` · ${grams(entry.mass)}` : ""}` : "nothing";
+  const carrying = [...world.stock].sort((a, b) => b[1].kg - a[1].kg)
+    .map(([what, have]) => ({ what, much: grams(have.kg) }));
+  const uses = [
+    ...(world.tools || []).map((p) => ({ what: p.object,
+      keys: "E take up · Left mouse swing it · Right mouse lever it out" })),
+    ...(world.profiles || []).map((p) => ({ what: p.object,
+      keys: "E take up · hold Left mouse to draw · let go to shoot" })),
+  ];
+  const said = JSON.stringify([holding, carrying, uses]);
+  if (said === inventorySaid) return;
+  inventorySaid = said;
+  $("inv-holding").textContent = holding;
+  const rows = (items, none) => (items.length ? items : [{ none }]).map((item) => {
+    const li = document.createElement("li");
+    if (item.none) { li.className = "none"; li.textContent = item.none; return li; }
+    li.textContent = item.what;
+    if (item.much) {
+      const much = document.createElement("span");
+      much.className = "much";
+      much.textContent = item.much;
+      li.append(much);
+    }
+    if (item.keys) {
+      const keys = document.createElement("span");
+      keys.className = "keys";
+      keys.textContent = item.keys;
+      li.append(keys);
+    }
+    return li;
+  });
+  $("inv-carrying").replaceChildren(...rows(carrying, "nothing yet"));
+  $("inv-tools").replaceChildren(...rows(uses, "nothing here yet"));
+}
+setInterval(showInventory, 250);
 
 // The sand and soil dug out of this room's ground and not put back, as the
 // engine counts them. Set from its numbers every time and never added to here:
@@ -3560,6 +3593,9 @@ function whereIAm() {
     const entry = world.bodies.get(world.held.name);
     if (entry) person.holding_at_m = entry.mesh.position.toArray().map(r);
   }
+  // What they carry, by material, as the panel's Carrying list says it.
+  if (world.stock.size)
+    person.carrying = [...world.stock].map(([what, have]) => ({ what, kg: r(have.kg) }));
   if (world.aim && world.aim.name) {
     person.looking_at = world.aim.name;
     if (Array.isArray(world.aim.point_m)) person.looking_at_m = world.aim.point_m.map(r);
@@ -3882,6 +3918,15 @@ async function open() {
     traceNewWorld(data.t);
     $("panel-state").textContent = "Live.";
     $("chat").replaceChildren();
+    // The conversation so far in this room, as the server keeps it -- across a
+    // reload, and across the server starting again (room_store) -- so the panel
+    // beside a room the chat has built in is not blank. A turn that failed is
+    // shown as the room said it then, not as a new error.
+    for (const turn of data.chat || []) {
+      say("you", turn.asked);
+      say("world", turn.replied, turn.did);
+    }
+    if (data.kept) say("world", "This is the room as you left it.");
     say("world",
       `${data.bodies.length} things, made of ${
         [...new Set(data.bodies.map((b) => b.material).filter(Boolean))].join(", ")

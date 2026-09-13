@@ -59,8 +59,10 @@ flat: see TERRAIN AND WATER.
 WHERE THE PERSON IS. the_person, when it is there, says where they stand
 (standing_m: the ground under their feet), which way they face (facing, a level
 direction), the point one_metre_in_front_m of them, and what the middle of
-their view is on (looking_at, and looking_at_m where it meets it), and what
-they have in their hand (holding). "This", "it" and "this one" mean what they
+their view is on (looking_at, and looking_at_m where it meets it), what they
+have in their hand (holding), and what they carry (carrying: each material and
+its kg -- the soil a pick broke out, what they swept up). "This", "it" and
+"this one" mean what they
 are holding -- or, holding nothing, what they are looking at: call the tools
 with that name. Something
 asked for "here", "near me", "in front of me" or "give me ..." goes where they
@@ -895,6 +897,24 @@ def where_the_person_is(raw: Any) -> dict[str, Any] | None:
         at = point(raw.get("looking_at_m"))
         if at is not None:
             said["looking_at_m"] = at
+    # What they carry, by material, as the page counts it -- the soil a pick
+    # broke out, the glass swept up -- so "heap what I'm carrying here" means
+    # something. Only names and weights that make sense are passed on.
+    carrying = raw.get("carrying")
+    if isinstance(carrying, list):
+        kept = []
+        for item in carrying[:12]:
+            if not isinstance(item, dict) or not isinstance(item.get("what"), str):
+                continue
+            name = item["what"].strip()[:40]
+            try:
+                kg = float(item.get("kg"))
+            except (TypeError, ValueError):
+                continue
+            if name and kg == kg and 0.0 < kg < 1e6:
+                kept.append({"what": name, "kg": round(kg, 3)})
+        if kept:
+            said["carrying"] = kept
     return said
 
 

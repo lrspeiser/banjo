@@ -96,6 +96,14 @@
     <!-- Which saved build is open, when the link names one (?qa=<run>/<case>-<trial>). -->
     <p id="panel-build" hidden></p>
   </header>
+  <!-- What the person has, always here beside the conversation (the owner,
+       2026-09-13: the chat side view at all times, "along with any data related
+       to the user's inventory"). Filled by showInventory() in world.js. -->
+  <section id="inventory" aria-label="What you have">
+    <div class="inv-row"><span class="inv-label">Holding</span><span id="inv-holding">nothing</span></div>
+    <div class="inv-row"><span class="inv-label">Carrying</span><ul id="inv-carrying"></ul></div>
+    <div class="inv-row"><span class="inv-label">To use</span><ul id="inv-tools"></ul></div>
+  </section>
   <div id="chat" role="log" aria-live="polite"></div>
   <form id="ask">
     <input id="ask-text" type="text" autocomplete="off" spellcheck="false"

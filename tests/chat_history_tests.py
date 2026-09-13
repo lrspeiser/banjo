@@ -120,5 +120,23 @@ class WhyAnAnswerCameBackUnfinished(unittest.TestCase):
         self.assertEqual(json.dumps(room.spec, sort_keys=True), before)
 
 
+class WhatThePersonCarries(unittest.TestCase):
+    """The page tells the room what the person carries -- the soil a pick broke
+    out, the glass swept up -- so "heap what I'm carrying here" means something.
+    It arrives over HTTP, so only names and weights that make sense go on."""
+
+    def test_what_they_carry_goes_to_the_room_and_nonsense_does_not(self):
+        said = world_chat.where_the_person_is({
+            "standing_m": [0, 0, 2.2], "facing": [0, 0, -1],
+            "carrying": [{"what": "soil", "kg": 9.17}, {"what": "glass", "kg": "0.25"},
+                         {"what": " ", "kg": 2}, {"what": "sand", "kg": -1}, {"kg": 3}, "junk",
+                         {"what": "iron", "kg": float("nan")}]})
+        self.assertEqual(said["carrying"], [{"what": "soil", "kg": 9.17}, {"what": "glass", "kg": 0.25}])
+
+    def test_carrying_nothing_says_nothing(self):
+        said = world_chat.where_the_person_is({"standing_m": [0, 0, 2.2], "facing": [0, 0, -1]})
+        self.assertNotIn("carrying", said)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
