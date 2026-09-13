@@ -61,7 +61,11 @@ in between steps (`SetShape`) -- never the one the solver may be reading --
 and `ActivateBodiesInAABox` wakes what it held. The triangles are split from
 (i, j) to (i + 1, j + 1), in the collider and in the drawing, so what is drawn
 is what things stand on. To the rigid solver the ground is soil: friction 0.7
-static and 0.6 dynamic, rolling resistance 0.05.
+static and 0.6 dynamic. Its rolling resistance is what the ground is made of
+where a ball touches it, asked of the terrain at every contact: rock 0.001 (the
+engine's concrete), soil 0.06, sand 0.30 -- so a ball set down on the sandy bank
+stays put and one let go on bare rock rolls. See
+[rolling-resistance.md](rolling-resistance.md).
 
 **Impacts are judged against what the ground is there.** Whether a body could
 break against the ground uses the contact impedance of the material at the

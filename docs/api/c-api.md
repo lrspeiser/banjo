@@ -17,9 +17,9 @@ if (banjo_abi_version() != BANJO_ABI_VERSION) { /* mismatch */ }
 `const char *banjo_version_string(void)` says which library it is in words, for
 a log line. Never parse it: the number to compare is `banjo_abi_version()`.
 
-Current ABI: **17**. 13 and 14 were two additions made side by side and then
-merged, numbered apart so that one number never meant two headers; 15, 16 and
-17 were added on top of both:
+Current ABI: **18**. 13 and 14 were two additions made side by side and then
+merged, numbered apart so that one number never meant two headers; 15 to 18
+were added on top of both:
 
 - **13** added blades -- `banjo_make_blade`, `banjo_blades`, `banjo_cuts`,
   `banjo_forget_cuts` -- and the bounded hand that swings them, `banjo_wield`,
@@ -42,14 +42,18 @@ merged, numbered apart so that one number never meant two headers; 15, 16 and
   `banjo_preview_stroke` (see [The hand's own motions](#the-hands-own-motions)) --
   and the one-way fixing, an arrow's nock on a string, `banjo_fix_one_way`; it
   added `mass_kg` at the **end** of `banjo_body`, and `comes_off_n` at the
-  **end** of `banjo_joint`, after 16's fields.
+  **end** of `banjo_joint`, after 16's fields;
+- **18** added rolling resistance -- every round body rolling on anything is
+  resisted by the couple `M = c N r` at its contacts -- and `banjo_materials`
+  and `banjo_rolling_report` to say with what, and the survey's
+  `rolling_resistance` (see [Rolling resistance](#rolling-resistance)).
 
-A library at 17 has all of them. Nothing that was in 12 changed, and nothing
-that was in 14 changed in 15. Neither 16 nor 17 changed a function that was
+A library at 18 has all of them. Nothing that was in 12 changed, and nothing
+that was in 14 changed in 15. None of 16, 17 and 18 changed a function that was
 already there, but structs grew at their ends -- `banjo_joint`, `banjo_overload`
 and `banjo_energy` in 16, `banjo_body` and `banjo_joint` again in 17 -- so a
 caller built against an older header must be rebuilt, and every field that was
-there keeps its place and its meaning.
+there keeps its place and its meaning. 18 changed no struct.
 
 ---
 
@@ -1441,13 +1445,71 @@ weighs; with `full`, the model's parameters, where each came from, and what is
 not modelled. The state is the water as it stands, for `"water": {"state": ...}`
 in a scene opened again: the same water over whatever ground that scene's edits
 leave. The survey is one point: the ground's height, what it is made of there,
-its slope, and the water's depth, surface and velocity.
+its slope, the ground's own share of rolling resistance there
+(`rolling_resistance`), and the water's depth, surface and velocity.
 
 ### `int banjo_awake_bodies(const banjo_world *world)`
 
 How many bodies the rigid solver is stepping now. A body at rest is asleep and
 costs nothing; this is how to see that digging one corner did not wake the
 valley.
+
+---
+
+## Rolling resistance
+
+A round body rolling on something is resisted at each of its contacts by a
+couple `M = c N r` against its turning about axes in the contact plane: `c` is
+the pair's coefficient -- the ball's own share plus the surface's, since both
+are deformed -- `N` the normal force the solver put through that contact, `r`
+the radius. On the level a rolling ball slows at `5/7 c g` and stops in
+`v^2 / (2 * 5/7 c g)`; on a slope whose tangent is below `c` a ball set down
+stays where it is, and on a steeper one it rolls at `5/7 g (sin - c cos)`.
+Boxes do not roll and broken pieces are not resisted. The numbers, their
+sources and what is not modelled: [docs/rolling-resistance.md](../rolling-resistance.md).
+
+### `const char *banjo_materials(void)`
+
+The materials a body can be made of, the floor, and the ground's rock, soil and
+sand, as JSON, without needing a world:
+
+```json
+{"materials": [{"name": "rubber", "density_kg_m3": 1100, "static_friction": 1.0,
+                "dynamic_friction": 0.8, "rolling_resistance": 0.01,
+                "rolling_resistance_sourced": true,
+                "rolling_resistance_basis": "a rubber tyre on concrete 0.010-0.015 ..."}, ...],
+ "surfaces": [{"name": "floor", "made_of": "concrete", "rolling_resistance": 0.001, ...},
+              {"name": "sand", "made_of": "sand", "rolling_resistance": 0.3, ...}, ...],
+ "rolling_resistance": {"law": "...", "pair": "...", "rests_if": "...", "stops_in_m": "..."}}
+```
+
+`rolling_resistance` is each one's OWN share; a ball on a surface is resisted
+with the sum. `rolling_resistance_sourced` is false for a demonstration value:
+no measurement was found, and `rolling_resistance_basis` says what it was
+carried over from. Valid until the next call on this thread.
+
+### `const char *banjo_rolling_report(const banjo_world *world)`
+
+What rolling resistance is doing in this world, as JSON:
+
+```json
+{"loss_j": 11.87,
+ "contacts": [{"ball": "rubber ball", "on": "the ground", "normal": [0.0, 1.0, 0.0],
+               "normal_force_n": 9.76, "from_solver": true, "coefficient": 0.31,
+               "limit_n_m": 0.1816, "applied_n_m": 0.0, "held": true, "loss_j": 0.0}],
+ "balls": [{"name": "rubber ball", "material": "rubber", "loss_j": 0.0}]}
+```
+
+`contacts` is every contact of a round body in the last step: what it rolls on
+(`"the floor"`, `"the ground"` or a body's name), the normal force the solver
+put through it, the pair's coefficient, the most the couple can be (`c N r`)
+and what it was, and whether the ball is `held` still -- a ball on a slope
+gentler than `atan(c)`, or one brought to rest. `from_solver` is false only if
+the engine could not read the solver's contact impulses and estimated `N`
+from the ball's own change of momentum. `loss_j` is the energy rolling
+resistance has taken out of the motion since the world opened, in all and by
+ball: a declared loss, like the work a cut takes. Valid until the next call on
+this world.
 
 ---
 

@@ -104,8 +104,13 @@ extern "C" {
  * (banjo_hand_mass, banjo_stroke, banjo_cancel_stroke, banjo_hand_state,
  * banjo_preview_stroke, banjo_preview_flight) -- and the one-way fixing, an
  * arrow's nock on a string (banjo_fix_one_way). banjo_body gained mass_kg and
- * banjo_joint comes_off_n, each at its END, after everything 16 put there. */
-#define BANJO_ABI_VERSION 17
+ * banjo_joint comes_off_n, each at its END, after everything 16 put there.
+ *
+ * 18 added rolling resistance: every round body rolling on anything is resisted
+ * by the couple M = c N r at its contacts, and banjo_materials and
+ * banjo_rolling_report say with what (the survey says the ground's share). No
+ * struct or signature that was in 17 changed. */
+#define BANJO_ABI_VERSION 18
 
 /* What a call reported. Anything below zero is a failure and leaves the world
  * unchanged; banjo_last_error() says what happened. */
@@ -1375,12 +1380,37 @@ BANJO_API const char *banjo_environment_report(const banjo_world *world, int ful
  * scene's edits leave. */
 BANJO_API const char *banjo_environment_state(const banjo_world *world);
 /* Ground and water at a point: height, what it is made of, slope, depth,
- * surface and flow. JSON. */
+ * surface and flow, and the ground's own share of rolling resistance there
+ * (`rolling_resistance`). JSON. */
 BANJO_API const char *banjo_survey(const banjo_world *world, double x_m, double z_m);
 /* How many bodies the rigid solver is stepping right now. A body at rest is
  * asleep and costs nothing; this is how to see that digging one corner did
  * not wake the valley. */
 BANJO_API int banjo_awake_bodies(const banjo_world *world);
+
+/* ---- rolling resistance (ABI 16) ----------------------------------------
+ *
+ * A round body rolling on something is resisted at each contact by a couple
+ * M = c N r against its turning: c the pair's coefficient -- the ball's own
+ * share plus the surface's, since both are deformed -- N the normal force the
+ * solver put through the contact, r the radius. On the level a rolling ball
+ * slows at 5/7 c g; on a slope whose tangent is below c a ball set down stays
+ * where it is. Boxes do not roll and broken pieces are not resisted. See
+ * docs/rolling-resistance.md. */
+
+/* The materials a body can be made of, the floor, and the ground's rock, soil
+ * and sand, as JSON, without needing a world: each with its friction and its
+ * own share of rolling resistance, whether that share is sourced or a
+ * demonstration value, and where it came from. Valid until the next call on
+ * this thread. */
+BANJO_API const char *banjo_materials(void);
+/* What rolling resistance is doing in this world, as JSON: every contact of a
+ * round body in the last step (what it rolls on, the solver's normal force
+ * there, the pair's coefficient, the most the couple can be and what it was,
+ * whether the ball is held still), and the energy it has taken out of the
+ * motion since the world opened, in all and by ball -- a declared loss, like
+ * the work a cut takes. Valid until the next call on this world. */
+BANJO_API const char *banjo_rolling_report(const banjo_world *world);
 
 #ifdef __cplusplus
 }

@@ -265,6 +265,7 @@ FragmentBuildResult buildFragmentRepresentations(
         fragment.voxel_size_m = matter.asset->recipe.voxel_size_m;
         fragment.friction = settings.friction;
         fragment.restitution = settings.restitution;
+        fragment.rolling_resistance = settings.rolling_resistance;
         fragment.source_node_count = component->node_indices.size();
         fragment.voxel_centers_local_m.reserve(component->node_indices.size());
         for (const std::uint32_t node_index : component->node_indices) {

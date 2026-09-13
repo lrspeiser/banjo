@@ -904,6 +904,10 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request) {
             compileContactMaterial(*definition), compileContactMaterial(setup.ground_material));
         fragment.friction = against_ground.dynamic_friction;
         fragment.restitution = against_ground.restitution;
+        // Its own share of rolling resistance, NOT combined with the floor's:
+        // the world adds the share of whatever it actually rolls on, contact
+        // by contact -- the floor, the ground where it is sand or rock, a plank.
+        fragment.rolling_resistance = compileContactMaterial(*definition).rolling_resistance;
         impl.nodes_of.emplace_back(component.node_indices.begin(), component.node_indices.end());
         for (const std::uint32_t node : component.node_indices)
             impl.cell_offset_m[node] = setup.matter.nodes[node].position_world_m -
@@ -3771,6 +3775,7 @@ std::size_t LiveWorld::applyPending() {
         const MaterialDefinition &material = dominant < setup.part_definitions.size()
                                                  ? setup.part_definitions[dominant]
                                                  : setup.tile_material;
+        fragment.rolling_resistance = compileContactMaterial(material).rolling_resistance;
         LiveBodyPose piece{};
         // A piece that is still all of its parent kept its parent; only a piece
         // that is part of one is numbered.
@@ -4534,6 +4539,87 @@ std::string LiveWorld::mechanicsReport(bool with_laws) const {
         out["limitations"] = mechanicsLimitations();
     }
     return out.dump();
+}
+
+// ---- rolling resistance ---------------------------------------------------------
+
+double LiveWorld::rollingLossJ() const { return impl_->world->rollingLossJ(); }
+
+std::string LiveWorld::rollingReport() const {
+    std::unordered_map<MatterBodyId, std::string> name_of;
+    for (std::size_t i = 0; i < impl_->body_of.size() && i < impl_->described.size(); ++i)
+        name_of.emplace(impl_->body_of[i], impl_->described[i].name);
+    const auto nameOf = [&](MatterBodyId id) -> std::string {
+        if (id == kSupportSurfaceMatterId) return "the floor";
+        if (id == kGroundPatchMatterId) return "the ground";
+        const auto found = name_of.find(id);
+        return found == name_of.end() ? std::string() : found->second;
+    };
+    nlohmann::json contacts = nlohmann::json::array();
+    for (const JoltWorld::RollingContactReport &c : impl_->world->rollingContacts())
+        contacts.push_back({{"ball", nameOf(c.sphere)}, {"on", nameOf(c.other)},
+                            {"normal", {c.normal_world.x, c.normal_world.y, c.normal_world.z}},
+                            {"normal_force_n", c.normal_force_n}, {"from_solver", c.from_solver},
+                            {"coefficient", c.coefficient}, {"limit_n_m", c.limit_n_m},
+                            {"applied_n_m", c.applied_n_m}, {"held", c.held}, {"loss_j", c.loss_j}});
+    nlohmann::json balls = nlohmann::json::array();
+    for (std::size_t i = 0; i < impl_->body_of.size() && i < impl_->described.size(); ++i) {
+        if (impl_->described[i].shape != "sphere") continue;
+        balls.push_back({{"name", impl_->described[i].name}, {"material", impl_->described[i].material},
+                         {"loss_j", impl_->world->rollingLossJ(impl_->body_of[i])}});
+    }
+    return nlohmann::json{
+        {"loss_j", impl_->world->rollingLossJ()},
+        {"contacts", std::move(contacts)},
+        {"balls", std::move(balls)},
+        {"law", "a couple M = c N r against a ball's turning at each contact: c the ball's own "
+                "share plus the surface's, N the solver's normal force there, r the radius"}}
+        .dump();
+}
+
+std::string LiveWorld::materialsJson() {
+    // The names a scene uses for them.
+    const auto sceneName = [](MaterialPreset preset) -> std::string {
+        if (preset == MaterialPreset::Aluminum) return "aluminum";
+        if (preset == MaterialPreset::Ceramic) return "ceramic";
+        return std::string(materialPresetName(preset));
+    };
+    nlohmann::json materials = nlohmann::json::array();
+    for (const MaterialPreset preset : kMaterialPresets) {
+        const MaterialDefinition material = makeReferenceMaterial(preset, 0);
+        const CompiledContactMaterial contact = compileContactMaterial(material);
+        const RollingResistanceSource source = rollingResistanceSource(preset);
+        materials.push_back({{"name", sceneName(preset)}, {"density_kg_m3", material.density_kg_m3},
+                             {"static_friction", contact.static_friction},
+                             {"dynamic_friction", contact.dynamic_friction},
+                             {"rolling_resistance", contact.rolling_resistance},
+                             {"rolling_resistance_sourced", source.sourced},
+                             {"rolling_resistance_basis", std::string(source.basis)}});
+    }
+    nlohmann::json surfaces = nlohmann::json::array();
+    const RollingResistanceSource stone = rollingResistanceSource(MaterialPreset::Concrete);
+    surfaces.push_back(
+        {{"name", "floor"}, {"made_of", "concrete"},
+         {"rolling_resistance",
+          compileContactMaterial(makeReferenceMaterial(MaterialPreset::Concrete, 0)).rolling_resistance},
+         {"rolling_resistance_sourced", stone.sourced},
+         {"rolling_resistance_basis", std::string(stone.basis)}});
+    for (const terrain::GroundMaterial *ground :
+         {&terrain::rockMaterial(), &terrain::soilMaterial(), &terrain::sandMaterial()})
+        surfaces.push_back({{"name", ground->name}, {"made_of", ground->name},
+                            {"rolling_resistance", ground->rolling_resistance},
+                            {"rolling_resistance_sourced", ground->rolling_sourced},
+                            {"rolling_resistance_basis", ground->rolling_basis}});
+    return nlohmann::json{
+        {"materials", std::move(materials)},
+        {"surfaces", std::move(surfaces)},
+        {"rolling_resistance",
+         {{"law", "a couple M = c N r against a round body's turning at each contact"},
+          {"pair", "c = the ball's own share + the surface's: both are deformed"},
+          {"rests_if", "tan(slope) < c: a ball set down on a slope gentler than atan(c) stays"},
+          {"stops_in_m", "v^2 / (2 * 5/7 * c * g) for a solid ball rolling on the level"},
+          {"source", "docs/rolling-resistance.md"}}}}
+        .dump();
 }
 
 // ---- terrain and water --------------------------------------------------------
@@ -6715,7 +6801,8 @@ std::size_t LiveWorld::splitCut(std::size_t which) {
              .minimum_nodes_per_rigid_fragment = 1,
              .maximum_collision_points = 192,
              .friction = against_ground.dynamic_friction,
-             .restitution = against_ground.restitution});
+             .restitution = against_ground.restitution,
+             .rolling_resistance = compileContactMaterial(*material).rolling_resistance});
         if (built.rigid_fragments.empty()) return 1;
         fragments.push_back(std::move(built.rigid_fragments.front()));
     }

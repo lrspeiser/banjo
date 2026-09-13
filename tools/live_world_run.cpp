@@ -49,6 +49,10 @@
 //        {"op":"cut_block","at":[x,z],"cells":[4,4],"height_m":0.4}  a block of rock
 //        {"op":"discharge","river":"the river","discharge_m3_s":0.5}
 //        {"op":"survey","at":[x,z]}          ground and water at a point
+//        {"op":"materials"}                  friction and rolling resistance of each
+//                                            material and surface, and their sources
+//        {"op":"rolling"}                    what rolling resistance is doing: each
+//                                            ball's contacts, and the energy it took
 //        {"op":"environment","full":false}   the ground, the water, their ledgers
 //        {"op":"environment_state"}          the water, for carrying into a reopen
 //        {"op":"terrain"}                    the whole ground again, for drawing
@@ -1162,6 +1166,9 @@ int main(int argc, char **argv) {
                     nlohmann::json report =
                         nlohmann::json::parse(world->thermoReport(command.value("model", false)));
                     report["ledger"]["mechanical_j"] = world->mechanicalEnergyJ();
+                    // A declared mechanical loss beside it: what rolling
+                    // resistance has taken out of the motion.
+                    report["ledger"]["rolling_loss_j"] = world->rollingLossJ();
                     std::cout << nlohmann::json{{"ok", true}, {"thermo", std::move(report)}}.dump()
                               << std::endl;
                     continue;
@@ -1204,6 +1211,20 @@ int main(int argc, char **argv) {
                     const auto at = readXZ(command, "at");
                     std::cout << nlohmann::json{{"ok", true},
                                                 {"survey", nlohmann::json::parse(world->survey(at.first, at.second))}}
+                                     .dump()
+                              << std::endl;
+                    continue;
+                } else if (op == "materials") {
+                    // What each material and surface rolls like, and where the
+                    // numbers came from. Answers on its own: it moves nothing.
+                    std::cout << nlohmann::json{{"ok", true},
+                                                {"materials", nlohmann::json::parse(LiveWorld::materialsJson())}}
+                                     .dump()
+                              << std::endl;
+                    continue;
+                } else if (op == "rolling") {
+                    std::cout << nlohmann::json{{"ok", true},
+                                                {"rolling", nlohmann::json::parse(world->rollingReport())}}
                                      .dump()
                               << std::endl;
                     continue;

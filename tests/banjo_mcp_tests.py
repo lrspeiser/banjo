@@ -163,6 +163,15 @@ class TheTools(unittest.TestCase):
         for entry in answer["materials"]:
             self.assertGreater(len(entry["behaviour"]), 40,
                                f"{entry['name']} says nothing useful about itself")
+            # And how it rolls, from the engine, marked for where it came from.
+            self.assertGreater(entry["rolling_resistance"], 0.0, entry["name"])
+            self.assertIn(entry["rolling_resistance_is"], ("sourced", "a demonstration value"))
+            self.assertTrue(entry["rolling_resistance_basis"], entry["name"])
+        surfaces = {s["name"]: s["rolling_resistance"] for s in answer["surfaces"]}
+        self.assertEqual(set(surfaces), {"floor", "rock", "soil", "sand"})
+        self.assertLess(surfaces["rock"], surfaces["soil"])
+        self.assertLess(surfaces["soil"], surfaces["sand"])
+        self.assertIn("5/7", answer["rolling"])
 
     def test_a_world_opens_and_describes_itself(self):
         world_id = self.pane_world()
@@ -1048,6 +1057,26 @@ class TheTools(unittest.TestCase):
         self.assertGreater(wet["in_water"]["depth_m"], 0.1)
         self.assertLess(wet["set_down"]["its_top_m"], wet["in_water"]["surface_m"],
                         "it should rest on the river's bed, under the water")
+
+    def test_a_ball_set_down_on_the_sandy_bank_stays_and_the_survey_says_why(self):
+        """Rolling resistance: the survey gives the ground's share there and which
+        balls rest on it, and a rubber ball set down on the sand by the river --
+        2 degrees, falling toward the water -- stays where it was put. Measured
+        before rolling resistance: 0.5 m in 2 s, and in the river by 4 s."""
+        world_id, _ = self.valley()
+        here = self.client.call("survey", world_id=world_id, at_m=[2.0, 4.25])
+        self.assertEqual(here["made_of"], "sand")
+        self.assertAlmostEqual(here["rolling_resistance"], 0.3)
+        self.assertIn("rubber", here["a_ball_rests_here"]["these_rest"])
+        put = self.client.call("add_object", world_id=world_id, object={
+            "name": "rubber ball", "shape": "sphere", "material": "rubber",
+            "size_m": [0.12, 0.12, 0.12], "position_m": [2.0, 4.25]})
+        self.assertEqual(put["set_down"]["on"], "the ground")
+        ran = self.client.call("run", world_id=world_id, seconds=4.0)
+        ball = next(o for o in ran["objects"] if o["name"] == "rubber ball")
+        moved = ((ball["position_m"][0] - 2.0) ** 2 + (ball["position_m"][2] - 4.25) ** 2) ** 0.5
+        self.assertLess(moved, 0.02, f"the ball set down on the sand rolled {moved:.3f} m")
+        self.assertNotIn("rubber ball", (ran.get("rolling_resistance") or {}).get("rolling_against_it", []))
 
     def test_a_river_backs_up_behind_a_dam_and_a_pond_drains_down_a_channel(self):
         """The ground and the water are physics a model can use: a survey finds

@@ -50,9 +50,9 @@ broke.
 
 | tool | what it does |
 |---|---|
-| `list_materials` | the eight materials and what each actually does, with measured speeds. **Worth calling first** — the numbers are not the ones you would guess. |
+| `list_materials` | the eight materials and what each actually does, with measured speeds, and each one's rolling resistance -- marked sourced or a demonstration value -- with the floor's, rock's, soil's and sand's. A ball is resisted with its own plus the surface's, rests on any slope whose tangent is below that, and on the level stops in v² / (2 · 5/7 c g). **Worth calling first** — the numbers are not the ones you would guess. |
 | `create_world` | build a world from a list of objects; returns an id |
-| `run` | let time pass and say what happened: every break, every dent, and the hardest contacts with the speeds they would have needed |
+| `run` | let time pass and say what happened: every break, every dent, and the hardest contacts with the speeds they would have needed; and which balls rolling resistance holds still, which are rolling against it, and the energy it took |
 | `drop` | the common experiment: put an object a given distance above a point, let it fall, report. The height is measured from **what it lands on**, not from the floor. |
 | `describe_world` | every object, where it is, and what has happened to it |
 | `add_object` / `remove_object` | change a world. It is opened again from its scene, so anything in flight starts over — and every joint is hung again. A removed object takes the joints that held it with it, and they are listed. `add_object` given `position_m` as **[x, z]** sets the thing down on whatever is under that point — the ground, the floor or the top of what is there — and says what in `set_down` — with `overhangs` when only part of it is over that, so it may tip; [x, y, z] puts it exactly there, and when that is in the air the answer's `in_the_air` says how far above what is under it the thing starts, and that it will fall unless a joint holds it — a thing about to be hung with `fix`, `hinge`, `slide`, `tie`, `reeve` or `spring` is meant to start there. On ground with water it says `in_water` when that is where it went. |
@@ -78,7 +78,7 @@ broke.
 | `heat` | heat from outside — kindling, a torch, a stove — into a body or a gas region, from when the world starts |
 | `thermal_state` | how hot everything is, what is burning and how hard, the fuel left and how long it would last at this rate, what the gas is doing, the energy ledger, and **strength**: what heat has left of each heated body and what every joint made of one carries against what it can still take |
 | `make_terrain` | ground that is not flat: a **valley** with a river along it and a pond beside it, made once by physics -- drainage decided where the river runs, erosion wore its channel -- and cached; or a basin holding a lake, a sloping channel with a stream, flat ground, or none. [docs/terrain-and-water.md](../terrain-and-water.md) |
-| `survey` | the ground and the water at a point or along a line: height, rock, soil or sand, slope, and the water's depth, level and speed. How to find the river, and what to stand things on |
+| `survey` | the ground and the water at a point or along a line: height, rock, soil or sand, slope, and the water's depth, level and speed. At a point it also gives the ground's rolling resistance and which materials of ball rest there and which roll away. How to find the river, and what to stand things on |
 | `water_state` | the rivers and ponds: how much water, what comes in and goes out, each pond's level, the river every 2 m along its course, what is in the water and whether it floats, and the water's ledger |
 | `dig` / `fill` | a trench or a pit, so wide and so deep below the ground as it stands; what comes out is carried, and `fill` heaps only what was carried |
 | `cut_block` | a block of stone out of bare rock; the ground loses exactly that much and the block is an ordinary loose object |

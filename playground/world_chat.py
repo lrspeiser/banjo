@@ -88,8 +88,14 @@ because the joint holds it; only if you meant it to rest, take it out and add
 it again with [x, z]. If an answer has in_water,
 the thing is in water: say so in your reply, and unless they asked for it in
 the water, take it out and set it down again on dry, level ground within their
-reach -- survey says where the ground is dry and how steep it is, and a ball
-on a slope rolls. A tool that answers with an error did nothing: never say it
+reach -- survey says where the ground is dry and how steep it is. A ball rests
+on a slope only while its rolling resistance holds it -- the ball's own plus the
+ground's, which list_materials and survey give: on sand (0.30) it stays on
+slopes up to 17 degrees and a ball rolled across it stops within a metre or
+two; on soil (0.06) it stays up to 4 degrees; on rock, concrete or the floor
+(0.001, plus the ball's own: rubber 0.010, iron 0.0005) it rolls down anything
+steeper than a degree, and a rubber ball rolled at 1 m/s runs about 6.5 m, an
+iron one about 50 m. A tool that answers with an error did nothing: never say it
 was done. Do what the error says and try again, or tell them what went wrong.
 
 MATERIALS. There are eight: iron, aluminum, glass, ceramic, oak, rubber, ice

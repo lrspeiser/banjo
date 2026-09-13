@@ -49,6 +49,43 @@ class TheLibraryLoads(unittest.TestCase):
         world.close()   # closing twice is not an error
 
 
+class RollingResistanceFromPython(unittest.TestCase):
+    """banjo_materials and banjo_rolling_report through the binding. The physics
+    itself -- 5/7 c g on the level, rest below atan(c), the declared loss equal
+    to the kinetic energy lost -- is measured in tests/rolling_resistance_tests.cpp."""
+
+    def test_the_materials_say_their_rolling_resistance_and_where_it_came_from(self):
+        said = banjo.materials()
+        self.assertEqual({m["name"] for m in said["materials"]},
+                         {"iron", "aluminum", "glass", "ceramic", "oak", "rubber", "ice", "concrete"})
+        for material in said["materials"]:
+            self.assertGreater(material["rolling_resistance"], 0.0, material["name"])
+            self.assertIsInstance(material["rolling_resistance_sourced"], bool)
+            self.assertTrue(material["rolling_resistance_basis"], material["name"])
+        surfaces = {s["name"]: s for s in said["surfaces"]}
+        self.assertEqual(surfaces["floor"]["made_of"], "concrete")
+        self.assertGreater(surfaces["sand"]["rolling_resistance"], surfaces["soil"]["rolling_resistance"])
+
+    def test_a_ball_rolled_across_the_floor_is_resisted_and_the_loss_is_declared(self):
+        scene = {"bodies": [{"name": "ball", "shape": "sphere", "material": "rubber",
+                             "dimensions_m": [0.12, 0.12, 0.12], "center_m": [0.0, 0.0605, 0.0],
+                             "velocity_m_s": [1.0, 0.0, 0.0], "roll": True}]}
+        with banjo.World(scene, cell_size_m=0.02) as world:
+            for _ in range(240):
+                world.step(1 / 240)
+            report = world.rolling_report()
+            contact = next(c for c in report["contacts"] if c["ball"] == "ball")
+            self.assertEqual(contact["on"], "the floor")
+            self.assertTrue(contact["from_solver"], "N was not the solver's own")
+            rubber_on_concrete = (next(m for m in banjo.materials()["materials"] if m["name"] == "rubber")
+                                  ["rolling_resistance"] + 0.001)
+            self.assertAlmostEqual(contact["coefficient"], rubber_on_concrete, places=6)
+            self.assertFalse(contact["held"], "a ball rolling at nearly 1 m/s is not held")
+            self.assertLess(world.body("ball").velocity_m_s[0], 0.97, "a second on the floor took nothing off it")
+            self.assertGreater(report["loss_j"], 0.0)
+            self.assertEqual([b["name"] for b in report["balls"]], ["ball"])
+
+
 class AWorldRunsFromPython(unittest.TestCase):
     def test_stepping_is_gravity(self):
         with banjo.World(pane_and_ball(1.0), cell_size_m=0.02) as world:

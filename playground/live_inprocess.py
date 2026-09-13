@@ -363,7 +363,13 @@ class InProcessSession:
             elif op == "thermo":
                 report = world.thermo_report(bool(command.get("model", False)))
                 report["ledger"]["mechanical_j"] = world.energy().mechanical_j
+                report["ledger"]["rolling_loss_j"] = world.rolling_report().get("loss_j", 0.0)
                 return {"ok": True, "thermo": report}
+            elif op == "materials":
+                # The same answers the line protocol gives: it moves nothing.
+                return {"ok": True, "materials": banjo.materials()}
+            elif op == "rolling":
+                return {"ok": True, "rolling": world.rolling_report()}
             elif op == "vent":
                 world.vent(str(command.get("region", "")), bool(command.get("open", True)))
             elif op == "fix":
