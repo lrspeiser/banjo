@@ -17,8 +17,8 @@ if (banjo_abi_version() != BANJO_ABI_VERSION) { /* mismatch */ }
 `const char *banjo_version_string(void)` says which library it is in words, for
 a log line. Never parse it: the number to compare is `banjo_abi_version()`.
 
-Current ABI: **18**. 13 and 14 were two additions made side by side and then
-merged, numbered apart so that one number never meant two headers; 15 to 18
+Current ABI: **19**. 13 and 14 were two additions made side by side and then
+merged, numbered apart so that one number never meant two headers; 15 to 19
 were added on top of both:
 
 - **13** added blades -- `banjo_make_blade`, `banjo_blades`, `banjo_cuts`,
@@ -46,14 +46,23 @@ were added on top of both:
 - **18** added rolling resistance -- every round body rolling on anything is
   resisted by the couple `M = c N r` at its contacts -- and `banjo_materials`
   and `banjo_rolling_report` to say with what, and the survey's
-  `rolling_resistance` (see [Rolling resistance](#rolling-resistance)).
+  `rolling_resistance` (see [Rolling resistance](#rolling-resistance));
+- **19** made one material state drive everything heat touches
+  ([thermal-mechanics.md](../thermal-mechanics.md), "One material state"): the
+  lattice a heated body is broken in carries the same law and state as its
+  section; what burns away leaves the collision shape, the drawn shape, the mass,
+  centre of mass and inertia; a joint on matter that burned away lets go; a
+  sustained load is answered by statics. `banjo_body` gained `revision` and
+  `banjo_body_mechanics` the geometry of what is left, each at its **end**
+  (see [Heat and strength](#heat-and-strength)).
 
-A library at 18 has all of them. Nothing that was in 12 changed, and nothing
-that was in 14 changed in 15. None of 16, 17 and 18 changed a function that was
+A library at 19 has all of them. Nothing that was in 12 changed, and nothing
+that was in 14 changed in 15. None of 16 to 19 changed a function that was
 already there, but structs grew at their ends -- `banjo_joint`, `banjo_overload`
-and `banjo_energy` in 16, `banjo_body` and `banjo_joint` again in 17 -- so a
-caller built against an older header must be rebuilt, and every field that was
-there keeps its place and its meaning. 18 changed no struct.
+and `banjo_energy` in 16, `banjo_body` and `banjo_joint` again in 17,
+`banjo_body` and `banjo_body_mechanics` in 19 -- so a caller built against an
+older header must be rebuilt, and every field that was there keeps its place and
+its meaning. 18 changed no struct.
 
 ---
 
@@ -368,11 +377,23 @@ typedef struct {
 } banjo_overload;
 ```
 
-**Heat changes the answer** (ABI 16). `strength_pa` is the material's strength
-times `capacity_fraction` -- 1 for anything heat has not touched, less for a
-beam whose section has charred, burned or softened (see
+**Heat changes the answer** (ABI 16). `strength_pa` is the material's cold
+governing strength times `capacity_fraction` -- 1 for anything heat has not
+touched, less for a beam whose section has charred, burned or softened (see
 [Heat and strength](#heat-and-strength)) -- and a body whose section has moved
 is surveyed again on the next step rather than at the stride.
+
+**Both sides of the section** (ABI 19). A beam gives on whichever side reaches
+its strength first, so the survey asks about both: the tension side by the
+tensile strength and the tension curve, the compression side by the compressive
+strength and the compression curve, and `strength_pa` is the lesser. Oak's
+declared 52 MPa in compression is below its 90 MPa in tension, and its
+compression curve falls faster (0.25 of cold at 100 degC against 0.65), so for
+oak the compression side governs; `why` names the side. A material that declares
+no compressive strength is asked about in tension alone. (It used to be tension
+alone for everything; the lattice applies all three strengths, and a heated oak
+beam was asked about only after its compression side was long past what it could
+take -- see the next paragraph for what that did.)
 
 For a simply supported span `L` of section `b × d`, under a central load `W` and
 its own weight `w` per metre:
@@ -389,15 +410,34 @@ span and cannot be bent, which is the honest reason a plate lying flat on the
 floor will not break however much is piled on it. Measured: the same five crates
 on the same plank, with a bench underneath, report nothing.
 
-**`banjo_fracture` on one of these puts it into the lattice *with its load on
-it*.** An island is normally built from the contact that caused the break, and a
-sustained load has no contact — so an overloaded shelf went into the lattice on
-its own, with nothing pressing on it, and came out whole however much was piled
-on. With its crates: a stone shelf at 5.46 MPa against concrete's 3 came out in
-**26 pieces**.
+**`banjo_fracture` on one of these answers it by statics** (ABI 19,
+`fracture/SustainedLoad.hpp`). The body's own lattice -- its bonds as heat has
+left them -- is solved for equilibrium under its own weight and the weight of
+what rests on it, held up (unilaterally) on its cells over what it rests on; the
+lattice's one failure criterion is applied to the strain that gives, every bond
+past it is removed, and it is solved again until nothing more fails. The pieces
+are what stays connected. What it said is in `banjo_mechanics_report`'s
+`statics` list: `held`/`broke`, the load, how near its bonds came to the
+criterion (`first_failure_ratio`), the bonds removed, and the cost.
 
-**`banjo_decline_break` matters more here than for a blow.** A load does not go
-away by itself, so an undeclined shelf is offered on every survey for ever.
+It used to be put into a few milliseconds of the *dynamic* lattice with the
+heaviest thing on it and nothing under it, and this page said a stone shelf at
+5.46 MPa came out in 26 pieces. Traced (`BANJO_ISLAND_TRACE=1`): shelf and crate
+fell freely together there, and what broke the shelf was the crate's resting
+cells, sunk millimetres into it by the rigid solver's contact allowance, being
+pushed out -- not the load. Statics on the same shelf says **held**, its bonds at
+**47%** of the criterion: the lattice removes a bond at the catalogue's break
+multiplier (2) times its strength's strain, and a shelf two cells deep has its
+outer cells a quarter of the depth from the middle, where beam theory's surface
+strain is halved. At 35 kN (5.9 times) its bonds reach 141% and it breaks, 2,519
+bonds, in 855 ms. **So the survey (beam theory at the declared strength) and the
+lattice's criterion are two different lines** -- past the first it is worth
+asking, past the second it breaks -- and both numbers are reported.
+
+**A load statics has answered is not offered again until it changes**: a
+section a hundredth weaker than it held at, or a load a hundredth heavier. A
+load does not go away by itself, so without this an overloaded shelf would be
+asked about on every survey.
 
 The survey runs at a stride — four times a second, not sixty — because load does
 not change in a quarter of a second and the survey is O(bodies²).
@@ -1259,19 +1299,34 @@ sources and what was measured are in
 | concrete | EN 1992-1-2 Table 3.1 and 3.2.2.2 (reference-derived) | compression 0.75 at 400 degC; tension 0 at 600; does not recover; stiffness not modelled |
 | glass, aluminium, alumina ceramic, rubber, ice | none | not changed by heat, and reported so |
 
-A section across the direction a body carries load is at most **three rings** --
-what burned away, the 3 mm surface layer (char once past 300 degC), the core --
-because that is what the thermal network holds of a body. What burned is taken
-out of the section, and out of the mass; not yet out of the collision shape,
-the drawn shape, the centre of mass or the inertia.
+**One material state** (ABI 19). The thermal network holds how hot each body's
+surface layer and core are and have been, and how much of its load-bearing
+matter is left. That state is laid over the body's reference box -- as authored,
+or the cells' box a piece broke off as -- as one field: burned away within the
+burned depth of every face, then the 3 mm surface layer (char once past
+300 degC), then the core. Everything reads that field and nothing else:
 
-**Failure is the engine's two existing paths, fed these numbers.** A joint made
-of a member parts when the load the solver measures passes what the member's
-law leaves it; a beam is offered as overloaded (`banjo_overload.capacity_fraction`,
-`why`) when the bending in it passes what its section can still take. Heat
-changing either makes it be asked again at once -- both ends of the joint woken
-so the load is measured, not remembered -- even while nothing moves. The lattice
-a fracture is run in still uses room-temperature bonds.
+- a **section** is the field integrated across the load (three rings at most);
+- the **lattice** a fracture is run in gets each cell's average of the field --
+  its mass, and its bonds' stiffness and strengths, applied once;
+- the **collision shape and the drawn shape** of a box or a sphere are the part
+  not burned away, re-cut every 0.2 mm (`banjo_body.revision` moves); a piece's
+  cells go once less than 2% of their matter is left, and it is rebuilt from the
+  rest -- as more than one if they no longer join;
+- **mass, centre of mass and inertia** are the matter left spread over the
+  volume left; a body whose load-bearing matter is all gone leaves the world, its
+  residue leaving the thermal network with it on the ledger;
+- a **joint** lets go of matter burned away from under its point by more than
+  half a cell.
+
+**Failure is the engine's existing paths, fed these numbers.** A joint made of a
+member parts when the load the solver measures passes what the member's law
+leaves it; a beam is offered as overloaded (`banjo_overload.capacity_fraction`,
+`why`) when the bending in it passes what either side of its section can still
+take, and answered by statics on its heated lattice; a blow on a heated body is
+admitted against its heated bonds and run with them. Heat changing any of it
+makes it be asked again at once -- both ends of a joint woken so the load is
+measured, not remembered -- even while nothing moves.
 
 ### `int banjo_joint_member(banjo_world *world, unsigned joint, const char *member)`
 
@@ -1323,21 +1378,43 @@ typedef struct {
     double stiffness, tension, compression, shear, bending;   /* 1 is as it was */
     double tension_if_cooled, shear_if_cooled, bending_if_cooled;
     int supported;                   /* 0: outside what the law supports */
+    /* ---- ABI 19: what is left of it, from the same field ---- */
+    double reference_m[3];           /* the box its matter is measured against (= dimensions_m) */
+    double remaining_m[3];           /* the part not burned away: what collides and is drawn */
+    double remaining_volume_m3;
+    double mass_kg;                  /* the rigid body's (scenery: its matter's) */
+    double inertia_kg_m2[3];         /* principal, about its own axes */
+    int cells, cells_burned;         /* its cells, and how many burned away entirely */
+    double bond_tension_min;         /* what a fracture run gives its lattice: the weakest */
+    double bond_tension_mean;        /* and mean tension factor over its bonds, */
+    double bond_stiffness_mean;      /* and their mean stiffness factor; 1 cold */
+    int revision;                    /* times its shape was changed where it stands */
 } banjo_body_mechanics;
 ```
 
 The `*_if_cooled` factors are what it would keep if it cooled now: what burned,
-the char and any lasting loss stay. Strings are good until the next call on the
-world.
+the char and any lasting loss stay. The section is taken across `reference_m`
+with the burned depth inside it -- measuring it across `remaining_m` as well
+would take what burned away out twice. Strings are good until the next call on
+the world.
+
+`banjo_body.revision` (ABI 19) counts the same changes for every body: redraw a
+body when it moves. For a box or a sphere `dimensions_m` is then what is left;
+for a piece, read its cells again.
 
 ### `const char *banjo_mechanics_report(const banjo_world *world, int with_laws)`
 
 All of it as JSON: `bodies` (the struct above, with `outside` saying why a state
 is unsupported), `attachments` (every joint made of a member, and every one that
-parted, with what it carries against what it can take and `parted_because`),
-`elastic_to_heat_j`; with `with_laws` nonzero also `laws` -- each law's curves,
-char temperature, lasting loss, whether it recovers, supported range, sources
-and what it does not model -- and `limitations`.
+parted, with what it carries against what it can take and `parted_because` --
+including "the ... it was fixed to has burned away under it"), `statics` (what
+statics last said about each body it answered for a sustained load: `stop`,
+`load_n`, `first_failure_ratio`, `deflection_mm`, `bonds_removed`, `pieces`,
+`cost_ms`), `burned_away` (every body whose load-bearing matter burned away
+entirely, with its `residue_kg` and why), `elastic_to_heat_j`; with `with_laws`
+nonzero also `laws` -- each law's curves, char temperature, lasting loss, whether
+it recovers, supported range, sources and what it does not model -- and
+`limitations`.
 
 ---
 
