@@ -190,8 +190,19 @@ private:
     struct Afloat {
         std::string name;
         double submerged_m3{}, buoyancy_n{}, weight_n{};
+        double lift_share{};    // buoyancy over weight, averaged: see kFloatAverageS
     };
     std::vector<Afloat> in_water_;
+    // Floating is judged over time, not at an instant. A log bobbing in still
+    // water is held up by anything from 0.75 to 1.3 times its weight as it
+    // passes up and down through its waterline; a log aground is held up by
+    // less than its weight however long it is watched. So what the water held
+    // up against what a body weighs is averaged with this time constant, over
+    // accepted steps only, and a body floats when the water carries at least
+    // kFloatsShare of it.
+    static constexpr double kFloatAverageS = 2.0;
+    static constexpr double kFloatsShare = 0.95;
+    std::unordered_map<std::string, double> lift_share_;
     EnvironmentStats stats_;
 };
 

@@ -459,6 +459,14 @@ if(BANJO_BUILD_HEADLESS)
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/blade_binding_tests.py)
         set_tests_properties(banjo_blade_binding_tests PROPERTIES
             ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
+        # Terrain and water through the same boundary: generated ground and
+        # its water read, dug, heaped and cut, a lake left at rest, oak that
+        # floats and iron that sinks, and the arrays a renderer draws from.
+        add_test(NAME banjo_environment_ffi_tests
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/environment_ffi_tests.py)
+        set_tests_properties(banjo_environment_ffi_tests PROPERTIES
+            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
         # The two ways the playground can hold a world, run against the same
         # scene and compared. Claiming they are interchangeable is easy; this
         # is the part that makes it true.

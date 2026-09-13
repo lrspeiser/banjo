@@ -1077,7 +1077,7 @@ int banjo_water_info(const banjo_world *world, banjo_water *out) {
         out->volume_m3 = w.volume();
         out->wet_area_m2 = w.wetArea();
         out->cells = static_cast<int>(w.grid().cells());
-        out->wet_cells = static_cast<int>(s.wet_cells);
+        out->wet_cells = static_cast<int>(w.wetCells());
         out->active_cells = static_cast<int>(s.active_cells);
         out->inflow_m3_s = w.inflowRate();
         out->outflow_m3_s = w.outflowRate();

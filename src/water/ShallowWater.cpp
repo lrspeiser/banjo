@@ -636,12 +636,14 @@ double ShallowWater::volume() const {
     return total;
 }
 
-double ShallowWater::wetArea() const {
+std::size_t ShallowWater::wetCells() const {
     std::size_t wet = 0;
     for (std::size_t c = 0; c < eta_.size(); ++c)
         if (eta_[c] - bed_[c] > settings_.dry_m) ++wet;
-    return static_cast<double>(wet) * faceArea();
+    return wet;
 }
+
+double ShallowWater::wetArea() const { return static_cast<double>(wetCells()) * faceArea(); }
 
 double ShallowWater::residual() const {
     return volume() - (ledger_.initial_m3 + ledger_.inflow_m3 - ledger_.outflow_m3 +

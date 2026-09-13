@@ -221,6 +221,9 @@ public:
 
     [[nodiscard]] double volume() const;
     [[nodiscard]] double wetArea() const;
+    // Columns holding water now. Counted, not remembered: stats().wet_cells is
+    // the last substep's count, which is nothing before the first substep.
+    [[nodiscard]] std::size_t wetCells() const;
     [[nodiscard]] const Ledger &ledger() const { return ledger_; }
     [[nodiscard]] double residual() const;
     // Starts the ledger from the water as it stands.

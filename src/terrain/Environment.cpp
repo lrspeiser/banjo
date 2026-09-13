@@ -439,7 +439,11 @@ void Environment::push(JoltWorld &world, const std::vector<water::BodyInWater> &
     const double g = water_->settings().gravity_m_s2;
     for (const water::BodyForce &f : forces_) {
         const water::BodyInWater &b = bodies[f.index];
-        in_water_.push_back({b.name, f.submerged_m3, f.pressure_n.y, b.density_kg_m3 * b.volume_m3 * g});
+        const double weight = b.density_kg_m3 * b.volume_m3 * g;
+        const auto share = lift_share_.find(b.name);
+        in_water_.push_back({b.name, f.submerged_m3, f.pressure_n.y, weight,
+                             share != lift_share_.end() ? share->second
+                                                        : (weight > 0.0 ? f.pressure_n.y / weight : 0.0)});
         if (!world.contains(b.body_id)) continue;
         world.pushBody(b.body_id, f.force_n);
         world.twistBody(b.body_id, f.torque_n_m);
@@ -462,6 +466,21 @@ void Environment::commit(JoltWorld &world, const std::vector<water::BodyInWater>
     // which momentum crosses between them.
     for (const water::Reaction &r : reactions_) water_->addImpulse(r.cell, -r.fx_n * dt_s, -r.fz_n * dt_s);
     reactions_.clear();
+    // What the water held up this step, folded into each body's running share
+    // (see kFloatAverageS). Here, after the step was accepted, so a step taken
+    // back is not counted; a body that has left the water is forgotten.
+    {
+        const double keep = std::exp(-dt_s / kFloatAverageS);
+        std::unordered_map<std::string, double> shares;
+        shares.reserve(in_water_.size());
+        for (Afloat &a : in_water_) {
+            const double now = a.weight_n > 0.0 ? a.buoyancy_n / a.weight_n : 0.0;
+            const auto was = lift_share_.find(a.name);
+            a.lift_share = was == lift_share_.end() ? now : keep * was->second + (1.0 - keep) * now;
+            shares.emplace(a.name, a.lift_share);
+        }
+        lift_share_ = std::move(shares);
+    }
 
     double water_ms = 0.0;
     if (water_behind_s_ >= kWaterStrideS) {
@@ -650,7 +669,8 @@ std::string Environment::reportJson(bool full) const {
     Json afloat = Json::array();
     for (const Afloat &a : in_water_)
         afloat.push_back({{"name", a.name}, {"submerged_m3", a.submerged_m3}, {"buoyancy_n", a.buoyancy_n},
-                          {"weight_n", a.weight_n}, {"floats", a.buoyancy_n >= 0.98 * a.weight_n}});
+                          {"weight_n", a.weight_n}, {"lift_share", a.lift_share},
+                          {"floats", a.lift_share >= kFloatsShare}});
     Json ponds = Json::array();
     for (const Lake &lake : landscape_.lakes) {
         Json pond = {{"name", lake.name}, {"at_m", {lake.x_m, lake.z_m}}, {"brim_m", lake.surface_m},
@@ -676,7 +696,7 @@ std::string Environment::reportJson(bool full) const {
                     {"unsettled_columns", terrain_->unsettled()},
                     {"bare_rock", bare}}},
         {"water", {{"time_s", ws.time_s}, {"volume_m3", water_->volume()}, {"wet_area_m2", water_->wetArea()},
-                   {"cells", g.cells()}, {"wet_cells", ws.wet_cells}, {"active_cells", ws.active_cells},
+                   {"cells", g.cells()}, {"wet_cells", water_->wetCells()}, {"active_cells", ws.active_cells},
                    {"active_tiles", ws.active_tiles}, {"tiles", ws.tiles},
                    {"inflow_m3_s", water_->inflowRate()}, {"outflow_m3_s", water_->outflowRate()},
                    {"substeps", ws.substeps}, {"last_substep_s", ws.last_substep_s},

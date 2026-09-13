@@ -478,7 +478,7 @@ nlohmann::json waterBlock(const banjo::terrain::Environment &env, double t) {
                 j0 = std::min(j0, j); j1 = std::max(j1, j);
             }
     nlohmann::json out = {{"t", t}, {"base_m", base}, {"volume_m3", tidy(w.volume())},
-                          {"wet_cells", w.stats().wet_cells}, {"active_cells", w.stats().active_cells},
+                          {"wet_cells", w.wetCells()}, {"active_cells", w.stats().active_cells},
                           {"in_m3_s", tidy(w.inflowRate())}, {"out_m3_s", tidy(w.outflowRate())},
                           {"residual_m3", w.residual()}};
     if (i1 < 0) {
