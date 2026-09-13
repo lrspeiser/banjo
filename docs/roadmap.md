@@ -261,6 +261,8 @@ Profile each stage and establish a reference machine and reproducible scenes. Ad
 
 **Exit:** many inactive objects stay cheap; impact cost follows the active region rather than total world volume; refinement does not change the material law or violate transfer accounting; frame/latency/memory percentiles and worst cases are measured. A target such as 60 Hz is not a completed benchmark until measured.
 
+**Terrain and water, milestone 1** ([checkpoint](terrain-and-water.md)): a valley whose cost follows what is changing -- an edit's recheck, the colliders it changed and what they held; the wet tiles of the water -- rather than the land and water that exist. Sixty seconds of the valley with bodies in it run at 0.078x realtime; a pit dug in one corner rebuilt 1 of 20 colliders and woke nothing. The coarse river network and coarse-to-fine transitions are milestone 2, not started.
+
 ## Gate 6 — validated precomputation and speculation
 
 Keep analytical projections distinct from simulated outcomes. Complete cache identity with material-content/geometry/state/solver hashes, both spins, contact frame, damage, gravity/support, time integration and numerical provenance. Harden serialization validation and cache invalidation. Add time-aligned outcome replay/resumption that does not jump a future terminal state into the current tick.
