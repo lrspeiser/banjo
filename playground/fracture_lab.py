@@ -101,6 +101,11 @@ DEFAULT: dict[str, Any] = {
     # part of the DOCUMENT, so a saved room keeps its swords sharp.
     # docs/cutting-model.md.
     "blades": [],
+    # Points that can go into the ground: which bodies are tools that dig,
+    # where on them the tip is, which way it goes in and where they are held.
+    # Like the edges, declared on a body that already exists, and part of the
+    # DOCUMENT so a saved room keeps its picks. docs/ground-work.md.
+    "tool_points": [],
     # How a person uses the things in the room: which parts make one object,
     # which part the hand takes, which joint lets go. Never a speed: what an
     # object does is the engine's answer. docs/interaction-profiles.md.
@@ -613,13 +618,61 @@ def normalise_blades(blades: Any, bodies: list[dict[str, Any]]) -> list[dict[str
     return out
 
 
+def normalise_tool_points(points: Any, bodies: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Check every tool's point against the body it claims to be on.
+
+    What a point DOES in the ground is the engine's (docs/ground-work.md); this
+    only checks it is a thing, and says so where whoever wrote it can be told.
+    Millimetres, like every other length in a room document.
+    """
+    if not isinstance(points, list):
+        raise ValueError("tool_points must be a list")
+    if len(points) > 16:
+        raise ValueError("a room may hold at most 16 tool points")
+    named = {str(body.get("name", "")) for body in bodies}
+    out: list[dict[str, Any]] = []
+    for i, point in enumerate(points):
+        if not isinstance(point, dict):
+            raise ValueError(f"tool point {i} is not an object")
+        body = str(point.get("body", ""))
+        if body not in named:
+            raise ValueError(f"tool point {i} is on {body!r}, which is not in this room")
+
+        def place(key: str) -> list[float]:
+            value = point.get(key)
+            if not isinstance(value, list) or len(value) != 3:
+                raise ValueError(f"tool point {i} needs {key} as three numbers")
+            return [_number(v, -100000.0, 100000.0, f"tool point {i} {key}") for v in value]
+
+        tip = place("tip_mm")
+        pointing = point.get("pointing")
+        if not isinstance(pointing, list) or len(pointing) != 3:
+            raise ValueError(f"tool point {i} needs pointing as three numbers: the way the point "
+                             f"goes in, out of the body at the tip")
+        pointing = [_number(v, -1e6, 1e6, f"tool point {i} pointing") for v in pointing]
+        if not any(abs(v) > 1e-9 for v in pointing):
+            raise ValueError(f"tool point {i} has a pointing with no direction")
+        out.append({
+            "body": body, "tip_mm": tip, "pointing": pointing,
+            "grip_mm": place("grip_mm") if "grip_mm" in point else list(tip),
+            "width_mm": _number(point.get("width_mm", 40.0), 2.0, 500.0, f"tool point {i} width_mm"),
+            "thickness_mm": _number(point.get("thickness_mm", 40.0), 2.0, 500.0,
+                                    f"tool point {i} thickness_mm"),
+            "angle_deg": _number(point.get("angle_deg", 30.0), 5.0, 170.0, f"tool point {i} angle_deg"),
+            "length_mm": _number(point.get("length_mm", 150.0), 10.0, 1000.0,
+                                 f"tool point {i} length_mm"),
+        })
+    return out
+
+
 # The interaction templates the page knows how to drive. A profile names one;
 # the controls are the page's and what happens is the engine's.
 INTERACTION_TEMPLATES = interaction_profiles.TEMPLATES
 
 
 def normalise_interactions(profiles: Any, bodies: list[dict[str, Any]],
-                           joints: list[dict[str, Any]]) -> list[dict[str, Any]]:
+                           joints: list[dict[str, Any]],
+                           tool_points: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """Check every interaction profile against the room it is in.
 
     A profile says how a person uses a thing -- which bodies it is made of,
@@ -638,14 +691,16 @@ def normalise_interactions(profiles: Any, bodies: list[dict[str, Any]],
     if len(profiles) > 32:
         raise ValueError("a room may hold at most 32 interaction profiles")
     named = {str(body.get("name", "")) for body in bodies}
+    pointed = {str(p.get("body", "")) for p in (tool_points or [])}
     out: list[dict[str, Any]] = []
     for i, profile in enumerate(profiles):
-        checked = interaction_profiles.check(profile, named, joints, f"interaction {i}")
-        name, draw = checked["object"], profile["draw"]
-        checked["draw"].update(
-            max_mm=_number(draw.get("max_mm", 500), 20.0, 3000.0, f"{name} draw max_mm"),
-            speed_mm_s=_number(draw.get("speed_mm_s", 400), 10.0, 5000.0,
-                               f"{name} draw speed_mm_s"))
+        checked = interaction_profiles.check(profile, named, joints, f"interaction {i}", pointed)
+        if checked["template"] == "draw-and-release":
+            name, draw = checked["object"], profile["draw"]
+            checked["draw"].update(
+                max_mm=_number(draw.get("max_mm", 500), 20.0, 3000.0, f"{name} draw max_mm"),
+                speed_mm_s=_number(draw.get("speed_mm_s", 400), 10.0, 5000.0,
+                                   f"{name} draw speed_mm_s"))
         out.append(checked)
     return out
 
@@ -832,7 +887,7 @@ def normalise_thermo(thermo: Any, bodies: list[dict[str, Any]]) -> dict[str, Any
     return out
 
 
-TERRAIN_KINDS = ("valley", "basin", "channel", "flat")
+TERRAIN_KINDS = ("valley", "basin", "channel", "flat", "clearing")
 TERRAIN_EDITS = ("dig", "deposit", "cut")
 
 
@@ -1424,8 +1479,11 @@ def validate(spec: Any) -> dict[str, Any]:
         result["terrain"] = normalise_terrain(result.get("terrain"))
         result["water"] = normalise_water(result.get("water"))
         result["blades"] = normalise_blades(result.get("blades") or [], result["bodies"])
+        result["tool_points"] = normalise_tool_points(result.get("tool_points") or [],
+                                                      result["bodies"])
         result["interactions"] = normalise_interactions(result.get("interactions") or [],
-                                                        result["bodies"], result["joints"])
+                                                        result["bodies"], result["joints"],
+                                                        result["tool_points"])
         result["duration_s"] = _number(result["duration_s"], LIMITS["duration_s"]["min"],
                                        LIMITS["duration_s"]["max"], "duration")
         result["seated"] = seat_bodies(result["bodies"], result["cell_m"])

@@ -1,4 +1,5 @@
 #include "fastlattice/LiveWorld.hpp"
+#include "fastlattice/ToolTerrain.hpp"
 
 #include "core/Plane.hpp"
 #include "core/RigidPrimitive.hpp"
@@ -208,7 +209,46 @@ struct StrokeHand {
     if (!(stroke.give_up_s > 0.0 && stroke.give_up_s <= 30.0))
         return "a stroke gives up after more than 0 and at most 30 s";
     if (!(arcLengths(stroke.path_m).back() > 1e-4)) return "a stroke's path has no length";
+    if (!stroke.facings_wxyz.empty()) {
+        if (stroke.facings_wxyz.size() != stroke.path_m.size())
+            return "a stroke's facings are one for each point of its path, or none";
+        for (const Quat &q : stroke.facings_wxyz) {
+            const double size = std::sqrt(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z);
+            if (!std::isfinite(size) || !(size > 1e-9))
+                return "a stroke's facing is a quaternion with a size, w first";
+        }
+    }
     return {};
+}
+
+// Which way the hand wants the thing to face `along` metres down a path that
+// turns as it goes (LiveStroke::facings_wxyz): from one point's facing to the
+// next's, by the shortest turn between them.
+[[nodiscard]] Quat facingAlong(const std::vector<Quat> &facings, const std::vector<double> &at,
+                               double along) {
+    const auto unit = [](const Quat &q) {
+        const double n = std::sqrt(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z);
+        return Quat{q.w / n, q.x / n, q.y / n, q.z / n};
+    };
+    if (facings.size() == 1 || !(along > 0.0)) return unit(facings.front());
+    std::size_t i = 1;
+    while (i + 1 < at.size() && along > at[i]) ++i;
+    const double span = at[i] - at[i - 1];
+    const double t = span > 0.0 ? std::clamp((along - at[i - 1]) / span, 0.0, 1.0) : 1.0;
+    const Quat a = unit(facings[i - 1]);
+    Quat b = unit(facings[i]);
+    double c = a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z;
+    if (c < 0.0) {
+        b = Quat{-b.w, -b.x, -b.y, -b.z};
+        c = -c;
+    }
+    if (c > 0.9995)
+        return unit(Quat{a.w + t * (b.w - a.w), a.x + t * (b.x - a.x), a.y + t * (b.y - a.y),
+                         a.z + t * (b.z - a.z)});
+    const double angle = std::acos(std::clamp(c, -1.0, 1.0));
+    const double wa = std::sin((1.0 - t) * angle) / std::sin(angle);
+    const double wb = std::sin(t * angle) / std::sin(angle);
+    return unit(Quat{wa * a.w + wb * b.w, wa * a.x + wb * b.x, wa * a.y + wb * b.y, wa * a.z + wb * b.z});
 }
 } // namespace
 
@@ -762,6 +802,11 @@ struct LiveWorld::Impl {
     Vec3 let_go_velocity{};
     double let_go_at_s{-1.0};
     double let_go_work_j{};
+
+    // Tools that work the ground (ToolTerrain.hpp, docs/ground-work.md): the
+    // points declared on bodies, and each one's meetings with the ground.
+    ToolTerrain tools;
+    std::string tool_point_refusal;
 };
 
 LiveWorld::LiveWorld() : impl_(std::make_unique<Impl>()) {}
@@ -1268,6 +1313,10 @@ void LiveWorld::step(double dt_s) {
     // which a reversible trial forbids, so it goes before the trial opens.
     // docs/cutting-model.md.
     prepareCuts(dt_s);
+    // A tool's point at the ground, the same way round: its bite -- the
+    // ground's resistance at the depth it has reached -- is set before the
+    // trial, because making or changing it changes the world's configuration.
+    if (!impl_->tools.empty()) impl_->tools.prepare(toolHost(), dt_s);
     if (impl_->body_of.size() + 8 <= 2000) {
         bool committed = false;
         try {
@@ -1316,6 +1365,9 @@ void LiveWorld::step(double dt_s) {
         // What each edge took this step, the kerfs it bought, and whatever came
         // apart. After the trial, for the same reason prepareCuts is before it.
         settleCuts(dt_s);
+        // What each point in the ground took this step, and a point that has
+        // come out takes what it broke loose out of the ground with it.
+        if (!impl_->tools.empty()) impl_->tools.settle(toolHost(), dt_s);
         partOverloadedLinks();
         // Load does not change in a quarter of a second, and the survey is
         // O(bodies squared). Sixty times a second would be waste; four is not.
@@ -1345,6 +1397,7 @@ void LiveWorld::step(double dt_s) {
     impl_->time_s += dt_s;
     impl_->rememberJointAngles(*impl_->world);
     settleCuts(dt_s);
+    if (!impl_->tools.empty()) impl_->tools.settle(toolHost(), dt_s);
     partOverloadedLinks();
     if (impl_->steps_taken % 60 == 0 || impl_->survey_due) {
         impl_->survey_due = false;
@@ -5394,6 +5447,10 @@ void LiveWorld::beginHandStep(double dt_s) {
     I.hand_step.target_speed_m_s = next.speed;
     I.held_at = pointAlong(s.asked.path_m, s.at_m, next.along);
     I.held_velocity = next.speed * pathDirection(s.asked.path_m, s.at_m, next.along);
+    // A stroke that turns as it goes -- a swing -- turns the wrist's wish with
+    // the hand; the wrist turns the thing towards it with what it has.
+    if (!s.asked.facings_wxyz.empty())
+        I.held_facing = facingAlong(s.asked.facings_wxyz, s.at_m, next.along);
 }
 
 void LiveWorld::abandonHandStep() {
@@ -6954,5 +7011,79 @@ std::size_t LiveWorld::splitCut(std::size_t which) {
     I.delays.push_back({I.time_s, parent.name, "cut apart", static_cast<double>(components.size()), 0.0});
     return components.size();
 }
+
+// ===========================================================================
+// Tools that work the ground (docs/ground-work.md). The process is
+// ToolTerrain; this is where it meets the world, and all it is told.
+// ===========================================================================
+
+ToolTerrainHost LiveWorld::toolHost() const {
+    const Impl &I = *impl_;
+    ToolTerrainHost host;
+    host.world = I.world.get();
+    host.environment = I.environment.get();
+    host.floor_y = I.setup ? I.setup->ground_y : 0.0;
+    host.cell_m = I.request.cell_size_m;
+    host.time_s = I.time_s;
+    host.id_of = [this](const std::string &name) -> std::optional<MatterBodyId> {
+        const auto found = impl_->index_of.find(name);
+        if (found == impl_->index_of.end()) return std::nullopt;
+        return impl_->body_of[found->second];
+    };
+    host.cells_of = [this](const std::string &name) {
+        std::vector<std::pair<std::uint32_t, Vec3>> out;
+        const auto found = impl_->index_of.find(name);
+        if (found == impl_->index_of.end()) return out;
+        for (const std::uint32_t node : impl_->nodes_of[found->second])
+            if (node < impl_->cell_offset_m.size()) out.emplace_back(node, impl_->cell_offset_m[node]);
+        return out;
+    };
+    host.material_of = [this](const std::string &name) -> const MaterialDefinition * {
+        const auto found = impl_->index_of.find(name);
+        return found == impl_->index_of.end() ? nullptr : &impl_->definitionOf(found->second);
+    };
+    host.material_name_of = [this](const std::string &name) {
+        const auto found = impl_->index_of.find(name);
+        return found == impl_->index_of.end() ? std::string() : impl_->described[found->second].material;
+    };
+    host.dent_of = [this](const std::string &name) {
+        const auto found = impl_->index_of.find(name);
+        return found == impl_->index_of.end() ? 0.0 : impl_->described[found->second].dent_m;
+    };
+    host.anchored = [this](const std::string &name) {
+        const auto found = impl_->index_of.find(name);
+        return found != impl_->index_of.end() && impl_->described[found->second].anchored;
+    };
+    return host;
+}
+
+unsigned LiveWorld::toolPoint(const std::string &body, const Vec3 &tip_world_m, const Vec3 &pointing_world,
+                              double width_m, double thickness_m, double angle_deg, double length_m,
+                              const Vec3 &grip_world_m) {
+    Impl &I = *impl_;
+    const terrain::ToolPointShape shape{width_m, thickness_m, angle_deg, length_m};
+    return I.tools.declare(toolHost(), body, tip_world_m, pointing_world, shape, grip_world_m,
+                           I.tool_point_refusal);
+}
+
+const std::string &LiveWorld::toolPointRefusal() const { return impl_->tool_point_refusal; }
+
+std::vector<LiveToolPoint> LiveWorld::toolPoints() const { return impl_->tools.points(toolHost()); }
+
+bool LiveWorld::strike(const LiveStrike &asked, std::string &why) {
+    Impl &I = *impl_;
+    if (I.holding == static_cast<std::size_t>(-1) || !I.wielding) {
+        why = "a tool action needs the tool in the hand by its grip: wield it first";
+        return false;
+    }
+    const std::string held = I.described[I.holding].name;
+    const std::optional<LiveStroke> planned = I.tools.plan(toolHost(), asked, held, I.grip_local, why);
+    if (!planned) return false;
+    return stroke(*planned, why);
+}
+
+std::vector<LiveGroundWork> LiveWorld::groundWork() const { return impl_->tools.reports(); }
+
+void LiveWorld::forgetGroundWork() { impl_->tools.forget(); }
 
 } // namespace banjo::fastlattice

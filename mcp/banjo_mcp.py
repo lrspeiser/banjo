@@ -168,6 +168,12 @@ def _scene(objects: Any, cell_m: float) -> dict[str, Any]:
         body = {"name": name, "shape": shape, "material": material,
                 "dimensions_m": size, "center_m": centre, "velocity_m_s": speed,
                 "anchored": bool(item.get("anchored"))}
+        # One piece: every object given the same join name is built as ONE
+        # body -- their cells unioned on the shared grid and bonded across the
+        # seam -- so a pick's haft and its arm are one tool, not two things
+        # touching. The world names the piece after the first of them.
+        if item.get("join") is not None and str(item["join"]).strip():
+            body["join"] = str(item["join"]).strip()[:60]
         # What it contains and how hot it starts. Left out, a body is made of
         # what its material is made of -- which for oak is dry wood, moisture
         # and ash, and is the whole reason an oak log can burn.
@@ -298,10 +304,7 @@ def tool_describe_world(args: dict[str, Any]) -> dict[str, Any]:
             "joints": len(entry.get("joints", [])),
             "what_has_happened": entry["story"][-20:]}
     if entry.get("interactions"):
-        said["things_a_person_uses"] = [
-            {"object": p["object"], "template": p["template"], "parts": p["parts"],
-             "draws": p["draw"]["part"], "shoots": p["projectile"]}
-            for p in entry["interactions"]]
+        said["things_a_person_uses"] = [_use_said(p) for p in entry["interactions"]]
     if _has_terrain(entry):
         report = world.environment_report()
         said["ground"] = _ground_said(report)
@@ -695,6 +698,10 @@ def _rebuild(entry: dict[str, Any], scene: dict[str, Any], world_id: str,
     entry["world"], entry["scene"] = fresh, scene
     if old is not None:
         old.close()
+    # Where every body stands as the world opens: a point declared on one is
+    # kept in its own frame, and the room is told where that is as built.
+    entry["poses"] = ({b.name: (list(b.position_m), list(b.orientation_wxyz)) for b in fresh.bodies()}
+                      if fresh is not None else {})
     kept: list[dict[str, Any]] = []
     lost: list[str] = []
     for record in joints:
@@ -721,6 +728,17 @@ def _rebuild(entry: dict[str, Any], scene: dict[str, Any], world_id: str,
             lost += dropped
             if dropped:
                 entry["scene"] = dict(scene, blades=armed)
+    # And the points of tools that dig (see tool_tool_point), the same way.
+    points = list(scene.get("tool_points") or [])
+    if points:
+        if fresh is None:
+            lost += [f"the point on {p['body']}: the world is empty" for p in points]
+            entry["scene"] = {k: v for k, v in entry["scene"].items() if k != "tool_points"}
+        else:
+            armed, dropped = _arm_tool_points(fresh, points)
+            lost += dropped
+            if dropped:
+                entry["scene"] = dict(entry["scene"], tool_points=armed)
     # And how the things in it are used, held to what is built now.
     _recheck_interactions(entry)
     return lost
@@ -841,17 +859,22 @@ def tool_remove_object(args: dict[str, Any]) -> dict[str, Any]:
                if h.get("target") == name or h.get("target") in gone]
     block["gas_regions"] = [r for r in block.get("gas_regions", []) if r not in regions]
     block["heaters"] = [h for h in block.get("heaters", []) if h not in heaters]
-    # And an edge on it.
+    # And an edge on it, and a point.
     edges = [b for b in entry["scene"].get("blades") or [] if b.get("body") == name]
+    points = [p for p in entry["scene"].get("tool_points") or [] if p.get("body") == name]
     scene = _with_thermo(dict(entry["scene"], bodies=kept,
                               blades=[b for b in entry["scene"].get("blades") or []
-                                      if b.get("body") != name]), block)
+                                      if b.get("body") != name],
+                              tool_points=[p for p in entry["scene"].get("tool_points") or []
+                                           if p.get("body") != name]), block)
     lost = _rebuild(entry, scene, world_id, joints)
     answer: dict[str, Any] = {"removed": name, "objects": _describe(entry["world"])}
     if held:
         answer["joints_removed_with_it"] = [_joint_words(r) for r in held]
     if edges:
         answer["edge_removed_with_it"] = f"the edge on {name}"
+    if points:
+        answer["point_removed_with_it"] = f"the point on {name}"
     if regions or heaters:
         answer["heat_removed_with_it"] = ([f"gas region {r['name']}" for r in regions] +
                                           [f"heater on {h['target']}" for h in heaters])
@@ -1138,6 +1161,9 @@ def tool_turn_object(args: dict[str, Any]) -> dict[str, Any]:
     if any(b.get("body") == name for b in entry["scene"].get("blades") or []):
         raise Refused(f"{name} has an edge, and the edge is where it is on it: take it by "
                       f"its grip with wield to hold it another way")
+    if any(p.get("body") == name for p in entry["scene"].get("tool_points") or []):
+        raise Refused(f"{name} has a point that digs, and the point is where it is on it: take "
+                      f"it by its grip with wield to hold it another way")
     stand = str(args.get("stand") or "upright").strip().lower()
     if stand not in ("upright", "lying"):
         raise Refused(f"stand is 'upright' (its longest side vertical) or 'lying' (its "
@@ -1267,6 +1293,7 @@ def tool_clear_world(args: dict[str, Any]) -> dict[str, Any]:
     scene = dict(entry["scene"], bodies=[])
     scene.pop("thermo", None)
     scene.pop("blades", None)
+    scene.pop("tool_points", None)
     entry["scene"] = scene
     entry["joints"] = []
     # And how anything in it was used: there is nothing left to use.
@@ -1594,7 +1621,17 @@ def _authored_joints(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def _profile_checked(entry: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]:
     """A profile held to the rules against what is built. Raises ValueError."""
     return interaction_profiles.check(profile, {b["name"] for b in entry["scene"]["bodies"]},
-                                      _authored_joints(entry.get("joints", [])))
+                                      _authored_joints(entry.get("joints", [])),
+                                      points={p.get("body") for p in
+                                              entry["scene"].get("tool_points") or []})
+
+
+def _use_said(profile: dict[str, Any]) -> dict[str, Any]:
+    """A thing a person uses, in a line: what it is, how, and what it is made of."""
+    said = {"object": profile["object"], "template": profile["template"], "parts": profile["parts"]}
+    if profile["template"] == "swing-and-lever":
+        return {**said, "swings": profile["tool"]}
+    return {**said, "draws": profile["draw"]["part"], "shoots": profile["projectile"]}
 
 
 def _recheck_interactions(entry: dict[str, Any]) -> None:
@@ -1639,14 +1676,28 @@ def tool_interaction(args: dict[str, Any]) -> dict[str, Any]:
         checked = _profile_checked(entry, profile)
     except ValueError as problem:
         raise Refused(str(problem)) from None
-    draw = profile["draw"]
-    checked["draw"]["max_m"] = _number(draw.get("max_m", 0.45), "draw max_m", 0.02, 3.0)
-    checked["draw"]["speed_m_s"] = _number(draw.get("speed_m_s", 0.4), "draw speed_m_s",
-                                           0.01, 5.0)
+    if checked["template"] == "draw-and-release":
+        draw = profile["draw"]
+        checked["draw"]["max_m"] = _number(draw.get("max_m", 0.45), "draw max_m", 0.02, 3.0)
+        checked["draw"]["speed_m_s"] = _number(draw.get("speed_m_s", 0.4), "draw speed_m_s",
+                                               0.01, 5.0)
     # One profile to an object: said again, it is what it says now.
     entry["interactions"] = [p for p in entry.get("interactions", [])
                              if p["object"] != checked["object"]] + [checked]
     answer: dict[str, Any] = dict(checked)
+    if checked["template"] == "swing-and-lever":
+        answer["how_a_person_uses_it"] = (
+            f"In the playground a person takes {checked['object']} up with E on any of its "
+            f"parts, by the grip its point was given with, and clicks the left mouse button "
+            f"to swing it: the hand raises it back over their shoulder and brings its point "
+            f"down where the crosshair meets the ground, with an 800 N hand and a 60 N m "
+            f"wrist, and the ground decides how far it goes in. With the point in the ground "
+            f"the right mouse button levers it -- turned about where it went in -- and draws "
+            f"it out, breaking out what the pry can; what comes loose is carried. E puts it "
+            f"down.")
+        if args.get("trial", True):
+            answer["trial"] = _trial_swing(entry, checked)
+        return answer
     answer["how_a_person_uses_it"] = (
         f"In the playground a person takes {checked['object']} up with E on any of its "
         f"parts, holds the left mouse button to draw {checked['draw']['part']} back -- with "
@@ -1681,7 +1732,7 @@ def _trial(entry: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]:
                 names |= ends
                 grew = True
     scene = {k: v for k, v in entry["scene"].items()
-             if k not in ("bodies", "blades", "thermo", "terrain", "water")}
+             if k not in ("bodies", "blades", "thermo", "terrain", "water", "tool_points")}
     scene["bodies"] = [b for b in entry["scene"]["bodies"] if b["name"] in names]
     try:
         world = banjo.World(scene, cell_size_m=entry["cell_m"])
@@ -1701,6 +1752,159 @@ def _trial(entry: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]:
         WORLDS.pop(scratch, None)
         world.close()
     said["computing_took_s"] = round(clock.perf_counter() - began, 2)
+    return said
+
+
+def _trial_swing(entry: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]:
+    """Swing it at the ground and pry it, as a person would, in a scratch world.
+
+    Never the world it was built in: a scratch world opened from what was
+    built -- the tool, whatever is joined to it, and the ground with every edit
+    made to it -- so what is tried is the tool as built on the ground as it is,
+    and nothing a caller holds is touched. The hand takes it by its grip, holds
+    it ready in front of a person, swings its point down on the nearest level
+    soil and pries it out, then swings it at the nearest level bare rock: what
+    the ground did each time is ground-work-v1's, measured off the solver.
+    """
+    import time as clock
+    began = clock.perf_counter()
+    if not entry["scene"].get("terrain"):
+        return {"tried": False,
+                "why": "there is no ground here to swing it at: make_terrain gives the world "
+                       "ground, and a clearing has soil and rock side by side"}
+    names = set(profile["parts"])
+    joins = {b.get("join") for b in entry["scene"]["bodies"] if b["name"] in names and b.get("join")}
+    names |= {b["name"] for b in entry["scene"]["bodies"] if b.get("join") and b["join"] in joins}
+    grew = True
+    while grew:
+        grew = False
+        for record in entry.get("joints", []):
+            ends = {record["args"].get("a"), record["args"].get("b")}
+            if ends & names and not ends <= names:
+                names |= ends
+                grew = True
+    scene = {k: v for k, v in entry["scene"].items()
+             if k not in ("bodies", "blades", "thermo", "water", "tool_points")}
+    scene["bodies"] = [b for b in entry["scene"]["bodies"] if b["name"] in names]
+    points = [p for p in entry["scene"].get("tool_points") or [] if p.get("body") in names]
+    try:
+        world = banjo.World(scene, cell_size_m=entry["cell_m"])
+    except banjo.BanjoError as error:
+        return {"tried": False, "why": f"it would not open on its own: {error}"}
+    scratch = "trial-" + uuid.uuid4().hex[:8]
+    WORLDS[scratch] = {"world": world, "scene": scene, "cell_m": entry["cell_m"],
+                       "story": [], "joints": [], "next_joint": 1, "carried": {}}
+    try:
+        for record in entry.get("joints", []):
+            if {record["args"].get("a"), record["args"].get("b")} <= names:
+                MAKE_JOINT[record["tool"]]({**record["args"], "world_id": scratch})
+        _, dropped = _arm_tool_points(world, points)
+        said = ({"tried": False, "why": "; ".join(dropped)} if dropped
+                else _swing_and_pry(world, profile["tool"]))
+    except (Refused, banjo.BanjoError) as problem:
+        said = {"tried": False, "why": str(problem)}
+    finally:
+        WORLDS.pop(scratch, None)
+        world.close()
+    said["computing_took_s"] = round(clock.perf_counter() - began, 2)
+    return said
+
+
+def _trial_targets(world: banjo.World, near: list[float]) -> dict[str, list[float] | None]:
+    """The nearest level soil deep enough for a point to go into, and the
+    nearest level bare rock, to `near` -- each the same for a quarter metre all
+    round, so a swing at one does not land on the step between them. Within
+    4 m, and not right under it. None where there is none."""
+    def kind(here: dict[str, Any]) -> str | None:
+        if not here.get("on_the_ground") or here.get("water") or here.get("slope_deg", 90.0) > 5.0:
+            return None
+        if here.get("surface") == "rock":
+            return "rock"
+        return "soil" if float(here["ground_m"]) - float(here["rock_top_m"]) >= 0.3 else None
+
+    found: dict[str, list[float] | None] = {"soil": None, "rock": None}
+    spots = sorted(((near[0] + 0.2 * i, near[2] + 0.2 * j) for i in range(-20, 21)
+                    for j in range(-20, 21)),
+                   key=lambda s: (math.hypot(s[0] - near[0], s[1] - near[2]), s))
+    for x, z in spots:
+        distance = math.hypot(x - near[0], z - near[2])
+        if distance < 0.6 or distance > 4.0:
+            continue
+        here = world.survey(x, z)
+        what = kind(here)
+        if what is None or found[what] is not None:
+            continue
+        if all(kind(world.survey(x + dx, z + dz)) == what
+               for dx, dz in ((0.25, 0.0), (-0.25, 0.0), (0.0, 0.25), (0.0, -0.25))):
+            found[what] = [round(x, 3), float(here["ground_m"]), round(z, 3)]
+        if found["soil"] is not None and found["rock"] is not None:
+            break
+    return found
+
+
+def _swing_and_pry(world: banjo.World, tool: str) -> dict[str, Any]:
+    """The trial, measured off the engine: into soil and pried out, then onto
+    rock -- each swung from where a person would stand, with the hand the room
+    gives them."""
+    events: list[dict[str, Any]] = []
+    dt = TRIAL_STEP_S
+    passed = 0.0
+
+    def advance(seconds: float) -> None:
+        nonlocal passed
+        for _ in range(int(round(seconds / dt))):
+            _step_answering(world, events)
+            passed += dt
+
+    # Standing, as a room has stood before anyone walks up to it.
+    advance(0.5)
+    point = next((p for p in world.tool_points() if p.body == tool and p.attached), None)
+    body = world.body(tool)
+    if point is None or body is None:
+        return {"tried": False, "why": f"{tool} is not there to try"}
+    targets = _trial_targets(world, list(point.grip_m))
+    if targets["soil"] is None and targets["rock"] is None:
+        return {"tried": False, "why": "there is no level soil or bare rock within 4 m of it to "
+                                       "swing it at"}
+    world.wield(tool, list(point.grip_m))
+    said: dict[str, Any] = {"tried": True, "tool": tool, "mass_kg": round(body.mass_kg, 3)}
+    for what in ("soil", "rock"):
+        at = targets[what]
+        if at is None:
+            said[f"into_{what}"] = f"there is no level {what} within 4 m of it to try"
+            continue
+        shoulder = _shoulder_for(world, at, list(world.hand().grip_m))
+        ux, uz = at[0] - shoulder[0], at[2] - shoulder[2]
+        size = math.hypot(ux, uz) or 1.0
+        # Taken up and held ready in front of the shoulder, as a person does.
+        world.move_held([shoulder[0] + READY_OUT_M * ux / size, shoulder[1] - READY_DOWN_M,
+                         shoulder[2] + READY_OUT_M * uz / size])
+        advance(1.0)
+        world.forget_ground_work()
+        try:
+            world.strike(at, shoulder, 4.0, 110.0, False, 40.0, 3.0)
+        except banjo.BanjoError as error:
+            said[f"into_{what}"] = f"the swing was refused: {error}"
+            continue
+        took, ended = _play_stroke(world, events, 6.0, 0.5)
+        passed += took
+        trial: dict[str, Any] = {"at_m": at, "standing_m": [round(shoulder[0], 3), round(shoulder[2], 3)],
+                                 "stroke_ended": ended}
+        work = world.ground_work()
+        trial["swung"] = [_ground_work_said(w) for w in work] or "its point met no ground"
+        if what == "soil" and any(w.open for w in work):
+            world.strike(None, shoulder, 1.2, 0.0, True, 40.0, 3.0)
+            took, trial["lever_ended"] = _play_stroke(world, events, 6.0, 0.3)
+            passed += took
+            if world.held and any(w.open for w in world.ground_work()):
+                passed += _pull_out(world, events)
+                trial["then"] = "drawn straight up out of the ground"
+            trial["levered"] = [_ground_work_said(w) for w in world.ground_work()]
+        said[f"into_{what}"] = trial
+    body = world.body(tool)
+    said["tool_whole"] = body is not None
+    said["what_broke"] = events or None
+    said["simulated_s"] = round(passed, 2)
     return said
 
 
@@ -1918,6 +2122,14 @@ def tool_duplicate(args: dict[str, Any]) -> dict[str, Any]:
              if b.get("body") in renamed]
     if edges:
         scene["blades"] = list(was_scene.get("blades") or []) + edges
+    # And the points of tools that dig: kept in their bodies' own frames, so a
+    # copy's point is where the original's is on it. Where it is as built moves
+    # with the copy.
+    points = [dict(p, body=renamed[p["body"]],
+                   tip_m=moved(p["tip_m"]), grip_m=moved(p["grip_m"]))
+              for p in was_scene.get("tool_points") or [] if p.get("body") in renamed]
+    if points:
+        scene["tool_points"] = list(was_scene.get("tool_points") or []) + points
     lost = _rebuild(entry, scene, world_id)
 
     made: list[dict[str, Any]] = []
@@ -2787,6 +2999,340 @@ def tool_swing(args: dict[str, Any]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Tools that work the ground (docs/ground-work.md)
+# ---------------------------------------------------------------------------
+#
+# A point on a body -- a pick's, a stake's -- that can go into the ground. What
+# the ground does about it is ground-work-v1, a DECLARED model from the ground's
+# own materials and the point's shape, applied in the solver: nothing here says
+# how deep anything goes or how much comes loose. Kept with its body like an
+# edge, so a rebuild puts it back and the room is opened with it.
+
+# Where a person swinging a pick has their shoulder: 1.45 m over the ground they
+# stand on (the room's eyes are at 1.62 m), standing 1.2 m back from where the
+# point comes down -- an 0.8 m haft at arm's length, as the engine's own swing
+# is measured (tests/ground_work_tests.cpp). And where the grip is held ready in
+# front of that shoulder before a swing: 0.54 m out and 0.43 m down.
+SHOULDER_M = 1.45
+STAND_BACK_M = 1.2
+READY_OUT_M, READY_DOWN_M = 0.54, 0.43
+# The wrist a swing is made with: LiveWorld's hand torque.
+HAND_TORQUE_N_M = 60.0
+
+
+def _one_piece(entry: dict[str, Any], name: str) -> str:
+    """The body a scene object is part of: itself, or -- joined -- the one piece
+    its join group is built as, which the world names after its first part."""
+    body = next((b for b in entry["scene"]["bodies"] if b["name"] == name), None)
+    if body is None or not body.get("join"):
+        return name
+    return next(b["name"] for b in entry["scene"]["bodies"] if b.get("join") == body["join"])
+
+
+def _tool_point_record(entry: dict[str, Any], world: banjo.World,
+                       point_id: int) -> dict[str, Any] | None:
+    """A point as its body carries it -- in the body's own frame, for a rebuild
+    -- and where that is on the body as it was built, for the room."""
+    point = next((p for p in world.tool_points() if p.id == point_id), None)
+    body = world.body(point.body) if point is not None else None
+    if point is None or body is None:
+        return None
+    turn = list(body.orientation_wxyz)
+    inverse = _qconj(turn)
+    tip = _to_body(body, point.tip_m)
+    pointing = _qrot(inverse, list(point.pointing))
+    grip = _to_body(body, point.grip_m)
+    at, facing = (entry.get("poses") or {}).get(point.body) or (list(body.position_m), turn)
+
+    def built(local: list[float]) -> list[float]:
+        return [round(c + r, 6) for c, r in zip(at, _qrot(facing, local))]
+
+    return {"body": point.body,
+            "tip_local_m": [round(v, 6) for v in tip],
+            "pointing_local": [round(v, 6) for v in pointing],
+            "grip_local_m": [round(v, 6) for v in grip],
+            "tip_m": built(tip), "pointing": [round(v, 6) for v in _qrot(facing, pointing)],
+            "grip_m": built(grip),
+            "width_m": point.width_m, "thickness_m": point.thickness_m,
+            "angle_deg": point.angle_deg, "length_m": point.length_m}
+
+
+def _arm_tool_points(world: banjo.World,
+                     points: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:
+    """Put every kept point back on its body, where that body is now."""
+    kept: list[dict[str, Any]] = []
+    lost: list[str] = []
+    for record in points:
+        body = world.body(str(record.get("body", "")))
+        if body is None:
+            lost.append(f"the point on {record.get('body')}: there is nothing called that now")
+            continue
+        try:
+            world.tool_point(record["body"], _from_body(body, record["tip_local_m"]),
+                             _qrot(list(body.orientation_wxyz), record["pointing_local"]),
+                             float(record["width_m"]), float(record["thickness_m"]),
+                             float(record["angle_deg"]), float(record["length_m"]),
+                             _from_body(body, record["grip_local_m"]))
+        except banjo.BanjoError as error:
+            lost.append(f"the point on {record['body']}: {error}")
+            continue
+        kept.append(record)
+    return kept, lost
+
+
+def _tool_point_said(point: banjo.ToolPoint) -> dict[str, Any]:
+    return {"id": point.id, "body": point.body, "material": point.material,
+            "tip_m": [round(v, 4) for v in point.tip_m],
+            "pointing": [round(v, 4) for v in point.pointing],
+            "grip_m": [round(v, 4) for v in point.grip_m],
+            "width_mm": round(1000.0 * point.width_m, 1),
+            "thickness_mm": round(1000.0 * point.thickness_m, 1),
+            "angle_deg": round(point.angle_deg, 1),
+            "length_mm": round(1000.0 * point.length_m, 1),
+            "in": point.in_ or "nothing",
+            "depth_mm": round(1000.0 * point.depth_m, 1),
+            "attached": point.attached}
+
+
+def _ground_work_said(w: banjo.GroundWork) -> dict[str, Any]:
+    """One meeting of a point with the ground, in words and the engine's numbers."""
+    said: dict[str, Any] = {"tool": w.tool, "ground": w.ground, "what_happened": w.kind,
+                            "supported": w.supported, "at_m": [round(v, 3) for v in w.at_m],
+                            "arrived_m_s": round(w.closing_speed_m_s, 2), "model": w.model}
+    if w.why:
+        said["why"] = w.why
+    if w.kind in ("stopped", "glanced", "not supported"):
+        return said
+    said.update({
+        "went_in_mm": round(1000.0 * w.depth_m, 1),
+        "sideways_mm": round(1000.0 * w.sideways_m, 1),
+        # Measured off the solver: the ground's push on the point, all of it.
+        "work_j": round(w.work_j, 3),
+        "of_it_going_in_j": round(w.penetration_work_j, 3),
+        "of_it_prying_j": round(w.breakout_work_j, 3),
+        "impulse_n_s": round(w.impulse_n_s, 3),
+        "peak_force_n": round(w.peak_force_n, 1),
+        # The model's own numbers at the deepest it went.
+        "the_ground_resisted_it_going_in_n": round(w.resistance_n, 1),
+        "a_pry_there_meets_n": round(w.passive_n, 1),
+        "loosened_litres": round(1000.0 * w.loosened_m3, 3),
+        "loosened_kg": round(w.loosened_kg, 3),
+        "still_in_the_ground": w.open,
+        "tool_whole": w.tool_whole,
+        "tool_dent_mm": round(1000.0 * w.tool_dent_m, 2)})
+    return said
+
+
+def _ground_work_words(w: banjo.GroundWork) -> str:
+    """One meeting, in a few words: for the story, and for the person."""
+    if w.kind in ("stopped", "glanced", "not supported"):
+        return f"{w.kind} on {w.ground}"
+    out = f"went {1000.0 * w.depth_m:.0f} mm into the {w.ground}"
+    if w.loosened_m3 > 0.0:
+        out += f" and broke out {1000.0 * w.loosened_m3:.2f} L ({w.loosened_kg:.2f} kg)"
+    return out
+
+
+def _shoulder_for(world: banjo.World, towards: list[float], grip: list[float],
+                  standing: Any = None) -> list[float]:
+    """The shoulder of a person using a tool on `towards`: SHOULDER_M over the
+    ground where they stand -- `standing` [x, z], or STAND_BACK_M back from
+    `towards` on the way to the grip."""
+    if standing is not None:
+        sx, sz = _xz(standing, "standing_m")
+    else:
+        dx, dz = towards[0] - grip[0], towards[2] - grip[2]
+        size = math.hypot(dx, dz)
+        ux, uz = (dx / size, dz / size) if size > 0.05 else (1.0, 0.0)
+        sx, sz = towards[0] - STAND_BACK_M * ux, towards[2] - STAND_BACK_M * uz
+    here = world.survey(sx, sz)
+    ground = float(here["ground_m"]) if here.get("on_the_ground") else float(towards[1])
+    return [sx, ground + SHOULDER_M, sz]
+
+
+def _play_stroke(world: banjo.World, events: list[dict[str, Any]], most_s: float,
+                 then_s: float) -> tuple[float, str]:
+    """Step until the hand's stroke is over; then hold the grip where it is -- as
+    a person stops pushing once the blow has landed -- and run `then_s` more.
+    Returns the seconds stepped and how the stroke ended."""
+    dt = 1.0 / 240.0
+    passed = 0.0
+    while passed < most_s and world.hand().stroking:
+        _step_answering(world, events)
+        passed += dt
+    ended = world.hand().stroke_ended
+    if world.held:
+        world.move_held(list(world.hand().grip_m))
+    for _ in range(int(round(then_s / dt))):
+        _step_answering(world, events)
+        passed += dt
+    return passed, ended
+
+
+def _pull_out(world: banjo.World, events: list[dict[str, Any]]) -> float:
+    """Draw what is held straight up out of the ground, 0.4 m, the way a person
+    pulls a pick out when the lever's own lift did not bring it out."""
+    grip = list(world.hand().grip_m)
+    world.stroke([grip, [grip[0], grip[1] + 0.4, grip[2]]], 0.6, 4.0, 0.05, False, 3.0)
+    return _play_stroke(world, events, 4.0, 0.3)[0]
+
+
+def tool_tool_point(args: dict[str, Any]) -> dict[str, Any]:
+    """Give a body a point that can go into the ground. docs/ground-work.md."""
+    world_id = str(args.get("world_id"))
+    entry = _world(world_id)
+    world: banjo.World = _live(entry)
+    asked = str(args.get("body", ""))
+    name = _one_piece(entry, asked)
+    tip = _triple(args.get("tip_m"), "tip_m", -200.0, 200.0)
+    pointing = _triple(args.get("pointing"), "pointing", -1e6, 1e6)
+    grip = _triple(args.get("grip_m") or tip, "grip_m", -200.0, 200.0)
+    sizes = (_number(args.get("width_m", 0.04), "width_m", 0.002, 0.5),
+             _number(args.get("thickness_m", 0.04), "thickness_m", 0.002, 0.5),
+             _number(args.get("angle_deg", 30.0), "angle_deg", 5.0, 170.0),
+             _number(args.get("length_m", 0.15), "length_m", 0.01, 1.0))
+    had = [p for p in entry["scene"].get("tool_points") or [] if p.get("body") == name]
+    others = [p for p in entry["scene"].get("tool_points") or [] if p.get("body") != name]
+    if had:
+        # One point to a tool: said again, it is what it says now. The old one
+        # comes off by opening the world again without it.
+        _rebuild(entry, dict(entry["scene"], tool_points=others), world_id)
+        world = _live(entry)
+    try:
+        point_id = world.tool_point(name, tip, pointing, *sizes, grip)
+    except banjo.BanjoError as error:
+        if had:
+            _rebuild(entry, dict(entry["scene"], tool_points=others + had), world_id)
+        raise Refused(str(error)) from None
+    record = _tool_point_record(entry, world, point_id)
+    if record is not None:
+        scene = dict(entry["scene"], tool_points=others + [record])
+        check = entry.get("check")
+        if check is not None:
+            try:
+                check(scene, entry.get("joints", []))
+            except ValueError as problem:
+                # The world has the point and the document must not.
+                _rebuild(entry, dict(entry["scene"], tool_points=others + had), world_id)
+                raise Refused(str(problem)) from None
+        entry["scene"] = scene
+    entry["story"].append(f"gave {name} a point that can go into the ground")
+    point = next(p for p in world.tool_points() if p.id == point_id)
+    answer: dict[str, Any] = {"tool_point": point_id, **_tool_point_said(point)}
+    if asked != name:
+        answer["one_piece"] = (f"{asked} is built as one piece with everything joined with it, and "
+                               f"the world calls that piece {name}: the point is on {name}")
+    body = world.body(name)
+    if body is not None:
+        # What a hand makes of it: the engine's own mass, and its weight's pull
+        # about the grip with the haft held level -- which the wrist has to hold.
+        lever = math.dist(point.grip_m, body.position_m)
+        about = body.mass_kg * 9.80665 * lever
+        answer["mass_kg"] = round(body.mass_kg, 3)
+        answer["its_weight_about_the_grip_n_m"] = round(about, 2)
+        if about > HAND_TORQUE_N_M or body.mass_kg >= HAND_LIFTS_KG:
+            answer["too_heavy_to_swing"] = (
+                f"held level by its grip its weight pulls {about:.0f} N m, and the hand's wrist "
+                f"holds {HAND_TORQUE_N_M:g} N m with {HAND_STRENGTH_N:g} N: a swing would droop "
+                f"and miss. Make it lighter, or the haft shorter.")
+    answer["note"] = (f"{name} has a point. Swung point first into soil it goes in as far as the "
+                      f"soil's bearing resistance lets the swing's energy take it; pried, it "
+                      f"breaks the soil out, and what comes loose is carried. Rock at least as "
+                      f"hard as the point stops it. That is ground-work-v1, a declared model "
+                      f"from the ground's own density, friction angle and cohesion "
+                      f"(docs/ground-work.md). From now on the body collides as its cells. "
+                      f"Take it by the grip with `wield` and use `strike`; `interaction` with "
+                      f"template swing-and-lever gives a person its controls.")
+    return answer
+
+
+def tool_strike(args: dict[str, Any]) -> dict[str, Any]:
+    """Swing the wielded tool's point down on the ground, or lever it out."""
+    import time as clock
+    world_id = str(args.get("world_id"))
+    entry = _world(world_id)
+    world = _require_terrain(entry)
+    held = world.held
+    if not held:
+        raise Refused("nothing is held: take the tool by its grip with wield first")
+    point = next((p for p in world.tool_points() if p.body == held and p.attached), None)
+    if point is None:
+        raise Refused(f"{held} has no point that can go into the ground: give it one with "
+                      f"tool_point")
+    lever = bool(args.get("lever"))
+    grip = list(world.hand().grip_m)
+    target = None
+    if lever:
+        towards = list(point.tip_m)
+    else:
+        if point.in_:
+            raise Refused(f"the point of {held} is in the {point.in_}: lever it out first "
+                          f"(strike with lever true)")
+        at = _xz(args.get("at_m"), "at_m")
+        here = world.survey(at[0], at[1])
+        if not here.get("on_the_ground"):
+            raise Refused("that point is off the edge of the ground")
+        target = [at[0], float(here["ground_m"]), at[1]]
+        towards = target
+    shoulder = _shoulder_for(world, towards, grip, args.get("standing_m"))
+    speed = _number(args.get("speed_m_s", 1.2 if lever else 4.0), "speed_m_s", 0.3, 12.0)
+    raise_deg = _number(args.get("raise_deg", 0.0 if lever else 110.0), "raise_deg", 0.0, 170.0)
+    lever_deg = _number(args.get("lever_deg", 40.0), "lever_deg", 5.0, 80.0)
+    world.forget_ground_work()
+    try:
+        world.strike(target, shoulder, speed, raise_deg, lever, lever_deg, 3.0)
+    except banjo.BanjoError as error:
+        raise Refused(str(error)) from None
+    events: list[dict[str, Any]] = []
+    began = clock.perf_counter()
+    simulated, ended = _play_stroke(world, events, 6.0, 0.5)
+    pulled = False
+    if lever and world.held and any(w.open for w in world.ground_work()):
+        simulated += _pull_out(world, events)
+        pulled = True
+    work = world.ground_work()
+    # What came loose went out through the ground's own dig: kept as the edit it
+    # was, so the world opened again has the same hole and carries the same.
+    for w in work:
+        if w.dug is not None and not w.open:
+            _record_edit(entry, {"dig": dict(w.dug)})
+    entry["story"].append(
+        (f"levered {held}" if lever else f"swung {held} at [{target[0]:.2f}, {target[2]:.2f}]")
+        + (": " + "; ".join(_ground_work_words(w) for w in work) if work else ": it met no ground"))
+    answer: dict[str, Any] = {"levered" if lever else "struck": held}
+    if target is not None:
+        answer["at_m"] = [round(v, 3) for v in target]
+    answer.update({
+        "shoulder_m": [round(v, 3) for v in shoulder],
+        "stroke_ended": ended,
+        "ground_work": [_ground_work_said(w) for w in work] or "its point met no ground",
+        "carried": {m: round(v["kilograms"], 3) for m, v in sorted(_all_carried(entry).items())},
+        "what_broke": events or None,
+        "simulated_s": round(simulated, 3),
+        "computing_took_s": round(clock.perf_counter() - began, 2)})
+    if pulled:
+        answer["then"] = ("the lever's own lift did not bring the point out, so the hand drew it "
+                          "straight up out of the ground")
+    answer["note"] = ("work, impulse and peak force are measured off the solver; what the ground "
+                      "resisted with is ground-work-v1's own number (declared, docs/ground-work.md). "
+                      "This is your copy: the person swings for themselves in theirs.")
+    return answer
+
+
+def tool_ground_work(args: dict[str, Any]) -> dict[str, Any]:
+    world: banjo.World = _live(_world(args.get("world_id")))
+    work = world.ground_work()
+    points = world.tool_points()
+    return {"ground_work": [_ground_work_said(w) for w in work] or
+                           "no point has met the ground since the last strike",
+            "tool_points": [_tool_point_said(p) for p in points] or
+                           "no body in this world has a point that can go into the ground",
+            "note": "every meeting is listed, including the ones that did nothing and why; work "
+                    "and forces are measured off the solver, resistances are ground-work-v1's own "
+                    "(declared, docs/ground-work.md)"}
+
+
+# ---------------------------------------------------------------------------
 # Terrain and water
 # ---------------------------------------------------------------------------
 #
@@ -2796,7 +3342,7 @@ def tool_swing(args: dict[str, Any]) -> dict[str, Any]:
 # room gets it in the spec it opens from. What the ground is and what the water
 # does is the engine's: nothing here sets a level, a speed or a slope.
 
-TERRAIN_KINDS = ["valley", "basin", "channel", "flat"]
+TERRAIN_KINDS = ["valley", "basin", "channel", "flat", "clearing"]
 # What a spade takes out of the ground and a heap puts back. How much of each is
 # carried is the ground's own account, kept by the engine: see _ground_carried.
 GROUND_MATERIALS = ("sand", "soil")
@@ -3148,10 +3694,18 @@ def tool_make_terrain(args: dict[str, Any]) -> dict[str, Any]:
     water = _water_said(entry["world"], full=True)
     if water:
         answer["water"] = water
-    answer["note"] = ("Made by physics once and saved: drainage decided where the river runs, "
-                      "erosion wore its channel and laid sand along it. Heights here are not flat: "
-                      "use survey to find the ground and the water anywhere, and every object added "
-                      "is set ON the ground if it was asked for inside it. The river runs along x.")
+    if kind == "clearing":
+        answer["note"] = ("Level and dry: the soil's surface is at y = 0, 0.4 m of soil over rock, "
+                          f"and a slab of bare rock stands {0.12:g} m proud of it, 1.6 m by 1.2 m, "
+                          "centred at [1.6, -1.2]. survey says which is which anywhere. A point that "
+                          "goes into the ground (tool_point) goes into the soil and is stopped by "
+                          "the rock; every object added is set ON the ground if it was asked for "
+                          "inside it.")
+    else:
+        answer["note"] = ("Made by physics once and saved: drainage decided where the river runs, "
+                          "erosion wore its channel and laid sand along it. Heights here are not flat: "
+                          "use survey to find the ground and the water anywhere, and every object added "
+                          "is set ON the ground if it was asked for inside it. The river runs along x.")
     if lost:
         answer["joints_lost"] = lost
     return answer
@@ -3434,6 +3988,13 @@ OBJECT_SCHEMA = {
         "temperature_k": {"type": "number",
                           "description": "How hot it starts, in kelvin. Left out, it is at "
                                          "room temperature, 293 K."},
+        "join": {"type": "string",
+                 "description": "Build it into ONE PIECE with every other object given the same "
+                                "join name: their cells are unioned and bonded across the seam, so "
+                                "a pick's haft and its arm are one body that moves, and breaks, as "
+                                "one. Give the first part the join name too; the world calls the "
+                                "piece by the FIRST part's name. Parts that only touch are two "
+                                "things."},
     },
     "required": ["shape", "material", "size_m"],
 }
@@ -3807,36 +4368,45 @@ TOOLS = [
          "member": MEMBER}}},
     {"name": "interaction",
      "description": "Say how a PERSON USES something you built, so the playground gives "
-                    "them its controls -- and try it. So far one kind, draw-and-release: "
-                    "a bow, or anything whose energy is stored by drawing one part back "
-                    "against elastic joints and spent when the hand lets go. Name its "
-                    "parts, the part the hand draws and the way it comes back, the "
-                    "ONE-WAY fixing (`fix` with comes_off_n) that holds what is shot, "
-                    "the elastics (`spring`) that store the draw, and the projectile. "
-                    "Never a speed: what it shoots with comes out of the limbs. It is "
-                    "checked against what is built -- a part that is not there, a nock "
-                    "that holds both ways or lets go backwards, a limb that is not an "
-                    "elastic are refused -- and then TRIED in a scratch world with a "
-                    "person's 800 N hand: drawn, held, loosed, and what the limbs held "
-                    "and what the projectile left with come back, with `sound` false "
-                    "and why when the engine did not follow the shot. It is kept "
-                    "through every change to the world and withdrawn, with the reason, "
-                    "if what it names is taken away.",
+                    "them its controls -- and try it. Two kinds. draw-and-release: a bow, "
+                    "or anything whose energy is stored by drawing one part back against "
+                    "elastic joints and spent when the hand lets go. Name its parts, the "
+                    "part the hand draws and the way it comes back, the ONE-WAY fixing "
+                    "(`fix` with comes_off_n) that holds what is shot, the elastics "
+                    "(`spring`) that store the draw, and the projectile. swing-and-lever: "
+                    "a pick, or any tool with a point (`tool_point`) swung so the point "
+                    "comes down on the ground and pried to break the ground out. Name its "
+                    "parts and the `tool`, the body with the point. Never a speed: what a "
+                    "bow shoots with comes out of its limbs, and how far a point goes in "
+                    "is the ground's. It is checked against what is built -- a part that "
+                    "is not there, a nock that holds both ways or lets go backwards, a limb "
+                    "that is not an elastic, a tool with no point are refused -- and then "
+                    "TRIED in a scratch world with a person's 800 N hand: a bow drawn, held "
+                    "and loosed, with what the limbs held and what the projectile left with "
+                    "(`sound` false and why when the engine did not follow the shot); a "
+                    "tool swung into the nearest level soil and pried out, then onto the "
+                    "nearest bare rock, with how deep, the work, what came loose and what "
+                    "stopped it. It is kept through every change to the world and "
+                    "withdrawn, with the reason, if what it names is taken away.",
      "inputSchema": {"type": "object",
-                     "required": ["world_id", "object", "parts", "draw", "nock", "limbs",
-                                  "projectile"],
+                     "required": ["world_id", "object", "parts"],
                      "properties": {
          "world_id": {"type": "string"},
          "object": {"type": "string",
-                    "description": "What it is called, like 'the stiff bow'. Said again "
-                                   "for the same object, it replaces what was said."},
-         "template": {"type": "string", "enum": ["draw-and-release"],
-                      "description": "How it is used. draw-and-release, the default."},
+                    "description": "What it is called, like 'the stiff bow' or 'the pick'. "
+                                   "Said again for the same object, it replaces what was "
+                                   "said."},
+         "template": {"type": "string", "enum": ["draw-and-release", "swing-and-lever"],
+                      "description": "How it is used: draw-and-release (the default) or "
+                                     "swing-and-lever."},
          "parts": {"type": "array", "items": {"type": "string"},
                    "description": "Every body it is made of. A person takes it up by "
                                   "any of them."},
+         "tool": {"type": "string",
+                  "description": "swing-and-lever only: the part with the point, which the "
+                                 "hand takes by its grip and swings."},
          "draw": {"type": "object", "required": ["part", "axis"],
-                  "description": "What the hand draws, and how.",
+                  "description": "draw-and-release only: what the hand draws, and how.",
                   "properties": {
              "part": {"type": "string",
                       "description": "The part the hand takes and draws: the string."},
@@ -3850,21 +4420,24 @@ TOOLS = [
              "speed_m_s": {"type": "number",
                            "description": "How fast the hand draws; 0.4 by default."}}},
          "nock": {"type": "object", "required": ["a", "b"],
-                  "description": "The ONE-WAY fixing that holds what is shot on what "
-                                 "draws it, by its two ends: a = the string, b = the "
-                                 "arrow.",
+                  "description": "draw-and-release only: the ONE-WAY fixing that holds "
+                                 "what is shot on what draws it, by its two ends: a = the "
+                                 "string, b = the arrow.",
                   "properties": {"a": {"type": "string"}, "b": {"type": "string"}}},
          "limbs": {"type": "array",
                    "items": {"type": "array", "items": {"type": "string"},
                              "minItems": 2, "maxItems": 2},
-                   "description": "Each elastic that stores the draw, by its two ends, "
-                                  "like [[\"bow grip upper\", \"upper limb tip\"], "
-                                  "[\"bow grip lower\", \"lower limb tip\"]]."},
+                   "description": "draw-and-release only: each elastic that stores the "
+                                  "draw, by its two ends, like [[\"bow grip upper\", "
+                                  "\"upper limb tip\"], [\"bow grip lower\", \"lower limb "
+                                  "tip\"]]."},
          "projectile": {"type": "string",
-                        "description": "What is shot: the one the nock lets go of."},
+                        "description": "draw-and-release only: what is shot, the one the "
+                                       "nock lets go of."},
          "trial": {"type": "boolean",
-                   "description": "Try it once, drawn and loosed in a scratch world. "
-                                  "True by default."}}}},
+                   "description": "Try it once in a scratch world: a bow drawn and loosed, "
+                                  "a tool swung at soil, pried, and swung at rock. True by "
+                                  "default."}}}},
     {"name": "duplicate",
      "description": "Make ANOTHER of something already built, somewhere else, exactly: "
                     "the bodies you name, every joint between them with its points moved "
@@ -4080,12 +4653,90 @@ TOOLS = [
                          "minItems": 4, "maxItems": 4,
                          "description": "Instead of pointing and edge_facing: which way the "
                                         "held body should face, as a quaternion, w first."}}}},
+    {"name": "tool_point",
+     "description": "Give a body a POINT that can go into the ground -- a pick's, a stake's -- so "
+                    "it digs. There is no digging power: what the ground does is ground-work-v1, "
+                    "a declared model from the ground's own density, friction angle and cohesion "
+                    "and the point's shape -- Terzaghi's bearing resistance to the point going "
+                    "in, Rankine's passive resistance to it being pried -- applied in the solver. "
+                    "So a point goes into soil only as far as the swing's energy pays for, a pry "
+                    "breaks out the soil it can and what comes loose is carried, and rock at "
+                    "least as hard as the point stops it. The tip must be at the very end of the "
+                    "body's matter and `pointing` must run out of the body there; `length_m` is "
+                    "how much of the tool is point. Points are where they are in the world now; "
+                    "the point is kept with its body from then on, through the world being "
+                    "opened again, and the person's room has it. A joined part is taken as its "
+                    "whole piece. The answer says the tool's mass and its weight's pull about "
+                    "the grip, which the hand's 60 N m wrist has to hold. Take it by the grip "
+                    "with `wield` and use `strike`; `interaction` with template swing-and-lever "
+                    "gives a person its controls.",
+     "inputSchema": {"type": "object", "required": ["world_id", "body", "tip_m", "pointing"],
+                     "properties": {
+         "world_id": {"type": "string"},
+         "body": {"type": "string", "description": "The body that carries the point: the tool."},
+         "tip_m": dict(VECTOR, description="Where the tip is: at the very end of the body's "
+                                           "matter, on the face the point comes out of."),
+         "pointing": dict(VECTOR, description="The way the point goes in, out of the body at "
+                                              "the tip, like [0, -1, 0] for a point hanging "
+                                              "straight down."),
+         "grip_m": dict(VECTOR, description="Where a hand holds it: the end of the haft."),
+         "width_m": {"type": "number", "description": "Across the point's broad face; 0.04 by "
+                                                      "default."},
+         "thickness_m": {"type": "number", "description": "Through it where it is thickest; "
+                                                          "0.04 by default."},
+         "angle_deg": {"type": "number", "description": "How sharply it comes to its tip: the "
+                                                        "included angle of its wedge, 30 by "
+                                                        "default."},
+         "length_m": {"type": "number", "description": "How much of the tool is point, back "
+                                                       "from the tip; 0.15 by default. The rest "
+                                                       "meets the ground as a surface."}}}},
+    {"name": "strike",
+     "description": "Use the wielded tool's point on the ground, as a person does. A swing: give "
+                    "`at_m`, [x, z] on the ground, and the hand raises the tool back over a "
+                    "shoulder 1.45 m above the ground 1.2 m back from there (or above "
+                    "`standing_m`) and swings it round that shoulder so its point comes down on "
+                    "at_m along its own axis -- with an 800 N hand and a 60 N m wrist, so how fast "
+                    "it arrives is the hand's strength against the tool's mass, never a speed you "
+                    "give it. How far it goes in, and whether rock stops it, is the ground's. "
+                    "With `lever`, a point that is in the ground is pried -- turned about where it "
+                    "went in, the haft coming back towards the person -- and drawn up out of it: "
+                    "what the pry breaks out is carried, and the ground keeps the hole. Reports "
+                    "every meeting of the point with the ground: how deep, the work and peak force "
+                    "measured off the solver, the model's own resistances, what came loose and "
+                    "whether the tool is whole. This is the copy of the world you are building in "
+                    "-- the person strikes for themselves in theirs.",
+     "inputSchema": {"type": "object", "required": ["world_id"], "properties": {
+         "world_id": {"type": "string"},
+         "at_m": dict(PAIR, description="Where the point comes down: [x, z] on the ground. "
+                                        "Needed for a swing."),
+         "lever": {"type": "boolean", "description": "Pry the point that is in the ground and "
+                                                     "draw it out, instead of a swing."},
+         "standing_m": dict(PAIR, description="Where the person stands, [x, z]: 1.2 m back from "
+                                              "at_m towards the tool by default."),
+         "speed_m_s": {"type": "number", "description": "As fast as the hand may take the grip: 4 "
+                                                        "for a swing and 1.2 for a lever by "
+                                                        "default. The tool goes as fast as the "
+                                                        "hand can make it go."},
+         "raise_deg": {"type": "number", "description": "How far back it is raised before the "
+                                                        "swing: 110 by default."},
+         "lever_deg": {"type": "number", "description": "How far a lever turns it: 40 by "
+                                                        "default."}}}},
+    {"name": "ground_work",
+     "description": "Every meeting of a point with the ground since the last strike, INCLUDING "
+                    "the ones that did nothing and why -- stopped by rock, glanced off, or not "
+                    "supported by the model (wet ground, a point harder than the rock) -- and "
+                    "every tool's point and what it is in right now.",
+     "inputSchema": {"type": "object", "required": ["world_id"],
+                     "properties": {"world_id": {"type": "string"}}}},
     {"name": "make_terrain",
      "description": "Give the world ground that is not flat: a VALLEY with a river running along "
                     "it (west to east, along x) and a pond beside it, made once by physics -- "
                     "drainage decided where the river runs, erosion wore its channel -- and saved. "
                     "Also a basin holding a lake, a straight sloping channel with a stream, flat "
-                    "ground of soil over rock, or none (back to the flat floor). The ground is rock, "
+                    "ground of soil over rock, a CLEARING -- level dry ground at y = 0, 8 m square, "
+                    "0.4 m of soil over rock, with a slab of bare rock 1.6 m by 1.2 m standing 0.12 m "
+                    "proud of it at [1.6, -1.2]: soil and rock side by side, to try a tool that digs "
+                    "on both -- or none (back to the flat floor). The ground is rock, "
                     "soil and sand; the water is real: it flows downhill, fills what it can, and "
                     "carries and lifts what is in it. Objects already in the world stay where they "
                     "are. Answers with where the ground and the river are.",
@@ -4437,6 +5088,9 @@ HANDLERS = {
     "cuts": tool_cuts,
     "wield": tool_wield,
     "swing": tool_swing,
+    "tool_point": tool_tool_point,
+    "strike": tool_strike,
+    "ground_work": tool_ground_work,
     "make_terrain": tool_make_terrain,
     "survey": tool_survey,
     "water_state": tool_water_state,

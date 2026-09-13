@@ -215,6 +215,38 @@ class InProcessSession:
                              "work_j": self._number(hand.let_go_work_j)}
         return out
 
+    def _tool_points(self) -> list[dict[str, Any]]:
+        """Every tool's point, as the line protocol spells them."""
+        return [{"id": p.id, "body": p.body, "material": p.material,
+                 "tip": [self._number(v) for v in p.tip_m],
+                 "pointing": [self._number(v) for v in p.pointing],
+                 "grip": [self._number(v) for v in p.grip_m],
+                 "width_m": self._number(p.width_m), "thickness_m": self._number(p.thickness_m),
+                 "angle_deg": self._number(p.angle_deg), "length_m": self._number(p.length_m),
+                 "in": p.in_, "depth_m": self._number(p.depth_m), "attached": p.attached}
+                for p in self._world.tool_points()]
+
+    def _ground_work(self) -> list[dict[str, Any]]:
+        """Every meeting of a point with the ground, as the line protocol spells it:
+        with the dig it went out through, unrounded, when something came loose."""
+        return [{**({"dug": w.dug} if w.dug else {}),
+                 "point": w.point, "tool": w.tool, "ground": w.ground, "kind": w.kind,
+                 "supported": w.supported, "why": w.why, "at_s": self._number(w.at_s),
+                 "at_m": [self._number(v) for v in w.at_m],
+                 "closing_speed_m_s": self._number(w.closing_speed_m_s),
+                 "depth_m": self._number(w.depth_m), "sideways_m": self._number(w.sideways_m),
+                 "impulse_n_s": self._number(w.impulse_n_s),
+                 "peak_force_n": self._number(w.peak_force_n), "work_j": self._number(w.work_j),
+                 "penetration_work_j": self._number(w.penetration_work_j),
+                 "breakout_work_j": self._number(w.breakout_work_j),
+                 "resistance_n": self._number(w.resistance_n),
+                 "passive_n": self._number(w.passive_n),
+                 "loosened": {"sand_m3": w.loosened_sand_m3, "soil_m3": w.loosened_soil_m3},
+                 "loosened_kg": self._number(w.loosened_kg), "tool_whole": w.tool_whole,
+                 "tool_dent_mm": self._number(w.tool_dent_m * 1000.0), "model": w.model,
+                 "open": w.open}
+                for w in self._world.ground_work()]
+
     def _flight(self, flight: "banjo.Flight") -> dict[str, Any]:
         return {"points_m": [[self._number(v) for v in p] for p in flight.points_m],
                 "hit": flight.hit, "hit_name": flight.hit_name,
@@ -389,6 +421,33 @@ class InProcessSession:
                 return self.state
             elif op == "member":
                 world.joint_member(int(command.get("joint", 0)), str(command.get("member") or ""))
+            # ---- tools that work the ground (docs/ground-work.md) ------------
+            elif op == "tool_point":
+                point = world.tool_point(str(command.get("body", "")), command.get("tip") or [0, 0, 0],
+                                         command.get("pointing") or [0, -1, 0],
+                                         float(command.get("width_m", 0.04)),
+                                         float(command.get("thickness_m", 0.04)),
+                                         float(command.get("angle_deg", 30.0)),
+                                         float(command.get("length_m", 0.15)),
+                                         command.get("grip") or command.get("tip"))
+                self.state = self._describe(extra={"tool_point": point,
+                                                   "tool_points": self._tool_points()})
+                return self.state
+            elif op == "tool_points":
+                return {"ok": True, "tool_points": self._tool_points()}
+            elif op == "strike":
+                world.strike(command.get("at"), command.get("shoulder"),
+                             float(command.get("speed_m_s", 4.0)),
+                             float(command.get("raise_deg", 0.0)),
+                             bool(command.get("lever", False)),
+                             float(command.get("lever_deg", 40.0)),
+                             float(command.get("give_up_s", 2.0)))
+                self.state = self._describe(extra={"striking": True})
+                return self.state
+            elif op == "ground_work":
+                said = {"ok": True, "ground_work": self._ground_work()}
+                world.forget_ground_work()
+                return said
             elif op == "mechanics":
                 # Moves nothing: answered on its own, like thermo.
                 return {"ok": True,

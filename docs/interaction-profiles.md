@@ -471,6 +471,16 @@ blocked. Shown briefly on first use, and on the help key afterwards.
    is held, and the MCP's `turn_object` stands a thing up at a point (section
    7). Measured.
 5. **Pose help**, a placement ghost, and the remaining components.
+6. **A tool that digs** — swing-and-lever, on `agent/progression`: a tool with
+   a point ([ground work](ground-work.md)) is taken up by any of its parts, by
+   the grip its point was given with, and held ready, point down. A click
+   swings it -- the engine plans and makes the stroke, raised back over the
+   shoulder and round it so the point meets the ground under the crosshair
+   along its own axis -- and the ground decides how far it goes in. With the
+   point in, the secondary button levers it about where it went in and draws it
+   out, and what the pry breaks out is carried. The profile names its `parts`
+   and its `tool`, never a speed or a depth; the MCP's `interaction` tries it in
+   a scratch world, into soil, levered, and onto rock (`picks.js`). Measured.
 
 Acceptance, from the owner: a new player can pick up a ball or a bow and use it
 without asking the chat, and heavier balls and stiffer bows behave physically

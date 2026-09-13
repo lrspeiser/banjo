@@ -18,6 +18,7 @@ import { BINDINGS, isKey, isButton, keyOf, controlsHint, holdPoint, windUpPoint,
          windUpReached, throwStroke, placeStroke, throwable, helpFor, AimArc,
          WIND_UP_S, TURNS, TURN_KEY_RATE, HOLD_RANGE_M, holdDistanceFor, radiusOf,
          turnPace, askTowards, uprightTurn } from "/interaction.js";
+import { makePicks } from "/picks.js";
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -1289,7 +1290,7 @@ $("ask-text").addEventListener("keydown", (e) => { if (e.key === "Escape") e.tar
 // there as the hand's strength says, and what is in the way stops it.
 canvas.addEventListener("wheel", (e) => {
   const held = world.held;
-  if (!held || held.bow || held.blade) return;
+  if (!held || held.bow || held.blade || held.pick) return;
   e.preventDefault();
   held.distance = clamp(held.distance * Math.exp(-e.deltaY * 0.0015),
                         HOLD_RANGE_M.least, HOLD_RANGE_M.most);
@@ -1305,6 +1306,11 @@ canvas.addEventListener("contextmenu", (e) => {
   if (world.use.mode === "preparing") { cancelWindUp(); return; }
   // ...and in the middle of a draw, let the string back down.
   if (world.use.mode === "drawing") { intend("let down"); return; }
+  // With a tool that digs in hand, it levers a point that is in the ground.
+  if (world.held && world.held.pick) {
+    if (world.use.mode === "pick-in") intend("lever");
+    return;
+  }
   // With a blade in hand it turns the edge instead, a quarter about the
   // blade's own length: left, down, right, up.
   if (world.held && world.held.blade) {
@@ -1337,6 +1343,11 @@ canvas.addEventListener("pointerdown", (e) => {
              world.use.mode === "bow-ready") {
     // The same button on a bow draws it.
     intend("draw");
+    primaryUsed = true;
+  } else if (isButton("primary", e.button) && world.held && world.held.pick &&
+             world.use.mode === "pick-ready") {
+    // And on a tool that digs, swings it at the ground under the crosshair.
+    intend("swing");
     primaryUsed = true;
   }
   if (looking) return;           // captured: the move handler has it
@@ -1584,14 +1595,19 @@ function showLabel(found) {
             + ` (drawn deeper so you can see it)` : "")
       + ` · ${found.distance_m.toFixed(2)} m away`
       + (bladeFor(found.name) ? " · has an edge: click to take it by the grip" : "")
-      + (!bladeFor(found.name) && throwable(entry, onAJoint(found.name))
+      + (!bladeFor(found.name) && !picks.profileOf(found.name) && throwable(entry, onAJoint(found.name))
           ? ` · ${entry.mass < 10 ? entry.mass.toFixed(2) : entry.mass.toFixed(1)} kg`
             + ` · ${keyOf("interact")} or click to take hold` : "")
       + (profileOf(found.name)
           ? ` · part of ${profileOf(found.name).object}: ${keyOf("interact")} or click to take it up`
           : "")
+      + (picks.profileOf(found.name)
+          ? ` · part of ${picks.profileOf(found.name).object}: ${keyOf("interact")} or click to take it`
+            + ` up by its grip`
+          : "")
     : "";
-  cross.classList.toggle("on", !entry?.anchored || !!profileOf(found.name));
+  cross.classList.toggle("on", !entry?.anchored || !!profileOf(found.name)
+                               || !!picks.profileOf(found.name));
 }
 
 // A click always lands.
@@ -1612,6 +1628,8 @@ function intend(what) {
   else if (what === "loose") loose();
   else if (what === "let down") letDown();
   else if (what === "settle") settleDown();
+  else if (what === "swing") picks.swing();
+  else if (what === "lever") picks.lever();
 }
 
 // ---------------------------------------------------------------------------
@@ -1718,6 +1736,9 @@ async function pickUp() {
   // hold, which is how a bowstring can still be grabbed by itself.
   const profile = !(keys.has("AltLeft") || keys.has("AltRight")) && profileOf(name);
   if (profile) { await takeUpBow(profile); return; }
+  // A part of a tool that digs takes the tool up by its grip (picks.js).
+  const tool = !(keys.has("AltLeft") || keys.has("AltRight")) && picks.profileOf(name);
+  if (tool) { await picks.takeUp(tool); return; }
   if (entry?.anchored) {
     say("world", `${name} is fixed in place — it is the room, not a prop.`);
     return;
@@ -1891,6 +1912,7 @@ async function letFly() {
 async function putDown() {
   const held = world.held;
   if (!held) return;
+  if (held.pick) { await picks.putDown(`You put down ${held.pick.object}.`); return; }
   if (held.bow) {
     // A bow is not dropped with its string drawn: let down first, then let go.
     if (world.use.mode === "drawing") await letDown();
@@ -2118,7 +2140,15 @@ function showUse() {
 function rememberProfiles(spec) {
   world.profiles = ((spec && spec.interactions) || [])
     .filter((p) => p.template === "draw-and-release");
+  // And the tools that dig, which picks.js drives (swing-and-lever).
+  world.tools = ((spec && spec.interactions) || [])
+    .filter((p) => p.template === "swing-and-lever");
 }
+
+// Tools that dig: taken up by the grip their point was given with, swung at
+// the ground and levered out. The engine makes every stroke; picks.js says
+// where the person is and what came back.
+const picks = makePicks({ world, act, say, remember, showUse, camera, carryGround, $ });
 
 function profileOf(name) {
   return world.profiles.find((p) => p.parts.includes(name)) || null;
@@ -2867,6 +2897,8 @@ async function tick() {
       else if (what === "loose") await loose();
       else if (what === "let down") await letDown();
       else if (what === "settle") await settleDown();
+      else if (what === "swing") await picks.swing();
+      else if (what === "lever") await picks.lever();
     }
     // Where the hand is, sent WITH the step rather than before it.
     //
@@ -2888,6 +2920,11 @@ async function tick() {
       // page is placing the hand. During a stroke the hand is the engine's,
       // and the wish it had stays where it was.
       if (hand) hand_q = wristWish(elapsed);
+    } else if (world.held && world.held.pick) {
+      // A tool that digs: held ready by the page; during a swing, a lever or a
+      // pull the hand is the engine's stroke, and once a blow has landed it
+      // holds where the grip is (picks.js).
+      ({ hand, hand_q } = picks.hand());
     } else if (world.held && world.held.bow) {
       // A bow's string: held where the hand took it, or drawn and let down by
       // the engine's own stroke. Nothing is sent; sending would take it back.
@@ -2982,6 +3019,7 @@ async function tick() {
     followTheHand(state.hand);
     previewThrow();
     followTheBow(state);
+    picks.follow(state);
     previewShot();
     drawRopes();
     followJoints();

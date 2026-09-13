@@ -89,6 +89,23 @@
 //        {"op":"preview_flight","from":[..],"velocity":[..],"horizon_s":4,
 //         "ignoring":"ball"}                 gravity and the world's shapes (lean)
 //        {"op":"cuts"}                       every edge contact since the last reply
+//        {"op":"tool_point","body":"pick","tip":[..],"pointing":[0,-1,0],"width_m":0.04,
+//         "thickness_m":0.04,"angle_deg":30,"length_m":0.2,"grip":[..]}
+//                                            give a body a point that can go into the
+//                                            ground (docs/ground-work.md); it then
+//                                            collides as its cells
+//        {"op":"tool_points"}                every point, and what each is in (lean)
+//        {"op":"strike","at":[x,y,z],"shoulder":[x,y,z],"speed_m_s":4,"raise_deg":110}
+//                                            swing what is wielded so its point comes
+//                                            down on `at`; with "lever":true (and
+//                                            "lever_deg"), pry a point that is in the
+//                                            ground and draw it out. The reply's "hand"
+//                                            says how it goes; a step reply carries
+//                                            "ground_work" -- every meeting of a point
+//                                            with the ground since the last one that
+//                                            said so, open ones every time -- and
+//                                            "carried" with it
+//        {"op":"ground_work"}                the same list on its own (lean)
 //   out  {"ok":true,"t":0.033,"stepped_back":false,
 //         "bodies":[{"name":"ball","shape":"sphere","dimensions_m":[...],
 //                    "position_m":[...],"orientation_wxyz":[...],"held":false,
@@ -396,6 +413,102 @@ nlohmann::json bladesOf(const LiveWorld &world) {
                        {"cutting", blade.cutting},
                        {"attached", blade.attached}});
     return out;
+}
+
+// Every point a tool has (docs/ground-work.md). Sent when the SET of them
+// changes, like the edges: what a point is in, and how deep, comes with the
+// ground work instead.
+std::string last_tool_points;
+
+nlohmann::json toolPointsOf(const LiveWorld &world) {
+    nlohmann::json out = nlohmann::json::array();
+    for (const LiveToolPoint &p : world.toolPoints())
+        out.push_back({{"id", p.id},
+                       {"body", p.body},
+                       {"material", p.material},
+                       {"tip_local", vec(p.tip_local_m)},
+                       {"pointing_local", vec(p.pointing_local)},
+                       {"grip_local", vec(p.grip_local_m)},
+                       {"tip", vec(p.tip_m)},
+                       {"pointing", vec(p.pointing)},
+                       {"grip", vec(p.grip_m)},
+                       {"width_m", tidy(p.width_m)},
+                       {"thickness_m", tidy(p.thickness_m)},
+                       {"angle_deg", tidy(p.angle_deg)},
+                       {"length_m", tidy(p.length_m)},
+                       {"in", p.in},
+                       {"depth_m", tidy(p.depth_m)},
+                       {"attached", p.attached}});
+    return out;
+}
+
+// One meeting between a point and the ground, in the room's units.
+nlohmann::json groundWorkFields(const LiveGroundWork &w);
+
+nlohmann::json groundWorkJson(const LiveGroundWork &w) {
+    nlohmann::json out = groundWorkFields(w);
+    // Where what came loose went out through the ground's dig, as a dig edit
+    // says it, and not rounded: a host that keeps the ground's edits makes it
+    // again from these numbers and has to get the same hole.
+    if (w.dug)
+        out["dug"] = {{"from_m", {w.dug_from_m[0], w.dug_from_m[1]}},
+                      {"to_m", {w.dug_to_m[0], w.dug_to_m[1]}},
+                      {"width_m", w.dug_width_m},
+                      {"depth_m", w.dug_depth_m}};
+    return out;
+}
+
+nlohmann::json groundWorkFields(const LiveGroundWork &w) {
+    return {{"point", w.point},
+            {"tool", w.tool},
+            {"ground", w.ground},
+            {"kind", w.kind},
+            {"supported", w.supported},
+            {"why", w.why},
+            {"at_s", tidy(w.at_s)},
+            {"at_m", vec(w.at_m)},
+            {"closing_speed_m_s", tidy(w.closing_speed_m_s)},
+            {"depth_m", tidy(w.depth_m)},
+            {"sideways_m", tidy(w.sideways_m)},
+            {"impulse_n_s", tidy(w.impulse_n_s)},
+            {"peak_force_n", tidy(w.peak_force_n)},
+            {"work_j", tidy(w.work_j)},
+            {"penetration_work_j", tidy(w.penetration_work_j)},
+            {"breakout_work_j", tidy(w.breakout_work_j)},
+            {"resistance_n", tidy(w.resistance_n)},
+            {"passive_n", tidy(w.passive_n)},
+            // Not rounded: the carried account is kept to the bit, and what a
+            // meeting took out of the ground is part of it.
+            {"loosened", {{"sand_m3", w.loosened.sand_m3}, {"soil_m3", w.loosened.soil_m3}}},
+            {"loosened_kg", tidy(w.loosened_kg)},
+            {"tool_whole", w.tool_whole},
+            {"tool_dent_mm", tidy(w.tool_dent_m * 1000.0)},
+            {"model", w.model},
+            {"open", w.open}};
+}
+
+// A tool action from a command (LiveStrike). The engine checks the numbers.
+LiveStrike readStrike(const nlohmann::json &command) {
+    const auto point = [&](const char *key) -> Vec3 {
+        if (!command.contains(key)) return {};
+        const nlohmann::json &p = command.at(key);
+        if (!p.is_array() || p.size() != 3)
+            throw std::invalid_argument(std::string(key) + " is a point: three numbers");
+        return {p[0].get<double>(), p[1].get<double>(), p[2].get<double>()};
+    };
+    LiveStrike strike;
+    strike.lever = command.value("lever", false);
+    if (!strike.lever && !command.contains("at"))
+        throw std::invalid_argument("a swing needs \"at\": the point on the ground it comes down on");
+    if (!command.contains("shoulder"))
+        throw std::invalid_argument("a tool action needs \"shoulder\": where the swing turns about");
+    strike.target_m = point("at");
+    strike.shoulder_m = point("shoulder");
+    strike.speed_m_s = command.value("speed_m_s", strike.speed_m_s);
+    strike.raise_deg = command.value("raise_deg", strike.raise_deg);
+    strike.lever_deg = command.value("lever_deg", strike.lever_deg);
+    strike.give_up_s = command.value("give_up_s", strike.give_up_s);
+    return strike;
 }
 
 // One meeting between an edge and something, in the room's units.
@@ -1175,6 +1288,39 @@ int main(int argc, char **argv) {
                     std::cout << nlohmann::json{{"ok", true}, {"cuts", std::move(list)}}.dump()
                               << std::endl;
                     continue;
+                } else if (op == "tool_point") {
+                    // A point that can go into the ground. docs/ground-work.md:
+                    // what the ground does about it is decided by the ground's
+                    // own materials and the point's shape, never by a name.
+                    const unsigned id = world->toolPoint(
+                        command.at("body").get<std::string>(), readVec(command, "tip"),
+                        readVec(command, "pointing"), command.value("width_m", 0.04),
+                        command.value("thickness_m", 0.04), command.value("angle_deg", 30.0),
+                        command.value("length_m", 0.15),
+                        command.contains("grip") ? readVec(command, "grip") : readVec(command, "tip"));
+                    if (id == 0)
+                        throw std::invalid_argument("that body cannot take that point: " +
+                                                    world->toolPointRefusal());
+                    reply["tool_point"] = id;
+                } else if (op == "tool_points") {
+                    std::cout << nlohmann::json{{"ok", true}, {"tool_points", toolPointsOf(*world)}}.dump()
+                              << std::endl;
+                    continue;
+                } else if (op == "strike") {
+                    // A bounded tool action: the hand makes it at the step's own
+                    // rate; what it does to the ground is the ground's.
+                    std::string why;
+                    if (!world->strike(readStrike(command), why)) throw std::invalid_argument(why);
+                    reply["striking"] = true;
+                } else if (op == "ground_work") {
+                    nlohmann::json list = nlohmann::json::array();
+                    for (const LiveGroundWork &w : world->groundWork()) list.push_back(groundWorkJson(w));
+                    world->forgetGroundWork();
+                    nlohmann::json answer{{"ok", true}, {"ground_work", std::move(list)}};
+                    if (const banjo::terrain::Environment *env = world->environment(); env != nullptr)
+                        answer["carried"] = carriedJson(*env);
+                    std::cout << answer.dump() << std::endl;
+                    continue;
                 } else if (op == "move") {
                     world->moveHeld(readVec(command, "to"));
                 } else if (op == "release") {
@@ -1549,6 +1695,30 @@ int main(int argc, char **argv) {
                         last_blades = shape;
                         reply["blades"] = std::move(edges);
                     }
+                }
+                // A tool's points, the same way: when the set changes.
+                {
+                    nlohmann::json points = toolPointsOf(*world);
+                    std::string shape;
+                    for (const auto &p : points)
+                        shape += std::to_string(p.value("id", 0u)) + "/" + p.value("body", std::string{}) +
+                                 "/" + (p.value("attached", false) ? "1" : "0") + ";";
+                    if (shape != last_tool_points || geometry) {
+                        last_tool_points = shape;
+                        if (!points.empty() || geometry) reply["tool_points"] = std::move(points);
+                    }
+                }
+                // And what points did in the ground since the last reply that
+                // said so: the meetings that ended, and every open one, each
+                // time -- a host follows a point in the ground by it. With the
+                // carried account, which a meeting that broke ground out adds to.
+                if (const std::vector<LiveGroundWork> work = world->groundWork(); !work.empty()) {
+                    nlohmann::json list = nlohmann::json::array();
+                    for (const LiveGroundWork &w : work) list.push_back(groundWorkJson(w));
+                    reply["ground_work"] = std::move(list);
+                    world->forgetGroundWork();
+                    if (const banjo::terrain::Environment *env = world->environment(); env != nullptr)
+                        reply["carried"] = carriedJson(*env);
                 }
                 nlohmann::json state = describe(*world, geometry,
                                                 !geometry && command.value("moved", false));

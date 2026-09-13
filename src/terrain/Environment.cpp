@@ -140,6 +140,16 @@ Landscape landscapeFrom(const Json &terrain) {
         return valley(p);
     }
     SimpleParameters p;
+    if (kind == "clearing") {
+        // A clearing is small and fine: 8 m square in 0.1 m columns, 0.4 m of
+        // soil and no sand, dry -- unless it says otherwise.
+        p.nx = 80;
+        p.nz = 80;
+        p.cell_m = 0.1;
+        p.soil_m = 0.4;
+        p.sand_m = 0.0;
+        p.discharge_m3_s = 0.0;
+    }
     onlyKeys(options, {"kind", "nx", "nz", "cell_m", "discharge_m3_s", "lake_level_m", "soil_m", "sand_m"},
              "a simple landscape");
     p.nx = static_cast<int>(number(options, "nx", p.nx, 4, 1024));
@@ -152,8 +162,9 @@ Landscape landscapeFrom(const Json &terrain) {
     if (kind == "basin") return basin(p);
     if (kind == "channel") return channel(p);
     if (kind == "flat") return flatGround(p);
-    throw std::invalid_argument("terrain.generate is \"valley\", \"basin\", \"channel\" or \"flat\", not \"" +
-                                kind + "\"");
+    if (kind == "clearing") return clearing(p);
+    throw std::invalid_argument("terrain.generate is \"valley\", \"basin\", \"channel\", \"flat\" or "
+                                "\"clearing\", not \"" + kind + "\"");
 }
 
 template <typename T> std::vector<T> decodeArray(const Json &state, const char *key, std::size_t count) {
@@ -539,9 +550,13 @@ void Environment::applyEdits(const std::string &edits_json) {
             onlyKeys(spec, {"from_m", "to_m", "width_m", "depth_m"}, "a dig");
             const auto a = pointXZ(spec, "from_m");
             const auto b = spec.contains("to_m") ? pointXZ(spec, "to_m") : a;
+            // As shallow as a micrometre: what a pick's pry breaks loose goes
+            // out as a dig spread over the ground its wedge reached, and a small
+            // pry takes less than a centimetre off each column
+            // (docs/ground-work.md). A room keeps it as an edit like any other.
             const EditReport dug = terrain_->dig(a.first, a.second, b.first, b.second,
                                                  number(spec, "width_m", 1.0, 0.05, 50.0),
-                                                 number(spec, "depth_m", 0.5, 0.01, 20.0));
+                                                 number(spec, "depth_m", 0.5, 1.0e-6, 20.0));
             carry(dug.moved);
             changed = dug.cells;
         } else if (kind == "deposit") {

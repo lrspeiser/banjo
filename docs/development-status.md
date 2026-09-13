@@ -315,6 +315,10 @@ The branch also contains an offline source-bundle workflow used to reproduce dev
 
 Read the [pinned contact checkpoint](https://github.com/lrspeiser/banjo/blob/138260d2f3d2e30a112f28034731db6052ae1720/docs/contact-checkpoint.md) and its source/tests before integration. The checkpoint's statement that graphical CI still needed checking was true when written; the CI evidence below supersedes that status only.
 
+### Tools that dig (knowledge and progression, increment 1), on `agent/progression`
+
+The physics layer of [knowledge and progression](knowledge-and-progression.md): a point on a body that can go into the ground, a bounded tool action (swing and lever) made by the engine's hand, and ground-work-v1, a **declared** model (Terzaghi bearing capacity going in, Rankine passive pressure being pried, a breakout wedge) applied in the solver as a per-step one-sided constraint whose work is measured from the solver's impulses. What a pry breaks loose leaves through the ground's own dig, is carried, and is reported as the dig edit it was, so a room keeps the hole. Rock at least as hard as the point stops it; wet ground and a point harder than rock are "not supported", said with the reason. Exposed through `LiveWorld`, the C API (ABI 20), Python, the line protocol, the MCP (`tool_point`, `strike`, `ground_work`, `interaction`'s `swing-and-lever` with a trial, `add_object`'s `join`, `make_terrain`'s `clearing`) and the page (`picks.js`; the clearing room). Tests: `tests/ground_work_tests.cpp`, `tests/ground_work_binding_tests.py`, `tests/ground_work_mcp_tests.py`. Declared, not calibrated; measured numbers and limitations in [ground work](ground-work.md). The knowledge journal, the requirement resolver, manufacturing and the rest of the concept are not started.
+
 ## 3. Implementation versus validation
 
 | Capability | Main baseline | Contact branch / remaining boundary |

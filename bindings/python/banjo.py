@@ -39,7 +39,7 @@ from typing import Any, Iterator
 # strength; 17 the hand's own motions and the one-way fixing; 18 rolling
 # resistance (materials(), World.rolling_report(), the survey's share).
 # Checked for equality below, so this has to match exactly.
-ABI_VERSION = 18
+ABI_VERSION = 20
 
 NOTHING, HELD, DENTED, BROKE = 0, 1, 2, 3
 OUTCOMES = {0: "nothing", 1: "held", 2: "dented", 3: "broke"}
@@ -311,6 +311,139 @@ class _Cut(ctypes.Structure):
                 ("separated", ctypes.c_int),
                 ("pieces", ctypes.c_int),
                 ("open", ctypes.c_int)]
+
+
+class _ToolPoint(ctypes.Structure):
+    _fields_ = [("id", ctypes.c_uint),
+                ("body", ctypes.c_char_p),
+                ("material", ctypes.c_char_p),
+                ("tip_m", ctypes.c_double * 3),
+                ("pointing", ctypes.c_double * 3),
+                ("grip_m", ctypes.c_double * 3),
+                ("width_m", ctypes.c_double),
+                ("thickness_m", ctypes.c_double),
+                ("angle_deg", ctypes.c_double),
+                ("length_m", ctypes.c_double),
+                ("in_", ctypes.c_char_p),
+                ("depth_m", ctypes.c_double),
+                ("attached", ctypes.c_int)]
+
+
+class _GroundWork(ctypes.Structure):
+    _fields_ = [("point", ctypes.c_uint),
+                ("tool", ctypes.c_char_p),
+                ("ground", ctypes.c_char_p),
+                ("kind", ctypes.c_char_p),
+                ("supported", ctypes.c_int),
+                ("why", ctypes.c_char_p),
+                ("at_s", ctypes.c_double),
+                ("at_m", ctypes.c_double * 3),
+                ("closing_speed_m_s", ctypes.c_double),
+                ("depth_m", ctypes.c_double),
+                ("sideways_m", ctypes.c_double),
+                ("impulse_n_s", ctypes.c_double),
+                ("peak_force_n", ctypes.c_double),
+                ("work_j", ctypes.c_double),
+                ("penetration_work_j", ctypes.c_double),
+                ("breakout_work_j", ctypes.c_double),
+                ("resistance_n", ctypes.c_double),
+                ("passive_n", ctypes.c_double),
+                ("loosened_sand_m3", ctypes.c_double),
+                ("loosened_soil_m3", ctypes.c_double),
+                ("loosened_kg", ctypes.c_double),
+                ("tool_whole", ctypes.c_int),
+                ("tool_dent_m", ctypes.c_double),
+                ("model", ctypes.c_char_p),
+                ("open", ctypes.c_int),
+                ("dug", ctypes.c_int),
+                ("dug_from_m", ctypes.c_double * 2),
+                ("dug_to_m", ctypes.c_double * 2),
+                ("dug_width_m", ctypes.c_double),
+                ("dug_depth_m", ctypes.c_double)]
+
+
+class _StrikeRequest(ctypes.Structure):
+    _fields_ = [("target_m", ctypes.c_double * 3),
+                ("shoulder_m", ctypes.c_double * 3),
+                ("speed_m_s", ctypes.c_double),
+                ("raise_deg", ctypes.c_double),
+                ("lever", ctypes.c_int),
+                ("lever_deg", ctypes.c_double),
+                ("give_up_s", ctypes.c_double)]
+
+
+@dataclass(frozen=True)
+class ToolPoint:
+    """A point on a body that can go into the ground. See docs/ground-work.md.
+
+    Declared ON a body, as an edge is: the body supplies the matter, the
+    material and where the mass is; the point adds where its tip is, which way
+    it goes in, how wide and thick it is, how sharply it comes to its tip and
+    how much of the tool is point. `in_` is what it is in right now ("soil",
+    "sand", "loose soil" or "") and `depth_m` how far, along its own axis.
+    """
+    id: int
+    body: str
+    material: str
+    tip_m: tuple[float, float, float]
+    pointing: tuple[float, float, float]
+    grip_m: tuple[float, float, float]
+    width_m: float
+    thickness_m: float
+    angle_deg: float
+    length_m: float
+    in_: str
+    depth_m: float
+    attached: bool
+
+
+@dataclass(frozen=True)
+class GroundWork:
+    """One meeting between a point and the ground, from first touch until it is out.
+
+    `kind` is "in the ground" (open: the ground is resisting it), "broke out"
+    (a pry broke ground out, and it came loose), "pulled out", "stopped" (ground
+    at least as hard as the point), "glanced" (it met the ground side-on) or
+    "not supported" (a regime ground-work-v1 does not cover: `supported` is
+    False, and `why` says which). The work, impulse and peak force are measured
+    from the solver; `resistance_n` and `passive_n` are the model's own at the
+    deepest it went; `loosened_*` is what went out through the ground's dig and
+    is carried.
+    """
+    point: int
+    tool: str
+    ground: str
+    kind: str
+    supported: bool
+    why: str
+    at_s: float
+    at_m: tuple[float, float, float]
+    closing_speed_m_s: float
+    depth_m: float
+    sideways_m: float
+    impulse_n_s: float
+    peak_force_n: float
+    work_j: float
+    penetration_work_j: float
+    breakout_work_j: float
+    resistance_n: float
+    passive_n: float
+    loosened_sand_m3: float
+    loosened_soil_m3: float
+    loosened_kg: float
+    tool_whole: bool
+    tool_dent_m: float
+    model: str
+    open: bool
+    # Where what came loose went out through the ground's dig, as a dig edit
+    # says it -- None when nothing did: {"from_m": [x, z], "to_m": [x, z],
+    # "width_m": ..., "depth_m": ...}. A host that keeps the ground's edits
+    # keeps this one, and the ground opened again from them has the same hole.
+    dug: dict | None = None
+
+    @property
+    def loosened_m3(self) -> float:
+        return self.loosened_sand_m3 + self.loosened_soil_m3
 
 
 @dataclass(frozen=True)
@@ -1109,6 +1242,23 @@ def library(path: str | os.PathLike[str] | None = None) -> ctypes.CDLL:
     lib.banjo_cuts.restype = ctypes.c_int
     lib.banjo_forget_cuts.argtypes = [ctypes.c_void_p]
     lib.banjo_forget_cuts.restype = ctypes.c_int
+    # Tools that work the ground (docs/ground-work.md).
+    lib.banjo_make_tool_point.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double * 3,
+                                          ctypes.c_double * 3, ctypes.c_double, ctypes.c_double,
+                                          ctypes.c_double, ctypes.c_double, ctypes.c_double * 3]
+    lib.banjo_make_tool_point.restype = ctypes.c_int
+    lib.banjo_tool_point_count.argtypes = [ctypes.c_void_p]
+    lib.banjo_tool_point_count.restype = ctypes.c_int
+    lib.banjo_tool_points.argtypes = [ctypes.c_void_p, ctypes.POINTER(_ToolPoint), ctypes.c_int]
+    lib.banjo_tool_points.restype = ctypes.c_int
+    lib.banjo_strike.argtypes = [ctypes.c_void_p, ctypes.POINTER(_StrikeRequest)]
+    lib.banjo_strike.restype = ctypes.c_int
+    lib.banjo_ground_work_count.argtypes = [ctypes.c_void_p]
+    lib.banjo_ground_work_count.restype = ctypes.c_int
+    lib.banjo_ground_works.argtypes = [ctypes.c_void_p, ctypes.POINTER(_GroundWork), ctypes.c_int]
+    lib.banjo_ground_works.restype = ctypes.c_int
+    lib.banjo_forget_ground_work.argtypes = [ctypes.c_void_p]
+    lib.banjo_forget_ground_work.restype = ctypes.c_int
     lib.banjo_wield.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double * 3]
     lib.banjo_wield.restype = ctypes.c_int
     lib.banjo_aim_held.argtypes = [ctypes.c_void_p, ctypes.c_double * 4]
@@ -1760,6 +1910,99 @@ class World:
 
     def forget_cuts(self) -> None:
         self._check(self._lib.banjo_forget_cuts(self._alive()), "forgetting cuts")
+
+    # -- tools that work the ground (docs/ground-work.md) --------------------
+    def tool_point(self, body: str, tip_m: Any, pointing: Any, width_m: float = 0.04,
+                   thickness_m: float = 0.04, angle_deg: float = 30.0, length_m: float = 0.15,
+                   grip_m: Any = None) -> int:
+        """Give a named body a point that can go into the ground. Returns its id.
+
+        Everything is given where it is in the world RIGHT NOW and kept in the
+        body's own frame. The tip has to be at the end of the body's matter and
+        `pointing` has to run out of it there. `length_m` is how much of the tool
+        is point: the rest of it meets the ground as a surface. From then on the
+        body collides as its cells, so a pick's crook is open. The grip defaults
+        to the tip.
+        """
+        grip = tip_m if grip_m is None else grip_m
+        return self._check(
+            self._lib.banjo_make_tool_point(self._alive(), body.encode("utf-8"), _triple(tip_m),
+                                            _triple(pointing), float(width_m), float(thickness_m),
+                                            float(angle_deg), float(length_m), _triple(grip)),
+            f"giving {body!r} a point")
+
+    def tool_points(self) -> list[ToolPoint]:
+        count = self._check(self._lib.banjo_tool_point_count(self._alive()), "counting tool points")
+        if count <= 0:
+            return []
+        out = (_ToolPoint * count)()
+        written = self._check(self._lib.banjo_tool_points(self._alive(), out, count),
+                              "reading tool points")
+
+        def text(value: bytes | None) -> str:
+            return (value or b"").decode("utf-8", "replace")
+
+        return [ToolPoint(id=int(p.id), body=text(p.body), material=text(p.material),
+                          tip_m=tuple(p.tip_m), pointing=tuple(p.pointing), grip_m=tuple(p.grip_m),
+                          width_m=p.width_m, thickness_m=p.thickness_m, angle_deg=p.angle_deg,
+                          length_m=p.length_m, in_=text(p.in_), depth_m=p.depth_m,
+                          attached=bool(p.attached))
+                for p in out[:written]]
+
+    def strike(self, target_m: Any = None, shoulder_m: Any = None, speed_m_s: float = 4.0,
+               raise_deg: float = 0.0, lever: bool = False, lever_deg: float = 40.0,
+               give_up_s: float = 2.0) -> None:
+        """A bounded tool action with what is wielded: the hand makes it at the
+        step's own rate, and what it does to the ground is the ground's.
+
+        A swing brings the tool's point down on `target_m`, a point on the
+        ground, turning about `shoulder_m`; `raise_deg` above zero raises it back
+        that far first. With `lever`, a point that is in the ground is pried,
+        turned `lever_deg` about where it went in, and drawn up out of it.
+        `hand()` says how it goes; step the world to let it happen.
+        """
+        request = _StrikeRequest()
+        request.target_m = _triple(target_m if target_m is not None else (0.0, 0.0, 0.0))
+        request.shoulder_m = _triple(shoulder_m if shoulder_m is not None else (0.0, 0.0, 0.0))
+        request.speed_m_s = float(speed_m_s)
+        request.raise_deg = float(raise_deg)
+        request.lever = 1 if lever else 0
+        request.lever_deg = float(lever_deg)
+        request.give_up_s = float(give_up_s)
+        self._check(self._lib.banjo_strike(self._alive(), ctypes.byref(request)),
+                    "levering" if lever else "swinging")
+
+    def ground_work(self) -> list[GroundWork]:
+        """Every meeting of a point with the ground since `forget_ground_work`."""
+        count = self._check(self._lib.banjo_ground_work_count(self._alive()), "counting ground work")
+        if count <= 0:
+            return []
+        out = (_GroundWork * count)()
+        written = self._check(self._lib.banjo_ground_works(self._alive(), out, count),
+                              "reading ground work")
+
+        def text(value: bytes | None) -> str:
+            return (value or b"").decode("utf-8", "replace")
+
+        return [GroundWork(point=int(w.point), tool=text(w.tool), ground=text(w.ground),
+                           kind=text(w.kind), supported=bool(w.supported), why=text(w.why),
+                           at_s=w.at_s, at_m=tuple(w.at_m), closing_speed_m_s=w.closing_speed_m_s,
+                           depth_m=w.depth_m, sideways_m=w.sideways_m, impulse_n_s=w.impulse_n_s,
+                           peak_force_n=w.peak_force_n, work_j=w.work_j,
+                           penetration_work_j=w.penetration_work_j,
+                           breakout_work_j=w.breakout_work_j, resistance_n=w.resistance_n,
+                           passive_n=w.passive_n, loosened_sand_m3=w.loosened_sand_m3,
+                           loosened_soil_m3=w.loosened_soil_m3, loosened_kg=w.loosened_kg,
+                           tool_whole=bool(w.tool_whole), tool_dent_m=w.tool_dent_m,
+                           model=text(w.model), open=bool(w.open),
+                           dug=({"from_m": [w.dug_from_m[0], w.dug_from_m[1]],
+                                 "to_m": [w.dug_to_m[0], w.dug_to_m[1]],
+                                 "width_m": w.dug_width_m, "depth_m": w.dug_depth_m}
+                                if w.dug else None))
+                for w in out[:written]]
+
+    def forget_ground_work(self) -> None:
+        self._check(self._lib.banjo_forget_ground_work(self._alive()), "forgetting ground work")
 
     # -- the grip ---------------------------------------------------------
     def wield(self, name: str, grip_m: Any) -> None:

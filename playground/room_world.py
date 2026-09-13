@@ -73,7 +73,10 @@ AUTHORING = {"add_object", "remove_object", "move_object", "turn_object", "clear
              "interaction", "duplicate",
              # The ground and the water are part of what the room IS: a trench
              # dug, a block cut, a river turned up.
-             "make_terrain", "dig", "fill", "cut_block", "set_river"}
+             "make_terrain", "dig", "fill", "cut_block", "set_river",
+             # A tool that digs is a body with a point; and what a strike breaks
+             # out of the ground stays out of it, like a dig.
+             "tool_point", "strike"}
 
 # How many objects a room may be built up to. See check() in open_room.
 MAX_OBJECTS = 120
@@ -184,6 +187,8 @@ def joint_spec(record: dict[str, Any]) -> dict[str, Any]:
 
 def mcp_profile(profile: dict[str, Any]) -> dict[str, Any]:
     """A room's interaction profile (millimetres) as the MCP's (metres)."""
+    if profile.get("template") == "swing-and-lever":
+        return dict(profile)    # names only: nothing in it is a length
     draw = profile["draw"]
     return {**{k: v for k, v in profile.items() if k != "draw"},
             "draw": {"part": draw["part"], "axis": list(draw["axis"]),
@@ -193,6 +198,8 @@ def mcp_profile(profile: dict[str, Any]) -> dict[str, Any]:
 
 def room_profile(profile: dict[str, Any]) -> dict[str, Any]:
     """An MCP interaction profile (metres) as the room's (millimetres)."""
+    if profile.get("template") == "swing-and-lever":
+        return dict(profile)
     draw = profile["draw"]
     return {**{k: v for k, v in profile.items() if k != "draw"},
             "draw": {"part": draw["part"], "axis": list(draw["axis"]),
@@ -237,6 +244,11 @@ def export_spec(entry: dict[str, Any], scene: dict[str, Any] | None = None,
              if b.get("body") in by_name]
     if edges:
         spec["blades"] = edges
+    # The points of tools that dig, where they are on their bodies as built, in
+    # the room's millimetres (the MCP keeps each in its body's own frame too).
+    points = [tool_point_spec(p) for p in scene.get("tool_points") or [] if p.get("body") in by_name]
+    if points:
+        spec["tool_points"] = points
     # How a person uses what is in it, in the room's millimetres -- each only
     # while it still stands up against the room as it is. A change that takes a
     # bow's arrow away is checked (open_room's check) while the bow's profile
@@ -248,7 +260,8 @@ def export_spec(entry: dict[str, Any], scene: dict[str, Any] | None = None,
     uses = []
     for profile in entry.get("interactions", []):
         try:
-            interaction_profiles.check(profile, names, spec["joints"])
+            interaction_profiles.check(profile, names, spec["joints"],
+                                       points={p["body"] for p in points})
         except ValueError:
             continue
         uses.append(room_profile(profile))
@@ -300,6 +313,17 @@ def blade_spec(record: dict[str, Any], body: dict[str, Any]) -> dict[str, Any]:
             "bevel_deg": float(record["bevel_deg"])}
 
 
+def tool_point_spec(record: dict[str, Any]) -> dict[str, Any]:
+    """An MCP tool point (where it is on its body as built, metres) as a room's (mm)."""
+    return {"body": record["body"], "tip_mm": _mm(record["tip_m"]),
+            "pointing": [round(float(v), 6) for v in record["pointing"]],
+            "grip_mm": _mm(record["grip_m"]),
+            "width_mm": round(float(record["width_m"]) * 1000.0, 3),
+            "thickness_mm": round(float(record["thickness_m"]) * 1000.0, 3),
+            "angle_deg": float(record["angle_deg"]),
+            "length_mm": round(float(record["length_m"]) * 1000.0, 3)}
+
+
 def open_room(spec: dict[str, Any], water_state: dict[str, Any] | None = None) -> str:
     """Hold a room spec as an MCP world; return the world's id.
 
@@ -346,6 +370,16 @@ def open_room(spec: dict[str, Any], water_state: dict[str, Any] | None = None) -
                 "thickness_m": edge["thickness_mm"] / 1000.0,
                 "edge_radius_m": edge["edge_radius_mm"] / 1000.0,
                 "bevel_deg": edge["bevel_deg"]})
+        # And the points of tools that dig, the same way, where they are on
+        # their bodies as the room was built -- before how anything is used,
+        # because a pick's profile needs its point.
+        for point in validated.get("tool_points", []):
+            banjo_mcp.HANDLERS["tool_point"]({
+                "world_id": world_id, "body": point["body"], "tip_m": _m(point["tip_mm"]),
+                "pointing": list(point["pointing"]), "grip_m": _m(point["grip_mm"]),
+                "width_m": point["width_mm"] / 1000.0,
+                "thickness_m": point["thickness_mm"] / 1000.0,
+                "angle_deg": point["angle_deg"], "length_m": point["length_mm"] / 1000.0})
         # And how a person uses what is in it, through the MCP's own call, so a
         # profile is kept -- and withdrawn when what it names is taken away --
         # as a model's would be. Not tried: a room opens on every turn.

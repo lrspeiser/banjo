@@ -318,6 +318,26 @@ export function helpFor(use) {
     case "letting-down":
       out.line = "Letting the string down…";
       break;
+    // A tool that digs (picks.js): what can be done in the state it is in, and
+    // what the ground last did, in the engine's numbers.
+    case "pick-ready":
+      out.line = `Click ${k("primary")} to swing it at the ground under the crosshair`
+        + ` · ${k("interact")} put it down`;
+      out.note = esc(use.result || "");
+      break;
+    case "striking":
+      out.line = "Swinging…";
+      break;
+    case "pick-in":
+      out.line = `${k("secondary")} lever it out · ${k("interact")} let go of it`;
+      out.note = esc(use.result || "");
+      break;
+    case "levering":
+      out.line = "Levering…";
+      break;
+    case "pulling":
+      out.line = "Drawing it out of the ground…";
+      break;
     default:
       out.line = "";
   }

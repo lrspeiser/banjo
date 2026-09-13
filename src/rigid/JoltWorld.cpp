@@ -340,6 +340,28 @@ float sweepRadius(const JPH::Vec3 &half_extent_m) {
     return std::min(kSweepRadiusM, 0.1F * half_extent_m.ReduceMin());
 }
 
+// A tool's point in the ground, as the contact listener sees it: its region
+// and -- for a tool that collides as its cells (setCollisionCells) -- exactly
+// which of its cells are point, by the sub-shape ids Jolt names them with. By
+// cell, not by where a contact lies: a cell of the point and the next cell up
+// the arm share a face, and a contact on that face could be either.
+struct GroundSuspension {
+    JoltWorld::GroundPointRegion region;
+    bool by_cell{};
+    std::vector<JPH::SubShapeID::Type> cells;   // sorted
+};
+
+// Whether a point in a tool's own frame is in the region its point occupies
+// (JoltWorld::GroundPointRegion): from `ahead_m` beyond the tip back along the
+// way it points to the end of the point, and near that line.
+[[nodiscard]] bool inPointRegion(const JoltWorld::GroundPointRegion &region, const Vec3 &local) {
+    const Vec3 from_tip = local - region.tip_local_m;
+    const double back = -dot(from_tip, region.pointing_local);
+    if (back < -region.ahead_m || back > region.length_m + region.margin_m) return false;
+    const Vec3 radial = from_tip + back * region.pointing_local;
+    return length(radial) <= region.radius_m + region.margin_m;
+}
+
 class ImpactCollector final : public JPH::ContactListener {
 public:
     bool detailed_observations{};
@@ -353,8 +375,10 @@ public:
     ImpactCollector(
         std::atomic<std::uint64_t> &tick,
         const std::unordered_map<MatterBodyId, BodyContactState> &contact_states,
-        const std::set<std::pair<MatterBodyId,MatterBodyId>> &external_pairs)
-        : tick_(tick), contact_states_(contact_states), external_pairs_(external_pairs) {}
+        const std::set<std::pair<MatterBodyId,MatterBodyId>> &external_pairs,
+        const std::unordered_map<MatterBodyId, GroundSuspension> &ground_suspended)
+        : tick_(tick), contact_states_(contact_states), external_pairs_(external_pairs),
+          ground_suspended_(ground_suspended) {}
 
     JPH::ValidateResult OnContactValidate(const JPH::Body &a,const JPH::Body &b,JPH::RVec3Arg,const JPH::CollideShapeResult &) override {
         const MatterBodyId first=a.GetUserData(),second=b.GetUserData();const auto key=std::minmax(first,second);
@@ -448,6 +472,34 @@ private:
         settings.mCombinedFriction = static_cast<float>(applied_friction);
         settings.mCombinedRestitution =
             static_cast<float>(combined.restitution);
+
+        // A tool's point in the ground is held by its bite, not by the height
+        // field: the height field is a surface and lets nothing in. The rest of
+        // the tool meets the ground as it always has (suspendGroundContact).
+        if (!ground_suspended_.empty() &&
+            (id1 == kGroundPatchMatterId || id2 == kGroundPatchMatterId)) {
+            const bool tool_is_1 = id2 == kGroundPatchMatterId;
+            const auto point = ground_suspended_.find(tool_is_1 ? id1 : id2);
+            if (point != ground_suspended_.end()) {
+                const GroundSuspension &held = point->second;
+                bool in_point = false;
+                if (held.by_cell) {
+                    const JPH::SubShapeID::Type cell =
+                        (tool_is_1 ? manifold.mSubShapeID1 : manifold.mSubShapeID2).GetValue();
+                    in_point = std::binary_search(held.cells.begin(), held.cells.end(), cell);
+                } else {
+                    const JPH::Body &tool = tool_is_1 ? body1 : body2;
+                    in_point = inPointRegion(
+                        held.region, fromJoltPosition(tool.GetCenterOfMassTransform()
+                                                          .InversedRotationTranslation() *
+                                                      contact_point));
+                }
+                if (in_point) {
+                    settings.mIsSensor = true;
+                    return;
+                }
+            }
+        }
 
         // A round body's contacts are kept for its rolling resistance: which
         // manifold, which way its normal points and where it is. The solver's
@@ -561,6 +613,8 @@ private:
     std::atomic<std::uint64_t> &tick_;
     const std::unordered_map<MatterBodyId, BodyContactState> &contact_states_;
     const std::set<std::pair<MatterBodyId,MatterBodyId>> &external_pairs_;
+    // Written only between steps; read, never written, while one runs.
+    const std::unordered_map<MatterBodyId, GroundSuspension> &ground_suspended_;
     std::mutex mutex_;
     std::vector<ImpactEvent> events_;
     std::mutex rolling_mutex_;
@@ -592,7 +646,7 @@ void ensureJoltRuntime() { static JoltRuntime runtime; }
 
 class JoltWorld::Impl {
 public:
-    explicit Impl(int requested_workers=-1,RigidContactCapacity capacity={}) : impact_collector_(tick_, contact_states_,external_pairs_) {
+    explicit Impl(int requested_workers=-1,RigidContactCapacity capacity={}) : impact_collector_(tick_, contact_states_,external_pairs_,ground_suspended_) {
         if(capacity.body_pairs<128||capacity.body_pairs>262144||capacity.constraints<64||capacity.constraints>65536)
             throw std::invalid_argument("contact capacity bounds exceeded");
         contact_diagnostics_.capacity=capacity;
@@ -990,6 +1044,18 @@ public:
     std::unique_ptr<JPH::PhysicsSystem> physics_;
     std::unordered_map<MatterBodyId, BodyContactState> contact_states_;
     std::set<std::pair<MatterBodyId,MatterBodyId>> external_pairs_;
+    // Tools whose point is in the ground, and where on each the point is
+    // (suspendGroundContact). Before the collector, which holds a reference.
+    std::unordered_map<MatterBodyId, GroundSuspension> ground_suspended_;
+    // Bodies that collide as their cells (setCollisionCells): the cell size,
+    // and each cell's centre in the body's frame with the sub-shape id Jolt
+    // gives it -- read back from the compound, which orders its children as
+    // it likes.
+    struct CellShape {
+        Vec3 centre{};
+        JPH::SubShapeID::Type id{};
+    };
+    std::unordered_map<MatterBodyId, std::pair<double, std::vector<CellShape>>> cell_shapes_;
     std::atomic<std::uint64_t> tick_{0};
     ImpactCollector impact_collector_;
     JPH::BodyID floor_id_;
@@ -1559,9 +1625,10 @@ JoltWorld::JointReport JoltWorld::jointState(unsigned joint) const {
         out.friction = 0.0;
         return out;
     }
-    if (held.kind == JointKind::Kerf) {
+    if (held.kind == JointKind::Kerf || held.kind == JointKind::GroundBite) {
         // An edge in a cut has no one position to report. What it has is
-        // what its friction took, and that is kerfImpulse's business.
+        // what its friction took, and that is kerfImpulse's business -- and a
+        // point in the ground likewise, groundBiteImpulse's.
         out.at = 0.0;
         out.lower = 0.0;
         out.upper = 0.0;
@@ -1595,7 +1662,7 @@ void JoltWorld::setJointFriction(unsigned joint, double friction) {
     // set, every step, from the material; nobody else's.
     if (held.kind == JointKind::Link || held.kind == JointKind::Pulley ||
         held.kind == JointKind::Fixing || held.kind == JointKind::Elastic ||
-        held.kind == JointKind::Kerf) return;
+        held.kind == JointKind::Kerf || held.kind == JointKind::GroundBite) return;
     if (held.kind == JointKind::Slider)
         static_cast<JPH::SliderConstraint *>(held.constraint.GetPtr())
             ->SetMaxFrictionForce(static_cast<float>(friction));
@@ -2417,6 +2484,190 @@ bool JoltWorld::isAwake(MatterBodyId body_id) const {
     return impl_->physics_->GetBodyInterface().IsActive(found->second);
 }
 
+// ---- a tool's point in the ground (docs/ground-work.md) ---------------------
+
+void JoltWorld::suspendGroundContact(MatterBodyId body_id, const GroundPointRegion &region) {
+    impl_->requireConfigurationMutable();
+    const auto found = impl_->bodies_.find(body_id);
+    if (found == impl_->bodies_.end()) throw std::invalid_argument("rigid body is missing");
+    const double along = length(region.pointing_local);
+    if (!(along > 1e-9) || !std::isfinite(along) || !(region.length_m >= 0.0) ||
+        !(region.radius_m >= 0.0) || !(region.margin_m >= 0.0) || !(region.ahead_m >= 0.0))
+        throw std::invalid_argument("a point's region needs a direction and sizes of zero or more");
+    GroundSuspension kept;
+    kept.region = region;
+    kept.region.pointing_local = (1.0 / along) * region.pointing_local;
+    // A tool made of cells has its point picked out cell by cell: every cell
+    // whose centre lies within the point -- no further back from the tip than
+    // its length less half a cell, near its line -- and no other. A quarter
+    // of a cell of slack each way, so a centre on the line is not lost to
+    // rounding.
+    if (const auto cells = impl_->cell_shapes_.find(body_id); cells != impl_->cell_shapes_.end()) {
+        const double cell = cells->second.first;
+        const GroundPointRegion &r = kept.region;
+        kept.by_cell = true;
+        for (const Impl::CellShape &c : cells->second.second) {
+            const Vec3 from_tip = c.centre - r.tip_local_m;
+            const double back = -dot(from_tip, r.pointing_local);
+            const Vec3 radial = from_tip + back * r.pointing_local;
+            if (back >= -0.75 * cell && back <= r.length_m - 0.25 * cell &&
+                length(radial) <= r.radius_m + 0.25 * cell)
+                kept.cells.push_back(c.id);
+        }
+        std::sort(kept.cells.begin(), kept.cells.end());
+    }
+    const bool fresh = !impl_->ground_suspended_.contains(body_id);
+    impl_->ground_suspended_[body_id] = std::move(kept);
+    // A manifold the cache kept from before was judged without the region.
+    if (fresh) impl_->physics_->GetBodyInterface().InvalidateContactCache(found->second);
+}
+
+void JoltWorld::restoreGroundContact(MatterBodyId body_id) {
+    impl_->requireConfigurationMutable();
+    if (impl_->ground_suspended_.erase(body_id) == 0) return;
+    const auto found = impl_->bodies_.find(body_id);
+    if (found == impl_->bodies_.end()) return;
+    auto &bodies = impl_->physics_->GetBodyInterface();
+    bodies.InvalidateContactCache(found->second);
+    bodies.ActivateBody(found->second);
+}
+
+bool JoltWorld::groundContactSuspended(MatterBodyId body_id) const {
+    return impl_->ground_suspended_.contains(body_id);
+}
+
+void JoltWorld::setManifoldReduction(MatterBodyId body_id, bool enabled) {
+    impl_->requireConfigurationMutable();
+    const auto found = impl_->bodies_.find(body_id);
+    if (found == impl_->bodies_.end()) throw std::invalid_argument("rigid body is missing");
+    impl_->physics_->GetBodyInterface().SetUseManifoldReduction(found->second, enabled);
+}
+
+void JoltWorld::setCollisionCells(MatterBodyId body_id, const std::vector<Vec3> &cells_local_m,
+                                  double cell_m) {
+    impl_->requireConfigurationMutable();
+    const auto found = impl_->bodies_.find(body_id);
+    if (found == impl_->bodies_.end()) throw std::invalid_argument("rigid body is missing");
+    if (cells_local_m.empty() || !(cell_m > 0.0) || !std::isfinite(cell_m))
+        throw std::invalid_argument("a body collides as at least one cell of positive size");
+    auto &bodies = impl_->physics_->GetBodyInterface();
+    // Scenery already collides as its cells (addFragments).
+    if (bodies.GetMotionType(found->second) != JPH::EMotionType::Dynamic) return;
+    // Round like every other moving box (kSweepRadiusM), so a tool lying on
+    // something does not start its sweep already touching it.
+    const JPH::Vec3 half = JPH::Vec3::sReplicate(static_cast<float>(0.5 * cell_m));
+    const JPH::RefConst<JPH::Shape> cell = new JPH::BoxShape(half, sweepRadius(half));
+    JPH::StaticCompoundShapeSettings compound;
+    for (const Vec3 &centre : cells_local_m)
+        compound.AddShape(toJolt(centre), JPH::Quat::sIdentity(), cell.GetPtr());
+    const JPH::ShapeSettings::ShapeResult built = compound.Create();
+    if (!built.IsValid()) {
+        const JPH::String &error = built.GetError();
+        throw std::runtime_error("Jolt could not build a body from its cells: " +
+                                 std::string(error.begin(), error.end()));
+    }
+    const JPH::RefConst<JPH::Shape> inner = built.Get();
+    // The cells are placed about the body's centre of mass, which is where the
+    // body's own frame is; the shape's centre is put there too, so swapping it
+    // moves nothing.
+    const JPH::RefConst<JPH::Shape> shape =
+        new JPH::OffsetCenterOfMassShape(inner.GetPtr(), -inner->GetCenterOfMass());
+    bodies.SetShape(found->second, shape.GetPtr(), false, JPH::EActivation::Activate);
+    bodies.InvalidateContactCache(found->second);
+    // Where each cell ended up in the compound and what Jolt calls it. The
+    // decorator passes sub-shape ids straight through to the compound.
+    const auto *cells = static_cast<const JPH::CompoundShape *>(inner.GetPtr());
+    const JPH::Vec3 centre = inner->GetCenterOfMass();
+    std::vector<Impl::CellShape> named;
+    named.reserve(cells->GetNumSubShapes());
+    for (JPH::uint i = 0; i < cells->GetNumSubShapes(); ++i)
+        named.push_back({fromJoltVector(cells->GetSubShape(i).GetPositionCOM() + centre),
+                         cells->GetSubShapeIDFromIndex(static_cast<int>(i), JPH::SubShapeIDCreator())
+                             .GetID()
+                             .GetValue()});
+    impl_->cell_shapes_[body_id] = {cell_m, std::move(named)};
+}
+
+unsigned JoltWorld::addGroundBite(const GroundBiteDescription &d) {
+    impl_->requireConfigurationMutable();
+    const auto found = impl_->bodies_.find(d.tool);
+    if (found == impl_->bodies_.end()) throw std::invalid_argument("a bite needs its tool in the world");
+    if (impl_->joints_.size() >= 4096) throw std::invalid_argument("joint budget exceeded");
+    const double into = length(d.into_world);
+    if (!(into > 1e-9) || !std::isfinite(into))
+        throw std::invalid_argument("a bite needs the way the point goes in");
+    if (!(d.resist_into_n >= 0.0) || !(d.resist_x_n >= 0.0) || !(d.resist_z_n >= 0.0) ||
+        !std::isfinite(d.resist_into_n + d.resist_x_n + d.resist_z_n))
+        throw std::invalid_argument("a bite's resistance is newtons, zero or more");
+    const Vec3 y = (1.0 / into) * d.into_world;
+    // Squared up against the way in, so "roughly across" is enough.
+    Vec3 x = d.across_x_world - dot(d.across_x_world, y) * y;
+    if (!(length(x) > 1e-6)) x = cross(y, Vec3{0.0, 1.0, 0.0});
+    if (!(length(x) > 1e-6)) x = cross(y, Vec3{1.0, 0.0, 0.0});
+    x = normalized(x);
+
+    using Axis = JPH::SixDOFConstraintSettings::EAxis;
+    JPH::SixDOFConstraintSettings settings;
+    settings.mSpace = JPH::EConstraintSpace::WorldSpace;
+    settings.mPosition1 = settings.mPosition2 = toJoltPosition(d.point_world_m);
+    settings.mAxisX1 = settings.mAxisX2 = toJolt(x);
+    settings.mAxisY1 = settings.mAxisY2 = toJolt(y);
+    settings.mSwingType = JPH::ESwingType::Pyramid;
+    for (const Axis axis : {Axis::TranslationX, Axis::TranslationY, Axis::TranslationZ,
+                            Axis::RotationX, Axis::RotationY, Axis::RotationZ})
+        settings.MakeFreeAxis(axis);
+    settings.mMaxFriction[Axis::TranslationX] = static_cast<float>(d.resist_x_n);
+    settings.mMaxFriction[Axis::TranslationZ] = static_cast<float>(d.resist_z_n);
+    // Body 1 is the tool and body 2 the world, so Jolt's constraint velocity
+    // along Y is the world's less the tool's: a tool going in is negative, and
+    // a motor driving it to zero pushes with a positive impulse -- the tool
+    // back out along -Y. The force limits [0, R] let it push out with up to R
+    // and never pull in.
+    auto *raw = impl_->physics_->GetBodyInterface().CreateConstraint(&settings, found->second,
+                                                                      JPH::BodyID());
+    if (!raw) throw std::runtime_error("a bite could not be made");
+    auto *bite = static_cast<JPH::SixDOFConstraint *>(raw);
+    bite->GetMotorSettings(Axis::TranslationY)
+        .SetForceLimits(0.0F, static_cast<float>(d.resist_into_n));
+    bite->SetTargetVelocityCS(JPH::Vec3::sZero());
+    bite->SetMotorState(Axis::TranslationY, JPH::EMotorState::Velocity);
+    // Against the world, which does not move, so no light-body correction is
+    // needed (see addKerf); enough iterations to deliver the limit exactly.
+    raw->SetNumVelocityStepsOverride(static_cast<JPH::uint>(kWarmKerfSteps));
+    raw->SetNumPositionStepsOverride(6);
+    const auto id = impl_->next_joint_++;
+    impl_->joints_.emplace(id, Impl::Joint{d.tool, kGroundPatchMatterId, JointKind::GroundBite,
+                                           static_cast<JPH::TwoBodyConstraint *>(raw)});
+    impl_->physics_->AddConstraint(raw);
+    impl_->physics_->GetBodyInterface().ActivateBody(found->second);
+    return id;
+}
+
+void JoltWorld::updateGroundBite(unsigned joint, double resist_into_n, double resist_x_n,
+                                 double resist_z_n) {
+    const auto found = impl_->joints_.find(joint);
+    if (found == impl_->joints_.end() || found->second.kind != JointKind::GroundBite) return;
+    if (!(resist_into_n >= 0.0) || !(resist_x_n >= 0.0) || !(resist_z_n >= 0.0) ||
+        !std::isfinite(resist_into_n + resist_x_n + resist_z_n))
+        throw std::invalid_argument("a bite's resistance is newtons, zero or more");
+    using Axis = JPH::SixDOFConstraintSettings::EAxis;
+    auto *bite = static_cast<JPH::SixDOFConstraint *>(found->second.constraint.GetPtr());
+    bite->GetMotorSettings(Axis::TranslationY).SetForceLimits(0.0F, static_cast<float>(resist_into_n));
+    bite->SetMaxFriction(Axis::TranslationX, static_cast<float>(resist_x_n));
+    bite->SetMaxFriction(Axis::TranslationZ, static_cast<float>(resist_z_n));
+}
+
+Vec3 JoltWorld::groundBiteImpulse(unsigned joint) const {
+    const auto found = impl_->joints_.find(joint);
+    if (found == impl_->joints_.end() || found->second.kind != JointKind::GroundBite) return {};
+    // The motor along Y and the frictions along X and Z are all Jolt's
+    // translation MOTOR parts, as the kerf's are (kerfImpulse).
+    const JPH::Vec3 impulse = static_cast<const JPH::SixDOFConstraint *>(found->second.constraint.GetPtr())
+                                  ->GetTotalLambdaMotorTranslation();
+    return {static_cast<double>(impulse.GetX()), static_cast<double>(impulse.GetY()),
+            static_cast<double>(impulse.GetZ())};
+}
+
 void JoltWorld::setGroundRollingResistance(std::function<double(double, double)> surface_at) {
     impl_->ground_rolling_at_ = std::move(surface_at);
 }
@@ -3028,6 +3279,8 @@ void JoltWorld::removeAndDestroy(MatterBodyId body_id) {
     for (const unsigned id : jointsOn(body_id)) removeJoint(id);
     std::erase_if(impl_->external_pairs_,[&](const auto &pair){return pair.first==body_id||pair.second==body_id;});
     std::erase_if(impl_->rolling_,[&](const RollingContact &c){return c.sphere==body_id||c.other==body_id;});
+    impl_->ground_suspended_.erase(body_id);
+    impl_->cell_shapes_.erase(body_id);
     JPH::BodyInterface &body_interface = impl_->physics_->GetBodyInterface();
     body_interface.RemoveBody(found->second);
     body_interface.DestroyBody(found->second);

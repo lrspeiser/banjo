@@ -303,7 +303,45 @@ class Live:
         # And the edges, on bodies that are now standing there, for the same
         # reason the pins go in afterwards. docs/cutting-model.md.
         armed = self._arm(session, spec.get("blades") or [])
-        return {"session": session.id, "spec": spec, **session.state, **hung, **armed}
+        # And the points of tools that dig, likewise. docs/ground-work.md.
+        tooled = self._point(session, spec.get("tool_points") or [])
+        return {"session": session.id, "spec": spec, **session.state, **hung, **armed, **tooled}
+
+    @staticmethod
+    def _point(session: "Session", points: Any) -> dict[str, Any]:
+        """Give every body the room says is a tool that digs its point.
+
+        A point that will not go on is said out loud, like an edge: a pick that
+        silently digs nothing reads as the physics failing.
+        """
+        if not isinstance(points, list):
+            raise LiveError("a room's tool points must be a list")
+        problems: list[str] = []
+        state: dict[str, Any] = {}
+        for point in points:
+            if not isinstance(point, dict):
+                problems.append("a tool point that is not an object")
+                continue
+            try:
+                answer = session.send(
+                    op="tool_point", body=str(point.get("body", "")),
+                    tip=[float(v) / 1000.0 for v in (point.get("tip_mm") or [])],
+                    pointing=[float(v) for v in (point.get("pointing") or [0, -1, 0])],
+                    width_m=float(point.get("width_mm", 40.0)) / 1000.0,
+                    thickness_m=float(point.get("thickness_mm", 40.0)) / 1000.0,
+                    angle_deg=float(point.get("angle_deg", 30.0)),
+                    length_m=float(point.get("length_mm", 150.0)) / 1000.0,
+                    grip=[float(v) / 1000.0
+                          for v in (point.get("grip_mm") or point.get("tip_mm") or [])])
+            except Exception as error:
+                problems.append(f"{point.get('body', '?')} would not take its point: {error}")
+                continue
+            point["id"] = answer.get("tool_point")
+            if answer.get("tool_points") is not None:
+                state["tool_points"] = answer["tool_points"]
+        if problems:
+            state["tool_point_problems"] = problems
+        return state
 
     @staticmethod
     def _arm(session: "Session", blades: Any) -> dict[str, Any]:
@@ -606,6 +644,36 @@ class Live:
                                 thickness_m=thickness, edge_radius_m=radius,
                                 bevel_deg=bevel,
                                 grip=_three(body.get("grip") or heel, "a blade's grip"))
+        # ---- tools that work the ground (docs/ground-work.md) ---------------
+        if op == "tool_point":
+            tip = _three(body.get("tip"), "a point's tip")
+            sizes = {key: float(body.get(key, fallback)) for key, fallback in
+                     (("width_m", 0.04), ("thickness_m", 0.04), ("length_m", 0.15))}
+            angle = float(body.get("angle_deg", 30.0))
+            if not all(0.002 <= v <= 1.0 for v in sizes.values()) or not 5.0 <= angle <= 170.0:
+                raise LiveError("a point is 2 mm to 1 m across and long, at 5 to 170 degrees")
+            return session.send(op="tool_point", body=str(body.get("body", "")), tip=tip,
+                                pointing=_three(body.get("pointing"), "a point's pointing"),
+                                angle_deg=angle, grip=_three(body.get("grip") or tip, "a point's grip"),
+                                **sizes)
+        if op == "strike":
+            # A bounded tool action: the engine's hand makes it at the step's
+            # own rate, and what it does to the ground is the ground's.
+            lever = bool(body.get("lever", False))
+            speed = float(body.get("speed_m_s", 4.0))
+            raise_deg = float(body.get("raise_deg", 0.0))
+            lever_deg = float(body.get("lever_deg", 40.0))
+            if not (0.3 <= speed <= 12.0 and 0.0 <= raise_deg <= 170.0 and 5.0 <= lever_deg <= 80.0):
+                raise LiveError("a tool action goes at 0.3 to 12 m/s, raised up to 170 degrees, "
+                                "levered 5 to 80 degrees")
+            command = {"op": "strike", "shoulder": _three(body.get("shoulder"), "the shoulder"),
+                       "speed_m_s": speed, "raise_deg": raise_deg, "lever": lever,
+                       "lever_deg": lever_deg}
+            if not lever:
+                command["at"] = _three(body.get("at"), "where the point comes down")
+            return session.send(**command)
+        if op in ("tool_points", "ground_work"):
+            return session.send(op=op)
         if op == "grab":
             return session.send(op="grab", name=str(body.get("name", "")))
         if op == "move":

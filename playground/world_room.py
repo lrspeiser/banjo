@@ -874,6 +874,33 @@ def valley() -> dict[str, Any]:
     }
 
 
+def clearing() -> dict[str, Any]:
+    """Level ground to dig in: soil, and a slab of bare rock beside it.
+
+    The engine's clearing (TerrainGenerator's clearing()): dry, level ground with
+    its surface at y = 0 -- 0.4 m of soil over rock, in 0.1 m columns, 8 m square
+    -- and a slab of bare rock 1.6 m by 1.2 m standing 0.12 m proud of it,
+    centred at [1.6, -1.2]. The person arrives on the soil at [0, 2.2] looking
+    towards the rock. Soil and rock a step apart, so a tool that digs can be
+    tried on both: its point goes into the soil and the rock stops it
+    (docs/ground-work.md).
+
+    Nothing else is here: the tool is for the chat to make, by being asked --
+    which is the point of the room. One marker stone, anchored and buried in the
+    rock under the clearing, because a world is opened from its bodies.
+    """
+    return {
+        "algorithm": "lattice",
+        "cell_m": 0.04,
+        "plasticity": "on",
+        "terrain": {"generate": "clearing"},
+        "bodies": [{"name": "marker stone", "shape": "box", "material": "concrete",
+                    "size_mm": [80, 80, 80], "center_mm": [-3600, -1000, -3600],
+                    "anchored": True}],
+        "joints": [],
+    }
+
+
 def watershed() -> dict[str, Any]:
     """The valley, and the river network beyond its edges (docs/watershed.md).
 
@@ -951,6 +978,7 @@ SCENES = {
     "armoury": armoury,
     "valley": valley,
     "watershed": watershed,
+    "clearing": clearing,
 }
 
 

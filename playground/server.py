@@ -1042,7 +1042,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(job)
             allowed={"/":"index.html","/index.html":"index.html","/app.js":"app.js","/style.css":"style.css","/scene.js":"scene.js",
                 "/world":"world.html","/world.html":"world.html","/world.js":"world.js","/world.css":"world.css",
-                "/blades.js":"blades.js","/interaction.js":"interaction.js",
+                "/blades.js":"blades.js","/interaction.js":"interaction.js","/picks.js":"picks.js",
                 "/vendor/three.module.js":"vendor/three.module.js","/vendor/three.core.js":"vendor/three.core.js"}
             if path not in allowed: return self.send({"error":"Not found"},404)
             file=STATIC/allowed[path]
@@ -1188,7 +1188,7 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/live/open": return self.send(self.server.app.live.open(self.server.app,body))
             if path=="/api/live/act":
                 answer=self.server.app.live.act(body)
-                remember_ground(self.server.app,body)
+                remember_ground(self.server.app,body,answer)
                 return self.send(answer)
             # Save the frame the 3D viewer is showing. The page cannot write
             # a file and cannot reach any other origin, so the one way a
@@ -1320,36 +1320,51 @@ def with_water(session,spec,ground_was):
 MAX_GROUND_EDITS=400
 
 
-def remember_ground(app,body):
-    """A spade in the person's hand changes the ground for good.
+def remember_ground(app,body,answer=None):
+    """A spade -- or a pick -- in the person's hand changes the ground for good.
 
     The ground is part of what the room IS, not something in flight in it: a
     pit dug with Dig here is still a pit when the room is opened again -- after
     the chat changes something, or on a reload -- and the chat's own copy of the
     room has it too. So a dig or a heap the engine made is written into the
     room's terrain edits, as the engine was asked for it. Asking the chat to
-    make the valley again gives the untouched ground back."""
-    if not isinstance(body,dict) or body.get("op") not in ("dig","deposit"): return
+    make the valley again gives the untouched ground back.
+
+    And what a pick's pry broke loose went out through the ground's own dig:
+    each meeting of a point with the ground that did says where, in the answer
+    that reports it over (ground_work's "dug", unrounded), and it is kept as the
+    dig edit it was -- made again from those numbers, it takes out the same
+    (docs/ground-work.md)."""
+    new=[]
+    if isinstance(body,dict) and body.get("op") in ("dig","deposit"):
+        def xz(key,default=None):
+            value=body.get(key,default)
+            return [float(value[0]),float(value[-1])]
+        if body["op"]=="dig":
+            start=xz("from")
+            new.append({"dig":{"from_m":start,"to_m":xz("to",start),
+                               "width_m":float(body.get("width_m",1.0)),"depth_m":float(body.get("depth_m",0.5))}})
+        else:
+            new.append({"deposit":{"at_m":xz("at"),"radius_m":float(body.get("radius_m",1.0)),
+                                   "sand_m3":float(body.get("sand_m3",0.0)),"soil_m3":float(body.get("soil_m3",0.0))}})
+    if isinstance(answer,dict):
+        for work in answer.get("ground_work") or []:
+            dug=work.get("dug") if isinstance(work,dict) else None
+            if isinstance(dug,dict) and not work.get("open"):
+                new.append({"dig":{"from_m":[float(v) for v in dug["from_m"]],"to_m":[float(v) for v in dug["to_m"]],
+                                   "width_m":float(dug["width_m"]),"depth_m":float(dug["depth_m"])}})
+    if not new: return
     room=getattr(app,"room",None)
     spec=getattr(room,"spec",None)
     if not isinstance(spec,dict) or not spec.get("terrain"): return
     terrain=dict(spec["terrain"])
     edits=list(terrain.get("edits") or [])
-    if len(edits)>=MAX_GROUND_EDITS:
-        log.warning("ground: the room already holds %d edits; this one stays in the running world only",
+    if len(edits)+len(new)>MAX_GROUND_EDITS:
+        log.warning("ground: the room already holds %d edits; what does not fit stays in the running world only",
                     len(edits))
-        return
-    def xz(key,default=None):
-        value=body.get(key,default)
-        return [float(value[0]),float(value[-1])]
-    if body["op"]=="dig":
-        start=xz("from")
-        edits.append({"dig":{"from_m":start,"to_m":xz("to",start),
-                             "width_m":float(body.get("width_m",1.0)),"depth_m":float(body.get("depth_m",0.5))}})
-    else:
-        edits.append({"deposit":{"at_m":xz("at"),"radius_m":float(body.get("radius_m",1.0)),
-                                 "sand_m3":float(body.get("sand_m3",0.0)),"soil_m3":float(body.get("soil_m3",0.0))}})
-    terrain["edits"]=edits
+        new=new[:max(0,MAX_GROUND_EDITS-len(edits))]
+        if not new: return
+    terrain["edits"]=edits+new
     room.spec=dict(spec,terrain=terrain)
 
 

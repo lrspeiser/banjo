@@ -221,11 +221,10 @@ Volumes TerrainField::strip(std::size_t c, double thickness) {
     return took;
 }
 
-EditReport TerrainField::dig(double ax, double az, double bx, double bz, double width_m,
-                             double depth_m) {
-    EditReport report;
-    if (!(width_m > 0.0) || !(depth_m > 0.0) || !std::isfinite(ax + az + bx + bz + width_m + depth_m))
-        throw std::invalid_argument("a dig needs two points, a positive width and a positive depth");
+std::vector<std::size_t> TerrainField::columnsAlong(double ax, double az, double bx, double bz,
+                                                    double width_m) const {
+    std::vector<std::size_t> out;
+    if (!(width_m > 0.0) || !std::isfinite(ax + az + bx + bz + width_m)) return out;
     const double r = 0.5 * width_m;
     const double lx = bx - ax, lz = bz - az;
     const double length2 = lx * lx + lz * lz;
@@ -239,14 +238,25 @@ EditReport TerrainField::dig(double ax, double az, double bx, double bz, double 
             const double s = length2 > 0.0 ? std::clamp((px * lx + pz * lz) / length2, 0.0, 1.0) : 0.0;
             const double dx = px - s * lx, dz = pz - s * lz;
             if (dx * dx + dz * dz > r * r) continue;
-            const std::size_t c = grid_.at(i, j);
-            const Volumes took = strip(c, depth_m);
-            if (took.total() <= 0.0) continue;
-            report.moved.sand_m3 += took.sand_m3;
-            report.moved.soil_m3 += took.soil_m3;
-            report.cells.push_back(c);
-            touched(c);
+            out.push_back(grid_.at(i, j));
         }
+    return out;
+}
+
+EditReport TerrainField::dig(double ax, double az, double bx, double bz, double width_m,
+                             double depth_m) {
+    EditReport report;
+    if (!(width_m > 0.0) || !(depth_m > 0.0) || !std::isfinite(ax + az + bx + bz + width_m + depth_m))
+        throw std::invalid_argument("a dig needs two points, a positive width and a positive depth");
+    // The same columns, in the same order, columnsAlong names.
+    for (const std::size_t c : columnsAlong(ax, az, bx, bz, width_m)) {
+        const Volumes took = strip(c, depth_m);
+        if (took.total() <= 0.0) continue;
+        report.moved.sand_m3 += took.sand_m3;
+        report.moved.soil_m3 += took.soil_m3;
+        report.cells.push_back(c);
+        touched(c);
+    }
     report.mass_kg = report.moved.sand_m3 * sandMaterial().density_kg_m3 +
                      report.moved.soil_m3 * soilMaterial().density_kg_m3;
     ledger_.dug.sand_m3 += report.moved.sand_m3;

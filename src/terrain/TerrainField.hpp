@@ -184,6 +184,11 @@ public:
     // segment from a to b (x, z) is taken down `depth` below where it stands,
     // loose material first, then soil. Rock is not dug -- a spade stops on it.
     EditReport dig(double ax, double az, double bx, double bz, double width_m, double depth_m);
+    // The columns such a dig takes, in the order it takes them: every column
+    // whose centre is within width/2 of the segment. Changes nothing -- it is
+    // how a caller that knows a VOLUME, not a depth, works out the depth.
+    [[nodiscard]] std::vector<std::size_t> columnsAlong(double ax, double az, double bx, double bz,
+                                                        double width_m) const;
     // Heap material up around a point: a cone of it within `radius`, which the
     // stability check then lets settle to whatever slope it can hold.
     EditReport deposit(double x, double z, double radius_m, double sand_m3, double soil_m3);

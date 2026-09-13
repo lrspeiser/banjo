@@ -92,6 +92,9 @@ struct banjo_world {
     // Blades and their cuts, for the same reason: names handed out point in here.
     std::vector<LiveBlade> blades;
     std::vector<LiveCut> cut_list;
+    // Tools' points and what they did in the ground, likewise.
+    std::vector<banjo::fastlattice::LiveToolPoint> tool_points;
+    std::vector<banjo::fastlattice::LiveGroundWork> ground_work;
     // Terrain and water, last time anyone asked.
     std::string environment_report;
     std::string environment_state;
@@ -875,6 +878,144 @@ int banjo_cuts(const banjo_world *world, banjo_cut *out, int max) {
 int banjo_forget_cuts(banjo_world *world) {
     if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
     return guarded([&] { world->world->forgetCuts(); return BANJO_OK; });
+}
+
+// ---- tools that work the ground (docs/ground-work.md) ----------------------
+
+int banjo_make_tool_point(banjo_world *world, const char *body, const double tip_m[3],
+                          const double pointing[3], double width_m, double thickness_m,
+                          double angle_deg, double length_m, const double grip_m[3]) {
+    if (!world || !body || !tip_m || !pointing || !grip_m) {
+        setError("no world, no body, or no point"); return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        const unsigned id = world->world->toolPoint(body, readVec(tip_m), readVec(pointing), width_m,
+                                                    thickness_m, angle_deg, length_m, readVec(grip_m));
+        if (id == 0) {
+            setError(std::string("\"") + body + "\" cannot take that point: " +
+                     world->world->toolPointRefusal());
+            return static_cast<int>(BANJO_BAD_ARGUMENT);
+        }
+        return static_cast<int>(id);
+    });
+}
+
+int banjo_tool_point_count(const banjo_world *world) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        auto *kept = const_cast<banjo_world *>(world);
+        kept->tool_points = world->world->toolPoints();
+        return static_cast<int>(kept->tool_points.size());
+    });
+}
+
+int banjo_tool_points(const banjo_world *world, banjo_tool_point *out, int max) {
+    if (!world || (!out && max > 0) || max < 0) {
+        setError("no world or nowhere to write"); return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        auto *kept = const_cast<banjo_world *>(world);
+        kept->tool_points = world->world->toolPoints();
+        const int count = std::min<int>(max, static_cast<int>(kept->tool_points.size()));
+        for (int i = 0; i < count; ++i) {
+            const banjo::fastlattice::LiveToolPoint &p = kept->tool_points[static_cast<std::size_t>(i)];
+            banjo_tool_point &said = out[i];
+            said.id = p.id;
+            said.body = p.body.c_str();
+            said.material = p.material.c_str();
+            writeVec(p.tip_m, said.tip_m);
+            writeVec(p.pointing, said.pointing);
+            writeVec(p.grip_m, said.grip_m);
+            said.width_m = p.width_m;
+            said.thickness_m = p.thickness_m;
+            said.angle_deg = p.angle_deg;
+            said.length_m = p.length_m;
+            said.in = p.in.c_str();
+            said.depth_m = p.depth_m;
+            said.attached = p.attached ? 1 : 0;
+        }
+        return count;
+    });
+}
+
+int banjo_strike(banjo_world *world, const banjo_strike_request *request) {
+    if (!world || !request) { setError("no world or no request"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        banjo::fastlattice::LiveStrike strike;
+        strike.target_m = readVec(request->target_m);
+        strike.shoulder_m = readVec(request->shoulder_m);
+        strike.speed_m_s = request->speed_m_s;
+        strike.raise_deg = request->raise_deg;
+        strike.lever = request->lever != 0;
+        strike.lever_deg = request->lever_deg;
+        strike.give_up_s = request->give_up_s;
+        std::string why;
+        if (world->world->strike(strike, why)) return static_cast<int>(BANJO_OK);
+        setError(why);
+        return static_cast<int>(BANJO_BAD_ARGUMENT);
+    });
+}
+
+int banjo_ground_work_count(const banjo_world *world) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        auto *kept = const_cast<banjo_world *>(world);
+        kept->ground_work = world->world->groundWork();
+        return static_cast<int>(kept->ground_work.size());
+    });
+}
+
+int banjo_ground_works(const banjo_world *world, banjo_ground_work *out, int max) {
+    if (!world || (!out && max > 0) || max < 0) {
+        setError("no world or nowhere to write"); return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        auto *kept = const_cast<banjo_world *>(world);
+        kept->ground_work = world->world->groundWork();
+        const int count = std::min<int>(max, static_cast<int>(kept->ground_work.size()));
+        for (int i = 0; i < count; ++i) {
+            const banjo::fastlattice::LiveGroundWork &w = kept->ground_work[static_cast<std::size_t>(i)];
+            banjo_ground_work &said = out[i];
+            said.point = w.point;
+            said.tool = w.tool.c_str();
+            said.ground = w.ground.c_str();
+            said.kind = w.kind.c_str();
+            said.supported = w.supported ? 1 : 0;
+            said.why = w.why.c_str();
+            said.at_s = w.at_s;
+            writeVec(w.at_m, said.at_m);
+            said.closing_speed_m_s = w.closing_speed_m_s;
+            said.depth_m = w.depth_m;
+            said.sideways_m = w.sideways_m;
+            said.impulse_n_s = w.impulse_n_s;
+            said.peak_force_n = w.peak_force_n;
+            said.work_j = w.work_j;
+            said.penetration_work_j = w.penetration_work_j;
+            said.breakout_work_j = w.breakout_work_j;
+            said.resistance_n = w.resistance_n;
+            said.passive_n = w.passive_n;
+            said.loosened_sand_m3 = w.loosened.sand_m3;
+            said.loosened_soil_m3 = w.loosened.soil_m3;
+            said.loosened_kg = w.loosened_kg;
+            said.tool_whole = w.tool_whole ? 1 : 0;
+            said.tool_dent_m = w.tool_dent_m;
+            said.model = w.model.c_str();
+            said.open = w.open ? 1 : 0;
+            said.dug = w.dug ? 1 : 0;
+            said.dug_from_m[0] = w.dug_from_m[0];
+            said.dug_from_m[1] = w.dug_from_m[1];
+            said.dug_to_m[0] = w.dug_to_m[0];
+            said.dug_to_m[1] = w.dug_to_m[1];
+            said.dug_width_m = w.dug_width_m;
+            said.dug_depth_m = w.dug_depth_m;
+        }
+        return count;
+    });
+}
+
+int banjo_forget_ground_work(banjo_world *world) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] { world->world->forgetGroundWork(); return static_cast<int>(BANJO_OK); });
 }
 
 int banjo_wield(banjo_world *world, const char *name, const double grip_m[3]) {

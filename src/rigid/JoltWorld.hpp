@@ -178,6 +178,66 @@ public:
     [[nodiscard]] unsigned awakeBodies() const;
     [[nodiscard]] bool isAwake(MatterBodyId body_id) const;
 
+    // ---- a tool's point in the ground (docs/ground-work.md) -----------------
+    //
+    // A point driven into soil is resisted by the soil, not by the ground's
+    // height field: the height field is a surface and cannot let anything in.
+    // So while a point is in the ground, the contacts between the ground and
+    // the part of the tool that is its point are left to the point's own
+    // constraint (addGroundBite), and every other part of the tool still meets
+    // the ground as the rigid surface it is -- the head of a pick stops at the
+    // surface, and bears on it as the fulcrum of a lever.
+    //
+    // The point is a region of the body in its own frame, about its centre of
+    // mass: from the tip back along the way it points as far as `length_m`,
+    // within `radius_m` of that line, and `margin_m` wider -- and `ahead_m`
+    // on beyond the tip, because a contact found by a sweep is placed where
+    // the body will be, not where it is. Behind the point the margin stays
+    // small: the rest of the tool must meet the ground. A manifold whose
+    // middle is in the region is not solved and not reported as an impact.
+    struct GroundPointRegion {
+        Vec3 tip_local_m{};
+        Vec3 pointing_local{};
+        double length_m{};
+        double radius_m{};
+        double ahead_m{};
+        double margin_m{};
+    };
+    void suspendGroundContact(MatterBodyId body_id, const GroundPointRegion &region);
+    void restoreGroundContact(MatterBodyId body_id);
+    [[nodiscard]] bool groundContactSuspended(MatterBodyId body_id) const;
+    // Whether Jolt may merge this body's contact manifolds. Off for a tool, so
+    // the contacts of its point are never merged with those of its handle.
+    void setManifoldReduction(MatterBodyId body_id, bool enabled);
+    // From now on the body collides as its cells -- a box per cell, centred
+    // where given in its own frame -- rather than as its convex hull. A hull
+    // fills in the crook of a pick, and a pick with a solid crook cannot put
+    // its point into the ground without its handle going in too. Mass and
+    // inertia are kept: they are the matter's, and the matter has not changed.
+    void setCollisionCells(MatterBodyId body_id, const std::vector<Vec3> &cells_local_m, double cell_m);
+
+    // The ground holding a point: a constraint between the tool and the world
+    // at the point, in the point's own axes. Along the way the point goes in
+    // (Y) it is a motor driven to no relative motion that may push the tool
+    // back out with up to `resist_into_n` and never pulls it in -- the soil's
+    // bearing resistance, which a point pushed harder than that overcomes, and
+    // which lets it be drawn back out freely. Across (X, and Z = X x Y) it is
+    // a friction of up to `resist_x_n` and `resist_z_n`: the soil's passive
+    // resistance to the buried point being pushed sideways, which is how a pry
+    // breaks ground out. Turning is free. Host thread, between steps.
+    struct GroundBiteDescription {
+        MatterBodyId tool{kInvalidMatterBodyId};
+        Vec3 point_world_m{};
+        Vec3 into_world{};
+        Vec3 across_x_world{};
+        double resist_into_n{}, resist_x_n{}, resist_z_n{};
+    };
+    [[nodiscard]] unsigned addGroundBite(const GroundBiteDescription &description);
+    void updateGroundBite(unsigned joint, double resist_into_n, double resist_x_n, double resist_z_n);
+    // What the last step's bite applied, N s, along its X, Y (in) and Z. Y is
+    // positive where it pushed the tool back out.
+    [[nodiscard]] Vec3 groundBiteImpulse(unsigned joint) const;
+
     // ---- rolling resistance -------------------------------------------------
     //
     // A round body rolling on something is resisted by a couple at each of its
@@ -528,7 +588,11 @@ public:
         // An edge in a cut. Not a joint anybody builds: the cutting model
         // makes one while an edge is engaged and takes it away when it is
         // not. See docs/cutting-model.md and KerfDescription below.
-        Kerf = 6
+        Kerf = 6,
+        // A tool's point in the ground, held by the soil. Not built by anyone
+        // either: the ground-work model makes it while a point is in and takes
+        // it away when the point comes out (docs/ground-work.md).
+        GroundBite = 7
     };
 
     // An edge engaged in matter, as the solver sees it.

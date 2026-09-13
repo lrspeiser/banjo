@@ -11,6 +11,8 @@
 
 namespace banjo::fastlattice {
 
+struct ToolTerrainHost;
+
 // Where one object is, under the name the request gave it.
 struct LiveBodyPose {
     std::string name;
@@ -138,6 +140,13 @@ struct LiveStroke {
     bool let_go_at_end{};
     // Stop trying after this long. The hand stays shut; the host decides.
     double give_up_s{2.0};
+    // Which way the hand wants the thing to face at each point of the path,
+    // w first, one per point -- or none, and the wrist keeps whatever it was
+    // last asked (aimHeld). Between two points the wish turns from one to the
+    // next as the hand goes, and the wrist turns the thing towards it with the
+    // torque it has: a swing is the grip going round and the thing turning
+    // with it. Nothing here sets how anything is turned.
+    std::vector<Quat> facings_wxyz;
 };
 
 // What the hand is doing, and what it has done.
@@ -458,6 +467,112 @@ struct LiveCut {
     bool separated{};      // the target came apart
     std::size_t pieces{};  // into how many, when it did
     bool open{};           // still in contact
+};
+
+// The working end of a tool: a point on a body that can go into the ground.
+// See docs/ground-work.md for the whole model; this is what a host sees of it.
+//
+// Declared ON a body, as an edge is: the body supplies the matter, the
+// material, the mass and where it is. The declaration adds what cells cannot
+// resolve -- where the tip is, which way the point goes in, how wide and thick
+// it is and how sharply it comes to its tip, how much of the tool is point --
+// and where a hand holds it.
+struct LiveToolPoint {
+    unsigned id{};
+    std::string body;
+    std::string material;
+    // Where it is now, in world metres, and the same in the body's own frame.
+    Vec3 tip_m{}, pointing{}, grip_m{};
+    Vec3 tip_local_m{}, pointing_local{}, grip_local_m{};
+    double width_m{}, thickness_m{}, angle_deg{}, length_m{};
+    // What the point is in right now ("soil", "sand", "loose soil"), "" for
+    // nothing, and how far in along its own axis.
+    std::string in;
+    double depth_m{};
+    // False once the body carrying it has gone -- broken up, or swept away.
+    bool attached{true};
+};
+
+// One meeting between a tool's point and the ground, from first touch until
+// the point is out again. Every meeting is reported, including the ones that
+// loosened nothing, and the ones the model does not cover: "not supported" is
+// an answer, and it is never "your tool failed".
+struct LiveGroundWork {
+    unsigned point{};          // the tool point
+    std::string tool;          // the body carrying it
+    std::string ground;        // what the point met: "soil", "sand", "loose soil", "rock", "the floor"
+    // "in the ground"  the point is in and the ground is resisting it (open)
+    // "broke out"      a pry broke ground out, and it came loose
+    // "pulled out"     the point came out without breaking anything out
+    // "stopped"        ground at least as hard as the point stopped it
+    // "glanced"        the point met the ground side-on: an ordinary contact
+    // "not supported"  the ground there is a regime the model does not cover
+    std::string kind;
+    bool supported{true};
+    // Why, for "stopped", "glanced" and "not supported"; what happened, for
+    // anything else worth saying.
+    std::string why;
+    double at_s{};
+    Vec3 at_m{};                   // where the point entered, or met the ground
+    double closing_speed_m_s{};    // along its own axis, as it arrived
+    double depth_m{};              // the deepest it went, along its axis
+    double sideways_m{};           // how far it went sideways while in the ground
+    // Measured from the solver: the ground's push back on the point along its
+    // axis over the whole meeting, the most it pushed with in one step, and
+    // the work it took out of the tool -- going in, and being pried.
+    double impulse_n_s{};
+    double peak_force_n{};
+    double work_j{};
+    double penetration_work_j{};
+    double breakout_work_j{};
+    // The model's own numbers at the deepest it went: what the ground resisted
+    // the point going in with, and a pry with.
+    double resistance_n{};
+    double passive_n{};
+    // What came loose and was taken out of the ground through the dig path --
+    // and so is carried (terrain::Environment::carried).
+    terrain::Volumes loosened;
+    double loosened_kg{};
+    // The tool as the meeting ended: whole or not, and its deepest dent.
+    bool tool_whole{true};
+    double tool_dent_m{};
+    std::string model;             // "ground-work-v1"
+    bool open{};
+    // Where what came loose went out through the ground's dig, as a dig edit
+    // says it ({"dig": {"from_m", "to_m", "width_m", "depth_m"}}): a host that
+    // keeps the ground's edits keeps this one, and the ground opened again from
+    // them has the same hole and carries the same.
+    bool dug{};
+    double dug_from_m[2]{};
+    double dug_to_m[2]{};
+    double dug_width_m{};
+    double dug_depth_m{};
+};
+
+// A bounded tool action, asked for by a host: the hand makes it at the step's
+// own rate with the strength it has, and the world decides what it does.
+//
+//   swing  the held tool is swung so its point comes down on `target_m` -- a
+//          point on the ground -- turning about `shoulder_m`, the way a pick
+//          is swung. With `raise_deg` above zero it is first raised back that
+//          far; at zero it swings from wherever it is held.
+//   lever  a tool whose point is in the ground is pried: turned by
+//          `lever_deg` about where the point went in, the handle coming back
+//          towards `shoulder_m`, and then drawn up out of the ground.
+//
+// `speed_m_s` is as fast as the hand may take the grip along the motion. How
+// fast the tool actually goes is the hand's strength against the tool's mass;
+// what it does to the ground is the ground's.
+struct LiveStrike {
+    Vec3 target_m{};
+    Vec3 shoulder_m{};
+    // A steady swing. With the wrist turning the tool as the grip goes round,
+    // its point comes down two to three times as fast as the hand goes.
+    double speed_m_s{4.0};
+    double raise_deg{0.0};
+    bool lever{};
+    double lever_deg{40.0};
+    double give_up_s{2.0};
 };
 
 // A moment where the world was made to wait, or was saved from waiting.
@@ -974,6 +1089,38 @@ public:
     [[nodiscard]] std::vector<LiveCut> cuts() const;
     void forgetCuts();
 
+    // ---- Tools that work the ground (docs/ground-work.md) ----------------
+    //
+    // Give a body a point that can go into the ground. Like an edge, it is
+    // given where it is in the world right now and kept in the body's own
+    // frame:
+    //
+    //   tip            the working end, on the body's matter
+    //   pointing       the way the point goes in, out of the body at the tip
+    //   width_m        across the edge the point comes to
+    //   thickness_m    its thickness where it stops getting thicker
+    //   angle_deg      the included angle it comes to its tip at
+    //   length_m       how much of the tool is point: the rest of it meets the
+    //                  ground as a rigid surface, and stops there
+    //   grip           where a hand holds it
+    //
+    // From then on the body collides as its cells rather than its hull, so a
+    // pick's crook is open. Returns the point's id, or 0 with the reason in
+    // toolPointRefusal().
+    unsigned toolPoint(const std::string &body, const Vec3 &tip_world_m, const Vec3 &pointing_world,
+                       double width_m, double thickness_m, double angle_deg, double length_m,
+                       const Vec3 &grip_world_m);
+    [[nodiscard]] const std::string &toolPointRefusal() const;
+    [[nodiscard]] std::vector<LiveToolPoint> toolPoints() const;
+    // A bounded tool action (LiveStrike) with the tool in the hand, which has
+    // to be WIELDED -- held by its grip. Returns false with the reason when it
+    // cannot be made: nothing wielded, no point on it, nothing to lever.
+    [[nodiscard]] bool strike(const LiveStrike &strike, std::string &why);
+    // Every meeting of a point with the ground since forgetGroundWork(), in
+    // the order they began. Open ones are still going.
+    [[nodiscard]] std::vector<LiveGroundWork> groundWork() const;
+    void forgetGroundWork();
+
     // Take hold of something the way a person holds a sword: at a point on
     // it, with a hand whose force and torque are BOUNDED. See
     // docs/cutting-model.md section 7. moveHeld() says where the grip should
@@ -1142,6 +1289,9 @@ private:
     void dropBodies(const std::vector<std::size_t> &which);
     static void work(Pending &job);
     std::size_t applyPending();
+    // What the tool-terrain process is handed at each call: this world, seen
+    // through a few questions it may ask (ToolTerrain.hpp).
+    [[nodiscard]] ToolTerrainHost toolHost() const;
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };

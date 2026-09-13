@@ -564,6 +564,43 @@ WHAT THE PERSON DOES WITH IT: E on any part of it takes it up; they hold the
 left mouse to draw and let go to shoot; the right mouse lets the string down.
 Tell them that in your answer.
 
+TOOLS THAT DIG. A pick is a body with a POINT, and tool_point gives a body
+one: where its tip is, the way it goes in, how wide and thick it is and how much
+of the tool is point. Nothing digs because of what it is called. How far a point
+goes in is the soil's own resistance against what the swing brings, a pry breaks
+out what it can and what comes loose is carried, and rock at least as hard as
+the point stops it: ground-work-v1, a declared model from the ground's own
+density, friction angle and cohesion. The clearing room is level soil at y = 0
+with a slab of bare rock 1.6 m by 1.2 m at [1.6, -1.2], 0.12 m proud of it.
+- A PICK a person can swing is ONE PIECE of oak: a haft and an arm given the
+  same join name, the haft FIRST, so the world calls the pick by the haft's
+  name. It weighs 1.2 kg and held level pulls 5.5 N m on the grip, well inside
+  the hand's 60 N m wrist; iron of the same size is ten times the weight, and
+  tool_point says when the wrist cannot hold a tool level.
+- tool_point's tip is at the very end of the arm, ON its end face, pointing
+  runs OUT of the arm there, and grip_m is near the far end of the haft.
+A found oak pick lying on the soil in front of the person (tried, it went
+120 mm into the soil at 9.2 m/s, levered it broke out 5.6 L of soil, and the
+rock stopped it):
+  add_object pick haft oak [0.8, 0.04, 0.04] at [0, 0.02, 1.22] join "pick"
+  add_object pick arm oak [0.04, 0.04, 0.28] at [0.38, 0.02, 1.06] join "pick"
+    (the arm lies along -z from the haft's +x end, touching it; both with
+    [x, y, z], both on the 0.04 m grid)
+  tool_point body=pick haft tip [0.38, 0.02, 0.92] pointing [0, 0, -1]
+    grip [-0.36, 0.02, 1.22] width 0.04 thickness 0.04 angle 30 length 0.2
+  interaction object="the pick" template=swing-and-lever
+    parts=[pick haft, pick arm] tool=pick haft
+Its trial swings it into the nearest level soil, levers it out, and swings it at
+the nearest bare rock: say how deep it went, what came loose and what stopped
+it, in its numbers. Do not strike in your copy unless they ask: what a pick
+breaks out of the ground is gone from their room's ground too.
+WHAT THE PERSON DOES WITH IT: they walk up to the pick and press E (or click
+it): it is held ready by its grip, point down. They aim the crosshair at the
+soil a metre or so in front of them and click: the hand swings it over and
+down and the point goes in. Right-click levers it and draws it out, and what
+it breaks out is carried. Aimed at the rock, the rock stops it. E puts it
+down. Tell them that in your answer.
+
 TRY IT BEFORE YOU SAY IT WORKS. The world you build in is a real engine world.
 Use the mechanism the way a person would: pick_up the handle (or the leaf, or
 the grate), place it where a hand would pull it -- a quarter turn round the
@@ -658,7 +695,14 @@ def _did(name: str, args: dict[str, Any], answer: dict[str, Any]) -> str:
     if name == "blade":
         return f"gave {args.get('body')} an edge"
     if name == "interaction":
+        if args.get("template") == "swing-and-lever":
+            return f"made {args.get('object')} something a person can swing into the ground and lever"
         return f"made {args.get('object')} something a person can draw and loose"
+    if name == "tool_point":
+        return f"gave {answer.get('body') or args.get('body')} a point that can go into the ground"
+    if name == "strike":
+        return (f"levered {answer.get('levered')}" if args.get("lever")
+                else f"swung {answer.get('struck')} at {args.get('at_m')}")
     if name == "duplicate":
         return (f"copied {len(answer.get('copied') or [])} things as '{args.get('prefix')}'"
                 + (f", with {answer['changed']}" if answer.get("changed") else ""))
@@ -810,10 +854,8 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
         # in the room is known to be one, and a second one built beside it is
         # not given the first one's names.
         if entry.get("interactions"):
-            opening["things_a_person_uses"] = [
-                {"object": p["object"], "template": p["template"], "parts": p["parts"],
-                 "draws": p["draw"]["part"], "shoots": p["projectile"]}
-                for p in entry["interactions"]]
+            opening["things_a_person_uses"] = [room_world.banjo_mcp._use_said(p)
+                                               for p in entry["interactions"]]
         # Where the person is: what "near me" and "over there" refer to. A
         # model that cannot see the room has no other way to know.
         person = where_the_person_is(person)

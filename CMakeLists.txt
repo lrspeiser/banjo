@@ -355,7 +355,8 @@ if(BANJO_BUILD_HEADLESS)
         banjo_enable_warnings(banjo_river_network_tests)
         add_test(NAME banjo_river_network_tests COMMAND banjo_river_network_tests)
     endif()
-    add_library(banjo_terrain src/terrain/TerrainField.cpp src/terrain/TerrainGenerator.cpp)
+    add_library(banjo_terrain src/terrain/TerrainField.cpp src/terrain/TerrainGenerator.cpp
+                              src/terrain/GroundWork.cpp)
     target_link_libraries(banjo_terrain PUBLIC banjo_core banjo_water)
     banjo_enable_warnings(banjo_terrain)
     if(BANJO_BUILD_TESTS)
@@ -369,7 +370,8 @@ if(BANJO_BUILD_HEADLESS)
                                             PRIVATE nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_environment)
     add_library(banjo_fastlattice_scene src/fastlattice/TileImpactScene.cpp
-                                       src/fastlattice/LiveWorld.cpp)
+                                       src/fastlattice/LiveWorld.cpp
+                                       src/fastlattice/ToolTerrain.cpp)
     target_link_libraries(banjo_fastlattice_scene PUBLIC banjo_fastlattice banjo_runtime banjo_thermo banjo_environment PRIVATE nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_fastlattice_scene)
     add_executable(banjo_fast_lattice_run tools/fast_lattice_run.cpp)
@@ -484,6 +486,22 @@ if(BANJO_BUILD_HEADLESS)
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/environment_ffi_tests.py)
         set_tests_properties(banjo_environment_ffi_tests PROPERTIES
+            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
+        # Tools that dig through the same boundary: a point given to a pick, a
+        # swing into soil and onto rock, a pry whose loosened soil is carried
+        # (docs/ground-work.md).
+        add_test(NAME banjo_ground_work_binding_tests
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/ground_work_binding_tests.py)
+        set_tests_properties(banjo_ground_work_binding_tests PROPERTIES
+            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
+        # And through the MCP and the playground's room: the found pick in the
+        # clearing, its point, its swing-and-lever trial, a strike whose hole
+        # the ground keeps, and the room handed all of it.
+        add_test(NAME banjo_ground_work_mcp_tests
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/ground_work_mcp_tests.py)
+        set_tests_properties(banjo_ground_work_mcp_tests PROPERTIES
             ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
         # The two ways the playground can hold a world, run against the same
         # scene and compared. Claiming they are interchangeable is easy; this
@@ -1020,6 +1038,16 @@ if(BANJO_BUILD_TESTS)
             target_link_libraries(banjo_hand_stroke_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_hand_stroke_tests)
             add_test(NAME banjo_hand_stroke_tests COMMAND banjo_hand_stroke_tests)
+
+            # Tools that work the ground: ground-work-v1 against its closed
+            # forms, a point's work against the energy the tool lost, the same
+            # swing twice, soil against rock, a pry carried, a point drawn out.
+            # docs/ground-work.md.
+            add_executable(banjo_ground_work_tests tests/ground_work_tests.cpp)
+            target_link_libraries(banjo_ground_work_tests PRIVATE banjo_fastlattice_scene
+                                                          nlohmann_json::nlohmann_json)
+            banjo_enable_warnings(banjo_ground_work_tests)
+            add_test(NAME banjo_ground_work_tests COMMAND banjo_ground_work_tests)
 
             add_executable(banjo_elastic_tests tests/elastic_tests.cpp)
             target_link_libraries(banjo_elastic_tests PRIVATE banjo_fastlattice_scene)

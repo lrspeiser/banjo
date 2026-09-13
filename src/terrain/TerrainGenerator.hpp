@@ -125,6 +125,12 @@ struct SimpleParameters {
 [[nodiscard]] Landscape basin(const SimpleParameters &parameters);
 [[nodiscard]] Landscape channel(const SimpleParameters &parameters);
 [[nodiscard]] Landscape flatGround(const SimpleParameters &parameters);
+// A clearing: level ground with its surface at y = 0 -- soil over rock, dry --
+// and a slab of bare rock standing kClearingRockProudM proud of it, 1.6 m by
+// 1.2 m, centred at x = 1.6, z = -1.2: soil and rock a step apart, to try a
+// tool on both (docs/ground-work.md). Made on the spot, like the others.
+inline constexpr double kClearingRockProudM = 0.12;
+[[nodiscard]] Landscape clearing(const SimpleParameters &parameters);
 
 // Put a landscape's still ponds into water by their LEVEL: every column of a
 // pond that no river runs through gets exactly the pond's surface and no

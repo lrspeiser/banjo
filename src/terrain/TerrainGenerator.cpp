@@ -710,6 +710,29 @@ Landscape flatGround(const SimpleParameters &p) {
     return land;
 }
 
+Landscape clearing(const SimpleParameters &p) {
+    Landscape land = simple(p, "clearing");
+    const Grid &g = land.grid;
+    // Level, with the surface at y = 0: the rock under the soil and sand.
+    const double cover = std::max(0.0, p.soil_m) + std::max(0.0, p.sand_m);
+    // The outcrop: bare rock, a little proud of the soil around it.
+    constexpr double kAtX = 1.6, kAtZ = -1.2, kHalfX = 0.8, kHalfZ = 0.6;
+    for (int j = 0; j < g.nz; ++j)
+        for (int i = 0; i < g.nx; ++i) {
+            const std::size_t c = g.at(i, j);
+            if (std::abs(g.xOf(i) - kAtX) <= kHalfX && std::abs(g.zOf(j) - kAtZ) <= kHalfZ) {
+                land.rock[c] = kClearingRockProudM;
+                land.soil[c] = 0.0;
+                land.sand[c] = 0.0;
+            } else {
+                land.rock[c] = -cover;
+            }
+        }
+    // Standing on the soil, the rock ahead and to the right.
+    setView(land, 0.0, 2.2, 0.8, -0.6, 0.0);
+    return land;
+}
+
 // ---- the cache -------------------------------------------------------------
 
 std::string cacheFileName(const ValleyParameters &p) {

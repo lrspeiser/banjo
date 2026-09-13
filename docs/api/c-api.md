@@ -17,9 +17,11 @@ if (banjo_abi_version() != BANJO_ABI_VERSION) { /* mismatch */ }
 `const char *banjo_version_string(void)` says which library it is in words, for
 a log line. Never parse it: the number to compare is `banjo_abi_version()`.
 
-Current ABI: **18**. 13 and 14 were two additions made side by side and then
+Current ABI: **20**. 13 and 14 were two additions made side by side and then
 merged, numbered apart so that one number never meant two headers; 15 to 18
-were added on top of both:
+were added on top of both; 19 and 20 are two more made side by side, 19 the
+heat-geometry lane's and 20 this one's, and whichever lands second is
+renumbered so that one number is one header:
 
 - **13** added blades -- `banjo_make_blade`, `banjo_blades`, `banjo_cuts`,
   `banjo_forget_cuts` -- and the bounded hand that swings them, `banjo_wield`,
@@ -46,9 +48,17 @@ were added on top of both:
 - **18** added rolling resistance -- every round body rolling on anything is
   resisted by the couple `M = c N r` at its contacts -- and `banjo_materials`
   and `banjo_rolling_report` to say with what, and the survey's
-  `rolling_resistance` (see [Rolling resistance](#rolling-resistance)).
+  `rolling_resistance` (see [Rolling resistance](#rolling-resistance));
+- **20** added tools that work the ground -- `banjo_make_tool_point`,
+  `banjo_tool_point_count`, `banjo_tool_points`, `banjo_strike`,
+  `banjo_ground_work_count`, `banjo_ground_works` and `banjo_forget_ground_work`,
+  and the structs `banjo_tool_point`, `banjo_ground_work` and
+  `banjo_strike_request` -- and the terrain generator's `clearing` (see
+  [Tools that work the ground](#tools-that-work-the-ground)). It changed no
+  function or struct that was already there; a terrain `dig` edit may now be as
+  shallow as a micrometre.
 
-A library at 18 has all of them. Nothing that was in 12 changed, and nothing
+A library at 18 has all of 13 to 18. Nothing that was in 12 changed, and nothing
 that was in 14 changed in 15. None of 16, 17 and 18 changed a function that was
 already there, but structs grew at their ends -- `banjo_joint`, `banjo_overload`
 and `banjo_energy` in 16, `banjo_body` and `banjo_joint` again in 17 -- so a
@@ -1112,6 +1122,73 @@ banjo_stroke(w, path, 2, 20.0, 2000.0, 0.05, 1, 2.0);    /* a full-effort throw 
 banjo_hand hand;
 do { banjo_step(w, 1.0 / 240.0); banjo_hand_state(w, &hand); } while (hand.stroking);
 /* hand.let_go_velocity_m_s: what it left with.  hand.let_go_work_j: what the hand put in. */
+```
+
+---
+
+## Tools that work the ground
+
+A point on a body that can go into the ground -- a pick's, a stake's. Declared
+ON a body, as an edge is: the body supplies the matter, the material and where
+the mass is; the point adds where its tip is, which way it goes in, how wide
+and thick it is, how sharply it comes to its tip and how much of the tool is
+point. What the ground does about it is ground-work-v1, a **declared** model
+from the ground's own materials (a density, a friction angle and a cohesion)
+and the point's shape: the soil's bearing resistance to the point going in and
+its passive resistance to the point being pried sideways, applied in the
+solver; what a pry breaks loose goes out through the ground's own dig and is
+carried. Rock at least as hard as the point stops it; a regime the model does
+not cover -- rock under a point harder than it, wet ground -- is reported as
+"not supported", never guessed. [docs/ground-work.md](../ground-work.md).
+
+### `int banjo_make_tool_point(banjo_world *world, const char *body, const double tip_m[3], const double pointing[3], double width_m, double thickness_m, double angle_deg, double length_m, const double grip_m[3])`
+### `int banjo_tool_point_count(const banjo_world *world)`
+### `int banjo_tool_points(const banjo_world *world, banjo_tool_point *out, int max)`
+
+Give a named body a point, everything where it is in the world now and kept
+in the body's own frame from then on; returns the point's id. The tip has to be
+at the end of the body's matter and `pointing` has to run out of it there;
+refusals say which. From then on the body collides as its cells, so a pick's
+crook is open. `banjo_tool_point.in` is what the point is in right now
+("soil", "sand", "loose soil" or "") and `depth_m` how far, along its axis.
+
+### `int banjo_strike(banjo_world *world, const banjo_strike_request *request)`
+
+A bounded tool action with what is wielded (`banjo_wield`): the engine's hand
+makes it at the step's own rate with the strength it has. A swing (`lever` 0)
+raises the tool back `raise_deg` over `shoulder_m` and swings it round so its
+point comes down on `target_m` along its own axis; a lever (`lever` 1) turns a
+point that is in the ground `lever_deg` about where it went in, then draws it
+up. `speed_m_s` is as fast as the hand may take the grip -- how fast the tool
+goes is the hand's strength against its mass. `banjo_hand_state` says how the
+stroke goes; step the world to let it happen. BANJO_BAD_ARGUMENT with the
+reason when nothing is wielded, the wielded body has no point, or there is
+nothing in the ground to lever.
+
+### `int banjo_ground_work_count(const banjo_world *world)`
+### `int banjo_ground_works(const banjo_world *world, banjo_ground_work *out, int max)`
+### `int banjo_forget_ground_work(banjo_world *world)`
+
+Every meeting of a point with the ground since the last
+`banjo_forget_ground_work`, in the order they began; open ones are still going
+and stay when the rest are forgotten. `kind` is "in the ground", "broke out",
+"pulled out", "stopped", "glanced" or "not supported" (`supported` 0, with
+`why`). `work_j`, `impulse_n_s` and `peak_force_n` are measured from the
+solver; `resistance_n` and `passive_n` are the model's own at the deepest the
+point went. `loosened_*` went out through the dig path and is carried, and when
+`dug` is 1, `dug_from_m`, `dug_to_m`, `dug_width_m` and `dug_depth_m` say that
+dig as a terrain `dig` edit says it: a host that keeps the ground's edits keeps
+this one, and the ground opened again has the same hole.
+
+```c
+double tip[3] = {0.38, 1.12, 0.02}, down[3] = {0, -1, 0}, grip[3] = {-0.36, 1.42, 0.02};
+banjo_make_tool_point(w, "pick", tip, down, 0.04, 0.04, 30.0, 0.2, grip);
+banjo_wield(w, "pick", grip);
+banjo_strike_request swing = {{0.3, 0.4, 0.02}, {-0.9, 1.85, 0.02}, 4.0, 110.0, 0, 40.0, 2.0};
+banjo_strike(w, &swing);
+for (int i = 0; i < 480; ++i) banjo_step(w, 1.0 / 240.0);
+banjo_ground_work met[8];
+int n = banjo_ground_works(w, met, 8);   /* met[0].kind, met[0].depth_m, ... */
 ```
 
 ---

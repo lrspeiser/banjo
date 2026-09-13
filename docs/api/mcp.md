@@ -68,11 +68,14 @@ broke.
 | `wield` | take hold of a body by its grip with a hand whose force (800 N) and torque (60 N m) are bounded — not `pick_up`, which places a thing exactly |
 | `swing` | swing the wielded blade the way a person does and report every edge contact on the way: edge, slice or press (it bit), glancing, flat or point (an ordinary contact), blunt or brittle (it could not). With `through_m`, `pointing` and `edge_facing` the hand takes the blade up off its rest, back clear and round to one side, then swings it round a shoulder half a metre behind the grip, 100 degrees in `seconds` (0.13 by default), so that the middle of the edge passes through `through_m`; an edge facing across the swing leads with the edge, one facing up or down leads with the flat. (Driven along a straight line at its grip, a sword trails its point: a measured straight swing crossed the rope's line 0.19 m short and met nothing.) With `to_m` instead it moves the grip along a straight line, which is a press or a push |
 | `cuts` | every edge contact since the last swing, including the ones that cut nothing and why |
+| `tool_point` | give a body a **point** that can go into the ground -- a pick's, a stake's: its tip, the way it goes in, its width, thickness, angle and how much of the tool is point, and where it is held. There is no digging power: how far it goes in, what a pry breaks out and what stops it is ground-work-v1, a declared model from the ground's own materials. A joined part is taken as its whole piece; the answer says the tool's mass and its weight's pull about the grip, against the hand's 60 N m wrist. Kept with its body through every rebuild, and the playground's room has it. [docs/ground-work.md](../ground-work.md) |
+| `strike` | use the wielded tool's point on the ground as a person does: a swing brings it round a shoulder so the point comes down on `at_m` along its own axis, with the hand's 800 N and 60 N m; `lever` pries a point that is in the ground and draws it out. Reports every meeting of the point with the ground -- how deep, the work and peak force measured off the solver, the model's own resistances, what came loose and whether the tool is whole -- and what a pry broke out is carried and kept as the ground's own dig edit |
+| `ground_work` | every meeting of a point with the ground since the last strike, including the ones that did nothing and why (stopped by rock, glanced, not supported by the model), and every tool's point and what it is in |
 | `close_world` | free it |
 | `hinge` / `slide` | a pin or a groove: `b` turns about, or slides along, a line fixed in `a` |
 | `tie` / `reeve` | a rope between a point on each of two things, or one run over two fixed pulleys |
 | `fix` / `spring` | a latch or bracket that holds two things as one piece; an elastic element that pushes and pulls. `fix`, `spring` and `tie` take `member`: what the joint is MADE of, so heat changes what it can take ([Heat and strength](#heat-and-strength)) |
-| `interaction` | say how a person **uses** a thing you built — so far draw-and-release: a bow — so the playground gives them its controls. Held to what is built (a part that is not there, a nock that holds both ways or lets go backwards, a limb that is not an elastic are refused), never a speed, kept through every rebuild and withdrawn with the reason when what it names is taken away; and **tried** in a scratch world with a person's 800 N hand, returning what was drawn, what the limbs held and what the projectile left with, and `sound` false with why when the engine did not follow the shot. [Things a person uses](#things-a-person-uses) |
+| `interaction` | say how a person **uses** a thing you built — draw-and-release, a bow; or swing-and-lever, a tool with a `tool_point` swung into the ground and levered, tried by being swung into the nearest level soil, levered out, and swung onto the nearest bare rock — so the playground gives them its controls. Held to what is built (a part that is not there, a nock that holds both ways or lets go backwards, a limb that is not an elastic are refused), never a speed, kept through every rebuild and withdrawn with the reason when what it names is taken away; and **tried** in a scratch world with a person's 800 N hand, returning what was drawn, what the limbs held and what the projectile left with, and `sound` false with why when the engine did not follow the shot. [Things a person uses](#things-a-person-uses) |
 | `duplicate` | make **another** of something already built, somewhere else, exactly: the bodies named, every joint between them with its points moved with it, their edges and how a person uses them. What should differ is said as `changes`, by kind of joint (`{"spring": {"stiffness_n_m": 8000}}`); the offset is rounded to whole cells; where the world refuses overlaps (the playground's room does) a copy that would overlap is refused and nothing is left half made; a copied bow is tried. [Things a person uses](#things-a-person-uses) |
 | `joints` / `hinge_friction` / `unhinge` | read them, stiffen them, take one out |
 | `overloaded` | what is carrying more than it can hold, worked out from statics — the only way a loaded shelf is ever noticed |
@@ -80,7 +83,7 @@ broke.
 | `enclose_gas` | a column of gas under a loose piston, starting at the pressure that holds the piston and its load up |
 | `heat` | heat from outside — kindling, a torch, a stove — into a body or a gas region, from when the world starts |
 | `thermal_state` | how hot everything is, what is burning and how hard, the fuel left and how long it would last at this rate, what the gas is doing, the energy ledger, and **strength**: what heat has left of each heated body and what every joint made of one carries against what it can still take |
-| `make_terrain` | ground that is not flat: a **valley** with a river along it and a pond beside it, made once by physics -- drainage decided where the river runs, erosion wore its channel -- and cached; or a basin holding a lake, a sloping channel with a stream, flat ground, or none. With `beyond_the_edges`, a valley's or a channel's river goes on beyond its edges as a river network: a reach down from a reservoir onto where it comes in, and from its mouth a reach to a confluence where a brook from a spring joins it and another on to a lake with a weir -- what crosses each edge decided by the water on both sides. [docs/terrain-and-water.md](../terrain-and-water.md), [docs/watershed.md](../watershed.md) |
+| `make_terrain` | ground that is not flat: a **valley** with a river along it and a pond beside it, made once by physics -- drainage decided where the river runs, erosion wore its channel -- and cached; or a basin holding a lake, a sloping channel with a stream, flat ground, a **clearing** (level dry soil at y = 0 with a slab of bare rock beside it, to try a tool that digs on both), or none. With `beyond_the_edges`, a valley's or a channel's river goes on beyond its edges as a river network: a reach down from a reservoir onto where it comes in, and from its mouth a reach to a confluence where a brook from a spring joins it and another on to a lake with a weir -- what crosses each edge decided by the water on both sides. [docs/terrain-and-water.md](../terrain-and-water.md), [docs/watershed.md](../watershed.md) |
 | `survey` | the ground and the water at a point or along a line: height, rock, soil or sand, slope, and the water's depth, level and speed. At a point it also gives the ground's rolling resistance and which materials of ball rest there and which roll away. How to find the river, and what to stand things on |
 | `water_state` | the rivers and ponds: how much water, what comes in and goes out, each pond's level, the river every 2 m along its course, what is in the water and whether it floats, and the water's ledger; where the river goes on beyond the edges, each basin's and junction's level, volume, feed, what it lets out and what it sends into the valley, and what each river beyond is carrying where it starts, in its middle and where it ends (`beyond_the_edges`) |
 | `dig` / `fill` | a trench or a pit, so wide and so deep below the ground as it stands; what comes out is carried, and `fill` heaps only what was carried -- the ground's own account, so a rebuild carries the same, and in the playground's room it includes what the person dug with their own spade |
@@ -88,7 +91,9 @@ broke.
 | `set_river` | a river's discharge from now: a flood or a drought. Where the river comes down from a reservoir beyond the edge, what feeds the reservoir; a basin or spring out there by its own name |
 
 `add_object` also takes `contents` (what the object is made of inside, by mass
-fraction) and `temperature_k`. Every `run` carries a `heat` summary whenever
+fraction), `temperature_k`, and `join`: objects given the same join name are
+built as ONE piece, their cells unioned and bonded across the seam, named by the
+first of them -- a pick's haft and its arm. Every `run` carries a `heat` summary whenever
 anything is hot, burning or pushing. On ground that is not flat, `add_object`
 seats a thing on the ground under it and says whether it is in water, and every
 `run` carries a `water` summary.
@@ -201,9 +206,23 @@ rebuild, and the call that takes away something it names withdraws it: that
 call's answer carries `interactions_withdrawn`, each with the object and why.
 `describe_world` lists what is left under `things_a_person_uses`.
 
+A tool that digs is a `swing-and-lever`: its `parts` and its `tool`, the part
+with the `tool_point`, which the hand takes by the point's grip. It is refused
+if the tool has no point. Its trial, in a scratch world holding the tool and the
+ground with every edit made to it, takes the tool by its grip, holds it ready in
+front of a person standing 1.2 m back, swings it into the nearest level soil
+(deep enough for the point) and levers it out -- drawing it straight up if the
+lever's own lift did not bring it out -- then swings it onto the nearest level
+bare rock. It answers what each swing met, how deep, the work and peak force,
+what came loose and what stopped it, and the seconds of world against the
+seconds of computing. Measured, the pick the playground's chat is given (1.21 kg
+of oak, lying on the clearing's soil): 120.3 mm into the soil at 9.17 m/s,
+5.61 L broken out by the lever, stopped by the rock at 8.22 m/s; 6.6 s of world
+in 0.17 s. [docs/ground-work.md](../ground-work.md)
+
 `duplicate` makes another of something already built, exactly: the bodies it
 is given, every joint between them with its points moved with the copy, their
-edges, and how a person uses them -- which a copied bow is then tried by. What
+edges and points, and how a person uses them -- which a copied bow is then tried by. What
 should differ is said as `changes`, by kind of joint, so a stiffer bow is
 `{"spring": {"stiffness_n_m": 8000}}` rather than a bow built again number by
 number. The offset is rounded to whole cells, so the grid cuts the copy as it

@@ -109,8 +109,17 @@ extern "C" {
  * 18 added rolling resistance: every round body rolling on anything is resisted
  * by the couple M = c N r at its contacts, and banjo_materials and
  * banjo_rolling_report say with what (the survey says the ground's share). No
- * struct or signature that was in 17 changed. */
-#define BANJO_ABI_VERSION 18
+ * struct or signature that was in 17 changed.
+ *
+ * 20 added tools that work the ground (docs/ground-work.md): a point on a body
+ * that can go into soil (banjo_make_tool_point, banjo_tool_point_count,
+ * banjo_tool_points), a bounded tool action -- a swing at a point on the
+ * ground, or a pry -- the hand makes at the step's own rate (banjo_strike),
+ * and what the ground did about each meeting (banjo_ground_work_count,
+ * banjo_ground_works, banjo_forget_ground_work). No struct or signature that
+ * was in 18 changed. 19 is the heat-geometry lane's, numbered apart as 13 and
+ * 14 were: whichever lands second is renumbered so one number is one header. */
+#define BANJO_ABI_VERSION 20
 
 /* What a call reported. Anything below zero is a failure and leaves the world
  * unchanged; banjo_last_error() says what happened. */
@@ -977,6 +986,125 @@ BANJO_API int banjo_preview_stroke(const banjo_world *world, const double *path_
                                    double give_up_s, double horizon_s,
                                    double *flight_points_m, int max_points,
                                    banjo_stroke_preview *out);
+
+/* ---- tools that work the ground (docs/ground-work.md) ---------------- */
+
+/* A point on a body that can go into the ground -- a pick's point, a stake's.
+ * Declared ON a body, as an edge is: the body supplies the matter, the
+ * material and where the mass is; the point adds where its tip is, which way it
+ * goes in, how wide and thick it is, how sharply it comes to its tip and how
+ * much of the tool is point. What the ground does about it is ground-work-v1, a
+ * DECLARED model from the ground's own materials (a density, a friction angle
+ * and a cohesion) and the point's shape: the soil's bearing resistance to the
+ * point going in and its passive resistance to the point being pried sideways,
+ * applied in the solver; what a pry breaks loose goes out through the ground's
+ * own dig and is carried. Rock at least as hard as the point stops it; a
+ * regime the model does not cover -- rock under a point harder than it, wet
+ * ground -- is reported as "not supported", never guessed. */
+typedef struct {
+    unsigned id;
+    const char *body;
+    const char *material;
+    double tip_m[3];              /* where it is now, in world metres */
+    double pointing[3];
+    double grip_m[3];
+    double width_m;
+    double thickness_m;
+    double angle_deg;
+    double length_m;
+    const char *in;               /* what it is in: "soil", "sand", "loose soil", or "" */
+    double depth_m;               /* how far in, along its own axis */
+    int attached;                 /* 0 once the body carrying it has gone */
+} banjo_tool_point;
+
+/* One meeting between a point and the ground, from first touch until the point
+ * is out again. `kind` is "in the ground" (open: the ground is resisting it),
+ * "broke out" (a pry broke ground out, and it came loose), "pulled out" (it came
+ * out without breaking anything out), "stopped" (ground at least as hard as the
+ * point), "glanced" (it met the ground side-on: an ordinary contact) or "not
+ * supported" (a regime the model does not cover; `supported` is then 0). The
+ * work, impulse and peak force are measured from the solver; `resistance_n`
+ * and `passive_n` are the model's own numbers at the deepest it went. */
+typedef struct {
+    unsigned point;
+    const char *tool;
+    const char *ground;
+    const char *kind;
+    int supported;
+    const char *why;
+    double at_s;
+    double at_m[3];               /* where the point went in, or met the ground */
+    double closing_speed_m_s;     /* along its own axis, as it arrived */
+    double depth_m;
+    double sideways_m;
+    double impulse_n_s;
+    double peak_force_n;
+    double work_j;
+    double penetration_work_j;
+    double breakout_work_j;
+    double resistance_n;
+    double passive_n;
+    /* What came loose and went out through the dig path -- and so is carried. */
+    double loosened_sand_m3;
+    double loosened_soil_m3;
+    double loosened_kg;
+    int tool_whole;
+    double tool_dent_m;
+    const char *model;            /* "ground-work-v1" */
+    int open;
+    /* Where what came loose went out through the ground's dig, as a dig edit
+     * says it ({"dig": {"from_m", "to_m", "width_m", "depth_m"}}), when `dug`
+     * is 1: a host that keeps the ground's edits keeps this one, and the
+     * ground opened again from them has the same hole and carries the same. */
+    int dug;
+    double dug_from_m[2];         /* [x, z] */
+    double dug_to_m[2];
+    double dug_width_m;
+    double dug_depth_m;
+} banjo_ground_work;
+
+/* A bounded tool action. A swing (`lever` 0) swings what is wielded so its point
+ * comes down on `target_m` -- a point on the ground -- turning about
+ * `shoulder_m`; with `raise_deg` above zero it is raised back that far first.
+ * A lever (`lever` 1) pries a point that is in the ground, turning the tool
+ * `lever_deg` about where the point went in, and then draws it up out of the
+ * ground. `speed_m_s` is as fast as the hand may take the grip; how fast the
+ * tool goes is the hand's strength against its mass, and what it does to the
+ * ground is the ground's. */
+typedef struct {
+    double target_m[3];
+    double shoulder_m[3];
+    double speed_m_s;             /* 4 is a steady swing */
+    double raise_deg;
+    int lever;
+    double lever_deg;             /* 40 is a good pry */
+    double give_up_s;             /* 2 */
+} banjo_strike_request;
+
+/* Give a named body a point. Everything is given where it is in the world RIGHT
+ * NOW and kept in the body's own frame. The tip has to be at the end of the
+ * body's matter and `pointing` has to run out of it there. From then on the
+ * body collides as its cells, so a pick's crook is open. Returns the point's id,
+ * always above zero, or a negative banjo_status with the reason in
+ * banjo_last_error. (Named make_tool_point because banjo_tool_point is the
+ * struct.) */
+BANJO_API int banjo_make_tool_point(banjo_world *world, const char *body, const double tip_m[3],
+                                    const double pointing[3], double width_m, double thickness_m,
+                                    double angle_deg, double length_m, const double grip_m[3]);
+BANJO_API int banjo_tool_point_count(const banjo_world *world);
+/* Fills up to `max` and returns how many were written. Strings stay good until
+ * the next call on this world. */
+BANJO_API int banjo_tool_points(const banjo_world *world, banjo_tool_point *out, int max);
+/* Start a tool action with what is wielded. BANJO_OK, or BANJO_BAD_ARGUMENT with
+ * the reason: nothing wielded, no point on it, nothing in the ground to lever.
+ * banjo_hand_state says how it goes; banjo_move_held takes the hand back. */
+BANJO_API int banjo_strike(banjo_world *world, const banjo_strike_request *request);
+/* Every meeting since the last banjo_forget_ground_work, in the order they
+ * began; open ones are still going. */
+BANJO_API int banjo_ground_work_count(const banjo_world *world);
+BANJO_API int banjo_ground_works(const banjo_world *world, banjo_ground_work *out, int max);
+/* Drop the meetings that are over. Open ones stay. */
+BANJO_API int banjo_forget_ground_work(banjo_world *world);
 
 /* ---- asking where things are ---------------------------------------- */
 
