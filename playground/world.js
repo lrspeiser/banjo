@@ -85,6 +85,13 @@ async function api(path, body, renewed = false) {
   }
   let data = {};
   try { data = text ? JSON.parse(text) : {}; } catch { data = { error: text.slice(0, 300) }; }
+  // Behind a password (docs/deploy.md), a session that has run out -- the
+  // server was started again, say -- goes to log in again rather than being
+  // shown as a room that has stopped working.
+  if (res.status === 401 && data.login) {
+    location.assign(data.login);
+    throw new Error(data.error || "log in first");
+  }
   if (!res.ok) {
     const failed = new Error(data.error || `HTTP ${res.status}`);
     failed.status = res.status;

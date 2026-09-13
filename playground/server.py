@@ -33,6 +33,7 @@ import live_inprocess
 import world_chat
 import world_room
 import room_store
+import access_gate
 import scene_chat
 import network_admission
 from network_admission import Inadmissible, LIMITS, describe_package
@@ -1017,12 +1018,18 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers(); self.wfile.write(data)
     def trusted_host(self):
         allowed = {f"127.0.0.1:{self.server.server_port}",f"localhost:{self.server.server_port}"}
+        origins = {"http://"+host for host in allowed}
+        # Hosted (docs/deploy.md): the one public name it is reached by, over HTTPS.
+        public = getattr(self.server.app,"public_host",None)
+        if public: allowed.add(public); origins.add("https://"+public)
         if self.headers.get("Host") not in allowed: raise ValueError("Unexpected local Host header")
         origin = self.headers.get("Origin")
-        if origin and origin not in {"http://"+host for host in allowed}: raise ValueError("Cross-origin requests are not permitted")
+        if origin and origin not in origins: raise ValueError("Cross-origin requests are not permitted")
     def do_GET(self):
         try:
             self.trusted_host()
+            # Behind a password nothing is served without a session (access_gate).
+            if access_gate.answered(self,"GET"): return
             path=urlsplit(self.path).path
             app=self.server.app
             if path=="/api/status": return self.send(app.status())
@@ -1079,6 +1086,9 @@ class Handler(BaseHTTPRequestHandler):
             if len(raw_body)!=length: raise ValueError("Incomplete request body")
             self.close_connection=not keep
             self.trusted_host()
+            # Behind a password: logging in, and nothing else without a session
+            # (access_gate). Before the page's token, which the login form has not got.
+            if access_gate.answered(self,"POST",raw_body): return
             if not secrets.compare_digest(self.headers.get("X-Banjo-Token",""),self.server.app.csrf_token):
                 return self.send({"error":"Missing or invalid local session token"},403)
             if self.headers.get("Content-Type","").split(";")[0]!="application/json": raise ValueError("Expected application/json")
@@ -1456,8 +1466,16 @@ def main():
     parser.add_argument("--live-inprocess",action="store_true",
                         default=os.environ.get("BANJO_LIVE_INPROCESS")=="1",
                         help="drive live worlds through the C library in this process")
+    # Where to listen. Anything but loopback lets anyone reach the room and
+    # spend the model credits, so it needs BANJO_PASSWORD (access_gate,
+    # docs/deploy.md); BANJO_PUBLIC_HOST is then the one name it answers to.
+    parser.add_argument("--host",default="127.0.0.1",
+                        help="where to listen (anything but 127.0.0.1 needs BANJO_PASSWORD)")
     args=parser.parse_args()
     if not 1024<=args.port<=65535: parser.error("Use a port in 1024..65535")
+    password=os.environ.get("BANJO_PASSWORD","")
+    refused=access_gate.refusal(args.host,password)
+    if refused: parser.error(refused)
     # The valley is made once by physics and kept: every world that opens on it
     # -- the room's and the chat's -- reads the same saved ground rather than
     # making it again. Under build/, beside everything else this server writes.
@@ -1473,8 +1491,13 @@ def main():
         ok,why=live_inprocess.available()
         if not ok: parser.error(f"--live-inprocess needs the C library: {why}")
         print("live worlds run in this process, through the C library",flush=True)
-    server=ThreadingHTTPServer(("127.0.0.1",args.port),Handler);server.app=app
-    print(f"Banjo playground: http://127.0.0.1:{args.port}",flush=True)
+    # Behind a password when there is one (access_gate), and answering to the one
+    # public name, besides localhost, when it is hosted.
+    app.password=password or None
+    app.public_host=os.environ.get("BANJO_PUBLIC_HOST") or None
+    server=ThreadingHTTPServer((args.host,args.port),Handler);server.app=app
+    print(f"Banjo playground: http://127.0.0.1:{args.port}"
+          +(f" -- listening on {args.host}, behind a password" if app.password else ""),flush=True)
     try: server.serve_forever()
     except KeyboardInterrupt: pass
     finally: server.server_close();app.live.shutdown();app.pool.shutdown(wait=False,cancel_futures=True)

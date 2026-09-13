@@ -1,0 +1,13 @@
+# What the image is built from is the source: never the builds, the history,
+# local keys or anything a session left behind.
+.git
+.github
+.claude
+build
+out
+runs
+**/__pycache__
+**/*.pyc
+.env
+**/.env
+*.log

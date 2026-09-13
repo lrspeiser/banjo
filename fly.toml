@@ -1,0 +1,34 @@
+# Banjo's playground on Fly.io -- docs/deploy.md. `fly launch --no-deploy`
+# writes your app's name and region here; the rest is what the playground needs.
+app = "banjo-playground"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  # The one name the page is reached by. Requests that name any other host are
+  # refused, so set this to your app's hostname.
+  BANJO_PUBLIC_HOST = "banjo-playground.fly.dev"
+
+[[mounts]]
+  # The rooms, the valley's saved ground and the runs: kept across restarts
+  # and deploys.
+  source = "banjo_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # One world, in one machine: stopped when nobody is there and started on the
+  # next visit. The rooms are on the volume, so a stop keeps them.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  # A break is worked out on every core there is: 8 dedicated cores finish one
+  # inside the warning the engine gives (a 4-core machine took twice as long).
+  cpu_kind = "performance"
+  cpus = 8
+  memory = "16gb"

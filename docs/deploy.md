@@ -1,0 +1,85 @@
+# Hosting the playground
+
+The playground -- `playground/server.py` and the engine it drives -- runs
+anywhere a Linux container runs and stays running. This page puts it on
+Fly.io, from this folder, with no GitHub connection needed.
+
+## Why not Vercel, or any serverless host
+
+The room is a world held in one running process. The page steps it about thirty
+times a second, and between steps it is still there. A serverless function
+starts for one request and is gone after it, so each step would find a new,
+empty world. The engine is native code that wants a whole machine: a break is
+worked out on every core there is, and on four cores one took 1.08 s against
+the 0.49 s of warning the engine gives. And the rooms need a disk to be kept
+on. A container host with an always-on machine and a volume has all three.
+
+## What runs
+
+`Dockerfile` builds the engine for Linux -- headless: `banjo_platform_cli`,
+`banjo_live_world_run` and `libbanjo.so` -- and runs the same Python server as a
+desktop, listening on every interface. Two things make that safe:
+
+- **A password.** With `BANJO_PASSWORD` set, every page, script and API needs a
+  session that only the password gets (`playground/access_gate.py`). The server
+  will not listen anywhere but `127.0.0.1` without one.
+- **One name.** The server answers only to `BANJO_PUBLIC_HOST` (and to
+  localhost), so a page on another site cannot drive it.
+
+The rooms, the valley's generated ground and recorded runs are kept under
+`/data`, a volume: what the chat built and what was dug is there after a restart
+or a new deploy (`playground/room_store.py`). Where things were moved by hand
+goes with the running world, as it does on a desktop.
+
+## Deploying to Fly.io
+
+You need flyctl (https://fly.io/docs/flyctl/install/) and a Fly account
+(`fly auth login`).
+
+1. From the repository root, `fly launch --no-deploy --copy-config`. Pick a name
+   and a region near you; it writes both into `fly.toml` and keeps the rest.
+2. In `fly.toml`, set `BANJO_PUBLIC_HOST` to `<your-app>.fly.dev`.
+3. Make the volume, in the same region:
+   `fly volumes create banjo_data --size 10 --region <region>`.
+4. Set the secrets, in your own terminal, so they never go in a file:
+   `fly secrets set OPENAI_API_KEY=... BANJO_PASSWORD=...`. The room's chat uses
+   `gpt-5-mini` unless `OPENAI_MODEL` says otherwise.
+5. `fly deploy --ha=false`. Fly builds the image on its own builders, so this
+   computer needs no Docker; `--ha=false` keeps it to one machine, since there is
+   one world and one volume.
+6. Open `https://<your-app>.fly.dev/world` and enter the password.
+
+The machine stops by itself when nobody is connected (`auto_stop_machines`) and
+starts on the next visit, which then takes a little longer. `fly scale count 0`
+stops it until you scale it back to 1.
+
+## What it costs
+
+- **The machine:** 8 dedicated cores and 16 GB, billed while it runs (Fly's
+  pricing page has the rate). Fewer cores cost less, but then a break takes
+  longer than the warning the engine gives, and the room waits for it.
+- **The volume:** 10 GB, billed while it exists.
+- **The chat:** each request to the room's chat sends 160,000 to 270,000 input
+  tokens to your OpenAI account (measured, `gpt-5-mini`).
+
+## One world, one person
+
+The server holds one live world. Two people with the password share it: opening
+a room opens it for both, and the chat builds in the one room. Share the
+password accordingly.
+
+## Checking it before deploying
+
+The image's steps by hand in Ubuntu 24.04 -- WSL's, on Windows -- from a checkout:
+
+    cmake -S . -B build/linux -G Ninja -DCMAKE_BUILD_TYPE=Release \
+      -DBANJO_BUILD_LAB=OFF -DBANJO_BUILD_HEADLESS=ON \
+      -DBANJO_BUILD_PRECOMPUTE=OFF -DBANJO_BUILD_TESTS=OFF
+    cmake --build build/linux --parallel \
+      --target banjo_platform_cli banjo_c banjo_live_world_run
+    BANJO_PASSWORD=... BANJO_LIBRARY=$PWD/build/linux/libbanjo.so \
+      python3 -u playground/server.py --host 0.0.0.0 --port 8090 \
+      --engine build/linux/banjo_platform_cli --studio build/linux/banjo_network_lab \
+      --rooms /tmp/banjo/rooms --runs /tmp/banjo/runs
+
+Then open http://localhost:8090/login from Windows.

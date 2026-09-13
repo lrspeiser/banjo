@@ -65,6 +65,12 @@
     const response = await fetch(path, options);
     let data = null;
     try { data = await response.json(); } catch { data = null; }
+    // Behind a password (docs/deploy.md), a session that has run out goes to
+    // log in again.
+    if (response.status === 401 && data && data.login) {
+      window.location.assign(data.login);
+      throw new Error(text(data.error || "log in first"));
+    }
     if (!response.ok) {
       const detail = data && (data.error || data.message);
       // The session token is minted when the server starts, so a restart
