@@ -55,7 +55,7 @@ broke.
 | `run` | let time pass and say what happened: every break, every dent, and the hardest contacts with the speeds they would have needed |
 | `drop` | the common experiment: put an object a given distance above a point, let it fall, report. The height is measured from **what it lands on**, not from the floor. |
 | `describe_world` | every object, where it is, and what has happened to it |
-| `add_object` / `remove_object` | change a world. It is opened again from its scene, so anything in flight starts over — and every joint is hung again. A removed object takes the joints that held it with it, and they are listed. `add_object` given `position_m` as **[x, z]** sets the thing down on whatever is under that point — the ground, the floor or the top of what is there — and says what in `set_down` — with `overhangs` when only part of it is over that, so it may tip; [x, y, z] puts it exactly there, and when that is in the air the answer's `in_the_air` says how far above what is under it the thing starts, and that it will fall. On ground with water it says `in_water` when that is where it went. |
+| `add_object` / `remove_object` | change a world. It is opened again from its scene, so anything in flight starts over — and every joint is hung again. A removed object takes the joints that held it with it, and they are listed. `add_object` given `position_m` as **[x, z]** sets the thing down on whatever is under that point — the ground, the floor or the top of what is there — and says what in `set_down` — with `overhangs` when only part of it is over that, so it may tip; [x, y, z] puts it exactly there, and when that is in the air the answer's `in_the_air` says how far above what is under it the thing starts, and that it will fall unless a joint holds it — a thing about to be hung with `fix`, `hinge`, `slide`, `tie`, `reeve` or `spring` is meant to start there. On ground with water it says `in_water` when that is where it went. |
 | `move_object` | put an object somewhere else, at rest: an **edit**, not a push. Refused for a joined object, with the reason — a joint is made at fixed points |
 | `clear_world` | empty a world, joints and all, to build it again. It stays open under the same id |
 | `pick_up` / `place` / `let_go` | the hand: take hold of something already in the world and move it. Without this a model can only add new objects from above — it can build a scene but never rearrange one. |
@@ -384,7 +384,11 @@ rule it broke: swung "edge first" it led with the bar's other face and glanced
 off the rope. And a `tie` or `spring` made off more than a cell away from its
 body is warned about: a model hung a weight 0.24 m below the end of its rope
 and tied it from a point in the air under the last segment, which rides on
-the segment like the end of a stiff arm that is not there.
+the segment like the end of a stiff arm that is not there. So is a `fix` whose
+point is more than a cell outside either of the two things it joins: a model
+set a peg down on top of its post and fixed it at the post's face 0.2 m below,
+and when heat parted the fixing nothing fell, because the peg sat on the post.
+(The 5 mm a jointed body stands clear is well inside a cell.)
 
 ## Terrain and water
 

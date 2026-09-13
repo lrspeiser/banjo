@@ -1005,41 +1005,59 @@ def check_burning_peg(built: Built) -> Verdict:
     cold = [j for j in rated if j["member"] not in heated_names]
     if not heated:
         return Verdict(False, "no fixing's member is being heated", measured)
-    start_y = {j["id"]: (world.body(j["member"]) or {}).get("position_m", [0, 0, 0])[1]
-               for j in heated}
+    # Where both ends of each heated joint stood. A joint made of the peg can
+    # hold the peg (post to peg) or hold something on it (peg to gate), so what
+    # falls when it gives way is whichever end is free -- not always its member.
+    def height(name: str) -> float:
+        return (world.body(name) or {}).get("position_m", [0, 0, 0])[1]
+
+    start_y = {j["id"]: {end: height(j[end]) for end in ("a", "b")} for j in heated}
     # As long as the heat runs, from two to four minutes: a peg that has not
     # given way by then under what the chat built is an answer too.
     limit = max(120.0, min(240.0, abt._heater_end_s(built.room)))
     gave_way: dict[int, dict[str, Any]] = {}
-    waited = 0.0
-    while waited < limit and len(gave_way) < len(heated):
-        world.seconds(1.0)
-        waited += 1.0
+
+    def note_parted() -> None:
         for j in world.joints():
             if j["id"] in start_y and not j.get("attached") and j["id"] not in gave_way:
-                gave_way[j["id"]] = {"at_s": round(world.simulated_s, 2),
+                gave_way[j["id"]] = {"joint": f"{j['a']} to {j['b']}",
+                                     "at_s": round(world.simulated_s, 2),
                                      "load_n": j.get("parted_load_n"),
                                      "could_take_n": j.get("parted_capacity_n"),
                                      "cold_n": j.get("rated_shear_n"),
                                      "why": j.get("parted_because", "")}
+
+    # Until the first of them gives way. Another joint made of the same peg
+    # that is far stronger than what it carries -- the chat can say the weld to
+    # the gate is made of the peg too -- is not asked to give way as well.
+    waited = 0.0
+    while waited < limit and not gave_way:
+        world.seconds(1.0)
+        waited += 1.0
+        note_parted()
     world.seconds(3.0)
+    note_parted()
     measured["gave_way"] = list(gave_way.values())
     after = {j["id"]: j for j in world.joints()}
+    if not gave_way:
+        return Verdict(False, f"{heated[0]['member']} was heated for {waited:.0f} s and nothing "
+                              f"made of it gave way: " + "; ".join(
+                                  f"{j['a']} to {j['b']} carries "
+                                  f"{(after.get(j['id']) or {}).get('shear_n')} N of the "
+                                  f"{(after.get(j['id']) or {}).get('holds_shear_n')} N it can take"
+                                  for j in heated), measured)
     for j in heated:
         failed = gave_way.get(j["id"])
         if failed is None:
-            now = after.get(j["id"]) or {}
-            return Verdict(False, f"{j['member']} was heated for {waited:.0f} s and still holds: "
-                                  f"it carries {now.get('shear_n')} N of the {now.get('holds_shear_n')} "
-                                  f"N it can take", measured)
+            continue
         if not failed["why"] or not (failed["load_n"] or 0) > (failed["could_take_n"] or 0):
             return Verdict(False, f"{j['member']} let go without its load passing what it could "
                                   f"take: {failed}", measured)
-        fell = start_y[j["id"]] - (world.body(j["member"]) or {}).get("position_m", [0, 0, 0])[1]
+        fell = max(start_y[j["id"]][end] - height(j[end]) for end in ("a", "b"))
         failed["fell_m"] = round(fell, 3)
         if fell < 0.3:
-            return Verdict(False, f"{j['member']}'s fixing let go but what it held did not fall "
-                                  f"({fell:.3f} m)", measured)
+            return Verdict(False, f"the fixing of {j['b']} to {j['a']}, made of {j['member']}, "
+                                  f"let go but neither end fell ({fell:.3f} m)", measured)
     for j in cold:
         now = after.get(j["id"]) or {}
         measured.setdefault("cold_twins", []).append(

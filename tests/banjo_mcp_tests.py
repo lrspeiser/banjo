@@ -812,6 +812,27 @@ class TheTools(unittest.TestCase):
         self.assertIn("at_a_m is 0.22 m outside segment", said)
         self.assertNotIn("at_b_m", said)
 
+    def test_a_fixing_made_off_away_from_what_it_holds_is_warned_about(self):
+        """A model set a peg down on top of its post and fixed it at the post's
+        face 0.2 m below: the joint held the peg like the end of a stiff arm, and
+        when heat parted it nothing fell. A fixing whose point is off one of its
+        two bodies is warned about; the 5 mm a jointed body stands clear is not."""
+        world_id = self.client.call("create_world", cell_size_m=0.04, objects=[
+            {"name": "post", "shape": "box", "material": "oak", "size_m": [0.16, 1.6, 0.16],
+             "position_m": [0, 0.8, 0], "anchored": True},
+            {"name": "peg", "shape": "box", "material": "oak", "size_m": [0.04, 0.04, 0.16],
+             "position_m": [0, 1.4, 0.165]},
+            {"name": "capping", "shape": "box", "material": "oak", "size_m": [0.04, 0.04, 0.16],
+             "position_m": [0, 1.622, 0]}])["world_id"]
+        good = self.client.call("fix", world_id=world_id, a="post", b="peg",
+                                at_m=[0, 1.4, 0.08], axis=[0, 0, 1], holds_shear_n=800)
+        self.assertFalse([w for w in good.get("warnings", []) if "outside" in w], good)
+        bad = self.client.call("fix", world_id=world_id, a="post", b="capping",
+                               at_m=[0, 1.4, 0.08], axis=[0, 0, 1], holds_shear_n=800)
+        said = " ".join(bad.get("warnings", []))
+        self.assertIn("at_m is 0.20 m outside capping", said)
+        self.assertNotIn("outside post", said)
+
     def test_a_world_can_be_closed_and_is_then_gone(self):
         world_id = self.pane_world()
         self.client.call("close_world", world_id=world_id)

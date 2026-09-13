@@ -2001,14 +2001,19 @@ def _held_up(entry: dict[str, Any], body: dict[str, Any]) -> dict[str, Any] | No
     """How far above what is under it a body given [x, y, z] starts -- said, so
     a caller that meant it to rest finds out it will fall. Measured, a model
     gave [x, z, 0] for [x, z]: three crates started 1.5 m up at the wrong place,
-    and its reply said they were resting on the floor."""
+    and its reply said they were resting on the floor. And measured the other
+    way: told only that it would fall, a model took the peg it was about to fix
+    into its post and set it down on the post's top, where nothing held it in
+    the post -- so the note says that a joint made next is what holds it up."""
     top, under, _, _ = _under_footprint(entry, body)
     gap = body["center_m"][1] - _half_height(body) - top
     if gap <= IN_THE_AIR_M:
         return None
     return {"above_m": round(gap, 3), "over": under,
-            "note": "it starts that far above what is under it and will fall; to set it "
-                    "down there instead, give position_m as [x, z]"}
+            "note": "it starts that far above what is under it and will fall unless a "
+                    "joint holds it: if you are about to hang it (fix, hinge, slide, tie, "
+                    "reeve or spring), leave it here; to set it down there instead, give "
+                    "position_m as [x, z]"}
 
 
 def _river_said(path: list[dict[str, Any]], every: int = 2) -> list[list[float]]:
@@ -3085,6 +3090,20 @@ def _joint_warnings(entry: dict[str, Any], tool: str, args: dict[str, Any]) -> l
                             f"the point rides on {name} like the end of a stiff arm that is "
                             f"not there. Put the point on {name} -- for a rope of segments, "
                             f"0.02 m either side of the join, with the bodies touching.")
+    if tool == "fix":
+        # A fixing joins two things at a point in both of them: a peg in its
+        # post and in what it carries. Measured, a model set a peg down on top
+        # of its post and fixed it at the post's face 0.2 m below: the joint
+        # held the peg there like the end of a stiff arm, and when heat parted
+        # it nothing fell, because the peg was sitting on the post.
+        for name in (args.get("a"), args.get("b")):
+            off = _off_body(entry, str(name or ""), args.get("at_m") or [0.0, 0.0, 0.0])
+            if off is not None and off > cell:
+                said.append(f"at_m is {off:.2f} m outside {name}. A fixing joins two things "
+                            f"at a point in both of them -- a peg in its post -- so at_m "
+                            f"belongs on or in {name}: made off in the air, it holds {name} "
+                            f"like the end of a stiff arm that is not there. If {name} is not "
+                            f"where you meant it, take it out and add it again where it goes.")
     return said
 
 

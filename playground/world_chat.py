@@ -82,8 +82,10 @@ must be at least half of each one's width apart, added together -- two 0.4 m
 crates, 0.4 m -- or [x, z] sets the second on top of the first; set_down's
 overhangs says when a thing is only partly on what is under it and may tip. Give [x, y, z] only to hold a thing
 up in the air: to fall, or to hang from something; then the answer's
-in_the_air says how far it will fall, and if you meant it to rest, take it out
-and add it again with [x, z]. If an answer has in_water,
+in_the_air says how far it would fall if nothing held it: if you are about to
+hang it with a joint (fix, hinge, slide, tie, reeve or spring), leave it there,
+because the joint holds it; only if you meant it to rest, take it out and add
+it again with [x, z]. If an answer has in_water,
 the thing is in water: say so in your reply, and unless they asked for it in
 the water, take it out and set it down again on dry, level ground within their
 reach -- survey says where the ground is dry and how steep it is, and a ball
@@ -291,7 +293,10 @@ An oak peg in a gatepost carrying an iron gate, heated until it gives way, with
 an identical cold one beside it that holds (2 kW into the peg: it chars within
 about 20 s and the 32 kg gate falls about 50 s in, when the peg's remaining
 section can no longer carry it; the cold twin carries it for ever). Jointed
-bodies stand 5 mm clear of each other, as below:
+bodies stand 5 mm clear of each other, as below. The peg and the gate HANG, so
+they are given [x, y, z]: add_object answers in_the_air for both, and that is
+right -- the two fixes hold them there. Never set either down with [x, z]: a peg
+set on top of its post is not in it, and nothing falls when it gives way.
   add_object gatepost oak [0.16, 1.6, 0.16] at [0, 0.8, 0] anchored
   add_object oak peg oak [0.04, 0.04, 0.16] at [0, 1.4, 0.165]
   add_object iron gate iron [0.32, 0.32, 0.04] at [0, 1.215, 0.205]
