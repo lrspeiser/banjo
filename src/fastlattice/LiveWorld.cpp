@@ -11,7 +11,10 @@
 #include "thermo/ThermoJson.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <stdexcept>
 #include <thread>
 #include <deque>
@@ -45,6 +48,12 @@ Vec3 cellBounds(const std::vector<std::uint32_t> &nodes,
     // The offsets are cell CENTRES, so the piece reaches half a cell past each.
     return {high.x - low.x + cell_m, high.y - low.y + cell_m, high.z - low.z + cell_m};
 }
+// The turn from one orientation to another, as axis times angle. Defined with
+// the blades at the end of this file; the hand's wrist needs it too.
+[[nodiscard]] Vec3 turnBetween(const Quat &from, const Quat &to);
+// How heavy a push at `arm` from the centre of mass feels, direction by
+// direction. Defined with the blades; the wielding hand is shaped by it.
+[[nodiscard]] Mat3 gripMassMatrix(double mass_kg, const Mat3 &inertia_world, const Vec3 &arm);
 } // namespace
 
 // One fracture in progress: everything the three phases pass between them.
@@ -319,6 +328,150 @@ struct LiveWorld::Impl {
             if (joint.rigid != 0 && in.hasJoint(joint.rigid))
                 joint.at_when_hung = in.jointState(joint.rigid).at;
     }
+
+    // ---- Blades and cuts (docs/cutting-model.md) --------------------------
+    struct Blade {
+        unsigned id{};
+        std::string body;
+        // In the body's own frame, about its centre of mass -- which is what
+        // lets a sword be carried across the room with its edge still on the
+        // same side of the steel.
+        Vec3 heel_local{}, tip_local{}, facing_local{}, grip_local{};
+        double thickness{}, edge_radius{}, bevel_deg{};
+        double cut_area{}, cut_work{};
+        std::string cutting;
+        bool attached{true};
+        // The rigid body the frame above belongs to, and the body's cells as
+        // they sat in it. A body that comes through a fracture whole is put
+        // back in a NEW frame; these are what let the edge follow its own steel
+        // into it rather than end up somewhere in the air beside it.
+        MatterBodyId body_id{};
+        std::vector<std::uint32_t> frame_nodes;
+        std::vector<Vec3> frame_offsets;
+    };
+    std::vector<Blade> blades;
+    unsigned next_blade{1};
+    std::string blade_refusal;   // why the last blade() said no, in words
+    // Every contact the rigid solver resolved this step between a blade and
+    // anything else: how a flat strike or a glance gets reported, from the
+    // contact's own normal rather than from a guess.
+    std::vector<ImpactEvent> blade_contacts;
+    // Bodies whose severed bonds leave them in pieces, waiting for a fracture
+    // that holds indices into the body table to finish before they are split.
+    std::set<std::string> split_later;
+    // A cut through one body, in that body's own frame. `u` runs along the
+    // edge as it was when it bit, `v` the way it faced and `w` across its
+    // flats. What has been swept is kept per strip of `u` as the stretches of
+    // `v` the edge has been through. Stretches, not one: an edge that turns or
+    // slides as it cuts crosses each strip's matter somewhere new, and a strip
+    // kept as one stretch grown from its end refused a mark that did not touch
+    // it -- the matter stayed, and it held the pieces together.
+    struct Kerf {
+        unsigned blade{};
+        Vec3 origin{}, u{}, v{}, w{};
+        double strip{};
+        double half_width{};
+        std::map<int, std::vector<std::pair<double, double>>> swept;
+        // Every bond that crosses this kerf's plane, and where. A bond is
+        // severed when the swept part of the plane reaches where it crosses.
+        struct Crossing {
+            std::uint32_t bond{};
+            double u{}, v{};
+            Vec3 at_local{};
+        };
+        std::vector<Crossing> crossings;
+        [[nodiscard]] bool covers(double at_u, double at_v, double slack = 0.0) const {
+            const auto found = swept.find(static_cast<int>(std::floor(at_u / strip)));
+            if (found == swept.end()) return false;
+            for (const auto &span : found->second)
+                if (at_v >= span.first - slack && at_v <= span.second + slack) return true;
+            return false;
+        }
+        // How much of [low, high] strip `s` does not hold yet. Its stretches
+        // are kept apart and in order, so what they cover can be subtracted.
+        [[nodiscard]] double uncovered(int s, double low, double high) const {
+            double open = std::max(0.0, high - low);
+            const auto found = swept.find(s);
+            if (found == swept.end()) return open;
+            for (const auto &span : found->second)
+                open -= std::max(0.0, std::min(high, span.second) - std::max(low, span.first));
+            return std::max(0.0, open);
+        }
+        // [low, high] swept through strip `s`, joined to whatever it touches.
+        void add(int s, double low, double high, double join) {
+            if (!(high > low)) return;
+            auto &spans = swept[s];
+            spans.emplace_back(low, high);
+            std::sort(spans.begin(), spans.end());
+            std::vector<std::pair<double, double>> merged;
+            for (const auto &span : spans) {
+                if (!merged.empty() && span.first <= merged.back().second + join)
+                    merged.back().second = std::max(merged.back().second, span.second);
+                else
+                    merged.push_back(span);
+            }
+            spans = std::move(merged);
+        }
+        // Where the stretch that `at` is in ends, or `at` if it is in none.
+        [[nodiscard]] double throughTo(int s, double at) const {
+            const auto found = swept.find(s);
+            if (found == swept.end()) return at;
+            for (const auto &span : found->second)
+                if (span.first <= at + 1e-6 && span.second > at) return span.second;
+            return at;
+        }
+        [[nodiscard]] double area() const {
+            double total = 0.0;
+            for (const auto &entry : swept)
+                for (const auto &span : entry.second) total += std::max(0.0, span.second - span.first);
+            return total * strip;
+        }
+    };
+    std::unordered_map<std::string, std::vector<Kerf>> kerfs;
+    // An edge in matter this step: set up before the step, accounted after it.
+    struct Engagement {
+        unsigned blade{};
+        std::string target;
+        std::size_t kerf{};
+        unsigned rigid{};
+        bool embedded{};
+        double resistance{};     // R = G + H w, J/m^2
+        double push_n{};         // how hard the hand and gravity push the edge in, N
+        std::size_t cut{};       // its entry in cut_log
+        // The constraint's frame and the relative motion at the start of the
+        // step, so the step can be accounted for once it has run.
+        Vec3 point_blade_local{}, point_target_local{};
+        Vec3 n_world{}, t_world{};
+        double vn_before{}, vt_before{};
+        double touching_m{};
+        // What the edge cut on its way out of the far side that the step's
+        // work did not cover, m^2: taken at once from the closing motion
+        // (settleCuts, settleOwed), so no cut is left unpaid.
+        double owed_m2{};
+        // The engaged part of the edge: each sample's place in the blade's own
+        // frame and, at the start of the step, in the target's.
+        std::vector<Vec3> sample_blade_local, sample_start_target_local;
+        double sample_ds{};
+    };
+    std::vector<Engagement> engaged;
+    // Pairs whose ordinary rigid contact is suspended until the blade is clear
+    // of the target's matter: a blade still in its kerf, or lying between two
+    // pieces it has just made.
+    std::set<std::pair<unsigned, std::string>> exempt;
+    // Where the bodies a cut has just replaced were at that moment, so a joint
+    // can follow its own end into the piece that holds it. See rehangJoints.
+    std::unordered_map<std::string, RigidSnapshot> vanished;
+    std::vector<LiveCut> cut_log;
+    // Contacts that did not bite, still open, by (blade, target).
+    std::map<std::pair<unsigned, std::string>, std::pair<std::size_t, std::uint64_t>> touching;
+    // The physical grip. See wield(): a bounded force at a point on the body
+    // and a bounded torque, towards where the hand wants it.
+    bool wielding{};
+    Vec3 grip_local{};
+    double hand_torque_n_m{60.0};
+    // What the hand is applying for the coming step. The cut's static rule
+    // needs to know which way the blade is being pushed when it is not moving.
+    Vec3 hand_force{};
 };
 
 LiveWorld::LiveWorld() : impl_(std::make_unique<Impl>()) {}
@@ -553,7 +706,18 @@ bool LiveWorld::judgeStep() {
     bool any_would_break = false;
     std::set<std::string> breaking_now;
     std::unordered_map<std::size_t, double> worst_speed;
+    impl_->blade_contacts.clear();
+    std::set<MatterBodyId> blade_bodies;
+    for (const Impl::Blade &blade : impl_->blades) {
+        const auto holder = impl_->index_of.find(blade.body);
+        if (blade.attached && holder != impl_->index_of.end())
+            blade_bodies.insert(impl_->body_of[holder->second]);
+    }
     for (const ImpactEvent &event : impl_->world->drainImpacts()) {
+        // A blade's own contacts are kept for the cutting model, which reports
+        // the ones that did not bite -- a flat strike, a glance -- from them.
+        if (blade_bodies.count(event.body_a) || blade_bodies.count(event.body_b))
+            impl_->blade_contacts.push_back(event);
         const auto a = index_of_body.find(event.body_a);
         const auto b = index_of_body.find(event.body_b);
         const bool a_known = a != index_of_body.end();
@@ -685,6 +849,88 @@ void LiveWorld::step(double dt_s) {
 
     const auto holdStill = [&]() { carryOrHaul(dt_s); };
 
+    // The hand on a wielded grip: pulling AT the grip with a bounded force and
+    // turning with a bounded torque, both towards where the hand wants the body
+    // (docs/cutting-model.md section 7). Worked out once, from the world as the
+    // step starts, and pushed INSIDE the step's reversible trial, so a step that
+    // is taken back takes its push back with it and the retry pushes once.
+    // Nothing here writes a pose: whatever the body meets can slow it, turn it
+    // aside or stop it.
+    struct HandPush {
+        bool on{};
+        MatterBodyId id{};
+        Vec3 force{}, torque{}, grip{};
+    };
+    const HandPush hand = [&]() {
+        HandPush out;
+        if (!impl_->wielding || impl_->holding == static_cast<std::size_t>(-1)) return out;
+        const MatterBodyId id = impl_->body_of[impl_->holding];
+        if (!impl_->world->contains(id)) return out;
+        const RigidMechanicalState held = impl_->world->mechanicalState(id);
+        const RigidSnapshot &now = held.motion;
+        if (!(held.mass_kg > 0.0)) return out;
+        const Vec3 arm = now.orientation_world.rotate(impl_->grip_local);
+        const Vec3 grip = now.center_of_mass_world_m + arm;
+        const Vec3 grip_velocity =
+            now.linear_velocity_m_s + cross(now.angular_velocity_rad_s, arm);
+        // A hand that answers in every direction at the same rate, each
+        // direction with the mass the GRIP has there. A push at the grip turns
+        // the body as well as moving it, so across the arm the grip is lighter
+        // than the body -- 0.6 kg of a 1.9 kg sword held 0.35 m from its
+        // middle. Sized for the whole mass instead, the damping came to 2.2 of
+        // a step's worth across the arm, past the 2 an explicit step can take,
+        // and the sword rang at the step rate: a blade in a kerf turns that into
+        // cutting nobody pushed it to do. The rate is 100 rad/s, a tenth of a
+        // step per radian, unless full strength would then come sooner than
+        // 50 mm off along the arm, where the grip has the whole mass.
+        constexpr double kFastest = 100.0;
+        constexpr double kDamping = 0.9;
+        const double strength = impl_->hand_strength_n;
+        const double rate = std::min(kFastest, std::sqrt(strength / (0.05 * held.mass_kg)));
+        const Mat3 feels = gripMassMatrix(held.mass_kg, held.inertia_world_kg_m2, arm);
+        // Its weight is carried first: a hand holding a sword out does not let
+        // it sag until the error pays for it, and does not stop carrying it
+        // because it is also swinging it. What the hand has left after the
+        // weight goes to moving it. (Capped as one vector, a hard swing spent
+        // the weight's share on the swing, and the sword dropped 100 mm and
+        // passed under the rope it had been aimed at.)
+        const Vec3 hold = -held.mass_kg * impl_->request.gravity_m_s2;
+        Vec3 track = feels * ((rate * rate) * (impl_->held_at - grip) -
+                              (2.0 * kDamping * rate) * grip_velocity);
+        const double spare = std::max(0.0, strength - length(hold));
+        const double pull = length(track);
+        if (pull > spare && pull > 0.0) track = (spare / pull) * track;
+        Vec3 force = hold + track;
+        // And never more than the hand has: a thing too heavy to hold up is
+        // held up as far as the strength goes.
+        const double total = length(force);
+        if (total > strength && total > 0.0) force = (strength / total) * force;
+        // The wrist turns it towards where the hand wants it facing, and has to
+        // answer the turn the grip force itself puts about the centre of mass:
+        // what the wrist supplies is what is left after the grip's own moment.
+        const Vec3 turn = turnBetween(now.orientation_world, impl_->held_facing);
+        const Vec3 wanted = (kFastest * kFastest) * turn -
+                            (2.0 * kDamping * kFastest) * now.angular_velocity_rad_s;
+        Vec3 torque = held.inertia_world_kg_m2 * wanted - cross(arm, force);
+        const double twist = length(torque);
+        if (twist > impl_->hand_torque_n_m && twist > 0.0)
+            torque = (impl_->hand_torque_n_m / twist) * torque;
+        out.on = true;
+        out.id = id;
+        out.force = force;
+        out.torque = torque;
+        out.grip = grip;
+        return out;
+    }();
+    // Which way the blade is being pushed, for the cut's rule at rest.
+    impl_->hand_force = hand.on ? hand.force : Vec3{};
+    const auto pushHand = [&]() {
+        if (!hand.on) return;
+        impl_->world->pushBodyAt(hand.id, hand.force, hand.grip);
+        impl_->world->twistBody(hand.id, hand.torque);
+        impl_->world->wake(hand.id);
+    };
+
     // A step that would break something is taken back.
 
     //
@@ -758,11 +1004,18 @@ void LiveWorld::step(double dt_s) {
         if (environment != nullptr) environment->commit(*impl_->world, waterBodies(), dt_s);
     };
 
+    // Edges first. Where one is about to meet matter, or is already in it, the
+    // kerf constraint that stands in for the material has to be in place before
+    // the solver moves anything -- and it changes the world's configuration,
+    // which a reversible trial forbids, so it goes before the trial opens.
+    // docs/cutting-model.md.
+    prepareCuts(dt_s);
     if (impl_->body_of.size() + 8 <= 2000) {
         bool committed = false;
         try {
             committed = impl_->world->runReversibleTrial([&]() {
                 pushGas();
+                pushHand();
                 pushWater();
                 impl_->world->step(dt_s);
                 holdStill();
@@ -800,6 +1053,9 @@ void LiveWorld::step(double dt_s) {
         }
         impl_->time_s += dt_s;
         impl_->rememberJointAngles(*impl_->world);
+        // What each edge took this step, the kerfs it bought, and whatever came
+        // apart. After the trial, for the same reason prepareCuts is before it.
+        settleCuts(dt_s);
         partOverloadedLinks();
         // Load does not change in a quarter of a second, and the survey is
         // O(bodies squared). Sixty times a second would be waste; four is not.
@@ -810,6 +1066,7 @@ void LiveWorld::step(double dt_s) {
         return;
     }
     pushGas();
+    pushHand();
     pushWater();
     impl_->world->step(dt_s);
     holdStill();
@@ -818,6 +1075,7 @@ void LiveWorld::step(double dt_s) {
     advanceGas();
     impl_->time_s += dt_s;
     impl_->rememberJointAngles(*impl_->world);
+    settleCuts(dt_s);
     partOverloadedLinks();
     if (impl_->steps_taken % 60 == 0) surveyLoads();
     foresee();
@@ -897,6 +1155,24 @@ std::vector<LiveBodyPose> LiveWorld::poses(bool with_geometry) const {
             out[i].cells_local_m.reserve(impl_->nodes_of[i].size());
             for (const std::uint32_t node : impl_->nodes_of[i])
                 out[i].cells_local_m.push_back(impl_->cell_offset_m[node]);
+        }
+        // The cuts it carries. They change while a blade works, so they are read
+        // every time rather than kept with the parts that do not.
+        if (const auto carried = impl_->kerfs.find(out[i].name); carried != impl_->kerfs.end()) {
+            for (const Impl::Kerf &kerf : carried->second) {
+                if (kerf.swept.empty()) continue;
+                LiveBodyPose::Kerf drawn{};
+                drawn.point_local_m = kerf.origin;
+                drawn.along_local = kerf.u;
+                drawn.facing_local = kerf.v;
+                drawn.normal_local = kerf.w;
+                drawn.thickness_m = 2.0 * (kerf.half_width - 0.001);
+                for (const auto &[strip, spans] : kerf.swept)
+                    for (const auto &span : spans)
+                        drawn.strips.push_back({strip * kerf.strip, (strip + 1) * kerf.strip,
+                                                span.first, span.second});
+                out[i].kerfs.push_back(std::move(drawn));
+            }
         }
         if (!impl_->world->contains(impl_->body_of[i])) continue;
         const RigidSnapshot snap = impl_->world->snapshot(impl_->body_of[i]);
@@ -1400,15 +1676,29 @@ void LiveWorld::rehangJoints() {
         for (int end = 0; end < 2; ++end) {
             const auto found = impl_->index_of.find(*names[end]);
             if (found != impl_->index_of.end()) { side[end] = found->second; continue; }
-            if (!have_point) break;
-            const std::size_t heir = bodyHolding(point, *names[end]);
+            // Where THIS end was attached, if a cut has just replaced its body:
+            // a rope, a pulley or a spring is tied at two different points, and
+            // a rope's are a cell apart across the join -- searched for with the
+            // other end's point, the pieces had nothing within a cell of it, and
+            // the ties on both sides of a cut segment came off. A pin's two ends
+            // share one point, so for a pin this is the same place.
+            Vec3 own = point;
+            bool have_own = have_point;
+            if (const auto gone = impl_->vanished.find(*names[end]); gone != impl_->vanished.end()) {
+                own = gone->second.center_of_mass_world_m +
+                      gone->second.orientation_world.rotate(*locals[end]);
+                have_own = true;
+            }
+            if (!have_own) break;
+            const std::size_t heir = bodyHolding(own, *names[end]);
             if (heir == static_cast<std::size_t>(-1)) break;
             // The pin is in this piece now. Re-write where it sits in the new
             // body's frame -- the piece has its own centre of mass, nowhere near
             // the one the parent had -- and rename the end to match, so the next
             // break follows the piece's own pieces.
             const RigidSnapshot at = impl_->world->snapshot(impl_->body_of[heir]);
-            *locals[end] = conjugateOf(at.orientation_world).rotate(point - at.center_of_mass_world_m);
+            *locals[end] = conjugateOf(at.orientation_world).rotate(own - at.center_of_mass_world_m);
+            if (end == 1) joint.point_local_b_tie = *locals[end];
             *names[end] = impl_->described[heir].name;
             side[end] = heir;
             impl_->delays.push_back({impl_->time_s, *names[end], "rehung", 0.0, 0.0});
@@ -1424,6 +1714,10 @@ void LiveWorld::rehangJoints() {
         try {
             const RigidSnapshot one = impl_->world->snapshot(impl_->body_of[side[0]]);
             const Vec3 along = one.orientation_world.rotate(joint.axis_local_a);
+            // A rope, a pulley or a spring is tied at two points, and end a's is
+            // its own -- not the point a pin's two ends share.
+            const Vec3 point_a = one.center_of_mass_world_m +
+                                 one.orientation_world.rotate(joint.point_local_a);
             // The limits were measured from where the thing was standing when
             // the joint was made, and it is not standing there now. Jolt
             // measures a fresh constraint from where it finds the bodies, so
@@ -1436,7 +1730,7 @@ void LiveWorld::rehangJoints() {
                 JoltWorld::PulleyDescription rove{};
                 rove.a = impl_->body_of[side[0]];
                 rove.b = impl_->body_of[side[1]];
-                rove.point_a_world_m = point;
+                rove.point_a_world_m = point_a;
                 const RigidSnapshot far = impl_->world->snapshot(impl_->body_of[side[1]]);
                 rove.point_b_world_m = far.center_of_mass_world_m +
                                        far.orientation_world.rotate(joint.point_local_b_tie);
@@ -1452,7 +1746,7 @@ void LiveWorld::rehangJoints() {
                 JoltWorld::LinkDescription rope{};
                 rope.a = impl_->body_of[side[0]];
                 rope.b = impl_->body_of[side[1]];
-                rope.point_a_world_m = point;
+                rope.point_a_world_m = point_a;
                 // The far end is tied somewhere else on the other body, so it
                 // has to be worked out from that body rather than shared. This
                 // is the one place a link differs from a pin: two points, not
@@ -1467,7 +1761,7 @@ void LiveWorld::rehangJoints() {
                 JoltWorld::ElasticDescription limb{};
                 limb.a = impl_->body_of[side[0]];
                 limb.b = impl_->body_of[side[1]];
-                limb.point_a_world_m = point;
+                limb.point_a_world_m = point_a;
                 const RigidSnapshot far = impl_->world->snapshot(impl_->body_of[side[1]]);
                 limb.point_b_world_m = far.center_of_mass_world_m +
                                        far.orientation_world.rotate(joint.point_local_b_tie);
@@ -1519,6 +1813,9 @@ bool LiveWorld::grab(const std::string &name) {
     if (impl_->described[found->second].anchored) return false;
     if (impl_->holding != static_cast<std::size_t>(-1)) release();
     impl_->holding = found->second;
+    // Carried, which is placement. wield() makes a grip of it afterwards.
+    impl_->wielding = false;
+    impl_->hand_force = {};
     // The world it is being taken out of has probably been still for a while,
     // and a body that has been still is not being simulated. Everything below
     // -- carrying it, and gravity when it is let go -- needs it back in the
@@ -1575,6 +1872,16 @@ void LiveWorld::carryOrHaul(double dt_s) {
     if (!(dt_s > 0.0)) dt_s = 1.0 / 240.0;
     const MatterBodyId id = impl_->body_of[impl_->holding];
     RigidSnapshot state = impl_->world->snapshot(id);
+
+    // WIELDED: a hand on a grip. Its pull is not made here but once per step,
+    // inside the step's reversible trial (step(), `hand`). Made here -- after
+    // each step for the next one, and again whenever the hand was moved between
+    // steps -- the pushes added up in the body's force accumulator, and the first
+    // step after every move of the hand had the hand's force twice. And the
+    // accumulator is part of the state a trial rewinds to, so a push made out
+    // here survived a refused step and was pushed again on the retry.
+    // docs/cutting-model.md section 7.
+    if (impl_->wielding) return;
 
     const std::string carrying = impl_->described[impl_->holding].name;
     const Impl::SceneJoint *on = nullptr;
@@ -1703,6 +2010,8 @@ void LiveWorld::release() {
     // Watched: let go a metre up, still a metre up two seconds later.
     impl_->world->wake(impl_->body_of[impl_->holding]);
     impl_->holding = static_cast<std::size_t>(-1);
+    impl_->wielding = false;
+    impl_->hand_force = {};
 }
 
 void LiveWorld::forgetImpacts() { impl_->reported.clear(); }
@@ -1791,6 +2100,11 @@ void LiveWorld::surveyLoads() {
     for (std::size_t i = 0; i < count; ++i) {
         if (impl_->described[i].anchored) continue;
         if (i == impl_->holding) continue;             // in a hand, not on anything
+        static const bool survey_trace = std::getenv("BANJO_CUT_TRACE") != nullptr;
+        const bool traced = survey_trace && impl_->kerfs.count(impl_->described[i].name) != 0;
+        if (traced)
+            std::fprintf(stderr, "survey %s carrying=%.1f N\n", impl_->described[i].name.c_str(),
+                         carrying[i]);
         if (!(carrying[i] > 0.0)) continue;            // nothing on it: nothing to do
 
         // What is holding it up, and how far apart. A beam supported all along
@@ -1828,9 +2142,74 @@ void LiveWorld::surveyLoads() {
         // whether the lattice is worth running, and it is meant to err towards
         // asking rather than towards silence.
         const double own_per_m = weight[i] / std::max(span, 1e-6);
-        const double stress = 3.0 * carrying[i] * span / (2.0 * breadth * depth * depth) +
-                              3.0 * own_per_m * span * span / (4.0 * breadth * depth * depth);
+        double stress = 3.0 * carrying[i] * span / (2.0 * breadth * depth * depth) +
+                        3.0 * own_per_m * span * span / (4.0 * breadth * depth * depth);
+        // And at every cut it carries. A kerf across the span leaves the bonds
+        // still alive across its plane as the only section there -- the
+        // ligament -- so the bending there is the moment where the kerf is over
+        // what that ligament can take. docs/cutting-model.md section 8.
+        if (const auto cut = impl_->kerfs.find(impl_->described[i].name);
+            cut != impl_->kerfs.end()) {
+            double inner_left = -1e30, inner_right = 1e30;
+            bool on_left = false, on_right = false;
+            for (std::size_t under = 0; under < count; ++under) {
+                if (!restsOn(i, under)) continue;
+                if (middle[under].x < middle[i].x) {
+                    inner_left = std::max(inner_left, middle[under].x + half[under].x);
+                    on_left = true;
+                } else {
+                    inner_right = std::min(inner_right, middle[under].x - half[under].x);
+                    on_right = true;
+                }
+            }
+            const double clear = inner_right - inner_left;
+            if (on_left && on_right && clear > 1e-3) {
+                const RigidSnapshot at = impl_->world->snapshot(impl_->body_of[i]);
+                const double cell = impl_->request.cell_size_m;
+                const auto &bonds = impl_->setup->matter.bonds;
+                for (const Impl::Kerf &kerf : cut->second) {
+                    // Only a cut ACROSS the span takes out bending section.
+                    if (kerf.swept.empty()) continue;
+                    if (std::abs(at.orientation_world.rotate(kerf.w).x) < 0.7) continue;
+                    double low_y = 1e30, high_y = -1e30, low_z = 1e30, high_z = -1e30;
+                    double where = 0.0;
+                    std::size_t alive = 0;
+                    for (const auto &crossing : kerf.crossings) {
+                        if (crossing.bond >= bonds.size() || !bonds[crossing.bond].alive) continue;
+                        const Vec3 p = at.center_of_mass_world_m +
+                                       at.orientation_world.rotate(crossing.at_local);
+                        low_y = std::min(low_y, p.y);
+                        high_y = std::max(high_y, p.y);
+                        low_z = std::min(low_z, p.z);
+                        high_z = std::max(high_z, p.z);
+                        where += p.x;
+                        ++alive;
+                    }
+                    if (alive == 0) continue;
+                    where /= static_cast<double>(alive);
+                    const double ligament_depth = high_y - low_y + cell;
+                    const double ligament_breadth = high_z - low_z + cell;
+                    const double a = std::clamp(where - inner_left, 0.0, clear);
+                    const double moment = 0.5 * carrying[i] * std::min(a, clear - a) +
+                                          0.5 * own_per_m * a * (clear - a);
+                    stress = std::max(stress, 6.0 * moment /
+                                                  (ligament_breadth * ligament_depth *
+                                                   ligament_depth));
+                    if (traced)
+                        std::fprintf(stderr,
+                                     "survey %s kerf: clear=%.3f a=%.3f moment=%.2f N m "
+                                     "ligament %.4f x %.4f m (%zu bonds) -> %.3g Pa\n",
+                                     impl_->described[i].name.c_str(), clear, a, moment,
+                                     ligament_breadth, ligament_depth, alive,
+                                     6.0 * moment /
+                                         (ligament_breadth * ligament_depth * ligament_depth));
+                }
+            }
+        }
         const double strength = i < impl_->tensile_of.size() ? impl_->tensile_of[i] : 0.0;
+        if (traced)
+            std::fprintf(stderr, "survey %s span=%.3f stress=%.3g Pa strength=%.3g Pa\n",
+                         impl_->described[i].name.c_str(), span, stress, strength);
         if (!(strength > 0.0)) continue;
         if (!(stress > strength)) continue;
 
@@ -3452,8 +3831,8 @@ terrain::EditEffect LiveWorld::deposit(double x, double z, double radius_m, doub
     return requireEnvironment(impl_->environment).deposit(*impl_->world, x, z, radius_m, sand_m3, soil_m3);
 }
 
-std::optional<terrain::CutBlock> LiveWorld::cut(double x, double z, int cells_x, int cells_z,
-                                                double height_m, std::string *why) {
+std::optional<terrain::CutBlock> LiveWorld::cutBlock(double x, double z, int cells_x, int cells_z,
+                                                     double height_m, std::string *why) {
     terrain::Environment &environment = requireEnvironment(impl_->environment);
     // The block has to be something the world can build: matter here is cubic
     // cells, so every side of it is a whole number of them. Said with the
@@ -3501,5 +3880,1758 @@ std::string LiveWorld::survey(double x, double z) const {
 }
 
 unsigned LiveWorld::awakeBodies() const { return impl_->world->awakeBodies(); }
+
+// ===========================================================================
+// Blades, and cutting that changes what things are.
+//
+// The declared model is docs/cutting-model.md, and this is that model and
+// nothing more. An edge is engaged when its path takes it into a target's
+// matter and the rules at the surface say it bites. While it is engaged, a
+// friction constraint in the blade's own axes resists it with R = G + H w per
+// metre of engaged edge. After the step the friction's work is read back, the
+// kerf is advanced by exactly the area that work bought, and every bond -- and
+// every rope link -- the kerf has reached is severed. A body whose severed
+// bonds leave it in more than one piece is replaced by its pieces.
+//
+// Nothing here knows what anything is called. A rope is cut because it is a run
+// of bodies tied by links and an edge went through it; a plank because it is
+// cells and bonds; and neither because of its name.
+// ===========================================================================
+
+namespace {
+
+constexpr double kPiBlade = 3.14159265358979323846;
+
+// BANJO_CUT_TRACE=1 prints every engaged edge's step to stderr: what it was set
+// up with and what it took. Observation only; it changes nothing computed.
+[[nodiscard]] bool cutTrace() {
+    static const bool on = std::getenv("BANJO_CUT_TRACE") != nullptr;
+    return on;
+}
+
+[[nodiscard]] Quat quatProduct(const Quat &a, const Quat &b) {
+    return Quat{a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+                a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+                a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+                a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w};
+}
+
+// How heavy a push at `arm` from the centre of mass feels, direction by
+// direction: the grip's effective mass matrix. A force at a point both moves
+// the body and turns it, so the point answers a force f with
+// f / m + (I^-1 (arm x f)) x arm, and the mass it meets is the inverse of that
+// map. Along the arm it is the body's whole mass; across it, less -- a sword
+// held 0.35 m from its middle is 0.6 kg across the grip and 1.9 kg along it.
+// docs/cutting-model.md section 7.
+[[nodiscard]] Mat3 gripMassMatrix(double mass_kg, const Mat3 &inertia_world, const Vec3 &arm) {
+    Mat3 whole;
+    for (int i = 0; i < 3; ++i) whole.m[i][i] = mass_kg;
+    if (!(mass_kg > 0.0)) return whole;
+    const auto invert = [](const Mat3 &value, Mat3 &inverse) {
+        const auto &a = value.m;
+        const double c00 = a[1][1] * a[2][2] - a[1][2] * a[2][1];
+        const double c01 = a[1][2] * a[2][0] - a[1][0] * a[2][2];
+        const double c02 = a[1][0] * a[2][1] - a[1][1] * a[2][0];
+        const double det = a[0][0] * c00 + a[0][1] * c01 + a[0][2] * c02;
+        if (!(det > 0.0) || !std::isfinite(det)) return false;
+        inverse.m[0][0] = c00 / det;
+        inverse.m[0][1] = (a[0][2] * a[2][1] - a[0][1] * a[2][2]) / det;
+        inverse.m[0][2] = (a[0][1] * a[1][2] - a[0][2] * a[1][1]) / det;
+        inverse.m[1][0] = c01 / det;
+        inverse.m[1][1] = (a[0][0] * a[2][2] - a[0][2] * a[2][0]) / det;
+        inverse.m[1][2] = (a[0][2] * a[1][0] - a[0][0] * a[1][2]) / det;
+        inverse.m[2][0] = c02 / det;
+        inverse.m[2][1] = (a[0][1] * a[2][0] - a[0][0] * a[2][1]) / det;
+        inverse.m[2][2] = (a[0][0] * a[1][1] - a[0][1] * a[1][0]) / det;
+        return true;
+    };
+    Mat3 inverse_inertia;
+    if (!invert(inertia_world, inverse_inertia)) return whole;
+    // The grip's response to a unit force along each axis, as columns.
+    Mat3 response;
+    const Vec3 basis[3] = {Vec3{1.0, 0.0, 0.0}, Vec3{0.0, 1.0, 0.0}, Vec3{0.0, 0.0, 1.0}};
+    for (int j = 0; j < 3; ++j) {
+        const Vec3 column =
+            (1.0 / mass_kg) * basis[j] + cross(inverse_inertia * cross(arm, basis[j]), arm);
+        response.m[0][j] = column.x;
+        response.m[1][j] = column.y;
+        response.m[2][j] = column.z;
+    }
+    // Symmetric by construction; made exactly so before it is inverted.
+    for (int i = 0; i < 3; ++i)
+        for (int j = i + 1; j < 3; ++j) {
+            const double mean = 0.5 * (response.m[i][j] + response.m[j][i]);
+            response.m[i][j] = mean;
+            response.m[j][i] = mean;
+        }
+    Mat3 mass;
+    if (!invert(response, mass)) return whole;
+    return mass;
+}
+
+// The turn that takes `from` to `to`, as its axis times its angle, the short
+// way round.
+[[nodiscard]] Vec3 turnBetween(const Quat &from, const Quat &to) {
+    Quat d = quatProduct(to, conjugateOf(from));
+    if (d.w < 0.0) d = Quat{-d.w, -d.x, -d.y, -d.z};
+    const Vec3 axis{d.x, d.y, d.z};
+    const double s = length(axis);
+    if (!(s > 1e-12)) return {};
+    return (2.0 * std::atan2(s, d.w) / s) * axis;
+}
+
+[[nodiscard]] Mat3 transposeOf(const Mat3 &m) {
+    Mat3 t;
+    for (int r = 0; r < 3; ++r)
+        for (int c = 0; c < 3; ++c) t.m[r][c] = m.m[c][r];
+    return t;
+}
+
+// The rotation nearest a matrix -- its orthogonal polar factor -- by Higham's
+// iteration. Used only to follow a blade's frame into a body that has been
+// rebuilt, which puts a body that came through a fracture whole back into the
+// world in a new frame.
+[[nodiscard]] Mat3 nearestRotation(Mat3 m) {
+    for (int i = 0; i < 40; ++i) {
+        const auto inverse = m.inverse(1e-30);
+        if (!inverse) break;
+        const Mat3 t = transposeOf(*inverse);
+        for (int r = 0; r < 3; ++r)
+            for (int c = 0; c < 3; ++c) m.m[r][c] = 0.5 * (m.m[r][c] + t.m[r][c]);
+    }
+    return m;
+}
+
+// A body's cells, looked up by where they are in its own frame. One body's
+// cells sit on the grid of the lattice they were cut from, so rounding a point
+// to the nearest centre finds the cell whose cube holds it.
+struct CellGrid {
+    Vec3 anchor{};
+    double cell{1.0};
+    std::unordered_map<std::int64_t, std::uint32_t> at;
+    [[nodiscard]] static std::int64_t key(long long x, long long y, long long z) {
+        constexpr long long kOffset = 1LL << 20;
+        return ((x + kOffset) << 42) | ((y + kOffset) << 21) | (z + kOffset);
+    }
+    void place(const Vec3 &local, long long &x, long long &y, long long &z) const {
+        x = std::llround((local.x - anchor.x) / cell);
+        y = std::llround((local.y - anchor.y) / cell);
+        z = std::llround((local.z - anchor.z) / cell);
+    }
+    [[nodiscard]] bool holds(const Vec3 &local) const {
+        long long x = 0, y = 0, z = 0;
+        place(local, x, y, z);
+        return at.count(key(x, y, z)) != 0;
+    }
+    [[nodiscard]] Vec3 centre(long long x, long long y, long long z) const {
+        return anchor + cell * Vec3{static_cast<double>(x), static_cast<double>(y),
+                                    static_cast<double>(z)};
+    }
+};
+
+[[nodiscard]] CellGrid gridOf(const std::vector<std::uint32_t> &nodes,
+                              const std::vector<Vec3> &offsets, double cell) {
+    CellGrid grid;
+    grid.cell = cell;
+    if (nodes.empty()) return grid;
+    grid.anchor = offsets[nodes.front()];
+    grid.at.reserve(nodes.size() * 2);
+    for (const std::uint32_t node : nodes) {
+        long long x = 0, y = 0, z = 0;
+        grid.place(offsets[node], x, y, z);
+        grid.at.emplace(CellGrid::key(x, y, z), node);
+    }
+    return grid;
+}
+
+// Whether a point in a body's frame has already been cut through, by any of the
+// kerfs the body carries: inside a kerf's slab, and inside what it has swept.
+template <class Kerfs>
+[[nodiscard]] bool alreadyCut(const Kerfs *kerfs, const Vec3 &local) {
+    if (kerfs == nullptr) return false;
+    for (const auto &kerf : *kerfs) {
+        const Vec3 d = local - kerf.origin;
+        if (std::abs(dot(d, kerf.w)) > kerf.half_width) continue;
+        if (kerf.covers(dot(d, kerf.u), dot(d, kerf.v), 1e-9)) return true;
+    }
+    return false;
+}
+
+// Every bond among these cells that crosses the kerf's plane, and where.
+template <class KerfT>
+void findCrossings(KerfT &kerf, const std::vector<std::uint32_t> &nodes,
+                   const std::vector<Vec3> &offsets, const LatticeAsset &asset) {
+    kerf.crossings.clear();
+    const std::unordered_set<std::uint32_t> inside(nodes.begin(), nodes.end());
+    for (const std::uint32_t node : nodes) {
+        if (node + 1U >= asset.adjacency_offsets.size()) continue;
+        for (std::uint32_t k = asset.adjacency_offsets[node]; k < asset.adjacency_offsets[node + 1U];
+             ++k) {
+            const std::uint32_t o = asset.adjacent_bond_indices[k];
+            const BondRest &bond = asset.bonds[o];
+            const std::uint32_t other = bond.node_a == node ? bond.node_b : bond.node_a;
+            // Each bond once, from its lower end, and only if both ends are here.
+            if (other < node || inside.count(other) == 0) continue;
+            const Vec3 &pa = offsets[node];
+            const Vec3 &pb = offsets[other];
+            const double sa = dot(pa - kerf.origin, kerf.w);
+            const double sb = dot(pb - kerf.origin, kerf.w);
+            if ((sa >= 0.0) == (sb >= 0.0)) continue;
+            const Vec3 x = pa + (sa / (sa - sb)) * (pb - pa);
+            kerf.crossings.push_back({o, dot(x - kerf.origin, kerf.u), dot(x - kerf.origin, kerf.v), x});
+        }
+    }
+}
+
+// Whether a body's cells are still one piece through the bonds left alive.
+[[nodiscard]] bool stillWhole(const std::vector<std::uint32_t> &nodes, const ActiveMatter &matter) {
+    if (nodes.size() <= 1 || matter.asset == nullptr) return true;
+    const LatticeAsset &asset = *matter.asset;
+    const std::unordered_set<std::uint32_t> inside(nodes.begin(), nodes.end());
+    std::unordered_set<std::uint32_t> seen{nodes.front()};
+    std::vector<std::uint32_t> stack{nodes.front()};
+    while (!stack.empty()) {
+        const std::uint32_t node = stack.back();
+        stack.pop_back();
+        if (node + 1U >= asset.adjacency_offsets.size()) continue;
+        for (std::uint32_t k = asset.adjacency_offsets[node]; k < asset.adjacency_offsets[node + 1U];
+             ++k) {
+            const std::uint32_t o = asset.adjacent_bond_indices[k];
+            if (o >= matter.bonds.size() || !matter.bonds[o].alive) continue;
+            const BondRest &bond = asset.bonds[o];
+            const std::uint32_t other = bond.node_a == node ? bond.node_b : bond.node_a;
+            if (inside.count(other) == 0) continue;
+            if (seen.insert(other).second) stack.push_back(other);
+        }
+    }
+    return seen.size() == nodes.size();
+}
+
+// Which face of a cell a path crossed going in, as that face's outward normal in
+// the body's frame. `outside` is the last point of the path not in matter and
+// `inside` the first one that is.
+[[nodiscard]] Vec3 faceCrossed(const CellGrid &grid, const Vec3 &outside, const Vec3 &inside) {
+    long long x = 0, y = 0, z = 0;
+    grid.place(inside, x, y, z);
+    const Vec3 off = outside - grid.centre(x, y, z);
+    const double ax = std::abs(off.x), ay = std::abs(off.y), az = std::abs(off.z);
+    if (ax >= ay && ax >= az) return {off.x >= 0.0 ? 1.0 : -1.0, 0.0, 0.0};
+    if (ay >= az) return {0.0, off.y >= 0.0 ? 1.0 : -1.0, 0.0};
+    return {0.0, 0.0, off.z >= 0.0 ? 1.0 : -1.0};
+}
+
+} // namespace
+
+unsigned LiveWorld::blade(const std::string &body, const Vec3 &heel_world_m,
+                          const Vec3 &tip_world_m, const Vec3 &facing_world,
+                          double thickness_m, double edge_radius_m, double bevel_deg,
+                          const Vec3 &grip_world_m) {
+    Impl &I = *impl_;
+    // Every refusal says which rule it broke: a caller told only "no" -- a
+    // model, say -- tries something else at random.
+    I.blade_refusal.clear();
+    const auto refuse = [&I](const char *why) {
+        I.blade_refusal = why;
+        return 0u;
+    };
+    const auto found = I.index_of.find(body);
+    if (found == I.index_of.end()) return refuse("there is nothing called that in the scene");
+    const auto finite = [](const Vec3 &v) {
+        return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+    };
+    if (!finite(heel_world_m) || !finite(tip_world_m) || !finite(facing_world) ||
+        !finite(grip_world_m))
+        return refuse("a point or the facing is not a finite number");
+    if (!(thickness_m > 0.0) || !(thickness_m < 1.0))
+        return refuse("the thickness must be more than 0 and less than 1 m");
+    if (!(edge_radius_m > 0.0) || !(edge_radius_m < 0.05))
+        return refuse("the edge radius must be more than 0 and less than 50 mm");
+    if (!(bevel_deg > 0.0) || !(bevel_deg < 180.0))
+        return refuse("the bevel must be more than 0 and less than 180 degrees");
+    const double reach = length(tip_world_m - heel_world_m);
+    if (!(reach > 1e-4)) return refuse("the heel and the tip are the same point");
+    const Vec3 t = (1.0 / reach) * (tip_world_m - heel_world_m);
+    // Squared up against the edge, so "roughly this way" is enough.
+    const Vec3 squared = facing_world - dot(facing_world, t) * t;
+    if (!(length(squared) > 1e-6))
+        return refuse("the facing runs along the edge; it has to point across it");
+    const Vec3 n = normalized(squared);
+
+    const std::size_t which = found->second;
+    const MatterBodyId id = I.body_of[which];
+    if (!I.world->contains(id)) return refuse("it is not in the world");
+    const RigidSnapshot at = I.world->snapshot(id);
+    const Quat inverse = conjugateOf(at.orientation_world);
+    Impl::Blade made{};
+    made.body = body;
+    made.heel_local = inverse.rotate(heel_world_m - at.center_of_mass_world_m);
+    made.tip_local = inverse.rotate(tip_world_m - at.center_of_mass_world_m);
+    made.facing_local = inverse.rotate(n);
+    made.grip_local = inverse.rotate(grip_world_m - at.center_of_mass_world_m);
+    made.thickness = thickness_m;
+    made.edge_radius = edge_radius_m;
+    made.bevel_deg = bevel_deg;
+
+    // The edge has to be ON the body. An edge floating beside it would cut what
+    // the body itself never reaches.
+    const double cell = I.request.cell_size_m;
+    const CellGrid grid = gridOf(I.nodes_of[which], I.cell_offset_m, cell);
+    const Vec3 inward = -0.25 * cell * made.facing_local;
+    const auto onBody = [&](const Vec3 &local) {
+        // A point on a face, an edge or a corner of the body's cells is on the
+        // body, and exactly there a cell lookup rounds either way: try it a
+        // hair inside in every direction, and a quarter cell in behind the
+        // edge. (An edge declared corner to corner of a plate was refused.)
+        const double hair = 1e-4 * cell;
+        for (int corner = 0; corner < 8; ++corner) {
+            const Vec3 nudge{(corner & 1) != 0 ? hair : -hair, (corner & 2) != 0 ? hair : -hair,
+                             (corner & 4) != 0 ? hair : -hair};
+            if (grid.holds(local + nudge) || grid.holds(local + inward + nudge)) return true;
+        }
+        return false;
+    };
+    if (!onBody(made.heel_local) || !onBody(made.tip_local))
+        return refuse("the edge does not lie on its matter: the heel and the tip have to be on "
+                      "the body's surface");
+    // And it faces OUT of the body. An edge on a bar's far face declared as
+    // facing back into the bar leads with the bar's OTHER face: a model built
+    // a sword that way, and swung edge first it glanced off the rope it was
+    // meant to cut. Out along the facing from an edge on a face there is no
+    // matter of the body's own, and in behind it there is.
+    const Vec3 across = 0.25 * cell * made.facing_local;
+    const auto facesIn = [&](const Vec3 &local) {
+        return grid.holds(local + across) && !grid.holds(local - across);
+    };
+    if (facesIn(made.heel_local) || facesIn(0.5 * (made.heel_local + made.tip_local)) ||
+        facesIn(made.tip_local))
+        return refuse("the edge faces into it: the facing has to point out of the face the "
+                      "edge is on, away from the body's matter");
+
+    made.body_id = id;
+    made.frame_nodes = I.nodes_of[which];
+    made.frame_offsets.reserve(made.frame_nodes.size());
+    for (const std::uint32_t node : made.frame_nodes) made.frame_offsets.push_back(I.cell_offset_m[node]);
+    made.id = I.next_blade++;
+    I.blades.push_back(std::move(made));
+    return I.blades.back().id;
+}
+
+const std::string &LiveWorld::bladeRefusal() const { return impl_->blade_refusal; }
+
+std::vector<LiveBlade> LiveWorld::blades() const {
+    const Impl &I = *impl_;
+    std::vector<LiveBlade> out;
+    out.reserve(I.blades.size());
+    for (const Impl::Blade &blade : I.blades) {
+        LiveBlade said{};
+        said.id = blade.id;
+        said.body = blade.body;
+        said.heel_local_m = blade.heel_local;
+        said.tip_local_m = blade.tip_local;
+        said.facing_local = blade.facing_local;
+        said.grip_local_m = blade.grip_local;
+        said.thickness_m = blade.thickness;
+        said.edge_radius_m = blade.edge_radius;
+        said.bevel_deg = blade.bevel_deg;
+        said.cut_area_m2 = blade.cut_area;
+        said.cut_work_j = blade.cut_work;
+        said.cutting = blade.cutting;
+        const auto found = I.index_of.find(blade.body);
+        said.attached = blade.attached && found != I.index_of.end();
+        if (said.attached && I.world->contains(I.body_of[found->second])) {
+            const RigidSnapshot at = I.world->snapshot(I.body_of[found->second]);
+            said.material = I.described[found->second].material;
+            said.heel_m = at.center_of_mass_world_m + at.orientation_world.rotate(blade.heel_local);
+            said.tip_m = at.center_of_mass_world_m + at.orientation_world.rotate(blade.tip_local);
+            said.grip_m = at.center_of_mass_world_m + at.orientation_world.rotate(blade.grip_local);
+            said.facing = at.orientation_world.rotate(blade.facing_local);
+            said.flat = cross(normalized(said.tip_m - said.heel_m), said.facing);
+        }
+        out.push_back(std::move(said));
+    }
+    return out;
+}
+
+std::vector<LiveCut> LiveWorld::cuts() const { return impl_->cut_log; }
+
+void LiveWorld::forgetCuts() {
+    Impl &I = *impl_;
+    // Closed contacts go; open ones are still happening and stay, with every
+    // index that points at them moved to where they now are.
+    std::vector<std::size_t> moved(I.cut_log.size(), static_cast<std::size_t>(-1));
+    std::vector<LiveCut> kept;
+    for (std::size_t i = 0; i < I.cut_log.size(); ++i) {
+        if (!I.cut_log[i].open) continue;
+        moved[i] = kept.size();
+        kept.push_back(I.cut_log[i]);
+    }
+    I.cut_log = std::move(kept);
+    for (Impl::Engagement &e : I.engaged)
+        e.cut = e.cut < moved.size() ? moved[e.cut] : static_cast<std::size_t>(-1);
+    for (auto it = I.touching.begin(); it != I.touching.end();) {
+        const std::size_t was = it->second.first;
+        if (was < moved.size() && moved[was] != static_cast<std::size_t>(-1)) {
+            it->second.first = moved[was];
+            ++it;
+        } else {
+            it = I.touching.erase(it);
+        }
+    }
+}
+
+bool LiveWorld::wield(const std::string &name, const Vec3 &grip_world_m) {
+    if (!std::isfinite(grip_world_m.x) || !std::isfinite(grip_world_m.y) ||
+        !std::isfinite(grip_world_m.z))
+        return false;
+    if (!grab(name)) return false;
+    Impl &I = *impl_;
+    const RigidSnapshot now = I.world->snapshot(I.body_of[I.holding]);
+    I.wielding = true;
+    I.grip_local = conjugateOf(now.orientation_world)
+                       .rotate(grip_world_m - now.center_of_mass_world_m);
+    // The hand starts exactly where the grip is and facing the way the body
+    // faces, so taking hold of something does not itself shove it.
+    I.held_at = grip_world_m;
+    I.held_facing = now.orientation_world;
+    I.hand_force = {};
+    return true;
+}
+
+void LiveWorld::aimHeld(const Quat &orientation_world) {
+    const double size = std::sqrt(orientation_world.w * orientation_world.w +
+                                  orientation_world.x * orientation_world.x +
+                                  orientation_world.y * orientation_world.y +
+                                  orientation_world.z * orientation_world.z);
+    if (!(size > 1e-9) || !std::isfinite(size)) return;
+    impl_->held_facing = Quat{orientation_world.w / size, orientation_world.x / size,
+                              orientation_world.y / size, orientation_world.z / size};
+}
+
+bool LiveWorld::wielding() const {
+    return impl_->wielding && impl_->holding != static_cast<std::size_t>(-1);
+}
+
+void LiveWorld::setHandTorque(double newton_metres) {
+    impl_->hand_torque_n_m = std::isfinite(newton_metres) ? std::max(0.0, newton_metres) : 0.0;
+}
+
+double LiveWorld::handTorque() const { return impl_->hand_torque_n_m; }
+
+void LiveWorld::prepareCuts(double dt_s) {
+    Impl &I = *impl_;
+    if (I.blades.empty()) return;
+
+    const TileImpactSetup &setup = *I.setup;
+    const double cell = I.request.cell_size_m;
+    const Vec3 gravity = I.request.gravity_m_s2;
+    constexpr double kPress = 0.25;                     // m/s: slower than this is a press
+    constexpr double kCreep = 0.02;                     // m/s: slower than this is at rest
+    constexpr double kShallow = 0.25881904510252074;    // sin 15 degrees
+    const auto materialOf = [&](std::size_t body) -> const MaterialDefinition & {
+        if (setup.multi_body && !setup.part_of_node.empty() && body < I.nodes_of.size() &&
+            !I.nodes_of[body].empty()) {
+            const std::uint32_t part = setup.part_of_node[I.nodes_of[body].front()];
+            if (part < setup.part_definitions.size()) return setup.part_definitions[part];
+        }
+        return setup.tile_material;
+    };
+    const auto closeCut = [&](std::size_t index) {
+        if (index < I.cut_log.size()) I.cut_log[index].open = false;
+    };
+    // An engagement ends by taking its constraint with it. Otherwise the
+    // constraint is KEPT from step to step, and that is not a detail: the
+    // friction impulse it has built up is carried into the next step, which is
+    // what lets a slow press be held. Remade every step, it started from nothing
+    // each time, and against a heavy blade on a light batten lying on the floor
+    // it delivered a fifth of its limit and let the blade sink uncut.
+    const auto endEngagement = [&](std::vector<Impl::Engagement>::iterator it) {
+        if (it->rigid != 0 && I.world->hasJoint(it->rigid)) I.world->removeJoint(it->rigid);
+        closeCut(it->cut);
+        return I.engaged.erase(it);
+    };
+
+    // Anything a fracture holds an index to is left alone until it is done.
+    std::set<std::size_t> spoken_for;
+    const auto reserve = [&](const Pending &job) {
+        spoken_for.insert(job.which);
+        for (const std::size_t body : job.island_bodies) spoken_for.insert(body);
+    };
+    if (I.pending) reserve(*I.pending);
+    for (const auto &job : I.queued) reserve(*job);
+
+    // Engagements whose blade or target has gone are over, and the kerfs of a
+    // body that no longer exists go with it.
+    for (auto it = I.engaged.begin(); it != I.engaged.end();) {
+        bool blade_here = false;
+        for (const Impl::Blade &blade : I.blades)
+            blade_here = blade_here ||
+                         (blade.id == it->blade && blade.attached && I.index_of.count(blade.body));
+        if (blade_here && I.index_of.count(it->target)) { ++it; continue; }
+        it = endEngagement(it);
+    }
+    for (auto it = I.kerfs.begin(); it != I.kerfs.end();)
+        it = I.index_of.count(it->first) ? std::next(it) : I.kerfs.erase(it);
+    for (auto it = I.exempt.begin(); it != I.exempt.end();)
+        it = I.index_of.count(it->second) ? std::next(it) : I.exempt.erase(it);
+    // A meeting that has not been heard from for a twentieth of a second is over.
+    for (auto it = I.touching.begin(); it != I.touching.end();) {
+        if (I.steps_taken > it->second.second + 12) {
+            closeCut(it->second.first);
+            it = I.touching.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    const auto noteTouch = [&](const std::pair<unsigned, std::string> &key, const std::string &body,
+                               const std::string &kind, const Vec3 &a, const Vec3 &n,
+                               const Vec3 &t, const Vec3 &f) {
+        const auto open = I.touching.find(key);
+        if (open != I.touching.end() && open->second.first < I.cut_log.size() &&
+            I.cut_log[open->second.first].kind == kind) {
+            open->second.second = I.steps_taken;
+            return;
+        }
+        if (open != I.touching.end()) closeCut(open->second.first);
+        LiveCut said{};
+        said.blade = body;
+        said.target = key.second;
+        said.kind = kind;
+        said.at_s = I.time_s;
+        said.speed_m_s = length(a);
+        said.into_m_s = dot(a, n);
+        said.along_m_s = dot(a, t);
+        said.across_m_s = dot(a, f);
+        said.open = true;
+        I.cut_log.push_back(said);
+        I.touching[key] = {I.cut_log.size() - 1, I.steps_taken};
+    };
+
+    for (Impl::Blade &blade : I.blades) {
+        if (!blade.attached) continue;
+        const auto holder = I.index_of.find(blade.body);
+        if (holder == I.index_of.end()) {
+            blade.attached = false;
+            blade.cutting.clear();
+            continue;
+        }
+        const std::size_t bi = holder->second;
+        const MatterBodyId blade_id = I.body_of[bi];
+        if (!I.world->contains(blade_id)) continue;
+        // A body that came through a fracture whole is put back in a new frame.
+        // Follow the blade's own cells into it, so the edge stays on the steel.
+        if (blade_id != blade.body_id && !blade.frame_offsets.empty()) {
+            Vec3 was_centre{}, now_centre{};
+            const double count = static_cast<double>(blade.frame_nodes.size());
+            for (std::size_t k = 0; k < blade.frame_nodes.size(); ++k) {
+                was_centre += blade.frame_offsets[k];
+                now_centre += I.cell_offset_m[blade.frame_nodes[k]];
+            }
+            was_centre = (1.0 / count) * was_centre;
+            now_centre = (1.0 / count) * now_centre;
+            Mat3 correlation{};
+            for (std::size_t k = 0; k < blade.frame_nodes.size(); ++k) {
+                const Vec3 a = I.cell_offset_m[blade.frame_nodes[k]] - now_centre;
+                const Vec3 b = blade.frame_offsets[k] - was_centre;
+                const double av[3] = {a.x, a.y, a.z}, bv[3] = {b.x, b.y, b.z};
+                for (int r = 0; r < 3; ++r)
+                    for (int c = 0; c < 3; ++c) correlation.m[r][c] += av[r] * bv[c];
+            }
+            const Mat3 turn = nearestRotation(correlation);
+            const auto carry = [&](const Vec3 &p) { return turn * (p - was_centre) + now_centre; };
+            blade.heel_local = carry(blade.heel_local);
+            blade.tip_local = carry(blade.tip_local);
+            blade.grip_local = carry(blade.grip_local);
+            blade.facing_local = normalized(turn * blade.facing_local);
+            for (std::size_t k = 0; k < blade.frame_nodes.size(); ++k)
+                blade.frame_offsets[k] = I.cell_offset_m[blade.frame_nodes[k]];
+            if (I.wielding && I.holding == bi) I.grip_local = blade.grip_local;
+            blade.body_id = blade_id;
+        }
+
+        const RigidMechanicalState blade_state = I.world->mechanicalState(blade_id);
+        const RigidSnapshot &bs = blade_state.motion;
+        const Vec3 heel = bs.center_of_mass_world_m + bs.orientation_world.rotate(blade.heel_local);
+        const Vec3 tip = bs.center_of_mass_world_m + bs.orientation_world.rotate(blade.tip_local);
+        const double edge_length = length(tip - heel);
+        if (!(edge_length > 1e-9)) continue;
+        const Vec3 t = (1.0 / edge_length) * (tip - heel);
+        Vec3 n = bs.orientation_world.rotate(blade.facing_local);
+        n = normalized(n - dot(n, t) * t);
+        const Vec3 f = cross(t, n);
+        const std::size_t samples = std::max<std::size_t>(
+            4, static_cast<std::size_t>(std::ceil(edge_length / (0.5 * cell))));
+        const double ds = edge_length / static_cast<double>(samples);
+        std::vector<Vec3> along(samples);
+        for (std::size_t k = 0; k < samples; ++k)
+            along[k] = heel + ((static_cast<double>(k) + 0.5) * ds) * t;
+        const Quat to_blade = conjugateOf(bs.orientation_world);
+        const MaterialDefinition &blade_material = materialOf(bi);
+        // Which way the blade is being pushed when it is not moving: the hand,
+        // if it is in one, and its own weight.
+        const bool in_hand = I.wielding && I.holding == bi;
+        const Vec3 intent = (in_hand ? I.hand_force : Vec3{}) + blade_state.mass_kg * gravity;
+        // Whatever it is welded to is part of it, not something to cut.
+        std::set<std::string> welded;
+        for (const Impl::SceneJoint &joint : I.joints) {
+            if (!joint.attached || joint.kind != JoltWorld::JointKind::Fixing) continue;
+            if (joint.a == blade.body) welded.insert(joint.b);
+            if (joint.b == blade.body) welded.insert(joint.a);
+        }
+        // The blade's own matter against another body's, for knowing when it is
+        // clear of it and ordinary contact can resume.
+        const auto overlaps = [&](const CellGrid &grid, const RigidSnapshot &ts) {
+            const Quat to_target = conjugateOf(ts.orientation_world);
+            for (const std::uint32_t node : I.nodes_of[bi]) {
+                const Vec3 p = to_target.rotate(bs.center_of_mass_world_m +
+                                                bs.orientation_world.rotate(I.cell_offset_m[node]) -
+                                                ts.center_of_mass_world_m);
+                long long x = 0, y = 0, z = 0;
+                grid.place(p, x, y, z);
+                for (long long dx = -1; dx <= 1; ++dx)
+                    for (long long dy = -1; dy <= 1; ++dy)
+                        for (long long dz = -1; dz <= 1; ++dz) {
+                            if (!grid.at.count(CellGrid::key(x + dx, y + dy, z + dz))) continue;
+                            const Vec3 off = p - grid.centre(x + dx, y + dy, z + dz);
+                            const double reach = cell - 0.002;
+                            if (std::abs(off.x) < reach && std::abs(off.y) < reach &&
+                                std::abs(off.z) < reach)
+                                return true;
+                        }
+            }
+            return false;
+        };
+
+        blade.cutting.clear();
+        for (std::size_t j = 0; j < I.described.size(); ++j) {
+            if (j == bi) continue;
+            const std::string target_name = I.described[j].name;
+            const std::pair<unsigned, std::string> key{blade.id, target_name};
+            const auto engaged_it = std::find_if(I.engaged.begin(), I.engaged.end(),
+                                                 [&](const Impl::Engagement &e) {
+                                                     return e.blade == blade.id &&
+                                                            e.target == target_name;
+                                                 });
+            const bool was_engaged = engaged_it != I.engaged.end();
+            const MatterBodyId target_id = I.body_of[j];
+            const bool carried = j == I.holding && !I.wielding;
+            const bool eligible = !I.described[j].anchored && welded.count(target_name) == 0 &&
+                                  spoken_for.count(j) == 0 && !carried &&
+                                  I.world->contains(target_id);
+            if (!eligible) {
+                if (was_engaged) endEngagement(engaged_it);
+                if (I.exempt.erase(key) && I.world->contains(target_id))
+                    I.world->setPairContactOwner(blade_id, target_id, PairContactOwner::Jolt);
+                continue;
+            }
+            const RigidSnapshot ts = I.world->snapshot(target_id);
+
+            // Nowhere near: nothing to do. A bounding sphere against the edge,
+            // widened by how far the two can close in a step.
+            const double target_reach = 0.5 * length(I.described[j].dimensions_m) + cell;
+            const double spin = length(bs.angular_velocity_rad_s) *
+                                    (edge_length + length(blade.grip_local) + cell) +
+                                length(ts.angular_velocity_rad_s) * target_reach;
+            const double sweep =
+                (length(bs.linear_velocity_m_s - ts.linear_velocity_m_s) + spin) * dt_s + 2.0 * cell;
+            const double along_edge =
+                std::clamp(dot(ts.center_of_mass_world_m - heel, t), 0.0, edge_length);
+            const double gap = length(ts.center_of_mass_world_m - (heel + along_edge * t));
+            if (gap > target_reach + sweep && !was_engaged && I.exempt.count(key) == 0) continue;
+
+            const CellGrid grid = gridOf(I.nodes_of[j], I.cell_offset_m, cell);
+            const auto held_kerfs = I.kerfs.find(target_name);
+            const std::vector<Impl::Kerf> *kerfs_here =
+                held_kerfs == I.kerfs.end() ? nullptr : &held_kerfs->second;
+            const Quat to_target = conjugateOf(ts.orientation_world);
+            const auto toLocal = [&](const Vec3 &w) {
+                return to_target.rotate(w - ts.center_of_mass_world_m);
+            };
+            const Vec3 n_local = to_target.rotate(n);
+            const Vec3 t_local = to_target.rotate(t);
+            const Vec3 f_local = to_target.rotate(f);
+            const auto uncut = [&](const Vec3 &p) {
+                return grid.holds(p) && !alreadyCut(kerfs_here, p);
+            };
+            // The outward normal of the target's surface nearest a point in its
+            // uncut matter: the shortest way out along the target's own axes,
+            // which are its cells' faces, to a twentieth of a cell. Two cells
+            // from anywhere out, the edge's own facing stands in.
+            const auto nearestFace = [&](const Vec3 &p) {
+                const Vec3 axes[6] = {Vec3{1.0, 0.0, 0.0}, Vec3{-1.0, 0.0, 0.0},
+                                      Vec3{0.0, 1.0, 0.0}, Vec3{0.0, -1.0, 0.0},
+                                      Vec3{0.0, 0.0, 1.0}, Vec3{0.0, 0.0, -1.0}};
+                const double step = 0.05 * cell;
+                constexpr int kMost = 40;
+                int best = kMost + 1;
+                Vec3 out = -1.0 * n_local;
+                for (const Vec3 &axis : axes) {
+                    for (int m = 1; m < best; ++m) {
+                        if (!uncut(p + (static_cast<double>(m) * step) * axis)) {
+                            best = m;
+                            out = axis;
+                            break;
+                        }
+                    }
+                }
+                return out;
+            };
+
+            // Whether a point is in the slit a kerf in this blade's own plane has
+            // already opened: the target's matter, cut, and cut the way this
+            // edge would cut it.
+            const auto inOwnSlit = [&](const Vec3 &p) {
+                if (kerfs_here == nullptr || !grid.holds(p)) return false;
+                for (const auto &kerf : *kerfs_here) {
+                    if (std::abs(dot(kerf.w, f_local)) < std::cos(5.0 * kPiBlade / 180.0)) continue;
+                    const Vec3 d = p - kerf.origin;
+                    if (std::abs(dot(d, kerf.w)) > kerf.half_width) continue;
+                    if (kerf.covers(dot(d, kerf.u), dot(d, kerf.v), 1e-9)) return true;
+                }
+                return false;
+            };
+
+            // Each part of the edge: is it in the target's matter, against uncut
+            // matter, and how much uncut matter will its path cross this step.
+            double touching_m = 0.0, swept_area = 0.0, weight = 0.0;
+            bool any_inside = false;
+            Vec3 contact_sum{}, normal_sum{};
+            std::vector<Vec3> engaged_blade_local, engaged_start_local;
+            for (std::size_t k = 0; k < samples; ++k) {
+                const Vec3 pw = along[k];
+                const Vec3 vb = bs.linear_velocity_m_s +
+                                cross(bs.angular_velocity_rad_s, pw - bs.center_of_mass_world_m);
+                const Vec3 vt = ts.linear_velocity_m_s +
+                                cross(ts.angular_velocity_rad_s, pw - ts.center_of_mass_world_m);
+                const Vec3 p0 = toLocal(pw);
+                const Vec3 d = dt_s * to_target.rotate(vb - vt);
+                const bool inside = grid.holds(p0);
+                any_inside = any_inside || inside;
+                const bool start_uncut = uncut(p0);
+                const Vec3 probe = p0 + 0.001 * n_local;
+                const bool touching = start_uncut || uncut(probe);
+                double in_len = 0.0;
+                // Coming back into its own kerf from outside the body. The body's
+                // rigid shape knows nothing of the slit, and met there it stopped
+                // a second stroke at the kerf's mouth: along a partial cut, the
+                // cut could never be carried on.
+                bool into_slit = false;
+                const double travel = length(d);
+                if (travel > 1e-12) {
+                    const int steps = std::max(1, static_cast<int>(std::ceil(travel / (0.125 * cell))));
+                    bool entered = start_uncut;
+                    Vec3 previous = p0;
+                    for (int m = 0; m < steps; ++m) {
+                        const Vec3 q = p0 + ((static_cast<double>(m) + 0.5) / steps) * d;
+                        if (!into_slit && !uncut(q) && inOwnSlit(q)) into_slit = true;
+                        if (uncut(q)) {
+                            in_len += travel / steps;
+                            if (!entered) {
+                                entered = true;
+                                // Came in through a face, or out of an old kerf
+                                // into the uncut matter ahead of it.
+                                normal_sum += grid.holds(previous) ? -1.0 * n_local
+                                                                   : faceCrossed(grid, previous, q);
+                            }
+                        }
+                        previous = q;
+                    }
+                }
+                if (start_uncut) {
+                    // Already in uncut matter as the step starts. At a kerf's
+                    // frontier -- cut matter just behind the edge -- the surface
+                    // it is against is the frontier, facing it head on.
+                    // Otherwise it was pressed in: a contact's slop lets a flat
+                    // pushed with 800 N sink millimetres into oak, and the edge
+                    // along its side goes in with it. What that edge is against
+                    // is the surface nearest it. Taken as head-on, a pressed flat
+                    // "bit" with its side edge and cut the batten it lay on.
+                    const bool at_frontier = alreadyCut(kerfs_here, p0 - 0.0005 * n_local);
+                    normal_sum += at_frontier ? -1.0 * n_local : nearestFace(p0);
+                } else if (touching && in_len <= 0.0) {
+                    const Vec3 outside = p0 - 0.0005 * n_local;
+                    normal_sum += grid.holds(outside) ? -1.0 * n_local
+                                                      : faceCrossed(grid, outside, probe);
+                }
+                if (touching) touching_m += ds;
+                if (travel > 1e-12 && in_len > 0.0)
+                    swept_area += ds * (in_len / travel) * std::max(0.0, dot(d, n_local));
+                if (touching || in_len > 0.0 || inside || into_slit) {
+                    contact_sum += pw;
+                    weight += 1.0;
+                    engaged_blade_local.push_back(to_blade.rotate(pw - bs.center_of_mass_world_m));
+                    engaged_start_local.push_back(p0);
+                }
+            }
+
+            if (!(weight > 0.0)) {
+                if (was_engaged) {
+                    // Out of it. The blade may still be lying in the kerf's
+                    // mouth, so ordinary contact waits until it is clear.
+                    endEngagement(engaged_it);
+                    I.exempt.insert(key);
+                }
+                if (I.exempt.count(key) && !overlaps(grid, ts)) {
+                    I.world->setPairContactOwner(blade_id, target_id, PairContactOwner::Jolt);
+                    I.exempt.erase(key);
+                }
+                continue;
+            }
+
+            const Vec3 centroid = (1.0 / weight) * contact_sum;
+            const Vec3 a = (bs.linear_velocity_m_s +
+                            cross(bs.angular_velocity_rad_s, centroid - bs.center_of_mass_world_m)) -
+                           (ts.linear_velocity_m_s +
+                            cross(ts.angular_velocity_rad_s, centroid - ts.center_of_mass_world_m));
+            const double a_n = dot(a, n), a_t = dot(a, t), a_f = dot(a, f);
+            const double speed = length(a);
+
+            Impl::Engagement *e = was_engaged ? &*engaged_it : nullptr;
+            if (e == nullptr) {
+                // A new meeting. Decide what it is, from the surface it meets,
+                // the edge's own geometry, and the motion (section 5).
+                const MaterialDefinition &target_material = materialOf(j);
+                const Vec3 surface = length(normal_sum) > 1e-9
+                                         ? ts.orientation_world.rotate(normalized(normal_sum))
+                                         : -1.0 * n;
+                const Vec3 into = -1.0 * surface;
+                const double v_in = dot(a, into);
+                const double push_in = dot(intent, into);
+                const double sin_half_bevel = std::sin(0.5 * blade.bevel_deg * kPiBlade / 180.0);
+                std::string kind;
+                bool bites = false;
+                if (!(target_material.yield_strength_pa > 0.0)) {
+                    kind = "brittle";
+                } else if (target_material.hardness_pa >= blade_material.hardness_pa) {
+                    kind = "blunt";
+                } else if (dot(t, into) > 0.7 && a_t > 0.0) {
+                    kind = "point";
+                } else if (dot(n, into) < sin_half_bevel) {
+                    // The bevel or the flat lies against the surface and rides it.
+                    kind = std::abs(dot(f, surface)) >= std::abs(dot(n, surface)) ? "flat" : "glancing";
+                } else {
+                    const bool moving = speed >= kCreep;
+                    const double lead_n = moving ? a_n : dot(intent, n);
+                    const double lead_f = moving ? std::abs(a_f) : std::abs(dot(intent, f));
+                    const bool leads = lead_n > 0.0 && lead_n >= lead_f;
+                    const bool pressed = v_in > 0.005 || push_in > 0.0;
+                    if (!leads) {
+                        kind = "flat";
+                    } else if (pressed) {
+                        bites = true;
+                        kind = speed < kPress           ? "press"
+                             : std::abs(a_t) > a_n      ? "slice"
+                             : v_in < kShallow * speed  ? "glancing"
+                                                        : "edge";
+                    }
+                    // Resting on it without pressing is not a meeting worth a word.
+                }
+                if (!bites) {
+                    if (!kind.empty()) noteTouch(key, blade.body, kind, a, n, t, f);
+                    // Ordinary contact, unless the blade is still inside it from
+                    // before, in which case it stays suspended until it is clear.
+                    continue;
+                }
+
+                // It bites. Continue a kerf this blade is lying in, or start one.
+                const Vec3 origin = toLocal(centroid);
+                std::vector<Impl::Kerf> &list = I.kerfs[target_name];
+                std::size_t kerf_index = list.size();
+                for (std::size_t k = 0; k < list.size(); ++k) {
+                    if (std::abs(dot(list[k].w, f_local)) < std::cos(5.0 * kPiBlade / 180.0)) continue;
+                    if (std::abs(dot(origin - list[k].origin, list[k].w)) > list[k].half_width) continue;
+                    kerf_index = k;
+                    break;
+                }
+                if (kerf_index == list.size()) {
+                    Impl::Kerf kerf{};
+                    kerf.blade = blade.id;
+                    kerf.origin = origin;
+                    kerf.u = t_local;
+                    kerf.v = n_local;
+                    kerf.w = f_local;
+                    kerf.strip = 0.25 * cell;
+                    kerf.half_width = 0.5 * blade.thickness + 0.001;
+                    findCrossings(kerf, I.nodes_of[j], I.cell_offset_m, setup.asset);
+                    list.push_back(std::move(kerf));
+                }
+                const double resistance =
+                    target_material.fracture_energy_j_m2 +
+                    target_material.hardness_pa * 2.0 * blade.edge_radius;
+
+                // A meeting that did not bite a moment ago and does now is the
+                // same meeting going somewhere; the note of it closes.
+                if (const auto open = I.touching.find(key); open != I.touching.end()) {
+                    closeCut(open->second.first);
+                    I.touching.erase(open);
+                }
+                LiveCut said{};
+                said.blade = blade.body;
+                said.target = target_name;
+                said.kind = kind;
+                said.at_s = I.time_s;
+                said.speed_m_s = speed;
+                said.into_m_s = a_n;
+                said.along_m_s = a_t;
+                said.across_m_s = a_f;
+                said.resistance_j_m2 = resistance;
+                said.open = true;
+                I.cut_log.push_back(said);
+                Impl::Engagement fresh{};
+                fresh.blade = blade.id;
+                fresh.target = target_name;
+                fresh.kerf = kerf_index;
+                fresh.resistance = resistance;
+                fresh.cut = I.cut_log.size() - 1;
+                I.engaged.push_back(std::move(fresh));
+                e = &I.engaged.back();
+            }
+
+            std::vector<Impl::Kerf> &list = I.kerfs[target_name];
+            if (e->kerf >= list.size()) continue;
+            Impl::Kerf &kerf = list[e->kerf];
+            // Until anything has been cut it is not a kerf yet, only where the
+            // edge is resting: it follows the blade.
+            if (kerf.swept.empty()) {
+                const Vec3 origin = toLocal(centroid);
+                const bool moved = std::abs(dot(kerf.w, f_local)) < std::cos(kPiBlade / 180.0) ||
+                                   std::abs(dot(origin - kerf.origin, kerf.w)) > 0.0005;
+                kerf.origin = origin;
+                kerf.u = t_local;
+                kerf.v = n_local;
+                if (moved) {
+                    kerf.w = f_local;
+                    findCrossings(kerf, I.nodes_of[j], I.cell_offset_m, setup.asset);
+                } else {
+                    // Same plane: the crossings are unchanged but their
+                    // coordinates in it follow the new origin.
+                    for (auto &crossing : kerf.crossings) {
+                        crossing.u = dot(crossing.at_local - kerf.origin, kerf.u);
+                        crossing.v = dot(crossing.at_local - kerf.origin, kerf.v);
+                    }
+                }
+            }
+            const bool embedded = !kerf.swept.empty() && any_inside;
+
+            // The resistance, from the relative motion at the start of the step.
+            // Into the material it is ONE-SIDED: the kerf pushes the edge back and
+            // never pulls it in (JoltWorld::addKerf), so an edge drawn out of its
+            // kerf is not held by it and nothing here has to decide which way the
+            // edge is going. (Something did, and a solver bounce of -20 mm/s
+            // switched the resistance off for a step: the blade fell into the
+            // batten unresisted and cut what a 219 N press should not have.) At
+            // rest the edge is held with all of R L; moving, the resistance is
+            // shared between the two directions with power R L v_n -- the
+            // slice-push law.
+            const double v_n_plus = std::max(0.0, a_n);
+            // What the edge is up against. At rest, the length of it touching
+            // uncut matter. Moving into the material, the area its path will
+            // sweep through uncut matter this step over how far it goes -- which
+            // is less than what it touches when it comes out of the far side
+            // within the step. (Taken as the larger of the two, the step in which
+            // an edge left a rope segment was charged whole, and the account
+            // said a 400 mm^2 rope had cost 480 mm^2 to cut.)
+            double length_eff = touching_m;
+            if (v_n_plus > kCreep) length_eff = swept_area / (v_n_plus * dt_s);
+            length_eff = std::min(length_eff, edge_length);
+            double c_n = 1.0, c_t = 0.0;
+            if (std::hypot(v_n_plus, a_t) >= kCreep) {
+                const double denominator = v_n_plus * v_n_plus + a_t * a_t + kCreep * kCreep;
+                c_n = (v_n_plus * v_n_plus + kCreep * kCreep) / denominator;
+                c_t = v_n_plus * std::abs(a_t) / denominator;
+            }
+            I.world->setPairContactOwner(blade_id, target_id, PairContactOwner::External);
+            JoltWorld::KerfDescription constraint{};
+            constraint.blade = blade_id;
+            constraint.target = target_id;
+            constraint.point_world_m = centroid;
+            constraint.facing_world = n;
+            constraint.flat_world = f;
+            constraint.embedded = embedded;
+            constraint.resist_facing_n = e->resistance * length_eff * c_n;
+            constraint.resist_along_n = e->resistance * length_eff * c_t;
+            // The same constraint as last step if nothing about its shape has
+            // changed: same state (touching or embedded), and the engaged part of
+            // the edge within two cells of where it acts. Its axes are the
+            // blade's own and turn with it, so a swing does not need a new one.
+            const Vec3 point_blade = to_blade.rotate(centroid - bs.center_of_mass_world_m);
+            const bool keep = e->rigid != 0 && I.world->hasJoint(e->rigid) &&
+                              e->embedded == embedded &&
+                              length(point_blade - e->point_blade_local) < 2.0 * cell;
+            if (keep) {
+                I.world->updateKerf(e->rigid, constraint.resist_facing_n,
+                                    constraint.resist_along_n);
+            } else {
+                if (e->rigid != 0 && I.world->hasJoint(e->rigid)) I.world->removeJoint(e->rigid);
+                e->rigid = I.world->addKerf(constraint);
+                e->point_blade_local = point_blade;
+                e->point_target_local = toLocal(centroid);
+            }
+            I.world->wake(blade_id);
+            I.world->wake(target_id);
+            e->embedded = embedded;
+            e->n_world = n;
+            e->t_world = t;
+            // The motion the step is accounted against is at the constraint's
+            // own point, which is where its impulses act.
+            {
+                const Vec3 at = bs.center_of_mass_world_m +
+                                bs.orientation_world.rotate(e->point_blade_local);
+                const Vec3 va =
+                    (bs.linear_velocity_m_s +
+                     cross(bs.angular_velocity_rad_s, at - bs.center_of_mass_world_m)) -
+                    (ts.linear_velocity_m_s +
+                     cross(ts.angular_velocity_rad_s, at - ts.center_of_mass_world_m));
+                e->vn_before = dot(va, n);
+                e->vt_before = dot(va, t);
+            }
+            e->touching_m = touching_m;
+            e->push_n = dot(intent, n);
+            e->sample_blade_local = std::move(engaged_blade_local);
+            e->sample_start_target_local = std::move(engaged_start_local);
+            e->sample_ds = ds;
+            blade.cutting = target_name;
+            if (cutTrace()) {
+                // Where the engaged edge is against the frontier of its kerf:
+                // depth along the facing, and the swept interval of the strips
+                // under it.
+                double v_low = 1e9, v_high = -1e9, front_low = 1e9, front_high = -1e9;
+                for (const Vec3 &p : e->sample_start_target_local) {
+                    const Vec3 d = p - kerf.origin;
+                    const double v = dot(d, kerf.v);
+                    v_low = std::min(v_low, v);
+                    v_high = std::max(v_high, v);
+                    const auto strip = kerf.swept.find(static_cast<int>(std::floor(dot(d, kerf.u) / kerf.strip)));
+                    if (strip != kerf.swept.end() && !strip->second.empty()) {
+                        front_low = std::min(front_low, strip->second.back().second);
+                        front_high = std::max(front_high, strip->second.back().second);
+                    }
+                }
+                std::fprintf(stderr,
+                             "cut  t=%.4f %s>%s touch=%.4f swept=%.3g owed=%.3g Leff=%.4f cn=%.3f ct=%.3f "
+                             "Fn=%.1f Ft=%.1f vn=%.4f vt=%.4f vf=%.4f emb=%d samples=%zu "
+                             "edge_v=[%.5f,%.5f] front=[%.5f,%.5f]\n",
+                             I.time_s, blade.body.c_str(), target_name.c_str(), touching_m,
+                             swept_area, e->owed_m2, length_eff, c_n, c_t, constraint.resist_facing_n,
+                             constraint.resist_along_n, a_n, a_t, a_f, embedded ? 1 : 0,
+                             e->sample_blade_local.size(), v_low, v_high, front_low, front_high);
+            }
+        }
+    }
+}
+
+void LiveWorld::settleCuts(double dt_s) {
+    (void)dt_s;
+    Impl &I = *impl_;
+    TileImpactSetup &setup = *I.setup;
+    const double cell = I.request.cell_size_m;
+
+    // Contacts the rigid solver resolved between a blade and something it did
+    // not bite: the flat of it, the point, a glance. Said once per meeting, from
+    // the contact's own normal against the blade's axes.
+    for (const ImpactEvent &event : I.blade_contacts) {
+        for (const Impl::Blade &blade : I.blades) {
+            if (!blade.attached) continue;
+            const auto holder = I.index_of.find(blade.body);
+            if (holder == I.index_of.end()) continue;
+            const MatterBodyId blade_id = I.body_of[holder->second];
+            if (event.body_a != blade_id && event.body_b != blade_id) continue;
+            const MatterBodyId other = event.body_a == blade_id ? event.body_b : event.body_a;
+            std::size_t j = static_cast<std::size_t>(-1);
+            for (std::size_t k = 0; k < I.body_of.size(); ++k)
+                if (I.body_of[k] == other) { j = k; break; }
+            if (j == static_cast<std::size_t>(-1) || I.described[j].anchored) continue;
+            const std::string &target_name = I.described[j].name;
+            const bool engaged_now = std::any_of(I.engaged.begin(), I.engaged.end(),
+                                                 [&](const Impl::Engagement &e) {
+                                                     return e.blade == blade.id && e.target == target_name;
+                                                 });
+            if (engaged_now || event.closing_speed_m_s < 0.05) continue;
+            const RigidSnapshot bs = I.world->snapshot(blade_id);
+            const Vec3 heel = bs.center_of_mass_world_m + bs.orientation_world.rotate(blade.heel_local);
+            const Vec3 tip = bs.center_of_mass_world_m + bs.orientation_world.rotate(blade.tip_local);
+            const Vec3 t = normalized(tip - heel);
+            Vec3 n = bs.orientation_world.rotate(blade.facing_local);
+            n = normalized(n - dot(n, t) * t);
+            const Vec3 f = cross(t, n);
+            // The contact normal, pointing out of the target at the blade.
+            const Vec3 surface = event.body_b == blade_id ? event.normal_a_to_b : -1.0 * event.normal_a_to_b;
+            const Vec3 a = event.body_b == blade_id ? event.relative_velocity_b_minus_a_m_s
+                                                    : -1.0 * event.relative_velocity_b_minus_a_m_s;
+            const double on_flat = std::abs(dot(surface, f));
+            const double on_point = std::abs(dot(surface, t));
+            const double on_edge = std::abs(dot(surface, n));
+            std::string kind;
+            if (on_flat >= on_point && on_flat >= on_edge) kind = "flat";
+            else if (on_point >= on_edge) kind = "point";
+            else kind = "glancing";
+            // Iterating a blade's own contacts from Jolt; key them the same way
+            // the cutting side does so one meeting is one note.
+            const std::pair<unsigned, std::string> key{blade.id, target_name};
+            const auto open = I.touching.find(key);
+            if (open != I.touching.end() && open->second.first < I.cut_log.size() &&
+                I.cut_log[open->second.first].kind == kind) {
+                open->second.second = I.steps_taken;
+                continue;
+            }
+            if (open != I.touching.end() && open->second.first < I.cut_log.size())
+                I.cut_log[open->second.first].open = false;
+            LiveCut said{};
+            said.blade = blade.body;
+            said.target = target_name;
+            said.kind = kind;
+            said.at_s = I.time_s;
+            said.speed_m_s = length(a);
+            said.into_m_s = dot(a, n);
+            said.along_m_s = dot(a, t);
+            said.across_m_s = dot(a, f);
+            said.open = true;
+            I.cut_log.push_back(said);
+            I.touching[key] = {I.cut_log.size() - 1, I.steps_taken};
+        }
+    }
+    I.blade_contacts.clear();
+
+    // Pieces waiting for a fracture to finish before they can be split off.
+    if (!I.pending && I.queued.empty() && !I.split_later.empty()) {
+        const std::set<std::string> waiting = std::move(I.split_later);
+        I.split_later.clear();
+        for (const std::string &name : waiting) {
+            const auto found = I.index_of.find(name);
+            if (found == I.index_of.end()) continue;
+            if (!stillWhole(I.nodes_of[found->second], setup.matter)) splitCut(found->second);
+        }
+    }
+    if (I.engaged.empty()) return;
+
+    // What an engagement has cut and not yet paid for, paid now: one equal and
+    // opposite impulse along the way the edge faced, taken from how fast the
+    // two are closing there, so the work the cut cost is work the two bodies
+    // gave. Bounded by what that closing motion has: an edge with nothing left
+    // to give leaves the rest unpaid, and the trace says so.
+    const auto settleOwed = [&](Impl::Engagement &owing, Impl::Blade &cutter,
+                                MatterBodyId cutter_id, MatterBodyId owed_id) {
+        if (!(owing.owed_m2 > 0.0) || !(owing.resistance > 0.0)) return;
+        const RigidMechanicalState one = I.world->mechanicalState(cutter_id);
+        const RigidMechanicalState two = I.world->mechanicalState(owed_id);
+        const RigidSnapshot &a = one.motion, &b = two.motion;
+        const Vec3 at = a.center_of_mass_world_m + a.orientation_world.rotate(owing.point_blade_local);
+        const Vec3 closing =
+            (a.linear_velocity_m_s + cross(a.angular_velocity_rad_s, at - a.center_of_mass_world_m)) -
+            (b.linear_velocity_m_s + cross(b.angular_velocity_rad_s, at - b.center_of_mass_world_m));
+        const double v_n = dot(closing, owing.n_world);
+        const double due = owing.resistance * owing.owed_m2;
+        double took = 0.0;
+        if (v_n > 1e-6 && one.mass_kg > 0.0 && two.mass_kg > 0.0) {
+            const double reduced = one.mass_kg * two.mass_kg / (one.mass_kg + two.mass_kg);
+            const double impulse = std::min(due / v_n, reduced * v_n);
+            try {
+                const PairImpulseAudit audit = I.world->applyPairImpulse(
+                    cutter_id, owed_id, at, at, -impulse * owing.n_world, std::max(1e-3, 1e-4 * due));
+                took = std::max(0.0, -audit.impulse_work_j);
+            } catch (const std::exception &refused) {
+                if (cutTrace())
+                    std::fprintf(stderr, "unpaid t=%.4f %s owed=%.3g: %s\n", I.time_s,
+                                 owing.target.c_str(), owing.owed_m2, refused.what());
+            }
+        }
+        const double bought = took / owing.resistance;
+        cutter.cut_area += bought;
+        cutter.cut_work += took;
+        if (owing.cut < I.cut_log.size()) {
+            I.cut_log[owing.cut].area_m2 += bought;
+            I.cut_log[owing.cut].work_j += took;
+        }
+        if (cutTrace())
+            std::fprintf(stderr, "paid t=%.4f %s owed=%.3g due=%.4g took=%.4g J v_n=%.4f\n", I.time_s,
+                         owing.target.c_str(), owing.owed_m2, due, took, v_n);
+        owing.owed_m2 = std::max(0.0, owing.owed_m2 - bought);
+    };
+
+    std::vector<std::string> to_split;
+    for (Impl::Engagement &e : I.engaged) {
+        if (e.rigid == 0 || !I.world->hasJoint(e.rigid)) continue;
+        Impl::Blade *blade = nullptr;
+        for (Impl::Blade &candidate : I.blades)
+            if (candidate.id == e.blade) blade = &candidate;
+        if (blade == nullptr) continue;
+        const auto bi = I.index_of.find(blade->body);
+        const auto tj = I.index_of.find(e.target);
+        if (bi == I.index_of.end() || tj == I.index_of.end()) continue;
+        auto &list = I.kerfs[e.target];
+        if (e.kerf >= list.size()) continue;
+        Impl::Kerf &kerf = list[e.kerf];
+        const MatterBodyId blade_id = I.body_of[bi->second];
+        const MatterBodyId target_id = I.body_of[tj->second];
+        const RigidSnapshot bs = I.world->snapshot(blade_id);
+        const RigidSnapshot ts = I.world->snapshot(target_id);
+
+        // What the friction took. The kinetic energy an impulse J removes from a
+        // relative motion that went from v_before to v_after along its axis is
+        // exactly J (v_before + v_after) / 2, whatever the two masses are.
+        const JoltWorld::KerfImpulse impulse = I.world->kerfImpulse(e.rigid);
+        const Vec3 at = bs.center_of_mass_world_m + bs.orientation_world.rotate(e.point_blade_local);
+        const Vec3 va = (bs.linear_velocity_m_s +
+                         cross(bs.angular_velocity_rad_s, at - bs.center_of_mass_world_m)) -
+                        (ts.linear_velocity_m_s +
+                         cross(ts.angular_velocity_rad_s, at - ts.center_of_mass_world_m));
+        const double vn_after = dot(va, e.n_world);
+        const double vt_after = dot(va, e.t_world);
+        // That is the measure for an edge LOSING speed -- one stopped dead
+        // inside a step went less far than the energy it lost would have carried
+        // it, and the energy is where the cut went. An edge GAINING speed went
+        // further than its mean speed says, because a step moves a body by its
+        // speed at the end of the step; the resistance acted over that distance,
+        // so it did its force times that distance of work. (Charging the mean
+        // there let an edge driven through at 800 N run ahead of what it had
+        // paid for, by half a step's gain in speed every step.) So: the impulse
+        // times the larger of the two. Into the material the kerf only ever
+        // pushes the edge back, and does cutting work only on an edge going in;
+        // along the edge it is a friction, which takes energy either way. What
+        // this leaves unaccounted is the step's own M dv^2 / 2, which is never
+        // negative: no cut is paid for with energy that was not there.
+        const double work_measured =
+            std::max(0.0, impulse.facing_n_s) *
+                std::max({0.0, 0.5 * (e.vn_before + vn_after), vn_after}) +
+            std::abs(impulse.along_n_s) *
+                std::max(0.5 * std::abs(e.vt_before + vt_after), std::abs(vt_after));
+        if (!(e.resistance > 0.0)) continue;
+
+        // Where it bought it: along each engaged part of the edge's ACTUAL path
+        // through uncut matter this step, scaled so that exactly `area` is cut.
+        const CellGrid grid = gridOf(I.nodes_of[tj->second], I.cell_offset_m, cell);
+        const Quat to_target = conjugateOf(ts.orientation_world);
+        // One part of the edge's advance this step: the pieces of uncut matter
+        // it crossed, each as (u, v_low, v_high) in the kerf's plane, in the
+        // order it crossed them, and how much depth that came to.
+        struct Advance {
+            std::vector<std::array<double, 3>> pieces;
+            double gained{};
+            bool against{};
+        };
+        std::vector<Advance> advances;
+        advances.reserve(e.sample_blade_local.size());
+        double actual = 0.0;
+        const auto uncut = [&](const Vec3 &q) { return grid.holds(q) && !alreadyCut(&list, q); };
+        // The blade's own steel, where it is now, asked in the target's frame.
+        const CellGrid steel = gridOf(I.nodes_of[bi->second], I.cell_offset_m, cell);
+        const Quat to_blade_now = conjugateOf(bs.orientation_world);
+        const auto underSteel = [&](const Vec3 &q) {
+            const Vec3 world = ts.center_of_mass_world_m + ts.orientation_world.rotate(q);
+            return steel.holds(to_blade_now.rotate(world - bs.center_of_mass_world_m));
+        };
+        // How far back from p, against the facing, runs uncut matter with the
+        // blade's steel in it: to the kerf's frontier, to the surface, or to the
+        // back of the blade, whichever comes first -- to a hundredth of a cell.
+        const auto backFrom = [&](const Vec3 &p) {
+            const double coarse = 0.1 * cell, fine = 0.01 * cell;
+            const int most = static_cast<int>(std::ceil(64.0 * cell / coarse));
+            int m = 1;
+            for (; m <= most; ++m) {
+                const Vec3 q = p - (m * coarse) * kerf.v;
+                if (!uncut(q) || !underSteel(q)) break;
+            }
+            double back = (m - 1) * coarse;
+            for (int f = 1; f < 10; ++f) {
+                const Vec3 q = p - (back + fine) * kerf.v;
+                if (!uncut(q) || !underSteel(q)) break;
+                back += fine;
+            }
+            return back;
+        };
+        for (std::size_t k = 0; k < e.sample_blade_local.size(); ++k) {
+            const Vec3 start = e.sample_start_target_local[k];
+            const Vec3 end = to_target.rotate(bs.center_of_mass_world_m +
+                                              bs.orientation_world.rotate(e.sample_blade_local[k]) -
+                                              ts.center_of_mass_world_m);
+            const Vec3 path = end - start;
+            const double travel = length(path);
+            Advance advance{};
+            advance.against = grid.holds(end + 0.001 * kerf.v) &&
+                              !alreadyCut(&list, end + 0.001 * kerf.v);
+            // The path, piece by piece: each stretch of it in uncut matter is
+            // laid into the strip it is over, so a slicing edge -- one moving
+            // along its own length as it goes in, crossing a strip every few
+            // millimetres -- cuts where it went. (Laid down as one strip-wide
+            // rectangle at the middle of the path, a 12 m/s slice through a rope
+            // booked 88% of the rope's section and severed four of its bonds.)
+            bool met = false;
+            Vec3 entered{};
+            if (travel > 1e-12) {
+                const int steps = std::max(1, static_cast<int>(std::ceil(travel / (0.125 * cell))));
+                const double rise = dot(path, kerf.v) / steps;
+                for (int m = 0; m < steps; ++m) {
+                    const Vec3 q = start + ((static_cast<double>(m) + 0.5) / steps) * path;
+                    if (!uncut(q)) continue;
+                    if (!met) {
+                        entered = q - (0.5 * rise) * kerf.v;
+                        met = true;
+                    }
+                    if (rise > 0.0) {
+                        const double v_q = dot(q - kerf.origin, kerf.v);
+                        advance.pieces.push_back(
+                            {dot(q - kerf.origin, kerf.u), v_q - 0.5 * rise, v_q + 0.5 * rise});
+                        advance.gained += rise;
+                    }
+                }
+            } else if (uncut(start + 1e-7 * kerf.v)) {
+                entered = start;   // at rest, in uncut matter
+                met = true;
+            }
+            // A kerf is one cut in from the surface, not a row of separate ones,
+            // so what is cut here starts where the uncut matter the steel is in
+            // begins: the frontier, or the surface. An edge can be in matter
+            // ahead of the frontier -- the first step of a press that has not
+            // yet been held, or any step a solver did not quite finish -- and
+            // that matter is the blade's to pay for with what it sweeps now.
+            // Marking only from where this step's path met matter left a gap
+            // behind it, and the strip, which is one interval, then closed the
+            // gap for nothing. docs/cutting-model.md section 3.
+            if (met) {
+                const double back = backFrom(entered);
+                if (back > 0.0) {
+                    const double v_in = dot(entered - kerf.origin, kerf.v);
+                    advance.pieces.insert(advance.pieces.begin(),
+                                          {dot(entered - kerf.origin, kerf.u), v_in - back, v_in});
+                    advance.gained += back;
+                }
+            }
+            advances.push_back(std::move(advance));
+        }
+        // Touching means to within the resolution the path is followed at, an
+        // eighth of a cell: pieces of a path are that far apart.
+        const double join = 0.125 * cell;
+        // Where the edge went through uncut matter this step, strip by strip.
+        // Each part of the edge covers a sample's width of the kerf -- several
+        // strips -- and its path is laid into every strip in that width that has
+        // matter in it: a part of the edge covers its width whether or not all
+        // of that is inside the body, and a strip beyond the body's face has
+        // nothing in it to cut or to pay for.
+        std::map<int, std::vector<std::pair<double, double>>> wanted;
+        for (const Advance &advance : advances) {
+            for (const auto &piece : advance.pieces) {
+                const int first = static_cast<int>(std::floor((piece[0] - 0.5 * e.sample_ds) / kerf.strip));
+                const int last = static_cast<int>(std::floor((piece[0] + 0.5 * e.sample_ds) / kerf.strip));
+                const double v_mid = 0.5 * (piece[1] + piece[2]);
+                for (int s = first; s <= last; ++s) {
+                    const double u_s = (static_cast<double>(s) + 0.5) * kerf.strip;
+                    if (!grid.holds(kerf.origin + u_s * kerf.u + v_mid * kerf.v)) continue;
+                    wanted[s].emplace_back(piece[1], piece[2]);
+                }
+            }
+        }
+        // What of it is new, merged where it touches.
+        for (auto &[s, spans] : wanted) {
+            std::sort(spans.begin(), spans.end());
+            std::vector<std::pair<double, double>> merged;
+            for (const auto &span : spans) {
+                if (!merged.empty() && span.first <= merged.back().second + join)
+                    merged.back().second = std::max(merged.back().second, span.second);
+                else
+                    merged.push_back(span);
+            }
+            spans = std::move(merged);
+            for (const auto &span : spans) actual += kerf.strip * kerf.uncovered(s, span.first, span.second);
+        }
+
+        const auto mark = [&](double u_centre, double v_low, double v_high) {
+            if (!(v_high > v_low)) return;
+            const int first = static_cast<int>(std::floor((u_centre - 0.5 * e.sample_ds) / kerf.strip));
+            const int last = static_cast<int>(std::floor((u_centre + 0.5 * e.sample_ds) / kerf.strip));
+            for (int s = first; s <= last; ++s) kerf.add(s, v_low, v_high, join);
+        };
+        // What it bought: the area the work cuts at the declared resistance,
+        // whatever the speed (docs/cutting-model.md section 3) -- and one case
+        // more. An edge held still by something ELSE, a batten pressed to the
+        // floor under it, while it is pushed in harder than the matter under
+        // it resists: that matter is not what is holding it, and it cannot
+        // hold, so what the steel is in is cut, at its declared cost. The
+        // energy is the push's, delivered in the step that stopped the blade
+        // and taken by the other contact; nothing moves now for an impulse to
+        // measure. A push short of R L -- the 181 N a 200 N hand has left after
+        // holding the blade up, on oak that resists with 300 -- cuts nothing
+        // this way.
+        constexpr double kStill = 0.02;     // m/s
+        const bool still = std::abs(e.vn_before) <= kStill && std::abs(vn_after) <= kStill;
+        const bool overpowered =
+            still && actual > 0.0 && e.push_n > e.resistance * e.touching_m;
+        double work = work_measured;
+        double area = overpowered ? std::max(work / e.resistance, actual) : work / e.resistance;
+        // Bought first, then cut, as far as the work goes -- every strip the
+        // same share of what the edge went through in it -- and what is not
+        // bought is still there under the steel for the next step to find and
+        // buy. Except in the step the edge comes out of the far side: no later
+        // step sweeps that matter again, so all of it is cut, and what this
+        // step's work did not cover is taken at once from the closing motion
+        // (settleOwed). Left standing, it was a strip at the far edge of an oak
+        // panel that held the two halves together.
+        bool leaving = !still;
+        for (std::size_t k = 0; leaving && k < e.sample_blade_local.size(); ++k) {
+            const Vec3 end = to_target.rotate(bs.center_of_mass_world_m +
+                                              bs.orientation_world.rotate(e.sample_blade_local[k]) -
+                                              ts.center_of_mass_world_m);
+            if (grid.holds(end)) leaving = false;
+        }
+        // Coming out, it cuts as far as it can pay: this step's work, and what
+        // one impulse along the facing can still take out of the closing motion
+        // (settleOwed takes it, audited). An edge that came out into something
+        // that stopped it -- a cleaver through a log onto the floor, bouncing
+        // back up -- has no closing motion left to pay with, and the last 26 mm
+        // of oak it went through in that step were marked free: a 1600 mm^2
+        // section came apart for 623 mm^2 of work.
+        double affordable = area;
+        if (leaving) {
+            const double closing = std::max(0.0, vn_after);
+            const double m_b = I.world->mechanicalState(blade_id).mass_kg;
+            const double m_t = I.world->mechanicalState(target_id).mass_kg;
+            if (closing > 0.0 && m_b > 0.0 && m_t > 0.0)
+                affordable += 0.5 * (m_b * m_t / (m_b + m_t)) * closing * closing / e.resistance;
+        }
+        if (!(affordable > 0.0)) continue;
+        // What the kerf holds before this step's marks, so what they add can be
+        // counted: an overpowered edge is charged for what it actually cut.
+        const auto sweptArea = [&kerf]() { return kerf.area(); };
+        const double swept_before = sweptArea();
+        if (actual > 1e-15) {
+            const double scale = overpowered ? 1.0 : std::min(1.0, affordable / actual);
+            for (const auto &[s, spans] : wanted)
+                for (const auto &span : spans)
+                    kerf.add(s, span.first, span.first + scale * (span.second - span.first), join);
+        }
+        const double marked = sweptArea() - swept_before;
+        const double remaining = area - marked;
+        e.owed_m2 = leaving ? std::max(0.0, marked - area) : 0.0;
+        // What the friction took beyond what the edge was seen to sweep went
+        // into the uncut matter just ahead of it. A friction limit in a velocity
+        // solver can stop a body within one step, and a body stopped within a
+        // step has not moved in it -- so an edge that should have run 12 mm into
+        // a block before stopping ends the step where it started, and the 12 mm
+        // is where the energy went. The cut goes where the energy went: from the
+        // first uncut matter ahead of each engaged part of the edge, along the
+        // way it faces, no further than it could have closed in the step.
+        if (remaining > 1e-9 * std::max(area, 1e-12)) {
+            const double reach = 2.0 * cell + (std::abs(e.vn_before) + std::abs(e.vt_before)) * dt_s;
+            // Fine: the look starts AT the frontier and a coarse step past it
+            // marks matter nobody paid for. (It was a sixteenth of a cell, and
+            // the frontier ran a millimetre ahead of a stationary edge.)
+            const int looks = std::max(1, static_cast<int>(std::ceil(reach / (0.01 * cell))));
+            std::vector<std::pair<double, double>> ahead;   // (u, where uncut matter starts)
+            for (std::size_t k = 0; k < e.sample_blade_local.size(); ++k) {
+                const Vec3 end = to_target.rotate(bs.center_of_mass_world_m +
+                                                  bs.orientation_world.rotate(e.sample_blade_local[k]) -
+                                                  ts.center_of_mass_world_m);
+                const Vec3 rel = end - kerf.origin;
+                const double u_here = dot(rel, kerf.u);
+                const double v_end = dot(rel, kerf.v);
+                // Uncut matter ahead begins at the kerf's frontier under this
+                // part of the edge if that is ahead of it, and where the edge is
+                // otherwise -- and it has to be matter.
+                const double from =
+                    kerf.throughTo(static_cast<int>(std::floor(u_here / kerf.strip)), v_end);
+                for (int m = 0; m <= looks; ++m) {
+                    const double v_try = from + reach * m / looks;
+                    const Vec3 q = end + (v_try - v_end + 1e-7) * kerf.v;
+                    if (!grid.holds(q) || alreadyCut(&list, q)) continue;
+                    ahead.emplace_back(u_here, v_try);
+                    break;
+                }
+            }
+            if (!ahead.empty()) {
+                const double depth = remaining / (static_cast<double>(ahead.size()) * e.sample_ds);
+                for (const auto &[u, from] : ahead) mark(u, from, from + depth);
+            }
+        }
+        if (overpowered) {
+            // Charged for what the marks added to the kerf and no more. A mark
+            // that could not join the kerf cut nothing; charged for anyway, the
+            // same overlap was paid for again every step the edge stood there,
+            // and a 6 J section was booked at 14 J.
+            const double realized = std::max(0.0, sweptArea() - swept_before);
+            area = std::max(work_measured / e.resistance, realized);
+            work = area * e.resistance;
+            if (!(area > 0.0)) continue;
+        }
+        blade->cut_area += area;
+        blade->cut_work += work;
+        if (e.cut < I.cut_log.size()) {
+            I.cut_log[e.cut].area_m2 += area;
+            I.cut_log[e.cut].work_j += work;
+        }
+
+        // Every bond the kerf has now reached is severed, in the scene's matter,
+        // where every later lattice run will find it severed too.
+        std::size_t severed = 0;
+        for (const auto &crossing : kerf.crossings) {
+            if (crossing.bond >= setup.matter.bonds.size()) continue;
+            ActiveBondState &bond = setup.matter.bonds[crossing.bond];
+            if (!bond.alive) continue;
+            if (!kerf.covers(crossing.u, crossing.v, 1e-9)) continue;
+            bond.alive = false;
+            bond.damage = 1.0;
+            bond.failure_mode = BondFailureMode::Shear;
+            ++severed;
+        }
+
+        // And every rope link the kerf has reached where it runs through matter:
+        // the fibres between two segments of a rope are cut with the segments.
+        std::size_t parted = 0;
+        for (Impl::SceneJoint &joint : I.joints) {
+            if (!joint.attached || joint.rigid == 0 || joint.kind != JoltWorld::JointKind::Link) continue;
+            if (joint.a != e.target && joint.b != e.target) continue;
+            const auto ja = I.index_of.find(joint.a);
+            const auto jb = I.index_of.find(joint.b);
+            if (ja == I.index_of.end() || jb == I.index_of.end()) continue;
+            const RigidSnapshot sa = I.world->snapshot(I.body_of[ja->second]);
+            const RigidSnapshot sb = I.world->snapshot(I.body_of[jb->second]);
+            const Vec3 la = to_target.rotate(sa.center_of_mass_world_m +
+                                             sa.orientation_world.rotate(joint.point_local_a) -
+                                             ts.center_of_mass_world_m);
+            const Vec3 lb = to_target.rotate(sb.center_of_mass_world_m +
+                                             sb.orientation_world.rotate(joint.point_local_b_tie) -
+                                             ts.center_of_mass_world_m);
+            const double da = dot(la - kerf.origin, kerf.w);
+            const double db = dot(lb - kerf.origin, kerf.w);
+            if ((da >= 0.0) == (db >= 0.0)) continue;
+            const Vec3 x = la + (da / (da - db)) * (lb - la);
+            if (!kerf.covers(dot(x - kerf.origin, kerf.u), dot(x - kerf.origin, kerf.v), 1e-9)) continue;
+            bool in_matter = grid.holds(x);
+            if (!in_matter) {
+                const std::size_t other = joint.a == e.target ? jb->second : ja->second;
+                const RigidSnapshot so = I.world->snapshot(I.body_of[other]);
+                const Vec3 xo = conjugateOf(so.orientation_world)
+                                    .rotate(ts.center_of_mass_world_m +
+                                            ts.orientation_world.rotate(x) - so.center_of_mass_world_m);
+                in_matter = gridOf(I.nodes_of[other], I.cell_offset_m, cell).holds(xo);
+            }
+            if (!in_matter) continue;
+            I.world->removeJoint(joint.rigid);
+            joint.rigid = 0;
+            joint.attached = false;
+            I.delays.push_back({I.time_s, joint.a + " to " + joint.b, "cut", 0.0, 0.0});
+            for (const std::string &side : {joint.a, joint.b}) {
+                const auto found = I.index_of.find(side);
+                if (found != I.index_of.end()) I.world->wake(I.body_of[found->second]);
+            }
+            ++parted;
+        }
+        if (e.cut < I.cut_log.size()) {
+            I.cut_log[e.cut].bonds += severed;
+            I.cut_log[e.cut].links += parted;
+        }
+        if (cutTrace())
+            std::fprintf(stderr,
+                         "took t=%.4f %s work=%.4g area=%.4g actual=%.4g marked=%.4g "
+                         "severed=%zu parted=%zu Jn=%.4g Jt=%.4g vn %.4f->%.4f vt %.4f->%.4f\n",
+                         I.time_s, e.target.c_str(), work, area, actual, marked, severed, parted,
+                         impulse.facing_n_s, impulse.along_n_s, e.vn_before, vn_after,
+                         e.vt_before, vt_after);
+        // Came out of the far side with more cut than paid for: paid now,
+        // while the two bodies it is owed between are still the two there are.
+        if (e.owed_m2 > 0.0) settleOwed(e, *blade, blade_id, target_id);
+        if (severed > 0) to_split.push_back(e.target);
+    }
+
+    for (const std::string &name : to_split) {
+        const auto found = I.index_of.find(name);
+        if (found == I.index_of.end()) continue;
+        if (stillWhole(I.nodes_of[found->second], setup.matter)) continue;
+        // A fracture holds indices into the body table while it runs; splitting
+        // under it would move them. The severed bonds wait, and so does this.
+        if (I.pending || !I.queued.empty()) {
+            I.split_later.insert(name);
+            continue;
+        }
+        splitCut(found->second);
+    }
+}
+
+std::size_t LiveWorld::splitCut(std::size_t which) {
+    Impl &I = *impl_;
+    TileImpactSetup &setup = *I.setup;
+    if (which >= I.described.size() || which >= I.nodes_of.size()) return 0;
+    const LiveBodyPose parent = I.described[which];
+    const std::vector<std::uint32_t> nodes = I.nodes_of[which];
+    const MatterBodyId old_body = I.body_of[which];
+    if (!I.world->contains(old_body) || nodes.empty()) return 1;
+    const RigidSnapshot snap = I.world->snapshot(old_body);
+    I.vanished[parent.name] = snap;
+
+    const MaterialDefinition *material = &setup.tile_material;
+    if (setup.multi_body && !setup.part_of_node.empty()) {
+        const std::uint32_t part = setup.part_of_node[nodes.front()];
+        if (part < setup.part_definitions.size()) material = &setup.part_definitions[part];
+    }
+
+    // The body's own cells, where they are and moving as it moves -- so each
+    // piece carries away exactly the momentum its cells had.
+    FragmentLattice island = buildFragmentLattice(
+        setup.matter, nodes, I.cell_offset_m,
+        FragmentPose{snap.center_of_mass_world_m, snap.orientation_world,
+                     snap.linear_velocity_m_s, snap.angular_velocity_rad_s},
+        I.plastic_extension_m, I.plastic_strain_m);
+    const auto components = findConnectedComponents(island.matter);
+    if (components.size() <= 1) return 1;
+
+    const CombinedContactMaterial against_ground = combineContactMaterials(
+        compileContactMaterial(*material), compileContactMaterial(setup.ground_material));
+    // One at a time, so piece k is exactly component k.
+    std::vector<RigidFragmentDescription> fragments;
+    fragments.reserve(components.size());
+    for (const FragmentComponent &component : components) {
+        FragmentBuildResult built = buildFragmentRepresentations(
+            island.matter, std::span<const FragmentComponent>(&component, 1),
+            {.first_body_id = I.next_body_id++,
+             .maximum_rigid_fragments = 1,
+             .minimum_nodes_per_rigid_fragment = 1,
+             .maximum_collision_points = 192,
+             .friction = against_ground.dynamic_friction,
+             .restitution = against_ground.restitution});
+        if (built.rigid_fragments.empty()) return 1;
+        fragments.push_back(std::move(built.rigid_fragments.front()));
+    }
+
+    std::vector<std::string> before;
+    before.reserve(I.described.size());
+    for (const LiveBodyPose &pose : I.described) before.push_back(pose.name);
+
+    // The kerfs it carried, in the world, to hand on to its pieces.
+    std::vector<Impl::Kerf> handed;
+    if (const auto carried = I.kerfs.find(parent.name); carried != I.kerfs.end()) {
+        for (Impl::Kerf kerf : carried->second) {
+            kerf.origin = snap.center_of_mass_world_m + snap.orientation_world.rotate(kerf.origin);
+            kerf.u = snap.orientation_world.rotate(kerf.u);
+            kerf.v = snap.orientation_world.rotate(kerf.v);
+            kerf.w = snap.orientation_world.rotate(kerf.w);
+            handed.push_back(std::move(kerf));
+        }
+        I.kerfs.erase(carried);
+    }
+
+    I.world->removeAndDestroy(old_body);
+    const auto drop = [&](auto &vector) {
+        if (which < vector.size()) vector.erase(vector.begin() + static_cast<std::ptrdiff_t>(which));
+    };
+    drop(I.described); drop(I.body_of); drop(I.nodes_of);
+    drop(I.limits_of); drop(I.impedance_of); drop(I.density_of); drop(I.tensile_of);
+    if (I.holding == which) {
+        I.holding = static_cast<std::size_t>(-1);
+        I.wielding = false;
+    } else if (I.holding != static_cast<std::size_t>(-1) && I.holding > which) {
+        --I.holding;
+    }
+
+    std::vector<std::string> made_names;
+    for (std::size_t k = 0; k < components.size(); ++k) {
+        const RigidFragmentDescription &fragment = fragments[k];
+        std::vector<std::uint32_t> parent_nodes;
+        parent_nodes.reserve(components[k].node_indices.size());
+        for (const std::uint32_t local : components[k].node_indices) {
+            const std::uint32_t node = island.parent_node[local];
+            parent_nodes.push_back(node);
+            I.cell_offset_m[node] = island.matter.nodes[local].position_world_m -
+                                    fragment.mass_properties.center_of_mass_world_m;
+        }
+        LiveBodyPose piece{};
+        piece.name = parent.name + " piece " + std::to_string(k + 1);
+        piece.material = parent.material;
+        piece.color_rgba = parent.color_rgba;
+        // Something that came off something: debris, in the room's terms.
+        piece.fragment = true;
+        piece.shape = "hull";
+        I.limits_of.push_back(fragmentFractureLimits(setup.matter, parent_nodes,
+                                                     material->density_kg_m3,
+                                                     material->young_modulus_pa,
+                                                     material->yield_strength_pa));
+        I.impedance_of.push_back(acousticImpedance(material->density_kg_m3, material->young_modulus_pa));
+        I.density_of.push_back(material->density_kg_m3);
+        I.tensile_of.push_back(material->tensile_strength_pa);
+        I.nodes_of.push_back(std::move(parent_nodes));
+        piece.dimensions_m = cellBounds(I.nodes_of.back(), I.cell_offset_m, I.request.cell_size_m);
+        made_names.push_back(piece.name);
+        I.described.push_back(std::move(piece));
+        I.body_of.push_back(fragment.body_id);
+        I.next_body_id = std::max(I.next_body_id, fragment.body_id + 1);
+    }
+    I.world->addFragments(fragments);
+    I.index_of.clear();
+    for (std::size_t i = 0; i < I.described.size(); ++i) I.index_of.emplace(I.described[i].name, i);
+
+    // Each piece takes the kerfs that made it, in its own frame: a new body is
+    // made facing the world's own way, about its own centre of mass.
+    for (std::size_t k = 0; k < made_names.size(); ++k) {
+        const Vec3 centre = fragments[k].mass_properties.center_of_mass_world_m;
+        const std::size_t index = I.index_of[made_names[k]];
+        for (Impl::Kerf kerf : handed) {
+            kerf.origin = kerf.origin - centre;
+            findCrossings(kerf, I.nodes_of[index], I.cell_offset_m, setup.asset);
+            I.kerfs[made_names[k]].push_back(std::move(kerf));
+        }
+    }
+
+    // What it held -- fuel, moisture, the heat in it -- is shared out among its
+    // pieces by the cells each one took, exactly as a fracture shares it out:
+    // a burning log cut in two is two burning halves, each with its share of
+    // the fuel and at the temperature the log was, and nothing is made or lost
+    // (the ledger does not see a cut, because nothing crosses its boundary).
+    // What was attached to it -- a heater under it, a gas pushing on it -- goes
+    // with the piece ThermoWorld::split gives it to, and the heat paths are
+    // worked out again from where the pieces are.
+    if (I.thermo && I.thermo->active()) {
+        if (I.thermo->holds(parent.name)) {
+            std::vector<std::pair<std::string, double>> shares;
+            shares.reserve(made_names.size());
+            const double whole = static_cast<double>(nodes.size());
+            for (std::size_t k = 0; k < made_names.size(); ++k)
+                shares.emplace_back(made_names[k],
+                                    static_cast<double>(components[k].node_indices.size()) / whole);
+            I.thermo->split(parent.name, shares);
+        }
+        I.thermo->refresh(thermoShapes(), setup.ground_y);
+    }
+
+    // Everything else that holds an index, exactly as an apply does it.
+    dropGuess("guess-wasted");
+    restackQueue(before);
+    rehangJoints();
+    I.vanished.clear();
+    repin();
+    I.held_through.erase(parent.name);
+    I.partner_of.clear();
+    surveyLoads();
+
+    // Whatever was cutting it has cut it: those meetings end as separations,
+    // and the blade is in ordinary contact with the pieces from now on -- the
+    // two halves' cut faces bear on its flats, as a kerf's walls do. The cells
+    // the blade passed through stay with one side, so a piece starts out
+    // overlapping the steel by up to a cell. That is inside the contact's
+    // penetration slop, so the solver only keeps it from growing rather than
+    // throwing the piece off; suspended "until clear" instead, it was never
+    // clear, nothing stopped a 140 g half sliding into the blade under the
+    // hand's push, and the edge then cut a second kerf into it for 8.75 J.
+    for (auto it = I.engaged.begin(); it != I.engaged.end();) {
+        if (it->target != parent.name) { ++it; continue; }
+        if (it->cut < I.cut_log.size()) {
+            I.cut_log[it->cut].separated = true;
+            I.cut_log[it->cut].pieces = components.size();
+            I.cut_log[it->cut].open = false;
+        }
+        for (const std::string &piece : made_names) {
+            I.exempt.erase({it->blade, piece});
+            for (const Impl::Blade &blade : I.blades) {
+                if (blade.id != it->blade) continue;
+                const auto holder = I.index_of.find(blade.body);
+                const auto made = I.index_of.find(piece);
+                if (holder == I.index_of.end() || made == I.index_of.end()) continue;
+                I.world->setPairContactOwner(I.body_of[holder->second], I.body_of[made->second],
+                                             PairContactOwner::Jolt);
+            }
+        }
+        it = I.engaged.erase(it);
+    }
+    for (auto it = I.exempt.begin(); it != I.exempt.end();)
+        it = it->second == parent.name ? I.exempt.erase(it) : std::next(it);
+    I.delays.push_back({I.time_s, parent.name, "cut apart", static_cast<double>(components.size()), 0.0});
+    return components.size();
+}
 
 } // namespace banjo::fastlattice

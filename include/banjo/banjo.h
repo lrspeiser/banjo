@@ -76,13 +76,20 @@ extern "C" {
  * Check it once at startup against banjo_abi_version(): a header and a library
  * that disagree will not tell you so any other way.
  *
- * 14 added heat, chemistry and gas. It skips 13, which another branch in
- * flight has taken, so that the two can be merged without one number meaning
- * two different headers.
+ * 13 added blades: an edge on a body, the bounded hand that swings it, and
+ * what it cut (banjo_make_blade, banjo_blades, banjo_cuts, banjo_forget_cuts,
+ * banjo_wield, banjo_aim_held, banjo_hand_strength, banjo_hand_torque).
+ * 14 added heat, chemistry and gas. The two were made on separate branches
+ * and numbered apart so that, merged, one number means one header: a library
+ * at 14 carries both. Nothing that was in 12 changed.
  *
  * 15 added terrain and water: a ground of rock, soil and sand held as a height
  * field, rivers and ponds as columns of water on it, digging, heaping and
- * cutting, and bodies that float, drift and dam. Nothing earlier changed. */
+ * cutting, and bodies that float, drift and dam (banjo_terrain_info,
+ * banjo_water_info, banjo_dig, banjo_deposit, banjo_cut_block, banjo_set_discharge,
+ * banjo_terrain_heights, banjo_water_surface, banjo_environment_report,
+ * banjo_environment_state, banjo_survey, banjo_awake_bodies). Nothing that was
+ * in 14 changed. */
 #define BANJO_ABI_VERSION 15
 
 /* What a call reported. Anything below zero is a failure and leaves the world
@@ -676,6 +683,129 @@ BANJO_API int banjo_joint_friction(banjo_world *world, unsigned joint,
 /* Take the pin out. What was hanging on it falls. */
 BANJO_API int banjo_unhinge(banjo_world *world, unsigned joint);
 
+/* ---- blades ---------------------------------------------------------- */
+
+/* An edge on a body, and what it has done. docs/cutting-model.md is the whole
+ * declared model; the short of it is this.
+ *
+ * A blade is declared ON a body that already exists. The body supplies the
+ * matter -- its material, its mass, and where that mass is -- and the
+ * declaration adds what cells cannot resolve: the edge (a straight line, heel
+ * to tip), the way it faces, how thick and how sharp it is, and where a hand
+ * holds it. There is no cutting power and nothing is destroyed on touch.
+ *
+ * What resists an edge is the target's own catalogue numbers, its fracture
+ * energy G and its hardness H. Advancing an edge of engaged length L a distance
+ * d through uncut matter costs R L d, with R = G + H * 2 * edge_radius. The
+ * resistance is applied in the solver as friction, so a slow press cuts only
+ * while it pushes harder than R L, and the work a cut takes is measured from the
+ * solver's own impulses rather than assumed.
+ *
+ * What gets cut is bonds. A partial cut leaves the body one body, carrying a
+ * kerf; a cut through replaces it with pieces that have their own mass, inertia
+ * and momentum and keep whatever joints they hold -- a rope cut through drops
+ * what hung on it because the link that held it is on the lower piece. */
+typedef struct {
+    unsigned id;
+    const char *body;       /* the body carrying the edge */
+    const char *material;
+    /* Where it is now, in world metres: the edge heel to tip, the way it
+     * faces, the normal to its flats, and the grip. */
+    double heel_m[3];
+    double tip_m[3];
+    double facing[3];
+    double flat[3];
+    double grip_m[3];
+    double thickness_m;
+    double edge_radius_m;
+    double bevel_deg;
+    /* Everything it has cut, and the work that cost as the solver applied it. */
+    double cut_area_m2;
+    double cut_work_j;
+    /* What the edge is in right now, "" for nothing. */
+    const char *cutting;
+    /* 0 once the body carrying it has gone. */
+    int attached;
+} banjo_blade;
+
+/* One meeting between an edge and something else, from first touch until they
+ * part. Every one is reported, including those that cut nothing, because "the
+ * flat of the blade hit it" is an answer a host has to be able to give.
+ *
+ * `kind` is decided from geometry and motion, never from names:
+ *   "edge", "slice", "press"     the edge bit; moving mostly into the material,
+ *                                mostly along its own length, or slowly
+ *   "glancing", "flat", "point"  it met the surface some other way and was an
+ *                                ordinary rigid contact
+ *   "blunt"                      the target is as hard as the blade, or harder
+ *   "brittle"                    the target has no yield point: it cracks under
+ *                                a blow, and is not cut */
+typedef struct {
+    const char *blade;
+    const char *target;
+    const char *kind;
+    double at_s;
+    /* The relative motion of the edge at first contact, in the blade's axes. */
+    double speed_m_s;
+    double into_m_s;
+    double along_m_s;
+    double across_m_s;
+    /* R = G + H w for this edge in this material, J/m^2 (newtons per metre of
+     * engaged edge). */
+    double resistance_j_m2;
+    double area_m2;
+    double work_j;
+    int bonds;          /* severed */
+    int links;          /* rope links severed */
+    int separated;      /* the target came apart */
+    int pieces;         /* into how many, when it did */
+    int open;           /* still in contact */
+} banjo_cut;
+
+/* Give a named body an edge. Everything is given where it is in the world RIGHT
+ * NOW and kept in the body's own frame from then on. Both ends of the edge must
+ * lie on the body's matter; `facing` is squared up against the edge, so roughly
+ * perpendicular is enough. `edge_radius_m` is how sharp it is -- 0.0002 is a
+ * working sword edge, 0.00005 a keen one -- and `bevel_deg` the included angle
+ * of the edge wedge.
+ *
+ * Returns the blade's id, always above zero, or a negative banjo_status. */
+/* (Named make_blade because C will not let a function and a struct share a
+ * name, and banjo_blade is the struct.) */
+BANJO_API int banjo_make_blade(banjo_world *world, const char *body,
+                               const double heel_m[3], const double tip_m[3],
+                               const double facing[3], double thickness_m,
+                               double edge_radius_m, double bevel_deg,
+                               const double grip_m[3]);
+BANJO_API int banjo_blade_count(const banjo_world *world);
+/* Fills up to `max` and returns how many were written, or a negative status.
+ * The strings stay good until the next call on this world. */
+BANJO_API int banjo_blades(const banjo_world *world, banjo_blade *out, int max);
+/* Every edge contact since the last banjo_forget_cuts, in the order they
+ * began. Open ones are still going and keep changing. */
+BANJO_API int banjo_cut_count(const banjo_world *world);
+BANJO_API int banjo_cuts(const banjo_world *world, banjo_cut *out, int max);
+/* Drop the ones that are over. Open contacts stay. */
+BANJO_API int banjo_forget_cuts(banjo_world *world);
+
+/* ---- the grip -------------------------------------------------------- */
+
+/* Take hold of a body the way a person holds a sword: at a point on it, with a
+ * hand whose force and torque are BOUNDED. banjo_move_held then says where the
+ * grip should be, and banjo_aim_held which way the body should face; the hand
+ * pulls and turns towards both with what it has -- 800 N and 60 N m unless told
+ * otherwise -- and what the body meets can slow it, turn it aside or stop it.
+ *
+ * This is not banjo_grab. banjo_grab carries a loose body exactly where it is
+ * put, which is placement -- an editor's move -- and stays exactly that.
+ * Returns BANJO_OK or BANJO_BAD_ARGUMENT. */
+BANJO_API int banjo_wield(banjo_world *world, const char *name, const double grip_m[3]);
+/* Which way the wielded body should face, as a quaternion, w first. */
+BANJO_API int banjo_aim_held(banjo_world *world, const double orientation_wxyz[4]);
+/* How hard the hand can pull, in newtons, and turn, in newton metres. */
+BANJO_API int banjo_hand_strength(banjo_world *world, double newtons);
+BANJO_API int banjo_hand_torque(banjo_world *world, double newton_metres);
+
 /* ---- asking where things are ---------------------------------------- */
 
 /* What a ray meets first, against the shapes the solver really collides. This
@@ -967,8 +1097,8 @@ BANJO_API int banjo_deposit(banjo_world *world, const double at_m[2], double rad
  * that would do (with 0.25 m columns and 0.04 m cells, 4 columns: 1 m).
  * BANJO_BAD_ARGUMENT, with the reason, also where there is soil over the rock
  * or the rock is too uneven for a block that shallow. */
-BANJO_API int banjo_cut(banjo_world *world, const double at_m[2], int cells_x, int cells_z,
-                        double height_m, banjo_block *out);
+BANJO_API int banjo_cut_block(banjo_world *world, const double at_m[2], int cells_x, int cells_z,
+                              double height_m, banjo_block *out);
 /* A river's discharge from now, by the name the scene or the valley gave it. */
 BANJO_API int banjo_set_discharge(banjo_world *world, const char *river, double discharge_m3_s);
 

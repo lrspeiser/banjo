@@ -295,9 +295,9 @@ void aCutBlockIsNeitherLostNorDuplicated() {
     const terrain::Volumes before = world->environment()->terrain().volumes();
     std::string why;
     // A footprint that is not whole cells is refused, and says what would do.
-    require(!world->cut(at_x, at_z, 2, 2, 0.4, &why).has_value() && why.find("4 columns") != std::string::npos,
+    require(!world->cutBlock(at_x, at_z, 2, 2, 0.4, &why).has_value() && why.find("4 columns") != std::string::npos,
             "a half-metre block of 0.04 m cells is refused, with the size that would do: " + why);
-    const auto block = world->cut(at_x, at_z, 4, 4, 0.4, &why);
+    const auto block = world->cutBlock(at_x, at_z, 4, 4, 0.4, &why);
     require(block.has_value(), "the cut is made: " + why);
     const terrain::Volumes after = world->environment()->terrain().volumes();
     near(before.rock_m3 - after.rock_m3, block->volume_m3, 1.0e-9, "the ground lost the block's volume");

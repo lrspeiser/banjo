@@ -27,6 +27,7 @@
 #include <Jolt/Physics/Constraints/HingeConstraint.h>
 #include <Jolt/Physics/Constraints/PulleyConstraint.h>
 #include <Jolt/Physics/Constraints/SliderConstraint.h>
+#include <Jolt/Physics/Constraints/SixDOFConstraint.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/RayCast.h>
@@ -1123,6 +1124,15 @@ JoltWorld::JointReport JoltWorld::jointState(unsigned joint) const {
         out.friction = 0.0;
         return out;
     }
+    if (held.kind == JointKind::Kerf) {
+        // An edge in a cut has no one position to report. What it has is
+        // what its friction took, and that is kerfImpulse's business.
+        out.at = 0.0;
+        out.lower = 0.0;
+        out.upper = 0.0;
+        out.friction = 0.0;
+        return out;
+    }
     if (held.kind == JointKind::Slider) {
         auto *slide = static_cast<JPH::SliderConstraint *>(held.constraint.GetPtr());
         out.at = slide->GetCurrentPosition();
@@ -1146,9 +1156,11 @@ void JoltWorld::setJointFriction(unsigned joint, double friction) {
     // A rope has no friction to set, and neither has an ideal pulley: it has
     // no wheel to have a bearing. Rather than refusing -- which would make every
     // caller special-case the kind before asking -- this does nothing, because
-    // nothing is the true answer.
+    // nothing is the true answer. A kerf's friction is the cutting model's to
+    // set, every step, from the material; nobody else's.
     if (held.kind == JointKind::Link || held.kind == JointKind::Pulley ||
-        held.kind == JointKind::Fixing || held.kind == JointKind::Elastic) return;
+        held.kind == JointKind::Fixing || held.kind == JointKind::Elastic ||
+        held.kind == JointKind::Kerf) return;
     if (held.kind == JointKind::Slider)
         static_cast<JPH::SliderConstraint *>(held.constraint.GetPtr())
             ->SetMaxFrictionForce(static_cast<float>(friction));
@@ -1299,6 +1311,142 @@ unsigned JoltWorld::addFixing(const FixingDescription &d) {
                                            static_cast<JPH::TwoBodyConstraint *>(raw)});
     impl_->physics_->AddConstraint(raw);
     return id;
+}
+
+namespace {
+// Solver iterations for the island an engaged edge is in: a new kerf's first
+// step up to the cold cap, every later step the warm count. See addKerf.
+constexpr int kWarmKerfSteps = 40;
+constexpr int kColdKerfStepsMax = 400;
+}  // namespace
+
+unsigned JoltWorld::addKerf(const KerfDescription &d) {
+    impl_->requireConfigurationMutable();
+    if (d.blade == d.target || !contains(d.blade) || !contains(d.target))
+        throw std::invalid_argument("a kerf needs a blade and a target that are both in the world");
+    if (impl_->joints_.size() >= 4096)
+        throw std::invalid_argument("joint budget exceeded");
+    const double facing = length(d.facing_world);
+    const double flat = length(d.flat_world);
+    if (!(facing > 1e-9) || !(flat > 1e-9) || !std::isfinite(facing) || !std::isfinite(flat))
+        throw std::invalid_argument("a kerf needs a facing and a flat normal with a direction");
+    if (!(d.resist_facing_n >= 0.0) || !(d.resist_along_n >= 0.0) ||
+        !std::isfinite(d.resist_facing_n) || !std::isfinite(d.resist_along_n))
+        throw std::invalid_argument("a kerf's resistance is newtons, zero or more");
+    const Vec3 n = (1.0 / facing) * d.facing_world;
+    // Square the flat normal up against the facing, so the frame is exact
+    // however the caller's two vectors were rounded.
+    Vec3 f = d.flat_world - dot(d.flat_world, n) * n;
+    const double across = length(f);
+    if (!(across > 1e-9)) throw std::invalid_argument("a kerf's facing and flat normal are parallel");
+    f = (1.0 / across) * f;
+
+    using Axis = JPH::SixDOFConstraintSettings::EAxis;
+    JPH::SixDOFConstraintSettings settings;
+    settings.mSpace = JPH::EConstraintSpace::WorldSpace;
+    settings.mPosition1 = settings.mPosition2 = toJoltPosition(d.point_world_m);
+    // X is the normal to the flats and Y is the facing, so Z runs along the
+    // edge. X is chosen deliberately: Jolt's rotation about X is TWIST, handled
+    // apart from the two swing axes, and turning in the blade's own plane --
+    // about the flat normal -- is the one rotation that must always be free.
+    // With it on X the two locked rotations are both swing, and a swing locked
+    // on both axes has no cone-versus-pyramid question to answer.
+    settings.mAxisX1 = settings.mAxisX2 = toJolt(f);
+    settings.mAxisY1 = settings.mAxisY2 = toJolt(n);
+    settings.mSwingType = JPH::ESwingType::Pyramid;
+    settings.MakeFreeAxis(Axis::TranslationY);   // into the material: a one-sided motor
+    settings.MakeFreeAxis(Axis::TranslationZ);   // along the edge: friction only
+    settings.MakeFreeAxis(Axis::RotationX);      // turning in its own plane
+    if (d.embedded) {
+        // The kerf's walls: no sliding across the flats, no twisting in the cut.
+        settings.MakeFixedAxis(Axis::TranslationX);
+        settings.MakeFixedAxis(Axis::RotationY);
+        settings.MakeFixedAxis(Axis::RotationZ);
+    } else {
+        settings.MakeFreeAxis(Axis::TranslationX);
+        settings.MakeFreeAxis(Axis::RotationY);
+        settings.MakeFreeAxis(Axis::RotationZ);
+    }
+    settings.mMaxFriction[Axis::TranslationZ] = static_cast<float>(d.resist_along_n);
+
+    // How light the target is against the blade, for the iterations below.
+    const auto inverseMass = [&](auto body) {
+        JPH::BodyLockRead lock(impl_->physics_->GetBodyLockInterface(), impl_->bodies_.at(body));
+        if (!lock.Succeeded() || !lock.GetBody().IsDynamic()) return 0.0;
+        return static_cast<double>(lock.GetBody().GetMotionProperties()->GetInverseMass());
+    };
+    const double inverse_blade = inverseMass(d.blade);
+    const double inverse_target = inverseMass(d.target);
+
+    auto *raw = impl_->physics_->GetBodyInterface().CreateConstraint(
+        &settings, impl_->bodies_.at(d.blade), impl_->bodies_.at(d.target));
+    if (!raw) throw std::runtime_error("kerf creation failed");
+    auto *kerf = static_cast<JPH::SixDOFConstraint *>(raw);
+    // Into the material the kerf is a velocity motor driven to no relative
+    // motion, whose force may push the edge back out and may not pull it in:
+    // [0, R L]. It holds an edge pressed into it with up to R L, gives way to
+    // more, and lets an edge be drawn out freely -- cut material does not grip
+    // the steel. (A friction resists both ways, so something had to switch it
+    // off for a retreating edge, and a solver bounce then switched it off
+    // under a pressing one.) Body 1 is the blade and the axis is the facing,
+    // so a positive impulse pushes the blade back and the target on.
+    kerf->GetMotorSettings(Axis::TranslationY)
+        .SetForceLimits(0.0F, static_cast<float>(d.resist_facing_n));
+    kerf->SetTargetVelocityCS(JPH::Vec3::sZero());
+    kerf->SetMotorState(Axis::TranslationY, JPH::EMotorState::Velocity);
+    // An edge is usually heavy steel pressed into something light -- a 2 kg
+    // blade on a 28 g batten lying on the floor -- and an iterative solver
+    // passes an impulse through a light body held between a heavy one and its
+    // support at about the ratio of their masses per iteration: after N
+    // iterations the part not yet passed is (1 + m/M)^-N. Measured with forty,
+    // a new kerf held back only two thirds of a 219 N press in its first step
+    // and the blade sank into matter nobody had cut. A kerf starts with none
+    // of its impulse, so its first step gets what passes all but 1% of it, up
+    // to a cap; from then on it starts each step from the last one's impulse
+    // and needs far fewer (updateKerf).
+    int cold = kWarmKerfSteps;
+    if (inverse_blade > 0.0 && inverse_target > inverse_blade) {
+        const double light_over_heavy = inverse_blade / inverse_target;   // m / M
+        cold = static_cast<int>(std::ceil(std::log(100.0) / std::log1p(light_over_heavy)));
+        cold = std::min(std::max(cold, kWarmKerfSteps), kColdKerfStepsMax);
+    }
+    raw->SetNumVelocityStepsOverride(static_cast<JPH::uint>(cold));
+    raw->SetNumPositionStepsOverride(6);
+    const auto id = impl_->next_joint_++;
+    impl_->joints_.emplace(id, Impl::Joint{d.blade, d.target, JointKind::Kerf,
+                                           static_cast<JPH::TwoBodyConstraint *>(raw)});
+    impl_->physics_->AddConstraint(raw);
+    return id;
+}
+
+void JoltWorld::updateKerf(unsigned joint, double resist_facing_n, double resist_along_n) {
+    const auto found = impl_->joints_.find(joint);
+    if (found == impl_->joints_.end() || found->second.kind != JointKind::Kerf) return;
+    if (!(resist_facing_n >= 0.0) || !(resist_along_n >= 0.0) ||
+        !std::isfinite(resist_facing_n) || !std::isfinite(resist_along_n))
+        throw std::invalid_argument("a kerf's resistance is newtons, zero or more");
+    using Axis = JPH::SixDOFConstraintSettings::EAxis;
+    auto *kerf = static_cast<JPH::SixDOFConstraint *>(found->second.constraint.GetPtr());
+    kerf->GetMotorSettings(Axis::TranslationY)
+        .SetForceLimits(0.0F, static_cast<float>(resist_facing_n));
+    kerf->SetMaxFriction(Axis::TranslationZ, static_cast<float>(resist_along_n));
+    // It has been solved at least once, so it starts from its last impulse.
+    kerf->SetNumVelocityStepsOverride(static_cast<JPH::uint>(kWarmKerfSteps));
+}
+
+JoltWorld::KerfImpulse JoltWorld::kerfImpulse(unsigned joint) const {
+    KerfImpulse out{};
+    const auto found = impl_->joints_.find(joint);
+    if (found == impl_->joints_.end() || found->second.kind != JointKind::Kerf) return out;
+    // The facing's one-sided motor and the edge's friction are both Jolt's
+    // translation MOTOR parts, bounded by their force times the step. Y is the
+    // facing and Z the edge; see addKerf for why the frame is laid out that way.
+    const JPH::Vec3 impulse =
+        static_cast<JPH::SixDOFConstraint *>(found->second.constraint.GetPtr())
+            ->GetTotalLambdaMotorTranslation();
+    out.facing_n_s = static_cast<double>(impulse.GetY());
+    out.along_n_s = static_cast<double>(impulse.GetZ());
+    return out;
 }
 
 JoltWorld::JointLoad JoltWorld::jointLoad(unsigned joint, const Vec3 &axis_world) const {
@@ -1659,22 +1807,6 @@ void JoltWorld::pushBody(MatterBodyId body_id, const Vec3 &force_n) {
     bodies.AddForce(found->second, toJolt(force_n));
 }
 
-void JoltWorld::pushBodyAt(MatterBodyId body_id, const Vec3 &force_n, const Vec3 &point_world_m) {
-    const auto found = impl_->bodies_.find(body_id);
-    if (found == impl_->bodies_.end()) throw std::invalid_argument("rigid body is missing");
-    auto &bodies = impl_->physics_->GetBodyInterface();
-    if (bodies.GetMotionType(found->second) == JPH::EMotionType::Static) return;
-    bodies.AddForce(found->second, toJolt(force_n), toJoltPosition(point_world_m));
-}
-
-void JoltWorld::twistBody(MatterBodyId body_id, const Vec3 &torque_n_m) {
-    const auto found = impl_->bodies_.find(body_id);
-    if (found == impl_->bodies_.end()) throw std::invalid_argument("rigid body is missing");
-    auto &bodies = impl_->physics_->GetBodyInterface();
-    if (bodies.GetMotionType(found->second) == JPH::EMotionType::Static) return;
-    bodies.AddTorque(found->second, toJolt(torque_n_m));
-}
-
 unsigned JoltWorld::addGroundPatch(const std::vector<float> &heights, unsigned count, double spacing_m,
                                    double origin_x_m, double origin_z_m,
                                    const MaterialDefinition &material, double max_error_m) {
@@ -1737,6 +1869,22 @@ void JoltWorld::setMass(MatterBodyId body_id, double mass_kg) {
     JPH::Body &body = lock.GetBody();
     if (!body.IsDynamic()) return;
     body.GetMotionProperties()->ScaleToMass(static_cast<float>(mass_kg));
+}
+
+void JoltWorld::pushBodyAt(MatterBodyId body_id, const Vec3 &force_n, const Vec3 &point_world_m) {
+    const auto found = impl_->bodies_.find(body_id);
+    if (found == impl_->bodies_.end()) throw std::invalid_argument("rigid body is missing");
+    auto &bodies = impl_->physics_->GetBodyInterface();
+    if (bodies.GetMotionType(found->second) == JPH::EMotionType::Static) return;
+    bodies.AddForce(found->second, toJolt(force_n), toJoltPosition(point_world_m));
+}
+
+void JoltWorld::twistBody(MatterBodyId body_id, const Vec3 &torque_n_m) {
+    const auto found = impl_->bodies_.find(body_id);
+    if (found == impl_->bodies_.end()) throw std::invalid_argument("rigid body is missing");
+    auto &bodies = impl_->physics_->GetBodyInterface();
+    if (bodies.GetMotionType(found->second) == JPH::EMotionType::Static) return;
+    bodies.AddTorque(found->second, toJolt(torque_n_m));
 }
 
 void JoltWorld::wake(MatterBodyId body_id) {

@@ -1,0 +1,514 @@
+{
+ "algorithm": "lattice",
+ "cell_m": 0.04,
+ "plasticity": "on",
+ "bodies": [
+  {
+   "name": "hinged-gate: stone post",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    160.0,
+    2000.0,
+    160.0
+   ],
+   "center_mm": [
+    -4480.0,
+    1000.0,
+    -200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "hinged-gate: far post",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    160.0,
+    2000.0,
+    160.0
+   ],
+   "center_mm": [
+    -3040.0,
+    1000.0,
+    -200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "hinged-gate: oak gate",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    1200.0,
+    1600.0,
+    80.0
+   ],
+   "center_mm": [
+    -3800.0,
+    840.0,
+    -40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "castle-gate-winch: left post",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    160.0,
+    2400.0,
+    160.0
+   ],
+   "center_mm": [
+    -1280.0,
+    1200.0,
+    -360.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "castle-gate-winch: right post",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    160.0,
+    2400.0,
+    160.0
+   ],
+   "center_mm": [
+    160.0,
+    1200.0,
+    -360.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "castle-gate-winch: lintel",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    1600.0,
+    120.0,
+    160.0
+   ],
+   "center_mm": [
+    -560.0,
+    2460.0,
+    -360.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "castle-gate-winch: castle gate",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    1280.0,
+    1040.0,
+    80.0
+   ],
+   "center_mm": [
+    -560.0,
+    520.0,
+    -200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "castle-gate-winch: winch post",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    160.0,
+    1200.0,
+    160.0
+   ],
+   "center_mm": [
+    1040.0,
+    600.0,
+    -360.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "castle-gate-winch: winch wheel",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    640.0,
+    640.0,
+    80.0
+   ],
+   "center_mm": [
+    1040.0,
+    1000.0,
+    -200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "castle-gate-winch: winch handle",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    80.0,
+    80.0,
+    160.0
+   ],
+   "center_mm": [
+    1040.0,
+    1240.0,
+    -80.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "castle-gate-capstan: stone post",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    160.0,
+    2000.0,
+    160.0
+   ],
+   "center_mm": [
+    3040.0,
+    1000.0,
+    -1840.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "castle-gate-capstan: far post",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    160.0,
+    2000.0,
+    160.0
+   ],
+   "center_mm": [
+    4480.0,
+    1000.0,
+    -1840.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "castle-gate-capstan: oak gate",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    1200.0,
+    1600.0,
+    80.0
+   ],
+   "center_mm": [
+    3720.0,
+    840.0,
+    -1680.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "castle-gate-capstan: capstan post",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    160.0,
+    1360.0,
+    160.0
+   ],
+   "center_mm": [
+    3720.0,
+    680.0,
+    -240.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "castle-gate-capstan: capstan wheel",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    480.0,
+    80.0,
+    480.0
+   ],
+   "center_mm": [
+    3720.0,
+    1440.0,
+    -240.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "castle-gate-capstan: capstan handle",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    80.0,
+    160.0,
+    80.0
+   ],
+   "center_mm": [
+    3920.0,
+    1560.0,
+    -240.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  }
+ ],
+ "joints": [
+  {
+   "kind": "hinge",
+   "a": "hinged-gate: stone post",
+   "b": "hinged-gate: oak gate",
+   "at_mm": [
+    -4400.0,
+    840.0,
+    -40.0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "lower_deg": 0,
+   "upper_deg": 100,
+   "friction_n_m": 10
+  },
+  {
+   "kind": "slider",
+   "a": "castle-gate-winch: left post",
+   "b": "castle-gate-winch: castle gate",
+   "at_mm": [
+    -560.0,
+    520.0,
+    -200.0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "lower_mm": 0.0,
+   "upper_mm": 1200.0,
+   "friction_n": 100
+  },
+  {
+   "kind": "hinge",
+   "a": "castle-gate-winch: winch post",
+   "b": "castle-gate-winch: winch wheel",
+   "at_mm": [
+    1040.0,
+    1000.0,
+    -200.0
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "lower_deg": -180,
+   "upper_deg": 180,
+   "friction_n_m": 2
+  },
+  {
+   "kind": "fixing",
+   "a": "castle-gate-winch: winch wheel",
+   "b": "castle-gate-winch: winch handle",
+   "at_mm": [
+    1040.0,
+    1240.0,
+    -160.0
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "holds_tension_n": 0.0,
+   "holds_shear_n": 0.0
+  },
+  {
+   "kind": "pulley",
+   "a": "castle-gate-winch: winch wheel",
+   "b": "castle-gate-winch: castle gate",
+   "at_mm": [
+    1040.0,
+    1320.0,
+    -200.0
+   ],
+   "to_mm": [
+    -560.0,
+    1040.0,
+    -200.0
+   ],
+   "over_a_mm": [
+    1040.0,
+    2300.0,
+    -200.0
+   ],
+   "over_b_mm": [
+    -560.0,
+    2300.0,
+    -200.0
+   ],
+   "ratio": 2,
+   "length_mm": 0.0
+  },
+  {
+   "kind": "hinge",
+   "a": "castle-gate-capstan: stone post",
+   "b": "castle-gate-capstan: oak gate",
+   "at_mm": [
+    3120.0,
+    840.0,
+    -1680.0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "lower_deg": -100,
+   "upper_deg": 100,
+   "friction_n_m": 10
+  },
+  {
+   "kind": "hinge",
+   "a": "castle-gate-capstan: capstan post",
+   "b": "castle-gate-capstan: capstan wheel",
+   "at_mm": [
+    3720.0,
+    1440.0,
+    -240.0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "lower_deg": -180,
+   "upper_deg": 180,
+   "friction_n_m": 2
+  },
+  {
+   "kind": "fixing",
+   "a": "castle-gate-capstan: capstan wheel",
+   "b": "castle-gate-capstan: capstan handle",
+   "at_mm": [
+    3920.0,
+    1480.0,
+    -240.0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "holds_tension_n": 0.0,
+   "holds_shear_n": 0.0
+  },
+  {
+   "kind": "elastic",
+   "a": "castle-gate-capstan: capstan wheel",
+   "b": "castle-gate-capstan: oak gate",
+   "at_mm": [
+    3720.0,
+    1440.0,
+    -480.0
+   ],
+   "to_mm": [
+    3720.0,
+    1440.0,
+    -1640.0
+   ],
+   "rest_mm": 0.0,
+   "stiffness_n_m": 20000,
+   "damping_n_s_m": 200
+  }
+ ]
+}

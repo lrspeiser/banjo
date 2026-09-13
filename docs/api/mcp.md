@@ -62,6 +62,11 @@ broke.
 | `collect` | sweep up the loose pieces near a point and say what they were made of, by material and by weight |
 | `carried` | what has been swept up in this world so far |
 | `cast_ray` | what a ray meets first — what is above or below something, what is in the way |
+| `blade` | give a body an **edge**: where it runs, which way it faces, how thick, how sharp (a radius) and its bevel, and where it is held. There is no cutting power: what resists the edge is the target's own fracture energy and hardness. [docs/cutting-model.md](../cutting-model.md) |
+| `blades` | every edge, what it has cut and what that cost |
+| `wield` | take hold of a body by its grip with a hand whose force (800 N) and torque (60 N m) are bounded — not `pick_up`, which places a thing exactly |
+| `swing` | swing the wielded blade the way a person does and report every edge contact on the way: edge, slice or press (it bit), glancing, flat or point (an ordinary contact), blunt or brittle (it could not). With `through_m`, `pointing` and `edge_facing` the hand takes the blade up off its rest, back clear and round to one side, then swings it round a shoulder half a metre behind the grip, 100 degrees in `seconds` (0.13 by default), so that the middle of the edge passes through `through_m`; an edge facing across the swing leads with the edge, one facing up or down leads with the flat. (Driven along a straight line at its grip, a sword trails its point: a measured straight swing crossed the rope's line 0.19 m short and met nothing.) With `to_m` instead it moves the grip along a straight line, which is a press or a push |
+| `cuts` | every edge contact since the last swing, including the ones that cut nothing and why |
 | `close_world` | free it |
 | `hinge` / `slide` | a pin or a groove: `b` turns about, or slides along, a line fixed in `a` |
 | `tie` / `reeve` | a rope between a point on each of two things, or one run over two fixed pulleys |
@@ -72,10 +77,18 @@ broke.
 | `enclose_gas` | a column of gas under a loose piston, starting at the pressure that holds the piston and its load up |
 | `heat` | heat from outside — kindling, a torch, a stove — into a body or a gas region, from when the world starts |
 | `thermal_state` | how hot everything is, what is burning and how hard, the fuel left and how long it would last at this rate, what the gas is doing, and the energy ledger |
+| `make_terrain` | ground that is not flat: a **valley** with a river along it and a pond beside it, made once by physics -- drainage decided where the river runs, erosion wore its channel -- and cached; or a basin holding a lake, a sloping channel with a stream, flat ground, or none. [docs/terrain-and-water.md](../terrain-and-water.md) |
+| `survey` | the ground and the water at a point or along a line: height, rock, soil or sand, slope, and the water's depth, level and speed. How to find the river, and what to stand things on |
+| `water_state` | the rivers and ponds: how much water, what comes in and goes out, each pond's level, the river every 2 m along its course, what is in the water and whether it floats, and the water's ledger |
+| `dig` / `fill` | a trench or a pit, so wide and so deep below the ground as it stands; what comes out is carried, and `fill` heaps only what was carried |
+| `cut_block` | a block of stone out of bare rock; the ground loses exactly that much and the block is an ordinary loose object |
+| `set_river` | a river's discharge from now: a flood or a drought |
 
 `add_object` also takes `contents` (what the object is made of inside, by mass
 fraction) and `temperature_k`. Every `run` carries a `heat` summary whenever
-anything is hot, burning or pushing.
+anything is hot, burning or pushing. On ground that is not flat, `add_object`
+seats a thing on the ground under it and says whether it is in water, and every
+`run` carries a `water` summary.
 
 `run` holds the **break conversation** itself. That is the part of this engine a
 caller can get wrong: ignore it and the world freezes at the first impact for
@@ -283,6 +296,84 @@ Things a model gets wrong unless told, and the tool descriptions say so: one log
 beside a cold one on a stone slab does not light with the kindling that lights a
 log on its own -- the slab and the cold log take the margin -- and a piston must
 be loose, on a `slide`, a cell clear of its walls.
+
+## Blades
+
+```
+blade(body="sword", heel_m=[0.2, 1.02, 1.88], tip_m=[-0.3, 1.02, 1.88],
+      facing=[0, 0, -1], thickness_m=0.04, edge_radius_m=0.0002,
+      grip_m=[0.28, 1.02, 1.9])
+wield(name="sword")
+swing(through_m=[-0.5, 1.58, 1.4], pointing=[0, 0, -1], edge_facing=[-1, 0, 0],
+      then_s=1.5)
+-> "cuts": [{"met": "rope 4", "kind": "edge", "speed_m_s": 13.21,
+             "resistance_j_m2": 7400.0, "cut_mm2": 1059.1, "work_j": 7.837,
+             "bonds_severed": 2, "came_apart": true, "pieces": 2}, ...]
+```
+
+An edge is declared in the scene document -- `blades`, each kept in its body's
+own frame -- so every rebuild arms it again on the same body, wherever that
+body has since been put, and the playground's room is handed it in its spec.
+Removing a body takes its edge with it and says so (`edge_removed_with_it`);
+an edge that cannot be armed again is reported, never dropped silently.
+`wield` and `swing` are uses, not authoring: they change the world the caller
+is building in and nothing in its scene. So after the playground's chat has
+cut a rope in its copy, the person's room still opens with the rope whole and
+the sword on its rests, and the cut is theirs to make. The swing above is the
+one `tests/banjo_mcp_tests.py` makes, on a rope of six rubber segments with a
+4 kg weight at 0.04 m cells: the weight ended on the floor, and with
+`edge_facing=[0, -1, 0]` the flat leads and nothing is cut.
+
+Two ways a model got a cutting setup wrong, and what now says so. An edge
+declared on a bar's far face but facing back into the bar is refused, with the
+rule it broke: swung "edge first" it led with the bar's other face and glanced
+off the rope. And a `tie` or `spring` made off more than a cell away from its
+body is warned about: a model hung a weight 0.24 m below the end of its rope
+and tied it from a point in the air under the last segment, which rides on
+the segment like the end of a stiff arm that is not there.
+
+## Terrain and water
+
+```
+make_terrain(kind="valley")
+-> "ground": {"kind": "valley", "from_m": [-19.38, -15.5], "to_m": [19.38, 15.5],
+              "column_m": 0.25, "bare_level_rock_at_m": [-9.12, 4.75], ...},
+   "water": {"volume_m3": 29.338, "rivers": [{"name": "the river", "fed_m3_s": 0.35}],
+             "ponds": [{"name": "the pond", "at_m": [4.77, -2.73], "level_m": 0.858}],
+             "the_river_runs": {"columns": ["x_m", "z_m", "level_m", "depth_m", "speed_m_s"],
+                                "every_2_m": [[-19.38, -2.75, 0.74, 0.305, 0.49], ...]}}
+survey(from_m=[0.62, 0.25], to_m=[0.62, 6.25], every_m=0.25)
+-> "water_between": [[[0.62, 1.5], [0.62, 4.5]]]
+add_object(...) x 9: concrete blocks 0.48 x 0.96 x 0.48 m across the river
+run(seconds=20)
+-> 3 m upstream of them the level went from 0.506 to 0.636 m
+dig(from_m=[4.77, -2.73], to_m=[4.77, 2.27], width_m=0.8, depth_m=0.7)
+-> "dug_m3": 3.374, "columns": 88, "colliders_rebuilt": 2, "things_woken": 0
+run(seconds=20)
+-> the pond from 0.858 to 0.525 m
+```
+
+The ground is declared in the scene document -- a `terrain` block holding what
+it was generated from and every edit made to it since, and a `water` block with
+any change to its rivers -- so a rebuild makes the same ground again and the
+playground's room is handed it in its spec. `dig` and `cut_block` are edits and
+are recorded; what `dig` takes out is carried, and `fill` heaps only that back
+(`ground does not come from nowhere`). `cut_block` takes a stone block out of
+bare rock and adds it as an ordinary loose body. The water is carried across a
+rebuild: a reservoir filled behind a dam is still there when a log is added.
+
+Two things a model got wrong in the room, and what now says so. Objects on this
+ground are **set on it**: asked for inside the ground, a block is lifted to rest
+on the highest point under it and the answer says `seated_on_the_ground`, so y
+only has to be roughly right. And a room holds 16,000 cells: nine blocks
+0.48 x 0.96 x 0.48 m are 31,104, and the room refuses them -- the guide's dam is
+nine blocks 0.32 m through and 0.48 m tall, 10,368 cells, which backed the
+river up from 0.49 to 0.69 m in 30 s. Side by side, their centres go on the
+0.04 m grid, or neighbours 0.48 m apart share a row of cells and are refused.
+
+The numbers above were measured through `create_world`, which has no room's
+cell budget; `tests/banjo_mcp_tests.py` makes the same dam and channel through
+the server's own protocol. See [terrain-and-water.md](../terrain-and-water.md).
 
 ## Implementation
 

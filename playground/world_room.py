@@ -20,6 +20,7 @@ import json
 import math
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any
 
 import fracture_lab
@@ -615,6 +616,184 @@ def courtyard() -> dict[str, Any]:
     }
 
 
+def armoury() -> dict[str, Any]:
+    """A sword, and things to cut with it: a rope with a weight on it, an oak
+    panel hung from a lintel, and an oak batten across two piers carrying a load.
+
+    Nothing here knows the word "sword". There is an iron bar, and a declared
+    edge along one side of it (docs/cutting-model.md): where the edge runs, which
+    way it faces, how thick and how sharp it is, and where it is held. What the
+    edge does to anything is decided by the edge's geometry, the two materials,
+    how they are moving and how hard they are pressed -- never by a name.
+
+    Built at 10 mm cells, because a blade is thin and the thin end of matter here
+    is one cell. The bar is one cell thick: a heavy blade, 1.9 kg, 820 mm long.
+
+    Standing where the room opens you face all of it. Click the sword on its rest
+    to take hold of it: it is held at its grip by a hand with 800 N and 60 N m,
+    in front of you and pointing where you look. Drag to look, and the sword
+    swings with your view -- as fast as the hand can make it, and no faster. The
+    edge starts facing LEFT; right-click turns it a quarter turn (left, down,
+    right, up), which is how a flat strike is made: the edge facing down, swung
+    sideways, leads with the flat. Click again to let go.
+
+      the rope    front left. Six rubber segments tied end to end, 1 kg of
+                  iron on the bottom. To cut it: holding the sword, look level
+                  at the middle of the rope from a little to its right, clear
+                  of the panel, and wait a moment for the sword to come round.
+                  Then drag the view LEFT about 60 degrees (some 480 px) in a
+                  fifth of a second or less. The edge arrives at 10-13 m/s and
+                  goes through: that segment comes apart, its upper piece
+                  stays tied to the rope above and the lower piece falls with
+                  the rest of the rope and the weight. A slower drag reaches
+                  it slower and only notches it -- the slit is drawn, and it
+                  stays. The same drag with the edge turned down (one right-
+                  click) leads with the flat: the rope swings and holds.
+      the panel   front right, hung from a lintel by its top edge. Holding the
+                  sword, look up so the blade clears everything, walk to stand
+                  square in front of the panel with your eye at its middle,
+                  look a little right of it, and flick the view LEFT about 35
+                  degrees (some 270 px) in an eighth of a second: the edge
+                  goes through the 10 mm oak at about 7 m/s for about 60 J,
+                  the lower piece falls and the upper stays on its fixings. A
+                  slow drag stops part way and the slit stays, drawn. (A second
+                  flick has to find the slit again: drawn back, the blade
+                  comes back a little lower, and one measured on a 20 mm
+                  board glanced off below it.)
+      the batten  straight ahead, low. Oak 20 mm deep and 30 mm wide across
+                  two piers with 32 kg on its middle: 41 MPa of bending against
+                  oak's 90, so it holds. Turn the edge down (one right-click),
+                  look up, stand over the batten a little right of the load,
+                  look level, and pitch the view DOWN about 25 degrees (some
+                  200 px) in a fifth of a second: the edge chops through and
+                  the load comes down with the pieces. A chop that stops part
+                  way leaves a notch, and a deep enough notch beside the load
+                  overloads what is left of the batten: the room says so, and
+                  the lattice decides what it does about that.
+    """
+    bodies: list[dict[str, Any]] = []
+
+    def add(name, shape, material, size_mm, center_mm, **rest):
+        body = {"name": name, "shape": shape, "material": material,
+                "size_mm": list(size_mm), "center_mm": list(center_mm)}
+        body.update(rest)
+        bodies.append(body)
+
+    # ---- the sword, on a rest in front of where you stand ---------------------
+    #
+    # One iron bar, 820 x 10 x 30 mm. The edge runs along its far long side for
+    # the 700 mm nearest the point; the last 120 mm is the grip. A plain bar
+    # rather than a join with a guard and a pommel: a join collides as the
+    # convex hull of its cells, and a hull round a crossguard is a flat kite
+    # wider than the blade -- an invisible wing that would strike things the
+    # steel never touches. This bar collides exactly as it is drawn.
+    SWORD_Y, SWORD_Z = 1005, 1900
+    add("sword rest left", "box", "oak", [40, 40, 40], [-250, 980, SWORD_Z], anchored=True)
+    add("sword rest right", "box", "oak", [40, 40, 40], [250, 980, SWORD_Z], anchored=True)
+    add("sword", "box", "iron", [820, 10, 30], [0, SWORD_Y, SWORD_Z])
+
+    # ---- a rope with a weight on it -------------------------------------------
+    #
+    # Six rubber segments, 20 x 120 x 20 mm, each tied to the next where they
+    # meet. A rope struck from the side is knocked away about as fast as it is
+    # cut, and how fast depends on how much rope the edge has to move: an edge
+    # gets through a segment before it gets away above about
+    # sqrt(2 R / (density x segment length)) -- 15 m/s for 60 mm of rubber,
+    # 10.6 for 120. A real rope is one piece and is harder still to knock
+    # aside; twelve short segments made it easier to push away than to cut.
+    # A rope made of bodies because a link on its own is a constraint with no
+    # matter in it, and nothing can cut what is not there. Rubber because the
+    # catalogue has no fibre: it is a rubber cord, and says so.
+    ROPE_X, ROPE_Z, BEAM_Y = -500, 1400, 2000
+    add("rope beam", "box", "oak", [300, 40, 40], [ROPE_X, BEAM_Y + 20, ROPE_Z],
+        anchored=True)
+    for k in range(6):
+        add(f"rope {k + 1}", "box", "rubber", [20, 120, 20],
+            [ROPE_X, BEAM_Y - 60 - 120 * k, ROPE_Z])
+    ROPE_END = BEAM_Y - 120 * 6
+    # A kilogram of iron, not eight. A chain of light links under a load three
+    # hundred times heavier does not hold its length in an iterative solver:
+    # the first rope hung 0.6 m long, with gaps between its segments that a
+    # blade went straight through without touching anything. Each segment here
+    # is 53 g, and at 19 to one the rope hangs as it was tied.
+    add("weight", "box", "iron", [50, 50, 50], [ROPE_X, ROPE_END - 25, ROPE_Z])
+
+    # ---- an oak panel hung from a lintel --------------------------------------
+    PANEL_X, PANEL_Z, LINTEL_Y = 700, 1300, 1720
+    add("panel lintel", "box", "oak", [500, 40, 40], [PANEL_X, LINTEL_Y + 20, PANEL_Z],
+        anchored=True)
+    # 10 mm of oak, a thin board. The sword's working edge meets oak's
+    # resistance at 15 kJ/m^2, so a cut all the way across costs 60 J here --
+    # which one flick of an 800 N hand pays. A 20 mm board costs 120 J, and a
+    # flick measured at 111 J came up 8% short: that one takes two strokes.
+    add("oak panel", "box", "oak", [400, 300, 10], [PANEL_X, LINTEL_Y - 150, PANEL_Z])
+
+    # ---- an oak batten across two piers, carrying a load ----------------------
+    #
+    # The sums. 30 mm wide, 20 mm deep oak over a 1.04 m clear span carrying
+    # 32.2 kg (316 N) at mid-span: 3 W L / (2 b d^2) = 41 MPa, against oak's 90.
+    # It holds. A notch half its depth, 200 mm from the middle, leaves a 10 mm
+    # ligament where the moment is 51 N m: 102 MPa, and the room offers it to
+    # the lattice to break. 300 mm out the moment there is 35 N m: 70 MPa, and
+    # it still holds -- where the notch is matters, as it does. That is the
+    # survey's answer changing because of what a blade did, and nothing else.
+    # (It was 20 mm square, and a 160 mm block on a 20 mm stick is a balancing
+    # act that tips at 5.7 degrees of roll. On 30 mm it stands 8.5.)
+    BATTEN_Z, PIER_TOP = 700, 1000
+    for side in (-1, 1):
+        add(f"batten pier {'left' if side < 0 else 'right'}", "box", "oak",
+            [40, PIER_TOP, 40], [side * 540, PIER_TOP // 2, BATTEN_Z], anchored=True)
+    add("oak batten", "box", "oak", [1200, 20, 30], [0, PIER_TOP + 10, BATTEN_Z])
+    add("iron load", "box", "iron", [160, 160, 160], [0, PIER_TOP + 20 + 80, BATTEN_Z])
+
+    joints: list[dict[str, Any]] = []
+    # The rope: beam to the first segment, each segment to the next, the last to
+    # the weight -- tied between the centres of the two cells either side of
+    # each join, so the tie runs through matter and a blade that crosses it
+    # there cuts it.
+    joints.append({"kind": "link", "a": "rope beam", "b": "rope 1",
+                   "at_mm": [ROPE_X, BEAM_Y + 5, ROPE_Z],
+                   "to_mm": [ROPE_X, BEAM_Y - 5, ROPE_Z],
+                   "length_mm": 0, "breaks_at_n": 0})
+    for k in range(1, 6):
+        join = BEAM_Y - 120 * k
+        joints.append({"kind": "link", "a": f"rope {k}", "b": f"rope {k + 1}",
+                       "at_mm": [ROPE_X, join + 5, ROPE_Z],
+                       "to_mm": [ROPE_X, join - 5, ROPE_Z],
+                       "length_mm": 0, "breaks_at_n": 0})
+    joints.append({"kind": "link", "a": "rope 6", "b": "weight",
+                   "at_mm": [ROPE_X, ROPE_END + 5, ROPE_Z],
+                   "to_mm": [ROPE_X, ROPE_END - 5, ROPE_Z],
+                   "length_mm": 0, "breaks_at_n": 0})
+    # The panel on two welds to the lintel, one at each top corner. Cut across
+    # it and the lower piece has nothing holding it; the fixings stay with the
+    # piece whose matter they are in.
+    for side in (-1, 1):
+        joints.append({"kind": "fixing", "a": "panel lintel", "b": "oak panel",
+                       "at_mm": [PANEL_X + side * 150, LINTEL_Y - 5, PANEL_Z],
+                       "axis": [0, 1, 0], "holds_tension_n": 0, "holds_shear_n": 0})
+
+    return {
+        "algorithm": "lattice",
+        "cell_m": 0.01,
+        "plasticity": "on",
+        "bodies": bodies,
+        "joints": joints,
+        # The edge: the far long side of the bar, from the grip to the point.
+        # 0.2 mm radius is a working edge, not a razor; a 30 degree bevel.
+        "blades": [{
+            "body": "sword",
+            "heel_mm": [290, SWORD_Y, SWORD_Z - 15],
+            "tip_mm": [-405, SWORD_Y, SWORD_Z - 15],
+            "facing": [0, 0, -1],
+            "thickness_mm": 10,
+            "edge_radius_mm": 0.2,
+            "bevel_deg": 30,
+            "grip_mm": [350, SWORD_Y, SWORD_Z],
+        }],
+    }
+
+
 # Every room this playground can open, by the name a person would ask for.
 def yard() -> dict[str, Any]:
     """An empty yard, on the courtyard's grid, to be built by asking.
@@ -667,10 +846,28 @@ def valley() -> dict[str, Any]:
     }
 
 
+# Every test's own build, side by side, to walk round and try: written by
+# `python tests/qa.py --rooms` from the recipes the QA proves, each part named
+# after its case. Three rooms, because together they hold more cells than a
+# room may and still run at realtime. The playground opens on the first.
+ROOMS = Path(__file__).resolve().parent / "rooms"
+
+
+def _saved_room(name: str):
+    def scene() -> dict[str, Any]:
+        return json.loads((ROOMS / f"{name}.json").read_text(encoding="utf-8"))
+    scene.__name__ = name.replace("-", "_")
+    return scene
+
+
 SCENES = {
+    "tests-gates": _saved_room("tests-gates"),
+    "tests-ropes": _saved_room("tests-ropes"),
+    "tests-motion": _saved_room("tests-motion"),
     "bench": room,
     "courtyard": courtyard,
     "yard": yard,
+    "armoury": armoury,
     "valley": valley,
 }
 

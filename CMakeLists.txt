@@ -452,6 +452,13 @@ if(BANJO_BUILD_HEADLESS)
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/thermo_ffi_tests.py)
         set_tests_properties(banjo_thermo_ffi_tests PROPERTIES
             ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
+        # Blades through the same boundary: an edge given, a hand that grips,
+        # and what it cut read back -- from nothing but banjo.h.
+        add_test(NAME banjo_blade_binding_tests
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/blade_binding_tests.py)
+        set_tests_properties(banjo_blade_binding_tests PROPERTIES
+            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
         # The two ways the playground can hold a world, run against the same
         # scene and compared. Claiming they are interchangeable is easy; this
         # is the part that makes it true.
@@ -463,6 +470,14 @@ if(BANJO_BUILD_HEADLESS)
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/banjo_mcp_tests.py)
         set_tests_properties(banjo_mcp_tests PROPERTIES
+            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
+        # The docs name everything the API has: every MCP tool in the table in
+        # docs/api/mcp.md, every banjo.h function in docs/api/c-api.md and in
+        # the Python binding.
+        add_test(NAME banjo_api_docs_tests
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/api_docs_tests.py)
+        set_tests_properties(banjo_api_docs_tests PROPERTIES
             ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
         add_test(NAME banjo_world_room_tests
                  COMMAND ${Python3_EXECUTABLE}
@@ -898,6 +913,14 @@ if(BANJO_BUILD_TESTS)
             banjo_enable_warnings(banjo_valley_live_tests)
             add_test(NAME banjo_valley_live_tests COMMAND banjo_valley_live_tests)
 
+            # Where cutting meets heat: a burning log cut in two keeps its fuel
+            # and its fire, a refused step mid-cut changes nothing, and a hand
+            # pushes once per step however the step is retried.
+            add_executable(banjo_blade_thermo_tests tests/blade_thermo_tests.cpp)
+            target_link_libraries(banjo_blade_thermo_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_blade_thermo_tests)
+            add_test(NAME banjo_blade_thermo_tests COMMAND banjo_blade_thermo_tests)
+
             # Pins, as the scene sees them: a joint between two NAMES, which is
             # what has to survive the bodies underneath being destroyed and
             # rebuilt every time anything in their island breaks.
@@ -952,6 +975,16 @@ if(BANJO_BUILD_TESTS)
             target_link_libraries(banjo_fixing_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_fixing_tests)
             add_test(NAME banjo_fixing_tests COMMAND banjo_fixing_tests)
+
+            # Blades, and cutting that changes what things are: the energy a cut
+            # takes against what the declared law says it costs, partial cuts that
+            # stay partial, pieces with their own mass and momentum, a rope that
+            # drops its load, and the flat of the blade that does not cut it.
+            # docs/cutting-model.md.
+            add_executable(banjo_blade_tests tests/blade_tests.cpp)
+            target_link_libraries(banjo_blade_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_blade_tests)
+            add_test(NAME banjo_blade_tests COMMAND banjo_blade_tests)
 
             add_executable(banjo_beam_tests tests/beam_tests.cpp)
             target_link_libraries(banjo_beam_tests PRIVATE banjo_fastlattice_scene)

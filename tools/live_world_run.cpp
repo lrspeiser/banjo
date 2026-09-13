@@ -39,12 +39,21 @@
 //        {"op":"dig","from":[x,z],"to":[x,z],"width_m":1,"depth_m":0.5}
 //                                            a trench (or a pit, from == to)
 //        {"op":"deposit","at":[x,z],"radius_m":1,"sand_m3":0.5,"soil_m3":0}
-//        {"op":"cut","at":[x,z],"cells":[4,4],"height_m":0.4}  a block of rock
+//        {"op":"cut_block","at":[x,z],"cells":[4,4],"height_m":0.4}  a block of rock
 //        {"op":"discharge","river":"the river","discharge_m3_s":0.5}
 //        {"op":"survey","at":[x,z]}          ground and water at a point
 //        {"op":"environment","full":false}   the ground, the water, their ledgers
 //        {"op":"environment_state"}          the water, for carrying into a reopen
 //        {"op":"terrain"}                    the whole ground again, for drawing
+//        {"op":"blade","body":"sword","heel":[..],"tip":[..],"facing":[0,0,-1],
+//         "thickness_m":0.01,"edge_radius_m":0.0002,"bevel_deg":30,"grip":[..]}
+//                                            give a body an edge (docs/cutting-model.md)
+//        {"op":"blades"}                     every edge, and what each has cut
+//        {"op":"wield","name":"sword","grip":[..]}   a bounded hand on a grip
+//        {"op":"step","n":4,"hand":[..],"hand_q":[w,x,y,z]}   where it wants the
+//                                            grip, and which way it wants it to face
+//        {"op":"hand","strength_n":800,"torque_n_m":60}   how strong the hand is
+//        {"op":"cuts"}                       every edge contact since the last reply
 //   out  {"ok":true,"t":0.033,"stepped_back":false,
 //         "bodies":[{"name":"ball","shape":"sphere","dimensions_m":[...],
 //                    "position_m":[...],"orientation_wxyz":[...],"held":false,
@@ -184,6 +193,54 @@ nlohmann::json jointsOf(const LiveWorld &world) {
     return out;
 }
 
+// Every edge in the room. Sent when the SET of them changes, like the pins: the
+// edge rides on its body's pose, so its local frame is all a host needs to draw
+// it from then on.
+std::string last_blades;
+
+nlohmann::json bladesOf(const LiveWorld &world) {
+    nlohmann::json out = nlohmann::json::array();
+    for (const LiveBlade &blade : world.blades())
+        out.push_back({{"id", blade.id},
+                       {"body", blade.body},
+                       {"material", blade.material},
+                       {"heel_local", vec(blade.heel_local_m)},
+                       {"tip_local", vec(blade.tip_local_m)},
+                       {"facing_local", vec(blade.facing_local)},
+                       {"grip_local", vec(blade.grip_local_m)},
+                       {"heel", vec(blade.heel_m)},
+                       {"tip", vec(blade.tip_m)},
+                       {"grip", vec(blade.grip_m)},
+                       {"thickness_m", tidy(blade.thickness_m)},
+                       {"edge_radius_m", blade.edge_radius_m},
+                       {"bevel_deg", tidy(blade.bevel_deg)},
+                       {"cut_area_mm2", tidy(blade.cut_area_m2 * 1.0e6)},
+                       {"cut_work_j", tidy(blade.cut_work_j)},
+                       {"cutting", blade.cutting},
+                       {"attached", blade.attached}});
+    return out;
+}
+
+// One meeting between an edge and something, in the room's units.
+nlohmann::json cutJson(const LiveCut &cut) {
+    return {{"blade", cut.blade},
+            {"target", cut.target},
+            {"kind", cut.kind},
+            {"at_s", tidy(cut.at_s)},
+            {"speed_m_s", tidy(cut.speed_m_s)},
+            {"into_m_s", tidy(cut.into_m_s)},
+            {"along_m_s", tidy(cut.along_m_s)},
+            {"across_m_s", tidy(cut.across_m_s)},
+            {"resistance_j_m2", tidy(cut.resistance_j_m2)},
+            {"area_mm2", tidy(cut.area_m2 * 1.0e6)},
+            {"work_j", tidy(cut.work_j)},
+            {"bonds", cut.bonds},
+            {"links", cut.links},
+            {"separated", cut.separated},
+            {"pieces", cut.pieces},
+            {"open", cut.open}};
+}
+
 // `only_moved` sends a body only if it is not identical to the last one sent
 // under that name. The reply then says so, and says which names have gone, so a
 // host can tell "this body did not change" from "this body no longer exists" --
@@ -225,6 +282,26 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
             nlohmann::json cells = nlohmann::json::array();
             for (const Vec3 &at : pose.cells_local_m) cells.push_back(vec(at));
             body["cells_local_m"] = std::move(cells);
+        }
+        // Where a blade has been through it: the plane, and what of it was
+        // swept, as strips. Part of the body's own record, so it goes out when it
+        // changes and not otherwise -- the comparison below sees to that.
+        if (!pose.kerfs.empty()) {
+            nlohmann::json cuts = nlohmann::json::array();
+            for (const LiveBodyPose::Kerf &kerf : pose.kerfs) {
+                nlohmann::json strips = nlohmann::json::array();
+                for (const LiveBodyPose::Kerf::Strip &strip : kerf.strips)
+                    strips.push_back(nlohmann::json::array(
+                        {tidy(strip.along_from), tidy(strip.along_to),
+                         tidy(strip.facing_from), tidy(strip.facing_to)}));
+                cuts.push_back({{"at", vec(kerf.point_local_m)},
+                                {"along", vec(kerf.along_local)},
+                                {"facing", vec(kerf.facing_local)},
+                                {"normal", vec(kerf.normal_local)},
+                                {"thickness_m", tidy(kerf.thickness_m)},
+                                {"strips", std::move(strips)}});
+            }
+            body["kerfs"] = std::move(cuts);
         }
         ++count;
         present.insert(pose.name);
@@ -282,6 +359,12 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
                          {"kind", delay.kind}, {"lead_ms", delay.lead_ms},
                          {"cost_ms", delay.cost_ms}});
     if (!waits.empty()) state["waits"] = std::move(waits);
+    // Every edge contact since the last reply that carried them: the open ones
+    // as they now stand, the closed ones one last time. The caller forgets the
+    // closed ones after sending, so each is seen finished exactly once.
+    nlohmann::json cut_list = nlohmann::json::array();
+    for (const LiveCut &cut : world.cuts()) cut_list.push_back(cutJson(cut));
+    if (!cut_list.empty()) state["cuts"] = std::move(cut_list);
     return state;
 }
 
@@ -512,6 +595,7 @@ int main(int argc, char **argv) {
             std::cout << opening.dump() << std::endl;
         }
         world->forgetDelays();
+        world->forgetCuts();
 
         std::string line;
         while (std::getline(std::cin, line)) {
@@ -535,6 +619,15 @@ int main(int argc, char **argv) {
                     // work, and halves its frame rate for as long as it is
                     // carrying anything. Measured, not guessed: the step itself
                     // is 0.03 ms.
+                    // Which way it should face, for something wielded: the
+                    // hand turns it there with the torque it has.
+                    if (command.contains("hand_q")) {
+                        const auto &q = command.at("hand_q");
+                        if (!q.is_array() || q.size() != 4)
+                            throw std::invalid_argument("hand_q needs four numbers, w first");
+                        world->aimHeld(Quat{q[0].get<double>(), q[1].get<double>(),
+                                            q[2].get<double>(), q[3].get<double>()});
+                    }
                     if (command.contains("hand")) world->moveHeld(readVec(command, "hand"));
                     const int count = std::max(1, command.value("n", 1));
                     // A fresh batch: what follows is what this call reports.
@@ -613,6 +706,58 @@ int main(int argc, char **argv) {
                 } else if (op == "grab") {
                     if (!world->grab(command.at("name").get<std::string>()))
                         throw std::invalid_argument("that object cannot be picked up");
+                } else if (op == "wield") {
+                    // A grip, not a carry: a bounded force at the grip and a
+                    // bounded torque. Without a grip given, a body that carries
+                    // an edge is held where its blade says it is held.
+                    const std::string name = command.at("name").get<std::string>();
+                    Vec3 grip{};
+                    bool have_grip = command.contains("grip");
+                    if (have_grip) grip = readVec(command, "grip");
+                    for (const LiveBlade &blade : world->blades())
+                        if (!have_grip && blade.body == name && blade.attached) {
+                            grip = blade.grip_m;
+                            have_grip = true;
+                        }
+                    if (!have_grip)
+                        throw std::invalid_argument("wield needs a grip, or a body with an edge");
+                    if (!world->wield(name, grip))
+                        throw std::invalid_argument("that object cannot be taken hold of");
+                    reply["wielding"] = name;
+                } else if (op == "hand") {
+                    if (command.contains("strength_n"))
+                        world->setHandStrength(command.at("strength_n").get<double>());
+                    if (command.contains("torque_n_m"))
+                        world->setHandTorque(command.at("torque_n_m").get<double>());
+                    reply["strength_n"] = world->handStrength();
+                    reply["torque_n_m"] = world->handTorque();
+                } else if (op == "blade") {
+                    // Give a body an edge. See docs/cutting-model.md: nothing
+                    // here is a cutting power; what the edge does is decided by
+                    // its geometry, the materials and the motion.
+                    const unsigned id = world->blade(
+                        command.at("body").get<std::string>(), readVec(command, "heel"),
+                        readVec(command, "tip"), readVec(command, "facing"),
+                        command.value("thickness_m", 0.01),
+                        command.value("edge_radius_m", 0.0002),
+                        command.value("bevel_deg", 30.0),
+                        command.contains("grip") ? readVec(command, "grip")
+                                                 : readVec(command, "heel"));
+                    if (id == 0)
+                        throw std::invalid_argument("that body cannot take that edge: " +
+                                                    world->bladeRefusal());
+                    reply["blade"] = id;
+                } else if (op == "blades") {
+                    std::cout << nlohmann::json{{"ok", true}, {"blades", bladesOf(*world)}}.dump()
+                              << std::endl;
+                    continue;
+                } else if (op == "cuts") {
+                    nlohmann::json list = nlohmann::json::array();
+                    for (const LiveCut &cut : world->cuts()) list.push_back(cutJson(cut));
+                    world->forgetCuts();
+                    std::cout << nlohmann::json{{"ok", true}, {"cuts", std::move(list)}}.dump()
+                              << std::endl;
+                    continue;
                 } else if (op == "move") {
                     world->moveHeld(readVec(command, "to"));
                 } else if (op == "release") {
@@ -795,7 +940,7 @@ int main(int argc, char **argv) {
                                                              command.value("radius_m", 1.0),
                                                              command.value("sand_m3", 0.0),
                                                              command.value("soil_m3", 0.0)));
-                } else if (op == "cut") {
+                } else if (op == "cut_block") {
                     // The ground loses the block now; the host adds it as a body
                     // in the scene it opens next.
                     const auto at = readXZ(command, "at");
@@ -805,8 +950,8 @@ int main(int argc, char **argv) {
                         cz = command.at("cells").at(1).get<int>();
                     }
                     std::string why;
-                    const auto block = world->cut(at.first, at.second, cx, cz,
-                                                  command.value("height_m", 0.4), &why);
+                    const auto block = world->cutBlock(at.first, at.second, cx, cz,
+                                                       command.value("height_m", 0.4), &why);
                     if (!block) throw std::invalid_argument(why.empty() ? "that block cannot be cut" : why);
                     reply["block"] = {{"center_m", vec(block->center_m)}, {"size_m", vec(block->size_m)},
                                       {"volume_m3", block->volume_m3}, {"kg", block->mass_kg}};
@@ -898,12 +1043,28 @@ int main(int argc, char **argv) {
                         reply["joints"] = std::move(pins);
                     }
                 }
+                // The edges travel like the pins: when the set changes -- one
+                // made, one whose body has gone -- or with anything that rebuilt
+                // the room.
+                {
+                    nlohmann::json edges = bladesOf(*world);
+                    std::string shape;
+                    for (const auto &edge : edges)
+                        shape += std::to_string(edge.value("id", 0u)) + "/" +
+                                 edge.value("body", std::string{}) + "/" +
+                                 (edge.value("attached", false) ? "1" : "0") + ";";
+                    if (shape != last_blades || geometry) {
+                        last_blades = shape;
+                        reply["blades"] = std::move(edges);
+                    }
+                }
                 nlohmann::json state = describe(*world, geometry,
                                                 !geometry && command.value("moved", false));
                 // The ground whole only when the host asks for the scene whole;
                 // otherwise only what changed, and the water at its stride.
                 addEnvironment(*world, state, op == "poses");
                 world->forgetDelays();
+                world->forgetCuts();
                 for (auto &[key, value] : reply.items()) state[key] = value;
                 std::cout << state.dump() << std::endl;
             } catch (const std::exception &error) {

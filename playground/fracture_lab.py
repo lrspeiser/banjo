@@ -89,6 +89,12 @@ DEFAULT: dict[str, Any] = {
     # when the room opens; here only their shape is checked.
     "terrain": {},
     "water": {},
+    # Edges: which bodies are blades, where on them the edge runs, which way it
+    # faces and where they are held. Like the pins, not part of the engine's
+    # scene request -- a blade is declared on a body that already exists -- but
+    # part of the DOCUMENT, so a saved room keeps its swords sharp.
+    # docs/cutting-model.md.
+    "blades": [],
     "striker": "iron",
     "plate_m": [0.25, 0.20, 0.01],
     "cell_m": 0.01,
@@ -517,6 +523,58 @@ def normalise_joints(joints: Any, bodies: list[dict[str, Any]]) -> list[dict[str
         out.append({"kind": kind, "a": a, "b": b, "at_mm": at, "axis": axis,
                     "lower_deg": lower, "upper_deg": upper,
                     "friction_n_m": friction})
+    return out
+
+
+def normalise_blades(blades: Any, bodies: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Check every edge against the body it claims to be on.
+
+    Checked here, where whoever wrote it can be told, for the same reason the
+    pins are: a sword whose edge will not go on is a sword that does not cut,
+    and that reads as the physics being wrong. What an edge DOES is the
+    engine's business (docs/cutting-model.md); this only checks it is a thing.
+    Millimetres, like every other length in a room document.
+    """
+    if not isinstance(blades, list):
+        raise ValueError("blades must be a list")
+    if len(blades) > 16:
+        raise ValueError("a room may hold at most 16 blades")
+    named = {str(body.get("name", "")) for body in bodies}
+    out: list[dict[str, Any]] = []
+    for i, blade in enumerate(blades):
+        if not isinstance(blade, dict):
+            raise ValueError(f"blade {i} is not an object")
+        body = str(blade.get("body", ""))
+        if body not in named:
+            raise ValueError(f"blade {i} is on {body!r}, which is not in this room")
+
+        def place(key: str) -> list[float]:
+            value = blade.get(key)
+            if not isinstance(value, list) or len(value) != 3:
+                raise ValueError(f"blade {i} needs {key} as three numbers")
+            return [_number(v, -100000.0, 100000.0, f"blade {i} {key}") for v in value]
+
+        heel = place("heel_mm")
+        tip = place("tip_mm")
+        if math.dist(heel, tip) < 1.0:
+            raise ValueError(f"blade {i}'s edge is shorter than a millimetre")
+        facing = blade.get("facing")
+        if not isinstance(facing, list) or len(facing) != 3:
+            raise ValueError(f"blade {i} needs facing as three numbers: which way the "
+                             f"edge faces, out of the body")
+        facing = [_number(v, -1e6, 1e6, f"blade {i} facing") for v in facing]
+        if not any(abs(v) > 1e-9 for v in facing):
+            raise ValueError(f"blade {i} has a facing with no direction")
+        out.append({
+            "body": body, "heel_mm": heel, "tip_mm": tip, "facing": facing,
+            "grip_mm": place("grip_mm") if "grip_mm" in blade else list(heel),
+            "thickness_mm": _number(blade.get("thickness_mm", 10.0), 0.5, 500.0,
+                                    f"blade {i} thickness_mm"),
+            "edge_radius_mm": _number(blade.get("edge_radius_mm", 0.2), 0.001, 10.0,
+                                      f"blade {i} edge_radius_mm"),
+            "bevel_deg": _number(blade.get("bevel_deg", 30.0), 1.0, 179.0,
+                                 f"blade {i} bevel_deg"),
+        })
     return out
 
 
@@ -1283,6 +1341,7 @@ def validate(spec: Any) -> dict[str, Any]:
         result["thermo"] = normalise_thermo(result.get("thermo"), result["bodies"])
         result["terrain"] = normalise_terrain(result.get("terrain"))
         result["water"] = normalise_water(result.get("water"))
+        result["blades"] = normalise_blades(result.get("blades") or [], result["bodies"])
         result["duration_s"] = _number(result["duration_s"], LIMITS["duration_s"]["min"],
                                        LIMITS["duration_s"]["max"], "duration")
         result["seated"] = seat_bodies(result["bodies"], result["cell_m"])

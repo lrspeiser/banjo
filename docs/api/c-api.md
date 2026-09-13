@@ -14,7 +14,28 @@ tell you any other way:
 if (banjo_abi_version() != BANJO_ABI_VERSION) { /* mismatch */ }
 ```
 
-Current ABI: **14**. (14 added heat, chemistry and gas; it skips 13, which another branch in flight has taken.)
+`const char *banjo_version_string(void)` says which library it is in words, for
+a log line. Never parse it: the number to compare is `banjo_abi_version()`.
+
+Current ABI: **15**. 13 and 14 were two additions made side by side and then
+merged, numbered apart so that one number never meant two headers; 15 was
+added on top of both:
+
+- **13** added blades -- `banjo_make_blade`, `banjo_blades`, `banjo_cuts`,
+  `banjo_forget_cuts` -- and the bounded hand that swings them, `banjo_wield`,
+  `banjo_aim_held`, `banjo_hand_strength` and `banjo_hand_torque`
+  (see [Blades](#blades));
+- **14** added heat, chemistry and gas -- `banjo_declare`, `banjo_heat`,
+  `banjo_vent`, `banjo_bodies_heat`, `banjo_gas_regions`,
+  `banjo_energy_ledger`, `banjo_thermo_report`, `banjo_thermo_model`;
+- **15** added terrain and water -- `banjo_terrain_info`, `banjo_water_info`,
+  `banjo_dig`, `banjo_deposit`, `banjo_cut_block`, `banjo_set_discharge`,
+  `banjo_terrain_heights`, `banjo_water_surface`, `banjo_environment_report`,
+  `banjo_environment_state`, `banjo_survey` and `banjo_awake_bodies`, and the
+  scene's `terrain` and `water` blocks (see [Terrain and water](#terrain-and-water)).
+
+A library at 15 has all three. Nothing that was in 12 changed, and nothing
+that was in 14 changed in 15.
 
 ---
 
@@ -201,6 +222,37 @@ Measured on a concrete pane, from the impact to the pieces: **856 ms** with none
 of this, **147 ms** with foresight on a 4 m drop, **43 ms** with the hold guess
 at any height. You still want `banjo_begin_fracture`, because a piece landing on
 a piece is exactly what a ray cannot see coming.
+
+### What made the world wait
+
+### `int banjo_delay_count(const banjo_world *world)`
+### `int banjo_delays(const banjo_world *world, banjo_delay *out, int max)`
+### `int banjo_forget_delays(banjo_world *world)`
+
+Working a fracture out costs between a third of a second and a second, and
+every way of making the run shorter changes the answer; what is left is to not
+make anyone wait for it. Whether that is working is written down. Every time a
+break was waited for, seen coming, guessed at or queued is a `banjo_delay`,
+`{at_s, object, kind, lead_ms, cost_ms}`: the world time, the body, what
+happened, and two numbers whose meaning depends on the kind. `cost_ms` is what
+the run cost, never what it spent queued.
+
+| `kind` | what happened | `lead_ms` | `cost_ms` |
+|---|---|---|---|
+| `blocked` | the caller asked and waited for the whole run | | the run |
+| `foreseen` | a collision was spotted coming; with a cost, a run started early and then used | the warning; with a cost, how far out its predicted speed was, in per cent | the run |
+| `guessing` | a run was started for a collision that has not happened yet | the speed it expects | |
+| `guess-missed` | what turned up was not what was guessed | the speed expected | the speed that arrived |
+| `guess-wasted` | a run started early and was thrown away | | |
+| `queued` | a break arrived while another was being worked out, and was captured rather than waited for | | |
+| `precomputed` | the answer was ready before it was asked for | how long it sat waiting for a worker | |
+| `held` | the pair was pinned while the answer was worked out | | |
+
+`banjo_delay_count` says how many there are. `banjo_delays` writes at most
+`max` and returns how many it wrote; its strings stay good until the next
+`banjo_delay_count` or `banjo_delays`, or until the world closes.
+`banjo_forget_delays` starts a fresh record and returns `BANJO_OK`: call it once
+you have read what you need.
 
 ---
 
@@ -697,6 +749,101 @@ left rather than carrying the hand's speed.
 
 ---
 
+## Blades
+
+A blade is an ordinary body with a declared **edge**. There is no cutting power
+and nothing is destroyed on touch: what resists an edge is the target's own
+fracture energy and hardness, applied in the solver, and the only way the world
+changes is that bonds between cells are severed, each for the work it cost. The
+model, and what it does not capture, is [../cutting-model.md](../cutting-model.md).
+
+### `int banjo_make_blade(banjo_world *world, const char *body, const double heel_m[3], const double tip_m[3], const double facing[3], double thickness_m, double edge_radius_m, double bevel_deg, const double grip_m[3])`
+
+Give a named body an edge. Everything is given where it is in the world now and
+kept in the body's own frame from then on. Both ends of the edge must lie on the
+body's matter, and the edge must face OUT of it, away from its matter: an edge
+on a bar's far face declared facing back into the bar is refused. `facing` is
+squared up against the edge, so roughly perpendicular is enough.
+`edge_radius_m` is how sharp it is — 0.0002 is a working sword edge, 0.00005 a
+keen one — and `bevel_deg` the included angle of the edge. Returns the blade's
+id, above zero, or a negative status; `banjo_last_error` then says which rule
+the edge broke.
+
+(`make_blade` because C will not let a function and a struct share a name.)
+
+### `int banjo_blade_count(const banjo_world *world)`
+### `int banjo_blades(const banjo_world *world, banjo_blade *out, int max)`
+
+```c
+typedef struct {
+    unsigned id;
+    const char *body;
+    const char *material;
+    double heel_m[3], tip_m[3];   /* the edge, heel to tip, in the world now */
+    double facing[3], flat[3];    /* the way it faces; the normal to its flats */
+    double grip_m[3];
+    double thickness_m, edge_radius_m, bevel_deg;
+    double cut_area_m2;           /* everything it has cut */
+    double cut_work_j;            /* and the work that cost, as the solver applied it */
+    const char *cutting;          /* what the edge is in right now, "" for nothing */
+    int attached;                 /* 0 once the body carrying it has gone */
+} banjo_blade;
+```
+
+### `int banjo_cut_count(const banjo_world *world)`
+### `int banjo_cuts(const banjo_world *world, banjo_cut *out, int max)`
+### `int banjo_forget_cuts(banjo_world *world)`
+
+Every meeting between an edge and something else, from first touch until they
+part — **including the ones that cut nothing**, because "the flat hit it" is an
+answer a host has to be able to give. `banjo_forget_cuts` drops the ones that
+are over; open ones stay.
+
+```c
+typedef struct {
+    const char *blade, *target, *kind;
+    double at_s;
+    double speed_m_s, into_m_s, along_m_s, across_m_s;  /* in the blade's axes */
+    double resistance_j_m2;   /* R = G + H w for this edge in this material */
+    double area_m2, work_j;   /* what it cut, and what that cost */
+    int bonds;                /* severed */
+    int links;                /* rope links severed */
+    int separated, pieces;    /* the target came apart, into how many */
+    int open;                 /* still in contact */
+} banjo_cut;
+```
+
+`kind` is decided from geometry and motion, never from names: `edge`, `slice`
+and `press` bit (mostly into the material, mostly along the edge, or slowly);
+`glancing`, `flat` and `point` met it some other way and were ordinary
+contacts; `blunt` means the target is at least as hard as the blade; `brittle`
+that it has no yield point, and cracks under a blow rather than being cut.
+`work_j` is always `area_m2` times `resistance_j_m2`.
+
+### `int banjo_wield(banjo_world *world, const char *name, const double grip_m[3])`
+### `int banjo_aim_held(banjo_world *world, const double orientation_wxyz[4])`
+### `int banjo_hand_strength(banjo_world *world, double newtons)`
+### `int banjo_hand_torque(banjo_world *world, double newton_metres)`
+
+Take hold of a body the way a person holds a sword: at a point on it, with a
+hand whose force and torque are **bounded** — 800 N and 60 N m unless told
+otherwise. `banjo_move_held` then says where the grip should be and
+`banjo_aim_held` which way the body should face; the hand pulls and turns
+towards both with what it has, and what the body meets can slow it, turn it
+aside or stop it. This is not `banjo_grab`, which carries a loose body exactly
+where it is put — placement, an editor's move — and stays exactly that.
+
+```c
+double heel[3] = {0.29, 1.005, 1.885}, tip[3] = {-0.405, 1.005, 1.885};
+double facing[3] = {0, 0, -1}, grip[3] = {0.35, 1.005, 1.9};
+int id = banjo_make_blade(w, "sword", heel, tip, facing, 0.01, 0.0002, 30.0, grip);
+banjo_wield(w, "sword", grip);
+banjo_move_held(w, (double[3]){-0.9, 1.5, 1.9});   /* the hand pulls; the world answers */
+for (int i = 0; i < 240; ++i) banjo_step(w, 1.0 / 240.0);
+```
+
+---
+
 ## Asking where things are
 
 ### `int banjo_pick_ray(const banjo_world *world, const double from_m[3], const double direction[3], double max_m, banjo_pick *out)`
@@ -821,6 +968,120 @@ modelled. `banjo_thermo_model` needs no world.
 
 ---
 
+## Terrain and water
+
+A world can stand on ground that is not flat and have rivers and ponds on it.
+The design, the models and what was measured are in
+[terrain-and-water.md](../terrain-and-water.md); this is the interface.
+
+**Physics decides what changes.** The ground is columns of rock, soil and sand
+held still as static height-field colliders, 31 x 31 cells each, and it costs
+nothing until something changes it. A dig asks only the columns it touched,
+and their neighbours, whether they still stand; only the chunks whose heights
+changed get new colliders; only what those chunks were holding up is woken.
+The water computes only its wet tiles and a one-tile ring round them. Measured
+in the valley: a pit dug in one corner checked 65 columns, rebuilt 1 of 20
+colliders in 0.04 ms, woke no body, and left the water computing the same
+7,136 columns it was.
+
+**One accounting path for the water's forces.** A body is pressed on by the
+water over its own surface, patch by patch, and dragged by it relative to its
+own motion; the drag goes back into the water as momentum. Buoyancy is not a
+separate force: it is the pressure on the underside, so it comes from density
+and displaced volume and nothing else -- oak floats with 70% of itself under,
+iron sinks. A body that sinks and rests on the bed is, to the water, part of
+the bed: a row of blocks across a river is a dam.
+
+### `int banjo_terrain_info(const banjo_world *world, banjo_terrain *out)`
+### `int banjo_water_info(const banjo_world *world, banjo_water *out)`
+
+The ground: its grid (`nx`, `nz`, `cell_m`, `origin_m`), its colliders
+(`chunks_x`, `chunks_z`, `chunks_rebuilt`, `rebuild_ms_worst`), how much rock,
+soil and sand it holds, and its ledger -- `dug_m3`, `cut_m3`, `deposited_m3`,
+and `slumped_m3` (moved between columns) apart. `residual_m3` is what is left
+once all of them are counted: rounding. `unsettled_columns` is how many are
+still being asked whether they stand.
+
+The water: `volume_m3`, `wet_cells`, `active_cells` (what the last substep
+computed -- only water costs), the rivers' `inflow_m3_s` and `outflow_m3_s`,
+and its ledger:
+
+    volume - initial = inflow - outflow + numerical + residual
+
+`numerical_m3` is water the arithmetic had to add to keep a depth from going
+below zero -- reported, never hidden, and zero in every run so far.
+`last_substep_s` is always inside the stability limit (Courant number 0.24;
+the scheme stays positive up to 1/4).
+
+Both return `BANJO_BAD_ARGUMENT`, with a reason, for a world whose scene
+declares no terrain.
+
+### `int banjo_dig(banjo_world *world, const double from_m[2], const double to_m[2], double width_m, double depth_m, banjo_dug *out)`
+### `int banjo_deposit(banjo_world *world, const double at_m[2], double radius_m, double sand_m3, double soil_m3, banjo_dug *out)`
+
+A trench from `from_m` to `to_m` (x, z; the same point twice is a pit),
+`width_m` wide and `depth_m` below the ground as it stands: loose material
+first, then soil; a spade stops on rock. `out` says what came out (`sand_m3`,
+`soil_m3`, `mass_kg`), from how many `columns`, how many colliders were
+rebuilt and in how long, and how many bodies the changed ground woke -- dig
+under a boulder and it is one, and it falls. What came out is the caller's to
+carry: `banjo_deposit` heaps sand and soil round a point, and the heap settles
+to the slope it can hold.
+
+Whether a side stands is Mohr-Coulomb: dry sand slumps to its angle of repose
+(a pit settles to 33.6 degrees), firm soil holds a spade-deep wall -- a 0.5 m
+trench stands, a 1.6 m one caves in -- and rock does not slump. Water over dug
+ground keeps its volume: digging makes none.
+
+### `int banjo_cut_block(banjo_world *world, const double at_m[2], int cells_x, int cells_z, double height_m, banjo_block *out)`
+
+Not a blade's cut (those are `banjo_cuts`): a block out of bare rock, `cells_x` by `cells_z` columns centred on `at_m`,
+`height_m` tall (rounded to whole cells). The cut is a flat plane that far
+below the rock's mean top there, so exactly the block's volume leaves the
+ground. It leaves NOW; a body cannot join a running world, so the caller adds
+the block as a body in the next scene it opens, with the same
+`{"cut": {"at_m", "cells", "height_m"}}` in that scene's `edits`, and ground
+and block together are the rock there was -- measured, 0.4 m3 and 960 kg, and
+ground plus block equal to the ground before to rounding. Every side of a body
+is a whole number of cells, so a footprint that is not is refused with the
+size that would be (with 0.25 m columns and 0.04 m cells: 4 columns, 1 m);
+so is rock under soil, or rock too uneven for a block that shallow.
+
+### `int banjo_set_discharge(banjo_world *world, const char *river, double discharge_m3_s)`
+
+A river's discharge from now, by name: a flood, a drought. The valley's river
+is `"the river"`.
+
+### `int banjo_terrain_heights(const banjo_world *world, float *out, int max)`
+### `int banjo_water_surface(const banjo_world *world, double *out, int max)`
+
+`nx * nz` values row by row, j outer, point (i, j) at
+`origin_m + (i, j) * cell_m`; the surface is NaN where a column is dry. The
+heights are the ones the colliders are built from. Draw each square as two
+triangles split from (i, j) to (i + 1, j + 1) -- the diagonal the collider
+uses -- and what is drawn is what things stand on.
+
+### `const char *banjo_environment_report(const banjo_world *world, int full)`
+### `const char *banjo_environment_state(const banjo_world *world)`
+### `const char *banjo_survey(const banjo_world *world, double x_m, double z_m)`
+
+The report is all of the above as JSON, with the rivers, their mouths, the
+ponds and their levels, the river every 2 m along its course (level, depth,
+speed), and every body in the water with what the water lifts against what it
+weighs; with `full`, the model's parameters, where each came from, and what is
+not modelled. The state is the water as it stands, for `"water": {"state": ...}`
+in a scene opened again: the same water over whatever ground that scene's edits
+leave. The survey is one point: the ground's height, what it is made of there,
+its slope, and the water's depth, surface and velocity.
+
+### `int banjo_awake_bodies(const banjo_world *world)`
+
+How many bodies the rigid solver is stepping now. A body at rest is asleep and
+costs nothing; this is how to see that digging one corner did not wake the
+valley.
+
+---
+
 ## The scene format
 
 A JSON object. `bodies` is required; everything else has a default.
@@ -862,6 +1123,8 @@ Scene-level settings, read from the same document:
 | `plasticity` | **off unless you ask.** Without it every bond springs back to its rest length, nothing can hold a shape it was pushed into, and nothing can dent. |
 | `hardening_ratio` | how much a material stiffens as it yields. 0 is perfect plasticity. |
 | `thermo` | heat, chemistry and gas that are not one body's: `gas_regions`, `heaters`, `ambient`. See [Heat, chemistry and gas](#heat-chemistry-and-gas). |
+| `terrain` | ground that is not flat: `{"generate": "valley"}` (or `"basin"`, `"channel"`, `"flat"`, or `{"kind": ..., ...}` with parameters), and `edits` -- `dig`, `deposit`, `cut` -- applied in order when the world opens. The flat floor goes below the rock, and a body rests on the ground under it. A key it does not know is refused by name. See [Terrain and water](#terrain-and-water). |
+| `water` | the rivers: `discharge_m3_s`, or `rivers: [{"name", "discharge_m3_s"}]`; and `state`, from `banjo_environment_state`, to carry the water into a world opened again. |
 
 Two mistakes worth naming because everyone makes them:
 

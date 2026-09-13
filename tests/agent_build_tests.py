@@ -123,13 +123,34 @@ def rotate(v, axis, degrees):
 # The room, as the server reopens it and the browser drives it
 # ---------------------------------------------------------------------------
 
+REALTIME_LIMIT = 1.1   # the owner's rule: no job more than 10% slower than it shows
+GRACE_S = 1.0          # what the first steps of a new world may cost on top
+
+
+class TooSlow(RuntimeError):
+    """The engine fell behind the realtime rule, so the job stops there."""
+
+    def __init__(self, simulated_s: float, stepping_s: float) -> None:
+        super().__init__(
+            f"the engine took {stepping_s:.1f} s to show {simulated_s:.2f} s "
+            f"({stepping_s / max(simulated_s, 1e-9):.1f}x realtime), and no job may run "
+            f"more than {REALTIME_LIMIT}x slower than what it shows")
+        self.simulated_s, self.stepping_s = simulated_s, stepping_s
+
+
 class World:
     def __init__(self, spec: dict[str, Any]) -> None:
         self.live = live_session.Live()
         self.opened = self.live.open(App(), {"spec": spec})
         self.session = self.live.session
         self.impacts: list[dict[str, Any]] = []
+        self.cuts: list[dict[str, Any]] = []
         self.finished: list[str] = []
+        # How much time the world was stepped through, and how long that took.
+        # The owner's rule: no job may take more than 10% longer than realtime
+        # of the interaction it runs, the settling down afterwards included.
+        self.simulated_s = 0.0
+        self.stepping_s = 0.0
 
     def close(self) -> None:
         try:
@@ -137,25 +158,40 @@ class World:
         except Exception:
             pass
 
-    def step(self, count: int = 1, hand: list[float] | None = None) -> None:
+    def step(self, count: int = 1, hand: list[float] | None = None,
+             hand_q: list[float] | None = None) -> None:
         """Advance, ANSWERING the break handshake.
 
         A step that would break something is taken back and the clock does not
         move until the host says what to do. A stepper that never answers stops
         the world at the first hard contact -- and a mechanism that is not moving
         looks exactly like one that cannot.
+
+        `hand_q` is the turn the hand is to hold what it wields at; a swing is
+        a grip and a turn sent a step at a time.
         """
         done = 0
         while done < count:
             n = 1 if hand is not None else min(8, count - done)
             extra = {"hand": [float(v) for v in hand]} if hand is not None else {}
+            if hand is not None and hand_q is not None:
+                extra["hand_q"] = [float(v) for v in hand_q]
+            began = time.perf_counter()
             state = self.session.send(op="step", dt=DT, n=n, moved=True, **extra)
             self.impacts.extend(state.get("impacts") or [])
+            self.cuts.extend(state.get("cuts") or [])
             if state.get("finished"):
                 self.finished.append(str(state["finished"]))
             for name in state.get("breakable") or []:
                 self.session.send(op="fracture", name=name, wait=False)
             done += n
+            self.simulated_s += n * DT
+            self.stepping_s += time.perf_counter() - began
+            # The rule is enforced here, not just reported afterwards: a check
+            # that goes on running a world four times slower than it shows is
+            # itself the job the owner said never to run.
+            if self.stepping_s > REALTIME_LIMIT * self.simulated_s + GRACE_S:
+                raise TooSlow(self.simulated_s, self.stepping_s)
 
     def seconds(self, s: float, hand: list[float] | None = None) -> None:
         self.step(max(1, int(round(s / DT))), hand)
@@ -174,6 +210,47 @@ class World:
 
     def anchored(self) -> dict[str, bool]:
         return {n: bool(b.get("anchored")) for n, b in self.bodies().items()}
+
+
+REST_M_S = 0.05      # slower than this, nobody watching would call it moving
+ESCAPED_M = 30.0     # further out than this, it has left the room
+
+
+def settle(world: World, most_s: float = 10.0) -> dict[str, Any]:
+    """Let go, let the room finish, and say how it looks once it has.
+
+    The owner counts how everything looks at rest, when the interaction is
+    over, as part of the interaction. So every check ends here: how long until
+    nothing is moving, and whether anything has gone through the floor or off
+    into the distance -- the two ways a room can look wrong after the thing that
+    was asked for has been shown to work.
+    """
+    world.session.send(op="release")
+    waited, moving = 0.0, []
+    while True:
+        moving = sorted(((norm(b.get("velocity_m_s") or [0.0, 0.0, 0.0]), n)
+                         for n, b in world.bodies().items() if not b.get("anchored")),
+                        reverse=True)
+        moving = [(v, n) for v, n in moving if v > REST_M_S]
+        if not moving or waited >= most_s:
+            break
+        world.seconds(1.0)
+        waited += 1.0
+    bodies = list(world.bodies().values())
+    return {"at_rest": not moving, "waited_s": waited,
+            "still_moving": [[n, round(v, 3)] for v, n in moving[:3]],
+            "sunk": [b["name"] for b in bodies if b["position_m"][1] < -0.25],
+            "flew_off": [b["name"] for b in bodies
+                         if max(abs(b["position_m"][0]), abs(b["position_m"][2])) > ESCAPED_M]}
+
+
+def timing(world: World, check_s: float) -> dict[str, Any]:
+    """The realtime rule, measured: the wall time a check took against the time
+    it showed. Opening the engine counts; it is part of the job."""
+    shown = max(world.simulated_s, 1e-9)
+    return {"simulated_s": round(world.simulated_s, 2), "stepping_s": round(world.stepping_s, 2),
+            "check_s": round(check_s, 2), "ratio": round(check_s / shown, 3),
+            "within_rule": check_s <= 1.1 * shown}
 
 
 def coordinate(joint: dict[str, Any] | None) -> float:
@@ -292,6 +369,9 @@ class Built:
     room: world_room.Room
     world: World
     before: set[str]
+    # What the agent said it did. A check can hold it to the engine: a reply
+    # that says an iron bar is burning, over a room where nothing is, fails.
+    reply: str = ""
 
 
 def check_hinged_gate(built: Built) -> Verdict:
@@ -636,6 +716,273 @@ def check_heated_piston(built: Built) -> Verdict:
                    measured)
 
 
+# ---------------------------------------------------------------------------
+# Blades: what an edge is swung through
+# ---------------------------------------------------------------------------
+
+def _qmul(a: list[float], b: list[float]) -> list[float]:
+    aw, ax, ay, az = a
+    bw, bx, by, bz = b
+    return [aw * bw - ax * bx - ay * by - az * bz, aw * bx + ax * bw + ay * bz - az * by,
+            aw * by - ax * bz + ay * bw + az * bx, aw * bz + ax * by - ay * bx + az * bw]
+
+
+def _qrot(q: list[float], v: list[float]) -> list[float]:
+    return _qmul(_qmul(q, [0.0] + list(v)), [q[0], -q[1], -q[2], -q[3]])[1:]
+
+
+def _qfrom(m: list[list[float]]) -> list[float]:
+    trace = m[0][0] + m[1][1] + m[2][2]
+    if trace > 0:
+        s = 0.5 / math.sqrt(trace + 1.0)
+        q = [0.25 / s, (m[2][1] - m[1][2]) * s, (m[0][2] - m[2][0]) * s, (m[1][0] - m[0][1]) * s]
+    elif m[0][0] > m[1][1] and m[0][0] > m[2][2]:
+        s = 2.0 * math.sqrt(1.0 + m[0][0] - m[1][1] - m[2][2])
+        q = [(m[2][1] - m[1][2]) / s, 0.25 * s, (m[0][1] + m[1][0]) / s, (m[0][2] + m[2][0]) / s]
+    elif m[1][1] > m[2][2]:
+        s = 2.0 * math.sqrt(1.0 + m[1][1] - m[0][0] - m[2][2])
+        q = [(m[0][2] - m[2][0]) / s, (m[0][1] + m[1][0]) / s, 0.25 * s, (m[1][2] + m[2][1]) / s]
+    else:
+        s = 2.0 * math.sqrt(1.0 + m[2][2] - m[0][0] - m[1][1])
+        q = [(m[1][0] - m[0][1]) / s, (m[0][2] + m[2][0]) / s, (m[1][2] + m[2][1]) / s, 0.25 * s]
+    size = math.sqrt(sum(x * x for x in q))    # four numbers: unit() is for three
+    return [x / size for x in q]
+
+
+def _aim(blade: dict[str, Any], pointing: list[float], edge_facing: list[float]) -> list[float]:
+    """The turn that points the blade along `pointing` with its edge facing `edge_facing`."""
+    along = unit(sub(blade["tip_local"], blade["heel_local"]))
+    faced = blade["facing_local"]
+    facing = unit(sub(faced, scale(along, dot(faced, along))))
+    want_along = unit(pointing)
+    want_facing = unit(sub(edge_facing, scale(want_along, dot(edge_facing, want_along))))
+    have = [along, facing, cross(along, facing)]
+    want = [want_along, want_facing, cross(want_along, want_facing)]
+    return _qfrom([[sum(want[k][r] * have[k][c] for k in range(3)) for c in range(3)]
+                   for r in range(3)])
+
+
+def _rope(world: World) -> tuple[list[str], str] | None:
+    """A run of loose bodies tied end to end, from something fixed down to what hangs
+    at the bottom: the rope's segments, top to bottom, and the thing on its end."""
+    links = [j for j in world.joints() if j["kind"] == "link" and j.get("attached")]
+    fixed = world.anchored()
+    for top in links:
+        if fixed.get(top["a"]) == fixed.get(top["b"]):
+            continue
+        here = top["b"] if fixed.get(top["a"]) else top["a"]
+        chain, used = [here], {id(top)}
+        while True:
+            onward = next((j for j in links if id(j) not in used and here in (j["a"], j["b"])),
+                          None)
+            if onward is None:
+                break
+            used.add(id(onward))
+            here = onward["b"] if onward["a"] == here else onward["a"]
+            if fixed.get(here):
+                break
+            chain.append(here)
+        if len(chain) >= 3:
+            return chain[:-1], chain[-1]
+    return None
+
+
+def _swing_at(spec: dict[str, Any], edge_down: bool,
+              locate: Callable[[World], tuple[list[float], dict[str, Any]] | str],
+              counted: World | None = None) -> dict[str, Any]:
+    """Open the room afresh, take its blade, and swing it through what `locate` names.
+
+    The engine's own hand does it: the grip and the way the blade should face
+    are sent a step at a time and the hand pulls and turns towards them with
+    what it has. Up off the rest, back clear, out to one side, and then a swing
+    round a shoulder half a metre behind the grip, through 100 degrees in
+    0.13 s, the middle of the edge passing through the point `locate` gives --
+    the blade pointing away from the person, and its edge leading, or
+    (edge_down) facing the floor so that the flat leads. Nothing here says what
+    is cut; the engine does. Returns what `locate` noted, the cuts, and every
+    body and joint as the swing left them.
+
+    Every step goes through World.step, so the swing is held to the realtime
+    rule like anything else, and its time is added to `counted` -- the world
+    the check is judged on -- so the report's realtime figure includes it.
+    """
+    world = World(spec)
+    try:
+        found = locate(world)
+        if isinstance(found, str):
+            return {"error": found}
+        middle, noted = found
+        blades = [b for b in world.session.send(op="blades").get("blades") or []
+                  if b.get("attached", True)]
+        if not blades:
+            return {"error": "nothing in the room has an edge"}
+        blade = blades[0]
+        to_middle = sub(scale(add(blade["heel_local"], blade["tip_local"]), 0.5), blade["grip_local"])
+        to_point = sub(blade["tip_local"], blade["grip_local"])
+        reach = dot(_qrot(_aim(blade, [0.0, 0.0, -1.0], [-1.0, 0.0, 0.0]), to_middle),
+                    [0.0, 0.0, -1.0])
+        shoulder = [middle[0], middle[1], middle[2] + 0.5 + reach]
+
+        def pose(angle: float) -> tuple[list[float], list[float]]:
+            """The grip and the turn with the blade pointing out from the shoulder at
+            `angle` (0 is straight through the target, positive to the right)."""
+            out = [math.sin(angle), 0.0, -math.cos(angle)]
+            going = [-math.cos(angle), 0.0, -math.sin(angle)]
+            turn = _aim(blade, out, [0.0, -1.0, 0.0] if edge_down else going)
+            edge_at = add(shoulder, scale(out, 0.5 + reach))
+            return sub(edge_at, _qrot(turn, to_middle)), turn
+
+        def step(hand: list[float], turn: list[float]) -> None:
+            world.step(1, hand, turn)
+
+        def go(a: list[float], b: list[float], turn: list[float], seconds: float) -> list[float]:
+            n = max(1, int(round(seconds / DT)))
+            for i in range(1, n + 1):
+                step(add(a, scale(sub(b, a), i / n)), turn)
+            return b
+
+        wide = math.radians(50.0)
+        ready, turn = pose(wide)
+        before = {name: list(body["position_m"]) for name, body in world.bodies().items()}
+        start = list(blade["grip"])
+        world.session.send(op="wield", name=blade["body"], grip=start)
+        # Far enough towards the person that the point stays 0.15 m short of the target.
+        clear_z = middle[2] + 0.15 - _qrot(turn, to_point)[2]
+        here = go(start, add(start, [0.0, 0.3, 0.0]), turn, 0.5)
+        here = go(here, [here[0], middle[1], max(here[2], clear_z)], turn, 0.6)
+        here = go(here, [ready[0], middle[1], max(here[2], clear_z)], turn, 0.6)
+        here = go(here, ready, turn, 0.5)
+        for _ in range(int(0.5 / DT)):
+            step(here, turn)
+        steps = int(round(0.13 / DT))
+        for i in range(1, steps + 1):
+            here, turn = pose(wide - 2.0 * wide * i / steps)
+            step(here, turn)
+        for _ in range(int(2.0 / DT)):
+            step(here, turn)
+        # A cut is reported on each step it goes on for; one entry per cut.
+        cuts = {(c.get("blade"), c.get("target"), c.get("at_s")): c for c in world.cuts}
+        met = [{"kind": c["kind"], "target": c["target"], "speed_m_s": round(c["speed_m_s"], 2),
+                "area_mm2": round(c.get("area_mm2", 0.0), 1), "bonds": c.get("bonds", 0),
+                "links": c.get("links", 0), "separated": bool(c.get("separated"))}
+               for c in cuts.values()]
+        bodies = world.bodies()
+        return {**noted, "cuts": met, "joints": world.joints(),
+                "before": before, "after": {n: list(b["position_m"]) for n, b in bodies.items()}}
+    finally:
+        if counted is not None:
+            counted.simulated_s += world.simulated_s
+            counted.stepping_s += world.stepping_s
+        world.close()
+
+
+def _rope_at(world: World) -> tuple[list[float], dict[str, Any]] | str:
+    found = _rope(world)
+    if found is None:
+        return ("there is no rope: a run of loose bodies tied end to end, from something "
+                "fixed down to what hangs on it")
+    segments, weight = found
+    struck = segments[len(segments) // 2]
+    return list(world.body(struck)["position_m"]), {"segments": segments, "weight": weight,
+                                                   "struck": struck}
+
+
+def _swing_through(spec: dict[str, Any], edge_down: bool,
+                   counted: World | None = None) -> dict[str, Any]:
+    swung = _swing_at(spec, edge_down, _rope_at, counted)
+    if "error" in swung:
+        return swung
+    links = [j for j in swung["joints"] if j["kind"] == "link"]
+    weight = swung["weight"]
+    return {"segments": swung["segments"], "weight": weight, "struck": swung["struck"],
+            "fell_m": round(swung["before"][weight][1] - swung["after"][weight][1], 3),
+            "cuts": swung["cuts"], "ties_off": sum(1 for j in links if not j.get("attached")),
+            "links_cut": sum(c["links"] for c in swung["cuts"])}
+
+
+def _panel_at(world: World) -> tuple[list[float], dict[str, Any]] | str:
+    """A loose body held up by fixings to something fixed: what is to be cut."""
+    fixed = world.anchored()
+    held: dict[str, int] = {}
+    for j in world.joints():
+        if j["kind"] != "fixing" or not j.get("attached"):
+            continue
+        for a, b in ((j["a"], j["b"]), (j["b"], j["a"])):
+            if fixed.get(a) and not fixed.get(b):
+                held[b] = held.get(b, 0) + 1
+    if not held:
+        return "there is no panel: a loose body held up by fixings to something fixed"
+    panel = max(held, key=lambda name: (held[name], volume(world.body(name))))
+    return list(world.body(panel)["position_m"]), {"panel": panel}
+
+
+def check_cut_panel(built: Built) -> Verdict:
+    """A panel on fixings, cut in two by a person's swing through its middle: the
+    lower piece falls and the upper keeps its fixings. The flat cuts nothing."""
+    edge = _swing_at(built.room.spec, False, _panel_at, built.world)
+    if "error" in edge:
+        return Verdict(False, edge["error"], edge)
+    panel = edge["panel"]
+    flat = _swing_at(built.room.spec, True, _panel_at, built.world)
+    pieces = sorted((n for n in edge["after"] if n.startswith(panel + " piece")),
+                    key=lambda n: edge["after"][n][1])
+    fixings = [j for j in edge["joints"] if j["kind"] == "fixing"]
+    measured = {"panel": panel, "cuts": edge["cuts"], "pieces": {n: edge["after"][n] for n in pieces},
+                "fixings": [[j["a"], j["b"], j.get("attached")] for j in fixings],
+                "flat_cuts": flat.get("cuts")}
+    bit = [c for c in edge["cuts"] if c["kind"] in ("edge", "slice") and c["bonds"] > 0]
+    if not bit:
+        return Verdict(False, f"swung edge-first through {panel}, the sword did not bite it: "
+                              f"{edge['cuts']}", measured)
+    if len(pieces) < 2:
+        return Verdict(False, f"the sword cut {sum(c['area_mm2'] for c in bit):.0f} mm2 into "
+                              f"{panel} and it held together", measured)
+    lower, upper = pieces[0], pieces[-1]
+    dropped = edge["before"][panel][1] - edge["after"][lower][1]
+    if dropped < 0.3:
+        return Verdict(False, f"{panel} came apart but its lower piece fell only {dropped:.2f} m",
+                       measured)
+    if not fixings or any(not j.get("attached") or upper not in (j["a"], j["b"]) for j in fixings):
+        return Verdict(False, f"the fixings did not stay with the upper piece: {measured['fixings']}",
+                       measured)
+    if flat.get("error") or any(c["bonds"] > 0 for c in flat.get("cuts") or []):
+        return Verdict(False, f"the flat of the same swing cut {panel}", measured)
+    return Verdict(True, f"swung edge-first at {max(c['speed_m_s'] for c in bit):.1f} m/s the "
+                         f"sword cut {panel} in two ({sum(c['area_mm2'] for c in bit):.0f} mm2): "
+                         f"the lower piece fell {dropped:.2f} m, the upper is still on its "
+                         f"{len(fixings)} fixings; the flat of the same swing cut nothing", measured)
+
+
+def check_cut_rope(built: Built) -> Verdict:
+    """The rope cut by a person's swing -- the engine's own hand, edge first -- and
+    not by the flat of the same swing. Nothing here decides that anything is cut."""
+    edge = _swing_through(built.room.spec, edge_down=False, counted=built.world)
+    if "error" in edge:
+        return Verdict(False, edge["error"], edge)
+    flat = _swing_through(built.room.spec, edge_down=True, counted=built.world)
+    measured = {"edge_first": edge, "flat_first": flat}
+    bit = [c for c in edge["cuts"] if c["kind"] in ("edge", "slice") and c["bonds"] > 0]
+    if not bit:
+        return Verdict(False, f"swung edge-first through {edge['struck']}, the sword did not bite "
+                              f"it: {edge['cuts']}", measured)
+    if edge["fell_m"] < 0.3:
+        return Verdict(False, f"the rope was cut into, but {edge['weight']} fell only "
+                              f"{edge['fell_m']:.2f} m", measured)
+    if edge["ties_off"] > edge["links_cut"]:
+        return Verdict(False, "a tie came off that the edge never went through", measured)
+    if flat.get("error"):
+        return Verdict(False, flat["error"], measured)
+    if any(c["bonds"] > 0 or c["links"] > 0 for c in flat["cuts"]):
+        return Verdict(False, f"the flat of the same swing cut the rope: {flat['cuts']}", measured)
+    if flat["fell_m"] > 0.2:
+        return Verdict(False, f"under the flat, {flat['weight']} fell {flat['fell_m']:.2f} m",
+                       measured)
+    return Verdict(True, f"swung edge-first at {max(c['speed_m_s'] for c in bit):.1f} m/s the sword "
+                         f"cut {sum(c['area_mm2'] for c in bit):.0f} mm2 of {edge['struck']} and "
+                         f"{edge['weight']} fell {edge['fell_m']:.2f} m with every other tie on; "
+                         f"the flat of the same swing cut nothing", measured)
+
+
 @dataclass
 class Case:
     id: str
@@ -685,6 +1032,16 @@ CASES = [
          "Build a cylinder with an iron piston in it and a weight on the piston, with gas under "
          "the piston, and heat the gas so it lifts the weight.",
          check_heated_piston, "heat into gas into work: a pressure boundary on a real body"),
+    Case("cut-rope", "yard",
+         "Hang an iron weight from a beam by a rope, and put a sword where I can take it, so "
+         "I can cut the rope.",
+         check_cut_rope, "an edge that cuts what it is swung through, a load that falls, and "
+         "a flat that does not cut"),
+    Case("cut-panel", "yard",
+         "Hang an oak panel from a beam on two fixings, and put a sword where I can take it, "
+         "so I can cut the panel in two.",
+         check_cut_panel, "a cut all the way through that makes pieces, with the fixings "
+         "staying on the piece that holds them"),
 ]
 
 
@@ -808,35 +1165,123 @@ RECIPES: dict[str, tuple[str, list[tuple[str, dict[str, Any]]]]] = {
         _box("iron block", "iron", [0.2, 0.2, 0.2], [-0.12, 0.94, 0.0]),
         _box("second iron block", "iron", [0.2, 0.2, 0.2], [0.12, 0.94, 0.0]),
     ]),
+    # A rope that can be cut: six rubber segments, each tied to the next at the
+    # join -- between the centres of the cells either side of it, so the tie
+    # runs through matter an edge can go through -- from an oak beam down to 4 kg
+    # of iron, 19 times a segment's mass. And a sword the person can take from
+    # its rest: an aluminium bar with an edge along its far side, 2.8 kg, light
+    # enough for an 800 N hand to swing at 10 m/s.
+    "cut-rope": ("cut-rope", [
+        _box("rope beam", "oak", [0.24, 0.08, 0.08], [-0.5, 2.04, 1.4], True),
+        *[_box(f"rope {k}", "rubber", [0.04, 0.12, 0.04], [-0.5, 2.06 - 0.12 * k, 1.4])
+          for k in range(1, 7)],
+        _box("weight", "iron", [0.08, 0.08, 0.08], [-0.5, 1.24, 1.4]),
+        ("tie", {"a": "rope beam", "b": "rope 1",
+                 "at_a_m": [-0.5, 2.02, 1.4], "at_b_m": [-0.5, 1.98, 1.4]}),
+        *[("tie", {"a": f"rope {k}", "b": f"rope {k + 1}",
+                   "at_a_m": [-0.5, 2.02 - 0.12 * k, 1.4], "at_b_m": [-0.5, 1.98 - 0.12 * k, 1.4]})
+          for k in range(1, 6)],
+        ("tie", {"a": "rope 6", "b": "weight",
+                 "at_a_m": [-0.5, 1.30, 1.4], "at_b_m": [-0.5, 1.26, 1.4]}),
+        _box("sword rest left", "oak", [0.08, 0.08, 0.08], [-0.24, 0.96, 1.9], True),
+        _box("sword rest right", "oak", [0.08, 0.08, 0.08], [0.24, 0.96, 1.9], True),
+        _box("sword", "aluminum", [0.64, 0.04, 0.04], [0.0, 1.02, 1.9]),
+        ("blade", {"body": "sword", "heel_m": [0.2, 1.02, 1.88], "tip_m": [-0.3, 1.02, 1.88],
+                   "facing": [0, 0, -1], "thickness_m": 0.04, "edge_radius_m": 0.0002,
+                   "bevel_deg": 30, "grip_m": [0.28, 1.02, 1.9]}),
+    ]),
+    # A panel to cut in two: 40 mm of oak -- the thinnest a 0.04 m room makes it
+    # -- 0.32 m across and 0.24 m tall, hung under an anchored oak lintel on two
+    # fixings where they meet, near its top corners. Across it that is
+    # 12,800 mm2, and a keen edge (0.05 mm) meets oak at 4.5 kJ/m2: 58 J, which
+    # one swing of the aluminium sword pays. With a working edge (0.2 mm,
+    # 15 kJ/m2) it would be 192 J.
+    "cut-panel": ("cut-panel", [
+        _box("panel lintel", "oak", [0.48, 0.08, 0.08], [0.6, 1.76, 1.4], True),
+        _box("oak panel", "oak", [0.32, 0.24, 0.04], [0.6, 1.60, 1.4]),
+        ("fix", {"a": "panel lintel", "b": "oak panel", "at_m": [0.50, 1.72, 1.4],
+                 "axis": [0, 1, 0]}),
+        ("fix", {"a": "panel lintel", "b": "oak panel", "at_m": [0.70, 1.72, 1.4],
+                 "axis": [0, 1, 0]}),
+        _box("sword rest left", "oak", [0.08, 0.08, 0.08], [-0.24, 0.96, 1.9], True),
+        _box("sword rest right", "oak", [0.08, 0.08, 0.08], [0.24, 0.96, 1.9], True),
+        _box("sword", "aluminum", [0.64, 0.04, 0.04], [0.0, 1.02, 1.9]),
+        ("blade", {"body": "sword", "heel_m": [0.2, 1.02, 1.88], "tip_m": [-0.3, 1.02, 1.88],
+                   "facing": [0, 0, -1], "thickness_m": 0.04, "edge_radius_m": 0.00005,
+                   "bevel_deg": 30, "grip_m": [0.28, 1.02, 1.9]}),
+    ]),
 }
 
 
-def run_recipe(recipe_id: str) -> dict[str, Any]:
-    """Build a recipe through the MCP, then give it the case's own check."""
+class RecipeRefused(RuntimeError):
+    """A step of a recipe that the MCP would not take."""
+
+
+def build_recipe(recipe_id: str, recipes: dict[str, Any] | None = None,
+                 cases: list[Case] | None = None) -> tuple[world_room.Room, set[str], list[str]]:
+    """Make a recipe through the MCP, in its case's room: the room as built, the
+    names the room had before, and the warnings the tools gave on the way.
+
+    A step is a tool call, or a function given the world's id, for a step that
+    has to look before it acts: taking a bar off a gate needs the bar's joint
+    id, which only the world knows. A recipe whose third element says
+    `keep_room` starts from the room as it stands instead of clearing it.
+    """
     import room_world
-    case_id, calls = RECIPES[recipe_id]
-    case = next(c for c in CASES if c.id == case_id)
-    record: dict[str, Any] = {"recipe": recipe_id, "case": case_id, "passed": False}
+    entry = (recipes or RECIPES)[recipe_id]
+    case_id, calls = entry[0], entry[1]
+    keep_room = len(entry) > 2 and bool(entry[2].get("keep_room"))
+    case = next(c for c in (cases or CASES) if c.id == case_id)
     room = world_room.Room(case.scene)
     before = {b["name"] for b in room.bodies()}
     world_id = room_world.open_room(room.spec)
     try:
-        room_world.call(world_id, "clear_world", {})
-        warnings = []
+        if not keep_room:
+            room_world.call(world_id, "clear_world", {})
+        warnings: list[str] = []
         for tool, args in calls:
-            answer = room_world.call(world_id, tool, args)
+            if callable(tool):
+                answer = tool(world_id)
+                tool = getattr(tool, "__name__", "a step")
+            else:
+                answer = room_world.call(world_id, tool, args)
             if "error" in answer:
-                record["reason"] = f"the recipe itself was refused at {tool}: {answer['error']}"
-                return record
+                raise RecipeRefused(f"the recipe itself was refused at {tool}: {answer['error']}")
             warnings += answer.get("warnings", [])
-        record["warnings"] = warnings
         room.spec = room_world.export_spec(room_world.entry_of(world_id))
     finally:
         room_world.close_room(world_id)
+    return room, before, warnings
+
+
+def run_recipe(recipe_id: str, recipes: dict[str, Any] | None = None,
+               cases: list[Case] | None = None, folder: Path | None = None) -> dict[str, Any]:
+    """Build a recipe through the MCP, then give it the case's own check."""
+    case_id = (recipes or RECIPES)[recipe_id][0]
+    case = next(c for c in (cases or CASES) if c.id == case_id)
+    record: dict[str, Any] = {"recipe": recipe_id, "case": case_id, "scene": case.scene,
+                              "passed": False}
+    try:
+        room, before, warnings = build_recipe(recipe_id, recipes, cases)
+    except RecipeRefused as refused:
+        record["reason"] = str(refused)
+        return record
+    record["warnings"] = warnings
+    if folder is not None:
+        # Trial 0 is the recipe: the build the guide describes, kept so it can
+        # be opened in the playground beside what the agent built.
+        (folder / f"{recipe_id}-0.spec.json").write_text(json.dumps(room.spec), encoding="utf-8")
+        record["spec"] = f"{recipe_id}-0.spec.json"
+    began = time.perf_counter()
     world = World(room.spec)
     try:
         verdict = case.check(Built(room, world, before))
         record.update(passed=verdict.ok, reason=verdict.reason, measured=verdict.measured)
+        record["rest"] = settle(world)
+        record["realtime"] = timing(world, time.perf_counter() - began)
+    except TooSlow as slow:
+        record.update(passed=False, too_slow=True, reason=f"stopped: {slow}",
+                      realtime=timing(world, time.perf_counter() - began))
     finally:
         world.close()
     return record
@@ -882,6 +1327,12 @@ def run_trial(case: Case, trial: int, api_key: str, model: str,
         json.dumps({"case": case.id, "trial": trial, "message": case.message,
                     "answer": answer, "trace": trace}, indent=1, default=str),
         encoding="utf-8")
+    if answer.get("changed"):
+        # The room as the agent left it, so it can be opened again -- in the
+        # playground, by anyone, to see and use what was built.
+        (folder / f"{case.id}-{trial}.spec.json").write_text(json.dumps(room.spec),
+                                                             encoding="utf-8")
+        record["spec"] = f"{case.id}-{trial}.spec.json"
     if not answer.get("changed"):
         reply = str(answer.get("reply") or "")
         if case.accept_no_change is not None and case.accept_no_change(reply):
@@ -890,6 +1341,15 @@ def run_trial(case: Case, trial: int, api_key: str, model: str,
         else:
             record["reason"] = "the agent changed nothing in the room"
         return record
+    return judge(case, room, before, str(answer.get("reply") or ""), record)
+
+
+def judge(case: Case, room: world_room.Room, before: set[str], reply: str,
+          record: dict[str, Any]) -> dict[str, Any]:
+    """Open the room the agent left in the real engine and USE it: the case's
+    check, then the room let come to rest, all of it held to the realtime rule.
+    Also how a finished run's rooms are judged again when a check is corrected
+    (tests/qa.py --recheck): the build is the agent's, unchanged."""
     checked = time.perf_counter()
     try:
         world = World(room.spec)
@@ -901,8 +1361,13 @@ def run_trial(case: Case, trial: int, api_key: str, model: str,
         if problems:
             record["reason"] = f"joints that would not hang: {problems}"
             return record
-        verdict = case.check(Built(room, world, before))
+        verdict = case.check(Built(room, world, before, reply))
         record.update(passed=verdict.ok, reason=verdict.reason, measured=verdict.measured)
+        record["rest"] = settle(world)
+        record["realtime"] = timing(world, time.perf_counter() - checked)
+    except TooSlow as slow:
+        record.update(passed=False, too_slow=True, reason=f"stopped: {slow}",
+                      realtime=timing(world, time.perf_counter() - checked))
     except Exception:
         record["reason"] = "the check itself failed: " + traceback.format_exc()[-800:]
     finally:
@@ -911,14 +1376,15 @@ def run_trial(case: Case, trial: int, api_key: str, model: str,
     return record
 
 
-def summarise(records: list[dict[str, Any]], model: str) -> str:
+def summarise(records: list[dict[str, Any]], model: str,
+              cases: list[Case] | None = None) -> str:
     lines = [f"agent build regression -- {model}", ""]
     by_case: dict[str, list[dict[str, Any]]] = {}
     for r in records:
         by_case.setdefault(r["case"], []).append(r)
     tokens_in = sum((r.get("usage") or {}).get("input_tokens", 0) for r in records)
     tokens_out = sum((r.get("usage") or {}).get("output_tokens", 0) for r in records)
-    for case in CASES:
+    for case in (cases or CASES):
         rows = by_case.get(case.id)
         if not rows:
             continue
@@ -936,6 +1402,16 @@ def summarise(records: list[dict[str, Any]], model: str) -> str:
             lines.append(f"        {r.get('rounds')} rounds, "
                          f"{len(r.get('calls') or [])} calls, {r.get('ask_s')} s asking, "
                          f"{r.get('check_s', '-')} s checking")
+            rest, clock = r.get("rest") or {}, r.get("realtime") or {}
+            if rest or clock:
+                lines.append(
+                    "        " + ("at rest" if rest.get("at_rest") else
+                                  f"STILL MOVING {rest.get('still_moving')}")
+                    + (f" after {rest['waited_s']:.0f} s" if rest.get("waited_s") else "")
+                    + (f"; SUNK {', '.join(rest['sunk'])}" if rest.get("sunk") else "")
+                    + (f"; FLEW OFF {', '.join(rest['flew_off'])}" if rest.get("flew_off") else "")
+                    + f"; {clock.get('check_s')} s to show {clock.get('simulated_s')} s"
+                    + ("" if clock.get("within_rule", True) else " -- SLOWER THAN THE REALTIME RULE"))
         lines.append("")
     total = sum(1 for r in records if r["passed"])
     lines.append(f"{total} of {len(records)} passed; {tokens_in} tokens in, "

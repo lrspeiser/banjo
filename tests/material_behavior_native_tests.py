@@ -1,13 +1,30 @@
 """Held-out native constitutive paths; no material-name dispatch."""
-import json, random, subprocess, sys, unittest
+import json, os, random, subprocess, sys, unittest
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'examples/authoring'))
 from material_behavior import MaterialBehavior
 from material_behavior_client import evaluate_material_path
-EXE=ROOT/'build/win-joint-double/Release/banjo_material_behavior_probe.exe'
+PROBE='banjo_material_behavior_probe'
+VARIABLE='BANJO_MATERIAL_BEHAVIOR_PROBE'
+
+def find_probe():
+    # As the other suites find their binaries: the environment variable first,
+    # then the build trees, the most recently built probe first.
+    candidates=[Path(os.environ[VARIABLE])] if os.environ.get(VARIABLE) else []
+    built=[path for name in (PROBE+'.exe',PROBE) for path in ROOT.glob(f'build/*/Release/{name}')]
+    candidates+=sorted(built,key=lambda path:path.stat().st_mtime,reverse=True)
+    return next((path for path in candidates if path.is_file()),None)
+EXE=find_probe()
 
 class NativeMaterialTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        if EXE is None:
+            told=f'{VARIABLE}={os.environ[VARIABLE]} is not a file' if os.environ.get(VARIABLE) else f'{VARIABLE} is not set'
+            raise unittest.SkipTest(f'{PROBE} not found: {told}, and there is none in {ROOT/"build"}/*/Release. '
+                                    f'Build it, or set {VARIABLE} to one.')
+
     def run_path(self,m,strains):
         return evaluate_material_path(EXE,m,strains)["samples"]
 
@@ -46,4 +63,5 @@ class NativeMaterialTests(unittest.TestCase):
             self.assertEqual(p.returncode,1)
             self.assertEqual(json.loads(p.stdout)['status'],'rejected')
 
-if __name__=='__main__':unittest.main()
+# Verbosity 2 so a skip prints its reason instead of a bare "s".
+if __name__=='__main__':unittest.main(verbosity=2)

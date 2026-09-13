@@ -12,9 +12,23 @@
 // what a ray hits, takes hold of things and lets go of them. If it can be done
 // from here it can be done from anything.
 import * as THREE from "/vendor/three.module.js";
+import { rememberBlades, bladeFor, STANCES, takeHold, handTarget, dressBlades, showKerfs,
+         narrateCuts } from "/blades.js";
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// What has gone wrong on this page, for whoever checks it from outside
+// (banjoRoom.status()). A QA pass that photographs the room has to be able to
+// say a picture was taken over an error, not only that it was taken.
+const errorsSeen = [];
+function noteError(what) {
+  errorsSeen.push({ at_s: +(performance.now() / 1000).toFixed(2), what: String(what).slice(0, 400) });
+  if (errorsSeen.length > 40) errorsSeen.shift();
+}
+addEventListener("error", (e) => noteError(e.message || e.error || "an error"));
+addEventListener("unhandledrejection", (e) =>
+  noteError(`unhandled: ${(e.reason && e.reason.message) || e.reason}`));
 
 // ---------------------------------------------------------------------------
 // Talking to the engine
@@ -76,6 +90,11 @@ const world = {
   // knows the word.
   drawn: null,            // { name, from: Vector3, latch, asked }
   loosing: null,          // { name, home: Vector3, latch, best }
+  // For banjoRoom.ready(): whether a room is being opened, why the last attempt
+  // failed, and how many frames have been drawn since one opened.
+  opening: false,
+  openError: null,
+  framesSinceOpen: 0,
 };
 
 function remember(what) {
@@ -92,6 +111,8 @@ async function act(op, extra) {
 // ---------------------------------------------------------------------------
 
 const canvas = $("stage");
+// A lost context never draws again, and nothing else on the page would say so.
+canvas.addEventListener("webglcontextlost", () => noteError("the WebGL context was lost"));
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 const scene = new THREE.Scene();
@@ -624,6 +645,7 @@ function place(mesh, body) {
 // and then anything it leaves out really has gone.
 function draw(state) {
   if (state.cell_size_m) world.cellSize = state.cell_size_m;
+  rememberBlades(state);
   const seen = new Set();
   for (const body of state.bodies) {
     seen.add(body.name);
@@ -647,6 +669,7 @@ function draw(state) {
     held.anchored = !!body.anchored;
     held.shape = body.shape;
     place(held.mesh, body);
+    showKerfs(held, body);
   }
   const drop = state.partial
     ? (state.gone || [])
@@ -657,6 +680,7 @@ function draw(state) {
     forget(entry.mesh);
     world.bodies.delete(name);
   }
+  dressBlades(world.bodies);
   $("panel-count").textContent = `${world.bodies.size} objects`;
 }
 
@@ -1037,7 +1061,17 @@ addEventListener("blur", () => keys.clear());
 // the gate, the nock off the string. On the mouse as well as on R because a
 // latch is a second thing to do to the object you are already pointing at, and
 // reaching for a key to do it is one hand too many.
-canvas.addEventListener("contextmenu", (e) => { e.preventDefault(); unlatch(); });
+canvas.addEventListener("contextmenu", (e) => {
+  e.preventDefault();
+  // With a blade in hand it turns the edge instead, a quarter about the
+  // blade's own length: left, down, right, up.
+  if (world.held && world.held.blade) {
+    world.held.stance = (world.held.stance + 1) % STANCES.length;
+    say("you", `Turned the edge to face ${STANCES[world.held.stance].name}.`);
+    return;
+  }
+  unlatch();
+});
 
 let drag = null;
 canvas.addEventListener("pointerdown", (e) => {
@@ -1194,6 +1228,7 @@ function showLabel(found) {
           ? ` · dented ${entry.dentMm < 1 ? entry.dentMm.toFixed(2) : entry.dentMm.toFixed(1)} mm`
             + ` (drawn deeper so you can see it)` : "")
       + ` · ${found.distance_m.toFixed(2)} m away`
+      + (bladeFor(found.name) ? " · has an edge: click to take it by the grip" : "")
     : "";
   cross.classList.toggle("on", !entry?.anchored);
 }
@@ -1277,6 +1312,22 @@ async function pickUp() {
     return;
   }
   try {
+    // A thing with an edge is taken by its grip and held the way a blade is:
+    // the hand drives the grip with bounded force and turns it with bounded
+    // torque, and whatever it meets can slow it, turn it or stop it.
+    const blade = bladeFor(name);
+    if (blade && entry) {
+      await act("wield", { name });
+      const reach = clamp(world.aim.distance_m, 0.45, 1.1);
+      world.held = Object.assign({ name, blade, distance: reach },
+                                 takeHold(camera, entry, blade, reach));
+      $("crosshair").classList.add("holding");
+      $("label").hidden = true;
+      remember(`took up the ${name} by its grip`);
+      say("you", `Took up ${name} by the grip, its edge facing ${STANCES[0].name}. Turn to`
+        + ` swing it; right-click turns the edge.`);
+      return;
+    }
     await act("grab", { name });
     world.held = { name, distance: clamp(world.aim.distance_m, 0.6, 4.0) };
     // Where the hand is, relative to where the view says it is.
@@ -1717,7 +1768,7 @@ const LIVE_DT = 1 / 240;
 const MAX_STEPS = 240;
 
 async function tick() {
-  if (!world.session || world.busy) return;
+  if (!world.session || world.busy || world.paused) return;
   world.busy = true;
   // Which world this tick is driving. The chat can rebuild the room while a
   // tick is in flight -- a rebuild opens a NEW world and closes the old one --
@@ -1743,21 +1794,26 @@ async function tick() {
     // 0.5 ms, so moving the hand in its own call pays the transport twice to do
     // one frame's work -- which halved the frame rate for as long as you were
     // carrying anything, which is the whole of pushing a gate open.
-    let hand = null;
-    if (world.held) {
+    let hand = null, hand_q = null;
+    const now = performance.now();
+    const elapsed = world.lastTick ? (now - world.lastTick) / 1000 : LIVE_DT;
+    world.lastTick = now;
+    if (world.held && world.held.blade) {
+      // A blade in hand: where the grip should be and which way the blade
+      // should face, from the view and the stance.
+      ({ hand, hand_q } = handTarget(camera, world.held.blade, world.held, elapsed));
+    } else if (world.held) {
       const dir = forwardVector();
       const p = camera.position.clone().add(dir.multiplyScalar(world.held.distance));
       if (world.held.offset) p.add(world.held.offset);
       hand = [p.x, p.y, p.z];
     }
-    const now = performance.now();
-    const elapsed = world.lastTick ? (now - world.lastTick) / 1000 : LIVE_DT;
-    world.lastTick = now;
     const steps = clamp(Math.round(elapsed / LIVE_DT), 1, MAX_STEPS);
     const asked = performance.now();
-    let state = await act("step", hand
-      ? { dt: LIVE_DT, n: steps, moved: true, hand }
-      : { dt: LIVE_DT, n: steps, moved: true });
+    const ask = { dt: LIVE_DT, n: steps, moved: true };
+    if (hand) ask.hand = hand;
+    if (hand_q) ask.hand_q = hand_q;
+    let state = await act("step", ask);
     trace.ticks.push(+(performance.now() - asked).toFixed(1));
     // Roughly, and without stringifying it twice: bodies are what a reply is
     // made of, and they are all about the same size.
@@ -1790,8 +1846,16 @@ async function tick() {
       const hit = (state.impacts || []).filter((i) => i.struck === name)
         .sort((a, b) => b.closing_speed_m_s - a.closing_speed_m_s)[0];
       if (hit) world.why.set(name, hit);
-      $("panel-state").textContent =
-        `${name} was hit hard enough to break — working it out…`;
+      // Offered because of what it is carrying rather than a blow -- a plank
+      // notched beside its load, say. Said as that, not as a hit.
+      const sagging = hit ? null : (state.overloaded || []).find((o) => o.name === name);
+      if (sagging) {
+        say("world", `${name} is carrying more than it can hold up: `
+          + `${Math.round(sagging.stress_mpa)} MPa where it can take ${Math.round(sagging.holds_mpa)}.`);
+      }
+      $("panel-state").textContent = sagging
+        ? `${name} is overloaded — working out whether it gives…`
+        : `${name} was hit hard enough to break — working it out…`;
       await act("fracture", { name, wait: false });
     }
     // The answer to one started earlier.
@@ -1823,6 +1887,7 @@ async function tick() {
     draw(state);
     drawRopes();
     drawHeat(state.heat);
+    narrateCuts(state.cuts, say, remember);
     if (state.terrain) drawTerrain(state.terrain);
     if (state.terrain_changed) patchTerrain(state.terrain_changed);
     if (state.water) drawWater(state.water);
@@ -1832,7 +1897,10 @@ async function tick() {
           if (wasAttached.get(pin.id) && !pin.attached) {
             if (pin.kind === "link" || pin.kind === "pulley") {
               const load = pin.tension_n ? ` at ${Math.round(pin.tension_n)} N` : "";
-              say("world", `the rope from ${pin.a} to ${pin.b} parted${load} —`
+              // A rope that can never part under load, and still came off, was
+              // cut -- saying it "parted, rated for 0 N" says the wrong thing.
+              if (!(pin.breaks_at_n > 0)) say("world", `the rope from ${pin.a} to ${pin.b} was cut through.`);
+              else say("world", `the rope from ${pin.a} to ${pin.b} parted${load} —`
                 + ` it was rated for ${Math.round(pin.breaks_at_n || 0)} N.`);
               remember(`the rope to ${pin.b} parted`);
               continue;
@@ -1881,8 +1949,13 @@ async function tick() {
     // than no numbers.
     updateGuides();
   } catch (error) {
-    if (world.session === driving) {
+    // While another room is being opened the server closes this one, and a
+    // step already on its way comes back "no longer open": that is the switch
+    // happening, not the room stopping, and open() is about to hand over the
+    // new world.
+    if (world.session === driving && !world.opening) {
       $("panel-state").textContent = `The room stopped: ${error.message || error}`;
+      noteError(`the room stopped: ${error.message || error}`);
       world.session = null;
     }
   } finally { world.busy = false; }
@@ -1958,6 +2031,7 @@ function frame() {
   animateWater(now);
   stepFoam(dt);
   renderer.render(scene, camera);
+  world.framesSinceOpen++;
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -1967,6 +2041,7 @@ requestAnimationFrame(frame);
 // ---------------------------------------------------------------------------
 
 function say(who, text, did) {
+  if (who === "bad") noteError(text);
   const turn = document.createElement("div");
   turn.className = `turn ${who}`;
   const label = document.createElement("span");
@@ -2127,7 +2202,17 @@ $("heat-it").addEventListener("click", async () => {
     remember(`heated ${target} at ${power / 1000} kW for ${seconds} s`);
   } catch (error) { say("bad", String(error.message || error)); }
 });
-$("scene").addEventListener("change", () => open());
+$("scene").addEventListener("change", () => {
+  // Choosing a room leaves the QA build: the link stops naming it, so a reload
+  // opens the room that was chosen rather than the build again.
+  if ($("scene").value !== QA_OPTION && qaBuild() !== null) {
+    const url = new URL(location.href);
+    url.searchParams.delete("qa");
+    history.replaceState(history.state, "", url);
+    showBuild(null);
+  }
+  open();
+});
 
 // A spade, where the crosshair meets the ground: a pit 0.8 m across and 0.4 m
 // deep. The engine takes the ground down, rebuilds the colliders it changed and
@@ -2166,12 +2251,62 @@ $("dig-it").addEventListener("click", async () => {
 // Opening
 // ---------------------------------------------------------------------------
 
+// A saved build, by its QA id: /world?qa=20260912-101201/hinged-gate-1 opens the
+// room a QA trial left behind (build/agent-regression/<id>.spec.json) instead of
+// one of the authored rooms, so a build the chat made can be looked at in the
+// real engine by anyone with the link. Whether the id is one is the server's to
+// say; the page passes it on, and says which build is open.
+const QA_OPTION = "qa-build";
+function qaBuild() {
+  return new URLSearchParams(location.search).get("qa");
+}
+// Held: the room opens and is drawn, and its clock waits until it is let go.
+// /world?qa=<id>&hold=1 is how the QA's pictures begin at the moment the build
+// does -- otherwise a ball dropped from two metres has landed before a camera
+// can be pointed at it.
+world.paused = new URLSearchParams(location.search).get("hold") === "1";
+function qaParts(id) {
+  const m = /^(\d{8}-\d{6})\/([a-z0-9-]+)-(\d+)$/.exec(id || "");
+  return m ? { run: m[1], name: m[2], trial: m[3] } : null;
+}
+// Which build is open, in the panel and in the dropdown. Without an entry of its
+// own a QA build would sit under whichever room the dropdown last showed, and
+// choosing that room would then change nothing.
+function showBuild(id) {
+  const parts = qaParts(id);
+  const label = $("panel-build");
+  label.hidden = id === null;
+  label.textContent = id === null ? ""
+    : parts ? `QA build ${parts.name} #${parts.trial}, run ${parts.run}` : `QA build ${id}`;
+  let option = $("scene").querySelector(`option[value="${QA_OPTION}"]`);
+  if (id === null) {
+    if (option) option.remove();
+    return;
+  }
+  if (!option) {
+    option = document.createElement("option");
+    option.value = QA_OPTION;
+    $("scene").prepend(option);
+  }
+  option.textContent = parts ? `QA: ${parts.name} #${parts.trial}` : "QA build";
+  $("scene").value = QA_OPTION;
+}
+
 async function open() {
+  world.opening = true;
   $("panel-state").textContent = "Opening the room…";
+  const qa = qaBuild();
+  showBuild(qa);
   try {
-    const data = await api("/api/world/open", { scene: $("scene").value });
+    const data = await api("/api/world/open", qa !== null ? { qa } : { scene: $("scene").value });
     world.session = data.session;
+    world.scene = data.scene || null;   // what the server says it opened
+    world.openError = null;
     world.lastTick = 0;
+    // This room's own clock. Left at the last room's, the first frame report
+    // after a reopen measured one room's seconds against the other's.
+    world.clock = Number(data.t) || 0;
+    trace.startedWorld = world.clock;
     world.story = [];
     world.held = null;
     $("carry").hidden = true;
@@ -2190,6 +2325,7 @@ async function open() {
     } else {
       clearGround();
     }
+    world.framesSinceOpen = 0;
     $("panel-state").textContent = "Live.";
     $("chat").replaceChildren();
     say("world",
@@ -2197,9 +2333,30 @@ async function open() {
         [...new Set(data.bodies.map((b) => b.material).filter(Boolean))].join(", ")
       }. Click the room to look around, walk with W A S D, and click again to pick`
       + ` something up. Ask me to change anything.`);
+    // Said, not dropped, as when the chat rebuilds the room: a gate that does
+    // not swing reads as broken physics rather than as a pin in the wrong place.
+    if (data.joint_problems && data.joint_problems.length)
+      say("bad", "Some joints would not hang: " + data.joint_problems.join("; "));
+    const edged = (data.blades || []).map((b) => b.body);
+    if (edged.length) {
+      say("world", `${edged.join(", ")} ${edged.length > 1 ? "have edges" : "has an edge"}.`
+        + ` Click it to take it by the grip; turn to swing it, and right-click to turn the`
+        + ` edge (left, down, right, up). It cuts what its edge meets hard enough, and`
+        + ` nothing else.`);
+    }
   } catch (error) {
-    $("panel-state").textContent = `Could not open the room: ${error.message || error}`;
+    world.openError = String(error.message || error);
+    $("panel-state").textContent = `Could not open the room: ${world.openError}`;
+    noteError(`could not open the room: ${world.openError}`);
+  } finally {
+    world.opening = false;
   }
+}
+
+// Up and on screen: opened, its bodies drawn, and two frames rendered since.
+function roomReady() {
+  return !!world.session && !world.opening && !world.openError
+    && world.bodies.size > 0 && world.framesSinceOpen >= 2;
 }
 
 // One handle onto the running room, so that what is on screen can be checked
@@ -2227,6 +2384,30 @@ window.banjoRoom = {
   groundAt, waterAt, digAt,
   groundDrawn: () => ground.grid && ({ ...ground.grid, water: ground.last,
                                        wetPoints: ground.raw ? ground.raw.filter(Number.isFinite).length : 0 }),
+  // Whether the room is up and on screen. Anything checking it from outside --
+  // tests/qa_browser.py photographs it -- waits on this rather than on a delay.
+  ready: roomReady,
+  // Hold the room's clock, and let it go again (see ?hold=1). Letting go
+  // restarts the step timing, as opening a room does, so the room does not
+  // try to catch up on the time it was held.
+  hold() { world.paused = true; return true; },
+  resume() { world.paused = false; world.lastTick = 0; return true; },
+  // What the page knows, in one call: which world, how many bodies, the world
+  // clock, what the panel says, and every error it has seen.
+  status: () => ({
+    session: world.session,
+    paused: !!world.paused,
+    scene: world.scene || null,
+    ready: roomReady(),
+    bodies: world.bodies.size,
+    time_s: world.clock,
+    frames: world.framesSinceOpen,
+    panel: $("panel-state").textContent,
+    build: $("panel-build").hidden ? null : $("panel-build").textContent,
+    said: [...$("chat").querySelectorAll(".turn")].slice(-6)
+      .map((turn) => (turn.querySelector("p") || turn).textContent),
+    errors: errorsSeen.slice(),
+  }),
 };
 
 // Reported on its own timer rather than from the frame loop, because a room

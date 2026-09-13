@@ -24,6 +24,7 @@ the model is told and can fix it rather than the person being told at reopen.
 """
 from __future__ import annotations
 
+import math
 import os
 import sys
 import uuid
@@ -65,7 +66,7 @@ NOT_FOR_THE_ROOM = {
 # person will be handed.
 AUTHORING = {"add_object", "remove_object", "move_object", "clear_world", "drop",
              "hinge", "slide", "tie", "reeve", "fix", "spring", "unhinge",
-             "hinge_friction", "enclose_gas", "heat",
+             "hinge_friction", "enclose_gas", "heat", "blade",
              # The ground and the water are part of what the room IS: a trench
              # dug, a block cut, a river turned up.
              "make_terrain", "dig", "fill", "cut_block", "set_river"}
@@ -191,6 +192,13 @@ def export_spec(entry: dict[str, Any], scene: dict[str, Any] | None = None,
     # them is a size on the room's grid.
     if scene.get("thermo"):
         spec["thermo"] = scene["thermo"]
+    # Edges, where they are on their bodies as authored. The MCP keeps them in
+    # each body's own frame; the room wants them in the world, in millimetres.
+    by_name = {body["name"]: body for body in scene["bodies"]}
+    edges = [blade_spec(b, by_name[b["body"]]) for b in scene.get("blades") or []
+             if b.get("body") in by_name]
+    if edges:
+        spec["blades"] = edges
     # The ground as it was made and every edit since, and the rivers. Water
     # carried from a running world is never part of what the room IS: it is
     # handed to the one open at the moment it is reopened, and no further.
@@ -202,11 +210,51 @@ def export_spec(entry: dict[str, Any], scene: dict[str, Any] | None = None,
     return spec
 
 
-def open_room(spec: dict[str, Any]) -> str:
+def _authored_turn(body: dict[str, Any]) -> list[list[float]]:
+    """The rotation a document body is built with: x, then y, then z, degrees."""
+    x, y, z = (math.radians(float(v)) for v in (body.get("rotation_deg") or [0.0, 0.0, 0.0]))
+    cx, sx, cy, sy, cz, sz = math.cos(x), math.sin(x), math.cos(y), math.sin(y), math.cos(z), math.sin(z)
+    rx = [[1, 0, 0], [0, cx, -sx], [0, sx, cx]]
+    ry = [[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]]
+    rz = [[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]]
+
+    def times(a, b):
+        return [[sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
+
+    return times(rz, times(ry, rx))
+
+
+def blade_spec(record: dict[str, Any], body: dict[str, Any]) -> dict[str, Any]:
+    """An MCP blade record (the body's own frame, metres) as a room blade (world, mm)."""
+    turn = _authored_turn(body)
+    centre = [float(v) for v in body["center_m"]]
+
+    def turned(v: Any) -> list[float]:
+        return [sum(turn[i][k] * float(v[k]) for k in range(3)) for i in range(3)]
+
+    def placed(v: Any) -> list[float]:
+        return [c + t for c, t in zip(centre, turned(v))]
+
+    return {"body": record["body"],
+            "heel_mm": _mm(placed(record["heel_local_m"])),
+            "tip_mm": _mm(placed(record["tip_local_m"])),
+            "facing": [round(v, 6) for v in turned(record["facing_local"])],
+            "grip_mm": _mm(placed(record["grip_local_m"])),
+            "thickness_mm": round(float(record["thickness_m"]) * 1000.0, 3),
+            "edge_radius_mm": round(float(record["edge_radius_m"]) * 1000.0, 4),
+            "bevel_deg": float(record["bevel_deg"])}
+
+
+def open_room(spec: dict[str, Any], water_state: dict[str, Any] | None = None) -> str:
     """Hold a room spec as an MCP world; return the world's id.
 
     The joints go in through the MCP's own joint calls, so they are recorded
     exactly as a model's would be and carry the MCP's ids from the start.
+
+    `water_state`, from the running room, puts the room's water as it IS into
+    the world opened -- the pond as low as a channel has let it fall. Only for
+    the opening: it is not part of what the room is, and export_spec leaves it
+    out.
     """
     validated = fracture_lab.validate(spec)
     document = fracture_lab.scene_document(validated)
@@ -220,11 +268,29 @@ def open_room(spec: dict[str, Any]) -> str:
         "max_cells": fracture_lab.ALGORITHMS[validated["algorithm"]]["max_cells"]}
     banjo_mcp.WORLDS[world_id] = entry
     try:
-        lost = banjo_mcp._rebuild(entry, document, world_id, joints=[])
+        opening = document
+        if water_state and document.get("terrain"):
+            opening = dict(document, water=dict(document.get("water") or {}, state=water_state))
+        lost = banjo_mcp._rebuild(entry, opening, world_id, joints=[])
         assert not lost
+        scene_now = entry["scene"]
+        water = dict(scene_now.get("water") or {})
+        if water.pop("state", None) is not None:
+            entry["scene"] = {**{k: v for k, v in scene_now.items() if k != "water"},
+                              **({"water": water} if water else {})}
         for pin in validated.get("joints", []):
             tool, args = joint_call(pin)
             banjo_mcp.HANDLERS[tool]({**args, "world_id": world_id})
+        # And its edges, through the MCP's own call, so they are kept as a
+        # model's would be.
+        for edge in validated.get("blades", []):
+            banjo_mcp.HANDLERS["blade"]({
+                "world_id": world_id, "body": edge["body"],
+                "heel_m": _m(edge["heel_mm"]), "tip_m": _m(edge["tip_mm"]),
+                "facing": list(edge["facing"]), "grip_m": _m(edge["grip_mm"]),
+                "thickness_m": edge["thickness_mm"] / 1000.0,
+                "edge_radius_m": edge["edge_radius_mm"] / 1000.0,
+                "bevel_deg": edge["bevel_deg"]})
     except Exception:
         close_room(world_id)
         raise

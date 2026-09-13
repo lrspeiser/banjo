@@ -15,6 +15,13 @@ This is the documentation for using that from your own program.
   something.
 - **[mcp.md](mcp.md)** — the MCP server, so Claude or ChatGPT can run
   experiments instead of guessing at them.
+- **[../cutting-model.md](../cutting-model.md)** — blades: an edge declared on a
+  body, a hand with bounded force and torque to swing it, and the contact law
+  that decides what an edge does to what it meets and what that costs.
+- **[../terrain-and-water.md](../terrain-and-water.md)** — ground of rock, soil
+  and sand, and rivers and ponds on it: a valley generated once by drainage and
+  erosion, a shallow-water solver, digging that disturbs only what it touches,
+  and bodies that float, drift and dam by displaced volume and drag.
 - **[../building-on-banjo.md](../building-on-banjo.md)** — a shorter
   orientation, and the honest list of what is not built in.
 
