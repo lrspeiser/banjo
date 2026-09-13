@@ -903,6 +903,19 @@ class TheTools(unittest.TestCase):
             "position_m": [1.5, -1.0]})
         self.assertEqual(floor["set_down"]["on"], "the floor")
         self.assertAlmostEqual(floor["set_down"]["centre_y_m"], 0.16, delta=0.005)
+        self.assertNotIn("overhangs", floor["set_down"])
+        # Half over the first crate, the second is set on it -- and told that it
+        # overhangs and may tip. Its own width away, it goes beside it instead.
+        edge = self.client.call("add_object", world_id=world_id, object={
+            "name": "crate on the edge", "shape": "box", "material": "oak",
+            "size_m": [0.32, 0.32, 0.32], "position_m": [1.66, -1.0]})
+        self.assertEqual(edge["set_down"]["on"], "crate")
+        self.assertIn("overhangs", edge["set_down"])
+        beside = self.client.call("add_object", world_id=world_id, object={
+            "name": "crate beside", "shape": "box", "material": "oak",
+            "size_m": [0.32, 0.32, 0.32], "position_m": [1.5, -0.6]})
+        self.assertEqual(beside["set_down"]["on"], "the floor")
+        self.assertNotIn("overhangs", beside["set_down"])
         table = self.client.call("add_object", world_id=world_id, object={
             "name": "ball", "shape": "sphere", "material": "rubber",
             "size_m": [0.12, 0.12, 0.12], "position_m": [0.1, 0.1]})

@@ -1799,7 +1799,8 @@ def _half_height(body: dict[str, Any]) -> float:
     return size[0] / 2.0 if body["shape"] == "sphere" else size[1] / 2.0
 
 
-def _under_footprint(entry: dict[str, Any], body: dict[str, Any]) -> tuple[float, str]:
+def _under_footprint(entry: dict[str, Any],
+                     body: dict[str, Any]) -> tuple[float, str, int, int]:
     """The top of what is under a body, and what that is: another object, the
     ground or the floor. Found the way the engine sees the world -- straight
     down from above, over the body's footprint -- so it is what it would land on.
@@ -1812,26 +1813,38 @@ def _under_footprint(entry: dict[str, Any], body: dict[str, Any]) -> tuple[float
     x, _, z = body["center_m"]
     spots = [(0.0, 0.0)] if body["shape"] == "sphere" else [
         (half[0] * a, half[2] * b) for a in (-0.9, 0.0, 0.9) for b in (-0.9, 0.0, 0.9)]
-    top, under = 0.0, "the floor"
+    # What each point looks down on; a point that meets nothing is over the floor.
+    heights: list[tuple[float, str]] = []
     world = entry.get("world")
-    if world is not None:
-        best: tuple[float, str] | None = None
-        for dx, dz in spots:
-            found = world.pick([x + dx, SET_DOWN_FROM_M, z + dz], [0.0, -1.0, 0.0])
-            if found.hit and (best is None or SET_DOWN_FROM_M - found.distance_m > best[0]):
-                best = (SET_DOWN_FROM_M - found.distance_m, found.name)
-        if best is not None:
-            top = best[0]
-            under = best[1] or ("the ground" if _has_terrain(entry) else "the floor")
-    return top, under
+    for dx, dz in spots:
+        found = (world.pick([x + dx, SET_DOWN_FROM_M, z + dz], [0.0, -1.0, 0.0])
+                 if world is not None else None)
+        heights.append((SET_DOWN_FROM_M - found.distance_m, found.name)
+                       if found is not None and found.hit else (0.0, ""))
+    top, name = max(heights, key=lambda h: h[0])
+    under = name or ("the ground" if _has_terrain(entry) else "the floor")
+    # How many of the points are on that top: fewer than all, and the thing
+    # hangs over its edge.
+    carried = sum(1 for height, _ in heights if height >= top - 0.01)
+    return top, under, carried, len(spots)
 
 
 def _set_down(entry: dict[str, Any], body: dict[str, Any]) -> dict[str, Any]:
-    """Rest a body on whatever is under it (_under_footprint)."""
-    top, under = _under_footprint(entry, body)
+    """Rest a body on whatever is under it (_under_footprint), and say when only
+    part of it is over that: measured, a model set three 0.4 m crates 0.2 m
+    apart, and the second and third went half on the first's top."""
+    top, under, carried, of = _under_footprint(entry, body)
     x, _, z = body["center_m"]
     body["center_m"] = [x, round(top + _half_height(body) + 0.002, 4), z]
-    return {"on": under, "its_top_m": round(top, 4), "centre_y_m": body["center_m"][1]}
+    said: dict[str, Any] = {"on": under, "its_top_m": round(top, 4),
+                            "centre_y_m": body["center_m"][1]}
+    if carried < of:
+        said["overhangs"] = {
+            "points_on_it": f"{carried} of {of}",
+            "note": f"only part of it is over {under}, and it may tip off. Side by side, "
+                    f"two things' centres must be at least half of each one's width apart, "
+                    f"added together."}
+    return said
 
 
 def _held_up(entry: dict[str, Any], body: dict[str, Any]) -> dict[str, Any] | None:
@@ -1839,7 +1852,7 @@ def _held_up(entry: dict[str, Any], body: dict[str, Any]) -> dict[str, Any] | No
     a caller that meant it to rest finds out it will fall. Measured, a model
     gave [x, z, 0] for [x, z]: three crates started 1.5 m up at the wrong place,
     and its reply said they were resting on the floor."""
-    top, under = _under_footprint(entry, body)
+    top, under, _, _ = _under_footprint(entry, body)
     gap = body["center_m"][1] - _half_height(body) - top
     if gap <= IN_THE_AIR_M:
         return None

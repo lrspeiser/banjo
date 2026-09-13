@@ -1110,8 +1110,13 @@ RESTING_M = 0.03       # a bottom this close to what is under it rests on it
 
 def _under(world: abt.World, thing: dict[str, Any], terrain: bool) -> float:
     """The top of what is under a body: the ground where there is ground, else
-    the floor -- or another body's top, if one is under it and below it."""
+    the floor -- or the highest other body whose footprint overlaps its own and
+    whose top is not above its bottom. Footprints, not centres: a crate set on
+    another's edge rests on it with its own centre over that edge, and a check
+    of the centre alone called it resting on nothing."""
     x, y, z = thing["position_m"]
+    mine = size_m(thing)
+    bottom = y - mine[1] / 2.0
     top = abt._survey(world, x, z)["ground_m"] if terrain else 0.0
     for other in world.bodies().values():
         if other["name"] == thing["name"]:
@@ -1119,7 +1124,9 @@ def _under(world: abt.World, thing: dict[str, Any], terrain: bool) -> float:
         ox, oy, oz = other["position_m"]
         s = size_m(other)
         its_top = oy + s[1] / 2.0
-        if abs(ox - x) <= s[0] / 2.0 and abs(oz - z) <= s[2] / 2.0 and its_top <= y:
+        overlaps = (abs(ox - x) < (s[0] + mine[0]) / 2.0 - 1e-6
+                    and abs(oz - z) < (s[2] + mine[2]) / 2.0 - 1e-6)
+        if overlaps and its_top <= bottom + RESTING_M:
             top = max(top, its_top)
     return top
 
@@ -1226,9 +1233,19 @@ def several_near_me(person: dict[str, Any], count: int):
                 return Verdict(False, f"{thing['name']} is {distance:.1f} m from the person", measured)
             if ahead < 0.3:
                 return Verdict(False, f"{thing['name']} is not in front of the person", measured)
-        world.seconds(2.0)
+        # And each stays where it was put: a crate set half over another's edge
+        # rests there for a moment and then tips off.
+        start = {b["name"]: list(b["position_m"]) for b in new}
+        world.seconds(3.0)
+        for name, was in start.items():
+            now = (world.body(name) or {}).get("position_m") or was
+            moved = math.dist(now, was)
+            measured[name]["moved_in_3_s_m"] = round(moved, 3)
+            if moved > 0.05:
+                return Verdict(False, f"{name} did not stay where it was put: it moved {moved:.2f} m "
+                                      f"in 3 s", measured)
         return Verdict(True, f"{count} new things, each resting on what is under it, within reach "
-                             f"in front of the person", measured)
+                             f"in front of the person, and still there 3 s later", measured)
     return check
 
 

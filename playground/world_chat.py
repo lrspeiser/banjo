@@ -77,7 +77,10 @@ PUTTING THINGS DOWN. add_object with the object's position_m as [x, z] --
 inside object, like {"object": {"name": "ball", ..., "position_m": [x, z]}} --
 sets the thing down on whatever is under that point: the ground, the floor or
 the top of what is there. The answer's set_down says what it rests on. Use
-that for anything meant to rest somewhere. Give [x, y, z] only to hold a thing
+that for anything meant to rest somewhere. Side by side, two things' centres
+must be at least half of each one's width apart, added together -- two 0.4 m
+crates, 0.4 m -- or [x, z] sets the second on top of the first; set_down's
+overhangs says when a thing is only partly on what is under it and may tip. Give [x, y, z] only to hold a thing
 up in the air: to fall, or to hang from something; then the answer's
 in_the_air says how far it will fall, and if you meant it to rest, take it out
 and add it again with [x, z]. If an answer has in_water,
