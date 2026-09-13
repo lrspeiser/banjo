@@ -17,10 +17,13 @@ WORKDIR /src
 COPY . .
 # Headless: the three programs the playground runs and nothing that draws a
 # window. CMake fetches Jolt and nlohmann/json from GitHub while it configures.
+# Two compiles at a time, as CI builds this code: a bare --parallel runs one on
+# every core the builder has, and Render's 8 GB builder ran out of memory.
+ARG BUILD_JOBS=2
 RUN cmake -S . -B build/linux -G Ninja -DCMAKE_BUILD_TYPE=Release \
       -DBANJO_BUILD_LAB=OFF -DBANJO_BUILD_HEADLESS=ON \
       -DBANJO_BUILD_PRECOMPUTE=OFF -DBANJO_BUILD_TESTS=OFF \
- && cmake --build build/linux --parallel \
+ && cmake --build build/linux --parallel "${BUILD_JOBS}" \
       --target banjo_platform_cli banjo_c banjo_live_world_run \
  && mkdir -p /out/bin \
  && cp -a build/linux/banjo_platform_cli build/linux/banjo_live_world_run \
