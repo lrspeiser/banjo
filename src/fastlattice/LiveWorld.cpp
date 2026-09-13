@@ -3308,6 +3308,8 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
     // perfect sphere however hard it was driven in. Below, it becomes what it
     // physically is -- a surface that does not give.
     std::size_t anvil = static_cast<std::size_t>(-1);
+    // Whether what it is run against struck it, as against resting on it.
+    bool struck = false;
     {
         // A guess names its own striker: partner_of is written by the step that
         // saw the contact, and for a collision that has not happened there is
@@ -3315,10 +3317,12 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
         std::size_t with = static_cast<std::size_t>(-1);
         if (guess) {
             with = guess->striker;
+            struck = true;
         } else {
             const auto partner = impl_->partner_of.find(which);
             if (partner != impl_->partner_of.end()) {
                 with = partner->second;
+                struck = true;
             } else {
                 // No contact caused this, so it is a load rather than a blow:
                 // the thing sitting on it is what it has to be run against. See
@@ -3344,10 +3348,95 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
     // Where a body is, or -- for the one thing that has not arrived yet -- where
     // it is going to be. Everything below asks through this, so a run started
     // early is built from the collision as it is expected to happen.
-    const auto stateOf = [&](std::size_t body) {
-        if (guess && body == guess->striker) return guess->striker_state;
-        return impl_->world->snapshot(impl_->body_of[body]);
-    };
+    std::unordered_map<std::size_t, RigidSnapshot> at;
+    for (const std::size_t body : island_bodies)
+        at.emplace(body, guess && body == guess->striker
+                             ? guess->striker_state
+                             : impl_->world->snapshot(impl_->body_of[body]));
+    // And the one that struck, from where it met the other -- which is not
+    // always where the rigid step left it.
+    //
+    // The step taken back is the one in which the contact was REPORTED, and a
+    // fast body can be well into what it hit by then: the rigid world moved it a
+    // whole step, 89 mm at 10.7 m/s, and found the contact only on the next.
+    // Measured on the iron ball dropped 5.95 m onto the 20 mm glass plate, the
+    // state handed to the lattice had the ball 10 mm into the plate. The lattice
+    // cannot start there. Two cells inside one another with no bond between them
+    // are thrown apart at once, which is energy the impact never had: bonds
+    // failed on the first substep, 215 J went into them against 15 to 40 J for a
+    // clean hit, and an iron ball that had not cleared half its own breaking bar
+    // came out in eleven pieces.
+    //
+    // So the one moving in is put back along its way in until no cell of it is
+    // nearer a cell of the other than two cells touching -- where it was when
+    // they met. A translation, like the lift below: its speed and spin are its
+    // own and the closing speed is untouched. Something that is resting on the
+    // body has no way in, and is left where it is.
+    if (struck && island_bodies.size() == 2) {
+        const std::size_t one = island_bodies[0], two = island_bodies[1];
+        const bool first_moves =
+            length(at[one].linear_velocity_m_s) >= length(at[two].linear_velocity_m_s);
+        const std::size_t mover = first_moves ? one : two, other = first_moves ? two : one;
+        const Vec3 closing = at[mover].linear_velocity_m_s - at[other].linear_velocity_m_s;
+        const double closing_m_s = length(closing);
+        if (closing_m_s > 1.0e-6) {
+            const Vec3 back = (-1.0 / closing_m_s) * closing;
+            const double touching =
+                2.0 * impl_->request.node_contact_radius_factor * impl_->request.cell_size_m;
+            const auto cellsOf = [&](std::size_t body) {
+                std::vector<Vec3> cells;
+                cells.reserve(impl_->nodes_of[body].size());
+                const RigidSnapshot &pose = at[body];
+                for (const std::uint32_t node : impl_->nodes_of[body])
+                    cells.push_back(pose.center_of_mass_world_m +
+                                    pose.orientation_world.rotate(impl_->cell_offset_m[node]));
+                return cells;
+            };
+            // The other body's cells, bucketed at the touching distance, so any
+            // pair near enough to matter is in neighbouring buckets.
+            const auto bucket = [&](const Vec3 &p) {
+                return std::array<long long, 3>{static_cast<long long>(std::floor(p.x / touching)),
+                                                static_cast<long long>(std::floor(p.y / touching)),
+                                                static_cast<long long>(std::floor(p.z / touching))};
+            };
+            std::map<std::array<long long, 3>, std::vector<Vec3>> by_bucket;
+            for (const Vec3 &cell : cellsOf(other)) by_bucket[bucket(cell)].push_back(cell);
+            const std::vector<Vec3> moving = cellsOf(mover);
+            double back_m = 0.0;
+            // Going back along its way in takes it away from what it was driven
+            // into, but could bring it nearer some other part of the same body,
+            // so it is looked at again from where it got to.
+            for (int pass = 0; pass < 8; ++pass) {
+                double further = 0.0;
+                for (const Vec3 &cell : moving) {
+                    const Vec3 p = cell + back_m * back;
+                    const std::array<long long, 3> k = bucket(p);
+                    for (long long dx = -1; dx <= 1; ++dx)
+                        for (long long dy = -1; dy <= 1; ++dy)
+                            for (long long dz = -1; dz <= 1; ++dz) {
+                                const auto there = by_bucket.find(
+                                    std::array<long long, 3>{k[0] + dx, k[1] + dy, k[2] + dz});
+                                if (there == by_bucket.end()) continue;
+                                for (const Vec3 &q : there->second) {
+                                    const Vec3 r = p - q;
+                                    const double r2 = dot(r, r);
+                                    if (r2 >= touching * touching) continue;
+                                    // How much further back puts this pair exactly
+                                    // touching: |r + t * back| = touching.
+                                    const double along = dot(r, back);
+                                    further = std::max(
+                                        further, -along + std::sqrt(along * along - r2 +
+                                                                    touching * touching));
+                                }
+                            }
+                }
+                if (!(further > 1.0e-9)) break;
+                back_m += further;
+            }
+            at[mover].center_of_mass_world_m = at[mover].center_of_mass_world_m + back_m * back;
+        }
+    }
+    const auto stateOf = [&](std::size_t body) { return at.at(body); };
     const MatterBodyId old_body = impl_->body_of[which];
     const RigidSnapshot snap = stateOf(which);
 
@@ -3355,6 +3444,21 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
     // cells are placed by ITS own rigid pose, which is what buildFragmentLattice
     // does for one body -- so the offsets are rewritten here into the frame the
     // island will be built in, one body at a time.
+    //
+    // Into a copy. The table is each body's own shape in its own frame, every
+    // later island that body is in reads it again, and only an apply writes it
+    // back -- while a run prepared here may never be applied: a guess that is
+    // not adopted, a queued job dropped, a run in which nothing happened.
+    // Rewriting it in place left the striker's cells in the frame of whatever
+    // it last struck. Measured on an iron ball dropped 6 m onto a 20 mm glass
+    // plate: the guess made while it was held put the ball's cells 75 mm above
+    // the ball, so every run at the real contact started with the ball 75 mm
+    // further off than it was, and the plate broke or not according to whether
+    // that 75 mm could be closed inside the run's window -- which is to say by
+    // the phase of the drop within a step. The run queued behind it was another
+    // 100 mm out, and a body rebuilt from such a run was put where its
+    // misplaced cells had got to.
+    std::vector<Vec3> island_offset_m = impl_->cell_offset_m;
     std::vector<std::uint32_t> island_nodes;
     std::unordered_map<std::uint32_t, std::size_t> body_of_node;
     std::unordered_map<std::size_t, RigidSnapshot> poses_before;
@@ -3372,7 +3476,7 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
             // conjugate, and Quat carries no operation for it.
             const Quat inverse{snap.orientation_world.w, -snap.orientation_world.x,
                                -snap.orientation_world.y, -snap.orientation_world.z};
-            impl_->cell_offset_m[node] = inverse.rotate(world - snap.center_of_mass_world_m);
+            island_offset_m[node] = inverse.rotate(world - snap.center_of_mass_world_m);
         }
     }
 
@@ -3387,7 +3491,7 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
         const SupportSet<double> &support = setup.settings_world.support;
         for (const std::uint32_t node : island_nodes) {
             const Vec3 position = snap.center_of_mass_world_m +
-                snap.orientation_world.rotate(impl_->cell_offset_m[node]);
+                snap.orientation_world.rotate(island_offset_m[node]);
             for (std::uint32_t p = 0; p < support.plane_count; ++p) {
                 const SupportPlane<double> &plane = support.planes[p];
                 if (plane.normal.y < 0.999) continue;
@@ -3404,7 +3508,7 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
                             snap.orientation_world, snap.linear_velocity_m_s,
                             snap.angular_velocity_rad_s};
     FragmentLattice island = buildFragmentLattice(
-        setup.matter, island_nodes, impl_->cell_offset_m, pose,
+        setup.matter, island_nodes, island_offset_m, pose,
         impl_->plastic_extension_m, impl_->plastic_strain_m);
     // buildFragmentLattice places every cell with ONE rigid pose, because it was
     // written for one fragment: position, orientation AND velocity all come from

@@ -1062,6 +1062,133 @@ void theWorldSeesACollisionComing() {
             "is no time to work the fracture out before it is needed");
 }
 
+// The bench room's 20 mm glass plate (playground/world_room.py): 240 x 160 mm,
+// bridged between two short iron piers and unsupported between them, with the
+// room's 120 mm iron ball lying on the floor beside it. The room asks for
+// plasticity, which is what lets an iron ball dent.
+TileImpactRequest plateOnPiers() {
+    TileImpactRequest r;
+    r.cell_size_m = 0.02;
+    r.backend = benchBackend();
+    r.plasticity = true;
+    for (const double x : {-0.1, 0.1}) {
+        SceneBody pier;
+        pier.name = x < 0.0 ? "left pier" : "right pier";
+        pier.shape = BodyShape::Box;
+        pier.material = MaterialPreset::Iron;
+        pier.dimensions_m = {0.04, 0.12, 0.16};
+        pier.center_m = {x, 0.06, 0.0};
+        pier.anchored = true;
+        r.bodies.push_back(pier);
+    }
+    SceneBody plate;
+    plate.name = "plate";
+    plate.shape = BodyShape::Box;
+    plate.material = MaterialPreset::Glass;
+    plate.dimensions_m = {0.24, 0.02, 0.16};
+    plate.center_m = {0.0, 0.13, 0.0};
+    r.bodies.push_back(plate);
+    SceneBody ball;
+    ball.name = "ball";
+    ball.shape = BodyShape::Sphere;
+    ball.material = MaterialPreset::Iron;
+    ball.dimensions_m = {0.12, 0.12, 0.12};
+    ball.center_m = {0.6, 0.06, 0.0};
+    r.bodies.push_back(ball);
+    return r;
+}
+
+// What came of dropping the ball on the plate.
+struct PlateDrop {
+    LiveImpact hardest{};     // the hardest the plate was hit
+    std::size_t pieces{};     // what the plate is in now
+    bool ball_whole{};        // the ball is still there, under its own name
+    bool ball_broke{};        // and nothing came off it
+};
+
+// Dropped the way the bench room drops it (tests/threshold_tests.py drop()):
+// picked up, held `fall_m` above the plate, let go, and stepped at 1/120 s in
+// batches of four, a batch stopping at a step taken back unless something is
+// already being worked out. Whatever is breakable is asked about, first name
+// first, without waiting, and each answer is collected in the batch after it is
+// ready -- which is what the live runner does with the room's commands.
+// Foresight is left on, as the room leaves it.
+PlateDrop dropOntoThePlate(double fall_m) {
+    const auto live = LiveWorld::open(plateOnPiers());
+    require(live->grab("ball"), "the ball could not be picked up");
+    live->moveHeld({0.0, 0.13 + fall_m, 0.0});
+    live->step(1.0 / 240.0);
+    live->release();
+    PlateDrop out;
+    // Two seconds of room clock is well past the landing. After that only an
+    // answer still being worked out keeps it going, paced in wall time the way
+    // theWorldKeepsRunningWhileAFractureIsWorkedOut is, so that spinning the
+    // world does not take the cores the run needs.
+    const auto give_up = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while ((live->time_s() < 2.0 || live->fracturePending()) &&
+           std::chrono::steady_clock::now() < give_up) {
+        live->forgetImpacts();
+        for (int s = 0; s < 4; ++s) {
+            live->step(1.0 / 120.0);
+            if (live->steppedBack() && !live->fracturePending()) break;
+        }
+        for (const LiveImpact &impact : live->impacts())
+            if (impact.struck == "plate" && impact.closing_speed_m_s > out.hardest.closing_speed_m_s)
+                out.hardest = impact;
+        if (live->fracturePending()) {
+            if (live->fractureReady()) live->finishFracture();
+            else std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        if (live->fracturePending()) continue;
+        const std::vector<std::string> waiting = live->breakable();
+        if (!waiting.empty()) static_cast<void>(live->beginFracture(waiting.front(), 0.003));
+    }
+    for (const LiveBodyPose &pose : live->poses(false)) {
+        if (pose.name.rfind("plate piece", 0) == 0) ++out.pieces;
+        if (pose.name == "ball") out.ball_whole = true;
+        if (pose.name.rfind("ball piece", 0) == 0) out.ball_broke = true;
+    }
+    return out;
+}
+
+// A drop that breaks the plate breaks it whatever the phase of the step it
+// lands in.
+//
+// From 6 m the ball arrives at about 10.8 m/s against the plate's 4.51 m/s bar
+// and the contact says it would break -- and it came apart into anything from
+// nothing to sixty-seven pieces according to where in a 1/120 s step the ball
+// met the plate: 8 from 5.99 m, none from 6.00 m, 67 from 6.02 m. Every run for
+// that contact started with the ball's cells 75 mm above the ball, left there
+// by the run foreseen for the same drop (see LiveWorld::prepared), so whether
+// the ball reached the plate inside the run's window was down to the phase.
+// And at the phases where the rigid step had already carried the ball into the
+// plate, a run started from that overlap broke the ball as well: in the room,
+// 5.955 m left the plate in 62 pieces and the iron ball in 23.
+// One step's travel at that speed is 90 mm of fall, so six drops 15 mm apart
+// cover every phase there is.
+void aDropBreaksThePlateWhateverThePhaseOfTheStep() {
+    for (int k = 0; k < 6; ++k) {
+        const double fall = 5.925 + 0.015 * k;
+        const PlateDrop drop = dropOntoThePlate(fall);
+        std::cout << "  dropped " << fall << " m: the plate hit at "
+                  << drop.hardest.closing_speed_m_s << " m/s against a "
+                  << drop.hardest.threshold_speed_m_s << " m/s bar, now in " << drop.pieces
+                  << " pieces\n";
+        const std::string from = "dropped from " + std::to_string(fall) + " m, ";
+        // The premise: a contact that is well past the bar and says so.
+        require(drop.hardest.would_break && drop.hardest.closing_speed_m_s > 10.0,
+                from + "the ball never hit the plate hard enough to break it, so this "
+                       "proves nothing");
+        require(drop.pieces > 1,
+                from + "the ball hit the plate at " +
+                    std::to_string(drop.hardest.closing_speed_m_s) + " m/s against its " +
+                    std::to_string(drop.hardest.threshold_speed_m_s) +
+                    " m/s bar, the contact said it would break, and it did not");
+        require(drop.ball_whole && !drop.ball_broke,
+                from + "the ball came apart breaking the plate");
+    }
+}
+
 void landingOnTheFloorIsAnImpact() {
     const Landing hard = dropOnFloor(MaterialPreset::Glass, 20.0);
     std::cout << "  glass onto the floor at 20 m/s: hit at " << hard.hit
@@ -1261,6 +1388,8 @@ int main() {
         std::cout << "[PASS] a second break does not stop the clock\n";
         theWorldSeesACollisionComing();
         std::cout << "[PASS] the world sees a collision coming, with more warning than the run costs\n";
+        aDropBreaksThePlateWhateverThePhaseOfTheStep();
+        std::cout << "[PASS] a drop breaks the plate whatever the phase of the step it lands in\n";
         landingOnTheFloorIsAnImpact();
         std::cout << "[PASS] landing on the floor is an impact and is judged like any other\n";
         aThingBendsBeforeItBreaks();
