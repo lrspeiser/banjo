@@ -1125,6 +1125,7 @@ function fadePieces(now) {
 // something to say.
 
 const TRACE_EVERY_MS = 4000;     // how often a summary goes out
+const SHORTEST_REPORT_S = 2;     // a routine one over less says nothing about the clocks
 const SLOW_FRAME_MS = 60;        // a frame worth naming individually
 const KEEP_SLOW = 12;            // at most this many named per report
 
@@ -1184,6 +1185,14 @@ async function sendTrace(why) {
   const now = performance.now();
   const wall_s = (now - trace.startedWall) / 1000;
   if (wall_s <= 0) return;
+  // Too short a window to measure the clocks by: the world trails the wall by
+  // up to a step, which over a fraction of a second is most of the number,
+  // and a world not stepped yet reads 0% -- the figure that means the clock
+  // stopped. A window that began part way through the interval (a new world
+  // begins one) goes out with the next report instead, unless there is
+  // something in it worth more than the clocks.
+  if (why === "routine" && wall_s < SHORTEST_REPORT_S
+      && !trace.breaks.length && !trace.slow.length) return;
   const frames = trace.frames.slice().sort((a, b) => a - b);
   const ticks = trace.ticks.slice().sort((a, b) => a - b);
   const report = {
@@ -1221,6 +1230,35 @@ async function sendTrace(why) {
   trace.startedWorld = world.clock;
   trace.sentAt = now;
   try { await api("/api/trace", report); } catch (e) { /* a lost report is not worth a bad frame */ }
+}
+
+// A world being replaced, and the one replacing it: "Start the room again",
+// another scene, or the chat rebuilding the room.
+//
+// A report is about one world. The new world's clock is its own -- a room
+// just opened starts from zero -- so a report that ran across the change took
+// the old world's clock from the new one's. The log said "room: -358% of
+// realtime", and when the difference came out positive it was no truer.
+//
+// So what the old world did since the last report goes out first, as its own:
+// the seconds before somebody starts the room again are the likeliest to have
+// the lag in them. Only if it was stepped at all -- a room that had already
+// stopped has been saying so every four seconds.
+function traceOldWorld() {
+  if (trace.ticks.length) sendTrace("routine");
+}
+
+// And the new world's report starts with the new world: its clock from where
+// that world is, the wall from now, and nothing carried over. An impact in the
+// old world will never have pieces in this one.
+function traceNewWorld(t) {
+  world.clock = Number.isFinite(t) ? t : 0;
+  world.lastTick = 0;   // its first step is one step, not a catch-up across the change
+  trace.frames.length = 0; trace.slow.length = 0; trace.ticks.length = 0;
+  trace.bytes.length = 0; trace.breaks.length = 0;
+  trace.awaiting.clear();
+  trace.startedWall = performance.now();
+  trace.startedWorld = world.clock;
 }
 
 // L for "that lagged". Marks the moment and sends everything immediately, so
@@ -2909,6 +2947,12 @@ async function tick() {
     // Roughly, and without stringifying it twice: bodies are what a reply is
     // made of, and they are all about the same size.
     trace.bytes.push(200 + (state.bodies ? state.bodies.length * 190 : 0));
+    // The answer to a step for a world that was replaced while it was in flight
+    // -- the room started again, or rebuilt by the chat. Its round trip is a
+    // round trip all the same; what it says about the world is not. Drawn, it
+    // would put the old room's bodies into the new one, and its clock would
+    // undo the new world's.
+    if (world.session !== driving) return;
     world.workingOn = state.working_on || "";
     // What the springs hold after this step, before anything below reads them.
     takeElastics(state.elastics);
@@ -3341,6 +3385,7 @@ $("ask").addEventListener("submit", async (e) => {
     waiting.done();
     say("world", answer.reply || "(nothing to say)", answer.did);
     if (answer.reopened) {
+      traceOldWorld();
       world.session = answer.session;
       // A rebuilt room: its own profiles, and nothing of the old one in hand.
       rememberProfiles(answer.state && answer.state.spec);
@@ -3381,6 +3426,8 @@ $("ask").addEventListener("submit", async (e) => {
       } else {
         clearGround();
       }
+      // Drawn: the frame report starts over with the rebuilt world.
+      traceNewWorld(answer.state.t);
       if (answer.joint_problems && answer.joint_problems.length)
         say("bad", "Some joints would not hang: " + answer.joint_problems.join("; "));
       remember("the room was rebuilt: " + (answer.did || []).join(", "));
@@ -3570,6 +3617,8 @@ function showBuild(id) {
 }
 
 async function open() {
+  // What the room being replaced did since its last report, as its own.
+  traceOldWorld();
   world.opening = true;
   $("panel-state").textContent = "Opening the room…";
   const qa = qaBuild();
@@ -3581,9 +3630,9 @@ async function open() {
     world.openError = null;
     world.lastTick = 0;
     // This room's own clock. Left at the last room's, the first frame report
-    // after a reopen measured one room's seconds against the other's.
+    // after a reopen measured one room's seconds against the other's; the
+    // report itself starts over once the room is drawn (traceNewWorld, below).
     world.clock = Number(data.t) || 0;
-    trace.startedWorld = world.clock;
     world.story = [];
     world.held = null;
     world.use = { mode: "none" };
@@ -3613,6 +3662,9 @@ async function open() {
     // none to carry.
     carryGround(data.terrain ? data.terrain.carried : null);
     world.framesSinceOpen = 0;
+    // Drawn and ready to step: the frame report starts here, with this world's
+    // clock and the wall from now -- not from the page load, nor the last room.
+    traceNewWorld(data.t);
     $("panel-state").textContent = "Live.";
     $("chat").replaceChildren();
     say("world",
