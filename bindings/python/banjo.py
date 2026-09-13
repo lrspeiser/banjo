@@ -37,7 +37,7 @@ from typing import Any, Iterator
 # branches so that, merged, one number means one header: a library at 14
 # carries both. 15 added terrain and water, on top of both. Checked for
 # equality below, so this has to match exactly.
-ABI_VERSION = 15
+ABI_VERSION = 16
 
 NOTHING, HELD, DENTED, BROKE = 0, 1, 2, 3
 OUTCOMES = {0: "nothing", 1: "held", 2: "dented", 3: "broke"}
@@ -64,7 +64,8 @@ class _Body(ctypes.Structure):
                 ("shape", ctypes.c_int),
                 ("anchored", ctypes.c_int),
                 ("held", ctypes.c_int),
-                ("rgba", ctypes.c_uint)]
+                ("rgba", ctypes.c_uint),
+                ("mass_kg", ctypes.c_double)]
 
 
 class _Delay(ctypes.Structure):
@@ -132,6 +133,44 @@ class _Pick(ctypes.Structure):
                 ("name", ctypes.c_char_p),
                 ("distance_m", ctypes.c_double),
                 ("point_m", ctypes.c_double * 3)]
+
+
+class _Hand(ctypes.Structure):
+    _fields_ = [("holding", ctypes.c_char_p),
+                ("mode", ctypes.c_char_p),
+                ("target_m", ctypes.c_double * 3),
+                ("grip_m", ctypes.c_double * 3),
+                ("grip_velocity_m_s", ctypes.c_double * 3),
+                ("force_n", ctypes.c_double * 3),
+                ("work_j", ctypes.c_double),
+                ("stroking", ctypes.c_int),
+                ("stroke_along_m", ctypes.c_double),
+                ("stroke_length_m", ctypes.c_double),
+                ("stroke_ended", ctypes.c_char_p),
+                ("let_go_body", ctypes.c_char_p),
+                ("let_go_velocity_m_s", ctypes.c_double * 3),
+                ("let_go_at_s", ctypes.c_double),
+                ("let_go_work_j", ctypes.c_double)]
+
+
+class _Flight(ctypes.Structure):
+    _fields_ = [("hit", ctypes.c_int),
+                ("hit_name", ctypes.c_char_p),
+                ("hit_point_m", ctypes.c_double * 3),
+                ("hit_after_s", ctypes.c_double),
+                ("hit_speed_m_s", ctypes.c_double),
+                ("points", ctypes.c_int)]
+
+
+class _StrokePreview(ctypes.Structure):
+    _fields_ = [("possible", ctypes.c_int),
+                ("why", ctypes.c_char_p),
+                ("reaches_end", ctypes.c_int),
+                ("stroke_s", ctypes.c_double),
+                ("work_j", ctypes.c_double),
+                ("let_go_at_m", ctypes.c_double * 3),
+                ("let_go_velocity_m_s", ctypes.c_double * 3),
+                ("flight", _Flight)]
 
 
 class _Impact(ctypes.Structure):
@@ -296,6 +335,67 @@ class Body:
     anchored: bool
     held: bool
     rgba: int
+    # What it weighs now: what a hand has to hold up and a throw has to
+    # accelerate. Zero for anchored scenery, which the solver never moves.
+    mass_kg: float = 0.0
+
+
+@dataclass(frozen=True)
+class Hand:
+    """What the hand is doing, and what it has done. docs/interaction-profiles.md.
+
+    `mode` is "carry" (placed exactly where it is put: no force, so no work),
+    "haul" (pulled with a bounded force because it is attached to something),
+    "grip" (wielded) or "" for an empty hand. `work_j` is measured -- the
+    hand's force times its grip's own motion, step by kept step -- so it
+    includes lifting and whatever the thing lost to what it rubbed on.
+    `stroke_ended` is "", "reached", "let go", "blocked", "gave up" or
+    "cancelled"; `let_go_*` describe the last stroke that opened the hand, and
+    `let_go_at_s` is negative when none has.
+    """
+    holding: str
+    mode: str
+    target_m: tuple[float, float, float]
+    grip_m: tuple[float, float, float]
+    grip_velocity_m_s: tuple[float, float, float]
+    force_n: tuple[float, float, float]
+    work_j: float
+    stroking: bool
+    stroke_along_m: float
+    stroke_length_m: float
+    stroke_ended: str
+    let_go_body: str
+    let_go_velocity_m_s: tuple[float, float, float]
+    let_go_at_s: float
+    let_go_work_j: float
+
+
+@dataclass(frozen=True)
+class Flight:
+    """Where something would go, stepped as the solver steps it -- gravity, then
+    the flying body's own damping -- and checked against the solver's own shapes
+    along the line of its centre. An empty `hit_name` with `hit` is the ground."""
+    points_m: tuple[tuple[float, float, float], ...]
+    hit: bool
+    hit_name: str
+    hit_point_m: tuple[float, float, float]
+    hit_after_s: float
+    hit_speed_m_s: float
+
+
+@dataclass(frozen=True)
+class StrokePreview:
+    """What a stroke would do to what the hand holds -- the body alone, pulled
+    by this hand along the path under gravity -- and where it would then fly.
+    What it cannot know is anything the stroke would bump into on the way."""
+    possible: bool
+    why: str
+    reaches_end: bool
+    stroke_s: float
+    work_j: float
+    let_go_at_m: tuple[float, float, float]
+    let_go_velocity_m_s: tuple[float, float, float]
+    flight: Flight
 
 
 @dataclass(frozen=True)
@@ -879,6 +979,28 @@ def library(path: str | os.PathLike[str] | None = None) -> ctypes.CDLL:
     lib.banjo_aim_held.restype = ctypes.c_int
     lib.banjo_hand_strength.argtypes = [ctypes.c_void_p, ctypes.c_double]
     lib.banjo_hand_strength.restype = ctypes.c_int
+    lib.banjo_hand_mass.argtypes = [ctypes.c_void_p, ctypes.c_double]
+    lib.banjo_hand_mass.restype = ctypes.c_int
+    # The hand's own motions and their previews.
+    lib.banjo_stroke.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_double), ctypes.c_int,
+                                 ctypes.c_double, ctypes.c_double, ctypes.c_double,
+                                 ctypes.c_int, ctypes.c_double]
+    lib.banjo_stroke.restype = ctypes.c_int
+    lib.banjo_cancel_stroke.argtypes = [ctypes.c_void_p]
+    lib.banjo_cancel_stroke.restype = ctypes.c_int
+    lib.banjo_hand_state.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Hand)]
+    lib.banjo_hand_state.restype = ctypes.c_int
+    lib.banjo_preview_flight.argtypes = [ctypes.c_void_p, ctypes.c_double * 3,
+                                         ctypes.c_double * 3, ctypes.c_double, ctypes.c_char_p,
+                                         ctypes.POINTER(ctypes.c_double), ctypes.c_int,
+                                         ctypes.POINTER(_Flight)]
+    lib.banjo_preview_flight.restype = ctypes.c_int
+    lib.banjo_preview_stroke.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_double),
+                                         ctypes.c_int, ctypes.c_double, ctypes.c_double,
+                                         ctypes.c_double, ctypes.c_double, ctypes.c_double,
+                                         ctypes.POINTER(ctypes.c_double), ctypes.c_int,
+                                         ctypes.POINTER(_StrokePreview)]
+    lib.banjo_preview_stroke.restype = ctypes.c_int
     lib.banjo_hand_torque.argtypes = [ctypes.c_void_p, ctypes.c_double]
     lib.banjo_hand_torque.restype = ctypes.c_int
 
@@ -1324,7 +1446,8 @@ class World:
                      orientation_wxyz=tuple(b.orientation_wxyz),
                      velocity_m_s=tuple(b.velocity_m_s),
                      dimensions_m=tuple(b.dimensions_m),
-                     anchored=bool(b.anchored), held=bool(b.held), rgba=int(b.rgba))
+                     anchored=bool(b.anchored), held=bool(b.held), rgba=int(b.rgba),
+                     mass_kg=float(b.mass_kg))
                 for b in buffer[:written]]
 
     def body(self, name: str) -> Body | None:
@@ -1472,6 +1595,109 @@ class World:
     def hand_torque(self, newton_metres: float) -> None:
         self._check(self._lib.banjo_hand_torque(self._alive(), float(newton_metres)),
                     "setting the hand's torque")
+
+    def hand_mass(self, kilograms: float) -> None:
+        """The moving mass of the hand and arm: what the strength has to get
+        going along with whatever a stroke throws. 2 kg unless told otherwise,
+        a demonstration value."""
+        self._check(self._lib.banjo_hand_mass(self._alive(), float(kilograms)),
+                    "setting the hand's moving mass")
+
+    # -- the hand's own motions (docs/interaction-profiles.md) ---------------
+    @staticmethod
+    def _path(path_m: Any) -> tuple[Any, int]:
+        points = [list(p) for p in path_m]
+        if not 2 <= len(points) <= 16 or any(len(p) != 3 for p in points):
+            raise BanjoError("a stroke's path is two to sixteen points of three numbers")
+        values = [float(v) for p in points for v in p]
+        return (ctypes.c_double * len(values))(*values), len(points)
+
+    def stroke(self, path_m: Any, speed_m_s: float, accel_m_s2: float, lead_m: float = 0.05,
+               let_go: bool = False, give_up_s: float = 2.0) -> None:
+        """A motion the hand makes by itself, at the step's own rate.
+
+        Where the hand wants the grip travels along `path_m` (two to sixteen
+        points) at up to `speed_m_s`, getting there at `accel_m_s2` -- and no
+        faster than the strength can move the hand and the thing together --
+        never more than `lead_m` ahead of the grip. The hand pulls with what it
+        has, so a heavy thing falls behind and a light one keeps up: nothing
+        gives the body a speed. With `let_go` the hand opens when the GRIP
+        reaches the end, which is a throw. Needs something wielded, or hauled
+        because it is attached; `move_held` takes the hand back.
+        """
+        flat, count = self._path(path_m)
+        self._check(self._lib.banjo_stroke(self._alive(), flat, count, float(speed_m_s),
+                                           float(accel_m_s2), float(lead_m),
+                                           1 if let_go else 0, float(give_up_s)),
+                    "making a stroke")
+
+    def cancel_stroke(self) -> None:
+        self._check(self._lib.banjo_cancel_stroke(self._alive()), "stopping a stroke")
+
+    def hand(self) -> Hand:
+        """What the hand is doing, and what it has done."""
+        out = _Hand()
+        self._check(self._lib.banjo_hand_state(self._alive(), ctypes.byref(out)),
+                    "reading the hand")
+
+        def text(value: bytes | None) -> str:
+            return (value or b"").decode("utf-8", "replace")
+
+        return Hand(holding=text(out.holding), mode=text(out.mode),
+                    target_m=tuple(out.target_m), grip_m=tuple(out.grip_m),
+                    grip_velocity_m_s=tuple(out.grip_velocity_m_s), force_n=tuple(out.force_n),
+                    work_j=out.work_j, stroking=bool(out.stroking),
+                    stroke_along_m=out.stroke_along_m, stroke_length_m=out.stroke_length_m,
+                    stroke_ended=text(out.stroke_ended), let_go_body=text(out.let_go_body),
+                    let_go_velocity_m_s=tuple(out.let_go_velocity_m_s),
+                    let_go_at_s=out.let_go_at_s, let_go_work_j=out.let_go_work_j)
+
+    # The engine writes a point every 1/60 s for at most ten seconds.
+    _MOST_FLIGHT_POINTS = 601
+
+    @staticmethod
+    def _flight(out: Any, points: Any) -> Flight:
+        return Flight(points_m=tuple((points[3 * i], points[3 * i + 1], points[3 * i + 2])
+                                     for i in range(out.points)),
+                      hit=bool(out.hit),
+                      hit_name=(out.hit_name or b"").decode("utf-8", "replace"),
+                      hit_point_m=tuple(out.hit_point_m), hit_after_s=out.hit_after_s,
+                      hit_speed_m_s=out.hit_speed_m_s)
+
+    def preview_flight(self, from_m: Any, velocity_m_s: Any, horizon_s: float = 3.0,
+                       ignoring: str = "") -> Flight:
+        """Where something would go, stepped as the solver steps it, against the
+        solver's own shapes, never meeting the body named `ignoring` -- the thing
+        itself, still in the hand, whose damping it flies with. Changes nothing."""
+        points = (ctypes.c_double * (3 * self._MOST_FLIGHT_POINTS))()
+        out = _Flight()
+        self._check(self._lib.banjo_preview_flight(self._alive(), _triple(from_m),
+                                                   _triple(velocity_m_s), float(horizon_s),
+                                                   ignoring.encode("utf-8"), points,
+                                                   self._MOST_FLIGHT_POINTS, ctypes.byref(out)),
+                    "previewing a flight")
+        return self._flight(out, points)
+
+    def preview_stroke(self, path_m: Any, speed_m_s: float, accel_m_s2: float,
+                       lead_m: float = 0.05, give_up_s: float = 2.0,
+                       horizon_s: float = 3.0) -> StrokePreview:
+        """What this stroke would do to what the hand holds -- the body alone,
+        pulled by this hand along the path under gravity -- and where it would
+        fly once let go at the end. Changes nothing."""
+        flat, count = self._path(path_m)
+        points = (ctypes.c_double * (3 * self._MOST_FLIGHT_POINTS))()
+        out = _StrokePreview()
+        self._check(self._lib.banjo_preview_stroke(self._alive(), flat, count, float(speed_m_s),
+                                                   float(accel_m_s2), float(lead_m),
+                                                   float(give_up_s), float(horizon_s), points,
+                                                   self._MOST_FLIGHT_POINTS, ctypes.byref(out)),
+                    "previewing a stroke")
+        return StrokePreview(possible=bool(out.possible),
+                             why=(out.why or b"").decode("utf-8", "replace"),
+                             reaches_end=bool(out.reaches_end), stroke_s=out.stroke_s,
+                             work_j=out.work_j, let_go_at_m=tuple(out.let_go_at_m),
+                             let_go_velocity_m_s=tuple(out.let_go_velocity_m_s),
+                             flight=self._flight(out.flight, points))
 
     # -- asking where things are ------------------------------------------
     def pick(self, from_m: Any, direction: Any, max_m: float = 0.0) -> Pick:

@@ -105,6 +105,7 @@ class InProcessSession:
                 "position_m": [self._number(v) for v in body.position_m],
                 "orientation_wxyz": [self._number(v) for v in body.orientation_wxyz],
                 "velocity_m_s": [self._number(v) for v in body.velocity_m_s],
+                "mass_kg": self._number(body.mass_kg),
                 "anchored": body.anchored,
                 "held": body.held,
                 "color_rgba": f"{body.rgba:08x}",
@@ -133,9 +134,40 @@ class InProcessSession:
         heat = self._heat()
         if heat is not None:
             state["heat"] = heat
+        # The hand, while it holds something and once a stroke has opened it --
+        # the same block the subprocess lane puts on its replies.
+        hand = world.hand()
+        if hand.holding or hand.let_go_at_s >= 0.0 or hand.stroke_ended:
+            state["hand"] = self._hand(hand)
         if extra:
             state.update(extra)
         return state
+
+    def _hand(self, hand: "banjo.Hand") -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "holding": hand.holding, "mode": hand.mode,
+            "target_m": [self._number(v) for v in hand.target_m],
+            "grip_m": [self._number(v) for v in hand.grip_m],
+            "grip_velocity_m_s": [self._number(v) for v in hand.grip_velocity_m_s],
+            "force_n": [self._number(v) for v in hand.force_n],
+            "work_j": self._number(hand.work_j),
+            "stroking": hand.stroking, "stroke_ended": hand.stroke_ended}
+        if hand.stroking:
+            out["stroke_along_m"] = self._number(hand.stroke_along_m)
+            out["stroke_length_m"] = self._number(hand.stroke_length_m)
+        if hand.let_go_at_s >= 0.0:
+            out["let_go"] = {"body": hand.let_go_body,
+                             "velocity_m_s": [self._number(v) for v in hand.let_go_velocity_m_s],
+                             "at_s": self._number(hand.let_go_at_s),
+                             "work_j": self._number(hand.let_go_work_j)}
+        return out
+
+    def _flight(self, flight: "banjo.Flight") -> dict[str, Any]:
+        return {"points_m": [[self._number(v) for v in p] for p in flight.points_m],
+                "hit": flight.hit, "hit_name": flight.hit_name,
+                "hit_point_m": [self._number(v) for v in flight.hit_point_m],
+                "hit_after_s": self._number(flight.hit_after_s),
+                "hit_speed_m_s": self._number(flight.hit_speed_m_s)}
 
     def _heat(self) -> dict[str, Any] | None:
         """The same trimmed heat block the subprocess lane puts on its replies."""
@@ -173,6 +205,12 @@ class InProcessSession:
         try:
             if op == "step":
                 dt = float(command.get("dt", 1 / 60.0))
+                # Where the hand is and which way it faces, sent with the step,
+                # in the order the line protocol applies them.
+                if command.get("hand_q") is not None:
+                    world.aim_held(command["hand_q"])
+                if command.get("hand") is not None:
+                    world.move_held(command["hand"])
                 # Stop the batch on a step that was taken back, exactly as the
                 # line protocol does, and hand the decision back to the host.
                 #
@@ -195,6 +233,58 @@ class InProcessSession:
                 world.move_held(command.get("to") or [0.0, 0.0, 0.0])
             elif op == "release":
                 world.release()
+            elif op == "wield":
+                # A grip, not a carry. Without a grip given, a body that carries
+                # an edge is held where its blade says, as in the other lane.
+                name = str(command.get("name", ""))
+                grip = command.get("grip")
+                if grip is None:
+                    grip = next((b.grip_m for b in world.blades()
+                                 if b.body == name and b.attached), None)
+                if grip is None:
+                    raise ValueError("wield needs a grip, or a body with an edge")
+                world.wield(name, grip)
+                self.state = self._describe(extra={"wielding": name})
+                return self.state
+            elif op == "hand":
+                if command.get("strength_n") is not None:
+                    world.hand_strength(float(command["strength_n"]))
+                if command.get("torque_n_m") is not None:
+                    world.hand_torque(float(command["torque_n_m"]))
+                if command.get("mass_kg") is not None:
+                    world.hand_mass(float(command["mass_kg"]))
+            elif op == "stroke":
+                world.stroke(command.get("path") or [], float(command.get("speed_m_s", 0.0)),
+                             float(command.get("accel_m_s2", 0.0)),
+                             float(command.get("lead_m", 0.05)),
+                             bool(command.get("let_go", False)),
+                             float(command.get("give_up_s", 2.0)))
+                self.state = self._describe(extra={"stroking": True})
+                return self.state
+            elif op == "cancel_stroke":
+                world.cancel_stroke()
+            elif op == "preview_stroke":
+                # Changes nothing, so it answers on its own, like pick.
+                seen = world.preview_stroke(command.get("path") or [],
+                                            float(command.get("speed_m_s", 0.0)),
+                                            float(command.get("accel_m_s2", 0.0)),
+                                            float(command.get("lead_m", 0.05)),
+                                            float(command.get("give_up_s", 2.0)),
+                                            float(command.get("horizon_s", 3.0)))
+                return {"ok": True, "possible": seen.possible, "why": seen.why,
+                        "reaches_end": seen.reaches_end,
+                        "stroke_s": self._number(seen.stroke_s),
+                        "work_j": self._number(seen.work_j),
+                        "let_go_at_m": [self._number(v) for v in seen.let_go_at_m],
+                        "let_go_velocity_m_s": [self._number(v)
+                                                for v in seen.let_go_velocity_m_s],
+                        "flight": self._flight(seen.flight)}
+            elif op == "preview_flight":
+                flight = world.preview_flight(command.get("from") or [0.0, 0.0, 0.0],
+                                              command.get("velocity") or [0.0, 0.0, 0.0],
+                                              float(command.get("horizon_s", 3.0)),
+                                              str(command.get("ignoring", "")))
+                return dict(self._flight(flight), ok=True)
             elif op == "fracture":
                 pieces = world.fracture(str(command.get("name", "")),
                                         float(command.get("window_s", 0.003)))

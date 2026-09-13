@@ -465,6 +465,14 @@ if(BANJO_BUILD_HEADLESS)
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/blade_binding_tests.py)
         set_tests_properties(banjo_blade_binding_tests PROPERTIES
             ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
+        # The hand's own motions through the same boundary: a ball wielded and
+        # thrown, the throw previewed first, what it left with and the work the
+        # hand did read back, and a block hauled against a spring.
+        add_test(NAME banjo_hand_stroke_binding_tests
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/hand_stroke_binding_tests.py)
+        set_tests_properties(banjo_hand_stroke_binding_tests PROPERTIES
+            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
         # Terrain and water through the same boundary: generated ground and
         # its water read, dug, heaped and cut, a lake left at rest, oak that
         # floats and iron that sinks, and the arrays a renderer draws from.
@@ -979,6 +987,14 @@ if(BANJO_BUILD_TESTS)
             target_link_libraries(banjo_bow_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_bow_tests)
             add_test(NAME banjo_bow_tests COMMAND banjo_bow_tests)
+
+            # The hand's own motions: a stroke made at the step's rate, what it
+            # does to light and heavy things, the work the hand does, and the
+            # previews that aim it. docs/interaction-profiles.md.
+            add_executable(banjo_hand_stroke_tests tests/hand_stroke_tests.cpp)
+            target_link_libraries(banjo_hand_stroke_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_hand_stroke_tests)
+            add_test(NAME banjo_hand_stroke_tests COMMAND banjo_hand_stroke_tests)
 
             add_executable(banjo_elastic_tests tests/elastic_tests.cpp)
             target_link_libraries(banjo_elastic_tests PRIVATE banjo_fastlattice_scene)

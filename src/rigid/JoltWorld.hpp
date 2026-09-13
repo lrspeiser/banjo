@@ -583,6 +583,12 @@ public:
     [[nodiscard]] std::vector<ImpactEvent> drainImpacts();
     [[nodiscard]] RigidSnapshot snapshot(MatterBodyId body_id) const;
     [[nodiscard]] RigidMechanicalState mechanicalState(MatterBodyId body_id) const;
+    // The damping a body carries, per second, on its speed and on its spin: the
+    // solver multiplies each by (1 - damping * dt) every step. A preview of a
+    // flight has to apply the same, or it is a preview of some other world.
+    // Zero for anything that does not move.
+    [[nodiscard]] double linearDamping(MatterBodyId body_id) const;
+    [[nodiscard]] double angularDamping(MatterBodyId body_id) const;
     [[nodiscard]] MechanicalTotals mechanicalTotals(const Vec3 &gravity_m_s2 = {}) const;
     [[nodiscard]] bool contains(MatterBodyId body_id) const;
     void removeAndDestroy(MatterBodyId body_id);

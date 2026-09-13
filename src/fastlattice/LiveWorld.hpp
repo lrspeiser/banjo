@@ -28,6 +28,11 @@ struct LiveBodyPose {
     Vec3 position_m{};
     double orientation_wxyz[4]{1.0, 0.0, 0.0, 0.0};
     Vec3 velocity_m_s{};
+    // What it weighs now, in kilograms: what the solver moves, and so what a
+    // hand has to hold up and a throw has to accelerate. Read every time
+    // rather than kept, because a body that burns gets lighter. Zero for
+    // anchored scenery, which the solver never moves.
+    double mass_kg{};
     bool anchored{};
     bool held{};
     // Whether this came OFF something, rather than being what it always was.
@@ -102,6 +107,98 @@ struct LivePick {
     std::string name;
     double distance_m{};
     Vec3 point_world_m{};
+};
+
+// A motion the hand makes by itself, step by step, instead of being moved
+// through it a frame at a time by whoever is driving. See
+// docs/interaction-profiles.md.
+//
+// What travels along `path_m` is where the hand WANTS the grip. It goes no
+// faster than `speed_m_s`, gets up to that at `accel_m_s2`, and is never more
+// than `lead_m` ahead of the grip: a hand is on the thing it holds and cannot
+// run on without it. The hand pulls with what it has (setHandStrength), so what
+// the held body does is the world's answer -- a heavy thing falls behind and a
+// light one keeps up, and whatever it meets can slow it or stop it. Nothing
+// here is a speed given to the body.
+//
+// Made at the step's own rate, not at a host's frame rate. A throw is over in a
+// tenth of a second, which is three frames at thirty a second: moved by the
+// host, the frame rate would decide how hard it was thrown.
+struct LiveStroke {
+    // Two to sixteen points, world metres: the path of the grip. It is joined
+    // wherever the grip is nearest to it, so a path that starts a little away
+    // from the grip is not a jump.
+    std::vector<Vec3> path_m;
+    double speed_m_s{};
+    double accel_m_s2{};
+    double lead_m{0.05};
+    // Open the hand when the GRIP reaches the end: the release of a throw. Not
+    // when the hand's target does -- that would let go of a heavy thing half a
+    // metre before it had been thrown.
+    bool let_go_at_end{};
+    // Stop trying after this long. The hand stays shut; the host decides.
+    double give_up_s{2.0};
+};
+
+// What the hand is doing, and what it has done.
+struct LiveHand {
+    std::string holding;          // "" for nothing
+    // How it holds it: "carry" (placed exactly where it is put -- an editor's
+    // move, with no force and so no work), "haul" (pulled with a bounded force
+    // because it is attached to something), "grip" (wielded: a bounded force at
+    // a point on it and a bounded torque), or "" when the hand is empty.
+    std::string mode;
+    Vec3 target_m{};              // where the hand wants the grip
+    Vec3 grip_m{};                // where the grip is
+    Vec3 grip_velocity_m_s{};
+    Vec3 force_n{};               // what it pulled with in the last step
+    // The work the hand has done on what it holds since it took hold, joules:
+    // its force times the grip's own displacement, and its torque times the
+    // turn, step by kept step. Measured rather than worked out from a speed,
+    // so it includes lifting, and whatever went into what the thing rubbed on.
+    double work_j{};
+    bool stroking{};
+    double stroke_along_m{};      // how far the GRIP has got along the path
+    double stroke_length_m{};
+    // How the last stroke ended: "" while one runs or none has; "reached" (the
+    // hand got to the end and holds there), "let go", "blocked" (the grip has
+    // stopped while the hand pulls with everything it has: as far as this hand
+    // can take it), "gave up" or "cancelled".
+    std::string stroke_ended;
+    // When a stroke opened the hand: what it let go of, how fast that was
+    // going as it left, when, and the work the hand had done on it by then.
+    std::string let_go_body;
+    Vec3 let_go_velocity_m_s{};
+    double let_go_at_s{-1.0};
+    double let_go_work_j{};
+};
+
+// Where something would go if it flew from here with this velocity, stepped the
+// way the solver steps it -- gravity, then the flying body's own damping, at
+// the rate the world is being stepped -- and checked against the solver's own
+// shapes along the line of its centre. Changes nothing.
+struct LiveFlight {
+    std::vector<Vec3> points_m;   // the path, a point every 1/60 s
+    bool hit{};
+    std::string hit_name;         // "" for the ground
+    Vec3 hit_point_m{};
+    double hit_after_s{};
+    double hit_speed_m_s{};
+};
+
+// What a stroke would do before it is made: the held body alone, pulled along
+// the path by this hand under gravity -- the same law a step pushes with --
+// and then where it would fly. What it cannot know is anything the stroke
+// itself would bump into on the way, which is why it is a preview.
+struct LiveStrokePreview {
+    bool possible{};
+    std::string why;              // when it is not possible, or does not reach
+    bool reaches_end{};           // false: the hand gave up before the grip got there
+    double stroke_s{};
+    double work_j{};
+    Vec3 let_go_at_m{};           // the body's centre as the hand opens
+    Vec3 let_go_velocity_m_s{};
+    LiveFlight flight;
 };
 
 struct LiveImpact {
@@ -772,6 +869,27 @@ public:
     // The most torque the hand can put on what it wields, newton metres.
     void setHandTorque(double newton_metres);
     [[nodiscard]] double handTorque() const;
+    // The moving mass of the hand and arm, kilograms: what the strength has to
+    // get going along with whatever a stroke throws. 2 kg unless told
+    // otherwise, a demonstration value. It is why a light ball leaves a hand
+    // faster than a heavy one even when neither is too heavy to hold.
+    void setHandMass(double kilograms);
+    [[nodiscard]] double handMass() const;
+
+    // The hand's own motions (LiveStroke). A stroke needs a hand that PULLS:
+    // something wielded, or something hauled because it is attached. A carried
+    // body goes where it is put and is never pushed, so it is refused, with the
+    // reason in `why`. A new stroke replaces one already running, and moveHeld
+    // takes the hand back from one: whoever moves the hand is driving it.
+    [[nodiscard]] bool stroke(const LiveStroke &stroke, std::string &why);
+    void cancelStroke();
+    [[nodiscard]] LiveHand hand() const;
+    // Previews, for aiming. Neither changes the world, and both are bounded:
+    // at most ten seconds of flight, and a stroke at most its own give_up_s.
+    [[nodiscard]] LiveStrokePreview previewStroke(const LiveStroke &stroke, double dt_s,
+                                                  double horizon_s) const;
+    [[nodiscard]] LiveFlight previewFlight(const Vec3 &from_world_m, const Vec3 &velocity_m_s,
+                                           double horizon_s, const std::string &ignoring) const;
 
 private:
     // Every body as the water sees it: shape, where it is, how it moves.
@@ -855,6 +973,19 @@ private:
     // along its joint if it is attached to something. See the definition; the
     // hand writes the world from two places and both have to agree.
     void carryOrHaul(double dt_s);
+    // The hand's side of a step. Before it: where a stroke wants the grip this
+    // step, and where the grip is, for the work. After a KEPT step: the work
+    // done, how far a stroke has got and whether it is over. A step that is
+    // taken back undoes the first half and never gets the second.
+    void beginHandStep(double dt_s);
+    void endHandStep(const Vec3 &grip_force_n, const Vec3 &grip_torque_n_m, double dt_s);
+    void abandonHandStep();
+    // Whether what the hand holds is attached to something, which makes holding
+    // it a haul rather than a carry.
+    [[nodiscard]] bool hauling() const;
+    // Where the grip is and how fast it is moving: the wielded point, or the
+    // centre of mass of anything carried or hauled.
+    [[nodiscard]] std::pair<Vec3, Vec3> gripNow() const;
     // Part every link carrying more than it can take.
     //
     // Checked after the step rather than inside it, because a link's tension is

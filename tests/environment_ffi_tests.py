@@ -62,9 +62,10 @@ def body(world, name):
 
 
 class TheGroundAndTheWaterThroughTheLibrary(unittest.TestCase):
-    def test_the_library_speaks_abi_15(self):
-        self.assertEqual(banjo.library().banjo_abi_version(), 15)
-        self.assertEqual(banjo.ABI_VERSION, 15)
+    def test_the_library_speaks_an_abi_with_ground_and_water_in_it(self):
+        # 15 added terrain and water, and every ABI after it keeps them.
+        self.assertGreaterEqual(banjo.library().banjo_abi_version(), 15)
+        self.assertEqual(banjo.ABI_VERSION, banjo.library().banjo_abi_version())
 
     def test_a_world_without_ground_says_so(self):
         flat_floor = {"bodies": [box("block", "concrete", (0.2, 0.2, 0.2), (0, 0.1, 0))]}

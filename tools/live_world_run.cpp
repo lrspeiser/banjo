@@ -53,6 +53,16 @@
 //        {"op":"step","n":4,"hand":[..],"hand_q":[w,x,y,z]}   where it wants the
 //                                            grip, and which way it wants it to face
 //        {"op":"hand","strength_n":800,"torque_n_m":60}   how strong the hand is
+//        {"op":"hand","mass_kg":2}           the hand and arm a throw also moves
+//        {"op":"stroke","path":[[..],[..]],"speed_m_s":20,"accel_m_s2":2000,
+//         "lead_m":0.05,"let_go":true,"give_up_s":2}   a motion the hand makes by
+//                                            itself, at the step's own rate; the
+//                                            reply's "hand" says how it is going
+//        {"op":"cancel_stroke"}              the host takes the hand back
+//        {"op":"preview_stroke", ...a stroke..., "horizon_s":4}   what it would do
+//                                            and where it would fly (a lean reply)
+//        {"op":"preview_flight","from":[..],"velocity":[..],"horizon_s":4,
+//         "ignoring":"ball"}                 gravity and the world's shapes (lean)
 //        {"op":"cuts"}                       every edge contact since the last reply
 //   out  {"ok":true,"t":0.033,"stepped_back":false,
 //         "bodies":[{"name":"ball","shape":"sphere","dimensions_m":[...],
@@ -123,6 +133,54 @@ std::string last_joints;
 
 nlohmann::json vec(const Vec3 &v) {
     return nlohmann::json::array({tidy(v.x), tidy(v.y), tidy(v.z)});
+}
+
+// What the hand is doing and what it has done (LiveHand). On every reply while
+// it holds something, and after a stroke has opened it, so a host can show a
+// throw's result: the speed it left with and the work the hand put in.
+nlohmann::json handJson(const LiveHand &hand) {
+    nlohmann::json out{{"holding", hand.holding}, {"mode", hand.mode},
+                       {"target_m", vec(hand.target_m)}, {"grip_m", vec(hand.grip_m)},
+                       {"grip_velocity_m_s", vec(hand.grip_velocity_m_s)},
+                       {"force_n", vec(hand.force_n)}, {"work_j", tidy(hand.work_j)},
+                       {"stroking", hand.stroking}, {"stroke_ended", hand.stroke_ended}};
+    if (hand.stroking) {
+        out["stroke_along_m"] = tidy(hand.stroke_along_m);
+        out["stroke_length_m"] = tidy(hand.stroke_length_m);
+    }
+    if (hand.let_go_at_s >= 0.0)
+        out["let_go"] = {{"body", hand.let_go_body},
+                         {"velocity_m_s", vec(hand.let_go_velocity_m_s)},
+                         {"at_s", tidy(hand.let_go_at_s)},
+                         {"work_j", tidy(hand.let_go_work_j)}};
+    return out;
+}
+
+nlohmann::json flightJson(const LiveFlight &flight) {
+    nlohmann::json points = nlohmann::json::array();
+    for (const Vec3 &p : flight.points_m) points.push_back(vec(p));
+    return {{"points_m", std::move(points)}, {"hit", flight.hit}, {"hit_name", flight.hit_name},
+            {"hit_point_m", vec(flight.hit_point_m)}, {"hit_after_s", tidy(flight.hit_after_s)},
+            {"hit_speed_m_s", tidy(flight.hit_speed_m_s)}};
+}
+
+// A stroke from a command: {"path":[[x,y,z],...],"speed_m_s":..,"accel_m_s2":..,
+// "lead_m":0.05,"let_go":true,"give_up_s":2}. The engine checks the numbers.
+LiveStroke readStroke(const nlohmann::json &command) {
+    LiveStroke stroke;
+    const nlohmann::json &path = command.at("path");
+    if (!path.is_array()) throw std::invalid_argument("a stroke's path is a list of points");
+    for (const nlohmann::json &p : path) {
+        if (!p.is_array() || p.size() != 3)
+            throw std::invalid_argument("a stroke's path is points of three numbers");
+        stroke.path_m.push_back({p[0].get<double>(), p[1].get<double>(), p[2].get<double>()});
+    }
+    stroke.speed_m_s = command.value("speed_m_s", 0.0);
+    stroke.accel_m_s2 = command.value("accel_m_s2", 0.0);
+    stroke.lead_m = command.value("lead_m", 0.05);
+    stroke.let_go_at_end = command.value("let_go", false);
+    stroke.give_up_s = command.value("give_up_s", 2.0);
+    return stroke;
 }
 
 // Every pin, as the host sees it. `a` and `b` are the names it holds, which do
@@ -269,6 +327,8 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
                                tidy(pose.orientation_wxyz[0]), tidy(pose.orientation_wxyz[1]),
                                tidy(pose.orientation_wxyz[2]), tidy(pose.orientation_wxyz[3])})},
                           {"velocity_m_s", vec(pose.velocity_m_s)},
+                          // What a hand has to hold up and a throw accelerate.
+                          {"mass_kg", tidy(pose.mass_kg)},
                           {"anchored", pose.anchored},
                           {"held", pose.held},
                           // How deep a permanent set it carries, and where.
@@ -345,6 +405,10 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
             // for a second fracture while one is running gets nothing, so it
             // needs to know.
             {"working_on", world.fracturePending() ? world.fractureSubject() : std::string{}}};
+    // The hand, while it holds something and once a stroke has opened it.
+    const LiveHand hand = world.hand();
+    if (!hand.holding.empty() || hand.let_go_at_s >= 0.0 || !hand.stroke_ended.empty())
+        state["hand"] = handJson(hand);
     // Every moment the world waited, or was spared waiting, since the last
     // reply carried them. Drained here rather than accumulated, so a host
     // reading each reply sees each one exactly once.
@@ -729,8 +793,43 @@ int main(int argc, char **argv) {
                         world->setHandStrength(command.at("strength_n").get<double>());
                     if (command.contains("torque_n_m"))
                         world->setHandTorque(command.at("torque_n_m").get<double>());
+                    if (command.contains("mass_kg"))
+                        world->setHandMass(command.at("mass_kg").get<double>());
                     reply["strength_n"] = world->handStrength();
                     reply["torque_n_m"] = world->handTorque();
+                    reply["mass_kg"] = world->handMass();
+                } else if (op == "stroke") {
+                    // A motion the hand makes by itself, at the step's own rate
+                    // (LiveStroke). The reply's `hand` says how it goes.
+                    std::string why;
+                    if (!world->stroke(readStroke(command), why))
+                        throw std::invalid_argument(why);
+                    reply["stroking"] = true;
+                } else if (op == "cancel_stroke") {
+                    world->cancelStroke();
+                } else if (op == "preview_stroke") {
+                    // What the stroke would do, and where the thing would fly.
+                    // Changes nothing, so it answers on its own, like `pick`.
+                    const LiveStrokePreview seen = world->previewStroke(
+                        readStroke(command), command.value("dt", 1.0 / 240.0),
+                        command.value("horizon_s", 3.0));
+                    nlohmann::json answer{{"ok", true}, {"possible", seen.possible},
+                                          {"why", seen.why}, {"reaches_end", seen.reaches_end},
+                                          {"stroke_s", tidy(seen.stroke_s)},
+                                          {"work_j", tidy(seen.work_j)},
+                                          {"let_go_at_m", vec(seen.let_go_at_m)},
+                                          {"let_go_velocity_m_s", vec(seen.let_go_velocity_m_s)},
+                                          {"flight", flightJson(seen.flight)}};
+                    std::cout << answer.dump() << std::endl;
+                    continue;
+                } else if (op == "preview_flight") {
+                    nlohmann::json answer = flightJson(world->previewFlight(
+                        readVec(command, "from"), readVec(command, "velocity"),
+                        command.value("horizon_s", 3.0),
+                        command.value("ignoring", std::string())));
+                    answer["ok"] = true;
+                    std::cout << answer.dump() << std::endl;
+                    continue;
                 } else if (op == "blade") {
                     // Give a body an edge. See docs/cutting-model.md: nothing
                     // here is a cutting power; what the edge does is decided by

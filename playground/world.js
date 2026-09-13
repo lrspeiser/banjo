@@ -14,6 +14,9 @@
 import * as THREE from "/vendor/three.module.js";
 import { rememberBlades, bladeFor, STANCES, takeHold, handTarget, dressBlades, showKerfs,
          narrateCuts } from "/blades.js";
+import { BINDINGS, isKey, isButton, keyOf, controlsHint, holdPoint, windUpPoint,
+         windUpReached, throwStroke, placeStroke, throwable, helpFor, AimArc,
+         WIND_UP_S } from "/interaction.js";
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -95,6 +98,10 @@ const world = {
   opening: false,
   openError: null,
   framesSinceOpen: 0,
+  // The hand as the one control language sees it (interaction.js): what it is
+  // doing -- "none", "ready", "preparing", "throwing", "placing", "blocked",
+  // "carrying", "thrown" -- and what the help and the meter say about it.
+  use: { mode: "none" },
 };
 
 function remember(what) {
@@ -668,6 +675,9 @@ function draw(state) {
     held.dims = body.dimensions_m;
     held.anchored = !!body.anchored;
     held.shape = body.shape;
+    // What the engine says it weighs: what a hand has to hold up and a throw
+    // has to accelerate.
+    held.mass = body.mass_kg || 0;
     place(held.mesh, body);
     showKerfs(held, body);
   }
@@ -1047,8 +1057,14 @@ let yaw = 0, pitch = 0, looking = false;
 
 addEventListener("keydown", (e) => {
   if (e.target instanceof HTMLInputElement) return;
+  if (isKey("more", e.code)) e.preventDefault();   // not the browser's focus hop
+  if (e.repeat) return;
   keys.add(e.code);
-  if (e.code === "KeyF" && world.held) intend("throw");
+  // The one control language (interaction.js): interact takes hold and puts
+  // down; more says what else the thing in the hand can do, by number.
+  if (isKey("interact", e.code)) intend(world.held ? "put down" : "pick");
+  if (isKey("more", e.code) && world.held) { world.use.more = !world.use.more; showUse(); }
+  if (world.use.more && /^Digit[123]$/.test(e.code)) moreAction(Number(e.code.slice(5)));
   if (e.code === "KeyR") unlatch();
   if (e.code === "KeyL") markLag();
   if (["KeyW","KeyA","KeyS","KeyD","KeyQ","KeyE","Space",
@@ -1056,6 +1072,8 @@ addEventListener("keydown", (e) => {
 });
 addEventListener("keyup", (e) => keys.delete(e.code));
 addEventListener("blur", () => keys.clear());
+// The controls, said from the same table the keys are read from.
+$("hud-hint").innerHTML = controlsHint();
 
 // Right-click releases a latch on whatever is under the crosshair: the bar off
 // the gate, the nock off the string. On the mouse as well as on R because a
@@ -1063,6 +1081,8 @@ addEventListener("blur", () => keys.clear());
 // reaching for a key to do it is one hand too many.
 canvas.addEventListener("contextmenu", (e) => {
   e.preventDefault();
+  // Secondary, in the middle of a wind-up: lower it instead of throwing.
+  if (world.use.mode === "preparing") { cancelWindUp(); return; }
   // With a blade in hand it turns the edge instead, a quarter about the
   // blade's own length: left, down, right, up.
   if (world.held && world.held.blade) {
@@ -1079,9 +1099,15 @@ canvas.addEventListener("pointerdown", (e) => {
   // that and then pick the thing up as well, because a pointerup is a
   // pointerup whichever button made it.
   if (e.button !== 0) return;
+  // Primary held with something throwable in the hand winds it up. Looking
+  // still works while it does -- that is how a throw is aimed.
+  if (isButton("primary", e.button) && world.held && world.held.throwable &&
+      (world.use.mode === "ready" || world.use.mode === "blocked")) startWindUp();
   if (looking) return;           // captured: the move handler has it
   drag = { x: e.clientX, y: e.clientY, moved: false };
-  canvas.setPointerCapture(e.pointerId);
+  // Capture can be refused -- a pointer already gone, or one a test made up --
+  // and dragging to look works without it.
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* look without it */ }
 });
 canvas.addEventListener("pointermove", (e) => {
   if (!drag) return;
@@ -1092,6 +1118,14 @@ canvas.addEventListener("pointermove", (e) => {
 });
 canvas.addEventListener("pointerup", (e) => {
   if (e.button !== 0) return;
+  // Letting go of primary after a wind-up throws, however much the view was
+  // turned while it was held.
+  if (world.use.mode === "preparing") {
+    if (drag) try { canvas.releasePointerCapture(e.pointerId); } catch { /* gone */ }
+    drag = null;
+    intend("let fly");
+    return;
+  }
   const was = drag;
   drag = null;
   try { canvas.releasePointerCapture(e.pointerId); } catch { /* already gone */ }
@@ -1142,8 +1176,9 @@ function walk(dt) {
   if (keys.has("KeyD")) move.add(right);
   if (keys.has("KeyA")) move.sub(right);
   if (move.lengthSq() > 0) move.normalize().multiplyScalar(speed);
-  if (keys.has("KeyE") || keys.has("Space")) move.y += speed;
-  if (keys.has("KeyQ")) move.y -= speed;
+  // Up and down from the bindings. E used to be up as well; it is interact now.
+  if (BINDINGS.up.keys.some((k) => keys.has(k))) move.y += speed;
+  if (BINDINGS.down.keys.some((k) => keys.has(k))) move.y -= speed;
   camera.position.add(move);
   // Not below the floor, and not so high the room is a map. On uneven ground
   // the floor is the ground under you.
@@ -1229,6 +1264,9 @@ function showLabel(found) {
             + ` (drawn deeper so you can see it)` : "")
       + ` · ${found.distance_m.toFixed(2)} m away`
       + (bladeFor(found.name) ? " · has an edge: click to take it by the grip" : "")
+      + (!bladeFor(found.name) && throwable(entry, onAJoint(found.name))
+          ? ` · ${entry.mass < 10 ? entry.mass.toFixed(2) : entry.mass.toFixed(1)} kg`
+            + ` · ${keyOf("interact")} or click to take hold` : "")
     : "";
   cross.classList.toggle("on", !entry?.anchored);
 }
@@ -1245,7 +1283,8 @@ function intend(what) {
   if (world.busy) { wants = what; return; }
   if (what === "pick") pickUp();
   else if (what === "drop") dropIt();
-  else if (what === "throw") throwIt();
+  else if (what === "put down") putDown();
+  else if (what === "let fly") letFly();
 }
 
 // ---------------------------------------------------------------------------
@@ -1269,6 +1308,11 @@ function latchOn(name) {
 function ropedTo(name) {
   return world.joints.some((j) => j.kind === "link" && j.attached &&
                                   (j.a === name || j.b === name));
+}
+
+// On any joint at all: hauled against it rather than taken by a grip.
+function onAJoint(name) {
+  return world.joints.some((j) => j.attached && (j.a === name || j.b === name));
 }
 
 // Let go of a latch by hand: whatever is held, or whatever is under the
@@ -1328,8 +1372,29 @@ async function pickUp() {
         + ` swing it; right-click turns the edge.`);
       return;
     }
+    // A loose thing a hand can lift is taken by a GRIP, not carried: held at
+    // its middle by the bounded hand, so that bringing it in, winding it up
+    // and throwing it are the hand's force acting on its mass. Anything on a
+    // joint keeps the hold it had -- a bowstring is hauled, a gate is shoved.
+    if (entry && throwable(entry, onAJoint(name))) {
+      const at = entry.mesh.position;
+      await act("wield", { name, grip: [at.x, at.y, at.z] });
+      world.held = { name, throwable: true, distance: 0.5 };
+      world.use = { mode: "ready", name, kg: entry.mass,
+                    noun: entry.shape === "sphere" ? "ball" : "thing",
+                    latched: !!latchOn(name),
+                    bringing: { from: at.clone(), since: performance.now() } };
+      $("crosshair").classList.add("holding");
+      $("label").hidden = true;
+      $("carry").hidden = false;
+      remember(`took hold of the ${entry.material || ""} ${name}`.replace(/\s+/g, " "));
+      say("you", `Took hold of ${name} — ${entry.mass < 10 ? entry.mass.toFixed(2) : entry.mass.toFixed(1)} kg.`);
+      showUse();
+      return;
+    }
     await act("grab", { name });
     world.held = { name, distance: clamp(world.aim.distance_m, 0.6, 4.0) };
+    world.use = { mode: "carrying", name, kg: entry?.mass || 0, latched: !!latchOn(name) };
     // Where the hand is, relative to where the view says it is.
     //
     // The crosshair ray stops at a SURFACE and the hand pulls on a CENTRE OF
@@ -1358,6 +1423,7 @@ async function pickUp() {
     $("carry").hidden = false;
     remember(`picked up the ${entry?.material || ""} ${name}`.replace(/\s+/g, " "));
     say("you", `Picked up ${name}.`);
+    showUse();
   } catch (error) { say("bad", String(error.message || error)); }
 }
 
@@ -1384,6 +1450,9 @@ async function dropIt() {
   $("crosshair").classList.remove("holding");
   $("carry").hidden = true;
   clearGuides();
+  aimArc.hide();
+  world.use = { mode: "none" };
+  showUse();
   try {
     await act("release");
     remember(at ? `let go of ${name} at ${at.x.toFixed(2)}, ${at.y.toFixed(2)}, ${at.z.toFixed(2)} m`
@@ -1392,24 +1461,197 @@ async function dropIt() {
   } catch (error) { say("bad", String(error.message || error)); }
 }
 
-// Throwing is letting go with the hand still moving. The engine takes a pose,
-// not a velocity, so the throw is three fast moves along the view and then a
-// release -- the object keeps the speed those moves gave it.
-async function throwIt() {
-  if (!world.held) return;
-  const held = world.held;
-  const dir = forwardVector();
+// ---------------------------------------------------------------------------
+// Using what is in the hand: one control language (interaction.js)
+// ---------------------------------------------------------------------------
+//
+// A throw is the hand moving: a wind-up, then a stroke the ENGINE makes at its
+// own step rate with the hand's bounded force, letting go when the thing gets
+// to the end. Nothing here gives anything a speed. A heavy ball winds up slower
+// and leaves slower because the same 800 N has more to move, and what it left
+// with, and the work the hand put in, are read back from the engine.
+//
+// (This replaced a throw that was three 0.55 m jumps of a CARRIED body and a
+// release. A carry is placement and zeroes the body's speed every step, so it
+// left the hand at 0.00 m/s and fell 1.65 m in front of you, whatever it was.)
+const aimArc = new AimArc(scene);
+
+function startWindUp() {
+  Object.assign(world.use, { mode: "preparing", since: performance.now(), asked: 0,
+                             reached: 0, more: false, bringing: null });
+  showUse();
+}
+
+function cancelWindUp() {
+  Object.assign(world.use, { mode: "ready", asked: 0 });
+  say("you", `Lowered ${world.use.name}.`);
+  showUse();
+}
+
+async function letFly() {
+  const use = world.use;
+  const entry = world.held && world.bodies.get(world.held.name);
+  if (!entry || use.mode !== "preparing") return;
+  const grip = use.grip || entry.mesh.position.clone();
+  const reached = use.reached || 0;
+  use.mode = "throwing";
+  showUse();
   try {
-    for (let i = 1; i <= 3; i++) {
-      const d = held.distance + i * 0.55;
-      const p = camera.position.clone().add(dir.clone().multiplyScalar(d));
-      await act("move", { to: [p.x, p.y, p.z] });
-      await act("step", { dt: 1 / 240, n: 1 });
-    }
-    remember(`threw ${held.name}`);
-    say("you", `Threw ${held.name}.`);
-  } catch { /* the release below still has to happen */ }
-  await dropIt();
+    const reply = await act("stroke", Object.assign(throwStroke(camera, grip, reached),
+                                                    { let_go: true }));
+    // The work the hand does on the throw itself, not on the wind-up before it.
+    use.workBefore = reply && reply.hand ? reply.hand.work_j : 0;
+  } catch (error) {
+    use.mode = "ready";
+    say("bad", String(error.message || error));
+    showUse();
+  }
+}
+
+// Put it down: lowered by the same hand onto what is under it, and let go of
+// when it gets there. A carried thing is set down as it always was.
+async function putDown() {
+  const held = world.held;
+  if (!held) return;
+  if (!held.throwable) { await dropIt(); return; }
+  const entry = world.bodies.get(held.name);
+  if (!entry) return;
+  const grip = world.use.grip || entry.mesh.position.clone();
+  const restsAt = dropOnto.y + underside(entry) - 0.002;
+  if (dropOnto.empty || grip.y - restsAt < 0.02) { await dropIt(); return; }
+  world.use.mode = "placing";
+  world.use.more = false;
+  showUse();
+  try { await act("stroke", placeStroke(grip, restsAt)); }
+  catch (error) {
+    world.use.mode = "ready";
+    say("bad", String(error.message || error));
+    showUse();
+  }
+}
+
+function moreAction(n) {
+  world.use.more = false;
+  if (n === 1) intend("drop");
+  else if (n === 2) intend("put down");
+  else if (n === 3) unlatch();
+  showUse();
+}
+
+// Where the hand wants a throwable thing this tick: brought in to the hand,
+// held there, or wound back as far as has been asked. While the engine is
+// making a stroke the hand is the engine's, and nothing is sent.
+function throwingHand(now) {
+  const use = world.use;
+  if (use.mode === "preparing") {
+    use.asked = Math.min(1, (now - use.since) / (WIND_UP_S * 1000));
+    const p = windUpPoint(camera, use.asked);
+    return [p.x, p.y, p.z];
+  }
+  if (use.mode !== "ready" && use.mode !== "blocked") return null;
+  const hold = holdPoint(camera);
+  if (use.bringing) {
+    // Brought in over a third of a second rather than yanked: the bounded hand
+    // would get it there anyway, but at 800 N into a quarter-kilogram ball.
+    const s = Math.min(1, (now - use.bringing.since) / 350);
+    if (s >= 1) use.bringing = null;
+    const p = use.bringing ? use.bringing.from.clone().lerp(hold, s) : hold;
+    return [p.x, p.y, p.z];
+  }
+  return [hold.x, hold.y, hold.z];
+}
+
+// What the engine says the hand did: how far back a wind-up actually got, and
+// how a stroke ended.
+function followTheHand(hand) {
+  const use = world.use;
+  if (!hand || !world.held || !world.held.throwable) return;
+  if (hand.grip_m && hand.holding) use.grip = new THREE.Vector3(...hand.grip_m);
+  if (use.mode === "preparing" && use.grip) {
+    use.reached = windUpReached(camera, use.grip);
+    showUse();
+  }
+  if (use.mode !== "throwing" && use.mode !== "placing") return;
+  if (hand.stroke_ended === "let go" && hand.let_go && !hand.holding) { letGoOf(hand); return; }
+  if (!hand.stroking && ["blocked", "gave up", "cancelled"].includes(hand.stroke_ended)) {
+    use.mode = "blocked";
+    say("world", `${use.name} would not go any further — something is in the way.`);
+    showUse();
+  }
+}
+
+function letGoOf(hand) {
+  const use = world.use;
+  const name = world.held.name;
+  const v = hand.let_go.velocity_m_s;
+  const speed = Math.hypot(v[0], v[1], v[2]);
+  const thrown = use.mode === "throwing";
+  world.held = null;
+  $("crosshair").classList.remove("holding");
+  $("carry").hidden = true;
+  clearGuides();
+  aimArc.hide();
+  if (thrown) {
+    const work = hand.let_go.work_j - (use.workBefore || 0);
+    const kg = use.kg || 0;
+    const text = `${name} left your hand at ${speed.toFixed(1)} m/s — the throw was`
+      + ` ${work.toFixed(work < 10 ? 1 : 0)} J of your hand's work on`
+      + ` ${kg < 10 ? kg.toFixed(2) : kg.toFixed(1)} kg.`;
+    say("world", text);
+    remember(`threw ${name}: it left the hand at ${speed.toFixed(1)} m/s after`
+      + ` ${work.toFixed(1)} J of the hand's work`);
+    world.use = { mode: "thrown", name, kg, result: text, until: performance.now() + 4000 };
+  } else {
+    say("you", `Put ${name} down.`);
+    remember(`put ${name} down`);
+    world.use = { mode: "none" };
+  }
+  showUse();
+}
+
+// Where the throw would go if it were let go of now: the engine's own preview
+// of this hand on this thing, a few times a second, redrawn as the view and the
+// wind-up change. It moves nothing.
+let previewBusy = false, previewAt = 0;
+async function previewThrow() {
+  const use = world.use;
+  if (!world.held || !world.held.throwable || (use.mode !== "ready" && use.mode !== "preparing")) {
+    aimArc.hide();
+    return;
+  }
+  const now = performance.now();
+  if (previewBusy || !use.grip || use.bringing || now - previewAt < 180) return;
+  previewAt = now;
+  previewBusy = true;
+  try {
+    const stroke = throwStroke(camera, use.grip, use.mode === "preparing" ? use.reached || 0 : 0);
+    const seen = await act("preview_stroke", Object.assign(stroke, { horizon_s: 4 }));
+    if (world.use !== use || (use.mode !== "ready" && use.mode !== "preparing")) return;
+    const v = seen.let_go_velocity_m_s || [0, 0, 0];
+    use.preview = { possible: !!(seen.possible && seen.reaches_end), why: seen.why || "",
+                    speed: Math.hypot(v[0], v[1], v[2]),
+                    hit: !!(seen.flight && seen.flight.hit),
+                    hitName: (seen.flight && seen.flight.hit_name) || "" };
+    if (use.preview.possible) aimArc.show(seen.flight); else aimArc.hide();
+    showUse();
+  } catch { /* the next tick asks again */ } finally { previewBusy = false; }
+}
+
+function showUse() {
+  const use = world.use;
+  const box = $("use");
+  if (!use || use.mode === "none") { box.hidden = true; return; }
+  const help = helpFor(use);
+  box.hidden = false;
+  $("use-title").innerHTML = help.title;
+  $("use-line").innerHTML = help.line;
+  $("use-note").textContent = help.note;
+  $("use-meter").hidden = !help.meter;
+  if (help.meter) {
+    $("use-meter-label").textContent = help.meter.label;
+    $("use-meter-fill").style.width = `${Math.round(100 * help.meter.fraction)}%`;
+    $("use-meter-value").textContent = help.meter.value;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1786,7 +2028,8 @@ async function tick() {
     if (wants) { const what = wants; wants = null; 
       if (what === "pick") await pickUp();
       else if (what === "drop") await dropIt();
-      else if (what === "throw") await throwIt();
+      else if (what === "put down") await putDown();
+      else if (what === "let fly") await letFly();
     }
     // Where the hand is, sent WITH the step rather than before it.
     //
@@ -1802,6 +2045,8 @@ async function tick() {
       // A blade in hand: where the grip should be and which way the blade
       // should face, from the view and the stance.
       ({ hand, hand_q } = handTarget(camera, world.held.blade, world.held, elapsed));
+    } else if (world.held && world.held.throwable) {
+      hand = throwingHand(now);
     } else if (world.held) {
       const dir = forwardVector();
       const p = camera.position.clone().add(dir.multiplyScalar(world.held.distance));
@@ -1885,6 +2130,9 @@ async function tick() {
     }
 
     draw(state);
+    // What the hand did this tick, and where a throw would go from here.
+    followTheHand(state.hand);
+    previewThrow();
     drawRopes();
     drawHeat(state.heat);
     narrateCuts(state.cuts, say, remember);
@@ -2022,6 +2270,11 @@ async function watchTheDraw() {
 let last = performance.now();
 function frame() {
   const now = performance.now();
+  // A throw's result stays up long enough to read, then the help goes.
+  if (world.use.mode === "thrown" && now > world.use.until) {
+    world.use = { mode: "none" };
+    showUse();
+  }
   const gap = now - last;
   const dt = Math.min(0.1, gap / 1000);
   last = now;
@@ -2341,6 +2594,9 @@ async function open() {
     trace.startedWorld = world.clock;
     world.story = [];
     world.held = null;
+    world.use = { mode: "none" };
+    aimArc.hide();
+    showUse();
     $("carry").hidden = true;
     world.bodies.forEach((e) => forget(e.mesh));
     world.bodies.clear();
@@ -2403,7 +2659,13 @@ window.banjoRoom = {
     camera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, "YXZ"));
   },
   standAt(x, y, z) { camera.position.set(x, y, z); },
-  aim, pickUp, dropIt, throwIt, intend,
+  aim, pickUp, dropIt, putDown, letFly, intend,
+  // The hand as the control language sees it, and what the help says about it.
+  use: () => ({ ...world.use, grip: world.use.grip && world.use.grip.toArray() }),
+  help: () => ({ shown: !$("use").hidden, title: $("use-title").textContent,
+                 line: $("use-line").textContent, note: $("use-note").textContent,
+                 meter: $("use-meter").hidden ? null : $("use-meter-value").textContent }),
+  arcShown: () => aimArc.group.visible,
   // For measuring what a frame costs: building the meshes for a shattered pane
   // is the expensive part of a break, and it cannot be seen from outside.
   buildMesh, renderer, THREE, MATERIALS,

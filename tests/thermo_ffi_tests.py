@@ -52,10 +52,12 @@ def run(world, seconds):
 
 
 class HeatThroughTheLibrary(unittest.TestCase):
-    def test_the_library_speaks_abi_15(self):
-        # 14 added heat, chemistry and gas; 15 added terrain and water on top.
-        self.assertEqual(banjo.library().banjo_abi_version(), 15)
-        self.assertEqual(banjo.ABI_VERSION, 15)
+    def test_the_library_speaks_an_abi_with_heat_in_it(self):
+        # 14 added heat, chemistry and gas, and every ABI after it keeps them.
+        # Pinned to exactly 15, this failed the day the hand's strokes made 16
+        # -- which says nothing about heat.
+        self.assertGreaterEqual(banjo.library().banjo_abi_version(), 14)
+        self.assertEqual(banjo.ABI_VERSION, banjo.library().banjo_abi_version())
 
     def test_the_model_is_readable_without_a_world(self):
         model = banjo.thermo_model()["model"]

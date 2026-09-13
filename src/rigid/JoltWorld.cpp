@@ -2309,6 +2309,26 @@ RigidMechanicalState JoltWorld::mechanicalState(MatterBodyId body_id) const {
     return {motion, 1.0 / inverse_mass, *inertia};
 }
 
+double JoltWorld::linearDamping(MatterBodyId body_id) const {
+    const auto found = impl_->bodies_.find(body_id);
+    if (found == impl_->bodies_.end()) throw std::out_of_range("damped body is missing");
+    JPH::BodyLockRead lock(impl_->physics_->GetBodyLockInterface(), found->second);
+    if (!lock.Succeeded()) throw std::runtime_error("cannot lock damped body");
+    const JPH::Body &body = lock.GetBody();
+    return body.IsDynamic() ? static_cast<double>(body.GetMotionProperties()->GetLinearDamping())
+                            : 0.0;
+}
+
+double JoltWorld::angularDamping(MatterBodyId body_id) const {
+    const auto found = impl_->bodies_.find(body_id);
+    if (found == impl_->bodies_.end()) throw std::out_of_range("damped body is missing");
+    JPH::BodyLockRead lock(impl_->physics_->GetBodyLockInterface(), found->second);
+    if (!lock.Succeeded()) throw std::runtime_error("cannot lock damped body");
+    const JPH::Body &body = lock.GetBody();
+    return body.IsDynamic() ? static_cast<double>(body.GetMotionProperties()->GetAngularDamping())
+                            : 0.0;
+}
+
 MechanicalTotals JoltWorld::mechanicalTotals(const Vec3 &gravity_m_s2) const {
     std::vector<MatterBodyId> ids;
     ids.reserve(impl_->bodies_.size());

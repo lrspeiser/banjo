@@ -1,6 +1,7 @@
 #include "fastlattice/LiveWorld.hpp"
 
 #include "core/Plane.hpp"
+#include "core/RigidPrimitive.hpp"
 #include "fracture/ConnectedComponents.hpp"
 #include "fastlattice/FastLattice.hpp"
 #include "fastlattice/LatticePhysics.hpp"
@@ -54,6 +55,116 @@ Vec3 cellBounds(const std::vector<std::uint32_t> &nodes,
 // How heavy a push at `arm` from the centre of mass feels, direction by
 // direction. Defined with the blades; the wielding hand is shaped by it.
 [[nodiscard]] Mat3 gripMassMatrix(double mass_kg, const Mat3 &inertia_world, const Vec3 &arm);
+
+// The hand on a grip, as ONE law: a step pushes with it and a preview of a
+// stroke integrates it, so the two cannot come to disagree about what a hand
+// can do. Defined with the blades, where the law was first written down.
+struct GripPull {
+    Vec3 force{}, torque{}, grip{};
+};
+[[nodiscard]] GripPull gripPull(const RigidMechanicalState &held, const Vec3 &grip_local,
+                                const Vec3 &wanted_at, const Vec3 &wanted_velocity,
+                                const Quat &wanted_facing, double strength_n,
+                                double torque_n_m, const Vec3 &gravity);
+
+// A stroke's path (LiveStroke): how far along it each of its points is.
+[[nodiscard]] std::vector<double> arcLengths(const std::vector<Vec3> &path) {
+    std::vector<double> at(path.size(), 0.0);
+    for (std::size_t i = 1; i < path.size(); ++i) at[i] = at[i - 1] + length(path[i] - path[i - 1]);
+    return at;
+}
+
+// The point `along` metres down a path.
+[[nodiscard]] Vec3 pointAlong(const std::vector<Vec3> &path, const std::vector<double> &at,
+                              double along) {
+    if (!(along > 0.0)) return path.front();
+    for (std::size_t i = 1; i < path.size(); ++i) {
+        if (along > at[i] && i + 1 < path.size()) continue;
+        const double span = at[i] - at[i - 1];
+        const double s = span > 0.0 ? std::clamp((along - at[i - 1]) / span, 0.0, 1.0) : 1.0;
+        return path[i - 1] + s * (path[i] - path[i - 1]);
+    }
+    return path.back();
+}
+
+// How far down a path the point on it nearest `p` is: where a grip has got to.
+[[nodiscard]] double alongNearest(const std::vector<Vec3> &path, const std::vector<double> &at,
+                                  const Vec3 &p) {
+    double best = 0.0, nearest = std::numeric_limits<double>::max();
+    for (std::size_t i = 1; i < path.size(); ++i) {
+        const Vec3 d = path[i] - path[i - 1];
+        const double span2 = lengthSquared(d);
+        const double s = span2 > 0.0 ? std::clamp(dot(p - path[i - 1], d) / span2, 0.0, 1.0) : 0.0;
+        const double gap = lengthSquared(path[i - 1] + s * d - p);
+        if (gap < nearest) {
+            nearest = gap;
+            best = at[i - 1] + s * (at[i] - at[i - 1]);
+        }
+    }
+    return best;
+}
+
+// One step of a stroke's hand: faster by accel*dt, up to the speed asked, and
+// never further ahead of the grip than the lead -- the hand is ON the thing
+// and cannot run on without it. That clamp is the whole difference between a
+// hand and a target: measured without it, a 33 kg iron ball "thrown" at a 12 m/s
+// sweep left at 1.5 m/s, because the target was 700 mm ahead of it and the
+// hand let go before the ball had been pushed through the stroke at all.
+//
+// Held back, it goes only as fast as it actually went. A hand that waited on a
+// heavy thing has not got up to speed without it, and must not leap ahead the
+// moment the thing gives.
+struct StrokeHand {
+    double along{}, speed{};
+};
+[[nodiscard]] StrokeHand advanceStrokeHand(const LiveStroke &stroke, double length_m,
+                                           double along, double speed, double grip_along,
+                                           double most_accel_m_s2, double dt_s) {
+    const double accel = std::min(stroke.accel_m_s2, most_accel_m_s2);
+    const double wants = std::min(stroke.speed_m_s, speed + accel * dt_s);
+    const double next = std::max(0.0, std::min({along + wants * dt_s,
+                                                grip_along + stroke.lead_m, length_m}));
+    const double went = std::max(0.0, next - along) / dt_s;
+    return {next, std::min(wants, went)};
+}
+
+// How fast the hand itself can get going with this in it. The strength has to
+// move the hand and arm as well as the thing -- a person throws a tennis ball
+// far faster than a shot, and not because the shot is hard to hold -- and
+// whatever of it is holding the thing up is not there to throw it with.
+[[nodiscard]] double handAcceleration(double strength_n, double hand_mass_kg, double mass_kg,
+                                      const Vec3 &gravity) {
+    const double spare = std::max(0.0, strength_n - mass_kg * length(gravity));
+    const double moving = hand_mass_kg + mass_kg;
+    return moving > 0.0 ? spare / moving : std::numeric_limits<double>::max();
+}
+
+// Which way a path runs at `along`.
+[[nodiscard]] Vec3 pathDirection(const std::vector<Vec3> &path, const std::vector<double> &at,
+                                 double along) {
+    return normalized(pointAlong(path, at, std::min(at.back(), along + 1e-3)) -
+                      pointAlong(path, at, std::max(0.0, along - 1e-3)));
+}
+
+// Why a stroke cannot be made as asked, or "" when it can.
+[[nodiscard]] std::string strokeProblem(const LiveStroke &stroke) {
+    if (stroke.path_m.size() < 2 || stroke.path_m.size() > 16)
+        return "a stroke's path is two to sixteen points";
+    for (const Vec3 &p : stroke.path_m)
+        if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z) ||
+            std::abs(p.x) > 1e5 || std::abs(p.y) > 1e5 || std::abs(p.z) > 1e5)
+            return "a stroke's path has a point that is not a place";
+    if (!(stroke.speed_m_s > 0.0 && stroke.speed_m_s <= 50.0))
+        return "a stroke's speed is more than 0 and at most 50 m/s";
+    if (!(stroke.accel_m_s2 > 0.0 && stroke.accel_m_s2 <= 5000.0))
+        return "a stroke's acceleration is more than 0 and at most 5000 m/s2";
+    if (!(stroke.lead_m >= 0.001 && stroke.lead_m <= 0.5))
+        return "a stroke's lead is 1 mm to 0.5 m";
+    if (!(stroke.give_up_s > 0.0 && stroke.give_up_s <= 30.0))
+        return "a stroke gives up after more than 0 and at most 30 s";
+    if (!(arcLengths(stroke.path_m).back() > 1e-4)) return "a stroke's path has no length";
+    return {};
+}
 } // namespace
 
 // One fracture in progress: everything the three phases pass between them.
@@ -488,9 +599,64 @@ struct LiveWorld::Impl {
     bool wielding{};
     Vec3 grip_local{};
     double hand_torque_n_m{60.0};
+    // The moving mass of the hand and arm, which the strength has to get going
+    // along with whatever it throws: 2 kg, a DEMONSTRATION value for a hand,
+    // forearm and part of an upper arm as felt at the hand. Only a stroke uses
+    // it, to bound how fast the hand itself can accelerate.
+    double hand_mass_kg{2.0};
+    // How fast the hand wants the grip to move: the stroke's own speed along its
+    // path, or nothing when the host holds the hand still. The hand damps motion
+    // RELATIVE to this. Damped against the absolute velocity it is a hand that
+    // wants everything at rest, and a throw stops where that damping cancels the
+    // pull -- 2.8 m/s, for a ball held 50 mm behind the hand.
+    Vec3 held_velocity{};
     // What the hand is applying for the coming step. The cut's static rule
     // needs to know which way the blade is being pushed when it is not moving.
     Vec3 hand_force{};
+
+    // A stroke the hand is making by itself (LiveWorld::stroke).
+    struct Stroke {
+        LiveStroke asked;
+        std::vector<double> at_m;         // how far along the path each point is
+        double length_m{};
+        double target_along_m{};          // where the hand wants the grip, on the path
+        double target_speed_m_s{};
+        double grip_along_m{};            // where the grip has got to
+        double began_s{};
+        // Where the grip has been lately, (time, along), for "blocked".
+        std::deque<std::pair<double, double>> recent;
+    };
+    std::optional<Stroke> stroke;
+    std::string stroke_ended;
+    // The work the hand has done on what it holds since taking hold, and what
+    // it pulled with in the last kept step. See LiveHand.
+    double hand_work_j{};
+    Vec3 hand_applied_n{};
+    // A haul is pushed after one step to act in the next -- and again whenever
+    // the hand is moved between steps, which is the double pull -- so these are
+    // the haul pulls sitting in the force accumulator for the coming step. Its
+    // work is counted in the step it acts in, not the one that pushed it.
+    Vec3 haul_pushed{};
+    // Taken as a step begins, for what the step does; kept only if it is kept.
+    struct HandStep {
+        bool measuring{};
+        std::string name;
+        // How fast the grip moves and the body turns as the step begins. A
+        // force's work over a step is the force times the AVERAGE of the
+        // velocities at the two ends: for the solver's step that is exactly
+        // what the force added to the kinetic energy, which the grip's
+        // displacement is not -- that overstates it by F dt^2 / 2m a step,
+        // 14% of a light ball's throw.
+        Vec3 grip_velocity_from{}, spin_from{};
+        Vec3 haul_in{};                   // the haul pulls this step starts with
+        double target_along_m{}, target_speed_m_s{};
+    };
+    HandStep hand_step;
+    // What the last stroke that opened the hand let go of, and how.
+    std::string let_go_body;
+    Vec3 let_go_velocity{};
+    double let_go_at_s{-1.0};
+    double let_go_work_j{};
 };
 
 LiveWorld::LiveWorld() : impl_(std::make_unique<Impl>()) {}
@@ -868,6 +1034,11 @@ void LiveWorld::step(double dt_s) {
 
     const auto holdStill = [&]() { carryOrHaul(dt_s); };
 
+    // Where a stroke wants the grip for this step, and where the grip is, for
+    // the work the step does. Before the grip's pull below, which is towards
+    // exactly that.
+    beginHandStep(dt_s);
+
     // The hand on a wielded grip: pulling AT the grip with a bounded force and
     // turning with a bounded torque, both towards where the hand wants the body
     // (docs/cutting-model.md section 7). Worked out once, from the world as the
@@ -886,59 +1057,18 @@ void LiveWorld::step(double dt_s) {
         const MatterBodyId id = impl_->body_of[impl_->holding];
         if (!impl_->world->contains(id)) return out;
         const RigidMechanicalState held = impl_->world->mechanicalState(id);
-        const RigidSnapshot &now = held.motion;
         if (!(held.mass_kg > 0.0)) return out;
-        const Vec3 arm = now.orientation_world.rotate(impl_->grip_local);
-        const Vec3 grip = now.center_of_mass_world_m + arm;
-        const Vec3 grip_velocity =
-            now.linear_velocity_m_s + cross(now.angular_velocity_rad_s, arm);
-        // A hand that answers in every direction at the same rate, each
-        // direction with the mass the GRIP has there. A push at the grip turns
-        // the body as well as moving it, so across the arm the grip is lighter
-        // than the body -- 0.6 kg of a 1.9 kg sword held 0.35 m from its
-        // middle. Sized for the whole mass instead, the damping came to 2.2 of
-        // a step's worth across the arm, past the 2 an explicit step can take,
-        // and the sword rang at the step rate: a blade in a kerf turns that into
-        // cutting nobody pushed it to do. The rate is 100 rad/s, a tenth of a
-        // step per radian, unless full strength would then come sooner than
-        // 50 mm off along the arm, where the grip has the whole mass.
-        constexpr double kFastest = 100.0;
-        constexpr double kDamping = 0.9;
-        const double strength = impl_->hand_strength_n;
-        const double rate = std::min(kFastest, std::sqrt(strength / (0.05 * held.mass_kg)));
-        const Mat3 feels = gripMassMatrix(held.mass_kg, held.inertia_world_kg_m2, arm);
-        // Its weight is carried first: a hand holding a sword out does not let
-        // it sag until the error pays for it, and does not stop carrying it
-        // because it is also swinging it. What the hand has left after the
-        // weight goes to moving it. (Capped as one vector, a hard swing spent
-        // the weight's share on the swing, and the sword dropped 100 mm and
-        // passed under the rope it had been aimed at.)
-        const Vec3 hold = -held.mass_kg * impl_->request.gravity_m_s2;
-        Vec3 track = feels * ((rate * rate) * (impl_->held_at - grip) -
-                              (2.0 * kDamping * rate) * grip_velocity);
-        const double spare = std::max(0.0, strength - length(hold));
-        const double pull = length(track);
-        if (pull > spare && pull > 0.0) track = (spare / pull) * track;
-        Vec3 force = hold + track;
-        // And never more than the hand has: a thing too heavy to hold up is
-        // held up as far as the strength goes.
-        const double total = length(force);
-        if (total > strength && total > 0.0) force = (strength / total) * force;
-        // The wrist turns it towards where the hand wants it facing, and has to
-        // answer the turn the grip force itself puts about the centre of mass:
-        // what the wrist supplies is what is left after the grip's own moment.
-        const Vec3 turn = turnBetween(now.orientation_world, impl_->held_facing);
-        const Vec3 wanted = (kFastest * kFastest) * turn -
-                            (2.0 * kDamping * kFastest) * now.angular_velocity_rad_s;
-        Vec3 torque = held.inertia_world_kg_m2 * wanted - cross(arm, force);
-        const double twist = length(torque);
-        if (twist > impl_->hand_torque_n_m && twist > 0.0)
-            torque = (impl_->hand_torque_n_m / twist) * torque;
+        // The law itself is gripPull, which previewStroke integrates too: a
+        // preview of a throw and the throw must not disagree about the hand.
+        const GripPull pull = gripPull(held, impl_->grip_local, impl_->held_at,
+                                       impl_->held_velocity, impl_->held_facing,
+                                       impl_->hand_strength_n, impl_->hand_torque_n_m,
+                                       impl_->request.gravity_m_s2);
         out.on = true;
         out.id = id;
-        out.force = force;
-        out.torque = torque;
-        out.grip = grip;
+        out.force = pull.force;
+        out.torque = pull.torque;
+        out.grip = pull.grip;
         return out;
     }();
     // Which way the blade is being pushed, for the cut's rule at rest.
@@ -1067,6 +1197,8 @@ void LiveWorld::step(double dt_s) {
         // Preparing also records the name as heard, so the next step commits
         // and the clock moves again.
         if (!committed) {
+            // The step did not happen, so neither did the hand's part of it.
+            abandonHandStep();
             if (impl_->pending) queueBreaks();
             return;
         }
@@ -1082,6 +1214,9 @@ void LiveWorld::step(double dt_s) {
         foresee();
         settleThermo();
         settleEnvironment();
+        // Last, because a stroke that has got to its end opens the hand, and
+        // everything above still has to see the step as it was taken.
+        endHandStep(hand.force, hand.torque, dt_s);
         return;
     }
     pushGas();
@@ -1100,6 +1235,7 @@ void LiveWorld::step(double dt_s) {
     foresee();
     settleThermo();
     settleEnvironment();
+    endHandStep(hand.force, hand.torque, dt_s);
 }
 
 // Part every link carrying more than it can take.
@@ -1201,6 +1337,8 @@ std::vector<LiveBodyPose> LiveWorld::poses(bool with_geometry) const {
         out[i].orientation_wxyz[2] = snap.orientation_world.y;
         out[i].orientation_wxyz[3] = snap.orientation_world.z;
         out[i].velocity_m_s = snap.linear_velocity_m_s;
+        out[i].mass_kg = out[i].anchored ? 0.0
+                                         : impl_->world->mechanicalState(impl_->body_of[i]).mass_kg;
         out[i].held = i == impl_->holding;
     }
     return out;
@@ -1874,11 +2012,26 @@ bool LiveWorld::grab(const std::string &name) {
     const RigidSnapshot now = impl_->world->snapshot(impl_->body_of[impl_->holding]);
     impl_->held_at = now.center_of_mass_world_m;
     impl_->held_facing = now.orientation_world;
+    // A new hold: nothing done to it yet, and no stroke.
+    impl_->held_velocity = {};
+    impl_->stroke.reset();
+    impl_->stroke_ended.clear();
+    impl_->hand_work_j = 0.0;
+    impl_->hand_applied_n = {};
+    impl_->haul_pushed = {};
+    impl_->let_go_body.clear();
+    impl_->let_go_velocity = {};
+    impl_->let_go_at_s = -1.0;
+    impl_->let_go_work_j = 0.0;
     return true;
 }
 
 void LiveWorld::moveHeld(const Vec3 &to_world_m) {
     if (impl_->holding == static_cast<std::size_t>(-1)) return;
+    // Whoever moves the hand is driving it, so a stroke stops here -- and the
+    // hand is being PUT somewhere, not moved along something.
+    cancelStroke();
+    impl_->held_velocity = {};
     impl_->held_at = to_world_m;
     // And put it there now, rather than waiting for the next step: a host that
     // moves the hand and then reads the world back expects the thing to have
@@ -2027,11 +2180,17 @@ void LiveWorld::carryOrHaul(double dt_s) {
             // A hand that stops everything is not a steadier hand.
             const RigidSnapshot now = impl_->world->snapshot(id);
             const double strength = impl_->hand_strength_n;
+            //
+            // The brake is against the speed RELATIVE to the hand's own, so a
+            // stroke can haul at speed; held still, it is the plain brake it
+            // always was.
             Vec3 force = (strength / 0.05) * gap -
-                         (strength / 8.0) * now.linear_velocity_m_s;
+                         (strength / 8.0) * (now.linear_velocity_m_s - impl_->held_velocity);
             const double push = length(force);
             if (push > strength) force = (strength / push) * force;
             impl_->world->pushBody(id, force);
+            // It acts in the coming step, and its work is counted there.
+            impl_->haul_pushed = impl_->haul_pushed + force;
         }
         impl_->world->wake(id);
         return;
@@ -2062,6 +2221,12 @@ void LiveWorld::release() {
     impl_->holding = static_cast<std::size_t>(-1);
     impl_->wielding = false;
     impl_->hand_force = {};
+    impl_->held_velocity = {};
+    // Letting go ends a stroke. One that let go by itself has already said so.
+    if (impl_->stroke) {
+        impl_->stroke.reset();
+        impl_->stroke_ended = "cancelled";
+    }
 }
 
 void LiveWorld::forgetImpacts() { impl_->reported.clear(); }
@@ -4366,6 +4531,451 @@ void LiveWorld::setHandTorque(double newton_metres) {
 }
 
 double LiveWorld::handTorque() const { return impl_->hand_torque_n_m; }
+
+void LiveWorld::setHandMass(double kilograms) {
+    impl_->hand_mass_kg = std::isfinite(kilograms) ? std::max(0.0, kilograms) : 0.0;
+}
+
+double LiveWorld::handMass() const { return impl_->hand_mass_kg; }
+
+// ---- the hand's own motions -------------------------------------------------
+//
+// docs/interaction-profiles.md. Two things people do with their hands cannot be
+// done a frame at a time from outside: a throw is over in a tenth of a second,
+// and a draw is decided by how hard a hand can pull against what resists it. So
+// the engine makes the stroke itself, at the step's rate, with the same bounded
+// hand every other hold has -- and counts the work the hand does.
+
+namespace {
+
+[[nodiscard]] GripPull gripPull(const RigidMechanicalState &held, const Vec3 &grip_local,
+                                const Vec3 &wanted_at, const Vec3 &wanted_velocity,
+                                const Quat &wanted_facing, double strength_n,
+                                double torque_n_m, const Vec3 &gravity) {
+    const RigidSnapshot &now = held.motion;
+    const Vec3 arm = now.orientation_world.rotate(grip_local);
+    const Vec3 grip = now.center_of_mass_world_m + arm;
+    const Vec3 grip_velocity = now.linear_velocity_m_s + cross(now.angular_velocity_rad_s, arm);
+    // A hand that answers in every direction at the same rate, each
+    // direction with the mass the GRIP has there. A push at the grip turns
+    // the body as well as moving it, so across the arm the grip is lighter
+    // than the body -- 0.6 kg of a 1.9 kg sword held 0.35 m from its
+    // middle. Sized for the whole mass instead, the damping came to 2.2 of
+    // a step's worth across the arm, past the 2 an explicit step can take,
+    // and the sword rang at the step rate: a blade in a kerf turns that into
+    // cutting nobody pushed it to do. The rate is 100 rad/s, a tenth of a
+    // step per radian, unless full strength would then come sooner than
+    // 50 mm off along the arm, where the grip has the whole mass.
+    constexpr double kFastest = 100.0;
+    constexpr double kDamping = 0.9;
+    const double rate = std::min(kFastest, std::sqrt(strength_n / (0.05 * held.mass_kg)));
+    const Mat3 feels = gripMassMatrix(held.mass_kg, held.inertia_world_kg_m2, arm);
+    // Its weight is carried first: a hand holding a sword out does not let
+    // it sag until the error pays for it, and does not stop carrying it
+    // because it is also swinging it. What the hand has left after the
+    // weight goes to moving it. (Capped as one vector, a hard swing spent
+    // the weight's share on the swing, and the sword dropped 100 mm and
+    // passed under the rope it had been aimed at.)
+    //
+    // The damping is against the grip's speed RELATIVE to how fast the hand
+    // wants it to go: nothing, when it is held still -- the hand as it always
+    // was -- and the stroke's own speed along its path during a stroke.
+    // Against the absolute speed, a stroke is a hand trying to stop the thing
+    // it is throwing.
+    const Vec3 hold = -held.mass_kg * gravity;
+    Vec3 track = feels * ((rate * rate) * (wanted_at - grip) +
+                          (2.0 * kDamping * rate) * (wanted_velocity - grip_velocity));
+    const double spare = std::max(0.0, strength_n - length(hold));
+    const double pull = length(track);
+    if (pull > spare && pull > 0.0) track = (spare / pull) * track;
+    Vec3 force = hold + track;
+    // And never more than the hand has: a thing too heavy to hold up is
+    // held up as far as the strength goes.
+    const double total = length(force);
+    if (total > strength_n && total > 0.0) force = (strength_n / total) * force;
+    // The wrist turns it towards where the hand wants it facing, and has to
+    // answer the turn the grip force itself puts about the centre of mass:
+    // what the wrist supplies is what is left after the grip's own moment.
+    const Vec3 turn = turnBetween(now.orientation_world, wanted_facing);
+    const Vec3 wanted = (kFastest * kFastest) * turn -
+                        (2.0 * kDamping * kFastest) * now.angular_velocity_rad_s;
+    Vec3 torque = held.inertia_world_kg_m2 * wanted - cross(arm, force);
+    const double twist = length(torque);
+    if (twist > torque_n_m && twist > 0.0) torque = (torque_n_m / twist) * torque;
+    return {force, torque, grip};
+}
+
+// An orientation after turning at `spin` for `dt_s`, integrated the way a
+// solver does it -- by the spin's quaternion rate -- and renormalised.
+[[nodiscard]] Quat turnedBy(const Quat &q, const Vec3 &spin, double dt_s) {
+    const Quat rate = quatProduct(Quat{0.0, spin.x, spin.y, spin.z}, q);
+    const Quat out{q.w + 0.5 * dt_s * rate.w, q.x + 0.5 * dt_s * rate.x,
+                   q.y + 0.5 * dt_s * rate.y, q.z + 0.5 * dt_s * rate.z};
+    const double size = std::sqrt(out.w * out.w + out.x * out.x + out.y * out.y + out.z * out.z);
+    return size > 0.0 ? Quat{out.w / size, out.x / size, out.y / size, out.z / size} : q;
+}
+
+} // namespace
+
+std::pair<Vec3, Vec3> LiveWorld::gripNow() const {
+    const Impl &I = *impl_;
+    if (I.holding == static_cast<std::size_t>(-1)) return {};
+    const MatterBodyId id = I.body_of[I.holding];
+    if (!I.world->contains(id)) return {};
+    const RigidSnapshot now = I.world->snapshot(id);
+    if (!I.wielding) return {now.center_of_mass_world_m, now.linear_velocity_m_s};
+    const Vec3 arm = now.orientation_world.rotate(I.grip_local);
+    return {now.center_of_mass_world_m + arm,
+            now.linear_velocity_m_s + cross(now.angular_velocity_rad_s, arm)};
+}
+
+bool LiveWorld::hauling() const {
+    const Impl &I = *impl_;
+    if (I.holding == static_cast<std::size_t>(-1) || I.wielding) return false;
+    const std::string &name = I.described[I.holding].name;
+    // The same test carryOrHaul makes: any joint still in place on it.
+    for (const Impl::SceneJoint &joint : I.joints)
+        if (joint.attached && joint.rigid != 0 && (joint.a == name || joint.b == name)) return true;
+    return false;
+}
+
+bool LiveWorld::stroke(const LiveStroke &asked, std::string &why) {
+    Impl &I = *impl_;
+    if (I.holding == static_cast<std::size_t>(-1)) {
+        why = "the hand is empty";
+        return false;
+    }
+    if (!I.wielding && !hauling()) {
+        why = "a carried thing goes exactly where it is put and is never pushed, so no stroke "
+              "can move it with a force: take hold of it by a grip (wield) to throw it";
+        return false;
+    }
+    if (std::string problem = strokeProblem(asked); !problem.empty()) {
+        why = std::move(problem);
+        return false;
+    }
+    Impl::Stroke made;
+    made.asked = asked;
+    made.at_m = arcLengths(asked.path_m);
+    made.length_m = made.at_m.back();
+    const auto [grip, velocity] = gripNow();
+    made.grip_along_m = alongNearest(asked.path_m, made.at_m, grip);
+    made.target_along_m = made.grip_along_m;
+    // Already moving along the path, the hand is moving with it; against it,
+    // it starts from rest.
+    made.target_speed_m_s =
+        std::clamp(dot(velocity, pathDirection(asked.path_m, made.at_m, made.grip_along_m)),
+                   0.0, asked.speed_m_s);
+    made.began_s = I.time_s;
+    I.stroke = std::move(made);
+    I.stroke_ended.clear();
+    why.clear();
+    return true;
+}
+
+void LiveWorld::cancelStroke() {
+    if (!impl_->stroke) return;
+    impl_->stroke.reset();
+    impl_->stroke_ended = "cancelled";
+    impl_->held_velocity = {};
+}
+
+LiveHand LiveWorld::hand() const {
+    const Impl &I = *impl_;
+    LiveHand out;
+    out.work_j = I.hand_work_j;
+    out.stroke_ended = I.stroke_ended;
+    out.let_go_body = I.let_go_body;
+    out.let_go_velocity_m_s = I.let_go_velocity;
+    out.let_go_at_s = I.let_go_at_s;
+    out.let_go_work_j = I.let_go_work_j;
+    if (I.holding == static_cast<std::size_t>(-1)) return out;
+    out.holding = I.described[I.holding].name;
+    out.mode = I.wielding ? "grip" : hauling() ? "haul" : "carry";
+    out.target_m = I.held_at;
+    const auto [grip, velocity] = gripNow();
+    out.grip_m = grip;
+    out.grip_velocity_m_s = velocity;
+    out.force_n = I.hand_applied_n;
+    if (I.stroke) {
+        out.stroking = true;
+        out.stroke_along_m = I.stroke->grip_along_m;
+        out.stroke_length_m = I.stroke->length_m;
+    }
+    return out;
+}
+
+void LiveWorld::beginHandStep(double dt_s) {
+    Impl &I = *impl_;
+    I.hand_step = Impl::HandStep{};
+    // The haul pulls this step acts with -- pushed after the last step, and
+    // whenever the hand moved since. Anything pushed from here on is for the
+    // step after this one.
+    I.hand_step.haul_in = I.haul_pushed;
+    I.haul_pushed = {};
+    if (I.holding == static_cast<std::size_t>(-1)) return;
+    const MatterBodyId id = I.body_of[I.holding];
+    if (!I.world->contains(id)) return;
+    const auto [grip, velocity] = gripNow();
+    I.hand_step.measuring = true;
+    I.hand_step.name = I.described[I.holding].name;
+    I.hand_step.grip_velocity_from = velocity;
+    I.hand_step.spin_from = I.world->snapshot(id).angular_velocity_rad_s;
+    if (!I.stroke) return;
+    const Impl::Stroke &s = *I.stroke;
+    const double most = handAcceleration(I.hand_strength_n, I.hand_mass_kg,
+                                         I.world->mechanicalState(id).mass_kg,
+                                         I.request.gravity_m_s2);
+    const StrokeHand next = advanceStrokeHand(s.asked, s.length_m, s.target_along_m,
+                                              s.target_speed_m_s,
+                                              alongNearest(s.asked.path_m, s.at_m, grip), most,
+                                              dt_s);
+    I.hand_step.target_along_m = next.along;
+    I.hand_step.target_speed_m_s = next.speed;
+    I.held_at = pointAlong(s.asked.path_m, s.at_m, next.along);
+    I.held_velocity = next.speed * pathDirection(s.asked.path_m, s.at_m, next.along);
+}
+
+void LiveWorld::abandonHandStep() {
+    Impl &I = *impl_;
+    // The world is back as it was when the step began, and the pulls it began
+    // with are back in the accumulator; whatever the trial pushed is gone.
+    I.haul_pushed = I.hand_step.haul_in;
+    I.hand_step = Impl::HandStep{};
+}
+
+void LiveWorld::endHandStep(const Vec3 &grip_force_n, const Vec3 &grip_torque_n_m, double dt_s) {
+    Impl &I = *impl_;
+    const Impl::HandStep was = I.hand_step;
+    I.hand_step = Impl::HandStep{};
+    if (!was.measuring || I.holding == static_cast<std::size_t>(-1) ||
+        I.described[I.holding].name != was.name)
+        return;
+    const MatterBodyId id = I.body_of[I.holding];
+    if (!I.world->contains(id)) return;
+    const auto [grip, velocity] = gripNow();
+    const Vec3 spin = I.world->snapshot(id).angular_velocity_rad_s;
+    // What the hand did in this step: its pull -- at the grip, or at the centre
+    // of what it hauls -- over the grip's motion, and its wrist over the turn.
+    // A carry is placement: no force, and so no work.
+    const Vec3 force = grip_force_n + was.haul_in;
+    I.hand_applied_n = force;
+    I.hand_work_j += dot(force, (0.5 * dt_s) * (was.grip_velocity_from + velocity)) +
+                     dot(grip_torque_n_m, (0.5 * dt_s) * (was.spin_from + spin));
+    if (!I.stroke) return;
+    Impl::Stroke &s = *I.stroke;
+    s.target_along_m = was.target_along_m;
+    s.target_speed_m_s = was.target_speed_m_s;
+    s.grip_along_m = alongNearest(s.asked.path_m, s.at_m, grip);
+    s.recent.emplace_back(I.time_s, s.grip_along_m);
+    while (s.recent.size() > 2 && s.recent.front().first < I.time_s - 0.25) s.recent.pop_front();
+    const auto finish = [&I](const char *how) {
+        I.stroke.reset();
+        I.stroke_ended = how;
+        I.held_velocity = {};
+    };
+    if (s.asked.let_go_at_end && s.grip_along_m >= s.length_m - 0.005) {
+        // The release of a throw: the moment the GRIP gets to the end.
+        I.let_go_body = was.name;
+        I.let_go_velocity = I.world->snapshot(id).linear_velocity_m_s;
+        I.let_go_at_s = I.time_s;
+        I.let_go_work_j = I.hand_work_j;
+        finish("let go");
+        release();
+        return;
+    }
+    if (!s.asked.let_go_at_end && s.target_along_m >= s.length_m - 1e-9) {
+        finish("reached");
+        return;
+    }
+    // Blocked: for a fifth of a second the grip has gone nowhere while the hand
+    // is as far ahead of it as it may be -- pulling with everything it has. As
+    // far as this hand can take it, which for a bow is the draw.
+    const double elapsed = I.time_s - s.began_s;
+    const bool at_lead = s.target_along_m >= s.grip_along_m + s.asked.lead_m - 1e-4;
+    if (elapsed >= 0.25 && at_lead && s.recent.back().first - s.recent.front().first >= 0.2 &&
+        std::abs(s.recent.back().second - s.recent.front().second) < 0.003) {
+        finish("blocked");
+        return;
+    }
+    if (elapsed >= s.asked.give_up_s) finish("gave up");
+}
+
+LiveFlight LiveWorld::previewFlight(const Vec3 &from_world_m, const Vec3 &velocity_m_s,
+                                    double horizon_s, const std::string &ignoring) const {
+    const Impl &I = *impl_;
+    LiveFlight out;
+    const auto usable = [](const Vec3 &v) {
+        return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+    };
+    if (!usable(from_world_m) || !usable(velocity_m_s) || !std::isfinite(horizon_s)) return out;
+    const double horizon = std::clamp(horizon_s, 0.0, 10.0);
+    // The thing that is flying is still where it starts, in the hand, and a ray
+    // from inside it meets it first. It is stepped over by as much as it could
+    // possibly be across.
+    bool skipping = false;
+    MatterBodyId skip{};
+    double across = 0.0;
+    if (const auto found = I.index_of.find(ignoring);
+        !ignoring.empty() && found != I.index_of.end()) {
+        skipping = true;
+        skip = I.body_of[found->second];
+        const Vec3 d = I.described[found->second].dimensions_m;
+        across = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z) + 0.002;
+    }
+    const Vec3 g = I.request.gravity_m_s2;
+    // Stepped the way the solver steps a free body, at the rate this world is
+    // being stepped: gravity, then the body's own damping, then the move.
+    // Exact ballistics came down 84 mm beyond a real throw over 11.5 m. The
+    // solver's step and the 0.02 a second of damping every live body carries
+    // are both part of how things fly here, and a preview that leaves them out
+    // is a preview of some other world.
+    const double dt = I.last_dt_s > 0.0 ? I.last_dt_s : 1.0 / 240.0;
+    const double damping = skipping ? I.world->linearDamping(skip) : 0.0;
+    const int per_point = std::max(1, static_cast<int>(std::lround((1.0 / 60.0) / dt)));
+    const int steps = static_cast<int>(std::ceil(horizon / dt));
+    Vec3 p = from_world_m, v = velocity_m_s;
+    out.points_m.push_back(p);
+    for (int done = 0; done < steps && out.points_m.size() < 601;) {
+        const Vec3 start = p, v_start = v;
+        const int here = std::min(per_point, steps - done);
+        for (int k = 0; k < here; ++k) {
+            v = std::max(0.0, 1.0 - damping * dt) * (v + dt * g);
+            p = p + dt * v;
+        }
+        const Vec3 span = p - start;
+        const double reach = length(span);
+        if (reach > 1e-12) {
+            const Vec3 dir = (1.0 / reach) * span;
+            Vec3 origin = start;
+            double gone = 0.0;
+            RayHit hit{};
+            for (int tries = 0; tries < 4 && gone < reach; ++tries) {
+                hit = I.world->castRay(origin, dir, reach - gone);
+                if (!hit.hit || !skipping || !hit.named || !(hit.body_id == skip)) break;
+                const double past = std::min(reach - gone, hit.distance_m + across);
+                origin = origin + past * dir;
+                gone += past;
+                hit = RayHit{};
+            }
+            if (hit.hit) {
+                const double fraction = std::clamp((gone + hit.distance_m) / reach, 0.0, 1.0);
+                out.hit = true;
+                out.hit_point_m = hit.point_world_m;
+                out.hit_after_s = (done + fraction * here) * dt;
+                out.hit_speed_m_s = length(v_start + fraction * (v - v_start));
+                if (hit.named)
+                    for (std::size_t i = 0; i < I.body_of.size(); ++i)
+                        if (I.body_of[i] == hit.body_id) {
+                            out.hit_name = I.described[i].name;
+                            break;
+                        }
+                out.points_m.push_back(hit.point_world_m);
+                return out;
+            }
+        }
+        done += here;
+        out.points_m.push_back(p);
+    }
+    return out;
+}
+
+LiveStrokePreview LiveWorld::previewStroke(const LiveStroke &asked, double dt_s,
+                                           double horizon_s) const {
+    const Impl &I = *impl_;
+    LiveStrokePreview out;
+    if (I.holding == static_cast<std::size_t>(-1)) {
+        out.why = "the hand is empty";
+        return out;
+    }
+    if (!I.wielding) {
+        out.why = hauling() ? "it is attached to other things, and where it goes depends on them"
+                            : "a carried thing is placed, not pushed: take hold of it by a grip "
+                              "(wield) to throw it";
+        return out;
+    }
+    if (std::string problem = strokeProblem(asked); !problem.empty()) {
+        out.why = std::move(problem);
+        return out;
+    }
+    const MatterBodyId id = I.body_of[I.holding];
+    if (!I.world->contains(id)) {
+        out.why = "what the hand holds is not in the world";
+        return out;
+    }
+    RigidMechanicalState body = I.world->mechanicalState(id);
+    if (!(body.mass_kg > 0.0)) {
+        out.why = "it has no mass to move";
+        return out;
+    }
+    if (!(dt_s > 0.0 && dt_s <= 0.02)) dt_s = 1.0 / 240.0;
+    // The body alone, with its own mass and inertia, this hand and gravity --
+    // stepped the way the solver steps a free body: velocity, then position.
+    const Mat3 inertia_local = rotateInertia(body.inertia_world_kg_m2,
+                                             conjugateOf(body.motion.orientation_world));
+    const std::vector<double> at = arcLengths(asked.path_m);
+    const double length_m = at.back();
+    const Vec3 g = I.request.gravity_m_s2;
+    const double most = handAcceleration(I.hand_strength_n, I.hand_mass_kg, body.mass_kg, g);
+    // The damping the solver applies to it every step, after the forces.
+    const double keep_speed = std::max(0.0, 1.0 - I.world->linearDamping(id) * dt_s);
+    const double keep_spin = std::max(0.0, 1.0 - I.world->angularDamping(id) * dt_s);
+    RigidSnapshot &now = body.motion;
+    const auto gripOf = [&]() {
+        const Vec3 arm = now.orientation_world.rotate(I.grip_local);
+        return std::pair<Vec3, Vec3>{now.center_of_mass_world_m + arm,
+                                     now.linear_velocity_m_s +
+                                         cross(now.angular_velocity_rad_s, arm)};
+    };
+    Vec3 grip{}, grip_velocity{};
+    std::tie(grip, grip_velocity) = gripOf();
+    double along = alongNearest(asked.path_m, at, grip);
+    double speed = std::clamp(dot(grip_velocity, pathDirection(asked.path_m, at, along)), 0.0,
+                              asked.speed_m_s);
+    double t = 0.0;
+    while (t < asked.give_up_s) {
+        std::tie(grip, grip_velocity) = gripOf();
+        const double grip_along = alongNearest(asked.path_m, at, grip);
+        if (grip_along >= length_m - 0.005) {
+            out.reaches_end = true;
+            break;
+        }
+        const StrokeHand next =
+            advanceStrokeHand(asked, length_m, along, speed, grip_along, most, dt_s);
+        along = next.along;
+        speed = next.speed;
+        body.inertia_world_kg_m2 = rotateInertia(inertia_local, now.orientation_world);
+        const GripPull pull = gripPull(body, I.grip_local, pointAlong(asked.path_m, at, along),
+                                       speed * pathDirection(asked.path_m, at, along),
+                                       I.held_facing, I.hand_strength_n, I.hand_torque_n_m, g);
+        const Vec3 spin_before = now.angular_velocity_rad_s;
+        const Vec3 arm = pull.grip - now.center_of_mass_world_m;
+        now.linear_velocity_m_s =
+            keep_speed * (now.linear_velocity_m_s + dt_s * ((1.0 / body.mass_kg) * pull.force + g));
+        if (const auto inverse = body.inertia_world_kg_m2.inverse(1e-18))
+            now.angular_velocity_rad_s =
+                keep_spin * (now.angular_velocity_rad_s +
+                             dt_s * ((*inverse) * (pull.torque + cross(arm, pull.force))));
+        now.center_of_mass_world_m = now.center_of_mass_world_m + dt_s * now.linear_velocity_m_s;
+        now.orientation_world = turnedBy(now.orientation_world, now.angular_velocity_rad_s, dt_s);
+        const Vec3 velocity_after = gripOf().second;
+        out.work_j += dot(pull.force, (0.5 * dt_s) * (grip_velocity + velocity_after)) +
+                      dot(pull.torque, (0.5 * dt_s) * (spin_before + now.angular_velocity_rad_s));
+        t += dt_s;
+    }
+    out.possible = true;
+    out.stroke_s = t;
+    out.let_go_at_m = now.center_of_mass_world_m;
+    out.let_go_velocity_m_s = now.linear_velocity_m_s;
+    if (!out.reaches_end) {
+        out.why = "the hand would give up before the grip got to the end: it cannot move this "
+                  "that far in time";
+        return out;
+    }
+    out.flight = previewFlight(now.center_of_mass_world_m, now.linear_velocity_m_s, horizon_s,
+                               I.described[I.holding].name);
+    return out;
+}
 
 void LiveWorld::prepareCuts(double dt_s) {
     Impl &I = *impl_;

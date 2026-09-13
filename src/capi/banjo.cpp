@@ -26,7 +26,11 @@ using banjo::fastlattice::LiveBodyPose;
 using banjo::fastlattice::LiveCut;
 using banjo::fastlattice::LiveCollected;
 using banjo::fastlattice::LiveDelay;
+using banjo::fastlattice::LiveFlight;
+using banjo::fastlattice::LiveHand;
 using banjo::fastlattice::LiveImpact;
+using banjo::fastlattice::LiveStroke;
+using banjo::fastlattice::LiveStrokePreview;
 using banjo::fastlattice::LiveJoint;
 using banjo::fastlattice::LiveOverload;
 using banjo::fastlattice::LivePick;
@@ -88,6 +92,11 @@ struct banjo_world {
     std::string environment_report;
     std::string environment_state;
     std::string survey;
+    // The hand and its previews, last time anyone asked: the strings handed out
+    // point in here.
+    banjo::fastlattice::LiveHand hand;
+    banjo::fastlattice::LiveFlight flight;
+    banjo::fastlattice::LiveStrokePreview preview;
 };
 
 namespace {
@@ -113,6 +122,34 @@ int guarded(Work &&work) {
         setError("the engine failed in a way it could not describe");
         return BANJO_ERROR;
     }
+}
+
+// A flight into the caller's struct, and as many of its points as fit.
+void writeFlight(const LiveFlight &flight, double *points_m, int max_points, banjo_flight &out) {
+    out.hit = flight.hit ? 1 : 0;
+    out.hit_name = flight.hit_name.c_str();
+    writeVec(flight.hit_point_m, out.hit_point_m);
+    out.hit_after_s = flight.hit_after_s;
+    out.hit_speed_m_s = flight.hit_speed_m_s;
+    const int count = points_m == nullptr
+                          ? 0
+                          : std::min(std::max(0, max_points), static_cast<int>(flight.points_m.size()));
+    for (int i = 0; i < count; ++i)
+        writeVec(flight.points_m[static_cast<std::size_t>(i)], points_m + 3 * i);
+    out.points = count;
+}
+
+// A stroke from C arrays. The engine checks the numbers and says what is wrong.
+LiveStroke readStroke(const double *path_m, int points, double speed_m_s, double accel_m_s2,
+                      double lead_m, int let_go_at_end, double give_up_s) {
+    LiveStroke stroke;
+    for (int i = 0; i < points; ++i) stroke.path_m.push_back(readVec(path_m + 3 * i));
+    stroke.speed_m_s = speed_m_s;
+    stroke.accel_m_s2 = accel_m_s2;
+    stroke.lead_m = lead_m;
+    stroke.let_go_at_end = let_go_at_end != 0;
+    stroke.give_up_s = give_up_s;
+    return stroke;
 }
 
 } // namespace
@@ -291,6 +328,7 @@ int banjo_bodies(const banjo_world *world, banjo_body *out, int max) {
             body.anchored = pose.anchored ? 1 : 0;
             body.held = pose.held ? 1 : 0;
             body.rgba = pose.color_rgba;
+            body.mass_kg = pose.mass_kg;
         }
         return count;
     });
@@ -832,6 +870,106 @@ int banjo_hand_torque(banjo_world *world, double newton_metres) {
         setError("hand torque is newton metres, zero or more"); return BANJO_BAD_ARGUMENT;
     }
     return guarded([&] { world->world->setHandTorque(newton_metres); return BANJO_OK; });
+}
+
+int banjo_hand_mass(banjo_world *world, double kilograms) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    if (!(kilograms >= 0.0) || !std::isfinite(kilograms)) {
+        setError("the hand's moving mass is kilograms, zero or more"); return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] { world->world->setHandMass(kilograms); return static_cast<int>(BANJO_OK); });
+}
+
+int banjo_stroke(banjo_world *world, const double *path_m, int points, double speed_m_s,
+                 double accel_m_s2, double lead_m, int let_go_at_end, double give_up_s) {
+    if (!world || !path_m) { setError("no world or no path"); return BANJO_BAD_ARGUMENT; }
+    if (points < 2 || points > 16) {
+        setError("a stroke's path is two to sixteen points"); return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        std::string why;
+        if (world->world->stroke(readStroke(path_m, points, speed_m_s, accel_m_s2, lead_m,
+                                            let_go_at_end, give_up_s), why))
+            return static_cast<int>(BANJO_OK);
+        setError(why);
+        return static_cast<int>(BANJO_BAD_ARGUMENT);
+    });
+}
+
+int banjo_cancel_stroke(banjo_world *world) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] { world->world->cancelStroke(); return static_cast<int>(BANJO_OK); });
+}
+
+int banjo_hand_state(const banjo_world *world, banjo_hand *out) {
+    if (!world || !out) { setError("no world or nowhere to write"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        auto *kept = const_cast<banjo_world *>(world);
+        kept->hand = world->world->hand();
+        const LiveHand &hand = kept->hand;
+        out->holding = hand.holding.c_str();
+        out->mode = hand.mode.c_str();
+        writeVec(hand.target_m, out->target_m);
+        writeVec(hand.grip_m, out->grip_m);
+        writeVec(hand.grip_velocity_m_s, out->grip_velocity_m_s);
+        writeVec(hand.force_n, out->force_n);
+        out->work_j = hand.work_j;
+        out->stroking = hand.stroking ? 1 : 0;
+        out->stroke_along_m = hand.stroke_along_m;
+        out->stroke_length_m = hand.stroke_length_m;
+        out->stroke_ended = hand.stroke_ended.c_str();
+        out->let_go_body = hand.let_go_body.c_str();
+        writeVec(hand.let_go_velocity_m_s, out->let_go_velocity_m_s);
+        out->let_go_at_s = hand.let_go_at_s;
+        out->let_go_work_j = hand.let_go_work_j;
+        return static_cast<int>(BANJO_OK);
+    });
+}
+
+int banjo_preview_flight(const banjo_world *world, const double from_m[3],
+                         const double velocity_m_s[3], double horizon_s, const char *ignoring,
+                         double *points_m, int max_points, banjo_flight *out) {
+    if (!world || !from_m || !velocity_m_s || !out) {
+        setError("no world, no start, no velocity, or nowhere to write"); return BANJO_BAD_ARGUMENT;
+    }
+    if (!(horizon_s >= 0.0) || !std::isfinite(horizon_s)) {
+        setError("a flight's horizon is zero or more seconds"); return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        auto *kept = const_cast<banjo_world *>(world);
+        kept->flight = world->world->previewFlight(readVec(from_m), readVec(velocity_m_s),
+                                                   horizon_s, ignoring ? ignoring : "");
+        writeFlight(kept->flight, points_m, max_points, *out);
+        return static_cast<int>(BANJO_OK);
+    });
+}
+
+int banjo_preview_stroke(const banjo_world *world, const double *path_m, int points,
+                         double speed_m_s, double accel_m_s2, double lead_m, double give_up_s,
+                         double horizon_s, double *flight_points_m, int max_points,
+                         banjo_stroke_preview *out) {
+    if (!world || !path_m || !out) {
+        setError("no world, no path, or nowhere to write"); return BANJO_BAD_ARGUMENT;
+    }
+    if (points < 2 || points > 16) {
+        setError("a stroke's path is two to sixteen points"); return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        auto *kept = const_cast<banjo_world *>(world);
+        kept->preview = world->world->previewStroke(
+            readStroke(path_m, points, speed_m_s, accel_m_s2, lead_m, 1, give_up_s),
+            1.0 / 240.0, horizon_s);
+        const LiveStrokePreview &p = kept->preview;
+        out->possible = p.possible ? 1 : 0;
+        out->why = p.why.c_str();
+        out->reaches_end = p.reaches_end ? 1 : 0;
+        out->stroke_s = p.stroke_s;
+        out->work_j = p.work_j;
+        writeVec(p.let_go_at_m, out->let_go_at_m);
+        writeVec(p.let_go_velocity_m_s, out->let_go_velocity_m_s);
+        writeFlight(p.flight, flight_points_m, max_points, out->flight);
+        return static_cast<int>(BANJO_OK);
+    });
 }
 
 int banjo_pick_ray(const banjo_world *world, const double from_m[3],

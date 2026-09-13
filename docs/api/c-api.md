@@ -17,9 +17,9 @@ if (banjo_abi_version() != BANJO_ABI_VERSION) { /* mismatch */ }
 `const char *banjo_version_string(void)` says which library it is in words, for
 a log line. Never parse it: the number to compare is `banjo_abi_version()`.
 
-Current ABI: **15**. 13 and 14 were two additions made side by side and then
-merged, numbered apart so that one number never meant two headers; 15 was
-added on top of both:
+Current ABI: **16**. 13 and 14 were two additions made side by side and then
+merged, numbered apart so that one number never meant two headers; 15 and 16
+were added on top:
 
 - **13** added blades -- `banjo_make_blade`, `banjo_blades`, `banjo_cuts`,
   `banjo_forget_cuts` -- and the bounded hand that swings them, `banjo_wield`,
@@ -32,10 +32,16 @@ added on top of both:
   `banjo_dig`, `banjo_deposit`, `banjo_cut_block`, `banjo_set_discharge`,
   `banjo_terrain_heights`, `banjo_water_surface`, `banjo_environment_report`,
   `banjo_environment_state`, `banjo_survey` and `banjo_awake_bodies`, and the
-  scene's `terrain` and `water` blocks (see [Terrain and water](#terrain-and-water)).
+  scene's `terrain` and `water` blocks (see [Terrain and water](#terrain-and-water));
+- **16** added the hand's own motions -- `banjo_stroke`, `banjo_cancel_stroke`,
+  `banjo_hand_state`, `banjo_hand_mass`, `banjo_preview_flight` and
+  `banjo_preview_stroke` (see [The hand's own motions](#the-hands-own-motions)) --
+  and `mass_kg` at the END of `banjo_body`, which is the one change to something
+  that was already there: a 15 caller's `banjo_body` array is too short for a 16
+  library, so rebuild against this header.
 
-A library at 15 has all three. Nothing that was in 12 changed, and nothing
-that was in 14 changed in 15.
+A library at 16 has all four. Nothing that was in 12 changed, nothing that was
+in 14 changed in 15, and in 16 only `banjo_body` grew.
 
 ---
 
@@ -722,6 +728,7 @@ typedef struct {
     int anchored;            /* scenery: does not move, cannot be picked up */
     int held;
     unsigned rgba;
+    double mass_kg;          /* what a hand holds up and a throw accelerates; 0 for scenery */
 } banjo_body;
 ```
 
@@ -871,6 +878,138 @@ int id = banjo_make_blade(w, "sword", heel, tip, facing, 0.01, 0.0002, 30.0, gri
 banjo_wield(w, "sword", grip);
 banjo_move_held(w, (double[3]){-0.9, 1.5, 1.9});   /* the hand pulls; the world answers */
 for (int i = 0; i < 240; ++i) banjo_step(w, 1.0 / 240.0);
+```
+
+---
+
+## The hand's own motions
+
+A throw is over in a tenth of a second, and a draw is decided by how hard a hand
+can pull against what resists it, so neither can be done a frame at a time from
+outside. The engine makes the **stroke** itself, at the step's own rate, with the
+same bounded hand every other hold has, and counts the **work** the hand does.
+Nothing here gives a body a speed: the hand pulls with what it has, and what the
+body does is the world's answer. The design, and what the playground builds on
+it, is [../interaction-profiles.md](../interaction-profiles.md).
+
+### `int banjo_hand_mass(banjo_world *world, double kilograms)`
+
+The moving mass of the hand and arm, which the strength has to get going along
+with whatever a stroke throws: **2 kg unless told otherwise — a demonstration
+value**, for a hand, forearm and part of an upper arm as felt at the hand. It is
+why a light ball leaves a hand faster than a heavy one even when neither is too
+heavy to hold. Only strokes use it.
+
+### `int banjo_stroke(banjo_world *world, const double *path_m, int points, double speed_m_s, double accel_m_s2, double lead_m, int let_go_at_end, double give_up_s)`
+### `int banjo_cancel_stroke(banjo_world *world)`
+
+Where the hand **wants** the grip travels along `path_m` — `points` points of
+three doubles each, two to sixteen of them — at up to `speed_m_s`, getting there
+at `accel_m_s2` and never faster than the strength can move the hand and the
+thing together. It is never more than `lead_m` ahead of the grip (0.05 is the
+hand's own scale: full strength at 50 mm off): a hand is on the thing it holds
+and cannot run on without it, so a heavy thing falls behind and a light one keeps
+up. The hand damps motion relative to its own speed along the path. With
+`let_go_at_end` the hand opens when the **grip** reaches the end — the release of
+a throw, on the step it happens, whatever the host's frame rate.
+
+A stroke needs a hand that pulls: something wielded (`banjo_wield`), or something
+hauled because it is on a joint. A carried body — `banjo_grab` on a loose thing —
+goes exactly where it is put and is never pushed, so a stroke refuses it with
+`BANJO_BAD_ARGUMENT` and `banjo_last_error` says why. `banjo_move_held` takes the
+hand back from a stroke; letting go ends one.
+
+A stroke ends `reached` (the hand got to the end and holds there), `let go`,
+`blocked` (for a fifth of a second the grip has gone nowhere while the hand pulls
+with everything it has: as far as this hand can take it, which for a bow is the
+draw), `gave up` after `give_up_s`, or `cancelled`.
+
+### `int banjo_hand_state(const banjo_world *world, banjo_hand *out)`
+
+```c
+typedef struct {
+    const char *holding;          /* "" for nothing */
+    const char *mode;             /* "carry", "haul", "grip" or "" */
+    double target_m[3];           /* where the hand wants the grip */
+    double grip_m[3];             /* where the grip is */
+    double grip_velocity_m_s[3];
+    double force_n[3];            /* what it pulled with in the last step */
+    double work_j;                /* since it took hold -- measured, see below */
+    int stroking;
+    double stroke_along_m;        /* how far the grip has got along the path */
+    double stroke_length_m;
+    const char *stroke_ended;     /* "", "reached", "let go", "blocked", "gave up", "cancelled" */
+    const char *let_go_body;      /* the last stroke that opened the hand: what, */
+    double let_go_velocity_m_s[3];/* how fast it left, */
+    double let_go_at_s;           /* when (negative: never), */
+    double let_go_work_j;         /* and the work the hand had done on it */
+} banjo_hand;
+```
+
+`work_j` is measured: the hand's force times its grip's velocity averaged over
+each kept step, plus the wrist's torque times the turn. For the solver's step
+that is exactly what the force added to the body's kinetic energy — the grip's
+displacement would overstate it by F dt² / 2m a step — so it includes lifting,
+and whatever the body lost to what it rubbed on. A carry is placement and does
+no work. The `let_go_*` fields stay until the next hold.
+
+### `int banjo_preview_flight(const banjo_world *world, const double from_m[3], const double velocity_m_s[3], double horizon_s, const char *ignoring, double *points_m, int max_points, banjo_flight *out)`
+
+```c
+typedef struct {
+    int hit;
+    const char *hit_name;         /* "" for the ground */
+    double hit_point_m[3];
+    double hit_after_s;
+    double hit_speed_m_s;
+    int points;                   /* how many points were written to points_m */
+} banjo_flight;
+```
+
+Where something would go from `from_m` at `velocity_m_s`, stepped the way the
+solver steps a free body at the rate the world is being stepped — gravity, then
+the body's own damping, then the move — and checked every 1/60 s against the
+solver's own shapes along the line of its centre, so a ball touches down its own
+radius before the point given. `ignoring` names the body that is flying, still in
+the hand: a ray from inside it would otherwise meet it first, and its damping is
+the one applied. Every live body carries a damping of 0.02 per second on its
+speed and its spin (about 2% of its speed a second); exact ballistics that leave
+it and the solver's step out came down 84 mm beyond a real throw over 11.5 m. At
+most ten seconds and 601 points. Changes nothing.
+
+### `int banjo_preview_stroke(const banjo_world *world, const double *path_m, int points, double speed_m_s, double accel_m_s2, double lead_m, double give_up_s, double horizon_s, double *flight_points_m, int max_points, banjo_stroke_preview *out)`
+
+```c
+typedef struct {
+    int possible;
+    const char *why;              /* when it is not possible, or does not reach */
+    int reaches_end;
+    double stroke_s;
+    double work_j;
+    double let_go_at_m[3];        /* the body's centre as the hand opens */
+    double let_go_velocity_m_s[3];
+    banjo_flight flight;          /* its points go to flight_points_m */
+} banjo_stroke_preview;
+```
+
+What a throw would do before it is made: the held body alone, with its own mass
+and inertia, pulled along the path by this hand under gravity — the same law a
+step pushes with, stepped at 1/240 s — and then where it would fly. What it
+cannot know is anything the stroke would bump into on the way, which is why it
+is a preview and a host should say so. It needs a wielded body: anything hauled
+moves as what it is attached to lets it, and then `possible` is 0 with the reason
+in `why`. Changes nothing.
+
+```c
+double from[3] = {-0.8, 1.5, 0}, path[6] = {-0.8, 1.5, 0,   0, 1.5, 0};
+banjo_wield(w, "ball", from);
+double arc[3 * 601];
+banjo_stroke_preview seen;
+banjo_preview_stroke(w, path, 2, 20.0, 2000.0, 0.05, 2.0, 4.0, arc, 601, &seen);
+banjo_stroke(w, path, 2, 20.0, 2000.0, 0.05, 1, 2.0);    /* a full-effort throw */
+banjo_hand hand;
+do { banjo_step(w, 1.0 / 240.0); banjo_hand_state(w, &hand); } while (hand.stroking);
+/* hand.let_go_velocity_m_s: what it left with.  hand.let_go_work_j: what the hand put in. */
 ```
 
 ---

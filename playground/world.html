@@ -21,6 +21,21 @@
   <span id="label-size"></span>
 </div>
 
+<!-- What the hand can do right now, in the player's own keys: the same place
+     and the same pattern for everything a hand can use. Written from one table
+     of bindings (interaction.js), so it always says what pressing does, and
+     the meter is a measured number, never a timer. -->
+<div id="use" hidden>
+  <div id="use-title"></div>
+  <div id="use-meter" hidden>
+    <span id="use-meter-label"></span>
+    <span class="use-bar"><i id="use-meter-fill"></i></span>
+    <output id="use-meter-value"></output>
+  </div>
+  <div id="use-line"></div>
+  <div id="use-note"></div>
+</div>
+
 <div id="hud">
   <div id="hud-clock">—</div>
   <div id="hud-hint"><b>W A S D</b> walk · <b>Q E</b> up and down · <b>Shift</b> run
