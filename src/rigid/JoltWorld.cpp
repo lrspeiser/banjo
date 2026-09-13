@@ -1059,7 +1059,11 @@ JoltWorld::JointReport JoltWorld::jointState(unsigned joint) const {
     if (held.kind == JointKind::Pulley) {
         auto *rove = static_cast<JPH::PulleyConstraint *>(held.constraint.GetPtr());
         // The whole run: one side plus the ratio times the other, which is the
-        // quantity the constraint actually holds.
+        // quantity the constraint actually holds. Jolt measures it between the
+        // points the rope is made off at, not the bodies' centres -- checked
+        // when the link below turned out to measure centres: a load made off
+        // 60 mm to one side, hauled and swinging, read within 0.025 mm of its
+        // tie points while its centre was 0.17 m out.
         out.at = rove->GetCurrentLength();
         out.lower = rove->GetMinLength();
         out.upper = rove->GetMaxLength();
@@ -1068,13 +1072,22 @@ JoltWorld::JointReport JoltWorld::jointState(unsigned joint) const {
     }
     if (held.kind == JointKind::Link) {
         auto *link = static_cast<JPH::DistanceConstraint *>(held.constraint.GetPtr());
-        // How far apart the two ends actually are. Jolt does not offer that on
-        // a distance constraint, so it is measured -- which is the honest
-        // number anyway: a rope's state is its length, taut or slack.
-        const JPH::RVec3 a = impl_->physics_->GetBodyInterface()
-                                 .GetCenterOfMassPosition(impl_->bodies_.at(held.a));
-        const JPH::RVec3 b = impl_->physics_->GetBodyInterface()
-                                 .GetCenterOfMassPosition(impl_->bodies_.at(held.b));
+        // How far apart the two ends actually are: the points the rope is tied
+        // to, each carried into the world by its body's pose as it stands now.
+        // A rope's state is its length, taut or slack.
+        //
+        // The ENDS, not the bodies' centres. This used to measure centre to
+        // centre, and a 1.00 m rope hauled tight between a post and an iron
+        // block read 1.272 m -- exactly how far apart their middles were, with
+        // the rope tied at the post's foot and the block's back.
+        //
+        // The constraint keeps each tie point in its own body's centre-of-mass
+        // frame, which is the frame this transform carries into the world.
+        auto &bodies = impl_->physics_->GetBodyInterface();
+        const JPH::RVec3 a = bodies.GetCenterOfMassTransform(impl_->bodies_.at(held.a)) *
+                             link->GetConstraintToBody1Matrix().GetTranslation();
+        const JPH::RVec3 b = bodies.GetCenterOfMassTransform(impl_->bodies_.at(held.b)) *
+                             link->GetConstraintToBody2Matrix().GetTranslation();
         out.at = static_cast<double>((b - a).Length());
         out.lower = link->GetMinDistance();
         out.upper = link->GetMaxDistance();

@@ -25,6 +25,10 @@
 // 6. A rope parts when it is overloaded, and says so.
 // 7. Cutting a link drops what was under it.
 // 8. A rope carries a load: hang a weight halfway and both ends take it.
+// 9. A rope's length is measured between where it is tied, not between the
+//    middles of the two things it ties, taut or slack.
+// 10. Tension is a force: the same load reads the same at any step size, and a
+//    hand pulling on it adds exactly the hand's strength.
 
 #include "fastlattice/LiveWorld.hpp"
 
@@ -56,8 +60,8 @@ LiveJoint jointNumber(const std::vector<LiveJoint> &joints, unsigned id) {
     throw std::runtime_error("no joint with that id");
 }
 
-void tick(LiveWorld &world) {
-    world.step(1.0 / 240.0);
+void tick(LiveWorld &world, double dt_s = 1.0 / 240.0) {
+    world.step(dt_s);
     if (!world.steppedBack()) return;
     for (const std::string &name : world.breakable()) world.declineBreak(name);
 }
@@ -68,6 +72,21 @@ void run(LiveWorld &world, int steps) {
 
 double heightOf(LiveWorld &world, const std::string &name) {
     return named(world.poses(), name).position_m.y;
+}
+
+// Where a point fixed in a body is now: its offset from the body's centre,
+// turned the way the body has turned and carried to where the body stands.
+Vec3 carried(const LiveBodyPose &pose, const Vec3 &offset) {
+    const double w = pose.orientation_wxyz[0];
+    const Vec3 q{pose.orientation_wxyz[1], pose.orientation_wxyz[2], pose.orientation_wxyz[3]};
+    const Vec3 t = 2.0 * cross(q, offset);
+    return pose.position_m + offset + w * t + cross(q, t);
+}
+
+// How far a body has turned from how it was built, about whatever axis.
+double turnedDegrees(const LiveBodyPose &pose) {
+    const double w = std::min(1.0, std::abs(pose.orientation_wxyz[0]));
+    return 2.0 * std::acos(w) * 180.0 / 3.14159265358979323846;
 }
 
 // A beam overhead with a weight under it, and nothing between them yet.
@@ -105,6 +124,30 @@ TileImpactRequest gantry(double weight_mm_below = 1000.0, int links = 0) {
         segment.center_m = {0.0, 3.85 - 0.15 * i, 0.0};
         r.bodies.push_back(segment);
     }
+    return r;
+}
+
+// A stone post and an iron block on the ground, a metre of rope to be tied
+// between them. This is the scene the chat built for the QA's tether check
+// ("Tie an iron block to a stone post with a one-metre rope"), cell for cell.
+TileImpactRequest postAndBlock() {
+    TileImpactRequest r;
+    r.cell_size_m = 0.04;
+    r.backend = BackendKind::CpuParallel;
+    SceneBody post;
+    post.name = "post";
+    post.shape = BodyShape::Box;
+    post.material = MaterialPreset::Concrete;
+    post.dimensions_m = {0.16, 1.2, 0.16};
+    post.center_m = {0.0, 0.6, 0.0};
+    post.anchored = true;
+    SceneBody block;
+    block.name = "block";
+    block.shape = BodyShape::Box;
+    block.material = MaterialPreset::Iron;
+    block.dimensions_m = {0.16, 0.16, 0.16};
+    block.center_m = {0.84, 0.08, 0.0};
+    r.bodies = {post, block};
     return r;
 }
 
@@ -273,6 +316,128 @@ void cuttingALinkDropsWhatIsUnderIt() {
     require(world->joints().empty(), "the cut rope is still listed");
 }
 
+void aRopeIsMeasuredBetweenItsTiePoints() {
+    // `at` is the rope's length as it is now, and every host reads it as that:
+    // the C API's `at`, the MCP `joints` tool's `apart_m`, the line protocol's
+    // "metres". It used to be measured between the two bodies' CENTRES, and on
+    // this scene, hauled tight with the rope exactly its own length, it read
+    // 1.272 m -- how far apart the middle of the post and the middle of the
+    // block are, when the rope is tied at the post's foot and the block's back.
+    const auto world = LiveWorld::open(postAndBlock());
+    const Vec3 on_post{0.08, 0.12, 0.0}, on_block{0.76, 0.12, 0.0};
+    const unsigned rope = world->tie("post", "block", on_post, on_block, 1.0);
+    require(rope != 0, "the block would not tie to the post");
+    // Each end in its own body's frame. The bodies are built unturned, so that
+    // is where it is tied less where the body's centre is.
+    const Vec3 post_end = on_post - Vec3{0.0, 0.6, 0.0};
+    const Vec3 block_end = on_block - Vec3{0.84, 0.08, 0.0};
+
+    struct Seen {
+        double at, apart, tension_n, turned_deg;
+    };
+    const auto look = [&]() {
+        const auto poses = world->poses();
+        const LiveJoint tied = jointNumber(world->joints(), rope);
+        const LiveBodyPose &block = named(poses, "block");
+        return Seen{tied.at,
+                    length(carried(block, block_end) - carried(named(poses, "post"), post_end)),
+                    tied.tension_n, turnedDegrees(block)};
+    };
+
+    // Slack, as it was laid out: 0.68 m of a 1 m rope.
+    run(*world, 120);
+    const Seen laid_out = look();
+
+    // Taut: hauled away and round to one side, so the block swings round the
+    // post on its rope and turns to keep its back to it. A tie point on a body
+    // that turns does not move the way the body's centre does, so this is what
+    // tells "carried by the body's pose" from "offset from the body's centre".
+    require(world->grab("block"), "could not take hold of the block");
+    world->moveHeld(Vec3{1.84, 0.08, 1.0});
+    run(*world, 720);
+    const Seen taut = look();
+
+    // Slack again: walked 0.4 m back towards the post, still turned.
+    const Vec3 here = named(world->poses(), "block").position_m;
+    Vec3 towards{on_post.x - here.x, 0.0, on_post.z - here.z};
+    towards = (0.4 / length(towards)) * towards;
+    world->moveHeld(here + towards);
+    run(*world, 480);
+    const Seen pushed_back = look();
+    world->release();
+
+    std::cout << "  laid out: reports " << laid_out.at << " m, tied " << laid_out.apart
+              << " m apart\n  hauled:   reports " << taut.at << " m, tied " << taut.apart
+              << " m apart, carrying " << taut.tension_n << " N, the block turned "
+              << taut.turned_deg << " degrees\n  pushed back: reports " << pushed_back.at
+              << " m, tied " << pushed_back.apart << " m apart, carrying "
+              << pushed_back.tension_n << " N\n";
+
+    require(laid_out.tension_n < 1.0 && laid_out.apart < 0.9,
+            "the rope was not slack as it was laid out");
+    require(std::abs(laid_out.at - laid_out.apart) < 1e-3,
+            "a slack rope reports something other than how far apart its ends are");
+    require(taut.tension_n > 100.0, "hauled away, the rope carried nothing: it never went taut");
+    require(taut.turned_deg > 10.0,
+            "the block never turned, so this did not test that a tie point turns with its body");
+    require(std::abs(taut.at - taut.apart) < 1e-3,
+            "a taut rope reports something other than how far apart its ends are");
+    require(std::abs(taut.at - 1.0) < 1e-3, "hauled tight, a 1 m rope does not read 1 m");
+    require(pushed_back.tension_n < 1.0 && pushed_back.apart < 0.9,
+            "pushed back towards the post, the rope did not go slack");
+    require(pushed_back.turned_deg > 10.0,
+            "the block turned back square, so the slack reading did not test a turned tie point");
+    require(std::abs(pushed_back.at - pushed_back.apart) < 1e-3,
+            "a slack rope on a turned body reports something other than how far apart its "
+            "ends are");
+}
+
+void tensionIsAForce() {
+    // What a rope reports is the impulse Jolt's solver put through it over the
+    // last step, divided by that step. That can be wrong in two ways that both
+    // look like "about right" on one scene: divided by the wrong step, and then
+    // the same weight reads differently at 60, 120 and 240 Hz, four times
+    // differently between the ends; or counting something that is not the
+    // rope's pull -- Jolt's position correction, say, which is solved
+    // separately and never enters that impulse. So the same weight is hung at
+    // three step sizes, and then held down by the hand, which pulls with a
+    // known force: the rope has to carry the weight and exactly that.
+    //
+    // The hand here is moved once and then held. A host that moves it before
+    // every step is applying a different load, not reading a different
+    // tension -- see `tension_n` in docs/api/c-api.md.
+    constexpr double kWeightN = 0.2 * 0.2 * 0.2 * 7870.0 * 9.81;
+    for (const double dt : {1.0 / 240.0, 1.0 / 120.0, 1.0 / 60.0}) {
+        const auto world = LiveWorld::open(gantry(1000.0));
+        // Tied at the middle of the weight, so the rope's line runs through its
+        // centre and nothing turns.
+        const unsigned rope = world->tie("beam", "weight", Vec3{0.0, 3.9, 0.0},
+                                         Vec3{0.0, 3.0, 0.0});
+        require(rope != 0, "the weight would not tie to the beam");
+        const int second = static_cast<int>(std::lround(1.0 / dt));
+        for (int i = 0; i < 2 * second; ++i) tick(*world, dt);
+        const double hanging = jointNumber(world->joints(), rope).tension_n;
+
+        require(world->grab("weight"), "could not take hold of the weight");
+        // A metre below it: far enough that the hand pulls with all it has.
+        world->moveHeld(Vec3{0.0, 2.0, 0.0});
+        for (int i = 0; i < second; ++i) tick(*world, dt);
+        const double held_down = jointNumber(world->joints(), rope).tension_n;
+        const double pulled = kWeightN + world->handStrength();
+        world->release();
+
+        std::cout << "  at " << std::lround(1.0 / dt) << " Hz: hanging it reads " << hanging
+                  << " N (weight " << kWeightN << " N); held down by a "
+                  << world->handStrength() << " N hand, " << held_down << " N (weight + hand "
+                  << pulled << " N)\n";
+        require(std::abs(hanging - kWeightN) < 0.01 * kWeightN,
+                "a rope holding a weight still does not report the weight, so its tension is "
+                "not a force at this step size");
+        require(std::abs(held_down - pulled) < 0.01 * pulled,
+                "held down by the hand, the rope does not report the weight plus the hand");
+    }
+}
+
 void aRopeRefusesWhatItCannotTie() {
     const auto world = LiveWorld::open(gantry(1000.0));
     require(world->tie("beam", "nothing at all", Vec3{}, Vec3{}) == 0,
@@ -303,6 +468,10 @@ int main() {
         std::cout << "[PASS] cutting a link drops what is under it\n";
         aRopeRefusesWhatItCannotTie();
         std::cout << "[PASS] a tie refuses what it cannot hold\n";
+        aRopeIsMeasuredBetweenItsTiePoints();
+        std::cout << "[PASS] a rope is measured between its tie points\n";
+        tensionIsAForce();
+        std::cout << "[PASS] tension is a force\n";
         std::cout << "\nall rope tests passed\n";
         return 0;
     } catch (const std::exception &error) {
