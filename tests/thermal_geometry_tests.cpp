@@ -425,6 +425,9 @@ struct BeamRun {
     double first_statics_pct{}, last_statics_pct{};
     LiveStatics statics;
     std::size_t pieces_after_heat{};
+    // How far the heated beam's load had come down 3 s after the beam came
+    // apart, from where it rested before the heat went on; -1 if it did not.
+    double load_down_m{-1.0};
     bool cold_offered{}, cold_broke{};
     double wall_s{}, world_s{};
     Snapshot before, at_offer, last_whole, hot_end, cooled, cold_end;
@@ -475,6 +478,7 @@ BeamRun twoBeams(const std::string &material, double heat_s, double cool_s, bool
     auto world = openScene(scene(assembly("hot", 0.0, material) + "," + assembly("cold", 3.0, material)), 0.02);
     Answered log;
     for (int i = 0; i < 240; ++i) stepAnswering(*world, log);
+    const double load_y0 = findPose(*world, "hot load")->position_m.y;
     (void)world->heat("hot beam", power_w, heat_s);
     // Taken once the network holds it: cold, whole, as built.
     run.before = snapshotOf(*world, "hot beam");
@@ -499,6 +503,8 @@ BeamRun twoBeams(const std::string &material, double heat_s, double cool_s, bool
             heated_gone = true;
             run.broke_s = world->time_s() - t0;
         }
+        if (heated_gone && run.load_down_m < 0.0 && world->time_s() - t0 >= run.broke_s + 3.0)
+            if (const auto load = findPose(*world, "hot load")) run.load_down_m = load_y0 - load->position_m.y;
         if (std::abs(world->time_s() - t0 - heat_s) < 0.5 * kDt) {
             if (const auto rest = largestOf(*world, "hot beam")) run.hot_end = snapshotOf(*world, rest->name);
             run.pieces_after_heat = descendantsOf(*world, "hot beam");
@@ -565,7 +571,8 @@ void report(const BeamRun &r) {
               << 100.0 * r.statics.first_failure_ratio << "% of the criterion, " << r.statics.bonds_removed
               << " bonds, " << r.statics.pieces << " pieces, " << r.statics.cost_ms << " ms)" << std::endl;
     if (r.broke_s >= 0.0)
-        std::cout << "      broke " << r.broke_s << " s in; last whole: " << describe(r.last_whole) << std::endl;
+        std::cout << "      broke " << r.broke_s << " s in; last whole: " << describe(r.last_whole)
+                  << "; its block came down " << 1000.0 * r.load_down_m << " mm in the 3 s after" << std::endl;
     std::cout << "      end of heating: " << r.pieces_after_heat << " bodies of the heated beam; largest: "
               << describe(r.hot_end) << std::endl;
     std::cout << "      cooled: " << describe(r.cooled) << "; would keep "
@@ -626,6 +633,10 @@ void theOwnersTwoBeams() {
         require(oak.statics.stop == "broke" && oak.statics.first_failure_ratio >= 1.0,
                 "statics broke the heated beam only at its own criterion");
         require(oak.broke_s > oak.offered_s, "and not before the survey asked");
+        // And what it carried came down. Asleep on the beam through the re-cuts,
+        // the room's block once hung 0.43 m up over a beam that had come apart
+        // into 56 pieces under it (LiveWorld::applyPending).
+        require(oak.load_down_m > 0.1, "and the block it carried came down");
     }
     // Heat that weakens it without lighting it. At 3 kW for 15 minutes the
     // owner's beam only dries -- it releases no heat (measure: heater powers)

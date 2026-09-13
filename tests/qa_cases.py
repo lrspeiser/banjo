@@ -1120,13 +1120,54 @@ def check_heated_beam(built: Built) -> Verdict:
         return Verdict(False, f"nothing rests on {beam}, so it has no load to give way under",
                        measured)
     load_y0 = bodies[load]["position_m"][1]
+
+    def of_beam(name: str) -> bool:
+        return name == beam or name.startswith(beam + " piece ")
+
+    def down_m() -> float:
+        return load_y0 - ((world.body(load) or {}).get("position_m") or [0.0, load_y0, 0.0])[1]
+
+    def standing_on() -> str | None:
+        """The piece of the beam the load stands on, if it stands on one."""
+        now = world.bodies()
+        held = now.get(load)
+        if held is None:
+            return None
+        bottom = held["position_m"][1] - size_m(held)[1] / 2
+        best = None
+        for n, piece in now.items():
+            if not of_beam(n):
+                continue
+            if abs(piece["position_m"][1] + size_m(piece)[1] / 2 - bottom) > 0.05:
+                continue
+            if abs(piece["position_m"][0] - held["position_m"][0]) > size_m(piece)[0] / 2:
+                continue
+            if best is None or mass(piece) > mass(now[best]):
+                best = n
+        return best
+
     # As long as the heat runs and two minutes more, from ten to twenty minutes:
     # a beam that has not given way by then under what the chat built is an
     # answer too, if statics says it held.
+    #
+    # Statics says "broke" whenever pieces come off, and that is not always the
+    # span giving way. Measured on this recipe: the first answer once took one
+    # 72 g cell off (54 bonds, two pieces) and left the span under the block;
+    # what was left was asked under the same load 0.1 s later and broke at 417%
+    # of the criterion -- the beam is two cells deep, and a notch one cell deep
+    # leaves a quarter of the section modulus (about 406%) -- and the block was
+    # on the floor 437 mm down within 2.7 s. So the load is followed onto
+    # whatever of the beam it stands on, and watched until it comes down or
+    # the time is up. Asking what it stands on is also what found the block in
+    # the air: in five other runs it stayed 12 mm down -- what the re-cuts had
+    # taken off the top -- with none of the beam under it, asleep since the
+    # re-cuts and never woken when the beam came apart (LiveWorld::applyPending
+    # wakes it now).
     limit = max(600.0, min(1200.0, abt._heater_end_s(built.room) + 120.0))
     lowest = {"bending": 1.0, "bending_compression": 1.0}
-    burned_mm, drawn_smaller, broke_s = 0.0, None, None
+    burned_mm, drawn_smaller, broke_s, came_down_s = 0.0, None, None, None
     answers: dict[str, dict[str, Any]] = {}
+    carrier, carriers = beam, [beam]
     waited = 0.0
     while waited < limit:
         world.seconds(10.0)
@@ -1143,13 +1184,26 @@ def check_heated_beam(built: Built) -> Verdict:
             if drawn_smaller is None and int(entry.get("revision") or 0) > 0:
                 drawn_smaller = {"at_s": round(waited, 1), "now_mm": entry.get("now_mm"),
                                  "mass_kg": entry.get("mass_kg")}
-        if world.body(beam) is None:
+        if broke_s is None and world.body(beam) is None:
             broke_s = round(waited, 1)
+        if down_m() >= 0.1:
+            came_down_s = round(waited, 1)
             world.seconds(5.0)
             break
+        # What it stood on came apart and it is still up: it stands on what is
+        # left, and that is what it can come down through from now on.
+        if world.body(carrier) is None and down_m() <= 0.05:
+            now_on = standing_on()
+            if now_on is not None:
+                carrier = now_on
+                carriers.append(now_on)
     answer = answers.get(beam)
+    last = answers.get(carrier)
+    down = down_m()
     measured.update({"lowest": lowest, "burned_mm": burned_mm, "drawn_smaller": drawn_smaller,
-                     "statics": answer, "broke_s": broke_s, "watched_s": waited})
+                     "statics": answer, "broke_s": broke_s, "watched_s": waited,
+                     "came_down_s": came_down_s, "carried_by": carriers,
+                     "pieces_said": {n: a for n, a in answers.items() if n != beam and of_beam(n)}})
     if min(lowest.values()) >= 0.99:
         return Verdict(False, f"{beam} was heated for {waited:.0f} s and the engine never said it "
                               f"lost any strength", measured)
@@ -1157,26 +1211,63 @@ def check_heated_beam(built: Built) -> Verdict:
     if burned_mm > 0.25 and drawn_smaller is None and broke_s is None:
         return Verdict(False, f"{burned_mm:.2f} mm of {beam} burned from every face and it was "
                               f"never drawn smaller", measured)
-    if broke_s is not None:
-        if not answer or answer.get("stop") != "broke" or float(answer.get("ratio") or 0.0) < 1.0:
-            return Verdict(False, f"{beam} came apart without statics saying its bonds reached the "
-                                  f"criterion: {answer}", measured)
-        fell = load_y0 - ((world.body(load) or {}).get("position_m") or [0.0, load_y0, 0.0])[1]
-        measured["load_fell_m"] = round(fell, 3)
-        if fell < 0.1:
-            return Verdict(False, f"{beam} broke and {load} did not come down ({fell:.3f} m)",
-                           measured)
-    elif answer and answer.get("stop") == "broke":
-        return Verdict(False, f"statics said {beam} broke and it is still whole: {answer}", measured)
+    # Whatever of the beam statics said broke came apart.
+    for n, said in answers.items():
+        if of_beam(n) and said.get("stop") == "broke" and world.body(n) is not None:
+            return Verdict(False, f"statics said {n} broke and it is still whole: {said}", measured)
+    if broke_s is not None and (not answer or answer.get("stop") != "broke"
+                                or float(answer.get("ratio") or 0.0) < 1.0):
+        return Verdict(False, f"{beam} came apart without statics saying its bonds reached the "
+                              f"criterion: {answer}", measured)
+    if came_down_s is not None:
+        # It came down only through what it stood on, and only once statics
+        # said that broke.
+        measured["load_fell_m"] = round(down, 3)
+        if world.body(carrier) is not None:
+            return Verdict(False, f"{load} came down {down:.3f} m through {carrier}, which did not "
+                                  f"break", measured)
+        if not last or last.get("stop") != "broke" or float(last.get("ratio") or 0.0) < 1.0:
+            return Verdict(False, f"{carrier} came apart under {load} without statics saying its "
+                                  f"bonds reached the criterion: {last}", measured)
+    else:
+        # What did not come down is still carried, by the beam or by what is
+        # left of it. Measured in the page once: the load sank into the beam
+        # each time statics was asked, fell through a beam that was whole, and
+        # the panel went on saying "under its load: holds".
+        measured["load_dropped_m"] = round(down, 3)
+        if down > 0.05:
+            return Verdict(False, f"{load} came down {down:.3f} m through {beam}, which did not "
+                                  f"break" if broke_s is None else
+                                  f"{load} came down {down:.3f} m when {beam} came apart and "
+                                  f"stopped there, neither carried nor down", measured)
+        if broke_s is not None and standing_on() is None:
+            return Verdict(False, f"{beam} came apart and {load} is still up without standing on "
+                                  f"any of it", measured)
     for twin in twins:
         said = answers.get(twin)
         if world.body(twin) is None or (said and said.get("stop") == "broke"):
             return Verdict(False, f"{twin} was not heated and it gave way: {said}", measured)
-    how = (f"statics broke it {broke_s:.0f} s in with its bonds at "
-           f"{100 * float(answer['ratio']):.0f}% of the criterion, and {load} came down "
-           f"{measured['load_fell_m']:.2f} m" if broke_s is not None else
-           f"statics held it with its bonds at {100 * float(answer['ratio']):.0f}% of the criterion"
-           if answer else "it was never asked: its load stayed under what heat left it")
+
+    def pct(said: dict[str, Any]) -> str:
+        return f"{100 * float(said['ratio']):.0f}%"
+
+    if answer and broke_s is not None:
+        # When statics said so, rather than the look that found it gone.
+        broke_s = float(answer.get("t") or broke_s)
+    if came_down_s is not None:
+        how = (f"statics broke it {broke_s:.0f} s in with its bonds at {pct(answer)} of the "
+               f"criterion" + (f"; what was left, {carrier}, carried {load} until statics broke "
+                               f"that too at {pct(last)}" if carrier != beam else "")
+               + f", and {load} came down {down:.2f} m")
+    elif broke_s is not None:
+        how = (f"statics broke pieces off it {broke_s:.0f} s in with its bonds at {pct(answer)} of "
+               f"the criterion, and what is left, {carrier}, still carries {load}"
+               + (f" (statics: {last.get('stop')} at {pct(last)})" if last and carrier != beam
+                  else ""))
+    elif answer:
+        how = f"statics held it with its bonds at {pct(answer)} of the criterion"
+    else:
+        how = "it was never asked: its load stayed under what heat left it"
     return Verdict(True, f"{beam} lost its strength to heat (bending down to "
                          f"{100 * lowest['bending']:.0f}%, its compression side to "
                          f"{100 * lowest['bending_compression']:.0f}%)"
@@ -1737,15 +1828,20 @@ RECIPES: dict[str, tuple[Any, ...]] = {
         ("heat", {"target": "oak peg", "power_w": 2000, "seconds": 300, "label": "a torch"}),
     ]),
     # Oak 1.4 m x 60 x 100 mm on two concrete piers 1.2 m apart under a 300 mm
-    # iron cube; the same 3 m along; 8 kW into the first for 15 minutes. In
-    # tests/thermal_geometry_tests.cpp's identical build statics broke it 654.75 s
-    # in, and its twin was never asked about.
+    # iron cube; the same 3 m along; 8 kW into the first for 15 minutes. The
+    # yard's cells are 40 mm, so the MCP builds the beam 80 x 80 mm (two cells
+    # deep) and the cube 320 mm (258 kg) -- what the chat's own build was in the
+    # page. The beam and the cube are set down ([x, z]) on what is under them,
+    # as the chat set them: given exact heights for the sizes asked, the snapped
+    # cube and beam claimed the same cells and the build was refused.
     "heated-beam": ("heated-beam", [
         *[call for tag, x in (("hot ", 0.0), ("cold ", 3.0)) for call in (
             _box(f"{tag}pier left", "concrete", [0.16, 0.4, 0.3], [x - 0.6, 0.2, 0.0], True),
             _box(f"{tag}pier right", "concrete", [0.16, 0.4, 0.3], [x + 0.6, 0.2, 0.0], True),
-            _box(f"{tag}beam", "oak", [1.4, 0.06, 0.1], [x, 0.43, 0.0]),
-            _box(f"{tag}load", "iron", [0.3, 0.3, 0.3], [x, 0.61, 0.0]))],
+            ("add_object", {"object": {"name": f"{tag}beam", "shape": "box", "material": "oak",
+                                       "size_m": [1.4, 0.06, 0.1], "position_m": [x, 0.0]}}),
+            ("add_object", {"object": {"name": f"{tag}load", "shape": "box", "material": "iron",
+                                       "size_m": [0.3, 0.3, 0.3], "position_m": [x, 0.0]}}))],
         ("heat", {"target": "hot beam", "power_w": 8000, "seconds": 900, "label": "a heater"}),
     ]),
     # Where the person is: set down with [x, z], the MCP working out the height

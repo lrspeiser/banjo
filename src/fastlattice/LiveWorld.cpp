@@ -1809,6 +1809,11 @@ namespace {
 // rigid body carries. Quat has rotate() but no inverse, and taking a world
 // vector into a body's own frame needs one on every call below.
 [[nodiscard]] Quat conjugateOf(const Quat &q) { return Quat{q.w, -q.x, -q.y, -q.z}; }
+// a, then b made in a's frame.
+[[nodiscard]] Quat productOf(const Quat &a, const Quat &b) {
+    return Quat{a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z, a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+                a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x, a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w};
+}
 } // namespace
 
 unsigned LiveWorld::hinge(const std::string &a, const std::string &b,
@@ -3885,6 +3890,25 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
         island.matter.nodes[local].velocity_m_s =
             pose.linear_velocity_m_s + cross(pose.angular_velocity_rad_s, arm);
     }
+    // Two bodies are two bodies. The scene's matter still holds as whole the
+    // bonds that broke when a body came apart -- an applied run rebuilds its
+    // bodies from its components and writes nothing back there -- so an island
+    // of two pieces of one thing took in the bonds between them alive,
+    // stretched across whatever gap had opened since. Measured on the owner's
+    // two beams (tests/thermal_geometry_tests.cpp): two pieces of the heated
+    // beam 79 mm apart, of 3 and 2 cells, went into a run at 4.8 and 5.4 m/s
+    // and came out one body at 97.5 m/s. A bond between cells of different
+    // bodies starts broken.
+    for (std::size_t k = 0; k < island.matter.bonds.size() && k < island.matter.asset->bonds.size(); ++k) {
+        const BondRest &rest = island.matter.asset->bonds[k];
+        if (rest.node_a >= island.parent_node.size() || rest.node_b >= island.parent_node.size()) continue;
+        const auto end_a = body_of_node.find(island.parent_node[rest.node_a]);
+        const auto end_b = body_of_node.find(island.parent_node[rest.node_b]);
+        if (end_a == body_of_node.end() || end_b == body_of_node.end() || end_a->second == end_b->second)
+            continue;
+        island.matter.bonds[k].alive = false;
+        island.matter.bonds[k].damage = 1.0;
+    }
     // A heated body's cells weigh what the network says is left, and its bonds
     // carry what the law leaves them -- the same field its section, its shape
     // and its report are read from. Nothing cold is touched.
@@ -4209,6 +4233,11 @@ std::size_t LiveWorld::applyPending() {
             const std::uint32_t b = island.parent_node[rest.node_b];
             // A bond inside a body that was allowed to break stays broken.
             if (job.may_break.count(a) && job.may_break.count(b)) continue;
+            // And so does one between two bodies: it is inside neither, and
+            // putting it back joined two bodies into one.
+            const auto end_a = body_of_node.find(a), end_b = body_of_node.find(b);
+            if (end_a == body_of_node.end() || end_b == body_of_node.end() || end_a->second != end_b->second)
+                continue;
             island.matter.bonds[o].alive = true;
             island.matter.bonds[o].damage = 0.0;
             island.matter.bonds[o].failure_mode = BondFailureMode::None;
@@ -4229,6 +4258,17 @@ std::size_t LiveWorld::applyPending() {
         const std::uint32_t parent_bond = island.parent_bond.empty()
                                               ? static_cast<std::uint32_t>(o)
                                               : island.parent_bond[o];
+        // Only a body admitted to break or dent at this contact takes a set
+        // from it. One that was only there to deliver the blow comes out as it
+        // went in: its bonds are put back above, and its cells below.
+        if (!job.may_break.empty() && island.matter.asset != nullptr &&
+            o < island.matter.asset->bonds.size()) {
+            const BondRest &rest = island.matter.asset->bonds[o];
+            if (rest.node_a < island.parent_node.size() && rest.node_b < island.parent_node.size() &&
+                !(job.may_break.count(island.parent_node[rest.node_a]) &&
+                  job.may_break.count(island.parent_node[rest.node_b])))
+                continue;
+        }
         if (parent_bond < impl_->plastic_extension_m.size()) {
             impl_->plastic_extension_m[parent_bond] = island_state.plastic_extension[k];
             impl_->plastic_strain_m[parent_bond] = island_state.plastic_strain[k];
@@ -4280,6 +4320,50 @@ std::size_t LiveWorld::applyPending() {
     if (island_components.empty()) return 1;
 
 
+    // What was only there to deliver the blow goes back to how it was made to
+    // sit, about the middle the run left it at: a body not admitted to break or
+    // dent at this contact comes out of the run as it went in but for how it
+    // moved -- its bonds put back and no set taken (above), its cells as they
+    // were (here), and its name and its shape (below). Handed back with its
+    // cells where the run had left them, a held body took whatever the run did
+    // to them into the next run it was part of: measured on the owner's two
+    // beams (tests/thermal_geometry_tests.cpp), a 212 kg iron block that had
+    // been through several runs in the 30 ms before, its cells by then 0.13 m
+    // from where its box touched a piece, came out of the next at 188 m/s.
+    std::unordered_map<std::size_t, std::pair<LiveBodyPose, std::size_t>> held_pose;
+    if (!job.may_break.empty()) {
+        for (const std::size_t body : island_bodies) {
+            if (body >= impl_->nodes_of.size() || impl_->nodes_of[body].empty()) continue;
+            if (job.may_break.count(impl_->nodes_of[body].front())) continue;
+            const auto before = poses_before.find(body);
+            if (before == poses_before.end()) continue;
+            std::vector<std::size_t> mine;
+            double mass = 0.0;
+            Vec3 middle{}, laid{};
+            for (std::size_t local = 0; local < island.parent_node.size() && local < island.matter.nodes.size();
+                 ++local) {
+                const auto owner = body_of_node.find(island.parent_node[local]);
+                if (owner == body_of_node.end() || owner->second != body) continue;
+                const double m = island.matter.nodes[local].mass_kg;
+                mine.push_back(local);
+                mass += m;
+                middle = middle + m * island.matter.nodes[local].position_world_m;
+                laid = laid + m * before->second.orientation_world.rotate(impl_->cell_offset_m[island.parent_node[local]]);
+            }
+            if (mine.empty() || !(mass > 0.0)) continue;
+            middle = (1.0 / mass) * middle;
+            laid = (1.0 / mass) * laid;
+            for (const std::size_t local : mine) {
+                ActiveNodeState &node = island.matter.nodes[local];
+                const Vec3 at = middle - laid +
+                                before->second.orientation_world.rotate(impl_->cell_offset_m[island.parent_node[local]]);
+                node.previous_position_world_m = node.previous_position_world_m + (at - node.position_world_m);
+                node.position_world_m = at;
+            }
+            held_pose.emplace(body, std::make_pair(impl_->described[body], mine.size()));
+        }
+    }
+
     // It broke, or it bent. Either way it is not what it was, so replace it.
     FragmentBuildResult rebuilt = buildFragmentRepresentations(island.matter, island_components, {
         .first_body_id = impl_->next_body_id,
@@ -4289,6 +4373,13 @@ std::size_t LiveWorld::applyPending() {
         .friction = setup.tile_ground.dynamic_friction,
         .restitution = setup.tile_ground.restitution,
     });
+    // Where each body that is about to go stood, and how far it reached: what
+    // rested on it or against it is woken once its pieces are in (below).
+    std::vector<std::pair<Vec3, double>> gone_from;
+    for (const std::size_t body : island_bodies)
+        if (impl_->world->contains(impl_->body_of[body]))
+            gone_from.emplace_back(impl_->world->snapshot(impl_->body_of[body]).center_of_mass_world_m,
+                                   0.5 * length(impl_->described[body].dimensions_m) + 0.05);
     for (const std::size_t body : island_bodies)
         impl_->world->removeAndDestroy(impl_->body_of[body]);
 
@@ -4304,11 +4395,15 @@ std::size_t LiveWorld::applyPending() {
     // took an empty name and an empty material out of it: the room filled with
     // things called " piece 1 piece 1" made of nothing, and sweeping the floor
     // up reported "2,833 g of ".
+    // And which body that was, for how it was turned when the run began.
+    std::vector<std::size_t> body_of_part(setup.part_bodies.size(), static_cast<std::size_t>(-1));
     for (const std::size_t body : island_bodies)
         for (const std::uint32_t node : impl_->nodes_of[body]) {
             const std::uint32_t part = setup.part_of_node[node];
-            if (part < parent_of_part.size() && parent_of_part[part].name.empty())
+            if (part < parent_of_part.size() && parent_of_part[part].name.empty()) {
                 parent_of_part[part] = impl_->described[body];
+                body_of_part[part] = body;
+            }
         }
     // And if a part still has nobody -- it was not in the island at all -- the
     // thing that was struck is the honest answer for whose piece this is.
@@ -4380,9 +4475,19 @@ std::size_t LiveWorld::applyPending() {
         }
         const std::size_t dominant = static_cast<std::size_t>(
             std::max_element(counted.begin(), counted.end()) - counted.begin());
-        const LiveBodyPose &parent = parent_of_part[dominant].name.empty()
-                                         ? fell_from
-                                         : parent_of_part[dominant];
+        // A body that was only there to deliver the blow, all of it, is still
+        // itself: its own pose stands in as its parent, and it keeps its name.
+        const LiveBodyPose *held = nullptr;
+        if (!held_pose.empty()) {
+            const auto owner = body_of_node.find(island.parent_node[component.node_indices.front()]);
+            if (owner != body_of_node.end())
+                if (const auto found = held_pose.find(owner->second);
+                    found != held_pose.end() && found->second.second == component.node_indices.size())
+                    held = &found->second.first;
+        }
+        const LiveBodyPose &parent = held ? *held
+                                     : parent_of_part[dominant].name.empty() ? fell_from
+                                                                             : parent_of_part[dominant];
         const MaterialDefinition &material = dominant < setup.part_definitions.size()
                                                  ? setup.part_definitions[dominant]
                                                  : setup.tile_material;
@@ -4394,8 +4499,8 @@ std::size_t LiveWorld::applyPending() {
                                   !parent_of_part[dominant].name.empty() &&
                                   component.node_indices.size() ==
                                       impl_->cellsOfPart(dominant);
-        piece.name = whole_parent ? parent.name
-                                  : parent.name + " piece " + std::to_string(++made);
+        piece.name = held || whole_parent ? parent.name
+                                          : parent.name + " piece " + std::to_string(++made);
         if (!source_of_cell.empty()) {
             std::unordered_map<std::string, std::size_t> from;
             for (const std::uint32_t node : parent_nodes) {
@@ -4504,6 +4609,23 @@ std::size_t LiveWorld::applyPending() {
             fragment.primitive = parent.shape == "sphere" ? FragmentPrimitive::Sphere
                                                           : FragmentPrimitive::Box;
             fragment.primitive_dimensions_m = parent.dimensions_m;
+            // Turned as it was. Every body handed back to the world is made
+            // unturned (JoltWorld::addFragments) and its cells are written down
+            // where the run left them, so the whole of how it is turned goes
+            // into its shape: how its body was turned when the run began, then
+            // how the shape sat in that body. Without this a tilted box came
+            // back square to the world each time it went through a run whole,
+            // while its cells kept the tilt.
+            Quat turned{1.0, 0.0, 0.0, 0.0};
+            if (const auto before = poses_before.find(body_of_part[dominant]); before != poses_before.end())
+                turned = before->second.orientation_world;
+            if (const auto tilt = impl_->tilt_of.find(parent.name); tilt != impl_->tilt_of.end())
+                turned = productOf(turned, tilt->second);
+            fragment.primitive_rotation_wxyz[0] = turned.w;
+            fragment.primitive_rotation_wxyz[1] = turned.x;
+            fragment.primitive_rotation_wxyz[2] = turned.y;
+            fragment.primitive_rotation_wxyz[3] = turned.z;
+            impl_->tilt_of[parent.name] = turned;
         } else {
             piece.shape = "hull";
         }
@@ -4531,6 +4653,9 @@ std::size_t LiveWorld::applyPending() {
         for (LiveBodyPose &pose : impl_->described) {
             if (pose.name != was || pose.shape == "hull") continue;
             pose.revision = record->second.revision;
+            // Its new body is unturned, and how it is turned is its shape's now.
+            if (const auto tilt = impl_->tilt_of.find(was); tilt != impl_->tilt_of.end())
+                record->second.turn = tilt->second;
             kept = true;
             break;
         }
@@ -4540,6 +4665,20 @@ std::size_t LiveWorld::applyPending() {
     impl_->index_of.clear();
     for (std::size_t i = 0; i < impl_->described.size(); ++i)
         impl_->index_of.emplace(impl_->described[i].name, i);
+    // And what stood on what came apart finds out whether it still stands.
+    // Jolt wakes nothing when a body is taken out from under a sleeping one,
+    // and the pieces put in its place did not wake it either. Measured on the
+    // heated beam: the 258 kg block had slept on it through the re-cuts,
+    // statics broke the beam into 56 pieces under it, the pieces fell to the
+    // floor, and the block hung where it was, 0.43 m up with nothing under
+    // it, for the four and a half minutes the check went on watching.
+    for (const auto &[at, reach] : gone_from)
+        for (std::size_t j = 0; j < impl_->described.size(); ++j) {
+            if (impl_->described[j].anchored || !impl_->world->contains(impl_->body_of[j])) continue;
+            const Vec3 there = impl_->world->snapshot(impl_->body_of[j]).center_of_mass_world_m;
+            if (length(there - at) <= reach + 0.5 * length(impl_->described[j].dimensions_m))
+                impl_->world->wake(impl_->body_of[j]);
+        }
     if (thermal) {
         for (auto &[source, pieces] : shares) {
             const double cells = static_cast<double>(source_cells[source]);

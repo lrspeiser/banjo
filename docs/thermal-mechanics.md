@@ -352,6 +352,23 @@ waiting on statics was held, and its block sank through it; and then the beam's
 re-cuts woke the block each time and it rolled off (*Sustained loads*, *What
 burns leaves the shape*). In neither case had the beam broken.
 
+And once the beam had broken, the block could hang in the air. Built by the
+QA recipe `heated-beam` (`tests/qa_cases.py`, the same assemblies set down
+through the MCP) and stepped ten seconds at a time, statics broke the beam
+746.3 to 747.2 s into 8 kW at 100.3 to 101.4% of the criterion in six runs out
+of six. In one, a cell came off first (54 bonds, 2 pieces), what was left was
+asked under the same load 0.1 s later and broke at 417% -- the beam is two
+cells deep, and a notch one cell deep leaves a quarter of its section modulus
+-- and the block came down 437 mm. In the other five (4, 5, 5, 5 and 56
+pieces) the block stayed where it had rested, 12 mm down, which is what the
+re-cuts had taken off the beam's top, with none of the beam under it: in the
+56-piece run the pieces were on the floor and the block 0.43 m above them,
+still there at 1,020 s. It had slept on the beam through the re-cuts, and
+Jolt wakes nothing when a body is taken out from under a sleeping one; the
+pieces put in its place did not wake it either. What stood on or against a
+body that comes apart is now woken (`LiveWorld::applyPending`), and in six
+runs since the block came down 0.38 to 0.48 m.
+
 ## The laws
 
 A law says, per material, a reduction factor against temperature for the
@@ -649,12 +666,12 @@ again by every survey and need not be kept.
 
 | file | what |
 |---|---|
-| `tests/thermal_geometry_tests.cpp` | `banjo_thermal_geometry_tests`, on every push: the field is one state; statics against beam theory; a heated beam over time; what burns leaves the shape; a piece rebuilt from the cells it has left. `banjo_thermal_geometry_long_tests`, labelled long and run by `.github/workflows/long-physics.yml`: the owner's two beams in glass, oak (8 and 3 kW) and iron; the heater powers |
+| `tests/thermal_geometry_tests.cpp` | `banjo_thermal_geometry_tests`, on every push: the field is one state; statics against beam theory; a heated beam over time; what burns leaves the shape; a piece rebuilt from the cells it has left; an answer goes with its load. `banjo_thermal_geometry_long_tests`, labelled long and run by `.github/workflows/long-physics.yml`: the owner's two beams in glass, oak (8 and 3 kW) and iron, the heated oak's block coming down when statics breaks its beam; the heater powers; the owner's room, answers not waited for |
 | `tests/thermal_mechanics_tests.cpp` | 11: the laws against their sources; the cold control; the heated twin; a different load; a sleeping assembly re-checked; cooling; a refused step; splits and restores; iron in the same fire; a softening spring's energy; a heated beam in the load survey, against oak's governing 52 MPa |
 | `tests/beam_tests.cpp`, `tests/joint_binding_tests.py` | the shelf on both sides of statics' line, in C++ and through the C library |
 | `tests/thermochemistry_tests.cpp` | what leaves the network does not come back |
 | `tests/thermo_ffi_tests.py`, `tests/banjo_mcp_tests.py`, `tests/live_lanes_agree_tests.py` | the same through the C library, the MCP and both live lanes, at ABI 19 |
-| `tests/qa_cases.py` | `burning-peg`: built by the chat, checked in the real engine |
+| `tests/qa_cases.py` | `burning-peg` and `heated-beam`: built by the chat or by the recipe, checked in the real engine. `heated-beam` follows the load onto whatever of the beam it stands on -- statics says "broke" whenever pieces come off, which is not always the span giving way -- until it comes down or the time is up |
 
 ## Not done
 
