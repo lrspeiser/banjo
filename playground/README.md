@@ -159,8 +159,9 @@ not change this fixed reference. See the [API, refinement and limitations](../do
 
 `/world` is a room to walk around in, picked at the bottom right. It opens on
 **the test rooms** — every build the QA proves, side by side (below) — and also
-has **the bench**, **the courtyard**, **an empty yard** and **the armoury**, where
-there is a sword to take up and things to cut with it. Its chat box builds with the MCP
+has **the bench**, **the courtyard**, **an empty yard**, **the armoury**, where
+there is a sword to take up and things to cut with it, and **a valley with a
+river**, where the ground can be dug and the water dammed (below). Its chat box builds with the MCP
 server's own tools: the same names, schemas and handlers as `mcp/banjo_mcp.py`,
 run on the room held as an MCP world (`playground/room_world.py`). Anything the
 MCP can do, the chat can do, and `tests/chat_tool_parity_tests.py` fails if a
@@ -231,7 +232,9 @@ a thrown or rolling ball would carry on into the next build. They are written to
 Three rooms, because a room may hold 16,000 cells and still run at realtime and
 together they hold 37,572. The overloaded shelf is in none of them — it slows
 any room it is in to a crawl while the engine works out its break — and taking
-the courtyard's bar off is an edit to the courtyard, which is its own room. Run
+the courtyard's bar off is an edit to the courtyard, which is its own room. So
+are the four valley builds — the dam, the drained pond, the log and the dug-out
+boulder — which are built in the valley, a room of its own (below). Run
 `--rooms` again whenever a recipe changes.
 
 ### Taking up a sword
@@ -271,6 +274,38 @@ flick of 34 degrees in 0.12 s took the bar through the 40 mm oak edge-first at
 7.3 m/s, 12,516 mm² for 56 J: the lower piece fell to the floor and the upper
 still hangs from the lintel.
 
+### The valley
+
+*A valley with a river* is generated ground with a river running west to east
+and a pond beside it. The ground and the water are the engine's own heights
+and depths, drawn as they are; the foam on the river is carried by the engine's
+velocity field. Aim at the water and the label says how deep it is and how fast
+it is moving. The Water panel says what is standing, what the river brings in
+and takes out, how many columns the solver is computing, and what is
+unaccounted for — zero to within rounding, or something is wrong. **Dig here**
+digs a pit where the crosshair is on the ground, 0.8 m across and 0.4 m deep;
+sandy sides slump into it, and the pit is still there when the room is opened
+again.
+
+Everything in it is built by asking. In this order the room holds all of it,
+12,960 of its 16,000 cells:
+
+1. "Dam the river with stone blocks so the water backs up behind them."
+2. "Dig a channel to drain the pond."
+3. "Put an oak log in the river."
+4. "Put a big stone boulder on the river bank, where I can dig the ground out
+   from under it." — then aim at the ground right beside it and press **Dig
+   here**.
+
+Measured in the page on 2026-09-12: asked for the dam, the chat set nine
+concrete blocks across the river (fixed in place), and in the room the water
+standing rose from 29.5 m³ to 36.2 m³ in 69 s while the outflow fell from 0.35
+to about 0.22–0.25 m³/s, with 10⁻¹² m³ unaccounted.
+[docs/terrain-and-water.md](../docs/terrain-and-water.md) has the rest: the
+channel, the log and the boulder measured, what it costs — a minute of the
+valley in 4.7 s — and what is not modelled: a floating body makes no waves,
+fronts are smeared, and no sediment moves while anyone is there.
+
 ### Opening a saved build
 
 `/world?qa=<run>/<case>-<trial>` opens any build a run saved, as a room of its
@@ -295,7 +330,7 @@ page from outside it.
 | `POST /api/jobs/{id}/open` | Open `{case_index}` in the native studio |
 | `POST /api/world/open` | Open the room on /world: `{scene}` (one of the rooms above) or `{qa: "<run>/<case>-<trial>"}` (a saved QA build); `fresh: true` builds it again from scratch |
 | `POST /api/world/ask` | One chat turn in the open room: `{message, story}`; a room the chat changed is opened again from what it left |
-| `POST /api/live/act` | Step the open room, or take hold of, move, let go of or heat something in it |
+| `POST /api/live/act` | Step the open room, or take hold of, move, let go of or heat something in it. In a room with ground: `dig` and `deposit` change it (and are kept, so a reopened room still has them), `survey` says what is at a point, `discharge` sets the river, and `environment`, `environment_state` and `terrain` read the ground and the water |
 
 The server answers in HTTP/1.1 and keeps a connection open between requests.
 Under 1.0 every reply closed its connection and the room's page opened a new one
