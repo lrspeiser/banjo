@@ -26,6 +26,12 @@ from playground_tests import (  # noqa: E402
 from control_contract import default_ui  # noqa: E402
 
 
+def job_events(app, job_id):
+    """The event names a job logged, in order."""
+    path = app.runs_path / job_id / "events.jsonl"
+    return [json.loads(line)["event"] for line in path.read_text(encoding="utf-8").splitlines()]
+
+
 class BrowserControlApiTests(PlaygroundTestCase):
     def test_optional_ui_is_validated_and_invalid_ui_never_reaches_engine(self):
         valid = plan_for("panel_impact")
@@ -64,17 +70,42 @@ class BrowserControlApiTests(PlaygroundTestCase):
         self.assertEqual(app.engine.call_order, [])
 
     def test_height_rerun_uses_prepared_plan_without_planner_and_preserves_original(self):
-        original = plan_for("plate_drop", heights_m=[.25])
+        # The rigid control has no network cells, so the realtime gate admits
+        # it. The network plate this test used before the gate existed is
+        # refused before any engine call; the next test pins that.
+        original = plan_for("rigid_drop", heights_m=[.25])
         planner = mock.Mock(return_value=(original, {"model": "fake-model"}))
         app = self.make_app(planner)
         first = app.submit({"message": "drop", "request_id": "rerun_base_01", "auto_open": False})
-        before = deepcopy(app.get(first["job_id"])["plan"])
+        base = app.get(first["job_id"])
+        self.assertEqual(base["status"], "complete", base["message"])
+        before = deepcopy(base["plan"])
         rerun = app.rerun(first["job_id"], {"case_index": 0, "action": "height_m", "value": .75, "request_id": "rerun_height_01"})
         self.assertEqual(planner.call_count, 1)
         self.assertEqual(app.get(first["job_id"])["plan"], before)
         rerun_job = app.get(rerun["job_id"])
+        self.assertEqual(rerun_job["status"], "complete", rerun_job["message"])
         self.assertEqual(rerun_job["plan"]["heights_m"], [.75])
         self.assertEqual(len(app.engine.run_calls), 2)
+
+    def test_network_plate_is_refused_before_any_engine_call_and_cannot_be_rerun(self):
+        # The plate the test above used before the realtime gate existed. The
+        # cost model prices it far over REALTIME_LIMIT, so the job stops before
+        # the engine is touched and a height control has no case to rerun.
+        plan = plan_for("plate_drop", heights_m=[.25])
+        planner = mock.Mock(return_value=(plan, {"model": "fake-model"}))
+        app = self.make_app(planner)
+        first = app.submit({"message": "drop", "request_id": "rerun_refused_01", "auto_open": False})
+        job = app.get(first["job_id"])
+        self.assertEqual(job["status"], "blocked", job["message"])
+        self.assertIn("realtime_refused", job_events(app, first["job_id"]))
+        self.assertEqual(job["cases"], [])
+        self.assertEqual(app.engine.call_order, [])
+        with self.assertRaisesRegex(ValueError, "Choose a completed experiment case"):
+            app.rerun(first["job_id"], {"case_index": 0, "action": "height_m", "value": .75, "request_id": "rerun_refused_02"})
+        self.assertEqual(planner.call_count, 1)
+        self.assertEqual(list(app.jobs), [first["job_id"]])
+        self.assertEqual(app.engine.call_order, [])
 
     def test_pressure_rerun_forwards_changed_pressure_and_nullable_default(self):
         plan = plan_for("continuum_pressure_reference", pressure=None)
@@ -101,7 +132,10 @@ class BrowserControlApiTests(PlaygroundTestCase):
     def test_recorder_artifact_becomes_playback_without_second_engine_run(self):
         recorder = self.engine_path.with_name("banjo_playground_record.fake")
         recorder.touch()
-        plan = plan_for("panel_impact", duration_s=.1)
+        # The rigid control, which the realtime gate admits. The network panel
+        # this test recorded before the gate existed never reaches the
+        # recorder; the next test pins that.
+        plan = plan_for("rigid_drop", duration_s=.1)
 
         def record(args, **kwargs):
             output = Path(args[args.index("--output") + 1])
@@ -112,12 +146,34 @@ class BrowserControlApiTests(PlaygroundTestCase):
         with mock.patch.object(playground_server.subprocess, "run", side_effect=record):
             result = app.submit({"message": "record", "request_id": "recording_01", "auto_open": False})
         job = app.get(result["job_id"])
+        self.assertEqual(job["status"], "complete", job["message"])
         self.assertTrue(job["cases"][0]["playback_available"])
         self.assertEqual(app.engine.run_calls, [])
         self.assertIn((result["job_id"], 0), app.playbacks)
         self.assertEqual(app.playback(result["job_id"], 0), json.dumps({"schema": "banjo.playback.v1", "status": "complete", "report": {"recorded": True}}).encode())
         with self.assertRaisesRegex(ValueError, "no computed 3D recording"):
             app.playback(result["job_id"], 1)
+
+    def test_network_panel_is_refused_before_the_recorder_runs(self):
+        # The panel the test above recorded before the realtime gate existed.
+        # A built recorder changes nothing: the job stops before a scene is
+        # written or the recorder is started, and there is nothing to play back.
+        recorder = self.engine_path.with_name("banjo_playground_record.fake")
+        recorder.touch()
+        plan = plan_for("panel_impact", duration_s=.1)
+        app = self.make_app(mock.Mock(return_value=(plan, {"model": "fake-model"})))
+        with mock.patch.object(playground_server.subprocess, "run") as run:
+            result = app.submit({"message": "record", "request_id": "recording_refused_01", "auto_open": False})
+        job = app.get(result["job_id"])
+        self.assertEqual(job["status"], "blocked", job["message"])
+        self.assertIn("realtime_refused", job_events(app, result["job_id"]))
+        run.assert_not_called()
+        self.assertEqual(app.engine.call_order, [])
+        self.assertEqual(job["cases"], [])
+        self.assertFalse((app.runs_path / result["job_id"] / "scenes").exists())
+        self.assertNotIn((result["job_id"], 0), app.playbacks)
+        with self.assertRaisesRegex(ValueError, "no computed 3D recording"):
+            app.playback(result["job_id"], 0)
 
 
 class BrowserHttpApiTests(PlaygroundTestCase):
