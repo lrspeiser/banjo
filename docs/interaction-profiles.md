@@ -164,6 +164,15 @@ where the room is written. The checks are:
 A profile that names something that isn't there, or tries to state a speed, is
 refused.
 
+Since increment 3 those rules are one set, `mcp/interaction_profiles.py`, and
+the room and the MCP's `interaction` tool both hold a profile to it. A room the
+chat changes is written back with its profiles. It used to be written back
+without them, so the first thing the chat changed anywhere in the courtyard --
+a crate by the gate -- left the bow with no controls, and the page offered to
+carry its string about like a stick. A change that takes away something a
+profile names withdraws that profile at the call that made the change, and the
+answer says which and why; the room is not refused the change.
+
 ### The bow, measured
 
 A nock is one-way, and the engine now has one. The string pushes the arrow as
@@ -181,7 +190,7 @@ the string takes up the bow; hold the left mouse to draw; let go to shoot.
 |---|---|
 | draw, 2 s of left mouse | 436 mm; 42.2 J in the limbs; the hand pulling 214 N; the meter read off the engine |
 | loose | the page opens the hand and does nothing else; "arrow came off bowstring" |
-| the shot | left at 8.6 m/s, 58% of what the limbs held; flew 1.6 m down the range and bounced off the gate |
+| the shot | the page said 8.6 m/s, 58% of what the limbs held -- the fastest it saw, the arrow and the string together; it left the string at 8.30, 55% (section 6); flew 1.6 m down the range and bounced off the gate |
 | again, no arrow | "No arrow on the string"; drawn to 430 mm and let down with the right mouse |
 | clock | 2.28 s of room time over 2.25 s of wall clock |
 
@@ -225,8 +234,75 @@ returned as numbers. After any change — a part removed, a string cut — the
 profile is revalidated, and an action whose parts are gone is withdrawn with the
 reason.
 
-**Status:** increment 3 (an MCP tool the chat uses to craft, and QA through the
-chat).
+**Status:** increment 3, measured below.
+
+The MCP's `interaction` tool is the transaction: build the thing with the other
+tools, then say how it is used ([api/mcp.md](api/mcp.md#things-a-person-uses)).
+It is held to what is BUILT -- the calls that made the joints, not what the
+world is doing, so a nock an arrow has just come off in a run is still the bow's
+nock -- and then tried in a scratch world opened from what was built, holding
+the object and whatever is joined to it. There the engine's own 800 N hand draws
+the draw part back along the draw, at the draw's speed, until the limbs balance
+it or it reaches `max_m`; holds it a quarter of a second; and lets go. What comes
+back is what was drawn, the pull, what the limbs held and what the projectile
+left with at the step the nock let it go, with `sound: false`, and why, when the
+engine did not follow the shot.
+
+### The trial, measured
+
+The chat's guide carries a bow as a recipe -- the courtyard's geometry at the
+origin: 6 kN/m limbs on 45 g tips, a 672 g oak arrow on a 20 N nock -- built and
+tried through the MCP's own tools. The same hand on other limbs and to other
+draws:
+
+| | drawn | pull | limbs held | the arrow left | share |
+|---|---|---|---|---|---|
+| 3 kN/m, asked for 0.45 m | 443 mm | 107 N | 21.8 J | 5.58 m/s | 48% |
+| 4.5 kN/m | 440 mm | 160 N | 32.2 J | 7.11 m/s | 53% |
+| 6 kN/m, the courtyard's | 436 mm | 214 N | 42.2 J | 8.30 m/s | 55% |
+| 8 kN/m | 432 mm | 285 N | 54.9 J | 9.67 m/s | 57% |
+| 12 kN/m | 423 mm | 423 N | 78.6 J | 11.87 m/s | 60% |
+| 20 kN/m | 406 mm | 686 N | 119.1 J | 15.48 m/s | 68% |
+| 6 kN/m, asked for 0.20 m | 195 mm | 77 N | 5.2 J | 2.10 m/s | 28% |
+| 6 kN/m, 0.30 m | 291 mm | 140 N | 15.6 J | 4.72 m/s | 48% |
+| 6 kN/m, 0.40 m | 387 mm | 197 N | 32.0 J | 7.20 m/s | 54% |
+
+A trial takes 0.05 to 0.08 s to compute.
+
+The page used to say the courtyard bow's arrow left at 8.6 m/s. That was the
+fastest it saw: the arrow and the string ran together at 8.59 m/s, and over the
+two steps the arrow slid off the nock, its 20 N grip took 0.29 m/s back. The page
+now reports the arrow's speed along the shot at its first report after the arrow
+is clear of the string.
+
+The trial found the engine wanting a fourth time. Before it, the arrow was
+stopped dead on the string on 13 of these 19 draws and stiffnesses -- 5.58 m/s to
+−2.54 in one step, still nocked, with nothing touching it -- and it was not the
+bow. Jolt sweeps a fast body as its shape shrunk by its convex radius; every
+moving box here had none, so one lying on something -- the arrow on its rest --
+started its sweep already touching it, and the sweep reported a hit along the
+way it was going. Every moving box and hull now has round edges, 2 mm or a tenth
+of its thinnest half if that is less, inside its authored size. Anything sliding
+fast over what it rested on was stopped the same way: a box thrown along a plank
+went from 7 m/s to −4.6 in one step, and now slides on, losing 0.021 m/s a step,
+which is friction.
+
+In the page, headless Chrome against the live engine, the chat was asked for
+two things in the courtyard and the bows were then used the way a person uses
+them -- E on the string, hold the left mouse, let go:
+
+| | Measured in the page |
+|---|---|
+| a change elsewhere | "Put a small oak crate on the floor a metre in front of me": done, the room reopened, and the courtyard's bow kept its controls |
+| the courtyard's bow, drawn 1 s | 352 mm; loosed, "The arrow left at 7.6 m/s — the limbs held 34.7 J and 56% of it went into the arrow" |
+| crafting | "Build me a second bow beside the courtyard bow, just like it but with stiffer limbs, 8 kN/m": `duplicate` of its 8 parts with the springs at 8 kN/m, 0.8 m across its line of fire, in 28 s; the chat gave the trial -- 0.432 m, 285 N, 54.9 J, 9.68 m/s |
+| the stiff bow, drawn 2 s | 432 mm by 285 N, 54.9 J; the arrow left at 9.7 m/s, 57%, and flew 9.3 m down the courtyard |
+| the courtyard's bow, drawn 2 s | 436 mm by 214 N, 42.2 J; the arrow left at 8.3 m/s, 55%, into the gate |
+| clock | 2.77 s of room time over 2.77 s of wall clock, shooting the stiff bow |
+
+The first time it was asked, before `duplicate` existed, the chat built the
+copy from the recipe by hand, got the offsets wrong and stopped halfway with its
+parts overlapping ([api/mcp.md](api/mcp.md#things-a-person-uses)).
 
 ## 7. Pose help
 
@@ -246,8 +322,11 @@ blocked. Shown briefly on first use, and on the help key afterwards.
    machine: take up the bow from any of its parts, draw by holding primary, a
    meter that reads this bow's own limbs, let down, and the states an unloaded
    or broken bow is in.
-3. **Crafting** — profiles through the MCP, the chat crafting a bow of a
-   different stiffness, and QA through the chat.
+3. **Crafting** — profiles through the MCP (`interaction`, with its trial),
+   profiles kept through the chat's changes and withdrawn with the reason, the
+   chat crafting a bow of a different stiffness -- `duplicate` of the
+   courtyard's, its springs at 8 kN/m -- and QA through the chat in the page
+   (section 6). Measured.
 4. **Pose help**, and the remaining components.
 
 Acceptance, from the owner: a new player can pick up a ball or a bow and use it

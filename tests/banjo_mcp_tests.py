@@ -536,6 +536,161 @@ class TheTools(unittest.TestCase):
                                1.0, places=3)
         self.assertAlmostEqual(drawn["force_n"] / (2000.0 * stretched), 1.0, places=3)
 
+    # A bow as the playground's chat is told to build one (world_chat.GUIDE): a
+    # grip of two anchored blocks, the lower one the arrow's rest, cheeks either
+    # side of the shaft, two limb tips on hinges held by springs made off 0.36 m
+    # forward of the grip, a string on two ropes, and the arrow on a one-way
+    # nock. `bows` is (prefix, z offset, stiffness): side by side, one world.
+    def bow_world(self, bows):
+        objects = []
+        for p, dz, _ in bows:
+            def box(name, size, at, anchored=False):
+                return {"name": p + name, "shape": "box", "material": "oak",
+                        "size_m": size, "position_m": at, "anchored": anchored}
+            objects += [box("bow grip upper", [0.04, 0.16, 0.12], [0, 1.40, dz], True),
+                        box("bow grip lower", [0.04, 0.16, 0.12], [0, 1.12, dz], True),
+                        box("bow grip near cheek", [0.04, 0.04, 0.04], [0, 1.22, dz + 0.06], True),
+                        box("bow grip far cheek", [0.04, 0.04, 0.04], [0, 1.22, dz - 0.06], True),
+                        box("upper limb tip", [0.04, 0.04, 0.04], [-0.16, 1.62, dz]),
+                        box("lower limb tip", [0.04, 0.04, 0.04], [-0.16, 0.82, dz]),
+                        box("bowstring", [0.04, 0.16, 0.04], [-0.16, 1.22, dz]),
+                        box("arrow", [0.6, 0.04, 0.04], [0.2, 1.22, dz])]
+        world_id = self.client.call("create_world", cell_size_m=0.04, objects=objects)["world_id"]
+        limbs = (("bow grip upper", "upper limb tip", 1.34, 1.62, 1.30),
+                 ("bow grip lower", "lower limb tip", 1.10, 0.82, 1.14))
+        for p, dz, k in bows:
+            for grip, tip, root, _, _ in limbs:
+                self.client.call("hinge", world_id=world_id, a=p + grip, b=p + tip,
+                                 at_m=[0, root, dz], axis=[0, 0, 1], lower_deg=-60,
+                                 upper_deg=60, friction_n_m=0)
+            for grip, tip, root, tip_y, _ in limbs:
+                made = self.client.call("spring", world_id=world_id, a=p + grip, b=p + tip,
+                                        at_a_m=[0.36, root, dz], at_b_m=[-0.16, tip_y, dz],
+                                        rest_m=0, stiffness_n_m=k, damping_n_s_m=20)
+                # Made off on scenery, 0.36 m out: the lever, and not a mistake.
+                self.assertNotIn("warnings", made)
+            for _, tip, _, tip_y, string_y in limbs:
+                self.client.call("tie", world_id=world_id, a=p + tip, b=p + "bowstring",
+                                 at_a_m=[-0.16, tip_y, dz], at_b_m=[-0.16, string_y, dz],
+                                 length_m=0, breaks_at_n=0)
+            made = self.client.call("fix", world_id=world_id, a=p + "bowstring", b=p + "arrow",
+                                    at_m=[-0.13, 1.22, dz], axis=[1, 0, 0], comes_off_n=20,
+                                    holds_shear_n=0)
+            self.assertNotIn("warnings", made)
+        return world_id
+
+    @staticmethod
+    def bow_profile(p, max_m=0.45):
+        return {"object": f"the {p}bow", "template": "draw-and-release",
+                "parts": [p + n for n in ("bow grip upper", "bow grip lower", "bow grip near cheek",
+                                          "bow grip far cheek", "upper limb tip", "lower limb tip",
+                                          "bowstring", "arrow")],
+                "draw": {"part": p + "bowstring", "axis": [-1, 0, 0], "max_m": max_m,
+                         "speed_m_s": 0.4},
+                "nock": {"a": p + "bowstring", "b": p + "arrow"},
+                "limbs": [[p + "bow grip upper", p + "upper limb tip"],
+                          [p + "bow grip lower", p + "lower limb tip"]],
+                "projectile": p + "arrow"}
+
+    def test_a_bow_is_told_how_it_is_used_and_tried_before_anyone_picks_it_up(self):
+        """docs/interaction-profiles.md: a profile says how a person uses a thing
+        and never what it does, and the tool TRIES it -- drawn by a person's hand
+        and loosed in a scratch world -- so what comes back is the engine's
+        answer. A stiffer bow, drawn by the same hand, stores more and shoots
+        faster; nothing in either profile says so."""
+        world_id = self.bow_world([("", 0.0, 6000.0), ("stiff ", 0.8, 8000.0)])
+        soft = self.client.call("interaction", world_id=world_id, **self.bow_profile(""))
+        stiff = self.client.call("interaction", world_id=world_id, **self.bow_profile("stiff "))
+        for bow in (soft, stiff):
+            trial = bow["trial"]
+            self.assertTrue(trial["sound"], trial)
+            self.assertGreater(trial["limbs_held_j"], 20.0, trial)
+            self.assertLess(trial["share_of_what_the_limbs_held_pct"], 100.0, trial)
+            said = json.dumps({k: v for k, v in bow.items() if k != "trial"}).lower()
+            self.assertNotIn("m_s\": ", said.replace("speed_m_s", ""))
+        self.assertGreater(stiff["trial"]["limbs_held_j"], soft["trial"]["limbs_held_j"])
+        self.assertGreater(stiff["trial"]["left_along_the_shot_m_s"],
+                           soft["trial"]["left_along_the_shot_m_s"])
+        # The trials were in scratch worlds: every nock here is still on.
+        nocks = [j for j in self.client.call("joints", world_id=world_id)["joints"]
+                 if j["kind"] == "fixing"]
+        self.assertEqual(len(nocks), 2)
+        self.assertTrue(all(j["attached"] for j in nocks), nocks)
+        listed = self.client.call("describe_world", world_id=world_id)["things_a_person_uses"]
+        self.assertEqual({t["object"] for t in listed}, {"the bow", "the stiff bow"})
+
+    def test_a_bow_shoots_true_at_every_draw(self):
+        """The arrow slides over its rest as it is shot. Jolt swept it as a box
+        with square edges, which started every sweep already touching the rest,
+        and on 13 of 19 draws and stiffnesses the sweep's false hit stopped the
+        arrow dead on the string and bounced it back -- 5.58 m/s to -2.54 in one
+        step. Every moving box and hull now has round edges -- 2 mm, or a tenth
+        of its thinnest half if that is less (JoltWorld's kSweepRadiusM) -- and
+        at every draw the arrow leaves, and leaves faster the further the string
+        was drawn."""
+        world_id = self.bow_world([("", 0.0, 6000.0)])
+        speeds = []
+        for draw in (0.20, 0.25, 0.30, 0.35, 0.40, 0.45):
+            trial = self.client.call("interaction", world_id=world_id,
+                                     **self.bow_profile("", max_m=draw))["trial"]
+            self.assertTrue(trial["sound"], f"drawn to {draw} m: {trial}")
+            speeds.append(trial["left_along_the_shot_m_s"])
+        self.assertEqual(speeds, sorted(speeds), f"a longer draw did not shoot faster: {speeds}")
+
+    def test_a_profile_that_says_what_it_does_or_names_what_is_not_there_is_refused(self):
+        world_id = self.bow_world([("", 0.0, 6000.0)])
+        for spoil, said in ((dict(arrow_speed_m_s=60.0), "never what it does"),
+                            (dict(limbs=[["bowstring", "arrow"]]), "elastic"),
+                            (dict(parts=["longbow"]), "not in this room"),
+                            (dict(projectile="bow grip upper"), "projectile")):
+            refused = self.client.refuse("interaction", world_id=world_id,
+                                         **dict(self.bow_profile(""), **spoil))
+            self.assertIn(said, refused)
+
+    def test_taking_the_arrow_away_withdraws_the_bow_and_says_why(self):
+        world_id = self.bow_world([("", 0.0, 6000.0)])
+        self.client.call("interaction", world_id=world_id, trial=False, **self.bow_profile(""))
+        answer = self.client.call("remove_object", world_id=world_id, name="arrow")
+        withdrawn = answer.get("interactions_withdrawn") or []
+        self.assertEqual([w["object"] for w in withdrawn], ["the bow"])
+        self.assertIn("arrow", withdrawn[0]["why"])
+        self.assertNotIn("things_a_person_uses",
+                         self.client.call("describe_world", world_id=world_id))
+
+    def test_another_bow_like_it_is_a_copy_with_stiffer_limbs(self):
+        """duplicate: another of what was built, exactly, with what differs said
+        as a change. Asked for a second bow beside the first, stiffer, a model
+        added one offset to forty numbers and got it wrong. This copies the
+        bodies, the joints with their points moved and how the bow is used, and
+        tries the copy: the same hand, stiffer limbs, a faster arrow."""
+        world_id = self.bow_world([("", 0.0, 6000.0)])
+        parts = self.bow_profile("")["parts"]
+        first = self.client.call("interaction", world_id=world_id, **self.bow_profile(""))
+        copy = self.client.call("duplicate", world_id=world_id, names=parts,
+                                offset_m=[0, 0, 0.81], prefix="stiff",
+                                changes={"spring": {"stiffness_n_m": 8000}},
+                                call_it="the stiff bow")
+        self.assertEqual(copy["copied"], ["stiff " + n for n in parts])
+        # Whole 40 mm cells, and said: moved by 0.81 the grid would cut it
+        # differently and it would not be the same bow.
+        self.assertEqual(copy["offset_m"], [0.0, 0.0, 0.8])
+        self.assertIn("offset_note", copy)
+        self.assertEqual(sorted(j["tool"] for j in copy["joints"]),
+                         ["fix", "hinge", "hinge", "spring", "spring", "tie", "tie"])
+        springs = {(j["a"], j["b"]): j["stiffness_n_m"]
+                   for j in self.client.call("joints", world_id=world_id)["joints"]
+                   if j["kind"] == "elastic"}
+        self.assertAlmostEqual(springs[("bow grip upper", "upper limb tip")], 6000.0, places=1)
+        self.assertAlmostEqual(springs[("stiff bow grip upper", "stiff upper limb tip")], 8000.0,
+                               places=1)
+        made = copy["things_a_person_uses"][0]
+        self.assertEqual(made["object"], "the stiff bow")
+        self.assertEqual(made["projectile"], "stiff arrow")
+        self.assertTrue(made["trial"]["sound"], made["trial"])
+        self.assertGreater(made["trial"]["limbs_held_j"], first["trial"]["limbs_held_j"])
+        self.assertGreater(made["trial"]["left_along_the_shot_m_s"],
+                           first["trial"]["left_along_the_shot_m_s"])
+
     def test_a_loaded_shelf_is_reported_without_being_struck(self):
         """Sustained load through the tools.
 

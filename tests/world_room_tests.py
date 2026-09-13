@@ -436,6 +436,78 @@ class TheCourtyard(unittest.TestCase):
                 side * (face - (top if side > 0 else top - shaft["size_mm"][1])),
                 0.0, f"the shaft runs through {block} rather than past it")
 
+    def test_a_change_elsewhere_in_the_courtyard_keeps_its_bow_usable(self):
+        """The chat changes the room through the MCP's own tools, and the room
+        is written back from the MCP world. It used to be written back without
+        its profiles, so the first thing the chat did anywhere in the
+        courtyard -- a crate by the gate -- left the bow with no controls: the
+        page offered to carry its string about like a stick."""
+        world_id = room_world.open_room(world_room.courtyard())
+        self.addCleanup(room_world.close_room, world_id)
+        answer = room_world.call(world_id, "add_object", {"object": {
+            "name": "test crate", "shape": "box", "material": "oak",
+            "size_m": [0.2, 0.2, 0.2], "position_m": [2.0, 2.4]}})
+        self.assertNotIn("error", answer)
+        self.assertNotIn("interactions_withdrawn", answer)
+        spec = fracture_lab.validate(room_world.export_spec(room_world.entry_of(world_id)))
+        bows = [p for p in spec["interactions"] if p["object"] == "the courtyard bow"]
+        self.assertEqual(len(bows), 1, "the courtyard's bow lost its controls when "
+                                       "something else in the room changed")
+        self.assertEqual(bows[0]["draw"]["part"], "bowstring")
+        self.assertEqual(bows[0]["draw"]["max_mm"], 450.0)
+        self.assertEqual(bows[0]["draw"]["speed_mm_s"], 400.0)
+
+    def test_taking_the_bows_arrow_away_withdraws_it_and_says_why(self):
+        """And a change that takes away what a profile names withdraws it at the
+        call that did it, with the reason -- rather than the room refusing the
+        change, or keeping controls for a bow that can no longer be loosed."""
+        world_id = room_world.open_room(world_room.courtyard())
+        self.addCleanup(room_world.close_room, world_id)
+        answer = room_world.call(world_id, "remove_object", {"name": "arrow"})
+        self.assertNotIn("error", answer)
+        withdrawn = answer.get("interactions_withdrawn") or []
+        self.assertEqual([w["object"] for w in withdrawn], ["the courtyard bow"])
+        self.assertIn("arrow", withdrawn[0]["why"])
+        spec = room_world.export_spec(room_world.entry_of(world_id))
+        self.assertNotIn("interactions", spec)
+        fracture_lab.validate(spec)     # and the room is still one the lane opens
+
+    def test_the_courtyard_bow_is_copied_beside_itself_and_tried(self):
+        """Asked for a stiffer bow beside the courtyard's, the chat copies it
+        across its line of fire (duplicate); the room carries both bows, and
+        the copy was tried: the same hand, stiffer limbs, a faster arrow."""
+        world_id = room_world.open_room(world_room.courtyard())
+        self.addCleanup(room_world.close_room, world_id)
+        entry = room_world.entry_of(world_id)
+        original = room_world.call(world_id, "interaction",
+                                   dict(entry["interactions"][0]))["trial"]
+        answer = room_world.call(world_id, "duplicate", {
+            "names": list(entry["interactions"][0]["parts"]), "offset_m": [0, 0, -0.8],
+            "prefix": "stiff", "changes": {"spring": {"stiffness_n_m": 8000}},
+            "call_it": "the stiff bow"})
+        self.assertNotIn("error", answer)
+        copied = answer["things_a_person_uses"][0]["trial"]
+        self.assertTrue(original["sound"], original)
+        self.assertTrue(copied["sound"], copied)
+        self.assertGreater(copied["left_along_the_shot_m_s"], original["left_along_the_shot_m_s"])
+        spec = fracture_lab.validate(room_world.export_spec(entry))
+        self.assertEqual({p["object"] for p in spec["interactions"]},
+                         {"the courtyard bow", "the stiff bow"})
+
+    def test_a_copy_that_would_overlap_is_refused_and_leaves_nothing(self):
+        """The room refuses a copy that overlaps anything, with its own reason,
+        and none of the copy is left behind -- no bodies, joints or controls."""
+        world_id = room_world.open_room(world_room.courtyard())
+        self.addCleanup(room_world.close_room, world_id)
+        entry = room_world.entry_of(world_id)
+        before = (len(entry["scene"]["bodies"]), len(entry["joints"]), len(entry["interactions"]))
+        answer = room_world.call(world_id, "duplicate", {
+            "names": list(entry["interactions"][0]["parts"]), "offset_m": [0, 0, 0],
+            "prefix": "again"})
+        self.assertIn("error", answer)
+        self.assertEqual((len(entry["scene"]["bodies"]), len(entry["joints"]),
+                          len(entry["interactions"])), before)
+
     @unittest.skipIf(ENGINE is None, "no live engine built")
     def test_drawing_the_bow_stores_work_and_loosing_spends_it(self):
         """The claim, end to end, through the same pipe the browser uses.

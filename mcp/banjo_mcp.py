@@ -38,8 +38,12 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bindings" / "python"))
+# Beside this file: the rules for how a person uses a thing, which the
+# playground's room holds its own profiles to as well.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import banjo  # noqa: E402
+import interaction_profiles  # noqa: E402
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER = {"name": "banjo", "version": "1.0.0"}
@@ -289,6 +293,11 @@ def tool_describe_world(args: dict[str, Any]) -> dict[str, Any]:
             "objects": _describe(world) if world is not None else [],
             "joints": len(entry.get("joints", [])),
             "what_has_happened": entry["story"][-20:]}
+    if entry.get("interactions"):
+        said["things_a_person_uses"] = [
+            {"object": p["object"], "template": p["template"], "parts": p["parts"],
+             "draws": p["draw"]["part"], "shoots": p["projectile"]}
+            for p in entry["interactions"]]
     if _has_terrain(entry):
         report = world.environment_report()
         said["ground"] = _ground_said(report)
@@ -700,6 +709,8 @@ def _rebuild(entry: dict[str, Any], scene: dict[str, Any], world_id: str,
             lost += dropped
             if dropped:
                 entry["scene"] = dict(scene, blades=armed)
+    # And how the things in it are used, held to what is built now.
+    _recheck_interactions(entry)
     return lost
 
 
@@ -861,6 +872,12 @@ def tool_clear_world(args: dict[str, Any]) -> dict[str, Any]:
     scene.pop("blades", None)
     entry["scene"] = scene
     entry["joints"] = []
+    # And how anything in it was used: there is nothing left to use.
+    if entry.get("interactions"):
+        entry.setdefault("withdrawn", []).extend(
+            {"object": p["object"], "why": "the world was cleared"}
+            for p in entry["interactions"])
+        entry["interactions"] = []
     entry["world"] = None
     if old is not None:
         old.close()
@@ -1143,6 +1160,423 @@ def tool_spring(args: dict[str, Any]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Things a person uses (docs/interaction-profiles.md)
+# ---------------------------------------------------------------------------
+#
+# A bow here is a grip, two limbs, a string and a nock, and every one of them is
+# an ordinary joint. What makes it a BOW to a person is what they do with it:
+# take it up, draw the string back, let go. That is its profile -- which bodies
+# are the object, which part the hand draws and which way, which joint lets go,
+# which joints hold the draw -- and never what the physics does. Declared with
+# `interaction`, it is held to the rules against what is built, kept through
+# every rebuild, withdrawn with the reason when what it names is taken away, and
+# TRIED: drawn with a person's hand and loosed in a scratch world, so whoever
+# made it is told what it stored and what it shot with before anybody picks it
+# up.
+
+# The joining calls, and the room's names for the joints they make.
+JOINT_KINDS = {"hinge": "hinge", "slide": "slider", "tie": "link", "reeve": "pulley",
+               "fix": "fixing", "spring": "elastic"}
+
+# A trial steps as the playground's room does (playground/world.js, LIVE_DT),
+# with the engine's own hand, which is the person's.
+TRIAL_STEP_S = 1.0 / 240.0
+
+
+def _authored_joints(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The joints as they were BUILT, from the calls that made them -- not what
+    the world is doing now. A nock an arrow has just come off, in a run or a
+    trial, is still the nock the bow was built with."""
+    return [{"kind": JOINT_KINDS.get(r["tool"], r["tool"]),
+             "a": r["args"].get("a"), "b": r["args"].get("b"),
+             "axis": list(r["args"].get("axis") or [0.0, 1.0, 0.0]),
+             "comes_off_n": float(r["args"].get("comes_off_n") or 0.0)}
+            for r in records]
+
+
+def _profile_checked(entry: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]:
+    """A profile held to the rules against what is built. Raises ValueError."""
+    return interaction_profiles.check(profile, {b["name"] for b in entry["scene"]["bodies"]},
+                                      _authored_joints(entry.get("joints", [])))
+
+
+def _recheck_interactions(entry: dict[str, Any]) -> None:
+    """After what is built has changed: a profile that names a part or a joint
+    that is gone is withdrawn, and why is kept for the answer to the call that
+    did it (see _saying_what_was_withdrawn). A bow whose arrow was taken away is
+    not a bow anyone can loose, and saying nothing would leave it looking like
+    one until somebody tried."""
+    kept, gone = [], []
+    for profile in entry.get("interactions", []):
+        try:
+            _profile_checked(entry, profile)
+            kept.append(profile)
+        except ValueError as problem:
+            gone.append({"object": profile["object"], "why": str(problem)})
+    if gone:
+        entry["interactions"] = kept
+        entry.setdefault("withdrawn", []).extend(gone)
+
+
+def _saying_what_was_withdrawn(handler: Any) -> Any:
+    """The tool, with anything its change withdrew said in its answer."""
+    def run(args: dict[str, Any]) -> Any:
+        answer = handler(args)
+        entry = WORLDS.get(str(args.get("world_id")))
+        gone = entry.pop("withdrawn", None) if entry is not None else None
+        if gone and isinstance(answer, dict):
+            answer = {**answer, "interactions_withdrawn": gone}
+        return answer
+
+    run.__name__ = getattr(handler, "__name__", "tool")
+    run.__doc__ = handler.__doc__
+    return run
+
+
+def tool_interaction(args: dict[str, Any]) -> dict[str, Any]:
+    """Say how a person uses a thing, hold it to what is built, and try it."""
+    entry = _world(args.get("world_id"))
+    profile = {k: v for k, v in args.items() if k not in ("world_id", "trial")}
+    profile.setdefault("template", "draw-and-release")
+    try:
+        checked = _profile_checked(entry, profile)
+    except ValueError as problem:
+        raise Refused(str(problem)) from None
+    draw = profile["draw"]
+    checked["draw"]["max_m"] = _number(draw.get("max_m", 0.45), "draw max_m", 0.02, 3.0)
+    checked["draw"]["speed_m_s"] = _number(draw.get("speed_m_s", 0.4), "draw speed_m_s",
+                                           0.01, 5.0)
+    # One profile to an object: said again, it is what it says now.
+    entry["interactions"] = [p for p in entry.get("interactions", [])
+                             if p["object"] != checked["object"]] + [checked]
+    answer: dict[str, Any] = dict(checked)
+    answer["how_a_person_uses_it"] = (
+        f"In the playground a person takes {checked['object']} up with E on any of its "
+        f"parts, holds the left mouse button to draw {checked['draw']['part']} back -- with "
+        f"an 800 N hand, which stops where the limbs balance it or at "
+        f"{checked['draw']['max_m']:g} m -- and lets go to shoot; the right mouse button "
+        f"lets it down again.")
+    if args.get("trial", True):
+        answer["trial"] = _trial(entry, checked)
+    return answer
+
+
+def _trial(entry: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]:
+    """Draw it with a person's hand and loose it, in a scratch world.
+
+    Never the world it was built in: a scratch world opened from what was
+    built, holding the object and whatever is joined to it -- a bow on a stand
+    is a bow and its stand -- so what is tried is the object as built, and
+    nothing a caller holds is touched. Drawn the way the playground draws it:
+    the draw's part taken, stroked back along the draw at the draw's speed
+    until the limbs balance the hand or it gets to max_m, held a moment, and
+    let go.
+    """
+    import time as clock
+    began = clock.perf_counter()
+    names = set(profile["parts"])
+    grew = True
+    while grew:
+        grew = False
+        for record in entry.get("joints", []):
+            ends = {record["args"].get("a"), record["args"].get("b")}
+            if ends & names and not ends <= names:
+                names |= ends
+                grew = True
+    scene = {k: v for k, v in entry["scene"].items()
+             if k not in ("bodies", "blades", "thermo", "terrain", "water")}
+    scene["bodies"] = [b for b in entry["scene"]["bodies"] if b["name"] in names]
+    try:
+        world = banjo.World(scene, cell_size_m=entry["cell_m"])
+    except banjo.BanjoError as error:
+        return {"tried": False, "why": f"it would not open on its own: {error}"}
+    scratch = "trial-" + uuid.uuid4().hex[:8]
+    WORLDS[scratch] = {"world": world, "scene": scene, "cell_m": entry["cell_m"],
+                       "story": [], "joints": [], "next_joint": 1, "carried": {}}
+    try:
+        for record in entry.get("joints", []):
+            if {record["args"].get("a"), record["args"].get("b")} <= names:
+                MAKE_JOINT[record["tool"]]({**record["args"], "world_id": scratch})
+        said = _draw_and_loose(world, profile)
+    except (Refused, banjo.BanjoError) as problem:
+        said = {"tried": False, "why": str(problem)}
+    finally:
+        WORLDS.pop(scratch, None)
+        world.close()
+    said["computing_took_s"] = round(clock.perf_counter() - began, 2)
+    return said
+
+
+def _draw_and_loose(world: banjo.World, profile: dict[str, Any]) -> dict[str, Any]:
+    """The trial, measured off the engine: how far the hand drew it, how hard it
+    pulled, what the limbs held, and what the projectile left with at the step
+    the nock let it go -- with `sound` false, and why, when the shot is not one
+    the engine followed.
+
+    At the step it comes off, and not the fastest it is ever seen: on the
+    courtyard's bow the string and the arrow ran together at 8.59 m/s, the
+    nock's grip took 0.29 m/s back over the two steps the arrow slid off it,
+    and it flew free at 8.30.
+    """
+    dt = TRIAL_STEP_S
+
+    def advance(seconds: float, until: Any = None) -> float:
+        passed = 0.0
+        while passed < seconds - 1e-9:
+            # Something about to break is answered, as `run` answers it, or the
+            # world waits at that step for ever.
+            if world.step(dt) == banjo.BREAK_PENDING:
+                for name in world.breakable():
+                    world.fracture(name)
+            passed += dt
+            if until is not None and until():
+                break
+        return passed
+
+    draw = profile["draw"]
+    part, axis, projectile = draw["part"], draw["axis"], profile["projectile"]
+    shot = [-v for v in axis]
+    limbs = [frozenset(pair) for pair in profile["limbs"]]
+    nock = frozenset((profile["nock"]["a"], profile["nock"]["b"]))
+
+    def seated() -> bool:
+        return any(j.kind == "fixing" and j.attached and frozenset((j.a, j.b)) == nock
+                   for j in world.joints())
+
+    def along(v: Any) -> float:
+        return sum(float(v[k]) * shot[k] for k in range(3))
+
+    # Standing, as a room has stood before anyone walks up to it.
+    advance(0.5)
+    string, arrow = world.body(part), world.body(projectile)
+    if string is None or arrow is None:
+        return {"tried": False,
+                "why": f"{part if string is None else projectile} is not there to try"}
+    kg = arrow.mass_kg
+    brace = list(string.position_m)
+    world.grab(part)
+    world.stroke([brace, [brace[i] + axis[i] * draw["max_m"] for i in range(3)]],
+                 draw["speed_m_s"], 2.0, 0.05, False, 30.0)
+    advance(draw["max_m"] / draw["speed_m_s"] + 4.0, until=lambda: not world.hand().stroking)
+    advance(0.25)    # held a moment, as a person holds a draw
+    hand = world.hand()
+    string = world.body(part)
+    if string is None:
+        return {"tried": False, "why": f"{part} did not survive being drawn"}
+    held = sum(j.stored_j for j in world.joints()
+               if j.kind == "elastic" and j.attached and frozenset((j.a, j.b)) in limbs)
+    said: dict[str, Any] = {
+        "tried": True,
+        "drawn_m": round(along([brace[i] - string.position_m[i] for i in range(3)]), 3),
+        "hand_pulled_n": round(math.sqrt(sum(f * f for f in hand.force_n)), 1),
+        "draw_ended": ("the limbs balanced the hand before it got to max_m"
+                       if hand.stroke_ended == "blocked" else
+                       "it got to max_m" if hand.stroke_ended == "reached" else
+                       hand.stroke_ended or "the hand was still drawing"),
+        "limbs_held_j": round(held, 2),
+        "projectile_kg": round(kg, 3)}
+    on = seated()
+    # While it is on the string nothing can slow it much faster than the nock's
+    # grip, what it rubs on and gravity can: the grip is comes_off_n at most,
+    # gravity along the shot at most its weight, and a rest rubbing it -- which
+    # the nock can press it onto -- a few times its weight. A step that takes
+    # three times that off it is not friction; it is the engine failing to
+    # follow the shot. Measured on this kind of bow: a slow shot lost 0.18 m/s
+    # in one step to the grip and the rest together, where the bound below is
+    # 0.55; and a false sweep hit, before every edge was made round (see
+    # JoltWorld's kSweepRadiusM), took an arrow from 5.58 m/s to -2.54 in one.
+    grip = max((j.comes_off_n for j in world.joints()
+                if j.kind == "fixing" and frozenset((j.a, j.b)) == nock), default=0.0)
+    most = 3.0 * dt * (grip / max(kg, 1e-6) + 9.81 * (1.0 + abs(shot[1]))) + 0.05
+    world.release()
+    if not on:
+        said.update(sound=False, why=[f"{projectile} was not on {part} when it was loosed"])
+        return said
+    came_off, left, passed, was, lurch = None, None, 0.0, 0.0, None
+    while passed < 1.0:
+        passed += advance(dt)
+        body = world.body(projectile)
+        now = along(body.velocity_m_s) if body is not None else 0.0
+        if not seated():
+            came_off, left = passed, (body.velocity_m_s if body is not None else (0.0, 0.0, 0.0))
+            break
+        if lurch is None and was - now > most:
+            lurch = (f"{projectile} went from {was:.2f} to {now:.2f} m/s along the shot in "
+                     f"one step while still on {part}, {passed:.3f} s after the loose -- "
+                     f"more than its nock's {grip:g} N grip, what it rubs on and gravity "
+                     f"could take off it")
+        was = now
+    if came_off is None:
+        said.update(sound=False, why=[f"{projectile} did not come off {part} within a "
+                                      f"second of the loose"] + ([lurch] if lurch else []))
+        return said
+    speed, forward = math.sqrt(sum(v * v for v in left)), along(left)
+    share = 0.5 * kg * speed * speed / held if held > 1e-6 else 0.0
+    said.update({"came_off_after_s": round(came_off, 3),
+                 "left_m_s": round(speed, 2),
+                 "left_along_the_shot_m_s": round(forward, 2),
+                 "share_of_what_the_limbs_held_pct": round(100.0 * share, 1)})
+    # Then a moment more. Clear of the bow, nothing should act on it but
+    # gravity, which along a shot aimed downwards adds a little.
+    struck, fastest = False, forward
+    for _ in range(int(round(0.15 / dt))):
+        advance(dt)
+        struck = struck or any({h.struck, h.by} == {projectile, part} for h in world.impacts(0.05))
+        body = world.body(projectile)
+        if body is not None:
+            fastest = max(fastest, along(body.velocity_m_s))
+    fall = max(0.0, -9.81 * shot[1]) * 0.15
+    why = [lurch] if lurch else []
+    # Backwards and meaning it. Drawn only a little, an arrow barely moves, and
+    # the string coming back past brace can drag it back a hair before it slides
+    # off -- measured, 147 mm on 6 kN/m came off at -0.03 m/s. A weak shot, and a
+    # physical one.
+    if forward < -0.1:
+        why.append(f"{projectile} came off moving backwards, {forward:.2f} m/s along the shot")
+    if share > 1.05:
+        why.append(f"{projectile} left with {100.0 * share:.0f}% of what the limbs held, "
+                   f"which is more than there was")
+    if struck:
+        why.append(f"{part} struck {projectile} after it had come off")
+    if fastest > forward + fall + 0.05 * max(1.0, abs(forward)):
+        why.append(f"something drove {projectile} on after it came off: it was doing "
+                   f"{fastest:.2f} m/s along the shot within 0.15 s")
+    said["sound"] = not why
+    if why:
+        said["why"] = why
+        said["note"] = ("an unsound trial is the engine not following this shot, not what "
+                        "the thing does: do not give its speed as the thing's")
+    return said
+
+
+# ---------------------------------------------------------------------------
+# Another one like it
+# ---------------------------------------------------------------------------
+#
+# Asked for "a second bow beside the courtyard's, but stiffer", a model has to
+# add one offset to forty numbers, and it does not. Measured: the playground's
+# chat put the copy's tips 0.2 m from where the recipe had them, the string's
+# centre where one of its ropes was made off, and the whole bow in the first
+# one's line of fire with its arrow inside the gate -- and stopped halfway. A
+# copy made here is exact, and what should differ is said as a change rather
+# than worked out again.
+
+# The arguments of a joining call that are points in the world, and move with
+# the copy. Lengths, limits and strengths do not.
+_POINT_ARGS = ("at_m", "at_a_m", "at_b_m", "over_a_m", "over_b_m")
+
+
+def tool_duplicate(args: dict[str, Any]) -> dict[str, Any]:
+    """Make another of something already built, somewhere else: its bodies, the
+    joints between them, their edges, and how a person uses them."""
+    world_id = str(args.get("world_id"))
+    entry = _world(world_id)
+    names = args.get("names")
+    if not isinstance(names, list) or not names or not all(isinstance(n, str) for n in names):
+        raise Refused("names is the list of the bodies to copy -- a bow's are listed under "
+                      "things_a_person_uses in describe_world")
+    names = list(dict.fromkeys(names))
+    bodies = {b["name"]: b for b in entry["scene"]["bodies"]}
+    missing = [n for n in names if n not in bodies]
+    if missing:
+        raise Refused(f"{missing} {'is' if len(missing) == 1 else 'are'} not in this world")
+    prefix = str(args.get("prefix") or "").strip()[:30]
+    if not prefix:
+        raise Refused("give the copies a prefix for their names, like 'stiff': names are how "
+                      "every joint and every later call finds a thing")
+    renamed = {n: f"{prefix} {n}"[:60] for n in names}
+    taken = [new for new in renamed.values() if new in bodies]
+    if taken:
+        raise Refused(f"there is already something called {taken[0]!r} here: choose another "
+                      f"prefix")
+    changes = args.get("changes") or {}
+    if not isinstance(changes, dict) or not all(isinstance(v, dict) for v in changes.values()):
+        raise Refused("changes is what should differ, by kind of joint, like "
+                      "{\"spring\": {\"stiffness_n_m\": 8000}}")
+    unknown = sorted(k for k in changes if k not in MAKE_JOINT)
+    if unknown:
+        raise Refused(f"changes are by kind of joint -- {sorted(MAKE_JOINT)} -- and "
+                      f"{unknown} is not one")
+    # Whole cells, or the grid cuts the copy differently from the original and
+    # it is not the same shape.
+    cell = float(entry["cell_m"])
+    asked = _triple(args.get("offset_m"), "offset_m", -50.0, 50.0)
+    offset = [round(v / cell) * cell for v in asked]
+
+    def moved(point: Any) -> list[float]:
+        return [float(v) + o for v, o in zip(point, offset)]
+
+    copies = []
+    for name in names:
+        body = dict(bodies[name], name=renamed[name], center_m=moved(bodies[name]["center_m"]),
+                    velocity_m_s=[0.0, 0.0, 0.0])
+        # Bodies sharing a join name are built as one piece: the copies are
+        # one piece with each other, not with the originals.
+        if body.get("join"):
+            body["join"] = f"{prefix} {body['join']}"
+        copies.append(body)
+    was_scene = entry["scene"]
+    scene = dict(was_scene, bodies=list(was_scene["bodies"]) + copies)
+    edges = [dict(b, body=renamed[b["body"]]) for b in was_scene.get("blades") or []
+             if b.get("body") in renamed]
+    if edges:
+        scene["blades"] = list(was_scene.get("blades") or []) + edges
+    lost = _rebuild(entry, scene, world_id)
+
+    made: list[dict[str, Any]] = []
+    tried: list[dict[str, Any]] = []
+    try:
+        for record in list(entry.get("joints", [])):
+            a, b = record["args"].get("a"), record["args"].get("b")
+            if a not in renamed or b not in renamed:
+                continue
+            call = dict(record["args"], a=renamed[a], b=renamed[b], world_id=world_id)
+            if call.get("member") in renamed:
+                call["member"] = renamed[call["member"]]
+            for key in _POINT_ARGS:
+                if isinstance(call.get(key), (list, tuple)) and len(call[key]) == 3:
+                    call[key] = moved(call[key])
+            call.update(changes.get(record["tool"], {}))
+            answer = HANDLERS[record["tool"]](call)
+            made.append({"joint": answer["joint"], "tool": record["tool"],
+                         "a": call["a"], "b": call["b"]})
+        for profile in list(entry.get("interactions", [])):
+            if not set(profile["parts"]) <= set(renamed):
+                continue
+            tried.append(tool_interaction({
+                "world_id": world_id,
+                "object": str(args.get("call_it") or f"{profile['object']} ({prefix})")[:80],
+                "template": profile["template"],
+                "parts": [renamed[p] for p in profile["parts"]],
+                "draw": dict(profile["draw"], part=renamed[profile["draw"]["part"]]),
+                "nock": {"a": renamed[profile["nock"]["a"]], "b": renamed[profile["nock"]["b"]]},
+                "limbs": [[renamed[x], renamed[y]] for x, y in profile["limbs"]],
+                "projectile": renamed[profile["projectile"]],
+                "trial": args.get("trial", True)}))
+    except Refused:
+        # Nothing half made: the copies go, and every joint made on them.
+        copied = set(renamed.values())
+        entry["joints"] = [r for r in entry.get("joints", [])
+                           if r["args"].get("a") not in copied and r["args"].get("b") not in copied]
+        entry["interactions"] = [p for p in entry.get("interactions", [])
+                                 if not set(p["parts"]) & copied]
+        _rebuild(entry, was_scene, world_id)
+        raise
+    answer = {"copied": [renamed[n] for n in names], "offset_m": [round(v, 4) for v in offset],
+              "joints": made, "objects": _describe(entry["world"])}
+    if any(abs(a - o) > 1e-9 for a, o in zip(asked, offset)):
+        answer["offset_note"] = (f"moved by whole {cell:g} m cells, so the copy is cut from the "
+                                 f"grid as the original is")
+    if changes:
+        answer["changed"] = changes
+    if tried:
+        answer["things_a_person_uses"] = tried
+    if lost:
+        answer["joints_lost"] = lost
+    return answer
+
+
+# ---------------------------------------------------------------------------
 # Heat and strength (docs/thermal-mechanics.md)
 # ---------------------------------------------------------------------------
 #
@@ -1277,6 +1711,7 @@ def tool_unhinge(args: dict[str, Any]) -> dict[str, Any]:
     # next rebuild.
     if record is not None:
         entry["joints"].remove(record)
+        _recheck_interactions(entry)
     return {"joint": joint, "note": "the pin is out; what hung on it is falling"}
 
 
@@ -2796,6 +3231,100 @@ TOOLS = [
                                           "per metre. 0 gives 96% of the stored "
                                           "energy back as motion."},
          "member": MEMBER}}},
+    {"name": "interaction",
+     "description": "Say how a PERSON USES something you built, so the playground gives "
+                    "them its controls -- and try it. So far one kind, draw-and-release: "
+                    "a bow, or anything whose energy is stored by drawing one part back "
+                    "against elastic joints and spent when the hand lets go. Name its "
+                    "parts, the part the hand draws and the way it comes back, the "
+                    "ONE-WAY fixing (`fix` with comes_off_n) that holds what is shot, "
+                    "the elastics (`spring`) that store the draw, and the projectile. "
+                    "Never a speed: what it shoots with comes out of the limbs. It is "
+                    "checked against what is built -- a part that is not there, a nock "
+                    "that holds both ways or lets go backwards, a limb that is not an "
+                    "elastic are refused -- and then TRIED in a scratch world with a "
+                    "person's 800 N hand: drawn, held, loosed, and what the limbs held "
+                    "and what the projectile left with come back, with `sound` false "
+                    "and why when the engine did not follow the shot. It is kept "
+                    "through every change to the world and withdrawn, with the reason, "
+                    "if what it names is taken away.",
+     "inputSchema": {"type": "object",
+                     "required": ["world_id", "object", "parts", "draw", "nock", "limbs",
+                                  "projectile"],
+                     "properties": {
+         "world_id": {"type": "string"},
+         "object": {"type": "string",
+                    "description": "What it is called, like 'the stiff bow'. Said again "
+                                   "for the same object, it replaces what was said."},
+         "template": {"type": "string", "enum": ["draw-and-release"],
+                      "description": "How it is used. draw-and-release, the default."},
+         "parts": {"type": "array", "items": {"type": "string"},
+                   "description": "Every body it is made of. A person takes it up by "
+                                  "any of them."},
+         "draw": {"type": "object", "required": ["part", "axis"],
+                  "description": "What the hand draws, and how.",
+                  "properties": {
+             "part": {"type": "string",
+                      "description": "The part the hand takes and draws: the string."},
+             "axis": dict(VECTOR, description="The way it comes back when drawn: from "
+                                              "the grip towards the archer, like [-1, 0, "
+                                              "0]. What is shot leaves the other way."),
+             "max_m": {"type": "number",
+                       "description": "The most the hand asks to draw it; 0.45 by "
+                                      "default. An 800 N hand stops sooner where the "
+                                      "limbs balance it."},
+             "speed_m_s": {"type": "number",
+                           "description": "How fast the hand draws; 0.4 by default."}}},
+         "nock": {"type": "object", "required": ["a", "b"],
+                  "description": "The ONE-WAY fixing that holds what is shot on what "
+                                 "draws it, by its two ends: a = the string, b = the "
+                                 "arrow.",
+                  "properties": {"a": {"type": "string"}, "b": {"type": "string"}}},
+         "limbs": {"type": "array",
+                   "items": {"type": "array", "items": {"type": "string"},
+                             "minItems": 2, "maxItems": 2},
+                   "description": "Each elastic that stores the draw, by its two ends, "
+                                  "like [[\"bow grip upper\", \"upper limb tip\"], "
+                                  "[\"bow grip lower\", \"lower limb tip\"]]."},
+         "projectile": {"type": "string",
+                        "description": "What is shot: the one the nock lets go of."},
+         "trial": {"type": "boolean",
+                   "description": "Try it once, drawn and loosed in a scratch world. "
+                                  "True by default."}}}},
+    {"name": "duplicate",
+     "description": "Make ANOTHER of something already built, somewhere else, exactly: "
+                    "the bodies you name, every joint between them with its points moved "
+                    "with it, their edges, and how a person uses them -- a second gate, a "
+                    "bow beside the first. Say what should differ as `changes`, by kind of "
+                    "joint: {\"spring\": {\"stiffness_n_m\": 8000}} gives a bow's limbs 8 "
+                    "kN/m. Use this rather than building the same thing again, number by "
+                    "number. The offset is rounded to whole cells, so the copy is the same "
+                    "shape. Where the world refuses things that overlap -- the playground's "
+                    "room does -- a copy that would overlap anything is refused, with the "
+                    "reason, and nothing is left half made. A copied bow is tried like one "
+                    "given its `interaction`.",
+     "inputSchema": {"type": "object",
+                     "required": ["world_id", "names", "offset_m", "prefix"],
+                     "properties": {
+         "world_id": {"type": "string"},
+         "names": {"type": "array", "items": {"type": "string"},
+                   "description": "The bodies to copy. A bow's are listed under "
+                                  "things_a_person_uses."},
+         "offset_m": dict(VECTOR, description="Where the copy goes, from the original, in "
+                                              "metres: [dx, dy, dz]. Beside a bow is across "
+                                              "its line of fire -- in z for one that shoots "
+                                              "along x -- never along it."),
+         "prefix": {"type": "string",
+                    "description": "Put in front of every copied name, like 'stiff'."},
+         "changes": {"type": "object",
+                     "description": "What differs, by kind of joint (hinge, slide, tie, "
+                                    "reeve, fix, spring): {\"spring\": {\"stiffness_n_m\": "
+                                    "8000}}."},
+         "call_it": {"type": "string",
+                     "description": "What to call the copy of a thing a person uses, like "
+                                    "'the stiff bow'."},
+         "trial": {"type": "boolean",
+                   "description": "Try a copied bow. True by default."}}}},
     {"name": "joints",
      "description": "Every pin in the world and where each has turned to. The two "
                     "names a pin holds can change -- a pin whose wood is smashed "
@@ -3187,6 +3716,13 @@ def _joint_warnings(entry: dict[str, Any], tool: str, args: dict[str, Any]) -> l
         for end, name in (("at_a_m", args.get("a")), ("at_b_m", args.get("b"))):
             if args.get(end) is None:
                 continue
+            # Not a spring made off on scenery: an anchored body never moves, so a
+            # point on it is a fixed point in the world wherever it is, and an
+            # arm that does not move is no arm. A bow's limb springs are made off
+            # 0.36 m forward of their riser -- that is their lever -- and this
+            # used to tell the chat to put them back on it.
+            if tool == "spring" and (_box(entry, str(name or "")) or {}).get("anchored"):
+                continue
             off = _off_body(entry, str(name or ""), args[end])
             if off is not None and off > cell:
                 said.append(f"{end} is {off:.2f} m outside {name}. A {what} is made off ON "
@@ -3288,6 +3824,8 @@ HANDLERS = {
     "reeve": _recorded("reeve"),
     "fix": _recorded("fix"),
     "spring": _recorded("spring"),
+    "interaction": tool_interaction,
+    "duplicate": tool_duplicate,
     "overloaded": tool_overloaded,
     "joints": tool_joints,
     "hinge_friction": tool_hinge_friction,
@@ -3311,6 +3849,9 @@ HANDLERS = {
     "set_river": tool_set_river,
     "close_world": tool_close_world,
 }
+# And every one of them says in its answer what its change withdrew: a bow that
+# can no longer be loosed, and why (see _recheck_interactions).
+HANDLERS = {name: _saying_what_was_withdrawn(handler) for name, handler in HANDLERS.items()}
 
 
 # ---------------------------------------------------------------------------

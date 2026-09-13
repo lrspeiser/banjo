@@ -71,6 +71,8 @@ broke.
 | `hinge` / `slide` | a pin or a groove: `b` turns about, or slides along, a line fixed in `a` |
 | `tie` / `reeve` | a rope between a point on each of two things, or one run over two fixed pulleys |
 | `fix` / `spring` | a latch or bracket that holds two things as one piece; an elastic element that pushes and pulls. `fix`, `spring` and `tie` take `member`: what the joint is MADE of, so heat changes what it can take ([Heat and strength](#heat-and-strength)) |
+| `interaction` | say how a person **uses** a thing you built — so far draw-and-release: a bow — so the playground gives them its controls. Held to what is built (a part that is not there, a nock that holds both ways or lets go backwards, a limb that is not an elastic are refused), never a speed, kept through every rebuild and withdrawn with the reason when what it names is taken away; and **tried** in a scratch world with a person's 800 N hand, returning what was drawn, what the limbs held and what the projectile left with, and `sound` false with why when the engine did not follow the shot. [Things a person uses](#things-a-person-uses) |
+| `duplicate` | make **another** of something already built, somewhere else, exactly: the bodies named, every joint between them with its points moved with it, their edges and how a person uses them. What should differ is said as `changes`, by kind of joint (`{"spring": {"stiffness_n_m": 8000}}`); the offset is rounded to whole cells; where the world refuses overlaps (the playground's room does) a copy that would overlap is refused and nothing is left half made; a copied bow is tried. [Things a person uses](#things-a-person-uses) |
 | `joints` / `hinge_friction` / `unhinge` | read them, stiffen them, take one out |
 | `overloaded` | what is carrying more than it can hold, worked out from statics — the only way a loaded shelf is ever noticed |
 | `list_substances` | what matter is made of: substances, reactions (with where every number came from) and the catalogue's compositions — oak is dry wood, moisture and ash, which is why an oak log can burn |
@@ -129,6 +131,75 @@ call it makes runs these handlers, on the person's room held as an MCP world
 (`playground/room_world.py`). A tool added here reaches it untouched;
 `tests/chat_tool_parity_tests.py` fails if one does not and no reason is
 written down.
+
+## Things a person uses
+
+A bow here is a grip, two limbs, a string and a nock, and every one of them is
+an ordinary joint. What makes it a bow to a person is what they do with it:
+take it up, draw the string back, let go. `interaction` says that
+([interaction-profiles.md](../interaction-profiles.md)):
+
+- which bodies are the object (`parts`), the part the hand draws and the way
+  it comes back (`draw`: `part`, `axis`, `max_m`, `speed_m_s`), the ONE-WAY
+  fixing that holds what is shot (`nock`: a `fix` with `comes_off_n`), the
+  elastics that store the draw (`limbs`), and the `projectile`;
+- never what it does. There is no speed in a profile, and one that tries to
+  say one is refused.
+
+It is held to what is BUILT: the calls that made the joints, not what the world
+happens to be doing, so a nock an arrow has just come off in a `run` is still
+the bow's nock. The playground's rooms are held to the same rules
+(`mcp/interaction_profiles.py`, shared). A profile is kept through every
+rebuild, and the call that takes away something it names withdraws it: that
+call's answer carries `interactions_withdrawn`, each with the object and why.
+`describe_world` lists what is left under `things_a_person_uses`.
+
+`duplicate` makes another of something already built, exactly: the bodies it
+is given, every joint between them with its points moved with the copy, their
+edges, and how a person uses them -- which a copied bow is then tried by. What
+should differ is said as `changes`, by kind of joint, so a stiffer bow is
+`{"spring": {"stiffness_n_m": 8000}}` rather than a bow built again number by
+number. The offset is rounded to whole cells, so the grid cuts the copy as it
+cut the original. In a world that refuses overlaps, as the playground's room
+does, a copy that would overlap anything is refused with the room's own reason,
+and nothing of it is left behind; a world made over stdio has no such rule, for
+a copy as for `add_object`. It exists because a model asked
+for a second bow beside the courtyard's added one offset to forty numbers and
+did not: it put the copy's limb tips 0.2 m from where they belonged, the string's
+centre where one of its ropes was made off, and the whole bow in the first one's
+line of fire with its arrow inside the gate.
+
+And it is TRIED, unless `trial` is false. The trial runs in a scratch world
+opened from what was built, holding the object and whatever is joined to it --
+never the world a caller holds -- stepped at 1/240 s as the playground's room
+is. The engine's own hand, 800 N, takes the draw part, strokes it back along the
+draw at the draw's speed until the limbs balance it or it reaches `max_m`,
+holds it a quarter of a second and lets go. The answer is what was drawn, how
+hard the hand pulled, what the limbs held, and what the projectile LEFT with:
+its speed at the step the nock let it go, along the shot, and the share of the
+limbs' energy that is. `sound` is false, with `why`, when the shot is not one
+the engine followed: the arrow was not on the string when it was loosed, or
+never came off it; it lost more in one step on the string than its nock's grip,
+what it rubs on and gravity could take; it came off going backwards, or left
+with more than the limbs held; the string struck it after it came off, or
+something drove it on.
+
+Measured, the recipe the playground's chat is given (6 kN/m limbs on 45 g tips,
+a 672 g oak arrow on a 20 N nock, drawn 0.45 m): drawn 436 mm by 214 N, the
+limbs held 42.2 J, and the arrow came off 0.09 s after the loose at 8.30 m/s --
+55% of it. The same hand on other limbs: 3 kN/m 5.58 m/s, 4.5 kN/m 7.11, 8 kN/m
+9.67, 12 kN/m 11.87, 20 kN/m 15.48 (686 N of the hand's 800). Drawn less, less:
+6 kN/m drawn 0.20 m, 2.10 m/s; 0.30 m, 4.72; 0.40 m, 7.20. Each trial took 0.05
+to 0.08 s to compute.
+
+The trial is what found the engine wanting. Before every moving box and hull
+was given round edges -- 2 mm, or a tenth of its thinnest half if that is less
+(`kSweepRadiusM` in `src/rigid/JoltWorld.cpp`) -- the arrow
+sliding over its rest was stopped dead on 13 of 19 of those draws and
+stiffnesses by a false hit of Jolt's own sweep: 5.58 m/s to −2.54 in one step,
+still nocked, with nothing touching it. It was not the bow: a 0.6 m oak box sent
+along an oak plank it lay on at 5 m/s did the same, and so, at any speed past
+about 3.6 m/s, would anything sliding fast over what it rests on.
 
 ## What `joints` says about a rope
 

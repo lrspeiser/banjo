@@ -1864,8 +1864,13 @@ async function loose() {
   world.held = null;
   $("crosshair").classList.remove("holding");
   aimArc.hide();
+  // How far ahead of the string the arrow sits, along the shot, while it is
+  // nocked: once it is further than that, it has come off (see followTheBow).
+  const shot = new THREE.Vector3(...profile.draw.axis).negate();
+  const ahead = world.bodies.get(profile.projectile), behind = world.bodies.get(profile.draw.part);
+  const apart = ahead && behind ? ahead.mesh.position.clone().sub(behind.mesh.position).dot(shot) : null;
   world.use = { mode: "loosed", name: profile.object, profile, stored: state.stored,
-                arrowReady: state.arrowReady, fastest: 0, reported: false,
+                arrowReady: state.arrowReady, shot, apart, left: null, reported: false,
                 watchUntil: performance.now() + 1500, until: performance.now() + 6000,
                 result: state.arrowReady ? "Loosed…" : "Loosed with no arrow on the string." };
   showUse();
@@ -1901,20 +1906,35 @@ function followTheBow(state) {
   const use = world.use;
   const now = performance.now();
   if (use.mode === "loosed") {
+    // What the arrow LEFT with: its speed along the shot at the first report
+    // after it is clear of the string -- the nock has let it go -- and not the
+    // fastest it is ever seen. The string and the arrow run together a little
+    // faster than the arrow leaves, because the nock's grip takes some back as
+    // the arrow slides off it, and an arrow falling after it has left is
+    // faster again, which is gravity: measured on the courtyard's bow, 8.59
+    // m/s together, 8.30 free, and 9.36 on its way to the floor.
     const arrow = (state.bodies || []).find((b) => b.name === use.profile.projectile);
-    if (arrow && arrow.velocity_m_s) use.fastest = Math.max(use.fastest, Math.hypot(...arrow.velocity_m_s));
+    const ahead = world.bodies.get(use.profile.projectile);
+    const behind = world.bodies.get(use.profile.draw.part);
+    if (use.left === null && use.apart !== null && arrow && arrow.velocity_m_s && ahead && behind
+        && ahead.mesh.position.clone().sub(behind.mesh.position).dot(use.shot) > use.apart + 0.01) {
+      use.left = new THREE.Vector3(...arrow.velocity_m_s).dot(use.shot);
+    }
     if (!use.reported && now > use.watchUntil) {
       use.reported = true;
-      if (use.arrowReady) {
-        const kg = world.bodies.get(use.profile.projectile)?.mass || 0;
-        const carried = 0.5 * kg * use.fastest * use.fastest;
+      if (use.arrowReady && use.left !== null) {
+        const kg = ahead?.mass || 0;
+        const carried = 0.5 * kg * use.left * use.left;
         const share = use.stored > 0.05 ? carried / use.stored : 0;
         if (share > 0) use.profile.efficiency = share;
-        use.result = `The arrow left at ${use.fastest.toFixed(1)} m/s — the limbs held`
+        use.result = `The arrow left at ${use.left.toFixed(1)} m/s — the limbs held`
           + ` ${use.stored.toFixed(1)} J and ${Math.round(100 * share)}% of it went into the arrow;`
           + ` the string and the limb tips kept the rest.`;
         say("world", use.result);
-        remember(`the arrow left ${use.profile.object} at ${use.fastest.toFixed(1)} m/s`);
+        remember(`the arrow left ${use.profile.object} at ${use.left.toFixed(1)} m/s`);
+      } else if (use.arrowReady) {
+        use.result = "The arrow never came clear of the string.";
+        say("world", use.result);
       }
       showUse();
     }

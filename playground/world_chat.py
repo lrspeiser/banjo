@@ -465,6 +465,69 @@ A boulder to dig out from under (dug under, it fell 0.32 m into the pit):
   and the pit takes the ground from under it. Do not dig it yourself unless
   they ask: a pit you dig is dug in their room too.
 
+THINGS A PERSON USES. Whatever you build, a person can push, pull, carry and
+throw. A BOW is more: they take it up, draw its string back and let go -- and
+the room gives them those controls only for what you declare with interaction,
+once it is built. interaction names its parts, the part the hand draws and
+which way, the one-way nock that holds the arrow, the springs that store the
+draw, and the arrow -- never a speed. It checks that against what is built and
+then TRIES the bow: a person's 800 N hand draws it and lets go in a copy, and
+trial says how far it drew, what the limbs held and how fast the arrow left.
+Say those numbers. If trial says sound: false, the engine did not follow that
+shot: say so, and not its speed. Built things the tools only warn about are
+not a bow; what interaction refuses is not one either -- fix what it says.
+
+A bow (6 kN/m limbs: drawn 0.44 m by 214 N it held 42 J, and the arrow left at
+8.3 m/s). It shoots along +x, and the person draws it towards -x:
+  add_object bow grip upper oak [0.04, 0.16, 0.12] at [0, 1.40, 0] anchored
+  add_object bow grip lower oak [0.04, 0.16, 0.12] at [0, 1.12, 0] anchored
+    (the arrow's REST: its top is exactly where the shaft lies)
+  add_object bow grip near cheek oak [0.04, 0.04, 0.04] at [0, 1.22, 0.06] anchored
+  add_object bow grip far cheek oak [0.04, 0.04, 0.04] at [0, 1.22, -0.06] anchored
+  add_object upper limb tip oak [0.04, 0.04, 0.04] at [-0.16, 1.62, 0]
+  add_object lower limb tip oak [0.04, 0.04, 0.04] at [-0.16, 0.82, 0]
+  add_object bowstring oak [0.04, 0.16, 0.04] at [-0.16, 1.22, 0]
+    (its CENTRE: the ties below are made off at its two ENDS, 1.30 and 1.14)
+  add_object arrow oak [0.6, 0.04, 0.04] at [0.2, 1.22, 0]
+    (all with [x, y, z]; the tips and the string answer in_the_air, which is
+    right -- the joints below hold them)
+  hinge a=bow grip upper b=upper limb tip at [0, 1.34, 0] axis [0,0,1]
+    lower -60 upper 60 friction 0
+  hinge a=bow grip lower b=lower limb tip at [0, 1.10, 0] axis [0,0,1]
+    lower -60 upper 60 friction 0
+  spring a=bow grip upper b=upper limb tip at_a [0.36, 1.34, 0]
+    at_b [-0.16, 1.62, 0] rest 0 stiffness 6000 damping 20
+  spring a=bow grip lower b=lower limb tip at_a [0.36, 1.10, 0]
+    at_b [-0.16, 0.82, 0] rest 0 stiffness 6000 damping 20
+    (the limbs, made off 0.36 m forward of the grip on purpose: that is the
+    lever they work on)
+  tie a=upper limb tip b=bowstring at_a [-0.16, 1.62, 0] at_b [-0.16, 1.30, 0]
+    length 0
+  tie a=lower limb tip b=bowstring at_a [-0.16, 0.82, 0] at_b [-0.16, 1.14, 0]
+    length 0
+  fix a=bowstring b=arrow at [-0.13, 1.22, 0] axis [1,0,0] comes_off_n 20
+    (the nock: one-way along +x, the way the arrow leaves)
+  interaction object="the bow" parts=[the eight above] draw={part: bowstring,
+    axis: [-1,0,0], max_m: 0.45} nock={a: bowstring, b: arrow}
+    limbs=[[bow grip upper, upper limb tip], [bow grip lower, lower limb tip]]
+    projectile=arrow
+A stiffer or softer bow is the same with another stiffness on both springs,
+drawn by the same hand: 4.5 kN/m sent the arrow off at 7.1 m/s, 8 kN/m at 9.7,
+12 kN/m at 11.9, and 20 kN/m -- 686 N of the hand's 800 -- at 15.5.
+ANOTHER LIKE ONE ALREADY BUILT -- a bow beside the courtyard's, a stiffer one, a
+second gate -- is duplicate, never the recipe again: the names of its parts
+(things_a_person_uses lists a bow's), an offset, a prefix for the copies' names,
+and changes for what should differ: {"spring": {"stiffness_n_m": 8000}} gives a
+bow's limbs 8 kN/m. It copies the bodies, every joint between them and how a
+person uses them, exactly, and tries a copied bow: say what its trial measured.
+BESIDE a bow is across its line of fire, never along it: the courtyard's shoots
+along +x, so move the copy in z, 0.8 m or more, clear of everything else. The
+recipe above is for a bow where there is none; to build it somewhere else, add
+the same offset to EVERY position and EVERY point, whole cells (0.04 m) each way.
+WHAT THE PERSON DOES WITH IT: E on any part of it takes it up; they hold the
+left mouse to draw and let go to shoot; the right mouse lets the string down.
+Tell them that in your answer.
+
 TRY IT BEFORE YOU SAY IT WORKS. The world you build in is a real engine world.
 Use the mechanism the way a person would: pick_up the handle (or the leaf, or
 the grate), place it where a hand would pull it -- a quarter turn round the
@@ -553,6 +616,11 @@ def _did(name: str, args: dict[str, Any], answer: dict[str, Any]) -> str:
                 f"for {args.get('seconds')} s")
     if name == "blade":
         return f"gave {args.get('body')} an edge"
+    if name == "interaction":
+        return f"made {args.get('object')} something a person can draw and loose"
+    if name == "duplicate":
+        return (f"copied {len(answer.get('copied') or [])} things as '{args.get('prefix')}'"
+                + (f", with {answer['changed']}" if answer.get("changed") else ""))
     if name == "make_terrain":
         return f"made the ground: {args.get('kind') or 'valley'}"
     if name == "dig":
@@ -689,6 +757,14 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
                                 "cells_used": entry["cells"],
                                 "cells_left": max(0, entry["max_cells"] - entry["cells"]),
                                 "joints": len(entry["joints"])}}
+        # What in it a person can take up and use, and how -- so a bow already
+        # in the room is known to be one, and a second one built beside it is
+        # not given the first one's names.
+        if entry.get("interactions"):
+            opening["things_a_person_uses"] = [
+                {"object": p["object"], "template": p["template"], "parts": p["parts"],
+                 "draws": p["draw"]["part"], "shoots": p["projectile"]}
+                for p in entry["interactions"]]
         # Where the person is: what "near me" and "over there" refer to. A
         # model that cannot see the room has no other way to know.
         person = where_the_person_is(person)

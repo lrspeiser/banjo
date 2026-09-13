@@ -48,6 +48,7 @@ sys.path.insert(0, str(ROOT / "mcp"))
 
 import banjo_mcp     # noqa: E402  the MCP server, used as a library
 import fracture_lab  # noqa: E402
+import interaction_profiles  # noqa: E402  how a person uses a thing: the MCP's rules
 
 # Everything the MCP offers reaches the chat except these, each for a reason
 # that is about the ROOM rather than about the tool.
@@ -67,6 +68,9 @@ NOT_FOR_THE_ROOM = {
 AUTHORING = {"add_object", "remove_object", "move_object", "clear_world", "drop",
              "hinge", "slide", "tie", "reeve", "fix", "spring", "unhinge",
              "hinge_friction", "enclose_gas", "heat", "blade",
+             # How a person uses a thing is part of what the room IS: the page
+             # gives a bow its controls from it. And a copy of a thing is things.
+             "interaction", "duplicate",
              # The ground and the water are part of what the room IS: a trench
              # dug, a block cut, a river turned up.
              "make_terrain", "dig", "fill", "cut_block", "set_river"}
@@ -75,8 +79,7 @@ AUTHORING = {"add_object", "remove_object", "move_object", "clear_world", "drop"
 MAX_OBJECTS = 120
 
 # The MCP's joint calls and the room's joint kinds, and which fields are lengths.
-KIND_OF = {"hinge": "hinge", "slide": "slider", "tie": "link", "reeve": "pulley",
-           "fix": "fixing", "spring": "elastic"}
+KIND_OF = banjo_mcp.JOINT_KINDS
 TOOL_FOR = {kind: tool for tool, kind in KIND_OF.items()}
 
 
@@ -176,6 +179,28 @@ def joint_spec(record: dict[str, Any]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# How a person uses a thing: the room's spelling and the MCP's
+# ---------------------------------------------------------------------------
+
+def mcp_profile(profile: dict[str, Any]) -> dict[str, Any]:
+    """A room's interaction profile (millimetres) as the MCP's (metres)."""
+    draw = profile["draw"]
+    return {**{k: v for k, v in profile.items() if k != "draw"},
+            "draw": {"part": draw["part"], "axis": list(draw["axis"]),
+                     "max_m": float(draw.get("max_mm", 500.0)) / 1000.0,
+                     "speed_m_s": float(draw.get("speed_mm_s", 400.0)) / 1000.0}}
+
+
+def room_profile(profile: dict[str, Any]) -> dict[str, Any]:
+    """An MCP interaction profile (metres) as the room's (millimetres)."""
+    draw = profile["draw"]
+    return {**{k: v for k, v in profile.items() if k != "draw"},
+            "draw": {"part": draw["part"], "axis": list(draw["axis"]),
+                     "max_mm": round(float(draw["max_m"]) * 1000.0, 3),
+                     "speed_mm_s": round(float(draw["speed_m_s"]) * 1000.0, 3)}}
+
+
+# ---------------------------------------------------------------------------
 # The room as an MCP world, and back
 # ---------------------------------------------------------------------------
 
@@ -212,6 +237,23 @@ def export_spec(entry: dict[str, Any], scene: dict[str, Any] | None = None,
              if b.get("body") in by_name]
     if edges:
         spec["blades"] = edges
+    # How a person uses what is in it, in the room's millimetres -- each only
+    # while it still stands up against the room as it is. A change that takes a
+    # bow's arrow away is checked (open_room's check) while the bow's profile
+    # is still held, so a profile naming what is going is left out here rather
+    # than making the room refuse the change; the MCP withdraws it, and says
+    # so, once the change is made. It used to be left out always: the first
+    # thing the chat changed in the courtyard took the bow's controls with it.
+    names = {body["name"] for body in bodies}
+    uses = []
+    for profile in entry.get("interactions", []):
+        try:
+            interaction_profiles.check(profile, names, spec["joints"])
+        except ValueError:
+            continue
+        uses.append(room_profile(profile))
+    if uses:
+        spec["interactions"] = uses
     # The ground as it was made and every edit since, and the rivers. Water
     # carried from a running world is never part of what the room IS: it is
     # handed to the one open at the moment it is reopened, and no further.
@@ -304,6 +346,12 @@ def open_room(spec: dict[str, Any], water_state: dict[str, Any] | None = None) -
                 "thickness_m": edge["thickness_mm"] / 1000.0,
                 "edge_radius_m": edge["edge_radius_mm"] / 1000.0,
                 "bevel_deg": edge["bevel_deg"]})
+        # And how a person uses what is in it, through the MCP's own call, so a
+        # profile is kept -- and withdrawn when what it names is taken away --
+        # as a model's would be. Not tried: a room opens on every turn.
+        for profile in validated.get("interactions", []):
+            banjo_mcp.HANDLERS["interaction"]({"world_id": world_id, "trial": False,
+                                                **mcp_profile(profile)})
     except Exception:
         close_room(world_id)
         raise
