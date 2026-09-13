@@ -24,6 +24,7 @@ the model is told and can fix it rather than the person being told at reopen.
 """
 from __future__ import annotations
 
+import math
 import os
 import sys
 import uuid
@@ -65,7 +66,7 @@ NOT_FOR_THE_ROOM = {
 # person will be handed.
 AUTHORING = {"add_object", "remove_object", "move_object", "clear_world", "drop",
              "hinge", "slide", "tie", "reeve", "fix", "spring", "unhinge",
-             "hinge_friction", "enclose_gas", "heat"}
+             "hinge_friction", "enclose_gas", "heat", "blade"}
 
 # How many objects a room may be built up to. See check() in open_room.
 MAX_OBJECTS = 120
@@ -188,7 +189,49 @@ def export_spec(entry: dict[str, Any], scene: dict[str, Any] | None = None,
     # them is a size on the room's grid.
     if scene.get("thermo"):
         spec["thermo"] = scene["thermo"]
+    # Edges, where they are on their bodies as authored. The MCP keeps them in
+    # each body's own frame; the room wants them in the world, in millimetres.
+    by_name = {body["name"]: body for body in scene["bodies"]}
+    edges = [blade_spec(b, by_name[b["body"]]) for b in scene.get("blades") or []
+             if b.get("body") in by_name]
+    if edges:
+        spec["blades"] = edges
     return spec
+
+
+def _authored_turn(body: dict[str, Any]) -> list[list[float]]:
+    """The rotation a document body is built with: x, then y, then z, degrees."""
+    x, y, z = (math.radians(float(v)) for v in (body.get("rotation_deg") or [0.0, 0.0, 0.0]))
+    cx, sx, cy, sy, cz, sz = math.cos(x), math.sin(x), math.cos(y), math.sin(y), math.cos(z), math.sin(z)
+    rx = [[1, 0, 0], [0, cx, -sx], [0, sx, cx]]
+    ry = [[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]]
+    rz = [[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]]
+
+    def times(a, b):
+        return [[sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
+
+    return times(rz, times(ry, rx))
+
+
+def blade_spec(record: dict[str, Any], body: dict[str, Any]) -> dict[str, Any]:
+    """An MCP blade record (the body's own frame, metres) as a room blade (world, mm)."""
+    turn = _authored_turn(body)
+    centre = [float(v) for v in body["center_m"]]
+
+    def turned(v: Any) -> list[float]:
+        return [sum(turn[i][k] * float(v[k]) for k in range(3)) for i in range(3)]
+
+    def placed(v: Any) -> list[float]:
+        return [c + t for c, t in zip(centre, turned(v))]
+
+    return {"body": record["body"],
+            "heel_mm": _mm(placed(record["heel_local_m"])),
+            "tip_mm": _mm(placed(record["tip_local_m"])),
+            "facing": [round(v, 6) for v in turned(record["facing_local"])],
+            "grip_mm": _mm(placed(record["grip_local_m"])),
+            "thickness_mm": round(float(record["thickness_m"]) * 1000.0, 3),
+            "edge_radius_mm": round(float(record["edge_radius_m"]) * 1000.0, 4),
+            "bevel_deg": float(record["bevel_deg"])}
 
 
 def open_room(spec: dict[str, Any]) -> str:
@@ -214,6 +257,16 @@ def open_room(spec: dict[str, Any]) -> str:
         for pin in validated.get("joints", []):
             tool, args = joint_call(pin)
             banjo_mcp.HANDLERS[tool]({**args, "world_id": world_id})
+        # And its edges, through the MCP's own call, so they are kept as a
+        # model's would be.
+        for edge in validated.get("blades", []):
+            banjo_mcp.HANDLERS["blade"]({
+                "world_id": world_id, "body": edge["body"],
+                "heel_m": _m(edge["heel_mm"]), "tip_m": _m(edge["tip_mm"]),
+                "facing": list(edge["facing"]), "grip_m": _m(edge["grip_mm"]),
+                "thickness_m": edge["thickness_mm"] / 1000.0,
+                "edge_radius_m": edge["edge_radius_mm"] / 1000.0,
+                "bevel_deg": edge["bevel_deg"]})
     except Exception:
         close_room(world_id)
         raise

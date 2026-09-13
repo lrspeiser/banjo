@@ -229,6 +229,95 @@ the heat stopped it came back down):
   heat cylinder gas 800 W for 30 s
   then run for 20 seconds and call thermal_state: the gas says how far it pushed.
 
+BLADES -- things that cut. blade gives a body an EDGE: where it runs, which
+way it faces, how sharp it is and where a hand holds it. Nothing cuts because
+of what it is called: what resists an edge is the target's own toughness and
+hardness, so an edge cuts only where it meets matter edge first, and only as
+far as the swing can pay for. The flat pushes and cuts nothing. Glass,
+ceramic, ice and concrete crack rather than cut, and nothing as hard as the
+blade is cut at all.
+- blade(body, heel_m, tip_m, facing, thickness_m, edge_radius_m, bevel_deg,
+  grip_m): the edge runs from heel to tip ON one face of the body, and facing
+  points OUT of that face, away from the body. A bar lying along x at z 1.9,
+  0.04 thick, has its far face at z 1.88: heel and tip at z 1.88, facing
+  [0,0,-1]. An edge that faces into its own body is refused. grip_m is where
+  a hand takes it. edge_radius_m 0.0002 is a working edge, 0.00005 a keen one.
+- A SWORD a person can swing is light: an aluminum bar one cell thick,
+  [0.64, 0.04, 0.04], 2.8 kg, with the edge along its far side and the grip at
+  its near end. An 800 N hand swings it at 12 to 13 m/s. The person is on the
+  +z side, so lay it across two anchored rests BETWEEN them and what is to be
+  cut, its edge facing -z, towards it -- not on the floor, and not beyond it.
+- A ROPE that can be cut is SEGMENTS: small rubber bodies, each tied to the
+  next ACROSS the join, from 0.02 m above it to 0.02 m below, so the tie runs
+  through matter an edge goes through. A rope made of one tie is a line in the
+  air, and a blade passes through it. Leave breaks_at_n out of its ties: the
+  edge has to be what parts the rope, and a tie that can break comes off when
+  the rope is struck. Keep what hangs on it within about 20 times one
+  segment's mass, or the rope stretches and opens gaps a blade passes through.
+  With more or fewer segments than the example, move what hangs on the rope
+  with its end: it touches the last segment, and every tie point is inside
+  the matter of the body it is on. A tie made off in the air is warned about.
+- A BOARD to cut hangs under an anchored lintel on two fix joints where they
+  meet. One cell is the thinnest it can be, and 40 mm of oak wants a keen edge.
+
+A weight hung by a rope, with a sword on a rest to cut it (swung edge first
+at 13 m/s the sword cut rope 4 in two and the weight fell 1.2 m to the floor
+with every other tie on; the flat of the same swing cut nothing):
+  add_object rope beam oak [0.24, 0.08, 0.08] at [-0.5, 2.04, 1.4] anchored
+  add_object rope 1 to rope 6, each rubber [0.04, 0.12, 0.04], rope k at
+    [-0.5, 2.06 - 0.12k, 1.4]: rope 1 at y 1.94, rope 2 at 1.82 ... rope 6 at 1.34
+  add_object weight iron [0.08, 0.08, 0.08] at [-0.5, 1.24, 1.4]   (4 kg)
+  tie a=rope beam b=rope 1 at_a [-0.5, 2.02, 1.4] at_b [-0.5, 1.98, 1.4]
+  tie a=rope k b=rope k+1 at_a [-0.5, 2.02 - 0.12k, 1.4]
+    at_b [-0.5, 1.98 - 0.12k, 1.4] for k = 1 to 5 (rope 1 to rope 2 at 1.90
+    and 1.86, and so on down)
+  tie a=rope 6 b=weight at_a [-0.5, 1.30, 1.4] at_b [-0.5, 1.26, 1.4]
+  add_object sword rest left oak [0.08, 0.08, 0.08] at [-0.24, 0.96, 1.9] anchored
+  add_object sword rest right oak [0.08, 0.08, 0.08] at [0.24, 0.96, 1.9] anchored
+  add_object sword aluminum [0.64, 0.04, 0.04] at [0, 1.02, 1.9]
+  blade body=sword heel [0.2, 1.02, 1.88] tip [-0.3, 1.02, 1.88] facing [0,0,-1]
+    thickness 0.04 edge_radius 0.0002 bevel 30 grip [0.28, 1.02, 1.9]
+  try it: wield sword, then swing through_m [-0.5, 1.58, 1.4] (the middle of
+    rope 4) pointing [0,0,-1] edge_facing [-1,0,0] seconds 0.13 then_s 1.5:
+    cuts says rope 4 came_apart, and the weight is on the floor.
+
+An oak panel on fixings (swung edge first at 12 m/s the sword cut it in two;
+the lower piece fell to the floor and the upper stayed on both fixings; the
+flat of the same swing cut nothing):
+  add_object panel lintel oak [0.48, 0.08, 0.08] at [0.6, 1.76, 1.4] anchored
+  add_object oak panel oak [0.32, 0.24, 0.04] at [0.6, 1.60, 1.4]
+  fix a=panel lintel b=oak panel at [0.50, 1.72, 1.4] axis [0,1,0]
+  fix a=panel lintel b=oak panel at [0.70, 1.72, 1.4] axis [0,1,0]
+  the rests and the sword as above, but edge_radius 0.00005: a keen edge paid
+    59 J to cut that board, where a working edge took 169 J of the same swing
+    to get through it
+  try it: wield sword, swing through_m [0.6, 1.60, 1.4] pointing [0,0,-1]
+    edge_facing [-1,0,0]: cuts says oak panel came_apart.
+
+TRYING A CUT IN YOUR COPY. wield takes the blade by its grip with a hand of
+800 N and 60 N m. swing with through_m swings it the way a person does: up
+off its rest, back, round to one side, and then 100 degrees round a shoulder
+in 0.13 s, so that the middle of the edge passes through through_m. pointing
+is the way the blade points, THROUGH what is to be cut; edge_facing across
+the swing leads with the edge, up or down leads with the flat. Read cuts:
+what came_apart, what it cost, and where things fell; then read joints:
+every tie the edge did not go through should still be on. Do not answer
+until you have swung it once, edge first, and read both. A cut in your copy
+is a test and nothing more, and it stays cut there: the person's room opens
+from what you authored, with the rope whole and the sword on its rests, and
+the cut is theirs to make.
+
+WHAT THE PERSON DOES WITH IT. They walk up to the sword and click it: it is
+held at its grip a little below and to the right of their eye, pointing where
+they look, its edge facing LEFT, so it meets the rope lower than where they
+look. They look level at the middle of the rope, then a little to its right,
+wait a moment for the sword to come round, and drag the view LEFT fast --
+about 60 degrees in a sixth of a second -- and the edge goes through: the
+rope parts and the weight falls. A slow drag only notches it. Right-click
+turns the edge a quarter turn; facing down, the same drag leads with the
+flat, and the rope swings and holds. Click again to let go. Tell them this
+in your answer.
+
 TRY IT BEFORE YOU SAY IT WORKS. The world you build in is a real engine world.
 Use the mechanism the way a person would: pick_up the handle (or the leaf, or
 the grate), place it where a hand would pull it -- a quarter turn round the
@@ -238,7 +327,8 @@ did not move, find out why and fix it -- a joint that reads 0 when it was pulled
 on is almost always touching something: the floor, its own post, or another
 part -- or it is HELD: a fix (a latch, a locking bar) keeps a gate shut until
 unhinge takes it out, so read joints for anything else on the thing you are
-moving. Every joint call says what it noticed under `warnings`; read them. A rope or rod that
+moving. Every joint call says what it noticed under `warnings`, and each names
+a mistake that will stop the thing working: fix it before you go on. A rope or rod that
 pulls along a hinge's own axis, or is made off right at the hinge line, cannot
 turn it at all. overloaded only knows about what has settled, so run for a
 second or two before asking it. Adding, moving or removing anything opens the
@@ -314,6 +404,8 @@ def _did(name: str, args: dict[str, Any], answer: dict[str, Any]) -> str:
     if name == "heat":
         return (f"heating {args.get('target')} at {float(args.get('power_w') or 0) / 1000:g} kW "
                 f"for {args.get('seconds')} s")
+    if name == "blade":
+        return f"gave {args.get('body')} an edge"
     return f"{name} {args.get('a')} to {args.get('b')}"
 
 

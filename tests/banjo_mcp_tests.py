@@ -604,6 +604,162 @@ class TheTools(unittest.TestCase):
                  self.client.call("describe_world", world_id=world_id)["objects"]}
         self.assertNotIn("marble", names)
 
+    def test_an_edge_presses_through_oak_and_a_flat_does_not(self):
+        """The distinction the cutting model rests on, through the tools: the
+        same iron plate, the same hand, the same oak. Edge down, the hand's
+        800 N is more than the 300 N the 20 mm batten resists with, and it goes
+        through. Flat down, the same push is an ordinary contact and nothing is
+        cut. docs/cutting-model.md."""
+        def press(edge_down: bool):
+            size = [0.01, 0.10, 0.25] if edge_down else [0.10, 0.01, 0.25]
+            world_id = self.client.call("create_world", cell_size_m=0.01, objects=[
+                {"name": "batten", "shape": "box", "material": "oak",
+                 "size_m": [0.2, 0.02, 0.02], "position_m": [0, 0.01, 0]},
+                {"name": "plate", "shape": "box", "material": "iron",
+                 "size_m": size, "position_m": [0, 0.02 + size[1] / 2, 0]},
+            ])["world_id"]
+            if edge_down:
+                edge = {"heel_m": [0, 0.02, -0.1], "tip_m": [0, 0.02, 0.1],
+                        "facing": [0, -1, 0], "grip_m": [0, 0.12, 0]}
+            else:
+                # The same edge along the plate's side, facing sideways: what
+                # meets the oak is a flat.
+                edge = {"heel_m": [0.05, 0.025, -0.1], "tip_m": [0.05, 0.025, 0.1],
+                        "facing": [1, 0, 0], "grip_m": [0, 0.025, 0]}
+            made = self.client.call("blade", world_id=world_id, body="plate",
+                                    thickness_m=0.01, edge_radius_m=0.0002, bevel_deg=30.0,
+                                    **edge)
+            self.assertGreater(made["blade"], 0)
+            self.client.call("wield", world_id=world_id, name="plate")
+            grip = edge["grip_m"]
+            return self.client.call("swing", world_id=world_id,
+                                    to_m=[grip[0], grip[1] - 0.2, grip[2]],
+                                    seconds=1.0, then_s=0.5)
+
+        edge = press(True)
+        names = {o["name"] for o in edge["objects"]}
+        self.assertTrue({"batten piece 1", "batten piece 2"} <= names,
+                        f"an 800 N press on the edge did not cut through: {sorted(names)}")
+        cuts = edge["cuts"] if isinstance(edge["cuts"], list) else []
+        bit = [c for c in cuts if c["met"].startswith("batten") and "cut_mm2" in c]
+        self.assertTrue(bit and bit[0]["kind"] == "press",
+                        f"a slow push was not reported as a press: {cuts}")
+        self.assertTrue(any(c.get("came_apart") for c in bit), f"no cut says it separated: {bit}")
+        # 20 mm of oak at R = 15 kJ/m^2 is 6 J; separation comes when the last
+        # row of bonds goes, which is from three quarters of the section.
+        work = sum(c["work_j"] for c in bit)
+        self.assertGreater(work, 0.7 * 6.0, f"it came apart for only {work} J")
+        self.assertLess(work, 1.15 * 6.0, f"it cost {work} J, more than the section")
+
+        flat = press(False)
+        names = {o["name"] for o in flat["objects"]}
+        self.assertIn("batten", names, "the flat of the plate cut the batten")
+        cuts = flat["cuts"] if isinstance(flat["cuts"], list) else []
+        self.assertFalse([c for c in cuts if c.get("bonds_severed")],
+                         f"the flat severed bonds: {cuts}")
+
+    def test_a_swing_through_a_rope_cuts_it_and_its_flat_does_not(self):
+        """What the playground's chat does to try a cut in its own copy: build a
+        rope of rubber segments with a weight on it and an aluminium sword on
+        a rest, take the sword, and swing it through the middle of the rope --
+        round a shoulder, edge leading. Then the same swing with the edge facing
+        the floor, so the flat leads. docs/cutting-model.md."""
+        def rope_and_sword(edge_facing):
+            objects = [{"name": "rope beam", "shape": "box", "material": "oak",
+                        "size_m": [0.24, 0.08, 0.08], "position_m": [-0.5, 2.04, 1.4],
+                        "anchored": True}]
+            objects += [{"name": f"rope {k}", "shape": "box", "material": "rubber",
+                         "size_m": [0.04, 0.12, 0.04], "position_m": [-0.5, 2.06 - 0.12 * k, 1.4]}
+                        for k in range(1, 7)]
+            objects += [
+                {"name": "weight", "shape": "box", "material": "iron",
+                 "size_m": [0.08, 0.08, 0.08], "position_m": [-0.5, 1.24, 1.4]},
+                {"name": "rest left", "shape": "box", "material": "oak",
+                 "size_m": [0.08, 0.08, 0.08], "position_m": [-0.24, 0.96, 1.9], "anchored": True},
+                {"name": "rest right", "shape": "box", "material": "oak",
+                 "size_m": [0.08, 0.08, 0.08], "position_m": [0.24, 0.96, 1.9], "anchored": True},
+                {"name": "sword", "shape": "box", "material": "aluminum",
+                 "size_m": [0.64, 0.04, 0.04], "position_m": [0.0, 1.02, 1.9]}]
+            world_id = self.client.call("create_world", cell_size_m=0.04, objects=objects)["world_id"]
+            ends = [("rope beam", "rope 1", 2.0)] + \
+                   [(f"rope {k}", f"rope {k + 1}", 2.0 - 0.12 * k) for k in range(1, 6)] + \
+                   [("rope 6", "weight", 1.28)]
+            for a, b, join in ends:
+                self.client.call("tie", world_id=world_id, a=a, b=b,
+                                 at_a_m=[-0.5, join + 0.02, 1.4], at_b_m=[-0.5, join - 0.02, 1.4])
+            self.client.call("blade", world_id=world_id, body="sword",
+                             heel_m=[0.2, 1.02, 1.88], tip_m=[-0.3, 1.02, 1.88], facing=[0, 0, -1],
+                             thickness_m=0.04, edge_radius_m=0.0002, bevel_deg=30,
+                             grip_m=[0.28, 1.02, 1.9])
+            self.client.call("wield", world_id=world_id, name="sword")
+            return self.client.call("swing", world_id=world_id, through_m=[-0.5, 1.58, 1.4],
+                                    pointing=[0, 0, -1], edge_facing=edge_facing,
+                                    seconds=0.13, then_s=1.5)
+
+        def weight_y(answer):
+            return next(o["position_m"][1] for o in answer["objects"] if o["name"] == "weight")
+
+        edge = rope_and_sword([-1, 0, 0])
+        cuts = edge["cuts"] if isinstance(edge["cuts"], list) else []
+        bit = [c for c in cuts if c["met"].startswith("rope") and c.get("bonds_severed")]
+        self.assertTrue(bit, f"the edge-first swing did not cut the rope: {edge['cuts']}")
+        self.assertTrue(any(c.get("came_apart") for c in bit), f"the rope did not part: {bit}")
+        self.assertLess(weight_y(edge), 0.3, "the rope was cut and the weight did not fall")
+        for c in bit:
+            self.assertAlmostEqual(c["work_j"] / (c["cut_mm2"] * 1e-6), c["resistance_j_m2"],
+                                   delta=0.01 * c["resistance_j_m2"])
+
+        flat = rope_and_sword([0, -1, 0])
+        cuts = flat["cuts"] if isinstance(flat["cuts"], list) else []
+        self.assertFalse([c for c in cuts if c.get("bonds_severed") or c.get("rope_links_cut")],
+                         f"the flat cut the rope: {cuts}")
+        self.assertGreater(weight_y(flat), 1.0, "the weight fell under the flat")
+
+    def test_an_edge_that_is_not_on_its_body_is_refused(self):
+        world_id = self.client.call("create_world", cell_size_m=0.01, objects=[
+            {"name": "plate", "shape": "box", "material": "iron",
+             "size_m": [0.01, 0.10, 0.25], "position_m": [0, 0.05, 0]}])["world_id"]
+        said = self.client.refuse("blade", world_id=world_id, body="plate",
+                                  heel_m=[0, 0.5, -0.1], tip_m=[0, 0.5, 0.1],
+                                  facing=[0, -1, 0])
+        self.assertGreater(len(said), 10, "refused without saying why")
+
+    def test_an_edge_facing_into_its_body_is_refused(self):
+        """An edge on a bar's far face, declared facing back into the bar, leads
+        with the bar's other face: a model built a sword that way, and swung edge
+        first it glanced off the rope it was meant to cut. It is refused, saying
+        why, and the same edge facing out of the bar is taken."""
+        world_id = self.client.call("create_world", cell_size_m=0.04, objects=[
+            {"name": "sword", "shape": "box", "material": "aluminum",
+             "size_m": [0.64, 0.04, 0.04], "position_m": [0, 1.02, -0.6]}])["world_id"]
+        edge = dict(world_id=world_id, body="sword", heel_m=[0.2, 1.02, -0.62],
+                    tip_m=[-0.3, 1.02, -0.62], thickness_m=0.04, grip_m=[0.28, 1.02, -0.6])
+        said = self.client.refuse("blade", facing=[0, 0, 1], **edge)
+        self.assertIn("faces into", said)
+        self.assertIn("blade", self.client.call("blade", facing=[0, 0, -1], **edge))
+
+    def test_a_rope_made_off_in_the_air_is_warned_about(self):
+        """A model hung a weight 0.24 m below the end of its rope and tied it from
+        a point in the air under the last segment: the point rode on the segment
+        like the end of a stiff arm, and a blow to the rope flung the weight
+        about. A rope made off away from its body is warned about; one made off
+        in its matter is not."""
+        world_id = self.client.call("create_world", cell_size_m=0.04, objects=[
+            {"name": "beam", "shape": "box", "material": "oak", "size_m": [0.24, 0.08, 0.08],
+             "position_m": [0, 2.04, 0], "anchored": True},
+            {"name": "segment", "shape": "box", "material": "rubber",
+             "size_m": [0.04, 0.12, 0.04], "position_m": [0, 1.94, 0]},
+            {"name": "weight", "shape": "box", "material": "iron", "size_m": [0.08, 0.08, 0.08],
+             "position_m": [0, 1.60, 0]}])["world_id"]
+        good = self.client.call("tie", world_id=world_id, a="beam", b="segment",
+                                at_a_m=[0, 2.02, 0], at_b_m=[0, 1.98, 0])
+        self.assertFalse([w for w in good.get("warnings", []) if "outside" in w], good)
+        bad = self.client.call("tie", world_id=world_id, a="segment", b="weight",
+                               at_a_m=[0, 1.66, 0], at_b_m=[0, 1.62, 0])
+        said = " ".join(bad.get("warnings", []))
+        self.assertIn("at_a_m is 0.22 m outside segment", said)
+        self.assertNotIn("at_b_m", said)
+
     def test_a_world_can_be_closed_and_is_then_gone(self):
         world_id = self.pane_world()
         self.client.call("close_world", world_id=world_id)

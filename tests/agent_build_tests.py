@@ -708,6 +708,270 @@ def check_heated_piston(built: Built) -> Verdict:
                    measured)
 
 
+# ---------------------------------------------------------------------------
+# Blades: what an edge is swung through
+# ---------------------------------------------------------------------------
+
+def _qmul(a: list[float], b: list[float]) -> list[float]:
+    aw, ax, ay, az = a
+    bw, bx, by, bz = b
+    return [aw * bw - ax * bx - ay * by - az * bz, aw * bx + ax * bw + ay * bz - az * by,
+            aw * by - ax * bz + ay * bw + az * bx, aw * bz + ax * by - ay * bx + az * bw]
+
+
+def _qrot(q: list[float], v: list[float]) -> list[float]:
+    return _qmul(_qmul(q, [0.0] + list(v)), [q[0], -q[1], -q[2], -q[3]])[1:]
+
+
+def _qfrom(m: list[list[float]]) -> list[float]:
+    trace = m[0][0] + m[1][1] + m[2][2]
+    if trace > 0:
+        s = 0.5 / math.sqrt(trace + 1.0)
+        q = [0.25 / s, (m[2][1] - m[1][2]) * s, (m[0][2] - m[2][0]) * s, (m[1][0] - m[0][1]) * s]
+    elif m[0][0] > m[1][1] and m[0][0] > m[2][2]:
+        s = 2.0 * math.sqrt(1.0 + m[0][0] - m[1][1] - m[2][2])
+        q = [(m[2][1] - m[1][2]) / s, 0.25 * s, (m[0][1] + m[1][0]) / s, (m[0][2] + m[2][0]) / s]
+    elif m[1][1] > m[2][2]:
+        s = 2.0 * math.sqrt(1.0 + m[1][1] - m[0][0] - m[2][2])
+        q = [(m[0][2] - m[2][0]) / s, (m[0][1] + m[1][0]) / s, 0.25 * s, (m[1][2] + m[2][1]) / s]
+    else:
+        s = 2.0 * math.sqrt(1.0 + m[2][2] - m[0][0] - m[1][1])
+        q = [(m[1][0] - m[0][1]) / s, (m[0][2] + m[2][0]) / s, (m[1][2] + m[2][1]) / s, 0.25 * s]
+    size = math.sqrt(sum(x * x for x in q))    # four numbers: unit() is for three
+    return [x / size for x in q]
+
+
+def _aim(blade: dict[str, Any], pointing: list[float], edge_facing: list[float]) -> list[float]:
+    """The turn that points the blade along `pointing` with its edge facing `edge_facing`."""
+    along = unit(sub(blade["tip_local"], blade["heel_local"]))
+    faced = blade["facing_local"]
+    facing = unit(sub(faced, scale(along, dot(faced, along))))
+    want_along = unit(pointing)
+    want_facing = unit(sub(edge_facing, scale(want_along, dot(edge_facing, want_along))))
+    have = [along, facing, cross(along, facing)]
+    want = [want_along, want_facing, cross(want_along, want_facing)]
+    return _qfrom([[sum(want[k][r] * have[k][c] for k in range(3)) for c in range(3)]
+                   for r in range(3)])
+
+
+def _rope(world: World) -> tuple[list[str], str] | None:
+    """A run of loose bodies tied end to end, from something fixed down to what hangs
+    at the bottom: the rope's segments, top to bottom, and the thing on its end."""
+    links = [j for j in world.joints() if j["kind"] == "link" and j.get("attached")]
+    fixed = world.anchored()
+    for top in links:
+        if fixed.get(top["a"]) == fixed.get(top["b"]):
+            continue
+        here = top["b"] if fixed.get(top["a"]) else top["a"]
+        chain, used = [here], {id(top)}
+        while True:
+            onward = next((j for j in links if id(j) not in used and here in (j["a"], j["b"])),
+                          None)
+            if onward is None:
+                break
+            used.add(id(onward))
+            here = onward["b"] if onward["a"] == here else onward["a"]
+            if fixed.get(here):
+                break
+            chain.append(here)
+        if len(chain) >= 3:
+            return chain[:-1], chain[-1]
+    return None
+
+
+def _swing_at(spec: dict[str, Any], edge_down: bool,
+              locate: Callable[[World], tuple[list[float], dict[str, Any]] | str]) -> dict[str, Any]:
+    """Open the room afresh, take its blade, and swing it through what `locate` names.
+
+    The engine's own hand does it: the grip and the way the blade should face
+    are sent a step at a time and the hand pulls and turns towards them with
+    what it has. Up off the rest, back clear, out to one side, and then a swing
+    round a shoulder half a metre behind the grip, through 100 degrees in
+    0.13 s, the middle of the edge passing through the point `locate` gives --
+    the blade pointing away from the person, and its edge leading, or
+    (edge_down) facing the floor so that the flat leads. Nothing here says what
+    is cut; the engine does. Returns what `locate` noted, the cuts, and every
+    body and joint as the swing left them.
+    """
+    world = World(spec)
+    try:
+        found = locate(world)
+        if isinstance(found, str):
+            return {"error": found}
+        middle, noted = found
+        blades = [b for b in world.session.send(op="blades").get("blades") or []
+                  if b.get("attached", True)]
+        if not blades:
+            return {"error": "nothing in the room has an edge"}
+        blade = blades[0]
+        to_middle = sub(scale(add(blade["heel_local"], blade["tip_local"]), 0.5), blade["grip_local"])
+        to_point = sub(blade["tip_local"], blade["grip_local"])
+        reach = dot(_qrot(_aim(blade, [0.0, 0.0, -1.0], [-1.0, 0.0, 0.0]), to_middle),
+                    [0.0, 0.0, -1.0])
+        shoulder = [middle[0], middle[1], middle[2] + 0.5 + reach]
+
+        def pose(angle: float) -> tuple[list[float], list[float]]:
+            """The grip and the turn with the blade pointing out from the shoulder at
+            `angle` (0 is straight through the target, positive to the right)."""
+            out = [math.sin(angle), 0.0, -math.cos(angle)]
+            going = [-math.cos(angle), 0.0, -math.sin(angle)]
+            turn = _aim(blade, out, [0.0, -1.0, 0.0] if edge_down else going)
+            edge_at = add(shoulder, scale(out, 0.5 + reach))
+            return sub(edge_at, _qrot(turn, to_middle)), turn
+
+        cuts: dict[tuple[Any, ...], dict[str, Any]] = {}
+
+        def step(hand: list[float], turn: list[float]) -> None:
+            state = world.session.send(op="step", dt=DT, n=1, moved=True,
+                                       hand=[float(v) for v in hand],
+                                       hand_q=[float(v) for v in turn])
+            for name in state.get("breakable") or []:
+                world.session.send(op="fracture", name=name, wait=False)
+            for cut in state.get("cuts") or []:
+                cuts[(cut.get("blade"), cut.get("target"), cut.get("at_s"))] = cut
+
+        def go(a: list[float], b: list[float], turn: list[float], seconds: float) -> list[float]:
+            n = max(1, int(round(seconds / DT)))
+            for i in range(1, n + 1):
+                step(add(a, scale(sub(b, a), i / n)), turn)
+            return b
+
+        wide = math.radians(50.0)
+        ready, turn = pose(wide)
+        before = {name: list(body["position_m"]) for name, body in world.bodies().items()}
+        start = list(blade["grip"])
+        world.session.send(op="wield", name=blade["body"], grip=start)
+        # Far enough towards the person that the point stays 0.15 m short of the target.
+        clear_z = middle[2] + 0.15 - _qrot(turn, to_point)[2]
+        here = go(start, add(start, [0.0, 0.3, 0.0]), turn, 0.5)
+        here = go(here, [here[0], middle[1], max(here[2], clear_z)], turn, 0.6)
+        here = go(here, [ready[0], middle[1], max(here[2], clear_z)], turn, 0.6)
+        here = go(here, ready, turn, 0.5)
+        for _ in range(int(0.5 / DT)):
+            step(here, turn)
+        steps = int(round(0.13 / DT))
+        for i in range(1, steps + 1):
+            here, turn = pose(wide - 2.0 * wide * i / steps)
+            step(here, turn)
+        for _ in range(int(2.0 / DT)):
+            step(here, turn)
+        met = [{"kind": c["kind"], "target": c["target"], "speed_m_s": round(c["speed_m_s"], 2),
+                "area_mm2": round(c.get("area_mm2", 0.0), 1), "bonds": c.get("bonds", 0),
+                "links": c.get("links", 0), "separated": bool(c.get("separated"))}
+               for c in cuts.values()]
+        bodies = world.bodies()
+        return {**noted, "cuts": met, "joints": world.joints(),
+                "before": before, "after": {n: list(b["position_m"]) for n, b in bodies.items()}}
+    finally:
+        world.close()
+
+
+def _rope_at(world: World) -> tuple[list[float], dict[str, Any]] | str:
+    found = _rope(world)
+    if found is None:
+        return ("there is no rope: a run of loose bodies tied end to end, from something "
+                "fixed down to what hangs on it")
+    segments, weight = found
+    struck = segments[len(segments) // 2]
+    return list(world.body(struck)["position_m"]), {"segments": segments, "weight": weight,
+                                                   "struck": struck}
+
+
+def _swing_through(spec: dict[str, Any], edge_down: bool) -> dict[str, Any]:
+    swung = _swing_at(spec, edge_down, _rope_at)
+    if "error" in swung:
+        return swung
+    links = [j for j in swung["joints"] if j["kind"] == "link"]
+    weight = swung["weight"]
+    return {"segments": swung["segments"], "weight": weight, "struck": swung["struck"],
+            "fell_m": round(swung["before"][weight][1] - swung["after"][weight][1], 3),
+            "cuts": swung["cuts"], "ties_off": sum(1 for j in links if not j.get("attached")),
+            "links_cut": sum(c["links"] for c in swung["cuts"])}
+
+
+def _panel_at(world: World) -> tuple[list[float], dict[str, Any]] | str:
+    """A loose body held up by fixings to something fixed: what is to be cut."""
+    fixed = world.anchored()
+    held: dict[str, int] = {}
+    for j in world.joints():
+        if j["kind"] != "fixing" or not j.get("attached"):
+            continue
+        for a, b in ((j["a"], j["b"]), (j["b"], j["a"])):
+            if fixed.get(a) and not fixed.get(b):
+                held[b] = held.get(b, 0) + 1
+    if not held:
+        return "there is no panel: a loose body held up by fixings to something fixed"
+    panel = max(held, key=lambda name: (held[name], volume(world.body(name))))
+    return list(world.body(panel)["position_m"]), {"panel": panel}
+
+
+def check_cut_panel(built: Built) -> Verdict:
+    """A panel on fixings, cut in two by a person's swing through its middle: the
+    lower piece falls and the upper keeps its fixings. The flat cuts nothing."""
+    edge = _swing_at(built.room.spec, False, _panel_at)
+    if "error" in edge:
+        return Verdict(False, edge["error"], edge)
+    panel = edge["panel"]
+    flat = _swing_at(built.room.spec, True, _panel_at)
+    pieces = sorted((n for n in edge["after"] if n.startswith(panel + " piece")),
+                    key=lambda n: edge["after"][n][1])
+    fixings = [j for j in edge["joints"] if j["kind"] == "fixing"]
+    measured = {"panel": panel, "cuts": edge["cuts"], "pieces": {n: edge["after"][n] for n in pieces},
+                "fixings": [[j["a"], j["b"], j.get("attached")] for j in fixings],
+                "flat_cuts": flat.get("cuts")}
+    bit = [c for c in edge["cuts"] if c["kind"] in ("edge", "slice") and c["bonds"] > 0]
+    if not bit:
+        return Verdict(False, f"swung edge-first through {panel}, the sword did not bite it: "
+                              f"{edge['cuts']}", measured)
+    if len(pieces) < 2:
+        return Verdict(False, f"the sword cut {sum(c['area_mm2'] for c in bit):.0f} mm2 into "
+                              f"{panel} and it held together", measured)
+    lower, upper = pieces[0], pieces[-1]
+    dropped = edge["before"][panel][1] - edge["after"][lower][1]
+    if dropped < 0.3:
+        return Verdict(False, f"{panel} came apart but its lower piece fell only {dropped:.2f} m",
+                       measured)
+    if not fixings or any(not j.get("attached") or upper not in (j["a"], j["b"]) for j in fixings):
+        return Verdict(False, f"the fixings did not stay with the upper piece: {measured['fixings']}",
+                       measured)
+    if flat.get("error") or any(c["bonds"] > 0 for c in flat.get("cuts") or []):
+        return Verdict(False, f"the flat of the same swing cut {panel}", measured)
+    return Verdict(True, f"swung edge-first at {max(c['speed_m_s'] for c in bit):.1f} m/s the "
+                         f"sword cut {panel} in two ({sum(c['area_mm2'] for c in bit):.0f} mm2): "
+                         f"the lower piece fell {dropped:.2f} m, the upper is still on its "
+                         f"{len(fixings)} fixings; the flat of the same swing cut nothing", measured)
+
+
+def check_cut_rope(built: Built) -> Verdict:
+    """The rope cut by a person's swing -- the engine's own hand, edge first -- and
+    not by the flat of the same swing. Nothing here decides that anything is cut."""
+    edge = _swing_through(built.room.spec, edge_down=False)
+    if "error" in edge:
+        return Verdict(False, edge["error"], edge)
+    flat = _swing_through(built.room.spec, edge_down=True)
+    measured = {"edge_first": edge, "flat_first": flat}
+    bit = [c for c in edge["cuts"] if c["kind"] in ("edge", "slice") and c["bonds"] > 0]
+    if not bit:
+        return Verdict(False, f"swung edge-first through {edge['struck']}, the sword did not bite "
+                              f"it: {edge['cuts']}", measured)
+    if edge["fell_m"] < 0.3:
+        return Verdict(False, f"the rope was cut into, but {edge['weight']} fell only "
+                              f"{edge['fell_m']:.2f} m", measured)
+    if edge["ties_off"] > edge["links_cut"]:
+        return Verdict(False, "a tie came off that the edge never went through", measured)
+    if flat.get("error"):
+        return Verdict(False, flat["error"], measured)
+    if any(c["bonds"] > 0 or c["links"] > 0 for c in flat["cuts"]):
+        return Verdict(False, f"the flat of the same swing cut the rope: {flat['cuts']}", measured)
+    if flat["fell_m"] > 0.2:
+        return Verdict(False, f"under the flat, {flat['weight']} fell {flat['fell_m']:.2f} m",
+                       measured)
+    return Verdict(True, f"swung edge-first at {max(c['speed_m_s'] for c in bit):.1f} m/s the sword "
+                         f"cut {sum(c['area_mm2'] for c in bit):.0f} mm2 of {edge['struck']} and "
+                         f"{edge['weight']} fell {edge['fell_m']:.2f} m with every other tie on; "
+                         f"the flat of the same swing cut nothing", measured)
+
+
 @dataclass
 class Case:
     id: str
@@ -757,6 +1021,16 @@ CASES = [
          "Build a cylinder with an iron piston in it and a weight on the piston, with gas under "
          "the piston, and heat the gas so it lifts the weight.",
          check_heated_piston, "heat into gas into work: a pressure boundary on a real body"),
+    Case("cut-rope", "yard",
+         "Hang an iron weight from a beam by a rope, and put a sword where I can take it, so "
+         "I can cut the rope.",
+         check_cut_rope, "an edge that cuts what it is swung through, a load that falls, and "
+         "a flat that does not cut"),
+    Case("cut-panel", "yard",
+         "Hang an oak panel from a beam on two fixings, and put a sword where I can take it, "
+         "so I can cut the panel in two.",
+         check_cut_panel, "a cut all the way through that makes pieces, with the fixings "
+         "staying on the piece that holds them"),
 ]
 
 
@@ -879,6 +1153,51 @@ RECIPES: dict[str, tuple[str, list[tuple[str, dict[str, Any]]]]] = {
         _box("stone shelf", "concrete", [1.2, 0.04, 0.24], [0.0, 0.82, 0.0]),
         _box("iron block", "iron", [0.2, 0.2, 0.2], [-0.12, 0.94, 0.0]),
         _box("second iron block", "iron", [0.2, 0.2, 0.2], [0.12, 0.94, 0.0]),
+    ]),
+    # A rope that can be cut: six rubber segments, each tied to the next at the
+    # join -- between the centres of the cells either side of it, so the tie
+    # runs through matter an edge can go through -- from an oak beam down to 4 kg
+    # of iron, 19 times a segment's mass. And a sword the person can take from
+    # its rest: an aluminium bar with an edge along its far side, 2.8 kg, light
+    # enough for an 800 N hand to swing at 10 m/s.
+    "cut-rope": ("cut-rope", [
+        _box("rope beam", "oak", [0.24, 0.08, 0.08], [-0.5, 2.04, 1.4], True),
+        *[_box(f"rope {k}", "rubber", [0.04, 0.12, 0.04], [-0.5, 2.06 - 0.12 * k, 1.4])
+          for k in range(1, 7)],
+        _box("weight", "iron", [0.08, 0.08, 0.08], [-0.5, 1.24, 1.4]),
+        ("tie", {"a": "rope beam", "b": "rope 1",
+                 "at_a_m": [-0.5, 2.02, 1.4], "at_b_m": [-0.5, 1.98, 1.4]}),
+        *[("tie", {"a": f"rope {k}", "b": f"rope {k + 1}",
+                   "at_a_m": [-0.5, 2.02 - 0.12 * k, 1.4], "at_b_m": [-0.5, 1.98 - 0.12 * k, 1.4]})
+          for k in range(1, 6)],
+        ("tie", {"a": "rope 6", "b": "weight",
+                 "at_a_m": [-0.5, 1.30, 1.4], "at_b_m": [-0.5, 1.26, 1.4]}),
+        _box("sword rest left", "oak", [0.08, 0.08, 0.08], [-0.24, 0.96, 1.9], True),
+        _box("sword rest right", "oak", [0.08, 0.08, 0.08], [0.24, 0.96, 1.9], True),
+        _box("sword", "aluminum", [0.64, 0.04, 0.04], [0.0, 1.02, 1.9]),
+        ("blade", {"body": "sword", "heel_m": [0.2, 1.02, 1.88], "tip_m": [-0.3, 1.02, 1.88],
+                   "facing": [0, 0, -1], "thickness_m": 0.04, "edge_radius_m": 0.0002,
+                   "bevel_deg": 30, "grip_m": [0.28, 1.02, 1.9]}),
+    ]),
+    # A panel to cut in two: 40 mm of oak -- the thinnest a 0.04 m room makes it
+    # -- 0.32 m across and 0.24 m tall, hung under an anchored oak lintel on two
+    # fixings where they meet, near its top corners. Across it that is
+    # 12,800 mm2, and a keen edge (0.05 mm) meets oak at 4.5 kJ/m2: 58 J, which
+    # one swing of the aluminium sword pays. With a working edge (0.2 mm,
+    # 15 kJ/m2) it would be 192 J.
+    "cut-panel": ("cut-panel", [
+        _box("panel lintel", "oak", [0.48, 0.08, 0.08], [0.6, 1.76, 1.4], True),
+        _box("oak panel", "oak", [0.32, 0.24, 0.04], [0.6, 1.60, 1.4]),
+        ("fix", {"a": "panel lintel", "b": "oak panel", "at_m": [0.50, 1.72, 1.4],
+                 "axis": [0, 1, 0]}),
+        ("fix", {"a": "panel lintel", "b": "oak panel", "at_m": [0.70, 1.72, 1.4],
+                 "axis": [0, 1, 0]}),
+        _box("sword rest left", "oak", [0.08, 0.08, 0.08], [-0.24, 0.96, 1.9], True),
+        _box("sword rest right", "oak", [0.08, 0.08, 0.08], [0.24, 0.96, 1.9], True),
+        _box("sword", "aluminum", [0.64, 0.04, 0.04], [0.0, 1.02, 1.9]),
+        ("blade", {"body": "sword", "heel_m": [0.2, 1.02, 1.88], "tip_m": [-0.3, 1.02, 1.88],
+                   "facing": [0, 0, -1], "thickness_m": 0.04, "edge_radius_m": 0.00005,
+                   "bevel_deg": 30, "grip_m": [0.28, 1.02, 1.9]}),
     ]),
 }
 

@@ -12,6 +12,8 @@
 // what a ray hits, takes hold of things and lets go of them. If it can be done
 // from here it can be done from anything.
 import * as THREE from "/vendor/three.module.js";
+import { rememberBlades, bladeFor, STANCES, takeHold, handTarget, dressBlades, showKerfs,
+         narrateCuts } from "/blades.js";
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -336,6 +338,7 @@ function place(mesh, body) {
 // and then anything it leaves out really has gone.
 function draw(state) {
   if (state.cell_size_m) world.cellSize = state.cell_size_m;
+  rememberBlades(state);
   const seen = new Set();
   for (const body of state.bodies) {
     seen.add(body.name);
@@ -359,6 +362,7 @@ function draw(state) {
     held.anchored = !!body.anchored;
     held.shape = body.shape;
     place(held.mesh, body);
+    showKerfs(held, body);
   }
   const drop = state.partial
     ? (state.gone || [])
@@ -369,6 +373,7 @@ function draw(state) {
     forget(entry.mesh);
     world.bodies.delete(name);
   }
+  dressBlades(world.bodies);
   $("panel-count").textContent = `${world.bodies.size} objects`;
 }
 
@@ -749,7 +754,17 @@ addEventListener("blur", () => keys.clear());
 // the gate, the nock off the string. On the mouse as well as on R because a
 // latch is a second thing to do to the object you are already pointing at, and
 // reaching for a key to do it is one hand too many.
-canvas.addEventListener("contextmenu", (e) => { e.preventDefault(); unlatch(); });
+canvas.addEventListener("contextmenu", (e) => {
+  e.preventDefault();
+  // With a blade in hand it turns the edge instead, a quarter about the
+  // blade's own length: left, down, right, up.
+  if (world.held && world.held.blade) {
+    world.held.stance = (world.held.stance + 1) % STANCES.length;
+    say("you", `Turned the edge to face ${STANCES[world.held.stance].name}.`);
+    return;
+  }
+  unlatch();
+});
 
 let drag = null;
 canvas.addEventListener("pointerdown", (e) => {
@@ -884,6 +899,7 @@ function showLabel(found) {
           ? ` · dented ${entry.dentMm < 1 ? entry.dentMm.toFixed(2) : entry.dentMm.toFixed(1)} mm`
             + ` (drawn deeper so you can see it)` : "")
       + ` · ${found.distance_m.toFixed(2)} m away`
+      + (bladeFor(found.name) ? " · has an edge: click to take it by the grip" : "")
     : "";
   cross.classList.toggle("on", !entry?.anchored);
 }
@@ -967,6 +983,22 @@ async function pickUp() {
     return;
   }
   try {
+    // A thing with an edge is taken by its grip and held the way a blade is:
+    // the hand drives the grip with bounded force and turns it with bounded
+    // torque, and whatever it meets can slow it, turn it or stop it.
+    const blade = bladeFor(name);
+    if (blade && entry) {
+      await act("wield", { name });
+      const reach = clamp(world.aim.distance_m, 0.45, 1.1);
+      world.held = Object.assign({ name, blade, distance: reach },
+                                 takeHold(camera, entry, blade, reach));
+      $("crosshair").classList.add("holding");
+      $("label").hidden = true;
+      remember(`took up the ${name} by its grip`);
+      say("you", `Took up ${name} by the grip, its edge facing ${STANCES[0].name}. Turn to`
+        + ` swing it; right-click turns the edge.`);
+      return;
+    }
     await act("grab", { name });
     world.held = { name, distance: clamp(world.aim.distance_m, 0.6, 4.0) };
     // Where the hand is, relative to where the view says it is.
@@ -1433,21 +1465,26 @@ async function tick() {
     // 0.5 ms, so moving the hand in its own call pays the transport twice to do
     // one frame's work -- which halved the frame rate for as long as you were
     // carrying anything, which is the whole of pushing a gate open.
-    let hand = null;
-    if (world.held) {
+    let hand = null, hand_q = null;
+    const now = performance.now();
+    const elapsed = world.lastTick ? (now - world.lastTick) / 1000 : LIVE_DT;
+    world.lastTick = now;
+    if (world.held && world.held.blade) {
+      // A blade in hand: where the grip should be and which way the blade
+      // should face, from the view and the stance.
+      ({ hand, hand_q } = handTarget(camera, world.held.blade, world.held, elapsed));
+    } else if (world.held) {
       const dir = forwardVector();
       const p = camera.position.clone().add(dir.multiplyScalar(world.held.distance));
       if (world.held.offset) p.add(world.held.offset);
       hand = [p.x, p.y, p.z];
     }
-    const now = performance.now();
-    const elapsed = world.lastTick ? (now - world.lastTick) / 1000 : LIVE_DT;
-    world.lastTick = now;
     const steps = clamp(Math.round(elapsed / LIVE_DT), 1, MAX_STEPS);
     const asked = performance.now();
-    let state = await act("step", hand
-      ? { dt: LIVE_DT, n: steps, moved: true, hand }
-      : { dt: LIVE_DT, n: steps, moved: true });
+    const ask = { dt: LIVE_DT, n: steps, moved: true };
+    if (hand) ask.hand = hand;
+    if (hand_q) ask.hand_q = hand_q;
+    let state = await act("step", ask);
     trace.ticks.push(+(performance.now() - asked).toFixed(1));
     // Roughly, and without stringifying it twice: bodies are what a reply is
     // made of, and they are all about the same size.
@@ -1480,8 +1517,16 @@ async function tick() {
       const hit = (state.impacts || []).filter((i) => i.struck === name)
         .sort((a, b) => b.closing_speed_m_s - a.closing_speed_m_s)[0];
       if (hit) world.why.set(name, hit);
-      $("panel-state").textContent =
-        `${name} was hit hard enough to break — working it out…`;
+      // Offered because of what it is carrying rather than a blow -- a plank
+      // notched beside its load, say. Said as that, not as a hit.
+      const sagging = hit ? null : (state.overloaded || []).find((o) => o.name === name);
+      if (sagging) {
+        say("world", `${name} is carrying more than it can hold up: `
+          + `${Math.round(sagging.stress_mpa)} MPa where it can take ${Math.round(sagging.holds_mpa)}.`);
+      }
+      $("panel-state").textContent = sagging
+        ? `${name} is overloaded — working out whether it gives…`
+        : `${name} was hit hard enough to break — working it out…`;
       await act("fracture", { name, wait: false });
     }
     // The answer to one started earlier.
@@ -1513,13 +1558,17 @@ async function tick() {
     draw(state);
     drawRopes();
     drawHeat(state.heat);
+    narrateCuts(state.cuts, say, remember);
     if (state.joints) {
         const wasAttached = new Map(world.joints.map((p) => [p.id, p.attached]));
         for (const pin of state.joints) {
           if (wasAttached.get(pin.id) && !pin.attached) {
             if (pin.kind === "link" || pin.kind === "pulley") {
               const load = pin.tension_n ? ` at ${Math.round(pin.tension_n)} N` : "";
-              say("world", `the rope from ${pin.a} to ${pin.b} parted${load} —`
+              // A rope that can never part under load, and still came off, was
+              // cut -- saying it "parted, rated for 0 N" says the wrong thing.
+              if (!(pin.breaks_at_n > 0)) say("world", `the rope from ${pin.a} to ${pin.b} was cut through.`);
+              else say("world", `the rope from ${pin.a} to ${pin.b} parted${load} —`
                 + ` it was rated for ${Math.round(pin.breaks_at_n || 0)} N.`);
               remember(`the rope to ${pin.b} parted`);
               continue;
@@ -1901,6 +1950,13 @@ async function open() {
     // not swing reads as broken physics rather than as a pin in the wrong place.
     if (data.joint_problems && data.joint_problems.length)
       say("bad", "Some joints would not hang: " + data.joint_problems.join("; "));
+    const edged = (data.blades || []).map((b) => b.body);
+    if (edged.length) {
+      say("world", `${edged.join(", ")} ${edged.length > 1 ? "have edges" : "has an edge"}.`
+        + ` Click it to take it by the grip; turn to swing it, and right-click to turn the`
+        + ` edge (left, down, right, up). It cuts what its edge meets hard enough, and`
+        + ` nothing else.`);
+    }
   } catch (error) {
     world.openError = String(error.message || error);
     $("panel-state").textContent = `Could not open the room: ${world.openError}`;

@@ -579,6 +579,18 @@ def _rebuild(entry: dict[str, Any], scene: dict[str, Any], world_id: str,
         record["live"] = answer["joint"]
         kept.append(record)
     entry["joints"] = kept
+    # And the edges, on the bodies now standing there (see tool_blade). One
+    # that will not go on is dropped and said, like a joint.
+    blades = list(scene.get("blades") or [])
+    if blades:
+        if fresh is None:
+            lost += [f"the edge on {b['body']}: the world is empty" for b in blades]
+            entry["scene"] = {k: v for k, v in scene.items() if k != "blades"}
+        else:
+            armed, dropped = _arm_blades(fresh, blades)
+            lost += dropped
+            if dropped:
+                entry["scene"] = dict(scene, blades=armed)
     return lost
 
 
@@ -634,11 +646,17 @@ def tool_remove_object(args: dict[str, Any]) -> dict[str, Any]:
                if h.get("target") == name or h.get("target") in gone]
     block["gas_regions"] = [r for r in block.get("gas_regions", []) if r not in regions]
     block["heaters"] = [h for h in block.get("heaters", []) if h not in heaters]
-    scene = _with_thermo(dict(entry["scene"], bodies=kept), block)
+    # And an edge on it.
+    edges = [b for b in entry["scene"].get("blades") or [] if b.get("body") == name]
+    scene = _with_thermo(dict(entry["scene"], bodies=kept,
+                              blades=[b for b in entry["scene"].get("blades") or []
+                                      if b.get("body") != name]), block)
     lost = _rebuild(entry, scene, world_id, joints)
     answer: dict[str, Any] = {"removed": name, "objects": _describe(entry["world"])}
     if held:
         answer["joints_removed_with_it"] = [_joint_words(r) for r in held]
+    if edges:
+        answer["edge_removed_with_it"] = f"the edge on {name}"
     if regions or heaters:
         answer["heat_removed_with_it"] = ([f"gas region {r['name']}" for r in regions] +
                                           [f"heater on {h['target']}" for h in heaters])
@@ -693,6 +711,7 @@ def tool_clear_world(args: dict[str, Any]) -> dict[str, Any]:
     old = entry.get("world")
     scene = dict(entry["scene"], bodies=[])
     scene.pop("thermo", None)
+    scene.pop("blades", None)
     entry["scene"] = scene
     entry["joints"] = []
     entry["world"] = None
@@ -1219,6 +1238,430 @@ def tool_thermal_state(args: dict[str, Any]) -> dict[str, Any]:
     return said
 
 
+# ---------------------------------------------------------------------------
+# Blades (docs/cutting-model.md)
+# ---------------------------------------------------------------------------
+#
+# An edge is declared on a body that already exists, like a pin, so it is kept
+# the way a pin is kept: in the scene document, where a rebuild puts it back
+# (_rebuild) and the playground's room is opened with it. In the BODY's own
+# frame, because the body may have been run, knocked over or moved since it was
+# built, and an edge written down in world metres would be left behind in
+# mid-air when the world is opened again.
+
+def _qmul(a: list[float], b: list[float]) -> list[float]:
+    aw, ax, ay, az = a
+    bw, bx, by, bz = b
+    return [aw * bw - ax * bx - ay * by - az * bz, aw * bx + ax * bw + ay * bz - az * by,
+            aw * by - ax * bz + ay * bw + az * bx, aw * bz + ax * by - ay * bx + az * bw]
+
+
+def _qconj(q: list[float]) -> list[float]:
+    return [q[0], -q[1], -q[2], -q[3]]
+
+
+def _qrot(q: list[float], v: list[float]) -> list[float]:
+    return _qmul(_qmul(q, [0.0] + [float(x) for x in v]), _qconj(q))[1:]
+
+
+def _qfrom(m: list[list[float]]) -> list[float]:
+    trace = m[0][0] + m[1][1] + m[2][2]
+    if trace > 0:
+        s = 0.5 / math.sqrt(trace + 1.0)
+        q = [0.25 / s, (m[2][1] - m[1][2]) * s, (m[0][2] - m[2][0]) * s, (m[1][0] - m[0][1]) * s]
+    elif m[0][0] > m[1][1] and m[0][0] > m[2][2]:
+        s = 2.0 * math.sqrt(1.0 + m[0][0] - m[1][1] - m[2][2])
+        q = [(m[2][1] - m[1][2]) / s, 0.25 * s, (m[0][1] + m[1][0]) / s, (m[0][2] + m[2][0]) / s]
+    elif m[1][1] > m[2][2]:
+        s = 2.0 * math.sqrt(1.0 + m[1][1] - m[0][0] - m[2][2])
+        q = [(m[0][2] - m[2][0]) / s, (m[0][1] + m[1][0]) / s, 0.25 * s, (m[1][2] + m[2][1]) / s]
+    else:
+        s = 2.0 * math.sqrt(1.0 + m[2][2] - m[0][0] - m[1][1])
+        q = [(m[1][0] - m[0][1]) / s, (m[0][2] + m[2][0]) / s, (m[1][2] + m[2][1]) / s, 0.25 * s]
+    size = math.sqrt(sum(x * x for x in q))
+    return [x / size for x in q]
+
+
+def _vdot(a: list[float], b: list[float]) -> float:
+    return sum(x * y for x, y in zip(a, b))
+
+
+def _vcross(a: list[float], b: list[float]) -> list[float]:
+    return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+
+
+def _vunit(v: list[float], what: str) -> list[float]:
+    size = math.sqrt(_vdot(v, v))
+    if not size > 1e-9:
+        raise Refused(f"{what} has no direction")
+    return [x / size for x in v]
+
+
+def _to_body(body: banjo.Body, point: Any) -> list[float]:
+    return _qrot(_qconj(list(body.orientation_wxyz)),
+                 [float(p) - c for p, c in zip(point, body.position_m)])
+
+
+def _from_body(body: banjo.Body, local: Any) -> list[float]:
+    return [c + r for c, r in zip(body.position_m, _qrot(list(body.orientation_wxyz), local))]
+
+
+def _blade_record(world: banjo.World, blade_id: int) -> dict[str, Any] | None:
+    """A blade as its body carries it: what a rebuild and the room need."""
+    blade = next((b for b in world.blades() if b.id == blade_id), None)
+    body = world.body(blade.body) if blade is not None else None
+    if blade is None or body is None:
+        return None
+    inverse = _qconj(list(body.orientation_wxyz))
+    return {"body": blade.body,
+            "heel_local_m": [round(v, 6) for v in _to_body(body, blade.heel_m)],
+            "tip_local_m": [round(v, 6) for v in _to_body(body, blade.tip_m)],
+            "facing_local": [round(v, 6) for v in _qrot(inverse, list(blade.facing))],
+            "grip_local_m": [round(v, 6) for v in _to_body(body, blade.grip_m)],
+            "thickness_m": blade.thickness_m, "edge_radius_m": blade.edge_radius_m,
+            "bevel_deg": blade.bevel_deg}
+
+
+def _arm_blades(world: banjo.World,
+                blades: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:
+    """Put every kept edge back on its body, where that body is now."""
+    kept: list[dict[str, Any]] = []
+    lost: list[str] = []
+    for record in blades:
+        body = world.body(str(record.get("body", "")))
+        if body is None:
+            lost.append(f"the edge on {record.get('body')}: there is nothing called that now")
+            continue
+        try:
+            world.blade(record["body"], _from_body(body, record["heel_local_m"]),
+                        _from_body(body, record["tip_local_m"]),
+                        _qrot(list(body.orientation_wxyz), record["facing_local"]),
+                        float(record["thickness_m"]), float(record["edge_radius_m"]),
+                        float(record["bevel_deg"]), _from_body(body, record["grip_local_m"]))
+        except banjo.BanjoError as error:
+            lost.append(f"the edge on {record['body']}: {error}")
+            continue
+        kept.append(record)
+    return kept, lost
+
+
+def _blade_axes(world: banjo.World, blade: banjo.Blade) -> tuple[list[float], list[float]]:
+    """The edge's direction and the way it faces, in its body's own frame."""
+    body = world.body(blade.body)
+    if body is None:
+        raise Refused(f"{blade.body} is not in the world")
+    inverse = _qconj(list(body.orientation_wxyz))
+    along = _vunit(_qrot(inverse, [t - h for t, h in zip(blade.tip_m, blade.heel_m)]), "the edge")
+    faced = _qrot(inverse, list(blade.facing))
+    return along, _vunit([f - _vdot(faced, along) * a for f, a in zip(faced, along)],
+                         "the edge's facing")
+
+
+def _turn_for(axes: tuple[list[float], list[float]], pointing: Any, edge_facing: Any) -> list[float]:
+    """The orientation that points the blade along `pointing`, edge facing `edge_facing`."""
+    along, facing = axes
+    want_along = _vunit([float(v) for v in pointing], "pointing")
+    wish = [float(v) for v in edge_facing]
+    across = [w - _vdot(wish, want_along) * a for w, a in zip(wish, want_along)]
+    if math.sqrt(_vdot(across, across)) < 1e-6:
+        raise Refused("edge_facing must be across the blade, not along pointing: an edge faces "
+                      "sideways from the line of the blade")
+    want_facing = _vunit(across, "edge_facing")
+    have = [along, facing, _vcross(along, facing)]
+    want = [want_along, want_facing, _vcross(want_along, want_facing)]
+    return _qfrom([[sum(want[k][r] * have[k][c] for k in range(3)) for c in range(3)]
+                   for r in range(3)])
+
+
+def _stance(world: banjo.World, blade: banjo.Blade, pointing: Any, edge_facing: Any) -> list[float]:
+    return _turn_for(_blade_axes(world, blade), _triple(pointing, "pointing", -1e6, 1e6),
+                     _triple(edge_facing, "edge_facing", -1e6, 1e6))
+
+
+def _swing_round(entry: dict[str, Any], world: banjo.World, held: str,
+                 args: dict[str, Any]) -> dict[str, Any]:
+    """A swing through a point, round a shoulder (see tool_swing)."""
+    import time as clock
+    blade = next((b for b in world.blades() if b.body == held and b.attached), None)
+    if blade is None:
+        raise Refused(f"{held} has no edge to swing; give it one with `blade`")
+    through = _triple(args.get("through_m"), "through_m", -50.0, 50.0)
+    if args.get("pointing") is None or args.get("edge_facing") is None:
+        raise Refused("a swing through a point needs pointing (which way the blade points: "
+                      "through what is to be cut) and edge_facing (the way the edge moves)")
+    pointing = _vunit(_triple(args["pointing"], "pointing", -1e6, 1e6), "pointing")
+    wish = _triple(args["edge_facing"], "edge_facing", -1e6, 1e6)
+    across = [w - _vdot(wish, pointing) * p for w, p in zip(wish, pointing)]
+    if math.sqrt(_vdot(across, across)) < 1e-6:
+        raise Refused("edge_facing must be across the blade, not along pointing")
+    facing_way = _vunit(across, "edge_facing")
+    seconds = _number(args.get("seconds", 0.13), "seconds", 0.05, 2.0)
+    settle = _number(args.get("then_s", 1.0), "then_s", 0.0, 5.0)
+    axes = _blade_axes(world, blade)
+    body = world.body(held)
+    grip_local = _to_body(body, blade.grip_m)
+    to_middle = [(h + t) / 2.0 - g for h, t, g in zip(_to_body(body, blade.heel_m),
+                                                       _to_body(body, blade.tip_m), grip_local)]
+    to_point = [t - g for t, g in zip(_to_body(body, blade.tip_m), grip_local)]
+    # Which way the swing goes: the way the edge faces, if it leads; the flat
+    # leads when the edge faces up or down, and then the swing goes the way the
+    # edge would have faced had it been turned to lead.
+    going = facing_way if abs(_vdot(facing_way, [0.0, 1.0, 0.0])) < 0.7 else \
+        _vunit(_vcross([0.0, 1.0, 0.0], pointing), "the swing's direction")
+    around = _vunit(_vcross(pointing, going), "the swing's axis")
+
+    def turned(v: list[float], angle: float) -> list[float]:
+        c, s = math.cos(angle), math.sin(angle)
+        k_cross = _vcross(around, v)
+        k_dot = _vdot(around, v)
+        return [v[i] * c + k_cross[i] * s + around[i] * k_dot * (1.0 - c) for i in range(3)]
+
+    reach = _vdot(_qrot(_turn_for(axes, pointing, facing_way), to_middle), pointing)
+    shoulder = [t - (0.5 + reach) * p for t, p in zip(through, pointing)]
+
+    def pose(angle: float) -> tuple[list[float], list[float]]:
+        out = turned(pointing, angle)
+        turn = _turn_for(axes, out, turned(facing_way, angle))
+        edge_at = [s + (0.5 + reach) * o for s, o in zip(shoulder, out)]
+        return [e - r for e, r in zip(edge_at, _qrot(turn, to_middle))], turn
+
+    wide = math.radians(50.0)
+    ready, turn = pose(-wide)
+    events: list[dict[str, Any]] = []
+    world.forget_cuts()
+    began = clock.perf_counter()
+
+    def go(a: list[float], b: list[float], turn_to: list[float], s: float) -> list[float]:
+        world.aim_held(turn_to)
+        steps = max(1, int(round(s * 240.0)))
+        for i in range(1, steps + 1):
+            world.move_held([a[k] + (b[k] - a[k]) * i / steps for k in range(3)])
+            _step_answering(world, events)
+        return b
+
+    def along(p: list[float]) -> float:
+        return _vdot(p, pointing)
+
+    def at_depth(p: list[float], depth: float) -> list[float]:
+        return [x + (depth - along(p)) * q for x, q in zip(p, pointing)]
+
+    # Up off whatever it rests on; back until the point is 0.15 m short of the
+    # line it will swing through; round to the side; in; then the swing.
+    start = list(blade.grip_m)
+    here = go(start, [start[0], start[1] + 0.3, start[2]], turn, 0.5)
+    clear = along(through) - 0.15 - _vdot(_qrot(turn, to_point), pointing)
+    depth = min(along(here), clear)
+    here = go(here, at_depth(here, depth), turn, 0.6)
+    here = go(here, at_depth(ready, depth), turn, 0.6)
+    here = go(here, ready, turn, 0.5)
+    here = go(here, here, turn, 0.5)
+    steps = max(1, int(round(seconds * 240.0)))
+    for i in range(1, steps + 1):
+        here, turn = pose(-wide + 2.0 * wide * i / steps)
+        world.aim_held(turn)
+        world.move_held(here)
+        _step_answering(world, events)
+    here = go(here, here, turn, settle)
+    cuts = world.cuts()
+    cut_through = [c for c in cuts if c.separated or c.links > 0]
+    entry["story"].append(
+        f"swung {held} through [{through[0]:.2f}, {through[1]:.2f}, {through[2]:.2f}]"
+        + (": cut through " + ", ".join(sorted({c.target for c in cut_through}))
+           if cut_through else ""))
+    return {"swung": held, "through_m": through, "over_s": round(seconds, 3),
+            "cuts": [_cut_said(cut) for cut in cuts] or "the edge met nothing on the way",
+            "what_broke": events or None,
+            "objects": _describe(world),
+            "computing_took_s": round(clock.perf_counter() - began, 2)}
+
+
+def _cut_said(cut: banjo.Cut) -> dict[str, Any]:
+    """One meeting between an edge and something, in words a model can use."""
+    said: dict[str, Any] = {
+        "blade": cut.blade, "met": cut.target, "kind": cut.kind,
+        "at_s": round(cut.at_s, 3),
+        "speed_m_s": round(cut.speed_m_s, 2),
+        "into_m_s": round(cut.into_m_s, 2),
+        "along_edge_m_s": round(cut.along_m_s, 2),
+        "across_flats_m_s": round(cut.across_m_s, 2),
+        "still_touching": cut.open}
+    if cut.kind in ("edge", "slice", "press", "glancing") and cut.resistance_j_m2 > 0.0:
+        said.update({
+            "resistance_j_m2": round(cut.resistance_j_m2, 1),
+            "cut_mm2": round(cut.area_m2 * 1e6, 1),
+            "work_j": round(cut.work_j, 3),
+            "bonds_severed": cut.bonds,
+            "rope_links_cut": cut.links,
+            "came_apart": cut.separated,
+            "pieces": cut.pieces})
+    return said
+
+
+def _blade_said(blade: banjo.Blade) -> dict[str, Any]:
+    return {"blade": blade.id, "body": blade.body, "material": blade.material,
+            "heel_m": [round(v, 4) for v in blade.heel_m],
+            "tip_m": [round(v, 4) for v in blade.tip_m],
+            "facing": [round(v, 4) for v in blade.facing],
+            "grip_m": [round(v, 4) for v in blade.grip_m],
+            "thickness_mm": round(blade.thickness_m * 1000.0, 2),
+            "edge_radius_mm": round(blade.edge_radius_m * 1000.0, 4),
+            "bevel_deg": round(blade.bevel_deg, 1),
+            "cut_mm2": round(blade.cut_area_m2 * 1e6, 1),
+            "cut_work_j": round(blade.cut_work_j, 3),
+            "cutting": blade.cutting or None,
+            "attached": blade.attached}
+
+
+def tool_blade(args: dict[str, Any]) -> dict[str, Any]:
+    """Give a body an edge. docs/cutting-model.md is the declared model."""
+    world_id = str(args.get("world_id"))
+    entry = _world(world_id)
+    world: banjo.World = _live(entry)
+    name = str(args.get("body", ""))
+    heel = _triple(args.get("heel_m"), "heel_m", -200.0, 200.0)
+    try:
+        blade = world.blade(
+            name, heel,
+            _triple(args.get("tip_m"), "tip_m", -200.0, 200.0),
+            _triple(args.get("facing"), "facing", -1e6, 1e6),
+            _number(args.get("thickness_m", 0.01), "thickness_m", 0.0005, 0.5),
+            _number(args.get("edge_radius_m", 0.0002), "edge_radius_m", 1e-6, 0.01),
+            _number(args.get("bevel_deg", 30.0), "bevel_deg", 1.0, 179.0),
+            _triple(args.get("grip_m") or heel, "grip_m", -200.0, 200.0))
+    except banjo.BanjoError as error:
+        raise Refused(str(error))
+    # Kept with the body, so a rebuild puts it back and the room is opened with it.
+    record = _blade_record(world, blade)
+    if record is not None:
+        scene = dict(entry["scene"], blades=list(entry["scene"].get("blades") or []) + [record])
+        check = entry.get("check")
+        if check is not None:
+            try:
+                check(scene, entry.get("joints", []))
+            except ValueError as problem:
+                # The world has the edge and the document must not: open it again
+                # from the document as it was.
+                _rebuild(entry, entry["scene"], world_id)
+                raise Refused(str(problem)) from None
+        entry["scene"] = scene
+    entry["story"].append(f"gave {name} an edge")
+    return {"blade": blade,
+            "note": f"{name} has an edge. It cuts what it bites into with "
+                    "the edge leading and pressed in, at a cost per square metre set by "
+                    "the target's own material; its flat and its point are ordinary "
+                    "contacts. Take hold of it with `wield` and move it with `swing`."}
+
+
+def tool_blades(args: dict[str, Any]) -> dict[str, Any]:
+    world: banjo.World = _live(_world(args.get("world_id")))
+    blades = world.blades()
+    return {"blades": [_blade_said(blade) for blade in blades],
+            "note": "no body in this world has an edge" if not blades else
+                    "cut_work_j is measured from the solver's own friction impulses; "
+                    "cut_mm2 is the area that bought at each material's resistance"}
+
+
+def tool_cuts(args: dict[str, Any]) -> dict[str, Any]:
+    world: banjo.World = _live(_world(args.get("world_id")))
+    cuts = world.cuts()
+    return {"cuts": [_cut_said(cut) for cut in cuts],
+            "note": "nothing has met an edge" if not cuts else
+                    "every meeting is listed, including the ones that cut nothing and why"}
+
+
+def tool_wield(args: dict[str, Any]) -> dict[str, Any]:
+    """Take hold of a body the way a person holds a sword."""
+    entry = _world(args.get("world_id"))
+    world: banjo.World = _live(entry)
+    name = str(args.get("name", ""))
+    grip = args.get("grip_m")
+    if grip is None:
+        blade = next((b for b in world.blades() if b.body == name and b.attached), None)
+        if blade is None:
+            raise Refused(f"give grip_m, or give {name!r} an edge with `blade` first -- a "
+                          f"blade knows where it is held")
+        grip = list(blade.grip_m)
+    grip = _triple(grip, "grip_m", -200.0, 200.0)
+    try:
+        world.wield(name, grip)
+    except banjo.BanjoError as error:
+        raise Refused(str(error))
+    entry["story"].append(f"took hold of {name}")
+    return {"wielding": name, "grip_m": [round(v, 4) for v in grip],
+            "note": "held at the grip by a hand with a bounded force (800 N) and a "
+                    "bounded torque (60 N m). Move it with `swing`: the hand pulls "
+                    "towards where it is sent and what the blade meets can slow it, "
+                    "turn it aside or stop it. `let_go` lets go."}
+
+
+def _step_answering(world: banjo.World, events: list[dict[str, Any]]) -> None:
+    """One step, settling anything that breaks on the way -- as `run` does."""
+    if world.step(1.0 / 240.0) != banjo.BREAK_PENDING:
+        return
+    for name in world.breakable():
+        pieces = world.fracture(name)
+        if world.last_outcome == "broke":
+            events.append({"what": "broke", "object": name, "into_pieces": pieces})
+
+
+def tool_swing(args: dict[str, Any]) -> dict[str, Any]:
+    """Move the hand along a straight line, turning if asked, and report the cuts."""
+    import time as clock
+    entry = _world(args.get("world_id"))
+    world: banjo.World = _live(entry)
+    held = world.held
+    if not held:
+        raise Refused("nothing is held. Call wield first.")
+    if args.get("through_m") is not None:
+        return _swing_round(entry, world, held, args)
+    if args.get("to_m") is None:
+        raise Refused("say where: through_m for a swing (the middle of the edge passes "
+                      "through it), or to_m to move the grip in a straight line")
+    to = _triple(args.get("to_m"), "to_m", -50.0, 50.0)
+    seconds = _number(args.get("seconds", 0.25), "seconds", 0.02, 5.0)
+    settle = _number(args.get("then_s", 1.0), "then_s", 0.0, 5.0)
+    facing = args.get("facing_wxyz")
+    blade = next((b for b in world.blades() if b.body == held and b.attached), None)
+    pointing, edge_facing = args.get("pointing"), args.get("edge_facing")
+    if (pointing is None) != (edge_facing is None):
+        raise Refused("give pointing and edge_facing together: which way the blade points "
+                      "from the grip, and which way its edge faces")
+    if pointing is not None:
+        if blade is None:
+            raise Refused(f"{held} has no edge to aim; give it one with `blade`")
+        facing = _stance(world, blade, pointing, edge_facing)
+    if facing is not None:
+        if not isinstance(facing, (list, tuple)) or len(facing) != 4:
+            raise Refused("facing_wxyz must be a quaternion of four numbers, w first")
+        world.aim_held([_number(v, "facing_wxyz", -1.0, 1.0) for v in facing])
+    body = world.body(held)
+    start = list(blade.grip_m) if blade else list(body.position_m if body else to)
+    world.forget_cuts()
+    events: list[dict[str, Any]] = []
+    began = clock.perf_counter()
+    steps = max(1, int(round(seconds * 240.0)))
+    for i in range(1, steps + 1):
+        part = i / steps
+        world.move_held([start[k] + part * (to[k] - start[k]) for k in range(3)])
+        _step_answering(world, events)
+    for _ in range(int(round(settle * 240.0))):
+        if clock.perf_counter() - began > MAX_WALL_S:
+            break
+        _step_answering(world, events)
+    cuts = world.cuts()
+    cut_through = [c for c in cuts if c.separated or c.links > 0]
+    entry["story"].append(
+        f"swung {held} to [{to[0]:.2f}, {to[1]:.2f}, {to[2]:.2f}]"
+        + (": cut through " + ", ".join(sorted({c.target for c in cut_through}))
+           if cut_through else ""))
+    return {"swung": held, "to_m": to, "over_s": round(seconds, 3),
+            "cuts": [_cut_said(cut) for cut in cuts] or
+                    "the edge met nothing on the way",
+            "what_broke": events or None,
+            "objects": _describe(world),
+            "computing_took_s": round(clock.perf_counter() - began, 2)}
+
+
 def tool_close_world(args: dict[str, Any]) -> dict[str, Any]:
     world_id = str(args.get("world_id"))
     entry = _world(world_id)
@@ -1647,6 +2090,93 @@ TOOLS = [
                     "the energy ledger. Call run first: this reads the world as it stands.",
      "inputSchema": {"type": "object", "required": ["world_id"],
                      "properties": {"world_id": {"type": "string"}}}},
+    {"name": "blade",
+     "description": "Give a body an EDGE, so it cuts. There is no cutting power: what "
+                    "resists the edge is the target's own fracture energy and hardness, "
+                    "R = G + H x (2 x edge radius) per square metre, applied in the "
+                    "solver as friction. So an edge cuts only where it bites -- edge "
+                    "leading, steeper than its own bevel, pressed in -- and only as far "
+                    "as the push or the swing can pay for. A partial cut stays partial; "
+                    "a cut through makes pieces with their own mass and momentum that "
+                    "keep whatever joints they hold. The flat and the point are ordinary "
+                    "contacts. Glass, ceramic, ice and concrete are brittle and are not "
+                    "cut, and nothing as hard as the blade is. Ropes that can be cut are "
+                    "runs of small bodies tied with `tie`. Points are where they are in the "
+                    "world now; the edge is kept with its body from then on, through the "
+                    "world being opened again, and the person's room has it.",
+     "inputSchema": {"type": "object",
+                     "required": ["world_id", "body", "heel_m", "tip_m", "facing"],
+                     "properties": {
+         "world_id": {"type": "string"},
+         "body": {"type": "string", "description": "The body that carries the edge."},
+         "heel_m": dict(VECTOR, description="Where the edge starts, on the body's surface."),
+         "tip_m": dict(VECTOR, description="Where it ends: the point."),
+         "facing": dict(VECTOR, description="Which way the edge faces, out of the body, "
+                                            "roughly perpendicular to the edge."),
+         "thickness_m": {"type": "number", "description": "Across the flats."},
+         "edge_radius_m": {"type": "number",
+                           "description": "How sharp: 0.0002 is a working sword edge, "
+                                          "0.00005 a keen one, 0.001 blunt."},
+         "bevel_deg": {"type": "number", "description": "Included angle of the edge, "
+                                                        "30 by default."},
+         "grip_m": dict(VECTOR, description="Where a hand holds it.")}}},
+    {"name": "blades",
+     "description": "Every edge in the world: where it is, how sharp, what it has cut "
+                    "and what that cost, and what it is in right now.",
+     "inputSchema": {"type": "object", "required": ["world_id"],
+                     "properties": {"world_id": {"type": "string"}}}},
+    {"name": "cuts",
+     "description": "Every meeting between an edge and something since the last swing, "
+                    "INCLUDING the ones that cut nothing, with what kind each was: "
+                    "edge, slice or press (it bit), glancing, flat or point (an "
+                    "ordinary contact), blunt (the target is as hard as the blade) or "
+                    "brittle (it cracks instead).",
+     "inputSchema": {"type": "object", "required": ["world_id"],
+                     "properties": {"world_id": {"type": "string"}}}},
+    {"name": "wield",
+     "description": "Take hold of a body the way a person holds a sword: at its grip, "
+                    "with a hand whose force (800 N) and torque (60 N m) are bounded, so "
+                    "what it meets can slow it or stop it. Not `pick_up`, which carries "
+                    "a loose thing exactly where it is put. grip_m defaults to the "
+                    "blade's grip.",
+     "inputSchema": {"type": "object", "required": ["world_id", "name"],
+                     "properties": {"world_id": {"type": "string"},
+                                    "name": {"type": "string"},
+                                    "grip_m": VECTOR}}},
+    {"name": "swing",
+     "description": "Swing the wielded blade, as a person does, and report every edge "
+                    "contact. Give `through_m`, a point the middle of the edge should pass "
+                    "through -- the middle of a rope segment, say -- with `pointing`, the way "
+                    "the blade points (THROUGH what is to be cut), and `edge_facing`, the way "
+                    "the edge faces: across the swing to lead with the edge and cut, or up "
+                    "or down to lead with the flat. The hand takes the blade up, back clear "
+                    "and round to one side, then swings it round a shoulder half a metre "
+                    "behind the grip through 100 degrees in `seconds` (0.13 by default), and "
+                    "lets the world run `then_s` more. Or give `to_m` to move the grip in a "
+                    "straight line, which is a press or a push, not a swing. The hand has "
+                    "800 N and 60 N m and swings as fast as that allows. This is the copy "
+                    "of the world you are building in -- the person swings for themselves "
+                    "in theirs.",
+     "inputSchema": {"type": "object", "required": ["world_id"],
+                     "properties": {
+         "world_id": {"type": "string"},
+         "through_m": dict(VECTOR, description="A point the middle of the edge passes "
+                                               "through: a swing."),
+         "to_m": dict(VECTOR, description="Instead of through_m: where the grip should "
+                                          "end up, moved in a straight line."),
+         "seconds": {"type": "number", "description": "How long the swing, or the move, "
+                                                      "takes."},
+         "then_s": {"type": "number", "description": "How long to let things settle "
+                                                     "after. 1 by default."},
+         "pointing": dict(VECTOR, description="Which way the blade should point from "
+                                              "the grip, in the world, like [0, 0, -1]."),
+         "edge_facing": dict(VECTOR, description="Which way its edge should face, like "
+                                                 "[-1, 0, 0]: the way the swing goes, for "
+                                                 "a cut; up or down, for the flat."),
+         "facing_wxyz": {"type": "array", "items": {"type": "number"},
+                         "minItems": 4, "maxItems": 4,
+                         "description": "Instead of pointing and edge_facing: which way the "
+                                        "held body should face, as a quaternion, w first."}}}},
     {"name": "close_world",
      "description": "Close a world and free it. Each open world is a physics engine "
                     "with its scene resident in it.",
@@ -1764,7 +2294,37 @@ def _joint_warnings(entry: dict[str, Any], tool: str, args: dict[str, Any]) -> l
         if args.get("at_a_m") is not None and towards_a is not None:
             said += _leverage_warnings(entry, str(args.get("a", "")), args["at_a_m"],
                                        towards_a, what)
+    if tool in ("tie", "spring"):
+        # Made off in the air, an end rides on its body like the tip of a stiff
+        # arm that is not there. A model hung a weight 0.24 m below the end of
+        # its rope and tied it from under the last segment, and a blow to the
+        # rope flung the weight about on that arm.
+        what = "rope" if tool == "tie" else "rod"
+        for end, name in (("at_a_m", args.get("a")), ("at_b_m", args.get("b"))):
+            if args.get(end) is None:
+                continue
+            off = _off_body(entry, str(name or ""), args[end])
+            if off is not None and off > cell:
+                said.append(f"{end} is {off:.2f} m outside {name}. A {what} is made off ON "
+                            f"what it holds, at a point in its matter: made off in the air, "
+                            f"the point rides on {name} like the end of a stiff arm that is "
+                            f"not there. Put the point on {name} -- for a rope of segments, "
+                            f"0.02 m either side of the join, with the bodies touching.")
     return said
+
+
+def _off_body(entry: dict[str, Any], name: str, point: Any) -> float | None:
+    """How far a point lies outside a body's box, in metres: 0 on or in it."""
+    world = entry.get("world")
+    try:
+        body = world.body(name) if world is not None else None
+    except banjo.BanjoError:
+        body = None
+    if body is None:
+        return None
+    local = _to_body(body, [float(v) for v in point])
+    outside = [max(0.0, abs(x) - d / 2.0) for x, d in zip(local, body.dimensions_m)]
+    return math.sqrt(sum(o * o for o in outside))
 
 
 # The calls that make joints, unwrapped: what a rebuild uses to hang a
@@ -1839,6 +2399,11 @@ HANDLERS = {
     "enclose_gas": tool_enclose_gas,
     "heat": tool_heat,
     "thermal_state": tool_thermal_state,
+    "blade": tool_blade,
+    "blades": tool_blades,
+    "cuts": tool_cuts,
+    "wield": tool_wield,
+    "swing": tool_swing,
     "close_world": tool_close_world,
 }
 

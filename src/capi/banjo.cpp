@@ -21,7 +21,9 @@
 
 using banjo::Vec3;
 using banjo::fastlattice::BackendKind;
+using banjo::fastlattice::LiveBlade;
 using banjo::fastlattice::LiveBodyPose;
+using banjo::fastlattice::LiveCut;
 using banjo::fastlattice::LiveCollected;
 using banjo::fastlattice::LiveDelay;
 using banjo::fastlattice::LiveImpact;
@@ -79,6 +81,9 @@ struct banjo_world {
     std::vector<banjo::thermo::BodyHeat> heats;
     std::vector<banjo::thermo::RegionState> gases;
     std::string report;
+    // Blades and their cuts, for the same reason: names handed out point in here.
+    std::vector<LiveBlade> blades;
+    std::vector<LiveCut> cut_list;
 };
 
 namespace {
@@ -676,6 +681,153 @@ int banjo_joint_friction(banjo_world *world, unsigned joint, double friction) {
 int banjo_unhinge(banjo_world *world, unsigned joint) {
     if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
     return guarded([&] { world->world->unhinge(joint); return BANJO_OK; });
+}
+
+int banjo_make_blade(banjo_world *world, const char *body, const double heel_m[3],
+                     const double tip_m[3], const double facing[3], double thickness_m,
+                     double edge_radius_m, double bevel_deg, const double grip_m[3]) {
+    if (!world || !body || !heel_m || !tip_m || !facing || !grip_m) {
+        setError("no world, no body, or no edge"); return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        const unsigned id = world->world->blade(body, readVec(heel_m), readVec(tip_m),
+                                                readVec(facing), thickness_m, edge_radius_m,
+                                                bevel_deg, readVec(grip_m));
+        if (id == 0) {
+            setError(std::string("\"") + body + "\" cannot take that edge: " +
+                     world->world->bladeRefusal());
+            return static_cast<int>(BANJO_BAD_ARGUMENT);
+        }
+        return static_cast<int>(id);
+    });
+}
+
+int banjo_blade_count(const banjo_world *world) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        auto *mutable_world = const_cast<banjo_world *>(world);
+        mutable_world->blades = world->world->blades();
+        return static_cast<int>(mutable_world->blades.size());
+    });
+}
+
+int banjo_blades(const banjo_world *world, banjo_blade *out, int max) {
+    if (!world || (!out && max > 0) || max < 0) {
+        setError("no world or nowhere to write"); return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        auto *mutable_world = const_cast<banjo_world *>(world);
+        mutable_world->blades = world->world->blades();
+        const int count = std::min<int>(max, static_cast<int>(mutable_world->blades.size()));
+        for (int i = 0; i < count; ++i) {
+            const LiveBlade &blade = mutable_world->blades[static_cast<std::size_t>(i)];
+            banjo_blade &said = out[i];
+            said.id = blade.id;
+            said.body = blade.body.c_str();
+            said.material = blade.material.c_str();
+            writeVec(blade.heel_m, said.heel_m);
+            writeVec(blade.tip_m, said.tip_m);
+            writeVec(blade.facing, said.facing);
+            writeVec(blade.flat, said.flat);
+            writeVec(blade.grip_m, said.grip_m);
+            said.thickness_m = blade.thickness_m;
+            said.edge_radius_m = blade.edge_radius_m;
+            said.bevel_deg = blade.bevel_deg;
+            said.cut_area_m2 = blade.cut_area_m2;
+            said.cut_work_j = blade.cut_work_j;
+            said.cutting = blade.cutting.c_str();
+            said.attached = blade.attached ? 1 : 0;
+        }
+        return count;
+    });
+}
+
+int banjo_cut_count(const banjo_world *world) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        auto *mutable_world = const_cast<banjo_world *>(world);
+        mutable_world->cut_list = world->world->cuts();
+        return static_cast<int>(mutable_world->cut_list.size());
+    });
+}
+
+int banjo_cuts(const banjo_world *world, banjo_cut *out, int max) {
+    if (!world || (!out && max > 0) || max < 0) {
+        setError("no world or nowhere to write"); return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        auto *mutable_world = const_cast<banjo_world *>(world);
+        mutable_world->cut_list = world->world->cuts();
+        const int count = std::min<int>(max, static_cast<int>(mutable_world->cut_list.size()));
+        for (int i = 0; i < count; ++i) {
+            const LiveCut &cut = mutable_world->cut_list[static_cast<std::size_t>(i)];
+            banjo_cut &said = out[i];
+            said.blade = cut.blade.c_str();
+            said.target = cut.target.c_str();
+            said.kind = cut.kind.c_str();
+            said.at_s = cut.at_s;
+            said.speed_m_s = cut.speed_m_s;
+            said.into_m_s = cut.into_m_s;
+            said.along_m_s = cut.along_m_s;
+            said.across_m_s = cut.across_m_s;
+            said.resistance_j_m2 = cut.resistance_j_m2;
+            said.area_m2 = cut.area_m2;
+            said.work_j = cut.work_j;
+            said.bonds = static_cast<int>(cut.bonds);
+            said.links = static_cast<int>(cut.links);
+            said.separated = cut.separated ? 1 : 0;
+            said.pieces = static_cast<int>(cut.pieces);
+            said.open = cut.open ? 1 : 0;
+        }
+        return count;
+    });
+}
+
+int banjo_forget_cuts(banjo_world *world) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] { world->world->forgetCuts(); return BANJO_OK; });
+}
+
+int banjo_wield(banjo_world *world, const char *name, const double grip_m[3]) {
+    if (!world || !name || !grip_m) { setError("no world, no name, or no grip"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        if (world->world->wield(name, readVec(grip_m))) return BANJO_OK;
+        setError(std::string("\"") + name + "\" cannot be taken hold of: it is not in the "
+                 "scene, or it is anchored scenery");
+        return BANJO_BAD_ARGUMENT;
+    });
+}
+
+int banjo_aim_held(banjo_world *world, const double orientation_wxyz[4]) {
+    if (!world || !orientation_wxyz) { setError("no world or no orientation"); return BANJO_BAD_ARGUMENT; }
+    const double size = orientation_wxyz[0] * orientation_wxyz[0] +
+                        orientation_wxyz[1] * orientation_wxyz[1] +
+                        orientation_wxyz[2] * orientation_wxyz[2] +
+                        orientation_wxyz[3] * orientation_wxyz[3];
+    if (!(size > 1e-12) || !std::isfinite(size)) {
+        setError("an orientation is a quaternion with some length to it"); return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        world->world->aimHeld(banjo::Quat{orientation_wxyz[0], orientation_wxyz[1],
+                                          orientation_wxyz[2], orientation_wxyz[3]});
+        return BANJO_OK;
+    });
+}
+
+int banjo_hand_strength(banjo_world *world, double newtons) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    if (!(newtons >= 0.0) || !std::isfinite(newtons)) {
+        setError("hand strength is newtons, zero or more"); return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] { world->world->setHandStrength(newtons); return BANJO_OK; });
+}
+
+int banjo_hand_torque(banjo_world *world, double newton_metres) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    if (!(newton_metres >= 0.0) || !std::isfinite(newton_metres)) {
+        setError("hand torque is newton metres, zero or more"); return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] { world->world->setHandTorque(newton_metres); return BANJO_OK; });
 }
 
 int banjo_pick_ray(const banjo_world *world, const double from_m[3],

@@ -190,6 +190,22 @@ V/V0 = T/T0 to 1%.
   fuel is made or lost and every piece is as hot as the body was: measured, a
   burning plank broke into 3 pieces holding 1.2096 of 1.2096 kg and 1.06445 of
   1.06445 kg of fuel.
+- **Cutting shares it out the same way.** A blade that cuts a body in two
+  (docs/cutting-model.md) hands the pieces the body's lumps through the same
+  split, by the cells each piece took, and a heater aimed at the body, or a gas
+  region whose piston or container it was, follows the largest piece. Measured
+  (`tests/blade_thermo_tests.cpp`): a burning oak log at 945.723 K, holding
+  295.667 g of fuel in 325.234 g, pressed through by a cleaver in a 300 N hand,
+  became two halves holding 295.667 g of fuel in 325.233 g, both at 945.883 K
+  -- the log went on burning and warming while it was cut, and what burned went
+  up as gas. The ledger's residual was -2.3e-9 J before and -1.4e-9 J after, the
+  mass residual 4e-17 kg, and a second later both halves were burning, one of
+  them under the log's 5000 W heater.
+- **A refused step takes the cut back too.** The kerfs, the bonds they severed
+  and every edge's totals are restored with the chemistry, so a retried step
+  can neither burn the same fuel twice nor cut the same kerf twice: a step
+  refused with the edge half way into a burning log left the network and the
+  cut exactly as they were before it.
 - **Sweeping a body away** carries its matter out through the ledger.
 - **Carrying a burning log** takes its fire with it: the log it was beside went
   from gaining 638 W to 7 W.

@@ -62,6 +62,11 @@ broke.
 | `collect` | sweep up the loose pieces near a point and say what they were made of, by material and by weight |
 | `carried` | what has been swept up in this world so far |
 | `cast_ray` | what a ray meets first — what is above or below something, what is in the way |
+| `blade` | give a body an **edge**: where it runs, which way it faces, how thick, how sharp (a radius) and its bevel, and where it is held. There is no cutting power: what resists the edge is the target's own fracture energy and hardness. [docs/cutting-model.md](../cutting-model.md) |
+| `blades` | every edge, what it has cut and what that cost |
+| `wield` | take hold of a body by its grip with a hand whose force (800 N) and torque (60 N m) are bounded — not `pick_up`, which places a thing exactly |
+| `swing` | swing the wielded blade the way a person does and report every edge contact on the way: edge, slice or press (it bit), glancing, flat or point (an ordinary contact), blunt or brittle (it could not). With `through_m`, `pointing` and `edge_facing` the hand takes the blade up off its rest, back clear and round to one side, then swings it round a shoulder half a metre behind the grip, 100 degrees in `seconds` (0.13 by default), so that the middle of the edge passes through `through_m`; an edge facing across the swing leads with the edge, one facing up or down leads with the flat. (Driven along a straight line at its grip, a sword trails its point: a measured straight swing crossed the rope's line 0.19 m short and met nothing.) With `to_m` instead it moves the grip along a straight line, which is a press or a push |
+| `cuts` | every edge contact since the last swing, including the ones that cut nothing and why |
 | `close_world` | free it |
 | `hinge` / `slide` | a pin or a groove: `b` turns about, or slides along, a line fixed in `a` |
 | `tie` / `reeve` | a rope between a point on each of two things, or one run over two fixed pulleys |
@@ -283,6 +288,41 @@ Things a model gets wrong unless told, and the tool descriptions say so: one log
 beside a cold one on a stone slab does not light with the kindling that lights a
 log on its own -- the slab and the cold log take the margin -- and a piston must
 be loose, on a `slide`, a cell clear of its walls.
+
+## Blades
+
+```
+blade(body="sword", heel_m=[0.2, 1.02, 1.88], tip_m=[-0.3, 1.02, 1.88],
+      facing=[0, 0, -1], thickness_m=0.04, edge_radius_m=0.0002,
+      grip_m=[0.28, 1.02, 1.9])
+wield(name="sword")
+swing(through_m=[-0.5, 1.58, 1.4], pointing=[0, 0, -1], edge_facing=[-1, 0, 0],
+      then_s=1.5)
+-> "cuts": [{"met": "rope 4", "kind": "edge", "speed_m_s": 13.21,
+             "resistance_j_m2": 7400.0, "cut_mm2": 1059.1, "work_j": 7.837,
+             "bonds_severed": 2, "came_apart": true, "pieces": 2}, ...]
+```
+
+An edge is declared in the scene document -- `blades`, each kept in its body's
+own frame -- so every rebuild arms it again on the same body, wherever that
+body has since been put, and the playground's room is handed it in its spec.
+Removing a body takes its edge with it and says so (`edge_removed_with_it`);
+an edge that cannot be armed again is reported, never dropped silently.
+`wield` and `swing` are uses, not authoring: they change the world the caller
+is building in and nothing in its scene. So after the playground's chat has
+cut a rope in its copy, the person's room still opens with the rope whole and
+the sword on its rests, and the cut is theirs to make. The swing above is the
+one `tests/banjo_mcp_tests.py` makes, on a rope of six rubber segments with a
+4 kg weight at 0.04 m cells: the weight ended on the floor, and with
+`edge_facing=[0, -1, 0]` the flat leads and nothing is cut.
+
+Two ways a model got a cutting setup wrong, and what now says so. An edge
+declared on a bar's far face but facing back into the bar is refused, with the
+rule it broke: swung "edge first" it led with the bar's other face and glanced
+off the rope. And a `tie` or `spring` made off more than a cell away from its
+body is warned about: a model hung a weight 0.24 m below the end of its rope
+and tied it from a point in the air under the last segment, which rides on
+the segment like the end of a stiff arm that is not there.
 
 ## Implementation
 
