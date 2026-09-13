@@ -351,18 +351,21 @@ leaves the shape: a box burns in from every face and is drawn smaller, things
 resting on it settle, a joint on burned-away wood lets go, and a body whose
 wood is all gone leaves the room. Burning is SLOW, as timber is: oak recedes
 about 0.4 mm a minute at the air it gets, so a beam loses its strength to heat
-long before it burns away. Make a beam at least three cells deep (60 mm here):
-a thinner one cannot bend in the lattice.
+long before it burns away. Make a beam at least two cells deep -- the yard's
+cells are 40 mm, so 80 mm; one cell cannot bend in the lattice -- and say the
+size it was built at: sizes are rounded to whole cells.
 
 Two loaded oak beams, one heated (the owner's): each on two anchored concrete
 piers 1.2 m apart with a 300 mm iron cube on its middle, the second 3 m away.
-With 8 kW into one, its compression side reaches the load after about 5 1/2
+With 8 kW into one, its compression side falls to what its load needs after some
 minutes, statics holds it while its bonds are short of breaking, and it breaks
-under the cube after about 11 minutes; the cold one carries its cube for ever.
+under the cube once they reach it; the cold one carries its cube for ever. Set
+the beam and the cube DOWN with [x, z], so each rests on what is under it --
+given exact heights, the rounded sizes overlap and the room refuses them:
   add_object hot pier left concrete [0.16, 0.4, 0.3] at [-0.6, 0.2, 0] anchored
   add_object hot pier right concrete [0.16, 0.4, 0.3] at [0.6, 0.2, 0] anchored
-  add_object hot beam oak [1.4, 0.06, 0.1] at [0, 0.43, 0]
-  add_object hot load iron [0.3, 0.3, 0.3] at [0, 0.61, 0]
+  add_object hot beam oak [1.4, 0.06, 0.1] at [0, 0] (set down: on the piers)
+  add_object hot load iron [0.3, 0.3, 0.3] at [0, 0] (set down: on the beam)
   and the same four 3 m along x as cold pier left / cold pier right / cold beam / cold load
   heat hot beam 8000 W for 900 s
   then run in 60 s runs and read thermal_state: the beam's compression and

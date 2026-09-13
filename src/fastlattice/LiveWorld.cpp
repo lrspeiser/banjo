@@ -303,6 +303,108 @@ bool wholeFactors(const thermo::ZoneFactors &f) {
 // strength over a modulus, so each goes by its strength's factor over the
 // stiffness's -- and the force a bond fails at goes by its strength's factor
 // alone, which is the law. False when it carries nothing at all.
+// What rests on a box whose faces have just come in by burning comes down with
+// its top, and the box comes down onto what it stands on -- by exactly what came
+// off each face, and without waking anything -- rather than each dropping onto
+// what is left and settling. Burning takes wood away a little at a time, but the
+// shape is cut again only every kReviseDepthM. Woken at every cut to settle, the
+// owner's 258 kg block on its 80 mm beam (40 mm cells), sunk a few millimetres
+// into it -- Jolt lets a resting body sink 20 mm (mPenetrationSlop) without
+// pushing it back -- rolled a little further each time it was awake: 0.14
+// degrees before the first cut, 1.9 after eight, 9.4 after eighteen, 28 mm to
+// one side, and then off a beam that had not broken. Carried exactly and left
+// asleep, it has nothing to settle. The plan is made before the cut, against
+// the box as it is; a joint anywhere in the stack, or anything standing on
+// something else as well, and it declines, and the solver settles the stack as
+// before. Extents are world-aligned boxes, so a body slightly tilted is carried
+// by its lowest point.
+struct Recession {
+    bool applies{};
+    bool lower_burned{};
+    double recess{}, top_drop{};
+    std::vector<std::size_t> carried;
+};
+
+Recession planRecession(const JoltWorld &world, const std::vector<LiveBodyPose> &described,
+                        const std::vector<MatterBodyId> &body_of, const std::vector<bool> &jointed,
+                        double ground_y, std::size_t burned, const Vec3 &was_m, const Vec3 &now_m) {
+    constexpr double kRest = 0.02;   // the load survey's whisker, for the same reason
+    const std::size_t count = std::min({described.size(), body_of.size(), jointed.size()});
+    if (burned >= count || described[burned].anchored || jointed[burned] || !world.contains(body_of[burned]))
+        return {};
+    const auto halfOf = [](const Quat &q, const Vec3 &h) {
+        const Vec3 ex = q.rotate(Vec3{h.x, 0.0, 0.0}), ey = q.rotate(Vec3{0.0, h.y, 0.0}),
+                   ez = q.rotate(Vec3{0.0, 0.0, h.z});
+        return Vec3{std::abs(ex.x) + std::abs(ey.x) + std::abs(ez.x), std::abs(ex.y) + std::abs(ey.y) + std::abs(ez.y),
+                    std::abs(ex.z) + std::abs(ey.z) + std::abs(ez.z)};
+    };
+    struct Extent {
+        Vec3 centre, half;
+        bool known{};
+    };
+    std::vector<Extent> at(count);
+    for (std::size_t k = 0; k < count; ++k) {
+        if (!world.contains(body_of[k])) continue;
+        const RigidSnapshot s = world.snapshot(body_of[k]);
+        const LiveBodyPose &p = described[k];
+        at[k].centre = s.center_of_mass_world_m;
+        if (p.shape == "sphere")
+            at[k].half = Vec3{0.5 * p.dimensions_m.x, 0.5 * p.dimensions_m.x, 0.5 * p.dimensions_m.x};
+        else if (p.shape == "box")
+            at[k].half = halfOf(s.orientation_world, 0.5 * p.dimensions_m);
+        else
+            at[k].half = 0.5 * p.dimensions_m;   // a hull: the box of its cells
+        at[k].known = true;
+    }
+    const Quat turn = world.snapshot(body_of[burned]).orientation_world;
+    const Vec3 before = halfOf(turn, 0.5 * was_m);
+    const double recess = before.y - halfOf(turn, 0.5 * now_m).y;
+    if (!(recess > 0.0)) return {};
+    at[burned].half = before;   // everything below is judged against the box as it was
+    const auto restsOn = [&](std::size_t upper, std::size_t lower) {
+        if (upper == lower || !at[upper].known || !at[lower].known) return false;
+        const double underside = at[upper].centre.y - at[upper].half.y;
+        const double top = at[lower].centre.y + at[lower].half.y;
+        return std::abs(underside - top) < kRest &&
+               std::abs(at[upper].centre.x - at[lower].centre.x) < at[upper].half.x + at[lower].half.x &&
+               std::abs(at[upper].centre.z - at[lower].centre.z) < at[upper].half.z + at[lower].half.z;
+    };
+    const auto onTheFloor = [&](std::size_t k) {
+        return std::abs(at[k].centre.y - at[k].half.y - ground_y) < kRest;
+    };
+    bool stands = onTheFloor(burned);
+    for (std::size_t k = 0; k < count && !stands; ++k) stands = restsOn(burned, k);
+    // Its underside rose by the recess: standing on something, it comes down by
+    // that, and its top comes down by twice it.
+    const double top_drop = stands ? 2.0 * recess : recess;
+    std::vector<bool> moved(count, false);
+    moved[burned] = true;
+    std::vector<std::size_t> carried, frontier{burned};
+    while (!frontier.empty()) {
+        const std::size_t base = frontier.back();
+        frontier.pop_back();
+        for (std::size_t k = 0; k < count; ++k) {
+            if (moved[k] || described[k].anchored || !restsOn(k, base)) continue;
+            // A joint on it, or a second support under it: the solver's to settle.
+            if (jointed[k]) return {};
+            bool elsewhere = onTheFloor(k);
+            for (std::size_t other = 0; other < count && !elsewhere; ++other)
+                elsewhere = !moved[other] && restsOn(k, other);
+            if (elsewhere) return {};
+            moved[k] = true;
+            carried.push_back(k);
+            frontier.push_back(k);
+        }
+    }
+    Recession plan;
+    plan.applies = true;
+    plan.lower_burned = stands;
+    plan.recess = recess;
+    plan.top_drop = top_drop;
+    plan.carried = std::move(carried);
+    return plan;
+}
+
 bool weakenBond(BondRest &bond, const thermo::ZoneFactors &f) {
     if (!(f.stiffness > kSoftestBond) || !(std::max({f.tension, f.compression, f.shear}) > 0.0)) return false;
     bond.compliance /= f.stiffness;
@@ -2902,6 +3004,19 @@ void LiveWorld::surveyLoads() {
             if (restsOn(on_top, i))
                 sustained.loads_n.emplace_back(impl_->described[on_top].name, weight[on_top] + carrying[on_top]);
     }
+    // A body statics answered that no longer carries a sustained load -- what
+    // rested on it was taken off, or fell -- is not under its load any more:
+    // its answer and its throttle go, so no report says "under its load:
+    // holds" of a beam with nothing on it. A body that broke keeps its answer,
+    // the last thing said about it.
+    for (auto it = impl_->sustained_answers.begin(); it != impl_->sustained_answers.end();) {
+        if (impl_->index_of.count(it->first) != 0 && impl_->sustained_by.count(it->first) == 0) {
+            impl_->statics_held.erase(it->first);
+            it = impl_->sustained_answers.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 std::vector<LiveOverload> LiveWorld::overloaded() const { return impl_->overloaded; }
@@ -2909,6 +3024,15 @@ std::vector<LiveOverload> LiveWorld::overloaded() const { return impl_->overload
 void LiveWorld::repin() {
     impl_->held_for_fracture.clear();
     const auto pin = [&](const Pending &job) {
+        // A body statics is answering is at rest under its load, and statics
+        // puts any pieces where it rests: there is nothing for it to bounce away
+        // from. Holding it -- its velocity zeroed and it woken after every step
+        // the answer takes -- only upsets the contact that carries the load.
+        // Measured in the owner's room (40 mm cells, answers not waited for):
+        // each held answer left the 258 kg block about a millimetre deeper in the
+        // beam it rested on, 4.1 mm to 9.3 mm over eight, and then the block
+        // fell through a beam that had not broken.
+        if (job.sustained) return;
         for (const std::size_t body : job.island_bodies)
             if (body < impl_->described.size() && !impl_->described[body].anchored)
                 impl_->held_for_fracture.push_back(body);
@@ -5352,11 +5476,35 @@ void LiveWorld::reviseMatter() {
             if (box.x > 0.0 && box.y > 0.0 && box.z > 0.0) {
                 const thermo::FieldMassProperties mass = thermo::massProperties(*field);
                 const double turn[4] = {record.turn.w, record.turn.x, record.turn.y, record.turn.z};
-                I.world->reshapePrimitive(I.body_of[i], record.round, box, turn, mass.mass_kg, mass.inertia_kg_m2);
-                pose.dimensions_m = record.round ? Vec3{box.x, box.x, box.x} : box;
+                const Vec3 was = pose.dimensions_m;
+                const Vec3 cut = record.round ? Vec3{box.x, box.x, box.x} : box;
+                // What stands on it comes down with its top, and it comes down
+                // onto what it stands on, exactly and without waking
+                // (planRecession). A box turned inside its body, one in a hand,
+                // or a stack the plan declines is woken and left to the solver.
+                Recession plan;
+                if (!record.round && i != I.holding && std::abs(std::abs(record.turn.w) - 1.0) < 1e-9) {
+                    std::vector<bool> jointed(I.described.size(), false);
+                    for (const Impl::SceneJoint &joint : I.joints) {
+                        if (!joint.attached) continue;
+                        for (const std::string *end : {&joint.a, &joint.b})
+                            if (const auto at = I.index_of.find(*end);
+                                at != I.index_of.end() && at->second < jointed.size())
+                                jointed[at->second] = true;
+                    }
+                    plan = planRecession(*I.world, I.described, I.body_of, jointed, I.setup->ground_y, i, was, cut);
+                }
+                I.world->reshapePrimitive(I.body_of[i], record.round, box, turn, mass.mass_kg, mass.inertia_kg_m2,
+                                          !plan.applies);
+                pose.dimensions_m = cut;
+                if (plan.applies) {
+                    if (plan.lower_burned) I.world->translateBody(I.body_of[i], Vec3{0.0, -plan.recess, 0.0});
+                    for (const std::size_t k : plan.carried)
+                        I.world->translateBody(I.body_of[k], Vec3{0.0, -plan.top_drop, 0.0});
+                }
                 record.applied_m = field->consumed_m;
                 pose.revision = ++record.revision;
-                wakeAround(i);
+                if (!plan.applies) wakeAround(i);
                 I.survey_due = true;
             }
         }

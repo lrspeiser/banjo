@@ -30,8 +30,9 @@ jobs:
           - network_adaptive
           - material_showcase
           - contact_capacity
-          # The owner's heated and cold beams, and the heater powers: about
-          # four minutes on a fast desktop (docs/thermal-mechanics.md).
+          # The owner's heated and cold beams, the heater powers and the room's
+          # own build: a minute to four on a fast desktop, as the pieces fall
+          # (docs/thermal-mechanics.md).
           - thermal_geometry_long
     steps:
       - uses: actions/checkout@v5

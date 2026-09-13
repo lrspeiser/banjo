@@ -844,6 +844,136 @@ void measureHeaterPowers() {
     }
 }
 
+// ---- an answer goes with its load --------------------------------------------------
+//
+// Statics' answer is about a load. Once nothing rests on the body it was about,
+// it is not "under its load" any more, and the answer goes. Measured in the page
+// before this: a block fell through a beam that had not broken, and the Heat
+// panel went on saying "under its load: holds".
+void anAnswerGoesWithItsLoad() {
+    const std::string bodies = box("left pier", "iron", {0.2, 0.4, 0.3}, {-0.6, 0.2, 0.0}, true) + "," +
+                               box("right pier", "iron", {0.2, 0.4, 0.3}, {0.6, 0.2, 0.0}, true) + "," +
+                               box("shelf", "concrete", {1.4, 0.1, 0.3}, {0.0, 0.45, 0.0}, false) + "," +
+                               box("crate", "iron", {0.45, 0.45, 0.45}, {0.0, 0.5 + 0.225, 0.0}, false);
+    auto world = openScene(scene(bodies), 0.05);
+    stepFor(*world, 2.0);
+    const std::vector<std::string> offered = world->breakable();
+    require(std::find(offered.begin(), offered.end(), "shelf") != offered.end(),
+            "a stone shelf under a 717 kg crate is asked about");
+    const std::size_t pieces = world->fracture("shelf");
+    const auto answer = [&]() -> std::optional<LiveStatics> {
+        for (const LiveStatics &s : world->statics())
+            if (s.name == "shelf") return s;
+        return std::nullopt;
+    };
+    require(pieces == 1 && answer() && answer()->stop == "held", "statics held it, and says so");
+    std::cout << "    under the crate: statics " << answer()->stop << ", its bonds at "
+              << 100.0 * answer()->first_failure_ratio << "% of the criterion" << std::endl;
+    require(world->grab("crate"), "the crate is taken hold of");
+    world->moveHeld(poseOf(*world, "crate").position_m + Vec3{0.0, 0.6, 0.0});
+    stepFor(*world, 1.0);
+    std::cout << "    the crate lifted off: " << (answer() ? "the answer is still there" : "no answer about its load")
+              << std::endl;
+    require(!answer(), "with nothing on it, there is no answer about what it carries");
+}
+
+// ---- the owner's room: answers not waited for -----------------------------------
+//
+// The two beams as the room builds them: the yard's cells are 40 mm, so the
+// owner's 60 x 100 mm beam is two cells, 80 x 80 mm, and the 300 mm block a
+// 320 mm, 258 kg cube. And answered as the room answers: it starts a fracture
+// without waiting, steps on in batches of four, and collects the answer when it
+// is ready. Measured in the page before the fix: a body waiting on statics was
+// held -- its velocity zeroed and it woken after every step -- each held answer
+// left the block about a millimetre deeper in the beam (4.1 to 9.3 mm over
+// eight), and then the block fell through a beam that had not broken. With that
+// fixed, the beam's re-cuts did it more slowly: woken at every cut to settle
+// onto a narrower top, the block rolled a little further each time it was
+// awake -- 0.14 degrees before the first cut, 1.9 after eight, 9.4 after
+// eighteen -- and then off a beam that had not broken. What rests on a burning
+// box now comes down with its top, exactly and asleep (planRecession).
+void theRoomWithAnswersNotWaitedFor() {
+    const auto pair = [](const std::string &tag, double x) {
+        return box(tag + " pier left", "concrete", {0.16, 0.4, 0.32}, {x - 0.6, 0.2, 0.0}, true) + "," +
+               box(tag + " pier right", "concrete", {0.16, 0.4, 0.32}, {x + 0.6, 0.2, 0.0}, true) + "," +
+               box(tag + " beam", "oak", {1.4, 0.08, 0.08}, {x, 0.44, 0.0}, false) + "," +
+               box(tag + " load", "iron", {0.32, 0.32, 0.32}, {x, 0.48 + 0.16, 0.0}, false);
+    };
+    auto world = openScene(scene(pair("hot", 0.0) + "," + pair("cold", 3.0)), 0.04);
+    stepFor(*world, 2.0);
+    // How far the block sits into the beam: the rigid solver's resting allowance.
+    const auto sunk = [&]() {
+        const LiveBodyPose beam = poseOf(*world, "hot beam");
+        const LiveBodyPose load = poseOf(*world, "hot load");
+        return (beam.position_m.y + 0.5 * beam.dimensions_m.y) - (load.position_m.y - 0.5 * load.dimensions_m.y);
+    };
+    const double resting = sunk();
+    const double load_y0 = poseOf(*world, "hot load").position_m.y;
+    (void)world->heat("hot beam", 8000.0, 900.0);
+    const double t0 = world->time_s();
+    double deepest = resting, broke_s = -1.0, tilted = 0.0;
+    std::size_t asked = 0;
+    bool cold_asked = false;
+    const auto started = std::chrono::steady_clock::now();
+    for (int batch = 0; world->time_s() - t0 < 1000.0; ++batch) {
+        for (int k = 0; k < 4; ++k) world->step(kDt);
+        if (world->fracturePending() && world->fractureReady()) (void)world->finishFracture();
+        if (!world->fracturePending()) {
+            const std::vector<std::string> offered = world->breakable();
+            if (!offered.empty() && world->beginFracture(offered.front())) {
+                ++asked;
+                cold_asked = cold_asked || offered.front().rfind("cold", 0) == 0;
+            }
+        }
+        if (!findPose(*world, "hot beam")) {
+            broke_s = world->time_s() - t0;
+            break;
+        }
+        if (batch % 15 == 0) {
+            deepest = std::max(deepest, sunk());
+            // And level: how far its up has turned from the world's. Dropped onto
+            // the beam at every re-cut instead of coming down with it, it had
+            // turned 9.4 degrees, 28 mm to one side, when it rolled off.
+            const double *q = poseOf(*world, "hot load").orientation_wxyz;
+            const double up_y = 1.0 - 2.0 * (q[1] * q[1] + q[3] * q[3]);
+            tilted = std::max(tilted, std::acos(std::clamp(up_y, -1.0, 1.0)) * 180.0 / 3.14159265358979323846);
+        }
+    }
+    stepFor(*world, 3.0);
+    const double wall = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+    std::optional<LiveStatics> last;
+    for (const LiveStatics &s : world->statics())
+        if (s.name == "hot beam") last = s;
+    const double load_now = poseOf(*world, "hot load").position_m.y;
+    std::cout << "    " << asked << " answers started without waiting; the block rested " << 1000.0 * resting
+              << " mm into the beam and was never more than " << 1000.0 * deepest << " mm into it while the beam was whole"
+              << std::endl;
+    std::cout << "    " << (broke_s >= 0.0 ? "broke " + std::to_string(broke_s) + " s in" : std::string("did not break"))
+              << "; statics' last answer: " << (last ? last->stop : std::string("none")) << " (its bonds at "
+              << (last ? 100.0 * last->first_failure_ratio : 0.0) << "% of the criterion, "
+              << (last ? last->bonds_removed : 0) << " bonds, " << (last ? last->pieces : 0) << " pieces); the block came down "
+              << 1000.0 * (load_y0 - load_now) << " mm; " << world->time_s() - t0 << " s of world in " << wall << " s"
+              << std::endl;
+    // The block may sit up to a millimetre deeper than it rested before anything
+    // was asked: a re-cut takes 0.2 mm off each face of the beam and the block
+    // comes down onto what is left. Held bodies drove it 5.2 mm deeper.
+    std::cout << "    the block turned at most " << tilted << " degrees from level while the beam was whole"
+              << std::endl;
+    require(deepest - resting < 1.0e-3, "the block stays where it rests while statics is asked and holds");
+    // Two degrees: well past a resting block's jitter, a fifth of the tilt that
+    // rolled it off.
+    require(tilted < 2.0, "and it stays level on the beam as the beam burns");
+    require(!cold_asked, "the cold twin is never asked about");
+    if (broke_s >= 0.0) {
+        require(last && last->stop == "broke" && last->first_failure_ratio >= 1.0,
+                "the beam broke only when statics said its bonds had reached the criterion");
+        require(load_y0 - load_now > 0.1, "and the block came down when it broke");
+    } else {
+        require(!last || last->stop != "broke", "statics did not say it broke");
+        require(load_y0 - load_now < 0.05, "a beam that did not break still carries its block");
+    }
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {
@@ -871,6 +1001,8 @@ int main(int argc, char **argv) {
         {"what burns leaves the shape", whatBurnsLeavesTheShape, false},
         {"a piece is rebuilt from the cells it has left", aPieceIsRebuiltFromTheCellsItHasLeft, false},
         {"measure: heater powers", measureHeaterPowers, true},
+        {"an answer goes with its load", anAnswerGoesWithItsLoad, false},
+        {"the owner's room, answers not waited for", theRoomWithAnswersNotWaitedFor, true},
     };
     unsigned failures = 0, ran = 0;
     for (const Test &test : tests) {

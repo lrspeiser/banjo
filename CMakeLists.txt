@@ -1197,8 +1197,9 @@ if(BANJO_BUILD_TESTS AND TARGET banjo_platform)
      banjo_network_adaptive_tests banjo_material_showcase_tests
      banjo_contact_capacity_tests PROPERTIES LABELS long)
  # The owner's heated and cold beams follow twenty-five minutes of world through
- # heating, fracture, cooling and a second blow: about four minutes on a fast
- # desktop, which a check made on every push does not spend either.
+ # heating, fracture, cooling and a second blow: a minute to four on a fast
+ # desktop, as the pieces happen to fall, which a check made on every push does
+ # not spend either.
  if(TEST banjo_thermal_geometry_long_tests)
      set_tests_properties(banjo_thermal_geometry_long_tests PROPERTIES
          LABELS long TIMEOUT ${BANJO_LONG_TEST_TIMEOUT_S})
