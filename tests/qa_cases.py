@@ -1007,7 +1007,9 @@ def check_burning_peg(built: Built) -> Verdict:
         return Verdict(False, "no fixing's member is being heated", measured)
     start_y = {j["id"]: (world.body(j["member"]) or {}).get("position_m", [0, 0, 0])[1]
                for j in heated}
-    limit = max(120.0, _heater_end_s(built.room) if _heater_end_s(built.room) < 240.0 else 240.0)
+    # As long as the heat runs, from two to four minutes: a peg that has not
+    # given way by then under what the chat built is an answer too.
+    limit = max(120.0, min(240.0, abt._heater_end_s(built.room)))
     gave_way: dict[int, dict[str, Any]] = {}
     waited = 0.0
     while waited < limit and len(gave_way) < len(heated):

@@ -796,7 +796,31 @@ function drawJoints(pins) {
     rod.position.copy(middle);
     // A cylinder is made standing up the y axis; point it along the joint.
     rod.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), along);
+    // Held where it is on `a`, because that is what the engine measures it
+    // from: `at` is a's pose times the point on a (LiveWorld::joints). This
+    // block only arrives when the SET of joints changes, so a pin fixed
+    // between two things that then fall would otherwise stay drawn in the air
+    // where they were. A pin that came off stays on `a`, where it was.
+    const on = world.bodies.get(pin.a);
+    if (on) {
+      const undo = on.mesh.quaternion.clone().invert();
+      rod.userData.follows = pin.a;
+      rod.userData.local = rod.position.clone().sub(on.mesh.position).applyQuaternion(undo);
+      rod.userData.turn = undo.multiply(rod.quaternion);
+    }
     pinGroup.add(rod);
+  }
+}
+
+// Move each pin with the body it is measured on, after every reply's poses.
+// A body that has gone keeps its pin where it was last seen.
+function followJoints() {
+  for (const rod of pinGroup.children) {
+    const { follows, local, turn } = rod.userData;
+    const on = follows && world.bodies.get(follows);
+    if (!on) continue;
+    rod.position.copy(local).applyQuaternion(on.mesh.quaternion).add(on.mesh.position);
+    rod.quaternion.copy(on.mesh.quaternion).multiply(turn);
   }
 }
 
@@ -1535,12 +1559,13 @@ function drawStrength(block) {
   heat.char = now;
   const hot = new Map(((heat.last && heat.last.bodies) || []).map((b) => [b.name, b.t_k]));
   for (const name of touched) glow(name, hot.get(name) || 0);
-  // Said once each time an attachment's strength has fallen by another fifth.
+  // Said once each time an attachment's strength falls below another fifth of
+  // what it had cold: under 80%, 60%, 40%, 20%.
   for (const a of (block && block.attachments) || []) {
     if (!a.attached) continue;
     const said = heat.weakest.get(a.id) ?? 1;
-    const step = Math.floor(a.fraction * 5) / 5;
-    if (a.fraction < 0.999 && step < said) {
+    const step = Math.ceil(a.fraction * 5 - 1e-9) / 5;
+    if (step < said) {
       heat.weakest.set(a.id, step);
       // "the oak peg in the gatepost": the member, in the other thing it
       // joins -- which is how anyone names a peg, a bracket or a rope's end.
@@ -1976,6 +2001,7 @@ async function tick() {
 
     draw(state);
     drawRopes();
+    followJoints();
     // Strength before heat, so the panel drawHeat fills in says both.
     drawStrength(state.mechanics);
     drawHeat(state.heat);

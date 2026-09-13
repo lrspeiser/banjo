@@ -255,7 +255,15 @@ The chat builds it with the MCP's own tools (`add_object`, `fix` with `member`,
 panel shows its strength falling and the attachment's load against what it can
 still take; about 50 s in the gate gives way, the chat's log says why in the
 numbers that decided it, and the gate falls through the rigid world. The cold
-twin hangs where it was.
+twin hangs where it was. Each pin is drawn on the thing it is fixed to: the weld
+goes down with the peg, and the fixing that gave way stays, faded, on the post
+where it was.
+
+Measured in headless Chrome on the chat's own build (QA run 20260913-013619,
+burning-peg #0): the room ran at 0.9989 of real time and 60 frames a second from
+the start until 12 s after the gate had come to rest; the log said the peg was
+under 80, 60 and 40% of its strength as it went; the fixing gave way about 47 s
+in, carrying 318 N against the 318 N it could still take.
 
 ## Where it is reachable
 
