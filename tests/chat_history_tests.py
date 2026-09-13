@@ -83,5 +83,42 @@ class TheConversationGoesToTheModel(unittest.TestCase):
             self.assertIn(words, world_chat.GUIDE)
 
 
+class WhyAnAnswerCameBackUnfinished(unittest.TestCase):
+    """The page said "try a shorter request" whatever had gone wrong, and a
+    one-line request once failed that way. The answer says why, so that is
+    what the person is told."""
+
+    def test_an_answer_that_ran_out_says_so(self):
+        said = world_chat.unfinished({"status": "incomplete",
+                                      "incomplete_details": {"reason": "max_output_tokens"}})
+        self.assertIn(f"{world_chat.MAX_OUTPUT_TOKENS} tokens", said)
+        self.assertIn("asking again", said)
+        self.assertNotIn("shorter request", said)
+
+    def test_other_reasons_are_named(self):
+        self.assertIn("content filter", world_chat.unfinished(
+            {"status": "incomplete", "incomplete_details": {"reason": "content_filter"}}))
+        said = world_chat.unfinished({"status": "failed", "error": {"code": "server_error"}})
+        self.assertIn("came back failed (server_error)", said)
+        self.assertIn("came back no status", world_chat.unfinished({}))
+
+    @unittest.skipUnless(LIBRARY and Path(LIBRARY).is_file(), "the library is not built")
+    def test_the_room_is_told_why_and_is_not_changed(self):
+        def model(api_key, model_name, conversation):
+            return {"status": "incomplete", "usage": {}, "output": [],
+                    "incomplete_details": {"reason": "max_output_tokens"}}
+
+        room = world_room.Room("yard")
+        before = json.dumps(room.spec, sort_keys=True)
+        real, world_chat._call = world_chat._call, model
+        try:
+            with self.assertRaises(ValueError) as failed:
+                world_chat.ask("key", "a model", room, {"bodies": []}, "a crate", [], history=[])
+        finally:
+            world_chat._call = real
+        self.assertIn("used up its whole answer", str(failed.exception))
+        self.assertEqual(json.dumps(room.spec, sort_keys=True), before)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

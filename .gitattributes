@@ -1,0 +1,6 @@
+# What runs on Linux keeps Linux line endings whatever the checkout: Fly.io
+# builds the image from the working tree as it stands, and a Dockerfile or
+# fly.toml checked out on Windows with CRLF endings is not what was tested.
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+fly.toml text eol=lf

@@ -40,6 +40,8 @@ MAX_ROUNDS = 30
 # than anyone watches a chat box. What was built by then is kept.
 MAX_TURN_S = 420.0
 TIMEOUT_S = 90
+# What one answer may spend, its thinking included.
+MAX_OUTPUT_TOKENS = 6000
 
 GUIDE = """You are the room. Someone is standing in a physics simulation, talking
 to you, and you build what they ask for out of real matter with the tools you
@@ -676,9 +678,32 @@ measured when you tried it. Name things by what they are made of. Never say
 something works, broke, bent or bounced unless a tool told you it did."""
 
 
+def unfinished(result: dict[str, Any]) -> str:
+    """Why the model's answer came back unfinished, as the person should hear it.
+
+    It used to say "try a shorter request" whatever the reason, and a one-line
+    request once failed that way after 62 s with nothing to say why. The answer
+    carries the reason (incomplete_details, or an error's code), so that is what
+    is said. A turn that fails changes nothing in the room, whatever the reason."""
+    status = str(result.get("status") or "no status")
+    details = result.get("incomplete_details")
+    reason = str(details.get("reason") or "") if isinstance(details, dict) else ""
+    if reason == "max_output_tokens":
+        return (f"the model used up its whole answer -- {MAX_OUTPUT_TOKENS} tokens, its thinking "
+                f"included -- before it finished, so nothing in the room was changed; asking "
+                f"again usually works")
+    if reason == "content_filter":
+        return "the model's answer was stopped by its content filter, so nothing in the room was changed"
+    error = result.get("error")
+    code = str(error.get("code") or "")[:60] if isinstance(error, dict) else ""
+    why = reason or code
+    return (f"the model's answer came back {status}" + (f" ({why})" if why else "")
+            + ", so nothing in the room was changed; asking again usually works")
+
+
 def payload(model: str, conversation: list[dict[str, Any]]) -> dict[str, Any]:
     """What is sent each round. The tools are the MCP's, via room_world."""
-    return {"model": model, "store": False, "max_output_tokens": 6000,
+    return {"model": model, "store": False, "max_output_tokens": MAX_OUTPUT_TOKENS,
             "reasoning": {"effort": "low"},
             # Handed back each round with the calls it led to, so that a model
             # that planned a gate in round one still has the plan in round five.
@@ -953,7 +978,7 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
             usage["input_tokens"] += int(spent.get("input_tokens") or 0)
             usage["output_tokens"] += int(spent.get("output_tokens") or 0)
             if result.get("status") != "completed":
-                raise ValueError("the model did not finish an answer; try a shorter request")
+                raise ValueError(unfinished(result))
 
             outputs = result.get("output", [])
             calls = [o for o in outputs if o.get("type") == "function_call"]
