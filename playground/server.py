@@ -789,7 +789,11 @@ class Playground:
         # Only a report from a room that was actually being drawn says anything
         # about how the room looked.
         watched=bool(body.get("frames")) and body.get("watched") is not False
-        behind=watched and isinstance(body.get("realtime_pct"),(int,float)) and body["realtime_pct"]<90
+        # And only a clock that ran forward says the room fell behind. One that
+        # went back is two worlds in one report (see clock_went_back), not a
+        # room running at less than nothing.
+        behind=(watched and not clock_went_back(body)
+                and isinstance(body.get("realtime_pct"),(int,float)) and body["realtime_pct"]<90)
         worst=((body.get("frame_ms") or {}).get("worst") or 0) if watched else 0
         if why!="routine" or behind or body.get("lost_link") or (isinstance(worst,(int,float)) and worst>100):
             logging.info("banjo room (%s): %s",why,line)
@@ -1220,6 +1224,22 @@ class Handler(BaseHTTPRequestHandler):
             self.send({"error":"Not found"},404)
         except (ValueError,UnicodeError) as exc: self.send({"error":str(exc)},400)
 
+def clock_went_back(report):
+    """Whether the world's clock ran backwards inside one frame report.
+
+    A world's clock only runs forward. Less than nothing means the report
+    spanned two worlds: "Start the room again", or the chat rebuilding the room,
+    put in a new world whose clock started nearer zero, and a page that kept its
+    old baseline took the old world's clock from the new one's. That measures
+    neither world, and printed as a percentage it reads as a measurement:
+    "room: -358% of realtime". The seconds are checked as well as the
+    percentage, because a little less than nothing rounds to 0% -- the figure
+    that means the clock stopped.
+    """
+    return any(isinstance(report.get(key),(int,float)) and report.get(key)<0
+               for key in ("world_s","realtime_pct"))
+
+
 def trace_line(report):
     """One readable line for the log, out of a frame report from the room.
 
@@ -1231,7 +1251,9 @@ def trace_line(report):
     and the one no server-side measurement can see at all.
     """
     frame=report.get("frame_ms") or {}
-    parts=[f"room: {report.get('realtime_pct')}% of realtime",
+    clocks=("the world was replaced during this report" if clock_went_back(report)
+            else f"{report.get('realtime_pct')}% of realtime")
+    parts=[f"room: {clocks}",
            f"{report.get('fps')} fps",
            f"worst frame {frame.get('worst')} ms",
            f"{report.get('objects')} objects"]
