@@ -243,14 +243,24 @@ of you, pointing where you look, and dragging the view swings it — as fast as
 that hand can manage, and no faster. Right-click turns the edge a quarter turn
 (left, down, right, up); swung sideways with the edge facing down, the flat
 leads. Whether what the edge meets is cut is the engine's answer — the edge's
-geometry, the two materials, how fast and how hard they meet — never a name: a
-quick stroke goes through, a slow one notches and the slit stays, and the flat
-cuts nothing. Click again to let go.
+geometry, the two materials, how fast and how hard they meet — never a name,
+and the flat cuts nothing. Click again to let go.
 
 The armoury is built for it, at 10 mm cells: a sword on a rest, a rope with a
 weight on it, an oak panel hung from a lintel and a loaded batten across two
 piers. How to make each cut by hand — where to stand and how far and fast to
-drag — is written in `armoury()` in `playground/world_room.py`.
+drag — is written in `armoury()` in `playground/world_room.py`. Measured in the
+page: from where the room's own test stands, a flick of the view 60 degrees to
+the left in 0.15 s took the armoury's iron sword through the rope edge-first at
+9.8 m/s, and the weight fell to the floor.
+
+The test room's two swords are the QA recipes' — 40 mm aluminium bars, the
+thinnest a 40 mm room makes — and they do not behave like the armoury's. A
+steady push through the rope has cut it (edge-first at 0.7 m/s, the weight on
+the floor); the same 0.15 s flick glanced off one segment and then led with
+the flat, and the rope held. The QA cuts it with the engine's own hand, a
+scripted 100 degree swing in 0.13 s at 13 m/s; a flick of the view is not that
+swing, and for these bars it is not yet a way to cut.
 
 ### Opening a saved build
 
