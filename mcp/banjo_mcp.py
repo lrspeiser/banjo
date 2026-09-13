@@ -749,7 +749,8 @@ def _by_hand(world: banjo.World | None, name: str) -> dict[str, Any] | None:
     return {"mass_kg": round(body.mass_kg, 1), "a_hand_lifts_kg": round(HAND_LIFTS_KG, 1),
             "note": "too heavy for a person's 800 N hand to hold up and turn: they can carry "
                     "it, but not turn it by hand. If it is for them to pick up and handle, "
-                    "make it lighter."}
+                    "make it lighter. turn_object is not held to this: it stands up or lays "
+                    "down anything that will stay as it is put, however heavy."}
 
 
 def tool_add_object(args: dict[str, Any]) -> dict[str, Any]:
@@ -3532,8 +3533,9 @@ TOOLS = [
                     "falls in that run: the edit is refused with what happened and nothing "
                     "changes. The answer says what it stands on and what the run measured: "
                     "how far its long side is from vertical, and how far it moved. \"Turn "
-                    "this upright and set it in front of me\" is this call. A ball, a cube "
-                    "or anything held by a joint cannot be turned this way.",
+                    "this upright and set it in front of me\" is this call -- for anything, "
+                    "however heavy: the 73 kg a person's hand can turn does not hold it. A "
+                    "ball, a cube or anything held by a joint cannot be turned this way.",
      "inputSchema": {"type": "object", "required": ["world_id", "name"], "properties": {
          "world_id": {"type": "string"}, "name": {"type": "string"},
          "stand": {"type": "string", "enum": ["upright", "lying"],
