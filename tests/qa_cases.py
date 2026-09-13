@@ -1328,5 +1328,6 @@ GROUPS = [
                                        "ice-breaks", "dent", "pane-breaks"]),
     ("Contact and motion", ["tower", "dominoes", "bounce", "sliding", "projectile"]),
     ("Heat, fire and gas", ["hearth", "heated-piston", "iron-wont-burn"]),
+    ("Cutting", ["cut-rope", "cut-panel"]),
     ("Changing what is already there", ["courtyard-unbar"]),
 ]

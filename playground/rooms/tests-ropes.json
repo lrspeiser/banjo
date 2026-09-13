@@ -632,6 +632,342 @@
     0.0
    ],
    "anchored": false
+  },
+  {
+   "name": "cut-rope: rope beam",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    240.0,
+    80.0,
+    80.0
+   ],
+   "center_mm": [
+    3620.0,
+    2040.0,
+    -2920.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "cut-rope: rope 1",
+   "shape": "box",
+   "material": "rubber",
+   "size_mm": [
+    40.0,
+    120.0,
+    40.0
+   ],
+   "center_mm": [
+    3620.0,
+    1940.0,
+    -2920.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "cut-rope: rope 2",
+   "shape": "box",
+   "material": "rubber",
+   "size_mm": [
+    40.0,
+    120.0,
+    40.0
+   ],
+   "center_mm": [
+    3620.0,
+    1820.0,
+    -2920.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "cut-rope: rope 3",
+   "shape": "box",
+   "material": "rubber",
+   "size_mm": [
+    40.0,
+    120.0,
+    40.0
+   ],
+   "center_mm": [
+    3620.0,
+    1700.0,
+    -2920.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "cut-rope: rope 4",
+   "shape": "box",
+   "material": "rubber",
+   "size_mm": [
+    40.0,
+    120.0,
+    40.0
+   ],
+   "center_mm": [
+    3620.0,
+    1580.0,
+    -2920.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "cut-rope: rope 5",
+   "shape": "box",
+   "material": "rubber",
+   "size_mm": [
+    40.0,
+    120.0,
+    40.0
+   ],
+   "center_mm": [
+    3620.0,
+    1460.0,
+    -2920.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "cut-rope: rope 6",
+   "shape": "box",
+   "material": "rubber",
+   "size_mm": [
+    40.0,
+    120.0,
+    40.0
+   ],
+   "center_mm": [
+    3620.0,
+    1340.0,
+    -2920.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "cut-rope: weight",
+   "shape": "box",
+   "material": "iron",
+   "size_mm": [
+    80.0,
+    80.0,
+    80.0
+   ],
+   "center_mm": [
+    3620.0,
+    1240.0,
+    -2920.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "cut-rope: sword rest left",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    80.0,
+    80.0,
+    80.0
+   ],
+   "center_mm": [
+    3880.0,
+    960.0,
+    -2420.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "cut-rope: sword rest right",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    80.0,
+    80.0,
+    80.0
+   ],
+   "center_mm": [
+    4360.0,
+    960.0,
+    -2420.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "cut-rope: sword",
+   "shape": "box",
+   "material": "aluminum",
+   "size_mm": [
+    640.0,
+    40.0,
+    40.0
+   ],
+   "center_mm": [
+    4120.0,
+    1020.0,
+    -2420.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "cut-panel: panel lintel",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    480.0,
+    80.0,
+    80.0
+   ],
+   "center_mm": [
+    -5080.0,
+    1760.0,
+    -5520.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "cut-panel: oak panel",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    320.0,
+    240.0,
+    40.0
+   ],
+   "center_mm": [
+    -5080.0,
+    1600.0,
+    -5520.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "cut-panel: sword rest left",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    80.0,
+    80.0,
+    80.0
+   ],
+   "center_mm": [
+    -5920.0,
+    960.0,
+    -5020.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "cut-panel: sword rest right",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    80.0,
+    80.0,
+    80.0
+   ],
+   "center_mm": [
+    -5440.0,
+    960.0,
+    -5020.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "cut-panel: sword",
+   "shape": "box",
+   "material": "aluminum",
+   "size_mm": [
+    640.0,
+    40.0,
+    40.0
+   ],
+   "center_mm": [
+    -5680.0,
+    1020.0,
+    -5020.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
   }
  ],
  "joints": [
@@ -951,6 +1287,213 @@
    "rest_mm": 520.0,
    "stiffness_n_m": 2000,
    "damping_n_s_m": 40
+  },
+  {
+   "kind": "link",
+   "a": "cut-rope: rope beam",
+   "b": "cut-rope: rope 1",
+   "at_mm": [
+    3620.0,
+    2020.0,
+    -2920.0
+   ],
+   "to_mm": [
+    3620.0,
+    1980.0,
+    -2920.0
+   ],
+   "length_mm": 0.0,
+   "breaks_at_n": 0.0
+  },
+  {
+   "kind": "link",
+   "a": "cut-rope: rope 1",
+   "b": "cut-rope: rope 2",
+   "at_mm": [
+    3620.0,
+    1900.0,
+    -2920.0
+   ],
+   "to_mm": [
+    3620.0,
+    1860.0,
+    -2920.0
+   ],
+   "length_mm": 0.0,
+   "breaks_at_n": 0.0
+  },
+  {
+   "kind": "link",
+   "a": "cut-rope: rope 2",
+   "b": "cut-rope: rope 3",
+   "at_mm": [
+    3620.0,
+    1780.0,
+    -2920.0
+   ],
+   "to_mm": [
+    3620.0,
+    1740.0,
+    -2920.0
+   ],
+   "length_mm": 0.0,
+   "breaks_at_n": 0.0
+  },
+  {
+   "kind": "link",
+   "a": "cut-rope: rope 3",
+   "b": "cut-rope: rope 4",
+   "at_mm": [
+    3620.0,
+    1660.0,
+    -2920.0
+   ],
+   "to_mm": [
+    3620.0,
+    1620.0,
+    -2920.0
+   ],
+   "length_mm": 0.0,
+   "breaks_at_n": 0.0
+  },
+  {
+   "kind": "link",
+   "a": "cut-rope: rope 4",
+   "b": "cut-rope: rope 5",
+   "at_mm": [
+    3620.0,
+    1540.0,
+    -2920.0
+   ],
+   "to_mm": [
+    3620.0,
+    1500.0,
+    -2920.0
+   ],
+   "length_mm": 0.0,
+   "breaks_at_n": 0.0
+  },
+  {
+   "kind": "link",
+   "a": "cut-rope: rope 5",
+   "b": "cut-rope: rope 6",
+   "at_mm": [
+    3620.0,
+    1420.0,
+    -2920.0
+   ],
+   "to_mm": [
+    3620.0,
+    1380.0,
+    -2920.0
+   ],
+   "length_mm": 0.0,
+   "breaks_at_n": 0.0
+  },
+  {
+   "kind": "link",
+   "a": "cut-rope: rope 6",
+   "b": "cut-rope: weight",
+   "at_mm": [
+    3620.0,
+    1300.0,
+    -2920.0
+   ],
+   "to_mm": [
+    3620.0,
+    1260.0,
+    -2920.0
+   ],
+   "length_mm": 0.0,
+   "breaks_at_n": 0.0
+  },
+  {
+   "kind": "fixing",
+   "a": "cut-panel: panel lintel",
+   "b": "cut-panel: oak panel",
+   "at_mm": [
+    -5180.0,
+    1720.0,
+    -5520.0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "holds_tension_n": 0.0,
+   "holds_shear_n": 0.0
+  },
+  {
+   "kind": "fixing",
+   "a": "cut-panel: panel lintel",
+   "b": "cut-panel: oak panel",
+   "at_mm": [
+    -4980.0,
+    1720.0,
+    -5520.0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "holds_tension_n": 0.0,
+   "holds_shear_n": 0.0
+  }
+ ],
+ "blades": [
+  {
+   "body": "cut-rope: sword",
+   "heel_mm": [
+    4320.0,
+    1020.0,
+    -2440.0
+   ],
+   "tip_mm": [
+    3820.0,
+    1020.0,
+    -2440.0
+   ],
+   "facing": [
+    0.0,
+    0.0,
+    -1.0
+   ],
+   "grip_mm": [
+    4400.0,
+    1020.0,
+    -2420.0
+   ],
+   "thickness_mm": 40.0,
+   "edge_radius_mm": 0.2,
+   "bevel_deg": 30.0
+  },
+  {
+   "body": "cut-panel: sword",
+   "heel_mm": [
+    -5480.0,
+    1020.0,
+    -5040.0
+   ],
+   "tip_mm": [
+    -5980.0,
+    1020.0,
+    -5040.0
+   ],
+   "facing": [
+    0.0,
+    0.0,
+    -1.0
+   ],
+   "grip_mm": [
+    -5400.0,
+    1020.0,
+    -5020.0
+   ],
+   "thickness_mm": 40.0,
+   "edge_radius_mm": 0.05,
+   "bevel_deg": 30.0
   }
  ]
 }

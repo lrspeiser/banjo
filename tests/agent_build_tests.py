@@ -144,6 +144,7 @@ class World:
         self.opened = self.live.open(App(), {"spec": spec})
         self.session = self.live.session
         self.impacts: list[dict[str, Any]] = []
+        self.cuts: list[dict[str, Any]] = []
         self.finished: list[str] = []
         # How much time the world was stepped through, and how long that took.
         # The owner's rule: no job may take more than 10% longer than realtime
@@ -157,21 +158,28 @@ class World:
         except Exception:
             pass
 
-    def step(self, count: int = 1, hand: list[float] | None = None) -> None:
+    def step(self, count: int = 1, hand: list[float] | None = None,
+             hand_q: list[float] | None = None) -> None:
         """Advance, ANSWERING the break handshake.
 
         A step that would break something is taken back and the clock does not
         move until the host says what to do. A stepper that never answers stops
         the world at the first hard contact -- and a mechanism that is not moving
         looks exactly like one that cannot.
+
+        `hand_q` is the turn the hand is to hold what it wields at; a swing is
+        a grip and a turn sent a step at a time.
         """
         done = 0
         while done < count:
             n = 1 if hand is not None else min(8, count - done)
             extra = {"hand": [float(v) for v in hand]} if hand is not None else {}
+            if hand is not None and hand_q is not None:
+                extra["hand_q"] = [float(v) for v in hand_q]
             began = time.perf_counter()
             state = self.session.send(op="step", dt=DT, n=n, moved=True, **extra)
             self.impacts.extend(state.get("impacts") or [])
+            self.cuts.extend(state.get("cuts") or [])
             if state.get("finished"):
                 self.finished.append(str(state["finished"]))
             for name in state.get("breakable") or []:
@@ -780,7 +788,8 @@ def _rope(world: World) -> tuple[list[str], str] | None:
 
 
 def _swing_at(spec: dict[str, Any], edge_down: bool,
-              locate: Callable[[World], tuple[list[float], dict[str, Any]] | str]) -> dict[str, Any]:
+              locate: Callable[[World], tuple[list[float], dict[str, Any]] | str],
+              counted: World | None = None) -> dict[str, Any]:
     """Open the room afresh, take its blade, and swing it through what `locate` names.
 
     The engine's own hand does it: the grip and the way the blade should face
@@ -792,6 +801,10 @@ def _swing_at(spec: dict[str, Any], edge_down: bool,
     (edge_down) facing the floor so that the flat leads. Nothing here says what
     is cut; the engine does. Returns what `locate` noted, the cuts, and every
     body and joint as the swing left them.
+
+    Every step goes through World.step, so the swing is held to the realtime
+    rule like anything else, and its time is added to `counted` -- the world
+    the check is judged on -- so the report's realtime figure includes it.
     """
     world = World(spec)
     try:
@@ -819,16 +832,8 @@ def _swing_at(spec: dict[str, Any], edge_down: bool,
             edge_at = add(shoulder, scale(out, 0.5 + reach))
             return sub(edge_at, _qrot(turn, to_middle)), turn
 
-        cuts: dict[tuple[Any, ...], dict[str, Any]] = {}
-
         def step(hand: list[float], turn: list[float]) -> None:
-            state = world.session.send(op="step", dt=DT, n=1, moved=True,
-                                       hand=[float(v) for v in hand],
-                                       hand_q=[float(v) for v in turn])
-            for name in state.get("breakable") or []:
-                world.session.send(op="fracture", name=name, wait=False)
-            for cut in state.get("cuts") or []:
-                cuts[(cut.get("blade"), cut.get("target"), cut.get("at_s"))] = cut
+            world.step(1, hand, turn)
 
         def go(a: list[float], b: list[float], turn: list[float], seconds: float) -> list[float]:
             n = max(1, int(round(seconds / DT)))
@@ -855,6 +860,8 @@ def _swing_at(spec: dict[str, Any], edge_down: bool,
             step(here, turn)
         for _ in range(int(2.0 / DT)):
             step(here, turn)
+        # A cut is reported on each step it goes on for; one entry per cut.
+        cuts = {(c.get("blade"), c.get("target"), c.get("at_s")): c for c in world.cuts}
         met = [{"kind": c["kind"], "target": c["target"], "speed_m_s": round(c["speed_m_s"], 2),
                 "area_mm2": round(c.get("area_mm2", 0.0), 1), "bonds": c.get("bonds", 0),
                 "links": c.get("links", 0), "separated": bool(c.get("separated"))}
@@ -863,6 +870,9 @@ def _swing_at(spec: dict[str, Any], edge_down: bool,
         return {**noted, "cuts": met, "joints": world.joints(),
                 "before": before, "after": {n: list(b["position_m"]) for n, b in bodies.items()}}
     finally:
+        if counted is not None:
+            counted.simulated_s += world.simulated_s
+            counted.stepping_s += world.stepping_s
         world.close()
 
 
@@ -877,8 +887,9 @@ def _rope_at(world: World) -> tuple[list[float], dict[str, Any]] | str:
                                                    "struck": struck}
 
 
-def _swing_through(spec: dict[str, Any], edge_down: bool) -> dict[str, Any]:
-    swung = _swing_at(spec, edge_down, _rope_at)
+def _swing_through(spec: dict[str, Any], edge_down: bool,
+                   counted: World | None = None) -> dict[str, Any]:
+    swung = _swing_at(spec, edge_down, _rope_at, counted)
     if "error" in swung:
         return swung
     links = [j for j in swung["joints"] if j["kind"] == "link"]
@@ -908,11 +919,11 @@ def _panel_at(world: World) -> tuple[list[float], dict[str, Any]] | str:
 def check_cut_panel(built: Built) -> Verdict:
     """A panel on fixings, cut in two by a person's swing through its middle: the
     lower piece falls and the upper keeps its fixings. The flat cuts nothing."""
-    edge = _swing_at(built.room.spec, False, _panel_at)
+    edge = _swing_at(built.room.spec, False, _panel_at, built.world)
     if "error" in edge:
         return Verdict(False, edge["error"], edge)
     panel = edge["panel"]
-    flat = _swing_at(built.room.spec, True, _panel_at)
+    flat = _swing_at(built.room.spec, True, _panel_at, built.world)
     pieces = sorted((n for n in edge["after"] if n.startswith(panel + " piece")),
                     key=lambda n: edge["after"][n][1])
     fixings = [j for j in edge["joints"] if j["kind"] == "fixing"]
@@ -945,10 +956,10 @@ def check_cut_panel(built: Built) -> Verdict:
 def check_cut_rope(built: Built) -> Verdict:
     """The rope cut by a person's swing -- the engine's own hand, edge first -- and
     not by the flat of the same swing. Nothing here decides that anything is cut."""
-    edge = _swing_through(built.room.spec, edge_down=False)
+    edge = _swing_through(built.room.spec, edge_down=False, counted=built.world)
     if "error" in edge:
         return Verdict(False, edge["error"], edge)
-    flat = _swing_through(built.room.spec, edge_down=True)
+    flat = _swing_through(built.room.spec, edge_down=True, counted=built.world)
     measured = {"edge_first": edge, "flat_first": flat}
     bit = [c for c in edge["cuts"] if c["kind"] in ("edge", "slice") and c["bonds"] > 0]
     if not bit:

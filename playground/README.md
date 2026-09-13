@@ -159,7 +159,8 @@ not change this fixed reference. See the [API, refinement and limitations](../do
 
 `/world` is a room to walk around in, picked at the bottom right. It opens on
 **the test rooms** — every build the QA proves, side by side (below) — and also
-has **the bench**, **the courtyard** and **an empty yard**. Its chat box builds with the MCP
+has **the bench**, **the courtyard**, **an empty yard** and **the armoury**, where
+there is a sword to take up and things to cut with it. Its chat box builds with the MCP
 server's own tools: the same names, schemas and handlers as `mcp/banjo_mcp.py`,
 run on the room held as an MCP world (`playground/room_world.py`). Anything the
 MCP can do, the chat can do, and `tests/chat_tool_parity_tests.py` fails if a
@@ -180,9 +181,10 @@ python tests/qa.py --cases bow,tower --trials 1
 
 Each case is a sentence a person might type — a gate, a winch, a hoist, a
 latch, a bow, a pendulum, dominoes, glass and ice that break, a hearth, a heated
-piston and the rest (`tests/agent_build_tests.py`, `tests/qa_cases.py`). The real
+piston, a rope and a panel to cut with a sword, and the rest
+(`tests/agent_build_tests.py`, `tests/qa_cases.py`). The real
 chat builds it with the MCP's tools; the engine then opens the room it left and
-USES what was built — shoves, turns, hauls, looses, heats, watches — and measures
+USES what was built — shoves, turns, hauls, looses, heats, swings, watches — and measures
 the result against what physics says it must be: a pendulum's period from its
 length, where a thrown ball must be, that a spring carries what hangs on it.
 Every case also has a recipe, the same thing built by hand through the MCP, so a
@@ -218,18 +220,37 @@ a thrown or rolling ball would carry on into the next build. They are written to
 
 - **Tests: gates and wheels** (13,920 cells) — the hinged gate, and the castle
   gates worked by a winch and by a capstan.
-- **Tests: latches, pulleys, ropes and springs** (10,480) — the latched gate, the
+- **Tests: latches, pulleys, ropes and springs** (10,780) — the latched gate, the
   counterweighted portcullis, the hoist, the seesaw, the bow, the tether, the
-  pendulum and the spring.
+  pendulum, the spring, and a rope and an oak panel to cut, each with a sword on
+  a rest in front of it.
 - **Tests: breaking, motion and heat** (12,872) — the plank bridge, ice, the
   dent, the pane on a pin, the tower, dominoes, the bounce, sliding, the throw,
   the heated piston, the hearth and the iron bar.
 
 Three rooms, because a room may hold 16,000 cells and still run at realtime and
-together they hold 37,272. The overloaded shelf is in none of them — it slows
+together they hold 37,572. The overloaded shelf is in none of them — it slows
 any room it is in to a crawl while the engine works out its break — and taking
 the courtyard's bar off is an edit to the courtyard, which is its own room. Run
 `--rooms` again whenever a recipe changes.
+
+### Taking up a sword
+
+A body with an edge declared on it — the MCP's `blade` tool,
+[docs/cutting-model.md](../docs/cutting-model.md) — can be taken up and swung.
+Click it to take it by its grip: a hand with 800 N and 60 N m holds it in front
+of you, pointing where you look, and dragging the view swings it — as fast as
+that hand can manage, and no faster. Right-click turns the edge a quarter turn
+(left, down, right, up); swung sideways with the edge facing down, the flat
+leads. Whether what the edge meets is cut is the engine's answer — the edge's
+geometry, the two materials, how fast and how hard they meet — never a name: a
+quick stroke goes through, a slow one notches and the slit stays, and the flat
+cuts nothing. Click again to let go.
+
+The armoury is built for it, at 10 mm cells: a sword on a rest, a rope with a
+weight on it, an oak panel hung from a lintel and a loaded batten across two
+piers. How to make each cut by hand — where to stand and how far and fast to
+drag — is written in `armoury()` in `playground/world_room.py`.
 
 ### Opening a saved build
 

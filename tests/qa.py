@@ -497,7 +497,7 @@ CELL_CAP = 16000
 TEST_ROOMS = {
     "tests-gates": ["hinged-gate", "castle-gate-winch", "castle-gate-capstan"],
     "tests-ropes": ["latched-gate", "counterweight", "hoist", "seesaw", "bow", "tether",
-                    "pendulum", "spring-weight"],
+                    "pendulum", "spring-weight", "cut-rope", "cut-panel"],
     "tests-motion": ["plank-bridge", "ice-breaks", "dent", "pane-breaks", "tower", "dominoes",
                      "bounce", "sliding", "projectile", "heated-piston", "hearth", "iron-wont-burn"],
 }
@@ -562,7 +562,7 @@ def room_of(recipe_ids: list[str]) -> tuple[dict[str, Any], int]:
     right = max(dx + _footprint(specs[rid])[1][0] for rid, dx, _ in placed)
     shift = _snap(-right / 2.0)
     first = specs[recipe_ids[0]]
-    bodies, joints, heaters, regions = [], [], [], []
+    bodies, joints, heaters, regions, blades = [], [], [], [], []
     for rid, dx, dz in placed:
         dx += shift
 
@@ -583,11 +583,17 @@ def room_of(recipe_ids: list[str]) -> tuple[dict[str, Any], int]:
         heaters += [dict(h, target=named(h["target"])) for h in thermo.get("heaters", [])]
         regions += [dict(r, name=named(r["name"]), piston=named(r["piston"]))
                     for r in thermo.get("gas_regions", [])]
+        # Edges are in the world, in millimetres, so they move with their body.
+        blades += [dict(e, body=named(e["body"]),
+                        **{key: _moved(e[key], dx, dz) for key in ("heel_mm", "tip_mm", "grip_mm")})
+                   for e in spec.get("blades", [])]
     room = {"algorithm": first.get("algorithm", "lattice"), "cell_m": first.get("cell_m", 0.04),
             "plasticity": first.get("plasticity", "on"), "bodies": bodies, "joints": joints}
     if heaters or regions:
         room["thermo"] = {key: value for key, value in (("gas_regions", regions), ("heaters", heaters))
                           if value}
+    if blades:
+        room["blades"] = blades
     cells = int(fracture_lab.validate(room)["cells"])
     if cells > CELL_CAP:
         raise ValueError(f"{cells} cells is over the {CELL_CAP} a room may hold")
