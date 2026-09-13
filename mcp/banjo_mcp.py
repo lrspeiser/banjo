@@ -1734,13 +1734,18 @@ def _saying_what_was_withdrawn(handler: Any) -> Any:
 
 
 # The fields only one kind of use has. A caller that fills in every field it is
-# offered -- a model whose function calls carry every property, blank where it
-# has nothing to say -- sends the other kind's as placeholders: an empty string,
-# zeros, an empty list. Measured in the room: asked for a pick, the chat sent a
-# swing-and-lever with a blank draw, nock, limbs and projectile, twelve times,
-# and was refused every time; a bow would have come with a blank tool. Blanks
-# say nothing and are dropped. A field that says something is still held to
-# the rules, and refused.
+# offered -- a model whose function calls carry every property -- sends the
+# other kind's too. Measured in the room, asked for a pick: once the chat sent
+# a swing-and-lever with a blank draw, nock, limbs and projectile, and was
+# refused twelve times; once it filled them with the pick's own parts -- the
+# haft drawn along no axis, nocked to the arm -- and, refused, sent them again
+# with new numbers, twelve times, never once leaving them out. A template said
+# is what the caller means: what the other kind has and it has not is set
+# aside, and the answer says so -- unless it would make a working thing of the
+# other kind, a real nock and real limbs, when the call says two things and is
+# refused. With no template said a profile is a draw-and-release, and a tool
+# may be the only sign a pick was meant: there blanks are dropped, and a field
+# that says something is held to the rules, and refused.
 _ONLY_IN = {"draw-and-release": ("draw", "nock", "limbs", "projectile"),
             "swing-and-lever": ("tool",)}
 
@@ -1759,25 +1764,52 @@ def _blank(value: Any) -> bool:
     return False
 
 
-def _without_blanks(profile: dict[str, Any]) -> dict[str, Any]:
-    """A profile less the other kind's fields where they are only placeholders."""
+def _set_aside(entry: dict[str, Any], profile: dict[str, Any],
+               said: bool) -> tuple[dict[str, Any], list[str]]:
+    """A profile less the other kind's fields, and which of them said something.
+
+    Blanks always go. With the template said the rest go too, unless they would
+    make a working profile of the other kind, which raises ValueError; with none
+    said they stay, to be held to the rules."""
     out = dict(profile)
+    if out.get("template") not in interaction_profiles.TEMPLATES:
+        return out, []
+    aside: list[str] = []
     for kind, fields in _ONLY_IN.items():
-        if kind != out.get("template"):
-            for field in fields:
-                if field in out and _blank(out[field]):
-                    del out[field]
-    return out
+        if kind == out["template"]:
+            continue
+        for field in fields:
+            if field in out and _blank(out[field]):
+                del out[field]
+        sent = [field for field in fields if field in out]
+        if not said or not sent:
+            continue
+        try:
+            _profile_checked(entry, {"object": out.get("object"), "template": kind,
+                                     "parts": out.get("parts"),
+                                     **{field: out[field] for field in sent}})
+        except (ValueError, TypeError, KeyError, AttributeError):
+            # Whatever keeps it from being one: it says nothing that works.
+            for field in sent:
+                del out[field]
+            aside += sent
+            continue
+        name = str(out.get("object") or "it").strip()[:80]
+        raise ValueError(f"{name}: said to be a {out['template']}, but its {', '.join(sent)} "
+                         f"make a working {kind} -- say which it is: template {kind}, or "
+                         f"{', '.join(sent)} left empty")
+    return out, sorted(aside)
 
 
 def tool_interaction(args: dict[str, Any]) -> dict[str, Any]:
     """Say how a person uses a thing, hold it to what is built, and try it."""
     entry = _world(args.get("world_id"))
     profile = {k: v for k, v in args.items() if k not in ("world_id", "trial")}
-    if not profile.get("template"):
+    said = bool(profile.get("template"))
+    if not said:
         profile["template"] = "draw-and-release"
-    profile = _without_blanks(profile)
     try:
+        profile, aside = _set_aside(entry, profile, said)
         checked = _profile_checked(entry, profile)
     except ValueError as problem:
         raise Refused(str(problem)) from None
@@ -1790,6 +1822,9 @@ def tool_interaction(args: dict[str, Any]) -> dict[str, Any]:
     entry["interactions"] = [p for p in entry.get("interactions", [])
                              if p["object"] != checked["object"]] + [checked]
     answer: dict[str, Any] = dict(checked)
+    if aside:
+        answer["not_read"] = (f"{', '.join(aside)}: a {checked['template']} has none, so what "
+                              f"was sent for them was set aside")
     if checked["template"] == "swing-and-lever":
         answer["how_a_person_uses_it"] = (
             f"In the playground a person takes {checked['object']} up with E on any of its "

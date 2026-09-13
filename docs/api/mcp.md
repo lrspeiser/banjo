@@ -224,6 +224,15 @@ of oak, lying on the clearing's soil): 120.3 mm into the soil at 9.17 m/s,
 5.61 L broken out by the lever, stopped by the rock at 8.22 m/s; 6.6 s of world
 in 0.17 s. [docs/ground-work.md](../ground-work.md)
 
+A caller that sends every field it is offered -- a model's function call often
+does -- sends the other kind's too. With a `template` said, what the other kind
+has and it has not (a pick's `draw`, `nock`, `limbs` and `projectile`; a bow's
+`tool`) is set aside whatever it holds, and the answer names it under
+`not_read`; only where those fields would make a working profile of the other
+kind is the call refused, since then it says two things. With no template said
+a profile is a draw-and-release: blanks are dropped, and a `tool` that names
+something is refused, since it may be the only sign a tool was meant.
+
 `duplicate` makes another of something already built, exactly: the bodies it
 is given, every joint between them with its points moved with the copy, their
 edges and points, and how a person uses them -- which a copied bow is then tried by. What
