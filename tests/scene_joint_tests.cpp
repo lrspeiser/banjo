@@ -279,16 +279,19 @@ void aPinFollowsTheWoodItIsIn() {
     // difference between a joint that tracks its material and one that is a
     // lookup by a name that no longer exists.
     TileImpactRequest request = doorway();
-    // The door is glass here, so it will actually come apart under a blow the
-    // scene can deliver. Oak at this cell size wants a great deal more.
-    request.bodies.back().material = MaterialPreset::Glass;
+    // An oak door, and a hammer that arrives past its breaking bar. This used to
+    // set `bodies.back()` to glass, meaning the door -- but doorway()'s last
+    // body is the fist, so the door was oak all along, the hammer met it at
+    // 10.79 m/s against oak's 10.98 m/s breaking bar, and it came apart only
+    // while the body asked about was let come apart whatever it had been asked
+    // about. Dropped from 12 m the hammer arrives at about 13.9 m/s.
     SceneBody hammer;
     hammer.name = "hammer";
     hammer.shape = BodyShape::Sphere;
     hammer.material = MaterialPreset::Iron;
     hammer.dimensions_m = {0.2, 0.2, 0.2};
     // Above the far edge of the leaf, well away from the pin.
-    hammer.center_m = {0.75, 8.0, 0.1};
+    hammer.center_m = {0.75, 12.0, 0.1};
     request.bodies.push_back(hammer);
 
     const auto world = LiveWorld::open(request);
@@ -296,8 +299,13 @@ void aPinFollowsTheWoodItIsIn() {
     require(pin != 0, "the door would not hang");
 
     std::size_t pieces = 0;
+    LiveImpact blow{};   // the hardest the hammer hit the door
     for (int i = 0; i < 3000 && pieces < 2; ++i) {
         world->step(1.0 / 240.0);
+        for (const LiveImpact &hit : world->impacts(0.5))
+            if (hit.by == "hammer" && hit.struck.rfind("door", 0) == 0 &&
+                hit.closing_speed_m_s > blow.closing_speed_m_s)
+                blow = hit;
         if (!world->steppedBack()) continue;
         for (const std::string &name : world->breakable()) {
             if (name.rfind("door", 0) != 0) { world->declineBreak(name); continue; }
@@ -305,6 +313,15 @@ void aPinFollowsTheWoodItIsIn() {
             break;
         }
     }
+    // The premise: a blow past the door's own breaking bar, or nothing can break.
+    require(blow.would_break,
+            "the hammer met the door at " + std::to_string(blow.closing_speed_m_s) +
+                " m/s against its " + std::to_string(blow.threshold_speed_m_s) +
+                " m/s breaking bar, so nothing can break and this proves nothing");
+    if (pieces <= 1)
+        for (const LiveImpact &hit : world->impacts(0.5))
+            std::cout << "    " << hit.by << " -> " << hit.struck << " at " << hit.closing_speed_m_s
+                      << " m/s against a breaking bar of " << hit.threshold_speed_m_s << "\n";
     require(pieces > 1, "the door never broke, so there is nothing to follow");
     run(*world, 120);
 
@@ -521,20 +538,25 @@ void aPinWithNoWoodLeftComesOut() {
     // the pin has nothing to hold. It must say so rather than keep a constraint
     // on a body that has been destroyed.
     TileImpactRequest request = doorway();
-    request.bodies.back().material = MaterialPreset::Glass;
+    // An oak door and a hammer past its breaking bar: see aPinFollowsTheWoodItIsIn.
     SceneBody hammer;
     hammer.name = "hammer";
     hammer.shape = BodyShape::Sphere;
     hammer.material = MaterialPreset::Iron;
     hammer.dimensions_m = {0.2, 0.2, 0.2};
-    hammer.center_m = {0.75, 8.0, 0.1};
+    hammer.center_m = {0.75, 12.0, 0.1};
     request.bodies.push_back(hammer);
 
     const auto world = LiveWorld::open(request);
     const unsigned pin = hangDoor(*world);
     std::size_t pieces = 0;
+    LiveImpact blow{};   // the hardest the hammer hit the door
     for (int i = 0; i < 3000 && pieces < 2; ++i) {
         world->step(1.0 / 240.0);
+        for (const LiveImpact &hit : world->impacts(0.5))
+            if (hit.by == "hammer" && hit.struck.rfind("door", 0) == 0 &&
+                hit.closing_speed_m_s > blow.closing_speed_m_s)
+                blow = hit;
         if (!world->steppedBack()) continue;
         for (const std::string &name : world->breakable()) {
             if (name.rfind("door", 0) != 0) { world->declineBreak(name); continue; }
@@ -542,6 +564,15 @@ void aPinWithNoWoodLeftComesOut() {
             break;
         }
     }
+    // The premise: a blow past the door's own breaking bar, or nothing can break.
+    require(blow.would_break,
+            "the hammer met the door at " + std::to_string(blow.closing_speed_m_s) +
+                " m/s against its " + std::to_string(blow.threshold_speed_m_s) +
+                " m/s breaking bar, so nothing can break and this proves nothing");
+    if (pieces <= 1)
+        for (const LiveImpact &hit : world->impacts(0.5))
+            std::cout << "    " << hit.by << " -> " << hit.struck << " at " << hit.closing_speed_m_s
+                      << " m/s against a breaking bar of " << hit.threshold_speed_m_s << "\n";
     require(pieces > 1, "the door never broke");
     run(*world, 120);
     // Sweep the whole doorway, taking every shard however big.
