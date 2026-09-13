@@ -1185,6 +1185,14 @@ async function sendTrace(why) {
   const now = performance.now();
   const wall_s = (now - trace.startedWall) / 1000;
   if (wall_s <= 0) return;
+  // A room still opening has no clock to measure yet. Its report starts when it
+  // is drawn (traceNewWorld); one sent before then measured the page load, or
+  // the replaced room's last seconds, against a clock that was not running --
+  // "room: 0% of realtime", said out loud as a lag, whenever an open outlasted
+  // the four seconds between reports: measured with a first open held to 5.5 s.
+  // The replaced room's own report has already gone (traceOldWorld, first thing
+  // in open()).
+  if (why === "routine" && world.opening) return;
   // Too short a window to measure the clocks by: the world trails the wall by
   // up to a step, which over a fraction of a second is most of the number,
   // and a world not stepped yet reads 0% -- the figure that means the clock
