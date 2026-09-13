@@ -1107,22 +1107,36 @@ if(BANJO_BUILD_TESTS AND TARGET banjo_platform)
  # price is. See docs/network-at-rest-stability-checkpoint.md.
  # The adaptive suite's tomato fixture is fully resolved under the 8,192-substep
  # cap and takes about 18 minutes, past ctest's default.
+ # How long the hour-long suites below are given. Two hours on a fast machine;
+ # .github/workflows/long-physics.yml gives a slower runner more.
+ set(BANJO_LONG_TEST_TIMEOUT_S 7200 CACHE STRING
+     "Timeout, in seconds, for the network, showcase and contact-capacity suites")
  set_tests_properties(banjo_network_skin_tests banjo_network_runtime_tests
      banjo_network_adaptive_tests
-     PROPERTIES TIMEOUT 7200)
+     PROPERTIES TIMEOUT ${BANJO_LONG_TEST_TIMEOUT_S})
  add_executable(banjo_material_showcase_tests tests/material_showcase_tests.cpp)
  target_link_libraries(banjo_material_showcase_tests PRIVATE banjo_platform nlohmann_json::nlohmann_json)
  target_compile_definitions(banjo_material_showcase_tests PRIVATE BANJO_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
  add_test(NAME banjo_material_showcase_tests COMMAND banjo_material_showcase_tests)
  # Same stability clock as the skin and runtime suites: about an hour.
- set_tests_properties(banjo_material_showcase_tests PROPERTIES TIMEOUT 7200)
+ set_tests_properties(banjo_material_showcase_tests PROPERTIES
+     TIMEOUT ${BANJO_LONG_TEST_TIMEOUT_S})
  add_executable(banjo_contact_capacity_tests tests/contact_capacity_tests.cpp)
  target_link_libraries(banjo_contact_capacity_tests PRIVATE banjo_platform nlohmann_json::nlohmann_json)
  target_compile_definitions(banjo_contact_capacity_tests PRIVATE BANJO_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
  add_test(NAME banjo_contact_capacity_tests COMMAND banjo_contact_capacity_tests)
  # Three 7^3 matter balls and a twice-stepped panel, fully resolved under the
  # substep cap: about 34 minutes (2,039 s measured).
- set_tests_properties(banjo_contact_capacity_tests PROPERTIES TIMEOUT 7200)
+ set_tests_properties(banjo_contact_capacity_tests PROPERTIES
+     TIMEOUT ${BANJO_LONG_TEST_TIMEOUT_S})
+ # Those five cost a quarter of an hour to an hour EACH on a fast machine, and
+ # the skin suite ran past two hours on a Linux build of it. A check made on
+ # every push cannot spend that, so .github/workflows/ci.yml runs `ctest -LE
+ # long`, and .github/workflows/long-physics.yml runs these five -- one job
+ # each, nightly and on demand. Nothing is skipped; it is when they run.
+ set_tests_properties(banjo_network_skin_tests banjo_network_runtime_tests
+     banjo_network_adaptive_tests banjo_material_showcase_tests
+     banjo_contact_capacity_tests PROPERTIES LABELS long)
  add_executable(banjo_network_spring_tests tests/network_spring_tests.cpp)
  target_link_libraries(banjo_network_spring_tests PRIVATE banjo_platform nlohmann_json::nlohmann_json)
  add_test(NAME banjo_network_spring_tests COMMAND banjo_network_spring_tests)

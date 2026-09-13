@@ -43,8 +43,10 @@ jobs:
       - name: Build
         run: cmake --build build/ci --parallel 2
 
+      # The five suites labelled `long` cost up to an hour or more each and
+      # run in long-physics.yml instead, nightly and on demand.
       - name: Test core and material laws
-        run: ctest --test-dir build/ci --output-on-failure
+        run: ctest --test-dir build/ci --output-on-failure -LE long
 
       - name: Test playground HTTP boundary without an API key
         env:

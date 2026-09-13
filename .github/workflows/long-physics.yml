@@ -1,0 +1,43 @@
+name: long-physics
+
+# The five physics suites labelled `long` in CMakeLists.txt: the network lane's
+# skin, runtime and adaptive suites, the material showcase, and the contact
+# capacity suite. Each costs a quarter of an hour to an hour on a fast machine
+# -- the skin suite ran past two hours on a Linux build -- which is more than a
+# check on every push can spend, so ci.yml leaves them out and they run here,
+# one job each so that no one of them waits on another, nightly and whenever
+# someone asks.
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  long-suite:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - network_skin
+          - network_runtime
+          - network_adaptive
+          - material_showcase
+          - contact_capacity
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build/ci -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DBANJO_BUILD_TESTS=ON
+          -DBANJO_LONG_TEST_TIMEOUT_S=19800
+
+      - name: Build
+        run: cmake --build build/ci --parallel 2 --target banjo_${{ matrix.suite }}_tests
+
+      - name: Test
+        run: ctest --test-dir build/ci --output-on-failure -R "^banjo_${{ matrix.suite }}_tests$"
