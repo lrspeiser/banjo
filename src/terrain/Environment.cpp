@@ -289,7 +289,13 @@ void Environment::applyEdits(const std::string &edits_json) {
     for (const Json &edit : edits) {
         if (!edit.is_object() || edit.size() != 1)
             throw std::invalid_argument("each terrain edit is {\"dig\": ...}, {\"deposit\": ...} or {\"cut\": ...}");
-        const auto &[kind, spec] = *edit.items().begin();
+        // The key and value read off the object's own iterator, which refer into
+        // `edit`. Bound as `const auto &[kind, spec] = *edit.items().begin()` they
+        // referred into the TEMPORARY that items().begin() returns, which dies at
+        // the end of that line: MSVC happened to leave the memory alone, and GCC
+        // at -O3 reused it and the valley tests died in here with a segfault.
+        const std::string kind = edit.begin().key();
+        const Json &spec = edit.begin().value();
         std::vector<std::size_t> changed;
         if (kind == "dig") {
             onlyKeys(spec, {"from_m", "to_m", "width_m", "depth_m"}, "a dig");
