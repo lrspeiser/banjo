@@ -26,17 +26,17 @@ void require(bool condition, const char *message) {
     if (!condition) throw std::runtime_error(message);
 }
 
-void finite(double value) {
+void requireFinite(double value) {
     require(std::isfinite(value), "playback contains a non-finite number");
 }
 
 Json vectorJson(Vec3 value) {
-    finite(value.x); finite(value.y); finite(value.z);
+    requireFinite(value.x); requireFinite(value.y); requireFinite(value.z);
     return {value.x, value.y, value.z};
 }
 
 Json quaternionJson(Quat value) {
-    finite(value.w); finite(value.x); finite(value.y); finite(value.z);
+    requireFinite(value.w); requireFinite(value.x); requireFinite(value.y); requireFinite(value.z);
     return {value.w, value.x, value.y, value.z};
 }
 
@@ -68,7 +68,7 @@ Json bodyJson(const PlatformInstance &instance) {
         body["shape"] = "box";
         body["dimensions_m"] = vectorJson(instance.geometry.dimensions_m);
     } else {
-        finite(instance.geometry.radius_m);
+        requireFinite(instance.geometry.radius_m);
         require(instance.geometry.radius_m > 0, "sphere has an invalid radius");
         const double diameter = 2 * instance.geometry.radius_m;
         body["shape"] = "sphere";
@@ -162,7 +162,7 @@ int main(int argc, char **argv) {
         std::size_t frame_bytes = 0;
 
         const auto capture = [&](double time) {
-            finite(time);
+            requireFinite(time);
             const auto instances = world->renderInstances();
             require(instances.size() <= kMaximumBodies, "playback body budget exceeded");
             Json poses = Json::array();
@@ -185,7 +185,7 @@ int main(int argc, char **argv) {
             require(lines.size() <= kMaximumBonds, "playback bond budget exceeded");
             Json bonds = Json::array();
             for (const auto &line : lines) {
-                finite(line.damage);
+                requireFinite(line.damage);
                 require(line.damage >= 0 && line.damage <= 1,
                         "bond damage is outside the supported range");
                 bonds.push_back({{"a_m", vectorJson(line.a)}, {"b_m", vectorJson(line.b)},
