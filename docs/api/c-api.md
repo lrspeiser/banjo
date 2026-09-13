@@ -415,14 +415,18 @@ on the same plank, with a bench underneath, report nothing.
 left them -- is solved for equilibrium under its own weight and the weight of
 what rests on it, held up (unilaterally) on its cells over what it rests on; the
 lattice's one failure criterion is applied to the strain that gives, every bond
-past it is removed, and it is solved again until nothing more fails. The pieces
-are what stays connected. What it said is in `banjo_mechanics_report`'s
+past it is removed, and it is solved again until nothing more fails or it breaks
+through between its supports -- statics stops there, because what its pieces do
+next is motion, which the rigid world answers; a chip that comes off without
+parting the supports is solved on without. The pieces are what stays connected. What it said is
+in `banjo_mechanics_report`'s
 `statics` list: `held`/`broke`, the load, how near its bonds came to the
 criterion (`first_failure_ratio`), the bonds removed, and the cost.
 
 It used to be put into a few milliseconds of the *dynamic* lattice with the
 heaviest thing on it and nothing under it, and this page said a stone shelf at
-5.46 MPa came out in 26 pieces. Traced (`BANJO_ISLAND_TRACE=1`): shelf and crate
+5.46 MPa came out in 26 pieces. Traced, with a print of every island's bodies
+(since removed): shelf and crate
 fell freely together there, and what broke the shelf was the crate's resting
 cells, sunk millimetres into it by the rigid solver's contact allowance, being
 pushed out -- not the load. Statics on the same shelf says **held**, its bonds at
@@ -430,14 +434,16 @@ pushed out -- not the load. Statics on the same shelf says **held**, its bonds a
 multiplier (2) times its strength's strain, and a shelf two cells deep has its
 outer cells a quarter of the depth from the middle, where beam theory's surface
 strain is halved. At 35 kN (5.9 times) its bonds reach 141% and it breaks, 2,519
-bonds, in 855 ms. **So the survey (beam theory at the declared strength) and the
+bonds in three rounds, in 12 ms. **So the survey (beam theory at the declared strength) and the
 lattice's criterion are two different lines** -- past the first it is worth
 asking, past the second it breaks -- and both numbers are reported.
 
 **A load statics has answered is not offered again until it changes**: a
 section a hundredth weaker than it held at, or a load a hundredth heavier. A
 load does not go away by itself, so without this an overloaded shelf would be
-asked about on every survey.
+asked about on every survey. That goes for any answer that leaves the body
+whole -- held, or a solve that did not converge: asked again unchanged, it
+would get the same answer at the same cost.
 
 The survey runs at a stride — four times a second, not sixty — because load does
 not change in a quarter of a second and the survey is O(bodies²).
@@ -1379,6 +1385,8 @@ typedef struct {
     double tension_if_cooled, shear_if_cooled, bending_if_cooled;
     int supported;                   /* 0: outside what the law supports */
     /* ---- ABI 19: what is left of it, from the same field ---- */
+    double bending_compression;      /* the compression side of the section (bending is */
+    double bending_compression_if_cooled;  /* the tension side); the survey takes the weaker */
     double reference_m[3];           /* the box its matter is measured against (= dimensions_m) */
     double remaining_m[3];           /* the part not burned away: what collides and is drawn */
     double remaining_volume_m3;
