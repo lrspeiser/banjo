@@ -99,6 +99,17 @@ of `0.02 v` on a rolling ball besides -- a quarter of a rubber ball's rolling
 resistance at 1 m/s on the floor, and twice an iron ball's. Boxes and broken
 pieces keep it, so nothing that slides or topples changed.
 
+One consequence reaches fracture, and it is left showing rather than tuned
+away. A ball dropped 6 m now arrives 0.4% faster (10.79 m/s against 10.75),
+and in `tests/threshold_tests.py` the iron ball dropped exactly 6.00 m onto
+the 20 mm glass plate now leaves it whole, where main broke it into 54 pieces.
+Whether that plate breaks turns on where in a step the ball arrives, on main
+as well. Dropped from each of 5.90, 5.93, 5.96, 5.99, 6.00, 6.02, 6.05 and
+6.08 m, main breaks it at 3 of the 8 heights (0, 31, 0, 0, 54, 26, 0, 0
+pieces) and this branch at 7 (14, 77, 43, 3, 0, 74, 37, 4). That is the
+queued fracture path's sensitivity to the capture phase, which does not depend
+on rolling resistance; it is a separate defect, and the test stays as written.
+
 ## What is round
 
 **Balls only**: a whole authored sphere (`FragmentPrimitive::Sphere`, not
