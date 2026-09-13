@@ -5,11 +5,11 @@ from unittest import mock
 from playground_tests import PlaygroundTestCase, plan_for, PRIVATE_KEY, playground_server
 
 class LoggingTests(PlaygroundTestCase):
-    def completed(self):
+    def completed(self,message="Compare impact"):
         # The rigid control has no network cells, so the realtime gate admits it.
         # The panel plan this suite used before the gate is refused; the last test pins that.
         app=self.make_app(mock.Mock(return_value=(plan_for("rigid_drop",heights_m=[0.25]),{})))
-        job_id=app.submit({"message":"Compare impact", "request_id":"logging_test_01", "auto_open":False})["job_id"]
+        job_id=app.submit({"message":message, "request_id":"logging_test_01", "auto_open":False})["job_id"]
         job=app.get(job_id)
         self.assertEqual(job["status"],"complete",job["message"])
         return app,job_id
@@ -26,6 +26,16 @@ class LoggingTests(PlaygroundTestCase):
         evidence=app.evidence(job_id,0)
         self.assertEqual(evidence["request"],"Compare impact")
         self.assertIn("native_facts",evidence["diagnostics"])
+        self.assertNotIn(PRIVATE_KEY,json.dumps(evidence))
+
+    def test_evidence_redacts_a_key_the_request_carried(self):
+        # log_event redacts the key before it writes an event, so the key the test above logs
+        # reaches the bundle already redacted. The request text is kept as typed: this key reaches
+        # evidence() whole, and only evidence()'s own redaction can take it out.
+        app,job_id=self.completed("Compare impact "+PRIVATE_KEY)
+        self.assertIn(PRIVATE_KEY,app.get(job_id)["request_text"])
+        evidence=app.evidence(job_id,0)
+        self.assertEqual(evidence["request"],"Compare impact [redacted]")
         self.assertNotIn(PRIVATE_KEY,json.dumps(evidence))
 
     def test_review_is_cached_and_saved_without_repeating_provider_call(self):
