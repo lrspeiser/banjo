@@ -582,7 +582,13 @@ class Live:
         if op == "cancel_stroke":
             return session.send(op="cancel_stroke")
         if op == "preview_stroke":
-            return session.send(op="preview_stroke", horizon_s=horizon(), **stroke_command())
+            # Always a throw, as banjo_preview_stroke is: a hand that keeps hold
+            # at the end has no flight to show. Taken from the request, with
+            # stroke's default of false, a preview asked without let_go was of a
+            # hand slowing to arrive at the end -- and the room's aim arc was
+            # drawn from it, at a third of the throw's speed.
+            return session.send(op="preview_stroke", horizon_s=horizon(),
+                                **{**stroke_command(), "let_go": True})
         if op == "preview_flight":
             return session.send(**{"op": "preview_flight",
                                    "from": _three(body.get("from"), "a flight's start"),
