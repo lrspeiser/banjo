@@ -369,6 +369,36 @@ pieces put in its place did not wake it either. What stood on or against a
 body that comes apart is now woken (`LiveWorld::applyPending`), and in six
 runs since the block came down 0.38 to 0.48 m.
 
+Woken, the block does what a 212 kg block does to charred wood, and that found
+three more faults, all in how a lattice run hands bodies back. Measured on the
+owner's two beams at 20 mm cells: statics broke the heated oak into 20 pieces,
+the block fell onto them, and the two halves, down to about a 2 m/s bar,
+were crushed into 305 and 327 pieces (31 bodies to 664 in 0.25 s of world).
+
+- A body that is only in a run to deliver the blow -- admitted neither to break
+  nor to dent -- was handed back with its cells where the run had left them.
+  The block was in several runs in 30 ms, its cells by then 0.13 m from where
+  its box touched a piece, and it came out of the next at 188 m/s, then 500.
+  It now comes out as it went in but for how it moved: its cells in their rigid
+  layout, no permanent set, its name and its shape kept.
+- A whole box that goes through a run came back square to the world, its cells
+  keeping the tilt. It keeps its turn.
+- An applied run never marked the bonds between the pieces it made as broken in
+  the scene's matter, so a later run with two of those pieces in it took the
+  bonds in alive, stretched across whatever gap had opened: two pieces 79 mm
+  apart went in at 5 m/s and came out one body at 97.5 m/s. A bond between two
+  bodies now starts broken, and a held body gets back only bonds inside itself.
+  `tests/threshold_tests.py` had relied on this without knowing: every bond it
+  saw put back in its six drops (16 between two pieces of the plate, 2 inside a
+  piece one of those pulled on) came from these stale bonds. None is now, and
+  its last check says so.
+
+What is left is not the lattice. After the crush the world holds some 660
+burning bodies, and it ran 29.25 s of world in 331 s of wall -- 11.3 times
+slower than real time -- with only 40 lattice runs in all: the cost is in the
+step, not in fracture. So the long suite's owner's two beams does not finish:
+2,400 s after all three fixes it had not. See *Not done*.
+
 ## The laws
 
 A law says, per material, a reduction factor against temperature for the
@@ -616,19 +646,22 @@ half minutes in, statics says its bonds have reached the criterion and it gives
 way under the block. The cold twin carries its block throughout.
 
 Measured in the real page, in headless Chrome over the DevTools protocol, on this
-branch's final build: the request above was typed into the room's own chat,
-which built both assemblies in one turn (32 s, gpt-5-mini). The room then ran at
-1.0007 of real time -- 777.3 s of world in 776.8 s, the worst minute 0.998, 60
-frames a second, no page errors. The heated beam was drawn smaller 17 times,
-from 1400 x 80 x 80 mm to 1393.2 x 73.2 x 73.2 mm and from 6.27 to 5.13 kg.
-Statics was first asked 420.8 s in, its bonds at 24.1% of the criterion, and
-asked again as the section fell, holding on every ask up to 97.4% at 742.8 s; at
-746.5 s they reached 100.5% -- broke, 110 bonds, 5 pieces -- and the halves
-folded down under the block between the piers, still burning. The cold twin
-carried its block throughout. Before the two fixes in *Sustained loads* and
-*What burns leaves the shape*, the same run ended with the block on the floor
-under a beam that had not broken, and the Heat panel saying "under its load:
-holds".
+branch's final build, merged with main at `2ef95e2`: the request above was typed
+into the room's own chat, which built both assemblies in one turn (57 s). The
+room then ran at 0.9999 of real time -- 781.76 s of world in 781.8 s, the worst
+minute 0.997, 60 frames a second, no page errors -- through the break and the
+20 s after it. The heated beam was drawn smaller 17 times, from 1400 x 80 x 80 mm
+to 1393.2 x 73.2 x 73.2 mm. Statics was first asked 431.1 s in, its bonds at
+24.2% of the criterion, and asked again as the section fell, holding on every
+ask up to 97.7% at 756.1 s; at 759.8 s they reached 100.8% -- broke, 64 bonds, 4
+pieces -- and the block came down between the piers onto the burning pieces,
+which the ground broke further (39 objects in the room after). The cold twin
+carried its block throughout. An earlier run of this branch, before a body that
+comes apart woke what stood on it, happened to break so that the block came
+down, the halves folding under it; through the QA recipe, five runs of six of
+that build did not. Before the two fixes in *Sustained loads* and *What burns
+leaves the shape*, the same run ended with the block on the floor under a beam
+that had not broken, and the Heat panel saying "under its load: holds".
 
 ## What it keeps
 
@@ -675,6 +708,17 @@ again by every survey and need not be kept.
 
 ## Not done
 
+* **Hundreds of burning pieces are slower than real time.** At 20 mm cells the
+  owner's heated oak, crushed by its block, becomes some 660 burning bodies,
+  and the world then runs 11.3 times slower than real time (29.25 s in 331 s),
+  the cost in the step rather than in its 40 lattice runs. The long suite's
+  owner's two beams does not finish (2,400 s after the fixes above); where the
+  step spends it has not been measured. The room's own build, at 40 mm, breaks
+  into far fewer pieces.
+* **A body that cracked and stayed whole heals on its next run.** An applied
+  run never writes the bonds it broke back into the scene's matter; a run now
+  starts with every bond between two bodies broken, but a crack inside one body
+  is whole again the next time that body is run.
 * **A body charred through keeps its shape.** EN 1995-1-2 gives char no strength
   and no stiffness, so a body charred all the way through has no live bond: its
   impact bar is infinite and statics cannot say where it gives ("char through").
