@@ -875,34 +875,55 @@ def valley() -> dict[str, Any]:
 
 
 def watershed() -> dict[str, Any]:
-    """The valley, and the regions beyond its edges (docs/watershed.md).
+    """The valley, and the river network beyond its edges (docs/watershed.md).
 
     The same ground as the valley room -- which is left exactly as it is: its
     numbers are what the milestone has to keep -- but the river is no longer
-    handed a discharge at the west edge and let go over the east one. Beyond
-    the west edge stands a reservoir the river is fed from, and beyond the east
-    edge a basin it pours into, which lets water go over its own outlet. Each
-    is a level pool, and what crosses between it and the valley is the water
-    on both sides, either way: dam the river and the reservoir fills.
+    handed a discharge at the west edge and let go over the east one. It comes
+    down a reach from a reservoir beyond the west edge, and leaves down another
+    beyond the east edge to a confluence, where a brook from a spring joins it,
+    and on down a third to a lake that lets water go over its own outlet. The
+    reaches and pools are held coarsely -- a handful of numbers a reach -- and
+    what crosses between them and the valley is the water on both sides,
+    either way: dam the river and the reservoir fills, and less goes on down.
 
-    From the valley itself (its engine's own report): the river comes in over
-    a bed of 0.44 m standing 0.69 to 0.74 m, at 0.35 m3/s, and leaves across a
-    mouth whose bed falls to 0.01 m. So the reservoir is fed at the river's own
-    0.35 m3/s and starts a little above the river where it comes in, at
-    0.80 m, so it feeds it; and the basin starts below the mouth's lowest bed
-    and lets water go over a 3 m weir at 0.05 m, which passes 0.35 m3/s
-    standing about 0.22 m -- a little way up the mouth, so the river meets it
-    rather than falling off an edge.
+    From the valley itself (its engine's own report): the river comes in across
+    the west edge over cells 51 to 57 -- 1.75 m, z -2.75 to -1.25 -- on a bed
+    of 0.435 m, standing 0.74 m, at 0.35 m3/s, and leaves across the east edge
+    over cells 49 to 68 -- 5.0 m, z -3.25 to 1.5 -- where the bed falls to
+    0.01 m. So the reach above is 1.75 m wide and comes down onto the river's
+    own 0.435 m bed, and the reach below is 5 m wide and starts at 0.0 m: the
+    same discharge a metre either side of each edge. Every reach is gentle
+    enough to stay subcritical at the discharge it is given (Froude 0.5 to 0.7
+    at its normal depth). The reservoir is fed the river's own 0.35 m3/s and
+    starts at 0.85 m; the lake starts below its outlet, so it fills first.
     """
     spec = valley()
+    west, east = -19.375, 19.375                 # the valley's edges, x
+    confluence = [east + 22.75, -0.875]          # 5.5 m across, where the brook joins
     spec["water"] = {"watershed": {
         "basins": [
-            {"name": "the upstream reservoir", "bed_m": 0.2, "area_m2": 400.0, "level_m": 0.8},
-            {"name": "the downstream basin", "bed_m": -0.6, "area_m2": 600.0, "level_m": 0.0,
-             "outlet": {"crest_m": 0.05, "width_m": 3.0}}],
-        "connections": [
-            {"basin": "the upstream reservoir", "instead_of": "the river"},
-            {"basin": "the downstream basin", "instead_of": "the river's mouth"}]}}
+            {"name": "the upstream reservoir", "bed_m": 0.2, "area_m2": 400.0, "level_m": 0.85,
+             "at_m": [west - 34.0, -2.0]},
+            {"name": "the spring", "bed_m": 0.0, "area_m2": 25.0, "level_m": 0.35, "fed_m3_s": 0.1,
+             "at_m": [confluence[0], confluence[1] - 29.25]},
+            {"name": "the lake", "bed_m": -1.0, "area_m2": 900.0, "level_m": -0.25,
+             "outlet": {"crest_m": -0.15, "width_m": 4.0}, "at_m": [east + 60.5, -0.875]}],
+        "junctions": [
+            {"name": "the confluence", "bed_m": -0.3, "area_m2": 30.0, "level_m": 0.03, "at_m": confluence}],
+        "reaches": [
+            {"name": "the river above the valley", "from": "the upstream reservoir",
+             "to": {"connection": "the river"}, "width_m": 1.75, "bed_from_m": 0.55, "bed_to_m": 0.435,
+             "cells": 4, "depth_m": 0.3, "discharge_m3_s": 0.35, "path_m": [[west - 24.0, -2.0], [west, -2.0]]},
+            {"name": "the river below the valley", "from": {"connection": "the river's mouth"},
+             "to": "the confluence", "width_m": 5.0, "bed_from_m": 0.0, "bed_to_m": -0.1, "cells": 4,
+             "depth_m": 0.12, "discharge_m3_s": 0.35, "path_m": [[east, -0.875], [east + 20.0, -0.875]]},
+            {"name": "the brook", "from": "the spring", "to": "the confluence", "width_m": 1.0,
+             "bed_from_m": 0.15, "bed_to_m": -0.05, "cells": 4, "depth_m": 0.13, "discharge_m3_s": 0.1,
+             "path_m": [[confluence[0], confluence[1] - 26.75], [confluence[0], confluence[1] - 2.75]]},
+            {"name": "the river to the lake", "from": "the confluence", "to": "the lake", "width_m": 5.0,
+             "bed_from_m": -0.1, "bed_to_m": -0.2, "cells": 4, "depth_m": 0.14, "discharge_m3_s": 0.45,
+             "path_m": [[east + 25.5, -0.875], [east + 45.5, -0.875]]}]}}
     return spec
 
 

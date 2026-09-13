@@ -880,13 +880,14 @@ def normalise_water(water: Any) -> dict[str, Any]:
     if "discharge_m3_s" in out:
         out["discharge_m3_s"] = _number(out["discharge_m3_s"], 0.0, 20.0, "water discharge_m3_s")
     if "watershed" in out:
-        # The regions beyond the edges (docs/watershed.md): basins and the
-        # connections to them. Their shape here; the engine checks the rest.
+        # The regions beyond the edges (docs/watershed.md): basins, junctions,
+        # the reaches between them and the connections to them. Their shape
+        # here; the engine checks the rest.
         shed = out["watershed"]
-        if (not isinstance(shed, dict) or not isinstance(shed.get("basins", []), list)
-                or not isinstance(shed.get("connections", []), list)):
-            raise ValueError("water watershed is an object holding a list of basins and a list of "
-                             "connections")
+        if not isinstance(shed, dict) or any(not isinstance(shed.get(key, []), list)
+                                             for key in ("basins", "junctions", "reaches", "connections")):
+            raise ValueError("water watershed is an object holding lists of basins, junctions, reaches "
+                             "and connections")
     return out
 
 

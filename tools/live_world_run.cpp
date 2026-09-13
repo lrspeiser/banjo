@@ -43,10 +43,15 @@
 //        {"op":"declare","json":{"gas_regions":[...],"heaters":[...]}}
 //        {"op":"vent","region":"cylinder gas","open":true}
 //        {"op":"thermo","model":false}      heat, chemistry, gas and the ledger
-//        (a ground block carries "beyond": where each connection meets the
-//         basin beyond an edge, {basin, edge, from_m, to_m}; the water block,
-//         "basins": {name, level_m, volume_m3, fed_m3_s, out_m3_s,
-//         across_m3_s} and "all_unaccounted_m3" -- docs/watershed.md)
+//        (a ground block carries "beyond": the river network beyond the
+//         edges, for a picture of it -- "connections" {name, edge, from_m,
+//         to_m, basin | reach and end}, "basins" and "junctions" {name, at_m,
+//         side_m, bed_m}, "reaches" {name, width_m, cells, length_m, points_m
+//         at its cells' boundaries, bed_m a cell}; the water block, "basins"
+//         and "junctions" {name, level_m, volume_m3, fed_m3_s, out_m3_s,
+//         across_m3_s, from_reaches_m3_s}, "reaches" {name, level_m a cell,
+//         in_m3_s, middle_m3_s, out_m3_s, froude} and "all_unaccounted_m3"
+//         -- docs/watershed.md)
 //        {"op":"dig","from":[x,z],"to":[x,z],"width_m":1,"depth_m":0.5}
 //                                            a trench (or a pit, from == to);
 //                                            "carried" in the reply is the sand
@@ -686,18 +691,55 @@ nlohmann::json carriedJson(const banjo::terrain::Environment &env) {
 // for with the numbers a reply gave, needs none.
 constexpr double kCarriedSlackM3 = 1.0e-9;
 
-// Where each connection meets the basin beyond it: the two end columns of its
-// span, in world metres, and which edge -- for a picture of the water standing
-// beyond the ground (docs/watershed.md).
+// A point `s` metres along a path of points.
+std::array<double, 2> pointAlong(const std::vector<std::array<double, 2>> &path, double s) {
+    for (std::size_t k = 1; k < path.size(); ++k) {
+        const double dx = path[k][0] - path[k - 1][0], dz = path[k][1] - path[k - 1][1];
+        const double len = std::hypot(dx, dz);
+        if (s <= len || k + 1 == path.size()) {
+            const double t = len > 0.0 ? std::clamp(s / len, 0.0, 1.0) : 0.0;
+            return {path[k - 1][0] + t * dx, path[k - 1][1] + t * dz};
+        }
+        s -= len;
+    }
+    return path.empty() ? std::array<double, 2>{0.0, 0.0} : path.front();
+}
+
+// The river network beyond the edges, for a picture of it (docs/watershed.md):
+// where each connection meets it -- the end columns of its span in world
+// metres, and which edge -- where each basin and junction stands and how big
+// it is drawn (a square of its surface's area), and each reach's course cut at
+// its cells' boundaries with the bed under each cell. Where a scene says where
+// they are, that; where it does not, a reach at a connection runs straight out
+// from the middle of the span, and a basin stands where its reach ends -- or,
+// met at the edge itself, just beyond it.
 nlohmann::json beyondBlock(const banjo::terrain::Environment &env) {
-    nlohmann::json beyond = nlohmann::json::array();
-    if (env.water() == nullptr) return beyond;
+    nlohmann::json beyond = {{"connections", nlohmann::json::array()}, {"basins", nlohmann::json::array()},
+                             {"junctions", nlohmann::json::array()}, {"reaches", nlohmann::json::array()}};
+    const banjo::water::RiverNetwork *net = env.network();
+    if (env.water() == nullptr || net == nullptr) return beyond;
     const banjo::terrain::Grid &g = env.terrain().grid();
     static constexpr const char *kEdge[] = {"west", "east", "south", "north"};
+    using Point = std::array<double, 2>;
+    const std::size_t nodes = net->nodes().size(), reaches = net->reaches().size();
+    std::vector<Point> node_at(nodes);
+    std::vector<bool> node_placed(nodes, false);
+    std::vector<double> node_side(nodes);
+    for (std::size_t k = 0; k < nodes; ++k) {
+        const banjo::water::RiverNetwork::Node &n = net->nodes()[k];
+        node_side[k] = std::sqrt(std::max(1.0, n.storage.area(n.level_m)));
+        if (n.x_m != 0.0 || n.z_m != 0.0) {
+            node_at[k] = {n.x_m, n.z_m};
+            node_placed[k] = true;
+        }
+    }
+    std::vector<std::vector<Point>> path(reaches);
+    for (std::size_t k = 0; k < reaches; ++k)
+        for (const auto &p : net->reaches()[k].path_m) path[k].push_back({p.first, p.second});
     for (const auto &link : env.links()) {
         const banjo::water::Connection &span =
             env.water()->connections()[static_cast<std::size_t>(link.connection)];
-        const auto at = [&](int k) -> std::array<double, 2> {
+        const auto at = [&](int k) -> Point {
             switch (span.edge) {
             case banjo::water::Edge::West: return {g.x0, g.z0 + k * g.dx};
             case banjo::water::Edge::East: return {g.x0 + (g.nx - 1) * g.dx, g.z0 + k * g.dx};
@@ -706,10 +748,74 @@ nlohmann::json beyondBlock(const banjo::terrain::Environment &env) {
             }
             return {0.0, 0.0};
         };
-        const auto a = at(span.from), b = at(span.to);
-        beyond.push_back({{"basin", env.basins()[link.basin].name},
-                          {"edge", kEdge[static_cast<int>(span.edge)]},
-                          {"from_m", {a[0], a[1]}}, {"to_m", {b[0], b[1]}}});
+        const Point a = at(span.from), b = at(span.to), mid = {(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0};
+        const Point out = span.edge == banjo::water::Edge::West ? Point{-1.0, 0.0}
+                        : span.edge == banjo::water::Edge::East ? Point{1.0, 0.0}
+                        : span.edge == banjo::water::Edge::South ? Point{0.0, -1.0} : Point{0.0, 1.0};
+        nlohmann::json said = {{"name", link.name}, {"edge", kEdge[static_cast<int>(span.edge)]},
+                               {"from_m", {a[0], a[1]}}, {"to_m", {b[0], b[1]}}};
+        if (link.end.node != banjo::water::RiverNetwork::kOpen) {
+            const std::size_t k = static_cast<std::size_t>(link.end.node);
+            said["basin"] = net->nodes()[k].name;
+            if (!node_placed[k]) {
+                const double off = g.dx / 2.0 + node_side[k] / 2.0;
+                node_at[k] = {mid[0] + out[0] * off, mid[1] + out[1] * off};
+                node_placed[k] = true;
+            }
+        } else {
+            const std::size_t k = static_cast<std::size_t>(link.end.reach);
+            const banjo::water::RiverNetwork::Reach &r = net->reaches()[k];
+            said["reach"] = r.name;
+            said["end"] = link.end.at_to ? "to" : "from";
+            if (path[k].empty()) {
+                const Point far = {mid[0] + out[0] * r.length_m, mid[1] + out[1] * r.length_m};
+                path[k] = link.end.at_to ? std::vector<Point>{far, mid} : std::vector<Point>{mid, far};
+            }
+        }
+        beyond["connections"].push_back(said);
+    }
+    // Basins and junctions where their reaches end, then reaches between them.
+    for (int pass = 0; pass < 4; ++pass)
+        for (std::size_t k = 0; k < reaches; ++k) {
+            const banjo::water::RiverNetwork::Reach &r = net->reaches()[k];
+            for (const bool at_to : {false, true}) {
+                const int node = at_to ? r.to : r.from;
+                if (node == banjo::water::RiverNetwork::kOpen || path[k].size() < 2) continue;
+                const std::size_t n = static_cast<std::size_t>(node);
+                if (node_placed[n]) continue;
+                const Point end = at_to ? path[k].back() : path[k].front();
+                const Point next = at_to ? path[k][path[k].size() - 2] : path[k][1];
+                const double len = std::max(1e-9, std::hypot(end[0] - next[0], end[1] - next[1]));
+                const double off = node_side[n] / 2.0;
+                node_at[n] = {end[0] + (end[0] - next[0]) / len * off, end[1] + (end[1] - next[1]) / len * off};
+                node_placed[n] = true;
+            }
+            if (path[k].empty() && r.from != banjo::water::RiverNetwork::kOpen &&
+                r.to != banjo::water::RiverNetwork::kOpen && node_placed[static_cast<std::size_t>(r.from)] &&
+                node_placed[static_cast<std::size_t>(r.to)])
+                path[k] = {node_at[static_cast<std::size_t>(r.from)], node_at[static_cast<std::size_t>(r.to)]};
+        }
+    for (std::size_t k = 0; k < nodes; ++k) {
+        const banjo::water::RiverNetwork::Node &n = net->nodes()[k];
+        if (!node_placed[k]) continue;
+        beyond[n.junction ? "junctions" : "basins"].push_back(
+            {{"name", n.name}, {"at_m", {node_at[k][0], node_at[k][1]}}, {"side_m", node_side[k]},
+             {"bed_m", n.storage.bottom()}});
+    }
+    for (std::size_t k = 0; k < reaches; ++k) {
+        const banjo::water::RiverNetwork::Reach &r = net->reaches()[k];
+        if (path[k].size() < 2) continue;
+        double along = 0.0;
+        for (std::size_t p = 1; p < path[k].size(); ++p)
+            along += std::hypot(path[k][p][0] - path[k][p - 1][0], path[k][p][1] - path[k][p - 1][1]);
+        nlohmann::json points = nlohmann::json::array(), beds = nlohmann::json::array();
+        for (int c = 0; c <= r.cells; ++c) {
+            const Point p = pointAlong(path[k], along * c / r.cells);
+            points.push_back({p[0], p[1]});
+        }
+        for (const double b : r.bed_m) beds.push_back(b);
+        beyond["reaches"].push_back({{"name", r.name}, {"width_m", r.width_m}, {"cells", r.cells},
+                                     {"length_m", r.length_m}, {"points_m", points}, {"bed_m", beds}});
     }
     return beyond;
 }
@@ -743,21 +849,34 @@ nlohmann::json waterBlock(const banjo::terrain::Environment &env, double t) {
                           {"wet_cells", box.wet_cells}, {"active_cells", w.stats().active_cells},
                           {"in_m3_s", tidy(w.inflowRate())}, {"out_m3_s", tidy(w.outflowRate())},
                           {"residual_m3", w.residualFor(volume)}};
-    if (!env.basins().empty()) {
-        // The basins beyond the edges, and one account for all the water: this
-        // region's and theirs, against what was there plus everything fed
-        // from beyond the world less everything let go to it.
-        nlohmann::json basins = nlohmann::json::array();
-        const banjo::water::Ledger &wl = w.ledger();
-        double held = volume, expected = wl.initial_m3 + wl.inflow_m3 - wl.outflow_m3 + wl.numerical_m3;
-        for (const auto &b : env.basins()) {
-            basins.push_back({{"name", b.name}, {"level_m", tidy(b.level())}, {"volume_m3", tidy(b.volume_m3)},
-                              {"fed_m3_s", tidy(b.fed_m3_s)}, {"out_m3_s", tidy(b.out_rate_m3_s)},
-                              {"across_m3_s", tidy(b.across_rate_m3_s)}});
-            held += b.volume_m3;
-            expected += b.initial_m3 + b.fed_m3 - b.out_m3;
+    if (const banjo::water::RiverNetwork *net = env.network()) {
+        // The river network beyond the edges, and one account for all the
+        // water: this region's and the network's, against what was there plus
+        // everything fed from beyond the world less everything let go to it.
+        // What crossed between them is in both ledgers with opposite signs.
+        nlohmann::json basins = nlohmann::json::array(), junctions = nlohmann::json::array();
+        nlohmann::json reaches = nlohmann::json::array();
+        for (const auto &n : net->nodes())
+            (n.junction ? junctions : basins)
+                .push_back({{"name", n.name}, {"level_m", tidy(n.level_m)}, {"volume_m3", tidy(n.volume_m3)},
+                            {"fed_m3_s", tidy(n.fed_m3_s)}, {"out_m3_s", tidy(n.out_rate_m3_s)},
+                            {"across_m3_s", tidy(n.across_rate_m3_s)},
+                            {"from_reaches_m3_s", tidy(n.from_reaches_rate_m3_s)}});
+        for (const auto &r : net->reaches()) {
+            nlohmann::json levels = nlohmann::json::array();
+            for (const double level : r.level_m) levels.push_back(tidy(level));
+            reaches.push_back({{"name", r.name}, {"level_m", levels}, {"in_m3_s", tidy(r.q_m3_s.front())},
+                               {"middle_m3_s", tidy(r.q_m3_s[r.q_m3_s.size() / 2])},
+                               {"out_m3_s", tidy(r.q_m3_s.back())}, {"froude", tidy(r.froude_now)}});
         }
+        const banjo::water::Ledger &wl = w.ledger();
+        const banjo::water::RiverNetwork::Totals totals = net->totals();
+        const double held = volume + net->volume();
+        const double expected = wl.initial_m3 + wl.inflow_m3 - wl.outflow_m3 + wl.numerical_m3 +
+                                totals.initial_m3 + totals.fed_m3 - totals.out_m3 + totals.numerical_m3;
         out["basins"] = basins;
+        out["junctions"] = junctions;
+        out["reaches"] = reaches;
         out["all_unaccounted_m3"] = held - expected;
     }
     if (box.ni == 0) {

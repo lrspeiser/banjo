@@ -316,8 +316,11 @@ function drawTerrain(block) {
   // The flat floor is the rock's safety net far below: not a thing to draw.
   floor.visible = false;
   grid.visible = false;
-  scene.fog.near = 32;
-  scene.fog.far = 95;
+  // A river network beyond the edges reaches tens of metres out: the haze
+  // stands back far enough to see where the river goes.
+  const reachesOut = ground.beyond.length > 0;
+  scene.fog.near = reachesOut ? 60 : 32;
+  scene.fog.far = reachesOut ? 190 : 95;
 }
 
 // Only the rectangle that changed: a spade, a bank slumping into its trench.
@@ -398,7 +401,7 @@ function drawWater(block) {
   ground.water.geometry.attributes.color.needsUpdate = true;
   ground.last = block;
   showWater(block);
-  placeBeyond(block.basins);
+  placeBeyond(block);
 }
 
 function currentSurface() {
@@ -463,10 +466,12 @@ function showWater(block) {
   const box = $("water");
   box.hidden = false;
   const cells = ground.grid.nx * ground.grid.nz;
-  const basins = block.basins || [];
-  // With regions beyond the edges nothing is handed in or let go at the
-  // valley's own edges: the river crosses to and from the basins, said below.
-  $("water-line").textContent = basins.length
+  const pools = [...(block.basins || []), ...(block.junctions || [])];
+  const reaches = block.reaches || [];
+  const networked = pools.length > 0 || reaches.length > 0;
+  // With a river network beyond the edges nothing is handed in or let go at
+  // the valley's own edges: the river crosses to and from it, said below.
+  $("water-line").textContent = networked
     ? `${block.volume_m3.toFixed(2)} m³ standing in the valley`
     : `${block.volume_m3.toFixed(2)} m³ standing · river in ${block.in_m3_s.toFixed(2)} m³/s,`
       + ` out ${block.out_m3_s.toFixed(2)} m³/s`;
@@ -474,58 +479,117 @@ function showWater(block) {
     `${block.active_cells} of ${cells} columns computed (${block.wet_cells} wet)`
     + ` · unaccounted ${Number(block.residual_m3).toExponential(1)} m³`;
   const beyond = $("water-beyond");
-  beyond.hidden = basins.length === 0;
-  if (basins.length) {
-    const said = basins.map((b) => {
+  beyond.hidden = !networked;
+  if (networked) {
+    const flow = (q) => `${Math.abs(q).toFixed(2)} m³/s`;
+    const said = pools.map((b) => {
       const parts = [`${b.name}: ${b.level_m.toFixed(3)} m, ${b.volume_m3.toFixed(1)} m³`];
-      if (b.fed_m3_s > 0) parts.push(`fed ${b.fed_m3_s.toFixed(2)} m³/s`);
-      if (b.across_m3_s < -1e-4) parts.push(`into the valley ${(-b.across_m3_s).toFixed(2)} m³/s`);
-      else if (b.across_m3_s > 1e-4) parts.push(`from the valley ${b.across_m3_s.toFixed(2)} m³/s`);
-      if (b.out_m3_s > 0) parts.push(`over its outlet ${b.out_m3_s.toFixed(2)} m³/s`);
+      if (b.fed_m3_s > 0) parts.push(`fed ${flow(b.fed_m3_s)}`);
+      if (b.across_m3_s < -1e-4) parts.push(`into the valley ${flow(b.across_m3_s)}`);
+      else if (b.across_m3_s > 1e-4) parts.push(`from the valley ${flow(b.across_m3_s)}`);
+      if (b.out_m3_s > 0) parts.push(`over its outlet ${flow(b.out_m3_s)}`);
       return parts.join(", ");
     });
+    // What each reach carries where it starts, in its middle and where it
+    // ends; at an end the valley meets, what crosses the valley's edge.
+    for (const r of reaches)
+      said.push(`${r.name} ${r.in_m3_s.toFixed(2)} → ${r.middle_m3_s.toFixed(2)} → ${r.out_m3_s.toFixed(2)} m³/s`);
     beyond.textContent = said.join(" · ")
       + ` · all of it unaccounted ${Number(block.all_unaccounted_m3).toExponential(1)} m³`;
   }
 }
 
-// The regions beyond the edges (docs/watershed.md). Each basin the river is
-// fed from or pours into is drawn as a still sheet of water standing out from
-// the edge where the connection meets it, at the level the engine reports: a
-// picture of a number, as the rest of the water is. It holds no bodies, and
+// The river network beyond the edges (docs/watershed.md), drawn from the
+// engine's own numbers: each basin and junction a still sheet of water at its
+// level over a floor at its bed -- a square of its surface's area -- and each
+// reach a ribbon of water along its course, cell by cell at each cell's level,
+// over a strip of bed at each cell's bed; a dry cell shows only its bed. A
+// picture of numbers, as the rest of the water is: it holds no bodies, and
 // nothing about it is decided here.
-const BEYOND_REACH_M = 14;
-function drawBeyond(spans) {
+const BEYOND_BANK_M = 1.5;   // the bed drawn this much wider than the water, each side
+function beyondWater() {
+  return new THREE.MeshStandardMaterial({ color: WATER_DEEP.clone(), transparent: true, opacity: 0.8,
+    roughness: 0.1, metalness: 0.05, depthWrite: false, side: THREE.DoubleSide });
+}
+function beyondBed() {
+  const c = GROUND_COLOURS[1];
+  return new THREE.MeshStandardMaterial({ color: new THREE.Color(c.r, c.g, c.b), roughness: 0.96,
+    metalness: 0.0, side: THREE.DoubleSide });
+}
+// A strip along a course, `half` metres either side of it: a quad a cell, with
+// each cell's four corners its own so each cell can stand at its own height.
+function stripAlong(points, half, heights) {
+  const n = points.length - 1;
+  const pos = new Float32Array(12 * n), index = new Uint32Array(6 * n);
+  for (let c = 0; c < n; ++c) {
+    const [x0, z0] = points[c], [x1, z1] = points[c + 1];
+    const len = Math.hypot(x1 - x0, z1 - z0) || 1;
+    const sx = -(z1 - z0) / len * half, sz = (x1 - x0) / len * half;
+    [[x0 + sx, z0 + sz], [x0 - sx, z0 - sz], [x1 + sx, z1 + sz], [x1 - sx, z1 - sz]].forEach(([x, z], v) => {
+      pos[12 * c + 3 * v] = x;
+      pos[12 * c + 3 * v + 1] = heights[c];
+      pos[12 * c + 3 * v + 2] = z;
+    });
+    index.set([4 * c, 4 * c + 1, 4 * c + 2, 4 * c + 1, 4 * c + 3, 4 * c + 2], 6 * c);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  geometry.setIndex(new THREE.BufferAttribute(index, 1));
+  geometry.computeVertexNormals();
+  return geometry;
+}
+function drawBeyond(beyond) {
   ground.beyond = [];
-  const half = ground.grid ? ground.grid.dx / 2 : 0;
-  for (const span of spans || []) {
-    const [ax, az] = span.from_m, [bx, bz] = span.to_m;
-    const acrossZ = span.edge === "west" || span.edge === "east";
-    const out = span.edge === "west" || span.edge === "south" ? -1 : 1;
-    const lo = Math.min(acrossZ ? az : ax, acrossZ ? bz : bx) - 3;
-    const hi = Math.max(acrossZ ? az : ax, acrossZ ? bz : bx) + 3;
-    const geometry = new THREE.PlaneGeometry(acrossZ ? BEYOND_REACH_M : hi - lo,
-                                             acrossZ ? hi - lo : BEYOND_REACH_M);
-    geometry.rotateX(-Math.PI / 2);
-    const sheet = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
-      color: WATER_DEEP.clone(), transparent: true, opacity: 0.8, roughness: 0.1, metalness: 0.05,
-      depthWrite: false }));
-    const off = out * (half + BEYOND_REACH_M / 2);
-    if (acrossZ) sheet.position.set(ax + off, -100, (lo + hi) / 2);
-    else sheet.position.set((lo + hi) / 2, -100, az + off);
+  if (!beyond || Array.isArray(beyond)) return;
+  const add = (mesh, data) => { mesh.userData = data; scene.add(mesh); ground.beyond.push(mesh); };
+  for (const pool of [...(beyond.basins || []), ...(beyond.junctions || [])]) {
+    const sheet = new THREE.Mesh(new THREE.PlaneGeometry(pool.side_m, pool.side_m).rotateX(-Math.PI / 2),
+                                 beyondWater());
+    sheet.position.set(pool.at_m[0], -100, pool.at_m[1]);
     sheet.visible = false;
     sheet.renderOrder = 2;
-    sheet.userData.basin = span.basin;
-    scene.add(sheet);
-    ground.beyond.push(sheet);
+    add(sheet, { pool: pool.name, bed: pool.bed_m });
+    const side = pool.side_m + 2 * BEYOND_BANK_M;
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(side, side).rotateX(-Math.PI / 2), beyondBed());
+    floor.position.set(pool.at_m[0], pool.bed_m, pool.at_m[1]);
+    add(floor, { bedOf: pool.name });
+  }
+  for (const reach of beyond.reaches || []) {
+    add(new THREE.Mesh(stripAlong(reach.points_m, reach.width_m / 2 + BEYOND_BANK_M, reach.bed_m), beyondBed()),
+        { bedOf: reach.name });
+    const water = new THREE.Mesh(stripAlong(reach.points_m, reach.width_m / 2, reach.bed_m.map((b) => b - 0.05)),
+                                 beyondWater());
+    water.visible = false;
+    water.renderOrder = 2;
+    add(water, { reach: reach.name, beds: reach.bed_m, cells: reach.cells, shown: [] });
   }
 }
 
-function placeBeyond(basins) {
-  for (const sheet of ground.beyond || []) {
-    const basin = (basins || []).find((b) => b.name === sheet.userData.basin);
-    sheet.visible = !!basin;
-    if (basin) sheet.position.y = basin.level_m;
+// Each sheet at its basin's or junction's level and each reach's cells at
+// theirs, from the water block's report of the network.
+function placeBeyond(block) {
+  const pools = new Map([...(block.basins || []), ...(block.junctions || [])].map((p) => [p.name, p]));
+  const reaches = new Map((block.reaches || []).map((r) => [r.name, r]));
+  for (const mesh of ground.beyond || []) {
+    const u = mesh.userData;
+    if (u.pool) {
+      const pool = pools.get(u.pool);
+      mesh.visible = !!pool && pool.level_m > u.bed + 0.003;
+      if (pool) mesh.position.y = pool.level_m;
+    } else if (u.reach) {
+      const r = reaches.get(u.reach);
+      mesh.visible = !!r;
+      if (!r) continue;
+      const pos = mesh.geometry.attributes.position.array;
+      u.shown = [];
+      for (let c = 0; c < u.cells; ++c) {
+        const wet = r.level_m[c] - u.beds[c] > 0.003;
+        for (let v = 0; v < 4; ++v) pos[12 * c + 3 * v + 1] = wet ? r.level_m[c] : u.beds[c] - 0.05;
+        u.shown.push(wet ? r.level_m[c] : null);
+      }
+      mesh.geometry.attributes.position.needsUpdate = true;
+      mesh.geometry.computeBoundingSphere();
+    }
   }
 }
 
@@ -3330,10 +3394,16 @@ window.banjoRoom = {
   groundAt, waterAt, digAt,
   groundDrawn: () => ground.grid && ({ ...ground.grid, water: ground.last,
                                        wetPoints: ground.raw ? ground.raw.filter(Number.isFinite).length : 0 }),
-  // The sheets of water drawn beyond the edges, each at the level its basin
-  // was last reported standing at (docs/watershed.md).
-  beyondDrawn: () => (ground.beyond || []).map((s) => ({ basin: s.userData.basin, visible: s.visible,
-                                                          y: s.position.y, x: s.position.x, z: s.position.z })),
+  // The river network drawn beyond the edges (docs/watershed.md): each basin's
+  // and junction's sheet, at the level it was last reported standing at, and
+  // each reach's ribbon at its cells' levels (null where a cell is dry).
+  beyondDrawn: () => ({
+    pools: (ground.beyond || []).filter((m) => m.userData.pool).map((m) => ({
+      name: m.userData.pool, visible: m.visible, y: m.position.y, x: m.position.x, z: m.position.z })),
+    reaches: (ground.beyond || []).filter((m) => m.userData.reach).map((m) => ({
+      name: m.userData.reach, visible: m.visible, levels: m.userData.shown })),
+    beds: (ground.beyond || []).filter((m) => m.userData.bedOf).length,
+  }),
   // Whether the room is up and on screen. Anything checking it from outside --
   // tests/qa_browser.py photographs it -- waits on this rather than on a delay.
   ready: roomReady,

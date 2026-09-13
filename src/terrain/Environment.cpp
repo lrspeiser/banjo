@@ -230,89 +230,191 @@ std::unique_ptr<Environment> Environment::fromScene(const std::string &scene_jso
     onlyKeys(terrain, {"generate", "edits"}, "terrain");
     onlyKeys(water, {"discharge_m3_s", "rivers", "state", "watershed"}, "water");
     Landscape land = landscapeFrom(terrain);
-    // Regions beyond the edges (docs/watershed.md): the basins declared, and a
-    // river's source or mouth that another region's water stands beyond,
-    // taken out of the landscape and made a connection to it. A source's own
-    // discharge feeds its basin unless the basin says otherwise.
-    std::vector<Basin> declared;
+    // Regions beyond the edges (docs/watershed.md): the river network -- the
+    // basins and junctions declared, and the reaches between them -- and a
+    // river's source or mouth the network's water stands beyond, taken out of
+    // the landscape and made a connection to a basin or to a reach's open end.
+    // A source's own discharge feeds what stands at the top of it -- the basin
+    // there, or the one the reach there comes down from -- unless that says
+    // otherwise.
+    std::unique_ptr<water::RiverNetwork> network;
     std::vector<std::pair<Link, water::Connection>> joins;
     if (water.contains("watershed")) {
         const Json &shed = water.at("watershed");
         if (!shed.is_object()) throw std::invalid_argument("water.watershed is an object");
-        onlyKeys(shed, {"basins", "connections"}, "water.watershed");
-        for (const Json &b : shed.value("basins", Json::array())) {
-            if (!b.is_object()) throw std::invalid_argument("a basin is an object");
-            onlyKeys(b, {"name", "bed_m", "area_m2", "level_m", "fed_m3_s", "outlet"}, "a basin");
-            Basin basin;
-            basin.name = b.value("name", std::string());
-            if (basin.name.empty()) throw std::invalid_argument("a basin needs a name");
-            for (const Basin &other : declared)
-                if (other.name == basin.name) throw std::invalid_argument("two basins are called \"" + basin.name + "\"");
-            basin.bed_m = number(b, "bed_m", 0.0, -1.0e4, 1.0e4);
-            basin.area_m2 = number(b, "area_m2", 100.0, 1.0, 1.0e8);
-            const double level = number(b, "level_m", basin.bed_m, basin.bed_m, 1.0e4);
-            basin.volume_m3 = (level - basin.bed_m) * basin.area_m2;
-            basin.initial_m3 = basin.volume_m3;
-            basin.fed_m3_s = b.contains("fed_m3_s") ? number(b, "fed_m3_s", 0.0, 0.0, 1.0e3) : -1.0;
+        onlyKeys(shed, {"basins", "junctions", "reaches", "connections"}, "water.watershed");
+        network = std::make_unique<water::RiverNetwork>();
+        std::vector<bool> fed_declared;
+        const auto addNode = [&](const Json &b, bool junction) {
+            const std::string what = junction ? "a junction" : "a basin";
+            if (!b.is_object()) throw std::invalid_argument(what + " is an object");
+            onlyKeys(b, {"name", "bed_m", "area_m2", "stage_storage", "level_m", "fed_m3_s", "outlet", "at_m"},
+                     what.c_str());
+            water::RiverNetwork::Node node;
+            node.name = b.value("name", std::string());
+            node.junction = junction;
+            if (b.contains("stage_storage")) {
+                if (b.contains("bed_m") || b.contains("area_m2"))
+                    throw std::invalid_argument("\"" + node.name + "\" says how much it holds twice: a "
+                                                "stage_storage table, or a bed and an area");
+                std::vector<std::pair<double, double>> rows;
+                for (const Json &row : b.at("stage_storage")) {
+                    if (!row.is_array() || row.size() != 2 || !row[0].is_number() || !row[1].is_number())
+                        throw std::invalid_argument("\"" + node.name + "\"'s stage_storage is rows of "
+                                                    "[level_m, volume_m3]");
+                    rows.emplace_back(row[0].get<double>(), row[1].get<double>());
+                }
+                node.storage = water::StageStorage::table(rows);
+            } else {
+                node.storage = water::StageStorage::prism(number(b, "bed_m", 0.0, -1.0e4, 1.0e4),
+                                                         number(b, "area_m2", junction ? 20.0 : 100.0, 1.0, 1.0e8));
+            }
+            const double level = number(b, "level_m", node.storage.bottom(), node.storage.bottom(), 1.0e4);
+            fed_declared.push_back(b.contains("fed_m3_s"));
+            node.fed_m3_s = b.contains("fed_m3_s") ? number(b, "fed_m3_s", 0.0, 0.0, 1.0e3) : 0.0;
             if (b.contains("outlet")) {
                 const Json &o = b.at("outlet");
-                if (!o.is_object()) throw std::invalid_argument("a basin's outlet is an object");
-                onlyKeys(o, {"crest_m", "width_m"}, "a basin's outlet");
-                basin.has_outlet = true;
-                basin.crest_m = number(o, "crest_m", basin.bed_m, -1.0e4, 1.0e4);
-                basin.width_m = number(o, "width_m", 1.0, 0.01, 1.0e4);
+                if (!o.is_object()) throw std::invalid_argument(what + "'s outlet is an object");
+                onlyKeys(o, {"crest_m", "width_m"}, "an outlet");
+                node.has_outlet = true;
+                node.crest_m = number(o, "crest_m", node.storage.bottom(), -1.0e4, 1.0e4);
+                node.outlet_width_m = number(o, "width_m", 1.0, 0.01, 1.0e4);
             }
-            declared.push_back(basin);
-        }
-        for (const Json &c : shed.value("connections", Json::array())) {
-            if (!c.is_object()) throw std::invalid_argument("a connection is an object");
-            onlyKeys(c, {"basin", "instead_of"}, "a connection");
-            const std::string basin_name = c.value("basin", std::string());
-            std::size_t index = declared.size();
-            for (std::size_t k = 0; k < declared.size(); ++k)
-                if (declared[k].name == basin_name) index = k;
-            if (index == declared.size())
-                throw std::invalid_argument("a connection's basin \"" + basin_name + "\" is not declared");
-            const std::string replaced = c.value("instead_of", std::string());
-            Link link;
-            link.name = replaced;
-            link.basin = index;
-            water::Connection span;
+            if (b.contains("at_m")) {
+                const auto at = pointXZ(b, "at_m");
+                node.x_m = at.first;
+                node.z_m = at.second;
+            }
+            (void)network->addNode(std::move(node), level);
+        };
+        for (const Json &b : shed.value("basins", Json::array())) addNode(b, false);
+        for (const Json &j : shed.value("junctions", Json::array())) addNode(j, true);
+        // A source or mouth of this ground, taken out of it and made a
+        // connection for `link`; what it brought in, if it was a source.
+        const auto takeOver = [&](const std::string &replaced, Link link) {
             const auto source = std::find_if(land.inflows.begin(), land.inflows.end(),
                                              [&](const water::Inflow &in) { return in.name == replaced; });
             const auto mouth = std::find_if(land.outflows.begin(), land.outflows.end(),
                                             [&](const water::Outflow &out) { return out.name == replaced; });
+            water::Connection span;
+            double brought = -1.0;
             if (source != land.inflows.end()) {
                 span = {replaced, source->edge, source->from, source->to};
                 link.replaced_source = true;
-                if (declared[index].fed_m3_s < 0.0) declared[index].fed_m3_s = source->discharge_m3_s;
+                brought = source->discharge_m3_s;
                 land.inflows.erase(source);
             } else if (mouth != land.outflows.end()) {
                 span = {replaced, mouth->edge, mouth->from, mouth->to};
                 land.outflows.erase(mouth);
             } else {
                 throw std::invalid_argument("there is no river source or mouth called \"" + replaced +
-                                            "\" for a connection to take over");
+                                            "\" for the regions beyond the edges to take over");
             }
+            link.name = replaced;
+            link.into_along_axis = span.edge == water::Edge::West || span.edge == water::Edge::South ? 1.0 : -1.0;
             joins.emplace_back(link, span);
+            return brought;
+        };
+        // What a source brought, fed to what stands at the top of it.
+        const auto feedFrom = [&](int node, double brought) {
+            if (node == water::RiverNetwork::kOpen || brought < 0.0) return;
+            const std::size_t k = static_cast<std::size_t>(node);
+            if (fed_declared[k]) return;
+            (void)network->setFeed(network->nodes()[k].name, brought);
+            fed_declared[k] = true;
+        };
+        for (const Json &r : shed.value("reaches", Json::array())) {
+            if (!r.is_object()) throw std::invalid_argument("a reach is an object");
+            onlyKeys(r, {"name", "from", "to", "length_m", "width_m", "bed_from_m", "bed_to_m", "manning_n",
+                         "cells", "depth_m", "discharge_m3_s", "level_m", "path_m"}, "a reach");
+            water::RiverNetwork::Reach reach;
+            reach.name = r.value("name", std::string());
+            const std::string who = "the reach \"" + reach.name + "\"";
+            // An end is a basin or junction by name, or {"connection": a source or
+            // mouth of this ground} -- where this region's water meets it.
+            std::string from_connection, to_connection;
+            const auto end = [&](const char *key, std::string &connection) {
+                if (!r.contains(key)) throw std::invalid_argument(who + " needs a " + key);
+                const Json &e = r.at(key);
+                if (e.is_string()) {
+                    const int k = network->nodeNamed(e.get<std::string>());
+                    if (k == water::RiverNetwork::kOpen)
+                        throw std::invalid_argument(who + " runs from or to \"" + e.get<std::string>() +
+                                                    "\", which is not a basin or junction declared");
+                    return k;
+                }
+                if (e.is_object() && e.size() == 1 && e.contains("connection") && e.at("connection").is_string()) {
+                    connection = e.at("connection").get<std::string>();
+                    return water::RiverNetwork::kOpen;
+                }
+                throw std::invalid_argument(who + "'s " + key + " is a basin's or junction's name, or "
+                                            "{\"connection\": a source or mouth of this ground}");
+            };
+            reach.from = end("from", from_connection);
+            reach.to = end("to", to_connection);
+            if (r.contains("path_m")) {
+                for (const Json &p : r.at("path_m")) {
+                    if (!p.is_array() || p.size() != 2 || !p[0].is_number() || !p[1].is_number())
+                        throw std::invalid_argument(who + "'s path_m is points of [x_m, z_m]");
+                    reach.path_m.emplace_back(p[0].get<double>(), p[1].get<double>());
+                }
+                if (reach.path_m.size() < 2) throw std::invalid_argument(who + "'s path_m needs two points");
+            }
+            double along = 0.0;
+            for (std::size_t k = 1; k < reach.path_m.size(); ++k)
+                along += std::hypot(reach.path_m[k].first - reach.path_m[k - 1].first,
+                                    reach.path_m[k].second - reach.path_m[k - 1].second);
+            reach.length_m = r.contains("length_m") ? number(r, "length_m", 10.0, 0.1, 1.0e6) : along;
+            if (!(reach.length_m > 0.0)) throw std::invalid_argument(who + " needs a length_m or a path_m");
+            reach.width_m = number(r, "width_m", 2.0, 0.05, 1.0e4);
+            reach.bed_from_m = number(r, "bed_from_m", 0.0, -1.0e4, 1.0e4);
+            reach.bed_to_m = number(r, "bed_to_m", reach.bed_from_m, -1.0e4, 1.0e4);
+            reach.manning_n = r.contains("manning_n") ? number(r, "manning_n", 0.03, 0.005, 0.5) : 0.0;
+            reach.cells = static_cast<int>(
+                number(r, "cells", std::max(1.0, std::round(reach.length_m / 10.0)), 1.0, 10000.0));
+            const double depth = number(r, "depth_m", 0.0, 0.0, 100.0);
+            const double discharge = number(r, "discharge_m3_s", 0.0, -1.0e3, 1.0e3);
+            const int index = network->addReach(std::move(reach), depth, discharge);
+            if (r.contains("level_m"))
+                network->standReach(static_cast<std::size_t>(index), number(r, "level_m", 0.0, -1.0e4, 1.0e4));
+            Link link;
+            link.end.reach = index;
+            if (!from_connection.empty()) {
+                link.end.at_to = false;
+                (void)takeOver(from_connection, link);
+            }
+            if (!to_connection.empty()) {
+                link.end.at_to = true;
+                feedFrom(network->reaches()[static_cast<std::size_t>(index)].from, takeOver(to_connection, link));
+            }
         }
-        for (Basin &basin : declared)
-            if (basin.fed_m3_s < 0.0) basin.fed_m3_s = 0.0;
+        for (const Json &c : shed.value("connections", Json::array())) {
+            if (!c.is_object()) throw std::invalid_argument("a connection is an object");
+            onlyKeys(c, {"basin", "instead_of"}, "a connection");
+            const std::string basin_name = c.value("basin", std::string());
+            const int node = network->nodeNamed(basin_name);
+            if (node == water::RiverNetwork::kOpen)
+                throw std::invalid_argument("a connection's basin \"" + basin_name + "\" is not declared");
+            Link link;
+            link.end.node = node;
+            feedFrom(node, takeOver(c.value("instead_of", std::string()), link));
+        }
+        network->resetLedger();
     }
     auto environment = std::make_unique<Environment>(std::move(land));
-    environment->basins_ = std::move(declared);
+    environment->network_ = std::move(network);
     for (auto &join : joins) {
         join.first.connection = environment->water_->addConnection(join.second);
         environment->links_.push_back(join.first);
     }
     if (terrain.contains("edits")) environment->applyEdits(terrain.at("edits").dump());
     // A river's discharge, overridden: one number for every source, or by name
-    // -- a source that became a connection feeding its basin instead.
+    // -- a source that became a connection feeding what stands beyond it.
     if (water.contains("discharge_m3_s")) {
         const double q = number(water, "discharge_m3_s", 0.0, 0.0, 20.0);
         for (const auto &in : environment->water_->inflows()) (void)environment->water_->setInflow(in.name, q);
         for (const Link &link : environment->links_)
-            if (link.replaced_source) environment->basins_[link.basin].fed_m3_s = q;
+            if (link.replaced_source) (void)environment->setDischarge(link.name, q);
     }
     if (water.contains("rivers")) {
         for (const Json &river : water.at("rivers")) {
@@ -344,22 +446,42 @@ std::unique_ptr<Environment> Environment::fromScene(const std::string &scene_jso
         s.ledger.impulse_in_z_n_s = ledger.value("impulse_in_z_n_s", 0.0);
         s.ledger.impulse_dropped_n_s = ledger.value("impulse_dropped_n_s", 0.0);
         environment->water_->restore(s);
-        // And the basins beyond the edges, by name, as they were left: a
+        // And the river network beyond the edges, by name, as it was left: a
         // reservoir that went on filling is still full in the world opened
-        // again. One no longer declared is let go; one newly declared starts
-        // at its declared level.
-        if (state.contains("basins")) {
-            for (const Json &saved : state.at("basins")) {
-                const std::string name = saved.value("name", std::string());
-                for (Basin &basin : environment->basins_) {
-                    if (basin.name != name) continue;
-                    basin.volume_m3 = saved.value("volume_m3", basin.volume_m3);
-                    basin.initial_m3 = saved.value("initial_m3", basin.initial_m3);
-                    basin.fed_m3 = saved.value("fed_m3", 0.0);
-                    basin.out_m3 = saved.value("out_m3", 0.0);
-                    basin.across_m3 = saved.value("across_m3", 0.0);
-                }
+        // again, and each reach is carried cell for cell. One no longer
+        // declared is let go; one newly declared -- or a reach now cut into
+        // another number of cells -- starts as declared. (A state saved before
+        // the network had reaches carries its basins as "basins".)
+        if (environment->network_) {
+            water::RiverNetwork &net = *environment->network_;
+            const Json saved = state.value("network", Json::object());
+            for (const Json &n : saved.value("nodes", state.value("basins", Json::array()))) {
+                const int k = net.nodeNamed(n.value("name", std::string()));
+                if (k == water::RiverNetwork::kOpen) continue;
+                water::RiverNetwork::NodeState node = net.nodeState(static_cast<std::size_t>(k));
+                node.volume_m3 = n.value("volume_m3", node.volume_m3);
+                node.level_m = n.value("level_m", std::nan(""));
+                node.initial_m3 = n.value("initial_m3", node.initial_m3);
+                node.fed_m3 = n.value("fed_m3", 0.0);
+                node.out_m3 = n.value("out_m3", 0.0);
+                node.across_m3 = n.value("across_m3", 0.0);
+                node.from_reaches_m3 = n.value("from_reaches_m3", 0.0);
+                node.numerical_m3 = n.value("numerical_m3", 0.0);
+                net.restoreNode(static_cast<std::size_t>(k), node);
             }
+            for (const Json &r : saved.value("reaches", Json::array())) {
+                const int k = net.reachNamed(r.value("name", std::string()));
+                if (k == water::RiverNetwork::kOpen) continue;
+                water::RiverNetwork::ReachState reach;
+                reach.level_m = r.value("level_m", std::vector<double>());
+                reach.q_m3_s = r.value("q_m3_s", std::vector<double>());
+                reach.initial_m3 = r.value("initial_m3", 0.0);
+                reach.across_m3 = r.value("across_m3", 0.0);
+                reach.numerical_m3 = r.value("numerical_m3", 0.0);
+                reach.froude_held = r.value("froude_held", std::uint64_t{0});
+                (void)net.restoreReach(static_cast<std::size_t>(k), reach);
+            }
+            if (saved.contains("time_s")) net.restoreClock(saved.value("time_s", 0.0));
         }
     }
     return environment;
@@ -638,11 +760,15 @@ void Environment::commit(JoltWorld &world, const std::vector<water::BodyInWater>
         // every column of the valley and compared, sixty times a second.
         const std::vector<std::pair<std::size_t, double>> changes = coupling_.obstacleChanges(*water_, bodies);
         if (!changes.empty()) water_->setObstacleTops(changes);
-        // Each connection sees its basin as it stands at the start of the
-        // stride; the basin takes what crossed at its end.
-        for (const Link &link : links_) water_->setFarSide(link.connection, basins_[link.basin].level());
+        // Each connection sees the network's water beyond it as it stands at
+        // the start of the stride -- its level, and the speed it is moving into
+        // this region -- and the network takes what crossed at its end.
+        if (network_)
+            for (const Link &link : links_)
+                water_->setFarSide(link.connection, network_->levelAt(link.end),
+                                   link.into_along_axis * network_->speedOut(link.end));
         water_->advance(water_behind_s_);
-        stepBasins(water_behind_s_);
+        if (network_) stepNetwork(water_behind_s_);
         water_behind_s_ = 0.0;
         water_ms = msSince(tw);
         stats_.water_ms_last = water_ms;
@@ -722,32 +848,15 @@ void Environment::wakeWhatTheWaterReached(JoltWorld &world, const std::vector<wa
 
 // ---- edits ------------------------------------------------------------------
 
-void Environment::stepBasins(double dt_s) {
-    for (Basin &basin : basins_) basin.across_rate_m3_s = 0.0;
-    for (const Link &link : links_) {
-        Basin &basin = basins_[link.basin];
-        // What crossed into this region's water came out of the basin.
-        const double crossed = water_->takeCrossed(link.connection);
-        basin.volume_m3 -= crossed;
-        basin.across_m3 -= crossed;
-        basin.across_rate_m3_s -= crossed / dt_s;
-    }
-    const double g = water_->settings().gravity_m_s2;
-    for (Basin &basin : basins_) {
-        basin.volume_m3 += basin.fed_m3_s * dt_s;
-        basin.fed_m3 += basin.fed_m3_s * dt_s;
-        basin.out_rate_m3_s = 0.0;
-        if (!basin.has_outlet) continue;
-        // Over its weir as over a broad-crested one, as the river's own mouth
-        // is, and never more than stands above the crest.
-        const double head = basin.level() - basin.crest_m;
-        if (!(head > 0.0)) continue;
-        const double rate = 0.5443310539518174 * std::sqrt(g) * head * std::sqrt(head) * basin.width_m;
-        const double out = std::min(rate * dt_s, head * basin.area_m2);
-        basin.volume_m3 -= out;
-        basin.out_m3 += out;
-        basin.out_rate_m3_s = out / dt_s;
-    }
+void Environment::stepNetwork(double dt_s) {
+    // What crossed into this region's water came out of the network, and what
+    // crossed out of it went in: exactly that, once. Then the network goes on
+    // over the same stride on its own clock -- its basins fed and letting water
+    // over their outlets, never more than stands above the crest, and its
+    // reaches carrying what the fall of their water says.
+    network_->startExchange();
+    for (const Link &link : links_) network_->exchange(link.end, -water_->takeCrossed(link.connection), dt_s);
+    network_->advance(dt_s);
 }
 
 void Environment::carry(const Volumes &dug) {
@@ -817,12 +926,20 @@ double Environment::contactImpedanceAt(const Vec3 &point_m) const {
 }
 
 bool Environment::setDischarge(const std::string &river, double discharge_m3_s) {
-    // A source that became a connection feeds the basin beyond it.
-    for (const Link &link : links_) {
-        if (!link.replaced_source || link.name != river) continue;
-        if (!(discharge_m3_s >= 0.0) || !std::isfinite(discharge_m3_s)) return false;
-        basins_[link.basin].fed_m3_s = discharge_m3_s;
-        return true;
+    if (!(discharge_m3_s >= 0.0) || !std::isfinite(discharge_m3_s)) return false;
+    if (network_) {
+        // A source that became a connection feeds what stands at the top of it:
+        // the basin met at the edge, or the one the reach there comes down from.
+        for (const Link &link : links_) {
+            if (!link.replaced_source || link.name != river) continue;
+            int node = link.end.node;
+            if (node == water::RiverNetwork::kOpen)
+                node = network_->reaches()[static_cast<std::size_t>(link.end.reach)].from;
+            if (node == water::RiverNetwork::kOpen) return false;
+            return network_->setFeed(network_->nodes()[static_cast<std::size_t>(node)].name, discharge_m3_s);
+        }
+        // A basin, spring or junction beyond the edges, fed by its own name.
+        if (network_->setFeed(river, discharge_m3_s)) return true;
     }
     return water_->setInflow(river, discharge_m3_s);
 }
@@ -956,30 +1073,62 @@ std::string Environment::reportJson(bool full) const {
         {"view", {{"eye_m", {landscape_.eye_m[0], landscape_.eye_m[1], landscape_.eye_m[2]}},
                   {"look_m", {landscape_.look_m[0], landscape_.look_m[1], landscape_.look_m[2]}}}},
     };
-    if (!basins_.empty()) {
-        // The regions beyond the edges, and one account for all the water:
-        // this region's and the basins', against what was there, plus
+    if (network_) {
+        // The river network beyond the edges, and one account for all the
+        // water: this region's and the network's, against what was there, plus
         // everything fed from beyond the world, less everything let go to it.
         // What crossed between them is in both ledgers with opposite signs.
-        Json basins = Json::array();
-        double held = water_->volume(), expected = wl.initial_m3 + wl.inflow_m3 - wl.outflow_m3 + wl.numerical_m3;
-        for (const Basin &b : basins_) {
-            basins.push_back({{"name", b.name}, {"level_m", b.level()}, {"volume_m3", b.volume_m3},
-                              {"bed_m", b.bed_m}, {"area_m2", b.area_m2}, {"fed_m3_s", b.fed_m3_s},
-                              {"out_m3_s", b.out_rate_m3_s}, {"across_m3_s", b.across_rate_m3_s},
-                              {"outlet", b.has_outlet ? Json{{"crest_m", b.crest_m}, {"width_m", b.width_m}}
-                                                      : Json(nullptr)},
-                              {"ledger", {{"initial_m3", b.initial_m3}, {"fed_m3", b.fed_m3},
-                                          {"out_m3", b.out_m3}, {"across_m3", b.across_m3}}}});
-            held += b.volume_m3;
-            expected += b.initial_m3 + b.fed_m3 - b.out_m3;
+        const water::RiverNetwork &net = *network_;
+        const auto endName = [&](int k) {
+            return k == water::RiverNetwork::kOpen ? std::string("the valley")
+                                                   : net.nodes()[static_cast<std::size_t>(k)].name;
+        };
+        Json basins = Json::array(), junctions = Json::array(), reaches = Json::array();
+        for (const water::RiverNetwork::Node &n : net.nodes())
+            (n.junction ? junctions : basins)
+                .push_back({{"name", n.name}, {"level_m", n.level_m}, {"volume_m3", n.volume_m3},
+                            {"bed_m", n.storage.bottom()}, {"area_m2", n.storage.area(n.level_m)},
+                            {"fed_m3_s", n.fed_m3_s}, {"out_m3_s", n.out_rate_m3_s},
+                            {"across_m3_s", n.across_rate_m3_s}, {"from_reaches_m3_s", n.from_reaches_rate_m3_s},
+                            {"outlet", n.has_outlet ? Json{{"crest_m", n.crest_m}, {"width_m", n.outlet_width_m}}
+                                                    : Json(nullptr)},
+                            {"ledger", {{"initial_m3", n.initial_m3}, {"fed_m3", n.fed_m3}, {"out_m3", n.out_m3},
+                                        {"across_m3", n.across_m3}, {"from_reaches_m3", n.from_reaches_m3},
+                                        {"numerical_m3", n.numerical_m3}}}});
+        for (std::size_t k = 0; k < net.reaches().size(); ++k) {
+            const water::RiverNetwork::Reach &r = net.reaches()[k];
+            reaches.push_back({{"name", r.name}, {"from", endName(r.from)}, {"to", endName(r.to)},
+                               {"length_m", r.length_m}, {"width_m", r.width_m}, {"cells", r.cells},
+                               {"manning_n", r.manning_n > 0.0 ? r.manning_n : net.settings().manning_n},
+                               {"bed_m", r.bed_m}, {"level_m", r.level_m}, {"q_m3_s", r.q_m3_s},
+                               {"in_m3_s", r.q_m3_s.front()}, {"middle_m3_s", r.q_m3_s[r.q_m3_s.size() / 2]},
+                               {"out_m3_s", r.q_m3_s.back()}, {"volume_m3", net.reachVolume(k)},
+                               {"froude_now", r.froude_now}, {"froude_held", r.froude_held},
+                               {"ledger", {{"initial_m3", r.initial_m3}, {"across_m3", r.across_m3},
+                                           {"numerical_m3", r.numerical_m3}}}});
         }
         Json links = Json::array();
-        for (const Link &l : links_)
-            links.push_back({{"name", l.name}, {"basin", basins_[l.basin].name},
-                             {"into_this_region_m3_s", water_->crossingRate(l.connection)}});
-        report["watershed"] = {{"basins", basins}, {"connections", links}, {"water_held_m3", held},
-                               {"unaccounted_m3", held - expected}};
+        for (const Link &l : links_) {
+            Json link = {{"name", l.name}, {"into_this_region_m3_s", water_->crossingRate(l.connection)}};
+            if (l.end.node != water::RiverNetwork::kOpen) {
+                link["to"] = net.nodes()[static_cast<std::size_t>(l.end.node)].name;
+                link["basin"] = link["to"];
+            } else {
+                link["to"] = net.reaches()[static_cast<std::size_t>(l.end.reach)].name;
+                link["end"] = l.end.at_to ? "to" : "from";
+            }
+            links.push_back(link);
+        }
+        const water::RiverNetwork::Totals t = net.totals();
+        const double held = water_->volume() + net.volume();
+        const double expected = wl.initial_m3 + wl.inflow_m3 - wl.outflow_m3 + wl.numerical_m3 + t.initial_m3 +
+                                t.fed_m3 - t.out_m3 + t.numerical_m3;
+        report["watershed"] = {{"basins", basins}, {"junctions", junctions}, {"reaches", reaches},
+                               {"connections", links},
+                               {"network", {{"time_s", net.timeS()}, {"substeps", net.stats().substeps},
+                                            {"faces_computed", net.stats().faces_computed},
+                                            {"shared_out", net.stats().shared_out}}},
+                               {"water_held_m3", held}, {"unaccounted_m3", held - expected}};
     }
     if (full) {
         const water::Settings &s = water_->settings();
@@ -1009,6 +1158,17 @@ std::string Environment::reportJson(bool full) const {
                                        "limited virtual-pipe erosion (after Mei, Decaudin & Hu 2007)",
                                        "soil thinned by slope", "river run to steady flow"}}}},
         };
+        if (network_) {
+            const water::NetworkSettings &n = network_->settings();
+            report["model"]["network"] = {
+                {"scheme", "local inertial (Bates, Horritt & Fewtrell 2010): each face's discharge from what it "
+                           "carried, the fall of the surface across it and semi-implicit Manning friction -- "
+                           "blended with its neighbours' only where theta is below 1 (de Almeida, Bates, Freer & "
+                           "Souvignet 2012); the level is the state, so still water stays exactly still"},
+                {"theta", n.theta}, {"cfl", n.cfl}, {"manning_n", n.manning_n},
+                {"froude_limit", n.froude_limit}, {"dry_m", n.dry_m},
+                {"provenance", "declared: the detailed water's own bed by default, not calibrated to any river"}};
+        }
         report["not_modelled"] = {
             "erosion and sediment transport during play (generation only)",
             "rain, evaporation and seepage into the ground",
@@ -1019,8 +1179,10 @@ std::string Environment::reportJson(bool full) const {
             "rock failing: rock never slumps, and is only cut",
             "moisture changing how the ground holds",
             "a break against the terrain: the lattice is supported by the flat floor under it",
-            "a coarse river network beyond level-pool basins at the connections, and coarse-to-fine "
-            "transitions (milestone 2)"};
+            "beyond the edges, only a coarse river network: one-dimensional reaches with no advection of "
+            "momentum (subcritical flow -- a face past Froude 1 inside a reach is held there and counted), "
+            "junctions and basins held as level pools or stage-storage curves; no floodplain beside a reach, and "
+            "no coarse-to-fine transitions yet (milestone 2)"};
     }
     return report.dump();
 }
@@ -1039,12 +1201,27 @@ std::string Environment::stateJson() const {
                               {"impulse_in_x_n_s", s.ledger.impulse_in_x_n_s},
                               {"impulse_in_z_n_s", s.ledger.impulse_in_z_n_s},
                               {"impulse_dropped_n_s", s.ledger.impulse_dropped_n_s}}}};
-    if (!basins_.empty()) {
-        Json saved = Json::array();
-        for (const Basin &b : basins_)
-            saved.push_back({{"name", b.name}, {"volume_m3", b.volume_m3}, {"initial_m3", b.initial_m3},
-                             {"fed_m3", b.fed_m3}, {"out_m3", b.out_m3}, {"across_m3", b.across_m3}});
-        state["basins"] = saved;
+    if (network_) {
+        // The river network beyond the edges, by name: each basin's and
+        // junction's volume and level, each reach cell for cell, every ledger,
+        // and the network's clock -- a world opened again from these goes on
+        // from where this one was, to the bit.
+        const water::RiverNetwork &net = *network_;
+        Json nodes = Json::array(), reaches = Json::array();
+        for (std::size_t k = 0; k < net.nodes().size(); ++k) {
+            const water::RiverNetwork::NodeState n = net.nodeState(k);
+            nodes.push_back({{"name", net.nodes()[k].name}, {"volume_m3", n.volume_m3}, {"level_m", n.level_m},
+                             {"initial_m3", n.initial_m3}, {"fed_m3", n.fed_m3}, {"out_m3", n.out_m3},
+                             {"across_m3", n.across_m3}, {"from_reaches_m3", n.from_reaches_m3},
+                             {"numerical_m3", n.numerical_m3}});
+        }
+        for (std::size_t k = 0; k < net.reaches().size(); ++k) {
+            const water::RiverNetwork::ReachState r = net.reachState(k);
+            reaches.push_back({{"name", net.reaches()[k].name}, {"level_m", r.level_m}, {"q_m3_s", r.q_m3_s},
+                               {"initial_m3", r.initial_m3}, {"across_m3", r.across_m3},
+                               {"numerical_m3", r.numerical_m3}, {"froude_held", r.froude_held}});
+        }
+        state["network"] = {{"time_s", net.timeS()}, {"nodes", nodes}, {"reaches", reaches}};
     }
     return state.dump();
 }

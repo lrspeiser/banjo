@@ -1457,20 +1457,42 @@ in a scene opened again: the same water over whatever ground that scene's edits
 leave -- with the basins beyond the edges, by name, when there are any.
 
 **Regions beyond the edges** ([the watershed](../watershed.md)). A scene's
-water block may declare `"watershed": {"basins": [...], "connections": [...]}`.
-A basin is another region's water held as a level pool: `name`, `bed_m`,
-`area_m2`, `level_m`, and optionally `fed_m3_s` (from beyond the world) and
-`outlet` (`crest_m`, `width_m`: a weir to beyond the world). A connection,
-`{"basin": ..., "instead_of": ...}`, takes over a river's source or mouth by
-name: its faces then see the basin's level, and what crosses is the water on
-both sides, either way. A replaced source's own discharge feeds its basin
-unless the basin says otherwise, and `banjo_set_discharge` with the river's
-name feeds it too. The report's `watershed` block lists each basin (level,
-volume, feed, outlet and crossing rates, its own ledger) and each connection
-(`into_this_region_m3_s`), with `water_held_m3` and `unaccounted_m3`: one
-account for this region's water and the basins', against what was there plus
-everything fed less everything let go. The water's own ledger gains
-`across_m3`, net water in across connections. No ABI change: it is the scene
+water block may declare `"watershed": {"basins": [...], "junctions": [...],
+"reaches": [...], "connections": [...]}`: a coarse river network the region's
+water meets at its edges (`water::RiverNetwork`). A basin or junction is a
+node: `name`, `bed_m` and `area_m2` (a flat-bottomed pool) or `stage_storage`
+(rows of `[level_m, volume_m3]`, from empty), `level_m`, and optionally
+`fed_m3_s` (from beyond the world), `outlet` (`crest_m`, `width_m`: a weir to
+beyond the world) and `at_m` (where it is drawn). A reach joins two of them, or
+one of them and this region: `name`; `from` and `to`, each a node's name or
+`{"connection": a source or mouth of this ground}`, which takes that span out
+of the ground and makes it a connection to the reach's end; `width_m`,
+`bed_from_m`, `bed_to_m`; `length_m` or `path_m` (points `[x_m, z_m]` from
+`from` to `to`); and optionally `cells` (about 10 m each by default),
+`manning_n`, and how it starts -- `depth_m` and `discharge_m3_s`, or a still
+`level_m`. A connection, `{"basin": ..., "instead_of": ...}`, takes over a
+source or mouth for a basin met at the edge itself. Either way the
+connection's faces see the network's level there and the speed its water moves
+across, what crosses is the water on both sides, either way, and it is handed
+to the network once with the opposite sign. A replaced source's own discharge
+feeds the basin at the top of it -- the one met at the edge, or the one its
+reach comes down from -- unless that says otherwise; `banjo_set_discharge` with
+the river's name feeds it too, and with a basin's, spring's or junction's own
+name feeds that. The report's `watershed` block lists each basin and junction
+(level, volume, area, feed, outlet, crossing and reach rates, its own ledger),
+each reach (`from` and `to` -- "the valley" for an end this region meets --
+its cells' beds and levels, every face's discharge, `in_m3_s`, `middle_m3_s`
+and `out_m3_s`, its volume, its Froude number now and how often a face inside
+it has been held at 1), each connection (what it meets: `to`, and for a reach
+which `end`; `into_this_region_m3_s`), the network's clock and costs, and
+`water_held_m3` and `unaccounted_m3`: one account for this region's water and
+the network's, against what was there plus everything fed less everything let
+go. The full report adds the network's model (`model.network`). The state
+carries `network` -- every node's volume, level and ledger and every reach
+cell for cell, by name, with its clock -- so a world opened again goes on from
+where it was; a state that carries `basins` instead is read too. The water's
+own ledger gains `across_m3`, net water in across connections. No ABI change:
+it is the scene
 and the report. The survey is one point: the ground's height, what it is made of there,
 its slope, the ground's own share of rolling resistance there
 (`rolling_resistance`), and the water's depth, surface and velocity.

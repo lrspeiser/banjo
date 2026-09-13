@@ -2574,16 +2574,26 @@ def _water_said(world: banjo.World, full: bool = False) -> dict[str, Any] | None
     }
     shed = report.get("watershed")
     if shed:
-        # The regions beyond the edges: the reservoir the river is fed from and
-        # the basin it pours into, each held as a level pool, and what crosses
-        # to and from each -- decided by the water on both sides, either way.
+        # The river network beyond the edges: its basins and junctions, what
+        # each river is carrying where it starts, in its middle and where it
+        # ends, and what crosses the valley's own edges -- all decided by the
+        # water along it, either way.
+        def pool(b: dict[str, Any]) -> dict[str, Any]:
+            return {"name": b["name"], "level_m": round(b["level_m"], 3), "volume_m3": round(b["volume_m3"], 2),
+                    "fed_m3_s": round(b["fed_m3_s"], 3), "let_out_m3_s": round(b["out_m3_s"], 3),
+                    "sending_into_the_valley_m3_s": round(-b["across_m3_s"], 3)}
         said["beyond_the_edges"] = {
-            "basins": [{"name": b["name"], "level_m": round(b["level_m"], 3),
-                        "volume_m3": round(b["volume_m3"], 2), "fed_m3_s": round(b["fed_m3_s"], 3),
-                        "let_out_m3_s": round(b["out_m3_s"], 3),
-                        "sending_into_the_valley_m3_s": round(-b["across_m3_s"], 3)}
-                       for b in shed["basins"]],
-            "connections": [{"at": c["name"], "to": c["basin"],
+            "basins": [pool(b) for b in shed["basins"]],
+            "junctions": [pool(j) for j in shed.get("junctions", [])],
+            "rivers": [{"name": r["name"], "from": r["from"], "to": r["to"],
+                        "carrying_m3_s": {"where_it_starts": round(r["in_m3_s"], 3),
+                                          "in_its_middle": round(r["middle_m3_s"], 3),
+                                          "where_it_ends": round(r["out_m3_s"], 3)},
+                        "level_m": {"where_it_starts": round(r["level_m"][0], 3),
+                                    "where_it_ends": round(r["level_m"][-1], 3)},
+                        "froude": round(r["froude_now"], 2)}
+                       for r in shed.get("reaches", [])],
+            "connections": [{"at": c["name"], "to": c["to"],
                              "into_this_valley_m3_s": round(c["into_this_region_m3_s"], 3)}
                             for c in shed["connections"]],
             "unaccounted_m3": shed["unaccounted_m3"]}
@@ -2620,26 +2630,85 @@ def _ground_said(report: dict[str, Any]) -> dict[str, Any]:
 
 
 def _watershed_for(report: dict[str, Any]) -> dict[str, Any] | None:
-    """The regions beyond a ground's edges, from its own report: a reservoir
-    beyond where its river comes in -- 6 cm above the river there, so it feeds
-    it, on a bed 25 cm below the river's, fed at the river's own discharge --
-    and a basin beyond its mouth, starting at the mouth's lowest bed and
-    letting water go over a 3 m weir 4 cm above it. None for ground with no
-    river coming in and going out."""
+    """The river network beyond a ground's edges, from its own report
+    (docs/watershed.md): beyond where its river comes in, 24 m of river coming
+    down from a reservoir fed the river's own discharge; beyond its mouth, 20 m
+    of river to a confluence where a brook from a spring joins it, and 20 m more
+    to a lake that lets water go over its outlet. Each reach meets the ground's
+    edge across the river's own span -- as wide as it, on the river's own bed
+    there -- falls 1 in 200 (a brook 1 in 120), gently enough to stay
+    subcritical, and starts at Manning's normal depth for what it carries. None
+    for ground with no river coming in and going out."""
     water = report.get("water") or {}
     rivers, mouths = water.get("rivers") or [], water.get("mouths") or []
     path = [p for p in (water.get("river_path") or []) if p.get("level_m") is not None]
     if not rivers or not mouths or len(path) < 2:
         return None
-    first, last = path[0], path[-1]
-    return {"basins": [
-                {"name": "the upstream reservoir", "bed_m": round(first["bed_m"] - 0.25, 3),
-                 "area_m2": 400.0, "level_m": round(first["level_m"] + 0.06, 3)},
-                {"name": "the downstream basin", "bed_m": round(last["bed_m"] - 0.6, 3),
-                 "area_m2": 600.0, "level_m": round(last["bed_m"], 3),
-                 "outlet": {"crest_m": round(last["bed_m"] + 0.04, 3), "width_m": 3.0}}],
-            "connections": [{"basin": "the upstream reservoir", "instead_of": rivers[0]["name"]},
-                            {"basin": "the downstream basin", "instead_of": mouths[0]["name"]}]}
+    grid = report["grid"]
+    x0, z0, cell = grid["x0_m"], grid["z0_m"], grid["cell_m"]
+    x1, z1 = x0 + grid["size_m"][0], z0 + grid["size_m"][1]
+    outward = {"west": (-1.0, 0.0), "east": (1.0, 0.0), "south": (0.0, -1.0), "north": (0.0, 1.0)}
+
+    def span(edge: str, cells: list[int]) -> tuple[tuple[float, float], tuple[float, float], float]:
+        """The middle of a span of an edge, which way is out of the ground there, and how wide it is."""
+        mid = (cells[0] + cells[1]) / 2 * cell
+        at = {"west": (x0, z0 + mid), "east": (x1, z0 + mid), "south": (x0 + mid, z0), "north": (x0 + mid, z1)}
+        return at[edge], outward[edge], (cells[1] - cells[0] + 1) * cell
+
+    def along(p: tuple[float, float], d: tuple[float, float], s: float) -> list[float]:
+        return [round(p[0] + d[0] * s, 3), round(p[1] + d[1] * s, 3)]
+
+    def normal_depth(q_m3_s: float, width_m: float, slope: float) -> float:
+        return round((0.03 * (q_m3_s / width_m) / math.sqrt(slope)) ** 0.6, 3)
+
+    river, mouth = rivers[0], mouths[0]
+    q = float(river["discharge_m3_s"])
+    slope, above, below, brook = 0.005, 24.0, 20.0, 24.0
+    source, into_ground, source_w = span(river["enters_from"], river["cells"])
+    out_at, out_of_ground, mouth_w = span(mouth["leaves_by"], mouth["cells"])
+    conf_side, lake_side, spring_side, reservoir_side = math.sqrt(30.0), 30.0, 5.0, 20.0
+    first_bed, last_bed = round(path[0]["bed_m"], 3), round(path[-1]["bed_m"], 3)
+    above_top = round(first_bed + slope * above, 3)
+    above_depth = normal_depth(q, source_w, slope)
+    below_bottom = round(last_bed - slope * below, 3)
+    lake_edge_bed = round(below_bottom - slope * below, 3)
+    brook_bottom, brook_top = round(below_bottom + 0.05, 3), round(below_bottom + 0.25, 3)
+    confluence = along(out_at, out_of_ground, below + conf_side / 2)
+    aside = (-out_of_ground[1], out_of_ground[0])     # the brook comes in from one side
+    return {
+        "basins": [
+            {"name": "the upstream reservoir", "bed_m": round(above_top - 0.35, 3), "area_m2": 400.0,
+             "level_m": round(above_top + above_depth + 0.06, 3),
+             "at_m": along(source, into_ground, above + reservoir_side / 2)},
+            {"name": "the spring", "bed_m": round(brook_top - 0.15, 3), "area_m2": 25.0,
+             "level_m": round(brook_top + 0.2, 3), "fed_m3_s": 0.1,
+             "at_m": along(tuple(confluence), aside, conf_side / 2 + brook + spring_side / 2)},
+            {"name": "the lake", "bed_m": round(lake_edge_bed - 0.8, 3), "area_m2": 900.0,
+             "level_m": round(lake_edge_bed - 0.05, 3),
+             "outlet": {"crest_m": round(lake_edge_bed + 0.05, 3), "width_m": 4.0},
+             "at_m": along(out_at, out_of_ground, below + conf_side + below + lake_side / 2)}],
+        "junctions": [
+            {"name": "the confluence", "bed_m": round(below_bottom - 0.2, 3), "area_m2": 30.0,
+             "level_m": round(below_bottom + 0.13, 3), "at_m": confluence}],
+        "reaches": [
+            {"name": "the river above the valley", "from": "the upstream reservoir",
+             "to": {"connection": river["name"]}, "width_m": source_w, "bed_from_m": above_top,
+             "bed_to_m": first_bed, "cells": 4, "depth_m": above_depth, "discharge_m3_s": q,
+             "path_m": [along(source, into_ground, above), along(source, into_ground, 0.0)]},
+            {"name": "the river below the valley", "from": {"connection": mouth["name"]}, "to": "the confluence",
+             "width_m": mouth_w, "bed_from_m": last_bed, "bed_to_m": below_bottom, "cells": 4,
+             "depth_m": normal_depth(q, mouth_w, slope), "discharge_m3_s": q,
+             "path_m": [along(out_at, out_of_ground, 0.0), along(out_at, out_of_ground, below)]},
+            {"name": "the brook", "from": "the spring", "to": "the confluence", "width_m": 1.0,
+             "bed_from_m": brook_top, "bed_to_m": brook_bottom, "cells": 4,
+             "depth_m": normal_depth(0.1, 1.0, (brook_top - brook_bottom) / brook), "discharge_m3_s": 0.1,
+             "path_m": [along(tuple(confluence), aside, conf_side / 2 + brook),
+                        along(tuple(confluence), aside, conf_side / 2)]},
+            {"name": "the river to the lake", "from": "the confluence", "to": "the lake", "width_m": mouth_w,
+             "bed_from_m": below_bottom, "bed_to_m": lake_edge_bed, "cells": 4,
+             "depth_m": normal_depth(q + 0.1, mouth_w, slope), "discharge_m3_s": round(q + 0.1, 3),
+             "path_m": [along(out_at, out_of_ground, below + conf_side),
+                        along(out_at, out_of_ground, below + conf_side + below)]}]}
 
 
 def tool_make_terrain(args: dict[str, Any]) -> dict[str, Any]:
@@ -2682,8 +2751,8 @@ def tool_make_terrain(args: dict[str, Any]) -> dict[str, Any]:
             raise Refused(f"a {kind} has no river coming in and going out for regions beyond its "
                           f"edges to stand at: make a valley or a channel")
         lost = _rebuild(entry, dict(entry["scene"], water={"watershed": shed}), world_id) or lost
-        entry["story"].append("stood a reservoir beyond where the river comes in and a basin beyond "
-                              "its mouth")
+        entry["story"].append("stood a river network beyond the edges: a reservoir the river comes down "
+                              "to it from, and below its mouth a confluence, a brook from a spring and a lake")
     entry["story"].append(f"made the ground a {kind}")
     report = entry["world"].environment_report()
     answer: dict[str, Any] = {"ground": _ground_said(report)}
@@ -2902,10 +2971,14 @@ def tool_set_river(args: dict[str, Any]) -> dict[str, Any]:
     world = _require_terrain(entry)
     report = world.environment_report()
     rivers = [r["name"] for r in report["water"]["rivers"]]
-    # A river whose source became a connection to a reservoir beyond the edge
-    # is fed through that reservoir: its name still sets the discharge, and the
-    # engine says no to a mouth's (docs/watershed.md).
-    rivers += [c["name"] for c in (report.get("watershed") or {}).get("connections", [])]
+    # A river whose source became a connection to the network beyond the edge
+    # is fed through what stands at the top of it -- the reservoir its reach
+    # comes down from: its name still sets the discharge, and the engine says no
+    # to a mouth's. A basin, spring or junction out there is fed by its own
+    # name (docs/watershed.md).
+    shed = report.get("watershed") or {}
+    rivers += [c["name"] for c in shed.get("connections", [])]
+    rivers += [b["name"] for b in shed.get("basins", []) + shed.get("junctions", [])]
     if not rivers:
         raise Refused("this ground has no river")
     river = str(args.get("river") or rivers[0])
@@ -3610,12 +3683,15 @@ TOOLS = [
          "beyond_the_edges": {"type": "boolean",
                               "description": "A valley or a channel only. Instead of the river being "
                                              "handed its discharge at the west edge and let go over the "
-                                             "east one, stand an upstream reservoir beyond where it comes "
-                                             "in (fed at the river's own discharge) and a downstream basin "
-                                             "beyond its mouth (letting water go over its own weir). What "
-                                             "crosses each is the difference in level, either way: dam "
-                                             "the river and the reservoir fills. water_state reports them "
-                                             "under beyond_the_edges; set_river sets the reservoir's feed."}}}},
+                                             "east one, stand a river network beyond the edges: a reach "
+                                             "coming down onto where the river comes in from a reservoir "
+                                             "fed at the river's own discharge, and beyond its mouth a "
+                                             "reach to a confluence, where a brook from a spring joins it, "
+                                             "and another on to a lake that lets water go over its weir. "
+                                             "What crosses each edge is the water on both sides, either "
+                                             "way: dam the river and the reservoir fills, and less goes "
+                                             "on down. water_state reports them under beyond_the_edges; "
+                                             "set_river sets the reservoir's feed, or the spring's by name."}}}},
     {"name": "survey",
      "description": "The ground and the water at a point, or along a line between two points: "
                     "how high the ground is, what it is made of (rock, soil, sand) and how steep, "
@@ -3634,12 +3710,13 @@ TOOLS = [
      "description": "The rivers and ponds: how much water there is, what is coming in and going "
                     "out, each pond's level, where the river runs (every 2 m along it: x, z, "
                     "level, depth, speed), what is in the water and whether it floats, and the "
-                    "water's ledger (in, out, and what is unaccounted for). Where water crosses "
-                    "the ground's edges to regions beyond them -- a reservoir upstream, a basin "
-                    "downstream -- also each one's level, volume, feed, what it lets out and what "
-                    "it sends into the valley (below zero when it takes from it), under "
-                    "beyond_the_edges. Call run first to let time pass; call this before and "
-                    "after to see a level rise or fall.",
+                    "water's ledger (in, out, and what is unaccounted for). Where the river goes "
+                    "on beyond the ground's edges -- a reach down from a reservoir, reaches on to a "
+                    "confluence and a lake -- also, under beyond_the_edges, each basin's and "
+                    "junction's level, volume, feed, what it lets out and what it sends into the "
+                    "valley (below zero when it takes from it), and what each river is carrying "
+                    "where it starts, in its middle and where it ends. Call run first to let time "
+                    "pass; call this before and after to see a level rise or fall.",
      "inputSchema": {"type": "object", "required": ["world_id"],
                      "properties": {"world_id": {"type": "string"}}}},
     {"name": "dig",
@@ -3685,10 +3762,13 @@ TOOLS = [
          "size_m": dict(VECTOR, description="Width, height, depth. [1, 0.4, 1] by default.")}}},
     {"name": "set_river",
      "description": "How much water a river brings in from now, cubic metres a second: a flood "
-                    "or a drought. It takes time to arrive downstream -- run to see it.",
+                    "or a drought. It takes time to arrive downstream -- run to see it. Where the "
+                    "river comes down from a reservoir beyond the edge, this is what feeds the "
+                    "reservoir; a basin or spring beyond the edges is fed by its own name.",
      "inputSchema": {"type": "object", "required": ["world_id", "discharge_m3_s"], "properties": {
          "world_id": {"type": "string"},
-         "river": {"type": "string", "description": "Its name; the only one by default."},
+         "river": {"type": "string", "description": "Its name, or a basin's or spring's beyond the "
+                                                    "edges; the only river by default."},
          "discharge_m3_s": {"type": "number"}}}},
     {"name": "close_world",
      "description": "Close a world and free it. Each open world is a physics engine "

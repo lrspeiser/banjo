@@ -319,6 +319,61 @@ class TheGroundAndTheWaterThroughTheLibrary(unittest.TestCase):
         self.assertLess(banked_in, open_in, "and less crosses from it")
         self.assertLessEqual(abs(unaccounted), 1e-9 * held, "every cubic metre accounted")
 
+    def test_a_river_network_brings_the_stream_down_and_takes_it_on_to_a_lake(self):
+        """The channel between two reaches (docs/watershed.md, W3): one comes down
+        from a reservoir onto the stream's source, another takes the stream from
+        its end to a lake with a weir. What crosses each edge is the water on
+        both sides, the reaches carry it on, every cubic metre of the channel and
+        the network is on one account, and a world opened again from the state
+        has the reaches and basins where they were, to the bit."""
+        with banjo.World(scene(CHANNEL), cell_size_m=CELL) as probe:
+            plain = probe.environment_report()
+        cell = plain["grid"]["cell_m"]
+        river, mouth = plain["water"]["rivers"][0], plain["water"]["mouths"][0]
+        path = [p for p in plain["water"]["river_path"] if p.get("level_m") is not None]
+        top, bottom = path[0]["bed_m"], path[-1]["bed_m"]
+        q = river["discharge_m3_s"]
+        shed = {"basins": [
+                    {"name": "the reservoir", "bed_m": top - 0.3, "area_m2": 60.0, "level_m": top + 0.35},
+                    {"name": "the lake", "bed_m": bottom - 1.0, "area_m2": 200.0, "level_m": bottom - 0.15,
+                     "outlet": {"crest_m": bottom - 0.05, "width_m": 1.0}}],
+                "reaches": [
+                    {"name": "the reach above", "from": "the reservoir", "to": {"connection": river["name"]},
+                     "length_m": 12.0, "width_m": (river["cells"][1] - river["cells"][0] + 1) * cell,
+                     "bed_from_m": top + 0.06, "bed_to_m": top, "cells": 3, "depth_m": 0.1,
+                     "discharge_m3_s": q},
+                    {"name": "the reach below", "from": {"connection": mouth["name"]}, "to": "the lake",
+                     "length_m": 12.0, "width_m": (mouth["cells"][1] - mouth["cells"][0] + 1) * cell,
+                     "bed_from_m": bottom, "bed_to_m": bottom - 0.06, "cells": 3, "depth_m": 0.05,
+                     "discharge_m3_s": q}]}
+        with banjo.World(scene(CHANNEL, water={"watershed": shed}), cell_size_m=CELL) as world:
+            run(world, 120.0)
+            report = world.environment_report()["watershed"]
+            reaches = {r["name"]: r for r in report["reaches"]}
+            links = {c["name"]: c for c in report["connections"]}
+            self.assertEqual(links[river["name"]]["to"], "the reach above")
+            self.assertGreater(links[river["name"]]["into_this_region_m3_s"], 0.0, "the reach feeds the channel")
+            self.assertLess(links[mouth["name"]]["into_this_region_m3_s"], 0.0,
+                            "the channel pours into the reach below")
+            self.assertGreater(reaches["the reach above"]["middle_m3_s"], 0.0, "the reach above carries it down")
+            self.assertGreater(reaches["the reach below"]["middle_m3_s"], 0.0, "the reach below carries it on")
+            self.assertLessEqual(abs(report["unaccounted_m3"]), 1e-9 * report["water_held_m3"],
+                                 "one account for the reservoir, the reaches, the channel and the lake")
+            state = world.environment_state()
+        again_scene = scene(CHANNEL, water={"watershed": shed, "state": state})
+        with banjo.World(again_scene, cell_size_m=CELL) as again:
+            opened = again.environment_report()["watershed"]
+            for reach in opened["reaches"]:
+                self.assertEqual(reach["level_m"], reaches[reach["name"]]["level_m"],
+                                 f"{reach['name']} is not where it was left")
+                self.assertEqual(reach["q_m3_s"][1:-1], reaches[reach["name"]]["q_m3_s"][1:-1],
+                                 f"{reach['name']}'s water is not moving as it was")
+            before = {b["name"]: b for b in report["basins"]}
+            for basin in opened["basins"]:
+                self.assertEqual((basin["volume_m3"], basin["level_m"]),
+                                 (before[basin["name"]]["volume_m3"], before[basin["name"]]["level_m"]),
+                                 f"{basin['name']} is not where it was left")
+
     def test_dug_from_under_a_block_it_falls_and_nothing_else_wakes(self):
         block = box("block", "concrete", (0.4, 0.4, 0.4), (2.0, 1.0, 1.0))
         with banjo.World(scene(FLAT, block), cell_size_m=CELL) as world:

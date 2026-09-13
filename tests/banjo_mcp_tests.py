@@ -1129,31 +1129,43 @@ class TheTools(unittest.TestCase):
              "anchored": True}])["world_id"]
         return world_id, self.client.call("make_terrain", world_id=world_id, kind="valley")
 
-    def test_a_valley_between_a_reservoir_and_a_basin(self):
-        """make_terrain(beyond_the_edges): the river crosses from a reservoir
-        beyond where it comes in and into a basin beyond its mouth, by the
-        difference in level (docs/watershed.md). water_state says so, set_river
-        feeds the reservoir, every cubic metre is on one account, and ground
-        with no river coming in and going out is refused before it is touched."""
+    def test_a_valley_within_a_river_network(self):
+        """make_terrain(beyond_the_edges): the river comes down a reach from a
+        reservoir onto where it comes in, and leaves down another to a
+        confluence, where a brook from a spring joins it, and on to a lake
+        (docs/watershed.md). water_state says what each river carries, set_river
+        feeds the reservoir and, by name, the spring, every cubic metre is on
+        one account, and ground with no river coming in and going out is refused
+        before it is touched."""
         world_id = self.client.call("create_world", cell_size_m=0.04, objects=[
             {"name": "marker stone", "shape": "box", "material": "concrete",
              "size_m": [0.08, 0.08, 0.08], "position_m": [-18, -2.6, -14],
              "anchored": True}])["world_id"]
         made = self.client.call("make_terrain", world_id=world_id, kind="valley", beyond_the_edges=True)
-        self.assertEqual({b["name"] for b in made["water"]["beyond_the_edges"]["basins"]},
-                         {"the upstream reservoir", "the downstream basin"})
+        beyond = made["water"]["beyond_the_edges"]
+        self.assertEqual({b["name"] for b in beyond["basins"]}, {"the upstream reservoir", "the spring", "the lake"})
+        self.assertEqual([j["name"] for j in beyond["junctions"]], ["the confluence"])
+        self.assertEqual({r["name"] for r in beyond["rivers"]},
+                         {"the river above the valley", "the river below the valley", "the brook",
+                          "the river to the lake"})
         self.client.call("run", world_id=world_id, seconds=10)
         now = self.client.call("water_state", world_id=world_id)["beyond_the_edges"]
-        basins = {b["name"]: b for b in now["basins"]}
-        self.assertGreater(basins["the upstream reservoir"]["sending_into_the_valley_m3_s"], 0.0,
-                           "the reservoir feeds the river")
-        self.assertLess(basins["the downstream basin"]["sending_into_the_valley_m3_s"], 0.0,
-                        "the river pours into the basin")
+        rivers = {r["name"]: r for r in now["rivers"]}
+        self.assertEqual((rivers["the river above the valley"]["from"], rivers["the river above the valley"]["to"]),
+                         ("the upstream reservoir", "the valley"))
+        self.assertGreater(rivers["the river above the valley"]["carrying_m3_s"]["where_it_ends"], 0.0,
+                           "the river comes down its reach into the valley")
+        self.assertGreater(rivers["the river below the valley"]["carrying_m3_s"]["where_it_starts"], 0.0,
+                           "and leaves it down the reach below")
+        self.assertGreater(rivers["the brook"]["carrying_m3_s"]["where_it_ends"], 0.0,
+                           "the brook runs into the confluence")
         self.assertLess(abs(now["unaccounted_m3"]), 1e-6, "every cubic metre accounted")
         self.client.call("set_river", world_id=world_id, discharge_m3_s=0.6)
+        self.client.call("set_river", world_id=world_id, river="the spring", discharge_m3_s=0.2)
         fed = {b["name"]: b for b in self.client.call("water_state", world_id=world_id)
                ["beyond_the_edges"]["basins"]}
         self.assertEqual(fed["the upstream reservoir"]["fed_m3_s"], 0.6, "set_river feeds the reservoir")
+        self.assertEqual(fed["the spring"]["fed_m3_s"], 0.2, "and the spring, by its own name")
         self.assertIn("no river", self.client.refuse("make_terrain", world_id=world_id, kind="basin",
                                                      beyond_the_edges=True))
         still = self.client.call("water_state", world_id=world_id)

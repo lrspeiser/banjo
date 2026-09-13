@@ -216,35 +216,46 @@ class TheToolsThatChangeIt(unittest.TestCase):
 
 
 class TheWatershedRoom(unittest.TestCase):
-    """The valley between a reservoir and a basin (docs/watershed.md) -- and the
-    valley room left exactly as it was, since its numbers are the milestone's
-    first acceptance test."""
+    """The valley within a river network (docs/watershed.md) -- and the valley
+    room left exactly as it was, since its numbers are the milestone's first
+    acceptance test."""
 
     def test_the_valley_room_keeps_its_own_river(self):
         self.assertNotIn("water", world_room.valley(), "the valley room's river is handed in and let go as before")
         shed = fracture_lab.validate(world_room.watershed())["water"]["watershed"]
-        self.assertEqual([c["instead_of"] for c in shed["connections"]], ["the river", "the river's mouth"])
+        ends = {r["name"]: (r["from"], r["to"]) for r in shed["reaches"]}
+        self.assertEqual(ends["the river above the valley"][1], {"connection": "the river"})
+        self.assertEqual(ends["the river below the valley"][0], {"connection": "the river's mouth"})
 
     @unittest.skipUnless(ENGINE, "the live engine is not built")
-    def test_the_river_crosses_from_the_reservoir_and_into_the_basin(self):
+    def test_the_river_comes_down_to_the_valley_and_on_to_the_lake(self):
         runs = ROOT / "build/playground-runs"
         runs.mkdir(parents=True, exist_ok=True)
         session = live_session.Session(ENGINE, fracture_lab.validate(world_room.watershed()), runs)
         try:
-            beyond = {b["basin"]: b for b in session.state["terrain"]["beyond"]}
-            self.assertEqual(beyond["the upstream reservoir"]["edge"], "west")
-            self.assertEqual(beyond["the downstream basin"]["edge"], "east")
+            beyond = session.state["terrain"]["beyond"]
+            edges = {c["name"]: c for c in beyond["connections"]}
+            self.assertEqual((edges["the river"]["edge"], edges["the river"]["reach"]),
+                             ("west", "the river above the valley"))
+            self.assertEqual((edges["the river's mouth"]["edge"], edges["the river's mouth"]["reach"]),
+                             ("east", "the river below the valley"))
+            self.assertEqual({b["name"] for b in beyond["basins"]}, {"the upstream reservoir", "the spring", "the lake"})
+            self.assertEqual([j["name"] for j in beyond["junctions"]], ["the confluence"])
+            for reach in beyond["reaches"]:
+                self.assertEqual(len(reach["points_m"]), reach["cells"] + 1, f"{reach['name']} is drawn cell by cell")
             water = session.state["water"]
             for _ in range(60):
                 state = session.send(op="step", dt=1 / 60.0, n=10)
                 for coming in state.get("breakable") or []:
                     session.send(op="fracture", name=coming, wait=False)
                 water = state.get("water") or water
-            basins = {b["name"]: b for b in water["basins"]}
-            self.assertLess(basins["the upstream reservoir"]["across_m3_s"], 0.0, "the reservoir feeds the river")
-            self.assertGreater(basins["the downstream basin"]["across_m3_s"], 0.0,
-                               "the river pours into the basin")
-            # Rounding over the valley's 29 m3 and the basins' 600-odd, nothing more.
+            reaches = {r["name"]: r for r in water["reaches"]}
+            self.assertGreater(reaches["the river above the valley"]["out_m3_s"], 0.0,
+                               "the river comes down its reach into the valley")
+            self.assertGreater(reaches["the river below the valley"]["in_m3_s"], 0.0,
+                               "and leaves it down the reach below")
+            self.assertGreater(reaches["the brook"]["out_m3_s"], 0.0, "the brook runs into the confluence")
+            # Rounding over the valley's 29 m3 and the network's 700-odd, nothing more.
             self.assertLess(abs(water["all_unaccounted_m3"]), 1e-6, "every cubic metre accounted")
         finally:
             session.close()

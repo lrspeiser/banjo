@@ -32,6 +32,7 @@
 // ground's settling a few times a frame. Nothing skips physical time.
 #include "terrain/TerrainField.hpp"
 #include "terrain/TerrainGenerator.hpp"
+#include "water/RiverNetwork.hpp"
 #include "water/ShallowWater.hpp"
 #include "water/WaterCoupling.hpp"
 
@@ -132,34 +133,28 @@ public:
     std::optional<CutBlock> cut(JoltWorld &world, double x, double z, int cells_x, int cells_z,
                                 double depth_m, std::string *why = nullptr);
     // A river's discharge, from now. A source that became a connection feeds
-    // the basin beyond it instead.
+    // what stands beyond it instead -- the basin there, or the basin or spring
+    // at the top of the reach there -- and a basin, spring or junction beyond
+    // the edges is fed by its own name.
     bool setDischarge(const std::string &river, double discharge_m3_s);
 
-    // Regions beyond the edges (docs/watershed.md). A basin is another
-    // region's water held as a level pool -- its level its bed plus its volume
-    // over its area -- fed from beyond the world and drained over an outlet
-    // weir to beyond it, as declared. A link joins a connection of this
-    // region's water to a basin: the connection's faces see the basin's level
-    // at the start of each water stride, and the basin takes exactly what
-    // crossed them at its end -- computed once, applied twice.
-    struct Basin {
-        std::string name;
-        double bed_m{}, area_m2{}, volume_m3{};
-        double fed_m3_s{};                     // from beyond the world
-        bool has_outlet{};
-        double crest_m{}, width_m{};           // its weir, to beyond the world
-        // Its own ledger: volume = initial + fed - out + across, to rounding.
-        double initial_m3{}, fed_m3{}, out_m3{}, across_m3{};
-        double out_rate_m3_s{}, across_rate_m3_s{};   // over the last stride
-        [[nodiscard]] double level() const { return bed_m + volume_m3 / area_m2; }
-    };
+    // Regions beyond the edges (docs/watershed.md): the river network this
+    // region's water meets -- basins, junctions and the reaches between them,
+    // held coarsely (water::RiverNetwork). A link joins a connection of this
+    // region's water to the network, at a basin or at a reach's open end. The
+    // connection's faces see that water's level and speed at the start of each
+    // water stride; the network takes exactly what crossed them at its end --
+    // computed once, applied twice -- and goes on over the same stride.
     struct Link {
-        std::string name;          // the source or mouth it took over
-        std::size_t basin{};       // into basins()
-        int connection{};          // into the water's connections
-        bool replaced_source{};    // a river's source became it
+        std::string name;                      // the source or mouth it took over
+        int connection{};                      // into the water's connections
+        water::RiverNetwork::Endpoint end;     // what it meets beyond the edge
+        bool replaced_source{};                // a river's source became it
+        // Water leaving the network across it moves into this region along +x
+        // or +z (a west or south edge: +1) or against it (east or north: -1).
+        double into_along_axis{1.0};
     };
-    [[nodiscard]] const std::vector<Basin> &basins() const { return basins_; }
+    [[nodiscard]] const water::RiverNetwork *network() const { return network_.get(); }
     [[nodiscard]] const std::vector<Link> &links() const { return links_; }
 
     // What has come out of the ground and not gone back: the sand and soil
@@ -231,9 +226,9 @@ private:
     void putBack(double sand_m3, double soil_m3);
     // A sleeping body whose water has changed around it is woken.
     void wakeWhatTheWaterReached(JoltWorld &world, const std::vector<water::BodyInWater> &bodies);
-    // The basins over one water stride: each takes what crossed its links,
-    // then its feed and what its outlet lets go.
-    void stepBasins(double dt_s);
+    // The network over one water stride: it takes what crossed each link, then
+    // goes on over the same stride on its own clock.
+    void stepNetwork(double dt_s);
     std::vector<float> chunkHeights(int chunk) const;
 
     Landscape landscape_;
@@ -245,7 +240,7 @@ private:
     std::vector<unsigned> patch_of_chunk_;
     bool attached_{};
     Volumes carried_{};
-    std::vector<Basin> basins_;
+    std::unique_ptr<water::RiverNetwork> network_;
     std::vector<Link> links_;
     double time_s_{};
     double water_behind_s_{};     // world time the water has yet to catch up
