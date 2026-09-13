@@ -41,24 +41,55 @@ addEventListener("unhandledrejection", (e) =>
 // The server hands out a token so that only this machine's browser can drive
 // it. Same handshake the other page uses.
 let token = null;
-async function api(path, body) {
+
+// A request can fail in two ways, and they want opposite answers.
+//
+// The engine REFUSING something comes back as a 400 with its reason, and that
+// is final: the same request gets the same answer. A request that got no
+// answer at all -- the fetch rejects -- or that the server fell over handling
+// -- a 5xx -- says nothing about the world, and the same request a moment
+// later usually goes through. On 2026-09-12 a room stopped for good five
+// minutes in because Windows had no socket buffer left to send one step with
+// (ERR_NO_BUFFER_SPACE), while the server and the world were both fine. So the
+// second kind is marked `transient`, and tick() tries again before giving up.
+function linkFailure(error) {
+  const failed = new Error(error.message || String(error));
+  failed.transient = true;
+  return failed;
+}
+
+async function api(path, body, renewed = false) {
   const headers = { "Content-Type": "application/json" };
   if (token) headers["X-Banjo-Token"] = token;
-  const res = await fetch(path, body === undefined
-    ? { headers }
-    : { method: "POST", headers, body: JSON.stringify(body) });
-  if (res.status === 403 && !token) {
+  let res, text;
+  try {
+    res = await fetch(path, body === undefined
+      ? { headers }
+      : { method: "POST", headers, body: JSON.stringify(body) });
+    text = await res.text();
+  } catch (error) { throw linkFailure(error); }
+  if (res.status === 403 && !renewed) {
     // The server hands the token out with its status rather than minting one on
-    // demand, so this is where it comes from.
-    const status = await (await fetch("/api/status")).json();
+    // demand, so this is where it comes from: the first time, and again after
+    // the server has been restarted, because a new server has a new token and
+    // refuses the old one. Only fetching it when there was none meant that
+    // after a restart every request was refused, "Start the room again"
+    // included, until the page was reloaded.
+    let status;
+    try { status = await (await fetch("/api/status")).json(); }
+    catch (error) { throw linkFailure(error); }
     token = status.csrf_token;
     if (!token) throw new Error("the server would not hand out a session token");
-    return api(path, body);
+    return api(path, body, true);
   }
-  const text = await res.text();
   let data = {};
   try { data = text ? JSON.parse(text) : {}; } catch { data = { error: text.slice(0, 300) }; }
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  if (!res.ok) {
+    const failed = new Error(data.error || `HTTP ${res.status}`);
+    failed.status = res.status;
+    failed.transient = res.status >= 500;
+    throw failed;
+  }
   return data;
 }
 
@@ -74,6 +105,12 @@ const world = {
   aim: null,              // what the crosshair is on, from the engine
   busy: false,
   lastTick: 0,
+  // After a request that got no answer (see tick()).
+  lost: 0,                // tries in a row that got none, not given up on yet
+  lostSince: 0,           // when the first of them went out
+  lostWhy: "",            // and what the last of them failed with
+  retryAt: 0,             // do not ask again before this (performance.now())
+  resync: false,          // the next step asks for every body, not just changes
   clock: 0,
   cellSize: 0.02,
   // What has happened, in the order it happened, for the model to read. A
@@ -1153,6 +1190,9 @@ const trace = {
   startedWorld: 0,
   sentAt: 0,
   marked: false,       // the reader pressed L, meaning "that lagged"
+  // Requests that got no answer. The world stands still while the server
+  // cannot be reached, and in every other number here that reads as a lag.
+  link: { times: 0, longest_ms: 0, why: "", gave_up: false },
 };
 
 function traceFrame(dt) {
@@ -1244,13 +1284,27 @@ async function sendTrace(why) {
     worst_reply_kb: trace.bytes.length ? +(Math.max(...trace.bytes) / 1024).toFixed(0) : null,
     breaks: trace.breaks.slice(),
     objects: world.bodies.size,
+    ...(trace.link.times ? { lost_link: { ...trace.link } } : {}),
   };
+  const link = trace.link;
   trace.frames.length = 0; trace.slow.length = 0; trace.ticks.length = 0;
   trace.bytes.length = 0; trace.breaks.length = 0;
+  trace.link = { times: 0, longest_ms: 0, why: "", gave_up: false };
   trace.startedWall = now;
   trace.startedWorld = world.clock;
   trace.sentAt = now;
-  try { await api("/api/trace", report); } catch (e) { /* a lost report is not worth a bad frame */ }
+  try { await api("/api/trace", report); } catch (e) {
+    // A lost report is not worth a bad frame -- but a lost connection is the
+    // one thing a report sent while the server is away is sure to lose, so it
+    // is kept for the next report, which reaches whichever server comes back
+    // and says why the room stopped.
+    if (link.times) {
+      trace.link.times += link.times;
+      trace.link.longest_ms = Math.max(trace.link.longest_ms, link.longest_ms);
+      trace.link.gave_up = trace.link.gave_up || link.gave_up;
+      trace.link.why = trace.link.why || link.why;
+    }
+  }
 }
 
 // A world being replaced, and the one replacing it: "Start the room again",
@@ -1931,11 +1985,13 @@ async function letFly() {
   if (!entry || use.mode !== "preparing") return;
   const grip = use.grip || entry.mesh.position.clone();
   const reached = use.reached || 0;
+  // The stroke the arc on screen was drawn from, if it is the one just shown;
+  // otherwise one made now (throwStroke lets go at its end either way).
+  const aimed = use.aimed && performance.now() - use.aimed.at < 500 ? use.aimed.stroke : null;
   use.mode = "throwing";
   showUse();
   try {
-    const reply = await act("stroke", Object.assign(throwStroke(camera, grip, reached),
-                                                    { let_go: true }));
+    const reply = await act("stroke", aimed || throwStroke(camera, grip, reached));
     // The work the hand does on the throw itself, not on the wind-up before it.
     use.workBefore = reply && reply.hand ? reply.hand.work_j : 0;
   } catch (error) {
@@ -2128,14 +2184,22 @@ async function previewThrow() {
   previewAt = now;
   previewBusy = true;
   try {
+    // The very stroke letFly would send now, let go of at its end.
     const stroke = throwStroke(camera, use.grip, use.mode === "preparing" ? use.reached || 0 : 0);
-    const seen = await act("preview_stroke", Object.assign(stroke, { horizon_s: 4 }));
+    const seen = await act("preview_stroke", Object.assign({ horizon_s: 4 }, stroke));
     if (world.use !== use || (use.mode !== "ready" && use.mode !== "preparing")) return;
     const v = seen.let_go_velocity_m_s || [0, 0, 0];
     use.preview = { possible: !!(seen.possible && seen.reaches_end), why: seen.why || "",
                     speed: Math.hypot(v[0], v[1], v[2]),
                     hit: !!(seen.flight && seen.flight.hit),
                     hitName: (seen.flight && seen.flight.hit_name) || "" };
+    // What is on screen is what letFly throws: this stroke, not one made afresh
+    // when the button comes up. A preview is a fifth of a second old by then,
+    // and measured on this page, a throw made afresh after turning 12 degrees
+    // came down 2.25 m to the side of the ring, and one let go halfway through
+    // the wind-up 1 m past it. The engine starts the stroke from wherever the
+    // thing is when it is thrown.
+    use.aimed = use.preview.possible ? { stroke, at: performance.now() } : null;
     if (use.preview.possible) aimArc.show(seen.flight); else aimArc.hide();
     showUse();
   } catch { /* the next tick asks again */ } finally { previewBusy = false; }
@@ -2920,8 +2984,33 @@ function updateGuides() {
 const LIVE_DT = 1 / 240;
 const MAX_STEPS = 240;
 
+// How long to wait before each new try after a request got no answer: three
+// tries, about a second of waiting in all, then the room says it has stopped.
+// Long enough to ride out a moment with no socket to send on, which is what
+// ended a room on 2026-09-12; short enough that a server that has really gone
+// is said to have. A try at a server that is not there takes about two seconds
+// of its own, because Windows retries a refused local connection before it
+// fails it -- so when a server really stops, the first "trying again" comes
+// about two seconds later and "the room stopped" about nine (measured).
+const RETRY_MS = [150, 300, 600];
+
+// A spell of the server being out of reach, written into the frame record when
+// it ends: in an answer, in giving up, or in a server that no longer has the
+// world. Kept with the spell rather than the record, because a record can go
+// out halfway through one.
+function recordLostLink(gaveUp) {
+  trace.link.times += 1;
+  trace.link.longest_ms = Math.max(trace.link.longest_ms,
+    Math.round(performance.now() - world.lostSince));
+  trace.link.why = world.lostWhy;
+  trace.link.gave_up = trace.link.gave_up || gaveUp;
+  world.lost = 0;
+}
+
 async function tick() {
   if (!world.session || world.busy || world.paused) return;
+  // Waiting out a request that got no answer before asking again.
+  if (performance.now() < world.retryAt) return;
   world.busy = true;
   // Which world this tick is driving. The chat can rebuild the room while a
   // tick is in flight -- a rebuild opens a NEW world and closes the old one --
@@ -2979,10 +3068,23 @@ async function tick() {
     }
     const steps = clamp(Math.round(elapsed / LIVE_DT), 1, MAX_STEPS);
     const asked = performance.now();
-    const ask = { dt: LIVE_DT, n: steps, moved: true };
+    // Only what moved -- except straight after a request that got no answer.
+    // The engine leaves out a body it has already sent, and a reply lost on
+    // its way here may have carried the only word of one that moved or went
+    // away. A step asked for WITHOUT `moved` sends every body and starts the
+    // engine's record of what was sent over, which puts the two back in step.
+    const moved = !world.resync;
+    const ask = { dt: LIVE_DT, n: steps, moved };
     if (hand) ask.hand = hand;
     if (hand_q) ask.hand_q = hand_q;
     let state = await act("step", ask);
+    // The pins too: they only come with a step when their set changes, and
+    // the change may have been in the reply that was lost.
+    if (!moved) await refreshJoints();
+    world.resync = false;
+    // Back. Written into the frame record, because the world stood still
+    // while the server was out of reach.
+    if (world.lost) recordLostLink(false);
     trace.ticks.push(+(performance.now() - asked).toFixed(1));
     // Roughly, and without stringifying it twice: bodies are what a reply is
     // made of, and they are all about the same size.
@@ -3160,9 +3262,34 @@ async function tick() {
     // new world in it. A world that really stopped is still said, by the
     // first step after.
     if (world.session === driving && !world.opening && !world.asking) {
-      $("panel-state").textContent = `The room stopped: ${error.message || error}`;
-      noteError(`the room stopped: ${error.message || error}`);
-      world.session = null;
+      const why = error.message || String(error);
+      if (error.transient) world.lostWhy = why;
+      if (error.transient && world.lost < RETRY_MS.length) {
+        // No answer is not a refusal. Try again shortly, a few times, before
+        // deciding the server has gone. Nothing steps the world meanwhile, and
+        // it carries on from where it stood rather than leaping the gap: the
+        // next step is one step, not the time spent waiting.
+        if (!world.lost) world.lostSince = performance.now();
+        world.retryAt = performance.now() + RETRY_MS[world.lost];
+        world.lost += 1;
+        world.resync = true;
+        world.lastTick = 0;
+        $("panel-state").textContent = `Lost the server for a moment (${why}) —`
+          + ` trying again, ${world.lost} of ${RETRY_MS.length}…`;
+      } else {
+        // Out of reach before this, whether it ended in giving up or in the
+        // server answering that the world is gone -- a restarted server has
+        // lost every world it held.
+        if (world.lost) recordLostLink(!!error.transient);
+        const said = error.transient
+          ? `lost the server (${why}), and ${RETRY_MS.length} more tries over`
+            + ` ${((performance.now() - world.lostSince) / 1000).toFixed(1)} s did not reach it.`
+            + ` Start the room again once it is back.`
+          : why;
+        $("panel-state").textContent = `The room stopped: ${said}`;
+        noteError(`the room stopped: ${said}`);
+        world.session = null;
+      }
     }
   } finally { world.busy = false; }
 }
@@ -3669,6 +3796,9 @@ async function open() {
     world.scene = data.scene || null;   // what the server says it opened
     world.openError = null;
     world.lastTick = 0;
+    world.lost = 0;
+    world.retryAt = 0;
+    world.resync = false;
     // This room's own clock. Left at the last room's, the first frame report
     // after a reopen measured one room's seconds against the other's; the
     // report itself starts over once the room is drawn (traceNewWorld, below).
