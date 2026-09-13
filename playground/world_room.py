@@ -640,10 +640,38 @@ def yard() -> dict[str, Any]:
     }
 
 
+def valley() -> dict[str, Any]:
+    """A small valley with a river in it, made by the engine and saved.
+
+    The ground is the generation call's: broad landforms, then Priority-Flood
+    drainage from the river's mouth to decide where the river runs, its channel
+    carved along that route, a hollow on the floodplain kept as a pond, a
+    limited erosion pass, soil thinned where it is steep, and the river run to
+    steady flow -- all once, cached on disk, never replayed while anyone is
+    in it (docs/terrain-and-water.md).
+
+    Nothing else is here. The dam, the log, the boulder and the channel are for
+    the chat to build, through the MCP's own tools, by being asked -- which is
+    the point of the room. One marker stone, anchored and buried in the rock
+    under the valley, because a world is opened from its bodies.
+    """
+    return {
+        "algorithm": "lattice",
+        "cell_m": 0.04,
+        "plasticity": "on",
+        "terrain": {"generate": "valley"},
+        "bodies": [{"name": "marker stone", "shape": "box", "material": "concrete",
+                    "size_mm": [80, 80, 80], "center_mm": [-18000, -2600, -14000],
+                    "anchored": True}],
+        "joints": [],
+    }
+
+
 SCENES = {
     "bench": room,
     "courtyard": courtyard,
     "yard": yard,
+    "valley": valley,
 }
 
 

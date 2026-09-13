@@ -26,6 +26,7 @@
   <div id="hud-hint"><b>W A S D</b> walk · <b>Q E</b> up and down · <b>Shift</b> run
     · <b>drag</b> or <b>arrow keys</b> look · <b>click</b> pick up and drop · <b>F</b> throw
     · <b>right-click</b> or <b>R</b> release a latch · <b>Heat it</b> warms what the crosshair is on (through a window, the gas behind it)
+    · <b>Dig here</b> digs where the crosshair is on the ground
     · <b>L</b> if it lagged · <b>Esc</b> release the mouse</div>
 </div>
 
@@ -55,6 +56,16 @@
   <p id="heat-note"></p>
 </div>
 
+<!-- The water, as the engine reports it: how much there is, what the river
+     brings in and takes out, and what it costs to run -- the columns the
+     solver actually computed, out of all of them. The surface drawn in the
+     room is a picture of these numbers. -->
+<div id="water" hidden>
+  <h2>Water</h2>
+  <p id="water-line"></p>
+  <p id="water-cost"></p>
+</div>
+
 <section id="panel">
   <header>
     <h1>Banjo</h1>
@@ -74,7 +85,10 @@
       <option value="bench">The bench</option>
       <option value="courtyard">The courtyard</option>
       <option value="yard">An empty yard</option>
+      <option value="valley">A valley with a river</option>
     </select>
+    <button type="button" id="dig-it" class="quiet"
+            title="Dig a pit 0.8 m across and 0.4 m deep where the crosshair is on the ground">Dig here</button>
     <button type="button" id="heat-it" class="quiet"
             title="10 kW for a minute into what the crosshair is on; aimed at a piston, or through a window at the gas behind it, 800 W into the gas">Heat it</button>
     <button type="button" id="reset" class="quiet">Start the room again</button>

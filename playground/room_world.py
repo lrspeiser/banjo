@@ -65,7 +65,10 @@ NOT_FOR_THE_ROOM = {
 # person will be handed.
 AUTHORING = {"add_object", "remove_object", "move_object", "clear_world", "drop",
              "hinge", "slide", "tie", "reeve", "fix", "spring", "unhinge",
-             "hinge_friction", "enclose_gas", "heat"}
+             "hinge_friction", "enclose_gas", "heat",
+             # The ground and the water are part of what the room IS: a trench
+             # dug, a block cut, a river turned up.
+             "make_terrain", "dig", "fill", "cut_block", "set_river"}
 
 # How many objects a room may be built up to. See check() in open_room.
 MAX_OBJECTS = 120
@@ -188,6 +191,14 @@ def export_spec(entry: dict[str, Any], scene: dict[str, Any] | None = None,
     # them is a size on the room's grid.
     if scene.get("thermo"):
         spec["thermo"] = scene["thermo"]
+    # The ground as it was made and every edit since, and the rivers. Water
+    # carried from a running world is never part of what the room IS: it is
+    # handed to the one open at the moment it is reopened, and no further.
+    if scene.get("terrain"):
+        spec["terrain"] = scene["terrain"]
+    water = {k: v for k, v in (scene.get("water") or {}).items() if k != "state"}
+    if water:
+        spec["water"] = water
     return spec
 
 

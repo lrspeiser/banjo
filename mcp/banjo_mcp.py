@@ -244,11 +244,18 @@ def tool_create_world(args: dict[str, Any]) -> dict[str, Any]:
 def tool_describe_world(args: dict[str, Any]) -> dict[str, Any]:
     entry = _world(args.get("world_id"))
     world = entry.get("world")
-    return {"world_id": args.get("world_id"),
+    said = {"world_id": args.get("world_id"),
             "time_s": round(world.time_s, 3) if world is not None else 0.0,
             "objects": _describe(world) if world is not None else [],
             "joints": len(entry.get("joints", [])),
             "what_has_happened": entry["story"][-20:]}
+    if _has_terrain(entry):
+        report = world.environment_report()
+        said["ground"] = _ground_said(report)
+        said["water"] = _water_said(world, full=True)
+    else:
+        said["ground"] = "flat, at y = 0"
+    return said
 
 
 def tool_run(args: dict[str, Any]) -> dict[str, Any]:
@@ -337,6 +344,10 @@ def tool_run(args: dict[str, Any]) -> dict[str, Any]:
     heat = _heat_said(world, limit=10)
     if heat is not None:
         answer["heat"] = heat
+    if _has_terrain(entry):
+        water = _water_said(world)
+        if water is not None:
+            answer["water"] = water
     if not events and contacts:
         answer["why_nothing_happened"] = (
             "Every contact was under the speed it would have taken. Drop it from "
@@ -556,12 +567,26 @@ def _rebuild(entry: dict[str, Any], scene: dict[str, Any], world_id: str,
         except ValueError as problem:
             raise Refused(str(problem)) from None
     fresh = None
+    old = entry.get("world")
     if scene["bodies"]:
+        # The water, carried: a world opened again from an edited scene holds
+        # the same water it held, over whatever ground the edits leave -- a
+        # reservoir filled behind a dam is still there when a log is added.
+        # Not across a change of ground: a new valley is new water.
+        opening = scene
+        was = (entry["scene"].get("terrain") or {}).get("generate")
+        now = (scene.get("terrain") or {}).get("generate")
+        if old is not None and now is not None and was == now:
+            try:
+                state = old.environment_state()
+            except banjo.BanjoError:
+                state = {}
+            if state.get("depth_b64"):
+                opening = dict(scene, water=dict(scene.get("water") or {}, state=state))
         try:
-            fresh = banjo.World(scene, cell_size_m=entry["cell_m"])
+            fresh = banjo.World(opening, cell_size_m=entry["cell_m"])
         except banjo.BanjoError as error:
             raise Refused(str(error))
-    old = entry.get("world")
     entry["world"], entry["scene"] = fresh, scene
     if old is not None:
         old.close()
@@ -597,6 +622,11 @@ def tool_add_object(args: dict[str, Any]) -> dict[str, Any]:
         raise Refused(f"there is already something called {added['name']!r} here. "
                       f"Joints and every later call find things by name, so give it "
                       f"another one.")
+    # On ground that is not flat, something asked for inside the ground is set
+    # on top of it instead: the ground under a thing is the one height a caller
+    # cannot work out for itself, and a body started inside a hill is thrown
+    # out of it.
+    seated = _seat_on_ground(entry, added)
     scene = dict(entry["scene"], bodies=list(entry["scene"]["bodies"]) + [added])
     lost = _rebuild(entry, scene, world_id)
     answer: dict[str, Any] = {
@@ -605,6 +635,14 @@ def tool_add_object(args: dict[str, Any]) -> dict[str, Any]:
         "note": "A world is opened from a scene, so adding an object opens it again "
                 "from the start: anything in flight is back where it was authored, "
                 "and every joint is hung again."}
+    if seated:
+        answer["seated_on_the_ground"] = seated
+    if _has_terrain(entry):
+        here = entry["world"].survey(added["center_m"][0], added["center_m"][2])
+        if here.get("water"):
+            answer["in_water"] = {"depth_m": round(here["water"]["depth_m"], 3),
+                                  "surface_m": round(here["water"]["surface_m"], 3),
+                                  "flowing_m_s": round(here["water"]["speed_m_s"], 3)}
     if lost:
         answer["joints_lost"] = lost
     return answer
@@ -1219,6 +1257,370 @@ def tool_thermal_state(args: dict[str, Any]) -> dict[str, Any]:
     return said
 
 
+# ---------------------------------------------------------------------------
+# Terrain and water
+# ---------------------------------------------------------------------------
+#
+# Declared in the scene document -- a "terrain" block with what the ground was
+# made from and every edit made to it since, a "water" block with any change to
+# its rivers -- so a rebuild makes the same ground again and the playground's
+# room gets it in the spec it opens from. What the ground is and what the water
+# does is the engine's: nothing here sets a level, a speed or a slope.
+
+TERRAIN_KINDS = ["valley", "basin", "channel", "flat"]
+GROUND_DENSITY = {"sand": 1600.0, "soil": 1600.0}
+PAIR = {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 3,
+        "description": "[x, z] on the ground (or [x, y, z], y ignored)."}
+
+
+def _has_terrain(entry: dict[str, Any]) -> bool:
+    return bool(entry["scene"].get("terrain")) and entry.get("world") is not None
+
+
+def _require_terrain(entry: dict[str, Any]) -> banjo.World:
+    world = _live(entry)
+    if not entry["scene"].get("terrain"):
+        raise Refused("this world has flat ground and no water. make_terrain gives it a valley "
+                      "with a river in it.")
+    return world
+
+
+def _xz(value: Any, what: str) -> list[float]:
+    if not isinstance(value, (list, tuple)) or len(value) not in (2, 3):
+        raise Refused(f"{what} is [x, z] on the ground, like [2.5, -1]")
+    point = [_number(v, what, -500.0, 500.0) for v in value]
+    return [point[0], point[-1]]
+
+
+def _ground_under(world: banjo.World, x: float, z: float, half_x: float, half_z: float) -> float:
+    """The highest ground under a footprint."""
+    top = -1.0e9
+    for a in range(5):
+        for b in range(5):
+            here = world.survey(x - half_x + half_x * a / 2.0, z - half_z + half_z * b / 2.0)
+            if here.get("on_the_ground"):
+                top = max(top, here["ground_m"])
+    return top
+
+
+def _seat_on_ground(entry: dict[str, Any], body: dict[str, Any]) -> dict[str, Any] | None:
+    """Lift a body asked for inside the ground to rest on top of it."""
+    if not _has_terrain(entry):
+        return None
+    size = body["dimensions_m"]
+    half = [size[0] / 2.0] * 3 if body["shape"] == "sphere" else [v / 2.0 for v in size]
+    x, y, z = body["center_m"]
+    ground = _ground_under(entry["world"], x, z, half[0], half[2])
+    if ground < -1.0e8 or y - half[1] >= ground + 0.002:
+        return None
+    rest = round(ground + half[1] + 0.003, 4)
+    body["center_m"] = [x, rest, z]
+    return {"asked_for_y_m": round(y, 4), "ground_m": round(ground, 4), "now_y_m": rest,
+            "note": "it was inside the ground, so it now stands on the highest point of the "
+                    "ground under it"}
+
+
+def _river_said(path: list[dict[str, Any]], every: int = 2) -> list[list[float]]:
+    """Where the river runs: [x, z, level, depth, speed] every few metres."""
+    return [[round(p["x_m"], 2), round(p["z_m"], 2), round(p["level_m"], 3), round(p["depth_m"], 3),
+             round(p["speed_m_s"], 2)] for p in path[::max(1, every)]]
+
+
+def _water_said(world: banjo.World, full: bool = False) -> dict[str, Any] | None:
+    """What the water is doing, in words a model can act on."""
+    try:
+        report = world.environment_report()
+    except banjo.BanjoError:
+        return None
+    if not report:
+        return None
+    water = report["water"]
+    said: dict[str, Any] = {
+        "time_s": round(water["time_s"], 2),
+        "volume_m3": round(water["volume_m3"], 3),
+        "rivers": [{"name": r["name"], "fed_m3_s": round(r["discharge_m3_s"], 3)} for r in water["rivers"]],
+        "coming_in_m3_s": round(water["inflow_m3_s"], 3),
+        "going_out_m3_s": round(water["outflow_m3_s"], 3),
+        "ponds": [{"name": p["name"], "at_m": [round(v, 2) for v in p["at_m"]],
+                   "level_m": round(p["level_m"], 3) if p.get("level_m") is not None else None,
+                   "brim_m": round(p["brim_m"], 3), "depth_now_m": round(p.get("depth_now_m", 0.0), 3)}
+                  for p in water["ponds"]],
+        # What the water holds up against what each thing weighs. A block
+        # sealed on the river bed has no water under it and is held up by the
+        # bed, not the water -- which is right, and is what makes it a dam.
+        "in_the_water": [{"object": b["name"], "floats": b["floats"],
+                          "water_lifts_n": round(b["buoyancy_n"], 1),
+                          "weighs_n": round(b["weight_n"], 1)} for b in water["bodies_in_water"]],
+    }
+    if full:
+        said["the_river_runs"] = {"columns": ["x_m", "z_m", "level_m", "depth_m", "speed_m_s"],
+                                  "every_2_m": _river_said(water["river_path"], 1)}
+        said["ledger"] = {"came_in_m3": round(water["ledger"]["inflow_m3"], 3),
+                          "went_out_m3": round(water["ledger"]["outflow_m3"], 3),
+                          "unaccounted_m3": water["residual_m3"]}
+        said["costs"] = {"columns_computed": water["active_cells"], "of": water["cells"],
+                         "wet": water["wet_cells"]}
+    return said
+
+
+def _ground_said(report: dict[str, Any]) -> dict[str, Any]:
+    grid = report["grid"]
+    ground = report["ground"]
+    said = {"kind": report["kind"],
+            "from_m": [round(grid["x0_m"], 2), round(grid["z0_m"], 2)],
+            "to_m": [round(grid["x0_m"] + grid["size_m"][0], 2), round(grid["z0_m"] + grid["size_m"][1], 2)],
+            "column_m": grid["cell_m"],
+            "lowest_m": round(ground["lowest_m"], 3), "highest_m": round(ground["highest_m"], 3),
+            "stand_here_to_look": [round(v, 2) for v in report["view"]["eye_m"]],
+            "looking_at": [round(v, 2) for v in report["view"]["look_m"]]}
+    if ground.get("bare_rock"):
+        said["bare_level_rock_at_m"] = [round(v, 2) for v in ground["bare_rock"]["at_m"]]
+    return said
+
+
+def tool_make_terrain(args: dict[str, Any]) -> dict[str, Any]:
+    """Give the world ground that is not flat -- a valley with a river -- or take it away."""
+    world_id = str(args.get("world_id"))
+    entry = _world(world_id)
+    kind = str(args.get("kind") or "valley")
+    scene = dict(entry["scene"])
+    scene.pop("water", None)
+    if kind == "none":
+        scene.pop("terrain", None)
+        lost = _rebuild(entry, scene, world_id)
+        entry["story"].append("the ground was made flat again")
+        return {"ground": "flat, at y = 0, with no water", "joints_lost": lost} if lost else \
+               {"ground": "flat, at y = 0, with no water"}
+    if kind not in TERRAIN_KINDS:
+        raise Refused(f"kind is one of {', '.join(TERRAIN_KINDS)} or none, not {kind!r}")
+    generate: Any = kind
+    extra: dict[str, Any] = {}
+    if args.get("seed") is not None:
+        extra["seed"] = int(_number(args["seed"], "seed", 0, 1e9))
+    if args.get("discharge_m3_s") is not None:
+        extra["discharge_m3_s"] = _number(args["discharge_m3_s"], "discharge_m3_s", 0.0, 5.0)
+    if extra:
+        generate = {"kind": kind, **extra}
+    scene["terrain"] = {"generate": generate}
+    if not scene["bodies"]:
+        raise Refused("a world is opened from its objects and this one has none: add_object "
+                      "something first (a marker stone out of the way will do)")
+    lost = _rebuild(entry, scene, world_id)
+    entry["story"].append(f"made the ground a {kind}")
+    report = entry["world"].environment_report()
+    answer: dict[str, Any] = {"ground": _ground_said(report)}
+    water = _water_said(entry["world"], full=True)
+    if water:
+        answer["water"] = water
+    answer["note"] = ("Made by physics once and saved: drainage decided where the river runs, "
+                      "erosion wore its channel and laid sand along it. Heights here are not flat: "
+                      "use survey to find the ground and the water anywhere, and every object added "
+                      "is set ON the ground if it was asked for inside it. The river runs along x.")
+    if lost:
+        answer["joints_lost"] = lost
+    return answer
+
+
+def tool_survey(args: dict[str, Any]) -> dict[str, Any]:
+    """The ground and the water at a point, or along a line."""
+    entry = _world(args.get("world_id"))
+    world = _require_terrain(entry)
+    if args.get("from_m") is not None and args.get("to_m") is not None:
+        a, b = _xz(args["from_m"], "from_m"), _xz(args["to_m"], "to_m")
+        every = _number(args.get("every_m", 0.5), "every_m", 0.1, 10.0)
+        length = math.dist(a, b)
+        count = max(2, min(60, int(length / every) + 1))
+        rows = []
+        wet: list[list[float]] = []
+        for k in range(count):
+            t = k / (count - 1)
+            x, z = a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t
+            here = world.survey(x, z)
+            if not here.get("on_the_ground"):
+                continue
+            water = here.get("water")
+            rows.append([round(x, 2), round(z, 2), round(here["ground_m"], 3), here["surface"],
+                         round(water["depth_m"], 3) if water else 0.0,
+                         round(water["surface_m"], 3) if water else None,
+                         round(water["speed_m_s"], 2) if water else 0.0])
+            if water:
+                if wet and wet[-1][1] == k - 1:
+                    wet[-1][1] = k
+                else:
+                    wet.append([k, k])
+        return {"from_m": a, "to_m": b,
+                "columns": ["x_m", "z_m", "ground_m", "made_of", "water_depth_m", "water_level_m",
+                            "flowing_m_s"],
+                "along": rows,
+                "water_between": [[rows[s][:2], rows[e][:2]] for s, e in wet if s < len(rows) and e < len(rows)],
+                "note": "an object resting on the ground has its centre at ground_m plus half its "
+                        "own height; one resting on a river bed, at the bed plus half its height"}
+    at = _xz(args.get("at_m") or [0, 0], "at_m")
+    here = world.survey(at[0], at[1])
+    if not here.get("on_the_ground"):
+        return {"at_m": at, "on_the_ground": False, "note": "that point is off the edge of the ground"}
+    said = {"at_m": at, "ground_m": round(here["ground_m"], 4), "made_of": here["surface"],
+            "slope_deg": round(here["slope_deg"], 1),
+            "layers_m": {"sand": round(here["sand_m"], 3), "soil": round(here["soil_m"] + here["loose_soil_m"], 3),
+                         "rock_starts_at_m": round(here["rock_top_m"], 3)}}
+    if here.get("water"):
+        w = here["water"]
+        said["water"] = {"depth_m": round(w["depth_m"], 3), "level_m": round(w["surface_m"], 3),
+                         "flowing_m_s": round(w["speed_m_s"], 3),
+                         "flowing_towards": [round(v, 3) for v in w["velocity_m_s"]]}
+    else:
+        said["water"] = None
+    return said
+
+
+def tool_water_state(args: dict[str, Any]) -> dict[str, Any]:
+    """The rivers and ponds: how much, where, how fast, and what is floating."""
+    entry = _world(args.get("world_id"))
+    world = _require_terrain(entry)
+    said = _water_said(world, full=True) or {}
+    said["note"] = ("A dam is things that sink resting on the river bed: water rises behind it "
+                    "until it spills over or round. A new channel dug lower than the water lets it "
+                    "out. What floats is what its density and the water it displaces make float.")
+    return said
+
+
+def _record_edit(entry: dict[str, Any], edit: dict[str, Any]) -> None:
+    """An edit kept in the scene, so the world opened again has the same ground."""
+    scene = dict(entry["scene"])
+    terrain = dict(scene["terrain"])
+    terrain["edits"] = list(terrain.get("edits") or []) + [edit]
+    scene["terrain"] = terrain
+    entry["scene"] = scene
+
+
+def _carry(entry: dict[str, Any], material: str, cubic_metres: float) -> None:
+    if cubic_metres <= 0.0:
+        return
+    have = entry["carried"].setdefault(material, {"kilograms": 0.0, "pieces": 0})
+    have["kilograms"] += cubic_metres * GROUND_DENSITY[material]
+
+
+def tool_dig(args: dict[str, Any]) -> dict[str, Any]:
+    """Dig a trench or a pit. Loose material first, then soil; a spade stops on rock."""
+    world_id = str(args.get("world_id"))
+    entry = _world(world_id)
+    world = _require_terrain(entry)
+    start = _xz(args.get("from_m"), "from_m")
+    end = _xz(args.get("to_m"), "to_m") if args.get("to_m") is not None else start
+    width = _number(args.get("width_m", 0.8), "width_m", 0.25, 10.0)
+    depth = _number(args.get("depth_m", 0.5), "depth_m", 0.05, 3.0)
+    try:
+        dug = world.dig(start, end, width, depth)
+    except banjo.BanjoError as error:
+        raise Refused(str(error))
+    _record_edit(entry, {"dig": {"from_m": start, "to_m": end, "width_m": width, "depth_m": depth}})
+    _carry(entry, "sand", dug.sand_m3)
+    _carry(entry, "soil", dug.soil_m3)
+    entry["story"].append(f"dug from {start} to {end}, {width:g} m wide and {depth:g} m deep")
+    return {"dug_m3": round(dug.sand_m3 + dug.soil_m3, 3), "sand_m3": round(dug.sand_m3, 3),
+            "soil_m3": round(dug.soil_m3, 3), "kilograms": round(dug.mass_kg, 1),
+            "columns": dug.columns, "colliders_rebuilt": dug.chunks_rebuilt,
+            "things_woken": dug.bodies_woken,
+            "carried": {m: round(v["kilograms"], 1) for m, v in sorted(entry["carried"].items())},
+            "note": "The ground is lower there now. Whatever stood on it was woken and falls if "
+                    "nothing is under it any more; loose sides slump into the trench over the next "
+                    "second; water finds it if it is lower than the water. Call run to let all of "
+                    "that happen. What came out is carried -- fill puts it back somewhere."}
+
+
+def tool_fill(args: dict[str, Any]) -> dict[str, Any]:
+    """Heap carried sand or soil on the ground: an earth bank, a filled hole."""
+    world_id = str(args.get("world_id"))
+    entry = _world(world_id)
+    world = _require_terrain(entry)
+    at = _xz(args.get("at_m"), "at_m")
+    radius = _number(args.get("radius_m", 1.0), "radius_m", 0.25, 5.0)
+    volume = _number(args.get("volume_m3", 0.5), "volume_m3", 0.01, 50.0)
+    material = str(args.get("material") or "soil")
+    if material not in GROUND_DENSITY:
+        raise Refused("fill with soil or sand: what digging gives you")
+    have = entry["carried"].get(material, {}).get("kilograms", 0.0) / GROUND_DENSITY[material]
+    if have + 1e-9 < volume:
+        raise Refused(f"you are carrying {have:.3f} m^3 of {material}, and ground does not come from "
+                      f"nowhere: dig {volume - have:.3f} m^3 more first, or fill with less")
+    sand, soil = (volume, 0.0) if material == "sand" else (0.0, volume)
+    try:
+        heaped = world.deposit(at, radius, sand, soil)
+    except banjo.BanjoError as error:
+        raise Refused(str(error))
+    _record_edit(entry, {"deposit": {"at_m": at, "radius_m": radius, "sand_m3": sand, "soil_m3": soil}})
+    entry["carried"][material]["kilograms"] -= volume * GROUND_DENSITY[material]
+    entry["story"].append(f"heaped {volume:g} m^3 of {material} at {at}")
+    return {"heaped_m3": round(volume, 3), "of": material, "columns": heaped.columns,
+            "colliders_rebuilt": heaped.chunks_rebuilt,
+            "carried": {m: round(v["kilograms"], 1) for m, v in sorted(entry["carried"].items())},
+            "note": "A heap settles to the steepest slope it can hold -- sand to about 32 degrees -- "
+                    "over the next second: run to let it."}
+
+
+def tool_cut_block(args: dict[str, Any]) -> dict[str, Any]:
+    """Cut a block of stone out of bare rock; it becomes an ordinary loose object."""
+    world_id = str(args.get("world_id"))
+    entry = _world(world_id)
+    world = _require_terrain(entry)
+    name = str(args.get("name") or "cut stone")[:60]
+    if any(b["name"] == name for b in entry["scene"]["bodies"]):
+        raise Refused(f"there is already something called {name!r} here; give the block another name")
+    at = _xz(args.get("at_m"), "at_m")
+    size = _triple(args.get("size_m") or [1.0, 0.4, 1.0], "size_m", 0.05, 4.0)
+    column = world.terrain().cell_m
+    cells = (max(1, round(size[0] / column)), max(1, round(size[2] / column)))
+    try:
+        block = world.cut(at, cells, size[1])
+    except banjo.BanjoError as error:
+        raise Refused(str(error))
+    body = {"name": name, "shape": "box", "material": "concrete",
+            "dimensions_m": [round(v, 6) for v in block.size_m],
+            "center_m": [round(v, 6) for v in block.center_m],
+            "velocity_m_s": [0.0, 0.0, 0.0], "anchored": False}
+    _record_edit(entry, {"cut": {"at_m": at, "cells": list(cells), "height_m": block.size_m[1]}})
+    scene = dict(entry["scene"], bodies=list(entry["scene"]["bodies"]) + [body])
+    lost = _rebuild(entry, scene, world_id)
+    entry["story"].append(f"cut {name} out of the rock at {at}")
+    answer: dict[str, Any] = {
+        "cut": name, "size_m": body["dimensions_m"], "kilograms": round(block.mass_kg, 1),
+        "volume_m3": round(block.volume_m3, 4),
+        "note": "The ground lost exactly this much stone and the block is it -- the ground's "
+                "ledger counts it as cut. It is an ordinary loose object now, made of the engine's "
+                "stone (concrete): pick it up, drop it, build a dam with it."}
+    if lost:
+        answer["joints_lost"] = lost
+    return answer
+
+
+def tool_set_river(args: dict[str, Any]) -> dict[str, Any]:
+    """How much water a river brings in, from now: a flood or a drought."""
+    world_id = str(args.get("world_id"))
+    entry = _world(world_id)
+    world = _require_terrain(entry)
+    report = world.environment_report()
+    rivers = [r["name"] for r in report["water"]["rivers"]]
+    if not rivers:
+        raise Refused("this ground has no river")
+    river = str(args.get("river") or rivers[0])
+    if river not in rivers:
+        raise Refused(f"there is no river called {river!r}: there is {', '.join(rivers)}")
+    discharge = _number(args.get("discharge_m3_s", 0.35), "discharge_m3_s", 0.0, 5.0)
+    try:
+        world.set_discharge(river, discharge)
+    except banjo.BanjoError as error:
+        raise Refused(str(error))
+    scene = dict(entry["scene"])
+    water = dict(scene.get("water") or {})
+    water["rivers"] = [r for r in (water.get("rivers") or []) if r.get("name") != river] + \
+                      [{"name": river, "discharge_m3_s": discharge}]
+    scene["water"] = water
+    entry["scene"] = scene
+    entry["story"].append(f"{river} now brings {discharge:g} m^3/s")
+    return {"river": river, "discharge_m3_s": discharge,
+            "note": "from now; run to see what it does downstream"}
+
+
 def tool_close_world(args: dict[str, Any]) -> dict[str, Any]:
     world_id = str(args.get("world_id"))
     entry = _world(world_id)
@@ -1647,6 +2049,90 @@ TOOLS = [
                     "the energy ledger. Call run first: this reads the world as it stands.",
      "inputSchema": {"type": "object", "required": ["world_id"],
                      "properties": {"world_id": {"type": "string"}}}},
+    {"name": "make_terrain",
+     "description": "Give the world ground that is not flat: a VALLEY with a river running along "
+                    "it (west to east, along x) and a pond beside it, made once by physics -- "
+                    "drainage decided where the river runs, erosion wore its channel -- and saved. "
+                    "Also a basin holding a lake, a straight sloping channel with a stream, flat "
+                    "ground of soil over rock, or none (back to the flat floor). The ground is rock, "
+                    "soil and sand; the water is real: it flows downhill, fills what it can, and "
+                    "carries and lifts what is in it. Objects already in the world stay where they "
+                    "are. Answers with where the ground and the river are.",
+     "inputSchema": {"type": "object", "required": ["world_id"], "properties": {
+         "world_id": {"type": "string"},
+         "kind": {"type": "string", "enum": TERRAIN_KINDS + ["none"]},
+         "seed": {"type": "integer", "description": "A different valley for a different number."},
+         "discharge_m3_s": {"type": "number",
+                            "description": "What the river brings in, cubic metres a second. "
+                                           "0.35 by default: a stream about 2 m wide."}}}},
+    {"name": "survey",
+     "description": "The ground and the water at a point, or along a line between two points: "
+                    "how high the ground is, what it is made of (rock, soil, sand) and how steep, "
+                    "and how deep the water is there, its level and how fast it flows. Use it "
+                    "before placing anything on uneven ground, and to find the river: survey "
+                    "across the valley (along z) and the stretch with water in it is the river. "
+                    "An object resting on the ground has its centre at the ground height plus "
+                    "half its own height.",
+     "inputSchema": {"type": "object", "required": ["world_id"], "properties": {
+         "world_id": {"type": "string"},
+         "at_m": dict(PAIR, description="One point: [x, z]."),
+         "from_m": dict(PAIR, description="A line from here..."),
+         "to_m": dict(PAIR, description="...to here."),
+         "every_m": {"type": "number", "description": "Spacing along the line; 0.5 by default."}}}},
+    {"name": "water_state",
+     "description": "The rivers and ponds: how much water there is, what is coming in and going "
+                    "out, each pond's level, where the river runs (every 2 m along it: x, z, "
+                    "level, depth, speed), what is in the water and whether it floats, and the "
+                    "water's ledger (in, out, and what is unaccounted for). Call run first to let "
+                    "time pass; call this before and after to see a level rise or fall.",
+     "inputSchema": {"type": "object", "required": ["world_id"],
+                     "properties": {"world_id": {"type": "string"}}}},
+    {"name": "dig",
+     "description": "Dig a trench from one point to another (or a pit, at one point), width_m "
+                    "wide and depth_m below the ground as it stands. Loose sand first, then soil; "
+                    "a spade stops on rock. It is real: whatever stood on that ground loses its "
+                    "support and falls if nothing else holds it up, loose banks slump into the "
+                    "trench, and water flows into it if it is lower than the water -- dig from a "
+                    "pond or a dammed river to lower ground and it drains. What comes out is "
+                    "carried, and `fill` can put it back. Only the ground you dig, and what it "
+                    "was holding, is disturbed.",
+     "inputSchema": {"type": "object", "required": ["world_id", "from_m"], "properties": {
+         "world_id": {"type": "string"},
+         "from_m": dict(PAIR, description="Where the trench starts: [x, z]."),
+         "to_m": dict(PAIR, description="Where it ends; leave out for a pit."),
+         "width_m": {"type": "number", "description": "0.8 by default."},
+         "depth_m": {"type": "number", "description": "Below the ground as it stands; 0.5 by "
+                                                      "default. To drain water, dig below its "
+                                                      "level all the way to somewhere lower."}}}},
+    {"name": "fill",
+     "description": "Heap sand or soil you have dug on the ground: fill a trench, bank up an "
+                    "earth dam, make a mound. It settles to the steepest slope it can hold. Ground "
+                    "does not come from nowhere: you can only fill with what digging has given "
+                    "you (see the carried amounts dig reports).",
+     "inputSchema": {"type": "object", "required": ["world_id", "at_m", "volume_m3"], "properties": {
+         "world_id": {"type": "string"},
+         "at_m": dict(PAIR, description="The middle of the heap: [x, z]."),
+         "radius_m": {"type": "number", "description": "How far it spreads; 1 by default."},
+         "volume_m3": {"type": "number"},
+         "material": {"type": "string", "enum": ["soil", "sand"]}}}},
+    {"name": "cut_block",
+     "description": "Cut a block of stone out of bare rock (survey says where the ground is "
+                    "made of rock -- the flat top of the rocky knoll is a quarry). The ground "
+                    "loses exactly that much rock and the block becomes an ordinary loose object "
+                    "of stone you can pick up, drop or build with. Its sides are whole numbers of "
+                    "the ground's columns and of the world's cells: 1 m across works.",
+     "inputSchema": {"type": "object", "required": ["world_id", "name", "at_m"], "properties": {
+         "world_id": {"type": "string"},
+         "name": {"type": "string"},
+         "at_m": dict(PAIR, description="The middle of the block, on the rock: [x, z]."),
+         "size_m": dict(VECTOR, description="Width, height, depth. [1, 0.4, 1] by default.")}}},
+    {"name": "set_river",
+     "description": "How much water a river brings in from now, cubic metres a second: a flood "
+                    "or a drought. It takes time to arrive downstream -- run to see it.",
+     "inputSchema": {"type": "object", "required": ["world_id", "discharge_m3_s"], "properties": {
+         "world_id": {"type": "string"},
+         "river": {"type": "string", "description": "Its name; the only one by default."},
+         "discharge_m3_s": {"type": "number"}}}},
     {"name": "close_world",
      "description": "Close a world and free it. Each open world is a physics engine "
                     "with its scene resident in it.",
@@ -1839,6 +2325,13 @@ HANDLERS = {
     "enclose_gas": tool_enclose_gas,
     "heat": tool_heat,
     "thermal_state": tool_thermal_state,
+    "make_terrain": tool_make_terrain,
+    "survey": tool_survey,
+    "water_state": tool_water_state,
+    "dig": tool_dig,
+    "fill": tool_fill,
+    "cut_block": tool_cut_block,
+    "set_river": tool_set_river,
     "close_world": tool_close_world,
 }
 

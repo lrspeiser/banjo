@@ -130,6 +130,313 @@ floor.rotation.x = -Math.PI / 2;
 floor.position.y = -0.002;   // just under the grid, so the lines stay visible
 scene.add(floor);
 
+// ---------------------------------------------------------------------------
+// The ground and the water, as the engine reports them
+// ---------------------------------------------------------------------------
+//
+// Both are drawn from the engine's own numbers and nothing else: the ground's
+// heights and what each column is made of, sent whole when the room opens and
+// afterwards only where they change; the water's surface, a few times a world
+// second, over the box that holds all of it. Between two reports the surface is
+// eased from one to the next -- a picture of the water moving, never a second
+// opinion about where it is. The foam on the river is carried by the engine's
+// own velocity field: it decorates the flow and cannot contradict it.
+const GROUND_COLOURS = [new THREE.Color(0x7b776f),   // rock
+                        new THREE.Color(0x6b4f32),   // soil
+                        new THREE.Color(0xc9ad7c)];  // sand
+const WATER_SHALLOW = new THREE.Color(0x58a7ad), WATER_DEEP = new THREE.Color(0x163f63);
+const FOAM_COUNT = 700;
+const WATER_EASE_MS = 260;
+const ground = {
+  grid: null, heights: null, surfaces: null, view: null,
+  mesh: null, water: null, foam: null,
+  was: null, next: null, arrived: 0, flow: null, flowBox: [0, 0, 0, 0], last: null,
+};
+
+function bytesOf(b64) {
+  const s = atob(b64 || "");
+  const out = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; ++i) out[i] = s.charCodeAt(i);
+  return out;
+}
+
+// The ground under a point, interpolated on the same diagonal as the collider.
+function groundAt(x, z) {
+  const g = ground.grid;
+  if (!g) return 0;
+  const fx = clamp((x - g.x0) / g.dx, 0, g.nx - 1), fz = clamp((z - g.z0) / g.dx, 0, g.nz - 1);
+  const i = Math.min(g.nx - 2, Math.floor(fx)), j = Math.min(g.nz - 2, Math.floor(fz));
+  const u = fx - i, v = fz - j, H = ground.heights, n = g.nx;
+  const h00 = H[j * n + i], h10 = H[j * n + i + 1], h01 = H[(j + 1) * n + i], h11 = H[(j + 1) * n + i + 1];
+  return u >= v ? h00 + u * (h10 - h00) + v * (h11 - h10) : h00 + v * (h01 - h00) + u * (h11 - h01);
+}
+
+// The water at a point from the last report: level, depth, velocity.
+function waterAt(x, z) {
+  const g = ground.grid;
+  if (!g || !ground.next) return null;
+  const i = Math.round((x - g.x0) / g.dx), j = Math.round((z - g.z0) / g.dx);
+  if (i < 0 || j < 0 || i >= g.nx || j >= g.nz) return null;
+  const level = ground.next[j * g.nx + i];
+  if (!Number.isFinite(level)) return null;
+  const [bi, bj, bn] = ground.flowBox;
+  let u = 0, w = 0;
+  if (ground.flow && i >= bi && j >= bj && i < bi + bn && j < bj + ground.flowBox[3]) {
+    const k = (j - bj) * bn + (i - bi);
+    u = ground.flow[2 * k] * 0.05; w = ground.flow[2 * k + 1] * 0.05;
+  }
+  return { level, depth: level - ground.heights[j * g.nx + i], u, w };
+}
+
+function clearGround() {
+  for (const key of ["mesh", "water", "foam"]) {
+    const thing = ground[key];
+    if (!thing) continue;
+    scene.remove(thing);
+    thing.geometry.dispose();
+    thing.material.dispose();
+    ground[key] = null;
+  }
+  Object.assign(ground, { grid: null, heights: null, surfaces: null, view: null, was: null,
+                          next: null, flow: null, last: null });
+  floor.visible = true;
+  grid.visible = true;
+  scene.fog.near = 18;
+  scene.fog.far = 55;
+  $("water").hidden = true;
+}
+
+function paintGround(colours, index) {
+  const c = GROUND_COLOURS[ground.surfaces[index]] || GROUND_COLOURS[1];
+  colours[3 * index] = c.r; colours[3 * index + 1] = c.g; colours[3 * index + 2] = c.b;
+}
+
+function drawTerrain(block) {
+  clearGround();
+  const { nx, nz, cell_m: dx, x0_m: x0, z0_m: z0 } = block.grid;
+  ground.grid = { nx, nz, dx, x0, z0 };
+  ground.heights = new Float32Array(bytesOf(block.heights_b64).buffer);
+  ground.surfaces = bytesOf(block.ground_b64);
+  ground.view = block.view;
+  const count = nx * nz;
+  const positions = new Float32Array(3 * count), colours = new Float32Array(3 * count);
+  for (let j = 0; j < nz; ++j)
+    for (let i = 0; i < nx; ++i) {
+      const k = j * nx + i;
+      positions[3 * k] = x0 + i * dx;
+      positions[3 * k + 1] = ground.heights[k];
+      positions[3 * k + 2] = z0 + j * dx;
+      paintGround(colours, k);
+    }
+  // Two triangles a quad, split along the diagonal from (i, j) to
+  // (i + 1, j + 1): the split the engine's collider uses, so what is drawn is
+  // the surface things actually stand on.
+  const indices = new Uint32Array(6 * (nx - 1) * (nz - 1));
+  let n = 0;
+  for (let j = 0; j < nz - 1; ++j)
+    for (let i = 0; i < nx - 1; ++i) {
+      const a = j * nx + i, b = a + 1, c = a + nx, d = c + 1;
+      indices[n++] = a; indices[n++] = c; indices[n++] = d;
+      indices[n++] = a; indices[n++] = d; indices[n++] = b;
+    }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(colours, 3));
+  geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+  geometry.computeVertexNormals();
+  ground.mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
+    vertexColors: true, roughness: 0.96, metalness: 0.0 }));
+  scene.add(ground.mesh);
+
+  // The water: the same points, lifted to the surface where there is water
+  // and tucked under the ground where there is none.
+  const wet = new THREE.BufferGeometry();
+  wet.setAttribute("position", new THREE.BufferAttribute(new Float32Array(positions), 3));
+  wet.setAttribute("color", new THREE.BufferAttribute(new Float32Array(3 * count), 3));
+  wet.setIndex(new THREE.BufferAttribute(indices, 1));
+  const wetY = wet.attributes.position.array;
+  for (let k = 0; k < count; ++k) wetY[3 * k + 1] = ground.heights[k] - 0.3;
+  ground.water = new THREE.Mesh(wet, new THREE.MeshStandardMaterial({
+    vertexColors: true, transparent: true, opacity: 0.8, roughness: 0.1, metalness: 0.05,
+    depthWrite: false }));
+  ground.water.renderOrder = 2;
+  scene.add(ground.water);
+
+  // Foam carried by the flow.
+  const foam = new THREE.BufferGeometry();
+  foam.setAttribute("position", new THREE.BufferAttribute(new Float32Array(3 * FOAM_COUNT), 3));
+  ground.foam = new THREE.Points(foam, new THREE.PointsMaterial({
+    color: 0xeef7f9, size: 0.07, sizeAttenuation: true, transparent: true, opacity: 0.85,
+    depthWrite: false }));
+  ground.foam.renderOrder = 3;
+  ground.foam.frustumCulled = false;
+  for (let p = 0; p < FOAM_COUNT; ++p) foam.attributes.position.array[3 * p + 1] = -100;
+  scene.add(ground.foam);
+
+  // The flat floor is the rock's safety net far below: not a thing to draw.
+  floor.visible = false;
+  grid.visible = false;
+  scene.fog.near = 32;
+  scene.fog.far = 95;
+}
+
+// Only the rectangle that changed: a spade, a bank slumping into its trench.
+function patchTerrain(changed) {
+  if (!ground.mesh) return;
+  const [i0, j0, ni, nj] = changed.box;
+  const heights = new Float32Array(bytesOf(changed.heights_b64).buffer);
+  const surfaces = bytesOf(changed.ground_b64);
+  const g = ground.grid;
+  const pos = ground.mesh.geometry.attributes.position, col = ground.mesh.geometry.attributes.color;
+  for (let j = 0; j < nj; ++j)
+    for (let i = 0; i < ni; ++i) {
+      const k = (j0 + j) * g.nx + (i0 + i);
+      ground.heights[k] = heights[j * ni + i];
+      ground.surfaces[k] = surfaces[j * ni + i];
+      pos.array[3 * k + 1] = ground.heights[k];
+      paintGround(col.array, k);
+    }
+  pos.needsUpdate = true;
+  col.needsUpdate = true;
+  ground.mesh.geometry.computeVertexNormals();
+}
+
+// A surface for every point: the level where there is water, and where there
+// is none but water is next door, the neighbour's level -- so a lake meets its
+// shore flat and the ground cuts the waterline, rather than the water sloping
+// down into the bank.
+function extendShore(surface) {
+  const g = ground.grid, out = new Float32Array(surface);
+  for (let j = 0; j < g.nz; ++j)
+    for (let i = 0; i < g.nx; ++i) {
+      const k = j * g.nx + i;
+      if (Number.isFinite(surface[k])) continue;
+      let best = -Infinity;
+      for (let dj = -1; dj <= 1; ++dj)
+        for (let di = -1; di <= 1; ++di) {
+          const x = i + di, z = j + dj;
+          if (x < 0 || z < 0 || x >= g.nx || z >= g.nz) continue;
+          const s = surface[z * g.nx + x];
+          if (Number.isFinite(s) && s > best) best = s;
+        }
+      out[k] = best > -Infinity ? best : NaN;
+    }
+  return out;
+}
+
+function drawWater(block) {
+  if (!ground.water || !block) return;
+  const g = ground.grid;
+  const surface = new Float32Array(g.nx * g.nz).fill(NaN);
+  const [i0, j0, ni, nj] = block.box;
+  if (ni > 0 && block.surface_mm_b64) {
+    const mm = new Uint16Array(bytesOf(block.surface_mm_b64).buffer);
+    for (let j = 0; j < nj; ++j)
+      for (let i = 0; i < ni; ++i) {
+        const v = mm[j * ni + i];
+        if (v) surface[(j0 + j) * g.nx + (i0 + i)] = block.base_m + v / 1000;
+      }
+    ground.flow = new Int8Array(bytesOf(block.flow_b64).buffer);
+    ground.flowBox = block.box;
+  } else {
+    ground.flow = null;
+  }
+  const extended = extendShore(surface);
+  // Ease from where the drawing is now to the new report.
+  ground.was = ground.next ? currentSurface() : extended;
+  ground.next = extended;
+  ground.raw = surface;
+  ground.arrived = performance.now();
+  // Deeper is darker.
+  const col = ground.water.geometry.attributes.color.array;
+  const c = new THREE.Color();
+  for (let k = 0; k < g.nx * g.nz; ++k) {
+    const depth = Number.isFinite(extended[k]) ? extended[k] - ground.heights[k] : 0;
+    c.copy(WATER_SHALLOW).lerp(WATER_DEEP, clamp(depth / 0.9, 0, 1));
+    col[3 * k] = c.r; col[3 * k + 1] = c.g; col[3 * k + 2] = c.b;
+  }
+  ground.water.geometry.attributes.color.needsUpdate = true;
+  ground.last = block;
+  showWater(block);
+}
+
+function currentSurface() {
+  const pos = ground.water.geometry.attributes.position.array;
+  const out = new Float32Array(ground.grid.nx * ground.grid.nz);
+  for (let k = 0; k < out.length; ++k) {
+    const y = pos[3 * k + 1];
+    out[k] = y > ground.heights[k] - 0.25 ? y : NaN;
+  }
+  return out;
+}
+
+function animateWater(now) {
+  if (!ground.water || !ground.next) return;
+  const t = clamp((now - ground.arrived) / WATER_EASE_MS, 0, 1);
+  const pos = ground.water.geometry.attributes.position.array;
+  const was = ground.was, next = ground.next, H = ground.heights;
+  for (let k = 0; k < next.length; ++k) {
+    const a = was[k], b = next[k];
+    let y;
+    if (Number.isFinite(a) && Number.isFinite(b)) y = a + (b - a) * t;
+    else if (Number.isFinite(b)) y = b;
+    else y = H[k] - 0.3;
+    pos[3 * k + 1] = y;
+  }
+  ground.water.geometry.attributes.position.needsUpdate = true;
+  ground.water.geometry.computeBoundingSphere();
+}
+
+function stepFoam(dt) {
+  if (!ground.foam || !ground.flow || !ground.raw) return;
+  const g = ground.grid, [bi, bj, bn, bm] = ground.flowBox;
+  const pos = ground.foam.geometry.attributes.position.array;
+  const respawn = (p) => {
+    for (let tries = 0; tries < 12; ++tries) {
+      const i = bi + Math.floor(Math.random() * bn), j = bj + Math.floor(Math.random() * bm);
+      const k = (j - bj) * bn + (i - bi);
+      const speed = Math.hypot(ground.flow[2 * k], ground.flow[2 * k + 1]) * 0.05;
+      if (speed < 0.06 || !Number.isFinite(ground.raw[j * g.nx + i])) continue;
+      pos[3 * p] = g.x0 + (i + Math.random() - 0.5) * g.dx;
+      pos[3 * p + 2] = g.z0 + (j + Math.random() - 0.5) * g.dx;
+      pos[3 * p + 1] = ground.raw[j * g.nx + i] + 0.012;
+      return;
+    }
+    pos[3 * p + 1] = -100;
+  };
+  for (let p = 0; p < FOAM_COUNT; ++p) {
+    const x = pos[3 * p], z = pos[3 * p + 2];
+    const at = pos[3 * p + 1] > -50 ? waterAt(x, z) : null;
+    if (!at || at.depth < 0.01 || Math.hypot(at.u, at.w) < 0.03 || Math.random() < dt * 0.15) {
+      respawn(p);
+      continue;
+    }
+    pos[3 * p] = x + at.u * dt;
+    pos[3 * p + 2] = z + at.w * dt;
+    pos[3 * p + 1] = at.level + 0.012;
+  }
+  ground.foam.geometry.attributes.position.needsUpdate = true;
+}
+
+function showWater(block) {
+  const box = $("water");
+  box.hidden = false;
+  const cells = ground.grid.nx * ground.grid.nz;
+  $("water-line").textContent =
+    `${block.volume_m3.toFixed(2)} m³ standing · river in ${block.in_m3_s.toFixed(2)} m³/s,`
+    + ` out ${block.out_m3_s.toFixed(2)} m³/s`;
+  $("water-cost").textContent =
+    `${block.active_cells} of ${cells} columns computed (${block.wet_cells} wet)`
+    + ` · unaccounted ${Number(block.residual_m3).toExponential(1)} m³`;
+}
+
+function placeCamera(view) {
+  if (!view) return;
+  const [ex, ey, ez] = view.eye_m, [lx, ly, lz] = view.look_m;
+  camera.position.set(ex, ey, ez);
+  window.banjoRoom?.lookAt(lx, ly, lz);
+}
+
 function resize() {
   const w = innerWidth, h = innerHeight;
   renderer.setSize(w, h, false);
@@ -804,8 +1111,10 @@ function walk(dt) {
   if (keys.has("KeyE") || keys.has("Space")) move.y += speed;
   if (keys.has("KeyQ")) move.y -= speed;
   camera.position.add(move);
-  // Not below the floor, and not so high the room is a map.
-  camera.position.y = clamp(camera.position.y, 0.25, 12);
+  // Not below the floor, and not so high the room is a map. On uneven ground
+  // the floor is the ground under you.
+  const under = ground.heights ? groundAt(camera.position.x, camera.position.z) : 0;
+  camera.position.y = clamp(camera.position.y, under + 0.25, under + 12);
   camera.position.x = clamp(camera.position.x, -28, 28);
   camera.position.z = clamp(camera.position.z, -28, 28);
   camera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, "YXZ"));
@@ -834,6 +1143,9 @@ async function aim() {
     const found = await act("pick", { from: [from.x, from.y, from.z],
                                       dir: [dir.x, dir.y, dir.z], max_m: 40 });
     world.aim = found.hit && found.name ? found : null;
+    // Where the crosshair meets the ground, when it is the ground it meets:
+    // that is where a spade goes in.
+    world.groundAim = found.hit && !found.name ? found.point_m : null;
     showLabel(world.aim);
   } catch { /* the next frame asks again */ } finally { aimBusy = false; }
 }
@@ -841,6 +1153,23 @@ async function aim() {
 function showLabel(found) {
   const box = $("label");
   const cross = $("crosshair");
+  if (!found && world.groundAim && ground.grid) {
+    // The ground itself: what it is made of there, and the water on it --
+    // from the engine's own numbers, already here, so no question is asked.
+    const [x, , z] = world.groundAim;
+    const g = ground.grid;
+    const i = Math.round((x - g.x0) / g.dx), j = Math.round((z - g.z0) / g.dx);
+    const made = ["rock", "soil", "sand"][ground.surfaces[j * g.nx + i]] || "ground";
+    const water = waterAt(x, z);
+    box.hidden = false;
+    $("label-name").textContent = "the ground";
+    $("label-material").textContent = made;
+    $("label-size").textContent = water && water.depth > 0.005
+      ? `under ${(water.depth * 100).toFixed(0)} cm of water flowing ${Math.hypot(water.u, water.w).toFixed(2)} m/s`
+      : `${groundAt(x, z).toFixed(2)} m up`;
+    cross.classList.toggle("on", false);
+    return;
+  }
   if (!found) {
     box.hidden = true;
     cross.classList.toggle("on", false);
@@ -1494,6 +1823,9 @@ async function tick() {
     draw(state);
     drawRopes();
     drawHeat(state.heat);
+    if (state.terrain) drawTerrain(state.terrain);
+    if (state.terrain_changed) patchTerrain(state.terrain_changed);
+    if (state.water) drawWater(state.water);
     if (state.joints) {
         const wasAttached = new Map(world.joints.map((p) => [p.id, p.attached]));
         for (const pin of state.joints) {
@@ -1623,6 +1955,8 @@ function frame() {
   updateGuides();
   fadePieces(now);
   animateHeat(now);
+  animateWater(now);
+  stepFoam(dt);
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
@@ -1732,6 +2066,14 @@ $("ask").addEventListener("submit", async (e) => {
       drawJoints(answer.state.joints || []);
       drawRopes();
       clearHeat();
+      // The ground and the water of the room as it now is. The camera stays
+      // where the person is standing.
+      if (answer.state.terrain) {
+        drawTerrain(answer.state.terrain);
+        if (answer.state.water) drawWater(answer.state.water);
+      } else {
+        clearGround();
+      }
       if (answer.joint_problems && answer.joint_problems.length)
         say("bad", "Some joints would not hang: " + answer.joint_problems.join("; "));
       remember("the room was rebuilt: " + (answer.did || []).join(", "));
@@ -1787,6 +2129,39 @@ $("heat-it").addEventListener("click", async () => {
 });
 $("scene").addEventListener("change", () => open());
 
+// A spade, where the crosshair meets the ground: a pit 0.8 m across and 0.4 m
+// deep. The engine takes the ground down, rebuilds the colliders it changed and
+// wakes whatever they held -- dig beside a boulder and it falls in -- and loose
+// sides slump into the hole over the next second. What is drawn is what it says.
+async function digAt(x, z, width = 0.8, depth = 0.4) {
+  const answer = await act("dig", { from: [x, z], to: [x, z], width_m: width, depth_m: depth });
+  draw(answer);
+  if (answer.terrain_changed) patchTerrain(answer.terrain_changed);
+  if (answer.water) drawWater(answer.water);
+  return answer;
+}
+$("dig-it").addEventListener("click", async () => {
+  if (!world.session) return;
+  if (!ground.grid) {
+    say("world", "This room's floor is flat concrete: there is nothing to dig. The valley has ground.");
+    return;
+  }
+  const at = world.groundAim;
+  if (!at) {
+    say("world", "Point the crosshair at the ground first: the spade goes in where it is.");
+    return;
+  }
+  try {
+    const answer = await digAt(at[0], at[2]);
+    const d = answer.dug || {};
+    say("you", `Dug ${((d.sand_m3 || 0) + (d.soil_m3 || 0)).toFixed(2)} m³ at`
+      + ` [${at[0].toFixed(1)}, ${at[2].toFixed(1)}]: ${(d.sand_m3 || 0).toFixed(2)} of sand,`
+      + ` ${(d.soil_m3 || 0).toFixed(2)} of soil; ${d.chunks_rebuilt} collider(s) rebuilt,`
+      + ` ${d.bodies_woken} thing(s) woken.`);
+    remember(`dug a pit at [${at[0].toFixed(1)}, ${at[2].toFixed(1)}]`);
+  } catch (error) { say("bad", String(error.message || error)); }
+});
+
 // ---------------------------------------------------------------------------
 // Opening
 // ---------------------------------------------------------------------------
@@ -1807,6 +2182,14 @@ async function open() {
     drawJoints(data.joints);
     drawRopes();
     clearHeat();
+    if (data.terrain) {
+      drawTerrain(data.terrain);
+      if (data.water) drawWater(data.water);
+      // Somewhere to stand that looks at something: the valley says where.
+      placeCamera(data.terrain.view);
+    } else {
+      clearGround();
+    }
     $("panel-state").textContent = "Live.";
     $("chat").replaceChildren();
     say("world",
@@ -1839,6 +2222,11 @@ window.banjoRoom = {
   heatState: () => heat.last,
   heatDrawn: () => ({ glowing: [...heat.glowing.keys()], flames: [...heat.flames.keys()],
                       columns: [...heat.columns.keys()] }),
+  // The ground and the water as drawn, for checking what is on screen against
+  // what the engine said -- and a spade, for driving the room from outside.
+  groundAt, waterAt, digAt,
+  groundDrawn: () => ground.grid && ({ ...ground.grid, water: ground.last,
+                                       wetPoints: ground.raw ? ground.raw.filter(Number.isFinite).length : 0 }),
 };
 
 // Reported on its own timer rather than from the frame loop, because a room

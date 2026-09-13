@@ -83,6 +83,12 @@ DEFAULT: dict[str, Any] = {
     # and heaters, in SI units (metres, pascals, watts) because nothing in them
     # is a size on the room's grid. What a body CONTAINS is on the body.
     "thermo": {},
+    # Terrain and water: the ground as a height field of rock, soil and sand,
+    # and rivers and ponds on it (docs/terrain-and-water.md). Handed to the
+    # engine as the scene's own "terrain" and "water" blocks, which it checks
+    # when the room opens; here only their shape is checked.
+    "terrain": {},
+    "water": {},
     "striker": "iron",
     "plate_m": [0.25, 0.20, 0.01],
     "cell_m": 0.01,
@@ -538,7 +544,9 @@ SHAPES = {"box": "a rectangular block", "sphere": "a ball",
 # A scene is capped by objects and by total cells: the cells are what costs, the
 # object count is what keeps a scene readable and the Jolt handoff inside its
 # contact caches.
-BODY_LIMITS = {"bodies": 250, "size_mm": (5.0, 6000.0), "center_mm": (-8000.0, 8000.0),
+# Positions reach 50 m either way: a valley is forty metres long, and a room
+# of objects on a floor never came near the old eight.
+BODY_LIMITS = {"bodies": 250, "size_mm": (5.0, 6000.0), "center_mm": (-50000.0, 50000.0),
                "velocity_m_s": (-600.0, 600.0), "name": 40}
 
 
@@ -691,6 +699,55 @@ def normalise_thermo(thermo: Any, bodies: list[dict[str, Any]]) -> dict[str, Any
         out["heaters"] = heaters
     if thermo.get("ambient"):
         out["ambient"] = thermo["ambient"]
+    return out
+
+
+TERRAIN_KINDS = ("valley", "basin", "channel", "flat")
+TERRAIN_EDITS = ("dig", "deposit", "cut")
+
+
+def normalise_terrain(terrain: Any) -> dict[str, Any]:
+    """A room's ground, checked for shape. What the ground IS -- the valley's
+    heights, whether a cut can be made -- is the engine's to say when it opens."""
+    if terrain in (None, {}):
+        return {}
+    if not isinstance(terrain, dict):
+        raise ValueError("terrain must be an object: {\"generate\": ..., \"edits\": [...]}")
+    unknown = set(terrain) - {"generate", "edits"}
+    if unknown:
+        raise ValueError(f"terrain cannot say {sorted(unknown)}: it holds generate and edits")
+    out: dict[str, Any] = {}
+    generate = terrain.get("generate", "valley")
+    kind = generate if isinstance(generate, str) else (generate or {}).get("kind", "valley")
+    if kind not in TERRAIN_KINDS:
+        raise ValueError(f"terrain.generate must be one of {list(TERRAIN_KINDS)}, not {kind!r}")
+    out["generate"] = generate
+    edits = terrain.get("edits") or []
+    if not isinstance(edits, list) or len(edits) > 400:
+        raise ValueError("terrain.edits is a list of at most 400")
+    for edit in edits:
+        if not isinstance(edit, dict) or len(edit) != 1 or next(iter(edit)) not in TERRAIN_EDITS:
+            raise ValueError(f"each terrain edit is one of {list(TERRAIN_EDITS)}, like "
+                             f"{{\"dig\": {{\"from_m\": [x, z], \"to_m\": [x, z], \"width_m\": 1, "
+                             f"\"depth_m\": 0.5}}}}")
+    if edits:
+        out["edits"] = edits
+    return out
+
+
+def normalise_water(water: Any) -> dict[str, Any]:
+    """A room's water: a discharge for its rivers, and water carried over from
+    the world it was last open in. Shape only; the engine checks the rest."""
+    if water in (None, {}):
+        return {}
+    if not isinstance(water, dict):
+        raise ValueError("water must be an object")
+    unknown = set(water) - {"discharge_m3_s", "rivers", "state"}
+    if unknown:
+        raise ValueError(f"water cannot say {sorted(unknown)}: it holds discharge_m3_s, rivers and state")
+    out = dict(water)
+    if "discharge_m3_s" in out:
+        out["discharge_m3_s"] = _number(out["discharge_m3_s"], 0.0, 20.0, "water discharge_m3_s")
     return out
 
 
@@ -903,7 +960,8 @@ def scene_cell_count(bodies: list[dict[str, Any]], cell_m: float) -> int:
     return total
 
 
-def check_scene(bodies: list[dict[str, Any]], cell_m: float) -> list[dict[str, Any]]:
+def check_scene(bodies: list[dict[str, Any]], cell_m: float,
+                on_terrain: bool = False) -> list[dict[str, Any]]:
     """Everything wrong with a scene, at once, in the terms it was written in.
 
     Nothing settles before a run and nothing is repaired behind the caller's
@@ -913,12 +971,17 @@ def check_scene(bodies: list[dict[str, Any]], cell_m: float) -> list[dict[str, A
 
     Severity "error" stops the run. "warning" does not: it is a thing worth
     knowing that is nonetheless a legitimate scene.
+
+    `on_terrain`: the ground is a height field, not the plane y = 0 -- a body in
+    a dug channel is legitimately below zero, and one on a hillside has ground
+    under it that only the engine knows about -- so the two checks that assume
+    a flat floor stand aside, and the MCP seats bodies on the real ground.
     """
     cell_mm = cell_m * 1000
     tolerance = max(0.05, cell_mm * 0.01)
     report: list[dict[str, Any]] = []
 
-    for body in bodies:
+    for body in ([] if on_terrain else bodies):
         bottom = _lowest_cell_mm(body, cell_mm)
         if bottom < -tolerance:
             # The height that fixes it is measured from the body's own lowest
@@ -995,7 +1058,7 @@ def check_scene(bodies: list[dict[str, Any]], cell_m: float) -> list[dict[str, A
 
     # Anything with nothing under it starts by falling, which is legitimate but
     # is usually a placement mistake rather than an intention.
-    for body in bodies:
+    for body in ([] if on_terrain else bodies):
         if any(v for v in body["velocity_m_s"]):
             continue
         bottom = body["center_mm"][1] - body["size_mm"][1] / 2
@@ -1073,9 +1136,9 @@ def check_scene(bodies: list[dict[str, Any]], cell_m: float) -> list[dict[str, A
     return report
 
 
-def check_placement(bodies: list[dict[str, Any]], cell_m: float) -> None:
+def check_placement(bodies: list[dict[str, Any]], cell_m: float, on_terrain: bool = False) -> None:
     """The hard gate: raise on the first thing that would make a run worthless."""
-    report = check_scene(bodies, cell_m)
+    report = check_scene(bodies, cell_m, on_terrain)
     errors = [item for item in report if item["severity"] == "error"]
     if not errors:
         return
@@ -1186,6 +1249,11 @@ def scene_document(spec: dict[str, Any]) -> dict[str, Any]:
                 "bodies": [body(b) for b in spec["bodies"]]}
     if spec.get("thermo"):
         document["thermo"] = spec["thermo"]
+    # The ground and the water, read by the engine's own terrain reader.
+    if spec.get("terrain"):
+        document["terrain"] = spec["terrain"]
+    if spec.get("water"):
+        document["water"] = spec["water"]
     return document
 
 
@@ -1213,10 +1281,12 @@ def validate(spec: Any) -> dict[str, Any]:
         result["bodies"] = normalise_bodies(result["bodies"], result["cell_m"])
         result["joints"] = normalise_joints(result["joints"], result["bodies"])
         result["thermo"] = normalise_thermo(result.get("thermo"), result["bodies"])
+        result["terrain"] = normalise_terrain(result.get("terrain"))
+        result["water"] = normalise_water(result.get("water"))
         result["duration_s"] = _number(result["duration_s"], LIMITS["duration_s"]["min"],
                                        LIMITS["duration_s"]["max"], "duration")
         result["seated"] = seat_bodies(result["bodies"], result["cell_m"])
-        check_placement(result["bodies"], result["cell_m"])
+        check_placement(result["bodies"], result["cell_m"], bool(result["terrain"]))
         result["cells"] = scene_cell_count(result["bodies"], result["cell_m"])
         result["cells_per_axis"] = [0, 0, 0]
         result["plate_m"] = [0.0, 0.0, 0.0]

@@ -433,6 +433,45 @@ class Live:
             # Everything about heat, chemistry and gas, and the ledger. Moves
             # nothing, so it answers on its own and carries no bodies.
             return session.send(op="thermo", model=bool(body.get("model", False)))
+        # ---- the ground and the water ----------------------------------------
+        def xz(key: str, fallback: Any = None) -> list[float]:
+            value = body.get(key, fallback)
+            if not isinstance(value, list) or len(value) not in (2, 3):
+                raise LiveError(f"{key} needs [x, z] (or [x, y, z]) in metres")
+            out = [float(v) for v in value]
+            if not all(math.isfinite(v) for v in out):
+                raise LiveError(f"{key} is not a number")
+            return [out[0], out[-1]]
+        if op == "dig":
+            # A spade: the engine takes the ground down, rebuilds the colliders
+            # it changed and wakes what they held. Bounded so a slip of the
+            # mouse is not a quarry.
+            width = float(body.get("width_m", 0.8))
+            depth = float(body.get("depth_m", 0.4))
+            if not (0.1 <= width <= 10.0 and 0.02 <= depth <= 5.0):
+                raise LiveError("a dig is 0.1 to 10 m wide and 0.02 to 5 m deep")
+            start = xz("from")
+            return session.send(**{"op": "dig", "from": start, "to": xz("to", start),
+                                   "width_m": width, "depth_m": depth})
+        if op == "deposit":
+            radius = float(body.get("radius_m", 1.0))
+            sand = float(body.get("sand_m3", 0.0))
+            soil = float(body.get("soil_m3", 0.0))
+            if not (0.1 <= radius <= 10.0 and 0.0 <= sand <= 100.0 and 0.0 <= soil <= 100.0
+                    and sand + soil > 0.0):
+                raise LiveError("a heap is 0.1 to 10 m across and holds some sand or soil")
+            return session.send(op="deposit", at=xz("at"), radius_m=radius, sand_m3=sand,
+                                soil_m3=soil)
+        if op == "survey":
+            return session.send(op="survey", at=xz("at"))
+        if op in ("environment", "environment_state", "terrain"):
+            return session.send(op=op, full=bool(body.get("full", False)))
+        if op == "discharge":
+            discharge = float(body.get("discharge_m3_s", 0.0))
+            if not 0.0 <= discharge <= 20.0:
+                raise LiveError("a river's discharge is 0 to 20 cubic metres a second")
+            return session.send(op="discharge", river=str(body.get("river", "")),
+                                discharge_m3_s=discharge)
         if op == "vent":
             return session.send(op="vent", region=str(body.get("region", "")),
                                 open=bool(body.get("open", True)))
