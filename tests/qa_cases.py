@@ -47,6 +47,12 @@ ALIASES = {"alumina ceramic": "ceramic", "aluminium": "aluminum"}
 LOAD_WORDS = ("weight", "load", "block", "stone", "crate", "bucket", "basket", "sack",
               "barrel", "bale")
 
+# A gate with its bar taken off is FREED when nothing holds it and a shove moves
+# it clearly -- not when it opens the 20 degrees a newly built gate must. The
+# owner's call, 2026-09-12: the courtyard's 142 kg gate swings 19.9 to 20.1
+# degrees under one shove with its bar off, and 0.0 with it on.
+FREED_DEG = 5.0
+
 
 # ---------------------------------------------------------------------------
 # What things are, whichever way they are described
@@ -235,11 +241,12 @@ def check_unbarred_gate(built: Built) -> Verdict:
     opened = shove(world, leaf, pin["id"])
     measured = {"gate": leaf, "still_holding": [said(j) for j in latches],
                 "turned_deg": round(opened, 1)}
-    if opened < HINGE_OPEN_DEG:
-        why = f"shoved, {leaf} turned only {opened:.1f} degrees"
-        if latches:
-            why += f"; still holding it: {', '.join(measured['still_holding'])}"
-        return Verdict(False, why, measured)
+    if latches:
+        return Verdict(False, f"the bar is not off: {', '.join(measured['still_holding'])} still "
+                              f"holds {leaf} (it turned {opened:.1f} degrees)", measured)
+    if opened < FREED_DEG:
+        return Verdict(False, f"nothing holds {leaf}, but shoved it turned only {opened:.1f} "
+                              f"degrees", measured)
     return Verdict(True, f"{leaf} swung {opened:.0f} degrees with the bar off", measured)
 
 

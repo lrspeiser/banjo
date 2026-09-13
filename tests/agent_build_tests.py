@@ -883,9 +883,14 @@ RECIPES: dict[str, tuple[str, list[tuple[str, dict[str, Any]]]]] = {
 }
 
 
-def run_recipe(recipe_id: str, recipes: dict[str, Any] | None = None,
-               cases: list[Case] | None = None, folder: Path | None = None) -> dict[str, Any]:
-    """Build a recipe through the MCP, then give it the case's own check.
+class RecipeRefused(RuntimeError):
+    """A step of a recipe that the MCP would not take."""
+
+
+def build_recipe(recipe_id: str, recipes: dict[str, Any] | None = None,
+                 cases: list[Case] | None = None) -> tuple[world_room.Room, set[str], list[str]]:
+    """Make a recipe through the MCP, in its case's room: the room as built, the
+    names the room had before, and the warnings the tools gave on the way.
 
     A step is a tool call, or a function given the world's id, for a step that
     has to look before it acts: taking a bar off a gate needs the bar's joint
@@ -897,15 +902,13 @@ def run_recipe(recipe_id: str, recipes: dict[str, Any] | None = None,
     case_id, calls = entry[0], entry[1]
     keep_room = len(entry) > 2 and bool(entry[2].get("keep_room"))
     case = next(c for c in (cases or CASES) if c.id == case_id)
-    record: dict[str, Any] = {"recipe": recipe_id, "case": case_id, "scene": case.scene,
-                              "passed": False}
     room = world_room.Room(case.scene)
     before = {b["name"] for b in room.bodies()}
     world_id = room_world.open_room(room.spec)
     try:
         if not keep_room:
             room_world.call(world_id, "clear_world", {})
-        warnings = []
+        warnings: list[str] = []
         for tool, args in calls:
             if callable(tool):
                 answer = tool(world_id)
@@ -913,13 +916,27 @@ def run_recipe(recipe_id: str, recipes: dict[str, Any] | None = None,
             else:
                 answer = room_world.call(world_id, tool, args)
             if "error" in answer:
-                record["reason"] = f"the recipe itself was refused at {tool}: {answer['error']}"
-                return record
+                raise RecipeRefused(f"the recipe itself was refused at {tool}: {answer['error']}")
             warnings += answer.get("warnings", [])
-        record["warnings"] = warnings
         room.spec = room_world.export_spec(room_world.entry_of(world_id))
     finally:
         room_world.close_room(world_id)
+    return room, before, warnings
+
+
+def run_recipe(recipe_id: str, recipes: dict[str, Any] | None = None,
+               cases: list[Case] | None = None, folder: Path | None = None) -> dict[str, Any]:
+    """Build a recipe through the MCP, then give it the case's own check."""
+    case_id = (recipes or RECIPES)[recipe_id][0]
+    case = next(c for c in (cases or CASES) if c.id == case_id)
+    record: dict[str, Any] = {"recipe": recipe_id, "case": case_id, "scene": case.scene,
+                              "passed": False}
+    try:
+        room, before, warnings = build_recipe(recipe_id, recipes, cases)
+    except RecipeRefused as refused:
+        record["reason"] = str(refused)
+        return record
+    record["warnings"] = warnings
     if folder is not None:
         # Trial 0 is the recipe: the build the guide describes, kept so it can
         # be opened in the playground beside what the agent built.

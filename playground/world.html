@@ -72,7 +72,12 @@
     <!-- Which room. The bench is the materials room; the courtyard has a gate
          hung on a pin, which swings because it is pushed rather than because
          anything plays an animation of a gate opening. -->
+    <!-- The three test rooms come first, so the room opens on them: every
+         build the QA proves, side by side (tests/qa.py writes them). -->
     <select id="scene" class="quiet" aria-label="Which room">
+      <option value="tests-gates">Tests: gates and wheels</option>
+      <option value="tests-ropes">Tests: latches, pulleys, ropes and springs</option>
+      <option value="tests-motion">Tests: breaking, motion and heat</option>
       <option value="bench">The bench</option>
       <option value="courtyard">The courtyard</option>
       <option value="yard">An empty yard</option>

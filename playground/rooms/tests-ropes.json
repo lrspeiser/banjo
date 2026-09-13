@@ -1,0 +1,956 @@
+{
+ "algorithm": "lattice",
+ "cell_m": 0.04,
+ "plasticity": "on",
+ "bodies": [
+  {
+   "name": "latched-gate: stone post",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    160.0,
+    2000.0,
+    160.0
+   ],
+   "center_mm": [
+    -5920.0,
+    1000.0,
+    -320.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "latched-gate: far post",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    160.0,
+    2000.0,
+    160.0
+   ],
+   "center_mm": [
+    -4480.0,
+    1000.0,
+    -320.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "latched-gate: oak gate",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    1200.0,
+    1600.0,
+    80.0
+   ],
+   "center_mm": [
+    -5240.0,
+    840.0,
+    -160.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "latched-gate: locking bar",
+   "shape": "box",
+   "material": "iron",
+   "size_mm": [
+    480.0,
+    80.0,
+    80.0
+   ],
+   "center_mm": [
+    -4640.0,
+    1200.0,
+    -40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "counterweight: left post",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    160.0,
+    2400.0,
+    160.0
+   ],
+   "center_mm": [
+    -2720.0,
+    1200.0,
+    -200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "counterweight: right post",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    160.0,
+    2400.0,
+    160.0
+   ],
+   "center_mm": [
+    -1680.0,
+    1200.0,
+    -200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "counterweight: lintel",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    1200.0,
+    120.0,
+    160.0
+   ],
+   "center_mm": [
+    -2200.0,
+    2460.0,
+    -200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "counterweight: iron portcullis",
+   "shape": "box",
+   "material": "iron",
+   "size_mm": [
+    800.0,
+    800.0,
+    80.0
+   ],
+   "center_mm": [
+    -2200.0,
+    440.0,
+    -200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "counterweight: counterweight",
+   "shape": "box",
+   "material": "iron",
+   "size_mm": [
+    400.0,
+    320.0,
+    400.0
+   ],
+   "center_mm": [
+    -1000.0,
+    1200.0,
+    -200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "hoist: hoist beam",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    1600.0,
+    120.0,
+    160.0
+   ],
+   "center_mm": [
+    1600.0,
+    2460.0,
+    -80.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "hoist: iron weight",
+   "shape": "box",
+   "material": "iron",
+   "size_mm": [
+    160.0,
+    160.0,
+    160.0
+   ],
+   "center_mm": [
+    1000.0,
+    80.0,
+    -80.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "hoist: hoist handle",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    80.0,
+    160.0,
+    80.0
+   ],
+   "center_mm": [
+    2200.0,
+    1200.0,
+    -80.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "seesaw: pivot stone",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    160.0,
+    400.0,
+    160.0
+   ],
+   "center_mm": [
+    5000.0,
+    200.0,
+    -120.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "seesaw: oak plank",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    2000.0,
+    80.0,
+    240.0
+   ],
+   "center_mm": [
+    5000.0,
+    480.0,
+    -120.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "seesaw: iron block",
+   "shape": "box",
+   "material": "iron",
+   "size_mm": [
+    160.0,
+    160.0,
+    160.0
+   ],
+   "center_mm": [
+    5840.0,
+    600.0,
+    -120.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "seesaw: small oak block",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    160.0,
+    160.0,
+    160.0
+   ],
+   "center_mm": [
+    4160.0,
+    600.0,
+    -120.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "bow: bow grip upper",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    160.0,
+    120.0
+   ],
+   "center_mm": [
+    -5840.0,
+    1400.0,
+    -2480.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "bow: upper limb tip",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    40.0,
+    40.0
+   ],
+   "center_mm": [
+    -6000.0,
+    1620.0,
+    -2480.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "bow: bow grip lower",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    160.0,
+    120.0
+   ],
+   "center_mm": [
+    -5840.0,
+    1120.0,
+    -2480.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "bow: lower limb tip",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    40.0,
+    40.0
+   ],
+   "center_mm": [
+    -6000.0,
+    820.0,
+    -2480.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "bow: bow grip near cheek",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    40.0,
+    40.0
+   ],
+   "center_mm": [
+    -5840.0,
+    1220.0,
+    -2420.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "bow: bow grip far cheek",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    40.0,
+    40.0
+   ],
+   "center_mm": [
+    -5840.0,
+    1220.0,
+    -2540.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "bow: bowstring",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    160.0,
+    40.0
+   ],
+   "center_mm": [
+    -6000.0,
+    1220.0,
+    -2480.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "bow: arrow",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    600.0,
+    40.0,
+    40.0
+   ],
+   "center_mm": [
+    -5640.0,
+    1220.0,
+    -2480.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "tether: stone post",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    160.0,
+    1200.0,
+    160.0
+   ],
+   "center_mm": [
+    -3640.0,
+    600.0,
+    -2480.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "tether: iron block",
+   "shape": "box",
+   "material": "iron",
+   "size_mm": [
+    160.0,
+    160.0,
+    160.0
+   ],
+   "center_mm": [
+    -2800.0,
+    80.0,
+    -2480.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "pendulum: high beam",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    400.0,
+    120.0,
+    160.0
+   ],
+   "center_mm": [
+    -920.0,
+    2460.0,
+    -2480.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "pendulum: iron ball",
+   "shape": "sphere",
+   "material": "iron",
+   "size_mm": [
+    120.0,
+    120.0,
+    120.0
+   ],
+   "center_mm": [
+    -560.0,
+    1480.0,
+    -2480.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "spring-weight: oak beam",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    800.0,
+    120.0,
+    160.0
+   ],
+   "center_mm": [
+    1520.0,
+    2060.0,
+    -2480.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "spring-weight: iron weight",
+   "shape": "box",
+   "material": "iron",
+   "size_mm": [
+    160.0,
+    160.0,
+    160.0
+   ],
+   "center_mm": [
+    1520.0,
+    1240.0,
+    -2480.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  }
+ ],
+ "joints": [
+  {
+   "kind": "hinge",
+   "a": "latched-gate: stone post",
+   "b": "latched-gate: oak gate",
+   "at_mm": [
+    -5840.0,
+    840.0,
+    -160.0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "lower_deg": -100,
+   "upper_deg": 100,
+   "friction_n_m": 10
+  },
+  {
+   "kind": "fixing",
+   "a": "latched-gate: oak gate",
+   "b": "latched-gate: locking bar",
+   "at_mm": [
+    -4720.0,
+    1200.0,
+    -80.0
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "holds_tension_n": 0.0,
+   "holds_shear_n": 0.0
+  },
+  {
+   "kind": "fixing",
+   "a": "latched-gate: far post",
+   "b": "latched-gate: locking bar",
+   "at_mm": [
+    -4480.0,
+    1200.0,
+    -80.0
+   ],
+   "axis": [
+    1,
+    0,
+    0
+   ],
+   "holds_tension_n": 0.0,
+   "holds_shear_n": 0.0
+  },
+  {
+   "kind": "slider",
+   "a": "counterweight: left post",
+   "b": "counterweight: iron portcullis",
+   "at_mm": [
+    -2200.0,
+    440.0,
+    -200.0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "lower_mm": 0.0,
+   "upper_mm": 1200.0,
+   "friction_n": 200
+  },
+  {
+   "kind": "pulley",
+   "a": "counterweight: counterweight",
+   "b": "counterweight: iron portcullis",
+   "at_mm": [
+    -1000.0,
+    1360.0,
+    -200.0
+   ],
+   "to_mm": [
+    -2200.0,
+    840.0,
+    -200.0
+   ],
+   "over_a_mm": [
+    -1000.0,
+    2360.0,
+    -200.0
+   ],
+   "over_b_mm": [
+    -2200.0,
+    2360.0,
+    -200.0
+   ],
+   "ratio": 1,
+   "length_mm": 0.0
+  },
+  {
+   "kind": "pulley",
+   "a": "hoist: hoist handle",
+   "b": "hoist: iron weight",
+   "at_mm": [
+    2200.0,
+    1280.0,
+    -80.0
+   ],
+   "to_mm": [
+    1000.0,
+    160.0,
+    -80.0
+   ],
+   "over_a_mm": [
+    2200.0,
+    2360.0,
+    -80.0
+   ],
+   "over_b_mm": [
+    1000.0,
+    2360.0,
+    -80.0
+   ],
+   "ratio": 1,
+   "length_mm": 0.0
+  },
+  {
+   "kind": "hinge",
+   "a": "seesaw: pivot stone",
+   "b": "seesaw: oak plank",
+   "at_mm": [
+    5000.0,
+    480.0,
+    -120.0
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "lower_deg": -25,
+   "upper_deg": 25,
+   "friction_n_m": 2
+  },
+  {
+   "kind": "hinge",
+   "a": "bow: bow grip upper",
+   "b": "bow: upper limb tip",
+   "at_mm": [
+    -5840.0,
+    1340.0,
+    -2480.0
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "lower_deg": -60,
+   "upper_deg": 60,
+   "friction_n_m": 0
+  },
+  {
+   "kind": "hinge",
+   "a": "bow: bow grip lower",
+   "b": "bow: lower limb tip",
+   "at_mm": [
+    -5840.0,
+    1100.0,
+    -2480.0
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "lower_deg": -60,
+   "upper_deg": 60,
+   "friction_n_m": 0
+  },
+  {
+   "kind": "elastic",
+   "a": "bow: bow grip upper",
+   "b": "bow: upper limb tip",
+   "at_mm": [
+    -5480.0,
+    1340.0,
+    -2480.0
+   ],
+   "to_mm": [
+    -6000.0,
+    1620.0,
+    -2480.0
+   ],
+   "rest_mm": 0.0,
+   "stiffness_n_m": 6000,
+   "damping_n_s_m": 20
+  },
+  {
+   "kind": "elastic",
+   "a": "bow: bow grip lower",
+   "b": "bow: lower limb tip",
+   "at_mm": [
+    -5480.0,
+    1100.0,
+    -2480.0
+   ],
+   "to_mm": [
+    -6000.0,
+    820.0,
+    -2480.0
+   ],
+   "rest_mm": 0.0,
+   "stiffness_n_m": 6000,
+   "damping_n_s_m": 20
+  },
+  {
+   "kind": "link",
+   "a": "bow: upper limb tip",
+   "b": "bow: bowstring",
+   "at_mm": [
+    -6000.0,
+    1620.0,
+    -2480.0
+   ],
+   "to_mm": [
+    -6000.0,
+    1300.0,
+    -2480.0
+   ],
+   "length_mm": 0.0,
+   "breaks_at_n": 0
+  },
+  {
+   "kind": "link",
+   "a": "bow: lower limb tip",
+   "b": "bow: bowstring",
+   "at_mm": [
+    -6000.0,
+    820.0,
+    -2480.0
+   ],
+   "to_mm": [
+    -6000.0,
+    1140.0,
+    -2480.0
+   ],
+   "length_mm": 0.0,
+   "breaks_at_n": 0
+  },
+  {
+   "kind": "fixing",
+   "a": "bow: bowstring",
+   "b": "bow: arrow",
+   "at_mm": [
+    -6000.0,
+    1220.0,
+    -2480.0
+   ],
+   "axis": [
+    1,
+    0,
+    0
+   ],
+   "holds_tension_n": 0,
+   "holds_shear_n": 0
+  },
+  {
+   "kind": "link",
+   "a": "tether: stone post",
+   "b": "tether: iron block",
+   "at_mm": [
+    -3560.0,
+    120.0,
+    -2480.0
+   ],
+   "to_mm": [
+    -2880.0,
+    120.0,
+    -2480.0
+   ],
+   "length_mm": 1000.0,
+   "breaks_at_n": 0.0
+  },
+  {
+   "kind": "link",
+   "a": "pendulum: high beam",
+   "b": "pendulum: iron ball",
+   "at_mm": [
+    -920.0,
+    2400.0,
+    -2480.0
+   ],
+   "to_mm": [
+    -560.0,
+    1480.0,
+    -2480.0
+   ],
+   "length_mm": 0.0,
+   "breaks_at_n": 0.0
+  },
+  {
+   "kind": "elastic",
+   "a": "spring-weight: oak beam",
+   "b": "spring-weight: iron weight",
+   "at_mm": [
+    1520.0,
+    2000.0,
+    -2480.0
+   ],
+   "to_mm": [
+    1520.0,
+    1320.0,
+    -2480.0
+   ],
+   "rest_mm": 520.0,
+   "stiffness_n_m": 2000,
+   "damping_n_s_m": 40
+  }
+ ]
+}

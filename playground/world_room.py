@@ -20,6 +20,7 @@ import json
 import math
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any
 
 import fracture_lab
@@ -640,7 +641,24 @@ def yard() -> dict[str, Any]:
     }
 
 
+# Every test's own build, side by side, to walk round and try: written by
+# `python tests/qa.py --rooms` from the recipes the QA proves, each part named
+# after its case. Three rooms, because together they hold more cells than a
+# room may and still run at realtime. The playground opens on the first.
+ROOMS = Path(__file__).resolve().parent / "rooms"
+
+
+def _saved_room(name: str):
+    def scene() -> dict[str, Any]:
+        return json.loads((ROOMS / f"{name}.json").read_text(encoding="utf-8"))
+    scene.__name__ = name.replace("-", "_")
+    return scene
+
+
 SCENES = {
+    "tests-gates": _saved_room("tests-gates"),
+    "tests-ropes": _saved_room("tests-ropes"),
+    "tests-motion": _saved_room("tests-motion"),
     "bench": room,
     "courtyard": courtyard,
     "yard": yard,

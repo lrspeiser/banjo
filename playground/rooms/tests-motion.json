@@ -1,0 +1,1039 @@
+{
+ "algorithm": "lattice",
+ "cell_m": 0.04,
+ "plasticity": "on",
+ "bodies": [
+  {
+   "name": "plank-bridge: left block",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    240.0,
+    400.0,
+    480.0
+   ],
+   "center_mm": [
+    -5400.0,
+    200.0,
+    -240.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "plank-bridge: right block",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    240.0,
+    400.0,
+    480.0
+   ],
+   "center_mm": [
+    -4200.0,
+    200.0,
+    -240.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "plank-bridge: oak plank",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    1600.0,
+    120.0,
+    400.0
+   ],
+   "center_mm": [
+    -4800.0,
+    460.0,
+    -240.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "plank-bridge: iron block",
+   "shape": "box",
+   "material": "iron",
+   "size_mm": [
+    240.0,
+    240.0,
+    240.0
+   ],
+   "center_mm": [
+    -4800.0,
+    640.0,
+    -240.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "ice-breaks: ice slab",
+   "shape": "box",
+   "material": "ice",
+   "size_mm": [
+    640.0,
+    80.0,
+    640.0
+   ],
+   "center_mm": [
+    -2080.0,
+    40.0,
+    -320.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "ice-breaks: iron block",
+   "shape": "box",
+   "material": "iron",
+   "size_mm": [
+    160.0,
+    160.0,
+    160.0
+   ],
+   "center_mm": [
+    -2080.0,
+    1520.0,
+    -320.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "dent: aluminium plate",
+   "shape": "box",
+   "material": "aluminum",
+   "size_mm": [
+    400.0,
+    80.0,
+    400.0
+   ],
+   "center_mm": [
+    40.0,
+    40.0,
+    -200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "dent: iron ball",
+   "shape": "sphere",
+   "material": "iron",
+   "size_mm": [
+    120.0,
+    120.0,
+    120.0
+   ],
+   "center_mm": [
+    40.0,
+    400.0,
+    -200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    -30.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "pane-breaks: stone post",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    160.0,
+    1600.0,
+    160.0
+   ],
+   "center_mm": [
+    1920.0,
+    800.0,
+    -480.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "pane-breaks: glass pane",
+   "shape": "box",
+   "material": "glass",
+   "size_mm": [
+    640.0,
+    640.0,
+    40.0
+   ],
+   "center_mm": [
+    2320.0,
+    1000.0,
+    -340.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "pane-breaks: iron ball",
+   "shape": "sphere",
+   "material": "iron",
+   "size_mm": [
+    120.0,
+    120.0,
+    120.0
+   ],
+   "center_mm": [
+    2520.0,
+    1200.0,
+    -40.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    -16.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "pane-breaks: stop",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    640,
+    1600,
+    80
+   ],
+   "center_mm": [
+    2520,
+    800,
+    -1280
+   ],
+   "anchored": true
+  },
+  {
+   "name": "tower: oak block 1",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    200.0,
+    200.0,
+    200.0
+   ],
+   "center_mm": [
+    4560.0,
+    100.0,
+    -80.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "tower: oak block 2",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    200.0,
+    200.0,
+    200.0
+   ],
+   "center_mm": [
+    4560.0,
+    300.0,
+    -80.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "tower: oak block 3",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    200.0,
+    200.0,
+    200.0
+   ],
+   "center_mm": [
+    4560.0,
+    500.0,
+    -80.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "tower: oak block 4",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    200.0,
+    200.0,
+    200.0
+   ],
+   "center_mm": [
+    4560.0,
+    700.0,
+    -80.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "tower: oak block 5",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    200.0,
+    200.0,
+    200.0
+   ],
+   "center_mm": [
+    4560.0,
+    900.0,
+    -80.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "dominoes: domino 1",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    400.0,
+    240.0
+   ],
+   "center_mm": [
+    -5020.0,
+    200.0,
+    -3600.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "dominoes: domino 2",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    400.0,
+    240.0
+   ],
+   "center_mm": [
+    -4820.0,
+    200.0,
+    -3600.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "dominoes: domino 3",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    400.0,
+    240.0
+   ],
+   "center_mm": [
+    -4620.0,
+    200.0,
+    -3600.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "dominoes: domino 4",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    400.0,
+    240.0
+   ],
+   "center_mm": [
+    -4420.0,
+    200.0,
+    -3600.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "dominoes: domino 5",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    400.0,
+    240.0
+   ],
+   "center_mm": [
+    -4220.0,
+    200.0,
+    -3600.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "dominoes: domino 6",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    400.0,
+    240.0
+   ],
+   "center_mm": [
+    -4020.0,
+    200.0,
+    -3600.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "dominoes: domino 7",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    400.0,
+    240.0
+   ],
+   "center_mm": [
+    -3820.0,
+    200.0,
+    -3600.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "dominoes: domino 8",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    400.0,
+    240.0
+   ],
+   "center_mm": [
+    -3620.0,
+    200.0,
+    -3600.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "dominoes: iron ball",
+   "shape": "sphere",
+   "material": "iron",
+   "size_mm": [
+    120.0,
+    120.0,
+    120.0
+   ],
+   "center_mm": [
+    -5540.0,
+    300.0,
+    -3600.0
+   ],
+   "velocity_m_s": [
+    4.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "dominoes: stop",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    80,
+    400,
+    480
+   ],
+   "center_mm": [
+    -3140,
+    200,
+    -3600
+   ],
+   "anchored": true
+  },
+  {
+   "name": "bounce: rubber ball",
+   "shape": "sphere",
+   "material": "rubber",
+   "size_mm": [
+    200.0,
+    200.0,
+    200.0
+   ],
+   "center_mm": [
+    -1400.0,
+    2100.0,
+    -3440.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "sliding: ice block",
+   "shape": "box",
+   "material": "ice",
+   "size_mm": [
+    240.0,
+    240.0,
+    240.0
+   ],
+   "center_mm": [
+    400.0,
+    120.0,
+    -4240.0
+   ],
+   "velocity_m_s": [
+    3.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "sliding: oak block",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    240.0,
+    240.0,
+    240.0
+   ],
+   "center_mm": [
+    400.0,
+    120.0,
+    -3440.0
+   ],
+   "velocity_m_s": [
+    3.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "projectile: iron ball",
+   "shape": "sphere",
+   "material": "iron",
+   "size_mm": [
+    120.0,
+    120.0,
+    120.0
+   ],
+   "center_mm": [
+    2200.0,
+    1000.0,
+    -3760.0
+   ],
+   "velocity_m_s": [
+    5.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "projectile: stop",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    80,
+    400,
+    800
+   ],
+   "center_mm": [
+    5600,
+    200,
+    -3760
+   ],
+   "anchored": true
+  },
+  {
+   "name": "heated-piston: cylinder base",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    480.0,
+    80.0,
+    480.0
+   ],
+   "center_mm": [
+    -5360.0,
+    40.0,
+    -6640.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "heated-piston: cylinder wall left",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    80.0,
+    1200.0,
+    480.0
+   ],
+   "center_mm": [
+    -5560.0,
+    680.0,
+    -6640.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "heated-piston: cylinder wall right",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    80.0,
+    1200.0,
+    480.0
+   ],
+   "center_mm": [
+    -5160.0,
+    680.0,
+    -6640.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "heated-piston: cylinder wall back",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    320.0,
+    1200.0,
+    80.0
+   ],
+   "center_mm": [
+    -5360.0,
+    680.0,
+    -6840.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "heated-piston: cylinder window",
+   "shape": "box",
+   "material": "glass",
+   "size_mm": [
+    320.0,
+    1200.0,
+    80.0
+   ],
+   "center_mm": [
+    -5360.0,
+    680.0,
+    -6440.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "heated-piston: piston",
+   "shape": "box",
+   "material": "iron",
+   "size_mm": [
+    240.0,
+    80.0,
+    240.0
+   ],
+   "center_mm": [
+    -5360.0,
+    520.0,
+    -6640.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "heated-piston: weight",
+   "shape": "box",
+   "material": "iron",
+   "size_mm": [
+    160.0,
+    160.0,
+    160.0
+   ],
+   "center_mm": [
+    -5360.0,
+    640.0,
+    -6640.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "hearth: hearth stone",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    800.0,
+    80.0,
+    640.0
+   ],
+   "center_mm": [
+    -3120.0,
+    40.0,
+    -6720.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "hearth: log 1",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    120.0,
+    120.0,
+    480.0
+   ],
+   "center_mm": [
+    -3200.0,
+    140.0,
+    -6720.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "hearth: log 2",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    120.0,
+    120.0,
+    480.0
+   ],
+   "center_mm": [
+    -3040.0,
+    140.0,
+    -6720.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "hearth: log 3",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    480.0,
+    120.0,
+    120.0
+   ],
+   "center_mm": [
+    -3120.0,
+    260.0,
+    -6720.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "hearth: kettle",
+   "shape": "box",
+   "material": "iron",
+   "size_mm": [
+    160.0,
+    160.0,
+    160.0
+   ],
+   "center_mm": [
+    -2760.0,
+    160.0,
+    -6720.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "iron-wont-burn: stone slab",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    640.0,
+    80.0,
+    480.0
+   ],
+   "center_mm": [
+    -760.0,
+    40.0,
+    -6640.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true
+  },
+  {
+   "name": "iron-wont-burn: iron bar",
+   "shape": "box",
+   "material": "iron",
+   "size_mm": [
+    480.0,
+    80.0,
+    80.0
+   ],
+   "center_mm": [
+    -760.0,
+    120.0,
+    -6640.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  }
+ ],
+ "joints": [
+  {
+   "kind": "hinge",
+   "a": "pane-breaks: stone post",
+   "b": "pane-breaks: glass pane",
+   "at_mm": [
+    2000.0,
+    1000.0,
+    -340.0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "lower_deg": -90,
+   "upper_deg": 90,
+   "friction_n_m": 1
+  },
+  {
+   "kind": "slider",
+   "a": "heated-piston: cylinder base",
+   "b": "heated-piston: piston",
+   "at_mm": [
+    -5360.0,
+    520.0,
+    -6640.0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "lower_mm": -200.0,
+   "upper_mm": 600.0,
+   "friction_n": 0
+  }
+ ],
+ "thermo": {
+  "gas_regions": [
+   {
+    "name": "heated-piston: cylinder gas",
+    "contents": {
+     "argon": 1.0
+    },
+    "piston": "heated-piston: piston",
+    "height_m": 0.4,
+    "balance": true
+   }
+  ],
+  "heaters": [
+   {
+    "target": "heated-piston: cylinder gas",
+    "power_w": 800.0,
+    "seconds": 30.0,
+    "start_s": 0.0,
+    "label": "heater"
+   },
+   {
+    "target": "hearth: log 1",
+    "power_w": 10000.0,
+    "seconds": 90.0,
+    "start_s": 0.0,
+    "label": "kindling"
+   },
+   {
+    "target": "hearth: log 2",
+    "power_w": 10000.0,
+    "seconds": 90.0,
+    "start_s": 0.0,
+    "label": "kindling"
+   },
+   {
+    "target": "iron-wont-burn: iron bar",
+    "power_w": 10000.0,
+    "seconds": 60.0,
+    "start_s": 0.0,
+    "label": "a torch"
+   }
+  ]
+ }
+}

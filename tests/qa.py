@@ -480,6 +480,131 @@ def summary_text(model: str, recipes: list[dict[str, Any]], trials: list[dict[st
 
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Rooms: every test's own build, side by side, to walk round and try
+# ---------------------------------------------------------------------------
+#
+# The playground opens on these. They are generated from the QA's own recipes --
+# the builds its checks prove -- and not laid out by hand, so what the owner
+# walks round is exactly what the QA vouches for, each part named after its case
+# ("hoist: iron weight"), which is what the page shows when it is aimed at.
+#
+# A room may hold CELL_CAP cells, the cap that keeps a room at realtime, and all
+# of the builds together are more than twice that. So there are three rooms.
+
+ROOMS_DIR = ROOT / "playground" / "rooms"
+CELL_CAP = 16000
+TEST_ROOMS = {
+    "tests-gates": ["hinged-gate", "castle-gate-winch", "castle-gate-capstan"],
+    "tests-ropes": ["latched-gate", "counterweight", "hoist", "seesaw", "bow", "tether",
+                    "pendulum", "spring-weight"],
+    "tests-motion": ["plank-bridge", "ice-breaks", "dent", "pane-breaks", "tower", "dominoes",
+                     "bounce", "sliding", "projectile", "heated-piston", "hearth", "iron-wont-burn"],
+}
+# In no room, and why.
+LEFT_OUT = {
+    "loaded-shelf": "it slows any room it is in to a crawl while the engine works out its "
+                    "break; the realtime rule stops it in every run",
+    "courtyard-unbar": "it is an edit to the courtyard, which is a room of its own",
+}
+# What stops a thing that would otherwise roll or fly on into the next build:
+# (centre, size) in metres in the recipe's own frame, anchored concrete.
+STOPS = {
+    "projectile": [([3.4, 0.2, 0.0], [0.08, 0.4, 0.8])],      # it lands 2.2 m out and rolls on
+    "dominoes": [([1.9, 0.2, 0.0], [0.08, 0.4, 0.48])],       # the ball rolls on past the last
+    "pane-breaks": [([0.6, 0.8, -0.8], [0.64, 1.6, 0.08])],   # the ball goes through the glass
+}
+CELL_MM = 40
+GAP_MM = 1600        # between builds in a row
+ROW_GAP_MM = 2000    # between rows
+ROW_MM = 12000       # how wide a row runs before the next begins, further from the camera
+
+
+def _snap(mm: float) -> int:
+    """Builds move by whole cells, so every body stays on the grid."""
+    return int(round(mm / CELL_MM)) * CELL_MM
+
+
+def _footprint(spec: dict[str, Any]) -> tuple[list[float], list[float]]:
+    bodies = [b for b in spec["bodies"] if b["name"] != "marker stone"]
+    lo = [min(b["center_mm"][i] - b["size_mm"][i] / 2.0 for b in bodies) for i in range(3)]
+    hi = [max(b["center_mm"][i] + b["size_mm"][i] / 2.0 for b in bodies) for i in range(3)]
+    return lo, hi
+
+
+def _moved(point: list[float], dx: int, dz: int) -> list[float]:
+    return [point[0] + dx, point[1], point[2] + dz]
+
+
+def room_of(recipe_ids: list[str]) -> tuple[dict[str, Any], int]:
+    """One room from several recipes: each built through the MCP exactly as the
+    QA builds it, its parts named after its case, and moved clear of the rest --
+    in rows across the view from where the room's camera starts (z = 2.6 m,
+    looking along -z), each row further away than the last."""
+    import fracture_lab
+    specs = {}
+    for rid in recipe_ids:
+        room, _, _ = abt.build_recipe(rid, RECIPES, CASES)
+        spec = room.spec
+        for i, (at, size) in enumerate(STOPS.get(rid, [])):
+            spec["bodies"].append({"name": "stop" if i == 0 else f"stop {i + 1}", "shape": "box",
+                                   "material": "concrete", "size_mm": [round(v * 1000) for v in size],
+                                   "center_mm": [round(v * 1000) for v in at], "anchored": True})
+        specs[rid] = spec
+    placed, cursor, front, depth = [], 0.0, 0.0, 0.0
+    for rid in recipe_ids:
+        lo, hi = _footprint(specs[rid])
+        if cursor > 0.0 and cursor + (hi[0] - lo[0]) > ROW_MM:
+            cursor, front, depth = 0.0, front - depth - ROW_GAP_MM, 0.0
+        placed.append((rid, _snap(cursor - lo[0]), _snap(front - hi[2])))
+        cursor += hi[0] - lo[0] + GAP_MM
+        depth = max(depth, hi[2] - lo[2])
+    right = max(dx + _footprint(specs[rid])[1][0] for rid, dx, _ in placed)
+    shift = _snap(-right / 2.0)
+    first = specs[recipe_ids[0]]
+    bodies, joints, heaters, regions = [], [], [], []
+    for rid, dx, dz in placed:
+        dx += shift
+
+        def named(name: str, rid: str = rid) -> str:
+            return f"{rid}: {name}"
+
+        spec = specs[rid]
+        for b in spec["bodies"]:
+            if b["name"] != "marker stone":
+                bodies.append(dict(b, name=named(b["name"]), center_mm=_moved(b["center_mm"], dx, dz)))
+        for j in spec.get("joints", []):
+            moved = dict(j, a=named(j["a"]), b=named(j["b"]))
+            for key in ("at_mm", "to_mm", "over_a_mm", "over_b_mm"):
+                if key in moved:
+                    moved[key] = _moved(moved[key], dx, dz)
+            joints.append(moved)
+        thermo = spec.get("thermo") or {}
+        heaters += [dict(h, target=named(h["target"])) for h in thermo.get("heaters", [])]
+        regions += [dict(r, name=named(r["name"]), piston=named(r["piston"]))
+                    for r in thermo.get("gas_regions", [])]
+    room = {"algorithm": first.get("algorithm", "lattice"), "cell_m": first.get("cell_m", 0.04),
+            "plasticity": first.get("plasticity", "on"), "bodies": bodies, "joints": joints}
+    if heaters or regions:
+        room["thermo"] = {key: value for key, value in (("gas_regions", regions), ("heaters", heaters))
+                          if value}
+    cells = int(fracture_lab.validate(room)["cells"])
+    if cells > CELL_CAP:
+        raise ValueError(f"{cells} cells is over the {CELL_CAP} a room may hold")
+    return room, cells
+
+
+def write_rooms() -> None:
+    ROOMS_DIR.mkdir(parents=True, exist_ok=True)
+    for room_id, recipe_ids in TEST_ROOMS.items():
+        room, cells = room_of(recipe_ids)
+        (ROOMS_DIR / f"{room_id}.json").write_text(json.dumps(room, indent=1) + "\n", encoding="utf-8")
+        print(f"  {room_id}: {len(recipe_ids)} builds, {len(room['bodies'])} bodies, "
+              f"{len(room['joints'])} joints, {cells} of {CELL_CAP} cells", flush=True)
+    for rid, why in LEFT_OUT.items():
+        print(f"  not in a room: {rid} -- {why}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--cases", default="", help="comma-separated parts of case ids")
@@ -504,7 +629,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--recheck", metavar="RUN",
                         help="judge a run again with the checks as they are now: recipes built "
                              "again, the agent's rooms reopened from what it left -- no model")
+    parser.add_argument("--rooms", action="store_true",
+                        help="write playground/rooms/: every test's own build side by side, for "
+                             "the playground to open on")
     args = parser.parse_args(argv)
+    if args.rooms:
+        write_rooms()
+        return 0
 
     wanted = [w.strip() for w in args.cases.split(",") if w.strip()]
     cases = [c for c in CASES if not wanted or any(w in c.id for w in wanted)]

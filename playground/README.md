@@ -157,8 +157,9 @@ not change this fixed reference. See the [API, refinement and limitations](../do
 
 ## The room on /world, and its chat
 
-`/world` is a room to walk around in — **the bench**, **the courtyard** and
-**an empty yard**, picked at the bottom right. Its chat box builds with the MCP
+`/world` is a room to walk around in, picked at the bottom right. It opens on
+**the test rooms** — every build the QA proves, side by side (below) — and also
+has **the bench**, **the courtyard** and **an empty yard**. Its chat box builds with the MCP
 server's own tools: the same names, schemas and handlers as `mcp/banjo_mcp.py`,
 run on the room held as an MCP world (`playground/room_world.py`). Anything the
 MCP can do, the chat can do, and `tests/chat_tool_parity_tests.py` fails if a
@@ -169,18 +170,75 @@ can pick things up, pull on them and let time pass — and every turn is logged
 with the calls it made and anything that was refused, one file per turn under
 `build/playground-logs/chat/`.
 
-Whether it can actually build things is measured by asking it:
+Whether it can actually build things is measured by asking it — the QA suite:
 
 ```powershell
-python tests/agent_build_tests.py --trials 3
+python tests/qa.py                        # every case, two trials each, then the pictures
+python tests/qa.py --recipes              # the proof builds only: no model, no cost
+python tests/qa.py --cases bow,tower --trials 1
 ```
 
-That asks the real model to build a gate, a portcullis, a hanging sign, a chain,
-an overloaded shelf and a castle gate worked by a wheel — mostly in the empty
-yard, nothing preloaded — then opens each room in the engine and uses what was
-built: shoves the gate, hauls the grate, turns the wheel by its handle. It
-costs a model conversation per trial, so it is run on purpose rather than from
-ctest. Results go to `build/agent-regression/<time>/`.
+Each case is a sentence a person might type — a gate, a winch, a hoist, a
+latch, a bow, a pendulum, dominoes, glass and ice that break, a hearth, a heated
+piston and the rest (`tests/agent_build_tests.py`, `tests/qa_cases.py`). The real
+chat builds it with the MCP's tools; the engine then opens the room it left and
+USES what was built — shoves, turns, hauls, looses, heats, watches — and measures
+the result against what physics says it must be: a pendulum's period from its
+length, where a thrown ball must be, that a spring carries what hangs on it.
+Every case also has a recipe, the same thing built by hand through the MCP, so a
+failure lands in the right place: a recipe that fails is the engine or the
+check, a recipe that passes while the chat fails is the chat or its guide.
+
+Every check is held to the realtime rule — stopped the moment its engine falls
+behind 1.1x, not reported afterwards — and ends by letting the room come to rest
+and saying how it looks: still moving, sunk through the floor, flown off. Every
+build is saved, and photographed in the real page by headless Chrome as it opens
+and after it has run (`tests/qa_browser.py`). A run writes
+`build/agent-regression/<time>/`: `index.html` (the report, with the pictures),
+`summary.txt`, `report.json`, and each build as `<case>-<trial>.spec.json` (trial
+0 is the recipe).
+
+- `--retry RUN` asks again, into the same run, for trials that never reached the model.
+- `--recheck RUN` judges a run again with the checks as they are now, from the
+  rooms it saved — no model.
+- `--photos RUN` takes a run's pictures again; `--share` also writes
+  `<run>/share/`, the report with small pictures, for sending.
+- `--rooms` writes the test rooms (below).
+
+Trials cost a model conversation each — 140k to 230k tokens in, as measured — so
+the suite is run on purpose, not from ctest.
+
+### The test rooms
+
+`python tests/qa.py --rooms` builds every recipe through the MCP exactly as the
+QA does and lays them out side by side, each part named after its case — aim at
+one and the page says, say, "hoist: iron weight" — with a concrete stop wherever
+a thrown or rolling ball would carry on into the next build. They are written to
+`playground/rooms/`, and the room opens on the first:
+
+- **Tests: gates and wheels** (13,920 cells) — the hinged gate, and the castle
+  gates worked by a winch and by a capstan.
+- **Tests: latches, pulleys, ropes and springs** (10,480) — the latched gate, the
+  counterweighted portcullis, the hoist, the seesaw, the bow, the tether, the
+  pendulum and the spring.
+- **Tests: breaking, motion and heat** (12,872) — the plank bridge, ice, the
+  dent, the pane on a pin, the tower, dominoes, the bounce, sliding, the throw,
+  the heated piston, the hearth and the iron bar.
+
+Three rooms, because a room may hold 16,000 cells and still run at realtime and
+together they hold 37,272. The overloaded shelf is in none of them — it slows
+any room it is in to a crawl while the engine works out its break — and taking
+the courtyard's bar off is an edit to the courtyard, which is its own room. Run
+`--rooms` again whenever a recipe changes.
+
+### Opening a saved build
+
+`/world?qa=<run>/<case>-<trial>` opens any build a run saved, as a room of its
+own, to be tried by hand; the report links each one. `&hold=1` opens it drawn
+and held, its clock stopped until `banjoRoom.resume()` — which is how the
+pictures begin at the moment the build does. `window.banjoRoom` also has
+`ready()`, `status()`, `hold()`, `lookAt()` and `standAt()`, for driving the
+page from outside it.
 
 ## Local HTTP contract
 
@@ -195,6 +253,14 @@ ctest. Results go to `build/agent-regression/<time>/`.
 | `GET /api/jobs/{id}/playback/{case_index}` | Bounded server-owned native recording |
 | `POST /api/jobs/{id}/rerun` | Apply `{case_index, action, value, request_id}` from a declared physical control; no model call |
 | `POST /api/jobs/{id}/open` | Open `{case_index}` in the native studio |
+| `POST /api/world/open` | Open the room on /world: `{scene}` (one of the rooms above) or `{qa: "<run>/<case>-<trial>"}` (a saved QA build); `fresh: true` builds it again from scratch |
+| `POST /api/world/ask` | One chat turn in the open room: `{message, story}`; a room the chat changed is opened again from what it left |
+| `POST /api/live/act` | Step the open room, or take hold of, move, let go of or heat something in it |
+
+The server answers in HTTP/1.1 and keeps a connection open between requests.
+Under 1.0 every reply closed its connection and the room's page opened a new one
+for every step; on Windows a long look ran the machine out of socket buffers
+(`net::ERR_NO_BUFFER_SPACE`) and the room stopped.
 
 POSTs require `Content-Type: application/json` and `X-Banjo-Token` from status.
 Use a fresh request ID for a new request and reuse that ID/body to deduplicate
@@ -213,7 +279,10 @@ cannot be enabled by prompt wording.
 
 ```powershell
 python tests/playground_tests.py -v
+python tests/qa_open_tests.py
+python tests/qa.py --recipes
 node --check playground/app.js
+node --check playground/world.js
 ctest --test-dir build/win-joint-double -C Release --output-on-failure
 build/win-joint-double/Release/banjo_object_state_probe.exe
 ```
