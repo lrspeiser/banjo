@@ -232,6 +232,135 @@ class TheTools(unittest.TestCase):
                         f"carried over the pane and dropped 3 m, nothing broke: "
                         f"{answer['what_happened']}")
 
+    def pillar_world(self):
+        """A concrete pillar lying on the floor, an oak crate and a rubber ball."""
+        return self.client.call("create_world", cell_size_m=0.04, objects=[
+            {"name": "stone pillar", "shape": "box", "material": "concrete",
+             "size_m": [0.16, 0.16, 0.8], "position_m": [0, 0.082, 1.6]},
+            {"name": "oak crate", "shape": "box", "material": "oak",
+             "size_m": [0.4, 0.4, 0.4], "position_m": [1.5, 0.202, 1.0]},
+            {"name": "rubber ball", "shape": "sphere", "material": "rubber",
+             "size_m": [0.2, 0.2, 0.2], "position_m": [-1.5, 0.102, 1.0]},
+        ])["world_id"]
+
+    def test_a_pillar_lying_down_is_stood_upright_where_it_is_asked_for(self):
+        """"Turn this upright and set it in front of me": an edit the engine
+        holds to what the world does with it -- set on the floor, run until it
+        is still, and still standing as it was put."""
+        world_id = self.pillar_world()
+        answer = self.client.call("turn_object", world_id=world_id, name="stone pillar",
+                                  at_m=[0.5, 1.2])
+        self.assertEqual(answer["stands"], "upright")
+        self.assertEqual(answer["size_m_as_it_stands"], [0.16, 0.8, 0.16])
+        self.assertEqual(answer["on"], "the floor")
+        settled = answer["settled"]
+        self.assertTrue(settled["at_rest"], settled)
+        self.assertLess(settled["long_side_from_vertical_deg"], 1.0, settled)
+        self.assertLess(settled["moved_m"], 0.005, settled)
+        self.assertAlmostEqual(settled["position_m"][1], 0.4, delta=0.003)
+        # And it IS standing there, in the world: its long side up.
+        pillar = next(o for o in self.client.call("describe_world", world_id=world_id)["objects"]
+                      if o["name"] == "stone pillar")
+        self.assertEqual(pillar["size_m"], [0.16, 0.8, 0.16])
+        self.assertAlmostEqual(pillar["position_m"][0], 0.5, delta=0.003)
+        self.assertAlmostEqual(pillar["position_m"][2], 1.2, delta=0.003)
+        # On the crate it stands on the crate.
+        on_top = self.client.call("turn_object", world_id=world_id, name="stone pillar",
+                                  at_m=[1.5, 1.0])
+        self.assertEqual(on_top["on"], "oak crate")
+        self.assertAlmostEqual(on_top["settled"]["position_m"][1], 0.8, delta=0.004)
+        # Laid down again, along x: its long side level.
+        laid = self.client.call("turn_object", world_id=world_id, name="stone pillar",
+                                stand="lying", along=[1, 0, 0], at_m=[0, 0.4])
+        self.assertEqual(laid["size_m_as_it_stands"], [0.8, 0.16, 0.16])
+        self.assertEqual(laid["on"], "the floor")
+        self.assertLess(laid["settled"]["long_side_from_level_deg"], 1.0)
+
+    def test_a_pillar_that_would_not_stand_is_refused_and_nothing_changes(self):
+        """Supported, not merely touching. On the point of a ball it is refused
+        before anything runs; on the end of a plank balanced on a trestle, all of
+        it over the plank, the plank tips in the settling run and it falls -- and
+        either way the world is as it was."""
+        world_id = self.client.call("create_world", cell_size_m=0.04, objects=[
+            {"name": "stone pillar", "shape": "box", "material": "concrete",
+             "size_m": [0.12, 0.12, 0.6], "position_m": [2.0, 0.062, 0]},
+            {"name": "rubber ball", "shape": "sphere", "material": "rubber",
+             "size_m": [0.2, 0.2, 0.2], "position_m": [-1.5, 0.102, 0]},
+            {"name": "trestle", "shape": "box", "material": "concrete",
+             "size_m": [0.08, 0.48, 0.24], "position_m": [0, 0.24, 0], "anchored": True},
+            {"name": "plank", "shape": "box", "material": "oak",
+             "size_m": [1.6, 0.04, 0.24], "position_m": [0, 0.502, 0]},
+        ])["world_id"]
+
+        def pillar():
+            return next(o for o in self.client.call("describe_world", world_id=world_id)["objects"]
+                        if o["name"] == "stone pillar")
+
+        was = pillar()
+        # On the ball: refused by what is under it (not under its middle) or by
+        # the run (it fell off) -- the ball's top reads as a gentle slope to a
+        # small footprint, so which of the two says it depends on the size.
+        said = self.client.refuse("turn_object", world_id=world_id, name="stone pillar",
+                                  at_m=[-1.5, 0])
+        self.assertIn("rubber ball", said)
+        self.assertTrue("tip off" in said or "would not stay upright" in said, said)
+        said = self.client.refuse("turn_object", world_id=world_id, name="stone pillar",
+                                  at_m=[0.64, 0])
+        self.assertIn("would not stay upright on plank", said)
+        now = pillar()
+        self.assertEqual(now["size_m"], was["size_m"], "a refused turn left it turned")
+        self.assertAlmostEqual(now["position_m"][0], 2.0, delta=0.01)
+
+    def test_standing_it_where_it_would_share_space_is_refused(self):
+        """A thin post between the points its footprint is looked down at is
+        not what it would stand on, and it would be inside the pillar: refused
+        by the pillar's box against the post's, and nothing changes."""
+        world_id = self.pillar_world()
+        self.client.call("add_object", world_id=world_id, object={
+            "name": "thin post", "shape": "box", "material": "iron",
+            "size_m": [0.04, 0.2, 0.04], "position_m": [0.54, 0.1, 1.2], "anchored": True})
+        said = self.client.refuse("turn_object", world_id=world_id, name="stone pillar",
+                                  at_m=[0.5, 1.2])
+        self.assertIn("overlap thin post", said)
+        pillar = next(o for o in self.client.call("describe_world", world_id=world_id)["objects"]
+                      if o["name"] == "stone pillar")
+        self.assertEqual(pillar["size_m"], [0.16, 0.16, 0.8])
+
+    def test_a_thing_too_heavy_for_a_hand_says_so_where_it_is_made(self):
+        """A person's hand holds 800 N and has to hold a thing up with some of
+        that over to move it: 73.4 kg. A 1.2 m concrete pillar is 73.7 kg -- the
+        chat made one twice for a person to stand up by hand -- and the answer
+        that made it says so; a 0.8 m one is 49 kg and says nothing."""
+        world_id = self.pillar_world()
+        heavy = self.client.call("add_object", world_id=world_id, object={
+            "name": "tall pillar", "shape": "box", "material": "concrete",
+            "size_m": [0.16, 0.16, 1.2], "position_m": [-0.6, 0.4]})
+        self.assertIn("too_heavy_for_a_hand", heavy)
+        self.assertAlmostEqual(heavy["too_heavy_for_a_hand"]["mass_kg"], 73.7, delta=0.2)
+        light = self.client.call("add_object", world_id=world_id, object={
+            "name": "short pillar", "shape": "box", "material": "concrete",
+            "size_m": [0.16, 0.16, 0.8], "position_m": [0.6, 0.4]})
+        self.assertNotIn("too_heavy_for_a_hand", light)
+        short = next(o for o in light["objects"] if o["name"] == "short pillar")
+        self.assertAlmostEqual(short["mass_kg"], 49.2, delta=0.2)
+        anchored = self.client.call("add_object", world_id=world_id, object={
+            "name": "gatepost", "shape": "box", "material": "concrete",
+            "size_m": [0.2, 1.6, 0.2], "position_m": [0.0, -1.0], "anchored": True})
+        self.assertNotIn("too_heavy_for_a_hand", anchored)
+
+    def test_what_cannot_be_turned_says_why(self):
+        world_id = self.pillar_world()
+        self.assertIn("ball", self.client.refuse("turn_object", world_id=world_id,
+                                                 name="rubber ball"))
+        self.assertIn("nothing called", self.client.refuse("turn_object", world_id=world_id,
+                                                          name="obelisk"))
+        self.assertIn("'upright'", self.client.refuse("turn_object", world_id=world_id,
+                                                      name="stone pillar", stand="sideways"))
+        self.client.call("fix", world_id=world_id, a="oak crate", b="stone pillar",
+                         at_m=[1.3, 0.1, 1.2], axis=[0, 1, 0])
+        self.assertIn("joint", self.client.refuse("turn_object", world_id=world_id,
+                                                  name="stone pillar"))
+
     def gateway(self):
         """A post with a gate beside it, and something to shove it with.
 

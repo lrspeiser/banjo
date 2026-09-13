@@ -57,7 +57,10 @@ flat: see TERRAIN AND WATER.
 WHERE THE PERSON IS. the_person, when it is there, says where they stand
 (standing_m: the ground under their feet), which way they face (facing, a level
 direction), the point one_metre_in_front_m of them, and what the middle of
-their view is on (looking_at, and looking_at_m where it meets it). Something
+their view is on (looking_at, and looking_at_m where it meets it), and what
+they have in their hand (holding). "This", "it" and "this one" mean what they
+are holding -- or, holding nothing, what they are looking at: call the tools
+with that name. Something
 asked for "here", "near me", "in front of me" or "give me ..." goes where they
 can take it: about a metre in front of them, at one_metre_in_front_m -- never
 behind them and never where they stand. "There", "over there" and "that" mean
@@ -97,6 +100,21 @@ two; on soil (0.06) it stays up to 4 degrees; on rock, concrete or the floor
 steeper than a degree, and a rubber ball rolled at 1 m/s runs about 6.5 m, an
 iron one about 50 m. A tool that answers with an error did nothing: never say it
 was done. Do what the error says and try again, or tell them what went wrong.
+
+TURNING THINGS. turn_object stands a thing upright -- its longest side
+vertical -- or lays it down, and sets it down at [x, z] on whatever is there.
+The engine then runs the world until it is still, and if the thing would not
+stay as it was put the call is refused and nothing changes. "Turn this vertical
+and set it in front of me" is turn_object with the name of what they are
+holding (or looking at), stand "upright", and at_m their one_metre_in_front_m.
+Say where it stands and what the answer's settled measured. A person can take
+up and turn by hand only what weighs UNDER 73 kg -- their hand holds 800 N, and
+it has to hold the thing up and still move it -- and every object's mass_kg is
+in objects and objects_now. Something put within their reach is theirs to
+handle: unless they asked for something heavier, make it lighter than that. A
+concrete pillar [0.16, 0.8, 0.16] is 49 kg; [0.16, 1.2, 0.16] is 74 kg, too
+heavy. Heavier than 73 kg they can only carry it, not turn it: add_object's
+answer says too_heavy_for_a_hand when it is, and then make it lighter, or say so.
 
 MATERIALS. There are eight: iron, aluminum, glass, ceramic, oak, rubber, ice
 and concrete (list_materials says what each does). Asked for anything else --
@@ -604,6 +622,7 @@ def _now(live_state: dict[str, Any]) -> list[dict[str, Any]]:
                     "shape": body.get("shape", ""),
                     "position_m": [round(v, 3) for v in (body.get("position_m") or [0, 0, 0])],
                     "size_m": [round(v, 3) for v in (body.get("dimensions_m") or [0, 0, 0])],
+                    "mass_kg": round(float(body.get("mass_kg") or 0.0), 2),
                     "anchored": bool(body.get("anchored")), "held": bool(body.get("held")),
                     "moving_m_s": round(math.sqrt(sum(v * v for v in velocity)), 3)})
     return out
@@ -617,6 +636,10 @@ def _did(name: str, args: dict[str, Any], answer: dict[str, Any]) -> str:
         return f"removed {answer.get('removed')}"
     if name == "move_object":
         return f"moved {answer.get('moved')}"
+    if name == "turn_object":
+        at = answer.get("at_m") or []
+        return (f"stood {answer.get('turned')} {answer.get('stands')}"
+                + (f" at [{at[0]:.2f}, {at[2]:.2f}]" if len(at) == 3 else ""))
     if name == "clear_world":
         return "cleared the room"
     if name == "drop":
@@ -724,6 +747,14 @@ def where_the_person_is(raw: Any) -> dict[str, Any] | None:
     eyes = point(raw.get("eyes_m"))
     if eyes is not None:
         said["eyes_m"] = eyes
+    # What they have in their hand: "this" and "it", before anything they are
+    # looking at. By name, as the room's objects are named.
+    holding = raw.get("holding")
+    if isinstance(holding, str) and holding.strip():
+        said["holding"] = holding.strip()[:80]
+        at = point(raw.get("holding_at_m"))
+        if at is not None:
+            said["holding_at_m"] = at
     looking = raw.get("looking_at")
     if isinstance(looking, str) and looking.strip():
         said["looking_at"] = looking.strip()[:80]
