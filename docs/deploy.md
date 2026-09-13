@@ -73,6 +73,10 @@ runtime. Render's native Python runtime has no CMake to build the engine with.
 - **Health check path:** `/login`. Everything else asks for the password first.
 - **Instance:** as many CPUs as you will pay for. With fewer, a break takes
   longer than the warning the engine gives, and the room waits for it.
+- **Build memory:** the image compiles two files at a time (`BUILD_JOBS`,
+  default 2). Render's builder has 8 GB, and a build with one compile per core
+  ran out of it. With two, the compilers and the linker together peak at
+  1.4 GB -- measured, with the largest single compile at 846 MB.
 
 ## What it costs
 
