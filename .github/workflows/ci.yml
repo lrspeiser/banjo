@@ -59,7 +59,9 @@ jobs:
           python3 tests/scene_composer_tests.py -v
           python3 tests/planner_proposal_tests.py -v
           python3 tests/playground_archive_tests.py -v
-          python3 tests/playground_record_tests.py --recorder build/ci/banjo_playground_record --engine build/ci/banjo_platform_cli -v
+          # The plate drop (-k plate) costs minutes through the network lane
+          # and runs in long-physics.yml; these are the two quick cases.
+          python3 tests/playground_record_tests.py --recorder build/ci/banjo_playground_record --engine build/ci/banjo_platform_cli -v -k rigid -k output
 
       - name: Generate deterministic scenario projections
         run: |

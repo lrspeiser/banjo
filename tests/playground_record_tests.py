@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 from copy import deepcopy
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -74,10 +75,18 @@ class PlaygroundRecordIntegrationTests(unittest.TestCase):
             if not binary.is_file():
                 raise unittest.SkipTest(f"native binary not built: {binary}")
 
+    # How long one native run is given. 180 s was set when the plate drop took
+    # seconds; since the network lane runs on its own stability clock
+    # (5603b8a), recording its 480 steps took more than nine CPU-minutes on a
+    # fast desktop. So the check on every push runs the two quick cases (-k
+    # rigid -k output) and .github/workflows/long-physics.yml runs the plate
+    # drop nightly, with this raised.
+    timeout_s = float(os.environ.get("BANJO_RECORD_TIMEOUT_S", "180"))
+
     def native(self, *arguments: object) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [str(arguments[0]), *(str(value) for value in arguments[1:])],
-            cwd=ROOT, text=True, capture_output=True, timeout=180, check=False,
+            cwd=ROOT, text=True, capture_output=True, timeout=self.timeout_s, check=False,
         )
 
     def write_package(self, directory: Path, experiment: str) -> Path:

@@ -1,12 +1,13 @@
 name: long-physics
 
-# The five physics suites labelled `long` in CMakeLists.txt: the network lane's
-# skin, runtime and adaptive suites, the material showcase, and the contact
-# capacity suite. Each costs a quarter of an hour to an hour on a fast machine
-# -- the skin suite ran past two hours on a Linux build -- which is more than a
-# check on every push can spend, so ci.yml leaves them out and they run here,
-# one job each so that no one of them waits on another, nightly and whenever
-# someone asks.
+# What costs too much to check on every push, run nightly and whenever someone
+# asks. The five physics suites labelled `long` in CMakeLists.txt -- the network
+# lane's skin, runtime and adaptive suites, the material showcase, and the
+# contact capacity suite -- cost a quarter of an hour to an hour each on a fast
+# machine, and the skin suite ran past two hours on a Linux build. The record
+# suite's plate drop, through the same network lane, took more than nine
+# CPU-minutes on a fast desktop. ci.yml leaves all of these out; they run here,
+# one job each so that no one of them waits on another.
 
 on:
   schedule:
@@ -29,10 +30,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # HEADLESS brings in banjo_platform, which these suites are built on; it
+      # needs no display, unlike the lab.
       - name: Configure
         run: >-
           cmake -S . -B build/ci -G Ninja
           -DCMAKE_BUILD_TYPE=Release
+          -DBANJO_BUILD_HEADLESS=ON
           -DBANJO_BUILD_TESTS=ON
           -DBANJO_LONG_TEST_TIMEOUT_S=19800
 
@@ -41,3 +45,26 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build/ci --output-on-failure -R "^banjo_${{ matrix.suite }}_tests$"
+
+  record-plate-drop:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build/ci -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DBANJO_BUILD_HEADLESS=ON
+
+      - name: Build
+        run: cmake --build build/ci --parallel 2 --target banjo_playground_record banjo_platform_cli
+
+      - name: Record a plate drop through the network lane
+        env:
+          BANJO_RECORD_TIMEOUT_S: "19800"
+        run: >-
+          python3 tests/playground_record_tests.py
+          --recorder build/ci/banjo_playground_record
+          --engine build/ci/banjo_platform_cli -v -k plate
