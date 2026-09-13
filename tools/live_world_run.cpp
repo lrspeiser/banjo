@@ -174,6 +174,9 @@ using namespace banjo::fastlattice;
 //
 // One world to a process, so one cache.
 std::unordered_map<std::string, std::string> last_sent;
+// The revision each piece's cells last went out at in the room's own stream,
+// the `moved` replies. See describe().
+std::unordered_map<std::string, unsigned> cells_sent_at;
 // And what the pins looked like last time, for the same reason. See where this
 // is compared, below: the SET of pins is news, their angles are not.
 std::string last_joints;
@@ -353,8 +356,36 @@ nlohmann::json mechanicsSummary(const LiveWorld &world) {
                                                                 roundTo(1000.0 * s.depth_m, 0.1)})},
                           {"sound_mm", nlohmann::json::array({roundTo(1000.0 * s.sound_breadth_m, 0.1),
                                                               roundTo(1000.0 * s.sound_depth_m, 0.1)})},
-                          {"supported", s.supported}});
+                          {"supported", s.supported},
+                          // The compression side of the bending, and what is
+                          // left of it (docs/thermal-mechanics.md, "One
+                          // material state"): what collides and is drawn, what
+                          // it weighs, its cells, what a lattice run gets.
+                          {"bending_compression", roundTo(s.bending_compression, 1e-3)},
+                          {"now_mm", nlohmann::json::array({roundTo(1000.0 * m.remaining_m.x, 0.1),
+                                                            roundTo(1000.0 * m.remaining_m.y, 0.1),
+                                                            roundTo(1000.0 * m.remaining_m.z, 0.1)})},
+                          {"mass_kg", roundTo(m.mass_kg, 1e-3)},
+                          {"cells", m.cells},
+                          {"cells_burned", m.cells_burned},
+                          {"bond_tension", roundTo(m.bond_tension_mean, 1e-3)},
+                          {"revision", m.revision}});
     }
+    // What statics said about each body it answered for a sustained load, and
+    // what has burned away entirely.
+    nlohmann::json statics = nlohmann::json::array();
+    for (const LiveStatics &s : world.statics())
+        statics.push_back({{"name", s.name},
+                           {"stop", s.stop},
+                           {"load_n", roundTo(s.load_n, 0.1)},
+                           {"ratio", roundTo(s.first_failure_ratio, 1e-3)},
+                           {"bonds", s.bonds_removed},
+                           {"pieces", s.pieces},
+                           {"t", roundTo(s.time_s, 0.01)}});
+    nlohmann::json burned = nlohmann::json::array();
+    for (const LiveBurnedAway &b : world.burnedAway())
+        burned.push_back({{"name", b.name}, {"t", roundTo(b.time_s, 0.01)},
+                          {"residue_kg", roundTo(b.residue_kg, 1e-3)}, {"why", b.why}});
     nlohmann::json held = nlohmann::json::array();
     for (const LiveJoint &j : world.joints()) {
         if (j.member.empty()) continue;
@@ -384,8 +415,11 @@ nlohmann::json mechanicsSummary(const LiveWorld &world) {
         if (!j.parted_because.empty()) said["parted_because"] = j.parted_because;
         held.push_back(std::move(said));
     }
-    if (bodies.empty() && held.empty()) return nullptr;
-    return {{"bodies", std::move(bodies)}, {"attachments", std::move(held)}};
+    if (bodies.empty() && held.empty() && statics.empty() && burned.empty()) return nullptr;
+    return {{"bodies", std::move(bodies)},
+            {"attachments", std::move(held)},
+            {"statics", std::move(statics)},
+            {"burned_away", std::move(burned)}};
 }
 
 // Every edge in the room. Sent when the SET of them changes, like the pins: the
@@ -546,10 +580,26 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
     // -- and trimming resumes from there. It costs one big reply and it cannot
     // go stale.
     const bool trim = only_moved && !last_sent.empty();
+    // A piece's cells are its surface, and they can change where it stands:
+    // burning takes cells away (docs/thermal-mechanics.md, "One material
+    // state"), and a piece can come apart into new pieces during a step.
+    // Geometry travels only with the opening state, a poses request or a
+    // fracture, so the room's own stream carries a piece's cells whenever its
+    // revision is not the one that stream last carried them at -- that piece's
+    // only, and only then. Not recorded from replies that carry geometry: those
+    // can have gone to a chat window, and a piece sent twice costs less than a
+    // piece drawn from cells it no longer has.
+    std::vector<LiveBodyPose> poses = world.poses(with_geometry);
+    const auto reshaped = [&](const LiveBodyPose &p) {
+        if (!only_moved || p.shape != "hull") return false;
+        const auto sent = cells_sent_at.find(p.name);
+        return sent == cells_sent_at.end() || sent->second != p.revision;
+    };
+    if (!with_geometry && std::any_of(poses.begin(), poses.end(), reshaped)) poses = world.poses(true);
     nlohmann::json bodies = nlohmann::json::array();
     std::unordered_set<std::string> present;
     std::size_t count = 0;
-    for (const LiveBodyPose &pose : world.poses(with_geometry)) {
+    for (const LiveBodyPose &pose : poses) {
         char colour[16];
         std::snprintf(colour, sizeof colour, "%08x", pose.color_rgba);
         nlohmann::json body = {{"name", pose.name}, {"material", pose.material},
@@ -570,11 +620,16 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
                           // to show it, not a redrawn outline.
                           {"dent_mm", tidy(pose.dent_m * 1000.0)},
                           {"dent_at_m", vec(pose.dent_at_m)},
+                          // Times its shape changed where it stands: burning
+                          // takes a box in from every face, and a piece whose
+                          // cells burn away is rebuilt. Redraw when it moves.
+                          {"revision", pose.revision},
                           {"color_rgba", std::string(colour)}};
-        if (!pose.cells_local_m.empty()) {
+        if (!pose.cells_local_m.empty() && (with_geometry || reshaped(pose))) {
             nlohmann::json cells = nlohmann::json::array();
             for (const Vec3 &at : pose.cells_local_m) cells.push_back(vec(at));
             body["cells_local_m"] = std::move(cells);
+            if (only_moved) cells_sent_at[pose.name] = pose.revision;
         }
         // Where a blade has been through it: the plane, and what of it was
         // swept, as strips. Part of the body's own record, so it goes out when it
@@ -645,6 +700,8 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
     for (auto it = last_elastics.begin(); it != last_elastics.end();)
         it = springs.count(it->first) ? std::next(it) : last_elastics.erase(it);
     if (!only_moved) last_elastics.clear();
+    for (auto it = cells_sent_at.begin(); it != cells_sent_at.end();)
+        it = present.count(it->first) ? std::next(it) : cells_sent_at.erase(it);
     nlohmann::json impacts = nlohmann::json::array();
     for (const LiveImpact &impact : world.impacts())
         impacts.push_back({{"struck", impact.struck}, {"by", impact.by},
@@ -1640,7 +1697,9 @@ int main(int argc, char **argv) {
                 // learn that here.
                 // Geometry travels with the opening state, with an explicit
                 // poses request, and after a fracture -- the three moments the
-                // set of bodies can have changed. A step never carries it.
+                // set of bodies can have changed. A step never carries it --
+                // except a piece's cells, when burning has changed them
+                // (describe()).
                 // A host that draws the room asks for only what moved. A
                 // reply that carries geometry carries all of it regardless:
                 // that is the reply that rebuilds the scene.

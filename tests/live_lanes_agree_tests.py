@@ -155,9 +155,18 @@ class TheTwoLanesDescribeTheSameWorld(unittest.TestCase):
             peg_l = next(m for m in left["bodies"] if m["name"] == "peg")
             peg_r = next(m for m in right["bodies"] if m["name"] == "peg")
             self.assertLess(peg_l["shear"], 0.999, "12 s of 2 kW has not weakened the peg (the premise)")
-            for key in ("tension", "shear", "bending", "stiffness", "if_cooled", "char_mm"):
+            for key in ("tension", "shear", "bending", "stiffness", "if_cooled", "char_mm",
+                        "bending_compression", "bond_tension"):
                 self.assertAlmostEqual(peg_l[key], peg_r[key], delta=2e-3,
                                        msg=f"the lanes disagree on the peg's {key}")
+            # What is left of it (ABI 21): the same size, weight and cells.
+            self.assertAlmostEqual(peg_l["mass_kg"], peg_r["mass_kg"], delta=2e-3)
+            for now_l, now_r in zip(peg_l["now_mm"], peg_r["now_mm"]):
+                self.assertAlmostEqual(now_l, now_r, delta=0.5)
+            for key in ("cells", "cells_burned", "revision"):
+                self.assertEqual(peg_l[key], peg_r[key], f"the lanes disagree on the peg's {key}")
+            self.assertEqual(left.get("statics"), right.get("statics"))
+            self.assertEqual(left.get("burned_away"), right.get("burned_away"))
             fix_l = next(j for j in left["attachments"] if j["member"] == "peg")
             fix_r = next(j for j in right["attachments"] if j["member"] == "peg")
             self.assertEqual(fix_l["mode"], fix_r["mode"])

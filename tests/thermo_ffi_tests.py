@@ -185,9 +185,29 @@ class StrengthThroughTheLibrary(unittest.TestCase):
             self.assertLessEqual(peg.shear_if_cooled, 1.0 - 0.9 * (1 - (0.034 * 0.034) / (0.04 * 0.04)),
                                  "cooled, the char would stay")
             self.assertEqual(peg.section_m, (0.04, 0.04))
+            # ABI 21, one material state: the box its matter is measured against,
+            # the part of it not burned away -- less the burned depth on every
+            # face, to within the 0.2 mm the shape is re-cut at -- what it weighs
+            # (lighter than the 0.179 kg it was built as: it dried and burned),
+            # its cells, and what a fracture run would give its lattice.
+            self.assertEqual(peg.reference_m, (0.04, 0.04, 0.16))
+            for now, was in zip(peg.remaining_m, peg.reference_m):
+                self.assertAlmostEqual(now, was - 2.0 * peg.consumed_m, delta=2 * 2e-4 + 1e-9)
+            self.assertGreater(peg.mass_kg, 0.0)
+            self.assertLess(peg.mass_kg, 700.0 * 0.04 * 0.04 * 0.16)
+            self.assertGreater(peg.cells, 0)
+            self.assertEqual(peg.cells_burned, 0)
+            self.assertTrue(0.0 < peg.bond_tension_min <= peg.bond_tension_mean < 1.0,
+                            "its lattice's bonds are weakened by the same state as its section")
+            self.assertEqual(peg.revision, world.body("peg").revision)
             report = world.mechanics_report(with_laws=True)
             self.assertEqual({law["material"] for law in report["laws"]}, {"oak", "iron", "concrete"})
             self.assertTrue(report["limitations"])
+            self.assertIn("statics", report)
+            self.assertIn("burned_away", report)
+            said = next(b for b in report["bodies"] if b["name"] == "peg")
+            self.assertEqual(said["reference_m"], [0.04, 0.04, 0.16])
+            self.assertIn("tension_mean", said["bonds"])
             self.assertTrue(any(a["member"] == "peg" and not a["attached"] and a["parted_because"]
                                 for a in report["attachments"]))
             # No spring was made of anything: nothing was handed over as heat.

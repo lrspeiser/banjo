@@ -705,12 +705,47 @@ def a_loaded_shelf_is_reported_without_being_struck() -> None:
         # It is offered for breaking through the ordinary door.
         require("shelf" in world.breakable(),
                 "the shelf is overloaded but was never offered for breaking")
-        # And it actually fails, with its load in the island.
+        # Asked, it is answered by statics on its own lattice under its load
+        # (docs/thermal-mechanics.md, "Sustained loads"). Beam theory against
+        # concrete's declared 3 MPa is the survey's question. The lattice
+        # removes a bond only at twice the strain that strength gives (the
+        # catalogue's break multiplier), and this shelf is two cells deep, so
+        # its outer cells see half the surface's strain. Five 300 mm crates are
+        # past the first and short of the second: offered, and held, and
+        # statics says how near its bonds came. tests/beam_tests.cpp has the
+        # same shelf on both sides of the line.
         pieces = world.fracture("shelf")
-        print(f"    put into the lattice under its load: {pieces} pieces")
-        require(pieces > 1,
+        answer = statics_of(world, "shelf")
+        print(f"    put into the lattice under its load: {pieces} piece(s); statics "
+              f"{answer['stop']}, its bonds at {100 * answer['first_failure_ratio']:.1f}% "
+              f"of the criterion")
+        require(pieces == 1 and answer["stop"] == "held" and answer["first_failure_ratio"] < 1.0,
+                "statics broke a shelf its own criterion says holds")
+
+    # Loaded past the lattice's criterion -- five 450 mm crates, 35 kN, six
+    # times what beam theory says 3 MPa takes -- it actually fails, with its load
+    # in the island. Detecting an overload and then being unable to do anything
+    # about it would be half a capability.
+    with banjo.World(loaded_shelf(5, 0.45), cell_size_m=0.05) as world:
+        tick(world, 480)
+        require("shelf" in world.breakable(),
+                "the heavier shelf is overloaded but was never offered for breaking")
+        pieces = world.fracture("shelf")
+        answer = statics_of(world, "shelf")
+        print(f"    five 450 mm crates: {pieces} pieces; statics {answer['stop']}, its bonds "
+              f"at {100 * answer['first_failure_ratio']:.1f}% of the criterion before "
+              f"anything failed")
+        require(pieces > 1 and answer["stop"] == "broke",
                 "the lattice gave an overloaded shelf back whole, so the load is "
                 "not reaching the island")
+
+
+def statics_of(world: banjo.World, name: str) -> dict:
+    """What statics last answered about a body under its load."""
+    for answer in world.mechanics_report().get("statics", []):
+        if answer["name"] == name:
+            return answer
+    raise AssertionError(f"statics said nothing about {name}")
 
 
 def bracket_on_a_wall(load_m=(0.2, 0.2, 0.2)) -> dict:

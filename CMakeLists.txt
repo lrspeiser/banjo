@@ -97,6 +97,7 @@ add_library(
     src/fracture/EnergyRupture.cpp
     src/fracture/BondFailure.cpp
     src/fracture/QuasiStaticFracture.cpp
+    src/fracture/SustainedLoad.cpp
     src/fracture/PieceGeometry.cpp
     src/fracture/BrittleBondSolver.cpp
     src/fracture/ConnectedComponents.cpp
@@ -958,6 +959,23 @@ if(BANJO_BUILD_TESTS)
             banjo_enable_warnings(banjo_thermal_mechanics_tests)
             add_test(NAME banjo_thermal_mechanics_tests COMMAND banjo_thermal_mechanics_tests)
 
+            # One material state (docs/thermal-mechanics.md): the lattice a
+            # heated body is broken in, its collision shape, its drawn shape,
+            # its mass, centre of mass and inertia, and its attachments all
+            # follow the same field the overload check and the reports read.
+            add_executable(banjo_thermal_geometry_tests tests/thermal_geometry_tests.cpp)
+            target_link_libraries(banjo_thermal_geometry_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_thermal_geometry_tests)
+            add_test(NAME banjo_thermal_geometry_tests COMMAND banjo_thermal_geometry_tests)
+            # The same source, built for the two tests that take minutes: the
+            # owner's two loaded beams, one heated and one cold, in glass, oak
+            # and iron, and the heater powers. Labelled long further down.
+            add_executable(banjo_thermal_geometry_long_tests tests/thermal_geometry_tests.cpp)
+            target_link_libraries(banjo_thermal_geometry_long_tests PRIVATE banjo_fastlattice_scene)
+            target_compile_definitions(banjo_thermal_geometry_long_tests PRIVATE BANJO_THERMAL_GEOMETRY_LONG=1)
+            banjo_enable_warnings(banjo_thermal_geometry_long_tests)
+            add_test(NAME banjo_thermal_geometry_long_tests COMMAND banjo_thermal_geometry_long_tests)
+
             # Terrain and water in a live world: the owner's acceptance tests
             # for the valley -- conservation, a lake at rest, a dam, an outlet,
             # a cut block, a dig that stays local, a boulder undermined, a log
@@ -1206,6 +1224,14 @@ if(BANJO_BUILD_TESTS AND TARGET banjo_platform)
  set_tests_properties(banjo_network_skin_tests banjo_network_runtime_tests
      banjo_network_adaptive_tests banjo_material_showcase_tests
      banjo_contact_capacity_tests PROPERTIES LABELS long)
+ # The owner's heated and cold beams follow twenty-five minutes of world through
+ # heating, fracture, cooling and a second blow: a minute to four on a fast
+ # desktop, as the pieces happen to fall, which a check made on every push does
+ # not spend either.
+ if(TEST banjo_thermal_geometry_long_tests)
+     set_tests_properties(banjo_thermal_geometry_long_tests PROPERTIES
+         LABELS long TIMEOUT ${BANJO_LONG_TEST_TIMEOUT_S})
+ endif()
  add_executable(banjo_network_spring_tests tests/network_spring_tests.cpp)
  target_link_libraries(banjo_network_spring_tests PRIVATE banjo_platform nlohmann_json::nlohmann_json)
  add_test(NAME banjo_network_spring_tests COMMAND banjo_network_spring_tests)

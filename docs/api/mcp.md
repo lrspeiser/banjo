@@ -492,6 +492,35 @@ never at a temperature or on a timer: an unloaded peg in the same fire does not
 drop anything, and a heavier gate gives way sooner. Rate a fixing at least twice
 what it holds -- a world starts with every load suddenly applied.
 
+**One material state** ([thermal-mechanics.md](../thermal-mechanics.md), "One
+material state"). What `strength` reports for a body is also what its lattice is
+given if it is broken, what it collides and is drawn as, and what it weighs:
+
+```
+-> "strength": {"bodies": [{"object": "hot beam", "bending_left_pct": 48.4, ...,
+                            "now_mm": [1398.8, 58.8, 98.8], "as_built_mm": [1400, 60, 100],
+                            "mass_kg": 5.549, "cells": 1050, "cells_burned_away": 0,
+                            "lattice_tension_left_pct": {"weakest_bond": 34.7, "mean": 50.2}}],
+                "under_load": [{"object": "hot beam", "answer": "held",
+                                "its_bonds_at_pct_of_what_breaks_them": 25.0, ...}],
+                "burned_away": [...]}
+```
+
+- A beam carrying a load is **asked about when beam theory passes the strength
+  of either side of its section** -- oak's compression side (52 MPa, and 0.25 of
+  it at 100 degC) before its tension side -- and **answered by statics** on its
+  own heated lattice, held where it rests and pressed by what rests on it.
+  `under_load` says the answer and how near its bonds came: the lattice removes a
+  bond at twice the strain the declared strength gives, so between the two a
+  beam is asked about and holds, and the model says so.
+- What burns **leaves the shape**: a box burns in from every face, the room draws
+  it smaller and things resting on it settle with it; a piece whose cells burn
+  away is rebuilt from the rest. A body whose load-bearing matter is all gone
+  leaves the world (`burned_away`), and whatever was fixed to it lets go.
+- Burning is **slow**, as timber is: at the oxygen the air can supply, oak
+  recedes about 0.4 mm a minute. A 60 mm beam loses its strength to heat long
+  before it burns away; a slat burns through in tens of minutes, not seconds.
+
 ## Blades
 
 ```

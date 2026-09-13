@@ -155,14 +155,26 @@ def theStrikerSurvivesBreakingSomethingElse() -> None:
 
 
 def theRuleIsActuallyBeingEnforced() -> None:
-    """Not a coincidence.
+    """Not a coincidence -- and, in these drops, no longer needed.
 
-    If no bond is ever put back, this file proves only that bystanders happen
-    not to break in these scenes -- which is a much weaker statement, and would
-    stop being true the moment they did.
+    When this was written, six bonds across these drops failed inside a body
+    that never cleared its own bar and the protection put them back; this
+    required that it did, or the file would prove only that bystanders happen
+    not to break here.
 
-    This is the test that fails when the protection is removed: measured, six
-    bonds across these drops fail inside a body that never cleared its own bar.
+    Measured since (heat-geometry, 2026-09-13): every bond put back in these
+    drops had been torn by a bond the scene's matter still held whole between
+    two pieces of the plate -- an applied run rebuilds its pieces and never
+    marks the bonds between them broken -- 16 of them between two pieces and 2
+    inside a piece one of those pulled on. A run now starts with every bond
+    between two bodies broken (LiveWorld::prepared), and nothing that never
+    cleared its bar breaks in these drops at all: no bond is put back.
+
+    So, as this test always said to, it says so: it requires that nothing is
+    put back here. It fails the moment a bystander breaks in these drops again
+    -- the lattice disagreeing with the bound, which is what every past case
+    was -- and that is when the protection matters and this should go back to
+    requiring that it fires.
     """
     total = 0
     for striker, plate in PAIRS:
@@ -171,10 +183,11 @@ def theRuleIsActuallyBeingEnforced() -> None:
             total += run["spared"]
     print(f"  {total} bonds were put back that a run had broken in a body which "
           f"never cleared its own threshold")
-    require(total > 0,
-            "no bond was ever put back, so nothing here exercises the rule -- either "
-            "bystanders no longer break at all, in which case say so, or the "
-            "protection is not running")
+    require(total == 0,
+            f"{total} bonds were put back in these drops: a body that never cleared its "
+            f"own bar lost bonds in someone else's run. The protection held, but the "
+            f"lattice disagreed with the bound -- find out why before changing this back "
+            f"to requiring that the protection fires")
 
 
 def main() -> int:

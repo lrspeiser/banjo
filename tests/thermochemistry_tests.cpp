@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <functional>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -370,6 +371,46 @@ void removingABodyCarriesItsMatterOut() {
     require(relativeResidual(l) < 1e-10, "and the ledger closes");
 }
 
+// What leaves stays gone until the host says otherwise. A hot neighbour still
+// touches where a removed body was until the host's next refresh, and that must
+// not bring it back as a fresh lump: its matter would join a second time, and
+// leave a second time when the refresh forgot it. The same holds for a body
+// broken into pieces the host has not placed yet. Found in a live world: a
+// burned-away slat's 0.158 kg of residue left the network as 0.315 kg.
+void whatLeavesDoesNotComeBack() {
+    // Two logs side by side, touching along their length.
+    const BodyShape hot = log("hot", {0.0, 0.06, 0.0});
+    const BodyShape cold = log("cold", {0.12, 0.06, 0.0});
+    const auto heated = [&] {
+        auto world = std::make_unique<ThermoWorld>();
+        world->refresh({hot, cold}, 0.0);
+        world->declareContents({"hot", {}, 900.0, -1.0, ""});
+        world->declareContents({"cold", {}, 300.0, -1.0, ""});
+        run(*world, 2.0);
+        return world;
+    };
+    {
+        auto world = heated();
+        const double carried = heatOf(world->bodies(), "cold").mass_kg;
+        const Ledger before = world->ledger();
+        world->remove("cold");
+        require(!world->holds("cold"), "the network does not hold what left it");
+        near(world->ledger().joined_kg, before.joined_kg, 1e-12, "and nothing joined as it went");
+        near(world->ledger().left_kg - before.left_kg, carried, 1e-12, "what left was what it held");
+        world->refresh({hot}, 0.0);
+        run(*world, 1.0);
+        near(world->ledger().left_kg - before.left_kg, carried, 1e-12, "and it left once");
+        require(relativeResidual(world->ledger()) < 1e-10, "and the ledger closes");
+    }
+    {
+        auto world = heated();
+        const Ledger before = world->ledger();
+        world->split("cold", {{"cold piece 1", 0.5}, {"cold piece 2", 0.5}});
+        require(!world->holds("cold"), "a body broken into pieces is not held whole as well");
+        near(world->ledger().joined_kg, before.joined_kg, 1e-12, "and nothing joined as it broke");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Milestone 3: gas state and mechanical work, gas side
 // ---------------------------------------------------------------------------
@@ -537,6 +578,7 @@ int main() {
         {"a fire warms what is beside it", aFireWarmsWhatIsBesideIt},
         {"splitting shares out the inventory exactly", splittingShareOutTheInventoryExactly},
         {"removing a body carries its matter out", removingABodyCarriesItsMatterOut},
+        {"what leaves does not come back", whatLeavesDoesNotComeBack},
         {"piston work is the work the mechanics received", pistonWorkIsTheWorkTheMechanicsReceived},
         {"piston lift converges as the step shrinks", pistonLiftConvergesAsTheStepShrinks},
         {"an open vent lets the gas out", anOpenVentLetsTheGasOut},

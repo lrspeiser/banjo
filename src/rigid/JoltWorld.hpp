@@ -292,6 +292,20 @@ public:
     // or every momentum and energy it is part of is wrong. Scenery is left
     // alone. Host thread, between steps; not part of a reversible trial.
     void setMass(MatterBodyId body_id, double mass_kg);
+    // Give a body a new box or sphere where it stands -- turned inside the body
+    // by `rotation_wxyz`, as an authored tilt is -- and the mass and principal
+    // inertia (about the body's own axes, turned the same way) of what it is
+    // made of now. For matter that burns away: the collision shape follows what
+    // is left of it (docs/thermal-mechanics.md, "One material state"). The
+    // centre of mass stays where it is, because the shape is centred on it.
+    // Scenery takes the new shape and keeps having no mass. A round body's
+    // rolling radius follows. Host thread, between steps; not in a trial.
+    // `activate` false leaves a sleeping body asleep: a stack carried down
+    // exactly with what it rests on has nothing to settle (LiveWorld's
+    // planRecession), and woken on a narrow support it rolls.
+    void reshapePrimitive(MatterBodyId body_id, bool sphere, const Vec3 &dimensions_m,
+                          const double rotation_wxyz[4], double mass_kg, const Vec3 &inertia_kg_m2,
+                          bool activate = true);
     // The same push delivered AT a point on the body rather than at its centre
     // of mass, so it turns the body as well as moving it -- a hand on the grip
     // of a sword swings the blade, it does not slide it. Cleared by the step.
@@ -664,6 +678,9 @@ public:
     void pinToWorld(MatterBodyId body_id);
     void releaseFromWorld(MatterBodyId body_id);
     void applyRigidState(MatterBodyId body_id,const RigidSnapshot &state);
+    // Move a body by `by_m` where it stands, keeping its orientation and its
+    // speed, without waking it. Host thread, between steps.
+    void translateBody(MatterBodyId body_id, const Vec3 &by_m);
     // What a ray hits first, asked of the shapes the solver is actually using.
     //
     // "What is the pointer on", "can this see that", "is anything in the way"

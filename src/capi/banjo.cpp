@@ -338,6 +338,7 @@ int banjo_bodies(const banjo_world *world, banjo_body *out, int max) {
             body.held = pose.held ? 1 : 0;
             body.rgba = pose.color_rgba;
             body.mass_kg = pose.mass_kg;
+            body.revision = static_cast<int>(pose.revision);
         }
         return count;
     });
@@ -1370,6 +1371,21 @@ int banjo_bodies_mechanics(const banjo_world *world, banjo_body_mechanics *out, 
             o.shear_if_cooled = s.shear_if_cooled;
             o.bending_if_cooled = s.bending_if_cooled;
             o.supported = s.supported ? 1 : 0;
+            // ABI 21: the compression side of the section, and what is left of
+            // it, from the same state.
+            o.bending_compression = s.bending_compression;
+            o.bending_compression_if_cooled = s.bending_compression_if_cooled;
+            writeVec(m.reference_m, o.reference_m);
+            writeVec(m.remaining_m, o.remaining_m);
+            o.remaining_volume_m3 = m.remaining_volume_m3;
+            o.mass_kg = m.mass_kg;
+            writeVec(m.inertia_kg_m2, o.inertia_kg_m2);
+            o.cells = static_cast<int>(m.cells);
+            o.cells_burned = static_cast<int>(m.cells_burned);
+            o.bond_tension_min = m.bond_tension_min;
+            o.bond_tension_mean = m.bond_tension_mean;
+            o.bond_stiffness_mean = m.bond_stiffness_mean;
+            o.revision = static_cast<int>(m.revision);
         }
         return count;
     });

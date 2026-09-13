@@ -80,6 +80,8 @@ Mat3 closestRotation(const Mat3 &a) {
     return rotationMatrix(q);
 }
 
+} // namespace
+
 double bondRemovalStretch(const BondRest &bond) {
     double smallest = modeRemovalStretch(bond.damage_start_stretch, bond.damage_end_stretch);
     smallest = std::min(smallest, modeRemovalStretch(bond.compression_damage_start_strain,
@@ -88,8 +90,6 @@ double bondRemovalStretch(const BondRest &bond) {
                                                      bond.shear_damage_end_strain));
     return smallest;
 }
-
-} // namespace
 
 double acousticImpedance(double density_kg_m3, double young_modulus_pa) {
     if (!(density_kg_m3 > 0.0) || !(young_modulus_pa > 0.0)) return 0.0;

@@ -637,6 +637,20 @@ void aHeatedBeamIsSurveyedWithTheSectionItHasLeft() {
     const thermo::MechanicalLaw *oak = thermo::lawFor("oak");
     int crossed = -1, offered = -1;
     double stress = 0.0, fraction = 0.0, law_fraction = 0.0, lowest = 1.0;
+    // A beam gives on whichever side of its section reaches its strength
+    // first, and the survey asks about both sides of the same law: oak's 90 MPa
+    // in tension by the tension curve, and its 52 MPa in compression by the
+    // compression curve -- which is the side that governs oak, cold (52 < 90)
+    // and more so heated (0.25 against 0.65 at 100 degC). This test used to pin
+    // the tension side alone ("its strength is 90 MPa times what is left"); the
+    // lattice applies all three strengths, and a survey that asked about one of
+    // them offered a heated oak beam only once its compression side was long
+    // past what it could take, when statics crushed a third of its span
+    // (tests/thermal_geometry_tests.cpp). The strength it reports is still the
+    // cold governing strength times what is left of it.
+    const auto governing = [&](const thermo::SectionState &s) {
+        return std::min(90.0e6 * s.bending, 52.0e6 * s.bending_compression);
+    };
     for (int i = 0; i < static_cast<int>(300.0 / kDt) && offered < 0; ++i) {
         stepOnce(*world);
         for (const LiveOverload &o : world->overloaded()) {
@@ -646,16 +660,18 @@ void aHeatedBeamIsSurveyedWithTheSectionItHasLeft() {
             stress = o.stress_pa;
             fraction = o.capacity_fraction;
             law_fraction =
-                thermo::evaluateSection(*oak, matterOf(*world, "hot plank"), {1.2, 0.02, 0.2}, 0, 1).bending;
-            require(near(o.strength_pa, 90.0e6 * o.capacity_fraction, 1.0), "its strength is 90 MPa times what is left");
+                governing(thermo::evaluateSection(*oak, matterOf(*world, "hot plank"), {1.2, 0.02, 0.2}, 0, 1)) /
+                52.0e6;
+            require(near(o.strength_pa, 52.0e6 * o.capacity_fraction, 1.0),
+                    "its strength is oak's governing 52 MPa times what is left");
             require(o.why.find("heated") != std::string::npos, "and it says it is heated");
         }
         if (crossed < 0 && world->thermo() != nullptr && world->thermo()->holds("hot plank")) {
             const double left =
-                thermo::evaluateSection(*oak, matterOf(*world, "hot plank"), {1.2, 0.02, 0.2}, 0, 1).bending;
-            lowest = std::min(lowest, left);
+                governing(thermo::evaluateSection(*oak, matterOf(*world, "hot plank"), {1.2, 0.02, 0.2}, 0, 1));
+            lowest = std::min(lowest, left / 52.0e6);
             // The same stress the survey reports, once it reports one.
-            if (stress > 0.0 && 90.0e6 * left < stress) crossed = i;
+            if (stress > 0.0 && left < stress) crossed = i;
         }
     }
     if (offered < 0)
@@ -663,8 +679,9 @@ void aHeatedBeamIsSurveyedWithTheSectionItHasLeft() {
                   << matterOf(*world, "hot plank").surface_k << " K surface, "
                   << matterOf(*world, "hot plank").core_k << " K core" << std::endl;
     std::cout << "    the heated plank was offered as overloaded " << offered * kDt << " s into 8 kW: "
-              << stress / 1e6 << " MPa against " << 90.0 * fraction << " MPa (" << fraction * 100.0
-              << "% of its section, law " << law_fraction * 100.0 << "%)" << std::endl;
+              << stress / 1e6 << " MPa against " << 52.0 * fraction << " MPa on its compression side ("
+              << fraction * 100.0 << "% of oak's governing 52 MPa, law " << law_fraction * 100.0 << "%)"
+              << std::endl;
     require(offered >= 0, "the heated plank was offered as overloaded");
     require(near(fraction, law_fraction, 5e-3), "with the section the law leaves it");
 }

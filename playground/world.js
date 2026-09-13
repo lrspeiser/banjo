@@ -836,7 +836,14 @@ function draw(state) {
     // A body that has just taken a dent needs its mesh made again: the hollow
     // is pressed into the geometry, not painted on.
     const dentChanged = held && (body.dent_mm || 0) !== (held.dentMm || 0);
-    if (!held || dentChanged || (body.cells_local_m && !held.fromCells)) {
+    // A body whose shape changed where it stands -- burned in from every face,
+    // or rebuilt from the cells it has left -- is drawn again from what is left
+    // of it (docs/thermal-mechanics.md, "One material state"). A box or a
+    // sphere carries its new size in dimensions_m; a piece needs its cells, and
+    // until they arrive it keeps the ones it has.
+    const reshaped = held && (body.revision || 0) !== (held.revision || 0)
+      && (!held.fromCells || (body.cells_local_m && body.cells_local_m.length));
+    if (!held || dentChanged || reshaped || (body.cells_local_m && !held.fromCells)) {
       if (held) forget(held.mesh);
       const mesh = buildMesh(body);
       scene.add(mesh);
@@ -844,6 +851,12 @@ function draw(state) {
                dentMm: body.dent_mm || 0 };
       world.bodies.set(body.name, held);
     }
+    // The revision it is drawn at. A piece whose shape has changed but whose
+    // cells have not come yet keeps the one it was drawn at, so that they are
+    // drawn when they do.
+    const waiting = held.fromCells && (body.revision || 0) !== (held.revision || 0)
+      && !(body.cells_local_m && body.cells_local_m.length);
+    if (!waiting) held.revision = body.revision || 0;
     held.material = body.material || "";
     held.dentMm = body.dent_mm || 0;
     held.dims = body.dimensions_m;
@@ -2767,7 +2780,22 @@ function showHeat(block) {
     let text = ` · ${Math.round(100 * Math.min(s.tension, s.shear))}% strength left`;
     if (s.char_mm > 0) text += `, ${s.char_mm.toFixed(1)} mm char`;
     if (s.burned_mm >= 0.05) text += `, ${s.burned_mm.toFixed(1)} mm burned`;
+    // What is left of it: the size it collides and is drawn at, and what it
+    // weighs -- the same state its strength is read from.
+    if (s.burned_mm >= 0.05 && Array.isArray(s.now_mm))
+      text += ` · now ${s.now_mm.map((v) => Math.round(v)).join(" x ")} mm, ${Number(s.mass_kg).toFixed(2)} kg`;
+    if (s.cells_burned > 0) text += `, ${s.cells_burned} cells gone`;
     return text;
+  };
+  // What statics last said about a body carrying a load: the survey asks when
+  // beam theory passes the declared strength, and the lattice answers.
+  const underLoad = new Map(((heat.strength && heat.strength.statics) || []).map((s) => [s.name, s]));
+  const staticsOf = (name) => {
+    const s = underLoad.get(name);
+    if (!s) return "";
+    if (s.stop === "held") return ` · under its load: holds, its bonds at ${Math.round(100 * s.ratio)}% of what breaks them`;
+    if (s.stop === "broke") return ` · under its load: broke, ${s.bonds} bonds`;
+    return ` · under its load: ${s.stop}`;
   };
   const listed = new Set();
   for (const b of block.bodies.slice(0, 8)) {
@@ -2778,9 +2806,13 @@ function showHeat(block) {
       text += ` · ~${Math.round(b.remaining_s / 60)} min at this rate`;
     if (b.heater_w > 0) text += ` · heated ${(b.heater_w / 1000).toFixed(1)} kW`;
     text += strengthOf(strength.get(b.name));
+    text += staticsOf(b.name);
     listed.add(b.name);
     row(b.name, text);
   }
+  // Whatever has burned away entirely, and what was left of it.
+  for (const gone of ((heat.strength && heat.strength.burned_away) || []).slice(-4))
+    row(gone.name, `burned away at ${Math.round(gone.t)} s · ${Number(gone.residue_kg).toFixed(2)} kg of ash left with it`);
   // What heat has left of anything that has cooled again: the char stays.
   for (const s of strength.values()) {
     if (listed.has(s.name) || Math.min(s.tension, s.shear) > 0.999) continue;

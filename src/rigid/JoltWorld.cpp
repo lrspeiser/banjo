@@ -2695,6 +2695,53 @@ void JoltWorld::setMass(MatterBodyId body_id, double mass_kg) {
     body.GetMotionProperties()->ScaleToMass(static_cast<float>(mass_kg));
 }
 
+void JoltWorld::reshapePrimitive(MatterBodyId body_id, bool sphere, const Vec3 &d,
+                                 const double rotation_wxyz[4], double mass_kg, const Vec3 &inertia,
+                                 bool activate) {
+    const auto found = impl_->bodies_.find(body_id);
+    if (found == impl_->bodies_.end()) throw std::invalid_argument("rigid body is missing");
+    const bool sized = std::isfinite(d.x) && d.x > 0.0 &&
+                       (sphere || (std::isfinite(d.y) && d.y > 0.0 && std::isfinite(d.z) && d.z > 0.0));
+    if (!sized) throw std::invalid_argument("a reshaped body needs a positive, finite size");
+    JPH::RefConst<JPH::Shape> authored;
+    if (sphere) {
+        authored = new JPH::SphereShape(static_cast<float>(0.5 * d.x));
+    } else {
+        const JPH::Vec3 half = toJolt(d / 2);
+        authored = new JPH::BoxShape(half, sweepRadius(half));
+    }
+    JPH::Quat turn = JPH::Quat::sIdentity();
+    if (rotation_wxyz != nullptr &&
+        (rotation_wxyz[1] != 0.0 || rotation_wxyz[2] != 0.0 || rotation_wxyz[3] != 0.0)) {
+        turn = JPH::Quat(static_cast<float>(rotation_wxyz[1]), static_cast<float>(rotation_wxyz[2]),
+                         static_cast<float>(rotation_wxyz[3]), static_cast<float>(rotation_wxyz[0]))
+                   .Normalized();
+        authored = new JPH::RotatedTranslatedShape(JPH::Vec3::sZero(), turn, authored);
+    }
+    // Centred on the body's centre of mass, as every authored shape here is.
+    const JPH::RefConst<JPH::Shape> centred =
+        new JPH::OffsetCenterOfMassShape(authored.GetPtr(), -authored->GetCenterOfMass());
+    JPH::BodyInterface &bodies = impl_->physics_->GetBodyInterface();
+    bodies.SetShape(found->second, centred.GetPtr(), false,
+                    activate ? JPH::EActivation::Activate : JPH::EActivation::DontActivate);
+    const auto state = impl_->contact_states_.find(body_id);
+    if (state != impl_->contact_states_.end() && state->second.is_sphere) state->second.radius_m = 0.5 * d.x;
+    if (bodies.GetMotionType(found->second) == JPH::EMotionType::Static) return;
+    if (!(mass_kg > 0.0) || !std::isfinite(mass_kg) || !(inertia.x > 0.0) || !(inertia.y > 0.0) ||
+        !(inertia.z > 0.0) || !std::isfinite(inertia.x + inertia.y + inertia.z))
+        throw std::invalid_argument("a reshaped body's mass and inertia are positive and finite");
+    JPH::BodyLockWrite lock(impl_->physics_->GetBodyLockInterface(), found->second);
+    if (!lock.Succeeded()) throw std::runtime_error("cannot lock a body to reshape it");
+    JPH::MotionProperties *motion = lock.GetBody().GetMotionProperties();
+    // Installed directly, as addBox does: the principal axes are known, and
+    // Jolt's own diagonalisation substitutes a unit sphere for small inertias.
+    motion->SetInverseMass(static_cast<float>(1.0 / mass_kg));
+    motion->SetInverseInertia(JPH::Vec3(static_cast<float>(1.0 / inertia.x), static_cast<float>(1.0 / inertia.y),
+                                        static_cast<float>(1.0 / inertia.z)),
+                              turn);
+    if (state != impl_->contact_states_.end()) state->second.mass_kg = mass_kg;
+}
+
 void JoltWorld::pushBodyAt(MatterBodyId body_id, const Vec3 &force_n, const Vec3 &point_world_m) {
     const auto found = impl_->bodies_.find(body_id);
     if (found == impl_->bodies_.end()) throw std::invalid_argument("rigid body is missing");
@@ -3255,6 +3302,14 @@ void JoltWorld::applyRigidState(MatterBodyId body_id,const RigidSnapshot &m) {
         JPH::Quat(static_cast<float>(m.orientation_world.x), static_cast<float>(m.orientation_world.y),
                   static_cast<float>(m.orientation_world.z), static_cast<float>(m.orientation_world.w)),
         toJolt(m.linear_velocity_m_s), toJolt(m.angular_velocity_rad_s));
+}
+
+void JoltWorld::translateBody(MatterBodyId body_id, const Vec3 &by_m) {
+    const auto it = impl_->bodies_.find(body_id);
+    if (it == impl_->bodies_.end()) throw std::invalid_argument("rigid body is missing");
+    JPH::BodyInterface &bodies = impl_->physics_->GetBodyInterface();
+    bodies.SetPosition(it->second, toJoltPosition(fromJoltPosition(bodies.GetPosition(it->second)) + by_m),
+                       JPH::EActivation::DontActivate);
 }
 
 bool JoltWorld::contains(MatterBodyId body_id) const {
