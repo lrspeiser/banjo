@@ -380,6 +380,7 @@ class Live:
                         axis=[float(v) for v in (pin.get("axis") or [0, 1, 0])],
                         holds_tension_n=float(pin.get("holds_tension_n", 0.0)),
                         holds_shear_n=float(pin.get("holds_shear_n", 0.0)),
+                        comes_off_n=float(pin.get("comes_off_n", 0.0)),
                         **_made_of(pin))
                 except Exception as error:
                     problems.append(f"{pin.get('b', '?')} would not fix to "
@@ -532,7 +533,55 @@ class Live:
                 if not 0.0 <= torque <= 1e4:
                     raise LiveError("the hand's torque is newton metres, 0 to 10,000")
                 command["torque_n_m"] = torque
+            if body.get("mass_kg") is not None:
+                # The hand and arm the strength has to move along with a throw.
+                mass = float(body.get("mass_kg"))
+                if not 0.0 <= mass <= 50.0:
+                    raise LiveError("the hand's moving mass is kilograms, 0 to 50")
+                command["mass_kg"] = mass
             return session.send(**command)
+
+        # ---- the hand's own motions (docs/interaction-profiles.md) ----------
+        def stroke_command() -> dict[str, Any]:
+            # Checked here as well as in the engine, so a bad request is told
+            # what is wrong in words before it costs a round trip.
+            path = body.get("path")
+            if not isinstance(path, list) or not 2 <= len(path) <= 16:
+                raise LiveError("a stroke's path is two to sixteen points")
+            points = [_three(p, "a point on a stroke's path") for p in path]
+            speed = float(body.get("speed_m_s", 0.0))
+            accel = float(body.get("accel_m_s2", 0.0))
+            lead = float(body.get("lead_m", 0.05))
+            give_up = float(body.get("give_up_s", 2.0))
+            if not 0.0 < speed <= 50.0:
+                raise LiveError("a stroke's speed is more than 0 and at most 50 m/s")
+            if not 0.0 < accel <= 5000.0:
+                raise LiveError("a stroke's acceleration is more than 0 and at most 5000 m/s2")
+            if not 0.001 <= lead <= 0.5:
+                raise LiveError("a stroke's lead is 1 mm to half a metre")
+            if not 0.0 < give_up <= 30.0:
+                raise LiveError("a stroke gives up after more than 0 and at most 30 seconds")
+            return {"path": points, "speed_m_s": speed, "accel_m_s2": accel, "lead_m": lead,
+                    "let_go": bool(body.get("let_go", False)), "give_up_s": give_up}
+
+        def horizon() -> float:
+            value = float(body.get("horizon_s", 3.0))
+            if not 0.0 <= value <= 10.0:
+                raise LiveError("a preview looks 0 to 10 seconds ahead")
+            return value
+
+        if op == "stroke":
+            return session.send(op="stroke", **stroke_command())
+        if op == "cancel_stroke":
+            return session.send(op="cancel_stroke")
+        if op == "preview_stroke":
+            return session.send(op="preview_stroke", horizon_s=horizon(), **stroke_command())
+        if op == "preview_flight":
+            return session.send(**{"op": "preview_flight",
+                                   "from": _three(body.get("from"), "a flight's start"),
+                                   "velocity": _three(body.get("velocity"), "a flight's velocity"),
+                                   "horizon_s": horizon(),
+                                   "ignoring": str(body.get("ignoring", ""))})
         if op == "blade":
             thickness = float(body.get("thickness_m", 0.01))
             radius = float(body.get("edge_radius_m", 0.0002))
@@ -777,10 +826,19 @@ class Live:
             if not all(0.0 <= v <= 1e9 for v in holds):
                 raise LiveError("a fixing's strengths are newtons, zero (never "
                                 "lets go) or more")
+            # One-way, like an arrow on a string: no tension strength, because
+            # what pulls it off is comes_off_n.
+            comes_off = float(body.get("comes_off_n", 0.0))
+            if not 0.0 <= comes_off <= 1e9:
+                raise LiveError("a one-way fixing comes off at newtons, zero (two-way) "
+                                "or more")
+            if comes_off > 0.0 and holds[0] > 0.0:
+                raise LiveError("a one-way fixing has no tension strength: what pulls "
+                                "it off is comes_off_n")
             return session.send(op="fix", a=str(body.get("a", "")),
                                 b=str(body.get("b", "")), at=spot("at"), axis=axis,
                                 holds_tension_n=holds[0], holds_shear_n=holds[1],
-                                **_made_of(body))
+                                comes_off_n=comes_off, **_made_of(body))
         if op == "unhinge":
             return session.send(op="unhinge", joint=int(body.get("joint", 0)))
         if op == "joint_friction":

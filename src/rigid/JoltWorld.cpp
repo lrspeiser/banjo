@@ -599,6 +599,9 @@ public:
         MatterBodyId a,b;
         JointKind kind;
         JPH::Ref<JPH::TwoBodyConstraint> constraint;
+        // A one-way fixing is a SixDOF constraint rather than a fixed one, and
+        // reports its load along its own axes (addFixing, jointLoad).
+        bool one_way{false};
     };
     // How long the last step was. Only jointTension() needs it: Jolt reports a
     // constraint's IMPULSE over the step, and an impulse divided by the step it
@@ -1231,14 +1234,14 @@ double JoltWorld::jointTension(unsigned joint) const {
     }
     if (found->second.kind != JointKind::Link) return 0.0;
     // Jolt reports the impulse the constraint applied over the last step, and
-    // an impulse over a step is a force. Negative would be a push, which this
-    // constraint cannot do, so the sign carries no information -- what a caller
-    // wants is how hard the rope is pulling.
+    // an impulse over a step is a force. A pull is negative. A rope held at its
+    // length for a step (step()) can push in it, once, as it starts to go
+    // slack -- and a push is not tension, so it reads as none.
     const double impulse =
         static_cast<JPH::DistanceConstraint *>(found->second.constraint.GetPtr())
             ->GetTotalLambdaPosition();
     const double dt = impl_->last_dt_s > 0.0 ? impl_->last_dt_s : 1.0 / 60.0;
-    return std::abs(impulse) / dt;
+    return std::max(0.0, -impulse) / dt;
 }
 
 unsigned JoltWorld::addElastic(const ElasticDescription &d) {
@@ -1315,25 +1318,57 @@ unsigned JoltWorld::addFixing(const FixingDescription &d) {
         !(d.holds_shear_n >= 0.0) || !std::isfinite(d.holds_shear_n))
         throw std::invalid_argument("a fixing's strengths are newtons, zero (never "
                                     "lets go) or more");
+    if (!(d.comes_off_n >= 0.0) || !std::isfinite(d.comes_off_n))
+        throw std::invalid_argument("a one-way fixing comes off at newtons, zero (two-way) "
+                                    "or more");
+    if (d.comes_off_n > 0.0 && d.holds_tension_n > 0.0)
+        throw std::invalid_argument("a one-way fixing has no tension strength: what pulls "
+                                    "it off is comes_off_n");
 
-    JPH::FixedConstraintSettings settings;
-    settings.mSpace = JPH::EConstraintSpace::WorldSpace;
-    // Their relative pose right now is the pose they keep. That is the whole of
-    // what "defined alignment" means here: it is defined by where they are when
-    // the peg goes in, which is also how a peg works.
-    settings.mAutoDetectPoint = false;
-    settings.mPoint1 = settings.mPoint2 = toJoltPosition(d.point_world_m);
     const Vec3 along = (1.0 / reach) * d.axis_world;
     const Vec3 away = std::abs(along.y) < 0.9 ? Vec3{0.0, 1.0, 0.0} : Vec3{1.0, 0.0, 0.0};
     Vec3 across = cross(away, along);
     const double sideways = length(across);
     if (!(sideways > 1e-9)) throw std::runtime_error("could not square up a fixing axis");
     across = (1.0 / sideways) * across;
-    settings.mAxisX1 = settings.mAxisX2 = toJolt(along);
-    settings.mAxisY1 = settings.mAxisY2 = toJolt(across);
 
-    auto *raw = impl_->physics_->GetBodyInterface().CreateConstraint(
-        &settings, impl_->bodies_.at(d.a), impl_->bodies_.at(d.b));
+    // Their relative pose right now is the pose they keep. That is the whole of
+    // what "defined alignment" means here: it is defined by where they are when
+    // the peg goes in, which is also how a peg works.
+    JPH::TwoBodyConstraint *raw = nullptr;
+    const bool one_way = d.comes_off_n > 0.0;
+    if (one_way) {
+        // The axis is X, and along it b may move off a -- towards +X -- and not
+        // back. Behind zero the limit is contact, and pushes as hard as it has
+        // to; ahead of it, friction holds b with up to comes_off_n and no more,
+        // so a harder pull slides it off. Across the axis, and in every turn,
+        // it is held as any fixing holds. LiveWorld decides when b has slid far
+        // enough to be off, and takes the constraint away.
+        using Axis = JPH::SixDOFConstraintSettings::EAxis;
+        JPH::SixDOFConstraintSettings settings;
+        settings.mSpace = JPH::EConstraintSpace::WorldSpace;
+        settings.mPosition1 = settings.mPosition2 = toJoltPosition(d.point_world_m);
+        settings.mAxisX1 = settings.mAxisX2 = toJolt(along);
+        settings.mAxisY1 = settings.mAxisY2 = toJolt(across);
+        settings.SetLimitedAxis(Axis::TranslationX, 0.0F, std::numeric_limits<float>::max());
+        settings.MakeFixedAxis(Axis::TranslationY);
+        settings.MakeFixedAxis(Axis::TranslationZ);
+        settings.MakeFixedAxis(Axis::RotationX);
+        settings.MakeFixedAxis(Axis::RotationY);
+        settings.MakeFixedAxis(Axis::RotationZ);
+        settings.mMaxFriction[Axis::TranslationX] = static_cast<float>(d.comes_off_n);
+        raw = impl_->physics_->GetBodyInterface().CreateConstraint(
+            &settings, impl_->bodies_.at(d.a), impl_->bodies_.at(d.b));
+    } else {
+        JPH::FixedConstraintSettings settings;
+        settings.mSpace = JPH::EConstraintSpace::WorldSpace;
+        settings.mAutoDetectPoint = false;
+        settings.mPoint1 = settings.mPoint2 = toJoltPosition(d.point_world_m);
+        settings.mAxisX1 = settings.mAxisX2 = toJolt(along);
+        settings.mAxisY1 = settings.mAxisY2 = toJolt(across);
+        raw = impl_->physics_->GetBodyInterface().CreateConstraint(
+            &settings, impl_->bodies_.at(d.a), impl_->bodies_.at(d.b));
+    }
     if (!raw) throw std::runtime_error("fixing creation failed");
     // A LIGHT BODY HELD BETWEEN A HEAVY ONE AND ITS SUPPORT: a 32 kg iron gate
     // welded under a 180 g oak peg that is itself fixed into an anchored post.
@@ -1396,8 +1431,7 @@ unsigned JoltWorld::addFixing(const FixingDescription &d) {
         }
     }
     const auto id = impl_->next_joint_++;
-    impl_->joints_.emplace(id, Impl::Joint{d.a, d.b, JointKind::Fixing,
-                                           static_cast<JPH::TwoBodyConstraint *>(raw)});
+    impl_->joints_.emplace(id, Impl::Joint{d.a, d.b, JointKind::Fixing, raw, one_way});
     impl_->physics_->AddConstraint(raw);
     return id;
 }
@@ -1543,14 +1577,29 @@ JoltWorld::JointLoad JoltWorld::jointLoad(unsigned joint, const Vec3 &axis_world
     const auto found = impl_->joints_.find(joint);
     if (found == impl_->joints_.end()) return out;
     if (found->second.kind != JointKind::Fixing) return out;
+    const double dt = impl_->last_dt_s > 0.0 ? impl_->last_dt_s : 1.0 / 60.0;
+    if (found->second.one_way) {
+        // A one-way fixing is solved along its own axes and reports along
+        // them. X is the fixing's axis, where the push (the limit) and the
+        // hold (the friction) are two parts of one force; Y and Z are across
+        // it. Jolt's impulse is the one on b, so positive pushes b off a.
+        const auto *seat =
+            static_cast<const JPH::SixDOFConstraint *>(found->second.constraint.GetPtr());
+        const JPH::Vec3 held = seat->GetTotalLambdaPosition();
+        const JPH::Vec3 friction = seat->GetTotalLambdaMotorTranslation();
+        out.axial_n = static_cast<double>(held.GetX() + friction.GetX()) / dt;
+        out.tension_n = std::abs(out.axial_n);
+        out.shear_n = std::hypot(static_cast<double>(held.GetY()),
+                                 static_cast<double>(held.GetZ())) / dt;
+        return out;
+    }
     // Jolt reports the impulse the constraint applied over the step as a
     // VECTOR, which is exactly what is needed: a peg pulled straight out and a
     // peg sheared sideways fail at different loads, so the two have to be told
-    // apart rather than added into one magnitude.
+    // apart rather than added into one magnitude. It is the impulse on b.
     const JPH::Vec3 impulse =
         static_cast<JPH::FixedConstraint *>(found->second.constraint.GetPtr())
             ->GetTotalLambdaPosition();
-    const double dt = impl_->last_dt_s > 0.0 ? impl_->last_dt_s : 1.0 / 60.0;
     const Vec3 force{static_cast<double>(impulse.GetX()) / dt,
                      static_cast<double>(impulse.GetY()) / dt,
                      static_cast<double>(impulse.GetZ()) / dt};
@@ -1558,6 +1607,7 @@ JoltWorld::JointLoad JoltWorld::jointLoad(unsigned joint, const Vec3 &axis_world
     if (!(reach > 1e-9)) return out;
     const Vec3 along = (1.0 / reach) * axis_world;
     const double pulled = dot(force, along);
+    out.axial_n = pulled;
     out.tension_n = std::abs(pulled);
     // What is left once the along-axis part is taken out is across it.
     const Vec3 sideways = force - pulled * along;
@@ -2311,6 +2361,47 @@ void JoltWorld::step(double fixed_dt_s) {
     }
     impl_->last_dt_s = fixed_dt_s;
     impl_->applyRollingResistance(fixed_dt_s);
+    // A rope that is pulling stays pulling for the step. Jolt's distance limit
+    // engages only when the two ends are AT or past the rope's length as the
+    // step starts, and a rope hauled tight sits right on that line: nudged a
+    // hair inside it by whatever else is being corrected, it does nothing for a
+    // whole step. Measured on the courtyard bow, a string rope carrying 110.7 N
+    // read 0 for one step while the 45 g limb tip it held back against a 307 N
+    // limb spring left at 6.8 m/s, and the string lurched back 1.25 m/s under the
+    // hand -- every few dozen steps, with nobody touching anything.
+    //
+    // So a rope that pulled on the last step, is within a millimetre of its
+    // length, and is not being closed faster than 5 cm/s, is held AT its length
+    // for this step. Anything else is left to be slack, as a rope is. If held
+    // like that it has to push -- its ends being brought together -- that push
+    // shows as the step's impulse, and on the next step it is slack again: a
+    // rope that has started to go slack goes slack a step late, never not at
+    // all. What decides is the constraint's own impulse from the last step,
+    // which is part of the state a refused trial is put back to.
+    constexpr float kRopeSlackM = 0.001F;
+    constexpr float kRopeClosingMS = 0.05F;
+    for (auto &[id, joint] : impl_->joints_) {
+        if (joint.kind != JointKind::Link) continue;
+        auto *rope = static_cast<JPH::DistanceConstraint *>(joint.constraint.GetPtr());
+        const float length = rope->GetMaxDistance();
+        const JPH::Body *one = rope->GetBody1();
+        const JPH::Body *two = rope->GetBody2();
+        const JPH::RVec3 here =
+            one->GetCenterOfMassTransform() * rope->GetConstraintToBody1Matrix().GetTranslation();
+        const JPH::RVec3 there =
+            two->GetCenterOfMassTransform() * rope->GetConstraintToBody2Matrix().GetTranslation();
+        const JPH::Vec3 apart(there - here);
+        const float distance = apart.Length();
+        bool taut = false;
+        if (distance > 1e-6F && distance >= length - kRopeSlackM &&
+            rope->GetTotalLambdaPosition() < 0.0F) {
+            const JPH::Vec3 closing =
+                two->GetPointVelocityCOM(JPH::Vec3(there - two->GetCenterOfMassPosition())) -
+                one->GetPointVelocityCOM(JPH::Vec3(here - one->GetCenterOfMassPosition()));
+            taut = -closing.Dot(apart / distance) < kRopeClosingMS;
+        }
+        rope->SetDistance(taut ? length : 0.0F, length);
+    }
     auto &collector=impl_->impact_collector_;collector.manifolds=0;collector.points=0;collector.speculative_manifolds=0;
     impl_->tick_.fetch_add(1U, std::memory_order_relaxed);
     const JPH::EPhysicsUpdateError error = impl_->physics_->Update(
@@ -2383,6 +2474,26 @@ RigidMechanicalState JoltWorld::mechanicalState(MatterBodyId body_id) const {
     if (inverse_mass <= 0.0 || !inertia)
         throw std::runtime_error("dynamic body has invalid mass or locked inertia");
     return {motion, 1.0 / inverse_mass, *inertia};
+}
+
+double JoltWorld::linearDamping(MatterBodyId body_id) const {
+    const auto found = impl_->bodies_.find(body_id);
+    if (found == impl_->bodies_.end()) throw std::out_of_range("damped body is missing");
+    JPH::BodyLockRead lock(impl_->physics_->GetBodyLockInterface(), found->second);
+    if (!lock.Succeeded()) throw std::runtime_error("cannot lock damped body");
+    const JPH::Body &body = lock.GetBody();
+    return body.IsDynamic() ? static_cast<double>(body.GetMotionProperties()->GetLinearDamping())
+                            : 0.0;
+}
+
+double JoltWorld::angularDamping(MatterBodyId body_id) const {
+    const auto found = impl_->bodies_.find(body_id);
+    if (found == impl_->bodies_.end()) throw std::out_of_range("damped body is missing");
+    JPH::BodyLockRead lock(impl_->physics_->GetBodyLockInterface(), found->second);
+    if (!lock.Succeeded()) throw std::runtime_error("cannot lock damped body");
+    const JPH::Body &body = lock.GetBody();
+    return body.IsDynamic() ? static_cast<double>(body.GetMotionProperties()->GetAngularDamping())
+                            : 0.0;
 }
 
 MechanicalTotals JoltWorld::mechanicalTotals(const Vec3 &gravity_m_s2) const {

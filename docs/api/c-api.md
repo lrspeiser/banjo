@@ -17,9 +17,9 @@ if (banjo_abi_version() != BANJO_ABI_VERSION) { /* mismatch */ }
 `const char *banjo_version_string(void)` says which library it is in words, for
 a log line. Never parse it: the number to compare is `banjo_abi_version()`.
 
-Current ABI: **16**. 13 and 14 were two additions made side by side and then
-merged, numbered apart so that one number never meant two headers; 15 and 16
-were added on top of both:
+Current ABI: **17**. 13 and 14 were two additions made side by side and then
+merged, numbered apart so that one number never meant two headers; 15, 16 and
+17 were added on top of both:
 
 - **13** added blades -- `banjo_make_blade`, `banjo_blades`, `banjo_cuts`,
   `banjo_forget_cuts` -- and the bounded hand that swings them, `banjo_wield`,
@@ -36,12 +36,20 @@ were added on top of both:
 - **16** made heat change what things can carry -- `banjo_joint_member`,
   `banjo_body_mechanics_count`, `banjo_bodies_mechanics`, `banjo_mechanics_report`
   -- and added fields at the **end** of `banjo_joint`, `banjo_overload` and
-  `banjo_energy` (see [Heat and strength](#heat-and-strength)).
+  `banjo_energy` (see [Heat and strength](#heat-and-strength));
+- **17** added the hand's own motions -- `banjo_stroke`, `banjo_cancel_stroke`,
+  `banjo_hand_state`, `banjo_hand_mass`, `banjo_preview_flight` and
+  `banjo_preview_stroke` (see [The hand's own motions](#the-hands-own-motions)) --
+  and the one-way fixing, an arrow's nock on a string, `banjo_fix_one_way`; it
+  added `mass_kg` at the **end** of `banjo_body`, and `comes_off_n` at the
+  **end** of `banjo_joint`, after 16's fields.
 
-A library at 16 has all of them. Nothing that was in 12 changed, and nothing
-that was in 14 changed in 15. 16 changed no function, but three structs grew:
-a caller built against 15 must be rebuilt, and every field that was there keeps
-its place and its meaning.
+A library at 17 has all of them. Nothing that was in 12 changed, and nothing
+that was in 14 changed in 15. Neither 16 nor 17 changed a function that was
+already there, but structs grew at their ends -- `banjo_joint`, `banjo_overload`
+and `banjo_energy` in 16, `banjo_body` and `banjo_joint` again in 17 -- so a
+caller built against an older header must be rebuilt, and every field that was
+there keeps its place and its meaning.
 
 ---
 
@@ -511,6 +519,19 @@ which is a different number whenever a rope is not tied at a middle: a 1.00 m
 rope from the foot of a post to the back of an iron block, hauled tight, read
 1.272 m. It now reads 1.000 m.
 
+**A taut rope stays taut.** The solver's distance limit only engages when the
+two ends are at or beyond the length as a step starts. A rope pulled tight sits
+right on that line, so it was nudged a hair inside by whatever else was being
+corrected, and then did nothing for the whole step. On the courtyard bow, a
+string rope carrying 110.7 N read 0 for one step, and the 45 g limb tip it held
+back against a 307 N limb spring left at 6.8 m/s, every few dozen steps. Now a
+rope that pulled on the last step, is within 1 mm of its length and is not
+being closed faster than 5 cm/s is held at its length for the step. If it has
+to push to do so, because its ends are really being brought together, that
+shows as a push in the step's impulse, and on the next step it is slack again.
+So a rope going slack goes slack at most a step late. A push is not tension:
+`tension_n` reads 0 for it.
+
 **`tension_n` is a force, and it is only the rope's.** It is the impulse the
 solver put through the link over the last step, divided by that step, so it is
 the same in newtons whatever the step: that 617.638 N weight reads 617.586,
@@ -565,6 +586,54 @@ that shows: measured, a 5 kg oak bar on a 142 kg gate let it move as far as no
 bar at all, and a 60 kg iron bar — a mass ratio of two rather than thirty — held
 it. If a fixing seems soft, look at the mass ratio before looking at the
 constraint.
+
+### `int banjo_fix_one_way(banjo_world *world, const char *a, const char *b, const double at_m[3], const double axis[3], double comes_off_n, double holds_shear_n)`
+
+A fixing that holds **one way**. b sits on a the way an arrow's nock sits on a
+bowstring, or a sling's ring on its release pin, and `axis` points the way b
+comes off.
+
+```c
+double at[3] = {-1.76, 1.22, 0.12}, down_range[3] = {1.0, 0.0, 0.0};
+int nock = banjo_fix_one_way(w, "bowstring", "arrow", at, down_range, 20.0, 0.0);
+```
+
+Along the axis it is a seat, not a bond. **Pushed** back into a, b is in contact
+and takes whatever the push is — the string drives the arrow as hard as the
+limbs drive the string. **Pulled** the other way it is held with up to
+`comes_off_n`, the grip of a snap-on nock, and pulled harder it slides. Once it
+has slid past the nock's throat, 5 mm, the fixing is gone. That is reported
+once, with `attached` 0 and a delay of kind `"came off"` that carries the pull
+it was holding and its rating. Nothing decides when an arrow leaves the
+string. It leaves at the step where keeping it on would take more than the
+nock holds with.
+
+Across the axis, and against turning, it holds as `banjo_fix` does, up to
+`holds_shear_n` (0 never lets go). It has no tension strength, because what
+pulls it apart is `comes_off_n`, which must be above zero. `banjo_joints`
+reports it as a fixing with `comes_off_n` set. For a one-way fixing,
+`tension_now_n` is the size of the force along the axis, whether push or pull.
+
+**Measured** (`tests/fixing_tests.cpp`), a 618 N iron bracket seated on a wall:
+
+| Seat | Result |
+|---|---|
+| comes off upwards at 1 N, so the weight pushes it in | held; moved 0.0004 mm in 3 s, carrying 617.6 N |
+| comes off downwards, rated 2,471 N | held; moved 0.0006 mm in 3 s, carrying 617.6 N |
+| comes off downwards, rated 154.4 N | came off holding 154.409 N, and the bracket fell |
+
+On a bow (`tests/bow_tests.cpp`), the same draw was loosed three ways:
+
+| Loosed by | Arrow speed |
+|---|---|
+| a latch the test let go of at the step the string crossed brace | 3.58 m/s |
+| a 5 N one-way nock | 3.50 m/s; the arrow left 81 mm past brace |
+| a 20 N one-way nock | 3.28 m/s; the arrow left 92 mm past brace |
+
+That string slows only as fast as its limbs can slow it. So an arrow rides it
+until keeping it on takes more than the nock holds with, and a firmer nock
+keeps more of the shot for itself. The draw itself put at most 3.5 N on
+either nock.
 
 ### `int banjo_reeve(banjo_world *world, const char *a, const char *b, const double at_a_m[3], const double at_b_m[3], const double over_a_m[3], const double over_b_m[3], double ratio, double length_m)`
 
@@ -757,6 +826,7 @@ typedef struct {
     int anchored;            /* scenery: does not move, cannot be picked up */
     int held;
     unsigned rgba;
+    double mass_kg;          /* what a hand holds up and a throw accelerates; 0 for scenery */
 } banjo_body;
 ```
 
@@ -906,6 +976,138 @@ int id = banjo_make_blade(w, "sword", heel, tip, facing, 0.01, 0.0002, 30.0, gri
 banjo_wield(w, "sword", grip);
 banjo_move_held(w, (double[3]){-0.9, 1.5, 1.9});   /* the hand pulls; the world answers */
 for (int i = 0; i < 240; ++i) banjo_step(w, 1.0 / 240.0);
+```
+
+---
+
+## The hand's own motions
+
+A throw is over in a tenth of a second, and a draw is decided by how hard a hand
+can pull against what resists it, so neither can be done a frame at a time from
+outside. The engine makes the **stroke** itself, at the step's own rate, with the
+same bounded hand every other hold has, and counts the **work** the hand does.
+Nothing here gives a body a speed: the hand pulls with what it has, and what the
+body does is the world's answer. The design, and what the playground builds on
+it, is [../interaction-profiles.md](../interaction-profiles.md).
+
+### `int banjo_hand_mass(banjo_world *world, double kilograms)`
+
+The moving mass of the hand and arm, which the strength has to get going along
+with whatever a stroke throws: **2 kg unless told otherwise — a demonstration
+value**, for a hand, forearm and part of an upper arm as felt at the hand. It is
+why a light ball leaves a hand faster than a heavy one even when neither is too
+heavy to hold. Only strokes use it.
+
+### `int banjo_stroke(banjo_world *world, const double *path_m, int points, double speed_m_s, double accel_m_s2, double lead_m, int let_go_at_end, double give_up_s)`
+### `int banjo_cancel_stroke(banjo_world *world)`
+
+Where the hand **wants** the grip travels along `path_m` — `points` points of
+three doubles each, two to sixteen of them — at up to `speed_m_s`, getting there
+at `accel_m_s2` and never faster than the strength can move the hand and the
+thing together. It is never more than `lead_m` ahead of the grip (0.05 is the
+hand's own scale: full strength at 50 mm off): a hand is on the thing it holds
+and cannot run on without it, so a heavy thing falls behind and a light one keeps
+up. The hand damps motion relative to its own speed along the path. With
+`let_go_at_end` the hand opens when the **grip** reaches the end — the release of
+a throw, on the step it happens, whatever the host's frame rate.
+
+A stroke needs a hand that pulls: something wielded (`banjo_wield`), or something
+hauled because it is on a joint. A carried body — `banjo_grab` on a loose thing —
+goes exactly where it is put and is never pushed, so a stroke refuses it with
+`BANJO_BAD_ARGUMENT` and `banjo_last_error` says why. `banjo_move_held` takes the
+hand back from a stroke; letting go ends one.
+
+A stroke ends `reached` (the hand got to the end and holds there), `let go`,
+`blocked` (for a fifth of a second the grip has gone nowhere while the hand pulls
+with everything it has: as far as this hand can take it, which for a bow is the
+draw), `gave up` after `give_up_s`, or `cancelled`.
+
+### `int banjo_hand_state(const banjo_world *world, banjo_hand *out)`
+
+```c
+typedef struct {
+    const char *holding;          /* "" for nothing */
+    const char *mode;             /* "carry", "haul", "grip" or "" */
+    double target_m[3];           /* where the hand wants the grip */
+    double grip_m[3];             /* where the grip is */
+    double grip_velocity_m_s[3];
+    double force_n[3];            /* what it pulled with in the last step */
+    double work_j;                /* since it took hold -- measured, see below */
+    int stroking;
+    double stroke_along_m;        /* how far the grip has got along the path */
+    double stroke_length_m;
+    const char *stroke_ended;     /* "", "reached", "let go", "blocked", "gave up", "cancelled" */
+    const char *let_go_body;      /* the last stroke that opened the hand: what, */
+    double let_go_velocity_m_s[3];/* how fast it left, */
+    double let_go_at_s;           /* when (negative: never), */
+    double let_go_work_j;         /* and the work the hand had done on it */
+} banjo_hand;
+```
+
+`work_j` is measured: the hand's force times its grip's velocity averaged over
+each kept step, plus the wrist's torque times the turn. For the solver's step
+that is exactly what the force added to the body's kinetic energy — the grip's
+displacement would overstate it by F dt² / 2m a step — so it includes lifting,
+and whatever the body lost to what it rubbed on. A carry is placement and does
+no work. The `let_go_*` fields stay until the next hold.
+
+### `int banjo_preview_flight(const banjo_world *world, const double from_m[3], const double velocity_m_s[3], double horizon_s, const char *ignoring, double *points_m, int max_points, banjo_flight *out)`
+
+```c
+typedef struct {
+    int hit;
+    const char *hit_name;         /* "" for the ground */
+    double hit_point_m[3];
+    double hit_after_s;
+    double hit_speed_m_s;
+    int points;                   /* how many points were written to points_m */
+} banjo_flight;
+```
+
+Where something would go from `from_m` at `velocity_m_s`, stepped the way the
+solver steps a free body at the rate the world is being stepped — gravity, then
+the body's own damping, then the move — and checked every 1/60 s against the
+solver's own shapes along the line of its centre, so a ball touches down its own
+radius before the point given. `ignoring` names the body that is flying, still in
+the hand: a ray from inside it would otherwise meet it first, and its damping is
+the one applied. Every live body carries a damping of 0.02 per second on its
+speed and its spin (about 2% of its speed a second); exact ballistics that leave
+it and the solver's step out came down 84 mm beyond a real throw over 11.5 m. At
+most ten seconds and 601 points. Changes nothing.
+
+### `int banjo_preview_stroke(const banjo_world *world, const double *path_m, int points, double speed_m_s, double accel_m_s2, double lead_m, double give_up_s, double horizon_s, double *flight_points_m, int max_points, banjo_stroke_preview *out)`
+
+```c
+typedef struct {
+    int possible;
+    const char *why;              /* when it is not possible, or does not reach */
+    int reaches_end;
+    double stroke_s;
+    double work_j;
+    double let_go_at_m[3];        /* the body's centre as the hand opens */
+    double let_go_velocity_m_s[3];
+    banjo_flight flight;          /* its points go to flight_points_m */
+} banjo_stroke_preview;
+```
+
+What a throw would do before it is made: the held body alone, with its own mass
+and inertia, pulled along the path by this hand under gravity — the same law a
+step pushes with, stepped at 1/240 s — and then where it would fly. What it
+cannot know is anything the stroke would bump into on the way, which is why it
+is a preview and a host should say so. It needs a wielded body: anything hauled
+moves as what it is attached to lets it, and then `possible` is 0 with the reason
+in `why`. Changes nothing.
+
+```c
+double from[3] = {-0.8, 1.5, 0}, path[6] = {-0.8, 1.5, 0,   0, 1.5, 0};
+banjo_wield(w, "ball", from);
+double arc[3 * 601];
+banjo_stroke_preview seen;
+banjo_preview_stroke(w, path, 2, 20.0, 2000.0, 0.05, 2.0, 4.0, arc, 601, &seen);
+banjo_stroke(w, path, 2, 20.0, 2000.0, 0.05, 1, 2.0);    /* a full-effort throw */
+banjo_hand hand;
+do { banjo_step(w, 1.0 / 240.0); banjo_hand_state(w, &hand); } while (hand.stroking);
+/* hand.let_go_velocity_m_s: what it left with.  hand.let_go_work_j: what the hand put in. */
 ```
 
 ---

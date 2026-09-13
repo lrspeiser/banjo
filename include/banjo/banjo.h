@@ -97,8 +97,15 @@ extern "C" {
  * (banjo_body_mechanics_count, banjo_bodies_mechanics, banjo_mechanics_report),
  * and new fields at the END of banjo_joint, banjo_overload and banjo_energy.
  * Those three structs grew, so a caller built against 15 must be rebuilt;
- * every field that was there keeps its place and its meaning. */
-#define BANJO_ABI_VERSION 16
+ * every field that was there keeps its place and its meaning.
+ *
+ * 17 added the hand's own motions -- a stroke the engine makes at its own
+ * step, the work the hand does, and previews of a stroke and of a flight
+ * (banjo_hand_mass, banjo_stroke, banjo_cancel_stroke, banjo_hand_state,
+ * banjo_preview_stroke, banjo_preview_flight) -- and the one-way fixing, an
+ * arrow's nock on a string (banjo_fix_one_way). banjo_body gained mass_kg and
+ * banjo_joint comes_off_n, each at its END, after everything 16 put there. */
+#define BANJO_ABI_VERSION 17
 
 /* What a call reported. Anything below zero is a failure and leaves the world
  * unchanged; banjo_last_error() says what happened. */
@@ -141,6 +148,10 @@ typedef struct {
     int anchored;
     int held;
     unsigned rgba;
+    /* What it weighs now, in kilograms: what a hand has to hold up and a throw
+     * has to accelerate. A body that burns gets lighter. Zero for anchored
+     * scenery, which the solver never moves. */
+    double mass_kg;
 } banjo_body;
 
 /* A pin two named things turn about.
@@ -221,6 +232,11 @@ typedef struct {
     const char *parted_because;
     double parted_load_n;
     double parted_capacity_n;
+    /* ---- ABI 17 ------------------------------------------------------------
+     * For a fixing: above zero it is ONE-WAY along its axis, which points the
+     * way b comes off a, and this is the most it holds b with that way
+     * (banjo_fix_one_way). Zero for a two-way fixing and every other kind. */
+    double comes_off_n;
 } banjo_joint;
 
 /* A thing carrying more than it can hold up.
@@ -673,6 +689,27 @@ BANJO_API int banjo_fix(banjo_world *world, const char *a, const char *b,
                         const double at_m[3], const double axis[3],
                         double holds_tension_n, double holds_shear_n);
 
+/* A ONE-WAY fixing: b sits on a the way an arrow's nock sits on a bowstring, or
+ * a sling's ring on its release pin. `axis` points the way b comes off a.
+ *
+ * Along the axis it is a seat and not a bond. Pushed back into a, b is in
+ * contact and takes whatever the push is -- the string drives the arrow as hard
+ * as the limbs drive the string. Pulled the other way it is held with up to
+ * `comes_off_n` newtons, the grip of a snap-on nock, and pulled harder it
+ * slides; once it has slid past the nock's throat, 5 mm, the fixing is gone,
+ * reported once with `attached` 0 and a delay of kind "came off". Nothing
+ * decides when: an arrow leaves the string at the step the string, slowing past
+ * brace, would have to pull it back harder than that.
+ *
+ * Across the axis, and against turning, it holds as banjo_fix does, up to
+ * `holds_shear_n` (0 never lets go). It has no tension strength -- what pulls
+ * it apart is `comes_off_n`, which must be above zero.
+ *
+ * Returns the joint's id, always above zero, or a negative banjo_status. */
+BANJO_API int banjo_fix_one_way(banjo_world *world, const char *a, const char *b,
+                                const double at_m[3], const double axis[3],
+                                double comes_off_n, double holds_shear_n);
+
 /* Put an elastic element between two named things: a bow limb, a spring, a bent
  * plank -- anything that stores energy by being deformed and gives it back.
  *
@@ -842,6 +879,99 @@ BANJO_API int banjo_aim_held(banjo_world *world, const double orientation_wxyz[4
 /* How hard the hand can pull, in newtons, and turn, in newton metres. */
 BANJO_API int banjo_hand_strength(banjo_world *world, double newtons);
 BANJO_API int banjo_hand_torque(banjo_world *world, double newton_metres);
+/* The moving mass of the hand and arm, kilograms: what the strength has to get
+ * going along with whatever a stroke throws. 2 kg unless told otherwise, a
+ * demonstration value. It is why a light ball leaves a hand faster than a heavy
+ * one even when neither is too heavy to hold. */
+BANJO_API int banjo_hand_mass(banjo_world *world, double kilograms);
+
+/* ---- the hand's own motions ------------------------------------------ */
+
+/* What the hand is doing and what it has done. Strings are valid until the
+ * next call on this world. */
+typedef struct {
+    const char *holding;          /* "" for nothing */
+    /* "carry" (placed where it is put: no force, so no work), "haul" (pulled
+     * with a bounded force because it is attached), "grip" (wielded), or "". */
+    const char *mode;
+    double target_m[3];           /* where the hand wants the grip */
+    double grip_m[3];             /* where the grip is */
+    double grip_velocity_m_s[3];
+    double force_n[3];            /* what it pulled with in the last step */
+    /* Work done on what it holds since taking hold: force times the grip's own
+     * displacement, and torque times the turn, step by kept step. */
+    double work_j;
+    int stroking;
+    double stroke_along_m;        /* how far the grip has got along the path */
+    double stroke_length_m;
+    /* How the last stroke ended: "" while one runs or none has, "reached",
+     * "let go", "blocked", "gave up" or "cancelled". */
+    const char *stroke_ended;
+    /* When a stroke opened the hand: what it let go of, how fast that was going
+     * as it left, when (negative: never), and the work done on it by then. */
+    const char *let_go_body;
+    double let_go_velocity_m_s[3];
+    double let_go_at_s;
+    double let_go_work_j;
+} banjo_hand;
+
+/* Where something would fly, stepped the way the solver steps it -- gravity,
+ * then the flying body's own damping -- and checked against the solver's own
+ * shapes along the line of its centre. */
+typedef struct {
+    int hit;
+    const char *hit_name;         /* "" for the ground */
+    double hit_point_m[3];
+    double hit_after_s;
+    double hit_speed_m_s;
+    int points;                   /* how many points were written */
+} banjo_flight;
+
+/* What a stroke would do before it is made. */
+typedef struct {
+    int possible;
+    const char *why;              /* when it is not possible, or does not reach */
+    int reaches_end;
+    double stroke_s;
+    double work_j;
+    double let_go_at_m[3];        /* the body's centre as the hand opens */
+    double let_go_velocity_m_s[3];
+    banjo_flight flight;
+} banjo_stroke_preview;
+
+/* A motion the hand makes by itself, step by step, at the step's own rate:
+ * where the hand WANTS the grip travels along `path_m` (`points` points, three
+ * doubles each, two to sixteen of them) at up to `speed_m_s`, getting there at
+ * `accel_m_s2`, never more than `lead_m` ahead of the grip. The hand pulls with
+ * the strength it has, so a heavy thing falls behind and a light one keeps up;
+ * nothing gives the body a speed. With `let_go_at_end` the hand opens when the
+ * GRIP reaches the end -- a throw. It needs a hand that pulls: something
+ * wielded, or something hauled because it is attached; a carried body is
+ * refused. banjo_move_held takes the hand back from a stroke.
+ * Returns BANJO_OK or BANJO_BAD_ARGUMENT with the reason. */
+BANJO_API int banjo_stroke(banjo_world *world, const double *path_m, int points,
+                           double speed_m_s, double accel_m_s2, double lead_m,
+                           int let_go_at_end, double give_up_s);
+BANJO_API int banjo_cancel_stroke(banjo_world *world);
+BANJO_API int banjo_hand_state(const banjo_world *world, banjo_hand *out);
+/* Where something would go from `from_m` at `velocity_m_s`, for at most
+ * `horizon_s` (ten seconds at most), never meeting the body named `ignoring`
+ * (the thing itself, still in the hand), whose damping it flies with. Up to
+ * `max_points` points, three doubles each, a point every 1/60 s, are written to
+ * `points_m`. Changes nothing. */
+BANJO_API int banjo_preview_flight(const banjo_world *world, const double from_m[3],
+                                   const double velocity_m_s[3], double horizon_s,
+                                   const char *ignoring, double *points_m, int max_points,
+                                   banjo_flight *out);
+/* What this stroke would do to what the hand holds -- the body alone, pulled by
+ * this hand along the path under gravity, stepped at 1/240 s -- and where it
+ * would then fly. Changes nothing. The flight's points go to `flight_points_m`
+ * as for banjo_preview_flight. */
+BANJO_API int banjo_preview_stroke(const banjo_world *world, const double *path_m, int points,
+                                   double speed_m_s, double accel_m_s2, double lead_m,
+                                   double give_up_s, double horizon_s,
+                                   double *flight_points_m, int max_points,
+                                   banjo_stroke_preview *out);
 
 /* ---- asking where things are ---------------------------------------- */
 

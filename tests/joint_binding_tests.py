@@ -783,6 +783,50 @@ def a_latch_changes_what_the_assembly_is() -> None:
         require(world.joints() == [], "the released fixing is still listed")
 
 
+def a_one_way_fixing_comes_off_by_itself() -> None:
+    """One way, like an arrow's nock on a string.
+
+    Seated so that it comes off upwards, the bracket's weight pushes it back
+    INTO its seat, and that is contact: a seat that lets go of 1 N holds 618 N.
+    Seated to come off downwards, the way the weight pulls, and rated for a
+    quarter of it, it slides off by itself.
+    """
+    weight = 0.2 ** 3 * 7870.0 * 9.81      # 618 N of iron
+    with banjo.World(bracket_on_a_wall(), cell_size_m=0.05) as world:
+        seat = world.fix("wall", "bracket", at_m=(0.15, 2.0, 0.0),
+                         axis=(0.0, 1.0, 0.0), comes_off_n=1.0)
+        require(seat > 0, "the bracket would not seat on the wall")
+        tick(world, 480)
+        held = next(j for j in world.joints() if j.id == seat)
+        print(f"  pushed into a 1 N seat by 618 N: {'held' if held.attached else 'let go'}, "
+              f"carrying {held.tension_now_n:.1f} N along it")
+        require(held.attached, "a one-way fixing let go of a push")
+        require(held.comes_off_n == 1.0, "the fixing does not say it is one-way")
+        require(held.tension_now_n > 0.9 * weight,
+                "the seat holds 618 N up and says it is carrying less")
+
+    with banjo.World(bracket_on_a_wall(), cell_size_m=0.05) as world:
+        seat = world.fix("wall", "bracket", at_m=(0.15, 2.0, 0.0),
+                         axis=(0.0, -1.0, 0.0), comes_off_n=0.25 * weight)
+        require(seat > 0, "the bracket would not seat on the wall")
+        tick(world, 480)
+        gone = next(j for j in world.joints() if j.id == seat)
+        fell = next(b for b in world.bodies() if b.name == "bracket").position_m[1]
+        print(f"    pulled off a seat rated for a quarter of it: "
+              f"{'held' if gone.attached else 'came off'}, the bracket is at y={fell:.3f}")
+        require(not gone.attached, "a seat rated for a quarter of the pull held it")
+        require(fell < 1.0, "the seat let go but the bracket did not fall")
+
+    with banjo.World(bracket_on_a_wall(), cell_size_m=0.05) as world:
+        try:
+            world.fix("wall", "bracket", at_m=(0.15, 2.0, 0.0), axis=(0.0, -1.0, 0.0),
+                      holds_tension_n=100.0, comes_off_n=50.0)
+        except banjo.BanjoError:
+            pass
+        else:
+            raise AssertionError("a one-way fixing took a tension strength as well")
+
+
 def a_spring_stores_what_a_known_load_does_to_it() -> None:
     """The declared model, through the public ABI, against a load it did not pick.
 
@@ -884,6 +928,8 @@ def main() -> int:
          "a fixing tells tension from shear"),
         (a_latch_changes_what_the_assembly_is,
          "a latch changes what the assembly is"),
+        (a_one_way_fixing_comes_off_by_itself,
+         "a one-way fixing comes off by itself"),
         (a_spring_stores_what_a_known_load_does_to_it,
          "a spring stores what a known load does to it"),
     ):

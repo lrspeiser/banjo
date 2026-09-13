@@ -8,10 +8,11 @@
 //                  where the energy goes when you draw
 //   the string     LINKS from each tip to the nocking point, because a string
 //                  pulls and does not push and that is exactly what a link is
-//   the nock       a FIXING between the arrow and the nocking point, because
-//                  what a nock does is hold two things together until it is
-//                  released, which is what a latch is
-//   loosing        unhinge() on that fixing
+//   the nock       a ONE-WAY FIXING between the arrow and the nocking point:
+//                  the string pushes the arrow as hard as it has to and holds
+//                  it back lightly, and the arrow comes off it by itself when
+//                  the string, slowing at brace, would have to pull it back
+//   loosing        opening the hand, and nothing else
 //
 // The arrow's speed is therefore not chosen. It comes out of the energy in the
 // limbs and the mass of what is nocked to the string, and the only way to change
@@ -27,9 +28,12 @@
 // 4. A LONGER draw throws the same arrow faster.
 // 5. A HEAVIER arrow leaves slower, and carries more momentum for it.
 // 6. The string cannot push: an arrow ahead of the string is not dragged.
-// 7. Nothing is loosed until the nock is released.
+// 7. A TWO-WAY nock is a latch: nothing is loosed until it is released.
 // 8. The arrow is an ordinary body afterwards -- it falls, it is affected by
 //    gravity, and it can be picked up again.
+// 9. With a one-way nock the arrow leaves the string BY ITSELF, at brace, and
+//    as fast as a release timed exactly at brace sends it -- which is the thing
+//    no person can do, and the engine has to.
 
 #include "fastlattice/LiveWorld.hpp"
 
@@ -133,6 +137,13 @@ struct Bow {
     unsigned upper_limb{}, lower_limb{};        // the elastics
     unsigned upper_string{}, lower_string{};
     unsigned nocked{};
+    // Whether the nock is one-way; the most it carried along the shot while
+    // the string was drawn; and where the string was when the arrow came off.
+    bool one_way{};
+    double nock_pull_n{};
+    double left_string_at_x{};
+    // What the nock was holding the arrow back with as it let go.
+    double pull_when_off_n{};
 };
 
 // Where the limbs are rooted on the riser, and where their springs are anchored.
@@ -154,6 +165,10 @@ constexpr double kSpringX = 0.36;
 // the same bow drawn 100 mm read 18.9 J built by MSVC and 30.8 J built by GCC,
 // and which bow of two "stored more" came down to that phase.
 constexpr double kLimbDamping = 20.0;   // N s/m
+
+// How far forward of the nocking point's centre the arrow's back end lies: the
+// string's own half-thickness, 25 mm, and 50 mm clear of its face (bowScene).
+constexpr double kArrowClear = 0.075;
 
 TileImpactRequest bowScene(Vec3 arrow_m, bool with_gravity) {
     TileImpactRequest r;
@@ -222,18 +237,35 @@ TileImpactRequest bowScene(Vec3 arrow_m, bool with_gravity) {
     arrow.shape = BodyShape::Box;
     arrow.material = MaterialPreset::Oak;
     arrow.dimensions_m = arrow_m;
-    // Its back end at the nocking point, so it lies forward along the shot.
-    arrow.center_m = {kBrace + arrow_m.x / 2, 2.0, 0.0};
+    // Lying forward along the shot, its back end CLEAR of the string rather
+    // than buried in it -- the courtyard's rule, and for its reason. It used to
+    // start at the nocking point's centre, 25 mm inside the string: a weld held
+    // that overlap still, but with a nock that lets go the contact solver
+    // pushed the two apart on the first step -- the string went back 2.2 mm in
+    // one step with nothing moving, measured -- and the arrow was off the string
+    // before anybody touched it. A nock holds two things in whatever pose they
+    // are in, touching or not.
+    arrow.center_m = {kBrace + kArrowClear + arrow_m.x / 2, 2.0, 0.0};
     r.bodies = {riser, riser_lower, cheek, cheek_far, upper, lower, nock, arrow};
     return r;
 }
 
+// What a one-way nock holds the arrow back with, along the shot: 20 N, the
+// courtyard's. It has to bring the arrow back with the string as the string is
+// drawn -- the arrow's own inertia, and anything it slides on -- and no more,
+// because whatever it holds with, it also holds on with as the arrow leaves.
+// theArrowComesOffTheStringByItself measures both.
+constexpr double kNockGripN = 20.0;
+
 // Assemble the bow out of the general parts. No step of this knows what a bow
-// is: two springs, two ropes and a latch.
+// is: two springs, two ropes and a one-way fixing. `nock_comes_off_n` of zero
+// makes the nock two-way instead: a latch, which holds the arrow on the string
+// until something releases it.
 Bow buildBow(double stiffness_n_m = 4000.0,
              Vec3 arrow_m = Vec3{0.6, 0.05, 0.05},
              bool with_gravity = false,
-             double hand_n = 800.0) {
+             double hand_n = 800.0,
+             double nock_comes_off_n = kNockGripN) {
     Bow bow{};
     bow.world = LiveWorld::open(bowScene(arrow_m, with_gravity));
     LiveWorld &w = *bow.world;
@@ -294,9 +326,11 @@ Bow buildBow(double stiffness_n_m = 4000.0,
     require(bow.upper_string != 0 && bow.lower_string != 0,
             "the string would not go on");
 
-    // The nock: the arrow held to the string until it is loosed.
+    // The nock. Its axis is the way the arrow comes off the string: +x, down
+    // the shot.
+    bow.one_way = nock_comes_off_n > 0.0;
     bow.nocked = w.fix("nocking point", "arrow", Vec3{kBrace, 2.0, 0.0},
-                       Vec3{1.0, 0.0, 0.0});
+                       Vec3{1.0, 0.0, 0.0}, 0.0, 0.0, nock_comes_off_n);
     require(bow.nocked != 0, "the arrow would not nock");
     return bow;
 }
@@ -308,13 +342,56 @@ double storedInLimbs(const Bow &bow) {
            jointNumber(joints, bow.lower_limb).stored_j;
 }
 
-// Draw the bow by taking hold of the nocking point and pulling it back.
+// Draw the bow by taking hold of the nocking point and pulling it back -- the
+// way a person draws and the playground draws: the engine's own stroke of the
+// bounded hand, back along the shot at 0.4 m/s and speeding up at no more than
+// 2 m/s^2, until the limbs balance the hand or it gets there.
+//
+// It used to move the hand 2 mm a step from here. That yanks the string from
+// rest -- and a hand moved before every step pulls twice in it, 1,600 N from an
+// 800 N hand -- and a string yanked like that pulls the arrow off any nock that
+// does not grip it like a vice: measured, off a 100 N one. A person does not
+// draw like that, and a real nock would not hold either.
 double drawBack(Bow &bow, double by_m) {
     LiveWorld &w = *bow.world;
     require(w.grab("nocking point"), "could not take hold of the string");
-    const int steps = static_cast<int>(by_m / 0.002);
-    for (int i = 1; i <= steps; ++i)
-        { w.moveHeld(Vec3{kBrace - by_m * i / steps, 2.0, 0.0}); tick(w); }
+    // What the nock carries along the shot while the string is drawn: the
+    // arrow's own inertia, and anything it slides on. BANJO_BOW_TRACE=1 prints
+    // it as it goes, with what the string, the arrow and the hand are doing.
+    static const bool trace = std::getenv("BANJO_BOW_TRACE") != nullptr;
+    int step = 0;
+    const auto carried = [&] {
+        ++step;
+        for (const LiveJoint &joint : w.joints()) {
+            if (joint.id != bow.nocked) continue;
+            if (joint.attached) bow.nock_pull_n = std::max(bow.nock_pull_n, joint.tension_n_now);
+            if (trace && (step <= 12 || step % 6 == 0 || !joint.attached ||
+                          joint.tension_n_now > 10.0)) {
+                const auto now = w.poses();
+                const LiveHand h = w.hand();
+                std::cout << "    draw step " << step << ": nock " << joint.tension_n_now
+                          << " N" << (joint.attached ? "" : " OFF") << ", string x "
+                          << named(now, "nocking point").position_m.x << " v "
+                          << named(now, "nocking point").velocity_m_s.x << ", arrow v "
+                          << named(now, "arrow").velocity_m_s.x << ", hand target x "
+                          << h.target_m.x << " grip x " << h.grip_m.x << " force "
+                          << h.force_n.x << " N " << h.stroke_ended << "\n";
+            }
+        }
+    };
+    LiveStroke draw;
+    draw.path_m = {named(w.poses(), "nocking point").position_m,
+                   Vec3{kBrace - by_m, 2.0, 0.0}};
+    draw.speed_m_s = 0.4;
+    draw.accel_m_s2 = 2.0;
+    draw.give_up_s = 30.0;
+    std::string why;
+    require(w.stroke(draw, why), "the hand would not draw the string: " + why);
+    if (trace)
+        std::cout << "    draw from x " << draw.path_m[0].x << " to " << draw.path_m[1].x
+                  << "; hand target x " << w.hand().target_m.x << ", grip x "
+                  << w.hand().grip_m.x << "\n";
+    for (int i = 0; i < 240 * 30 && w.hand().stroking; ++i) { tick(w); carried(); }
     // And HOLD at full draw until it settles.
     //
     // The hand pulls with a bounded force, so reaching full draw takes as long
@@ -328,8 +405,13 @@ double drawBack(Bow &bow, double by_m) {
     // -- and not for a fixed count of steps, which read limbs still ringing.
     for (int i = 0, still = 0; i < 2400 && still < 60; ++i) {
         tick(w);
+        carried();
         still = speedOf(w, "nocking point") < 0.001 ? still + 1 : 0;
     }
+    // Still on the string -- or taken off it on purpose before the draw.
+    for (const LiveJoint &joint : w.joints())
+        if (joint.id == bow.nocked)
+            require(joint.attached, "the arrow came off the string while it was being drawn");
     return storedInLimbs(bow);
 }
 
@@ -372,31 +454,68 @@ void dumpBow(Bow &bow, const std::string &label) {
     body("arrow");
 }
 
-// Loose. Returns the fastest the arrow ever goes.
+// Loose. Returns how fast the arrow was going as it left the string -- not the
+// fastest it ever went, which it may reach while still on it.
 //
-// Let go with the fingers, and let the arrow go from the string AT BRACE --
-// which is where an arrow leaves a real string, because that is the point where
-// the string stops and the arrow does not. Unhinging the nock at the moment of
-// release instead, which was the first version of this, frees the arrow BEFORE
-// the string has pushed it: measured, 110 J in the limbs threw the arrow at
-// 0.6 m/s, being 0.18% of the stored energy, because the string accelerated
-// away from an arrow that was no longer attached to it.
+// With a one-way nock this is opening the hand and nothing else: the arrow
+// comes off the string by itself, and where the string was, and what the nock
+// was holding it back with, are written down.
+//
+// With a two-way nock -- a latch -- something has to let the arrow go, and it is
+// let go AT BRACE, which is where an arrow leaves a real string, because that is
+// the point where the string stops and the arrow does not. Unhinging the nock at
+// the moment of release instead, which was the first version of this, frees the
+// arrow BEFORE the string has pushed it: measured, 110 J in the limbs threw the
+// arrow at 0.6 m/s, being 0.18% of the stored energy, because the string
+// accelerated away from an arrow that was no longer attached to it.
 double loose(Bow &bow, int steps = 240) {
     LiveWorld &w = *bow.world;
     w.release();
+    w.forgetDelays();
     bool away = false;
-    double best = 0.0;
+    double left = 0.0;
     for (int i = 0; i < steps; ++i) {
-        if (!away && named(w.poses(), "nocking point").position_m.x >= kBrace) {
+        bool leaving = false;
+        if (!bow.one_way && !away &&
+            named(w.poses(), "nocking point").position_m.x >= kBrace) {
             w.unhinge(bow.nocked);
-            away = true;
+            away = leaving = true;
         }
         tick(w);
-        best = std::max(best, speedOf(w, "arrow"));
+        if (bow.one_way && !away)
+            for (const LiveDelay &delay : w.delays())
+                if (std::string(delay.kind) == "came off") {
+                    away = leaving = true;
+                    bow.pull_when_off_n = delay.lead_ms;
+                }
+        w.forgetDelays();
+        if (leaving) {
+            left = speedOf(w, "arrow");
+            bow.left_string_at_x = named(w.poses(), "nocking point").position_m.x;
+        }
+        static const bool trace = std::getenv("BANJO_BOW_TRACE") != nullptr;
+        if (trace && (i % 4 == 0 || leaving || (i >= 10 && i <= 18))) {
+            const auto now = w.poses();
+            const LiveBodyPose &s = named(now, "nocking point");
+            const LiveBodyPose &a = named(now, "arrow");
+            std::cout << "    loose step " << i << ": string (" << s.position_m.x << ", "
+                      << s.position_m.y << ") v (" << s.velocity_m_s.x << ", "
+                      << s.velocity_m_s.y << "), arrow (" << a.position_m.x << ", "
+                      << a.position_m.y << ") v (" << a.velocity_m_s.x << ", "
+                      << a.velocity_m_s.y << "), nock " << (away ? "off" : "on")
+                      << (w.steppedBack() ? ", STEPPED BACK" : "");
+            for (const std::string &name : w.breakable()) std::cout << " breakable:" << name;
+            for (const LiveImpact &hit : w.impacts(0.1))
+                std::cout << " hit:" << hit.struck << "<-" << hit.by << "@"
+                          << hit.closing_speed_m_s;
+            std::cout << "\n";
+        }
     }
-    require(away, "the string never came back to brace, so the arrow was never "
-                  "loosed at all");
-    return best;
+    require(away, bow.one_way
+                      ? "the arrow never came off the string"
+                      : "the string never came back to brace, so the arrow was never "
+                        "loosed at all");
+    return left;
 }
 
 constexpr double oakMassKg(Vec3 size_m) {
@@ -568,7 +687,8 @@ void theStringCannotPush() {
 }
 
 void nothingIsLoosedUntilTheNockIsReleased() {
-    Bow bow = buildBow();
+    // A TWO-WAY nock: a latch, like a crossbow's nut on its string.
+    Bow bow = buildBow(4000.0, Vec3{0.6, 0.05, 0.05}, false, 800.0, 0.0);
     LiveWorld &w = *bow.world;
     drawBack(bow, 0.3);
     // Let go of the string but NOT the nock. The whole assembly -- string,
@@ -589,16 +709,68 @@ void nothingIsLoosedUntilTheNockIsReleased() {
     const auto now = w.poses();
     const double apart = length(named(now, "arrow").position_m -
                                 named(now, "nocking point").position_m);
-    std::cout << "    they are " << apart << " m apart, against the half-arrow "
-              << "0.3 they were nocked at\n";
-    require(std::abs(apart - 0.3) < 0.06,
+    std::cout << "    they are " << apart << " m apart, against the "
+              << kArrowClear + 0.3 << " they were nocked at\n";
+    require(std::abs(apart - (kArrowClear + 0.3)) < 0.06,
             "the arrow came off the string without the nock being released");
+}
+
+void theArrowComesOffTheStringByItself() {
+    // The same bow and the same draw, loosed three ways: off a latch the test
+    // releases at the step the string crosses brace -- a release no person
+    // could time -- and off one-way nocks that nothing touches, one holding the
+    // arrow back with 20 N and one with 5.
+    //
+    // Off a nock the arrow leaves at the moment keeping it on the string would
+    // take more than the nock holds with, and not before. Past brace this
+    // string slows only as fast as the limbs, pulling the other way, can slow
+    // it -- which starts at nothing -- so an arrow on a nock rides the string
+    // for a while, and what the nock holds with it holds on with: the lighter
+    // one lets go sooner, and its arrow keeps more of the shot.
+    Bow timed = buildBow(4000.0, Vec3{0.6, 0.05, 0.05}, false, 800.0, 0.0);
+    drawBack(timed, 0.3);
+    const double released = loose(timed);
+    Bow firm = buildBow();
+    drawBack(firm, 0.3);
+    const double off_firm = loose(firm);
+    Bow light = buildBow(4000.0, Vec3{0.6, 0.05, 0.05}, false, 800.0, 5.0);
+    drawBack(light, 0.3);
+    const double off_light = loose(light);
+    std::cout << "  let go at brace by the test: " << released << " m/s.\n    Off a "
+              << kNockGripN << " N nock by itself: " << off_firm << " m/s, the string "
+              << (firm.left_string_at_x - kBrace) * 1000.0 << " mm past brace, the nock "
+              << "holding " << firm.pull_when_off_n << " N as it let go.\n    Off a 5 N "
+              << "nock: " << off_light << " m/s, " << (light.left_string_at_x - kBrace) * 1000.0
+              << " mm past brace, holding " << light.pull_when_off_n << " N.\n    Drawn, "
+              << "the nocks carried at most " << firm.nock_pull_n << " and "
+              << light.nock_pull_n << " N along the shot\n";
+    require(std::abs(firm.pull_when_off_n - kNockGripN) < 0.05 * kNockGripN &&
+                std::abs(light.pull_when_off_n - 5.0) < 0.25,
+            "a nock let go holding something other than what it holds with, so its "
+            "hold is not what decided when the arrow left");
+    require(light.left_string_at_x < firm.left_string_at_x,
+            "the lighter nock did not let the arrow go sooner");
+    require(off_light > off_firm,
+            "the lighter nock let go sooner and its arrow did not keep more of the shot");
+    require(off_firm <= 1.01 * released && off_light <= 1.01 * released,
+            "an arrow off a nock left faster than one let go at brace, which is a nock "
+            "that makes energy");
 }
 
 void theArrowIsAnOrdinaryBodyAfterwards() {
     // With gravity this time. It is thrown, it flies, it falls, and it can be
     // picked up -- because it is a body and was never anything else.
-    Bow bow = buildBow(8000.0, Vec3{0.6, 0.05, 0.05}, true);
+    //
+    // Loosed off a LATCH the test lets go of at brace, because what this is
+    // about is the arrow afterwards. This bow has nothing under the shaft, and
+    // hung from its nock alone an arrow's weight 375 mm in front of the string
+    // tips string and arrow nose-down together as it is drawn; a nock that lets
+    // go lets go of it -- measured, at 20 N, 41 steps into the draw -- where a
+    // weld holds the tipping assembly together. A one-way nock under gravity
+    // needs the shaft on a rest and the bow settled, as the courtyard's bow
+    // has, and world_room_tests draws and looses that one through the same pipe
+    // as the page.
+    Bow bow = buildBow(8000.0, Vec3{0.6, 0.05, 0.05}, true, 800.0, 0.0);
     drawBack(bow, 0.3);
     LiveWorld &w = *bow.world;
     const double fastest = loose(bow, 60);
@@ -639,7 +811,9 @@ int main() {
         theStringCannotPush();
         std::cout << "[PASS] the string cannot push\n";
         nothingIsLoosedUntilTheNockIsReleased();
-        std::cout << "[PASS] nothing is loosed until the nock is released\n";
+        std::cout << "[PASS] a two-way nock looses nothing until it is released\n";
+        theArrowComesOffTheStringByItself();
+        std::cout << "[PASS] the arrow comes off a one-way nock by itself, when its hold is spent\n";
         theArrowIsAnOrdinaryBodyAfterwards();
         std::cout << "[PASS] the arrow is an ordinary body afterwards\n";
         std::cout << "\

@@ -28,6 +28,10 @@
 // 7. A fixing survives the room rearranging itself.
 // 8. A latch changes the assembly: barred, a gate will not swing; unbarred, it
 //    does -- and nothing about the gate itself changed.
+// 9. A ONE-WAY fixing -- an arrow's nock on a string -- takes any push back
+//    into its seat, holds a pull along its axis up to its rating without
+//    creeping, and lets go of a harder one by itself, saying it "came off" and
+//    what it was holding when it did. It has no tension strength to give.
 
 #include "fastlattice/LiveWorld.hpp"
 
@@ -387,6 +391,96 @@ void aLatchChangesWhatTheAssemblyIs() {
                              "proved nothing either way");
 }
 
+// A bracket seated on the wall ONE WAY: it comes off along `off`, and the wall
+// holds it that way with no more than `grip_n`.
+unsigned seat(LiveWorld &world, Vec3 off, double grip_n) {
+    const Vec3 at = named(world.poses(), "bracket").position_m;
+    return world.fix("wall", "bracket", Vec3{0.15, at.y, at.z}, off, 0.0, 0.0, grip_n);
+}
+
+void aOneWayFixingTakesAnyPush() {
+    // Seated so that it comes off UPWARDS, the bracket's own weight pushes it
+    // back into its seat rather than off it -- and that is contact, which takes
+    // whatever the push is. 618 N on a seat that would let go of a 1 N pull.
+    const auto world = LiveWorld::open(wall());
+    const unsigned fixing = seat(*world, Vec3{0.0, 1.0, 0.0}, 1.0);
+    require(fixing != 0, "the bracket would not seat on the wall");
+    const double hung = named(world->poses(), "bracket").position_m.y;
+    run(*world, 720);
+    const double after = named(world->poses(), "bracket").position_m.y;
+    const LiveJoint held = jointNumber(world->joints(), fixing);
+    std::cout << "  618 N pushing a bracket into a seat that comes off at 1 N: it moved "
+              << (after - hung) * 1000.0 << " mm, carrying " << held.tension_n_now
+              << " N along the axis\n";
+    require(held.attached, "a one-way fixing let go of a PUSH");
+    require(held.kind == "fixing" && held.comes_off_n == 1.0,
+            "the fixing does not say it is one-way");
+    require(std::abs(after - hung) < 0.002, "the bracket sank into its seat");
+    require(held.tension_n_now > 0.9 * ironWeightN(kBracketLoad),
+            "the seat is holding 618 N up and says it is carrying less");
+}
+
+void aOneWayFixingHoldsAPullItIsRatedFor() {
+    // Seated to come off DOWNWARDS -- the way its weight pulls -- and rated for
+    // four times that weight. It holds, and it does not creep off.
+    const auto world = LiveWorld::open(wall());
+    const unsigned fixing =
+        seat(*world, Vec3{0.0, -1.0, 0.0}, 4.0 * ironWeightN(kBracketLoad));
+    require(fixing != 0, "the bracket would not seat on the wall");
+    const double hung = named(world->poses(), "bracket").position_m.y;
+    run(*world, 720);
+    const double after = named(world->poses(), "bracket").position_m.y;
+    const LiveJoint held = jointNumber(world->joints(), fixing);
+    std::cout << "  618 N pulling a bracket off a seat rated for "
+              << 4.0 * ironWeightN(kBracketLoad) << " N: it moved "
+              << (after - hung) * 1000.0 << " mm in three seconds, carrying "
+              << held.tension_n_now << " N\n";
+    require(held.attached, "a one-way fixing let go of a pull under its rating");
+    require(std::abs(after - hung) < 0.001, "the bracket crept off its seat");
+    require(std::abs(held.tension_n_now - ironWeightN(kBracketLoad)) <
+                0.05 * ironWeightN(kBracketLoad),
+            "the seat is holding the bracket's weight up and reports a different pull");
+}
+
+void aOneWayFixingLetsGoOfAHarderPull() {
+    // Rated for a quarter of the weight pulling it off: it slides off and the
+    // bracket falls. And the fixing says it CAME OFF, with the pull it was
+    // holding when it did -- which is its rating, because past that it slides.
+    const auto world = LiveWorld::open(wall());
+    const double rating = 0.25 * ironWeightN(kBracketLoad);
+    const unsigned fixing = seat(*world, Vec3{0.0, -1.0, 0.0}, rating);
+    require(fixing != 0, "the bracket would not seat on the wall");
+    const double hung = named(world->poses(), "bracket").position_m.y;
+    double pull_when_off = -1.0;
+    for (int i = 0; i < 480; ++i) {
+        tick(*world);
+        for (const LiveDelay &delay : world->delays())
+            if (std::string(delay.kind) == "came off") pull_when_off = delay.lead_ms;
+        world->forgetDelays();
+    }
+    const double after = named(world->poses(), "bracket").position_m.y;
+    const LiveJoint gone = jointNumber(world->joints(), fixing);
+    std::cout << "  618 N on a seat rated for " << rating << " N: it came off holding "
+              << pull_when_off << " N, and the bracket fell from y=" << hung
+              << " to y=" << after << "\n";
+    require(!gone.attached, "a one-way fixing held four times its rating");
+    require(after < hung - 1.0, "the seat let go but the bracket did not fall");
+    require(pull_when_off >= 0.0, "it came off without saying so");
+    require(std::abs(pull_when_off - rating) < 0.05 * rating,
+            "it came off holding something other than its rating, so the pull is "
+            "not what decided it");
+}
+
+void aOneWayFixingHasNoTensionStrength() {
+    // What pulls a one-way fixing apart is what it comes off at. A tension
+    // strength as well would be a second answer to the same question.
+    const auto world = LiveWorld::open(wall());
+    const Vec3 at = named(world->poses(), "bracket").position_m;
+    require(world->fix("wall", "bracket", Vec3{0.15, at.y, at.z}, Vec3{0.0, -1.0, 0.0},
+                       100.0, 0.0, 50.0) == 0,
+            "a one-way fixing was given a tension strength as well, and took it");
+}
+
 } // namespace
 
 int main() {
@@ -407,6 +501,14 @@ int main() {
         std::cout << "[PASS] a fixing survives the room rearranging itself\n";
         aLatchChangesWhatTheAssemblyIs();
         std::cout << "[PASS] a latch changes what the assembly is\n";
+        aOneWayFixingTakesAnyPush();
+        std::cout << "[PASS] a one-way fixing takes any push\n";
+        aOneWayFixingHoldsAPullItIsRatedFor();
+        std::cout << "[PASS] a one-way fixing holds a pull it is rated for\n";
+        aOneWayFixingLetsGoOfAHarderPull();
+        std::cout << "[PASS] a one-way fixing lets go of a harder pull, and says so\n";
+        aOneWayFixingHasNoTensionStrength();
+        std::cout << "[PASS] a one-way fixing has no tension strength\n";
         std::cout << "\nall fixing tests passed\n";
         return 0;
     } catch (const std::exception &error) {

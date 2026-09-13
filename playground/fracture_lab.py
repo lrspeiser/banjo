@@ -95,6 +95,10 @@ DEFAULT: dict[str, Any] = {
     # part of the DOCUMENT, so a saved room keeps its swords sharp.
     # docs/cutting-model.md.
     "blades": [],
+    # How a person uses the things in the room: which parts make one object,
+    # which part the hand takes, which joint lets go. Never a speed: what an
+    # object does is the engine's answer. docs/interaction-profiles.md.
+    "interactions": [],
     "striker": "iron",
     "plate_m": [0.25, 0.20, 0.01],
     "cell_m": 0.01,
@@ -458,9 +462,21 @@ def normalise_joints(joints: Any, bodies: list[dict[str, Any]]) -> list[dict[str
                                     f"joint {i} holds_tension_n")
             holds_shear = _number(joint.get("holds_shear_n", 0.0), 0.0, 1e9,
                                   f"joint {i} holds_shear_n")
-            out.append({"kind": kind, "a": a, "b": b, "at_mm": at, "axis": axis,
-                        "holds_tension_n": holds_tension,
-                        "holds_shear_n": holds_shear, **made})
+            # One-way, like an arrow's nock on a string: pushed freely, held
+            # along its axis with up to comes_off_n, off past that. It has no
+            # tension strength, because what pulls it off is comes_off_n.
+            comes_off = _number(joint.get("comes_off_n", 0.0), 0.0, 1e9,
+                                f"joint {i} comes_off_n")
+            if comes_off > 0.0 and holds_tension > 0.0:
+                raise ValueError(f"joint {i} is one-way (comes_off_n) and has a "
+                                 f"holds_tension_n: a one-way fixing has no tension "
+                                 f"strength, because what pulls it off is comes_off_n")
+            fixing = {"kind": kind, "a": a, "b": b, "at_mm": at, "axis": axis,
+                      "holds_tension_n": holds_tension, "holds_shear_n": holds_shear,
+                      **made}
+            if comes_off > 0.0:
+                fixing["comes_off_n"] = comes_off
+            out.append(fixing)
             continue
         if kind == "pulley":
             # Four places: where the rope is made off on each body, and the two
@@ -587,6 +603,128 @@ def normalise_blades(blades: Any, bodies: list[dict[str, Any]]) -> list[dict[str
                                       f"blade {i} edge_radius_mm"),
             "bevel_deg": _number(blade.get("bevel_deg", 30.0), 1.0, 179.0,
                                  f"blade {i} bevel_deg"),
+        })
+    return out
+
+
+# The interaction templates the page knows how to drive. A profile names one;
+# the controls are the page's and what happens is the engine's.
+INTERACTION_TEMPLATES = ("draw-and-release",)
+_PROFILE_KEYS = {"object", "template", "parts", "draw", "nock", "limbs", "projectile"}
+
+
+def normalise_interactions(profiles: Any, bodies: list[dict[str, Any]],
+                           joints: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Check every interaction profile against the room it is in.
+
+    A profile says how a person uses a thing -- which bodies it is made of,
+    which part the hand takes and which way that is drawn, which joint lets go
+    -- and never what the physics does. There is no speed in one anywhere, and
+    a profile that tries to say one is refused. Checked here, where whoever
+    wrote it can be told, for the reason blades are: a bow whose nock is named
+    wrong is a bow that cannot be loosed, and that reads as the physics failing.
+    docs/interaction-profiles.md.
+    """
+    if not isinstance(profiles, list):
+        raise ValueError("interactions must be a list")
+    if len(profiles) > 32:
+        raise ValueError("a room may hold at most 32 interaction profiles")
+    named = {str(body.get("name", "")) for body in bodies}
+
+    def joint(kind: str, a: Any, b: Any) -> dict[str, Any] | None:
+        return next((j for j in joints
+                     if j.get("kind") == kind and {j.get("a"), j.get("b")} == {a, b}), None)
+
+    def joined(kind: str, a: Any, b: Any) -> bool:
+        return joint(kind, a, b) is not None
+
+    out: list[dict[str, Any]] = []
+    for i, profile in enumerate(profiles):
+        if not isinstance(profile, dict):
+            raise ValueError(f"interaction {i} is not an object")
+        name = str(profile.get("object") or "").strip()[:80]
+        if not name:
+            raise ValueError(f"interaction {i} needs an object: what the thing is called")
+        unknown = set(profile) - _PROFILE_KEYS
+        if unknown:
+            raise ValueError(f"{name}: {sorted(unknown)} are not part of a profile, which says "
+                             f"how a thing is used and never what it does; it may have "
+                             f"{sorted(_PROFILE_KEYS)}")
+        template = profile.get("template")
+        if template not in INTERACTION_TEMPLATES:
+            raise ValueError(f"{name}: the template is one of {list(INTERACTION_TEMPLATES)}, "
+                             f"not {template!r}")
+        parts = profile.get("parts")
+        if (not isinstance(parts, list) or not parts or len(parts) > 64
+                or not all(isinstance(p, str) for p in parts)):
+            raise ValueError(f"{name}: parts is the list of the bodies it is made of")
+        missing = [p for p in parts if p not in named]
+        if missing:
+            raise ValueError(f"{name}: {missing} {'is' if len(missing) == 1 else 'are'} "
+                             f"not in this room")
+        draw = profile.get("draw")
+        if not isinstance(draw, dict):
+            raise ValueError(f"{name}: a draw-and-release needs a draw -- the part the hand "
+                             f"takes and the way it comes back")
+        part = draw.get("part")
+        if part not in parts:
+            raise ValueError(f"{name}: the draw's part is {part!r}, which is not one of its parts")
+        axis = draw.get("axis")
+        if not isinstance(axis, list) or len(axis) != 3:
+            raise ValueError(f"{name}: the draw's axis is three numbers, the way it comes back")
+        axis = [_number(v, -1e6, 1e6, f"{name} draw axis") for v in axis]
+        size = math.sqrt(sum(v * v for v in axis))
+        if size < 1e-9:
+            raise ValueError(f"{name}: the draw's axis has no direction")
+        nock = profile.get("nock") if isinstance(profile.get("nock"), dict) else {}
+        seat = joint("fixing", nock.get("a"), nock.get("b"))
+        if seat is None:
+            raise ValueError(f"{name}: the nock is the fixing that seats what is loosed on what "
+                             f"draws it, and there is no fixing between {nock.get('a')!r} and "
+                             f"{nock.get('b')!r}")
+        loosed = nock["b"] if nock["a"] == part else nock["a"]
+        projectile = profile.get("projectile")
+        if projectile != loosed or projectile == part:
+            raise ValueError(f"{name}: the projectile is what the nock lets go of -- "
+                             f"{loosed!r}, not {projectile!r}")
+        # A nock is ONE-WAY: the string pushes the arrow, and the arrow comes off
+        # it by itself. One that holds both ways would carry the arrow back to
+        # brace and hold it there, and the only way to shoot would be for
+        # something that is not the physics to let go of it at the right moment.
+        if not seat.get("comes_off_n", 0.0) > 0.0:
+            raise ValueError(f"{name}: the nock holds {projectile!r} both ways, so it could "
+                             f"never leave the string by itself; a nock is one-way -- give "
+                             f"that fixing comes_off_n")
+        # And it lets go the way the thing is SHOT, which is against the draw. The
+        # fixing's axis points the way its b comes off its a: the arrow off the
+        # string, or the string off the arrow, which is the other way.
+        shot = [-v / size for v in axis]
+        wanted = shot if seat.get("b") == projectile else [-v for v in shot]
+        seat_axis = [float(v) for v in seat.get("axis") or [0.0, 0.0, 0.0]]
+        seat_size = math.sqrt(sum(v * v for v in seat_axis))
+        if seat_size < 1e-9 or sum(w * v for w, v in zip(wanted, seat_axis)) < 0.9 * seat_size:
+            raise ValueError(f"{name}: the nock lets {seat.get('b')!r} come off "
+                             f"{seat.get('a')!r} along {seat_axis}, and for {projectile!r} "
+                             f"to leave the way it is shot that has to be "
+                             f"{[round(v, 3) for v in wanted]}")
+        limbs = profile.get("limbs")
+        if not isinstance(limbs, list) or not limbs:
+            raise ValueError(f"{name}: limbs are the elastic joints that store the draw, each "
+                             f"named by its two bodies")
+        for pair in limbs:
+            if (not isinstance(pair, list) or len(pair) != 2
+                    or not joined("elastic", pair[0], pair[1])):
+                raise ValueError(f"{name}: there is no elastic between {pair!r} to be a limb")
+        out.append({
+            "object": name, "template": template, "parts": list(parts),
+            "draw": {"part": part, "axis": [v / size for v in axis],
+                     "max_mm": _number(draw.get("max_mm", 500), 20.0, 3000.0,
+                                       f"{name} draw max_mm"),
+                     "speed_mm_s": _number(draw.get("speed_mm_s", 400), 10.0, 5000.0,
+                                           f"{name} draw speed_mm_s")},
+            "nock": {"a": nock["a"], "b": nock["b"]},
+            "limbs": [list(pair) for pair in limbs],
+            "projectile": projectile,
         })
     return out
 
@@ -1355,6 +1493,8 @@ def validate(spec: Any) -> dict[str, Any]:
         result["terrain"] = normalise_terrain(result.get("terrain"))
         result["water"] = normalise_water(result.get("water"))
         result["blades"] = normalise_blades(result.get("blades") or [], result["bodies"])
+        result["interactions"] = normalise_interactions(result.get("interactions") or [],
+                                                        result["bodies"], result["joints"])
         result["duration_s"] = _number(result["duration_s"], LIMITS["duration_s"]["min"],
                                        LIMITS["duration_s"]["max"], "duration")
         result["seated"] = seat_bodies(result["bodies"], result["cell_m"])

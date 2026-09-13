@@ -872,7 +872,9 @@ def _said(joint: banjo.Joint) -> dict[str, Any]:
                 "tension_n": round(joint.tension_now_n, 2),
                 "shear_n": round(joint.shear_now_n, 2),
                 "holds_tension_n": round(joint.holds_tension_n, 2),
-                "holds_shear_n": round(joint.holds_shear_n, 2)}
+                "holds_shear_n": round(joint.holds_shear_n, 2),
+                **({"comes_off_n": round(joint.comes_off_n, 2)}
+                   if joint.comes_off_n > 0.0 else {})}
     if joint.kind == "pulley":
         return {**common,
                 "rope_m": round(joint.at, 4),
@@ -1018,6 +1020,7 @@ def tool_fix(args: dict[str, Any]) -> dict[str, Any]:
     """Fix one named thing to another: a peg, a bracket, a catch, a locking bar."""
     world: banjo.World = _live(_world(args.get("world_id")))
     member = _member(args)
+    comes_off = _number(args.get("comes_off_n", 0.0), "comes_off_n", 0.0, 1e9)
     try:
         joint = world.fix(
             str(args.get("a", "")), str(args.get("b", "")),
@@ -1025,13 +1028,19 @@ def tool_fix(args: dict[str, Any]) -> dict[str, Any]:
             _triple(args.get("axis", [0.0, 1.0, 0.0]), "axis", -1e6, 1e6),
             _number(args.get("holds_tension_n", 0.0), "holds_tension_n", 0.0, 1e9),
             _number(args.get("holds_shear_n", 0.0), "holds_shear_n", 0.0, 1e9),
-            member=member)
+            member=member, comes_off_n=comes_off)
     except banjo.BanjoError as error:
         raise Refused(str(error))
-    answer = {"joint": joint,
-              "note": f"{args.get('b')} and {args.get('a')} are now one piece. "
-                      "Release it with `unhinge` -- that is what a latch is, and "
-                      "doing it changes what the assembly can do."}
+    if comes_off > 0.0:
+        note = (f"{args.get('b')} sits on {args.get('a')} ONE WAY: pushed back into "
+                f"it, it takes whatever the push is; pulled along the axis it is held "
+                f"with up to {comes_off:g} N, and harder than that it comes off by "
+                f"itself. That is how an arrow leaves a string -- nothing lets it go.")
+    else:
+        note = (f"{args.get('b')} and {args.get('a')} are now one piece. "
+                "Release it with `unhinge` -- that is what a latch is, and "
+                "doing it changes what the assembly can do.")
+    answer = {"joint": joint, "note": note}
     if member:
         answer["made_of"] = _made_of_said(world, joint, member)
     return answer
@@ -2641,7 +2650,10 @@ TOOLS = [
                     "and burns, and it gives way when the load the solver "
                     "measures passes what is left -- not at a temperature, not "
                     "on a timer. Rate it at least twice what it holds: a scene "
-                    "starts with every load suddenly applied.",
+                    "starts with every load suddenly applied. "
+                    "Give it comes_off_n and it is ONE-WAY instead -- an arrow's "
+                    "nock on a string: b comes off along `axis` by itself when "
+                    "pulled harder than that, and takes any push the other way.",
      "inputSchema": {"type": "object",
                      "required": ["world_id", "a", "b", "at_m"],
                      "properties": {
@@ -2659,7 +2671,17 @@ TOOLS = [
                            "description": "What it takes to shear it across the "
                                           "axis. A 200 mm iron cube hanging on a "
                                           "bracket is 618 N of pure shear."},
-         "member": MEMBER}}},
+         "member": MEMBER,
+         "comes_off_n": {"type": "number",
+                         "description": "Above 0 the fixing is ONE-WAY along `axis`, "
+                                        "which then points the way b comes off a: an "
+                                        "arrow's nock on a string, a sling's ring on "
+                                        "its release pin. Pushed back into a, b takes "
+                                        "whatever the push is; pulled along the axis "
+                                        "it is held with up to this many newtons and "
+                                        "slides off by itself past that. Leave "
+                                        "holds_tension_n at 0 with it. 0, the "
+                                        "default, is an ordinary two-way fixing."}}}},
     {"name": "spring",
      "description": "Put an elastic element between two named things: a BOW LIMB, "
                     "a spring, a bent plank -- anything that stores energy by "

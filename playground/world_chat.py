@@ -140,9 +140,12 @@ is fixed to each body at the point where you make it.
   are fixed points in the world, above the ends of the rope. ratio is on b's
   side: b moves 1/ratio as far as a's end moves, and a needs only 1/ratio of the
   load on b -- so put the heavy load at b and use ratio 2 to 3 for a winch.
-- fix(a, b, at_m, axis, holds_tension_n, holds_shear_n): welds b to a so they
-  move as one, until unhinge releases it: a latch, a locking bar, a handle fixed
-  to a wheel. Strengths of 0 never let go.
+- fix(a, b, at_m, axis, holds_tension_n, holds_shear_n, comes_off_n): welds b to
+  a so they move as one, until unhinge releases it: a latch, a locking bar, a
+  handle fixed to a wheel. Strengths of 0 never let go. comes_off_n above 0
+  makes it ONE-WAY along axis, which then points the way b comes off: an arrow's
+  nock on a string is pushed freely, held with up to comes_off_n, and comes off
+  by itself past that -- nothing has to let it go.
 - spring(a, b, at_a_m, at_b_m, rest_m, stiffness_n_m, damping_n_s_m): an elastic
   element that pushes AND pulls. Very stiff (20000 N/m, damping 200) it is a
   connecting rod.

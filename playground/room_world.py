@@ -119,9 +119,13 @@ def joint_call(pin: dict[str, Any]) -> tuple[str, dict[str, Any]]:
                          "ratio": pin.get("ratio", 1.0),
                          "length_m": pin.get("length_mm", 0.0) / 1000.0}
     if kind == "fixing":
-        return "fix", {**ends, "at_m": _m(pin["at_mm"]), "axis": list(pin["axis"]),
-                       "holds_tension_n": pin.get("holds_tension_n", 0.0),
-                       "holds_shear_n": pin.get("holds_shear_n", 0.0), **made}
+        call = {**ends, "at_m": _m(pin["at_mm"]), "axis": list(pin["axis"]),
+                "holds_tension_n": pin.get("holds_tension_n", 0.0),
+                "holds_shear_n": pin.get("holds_shear_n", 0.0), **made}
+        # One-way, like an arrow on a string; absent, it is two-way as before.
+        if pin.get("comes_off_n", 0.0) > 0.0:
+            call["comes_off_n"] = pin["comes_off_n"]
+        return "fix", call
     if kind == "elastic":
         return "spring", {**ends, "at_a_m": _m(pin["at_mm"]), "at_b_m": _m(pin["to_mm"]),
                           "rest_m": pin.get("rest_mm", 0.0) / 1000.0,
@@ -159,9 +163,12 @@ def joint_spec(record: dict[str, Any]) -> dict[str, Any]:
                 "ratio": args.get("ratio", 1.0),
                 "length_mm": round(float(args.get("length_m", 0.0)) * 1000.0, 3)}
     if tool == "fix":
-        return {**ends, "at_mm": _mm(args["at_m"]), "axis": list(args.get("axis", [0, 1, 0])),
+        spec = {**ends, "at_mm": _mm(args["at_m"]), "axis": list(args.get("axis", [0, 1, 0])),
                 "holds_tension_n": args.get("holds_tension_n", 0.0),
                 "holds_shear_n": args.get("holds_shear_n", 0.0)}
+        if args.get("comes_off_n", 0.0) > 0.0:
+            spec["comes_off_n"] = args["comes_off_n"]
+        return spec
     return {**ends, "at_mm": _mm(args["at_a_m"]), "to_mm": _mm(args["at_b_m"]),
             "rest_mm": round(float(args.get("rest_m", 0.0)) * 1000.0, 3),
             "stiffness_n_m": args.get("stiffness_n_m", 1000.0),

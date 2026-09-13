@@ -52,11 +52,13 @@ def run(world, seconds):
 
 
 class HeatThroughTheLibrary(unittest.TestCase):
-    def test_the_library_speaks_abi_16(self):
-        # 14 added heat, chemistry and gas; 15 added terrain and water on top;
-        # 16 made heat change what things can carry.
-        self.assertEqual(banjo.library().banjo_abi_version(), 16)
-        self.assertEqual(banjo.ABI_VERSION, 16)
+    def test_the_library_speaks_an_abi_with_heat_in_it(self):
+        # 14 added heat, chemistry and gas, and every ABI after it keeps them;
+        # 16 made heat change what things can carry. Pinned to one number, this
+        # failed the day an unrelated addition moved it -- which says nothing
+        # about heat.
+        self.assertGreaterEqual(banjo.library().banjo_abi_version(), 16)
+        self.assertEqual(banjo.ABI_VERSION, banjo.library().banjo_abi_version())
 
     def test_the_model_is_readable_without_a_world(self):
         model = banjo.thermo_model()["model"]

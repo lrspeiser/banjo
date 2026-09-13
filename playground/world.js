@@ -14,6 +14,9 @@
 import * as THREE from "/vendor/three.module.js";
 import { rememberBlades, bladeFor, STANCES, takeHold, handTarget, dressBlades, showKerfs,
          narrateCuts } from "/blades.js";
+import { BINDINGS, isKey, isButton, keyOf, controlsHint, holdPoint, windUpPoint,
+         windUpReached, throwStroke, placeStroke, throwable, helpFor, AimArc,
+         WIND_UP_S } from "/interaction.js";
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -95,6 +98,13 @@ const world = {
   opening: false,
   openError: null,
   framesSinceOpen: 0,
+  // The hand as the one control language sees it (interaction.js): what it is
+  // doing -- "none", "ready", "preparing", "throwing", "placing", "blocked",
+  // "carrying", "thrown" -- and what the help and the meter say about it.
+  use: { mode: "none" },
+  // The room's interaction profiles (docs/interaction-profiles.md): how each
+  // object in it is used. From the validated room, never worked out here.
+  profiles: [],
 };
 
 function remember(what) {
@@ -668,6 +678,9 @@ function draw(state) {
     held.dims = body.dimensions_m;
     held.anchored = !!body.anchored;
     held.shape = body.shape;
+    // What the engine says it weighs: what a hand has to hold up and a throw
+    // has to accelerate.
+    held.mass = body.mass_kg || 0;
     place(held.mesh, body);
     showKerfs(held, body);
   }
@@ -1071,8 +1084,14 @@ let yaw = 0, pitch = 0, looking = false;
 
 addEventListener("keydown", (e) => {
   if (e.target instanceof HTMLInputElement) return;
+  if (isKey("more", e.code)) e.preventDefault();   // not the browser's focus hop
+  if (e.repeat) return;
   keys.add(e.code);
-  if (e.code === "KeyF" && world.held) intend("throw");
+  // The one control language (interaction.js): interact takes hold and puts
+  // down; more says what else the thing in the hand can do, by number.
+  if (isKey("interact", e.code)) intend(world.held ? "put down" : "pick");
+  if (isKey("more", e.code) && world.held) { world.use.more = !world.use.more; showUse(); }
+  if (world.use.more && /^Digit[123]$/.test(e.code)) moreAction(Number(e.code.slice(5)));
   if (e.code === "KeyR") unlatch();
   if (e.code === "KeyL") markLag();
   if (["KeyW","KeyA","KeyS","KeyD","KeyQ","KeyE","Space",
@@ -1080,6 +1099,8 @@ addEventListener("keydown", (e) => {
 });
 addEventListener("keyup", (e) => keys.delete(e.code));
 addEventListener("blur", () => keys.clear());
+// The controls, said from the same table the keys are read from.
+$("hud-hint").innerHTML = controlsHint();
 
 // Right-click releases a latch on whatever is under the crosshair: the bar off
 // the gate, the nock off the string. On the mouse as well as on R because a
@@ -1087,6 +1108,10 @@ addEventListener("blur", () => keys.clear());
 // reaching for a key to do it is one hand too many.
 canvas.addEventListener("contextmenu", (e) => {
   e.preventDefault();
+  // Secondary, in the middle of a wind-up: lower it instead of throwing.
+  if (world.use.mode === "preparing") { cancelWindUp(); return; }
+  // ...and in the middle of a draw, let the string back down.
+  if (world.use.mode === "drawing") { intend("let down"); return; }
   // With a blade in hand it turns the edge instead, a quarter about the
   // blade's own length: left, down, right, up.
   if (world.held && world.held.blade) {
@@ -1098,14 +1123,34 @@ canvas.addEventListener("contextmenu", (e) => {
 });
 
 let drag = null;
+// Whether the press of primary that is down began a wind-up or a draw. Its
+// release then throws or looses -- or, when secondary cancelled it first, does
+// nothing at all. It is never also a click: a release after letting a string
+// down used to pick the bow straight up again, and after lowering a wind-up it
+// dropped the ball.
+let primaryUsed = false;
 canvas.addEventListener("pointerdown", (e) => {
   // The LEFT button only. The right one releases a latch, and it used to do
   // that and then pick the thing up as well, because a pointerup is a
   // pointerup whichever button made it.
   if (e.button !== 0) return;
+  // Primary held with something throwable in the hand winds it up. Looking
+  // still works while it does -- that is how a throw is aimed.
+  if (isButton("primary", e.button) && world.held && world.held.throwable &&
+      (world.use.mode === "ready" || world.use.mode === "blocked")) {
+    startWindUp();
+    primaryUsed = true;
+  } else if (isButton("primary", e.button) && world.held && world.held.bow &&
+             world.use.mode === "bow-ready") {
+    // The same button on a bow draws it.
+    intend("draw");
+    primaryUsed = true;
+  }
   if (looking) return;           // captured: the move handler has it
   drag = { x: e.clientX, y: e.clientY, moved: false };
-  canvas.setPointerCapture(e.pointerId);
+  // Capture can be refused -- a pointer already gone, or one a test made up --
+  // and dragging to look works without it.
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* look without it */ }
 });
 canvas.addEventListener("pointermove", (e) => {
   if (!drag) return;
@@ -1116,6 +1161,16 @@ canvas.addEventListener("pointermove", (e) => {
 });
 canvas.addEventListener("pointerup", (e) => {
   if (e.button !== 0) return;
+  // Letting go of primary after a wind-up throws, however much the view was
+  // turned while it was held.
+  if (primaryUsed) {
+    primaryUsed = false;
+    if (drag) try { canvas.releasePointerCapture(e.pointerId); } catch { /* gone */ }
+    drag = null;
+    if (world.use.mode === "preparing") intend("let fly");
+    else if (world.use.mode === "drawing") intend("loose");
+    return;
+  }
   const was = drag;
   drag = null;
   try { canvas.releasePointerCapture(e.pointerId); } catch { /* already gone */ }
@@ -1166,8 +1221,9 @@ function walk(dt) {
   if (keys.has("KeyD")) move.add(right);
   if (keys.has("KeyA")) move.sub(right);
   if (move.lengthSq() > 0) move.normalize().multiplyScalar(speed);
-  if (keys.has("KeyE") || keys.has("Space")) move.y += speed;
-  if (keys.has("KeyQ")) move.y -= speed;
+  // Up and down from the bindings. E used to be up as well; it is interact now.
+  if (BINDINGS.up.keys.some((k) => keys.has(k))) move.y += speed;
+  if (BINDINGS.down.keys.some((k) => keys.has(k))) move.y -= speed;
   camera.position.add(move);
   // Not below the floor, and not so high the room is a map. On uneven ground
   // the floor is the ground under you.
@@ -1253,8 +1309,14 @@ function showLabel(found) {
             + ` (drawn deeper so you can see it)` : "")
       + ` · ${found.distance_m.toFixed(2)} m away`
       + (bladeFor(found.name) ? " · has an edge: click to take it by the grip" : "")
+      + (!bladeFor(found.name) && throwable(entry, onAJoint(found.name))
+          ? ` · ${entry.mass < 10 ? entry.mass.toFixed(2) : entry.mass.toFixed(1)} kg`
+            + ` · ${keyOf("interact")} or click to take hold` : "")
+      + (profileOf(found.name)
+          ? ` · part of ${profileOf(found.name).object}: ${keyOf("interact")} or click to take it up`
+          : "")
     : "";
-  cross.classList.toggle("on", !entry?.anchored);
+  cross.classList.toggle("on", !entry?.anchored || !!profileOf(found.name));
 }
 
 // A click always lands.
@@ -1269,7 +1331,11 @@ function intend(what) {
   if (world.busy) { wants = what; return; }
   if (what === "pick") pickUp();
   else if (what === "drop") dropIt();
-  else if (what === "throw") throwIt();
+  else if (what === "put down") putDown();
+  else if (what === "let fly") letFly();
+  else if (what === "draw") startDraw();
+  else if (what === "loose") loose();
+  else if (what === "let down") letDown();
 }
 
 // ---------------------------------------------------------------------------
@@ -1293,6 +1359,11 @@ function latchOn(name) {
 function ropedTo(name) {
   return world.joints.some((j) => j.kind === "link" && j.attached &&
                                   (j.a === name || j.b === name));
+}
+
+// On any joint at all: hauled against it rather than taken by a grip.
+function onAJoint(name) {
+  return world.joints.some((j) => j.attached && (j.a === name || j.b === name));
 }
 
 // Let go of a latch by hand: whatever is held, or whatever is under the
@@ -1322,15 +1393,37 @@ async function refreshJoints() {
   return got && got.joints;
 }
 
-function storedInElastics() {
-  return world.joints.reduce(
-    (sum, j) => sum + (j.kind === "elastic" && j.attached ? (j.stored_j || 0) : 0), 0);
+// What the elastics of ONE mechanism hold: those joined to the thing being drawn
+// through any chain of attached joints, without going on through scenery.
+// Summed over the whole room it read every other assembly's springs as this
+// one's draw (docs/interaction-profiles.md).
+function storedInElastics(name) {
+  const seen = new Set([name]);
+  const reach = [name];
+  while (reach.length) {
+    const at = reach.pop();
+    for (const j of world.joints) {
+      if (!j.attached || (j.a !== at && j.b !== at)) continue;
+      const other = j.a === at ? j.b : j.a;
+      if (seen.has(other)) continue;
+      seen.add(other);
+      if (!world.bodies.get(other)?.anchored) reach.push(other);
+    }
+  }
+  return world.joints.reduce((sum, j) => sum + (j.kind === "elastic" && j.attached &&
+    seen.has(j.a) && seen.has(j.b) ? (j.stored_j || 0) : 0), 0);
 }
 
 async function pickUp() {
   if (!world.aim) return;
   const name = world.aim.name;
   const entry = world.bodies.get(name);
+  // A part of something with a profile takes up the whole of it -- the bow,
+  // not its grip, even though the grip is fixed in place. With Alt held the
+  // hand takes exactly the part under the crosshair instead: the advanced
+  // hold, which is how a bowstring can still be grabbed by itself.
+  const profile = !(keys.has("AltLeft") || keys.has("AltRight")) && profileOf(name);
+  if (profile) { await takeUpBow(profile); return; }
   if (entry?.anchored) {
     say("world", `${name} is fixed in place — it is the room, not a prop.`);
     return;
@@ -1352,8 +1445,29 @@ async function pickUp() {
         + ` swing it; right-click turns the edge.`);
       return;
     }
+    // A loose thing a hand can lift is taken by a GRIP, not carried: held at
+    // its middle by the bounded hand, so that bringing it in, winding it up
+    // and throwing it are the hand's force acting on its mass. Anything on a
+    // joint keeps the hold it had -- a bowstring is hauled, a gate is shoved.
+    if (entry && throwable(entry, onAJoint(name))) {
+      const at = entry.mesh.position;
+      await act("wield", { name, grip: [at.x, at.y, at.z] });
+      world.held = { name, throwable: true, distance: 0.5 };
+      world.use = { mode: "ready", name, kg: entry.mass,
+                    noun: entry.shape === "sphere" ? "ball" : "thing",
+                    latched: !!latchOn(name),
+                    bringing: { from: at.clone(), since: performance.now() } };
+      $("crosshair").classList.add("holding");
+      $("label").hidden = true;
+      $("carry").hidden = false;
+      remember(`took hold of the ${entry.material || ""} ${name}`.replace(/\s+/g, " "));
+      say("you", `Took hold of ${name} — ${entry.mass < 10 ? entry.mass.toFixed(2) : entry.mass.toFixed(1)} kg.`);
+      showUse();
+      return;
+    }
     await act("grab", { name });
     world.held = { name, distance: clamp(world.aim.distance_m, 0.6, 4.0) };
+    world.use = { mode: "carrying", name, kg: entry?.mass || 0, latched: !!latchOn(name) };
     // Where the hand is, relative to where the view says it is.
     //
     // The crosshair ray stops at a SURFACE and the hand pulls on a CENTRE OF
@@ -1382,6 +1496,7 @@ async function pickUp() {
     $("carry").hidden = false;
     remember(`picked up the ${entry?.material || ""} ${name}`.replace(/\s+/g, " "));
     say("you", `Picked up ${name}.`);
+    showUse();
   } catch (error) { say("bad", String(error.message || error)); }
 }
 
@@ -1394,7 +1509,7 @@ async function dropIt() {
   // back to where it was taken hold of, because that is where the string stops
   // and the arrow does not -- which is where an arrow leaves a real one.
   if (world.drawn && world.drawn.name === name) {
-    const stored = storedInElastics();
+    const stored = storedInElastics(name);
     world.loosing = { name, home: world.drawn.from, latch: world.drawn.latch,
                       best: 0, stored };
     world.drawn = null;
@@ -1408,6 +1523,9 @@ async function dropIt() {
   $("crosshair").classList.remove("holding");
   $("carry").hidden = true;
   clearGuides();
+  aimArc.hide();
+  world.use = { mode: "none" };
+  showUse();
   try {
     await act("release");
     remember(at ? `let go of ${name} at ${at.x.toFixed(2)}, ${at.y.toFixed(2)}, ${at.z.toFixed(2)} m`
@@ -1416,24 +1534,462 @@ async function dropIt() {
   } catch (error) { say("bad", String(error.message || error)); }
 }
 
-// Throwing is letting go with the hand still moving. The engine takes a pose,
-// not a velocity, so the throw is three fast moves along the view and then a
-// release -- the object keeps the speed those moves gave it.
-async function throwIt() {
-  if (!world.held) return;
-  const held = world.held;
-  const dir = forwardVector();
+// ---------------------------------------------------------------------------
+// Using what is in the hand: one control language (interaction.js)
+// ---------------------------------------------------------------------------
+//
+// A throw is the hand moving: a wind-up, then a stroke the ENGINE makes at its
+// own step rate with the hand's bounded force, letting go when the thing gets
+// to the end. Nothing here gives anything a speed. A heavy ball winds up slower
+// and leaves slower because the same 800 N has more to move, and what it left
+// with, and the work the hand put in, are read back from the engine.
+//
+// (This replaced a throw that was three 0.55 m jumps of a CARRIED body and a
+// release. A carry is placement and zeroes the body's speed every step, so it
+// left the hand at 0.00 m/s and fell 1.65 m in front of you, whatever it was.)
+const aimArc = new AimArc(scene);
+
+function startWindUp() {
+  Object.assign(world.use, { mode: "preparing", since: performance.now(), asked: 0,
+                             reached: 0, more: false, bringing: null });
+  showUse();
+}
+
+function cancelWindUp() {
+  Object.assign(world.use, { mode: "ready", asked: 0 });
+  say("you", `Lowered ${world.use.name}.`);
+  showUse();
+}
+
+async function letFly() {
+  const use = world.use;
+  const entry = world.held && world.bodies.get(world.held.name);
+  if (!entry || use.mode !== "preparing") return;
+  const grip = use.grip || entry.mesh.position.clone();
+  const reached = use.reached || 0;
+  use.mode = "throwing";
+  showUse();
   try {
-    for (let i = 1; i <= 3; i++) {
-      const d = held.distance + i * 0.55;
-      const p = camera.position.clone().add(dir.clone().multiplyScalar(d));
-      await act("move", { to: [p.x, p.y, p.z] });
-      await act("step", { dt: 1 / 240, n: 1 });
+    const reply = await act("stroke", Object.assign(throwStroke(camera, grip, reached),
+                                                    { let_go: true }));
+    // The work the hand does on the throw itself, not on the wind-up before it.
+    use.workBefore = reply && reply.hand ? reply.hand.work_j : 0;
+  } catch (error) {
+    use.mode = "ready";
+    say("bad", String(error.message || error));
+    showUse();
+  }
+}
+
+// Put it down: lowered by the same hand onto what is under it, and let go of
+// when it gets there. A carried thing is set down as it always was.
+async function putDown() {
+  const held = world.held;
+  if (!held) return;
+  if (held.bow) {
+    // A bow is not dropped with its string drawn: let down first, then let go.
+    if (world.use.mode === "drawing") await letDown();
+    else if (world.use.mode === "bow-ready") await releaseBow(`You let go of ${held.bow.object}.`);
+    return;
+  }
+  if (!held.throwable) { await dropIt(); return; }
+  const entry = world.bodies.get(held.name);
+  if (!entry) return;
+  const grip = world.use.grip || entry.mesh.position.clone();
+  const restsAt = dropOnto.y + underside(entry) - 0.002;
+  if (dropOnto.empty || grip.y - restsAt < 0.02) { await dropIt(); return; }
+  world.use.mode = "placing";
+  world.use.more = false;
+  showUse();
+  try { await act("stroke", placeStroke(grip, restsAt)); }
+  catch (error) {
+    world.use.mode = "ready";
+    say("bad", String(error.message || error));
+    showUse();
+  }
+}
+
+function moreAction(n) {
+  world.use.more = false;
+  if (n === 1) intend("drop");
+  else if (n === 2) intend("put down");
+  else if (n === 3) unlatch();
+  showUse();
+}
+
+// Where the hand wants a throwable thing this tick: brought in to the hand,
+// held there, or wound back as far as has been asked. While the engine is
+// making a stroke the hand is the engine's, and nothing is sent.
+function throwingHand(now) {
+  const use = world.use;
+  if (use.mode === "preparing") {
+    use.asked = Math.min(1, (now - use.since) / (WIND_UP_S * 1000));
+    const p = windUpPoint(camera, use.asked);
+    return [p.x, p.y, p.z];
+  }
+  if (use.mode !== "ready" && use.mode !== "blocked") return null;
+  const hold = holdPoint(camera);
+  if (use.bringing) {
+    // Brought in over a third of a second rather than yanked: the bounded hand
+    // would get it there anyway, but at 800 N into a quarter-kilogram ball.
+    const s = Math.min(1, (now - use.bringing.since) / 350);
+    if (s >= 1) use.bringing = null;
+    const p = use.bringing ? use.bringing.from.clone().lerp(hold, s) : hold;
+    return [p.x, p.y, p.z];
+  }
+  return [hold.x, hold.y, hold.z];
+}
+
+// What the engine says the hand did: how far back a wind-up actually got, and
+// how a stroke ended.
+function followTheHand(hand) {
+  const use = world.use;
+  if (!hand || !world.held || !world.held.throwable) return;
+  if (hand.grip_m && hand.holding) use.grip = new THREE.Vector3(...hand.grip_m);
+  if (use.mode === "preparing" && use.grip) {
+    use.reached = windUpReached(camera, use.grip);
+    showUse();
+  }
+  if (use.mode !== "throwing" && use.mode !== "placing") return;
+  if (hand.stroke_ended === "let go" && hand.let_go && !hand.holding) { letGoOf(hand); return; }
+  if (!hand.stroking && ["blocked", "gave up", "cancelled"].includes(hand.stroke_ended)) {
+    use.mode = "blocked";
+    say("world", `${use.name} would not go any further — something is in the way.`);
+    showUse();
+  }
+}
+
+function letGoOf(hand) {
+  const use = world.use;
+  const name = world.held.name;
+  const v = hand.let_go.velocity_m_s;
+  const speed = Math.hypot(v[0], v[1], v[2]);
+  const thrown = use.mode === "throwing";
+  world.held = null;
+  $("crosshair").classList.remove("holding");
+  $("carry").hidden = true;
+  clearGuides();
+  aimArc.hide();
+  if (thrown) {
+    const work = hand.let_go.work_j - (use.workBefore || 0);
+    const kg = use.kg || 0;
+    const text = `${name} left your hand at ${speed.toFixed(1)} m/s — the throw was`
+      + ` ${work.toFixed(work < 10 ? 1 : 0)} J of your hand's work on`
+      + ` ${kg < 10 ? kg.toFixed(2) : kg.toFixed(1)} kg.`;
+    say("world", text);
+    remember(`threw ${name}: it left the hand at ${speed.toFixed(1)} m/s after`
+      + ` ${work.toFixed(1)} J of the hand's work`);
+    world.use = { mode: "thrown", name, kg, result: text, until: performance.now() + 4000 };
+  } else {
+    say("you", `Put ${name} down.`);
+    remember(`put ${name} down`);
+    world.use = { mode: "none" };
+  }
+  showUse();
+}
+
+// Where the throw would go if it were let go of now: the engine's own preview
+// of this hand on this thing, a few times a second, redrawn as the view and the
+// wind-up change. It moves nothing.
+let previewBusy = false, previewAt = 0;
+async function previewThrow() {
+  const use = world.use;
+  if (!world.held || !world.held.throwable || (use.mode !== "ready" && use.mode !== "preparing")) {
+    aimArc.hide();
+    return;
+  }
+  const now = performance.now();
+  if (previewBusy || !use.grip || use.bringing || now - previewAt < 180) return;
+  previewAt = now;
+  previewBusy = true;
+  try {
+    const stroke = throwStroke(camera, use.grip, use.mode === "preparing" ? use.reached || 0 : 0);
+    const seen = await act("preview_stroke", Object.assign(stroke, { horizon_s: 4 }));
+    if (world.use !== use || (use.mode !== "ready" && use.mode !== "preparing")) return;
+    const v = seen.let_go_velocity_m_s || [0, 0, 0];
+    use.preview = { possible: !!(seen.possible && seen.reaches_end), why: seen.why || "",
+                    speed: Math.hypot(v[0], v[1], v[2]),
+                    hit: !!(seen.flight && seen.flight.hit),
+                    hitName: (seen.flight && seen.flight.hit_name) || "" };
+    if (use.preview.possible) aimArc.show(seen.flight); else aimArc.hide();
+    showUse();
+  } catch { /* the next tick asks again */ } finally { previewBusy = false; }
+}
+
+function showUse() {
+  const use = world.use;
+  const box = $("use");
+  if (!use || use.mode === "none") { box.hidden = true; return; }
+  const help = helpFor(use);
+  box.hidden = false;
+  $("use-title").innerHTML = help.title;
+  $("use-line").innerHTML = help.line;
+  $("use-note").textContent = help.note;
+  $("use-meter").hidden = !help.meter;
+  if (help.meter) {
+    $("use-meter-label").textContent = help.meter.label;
+    $("use-meter-fill").style.width = `${Math.round(100 * help.meter.fraction)}%`;
+    $("use-meter-value").textContent = help.meter.value;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// A bow, by its profile (docs/interaction-profiles.md)
+// ---------------------------------------------------------------------------
+//
+// Taking up any part of it takes the string. Holding primary draws: the ENGINE
+// makes the stroke, and the hand -- 800 N -- pulls the string back along the
+// profile's axis until the limbs balance it; how far it comes is the bow's
+// answer, and the meter reads it off the engine. Letting go opens the hand and
+// the string runs home; the nock is one-way, so the arrow comes off the string
+// by itself as the string slows at brace, and what it leaves with is what the
+// limbs held, less what the string and the tips kept. Nothing here is a speed,
+// and nothing here lets the arrow go.
+
+function rememberProfiles(spec) {
+  world.profiles = ((spec && spec.interactions) || [])
+    .filter((p) => p.template === "draw-and-release");
+}
+
+function profileOf(name) {
+  return world.profiles.find((p) => p.parts.includes(name)) || null;
+}
+
+// Where each bow's string sits unshot, taken from the room as it opens, with
+// everything at rest. Taken instead when the string was picked up, it was
+// wherever a string still ringing from the last shot happened to be -- and the
+// hand then held it there, off brace, with its full 800 N.
+function braceProfiles() {
+  for (const profile of world.profiles) {
+    const entry = world.bodies.get(profile.draw.part);
+    if (entry) profile.brace = entry.mesh.position.clone();
+  }
+}
+
+function bowJoint(kind, a, b) {
+  return world.joints.find((j) => j.kind === kind &&
+    ((j.a === a && j.b === b) || (j.a === b && j.b === a))) || null;
+}
+
+// The bow as the engine last reported it: whether there is an arrow on the
+// string, whether the string is still strung, and what ITS limbs hold.
+function bowState(profile) {
+  const part = profile.draw.part;
+  const nock = bowJoint("fixing", profile.nock.a, profile.nock.b);
+  const strung = world.joints.some((j) => j.kind === "link" && j.attached &&
+                                          (j.a === part || j.b === part));
+  const stored = profile.limbs.reduce((sum, [a, b]) => {
+    const limb = bowJoint("elastic", a, b);
+    return sum + (limb && limb.attached ? (limb.stored_j || 0) : 0);
+  }, 0);
+  return { arrowReady: !!(nock && nock.attached), nock, strung, stored };
+}
+
+function notice(name, text) {
+  world.use = { mode: "notice", name, result: text, until: performance.now() + 4000 };
+  say("world", text);
+  showUse();
+}
+
+async function takeUpBow(profile) {
+  const part = profile.draw.part;
+  const entry = world.bodies.get(part);
+  const state = bowState(profile);
+  if (!entry || !state.strung) {
+    notice(profile.object, entry ? `The string of ${profile.object} is cut — it cannot be drawn.`
+                                 : `${profile.object} has no string any more.`);
+    return;
+  }
+  await act("grab", { name: part });
+  world.held = { name: part, bow: profile, distance: 1 };
+  world.use = { mode: "bow-ready", name: profile.object,
+                brace: (profile.brace || entry.mesh.position).clone(),
+                bow: { arrowReady: state.arrowReady, strung: true, drawn: 0,
+                       max: profile.draw.max_mm / 1000, storedJ: state.stored, pullN: 0 } };
+  $("crosshair").classList.add("holding");
+  $("label").hidden = true;
+  remember(`took up ${profile.object} by its string`);
+  say("you", `Took up ${profile.object}` + (state.arrowReady ? ", an arrow on the string."
+                                                              : " — there is no arrow on the string."));
+  showUse();
+}
+
+async function releaseBow(text) {
+  world.held = null;
+  world.use = { mode: "none" };
+  $("crosshair").classList.remove("holding");
+  aimArc.hide();
+  showUse();
+  try { await act("release"); } catch (error) { say("bad", String(error.message || error)); }
+  if (text) say("you", text);
+}
+
+async function startDraw() {
+  const use = world.use;
+  const profile = world.held && world.held.bow;
+  if (!profile || use.mode !== "bow-ready") return;
+  const entry = world.bodies.get(profile.draw.part);
+  if (!entry) return;
+  if (!bowState(profile).strung) {
+    await releaseBow();
+    notice(profile.object, `The string of ${profile.object} is cut — it cannot be drawn.`);
+    return;
+  }
+  const at = entry.mesh.position.clone();
+  const back = use.brace.clone()
+    .addScaledVector(new THREE.Vector3(...profile.draw.axis), profile.draw.max_mm / 1000);
+  use.mode = "drawing";
+  showUse();
+  try {
+    await act("stroke", { path: [[at.x, at.y, at.z], [back.x, back.y, back.z]],
+                          speed_m_s: profile.draw.speed_mm_s / 1000, accel_m_s2: 2.0,
+                          lead_m: 0.05, let_go: false, give_up_s: 30 });
+  } catch (error) {
+    use.mode = "bow-ready";
+    say("bad", String(error.message || error));
+    showUse();
+  }
+}
+
+// Loosed: the hand opens, and that is all this does. The nock is one-way, so
+// the arrow comes off the string by itself, at the engine's own step, when the
+// string slowing at brace would have to pull it back. Here the arrow is watched
+// for a second and a half and what it left with is said, with the share of the
+// limbs' energy it carried.
+async function loose() {
+  const use = world.use;
+  const profile = world.held && world.held.bow;
+  if (!profile || use.mode !== "drawing") return;
+  const state = bowState(profile);
+  world.held = null;
+  $("crosshair").classList.remove("holding");
+  aimArc.hide();
+  world.use = { mode: "loosed", name: profile.object, profile, stored: state.stored,
+                arrowReady: state.arrowReady, fastest: 0, reported: false,
+                watchUntil: performance.now() + 1500, until: performance.now() + 6000,
+                result: state.arrowReady ? "Loosed…" : "Loosed with no arrow on the string." };
+  showUse();
+  try { await act("release"); } catch (error) { say("bad", String(error.message || error)); }
+  remember(`loosed ${profile.object} with ${state.stored.toFixed(1)} J in its limbs`);
+}
+
+async function letDown() {
+  const use = world.use;
+  const profile = world.held && world.held.bow;
+  if (!profile || (use.mode !== "drawing" && use.mode !== "bow-ready")) return;
+  const entry = world.bodies.get(profile.draw.part);
+  if (!entry) return;
+  const at = entry.mesh.position.clone();
+  if (at.distanceTo(use.brace) < 0.01) { await releaseBow(`You let go of ${profile.object}.`); return; }
+  use.mode = "letting-down";
+  showUse();
+  try {
+    await act("stroke", { path: [[at.x, at.y, at.z], [use.brace.x, use.brace.y, use.brace.z]],
+                          speed_m_s: 0.25, accel_m_s2: 1.0, lead_m: 0.05, let_go: false,
+                          give_up_s: 6 });
+  } catch (error) {
+    use.mode = "drawing";
+    say("bad", String(error.message || error));
+    showUse();
+  }
+}
+
+// After every step: how far back the string actually is, what this bow's limbs
+// hold, how hard the hand pulls -- and, once loosed, how fast the arrow went.
+let bowJointsAt = 0;
+function followTheBow(state) {
+  const use = world.use;
+  const now = performance.now();
+  if (use.mode === "loosed") {
+    const arrow = (state.bodies || []).find((b) => b.name === use.profile.projectile);
+    if (arrow && arrow.velocity_m_s) use.fastest = Math.max(use.fastest, Math.hypot(...arrow.velocity_m_s));
+    if (!use.reported && now > use.watchUntil) {
+      use.reported = true;
+      if (use.arrowReady) {
+        const kg = world.bodies.get(use.profile.projectile)?.mass || 0;
+        const carried = 0.5 * kg * use.fastest * use.fastest;
+        const share = use.stored > 0.05 ? carried / use.stored : 0;
+        if (share > 0) use.profile.efficiency = share;
+        use.result = `The arrow left at ${use.fastest.toFixed(1)} m/s — the limbs held`
+          + ` ${use.stored.toFixed(1)} J and ${Math.round(100 * share)}% of it went into the arrow;`
+          + ` the string and the limb tips kept the rest.`;
+        say("world", use.result);
+        remember(`the arrow left ${use.profile.object} at ${use.fastest.toFixed(1)} m/s`);
+      }
+      showUse();
     }
-    remember(`threw ${held.name}`);
-    say("you", `Threw ${held.name}.`);
-  } catch { /* the release below still has to happen */ }
-  await dropIt();
+    return;
+  }
+  const profile = world.held && world.held.bow;
+  if (!profile) return;
+  if (now - bowJointsAt > 250) { bowJointsAt = now; refreshJoints().catch(() => {}); }
+  const entry = world.bodies.get(profile.draw.part);
+  if (!entry || !use.brace) return;
+  const s = bowState(profile);
+  const hand = state.hand || {};
+  use.bow = Object.assign(use.bow || {}, {
+    arrowReady: s.arrowReady, strung: s.strung, storedJ: s.stored,
+    drawn: Math.max(0, entry.mesh.position.clone().sub(use.brace)
+                        .dot(new THREE.Vector3(...profile.draw.axis))),
+    max: profile.draw.max_mm / 1000,
+    pullN: hand.force_n ? Math.hypot(...hand.force_n) : 0,
+    // Two different ends to a draw: the hand ran out of strength against the
+    // limbs, or it got as far as the bow's profile asks and holds there.
+    blocked: use.mode === "drawing" && !hand.stroking && hand.stroke_ended === "blocked",
+    full: use.mode === "drawing" && !hand.stroking && hand.stroke_ended === "reached",
+  });
+  if (!s.strung) {
+    releaseBow();
+    notice(profile.object, `The string of ${profile.object} was cut.`);
+    return;
+  }
+  if (use.mode === "letting-down" && !hand.stroking && hand.stroke_ended) {
+    releaseBow("You let the string down.");
+    return;
+  }
+  showUse();
+}
+
+// Where the shot would go: what the limbs hold NOW, times the share of it this
+// bow gave its arrow on its last shot, as the arrow's speed along its own axis
+// -- then the engine's flight. Approximate, and said to be: the share is from
+// one shot, and the draw is not yet the shot. Before the first shot there is
+// no share to use, and it says that instead of guessing.
+let shotBusy = false, shotAt = 0;
+async function previewShot() {
+  const use = world.use;
+  const profile = world.held && world.held.bow;
+  if (!profile || use.mode !== "drawing" || !use.bow || !use.bow.arrowReady) {
+    if (profile) aimArc.hide();
+    return;
+  }
+  const now = performance.now();
+  if (shotBusy || now - shotAt < 250) return;
+  const arrow = world.bodies.get(profile.projectile);
+  const kg = arrow ? arrow.mass || 0 : 0;
+  if (!(profile.efficiency > 0)) {
+    use.bow.noPreview = "shoot it once and its efficiency is measured for the aim";
+    aimArc.hide();
+    return;
+  }
+  if (!arrow || !(kg > 0) || !(use.bow.storedJ > 0.05)) { aimArc.hide(); return; }
+  shotAt = now;
+  shotBusy = true;
+  try {
+    const speed = Math.sqrt(2 * profile.efficiency * use.bow.storedJ / kg);
+    const along = new THREE.Vector3(...profile.draw.axis).negate();
+    const axis = new THREE.Vector3(1, 0, 0).applyQuaternion(arrow.mesh.quaternion);
+    if (axis.dot(along) < 0) axis.negate();
+    const p = arrow.mesh.position;
+    const flight = await act("preview_flight", {
+      from: [p.x, p.y, p.z], velocity: [axis.x * speed, axis.y * speed, axis.z * speed],
+      horizon_s: 4, ignoring: profile.projectile });
+    if (world.use !== use || use.mode !== "drawing") return;
+    use.preview = { possible: true, text: `approximately ${speed.toFixed(1)} m/s, from what the`
+      + ` limbs hold and this bow's last shot (${Math.round(100 * profile.efficiency)}% of it reached the arrow)` };
+    aimArc.show(flight);
+    showUse();
+  } catch { /* the next step asks again */ } finally { shotBusy = false; }
 }
 
 // ---------------------------------------------------------------------------
@@ -1901,7 +2457,11 @@ async function tick() {
     if (wants) { const what = wants; wants = null; 
       if (what === "pick") await pickUp();
       else if (what === "drop") await dropIt();
-      else if (what === "throw") await throwIt();
+      else if (what === "put down") await putDown();
+      else if (what === "let fly") await letFly();
+      else if (what === "draw") await startDraw();
+      else if (what === "loose") await loose();
+      else if (what === "let down") await letDown();
     }
     // Where the hand is, sent WITH the step rather than before it.
     //
@@ -1917,6 +2477,11 @@ async function tick() {
       // A blade in hand: where the grip should be and which way the blade
       // should face, from the view and the stance.
       ({ hand, hand_q } = handTarget(camera, world.held.blade, world.held, elapsed));
+    } else if (world.held && world.held.throwable) {
+      hand = throwingHand(now);
+    } else if (world.held && world.held.bow) {
+      // A bow's string: held where the hand took it, or drawn and let down by
+      // the engine's own stroke. Nothing is sent; sending would take it back.
     } else if (world.held) {
       const dir = forwardVector();
       const p = camera.position.clone().add(dir.multiplyScalar(world.held.distance));
@@ -2000,6 +2565,11 @@ async function tick() {
     }
 
     draw(state);
+    // What the hand did this tick, and where a throw would go from here.
+    followTheHand(state.hand);
+    previewThrow();
+    followTheBow(state);
+    previewShot();
     drawRopes();
     followJoints();
     // Strength before heat, so the panel drawHeat fills in says both.
@@ -2016,7 +2586,8 @@ async function tick() {
             // A fixing that gave way under its load says why, in the numbers
             // that decided it: the load the solver measured against what the
             // joint could still take -- and what heat had left of its member.
-            if (pin.parted_because && pin.kind === "fixing") {
+            // Not a one-way one: coming off is what a nock is for, said below.
+            if (pin.parted_because && pin.kind === "fixing" && !(pin.comes_off_n > 0)) {
               say("world", `${pin.b} gave way from ${pin.a}: ${pin.parted_because}.`);
               remember(`${pin.b} gave way from ${pin.a}`);
               continue;
@@ -2029,6 +2600,15 @@ async function tick() {
               else say("world", `the rope from ${pin.a} to ${pin.b} parted${load} —`
                 + ` it was rated for ${Math.round(pin.breaks_at_n || 0)} N.`);
               remember(`the rope to ${pin.b} parted`);
+              continue;
+            }
+            if (pin.kind === "fixing") {
+              // A one-way fixing coming off is an arrow leaving a string, which
+              // is what it is for. A two-way one that lets go was overloaded, or
+              // the wood around it was cut away.
+              if (pin.comes_off_n > 0) say("world", `${pin.b} came off ${pin.a}.`);
+              else say("world", `${pin.b} is no longer fixed to ${pin.a}.`);
+              remember(`${pin.b} came off ${pin.a}`);
               continue;
             }
             const how = pin.kind === "slider" ? "out of its groove" : "off its hinge";
@@ -2106,7 +2686,7 @@ async function watchTheDraw() {
       const entry = world.bodies.get(world.drawn.name);
       const back = entry
         ? entry.mesh.position.distanceTo(world.drawn.from) : 0;
-      const stored = storedInElastics();
+      const stored = storedInElastics(world.drawn.name);
       if (stored > 0.05)
         $("panel-state").textContent =
           `Drawing ${world.drawn.name} — ${(back * 1000).toFixed(0)} mm back,`
@@ -2148,6 +2728,11 @@ async function watchTheDraw() {
 let last = performance.now();
 function frame() {
   const now = performance.now();
+  // A throw's result stays up long enough to read, then the help goes.
+  if (["thrown", "loosed", "notice"].includes(world.use.mode) && now > world.use.until) {
+    world.use = { mode: "none" };
+    showUse();
+  }
   const gap = now - last;
   const dt = Math.min(0.1, gap / 1000);
   last = now;
@@ -2283,6 +2868,13 @@ $("ask").addEventListener("submit", async (e) => {
     say("world", answer.reply || "(nothing to say)", answer.did);
     if (answer.reopened) {
       world.session = answer.session;
+      // A rebuilt room: its own profiles, and nothing of the old one in hand.
+      rememberProfiles(answer.state && answer.state.spec);
+      world.held = null;
+      world.use = { mode: "none" };
+      world.loosing = null;
+      aimArc.hide();
+      showUse();
       world.bodies.forEach((e) => forget(e.mesh));
       world.bodies.clear();
       world.fading.forEach((f) => forget(f.mesh));
@@ -2291,6 +2883,7 @@ $("ask").addEventListener("submit", async (e) => {
       world.sweptSince.clear();
       showStock();
       draw(answer.state);
+      braceProfiles();
       // And its joints. The room that comes back can have hinges, ropes and
       // springs the chat just made -- and the list held here is the OLD room's,
       // naming bodies that may be gone. Without this a gate the chat hung is
@@ -2467,11 +3060,17 @@ async function open() {
     trace.startedWorld = world.clock;
     world.story = [];
     world.held = null;
+    world.use = { mode: "none" };
+    world.loosing = null;
+    rememberProfiles(data.spec);
+    aimArc.hide();
+    showUse();
     $("carry").hidden = true;
     world.bodies.forEach((e) => forget(e.mesh));
     world.bodies.clear();
     world.joints = [];
     draw(data);
+    braceProfiles();
     drawJoints(data.joints);
     drawRopes();
     clearHeat();
@@ -2529,7 +3128,13 @@ window.banjoRoom = {
     camera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, "YXZ"));
   },
   standAt(x, y, z) { camera.position.set(x, y, z); },
-  aim, pickUp, dropIt, throwIt, intend,
+  aim, pickUp, dropIt, putDown, letFly, intend,
+  // The hand as the control language sees it, and what the help says about it.
+  use: () => ({ ...world.use, grip: world.use.grip && world.use.grip.toArray() }),
+  help: () => ({ shown: !$("use").hidden, title: $("use-title").textContent,
+                 line: $("use-line").textContent, note: $("use-note").textContent,
+                 meter: $("use-meter").hidden ? null : $("use-meter-value").textContent }),
+  arcShown: () => aimArc.group.visible,
   // For measuring what a frame costs: building the meshes for a shattered pane
   // is the expensive part of a break, and it cannot be seen from outside.
   buildMesh, renderer, THREE, MATERIALS,
