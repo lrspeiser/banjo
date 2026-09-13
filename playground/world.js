@@ -3897,7 +3897,10 @@ async function open() {
     world.joints = [];
     draw(data);
     braceProfiles();
-    drawJoints(data.joints);
+    // A new room: no joints said means none, as when the chat rebuilds one. Left
+    // to mean "unchanged" -- which it does in a step's reply -- it left the last
+    // room's pins drawn in the air over this one.
+    drawJoints(data.joints || []);
     drawRopes();
     clearHeat();
     if (data.terrain) {
@@ -3992,6 +3995,9 @@ window.banjoRoom = {
   heatState: () => heat.last,
   // What heat has left of what things can carry, as the engine last said it.
   strengthState: () => heat.strength,
+  // The pins and grooves drawn right now: none may be left over from a room
+  // that is no longer open.
+  pinsDrawn: () => pinGroup.children.length,
   heatDrawn: () => ({ glowing: [...heat.glowing.keys()], flames: [...heat.flames.keys()],
                       columns: [...heat.columns.keys()] }),
   // The ground and the water as drawn, for checking what is on screen against
