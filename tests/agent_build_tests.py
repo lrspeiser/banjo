@@ -237,9 +237,12 @@ def settle(world: World, most_s: float = 10.0) -> dict[str, Any]:
         world.seconds(1.0)
         waited += 1.0
     bodies = list(world.bodies().values())
+    # An anchored body is where it was put and cannot have sunk: the valley's
+    # marker stone is buried in its rock on purpose.
     return {"at_rest": not moving, "waited_s": waited,
             "still_moving": [[n, round(v, 3)] for v, n in moving[:3]],
-            "sunk": [b["name"] for b in bodies if b["position_m"][1] < -0.25],
+            "sunk": [b["name"] for b in bodies
+                     if b["position_m"][1] < -0.25 and not b.get("anchored")],
             "flew_off": [b["name"] for b in bodies
                          if max(abs(b["position_m"][0]), abs(b["position_m"][2])) > ESCAPED_M]}
 
