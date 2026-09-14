@@ -77,7 +77,9 @@ part at its exact [x, y, z] (a part on the ground at half its own height; a seat
 on the legs' tops), and held together: a pick's haft and arm by one join name,
 as its recipe says; legs to a seat with fix, one fix to a leg -- NEVER the
 seat's join name. Joined, a seat and four 0.04 m legs fell over within two
-seconds; fixed, they stood.
+seconds; fixed, they stood. Parts given one join name keep every face on the
+room's cell grid (the_room.cell_size_m): a thin part off it is lost from the
+piece (see the pick).
 Never give one of its parts [x, z]: that sets the part down on whatever is under
 it, which is the part before it -- a pick's arm went onto its haft, and the hand
 then held the pick by its head. add_object may say a seat on thin legs is
@@ -673,13 +675,22 @@ with a slab of bare rock 1.6 m by 1.2 m at [1.6, -1.2], 0.12 m proud of it.
   end -- [x, y, z] like the tip, at the haft's own height and depth.
 A found oak pick lying on the soil in front of the person (tried, it went
 120 mm into the soil at 9.2 m/s, levered it broke out 5.6 L of soil, and the
-rock stopped it):
-  add_object pick haft oak [0.8, 0.04, 0.04] at [0, 0.02, 1.22] join "pick"
-  add_object pick arm oak [0.04, 0.04, 0.28] at [0.38, 0.02, 1.06] join "pick"
+rock stopped it), at a place [px, pz]: px is the x of the first of
+put_new_things_m, and pz its z with 0.02 added, so every face of both parts
+lies on the room's 0.04 m cell grid. Joined, a part off the grid is lost from
+the piece: measured, a haft at z 1.2 left a piece of just its arm, 0.36 kg,
+whose grip was refused; at z 1.22 the piece was 1.21 kg and took its grip.
+Every number below is worked out from px and pz, so the parts, the tip and the
+grip stay together:
+  add_object pick haft oak [0.8, 0.04, 0.04] at [px, 0.02, pz] join "pick"
+  add_object pick arm oak [0.04, 0.04, 0.28] at [px + 0.38, 0.02, pz - 0.16] join "pick"
     (the arm lies along -z from the haft's +x end, touching it; both with
-    [x, y, z], both on the 0.04 m grid)
-  tool_point body=pick haft tip [0.38, 0.02, 0.92] pointing [0, 0, -1]
-    grip [-0.36, 0.02, 1.22] width 0.04 thickness 0.04 angle 30 length 0.2
+    [x, y, z])
+  tool_point body=pick haft tip [px + 0.38, 0.02, pz - 0.30] pointing [0, 0, -1]
+    grip [px - 0.36, 0.02, pz] width 0.04 thickness 0.04 angle 30 length 0.2
+  For the place [0.0, 1.2]: px 0.0 and pz 1.22, so the haft at [0.0, 0.02, 1.22],
+  the arm at [0.38, 0.02, 1.06], the tip at [0.38, 0.02, 0.92] and the grip at
+  [-0.36, 0.02, 1.22].
   interaction object="the pick" template=swing-and-lever
     parts=[pick haft, pick arm] tool=pick haft
 A pick is not the person's to swing until interaction declares it: tool_point
@@ -1017,7 +1028,7 @@ ABOVE_THE_GROUND_M = 1.6    # a thing whose bottom is higher (a lamp) leaves the
 
 
 def clear_spots(person: dict[str, Any], bodies: list[dict[str, Any]],
-                wanted: int = 3) -> list[list[float]]:
+                wanted: int = 3, grid_m: float = 0.04) -> list[list[float]]:
     """Up to `wanted` places [x, z] on the ground close in front of the person
     with nothing standing there, the best first, and apart from each other --
     so a second thing goes beside the first, not on it. What the room has is
@@ -1052,6 +1063,10 @@ def clear_spots(person: dict[str, Any], bodies: list[dict[str, Any]],
     chosen: list[list[float]] = []
     for ahead, left in NEW_THING_SPOTS:
         cx, cz = sx + fx * ahead + fz * left, sz + fz * ahead - fx * left
+        # On the room's cell grid, so a recipe worked out from the place keeps
+        # a joined piece's faces on it (the guide's pick): off it, a part is
+        # lost from the piece.
+        cx, cz = round(cx / grid_m) * grid_m, round(cz / grid_m) * grid_m
         if any(max(abs(cx - bx) - hx, 0.0) ** 2 + max(abs(cz - bz) - hz, 0.0) ** 2
                < NEW_THING_CLEAR_M ** 2 for bx, bz, hx, hz in footprints):
             continue
@@ -1122,7 +1137,8 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
         person = where_the_person_is(person)
         if person is not None:
             # Where something made for them goes when they do not say where.
-            person["put_new_things_m"] = clear_spots(person, live_state.get("bodies", []))
+            person["put_new_things_m"] = clear_spots(person, live_state.get("bodies", []),
+                                                     grid_m=float(entry["cell_m"]))
             opening["the_person"] = person
         # What they know, as it stands, so that what the chat says of their
         # notebook is what it holds. Left to ask read_knowledge, the model once

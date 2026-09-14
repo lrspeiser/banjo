@@ -170,6 +170,23 @@ class TheRoomIsToldWhereThePersonIs(unittest.TestCase):
         self.assertIn("EVERYTHING YOU MAKE goes on the ground close in front of them",
                       world_chat.GUIDE)
 
+    def test_new_places_are_on_the_rooms_cell_grid(self):
+        """A recipe worked out from the place keeps a joined piece on the grid:
+        off it, a haft was lost from its pick (0.36 kg of 1.21)."""
+        person = world_chat.where_the_person_is({"standing_m": [0.37, 0.0, 2.13],
+                                                 "facing": [0.3, 0.0, -1.0]})
+        for x, z in world_chat.clear_spots(person, [], grid_m=0.04):
+            self.assertAlmostEqual(x / 0.04, round(x / 0.04), places=6)
+            self.assertAlmostEqual(z / 0.04, round(z / 0.04), places=6)
+
+    def test_the_guides_pick_is_the_recipe_the_ground_work_suite_tries(self):
+        # tests/ground_work_mcp_tests.py builds and swings exactly these; the
+        # guide's worked example for the place [0.0, 1.2] must come to them.
+        for words in ("haft at [0.0, 0.02, 1.22]", "arm at [0.38, 0.02, 1.06]",
+                      "tip at [0.38, 0.02, 0.92]", "grip at\n  [-0.36, 0.02, 1.22]",
+                      "[px + 0.38, 0.02, pz - 0.16]", "[px - 0.36, 0.02, pz]"):
+            self.assertIn(words, world_chat.GUIDE)
+
     def test_the_guide_and_the_tool_say_how_to_put_a_thing_down(self):
         for words in ("the_person", "one_metre_in_front_m", "position_m [x, z]", "in_water"):
             self.assertIn(words, world_chat.GUIDE)
