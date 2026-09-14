@@ -817,6 +817,19 @@ def tool_add_object(args: dict[str, Any]) -> dict[str, Any]:
     # cannot work out for itself, and a body started inside a hill is thrown
     # out of it.
     rests = _set_down(entry, added) if set_down else None
+    # A part of a piece set down on top of another part of the same piece is
+    # never where a part goes. Measured, the playground's chat gave a pick's arm
+    # [x, z] twice, the arm went onto its own haft, and the hand then held the
+    # pick by its head, so every swing met no ground. Refused before the world
+    # changes, with what to give instead.
+    if rests is not None and added.get("join"):
+        own = {b["name"] for b in entry["scene"]["bodies"] if b.get("join") == added["join"]}
+        if rests["on"] in own:
+            raise Refused(f"{added['name']} is part of the piece {added['join']!r}, and given "
+                          f"[x, z] it would be set down on top of {rests['on']}, another part of "
+                          f"that piece. Give every part of one piece its exact [x, y, z], side "
+                          f"by side as they join: on the ground, its centre at half its own "
+                          f"height; otherwise where it meets the part before it.")
     seated = None if set_down else _seat_on_ground(entry, added)
     held_up = None if set_down else _held_up(entry, added)
     scene = dict(entry["scene"], bodies=list(entry["scene"]["bodies"]) + [added])

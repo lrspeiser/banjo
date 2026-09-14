@@ -1400,6 +1400,42 @@ class TheTools(unittest.TestCase):
         self.assertEqual(held_up["in_the_air"]["over"], "the floor")
         self.assertNotIn("in_the_air", table)
 
+    def test_a_part_of_a_piece_is_not_set_down_on_another_part_of_it(self):
+        """Given [x, z], a pick's arm was set down on its own haft -- the room's
+        chat did it twice, as below -- and the hand then held the pick by its
+        head, so its swings met no ground. A part of a piece takes its exact
+        [x, y, z]; a thing that is part of no piece is still set down on it."""
+        world_id = self.client.call("create_world", cell_size_m=0.04, objects=[
+            {"name": "marker", "shape": "box", "material": "concrete",
+             "size_m": [0.08, 0.08, 0.08], "position_m": [3.0, 0.04, 3.0],
+             "anchored": True}])["world_id"]
+        self.client.call("add_object", world_id=world_id, object={
+            "name": "pick haft", "shape": "box", "material": "oak", "size_m": [0.8, 0.04, 0.04],
+            "position_m": [0.0, 1.2], "join": "pick"})
+        said = self.client.refuse("add_object", world_id=world_id, object={
+            "name": "pick arm", "shape": "box", "material": "oak", "size_m": [0.04, 0.04, 0.28],
+            "position_m": [0.38, 1.06], "join": "pick"})
+        self.assertIn("on top of pick haft", said)
+        self.assertIn("exact [x, y, z]", said)
+        arm = self.client.call("add_object", world_id=world_id, object={
+            "name": "pick arm", "shape": "box", "material": "oak", "size_m": [0.04, 0.04, 0.28],
+            "position_m": [0.38, 0.02, 1.06], "join": "pick"})
+        self.assertEqual(arm["added"], "pick arm")
+        self.assertNotIn("in_the_air", arm)
+        # A thing that is part of no piece, or of another piece, is still set
+        # down on what is there.
+        self.client.call("add_object", world_id=world_id, object={
+            "name": "plank", "shape": "box", "material": "oak", "size_m": [0.6, 0.04, 0.3],
+            "position_m": [-1.0, -1.0]})
+        crate = self.client.call("add_object", world_id=world_id, object={
+            "name": "crate", "shape": "box", "material": "oak", "size_m": [0.2, 0.2, 0.2],
+            "position_m": [-1.0, -1.0]})
+        self.assertEqual(crate["set_down"]["on"], "plank")
+        lid = self.client.call("add_object", world_id=world_id, object={
+            "name": "lid", "shape": "box", "material": "oak", "size_m": [0.16, 0.04, 0.16],
+            "position_m": [-1.2, -1.0], "join": "box"})
+        self.assertEqual(lid["set_down"]["on"], "plank")
+
     def test_a_place_given_beside_the_object_is_taken_and_a_missing_one_explained(self):
         """A model often puts position_m next to the object rather than in it. It
         is taken from there; and with no place at all the refusal says where it
