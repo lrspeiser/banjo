@@ -1,5 +1,23 @@
 # Development status and handoff
 
+**Tools by name: the room's chat makes a mattock that works.** Branch `agent/tool-recipes` from `37a0c02`. Asked in the page for "a mattock for breaking up hard soil", the chat had twice laid one out by hand that was not a tool (317,000 and 691,000 input tokens). gpt-5-mini follows a recipe it is handed by name, not a layout it is told.
+- `build_recipe` has three tools that work the ground: "pick", "mattock" and "hoe" (banjo_mcp `TOOL_KINDS`, laid out by `_tool_recipe`). Every face is on the room's cells, the point's tip is on the head's end face, and the grip is one cell in from the haft's far end. The pick comes out number for number as before.
+- `tool` makes it the one the person asked for: `call_it`; `material` (the whole tool's); head and haft sizes; the point's shape; and `use` (label, past, swing, lever, reach_m, repeat). Blanks the chat fills in are dropped, and a tool the hand's 60 N m wrist cannot hold level is not built at all.
+- Found on the way:
+  - A joined piece is all one material. An "iron" head on an oak haft was built all of oak (1.344 kg, oak's weight for its size), so a tool has one material and says so.
+  - A head broader than its point met the ground with its edges first: the chat's 0.12 m head on the recipe's 0.08 m point stopped 29 mm above the ground. The point now takes the head's width unless told.
+  - The chat filled in `pry: false`, so whether a tool is pried is now the recipe kind's.
+  - A result read "Broke up the soil 3.6 L of soil" with the chat's own past, so results now read "Broke up the soil: 2.7 L of sand (4.3 kg) came loose; the point went 8 cm in."
+  - A stroke "reaches" when the hand's target does, while the tool is still on its way, so a use now waits up to 0.6 s after a swing for the ground to meet it (the trial plays 0.5 s past). A use had read the ground too soon: the tool was still 0.76 m in the air.
+  - The chat twice gave a swing its trial's 9.8 m/s point speed as the hand's. Measured live with the world's pick (the scratchpad's `probe_swing_speed.py`): at 4 and 5 m/s it dug 4.0 and 17.8 L; at 6 and 8 m/s it stopped short above the ground; at 9.8 m/s it glanced side-on. So a hand swings at most 5 m/s, and the schema and guide say the point arrives two to three times faster.
+- Trials: the mattock went 125 mm into the soil at 9.8 m/s, and its pry broke out 6.1 L. The hoe's broad thin blade went 47 mm in at 8.5 m/s and broke out 0.8 L: the ground resists a broad blade more.
+- Measured in the page on my server with untouched ground (the scratchpad's `headless_chat_tool.py`), the room's own chat asked by typing for "a mattock for breaking up hard soil":
+  - it called build_recipe "mattock" once: 2 rounds, none refused, 81,700 input tokens, 23.6 s;
+  - it chose a 0.08 m by 0.12 m head, the label "Break up the soil" and the past "broke up the soil";
+  - E near it took it up; the ring and the use box said "Click Left mouse to break up the soil · hold to keep going";
+  - one click: "Broke up the soil: 2.7 L of sand (4.3 kg) came loose; the point went 8 cm in"; no page errors.
+- Open: that mattock's trial in its scratch world "met no ground" (the chat said so), while the same tool dug in the live room. The scratch trial and the live room still differ for some shapes.
+
 **Every tool used the same way, and the pick made easy to use.** Branch `agent/tool-use` from `8289505`. The owner: "im having a lot of challenges with the pick ax" -- and, choosing the fixes, "make sure this is designed to be a generic capability, so if I build a hoe or an axe it will have the same capabilities, meaning the llm can tap into these user experience capabilities and even shape them".
 - Measured first, with the world's own pick in the page on my server (the scratchpad's `headless_world_pick.py`):
   - E took it up only with the crosshair exactly on its 4 cm haft; looking at the middle of the L, the crosshair was on the ground.

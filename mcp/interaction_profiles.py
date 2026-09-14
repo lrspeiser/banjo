@@ -54,7 +54,13 @@ TOOL_USE_DEFAULTS = {"label": "Dig here", "past": "dug",
                      "lever": {"speed_m_s": 1.2, "lever_deg": 40.0}, "pry": True,
                      "reach_m": [1.15, 2.0], "repeat": True}
 _USE_KEYS = set(TOOL_USE_DEFAULTS)
-_SWING_BOUNDS = {"speed_m_s": (1.0, 12.0), "raise_deg": (30.0, 170.0)}
+# How fast the HAND moves along a swing; the point arrives two to three times
+# faster (a 4 m/s swing brings the pick's point down at 9.2 m/s). Measured in
+# the live room with the world's pick (the scratchpad's probe_swing_speed.py):
+# at 4 and 5 m/s it dug; at 6 and 8 m/s the tool lagged the swing and stopped
+# short above the ground; at 9.8 m/s -- the point speed the room's chat put
+# here -- it met the sand side-on and glanced. So no faster than 5.
+_SWING_BOUNDS = {"speed_m_s": (1.0, 5.0), "raise_deg": (30.0, 170.0)}
 _LEVER_BOUNDS = {"speed_m_s": (0.3, 4.0), "lever_deg": (5.0, 80.0)}
 REACH_BOUNDS_M = (0.3, 2.0)
 

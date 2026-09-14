@@ -56,6 +56,14 @@ GIVE_UP_S = 3.0
 # How long a stroke the room has not yet said is under way is waited for before
 # an end it says is believed.
 STROKE_UNSEEN_S = 1.5
+# A stroke has "reached" when the hand's TARGET is at its end, and the tool,
+# which the bounded hand drags after it, is still on its way: a mattock the
+# chat gave a 9.8 m/s swing was 0.76 m in the air when its stroke ended in
+# 0.28 s. The MCP's trial plays 0.5 s past a swing and 0.3 s past a pry before
+# it reads what the ground did; so is waited here for a meeting, and for a pry
+# to settle.
+MEET_WAIT_S = 0.6
+PRY_SETTLE_S = 0.3
 # A pry that does not bring the point out by its own lift is drawn straight up.
 PULL_M, PULL_SPEED_M_S = 0.4, 0.6
 # How long the ground is given to say a meeting is over once the point is out:
@@ -227,6 +235,10 @@ def run(app: Any, body: dict[str, Any],
         since = float((started or {}).get("t") or 0.0)
         ended = _stroke(app)
         record = _latest(app, tool, since, heard)
+        waited = time.monotonic()
+        while record is None and time.monotonic() - waited < MEET_WAIT_S:
+            time.sleep(0.03)
+            record = _latest(app, tool, since, heard)
         done.append(f"swung it: {record.get('kind') if record else 'it met no ground'}, "
                     f"the stroke {ended}")
         if record is None:
@@ -262,6 +274,7 @@ def run(app: Any, body: dict[str, Any],
                               "raise_deg": 0.0, "lever_deg": use["lever"]["lever_deg"],
                               "give_up_s": GIVE_UP_S})
                 ended = _stroke(app)
+                time.sleep(PRY_SETTLE_S)
                 record = _latest(app, tool, since, heard, record)
                 done.append(f"pried it: {record.get('kind')}, the stroke {ended}")
             if record.get("open"):
@@ -388,9 +401,11 @@ def _said(record: dict[str, Any] | None, use: dict[str, Any], carried_kg: float)
     litres = 1000.0 * (float(loosened.get("sand_m3") or 0.0) + float(loosened.get("soil_m3") or 0.0))
     depth_cm = 100.0 * float(record.get("depth_m") or 0.0)
     if litres > 0.0:
+        # Said with the profile's own word, whatever it is: "dug", or the chat's
+        # "broke up the soil".
         past = use["past"]
-        return (f"{past[:1].upper()}{past[1:]} {litres:.1f} L of {ground} "
-                f"({float(record.get('loosened_kg') or 0.0):.1f} kg): the point went "
+        return (f"{past[:1].upper()}{past[1:]}: {litres:.1f} L of {ground} "
+                f"({float(record.get('loosened_kg') or 0.0):.1f} kg) came loose; the point went "
                 f"{depth_cm:.0f} cm in."
                 + (f" You carry {carried_kg:.1f} kg of ground; H heaps it." if carried_kg > 0.05 else ""))
     if record.get("open"):

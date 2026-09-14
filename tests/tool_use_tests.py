@@ -139,7 +139,8 @@ class AToolsUseIsShapedByItsProfile(unittest.TestCase):
         self.assertEqual(use["label"], "Break up the soil")
 
     def test_the_hands_bounds_are_held(self):
-        for use, said in (({"swing": {"speed_m_s": 20}}, "1 to 12"),
+        # 6 m/s: in the live room the tool lagged the swing and stopped short.
+        for use, said in (({"swing": {"speed_m_s": 6}}, "1 to 5"),
                           ({"lever": {"lever_deg": 90}}, "5 to 80"),
                           ({"reach_m": [0.2, 2.5]}, "0.3 and 2"),
                           ({"label": ""}, "a few words"),
@@ -228,8 +229,8 @@ class OneUseIsTheWholeOfIt(unittest.TestCase):
                          ["strike", "lever", "stroke"])
         # The record closed in one reply, after which the room's own list is
         # empty: read from that list, this said "it is still in".
-        self.assertEqual(said["said"], "Dug 5.0 L of sand (8.0 kg): the point went 12 cm in. "
-                                       "You carry 8.0 kg of ground; H heaps it.")
+        self.assertEqual(said["said"], "Dug: 5.0 L of sand (8.0 kg) came loose; the point went 12 cm "
+                                       "in. You carry 8.0 kg of ground; H heaps it.")
         self.assertIn("It arrived at 9.2 m/s", said["detail"])
         self.assertEqual(said["did"], ["Dig here"])
         self.assertEqual(len(noted), 1, "the swing is credited to the notebook once")

@@ -251,12 +251,13 @@ takes hold; E puts down; / talks to you.
   double-click takes it by its grip, dragging the view swings it, the right
   mouse turns the edge; a click lets go. The page gives it those: offer no
   action to take it up or swing it -- a program ends with the hand empty.
-- A tool that works the ground (a pick, a mattock, a stake): build_recipe
-  "pick" -- the tool the engine has been tried on -- and then, for anything but
-  a plain pick, interaction again for what it built (the parts and the tool its
-  answer names, template swing-and-lever) with `object` named for what the
-  person asked for and `use`, so its click is called and said their way (TOOLS
-  THAT DIG). Never make a tool part by part: its point has to sit on its end
+- A tool that works the ground: build_recipe "pick", "mattock" or "hoe", by
+  name -- laid out exactly and tried in the engine -- and with `tool` to make
+  it the one the person asked for: call_it, its material (one for the whole
+  tool: it is one piece; oak unless said, and iron that size is too heavy to
+  swing), its head and haft, its point (the shape that goes into the ground)
+  and its use (what the click is called and how a result is said). Any other
+  digging tool is the nearest of the three with `tool`. Never make a tool part by part: its point has to sit on its end
   face and every face on the room's 0.04 m cells, and a mattock made by hand
   was refused three times and ended as a fake action. Keys, the same for every
   tool: E near it takes it up; a ring on the ground shows where it will come
@@ -822,17 +823,18 @@ SHAPING HOW IT IS USED. The page uses every tool the same way, and interaction
 takes `use` to shape it for what you made -- only what you say is kept:
 label, what the click is called ("Dig here" unless you say; "Break up the soil"
 for a mattock, "Drive it in" for a stake); past, how a result is said ("dug");
-swing {speed_m_s 1 to 12, raise_deg 30 to 170}, how the hand swings it (4 m/s,
-raised 110 degrees); lever {speed_m_s 0.3 to 4, lever_deg 5 to 80}, how it is
+swing {speed_m_s 1 to 5, raise_deg 30 to 170}, how fast the HAND swings it (4
+m/s, raised 110 degrees -- the point arrives two to three times faster, so the
+9 m/s a trial says is the point, not the hand; leave it out unless it should
+swing slower); lever {speed_m_s 0.3 to 4, lever_deg 5 to 80}, how it is
 pried (1.2 m/s, 40 degrees); pry false for a tool that is only swung and drawn
 out, never pried; reach_m [nearest, furthest], within 0.3 to 2 m ([1.15, 2]);
 repeat false when holding the button should not go on. Say only what differs
 from those. How deep it goes and what comes loose are still the ground's, and
-its trial swings it with the use you gave it. Said again for the same tool,
-interaction replaces what was said before, whatever it was called: for a
-mattock, build_recipe "pick", then interaction object "the mattock",
-template swing-and-lever, the parts and tool build_recipe named, use {label
-"Break up the soil", past "broke up"}. A hoe's draw through the soil
+its trial swings it with the use you gave it. For a grub hoe: build_recipe
+"hoe" at the place with tool {call_it "the grub hoe", use {label "Grub it
+out", past "grubbed out"}} -- one call. Said again for a tool already built,
+interaction replaces how it is used, whatever it was called. A hoe's draw through the soil
 and an axe's chop are not modelled: a hoe made with a point is swung and pried
 like a pick, and an axe is a blade.
 

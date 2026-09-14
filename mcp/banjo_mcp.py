@@ -2965,28 +2965,8 @@ RECIPES: dict[str, dict[str, Any]] = {
         "use": "it shoots along +x. E on any part takes it up; they hold the left mouse to draw "
                "and let go to shoot, and the right mouse lets the string down",
     },
-    # The guide's pick, number for number: one piece of oak, the haft first.
-    "pick": {
-        "title": "an oak pick lying on the ground, to dig with",
-        "tried": "swung, it went 120 mm into the soil at 9.2 m/s; levered, it broke out 5.6 L of "
-                 "soil; the rock stopped it",
-        "parts": [
-            {"name": "pick haft", "shape": "box", "material": "oak", "size_m": [0.8, 0.04, 0.04],
-             "position_m": (0.0, 0.02, 0.02), "join": "pick"},
-            {"name": "pick arm", "shape": "box", "material": "oak", "size_m": [0.04, 0.04, 0.28],
-             "position_m": (0.38, 0.02, -0.14), "join": "pick"}],
-        "joints": [],
-        "then": [
-            ("tool_point", {"body": "pick haft", "tip_m": (0.38, 0.02, -0.28), "pointing": [0, 0, -1],
-                            "grip_m": (-0.36, 0.02, 0.02), "width_m": 0.04, "thickness_m": 0.04,
-                            "angle_deg": 30, "length_m": 0.2}),
-            ("interaction", {"object": "the pick", "template": "swing-and-lever",
-                             "parts": ["pick haft", "pick arm"], "tool": "pick haft"})],
-        "actions": {},
-        "use": "they press E on it and it is held ready by its grip, point down; a click swings it "
-               "at the ground under the crosshair, and the right mouse levers it out",
-    },
-    # Light enough to take hold of, and a few hundred cells rather than the
+    # The tools that work the ground (pick, mattock, hoe) are added below, from
+    # TOOL_KINDS by _tool_recipe. Light enough to take hold of, and a few hundred cells rather than the
     # 4,172 two solid blocks cost: a top and a seat on legs fixed to them, every
     # face on the room's 0.04 m cells.
     "table": {
@@ -3041,6 +3021,190 @@ RECIPES: dict[str, dict[str, Any]] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Tools that work the ground, by recipe
+# ---------------------------------------------------------------------------
+#
+# gpt-5-mini cannot lay a tool out by hand. Asked in the page for "a mattock for
+# breaking up hard soil", it put the head off the room's 0.04 m cells and the tip
+# 14 cm past it, had tool_point refused three times, and offered a "Dig here"
+# action that only carried it (317,000 tokens); told to use the pick's recipe
+# and shape it, it laid one by hand again (691,000). So a tool is a recipe with
+# a name, laid out here exactly -- every face on the cells, the tip on the head's
+# end face, the grip a cell in from the haft's far end -- and what makes it the
+# tool the person asked for is options (build_recipe `tool`): its name, its head,
+# its haft, its point and how it is used. The point's shape is what the ground
+# answers (ground-work-v1: its width and angle set how hard the ground resists
+# it and what a pry breaks out); `use` is the handling (interaction_profiles).
+
+# A tool is ONE piece, joined, and a joined piece is one material: an "iron"
+# head on an oak haft was built all of oak (1.344 kg, oak's weight for its
+# size), so a tool has one material, and says so.
+TOOL_KINDS: dict[str, dict[str, Any]] = {
+    # The guide's pick, number for number: one piece of oak, the haft first.
+    "pick": {"title": "an oak pick lying on the ground, to dig with",
+             "tried": "swung, it went 120 mm into the soil at 9.2 m/s; levered, it broke out "
+                      "5.6 L of soil; the rock stopped it",
+             "head_name": "arm", "material": "oak",
+             "haft": {"length_m": 0.8},
+             "head": {"length_m": 0.28, "width_m": 0.04},
+             "point": {"width_m": 0.04, "thickness_m": 0.04, "angle_deg": 30.0, "length_m": 0.2},
+             "use": {}},
+    "mattock": {"title": "an oak mattock -- a broad flat blade on its haft, one piece -- lying on "
+                         "the ground, to break up hard soil",
+                "tried": "swung, it went 125 mm into the soil at 9.8 m/s; pried, it broke out "
+                         "6.1 L of soil",
+                "head_name": "head", "material": "oak",
+                "haft": {"length_m": 0.8},
+                "head": {"length_m": 0.2, "width_m": 0.08},
+                "point": {"width_m": 0.08, "thickness_m": 0.02, "angle_deg": 25.0, "length_m": 0.16},
+                "use": {"label": "Break up the soil", "past": "broke up"}},
+    "hoe": {"title": "an oak hoe -- a thin broad blade on its haft, one piece -- lying on the "
+                     "ground, to chop the soil loose (its draw through the soil is not modelled: "
+                     "it chops in and is pried)",
+            "tried": "swung, its broad thin blade went 47 mm into the soil at 8.5 m/s; pried, it "
+                     "broke out 0.8 L -- the ground resists a broad blade more than a point",
+            "head_name": "blade", "material": "oak",
+            # The pick's 0.8 m: with 0.96 its trial, standing 1.2 m back as the
+            # engine's swing is measured, met no ground.
+            "haft": {"length_m": 0.8},
+            "head": {"length_m": 0.12, "width_m": 0.12},
+            "point": {"width_m": 0.12, "thickness_m": 0.01, "angle_deg": 20.0, "length_m": 0.1},
+            "use": {"label": "Hoe the soil", "past": "hoed", "lever": {"lever_deg": 25.0}}},
+}
+_TOOL_BOUNDS = {"haft": {"length_m": (0.48, 1.44)},
+                "head": {"length_m": (0.08, 0.48), "width_m": (0.04, 0.2)},
+                "point": {"width_m": (0.01, 0.2), "thickness_m": (0.005, 0.04),
+                          "angle_deg": (10.0, 120.0), "length_m": (0.05, 0.4)}}
+
+
+def _unblanked(value: Any) -> Any:
+    """What a caller said, less the blanks: the chat fills every field it is
+    shown, and an empty one says nothing. true and false say something."""
+    if isinstance(value, dict):
+        out = {k: _unblanked(v) for k, v in value.items() if isinstance(v, bool) or not _blank(v)}
+        return {k: v for k, v in out.items() if isinstance(v, bool) or v not in ({}, [], None, "")}
+    return value
+
+
+def _tool_recipe(kind: str, options: dict[str, Any] | None = None,
+                 cell: float = 0.04) -> dict[str, Any]:
+    """A tool of this kind as a recipe (RECIPES' form), with what `options`
+    change of it: call_it, material (the whole piece's), head {length_m,
+    width_m}, haft {length_m}, point {width_m, thickness_m, angle_deg,
+    length_m}, use (as interaction's). Refused, saying which, for what is out
+    of bounds."""
+    base = TOOL_KINDS[kind]
+    options = options or {}
+    unknown = set(options) - {"call_it", "material", "head", "haft", "point", "use"}
+    if unknown:
+        raise Refused(f"tool has no {sorted(unknown)}; it may say call_it, material, head, haft, "
+                      f"point and use")
+    material = options.get("material", base["material"])
+    if material not in MATERIALS:
+        raise Refused(f"tool material is one of {MATERIALS}, not {material!r}")
+    sizes: dict[str, dict[str, Any]] = {}
+    for part in ("haft", "head", "point"):
+        said = options.get(part) or {}
+        if not isinstance(said, dict):
+            raise Refused(f"tool {part} is an object")
+        if "material" in said:
+            raise Refused(f"a tool is one piece, and a piece is all one material: say tool "
+                          f"material, not its {part}'s")
+        if set(said) - set(_TOOL_BOUNDS[part]):
+            raise Refused(f"tool {part} has no {sorted(set(said) - set(_TOOL_BOUNDS[part]))}; it may "
+                          f"say {sorted(_TOOL_BOUNDS[part])}")
+        out = dict(base[part])
+        for field, (low, high) in _TOOL_BOUNDS[part].items():
+            if field in said:
+                value = said[field]
+                if type(value) not in (int, float) or not math.isfinite(value) or not low <= value <= high:
+                    raise Refused(f"tool {part} {field} is {low:g} to {high:g}, not {value!r}")
+                out[field] = float(value)
+        sizes[part] = out
+    name = str(options.get("call_it") or f"the {kind}").strip()[:40]
+    stem = name[4:] if name.lower().startswith("the ") else name
+    stem = (stem[2:] if stem.lower().startswith("a ") else stem).strip() or kind
+    head_name = base["head_name"]
+
+    def cells(value: float, step: float) -> float:
+        return round(max(step, round(value / step) * step), 4)
+
+    # Both ends of the haft on the cells, so it is laid out from its middle; the
+    # head along -z from the haft's +x end, touching it; one cell thick, since a
+    # thinner part is lost from the grid.
+    length = cells(sizes["haft"]["length_m"], 2 * cell)
+    head_length = cells(sizes["head"]["length_m"], cell)
+    head_width = min(cells(sizes["head"]["width_m"], cell), length / 2)
+    half, t = length / 2.0, cell
+    hx = round(half - head_width / 2.0, 4)
+    haft, head = f"{stem} haft", f"{stem} {head_name}"
+    point = sizes["point"]
+    # The point is the whole of the head's working edge unless its width is
+    # said: a 0.12 m head the chat made on an 0.08 m point met the ground with
+    # its edges first, and the swing stopped 29 mm above it.
+    if "width_m" not in (options.get("point") or {}):
+        point["width_m"] = head_width
+    # Whether it is pried is the kind's: the chat fills every field, and a
+    # mattock it made said pry false.
+    use = dict(base["use"], **{k: v for k, v in (options.get("use") or {}).items() if k != "pry"})
+    then: list[tuple[str, dict[str, Any]]] = [
+        ("tool_point", {"body": haft, "tip_m": (hx, t / 2, -head_length), "pointing": [0, 0, -1],
+                        "grip_m": (round(-half + cell, 4), t / 2, t / 2),
+                        # No point broader than its head, or longer.
+                        "width_m": min(point["width_m"], head_width),
+                        "thickness_m": point["thickness_m"], "angle_deg": point["angle_deg"],
+                        "length_m": min(point["length_m"], head_length)}),
+        ("interaction", {"object": name, "template": "swing-and-lever", "parts": [haft, head],
+                         "tool": haft, **({"use": use} if use else {})})]
+    label = use.get("label") or interaction_profiles.TOOL_USE_DEFAULTS["label"]
+    return {"title": base["title"] if not options else
+                     f"{name}: one piece of {material}, a {head_width:g} m by {head_length:g} m "
+                     f"{head_name} on a {length:g} m haft, lying on the ground",
+            "tried": base["tried"] if not options else None,
+            "parts": [{"name": haft, "shape": "box", "material": material,
+                       "size_m": [length, t, t], "position_m": (0.0, t / 2, t / 2), "join": stem},
+                      {"name": head, "shape": "box", "material": material,
+                       "size_m": [head_width, t, head_length],
+                       "position_m": (hx, t / 2, round(-head_length / 2, 4)), "join": stem}],
+            "joints": [], "then": then, "actions": {},
+            "use": f"they press E near it and it is held ready by its grip, point down; a ring on "
+                   f"the ground shows where it will come down; a click does '{label}' -- swung, "
+                   f"pried and drawn out -- and holding the button goes on"}
+
+
+RECIPES.update({kind: _tool_recipe(kind) for kind in TOOL_KINDS})
+
+# How the person uses a tool, as a tool call says it (interaction's `use`, and
+# build_recipe's `tool` `use`): interaction_profiles checks it.
+TOOL_USE_SCHEMA = {
+    "type": "object",
+    "description": "swing-and-lever only, and optional: how the PERSON uses the tool -- the "
+                   "playground gives every tool the same ring, one click that does the whole of "
+                   "it (swing, pry, draw out) and holding to keep going. label: what the click is "
+                   "called ('Break up the soil'); past: how a result is said ('broke up'); swing "
+                   "and lever: how the hand moves it, within its bounds; pry false for a tool "
+                   "only swung and drawn out; reach_m: [nearest, furthest] in front of the person "
+                   "it comes down; repeat: whether holding goes on. Say only what differs from "
+                   "the defaults: Dig here, dug, a 4 m/s swing raised 110 degrees, a 40 degree "
+                   "pry at 1.2 m/s, 1.15 to 2 m, repeating. How deep it goes and what comes loose "
+                   "stay the ground's.",
+    "properties": {
+        "label": {"type": "string", "description": "What the click is called, at most 40 letters."},
+        "past": {"type": "string", "description": "How a result is said, in the past, at most 24 letters."},
+        "swing": {"type": "object",
+                  "description": "speed_m_s 1 to 5: how fast the HAND moves along the swing -- "
+                                 "the point arrives two to three times faster, so a trial's "
+                                 "9 m/s point is a 4 m/s swing; raise_deg 30 to 170.",
+                  "properties": {"speed_m_s": {"type": "number"}, "raise_deg": {"type": "number"}}},
+        "lever": {"type": "object", "description": "speed_m_s 0.3 to 4, lever_deg 5 to 80.",
+                  "properties": {"speed_m_s": {"type": "number"}, "lever_deg": {"type": "number"}}},
+        "pry": {"type": "boolean", "description": "false: swung and drawn out, never pried."},
+        "reach_m": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2,
+                    "description": "[nearest, furthest], within 0.3 to 2 m."},
+        "repeat": {"type": "boolean", "description": "false: holding the button does not go on."}}}
+
+
 def tool_build_recipe(args: dict[str, Any]) -> dict[str, Any]:
     """A mechanism the engine has been tried on, built exactly at a place: its
     parts, its joints and its actions, or nothing at all."""
@@ -3051,6 +3215,14 @@ def tool_build_recipe(args: dict[str, Any]) -> dict[str, Any]:
         raise Refused(f"recipe is one of {', '.join(RECIPES)}, not {which!r}")
     recipe = RECIPES[which]
     cell = float(entry["cell_m"])
+    # What makes a tool the one the person asked for (_tool_recipe), less the
+    # blanks the chat fills in.
+    options = _unblanked(args.get("tool")) if isinstance(args.get("tool"), dict) else None
+    if options:
+        if which not in TOOL_KINDS:
+            raise Refused(f"tool shapes a tool that works the ground -- {', '.join(TOOL_KINDS)} -- "
+                          f"not the {which}")
+        recipe = _tool_recipe(which, options, cell)
     px, pz = (round(v / cell) * cell for v in _xz(args.get("at_m"), "at_m"))
     # The ground there, up to the next whole cell, so nothing starts inside it:
     # 0 on a floor.
@@ -3102,6 +3274,11 @@ def tool_build_recipe(args: dict[str, Any]) -> dict[str, Any]:
         for tool, call in then:
             answer = HANDLERS[tool]({"world_id": world_id, **made(call)})
             said[tool] = {k: v for k, v in answer.items() if k != "objects"}
+            # A tool the wrist cannot hold level droops and misses every swing:
+            # not built at all, and the answer says what to change.
+            if tool == "tool_point" and answer.get("too_heavy_to_swing"):
+                raise Refused(f"{answer.get('body')}, {answer.get('mass_kg')} kg: "
+                              f"{answer['too_heavy_to_swing']}")
         for thing, actions in recipe["actions"].items():
             answer = tool_offer_actions({"world_id": world_id, "name": renamed[thing],
                                          "actions": made(actions)})
@@ -5544,6 +5721,7 @@ TOOLS = [
          "tool": {"type": "string",
                   "description": "swing-and-lever only: the part with the point, which the "
                                  "hand takes by its grip and swings."},
+         "use": TOOL_USE_SCHEMA,
          "draw": {"type": "object", "required": ["part", "axis"],
                   "description": "draw-and-release only: what the hand draws, and how.",
                   "properties": {
@@ -5628,7 +5806,42 @@ TOOLS = [
          "recipe": {"type": "string", "enum": list(RECIPES)},
          "at_m": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2,
                   "description": "The place, [x, z] on the ground: for something asked for "
-                                 "near the person, the first of put_new_things_m."}}}},
+                                 "near the person, the first of put_new_things_m."},
+         "tool": {"type": "object",
+                  "description": "For a tool that works the ground (" + ", ".join(TOOL_KINDS)
+                                 + "), and optional: what makes it the tool the person asked "
+                                   "for. call_it, its name ('the grub hoe'); material, the whole "
+                                   "tool's -- it is one piece, and a piece is all one material "
+                                   "(oak unless said; iron that size is too heavy to swing); "
+                                   "head and haft, laid on the room's cells; point, the shape "
+                                   "that goes into "
+                                   "the ground -- a broad flat point is resisted more and breaks "
+                                   "out more than a narrow one; use, how the person uses it "
+                                   "(interaction's use). Leave out what should be the recipe's. "
+                                   "A tool the hand's 60 N m wrist cannot hold level is not "
+                                   "built, and the answer says why.",
+                  "properties": {
+             "call_it": {"type": "string", "description": "Its name, like 'the grub hoe'."},
+             "material": {"type": "string", "enum": MATERIALS,
+                          "description": "The whole tool's: it is one piece."},
+             "head": {"type": "object", "description": "The part with the point: length_m 0.08 "
+                                                       "to 0.48, width_m 0.04 to 0.2.",
+                      "properties": {"length_m": {"type": "number"}, "width_m": {"type": "number"}}},
+             "haft": {"type": "object", "description": "What the hand holds: length_m 0.48 to "
+                                                       "1.44 (0.8 is the length its swing is "
+                                                       "measured at).",
+                      "properties": {"length_m": {"type": "number"}}},
+             "point": {"type": "object", "description": "width_m 0.01 to 0.2, thickness_m 0.005 "
+                                                        "to 0.04, angle_deg 10 to 120, length_m "
+                                                        "0.05 to 0.4 (no broader or longer than "
+                                                        "its head).",
+                       "properties": {"width_m": {"type": "number"}, "thickness_m": {"type": "number"},
+                                      "angle_deg": {"type": "number"}, "length_m": {"type": "number"}}},
+             # Pried or not is the recipe's kind (a pick, a mattock and a hoe are
+             # all pried): offered here, the chat filled it false.
+             "use": {**TOOL_USE_SCHEMA,
+                     "properties": {k: v for k, v in TOOL_USE_SCHEMA["properties"].items()
+                                    if k != "pry"}}}}}}},
     {"name": "joints",
      "description": "Every pin in the world and where each has turned to. The two "
                     "names a pin holds can change -- a pin whose wood is smashed "

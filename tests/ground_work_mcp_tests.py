@@ -56,6 +56,88 @@ def trial_of(world_id: str, name: str) -> dict:
                 parts=["pick haft", "pick arm"], tool="pick haft")["trial"]
 
 
+class ToolsByRecipe(unittest.TestCase):
+    """A tool by name, laid out exactly and tried. Asked in the page for a
+    mattock, the room's chat twice laid one by hand that was not a tool (317,000
+    and 691,000 tokens): its head off the cells, its tip past its head."""
+
+    def tearDown(self):
+        for world_id in [w for w in banjo_mcp.WORLDS if w.startswith("room-")]:
+            room_world.close_room(world_id)
+
+    def profile(self, world_id: str, name: str) -> dict:
+        return next(p for p in banjo_mcp.WORLDS[world_id]["interactions"] if p["object"] == name)
+
+    def test_a_mattock_and_a_hoe_are_built_and_dig_when_tried(self):
+        world_id = room_world.open_room(world_room.clearing())
+        for which, at, label in (("mattock", [0.0, 1.2], "Break up the soil"),
+                                 ("hoe", [-1.6, 2.4], "Hoe the soil")):
+            said = call("build_recipe", world_id=world_id, recipe=which, at_m=at)
+            trial = said["and"]["interaction"]["trial"]
+            point = said["and"]["tool_point"]
+            soil = trial.get("into_soil") or {}
+            print(f"\n  {which}: {point.get('mass_kg')} kg, {point.get('its_weight_about_the_grip_n_m')} N m "
+                  f"about the grip; into the soil {soil.get('swung')}; then {soil.get('levered')}")
+            self.assertTrue(trial.get("tried"), trial)
+            self.assertEqual(self.profile(world_id, f"the {which}")["use"]["label"], label)
+            broke = [w for w in (soil.get("levered") or []) if w.get("loosened_litres", 0) > 0]
+            self.assertTrue(broke, f"the {which} broke nothing out: {soil}")
+
+    def test_a_tool_is_made_the_one_the_person_asked_for(self):
+        world_id = room_world.open_room(world_room.clearing())
+        said = call("build_recipe", world_id=world_id, recipe="hoe", at_m=[0.0, 1.2],
+                    tool={"call_it": "the grub hoe", "head": {"width_m": 0.08},
+                          "use": {"label": "Grub it out", "past": "grubbed out"}})
+        self.assertEqual(said["parts"], ["grub hoe haft", "grub hoe blade"])
+        profile = self.profile(world_id, "the grub hoe")
+        self.assertEqual((profile["tool"], profile["use"]["label"], profile["use"]["past"]),
+                         ("grub hoe haft", "Grub it out", "grubbed out"))
+        self.assertIn("0.08 m by 0.12 m blade", said["built"])
+
+    def test_a_broader_head_gets_a_point_as_broad_and_is_still_pried(self):
+        """The chat's mattock: a 0.12 m head on the recipe's 0.08 m point met
+        the ground with its edges first, and it had filled in pry false."""
+        world_id = room_world.open_room(world_room.clearing())
+        said = call("build_recipe", world_id=world_id, recipe="mattock", at_m=[0.0, 1.2],
+                    tool={"head": {"width_m": 0.12}, "use": {"label": "Break up the soil", "pry": False}})
+        self.assertEqual(said["and"]["tool_point"]["width_mm"], 120.0)
+        self.assertNotIn("pry", self.profile(world_id, "the mattock")["use"])
+
+    def test_a_tool_is_one_material(self):
+        """A joined piece is all one material: an "iron" head on an oak haft was
+        built all of oak, 1.344 kg."""
+        world_id = room_world.open_room(world_room.clearing())
+        with self.assertRaisesRegex(banjo_mcp.Refused, "one material"):
+            call("build_recipe", world_id=world_id, recipe="mattock", at_m=[0.0, 1.2],
+                 tool={"head": {"material": "iron"}})
+
+    def test_a_head_the_wrist_cannot_hold_level_is_refused_whole(self):
+        world_id = room_world.open_room(world_room.clearing())
+        before = len(banjo_mcp.WORLDS[world_id]["scene"]["bodies"])
+        with self.assertRaisesRegex(banjo_mcp.Refused, "wrist"):
+            call("build_recipe", world_id=world_id, recipe="mattock", at_m=[0.0, 1.2],
+                 tool={"material": "iron"})
+        self.assertEqual(len(banjo_mcp.WORLDS[world_id]["scene"]["bodies"]), before, "nothing built")
+        self.assertEqual(banjo_mcp.WORLDS[world_id].get("interactions") or [], [])
+
+    def test_the_blanks_a_model_fills_are_dropped(self):
+        world_id = room_world.open_room(world_room.clearing())
+        said = call("build_recipe", world_id=world_id, recipe="pick", at_m=[0.0, 1.2],
+                    tool={"call_it": "", "head": {"material": "", "length_m": 0, "width_m": 0},
+                          "point": {}, "use": {"label": ""}})
+        self.assertEqual(said["parts"], ["pick haft", "pick arm"])
+        self.assertNotIn("use", self.profile(world_id, "the pick"))
+
+    def test_the_pick_is_laid_out_as_the_guide_has_it(self):
+        recipe = banjo_mcp.RECIPES["pick"]
+        self.assertEqual([(p["name"], p["size_m"], p["position_m"]) for p in recipe["parts"]],
+                         [("pick haft", [0.8, 0.04, 0.04], (0.0, 0.02, 0.02)),
+                          ("pick arm", [0.04, 0.04, 0.28], (0.38, 0.02, -0.14))])
+        point = recipe["then"][0][1]
+        self.assertEqual((point["tip_m"], point["grip_m"], point["width_m"], point["length_m"]),
+                         ((0.38, 0.02, -0.28), (-0.36, 0.02, 0.02), 0.04, 0.2))
+
+
 class HowAToolIsUsed(unittest.TestCase):
     """A tool's profile may shape how the person uses it (`use`): what the click
     is called, how the hand swings and pries it -- within the hand's bounds --
@@ -84,8 +166,10 @@ class HowAToolIsUsed(unittest.TestCase):
     def test_a_swing_past_the_hands_bounds_is_refused(self):
         world_id = clearing_with_pick()
         pointed(world_id)
-        with self.assertRaisesRegex(banjo_mcp.Refused, "1 to 12"):
-            self.declared(world_id, {"swing": {"speed_m_s": 20}})
+        # The room's chat gave a mattock its trial's 9.8 m/s point speed as the
+        # hand's: live, the swing glanced.
+        with self.assertRaisesRegex(banjo_mcp.Refused, "1 to 5"):
+            self.declared(world_id, {"swing": {"speed_m_s": 9.8}})
 
     def test_a_tool_that_is_never_pried_is_tried_that_way(self):
         world_id = clearing_with_pick()
