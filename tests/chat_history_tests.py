@@ -104,7 +104,10 @@ class WhyAnAnswerCameBackUnfinished(unittest.TestCase):
 
     @unittest.skipUnless(LIBRARY and Path(LIBRARY).is_file(), "the library is not built")
     def test_the_room_is_told_why_and_is_not_changed(self):
+        calls = []
+
         def model(api_key, model_name, conversation):
+            calls.append(1)
             return {"status": "incomplete", "usage": {}, "output": [],
                     "incomplete_details": {"reason": "max_output_tokens"}}
 
@@ -117,7 +120,57 @@ class WhyAnAnswerCameBackUnfinished(unittest.TestCase):
         finally:
             world_chat._call = real
         self.assertIn("used up its whole answer", str(failed.exception))
+        # Asked for once more, and only once, before the person is told.
+        self.assertEqual(len(calls), 2)
+        self.assertIn("asked once more", str(failed.exception))
         self.assertEqual(json.dumps(room.spec, sort_keys=True), before)
+
+    @unittest.skipUnless(LIBRARY and Path(LIBRARY).is_file(), "the library is not built")
+    def test_an_answer_that_ran_out_is_asked_for_once_more(self):
+        """On Render a tower ran out at 6000 tokens in its first round; asked
+        again, the same request took 727. The person should not have to ask."""
+        sent: list[str] = []
+
+        def model(api_key, model_name, conversation):
+            sent.append(json.dumps(conversation))
+            if len(sent) == 1:
+                return {"status": "incomplete", "usage": {"output_tokens": 6000}, "output": [],
+                        "incomplete_details": {"reason": "max_output_tokens"}}
+            return {"status": "completed", "usage": {"output_tokens": 700},
+                    "output": [{"type": "message",
+                                "content": [{"type": "output_text", "text": "Built it."}]}]}
+
+        trace: list = []
+        real, world_chat._call = world_chat._call, model
+        try:
+            answer = world_chat.ask("key", "a model", world_room.Room("yard"), {"bodies": []},
+                                    "a tower", [], history=[], trace=trace)
+        finally:
+            world_chat._call = real
+        self.assertEqual(answer["reply"], "Built it.")
+        self.assertEqual(len(sent), 2)
+        self.assertEqual(sent[0], sent[1], "nothing of the unfinished answer goes with the second")
+        self.assertEqual(answer["usage"]["output_tokens"], 6700, "both answers are paid for and counted")
+        self.assertTrue(any(isinstance(r, dict) and r.get("asked_again") for r in trace))
+
+    @unittest.skipUnless(LIBRARY and Path(LIBRARY).is_file(), "the library is not built")
+    def test_only_an_answer_that_ran_out_is_asked_for_again(self):
+        calls = []
+
+        def model(api_key, model_name, conversation):
+            calls.append(1)
+            return {"status": "incomplete", "usage": {}, "output": [],
+                    "incomplete_details": {"reason": "content_filter"}}
+
+        real, world_chat._call = world_chat._call, model
+        try:
+            with self.assertRaises(ValueError) as failed:
+                world_chat.ask("key", "a model", world_room.Room("yard"), {"bodies": []},
+                               "a crate", [], history=[])
+        finally:
+            world_chat._call = real
+        self.assertEqual(len(calls), 1)
+        self.assertIn("content filter", str(failed.exception))
 
 
 class WhatThePersonCarries(unittest.TestCase):

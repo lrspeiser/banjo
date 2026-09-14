@@ -680,17 +680,30 @@ measured when you tried it. Name things by what they are made of. Never say
 something works, broke, bent or bounced unless a tool told you it did."""
 
 
-def unfinished(result: dict[str, Any]) -> str:
+def ran_out(result: dict[str, Any]) -> bool:
+    """Whether the model used up its whole answer before it finished."""
+    details = result.get("incomplete_details")
+    return (result.get("status") == "incomplete" and isinstance(details, dict)
+            and details.get("reason") == "max_output_tokens")
+
+
+def unfinished(result: dict[str, Any], asked_again: bool = False) -> str:
     """Why the model's answer came back unfinished, as the person should hear it.
 
     It used to say "try a shorter request" whatever the reason, and a one-line
     request once failed that way after 62 s with nothing to say why. The answer
     carries the reason (incomplete_details, or an error's code), so that is what
-    is said. A turn that fails changes nothing in the room, whatever the reason."""
+    is said. A turn that fails changes nothing in the room, whatever the reason.
+    An answer that ran out is asked for once more first (ask), so the person
+    hears that it ran out only when it did so twice."""
     status = str(result.get("status") or "no status")
     details = result.get("incomplete_details")
     reason = str(details.get("reason") or "") if isinstance(details, dict) else ""
     if reason == "max_output_tokens":
+        if asked_again:
+            return (f"the model used up its whole answer -- {MAX_OUTPUT_TOKENS} tokens, its "
+                    f"thinking included -- before it finished, and again when it was asked once "
+                    f"more, so nothing in the room was changed; asking for less at a time may work")
         return (f"the model used up its whole answer -- {MAX_OUTPUT_TOKENS} tokens, its thinking "
                 f"included -- before it finished, so nothing in the room was changed; asking "
                 f"again usually works")
@@ -986,6 +999,7 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
         reply = ""
         rounds = 0
 
+        asked_again = False
         for turn in range(MAX_ROUNDS):
             if time.perf_counter() - started > MAX_TURN_S:
                 reply = (f"I ran out of time after {turn} rounds. "
@@ -997,8 +1011,23 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
             spent = result.get("usage") or {}
             usage["input_tokens"] += int(spent.get("input_tokens") or 0)
             usage["output_tokens"] += int(spent.get("output_tokens") or 0)
+            this_round_asked_again = False
+            if ran_out(result) and not asked_again:
+                # A burst of the model's thinking can use up a whole answer on a
+                # request that needs a few hundred tokens the next time. On
+                # Render, 2026-09-13, "build a tower like the washington
+                # monument" ran out at 6000 tokens in its first round; asked
+                # again on a desktop it took 727 over three rounds. Nothing of
+                # an unfinished answer is kept, so the same round is asked for
+                # once more -- once a turn, so a turn costs one extra request at
+                # most, and only when this happens.
+                asked_again = this_round_asked_again = True
+                result = _call(api_key, model, conversation)
+                spent = result.get("usage") or {}
+                usage["input_tokens"] += int(spent.get("input_tokens") or 0)
+                usage["output_tokens"] += int(spent.get("output_tokens") or 0)
             if result.get("status") != "completed":
-                raise ValueError(unfinished(result))
+                raise ValueError(unfinished(result, asked_again=this_round_asked_again))
 
             outputs = result.get("output", [])
             calls = [o for o in outputs if o.get("type") == "function_call"]
@@ -1011,6 +1040,8 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
                         said.append(content.get("text", ""))
             round_record: dict[str, Any] = {"round": rounds, "said": "".join(said).strip(),
                                             "calls": []}
+            if this_round_asked_again:
+                round_record["asked_again"] = True
             if trace is not None:
                 trace.append(round_record)
 
