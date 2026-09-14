@@ -56,6 +56,71 @@ def trial_of(world_id: str, name: str) -> dict:
                 parts=["pick haft", "pick arm"], tool="pick haft")["trial"]
 
 
+class HowAToolIsUsed(unittest.TestCase):
+    """A tool's profile may shape how the person uses it (`use`): what the click
+    is called, how the hand swings and pries it -- within the hand's bounds --
+    and its trial swings it that way (playground/tool_use.py uses the same)."""
+
+    def tearDown(self):
+        for world_id in [w for w in banjo_mcp.WORLDS if w.startswith("room-")]:
+            room_world.close_room(world_id)
+
+    def declared(self, world_id: str, use: dict, trial: bool = False, name: str = "the mattock"):
+        return call("interaction", world_id=world_id, object=name, template="swing-and-lever",
+                    parts=["pick haft", "pick arm"], tool="pick haft", trial=trial, use=use)
+
+    def test_what_is_said_is_kept_and_the_blanks_a_model_fills_are_dropped(self):
+        world_id = clearing_with_pick()
+        pointed(world_id)
+        said = self.declared(world_id, {"label": "Break up the soil", "past": "",
+                                        "swing": {"speed_m_s": 0, "raise_deg": 140},
+                                        "reach_m": [0, 0], "repeat": True})
+        self.assertEqual(said["use"], {"label": "Break up the soil", "swing": {"raise_deg": 140.0},
+                                       "repeat": True})
+        self.assertIn("'Break up the soil'", said["how_a_person_uses_it"])
+        kept = banjo_mcp.WORLDS[world_id]["interactions"][0]
+        self.assertEqual(kept["use"]["label"], "Break up the soil")
+
+    def test_a_swing_past_the_hands_bounds_is_refused(self):
+        world_id = clearing_with_pick()
+        pointed(world_id)
+        with self.assertRaisesRegex(banjo_mcp.Refused, "1 to 12"):
+            self.declared(world_id, {"swing": {"speed_m_s": 20}})
+
+    def test_a_tool_that_is_never_pried_is_tried_that_way(self):
+        world_id = clearing_with_pick()
+        pointed(world_id)
+        said = self.declared(world_id, {"label": "Drive it in", "pry": False}, trial=True,
+                             name="the stake")
+        self.assertIn("never pried", said["how_a_person_uses_it"])
+        soil = said["trial"]["into_soil"]
+        print(f"\n  never pried: {soil}")
+        self.assertIsInstance(soil, dict, soil)
+        self.assertNotIn("levered", soil)
+        self.assertIn("drawn_out", soil)
+
+    def test_said_again_under_a_new_name_the_tool_has_one_profile(self):
+        """A pick built by recipe, then declared again as "the mattock": left
+        with both, the page took the tool up as the first."""
+        world_id = clearing_with_pick()
+        pointed(world_id)
+        self.declared(world_id, {}, name="the pick")
+        self.declared(world_id, {"label": "Break up the soil", "past": "broke up"})
+        profiles = banjo_mcp.WORLDS[world_id]["interactions"]
+        self.assertEqual([p["object"] for p in profiles], ["the mattock"])
+        self.assertEqual(profiles[0]["use"]["past"], "broke up")
+
+    def test_a_copy_of_a_pick_is_a_pick_used_the_same_way(self):
+        world_id = clearing_with_pick()
+        pointed(world_id)
+        self.declared(world_id, {"label": "Dig here", "swing": {"raise_deg": 120}}, name="the pick")
+        call("duplicate", world_id=world_id, names=["pick haft", "pick arm"], prefix="second",
+             offset_m=[1.2, 0.0, 0.0], trial=False)
+        copy = next(p for p in banjo_mcp.WORLDS[world_id]["interactions"] if p["object"] != "the pick")
+        self.assertEqual((copy["template"], copy["tool"]), ("swing-and-lever", "second pick haft"))
+        self.assertEqual(copy["use"], {"label": "Dig here", "swing": {"raise_deg": 120.0}})
+
+
 class APickInTheClearing(unittest.TestCase):
     def tearDown(self):
         for world_id in [w for w in banjo_mcp.WORLDS if w.startswith("room-")]:

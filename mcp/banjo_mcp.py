@@ -2173,7 +2173,7 @@ def _saying_what_was_withdrawn(handler: Any) -> Any:
 # may be the only sign a pick was meant: there blanks are dropped, and a field
 # that says something is held to the rules, and refused.
 _ONLY_IN = {"draw-and-release": ("draw", "nock", "limbs", "projectile"),
-            "swing-and-lever": ("tool",)}
+            "swing-and-lever": ("tool", "use")}
 
 
 def _blank(value: Any) -> bool:
@@ -2231,6 +2231,20 @@ def tool_interaction(args: dict[str, Any]) -> dict[str, Any]:
     """Say how a person uses a thing, hold it to what is built, and try it."""
     entry = _world(args.get("world_id"))
     profile = {k: v for k, v in args.items() if k not in ("world_id", "trial")}
+    if isinstance(profile.get("use"), dict):
+        # The chat fills every field it is shown, and an empty one says nothing:
+        # left in, a 0 m/s swing would be refused, and it answers a refusal by
+        # changing values, never by leaving one out.
+        use = {k: v for k, v in profile["use"].items() if isinstance(v, bool) or not _blank(v)}
+        for key in ("swing", "lever"):
+            if isinstance(use.get(key), dict):
+                use[key] = {f: v for f, v in use[key].items() if not _blank(v)}
+                if not use[key]:
+                    del use[key]
+        if use:
+            profile["use"] = use
+        else:
+            del profile["use"]
     said = bool(profile.get("template"))
     if not said:
         profile["template"] = "draw-and-release"
@@ -2244,23 +2258,36 @@ def tool_interaction(args: dict[str, Any]) -> dict[str, Any]:
         checked["draw"]["max_m"] = _number(draw.get("max_m", 0.45), "draw max_m", 0.02, 3.0)
         checked["draw"]["speed_m_s"] = _number(draw.get("speed_m_s", 0.4), "draw speed_m_s",
                                                0.01, 5.0)
-    # One profile to an object: said again, it is what it says now.
+    # One profile to an object, and one to a tool: said again -- under a new
+    # name too, a pick built by recipe and then called "the mattock" -- it is
+    # what it says now. Left, the page found the old one first.
     entry["interactions"] = [p for p in entry.get("interactions", [])
-                             if p["object"] != checked["object"]] + [checked]
+                             if p["object"] != checked["object"]
+                             and not (checked["template"] == "swing-and-lever"
+                                      and p.get("template") == "swing-and-lever"
+                                      and p.get("tool") == checked.get("tool"))] + [checked]
     answer: dict[str, Any] = dict(checked)
     if aside:
         answer["not_read"] = (f"{', '.join(aside)}: a {checked['template']} has none, so what "
                               f"was sent for them was set aside")
     if checked["template"] == "swing-and-lever":
+        use = interaction_profiles.tool_use(checked)
+        then = ("pries it -- turned about where it went in -- and draws it out, breaking out "
+                "what the pry can, and what comes loose is carried" if use["lever"] else
+                "draws it straight back out: this one is only swung, never pried")
         answer["how_a_person_uses_it"] = (
-            f"In the playground a person takes {checked['object']} up with E on any of its "
-            f"parts, by the grip its point was given with, and clicks the left mouse button "
-            f"to swing it: the hand raises it back over their shoulder and brings its point "
-            f"down where the crosshair meets the ground, with an 800 N hand and a 60 N m "
-            f"wrist, and the ground decides how far it goes in. With the point in the ground "
-            f"the right mouse button levers it -- turned about where it went in -- and draws "
-            f"it out, breaking out what the pry can; what comes loose is carried. E puts it "
-            f"down.")
+            f"In the playground a person takes {checked['object']} up with E near any of its "
+            f"parts, by the grip its point was given with. A ring on the ground shows where it "
+            f"will come down -- green where it can work, amber when that is too far or too "
+            f"near (it comes down {use['reach_m'][0]:g} to {use['reach_m'][1]:g} m in front of "
+            f"them), red on bare rock -- and one click of the left mouse button, "
+            f"'{use['label']}', does the whole of it: the hand raises it back over their "
+            f"shoulder and brings the point down there at {use['swing']['speed_m_s']:g} m/s, "
+            f"with an 800 N hand and a 60 N m wrist, the ground decides how far it goes in, "
+            f"and the hand {then}."
+            + (" Holding the button keeps going; the right button stops it." if use["repeat"]
+               else "")
+            + " E puts it down.")
         if args.get("trial", True):
             answer["trial"] = _trial_swing(entry, checked)
         return answer
@@ -2366,7 +2393,7 @@ def _trial_swing(entry: dict[str, Any], profile: dict[str, Any]) -> dict[str, An
                 MAKE_JOINT[record["tool"]]({**record["args"], "world_id": scratch})
         _, dropped = _arm_tool_points(world, points)
         said = ({"tried": False, "why": "; ".join(dropped)} if dropped
-                else _swing_and_pry(world, profile["tool"]))
+                else _swing_and_pry(world, profile["tool"], interaction_profiles.tool_use(profile)))
     except (Refused, banjo.BanjoError) as problem:
         said = {"tried": False, "why": str(problem)}
     finally:
@@ -2408,10 +2435,16 @@ def _trial_targets(world: banjo.World, near: list[float]) -> dict[str, list[floa
     return found
 
 
-def _swing_and_pry(world: banjo.World, tool: str) -> dict[str, Any]:
+def _swing_and_pry(world: banjo.World, tool: str,
+                   use: dict[str, Any] | None = None) -> dict[str, Any]:
     """The trial, measured off the engine: into soil and pried out, then onto
     rock -- each swung from where a person would stand, with the hand the room
-    gives them."""
+    gives them, the way the tool's profile says it is used (use: swing, lever;
+    interaction_profiles.tool_use) -- the same numbers the playground swings it
+    with."""
+    use = use or interaction_profiles.tool_use(None)
+    swing = use["swing"]
+    lever = use["lever"]
     events: list[dict[str, Any]] = []
     dt = TRIAL_STEP_S
     passed = 0.0
@@ -2448,7 +2481,8 @@ def _swing_and_pry(world: banjo.World, tool: str) -> dict[str, Any]:
         advance(1.0)
         world.forget_ground_work()
         try:
-            world.strike(at, shoulder, 4.0, 110.0, False, 40.0, 3.0)
+            world.strike(at, shoulder, swing["speed_m_s"], swing["raise_deg"], False,
+                         (lever or interaction_profiles.TOOL_USE_DEFAULTS["lever"])["lever_deg"], 3.0)
         except banjo.BanjoError as error:
             said[f"into_{what}"] = f"the swing was refused: {error}"
             continue
@@ -2459,13 +2493,15 @@ def _swing_and_pry(world: banjo.World, tool: str) -> dict[str, Any]:
         work = world.ground_work()
         trial["swung"] = [_ground_work_said(w) for w in work] or "its point met no ground"
         if what == "soil" and any(w.open for w in work):
-            world.strike(None, shoulder, 1.2, 0.0, True, 40.0, 3.0)
-            took, trial["lever_ended"] = _play_stroke(world, events, 6.0, 0.3)
-            passed += took
+            if lever:
+                world.strike(None, shoulder, lever["speed_m_s"], 0.0, True, lever["lever_deg"], 3.0)
+                took, trial["lever_ended"] = _play_stroke(world, events, 6.0, 0.3)
+                passed += took
             if world.held and any(w.open for w in world.ground_work()):
                 passed += _pull_out(world, events)
                 trial["then"] = "drawn straight up out of the ground"
-            trial["levered"] = [_ground_work_said(w) for w in world.ground_work()]
+            trial["levered" if lever else "drawn_out"] = [_ground_work_said(w)
+                                                          for w in world.ground_work()]
         said[f"into_{what}"] = trial
     body = world.body(tool)
     said["tool_whole"] = body is not None
@@ -2718,16 +2754,23 @@ def tool_duplicate(args: dict[str, Any]) -> dict[str, Any]:
         for profile in list(entry.get("interactions", [])):
             if not set(profile["parts"]) <= set(renamed):
                 continue
-            tried.append(tool_interaction({
-                "world_id": world_id,
-                "object": str(args.get("call_it") or f"{profile['object']} ({prefix})")[:80],
-                "template": profile["template"],
-                "parts": [renamed[p] for p in profile["parts"]],
-                "draw": dict(profile["draw"], part=renamed[profile["draw"]["part"]]),
-                "nock": {"a": renamed[profile["nock"]["a"]], "b": renamed[profile["nock"]["b"]]},
-                "limbs": [[renamed[x], renamed[y]] for x, y in profile["limbs"]],
-                "projectile": renamed[profile["projectile"]],
-                "trial": args.get("trial", True)}))
+            call = {"world_id": world_id,
+                    "object": str(args.get("call_it") or f"{profile['object']} ({prefix})")[:80],
+                    "template": profile["template"],
+                    "parts": [renamed[p] for p in profile["parts"]],
+                    "trial": args.get("trial", True)}
+            if profile["template"] == "swing-and-lever":
+                # A tool: its point came across with its body (tool_points below
+                # are copied with the bodies), and how it is used is the same.
+                call["tool"] = renamed[profile["tool"]]
+                if profile.get("use"):
+                    call["use"] = json.loads(json.dumps(profile["use"]))
+            else:
+                call.update(draw=dict(profile["draw"], part=renamed[profile["draw"]["part"]]),
+                            nock={"a": renamed[profile["nock"]["a"]], "b": renamed[profile["nock"]["b"]]},
+                            limbs=[[renamed[x], renamed[y]] for x, y in profile["limbs"]],
+                            projectile=renamed[profile["projectile"]])
+            tried.append(tool_interaction(call))
     except Refused:
         # Nothing half made: the copies go, and every joint made on them.
         copied = set(renamed.values())

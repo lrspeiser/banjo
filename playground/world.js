@@ -18,7 +18,7 @@ import { BINDINGS, isKey, isButton, keyOf, controlsHint, holdPoint, windUpPoint,
          windUpReached, throwStroke, placeStroke, throwable, helpFor, AimArc,
          WIND_UP_S, TURNS, TURN_KEY_RATE, HOLD_RANGE_M, holdDistanceFor, radiusOf,
          turnPace, askTowards, uprightTurn } from "/interaction.js";
-import { makePicks } from "/picks.js";
+import { makeTools } from "/tools.js";
 import { makeWorkbench } from "/workbench.js";
 
 const $ = (id) => document.getElementById(id);
@@ -1139,7 +1139,7 @@ function showInventory() {
     .map(([what, have]) => ({ what, much: grams(have.kg) }));
   const uses = [
     ...(world.tools || []).map((p) => ({ what: p.object,
-      keys: "E take up · Left mouse swing it · Right mouse lever it out" })),
+      keys: "E take up · Left mouse use it where the ring is · hold to keep going" })),
     ...(world.profiles || []).map((p) => ({ what: p.object,
       keys: "E take up · hold Left mouse to draw · let go to shoot" })),
   ];
@@ -1197,12 +1197,14 @@ function showActions() {
   const underfoot = !held && !on ? groundMadeOf(world.groundAim) : null;
   const tool = (world.tools || [])[0] || null;
   if (held && held.pick) {
-    if (use.mode === "pick-in") rows.push([k("secondary"), `lever ${held.pick.object} out`]);
-    else if (use.mode === "pick-ready")
-      rows.push([k("primary"), `swing ${held.pick.object} at the ground under the crosshair`]);
+    // A tool: what it does where the crosshair meets the ground, as the server
+    // says it (tools.js, tool_use.resolve) -- the same answer the ring is drawn from.
+    const target = use.target || {};
+    rows.push([k("primary"), `${(target.label || "use it").toLowerCase()}`
+      + (target.repeat ? " · hold to keep going" : "")]);
+    rows.push([k("secondary"), "stop after this one"]);
     rows.push([k("interact"), `put ${held.pick.object} down`]);
-    if (use.mode === "pick-ready" && groundMadeOf(world.groundAim) === "rock")
-      tip = "Rock stops an oak point: aim at the soil to dig.";
+    if (target.reason) tip = target.reason;
   } else if (held && held.bow) {
     rows.push([k("primary"), "hold to draw, let go to shoot"]);
     rows.push([k("interact"), "let go of the bow"]);
@@ -1218,7 +1220,7 @@ function showActions() {
     rows.push([k("talk"), `ask the room to turn or move ${held.name}`]);
   } else if (on) {
     const entry = world.bodies.get(on);
-    const pick = picks.profileOf(on), bow = profileOf(on);
+    const pick = tools.profileOf(on), bow = profileOf(on);
     if (pick) rows.push([k("interact"), `take up ${pick.object} by its grip`]);
     else if (bow) rows.push([k("interact"), `take up ${bow.object}`]);
     else if (bladeFor(on)) rows.push(["double-click", `take ${on} by the grip`]);
@@ -1233,11 +1235,11 @@ function showActions() {
       ? (Number(world.carriedGround.soil_kg) || 0) + (Number(world.carriedGround.sand_kg) || 0) : 0;
     if (carried > 0.0005) rows.push([k("heap"), "heap what you carry here"]);
     if (underfoot === "rock") {
-      if (tool) tip = `Bare rock: it stops the oak point of ${tool.object}.`;
+      if (tool) tip = `Bare rock: a point no harder than the rock stops on it.`;
     } else {
       tip = tool
-        ? `The tool for this ground: ${tool.object}. Look at it and press ${k("interact")} to take it`
-          + ` up, then ${k("primary")} to swing it.`
+        ? `The tool for this ground: ${tool.object}. Look at it, or beside it, and press`
+          + ` ${k("interact")} to take it up; then ${k("primary")} uses it where the ring is.`
         : `No tool here to dig with: press ${k("talk")} and ask the room to make you a pick.`;
     }
   }
@@ -1691,9 +1693,10 @@ canvas.addEventListener("contextmenu", (e) => {
   if (world.use.mode === "preparing") { cancelWindUp(); return; }
   // ...and in the middle of a draw, let the string back down.
   if (world.use.mode === "drawing") { intend("let down"); return; }
-  // With a tool that digs in hand, it levers a point that is in the ground.
+  // With a tool in hand it stops the tool going on after the use in hand
+  // (tools.js): the server's use pries and draws the point out by itself.
   if (world.held && world.held.pick) {
-    if (world.use.mode === "pick-in") intend("lever");
+    tools.stop();
     return;
   }
   // With a blade in hand it turns the edge instead, a quarter about the
@@ -1734,10 +1737,10 @@ canvas.addEventListener("pointerdown", (e) => {
     // The same button on a bow draws it.
     intend("draw");
     primaryUsed = true;
-  } else if (isButton("primary", e.button) && world.held && world.held.pick &&
-             world.use.mode === "pick-ready") {
-    // And on a tool that digs, swings it at the ground under the crosshair.
-    intend("swing");
+  } else if (isButton("primary", e.button) && world.held && world.held.pick) {
+    // And with a tool, uses it where the ring is -- and held, goes on
+    // (tools.js). Pressed while it works, it goes on after the use in hand.
+    tools.press();
     primaryUsed = true;
   }
   if (looking) return;           // captured: the move handler has it
@@ -1763,6 +1766,7 @@ canvas.addEventListener("pointerup", (e) => {
     drag = null;
     if (world.use.mode === "preparing") intend("let fly");
     else if (world.use.mode === "drawing") intend("loose");
+    tools.release();
     return;
   }
   const was = drag;
@@ -1775,6 +1779,9 @@ canvas.addEventListener("pointerup", (e) => {
     const asked = canvas.requestPointerLock?.();
     if (asked && typeof asked.catch === "function") asked.catch(() => {});
   }
+  // A tool is never dropped by a click -- E puts it down. A second click with
+  // the pick's point in the ground used to come here and drop it.
+  if (world.held && world.held.pick) return;
   if (world.held) { intend("drop"); return; }
   // With the hand empty a click no longer takes hold: it opens what can be
   // done with the thing, and a second click on it straight after takes hold.
@@ -1943,8 +1950,16 @@ async function aim() {
   try {
     const from = camera.position;
     const dir = forwardVector();
-    const found = await act("pick", { from: [from.x, from.y, from.z],
-                                      dir: [dir.x, dir.y, dir.z], max_m: 40 });
+    let found = await act("pick", { from: [from.x, from.y, from.z],
+                                    dir: [dir.x, dir.y, dir.z], max_m: 40 });
+    // Past the tool in your own hand: held ready it can be under the
+    // crosshair, and where you are looking is the ground beyond it.
+    for (let past = 0; past < 3 && found.hit && found.name && found.point_m && world.held
+         && world.held.pick && world.held.pick.parts.includes(found.name); past++) {
+      const p = found.point_m;
+      found = await act("pick", { from: [p[0] + 0.05 * dir.x, p[1] + 0.05 * dir.y, p[2] + 0.05 * dir.z],
+                                  dir: [dir.x, dir.y, dir.z], max_m: 40 });
+    }
     world.aim = found.hit && found.name ? found : null;
     // Where the crosshair meets the ground, when it is the ground it meets:
     // that is where a spade goes in.
@@ -2023,25 +2038,25 @@ function showLabel(found) {
             + ` (drawn deeper so you can see it)` : "")
       + ` · ${found.distance_m.toFixed(2)} m away`
       + (bladeFor(found.name) ? " · has an edge: double-click to take it by the grip" : "")
-      + (!bladeFor(found.name) && !picks.profileOf(found.name) && throwable(entry, onAJoint(found.name))
+      + (!bladeFor(found.name) && !tools.profileOf(found.name) && throwable(entry, onAJoint(found.name))
           ? ` · ${entry.mass < 10 ? entry.mass.toFixed(2) : entry.mass.toFixed(1)} kg`
             + ` · click: what you can do · ${keyOf("interact")} or double-click: take hold` : "")
       // On a pin, in a groove, fixed to something that is: worked by hand, and
       // nothing said so -- the winch's handle showed only its size.
-      + (!bladeFor(found.name) && !profileOf(found.name) && !picks.profileOf(found.name)
+      + (!bladeFor(found.name) && !profileOf(found.name) && !tools.profileOf(found.name)
          && !entry.anchored && onAJoint(found.name)
           ? ` · on a joint: ${keyOf("interact")} or double-click to take hold, then move the crosshair to work it`
           : "")
       + (profileOf(found.name)
           ? ` · part of ${profileOf(found.name).object}: ${keyOf("interact")} or double-click to take it up`
           : "")
-      + (picks.profileOf(found.name)
-          ? ` · part of ${picks.profileOf(found.name).object}: ${keyOf("interact")} or double-click to take it`
+      + (tools.profileOf(found.name)
+          ? ` · part of ${tools.profileOf(found.name).object}: ${keyOf("interact")} or double-click to take it`
             + ` up by its grip`
           : "")
     : "";
   cross.classList.toggle("on", !entry?.anchored || !!profileOf(found.name)
-                               || !!picks.profileOf(found.name));
+                               || !!tools.profileOf(found.name));
 }
 
 // A click always lands.
@@ -2062,8 +2077,8 @@ function intend(what) {
   else if (what === "loose") loose();
   else if (what === "let down") letDown();
   else if (what === "settle") settleDown();
-  else if (what === "swing") picks.swing();
-  else if (what === "lever") picks.lever();
+  else if (what === "swing") { tools.press(); tools.release(); }
+  else if (what === "lever") tools.stop();
 }
 
 // ---------------------------------------------------------------------------
@@ -2250,7 +2265,13 @@ function storedInElastics(name) {
 }
 
 async function pickUp() {
-  if (!world.aim) return;
+  // On the ground beside a tool -- a pick lies flat and is 4 cm thick -- E
+  // takes up the tool whose body passes nearest the crosshair's line (tools.js).
+  if (!world.aim) {
+    const near = !world.held && !world.acting ? tools.nearTool() : null;
+    if (near) await tools.takeUp(near);
+    return;
+  }
   // An action has the hand while it runs (runAction).
   if (world.acting) { say("world", "Your hand is busy with an action."); return; }
   world.menuFor = null;
@@ -2262,9 +2283,9 @@ async function pickUp() {
   // hold, which is how a bowstring can still be grabbed by itself.
   const profile = !(keys.has("AltLeft") || keys.has("AltRight")) && profileOf(name);
   if (profile) { await takeUpBow(profile); return; }
-  // A part of a tool that digs takes the tool up by its grip (picks.js).
-  const tool = !(keys.has("AltLeft") || keys.has("AltRight")) && picks.profileOf(name);
-  if (tool) { await picks.takeUp(tool); return; }
+  // A part of a tool takes the tool up by its grip (tools.js).
+  const tool = !(keys.has("AltLeft") || keys.has("AltRight")) && tools.profileOf(name);
+  if (tool) { await tools.takeUp(tool); return; }
   if (entry?.anchored) {
     say("world", `${name} is fixed in place — it is the room, not a prop.`);
     return;
@@ -2449,7 +2470,7 @@ async function letFly() {
 async function putDown() {
   const held = world.held;
   if (!held) return;
-  if (held.pick) { await picks.putDown(`You put down ${held.pick.object}.`); return; }
+  if (held.pick) { await tools.putDown(`You put down ${held.pick.object}.`); return; }
   if (held.bow) {
     // A bow is not dropped with its string drawn: let down first, then let go.
     if (world.use.mode === "drawing") await letDown();
@@ -2688,15 +2709,17 @@ function rememberProfiles(spec) {
   world.actions = (spec && spec.actions) || [];
   world.profiles = ((spec && spec.interactions) || [])
     .filter((p) => p.template === "draw-and-release");
-  // And the tools that dig, which picks.js drives (swing-and-lever).
+  // And the tools that work the ground (swing-and-lever), which tools.js holds.
   world.tools = ((spec && spec.interactions) || [])
     .filter((p) => p.template === "swing-and-lever");
 }
 
-// Tools that dig: taken up by the grip their point was given with, swung at
-// the ground and levered out. The engine makes every stroke; picks.js says
-// where the person is and what came back.
-const picks = makePicks({ world, act, say, remember, showUse, camera, carryGround, $ });
+// Tools: taken up by the grip their point was given with, and used the same
+// way whatever they are -- the server says what the tool does where the ring
+// is and does it (tool_use.py), each stroke the engine's; tools.js holds the
+// tool ready, draws the ring and sends the click.
+const tools = makeTools({ world, act, api, say, remember, showUse, camera, carryGround, scene,
+                          whereIAm, $ });
 
 function profileOf(name) {
   return world.profiles.find((p) => p.parts.includes(name)) || null;
@@ -3489,8 +3512,8 @@ async function tick() {
       else if (what === "loose") await loose();
       else if (what === "let down") await letDown();
       else if (what === "settle") await settleDown();
-      else if (what === "swing") await picks.swing();
-      else if (what === "lever") await picks.lever();
+      else if (what === "swing") { tools.press(); tools.release(); }
+      else if (what === "lever") tools.stop();
     }
     // Where the hand is, sent WITH the step rather than before it.
     //
@@ -3513,10 +3536,12 @@ async function tick() {
       // and the wish it had stays where it was.
       if (hand) hand_q = wristWish(elapsed);
     } else if (world.held && world.held.pick) {
-      // A tool that digs: held ready by the page; during a swing, a lever or a
-      // pull the hand is the engine's stroke, and once a blow has landed it
-      // holds where the grip is (picks.js).
-      ({ hand, hand_q } = picks.hand());
+      // A tool: held ready by the page, with the ring following the crosshair;
+      // while the server uses it, nothing is sent -- the hand is the engine's
+      // stroke, and a step carrying the ready pose would cancel the swing
+      // (tools.js).
+      tools.followAim();
+      ({ hand, hand_q } = tools.hand());
     } else if (world.held && world.held.bow) {
       // A bow's string: held where the hand took it, or drawn and let down by
       // the engine's own stroke. Nothing is sent; sending would take it back.
@@ -3627,7 +3652,7 @@ async function tick() {
     followTheHand(state.hand);
     previewThrow();
     followTheBow(state);
-    picks.follow(state);
+    tools.follow(state);
     previewShot();
     drawRopes();
     followJoints();
@@ -4145,7 +4170,7 @@ function builtinsFor(name) {
   const jointed = onAJoint(name);
   if (throwable(entry, jointed)) out.push({ key: "put_on_ground", label: "Put it on the ground in front of me" });
   const d = entry.dims || [0, 0, 0];
-  if (entry.shape === "box" && !jointed && !bladeFor(name) && !picks.profileOf(name)
+  if (entry.shape === "box" && !jointed && !bladeFor(name) && !tools.profileOf(name)
       && Math.max(...d) - Math.min(...d) > 1e-3) {
     // How it stands now, from its turn as drawn: how much each of its sides
     // points up, and so how high it reaches above its middle. Upright is its

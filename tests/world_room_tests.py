@@ -1938,6 +1938,75 @@ class TheArmoury(unittest.TestCase):
         self.assertGreater(math.degrees(math.atan2(half_width, height)), 8.0)
 
 
+class TheWorldsPickIsUsedByItsOneAction(unittest.TestCase):
+    """The owner, 2026-09-14: "im having a lot of challenges with the pick ax".
+    One use of a tool is the whole of it, done by the server with the bounded
+    hand (playground/tool_use.py): held still, swung, pried, drawn out, and said
+    from the ground's record of it -- which the engine sends over closed in
+    exactly one reply. Read from the room's list afterwards, every use said "it
+    is still in" when the pry had broken out 5 L."""
+
+    @unittest.skipUnless(ENGINE, "the live engine is not built")
+    def test_one_use_of_the_worlds_pick_digs_and_says_how_much(self):
+        import threading
+        import time
+        import tool_use
+        live = live_session.Live()
+        self.addCleanup(live.shutdown)
+
+        class App:
+            engine_path = ENGINE
+            runs_path = ROOT / "build/playground-runs"
+            live_inprocess = False
+
+        App.runs_path.mkdir(parents=True, exist_ok=True)
+        app = App()
+        app.live = live
+        # What the server's Playground wires: every reply to whoever listens.
+        app.reply_listeners = []
+        app.on_live_reply = lambda session, reply: [f(session, reply) for f in list(app.reply_listeners)]
+        app.room = world_room.Room("world")
+        live.open(app, {"spec": app.room.spec})
+        ground = live.session.send(op="survey", at=[13.0, -4.38])["survey"]["ground_m"]
+        eyes = [13.0, ground + 1.62, -4.38]
+        # Held ready as the page holds it: 0.55 m out, 0.5 m down, 0.18 m right.
+        ready = [eyes[0] + 0.18, eyes[1] - 0.5, eyes[2] - 0.55]
+        running = threading.Event()
+        running.set()
+
+        def keep_running():            # the page's part: the room runs, and the tool is held
+            while running.is_set():   # ready while nothing is being done with it
+                try:
+                    step = {"op": "step", "dt": 1 / 240.0, "n": 4, "moved": True}
+                    if not getattr(live.session, "tool_busy", False):
+                        step["hand"] = ready
+                    live.session.send(**step)
+                except Exception:
+                    return
+                time.sleep(0.005)
+        point = next(p for p in live.session.send(op="tool_points")["tool_points"]
+                     if p["body"] == "pick haft")
+        live.session.send(op="wield", name="pick haft", grip=point["grip"])
+        runner = threading.Thread(target=keep_running, daemon=True)
+        runner.start()
+        try:
+            time.sleep(1.5)            # taken up and swung round into the ready pose
+            at = [12.7, live.session.send(op="survey", at=[12.7, -5.58])["survey"]["ground_m"], -5.58]
+            person = {"standing_m": [13.0, ground, -4.38], "facing": [0.0, 0.0, -1.0], "eyes_m": eyes}
+            said = tool_use.run(app, {"person": person, "at_m": at})
+            print(f"\n  one use: {said.get('said')} {said.get('detail')}\n  strokes: {said.get('done')}")
+            self.assertNotIn("refused", said, said)
+            record = said["result"] or {}
+            litres = 1000.0 * sum(float(v or 0.0) for v in (record.get("loosened") or {}).values())
+            self.assertFalse(record.get("open"), said)
+            self.assertGreater(litres, 2.0, said)
+            self.assertTrue(said["said"].startswith("Dug"), said)
+            self.assertEqual(app.reply_listeners, [])
+        finally:
+            running.clear()
+            runner.join(timeout=3)
+
+
 class AThingOnAJointIsWorkedByHand(unittest.TestCase):
     """The owner, 2026-09-14: one click on the castle gate's winch gave no "Turn
     the winch half way" -- and that is to be so for everything on a joint, all

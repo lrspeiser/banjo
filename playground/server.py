@@ -35,6 +35,7 @@ import world_room
 import room_world
 import progression  # noqa: E402  (mcp/, put on the path by room_world)
 import room_store
+import tool_use
 import access_gate
 import scene_chat
 import network_admission
@@ -255,9 +256,13 @@ class Playground:
         self.studios = []
         self.reviewing = set()
         # The person's notebook (journal_of), and what hears every reply of their
-        # live room for it (hear): docs/knowledge-and-progression.md.
+        # live room for it (hear): docs/knowledge-and-progression.md. And
+        # whoever else listens for a while (heard): a tool's use, for the
+        # ground-work record the engine sends over in exactly one reply
+        # (tool_use.run).
         self.journal = None
-        self.on_live_reply = lambda session, reply: hear(self, session, reply)
+        self.reply_listeners = []
+        self.on_live_reply = lambda session, reply: heard(self, session, reply)
 
     def log_event(self, job_id, event, **fields):
         directory = self.runs_path / job_id
@@ -1119,7 +1124,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(job)
             allowed={"/":"index.html","/index.html":"index.html","/app.js":"app.js","/style.css":"style.css","/scene.js":"scene.js",
                 "/world":"world.html","/world.html":"world.html","/world.js":"world.js","/world.css":"world.css",
-                "/blades.js":"blades.js","/interaction.js":"interaction.js","/picks.js":"picks.js","/workbench.js":"workbench.js",
+                "/blades.js":"blades.js","/interaction.js":"interaction.js","/tools.js":"tools.js","/workbench.js":"workbench.js",
                 "/vendor/three.module.js":"vendor/three.module.js","/vendor/three.core.js":"vendor/three.core.js"}
             if path not in allowed: return self.send({"error":"Not found"},404)
             file=STATIC/allowed[path]
@@ -1310,6 +1315,18 @@ class Handler(BaseHTTPRequestHandler):
                 # has open (_this_pages_room).
                 _this_pages_room(self.server.app,body)
                 return self.send(run_action(self.server.app,body))
+            if path=="/api/world/tool":
+                # What the tool in the person's hand does where they look
+                # (tool_use.resolve): its action, whether it can be done there
+                # and why not, and the ring the page draws. Asking does nothing.
+                _this_pages_room(self.server.app,body)
+                return self.send(tool_use.resolve(self.server.app,body))
+            if path=="/api/world/tool/use":
+                # And doing it: the whole of it, with the bounded hand, while
+                # the page keeps the room running (tool_use.run). The swing is
+                # the person's, so what it does is credited to their notebook.
+                _this_pages_room(self.server.app,body)
+                return self.send(tool_use.run(self.server.app,body,note=note_strike))
             if path=="/api/live/open":
                 opened=self.server.app.live.open(self.server.app,body)
                 # The lab page's stage now: the world page's room was closed by it.
@@ -2028,6 +2045,16 @@ def journal_of(app):
         store=getattr(app,"store",None)
         journal=app.journal=progression.Journal(Path(store.folder)/"journal.json" if store is not None else None)
     return journal
+
+
+def heard(app,session,reply):
+    """Every reply of the person's live room: to their notebook (hear), and to
+    whoever listens for a while (app.reply_listeners, a tool's use). A listener
+    that fails is logged and never stops the room."""
+    hear(app,session,reply)
+    for listener in list(getattr(app,"reply_listeners",None) or ()):
+        try: listener(session,reply)
+        except Exception: logging.getLogger("banjo").exception("banjo: a reply's listener failed")
 
 
 def hear(app,session,reply):

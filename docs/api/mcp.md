@@ -297,8 +297,11 @@ take it up, draw the string back, let go. `interaction` says that
   it comes back (`draw`: `part`, `axis`, `max_m`, `speed_m_s`), the ONE-WAY
   fixing that holds what is shot (`nock`: a `fix` with `comes_off_n`), the
   elastics that store the draw (`limbs`), and the `projectile`;
-- never what it does. There is no speed in a profile, and one that tries to
-  say one is refused.
+- never what the physics does: what a bow shoots with is its limbs', and how
+  deep a point goes is the ground's. How the person's hand moves it may be
+  said, within the hand's own bounds -- how far and how fast a bow is drawn
+  (`draw` `max_m`, `speed_m_s`), and how a tool is swung and pried (`use`,
+  below).
 
 It is held to what is BUILT: the calls that made the joints, not what the world
 happens to be doing, so a nock an arrow has just come off in a `run` is still
@@ -321,6 +324,29 @@ seconds of computing. Measured, the pick the playground's chat is given (1.21 kg
 of oak, lying on the clearing's soil): 120.3 mm into the soil at 9.17 m/s,
 5.61 L broken out by the lever, stopped by the rock at 8.22 m/s; 6.6 s of world
 in 0.17 s. [docs/ground-work.md](../ground-work.md)
+
+The playground uses every tool the same way (`playground/tool_use.py`, and
+`POST /api/world/tool` and `/api/world/tool/use` in playground/README.md): E
+takes it up, a ring on the ground shows where it will come down and whether it
+can work there, one click does the whole of it -- swing, pry, draw out -- and
+holding the button keeps going. A tool's optional `use` shapes that for the
+thing that was made, and only what it says is kept:
+
+| `use` field | What it says | When not said |
+|---|---|---|
+| `label` | What the click is called, at most 40 letters | "Dig here" |
+| `past` | How a result is said, at most 24 letters | "dug" |
+| `swing` | `speed_m_s` 1 to 12 and `raise_deg` 30 to 170: how the hand swings it | 4 m/s, 110 degrees |
+| `lever` | `speed_m_s` 0.3 to 4 and `lever_deg` 5 to 80: how it is pried | 1.2 m/s, 40 degrees |
+| `pry` | false for a tool that is only swung and drawn out | true |
+| `reach_m` | [nearest, furthest] in front of the person, within 0.3 to 2 m | [1.15, 2]: from 1.2 m out every swing measured dug, and at 1.05-1.1 m about one in several came down short |
+| `repeat` | false where holding the button should not go on | true |
+
+Its trial swings it with the same numbers, from `interaction_profiles.TOOL_USE_DEFAULTS`
+and what `use` says, so what the trial measured is what the person gets. Blank
+fields of a `use` -- a model's function call often fills every one -- are
+dropped rather than refused; a value outside the hand's bounds is refused with
+them.
 
 A caller that sends every field it is offered -- a model's function call often
 does -- sends the other kind's too. With a `template` said, what the other kind

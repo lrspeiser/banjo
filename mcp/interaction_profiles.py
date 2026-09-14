@@ -2,8 +2,11 @@
 
 A profile says which bodies are one object, which part a hand takes and which
 way it is drawn, which joint lets go and which joints hold the draw -- and never
-what the physics does. There is no speed in one anywhere, and a profile that
-tries to say one is refused. docs/interaction-profiles.md.
+what the physics does. How deep a point goes and what comes loose are the
+ground's, what a bow shoots with is its limbs'. What a tool's profile may say is
+how the PERSON uses it (`use`): what their click is called, how the hand swings
+and pries it, how far off it can be brought down and whether holding the button
+keeps going -- each within the bounded hand's own limits. docs/interaction-profiles.md.
 
 Two templates, each a way of using things the page knows how to drive:
 
@@ -30,8 +33,95 @@ from typing import Any, Iterable
 TEMPLATES = ("draw-and-release", "swing-and-lever")
 KEYS = {
     "draw-and-release": {"object", "template", "parts", "draw", "nock", "limbs", "projectile"},
-    "swing-and-lever": {"object", "template", "parts", "tool"},
+    "swing-and-lever": {"object", "template", "parts", "tool", "use"},
 }
+
+# How a person uses a tool that works the ground, when its profile does not say:
+# what the click is called and how a result is said; the swing -- raised back
+# over the shoulder and brought down at the hand's speed -- and the pry after
+# it, turned about where the point went in; how far in front of them it can be
+# brought down (a haft and an arm at most, and not at their own feet); and
+# whether holding the button goes on. One copy, read by the MCP's trial and by
+# the playground's page and server alike, so what a trial measured is what the
+# person gets. The bounds are the hand's: live_session's strike op refuses
+# anything outside 0.3 to 12 m/s, a raise up to 170 degrees, a pry of 5 to 80.
+# The nearest it comes down by default is 1.15 m: in the page, on untouched
+# ground, every swing from 1.2 m to 1.84 m in front dug, while at 1.05-1.1 m
+# about one in several stopped short -- its point 1 cm above the ground and 4 cm
+# before the aim -- and the MCP's trial stands 1.2 m back (banjo_mcp STAND_BACK_M).
+TOOL_USE_DEFAULTS = {"label": "Dig here", "past": "dug",
+                     "swing": {"speed_m_s": 4.0, "raise_deg": 110.0},
+                     "lever": {"speed_m_s": 1.2, "lever_deg": 40.0}, "pry": True,
+                     "reach_m": [1.15, 2.0], "repeat": True}
+_USE_KEYS = set(TOOL_USE_DEFAULTS)
+_SWING_BOUNDS = {"speed_m_s": (1.0, 12.0), "raise_deg": (30.0, 170.0)}
+_LEVER_BOUNDS = {"speed_m_s": (0.3, 4.0), "lever_deg": (5.0, 80.0)}
+REACH_BOUNDS_M = (0.3, 2.0)
+
+
+def tool_use(profile: dict[str, Any] | None) -> dict[str, Any]:
+    """What a tool's profile says of how it is used, with what it leaves unsaid
+    filled in from TOOL_USE_DEFAULTS: `lever` is None for a tool that is only
+    swung, never pried."""
+    said = (profile or {}).get("use") or {}
+    out = {"label": said.get("label", TOOL_USE_DEFAULTS["label"]),
+           "past": said.get("past", TOOL_USE_DEFAULTS["past"]),
+           "swing": {**TOOL_USE_DEFAULTS["swing"], **(said.get("swing") or {})},
+           "lever": (None if said.get("pry") is False
+                     else {**TOOL_USE_DEFAULTS["lever"], **(said.get("lever") or {})}),
+           "reach_m": list(said.get("reach_m") or TOOL_USE_DEFAULTS["reach_m"]),
+           "repeat": bool(said.get("repeat", TOOL_USE_DEFAULTS["repeat"]))}
+    return out
+
+
+def _use_checked(name: str, use: Any) -> dict[str, Any]:
+    """A tool profile's `use`, held to the hand's bounds: only what was said
+    is kept, so a profile says no more than its author did."""
+    if not isinstance(use, dict):
+        raise ValueError(f"{name}: use is an object: how the person uses it")
+    unknown = set(use) - _USE_KEYS
+    if unknown:
+        raise ValueError(f"{name}: use has no {sorted(unknown)}; it may say {sorted(_USE_KEYS)}")
+    out: dict[str, Any] = {}
+    for key, most in (("label", 40), ("past", 24)):
+        if key in use:
+            words = use[key]
+            if not isinstance(words, str) or not words.strip() or len(words.strip()) > most:
+                raise ValueError(f"{name}: use {key} is a few words, at most {most} letters")
+            out[key] = words.strip()
+    for key, bounds in (("swing", _SWING_BOUNDS), ("lever", _LEVER_BOUNDS)):
+        if key not in use:
+            continue
+        motion = use[key]
+        if not isinstance(motion, dict) or not set(motion) <= set(bounds):
+            raise ValueError(f"{name}: use {key} is {{{', '.join(sorted(bounds))}}}")
+        checked: dict[str, float] = {}
+        for field, (low, high) in bounds.items():
+            if field not in motion:
+                continue
+            value = motion[field]
+            if type(value) not in (int, float) or not math.isfinite(value) or not low <= value <= high:
+                raise ValueError(f"{name}: use {key} {field} is {low:g} to {high:g}, the hand's "
+                                 f"own bounds, not {value!r}")
+            checked[field] = float(value)
+        out[key] = checked
+    if "reach_m" in use:
+        reach = use["reach_m"]
+        low, high = REACH_BOUNDS_M
+        if (not isinstance(reach, (list, tuple)) or len(reach) != 2
+                or not all(type(v) in (int, float) and math.isfinite(v) for v in reach)
+                or not low <= reach[0] < reach[1] <= high):
+            raise ValueError(f"{name}: use reach_m is [nearest, furthest] in front of the person, "
+                             f"between {low:g} and {high:g} m -- a haft and an arm at most")
+        out["reach_m"] = [float(reach[0]), float(reach[1])]
+    for key, meaning in (("repeat", "whether holding the button keeps going"),
+                         ("pry", "whether the point is pried once it is in; false for a tool "
+                                 "that is only swung")):
+        if key in use:
+            if not isinstance(use[key], bool):
+                raise ValueError(f"{name}: use {key} is true or false: {meaning}")
+            out[key] = use[key]
+    return out
 
 
 def check(profile: Any, bodies: set[str], joints: list[dict[str, Any]],
@@ -87,7 +177,12 @@ def _swing_and_lever(name: str, profile: dict[str, Any], parts: list[str],
     if tool not in points:
         raise ValueError(f"{name}: {tool!r} has no point that can go into the ground, so a swing "
                          f"could never dig anything: give it one first with tool_point")
-    return {"object": name, "template": "swing-and-lever", "parts": list(parts), "tool": tool}
+    out = {"object": name, "template": "swing-and-lever", "parts": list(parts), "tool": tool}
+    if profile.get("use") is not None:
+        use = _use_checked(name, profile["use"])
+        if use:
+            out["use"] = use
+    return out
 
 
 def _draw_and_release(name: str, profile: dict[str, Any], parts: list[str],

@@ -344,26 +344,23 @@ export function helpFor(use) {
     case "letting-down":
       out.line = "Letting the string down…";
       break;
-    // A tool that digs (picks.js): what can be done in the state it is in, and
-    // what the ground last did, in the engine's numbers.
-    case "pick-ready":
-      out.line = `Click ${k("primary")} to swing it at the ground under the crosshair`
-        + ` · ${k("interact")} put it down`;
-      out.note = esc(use.result || "");
+    // A tool (tools.js): what its click does where the ring is, as the server
+    // says it (tool_use.resolve), why it cannot be done there when it cannot,
+    // and what the last use came to.
+    case "tool-ready": {
+      const t = use.target || {};
+      out.line = `Click ${k("primary")} to ${esc((t.label || "use it").toLowerCase())}`
+        + (t.repeat ? " · hold to keep going" : "") + ` · ${k("interact")} put it down`;
+      const why = t.reason ? esc(t.reason) : "";
+      const last = esc(use.result || "");
+      out.note = t.enabled === false ? why : [why, last].filter(Boolean).join(" · ");
       break;
-    case "striking":
-      out.line = "Swinging…";
+    }
+    case "tool-working": {
+      const t = use.target || {};
+      out.line = `${esc(t.label || "Working")}… · ${k("secondary")} stop after this one`;
       break;
-    case "pick-in":
-      out.line = `${k("secondary")} lever it out · ${k("interact")} let go of it`;
-      out.note = esc(use.result || "");
-      break;
-    case "levering":
-      out.line = "Levering…";
-      break;
-    case "pulling":
-      out.line = "Drawing it out of the ground…";
-      break;
+    }
     default:
       out.line = "";
   }

@@ -696,12 +696,16 @@ class Live:
             speed = float(body.get("speed_m_s", 4.0))
             raise_deg = float(body.get("raise_deg", 0.0))
             lever_deg = float(body.get("lever_deg", 40.0))
-            if not (0.3 <= speed <= 12.0 and 0.0 <= raise_deg <= 170.0 and 5.0 <= lever_deg <= 80.0):
+            # How long the hand keeps at it before giving up: the engine's own
+            # 2 s unless said -- a slow swing of a heavy tool needs longer.
+            give_up = float(body.get("give_up_s", 2.0))
+            if not (0.3 <= speed <= 12.0 and 0.0 <= raise_deg <= 170.0 and 5.0 <= lever_deg <= 80.0
+                    and 0.2 <= give_up <= 10.0):
                 raise LiveError("a tool action goes at 0.3 to 12 m/s, raised up to 170 degrees, "
-                                "levered 5 to 80 degrees")
+                                "levered 5 to 80 degrees, given up after 0.2 to 10 s")
             command = {"op": "strike", "shoulder": _three(body.get("shoulder"), "the shoulder"),
                        "speed_m_s": speed, "raise_deg": raise_deg, "lever": lever,
-                       "lever_deg": lever_deg}
+                       "lever_deg": lever_deg, "give_up_s": give_up}
             if not lever:
                 command["at"] = _three(body.get("at"), "where the point comes down")
             return session.send(**command)

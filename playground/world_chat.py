@@ -251,9 +251,18 @@ takes hold; E puts down; / talks to you.
   double-click takes it by its grip, dragging the view swings it, the right
   mouse turns the edge; a click lets go. The page gives it those: offer no
   action to take it up or swing it -- a program ends with the hand empty.
-- A tool that digs (a pick): build_recipe "pick" (its recipe below is what
-  that builds). Keys: a click swings it at the ground under the crosshair; the
-  right mouse levers it out.
+- A tool that works the ground (a pick, a mattock, a stake): build_recipe
+  "pick" -- the tool the engine has been tried on -- and then, for anything but
+  a plain pick, interaction again for what it built (the parts and the tool its
+  answer names, template swing-and-lever) with `object` named for what the
+  person asked for and `use`, so its click is called and said their way (TOOLS
+  THAT DIG). Never make a tool part by part: its point has to sit on its end
+  face and every face on the room's 0.04 m cells, and a mattock made by hand
+  was refused three times and ended as a fake action. Keys, the same for every
+  tool: E near it takes it up; a ring on the ground shows where it will come
+  down; a click does the whole of it -- swing, pry, draw out -- and holding the
+  button keeps going; the right mouse stops it. The page gives every tool
+  those: offer no action to swing it or dig with it.
 - Heat (a fire under a pot, a piston over gas): heat, enclose_gas. Key: B heats
   what the crosshair is on. Offer: "Heat it" (heat).
 - Ground and water (a pit, a dam, a channel): dig, fill, cut_block, set_river.
@@ -801,12 +810,31 @@ Its trial swings it into the nearest level soil, levers it out, and swings it at
 the nearest bare rock: say how deep it went, what came loose and what stopped
 it, in its numbers. Do not strike in your copy unless they ask: what a pick
 breaks out of the ground is gone from their room's ground too.
-WHAT THE PERSON DOES WITH IT: they walk up to the pick and press E (or double-click
-it): it is held ready by its grip, point down. They aim the crosshair at the
-soil a metre or so in front of them and click: the hand swings it over and
-down and the point goes in. Right-click levers it and draws it out, and what
-it breaks out is carried. Aimed at the rock, the rock stops it. E puts it
-down. Tell them that in your answer.
+WHAT THE PERSON DOES WITH IT: they walk up to the pick and press E, looking at it
+or at the ground beside it: it is held ready by its grip, point down. A ring on
+the ground shows where it will come down -- green where it can work, amber when
+that is too far or too near, red on bare rock. One click does the whole of it:
+the hand swings it over and down, the point goes in, the hand pries it and
+draws it out, and what it breaks out is carried. Holding the button keeps
+going; the right mouse stops it. Aimed at the rock, the rock stops it. E puts
+it down. Tell them that in your answer.
+SHAPING HOW IT IS USED. The page uses every tool the same way, and interaction
+takes `use` to shape it for what you made -- only what you say is kept:
+label, what the click is called ("Dig here" unless you say; "Break up the soil"
+for a mattock, "Drive it in" for a stake); past, how a result is said ("dug");
+swing {speed_m_s 1 to 12, raise_deg 30 to 170}, how the hand swings it (4 m/s,
+raised 110 degrees); lever {speed_m_s 0.3 to 4, lever_deg 5 to 80}, how it is
+pried (1.2 m/s, 40 degrees); pry false for a tool that is only swung and drawn
+out, never pried; reach_m [nearest, furthest], within 0.3 to 2 m ([1.15, 2]);
+repeat false when holding the button should not go on. Say only what differs
+from those. How deep it goes and what comes loose are still the ground's, and
+its trial swings it with the use you gave it. Said again for the same tool,
+interaction replaces what was said before, whatever it was called: for a
+mattock, build_recipe "pick", then interaction object "the mattock",
+template swing-and-lever, the parts and tool build_recipe named, use {label
+"Break up the soil", past "broke up"}. A hoe's draw through the soil
+and an axe's chop are not modelled: a hoe made with a point is swung and pried
+like a pick, and an axe is a blade.
 
 WHAT THE PERSON KNOWS. their_notebook, in what you are given, is their notebook
 as it stands (read_knowledge gives the same in full): what the engine measured
@@ -1358,7 +1386,10 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
                 if name in room_world.AUTHORING and "error" not in answer:
                     changed = True
                     did.append(_did(name, args, answer))
-                if name == "offer_actions" and "error" not in answer:
+                # Controls given: actions, or a profile (interaction), whose
+                # controls are the page's -- a pick built part by part was
+                # asked to offer actions no step can drive.
+                if name in ("offer_actions", "interaction") and "error" not in answer:
                     offered = True
                 if name in ("add_object", "duplicate") and "error" not in answer:
                     made = True

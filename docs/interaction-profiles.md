@@ -202,6 +202,14 @@ carry its string about like a stick. A change that takes away something a
 profile names withdraws that profile at the call that made the change, and the
 answer says which and why; the room is not refused the change.
 
+A tool's profile (`swing-and-lever`) may also say how the person uses it,
+`use`: what their click is called, how the hand swings and pries it, whether it
+is pried at all, how far in front of them it comes down, and whether holding
+the button goes on -- each within the bounded hand's own limits, and only what
+is said is kept (`interaction_profiles.tool_use` fills in the rest from
+`TOOL_USE_DEFAULTS`, the one copy the trial and the playground both read). How
+deep a point goes and what comes loose stay the ground's.
+
 ### The bow, measured
 
 A nock is one-way, and the engine now has one. The string pushes the arrow as
@@ -499,14 +507,25 @@ blocked. Shown briefly on first use, and on the help key afterwards.
 5. **Pose help**, a placement ghost, and the remaining components.
 6. **A tool that digs** — swing-and-lever, on `agent/progression`: a tool with
    a point ([ground work](ground-work.md)) is taken up by any of its parts, by
-   the grip its point was given with, and held ready, point down. A click
-   swings it -- the engine plans and makes the stroke, raised back over the
-   shoulder and round it so the point meets the ground under the crosshair
-   along its own axis -- and the ground decides how far it goes in. With the
-   point in, the secondary button levers it about where it went in and draws it
-   out, and what the pry breaks out is carried. The profile names its `parts`
-   and its `tool`, never a speed or a depth; the MCP's `interaction` tries it in
-   a scratch world, into soil, levered, and onto rock (`picks.js`). Measured.
+   the grip its point was given with, and held ready, point down. The engine
+   plans and makes every stroke -- raised back over the shoulder and round it so
+   the point meets the ground along its own axis -- and the ground decides how
+   far it goes in and what the pry breaks out, which is carried. The MCP's
+   `interaction` tries it in a scratch world, into soil, levered, and onto rock.
+   Measured.
+7. **Every tool used the same way** — `agent/tool-use`. The owner: "make sure
+   this is designed to be a generic capability, so if I build a hoe or an axe it
+   will have the same capabilities". The page (`tools.js`) never knows a tool's
+   steps: the server (`playground/tool_use.py`) says what the tool in hand does
+   where the crosshair meets the ground -- its label, whether it can be done
+   there and why not, and a ring the page draws (green where it can work, amber
+   too far or too near, red on bare rock or wet ground) -- and one click has the
+   server do the whole of it: the tool held still, swung, pried when the point
+   is in, drawn out. Holding the button goes on; the secondary stops it; a click
+   never drops a tool; E takes one up from the ground beside it. The profile's
+   `use` shapes it (section 5). One template so far: a hoe's draw and an axe's
+   chop are not modelled, and would come in as templates with nothing changed
+   on the page. Measured in the page, section 9 of docs/development-status.md.
 
 Acceptance, from the owner: a new player can pick up a ball or a bow and use it
 without asking the chat, and heavier balls and stiffer bows behave physically
