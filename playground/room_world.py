@@ -218,7 +218,7 @@ def room_profile(profile: dict[str, Any]) -> dict[str, Any]:
 
 # The fields a room body carries that the engine's scene document also carries,
 # beyond the ones every body has. Passed through untouched both ways.
-_PASSED = ("join", "rotation_deg", "subtract", "roll", "color_rgba", "contents",
+_PASSED = ("id", "join", "rotation_deg", "subtract", "roll", "color_rgba", "contents",
            "temperature_k")
 
 

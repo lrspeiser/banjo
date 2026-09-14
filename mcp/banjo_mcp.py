@@ -136,6 +136,14 @@ def _triple(value: Any, what: str, low: float, high: float) -> list[float]:
     return [_number(v, what, low, high) for v in value]
 
 
+def new_body_id() -> str:
+    """Who a body is for as long as its room is kept: given once, when it is
+    made, and never again. A name can be taken again by something new after the
+    thing that had it is gone; an id cannot. Never the chat's to give: it fills
+    every field it is shown."""
+    return "b-" + uuid.uuid4().hex[:10]
+
+
 def _scene(objects: Any, cell_m: float) -> dict[str, Any]:
     """The scene document, checked so the engine's complaints arrive as words."""
     if not isinstance(objects, list) or not objects:
@@ -166,7 +174,7 @@ def _scene(objects: Any, cell_m: float) -> dict[str, Any]:
         centre = _triple(item.get("position_m"), f"{name}: position_m", -50.0, 50.0)
         speed = _triple(item.get("velocity_m_s") or [0, 0, 0],
                         f"{name}: velocity_m_s", -200.0, 200.0)
-        body = {"name": name, "shape": shape, "material": material,
+        body = {"id": new_body_id(), "name": name, "shape": shape, "material": material,
                 "dimensions_m": size, "center_m": centre, "velocity_m_s": speed,
                 "anchored": bool(item.get("anchored"))}
         # One piece: every object given the same join name is built as ONE
@@ -2711,8 +2719,8 @@ def tool_duplicate(args: dict[str, Any]) -> dict[str, Any]:
 
     copies = []
     for name in names:
-        body = dict(bodies[name], name=renamed[name], center_m=moved(bodies[name]["center_m"]),
-                    velocity_m_s=[0.0, 0.0, 0.0])
+        body = dict(bodies[name], id=new_body_id(), name=renamed[name],
+                    center_m=moved(bodies[name]["center_m"]), velocity_m_s=[0.0, 0.0, 0.0])
         # Bodies sharing a join name are built as one piece: the copies are
         # one piece with each other, not with the originals.
         if body.get("join"):

@@ -17,6 +17,7 @@ Nothing here changes any solver, criterion or tolerance.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import run_account
@@ -814,6 +815,10 @@ def body_cells(body: dict[str, Any], cell_m: float) -> int:
     return max(1, round(sx / cell_m)) * max(1, round(sy / cell_m)) * max(1, round(sz / cell_m))
 
 
+# What a body's id may be (banjo_mcp.new_body_id makes "b-" and ten hex digits).
+_BODY_ID = re.compile(r"[A-Za-z0-9._:-]{1,40}")
+
+
 def normalise_bodies(bodies: Any, cell_m: float) -> list[dict[str, Any]]:
     """Check every object against its bound; return the list the engine will get."""
     if not isinstance(bodies, list):
@@ -821,6 +826,7 @@ def normalise_bodies(bodies: Any, cell_m: float) -> list[dict[str, Any]]:
     if len(bodies) > BODY_LIMITS["bodies"]:
         raise ValueError(f"a scene holds at most {BODY_LIMITS['bodies']} objects; this one has {len(bodies)}")
     out: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
     for index, body in enumerate(bodies):
         if not isinstance(body, dict):
             raise ValueError(f"object {index + 1} is not an object")
@@ -882,7 +888,18 @@ def normalise_bodies(bodies: Any, cell_m: float) -> list[dict[str, Any]]:
         # rather than asked of the caller, and said out loud in the summary.
         horizontal = math.hypot(velocity[0], velocity[2])
         rolls = bool(body.get("roll", False)) or (shape == "sphere" and horizontal > 0.0)
-        entry = {"name": name, "shape": shape, "material": material, "join": join,
+        # Who it is, for as long as its room is kept: an id given when it was
+        # made (banjo_mcp.new_body_id), kept through every change and save. A
+        # body kept from before there were ids gets one from its name -- the
+        # same on every load until the room is saved with it -- and an id
+        # repeated from another body (a body copied whole) is made its own.
+        ident = str(body.get("id") or "").strip()
+        if not _BODY_ID.fullmatch(ident):
+            ident = "b-" + hashlib.sha1(name.encode("utf-8")).hexdigest()[:10]
+        if ident in seen_ids:
+            ident = "b-" + hashlib.sha1(f"{name}#{index}".encode("utf-8")).hexdigest()[:10]
+        seen_ids.add(ident)
+        entry = {"id": ident, "name": name, "shape": shape, "material": material, "join": join,
                  "roll": rolls, "rotation_deg": rotation, "anchored": anchored,
                  "rest_on": rest_on, "subtract": subtract,
                  "size_mm": [round(v, 3) for v in built],
@@ -1510,7 +1527,9 @@ def scene_document(spec: dict[str, Any]) -> dict[str, Any]:
                "color_rgba": b["color_rgba"]}
         # What it contains and how hot it starts: read by the engine's
         # thermochemical network, which refuses a substance it does not know.
-        for key in ("contents", "temperature_k"):
+        # And who it is (normalise_bodies): the engine does not read it, the
+        # MCP world keeps it, and export_spec hands it back to the room.
+        for key in ("contents", "temperature_k", "id"):
             if b.get(key) is not None:
                 out[key] = b[key]
         return out

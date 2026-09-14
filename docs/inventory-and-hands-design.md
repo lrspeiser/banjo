@@ -1,0 +1,166 @@
+# Inventory and two hands: the design of increment 1
+
+Draft, 2026-09-14. This is how the owner's spec (docs/inventory-and-hands.md) is
+built, starting from what the code does today. The engine half is still open:
+whether a body can be taken out of a running world and back, and a second
+hand.
+
+## What there is today (read from the code)
+
+- **Identity.** A thing is known by its body's name in the spec, the room, the
+  server and the page. A broken piece is renamed "<name> piece N". Only the
+  authored name survives a reload.
+- **The hand.**
+  - The engine has one hand (`LiveWorld` `Impl::holding`), which carries,
+    hauls or grips.
+  - The page owns what is held (`world.held`, 16 modes in `world.use`).
+  - The server reads only `session.state.hand.holding`, and refuses a thing's
+    action while the hand holds anything else (`run_action`).
+- **E.** On the page it runs a cascade (`world.js` `pickUp`):
+  1. a tool lying nearby;
+  2. a thing with a profile (the bow);
+  3. a tool's part;
+  4. anchored: refused;
+  5. a blade: wielded;
+  6. a liftable loose thing: wielded at its middle;
+  7. anything else: grabbed, so carried, or hauled on its joint.
+- **What a room keeps.** `room_store` v1 keeps the authored spec (with the
+  chat's builds and the ground's digs) and the conversation. Where things were
+  moved by hand, and what broke, go with the running world. A change by the
+  chat reopens the whole world.
+- **The engine.** It cannot add a body to a running world, nor take one out and
+  bring it back with its state.
+
+## The model
+
+- **Item.**
+  - An item is a portable thing with a stable id: `item` on its bodies in the
+    spec.
+  - Every body of a join group shares one id, and so does an assembly whose
+    parts are joined only to each other (a stool's legs are not five items).
+  - An item is **installed** when any part is anchored, or joined through
+    attached joints to anything anchored (a gate on its post). An installed
+    item is operated, never taken.
+- **Where an item is.** `world`, `stowed`, `hand` (left, right or both), or
+  `reserved` by an action. Stowed and in a hand are both possession: an
+  equipped item is still in the inventory, not a second copy.
+- **Hands.**
+  - There are two, left and right. Each is free, holding an item, supporting
+    one held with the other hand, or reserved by an action.
+  - One hand is dominant, the right unless the person says so, and takes a
+    one-handed tool.
+- **Who owns the record.** The server keeps the record, and the page shows it
+  and never decides it:
+  `{revision, dominant, hands: {left, right}, items: {id: {where, hand}}}`.
+- **E asks the server.** What E does here is the server's answer, the same for
+  the page, the chat and the API:
+  - a portable tool is taken and equipped if the hands it needs are free;
+  - an ordinary thing goes into the inventory;
+  - an installed thing is operated;
+  - a thing in reach but too heavy to lift says so.
+
+## Transactions
+
+- `POST /api/world/inventory {session, request, expected_revision, op, item,
+  hand}`. The op is one of `take`, `stow`, `equip`, `unequip` or `drop`.
+- The same request sent twice gets the first answer, so a retry never takes a
+  thing twice.
+- An `expected_revision` that is out of date is refused, with the record as it
+  is now.
+- Every op checks and moves under one lock, so an item is never in two places.
+- A refusal says what is wrong in the person's words: "Cannot stow while
+  drawn", "The gate is fixed to its post: it can be opened, not taken".
+
+## What can be stowed at first
+
+- An item can be stowed when all of these hold:
+  - it is whole, never broken or dented;
+  - it is not anchored and joined to nothing outside itself;
+  - it is not burning or hot;
+  - it holds no stored energy (a drawn bow);
+  - it is not moving;
+  - it is within what the hands can lift.
+- Anything else stays in the world or in the hand, with the reason.
+- No state is quietly paused, repaired or thrown away by stowing.
+
+## What a room keeps (`room_store` v2)
+
+- With the spec and the chat, the room keeps two more things:
+  - the inventory record;
+  - the pose of every item where it was left in the world.
+- So a reload puts things where they were, a stowed thing stays stowed, and
+  nothing comes back as an old copy.
+- A v1 file still reads, with an empty inventory and the authored poses.
+- Damage is not kept yet. A thing that has broken or dented cannot be stowed,
+  and says so, and a reload restores it as authored. That stays open.
+
+## The engine half (read from the code, 2026-09-14)
+
+- **The bow needs no second hand today.**
+  - Its grips are anchored scenery, and the hand hauls only the string
+    (banjo_mcp `RECIPES["bow"]`, world.js `takeUpBow`).
+  - A bow carried in one hand would need a second hand holding its grip while
+    the other draws. That is increment 4, with the bow's profile made to go
+    unloaded, loaded, drawing and releasing.
+  - There is no re-nock today, and a nock that came off stays in the engine's
+    list of joints.
+- **Nothing takes a body out of a running world and back.** Every `RemoveBody`
+  is followed by `DestroyBody`, and `AddBody` is used only for new fragments.
+  So stowing needs a new primitive: park, and unpark.
+  - **JoltWorld:**
+    - Take the body out of the broadphase without destroying it: `RemoveBody`,
+      keeping the Body and its id. Put it back at a pose: set the pose, then
+      `AddBody` and activate.
+    - Only between steps, behind the guard on changes, never inside the
+      reversible trial. Jolt's saved state covers only the bodies in the
+      broadphase, and adding or removing one inside a trial throws.
+    - `wake`, the hand's push and `applyRigidState` skip a parked body.
+    - The loops over every body (`contactPairUpperBound`, `mechanicalTotals`)
+      leave it out.
+  - **LiveWorld:**
+    - A parked slot is left out of `poses()`, so the runner says it is gone and
+      the page stops drawing it.
+    - It is left out of foresight, fracture, the surveys, heat and water:
+      `contains()` says no.
+    - The hand lets go of it first.
+    - In the first slice, only a body with no attached joints is parked.
+  - **The runner, the C API and the Python binding:**
+    - The runner gets `park {name}` and `unpark {name, at, q}`.
+    - The C API and the Python binding get the same, for the MCP and the
+      in-process lane.
+- **What the page draws.**
+  - It draws a held thing only where the engine has it. There is no
+    first-person view model.
+  - A stowed item's picture in the panel is built from the last reply's shape,
+    size, material and cells, since the workbench already draws bodies that are
+    not in the engine.
+- **A room that reopens** (the chat built something) opens its stowed items
+  with it and parks them before the first step.
+- **A second hand** (increment 4): a hand index through the engine's hand, its
+  operations and its reply. Each hand has its own force and torque, and the
+  whole person shares one limit, rather than the single hand's budget doubled.
+
+## The first slice to test in 3D
+
+1. E on a small loose thing (a cup, the sword):
+   - the page says "Oak cup added to inventory";
+   - the thing leaves the world, parked and not destroyed;
+   - the panel lists it under the inventory, with both hands free.
+2. From the inventory (Tab):
+   - Equip puts it in the dominant hand, out of the park into the hand's grip;
+   - Stow puts it back;
+   - Drop sets it down in front.
+3. After a page reload and a server restart, it is still in the inventory, and
+   nothing is duplicated.
+4. E on the gate operates it and does not take it. E on something too heavy says
+   what it weighs.
+
+Tests go with it:
+
+- C++: parking a body keeps its mass, shape, contents and temperature.
+- Python:
+  - a retry takes nothing twice;
+  - a stale revision is refused;
+  - two callers cannot both take one item;
+  - v1 and v2 files both read.
+- Browser: steps 1-4 in headless Chrome.
