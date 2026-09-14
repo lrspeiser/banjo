@@ -312,6 +312,14 @@ export function helpFor(use) {
       break;
     case "carrying":
       out.line = `${k("primary")} or ${k("interact")} put it down · ${k("more")} more`;
+      // A thing on a pin or in a groove follows the crosshair over what the
+      // joint lets it move along (world.js haulTarget): say so, or a winch
+      // looks like it cannot be worked at all.
+      if (use.guide === "hinge") {
+        out.note = "It turns on a pin: move the crosshair round the pin and it follows -- round and round to crank a wheel";
+      } else if (use.guide === "slider") {
+        out.note = "It slides in a groove: move the crosshair along the groove and it follows";
+      }
       break;
     case "thrown":
     case "loosed":

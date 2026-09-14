@@ -1,5 +1,18 @@
 # Development status and handoff
 
+**The controls: a thing on a joint follows the crosshair, and the page says how to take hold.** Branch `agent/controls` from `6205e59`. The owner could not work the castle gate's winch in "Tests: gates and wheels": "I tried to run the winch or click on things and it doesn't seem to work". Their session was on 8765, not 8768. Its logs held no error, no refusal and no chat turn, and the page was drawing (99% of realtime, 41.6 fps). It came down to two things:
+- Since the click menu, one click only lists what can be done. For a thing on a joint the list is just "E or double-click · take hold", and nothing on its label said how to take hold. The room's opening line also still said "click again to pick something up".
+- Held, a thing on a joint was hauled toward a point at a fixed distance along the view. For a winch, that point falls short of the rim below the axle, so the hand drew a small loop beside the axle and the wheel hardly turned. This predates the click menu.
+
+Now, taken hold of, a thing on a pin or in a groove follows the crosshair over the plane its pin turns it in, or along its groove, from where it was taken hold of. A handle fixed to a hinged wheel counts: the joints are followed from what is held to the pin (world.js `guideFor`, `alongGuide`, `haulTarget`). The label says "on a joint: E or double-click to take hold, then move the crosshair to work it". The help line says how to move it, and the opening line gives the controls.
+
+Measured in the page on 8781, in the same room, with the same half turn of the crosshair round the winch's axle:
+- the old hauling moved the handle -1 degree of the 180, and the castle gate rose 0 mm;
+- the new hauling moved it the full 180 degrees, and the gate rose 320 mm. The recipe says 0.30 m, and the live runner with its hand on the circle gave 0.320 m;
+- turning the view the same amount at the hinged oak gate swung it 0.6 degrees before and 17.9 degrees after.
+
+There were no page errors. No JavaScript test harness in the repository covers the page, so this is checked by the scratchpad `headless_winch.py`, not in CI.
+
 **A person's notebook: what the engine measured their own tools doing, kept apart from the world.** Branch `agent/knowledge` from `16f09ed`. This is increment 2's first part from [knowledge and progression](knowledge-and-progression.md), which a review the owner shared recommended as the next step in the tech chain.
 - `mcp/progression.py` holds three things:
   - the curated graph (`progression/*.json`: a technique, a process the engine does not run yet, the one-piece wooden pick's design, and the start). It is checked when it loads: no cycles, every process and template registered, and a route to the first tool open from the start.

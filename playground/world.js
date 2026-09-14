@@ -2013,11 +2013,17 @@ function showLabel(found) {
       + (!bladeFor(found.name) && !picks.profileOf(found.name) && throwable(entry, onAJoint(found.name))
           ? ` · ${entry.mass < 10 ? entry.mass.toFixed(2) : entry.mass.toFixed(1)} kg`
             + ` · click: what you can do · ${keyOf("interact")} or double-click: take hold` : "")
+      // On a pin, in a groove, fixed to something that is: worked by hand, and
+      // nothing said so -- the winch's handle showed only its size.
+      + (!bladeFor(found.name) && !profileOf(found.name) && !picks.profileOf(found.name)
+         && !entry.anchored && onAJoint(found.name)
+          ? ` · on a joint: ${keyOf("interact")} or double-click to take hold, then move the crosshair to work it`
+          : "")
       + (profileOf(found.name)
           ? ` · part of ${profileOf(found.name).object}: ${keyOf("interact")} or double-click to take it up`
           : "")
       + (picks.profileOf(found.name)
-          ? ` · part of ${picks.profileOf(found.name).object}: ${keyOf("interact")} or click to take it`
+          ? ` · part of ${picks.profileOf(found.name).object}: ${keyOf("interact")} or double-click to take it`
             + ` up by its grip`
           : "")
     : "";
@@ -2073,6 +2079,69 @@ function ropedTo(name) {
 // On any joint at all: hauled against it rather than taken by a grip.
 function onAJoint(name) {
   return world.joints.some((j) => j.attached && (j.a === name || j.b === name));
+}
+
+// What a thing on a joint moves along when it is hauled: the pin it turns on or
+// the groove it slides in -- its own, or that of what it is fixed to. A winch's
+// handle is fixed to its wheel, and the wheel turns on the pin.
+function guideFor(name) {
+  const seen = new Set([name]);
+  let these = [name];
+  while (these.length) {
+    const next = [];
+    for (const n of these) {
+      for (const j of world.joints) {
+        if (!j.attached || (j.a !== n && j.b !== n)) continue;
+        if ((j.kind === "hinge" || j.kind === "slider") && j.axis) return j;
+        const other = j.a === n ? j.b : j.a;
+        if (j.kind === "fixing" && !seen.has(other)) { seen.add(other); next.push(other); }
+      }
+    }
+    these = next;
+  }
+  return null;
+}
+
+// Where the view meets what a joint lets a thing move along: the plane a pin
+// turns it in, through its middle, or the line a groove slides it along. Null
+// when the view runs along the plane or the groove, or meets it out of reach.
+const HAUL_REACH_M = 6.0;
+function alongGuide(guide, middle, from, dir) {
+  const axis = new THREE.Vector3(...guide.axis).normalize();
+  if (guide.kind === "hinge") {
+    const facing = dir.dot(axis);
+    if (Math.abs(facing) < 0.05) return null;
+    const t = middle.clone().sub(from).dot(axis) / facing;
+    return t > 0 && t < HAUL_REACH_M ? from.clone().addScaledVector(dir, t) : null;
+  }
+  // A groove: the point on its line nearest the view.
+  const w = middle.clone().sub(from);
+  const b = dir.dot(axis);
+  if (1 - b * b < 1e-4) return null;
+  const s = (b * dir.dot(w) - axis.dot(w)) / (1 - b * b);
+  return Math.abs(s) < HAUL_REACH_M ? middle.clone().addScaledVector(axis, s) : null;
+}
+
+// Where the hand hauls a thing on a joint: its middle, moved by as much as the
+// crosshair has moved over the plane it turns in or along the groove it slides
+// in, from where it was taken hold of. Moving the crosshair round a winch's axle
+// cranks it. At a fixed distance along the view instead, as it used to be, the
+// hand drew a small loop beside the axle -- that point falls short of the rim
+// below the axle -- and the wheel turned 0.1 degrees for two sweeps round it.
+// With no pin or groove, or a view along its plane, at that distance as before.
+function haulTarget() {
+  const held = world.held;
+  const dir = forwardVector();
+  if (held.guide) {
+    const now = alongGuide(held.guide.joint, held.guide.middle, camera.position, dir);
+    if (now) {
+      const p = held.guide.middle.clone().add(now.sub(held.guide.grabbed));
+      return [p.x, p.y, p.z];
+    }
+  }
+  const p = camera.position.clone().add(dir.multiplyScalar(held.distance));
+  if (held.offset) p.add(held.offset);
+  return [p.x, p.y, p.z];
 }
 
 // Let go of a latch by hand: whatever is held, or whatever is under the
@@ -2226,6 +2295,15 @@ async function pickUp() {
       const from = camera.position.clone()
         .add(forwardVector().multiplyScalar(world.held.distance));
       world.held.offset = entry.mesh.position.clone().sub(from);
+      // And what it moves along, when that is a pin or a groove (haulTarget):
+      // from here the hand follows the crosshair over it.
+      const joint = guideFor(name);
+      const middle = entry.mesh.position.clone();
+      const grabbed = joint && alongGuide(joint, middle, camera.position, forwardVector());
+      if (grabbed) {
+        world.held.guide = { joint, middle, grabbed };
+        world.use.guide = joint.kind;
+      }
     }
     // Taking hold of something that hangs on ropes AND carries a latch is
     // taking hold of a drawn thing. Where it is NOW is where it comes back to,
@@ -3406,10 +3484,7 @@ async function tick() {
     } else if (world.held && world.held.loose) {
       hand = carriedHand(now);
     } else if (world.held) {
-      const dir = forwardVector();
-      const p = camera.position.clone().add(dir.multiplyScalar(world.held.distance));
-      if (world.held.offset) p.add(world.held.offset);
-      hand = [p.x, p.y, p.z];
+      hand = haulTarget();
     }
     const steps = clamp(Math.round(elapsed / LIVE_DT), 1, MAX_STEPS);
     const asked = performance.now();
@@ -4323,8 +4398,9 @@ async function open() {
     say("world",
       `${data.bodies.length} things, made of ${
         [...new Set(data.bodies.map((b) => b.material).filter(Boolean))].join(", ")
-      }. Click the room to look around, walk with W A S D, and click again to pick`
-      + ` something up. Ask me to change anything.`);
+      }. Click the room to look around and walk with W A S D. Click a thing to see what`
+      + ` you can do with it; double-click it, or press ${keyOf("interact")}, to take hold of it.`
+      + ` Ask me to change anything.`);
     // Said, not dropped, as when the chat rebuilds the room: a gate that does
     // not swing reads as broken physics rather than as a pin in the wrong place.
     if (data.joint_problems && data.joint_problems.length)
@@ -4364,6 +4440,11 @@ window.banjoRoom = {
   },
   standAt(x, y, z) { camera.position.set(x, y, z); },
   aim, pickUp, dropIt, putDown, letFly, intend,
+  // Where the hand hauls what it holds on a joint, and what it moves along.
+  haulTarget: () => world.held && haulTarget(),
+  haulGuide: () => world.held && world.held.guide && ({
+    kind: world.held.guide.joint.kind, axis: world.held.guide.joint.axis,
+    middle: world.held.guide.middle.toArray(), grabbed: world.held.guide.grabbed.toArray() }),
   // Turning what is held, the way U does it, and "/" -- and what the hand holds:
   // how far out, whether the wrist turns it, the wish it is asking of the wrist
   // ([x, y, z, w]), and whether it is being drawn see-through.

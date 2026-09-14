@@ -196,6 +196,14 @@ is (`POST /api/world/action`). The hand's steps act in
 the running room with the hand's own strength, so you watch them happen, and no
 model is asked.
 
+A thing on a pin or in a groove -- a gate, a winch's handle, a portcullis -- is
+hauled, not carried. Taken hold of, it follows the crosshair over the plane its
+pin turns it in, or along its groove, from where it was taken hold of, so
+moving the crosshair round a winch's axle cranks it. The label and the help line
+say so. It used to follow a point at a fixed distance along the view, which
+falls short of a winch's rim below the axle: half a turn of the crosshair turned
+the winch 1 degree.
+
 The **Notebook** in the side panel is what the person knows
 ([knowledge and progression](../docs/knowledge-and-progression.md),
 `mcp/progression.py`). It is written only from what the engine measured their
@@ -321,7 +329,7 @@ rule; the 50 s is the peg's own physics at 2 kW, not a setting.
 
 A body with an edge declared on it — the MCP's `blade` tool,
 [docs/cutting-model.md](../docs/cutting-model.md) — can be taken up and swung.
-Click it to take it by its grip: a hand with 800 N and 60 N m holds it in front
+Double-click it, or press E, to take it by its grip: a hand with 800 N and 60 N m holds it in front
 of you, pointing where you look, and dragging the view swings it — as fast as
 that hand can manage, and no faster. Right-click turns the edge a quarter turn
 (left, down, right, up); swung sideways with the edge facing down, the flat
