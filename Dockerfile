@@ -35,11 +35,13 @@ RUN apt-get update \
       python3 libgomp1 ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
+# The source tree as a checkout has it -- about 5 MB, with .dockerignore leaving
+# out the builds and git's own files -- because the server finds its modules and
+# data from where it stands in a checkout: examples/authoring, mcp and bindings
+# on its import path, docs and assets read from disk. Copied folder by folder it
+# left out examples/authoring, and on Render it would not start.
+COPY . /app
 COPY --from=build /out/bin /app/bin
-COPY --from=build /src/playground /app/playground
-COPY --from=build /src/mcp /app/mcp
-COPY --from=build /src/bindings /app/bindings
-COPY --from=build /src/docs /app/docs
 ENV BANJO_LIBRARY=/app/bin/libbanjo.so \
     BANJO_TERRAIN_CACHE=/data/terrain-cache \
     PYTHONUNBUFFERED=1

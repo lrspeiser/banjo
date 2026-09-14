@@ -26,6 +26,13 @@ desktop, listening on every interface. Two things make that safe:
 - **One name.** The server answers only to `BANJO_PUBLIC_HOST` (and to
   localhost), so a page on another site cannot drive it.
 
+The image holds the whole source tree, as a checkout does, with the three
+programs in `/app/bin`. The server finds its modules and data from where it
+stands in a checkout: `examples/authoring`, `mcp` and `bindings` on its import
+path, `docs` and `assets` read from disk. An image that copied folders one by one
+left out `examples/authoring`, and on Render the server stopped at its first
+import (`ModuleNotFoundError: No module named 'banjo_authoring'`).
+
 The rooms, the valley's generated ground and recorded runs are kept under
 `/data`, a volume: what the chat built and what was dug is there after a restart
 or a new deploy (`playground/room_store.py`). Where things were moved by hand
@@ -95,16 +102,29 @@ password accordingly.
 
 ## Checking it before deploying
 
-The image's steps by hand in Ubuntu 24.04 -- WSL's, on Windows -- from a checkout:
+The image's steps by hand in Ubuntu 24.04 -- WSL's, on Windows. The build
+stage, from a checkout:
 
     cmake -S . -B build/linux -G Ninja -DCMAKE_BUILD_TYPE=Release \
       -DBANJO_BUILD_LAB=OFF -DBANJO_BUILD_HEADLESS=ON \
       -DBANJO_BUILD_PRECOMPUTE=OFF -DBANJO_BUILD_TESTS=OFF
-    cmake --build build/linux --parallel \
+    cmake --build build/linux --parallel 8 \
       --target banjo_platform_cli banjo_c banjo_live_world_run
-    BANJO_PASSWORD=... BANJO_LIBRARY=$PWD/build/linux/libbanjo.so \
-      python3 -u playground/server.py --host 0.0.0.0 --port 8090 \
-      --engine build/linux/banjo_platform_cli --studio build/linux/banjo_network_lab \
-      --rooms /tmp/banjo/rooms --runs /tmp/banjo/runs
 
-Then open http://localhost:8090/login from Windows.
+Then the image's start, from the files the image holds and nothing else. Run
+from the checkout itself, the server finds files the image leaves out: that is
+how `examples/authoring` went missing on Render with this check passing.
+
+    rm -rf /tmp/banjo-image && mkdir -p /tmp/banjo-image/app/bin
+    git archive HEAD | tar -x -C /tmp/banjo-image/app
+    cp -a build/linux/banjo_platform_cli build/linux/banjo_live_world_run \
+          build/linux/libbanjo.so* /tmp/banjo-image/app/bin/
+    cd /tmp/banjo-image/app
+    BANJO_PASSWORD=... BANJO_LIBRARY=$PWD/bin/libbanjo.so \
+      python3 -S -u playground/server.py --host 0.0.0.0 --port 8090 \
+      --engine bin/banjo_platform_cli --studio bin/banjo_network_lab \
+      --rooms /tmp/banjo-image/data/rooms --runs /tmp/banjo-image/data/runs
+
+`-S` keeps Python to its standard library, as the image's is: a module installed
+on the machine but not in the image would fail the same way. Then open
+http://localhost:8090/login from Windows.
