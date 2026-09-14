@@ -178,6 +178,36 @@ class WhatThePersonCarries(unittest.TestCase):
     out, the glass swept up -- so "heap what I'm carrying here" means something.
     It arrives over HTTP, so only names and weights that make sense go on."""
 
+    @unittest.skipUnless(LIBRARY and Path(LIBRARY).is_file(), "the library is not built")
+    def test_the_model_is_sent_clear_ground_in_front_of_them_and_the_log_gets_it(self):
+        """The owner: "when making something always pass the view the user has
+        and put the item on the ground in front of them (close)". The model is
+        sent where they are and clear places on the ground a metre ahead -- not
+        on the crate already there -- and the turn's log is given exactly that,
+        which it was not: the server logged its own copy, without the places."""
+        sent: list[list[dict]] = []
+
+        def model(api_key, model_name, conversation):
+            sent.append(list(conversation))
+            return {"status": "completed", "usage": {},
+                    "output": [{"type": "message",
+                                "content": [{"type": "output_text", "text": "Made."}]}]}
+
+        crate = {"name": "crate", "shape": "box", "position_m": [0.0, 0.2, 2.2],
+                 "dimensions_m": [0.4, 0.4, 0.4], "orientation_wxyz": [1.0, 0.0, 0.0, 0.0]}
+        real, world_chat._call = world_chat._call, model
+        try:
+            answer = world_chat.ask("key", "a model", world_room.Room("yard"), {"bodies": [crate]},
+                                    "make me a stool", [], history=[],
+                                    person={"standing_m": [0.0, 0.0, 3.2], "facing": [0.0, 0.0, -1.0]})
+        finally:
+            world_chat._call = real
+        told = json.loads(sent[0][-1]["content"])["the_person"]
+        # A step to either side of the crate, then further round it: 1.5 m
+        # ahead is within 0.4 m of it, or of the first two.
+        self.assertEqual(told["put_new_things_m"], [[-0.8, 2.2], [0.8, 2.2], [-1.6, 2.2]])
+        self.assertEqual(answer["the_person"], told)
+
     def test_what_they_carry_goes_to_the_room_and_nonsense_does_not(self):
         said = world_chat.where_the_person_is({
             "standing_m": [0, 0, 2.2], "facing": [0, 0, -1],

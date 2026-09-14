@@ -1204,12 +1204,12 @@ function showActions() {
     const pick = picks.profileOf(on), bow = profileOf(on);
     if (pick) rows.push([k("interact"), `take up ${pick.object} by its grip`]);
     else if (bow) rows.push([k("interact"), `take up ${bow.object}`]);
-    else if (bladeFor(on)) rows.push(["click", `take ${on} by the grip`]);
+    else if (bladeFor(on)) rows.push(["double-click", `take ${on} by the grip`]);
     else if (entry && throwable(entry, onAJoint(on))) rows.push([k("interact"), `take hold of ${on}`]);
     rows.push([k("heat"), `heat ${on}`]);
     // Its own actions first: what the room's chat worked out a person does
     // with this thing when it made it, one per number key (offer_actions).
-    rows.unshift(...actionsFor(on).map((action, i) => [String(i + 1), action.label]));
+    rows.unshift(...allActionsFor(on).map((action, i) => [String(i + 1), action.label]));
   } else if (underfoot) {
     if (underfoot !== "rock") rows.push([k("dig"), `dig here, in the ${underfoot}`]);
     const carried = world.carriedGround
@@ -1621,10 +1621,11 @@ addEventListener("keydown", (e) => {
   if (isKey("heap", e.code)) $("heap-it").click();
   if (isKey("heat", e.code)) $("heat-it").click();
   if (isKey("workbench", e.code)) openWorkbench();
+  if (e.key === "Escape") world.menuFor = null;
   // One of the actions of what the crosshair is on, by its number -- with
   // nothing in hand, where the number keys are not the hand's "more" menu.
   if (!world.held && /^Digit[1-9]$/.test(e.code) && world.aim && world.aim.name
-      && actionsFor(world.aim.name).length) runAction(world.aim.name, Number(e.code.slice(5)) - 1);
+      && allActionsFor(world.aim.name).length) runAction(world.aim.name, Number(e.code.slice(5)) - 1);
   if (["KeyW","KeyA","KeyS","KeyD","KeyQ","KeyE","Space",
        "ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.code)) e.preventDefault();
 });
@@ -1688,6 +1689,11 @@ let drag = null;
 // down used to pick the bow straight up again, and after lowering a wind-up it
 // dropped the ball.
 let primaryUsed = false;
+// One click on a thing shows what can be done with it, beside it; a second
+// click on it straight after takes hold of it (the owner: "click once to see
+// the actions you can take", "maybe double click to take it").
+let lastClick = null;
+const DOUBLE_CLICK_MS = 400;
 canvas.addEventListener("pointerdown", (e) => {
   // The LEFT button only. The right one releases a latch, and it used to do
   // that and then pick the thing up as well, because a pointerup is a
@@ -1745,7 +1751,20 @@ canvas.addEventListener("pointerup", (e) => {
     const asked = canvas.requestPointerLock?.();
     if (asked && typeof asked.catch === "function") asked.catch(() => {});
   }
-  intend(world.held ? "drop" : "pick");
+  if (world.held) { intend("drop"); return; }
+  // With the hand empty a click no longer takes hold: it opens what can be
+  // done with the thing, and a second click on it straight after takes hold.
+  // A click on nothing closes what was open.
+  const on = world.aim && world.aim.name;
+  const now = performance.now();
+  if (on && lastClick && lastClick.name === on && now - lastClick.at < DOUBLE_CLICK_MS) {
+    lastClick = null;
+    world.menuFor = null;
+    intend("pick");
+  } else {
+    lastClick = on ? { name: on, at: now } : null;
+    world.menuFor = on || null;
+  }
 });
 
 document.addEventListener("pointerlockchange", () => {
@@ -1910,7 +1929,32 @@ async function aim() {
   } catch { /* the next frame asks again */ } finally { aimBusy = false; }
 }
 
+// What can be done with the thing a click opened, listed in its label: its own
+// actions, then the built-in ones, then taking hold. Closed when the crosshair
+// leaves it, on Esc, or once one of them has been done.
+function updateMenu(found) {
+  const list = $("label-actions");
+  if (!found || found.name !== world.menuFor) {
+    if (world.menuFor) world.menuFor = null;
+    list.hidden = true;
+    return;
+  }
+  const rows = allActionsFor(found.name).map((action, i) => `${i + 1} · ${action.label}`);
+  rows.push(`${keyOf("interact")} or double-click · take hold`);
+  const said = rows.join("\n");
+  if (list.dataset.said !== said) {
+    list.dataset.said = said;
+    list.replaceChildren(...rows.map((row) => {
+      const line = document.createElement("span");
+      line.textContent = row;
+      return line;
+    }));
+  }
+  list.hidden = false;
+}
+
 function showLabel(found) {
+  updateMenu(found);
   const box = $("label");
   const cross = $("crosshair");
   if (!found && world.groundAim && ground.grid) {
@@ -1954,12 +1998,12 @@ function showLabel(found) {
           ? ` · dented ${entry.dentMm < 1 ? entry.dentMm.toFixed(2) : entry.dentMm.toFixed(1)} mm`
             + ` (drawn deeper so you can see it)` : "")
       + ` · ${found.distance_m.toFixed(2)} m away`
-      + (bladeFor(found.name) ? " · has an edge: click to take it by the grip" : "")
+      + (bladeFor(found.name) ? " · has an edge: double-click to take it by the grip" : "")
       + (!bladeFor(found.name) && !picks.profileOf(found.name) && throwable(entry, onAJoint(found.name))
           ? ` · ${entry.mass < 10 ? entry.mass.toFixed(2) : entry.mass.toFixed(1)} kg`
-            + ` · ${keyOf("interact")} or click to take hold` : "")
+            + ` · click: what you can do · ${keyOf("interact")} or double-click: take hold` : "")
       + (profileOf(found.name)
-          ? ` · part of ${profileOf(found.name).object}: ${keyOf("interact")} or click to take it up`
+          ? ` · part of ${profileOf(found.name).object}: ${keyOf("interact")} or double-click to take it up`
           : "")
       + (picks.profileOf(found.name)
           ? ` · part of ${picks.profileOf(found.name).object}: ${keyOf("interact")} or click to take it`
@@ -2090,6 +2134,7 @@ async function pickUp() {
   if (!world.aim) return;
   // An action has the hand while it runs (runAction).
   if (world.acting) { say("world", "Your hand is busy with an action."); return; }
+  world.menuFor = null;
   const name = world.aim.name;
   const entry = world.bodies.get(name);
   // A part of something with a profile takes up the whole of it -- the bow,
@@ -3549,9 +3594,14 @@ async function tick() {
     // happening, not the room stopping, and open() is about to hand over the
     // new world. The same while the chat is answering: when it has changed
     // the room, the server opens it again before the answer arrives with the
-    // new world in it. A world that really stopped is still said, by the
-    // first step after.
-    if (world.session === driving && !world.opening && !world.asking) {
+    // new world in it. And while one of a thing's actions runs: a stand step
+    // opens the room again from what it has become, and a step on its way
+    // comes back "this live world has closed" just before the action's answer
+    // hands over the new world (it said "the room stopped" over a plank that
+    // had just been stood up). A lost server is still tried again as ever. A
+    // world that really stopped is still said, by the first step after.
+    const handedOver = world.acting && !error.transient;
+    if (world.session === driving && !world.opening && !world.asking && !handedOver) {
       const why = error.message || String(error);
       if (error.transient) world.lostWhy = why;
       if (error.transient && world.lost < RETRY_MS.length) {
@@ -3921,13 +3971,50 @@ function actionsFor(name) {
   return (world.actions || []).filter((action) => action.body === name);
 }
 
+// What anything loose can have done to it without the room's chat having
+// thought of it (the owner: "there is also things like place on ground that are
+// missing"): the server's BUILTIN_ACTIONS, run the same way as the chat's.
+// Offered only where the engine could do them -- a hand lifts a loose thing up
+// to 73 kg, and turn_object stands a box that is not a cube -- and not twice
+// when the chat already gave the thing one of the same name.
+function builtinsFor(name) {
+  const entry = world.bodies.get(name);
+  if (!entry || entry.anchored) return [];
+  const own = new Set(actionsFor(name).map((action) => action.label.toLowerCase()));
+  const out = [];
+  const jointed = onAJoint(name);
+  if (throwable(entry, jointed)) out.push({ key: "put_on_ground", label: "Put it on the ground in front of me" });
+  const d = entry.dims || [0, 0, 0];
+  if (entry.shape === "box" && !jointed && !bladeFor(name) && !picks.profileOf(name)
+      && Math.max(...d) - Math.min(...d) > 1e-3) {
+    // How it stands now, from its turn as drawn: how much each of its sides
+    // points up, and so how high it reaches above its middle. Upright is its
+    // longest side vertical; lying is as low as it goes, its thinnest side up.
+    const m = new THREE.Matrix4().makeRotationFromQuaternion(entry.mesh.quaternion).elements;
+    const up = [m[1], m[5], m[9]];
+    const high = up.reduce((sum, u, i) => sum + Math.abs(u) * d[i] / 2, 0);
+    if (Math.abs(up[d.indexOf(Math.max(...d))]) < 0.99) {
+      out.push({ key: "stand_upright", label: "Stand it upright" });
+    }
+    if (high > Math.min(...d) / 2 + 0.005) out.push({ key: "lay_down", label: "Lay it down where I'm facing" });
+  }
+  return out.filter((builtin) => !own.has(builtin.label.toLowerCase()));
+}
+
+// Its own actions first, then the built-in ones: one list, one number each.
+function allActionsFor(name) {
+  return actionsFor(name).map((action, i) => ({ label: action.label, ask: { action: i } }))
+    .concat(builtinsFor(name).map((builtin) => ({ label: builtin.label, ask: { builtin: builtin.key } })));
+}
+
 async function runAction(name, index) {
-  const action = actionsFor(name)[index];
+  const action = allActionsFor(name)[index];
   if (!action || world.asking || world.acting) return;
   world.acting = true;
+  world.menuFor = null;
   const waiting = waitingFor(`${action.label}: doing it`);
   try {
-    const answer = await api("/api/world/action", { object: name, action: index,
+    const answer = await api("/api/world/action", { object: name, ...action.ask,
                                                      person: whereIAm() });
     waiting.done();
     const done = (answer.done || []).join(", ");

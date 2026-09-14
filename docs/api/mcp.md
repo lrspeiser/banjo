@@ -58,6 +58,7 @@ broke.
 | `add_object` / `remove_object` | change a world. It is opened again from its scene, so anything in flight starts over — and every joint is hung again. A removed object takes the joints that held it with it, and they are listed. `add_object` given `position_m` as **[x, z]** sets the thing down on whatever is under that point — the ground, the floor or the top of what is there — and says what in `set_down` — with `overhangs` when only part of it is over that, so it may tip; [x, y, z] puts it exactly there, and when that is in the air the answer's `in_the_air` says how far above what is under it the thing starts, and that it will fall unless a joint holds it — a thing about to be hung with `fix`, `hinge`, `slide`, `tie`, `reeve` or `spring` is meant to start there. On ground with water it says `in_water` when that is where it went. |
 | `move_object` | put an object somewhere else, at rest: an **edit**, not a push. Refused for a joined object, with the reason — a joint is made at fixed points |
 | `turn_object` | stand an object **upright** — its longest side vertical — or lay it down, its longest side level, and set it down at `at_m` [x, z] on whatever is under that point. An **edit**, like `move_object`, that the engine holds to what the world would do with it: it must not overlap anything, what is under it has to be under its middle on every side and flat (not the top of a ball), and the world is then **run** — from a third of a degree off how it was put, so a balance only an exact run could keep is found out — until it is still. Standing as it was put (moved under 20 mm, turned under 5 degrees) it is kept; otherwise it is refused with what happened and nothing changes. The answer says what it stands on and how far its long side came to rest from vertical. "Turn this upright and set it in front of me" is this call. [Turning a thing](#turning-a-thing) |
+| `offer_actions` | what a person can **do** with a thing, kept with it: up to nine short programs of up to twelve steps — stand, take_hold, carry_to, put_down, let_go, push, heat, wait — each checked when it is offered against what the engine says of the thing (a hand holds up at most 73 kg, a thing fixed in place is not moved, and a program ends with the hand empty). A client lists them when the thing is clicked and runs one on the world as it is then. A field a step's kind does not use is set aside and listed in `not_read`. [A thing's actions](#a-things-actions) |
 | `clear_world` | empty a world, joints and all, to build it again. It stays open under the same id |
 | `pick_up` / `place` / `let_go` | the hand: take hold of something already in the world and move it. Without this a model can only add new objects from above — it can build a scene but never rearrange one. |
 | `collect` | sweep up the loose pieces near a point and say what they were made of, by material and by weight |
@@ -156,7 +157,8 @@ pillar lying still along z as having turned 90 degrees, and refused it.
 
 `offer_actions` gives a thing the actions a person takes with it. Each is a
 label and a short program of steps, and the room runs the program when the
-person looks at the thing and presses the action's number key. The owner asked
+person chooses it: in the playground a click on the thing lists its actions by
+number, and the number key runs one. The owner asked
 for this on 2026-09-13. The model making a thing works out "what the user would
 need to do", since "a bow and arrow would have different actions than a chair",
 and is "given the ability to program the execution of it".
@@ -196,7 +198,12 @@ was done stays done. A thing may have at most nine actions, one per number key.
 Calling the tool again replaces them, and an empty list takes them away. The
 playground keeps them in the room's spec (`actions`), so they survive every
 later edit and a restart. The page presses one with `POST /api/world/action`
-(playground/README.md).
+(playground/README.md). The playground also gives every loose thing built-in
+actions that no model offers, run the same way and listed after its own: "Put
+it on the ground in front of me" (`put_on_ground`) for what a hand can lift, and
+"Stand it upright" (`stand_upright`) and "Lay it down where I'm facing"
+(`lay_down`) for a box longer than it is wide. The room's chat is told not to
+offer those again.
 
 ## A joint outlives the next edit
 

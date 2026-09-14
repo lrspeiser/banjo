@@ -341,6 +341,36 @@ class RunningAnAction(PlaygroundTestCase):
         self.assertIn("could not push it", answer["refused"])
         self.assertNotIn("did", answer)
 
+    def test_a_built_in_puts_a_loose_thing_on_the_ground_in_front(self):
+        # What anything loose has without the chat thinking of it: "place on
+        # ground", the owner's words.
+        app = self.start([])
+        status, answer = self.post(app, "/api/world/action",
+                                   {"object": "stool", "builtin": "put_on_ground", "person": PERSON})
+        self.assertEqual(status, 200, answer)
+        self.assertEqual(answer["did"], ["Put it on the ground in front of me"], answer)
+        self.assertEqual([a["op"] for a in app.live.acts], ["wield", "stroke", "stroke", "release"])
+        carried = app.live.acts[1]["path"][-1]
+        self.assertEqual([round(carried[0], 3), round(carried[2], 3)], [0.0, 2.0],
+                         "a metre in front of them")
+
+    def test_a_built_in_a_hand_cannot_do_is_refused_before_the_hand_moves(self):
+        app = self.start([])
+        stool = next(b for b in app.live.session.state["bodies"] if b["name"] == "stool")
+        stool["mass_kg"] = 140.0
+        status, answer = self.post(app, "/api/world/action",
+                                   {"object": "stool", "builtin": "put_on_ground", "person": PERSON})
+        self.assertEqual(status, 200, answer)
+        self.assertIn("more than", answer["refused"])
+        self.assertEqual(app.live.acts, [])
+
+    def test_a_built_in_that_is_not_there_is_an_error(self):
+        app = self.start([])
+        status, answer = self.post(app, "/api/world/action",
+                                   {"object": "stool", "builtin": "juggle", "person": PERSON})
+        self.assertEqual(status, 400)
+        self.assertIn("no built-in action", answer["error"])
+
     def test_with_something_in_hand_the_action_waits(self):
         app = self.start([dict(BRING, body="stool")])
         app.live.session.state["hand"] = {"holding": True}

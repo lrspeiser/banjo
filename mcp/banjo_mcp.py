@@ -4638,8 +4638,9 @@ TOOLS = [
                                            "runs now.")}}},
     {"name": "offer_actions",
      "description": "Give an object you made the actions a person would take with it: each "
-                    "a label and a short program the room runs when they look at the object "
-                    "and press its number key. Think about what the thing is FOR. A chair is "
+                    "a label and a short program the room runs when they click on the object, "
+                    "which lists its actions by number, and press one. Think about what the "
+                    "thing is FOR. A chair is "
                     "pulled out from its table and pushed back in; a door is pushed open and "
                     "shut; a beam is stood upright or laid where you face; a pot is heated; "
                     "anything loose can be brought to the person. Every step is something the "

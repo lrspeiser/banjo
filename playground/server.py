@@ -1428,7 +1428,8 @@ def remember_chat(app, message, trace, answer, failure, wall_s, person=None):
         record = {"message": message, "wall_s": round(wall_s, 2),
                   "failure": str(failure) if failure is not None else None,
                   "reply": (answer or {}).get("reply"), "did": (answer or {}).get("did"),
-                  "usage": (answer or {}).get("usage"), "the_person": person,
+                  "usage": (answer or {}).get("usage"),
+                  "the_person": (answer or {}).get("the_person") or person,
                   "rounds": trace}
         text = json.dumps(record, indent=1, default=str)
         if app.api_key:
@@ -1467,6 +1468,17 @@ def with_water(session,spec,ground_was):
 ACTION_AHEAD_M=1.2
 # How long a hand's stroke may take before the action says it did not get there.
 ACTION_STROKE_S=6.0
+# What anything loose can have done to it without the room's chat having
+# thought of it (the owner: "there is also things like place on ground that are
+# missing"). Programs like the chat's, run by run_action; the page offers each
+# only where the engine could do it.
+BUILTIN_ACTIONS={
+    "put_on_ground":{"label":"Put it on the ground in front of me","steps":[
+        {"do":"take_hold"},{"do":"carry_to","to":{"kind":"in_front","in_front_m":1.0}},
+        {"do":"put_down"}]},
+    "stand_upright":{"label":"Stand it upright","steps":[{"do":"stand","stand":"upright"}]},
+    "lay_down":{"label":"Lay it down where I'm facing","steps":[
+        {"do":"stand","stand":"lying","along":"facing"}]}}
 
 
 def _live_body(app,name):
@@ -1590,11 +1602,16 @@ def run_action(app,body):
     if not isinstance(body,dict): raise ValueError("expected {object, action, person}")
     room=app.room
     name=str(body.get("object",""))[:200]
-    offered=[action for action in (room.spec.get("actions") or []) if action.get("body")==name]
-    try: index=int(body.get("action"))
-    except (TypeError,ValueError): raise ValueError("action is the number of one of the thing's actions, from 0") from None
-    if not 0<=index<len(offered): raise ValueError(f"{name or 'that'} has no action {index+1}")
-    action=offered[index]
+    if body.get("builtin") is not None:
+        key=str(body.get("builtin"))
+        if key not in BUILTIN_ACTIONS: raise ValueError(f"there is no built-in action {key!r}")
+        action=BUILTIN_ACTIONS[key]
+    else:
+        offered=[action for action in (room.spec.get("actions") or []) if action.get("body")==name]
+        try: index=int(body.get("action"))
+        except (TypeError,ValueError): raise ValueError("action is the number of one of the thing's actions, from 0") from None
+        if not 0<=index<len(offered): raise ValueError(f"{name or 'that'} has no action {index+1}")
+        action=offered[index]
     person=world_chat.where_the_person_is(body.get("person"))
     if ((app.live.session.state or {}).get("hand") or {}).get("holding"):
         raise ValueError("put down what you are holding first: the action needs your hand")
@@ -1611,7 +1628,19 @@ def run_action(app,body):
                 done.append(said)
             elif do=="take_hold":
                 part=step.get("part") or name
-                at=[float(v) for v in _live_body(app,part).get("position_m")]
+                held=_live_body(app,part)
+                # What the running room says of it now: the MCP checked the
+                # chat's actions when it offered them, and nothing checked a
+                # built-in one, and a thing can have changed since.
+                if held.get("anchored"):
+                    problem=f"{part} is fixed in place, and a hand cannot move it"
+                    break
+                kg=held.get("mass_kg")
+                if kg is not None and float(kg)>room_world.banjo_mcp.HAND_LIFTS_KG:
+                    problem=(f"{part} weighs {float(kg):.0f} kg, more than the "
+                             f"{room_world.banjo_mcp.HAND_LIFTS_KG:.0f} kg a hand can hold up")
+                    break
+                at=[float(v) for v in held.get("position_m")]
                 app.live.act({"session":app.live.session.id,"op":"wield","name":part,"grip":at})
                 holding=part
                 done.append(f"took hold of {part}")

@@ -16,6 +16,7 @@ No model and no network: this is about what the model would be SENT.
 from __future__ import annotations
 
 import json
+import math
 import sys
 import unittest
 from pathlib import Path
@@ -126,6 +127,48 @@ class TheRoomIsToldWhereThePersonIs(unittest.TestCase):
                      {"standing_m": [float("nan"), 0, 0], "facing": [0, 0, -1]},
                      {"standing_m": ["a", 0, 0], "facing": [0, 0, -1]}):
             self.assertIsNone(world_chat.where_the_person_is(junk), junk)
+
+    def test_new_things_go_on_clear_ground_close_in_front(self):
+        """The owner: "put the item on the ground in front of them (close)". On
+        empty ground: a metre ahead, then a step to their left and to their
+        right of that."""
+        person = world_chat.where_the_person_is({"standing_m": [0.0, 0.0, 3.0],
+                                                 "facing": [0.0, 0.0, -1.0]})
+        self.assertEqual(world_chat.clear_spots(person, []),
+                         [[0.0, 2.0], [-0.8, 2.0], [0.8, 2.0]])
+        # A floor slab, a lamp overhead and what they hold take no ground.
+        free = [{"name": "floor", "shape": "box", "position_m": [0.0, -0.05, 0.0],
+                 "dimensions_m": [20.0, 0.1, 20.0]},
+                {"name": "lamp", "shape": "sphere", "position_m": [0.0, 2.5, 2.0],
+                 "dimensions_m": [0.3, 0.3, 0.3]},
+                {"name": "cup", "shape": "box", "position_m": [0.0, 0.6, 2.0],
+                 "dimensions_m": [0.1, 0.1, 0.1], "held": True}]
+        self.assertEqual(world_chat.clear_spots(person, free),
+                         [[0.0, 2.0], [-0.8, 2.0], [0.8, 2.0]])
+
+    def test_new_things_go_round_what_is_there_and_not_on_each_other(self):
+        person = world_chat.where_the_person_is({"standing_m": [0.0, 0.0, 3.0],
+                                                 "facing": [0.0, 0.0, -1.0]})
+        # A table a metre ahead, turned a quarter so its long side runs toward
+        # them: 0.6 m across and 1.6 m deep.
+        table = {"name": "table", "shape": "box", "position_m": [0.0, 0.4, 2.0],
+                 "dimensions_m": [1.6, 0.8, 0.6],
+                 "orientation_wxyz": [0.7071068, 0.0, 0.7071068, 0.0]}
+        spots = world_chat.clear_spots(person, [table])
+        self.assertEqual(spots, [[-0.8, 2.0], [0.8, 2.0], [-1.6, 2.0]])
+        for x, z in spots:
+            gap = math.hypot(max(abs(x) - 0.3, 0.0), max(abs(z - 2.0) - 0.8, 0.0))
+            self.assertGreaterEqual(gap, world_chat.NEW_THING_CLEAR_M, (x, z))
+            self.assertLess(z, 3.0, "in front of them, never behind")
+            self.assertLessEqual(math.hypot(x, z - 3.0), 2.5, "close")
+        for i, a in enumerate(spots):
+            for b in spots[i + 1:]:
+                self.assertGreaterEqual(math.hypot(a[0] - b[0], a[1] - b[1]),
+                                        world_chat.NEW_THING_APART_M)
+        self.assertEqual(spots[0], [-0.8, 2.0], "beside the table before past it")
+        self.assertIn("put_new_things_m", world_chat.GUIDE)
+        self.assertIn("EVERYTHING YOU MAKE goes on the ground close in front of them",
+                      world_chat.GUIDE)
 
     def test_the_guide_and_the_tool_say_how_to_put_a_thing_down(self):
         for words in ("the_person", "one_metre_in_front_m", "position_m [x, z]", "in_water"):

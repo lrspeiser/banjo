@@ -65,7 +65,8 @@ export const TURNS = [
 export function controlsHint() {
   return `<b>W A S D</b> walk · <b>${keyOf("up")}</b> up · <b>${keyOf("down")}</b> down`
     + ` · <b>Shift</b> run · <b>drag</b> or <b>arrow keys</b> look`
-    + ` · <b>${keyOf("interact")}</b> or <b>click</b> take hold and put down`
+    + ` · <b>click</b> a thing: what you can do with it, by number`
+    + ` · <b>${keyOf("interact")}</b> or <b>double-click</b> take hold, <b>${keyOf("interact")}</b> put down`
     + ` · hold <b>${keyOf("primary")}</b> to wind up a throw, let go to throw`
     + ` · <b>${keyOf("secondary")}</b> cancel · <b>${keyOf("more")}</b> more`
     + ` · holding something: <b>${keyOf("turnLeft")} ${keyOf("turnRight")}</b> turn,`

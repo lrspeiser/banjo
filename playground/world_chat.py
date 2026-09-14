@@ -64,11 +64,21 @@ have in their hand (holding), and what they carry (carrying: each material and
 its kg -- the soil a pick broke out, what they swept up). "This", "it" and
 "this one" mean what they
 are holding -- or, holding nothing, what they are looking at: call the tools
-with that name. Something
-asked for "here", "near me", "in front of me" or "give me ..." goes where they
-can take it: about a metre in front of them, at one_metre_in_front_m -- never
-behind them and never where they stand. "There", "over there" and "that" mean
-what they are looking at. If the point in front of them is water or a steep
+with that name. EVERYTHING YOU MAKE goes on the ground close in front of them,
+where they can see it and take it, unless they said where: put_new_things_m is
+a list of clear places on the ground there, [x, z], the best first. The first
+thing you make goes at the first of them, a second thing at the second, beside
+it, and so on -- never on or in each other, never behind them, never where they
+stand. A thing that is one object is given its place as its position_m [x, z],
+so it is set down on the ground. A thing built of several objects -- a seat on
+four legs, a top on trestles -- is built at one place as one piece: the legs
+set down round it with [x, z], the seat at its exact [x, y, z] on their tops,
+and each leg joined to the seat with fix. add_object may say the seat is
+in_the_air -- it looks down from nine points of its bottom and can see the
+floor between thin legs -- so leave it there and fix it to each leg. A thing more than a metre deep goes further out along
+facing, by half its depth less half a metre, so it does not touch them. When
+put_new_things_m is empty the ground near them is taken: say so and ask where.
+"There", "over there" and "that" mean what they are looking at. If the point in front of them is water or a steep
 bank, use one_metre_to_the_left_m or one_metre_to_the_right_m instead, whichever
 survey says is dry and level. Without the_person you do not know where they
 are: say where you put things.
@@ -126,20 +136,23 @@ for them with turn_object when they ask.
 
 ACTIONS. Whenever you make something, work out what a person would DO with it,
 and give it those actions with offer_actions in the same turn: each a label and
-a short program the room runs when they look at the thing and press its number
-key. Think about what it is for, not only where it goes. A chair: "Pull it out"
-(take_hold it, carry_to beside the table on the near side with gap_m 0.4,
-put_down) and "Push it in" (the same with gap_m 0.05). A door or a gate on a
-hinge: "Push it open" (push it toward a place beyond it). A beam or a pillar:
-"Stand it upright" (stand upright) and "Lay it where I'm facing" (stand lying,
-along facing). A pot or a log: "Heat it" (heat). Anything loose: "Bring it to
-me" (take_hold, carry_to a place of kind in_front with in_front_m 0.8 and
-height_m 1.0, put_down). A hand takes hold of up to 73 kg: a heavier thing, like
-a big table, is pushed ("Slide it closer": push it toward a place of kind
-in_front) or stood, never taken hold of. Give each step only the fields its kind
-uses -- a take_hold step has only part -- and every place its kind. Every
-program ends with the hand empty. Say in your answer that they can look at the
-thing and press 1, 2, 3. What already has actions is in actions_offered.
+a short program the room runs when they click on the thing, which lists its
+actions by number, and press one. Think about what it is for, not only where it
+goes. A chair: "Pull it out" (take_hold it, carry_to beside the table on the
+near side with gap_m 0.4, put_down) and "Push it in" (the same with gap_m 0.05).
+A door or a gate on a hinge: "Push it open" (push it toward a place beyond it).
+A pot or a log: "Heat it" (heat). A cup: "Put it on the table" (take_hold,
+carry_to a place of kind on, put_down). The page already gives every loose thing
+"Put it on the ground in front of me", and a box longer than it is wide "Stand
+it upright" and "Lay it down where I'm facing": do not offer those again -- give
+what is particular to this thing. An action that only takes it and puts it down,
+or brings it to them, is the built-in one again under another name: leave it
+out. A hand takes hold of up to 73 kg: a heavier
+thing, like a big table, is pushed ("Slide it closer": push it toward a place of
+kind in_front) or stood, never taken hold of. Give each step only the fields its
+kind uses -- a take_hold step has only part -- and every place its kind. Every
+program ends with the hand empty. Say in your answer that they can click on the
+thing to see what it does. What already has actions is in actions_offered.
 
 AT AN ANGLE. A ramp, a leaning plank -- anything not square to the room -- is
 one object with rotation_deg [x, y, z] in degrees. On its own, x leans it about
@@ -951,6 +964,67 @@ def where_the_person_is(raw: Any) -> dict[str, Any] | None:
     return said
 
 
+# Where something made for the person goes when they do not say where (the
+# owner: "put the item on the ground in front of them (close)"): places on the
+# ground a metre in front of them with nothing there, the nearest first --
+# straight ahead, then either side of that, then a little further out, so
+# what is in the way is gone round before it is gone past. Each is (metres
+# ahead, metres to their left; negative is to their right).
+NEW_THING_SPOTS = ((1.0, 0.0), (1.0, 0.8), (1.0, -0.8), (1.5, 0.0), (1.5, 0.8), (1.5, -0.8),
+                   (1.0, 1.6), (1.0, -1.6), (2.0, 0.0), (2.0, 0.9), (2.0, -0.9),
+                   (2.5, 0.0), (3.0, 0.0))
+NEW_THING_CLEAR_M = 0.4     # how far round the middle of a new thing is kept clear
+NEW_THING_APART_M = 0.7     # how far apart two new things' middles are
+ABOVE_THE_GROUND_M = 1.6    # a thing whose bottom is higher (a lamp) leaves the ground free
+
+
+def clear_spots(person: dict[str, Any], bodies: list[dict[str, Any]],
+                wanted: int = 3) -> list[list[float]]:
+    """Up to `wanted` places [x, z] on the ground close in front of the person
+    with nothing standing there, the best first, and apart from each other --
+    so a second thing goes beside the first, not on it. What the room has is
+    each body's footprint as it is turned, from the running room's state; what
+    is held moves with them and takes no ground."""
+    sx, sy, sz = person["standing_m"]
+    fx, _, fz = person["facing"]
+    footprints = []
+    for body in bodies:
+        if body.get("held"):
+            continue
+        try:
+            at = [float(v) for v in body.get("position_m") or []]
+            dims = [float(v) for v in body.get("dimensions_m") or []]
+            w, x, y, z = (float(v) for v in (body.get("orientation_wxyz") or [1.0, 0.0, 0.0, 0.0]))
+        except (TypeError, ValueError):
+            continue
+        if len(at) != 3 or len(dims) != 3:
+            continue
+        if body.get("shape") == "sphere":
+            half = [dims[0] / 2.0] * 3
+        else:
+            turn = ((1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)),
+                    (2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)),
+                    (2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)))
+            half = [sum(abs(turn[r][i]) * dims[i] / 2.0 for i in range(3)) for r in range(3)]
+        # Above their head (a lamp), or no higher than the ground (a floor slab,
+        # a rug): the ground is free.
+        if at[1] - half[1] > sy + ABOVE_THE_GROUND_M or at[1] + half[1] <= sy + 0.02:
+            continue
+        footprints.append((at[0], at[2], half[0], half[2]))
+    chosen: list[list[float]] = []
+    for ahead, left in NEW_THING_SPOTS:
+        cx, cz = sx + fx * ahead + fz * left, sz + fz * ahead - fx * left
+        if any(max(abs(cx - bx) - hx, 0.0) ** 2 + max(abs(cz - bz) - hz, 0.0) ** 2
+               < NEW_THING_CLEAR_M ** 2 for bx, bz, hx, hz in footprints):
+            continue
+        if any(math.hypot(cx - px, cz - pz) < NEW_THING_APART_M for px, pz in chosen):
+            continue
+        chosen.append([round(cx, 3), round(cz, 3)])
+        if len(chosen) == wanted:
+            break
+    return chosen
+
+
 def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
         message: str, story: list[str],
         trace: list[dict[str, Any]] | None = None,
@@ -1004,6 +1078,8 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
         # model that cannot see the room has no other way to know.
         person = where_the_person_is(person)
         if person is not None:
+            # Where something made for them goes when they do not say where.
+            person["put_new_things_m"] = clear_spots(person, live_state.get("bodies", []))
             opening["the_person"] = person
         if entry["scene"].get("terrain") and entry.get("world") is not None:
             # The ground and the water as they are now, so a dam or a channel
@@ -1103,8 +1179,10 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
 
         if changed:
             room.spec = room_world.export_spec(entry)
+        # And where the person was, as the model was told it -- with the
+        # places it was given for new things -- for the turn's log.
         return {"reply": reply, "did": did, "changed": changed,
                 "wall_s": round(time.perf_counter() - started, 2), "rounds": rounds,
-                "usage": usage}
+                "usage": usage, "the_person": opening.get("the_person")}
     finally:
         room_world.close_room(world_id)
