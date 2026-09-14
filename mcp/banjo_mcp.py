@@ -3052,8 +3052,8 @@ TOOL_KINDS: dict[str, dict[str, Any]] = {
              "use": {}},
     "mattock": {"title": "an oak mattock -- a broad flat blade on its haft, one piece -- lying on "
                          "the ground, to break up hard soil",
-                "tried": "swung, it went 125 mm into the soil at 9.8 m/s; pried, it broke out "
-                         "6.1 L of soil",
+                "tried": "swung, it went 130 mm into the soil at 8.2 m/s; pried, it broke out "
+                         "9.6 L of soil",
                 "head_name": "head", "material": "oak",
                 "haft": {"length_m": 0.8},
                 "head": {"length_m": 0.2, "width_m": 0.08},
@@ -3062,8 +3062,8 @@ TOOL_KINDS: dict[str, dict[str, Any]] = {
     "hoe": {"title": "an oak hoe -- a thin broad blade on its haft, one piece -- lying on the "
                      "ground, to chop the soil loose (its draw through the soil is not modelled: "
                      "it chops in and is pried)",
-            "tried": "swung, its broad thin blade went 47 mm into the soil at 8.5 m/s; pried, it "
-                     "broke out 0.8 L -- the ground resists a broad blade more than a point",
+            "tried": "swung, its broad thin blade went 74 mm into the soil at 9.5 m/s; pried, it "
+                     "broke out 1.5 L -- the ground resists a broad blade more than a point",
             "head_name": "blade", "material": "oak",
             # The pick's 0.8 m: with 0.96 its trial, standing 1.2 m back as the
             # engine's swing is measured, met no ground.
@@ -3130,26 +3130,34 @@ def _tool_recipe(kind: str, options: dict[str, Any] | None = None,
     def cells(value: float, step: float) -> float:
         return round(max(step, round(value / step) * step), 4)
 
-    # Both ends of the haft on the cells, so it is laid out from its middle; the
-    # head along -z from the haft's +x end, touching it; one cell thick, since a
-    # thinner part is lost from the grid.
+    # Both ends of the haft on the cells, so it is laid out from its middle. The
+    # head goes along -z from the haft's last cell, touching it, one cell thick
+    # along the haft (a thinner part is lost from the grid) and as broad as it is
+    # ACROSS the swing: up, as it lies. The engine takes a point's width as square
+    # to the point and to the handle. A head laid broad along the haft was a
+    # different tool from the point it was declared as: coming in tilted, its end
+    # led with a corner, 2-3 cm below its tip, and that corner met the ground
+    # first, so the swing stopped short (a hoe from 6 stand-backs of 8). A pick's
+    # head is a cell square, the same either way.
     length = cells(sizes["haft"]["length_m"], 2 * cell)
     head_length = cells(sizes["head"]["length_m"], cell)
-    head_width = min(cells(sizes["head"]["width_m"], cell), length / 2)
+    head_width = cells(sizes["head"]["width_m"], cell)
     half, t = length / 2.0, cell
-    hx = round(half - head_width / 2.0, 4)
+    hx = round(half - t / 2.0, 4)
+    hy = round(head_width / 2.0, 4)
     haft, head = f"{stem} haft", f"{stem} {head_name}"
     point = sizes["point"]
     # The point is the whole of the head's working edge unless its width is
-    # said: a 0.12 m head the chat made on an 0.08 m point met the ground with
-    # its edges first, and the swing stopped 29 mm above it.
+    # said. The ends of an edge broader than its point are not point: they meet
+    # the ground as a surface, and a 0.12 m head the chat made on an 0.08 m
+    # point stopped 29 mm above the ground.
     if "width_m" not in (options.get("point") or {}):
         point["width_m"] = head_width
     # Whether it is pried is the kind's: the chat fills every field, and a
     # mattock it made said pry false.
     use = dict(base["use"], **{k: v for k, v in (options.get("use") or {}).items() if k != "pry"})
     then: list[tuple[str, dict[str, Any]]] = [
-        ("tool_point", {"body": haft, "tip_m": (hx, t / 2, -head_length), "pointing": [0, 0, -1],
+        ("tool_point", {"body": haft, "tip_m": (hx, hy, -head_length), "pointing": [0, 0, -1],
                         "grip_m": (round(-half + cell, 4), t / 2, t / 2),
                         # No point broader than its head, or longer.
                         "width_m": min(point["width_m"], head_width),
@@ -3165,8 +3173,8 @@ def _tool_recipe(kind: str, options: dict[str, Any] | None = None,
             "parts": [{"name": haft, "shape": "box", "material": material,
                        "size_m": [length, t, t], "position_m": (0.0, t / 2, t / 2), "join": stem},
                       {"name": head, "shape": "box", "material": material,
-                       "size_m": [head_width, t, head_length],
-                       "position_m": (hx, t / 2, round(-head_length / 2, 4)), "join": stem}],
+                       "size_m": [t, head_width, head_length],
+                       "position_m": (hx, hy, round(-head_length / 2, 4)), "join": stem}],
             "joints": [], "then": then, "actions": {},
             "use": f"they press E near it and it is held ready by its grip, point down; a ring on "
                    f"the ground shows where it will come down; a click does '{label}' -- swung, "

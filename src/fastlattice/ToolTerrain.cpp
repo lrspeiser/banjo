@@ -18,6 +18,21 @@ constexpr double kPi = 3.14159265358979323846;
 constexpr double kPointsDown = 0.5;
 // How near the ground the tip counts as touching it.
 constexpr double kTouchM = 0.003;
+// The margin round a point's region (JoltWorld::GroundPointRegion): what of the
+// tool is within it meets the ground as the point, not as a surface.
+constexpr double kRegionMarginM = 0.01;
+// A point whose tip will be in the ground within this long is arriving: the
+// ground under it is handed to it before a corner of its end can meet the
+// ground as an ordinary contact. A swing brings a tip down at 5-7 m/s; a tool
+// let down slowly does not lead by that, and rests on its corner as before.
+constexpr double kArrivingS = 0.05;
+
+// The radius of a point's region: its cells, whatever the declared wedge inside
+// them -- half a cell's diagonal across, or the point's own section if that is
+// bigger.
+[[nodiscard]] double pointRadius(const terrain::ToolPointShape &shape, double cell_m) {
+    return std::max(0.5 * std::hypot(shape.width_m, shape.thickness_m), 0.5 * std::sqrt(2.0) * cell_m);
+}
 // How far back out of where it went in a point has to come before it is out.
 constexpr double kOutM = 0.01;
 // The resistance of rock under the soil a point has gone through: it stops it.
@@ -368,16 +383,14 @@ void ToolTerrain::suspend(const ToolTerrainHost &host, const Point &p, MatterBod
     region.tip_local_m = p.tip_local;
     region.pointing_local = p.pointing_local;
     region.length_m = p.shape.length_m;
-    // The point's cells, whatever the declared wedge inside them: half a
-    // cell's diagonal across, or the point's own section if that is bigger.
-    region.radius_m = std::max(0.5 * std::hypot(p.shape.width_m, p.shape.thickness_m),
-                               0.5 * std::sqrt(2.0) * host.cell_m);
+    // The point's cells, whatever the declared wedge inside them.
+    region.radius_m = pointRadius(p.shape, host.cell_m);
     // A contact found by a sweep is placed where the body will be: allow a
     // step's travel beyond the tip. Behind the point, only a centimetre: what
     // is not point meets the ground as a surface -- it is what stops a pick at
     // its head, and what a lever turns on.
     region.ahead_m = std::max(0.01, length(v) * dt_s + 0.005);
-    region.margin_m = 0.01;
+    region.margin_m = kRegionMarginM;
     host.world->suspendGroundContact(id, region);
 }
 
@@ -400,7 +413,23 @@ void ToolTerrain::meet(const ToolTerrainHost &host, Point &p, MatterBodyId id, c
     const Vec3 next = tip + dt_s * v;
     const bool touching = tip.y <= ground_y + kTouchM;
     const bool arriving = next.y <= ground_y + kTouchM;
-    if (!touching && !arriving) {
+    // A point comes down tilted, along the way its tip is going, so its end
+    // leads with a corner: lower than its tip by up to its region's reach across
+    // times the tilt. The rigid world meets that corner as an ordinary contact
+    // from its speculative distance away, a step before the tip is near enough
+    // to go in, and the swing stopped with the tip 2-3 cm up -- a blade broad
+    // along its swing from 3 stand-backs of 8 (ground_work_tests, 8). So the
+    // ground under the point is the point's once that corner could meet it this
+    // step while the tip follows it in, in the ground within kArrivingS. When
+    // the bite opens is still the tip's own meeting.
+    bool leading = false;
+    if (!touching && !arriving && v.y < 0.0 && tip.y - ground_y <= -v.y * kArrivingS) {
+        const double tilt = std::sqrt(std::max(0.0, 1.0 - a.y * a.y));
+        const double corner_y = tip.y - (pointRadius(p.shape, host.cell_m) + kRegionMarginM) * tilt;
+        leading = corner_y + dt_s * v.y <=
+                  ground_y + kTouchM + world.contactDiagnostics().speculative_distance_m;
+    }
+    if (!touching && !arriving && !leading) {
         if (tip.y > ground_y + 0.02) closeNote(host, p);
         if (world.groundContactSuspended(id)) world.restoreGroundContact(id);
         return;
@@ -442,6 +471,11 @@ void ToolTerrain::meet(const ToolTerrainHost &host, Point &p, MatterBodyId id, c
                           layer.c_str(), std::acos(std::clamp(down, -1.0, 1.0)) * 180.0 / kPi);
             note(host, p, "glanced", layer, why, true, at, closing);
         }
+        return;
+    }
+    // Handed over, and the tip not in it yet: its own meeting opens the bite.
+    if (leading) {
+        suspend(host, p, id, v, dt_s);
         return;
     }
     // Going in, or pressed in from on the surface.

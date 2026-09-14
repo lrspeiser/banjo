@@ -137,6 +137,44 @@ class ToolsByRecipe(unittest.TestCase):
         self.assertEqual((point["tip_m"], point["grip_m"], point["width_m"], point["length_m"]),
                          ((0.38, 0.02, -0.28), (-0.36, 0.02, 0.02), 0.04, 0.2))
 
+    def test_a_mattock_and_a_hoe_are_laid_broad_across_their_swing(self):
+        """The engine takes a point's width as square to the point and to the
+        handle, which is across the swing. A head laid broad along the haft led
+        with a corner of its end, and the hoe's swing stopped short from 6
+        stand-backs of 8."""
+        for which, width, length in (("mattock", 0.08, 0.2), ("hoe", 0.12, 0.12)):
+            recipe = banjo_mcp.RECIPES[which]
+            head = recipe["parts"][1]
+            self.assertEqual((head["size_m"], head["position_m"]),
+                             ([0.04, width, length], (0.38, width / 2, -length / 2)))
+            point = recipe["then"][0][1]
+            self.assertEqual((point["tip_m"], point["width_m"]), ((0.38, width / 2, -length), width))
+
+    def test_a_mattock_and_a_hoe_go_in_from_wherever_they_are_swung(self):
+        """In CI's clearing the hoe's trial met no ground from 1.2 m, and in the
+        world's valley, where the room's chat built its mattock, it went in from
+        2 stand-backs of 8: its end led with a corner the rigid world met first.
+        From every stand-back the page swings a tool from (1.15 to 2 m in front,
+        by default), each goes in."""
+        from unittest import mock
+        missed = []
+        for which in ("mattock", "hoe"):
+            for back in (1.2, 1.4, 1.6, 1.8, 2.0):
+                world_id = room_world.open_room(world_room.valley())
+                try:
+                    with mock.patch.object(banjo_mcp, "STAND_BACK_M", back):
+                        said = call("build_recipe", world_id=world_id, recipe=which, at_m=[12.08, -5.0])
+                finally:
+                    room_world.close_room(world_id)
+                soil = said["and"]["interaction"]["trial"].get("into_soil") or {}
+                swung = soil.get("swung")
+                went = max((w.get("went_in_mm", 0.0) for w in swung), default=0.0) \
+                    if isinstance(swung, list) else 0.0
+                print(f"\n  {which} from {back} m: " + (f"{went:.0f} mm in" if went else str(swung)))
+                if not went > 20.0:
+                    missed.append((which, back, swung))
+        self.assertEqual(missed, [])
+
 
 class HowAToolIsUsed(unittest.TestCase):
     """A tool's profile may shape how the person uses it (`use`): what the click

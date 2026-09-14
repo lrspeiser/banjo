@@ -25,6 +25,18 @@ push on the point is the bite's and nothing else. The work is measured from the
 solver's own impulses, the way a cut's is. How deep the point goes is what the
 solver makes of that resistance against the tool's momentum and the hand.
 
+The ground is handed to the point a moment before its tip arrives. A swing
+brings a point down tilted, along the way its tip is going, so its end leads
+with a corner, and the rigid world meets that corner as a surface from its
+speculative contact distance away. A step before the tip was near enough to go
+in, the swing stopped with the tip 2-3 cm up: a blade broad along its swing did
+so from 3 stand-backs of 8, and build_recipe's hoe from 6 of 8. So once that
+corner could meet the ground within the step, and the tip will be in the ground
+within 0.05 s, the ground's contact with the point's region is suspended. The
+bite still opens when the tip itself arrives. A tool let down slowly still rests
+on its corner, and rock still stops the tool where it meets it
+(tests/ground_work_tests.cpp, check 8).
+
 Pried sideways further than a tenth of its depth, the point **breaks the ground
 out**: a wedge of soil comes loose in front of it. When the point comes out of
 the ground, what came loose leaves through the ground's own dig

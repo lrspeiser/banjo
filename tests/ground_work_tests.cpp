@@ -17,6 +17,10 @@
 //     exactly what the dig took, and the ground's ledger still closes.
 //  7. The ground opened again from the dig as the report says it -- the edit a
 //     room keeps -- has the same hole, to the bit, and carries the same.
+//  8. A broad end -- a blade 0.12 m broad, across its swing as a hoe's is or
+//     along it as an axe's is -- goes into the ground from every stand-back from
+//     1.0 to 2.0 m: the corner it leads with, coming in tilted, is the point's,
+//     not an ordinary contact that stops the swing short of the ground.
 //
 // Every number checked is printed.
 #include "fastlattice/LiveWorld.hpp"
@@ -472,6 +476,68 @@ void aGripOffTheBodyIsRefused() {
             "the same point with its grip on the haft was refused: " + live->toolPointRefusal());
 }
 
+// ---- a broad end, from wherever it is swung ---------------------------------------
+
+// A one-piece oak tool: the pick's handle, and hanging from its +x end a blade a
+// cell thick and 0.12 m deep, 0.12 m broad -- across the swing (along z), as a
+// hoe's or a mattock's edge is, or along it (along x), as an axe's is and as
+// build_recipe once laid a mattock's and a hoe's head, along the haft. Its point
+// is the whole of the blade's lower edge, and the engine takes a point's width
+// as square to the point and to the handle: across the swing.
+Json blade(double lift, bool along) {
+    return {box("hoe", "oak", {0.8, 0.04, 0.04}, {0.0, lift + 1.02, 0.02}, "hoe"),
+            along ? box("hoe blade", "oak", {0.12, 0.12, 0.04}, {0.34, lift + 0.94, 0.02}, "hoe")
+                  : box("hoe blade", "oak", {0.04, 0.12, 0.12}, {0.38, lift + 0.94, 0.02}, "hoe")};
+}
+
+// Swung at the ground 0.3 m out from a shoulder `back` behind it. A point comes
+// down tilted -- along the way its tip is going, 25-35 degrees off straight down
+// -- so an end broad in the swing leads with a corner, up to 3 cm below its tip.
+Swing swingBladeFrom(double back, bool along) {
+    const double top = 0.4;
+    Json scene{{"terrain", ground(top, 0.0)}, {"bodies", blade(top, along)}};
+    Swing out;
+    out.live = open(scene);
+    LiveWorld &live = *out.live;
+    const Vec3 tip{along ? 0.34 : kTipX, top + 0.88, kTipZ};
+    const Vec3 grip{kGripX, top + 1.02, kTipZ};
+    require(live.toolPoint("hoe", tip, {0.0, -1.0, 0.0}, 0.12, 0.01, 20.0, 0.1, grip) != 0,
+            "the hoe would not take a point: " + live.toolPointRefusal());
+    require(live.wield("hoe", grip), "the hoe could not be taken by its grip");
+    out.carried_before_m3 = live.environment()->carried().total();
+    LiveStrike strike;
+    strike.target_m = {0.3, top, kTipZ};
+    strike.shoulder_m = {0.3 - back, top + 1.45, kTipZ};
+    strike.speed_m_s = 4.0;
+    strike.raise_deg = 110.0;
+    std::string why;
+    require(live.strike(strike, why), "the swing was refused: " + why);
+    out.ended = finishStroke(live, 480, 120);
+    out.work = live.groundWork();
+    return out;
+}
+
+// That corner met the ground as an ordinary contact a step before the tip was
+// near enough for the ground to be the point's, and the swing stopped with the
+// tip 2-3 cm up: build_recipe's hoe from 6 of 8 stand-backs in the world's
+// valley, and in CI's clearing from 1.2 m ("its point met no ground"). Broad
+// across its swing or along it, from wherever it is swung, the point goes in.
+void aBroadEndMeetsTheGroundFromWhereverItIsSwung() {
+    int missed = 0;
+    for (const bool along : {false, true}) {
+        for (const double back : {1.0, 1.1, 1.2, 1.3, 1.4, 1.6, 1.8, 2.0}) {
+            const Swing s = swingBladeFrom(back, along);
+            double deepest = 0.0;
+            for (const LiveGroundWork &w : s.work) deepest = std::max(deepest, w.depth_m);
+            std::printf("  broad %s its swing, from %.1f m: the stroke %s; %s\n", along ? "along" : "across",
+                        back, s.ended.c_str(),
+                        s.work.empty() ? "its point met no ground" : said(s.work.front()).c_str());
+            if (!(deepest > 0.02)) ++missed;
+        }
+    }
+    require(missed == 0, std::to_string(missed) + " of 16 swings did not go into the ground");
+}
+
 } // namespace
 
 int main() {
@@ -482,6 +548,7 @@ int main() {
         {"soil against rock", soilAgainstRock},
         {"a pry breaks ground out, and it is carried", aPryBreaksGroundOutAndItIsCarried},
         {"a grip off the body is refused", aGripOffTheBodyIsRefused},
+        {"a broad end meets the ground from wherever it is swung", aBroadEndMeetsTheGroundFromWhereverItIsSwung},
     };
     int failed = 0;
     for (const auto &[name, check] : checks) {
