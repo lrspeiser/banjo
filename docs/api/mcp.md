@@ -152,6 +152,52 @@ pillar lying still along z as having turned 90 degrees, and refused it.
   plank, the plank tipped in the settling run and the pillar fell. Refused, and
   the pillar was back lying where it had been.
 
+## A thing's actions
+
+`offer_actions` gives a thing the actions a person takes with it. Each is a
+label and a short program of steps, and the room runs the program when the
+person looks at the thing and presses the action's number key. The owner asked
+for this on 2026-09-13. The model making a thing works out "what the user would
+need to do", since "a bow and arrow would have different actions than a chair",
+and is "given the ability to program the execution of it".
+
+Every step is something the engine already does:
+
+| Step | Does |
+|---|---|
+| `stand` | `turn_object` on the object, with all four checks above: `upright` or `lying`, `along` facing / across / x / z, `where` here or in_front |
+| `take_hold` | The hand grips a part at its middle with its own 800 N, which holds up at most 73 kg |
+| `carry_to` | The hand carries what it holds to a place with its own stroke, at `speed_m_s` |
+| `put_down` | Lowers what it holds onto what is under it, and lets go |
+| `let_go` | Opens the hand where it is |
+| `push` | Grips a part, pushes it `distance_m` toward a place and lets go, so a door, gate or lever goes where its joints let it |
+| `heat` | `power_w` into a part for `seconds` |
+| `wait` | Lets the room run for `seconds` |
+
+A place is where the hand takes the middle of what it moves. Its `kind` says
+which of these it is, and only that kind's fields are read; without a `kind`,
+exactly one may be given. A step likewise reads only its own kind's fields. The
+room's chat fills every field it is shown, so fields that do not apply are set
+aside, not refused, and the answer lists them under `not_read`.
+- `in_front_m`, in front of the person when the key is pressed, with `height_m`;
+- `on` a thing;
+- `beside` a thing, on a `side` near, far, left or right as the person sees it, with `gap_m`;
+- `from` a thing, at `offset_m`.
+
+When actions are offered, the tool checks them the way the room will run them.
+The hand holds one thing at a time. Every part named exists and is not fixed in
+place. What is taken hold of weighs 73 kg or less; anything heavier gets `stand`
+steps instead. The program ends with the hand empty.
+
+When a key is pressed, the program runs on the room as it is then, and
+everything it does is the engine's answer. A stroke that is blocked, or a stand
+that is refused, stops the action with the reason; the hand is opened and what
+was done stays done. A thing may have at most nine actions, one per number key.
+Calling the tool again replaces them, and an empty list takes them away. The
+playground keeps them in the room's spec (`actions`), so they survive every
+later edit and a restart. The page presses one with `POST /api/world/action`
+(playground/README.md).
+
 ## A joint outlives the next edit
 
 A world is opened from its scene, so adding, moving or removing an object means

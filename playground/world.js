@@ -1207,6 +1207,9 @@ function showActions() {
     else if (bladeFor(on)) rows.push(["click", `take ${on} by the grip`]);
     else if (entry && throwable(entry, onAJoint(on))) rows.push([k("interact"), `take hold of ${on}`]);
     rows.push([k("heat"), `heat ${on}`]);
+    // Its own actions first: what the room's chat worked out a person does
+    // with this thing when it made it, one per number key (offer_actions).
+    rows.unshift(...actionsFor(on).map((action, i) => [String(i + 1), action.label]));
   } else if (underfoot) {
     if (underfoot !== "rock") rows.push([k("dig"), `dig here, in the ${underfoot}`]);
     const carried = world.carriedGround
@@ -1618,6 +1621,10 @@ addEventListener("keydown", (e) => {
   if (isKey("heap", e.code)) $("heap-it").click();
   if (isKey("heat", e.code)) $("heat-it").click();
   if (isKey("workbench", e.code)) openWorkbench();
+  // One of the actions of what the crosshair is on, by its number -- with
+  // nothing in hand, where the number keys are not the hand's "more" menu.
+  if (!world.held && /^Digit[1-9]$/.test(e.code) && world.aim && world.aim.name
+      && actionsFor(world.aim.name).length) runAction(world.aim.name, Number(e.code.slice(5)) - 1);
   if (["KeyW","KeyA","KeyS","KeyD","KeyQ","KeyE","Space",
        "ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.code)) e.preventDefault();
 });
@@ -2081,6 +2088,8 @@ function storedInElastics(name) {
 
 async function pickUp() {
   if (!world.aim) return;
+  // An action has the hand while it runs (runAction).
+  if (world.acting) { say("world", "Your hand is busy with an action."); return; }
   const name = world.aim.name;
   const entry = world.bodies.get(name);
   // A part of something with a profile takes up the whole of it -- the bow,
@@ -2501,6 +2510,9 @@ function showUse() {
 // and nothing here lets the arrow go.
 
 function rememberProfiles(spec) {
+  // The actions the room's chat gave its things (offer_actions), each
+  // {body, label, steps}: on the number keys when the crosshair is on that thing.
+  world.actions = (spec && spec.actions) || [];
   world.profiles = ((spec && spec.interactions) || [])
     .filter((p) => p.template === "draw-and-release");
   // And the tools that dig, which picks.js drives (swing-and-lever).
@@ -3833,59 +3845,103 @@ $("ask").addEventListener("submit", async (e) => {
     });
     waiting.done();
     say("world", answer.reply || "(nothing to say)", answer.did);
-    if (answer.reopened) {
-      traceOldWorld();
-      world.session = answer.session;
-      // A rebuilt room: its own profiles, and nothing of the old one in hand.
-      rememberProfiles(answer.state && answer.state.spec);
-      world.held = null;
-      world.use = { mode: "none" };
-      world.loosing = null;
-      aimArc.hide();
-      // Asked with something in hand ("turn this upright"), the new room has
-      // nothing in the hand: the carry readout, the ring and the drop line go.
-      $("crosshair").classList.remove("holding");
-      $("carry").hidden = true;
-      clearGuides();
-      showUse();
-      world.bodies.forEach((e) => forget(e.mesh));
-      world.bodies.clear();
-      world.fading.forEach((f) => forget(f.mesh));
-      world.fading.length = 0;
-      world.stock.clear();
-      world.sweptSince.clear();
-      // ...but not what the spade dug: the ground keeps its edits, and the
-      // engine counts what came out of them all over again.
-      carryGround(answer.state.terrain ? answer.state.terrain.carried : null);
-      draw(answer.state);
-      braceProfiles();
-      // And its joints. The room that comes back can have hinges, ropes and
-      // springs the chat just made -- and the list held here is the OLD room's,
-      // naming bodies that may be gone. Without this a gate the chat hung is
-      // drawn with no pin, and a sign with no ropes.
-      world.joints = [];
-      drawJoints(answer.state.joints || []);
-      drawRopes();
-      clearHeat();
-      // The ground and the water of the room as it now is. The camera stays
-      // where the person is standing.
-      if (answer.state.terrain) {
-        drawTerrain(answer.state.terrain);
-        if (answer.state.water) drawWater(answer.state.water);
-      } else {
-        clearGround();
-      }
-      // Drawn: the frame report starts over with the rebuilt world.
-      traceNewWorld(answer.state.t);
-      if (answer.joint_problems && answer.joint_problems.length)
-        say("bad", "Some joints would not hang: " + answer.joint_problems.join("; "));
-      remember("the room was rebuilt: " + (answer.did || []).join(", "));
-    }
+    if (answer.reopened) adoptRebuilt(answer);
   } catch (error) {
     waiting.done();
     say("bad", String(error.message || error));
   } finally { world.asking = false; $("ask-send").disabled = false; input.focus(); }
 });
+
+// A room rebuilt from what it has become -- after the chat changed it, or after
+// one of a thing's set-ups was used -- replaces the one on screen, with nothing
+// of the old one in hand.
+function adoptRebuilt(answer) {
+  traceOldWorld();
+  world.session = answer.session;
+  // A rebuilt room: its own profiles and set-ups, and nothing of the old one
+  // in hand.
+  rememberProfiles(answer.state && answer.state.spec);
+  world.held = null;
+  world.use = { mode: "none" };
+  world.loosing = null;
+  aimArc.hide();
+  // Asked with something in hand ("turn this upright"), the new room has
+  // nothing in the hand: the carry readout, the ring and the drop line go.
+  $("crosshair").classList.remove("holding");
+  $("carry").hidden = true;
+  clearGuides();
+  showUse();
+  world.bodies.forEach((e) => forget(e.mesh));
+  world.bodies.clear();
+  world.fading.forEach((f) => forget(f.mesh));
+  world.fading.length = 0;
+  world.stock.clear();
+  world.sweptSince.clear();
+  // ...but not what the spade dug: the ground keeps its edits, and the
+  // engine counts what came out of them all over again.
+  carryGround(answer.state.terrain ? answer.state.terrain.carried : null);
+  draw(answer.state);
+  braceProfiles();
+  // And its joints. The room that comes back can have hinges, ropes and
+  // springs the chat just made -- and the list held here is the OLD room's,
+  // naming bodies that may be gone. Without this a gate the chat hung is
+  // drawn with no pin, and a sign with no ropes.
+  world.joints = [];
+  drawJoints(answer.state.joints || []);
+  drawRopes();
+  clearHeat();
+  // The ground and the water of the room as it now is. The camera stays
+  // where the person is standing.
+  if (answer.state.terrain) {
+    drawTerrain(answer.state.terrain);
+    if (answer.state.water) drawWater(answer.state.water);
+  } else {
+    clearGround();
+  }
+  // Drawn: the frame report starts over with the rebuilt world.
+  traceNewWorld(answer.state.t);
+  if (answer.joint_problems && answer.joint_problems.length)
+    say("bad", "Some joints would not hang: " + answer.joint_problems.join("; "));
+  remember("the room was rebuilt: " + (answer.did || []).join(", "));
+}
+
+// ---------------------------------------------------------------------------
+// A thing's actions
+// ---------------------------------------------------------------------------
+//
+// What the room's chat worked out a person does with a thing when it made it
+// (offer_actions in the MCP): each a label and a short program -- take hold of
+// a part, carry it somewhere, put it down, push it, heat it, stand it upright.
+// Shown in the actions box when the crosshair is on the thing, one per number
+// key. Pressing one asks the server to run the program on the room as it is:
+// the hand's steps in the running room with the hand's own strength, which
+// this page keeps running and draws, and a stand step as turn_object. No model
+// is asked. A step that cannot be done stops the action, with why.
+function actionsFor(name) {
+  return (world.actions || []).filter((action) => action.body === name);
+}
+
+async function runAction(name, index) {
+  const action = actionsFor(name)[index];
+  if (!action || world.asking || world.acting) return;
+  world.acting = true;
+  const waiting = waitingFor(`${action.label}: doing it`);
+  try {
+    const answer = await api("/api/world/action", { object: name, action: index,
+                                                     person: whereIAm() });
+    waiting.done();
+    const done = (answer.done || []).join(", ");
+    if (answer.refused) {
+      say("bad", `${action.label}: ${answer.refused}` + (done ? ` (done first: ${done})` : ""));
+    } else {
+      say("world", `${action.label}: ${done || "done"}.`, answer.did);
+    }
+    if (answer.reopened) adoptRebuilt(answer);
+  } catch (error) {
+    waiting.done();
+    say("bad", `${action.label}: ${error.message || error}`);
+  } finally { world.acting = false; }
+}
 
 $("reset").addEventListener("click", () => open());
 

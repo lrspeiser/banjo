@@ -1,5 +1,21 @@
 # Development status and handoff
 
+**A thing's actions: the room's chat works out what a person does with what it makes, and programs it.** Branch `agent/actions` from `6b454e6`. The owner asked that looking at a thing show all its options, with the model that made it providing them. Then: "it isn't just placement, the llm should look at the item and think what the user would need to do. a bow and arrow would have different actions than a chair, it needs to be asked what actions and given the ability to program the execution of it".
+
+The MCP's new `offer_actions` gives a thing up to nine actions, each a label and a program of up to 12 steps. Every step is something the engine already does: `stand` (turn_object), `take_hold` (the hand's 800 N grip, 73 kg at most), `carry_to` a place, `put_down`, `let_go`, `push` (for things on joints), `heat` and `wait`. A place is relative to the person when the key is pressed, or to another thing. Actions are checked when offered: the parts exist, a hand can move them, and the program ends with the hand empty. They are kept in the room's spec. Looking at the thing lists them first in the actions box, on the number keys. `POST /api/world/action` runs the program on the room as it is: the hand's steps are the running room's own operations while the page keeps the room going, and a stand step is turn_object, after which the room is opened again.
+
+Measured in the page on 8781, with everything built by the room's own chat:
+- Asked for "a small wooden table in front of me with a stool beside it", the chat gave the stool "Bring the stool to me" (take_hold, carry_to, put_down) and the 151 kg table "Push it closer" (push). offer_actions refused the table's take_hold, since it is over 73 kg, and a program that ended with the stool still held; the chat fixed both.
+- Pressing 1 on the stool moved it 1.48 m, to 0.8 m in front of the person, and set it on the floor.
+- Pressing 1 on the table moved it 0.00 m: the hand's 800 N cannot slide 151 kg of oak built as one block. The action now says so instead of claiming it pushed.
+
+This turned up three bugs, all fixed:
+- The chat filled every field of every step and retried six times. A step and a place now read only their kind's fields, and the rest is set aside (`not_read`).
+- The runner's hand operations named no session, so the room refused them all. The test stand-in now refuses them too.
+- After the chat answers, the cursor stays in the chat box, so a number typed then goes into the box until Esc.
+
+`tests/actions_tests.py` (16 tests) runs in CI with the library. Not yet built: a trial run of each program when it is offered (today it is checked, not run, until the key is pressed), and steps for joints, so an arrow cannot be nocked by an action. A bow's draw and loose are still its own controls.
+
 **The chat asks the model once more when an answer runs out, before telling the person it failed.** Branch `agent/chat-retry` from `6bcd2e9`. On Render, the first thing the owner asked for, "build a tower like the washington monument", failed: the model used its whole 6,000-token answer, reasoning included, in its first round. On 8781 the same request took 727 answer tokens over 3 rounds in the empty yard and 876 over 4 in the gates room, and none of the 37 turns logged on this machine went past 3,464. So the budget was not too small: one answer ran away.
 - An answer that stops at the token limit is now asked for once more, in the same round and with nothing of the unfinished answer kept. That is at most one extra request a turn, and only when it happens. The turn's log marks the round `asked_again`, and both answers count in its usage.
 - Two in a row still end the turn with the reason. An answer stopped for any other reason (a content filter, an error) is not asked for again.

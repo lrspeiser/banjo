@@ -32,6 +32,7 @@ import live_session
 import live_inprocess
 import world_chat
 import world_room
+import room_world
 import room_store
 import access_gate
 import scene_chat
@@ -1296,6 +1297,11 @@ class Handler(BaseHTTPRequestHandler):
                                          " screen is the last one. Ask for something to"
                                          " be added and it will be built.").strip()
                 return self.send(answer)
+            if path=="/api/world/action":
+                # One of a thing's actions (offer_actions), run step by step --
+                # no model is asked: the room's chat wrote the program when it
+                # made the thing. See run_action.
+                return self.send(run_action(self.server.app,body))
             if path=="/api/live/open":
                 opened=self.server.app.live.open(self.server.app,body)
                 # The lab page's stage now: the world page's room was closed by it.
@@ -1455,6 +1461,224 @@ def with_water(session,spec,ground_was):
     state=live_water(session,spec)
     if state is None: return spec
     return dict(spec,water=dict(spec.get("water") or {},state=state))
+
+
+# How far in front of the person a stand step puts a thing it sets "in_front".
+ACTION_AHEAD_M=1.2
+# How long a hand's stroke may take before the action says it did not get there.
+ACTION_STROKE_S=6.0
+
+
+def _live_body(app,name):
+    """A thing as the running room has it now: where it is, its sides, its turn."""
+    body=next((b for b in (app.live.session.state or {}).get("bodies",[]) if b.get("name")==name),None)
+    if body is None: raise ValueError(f"{name} is not in the room as it runs: it may have broken")
+    return body
+
+
+def _reach(body,direction):
+    """How far a box or a ball reaches from its middle along a direction,
+    turned as it is."""
+    dims=[float(v) for v in body.get("dimensions_m") or [0.0,0.0,0.0]]
+    if body.get("shape")=="sphere": return dims[0]/2.0
+    w,x,y,z=(float(v) for v in (body.get("orientation_wxyz") or [1.0,0.0,0.0,0.0]))
+    turn=[[1-2*(y*y+z*z),2*(x*y-w*z),2*(x*z+w*y)],
+          [2*(x*y+w*z),1-2*(x*x+z*z),2*(y*z-w*x)],
+          [2*(x*z-w*y),2*(y*z+w*x),1-2*(x*x+y*y)]]
+    return sum(abs(sum(turn[r][i]*direction[r] for r in range(3)))*dims[i]/2.0 for i in range(3))
+
+
+def _action_point(app,place,person,moving):
+    """Where a step takes the middle of what the hand moves, in the room as it
+    is now: in front of the person, on a thing, beside it on a side as the
+    person sees it (near is between it and them), or at an offset from it."""
+    mover=_live_body(app,moving)
+    here=[float(v) for v in mover.get("position_m") or [0.0,0.0,0.0]]
+    up=[0.0,1.0,0.0]
+    if "in_front_m" in place:
+        if person is None: raise ValueError("the page did not say where you are")
+        sx,sy,sz=person["standing_m"]
+        fx,_,fz=person["facing"]
+        ahead=float(place["in_front_m"])
+        y=sy+float(place["height_m"]) if "height_m" in place else sy+_reach(mover,up)+0.02
+        return [sx+ahead*fx,y,sz+ahead*fz]
+    other=_live_body(app,place.get("on") or place.get("beside") or place.get("from"))
+    at=[float(v) for v in other.get("position_m") or [0.0,0.0,0.0]]
+    if "on" in place:
+        return [at[0],at[1]+_reach(other,up)+_reach(mover,up)+0.02,at[2]]
+    if "from" in place:
+        return [at[k]+float(place["offset_m"][k]) for k in range(3)]
+    if person is None: raise ValueError("the page did not say where you are")
+    sx,_,sz=person["standing_m"]
+    fx,_,fz=person["facing"]
+    tx,tz=sx-at[0],sz-at[2]
+    size=math.hypot(tx,tz)
+    nx,nz=(tx/size,tz/size) if size>1e-6 else (-fx,-fz)
+    side=place.get("side","near")
+    if side=="far": nx,nz=-nx,-nz
+    elif side=="left": nx,nz=fz,-fx
+    elif side=="right": nx,nz=-fz,fx
+    way=[nx,0.0,nz]
+    out=_reach(other,way)+float(place.get("gap_m",0.3))+_reach(mover,way)
+    return [at[0]+nx*out,max(here[1],at[1]-_reach(other,up)+_reach(mover,up))+0.02,at[2]+nz*out]
+
+
+def _stroke_to(app,target,speed,start):
+    """Move what the hand holds to a point with the hand's own stroke, and wait
+    -- while the page keeps the room running -- for the engine to say how the
+    stroke ended: reached, blocked or gave up. The force is the hand's."""
+    app.live.act({"session":app.live.session.id,"op":"stroke","path":[list(start),list(target)],"speed_m_s":float(speed),
+                  "accel_m_s2":2.0,"lead_m":0.05,"let_go":False,"give_up_s":ACTION_STROKE_S})
+    began=time.monotonic()
+    started=False
+    while time.monotonic()-began<ACTION_STROKE_S+3.0:
+        hand=(app.live.session.state or {}).get("hand") or {}
+        if hand.get("stroking"): started=True
+        elif (started or time.monotonic()-began>0.5) and hand.get("stroke_ended"):
+            return str(hand["stroke_ended"])
+        time.sleep(0.03)
+    return "ran out of time"
+
+
+def _stand(app,room,name,step,person):
+    """A stand step: turn_object on the room as it is -- where the thing stands
+    in the running room, or in front of the person -- and then the room opened
+    again from what it has become. (None, why) when it could not stand there."""
+    session=app.live.session
+    args={"name":name,"stand":step["stand"]}
+    along=step.get("along")
+    if along in ("facing","across"):
+        if person is None: raise ValueError("the page did not say which way you face")
+        fx,_,fz=person["facing"]
+        args["along"]=[fx,0.0,fz] if along=="facing" else [fz,0.0,-fx]
+    elif along=="x": args["along"]=[1.0,0.0,0.0]
+    elif along=="z": args["along"]=[0.0,0.0,1.0]
+    if step.get("where")=="in_front":
+        if person is None: raise ValueError("the page did not say where you are")
+        sx,_,sz=person["standing_m"]
+        fx,_,fz=person["facing"]
+        args["at_m"]=[round(sx+ACTION_AHEAD_M*fx,3),round(sz+ACTION_AHEAD_M*fz,3)]
+    else:
+        at=_live_body(app,name).get("position_m") or [0.0,0.0,0.0]
+        args["at_m"]=[round(float(at[0]),3),round(float(at[2]),3)]
+    ground_was=json.dumps((room.spec.get("terrain") or {}).get("generate"),sort_keys=True)
+    world_id=room_world.open_room(room.spec,water_state=live_water(session,room.spec))
+    try:
+        answer=room_world.call(world_id,"turn_object",args)
+        if "error" in answer: return None,answer["error"]
+        room.spec=room_world.export_spec(room_world.entry_of(world_id))
+    finally:
+        room_world.close_room(world_id)
+    room_store.keep(app,room)
+    opened=app.live.open(app,{"spec":with_water(session,room.spec,ground_was)})
+    app.live_holder="world"
+    return opened,f"stood {name} {answer.get('stands')} on {answer.get('on')}"
+
+
+def run_action(app,body):
+    """One of a thing's actions, pressed on the page (POST /api/world/action).
+
+    An action is a short program the room's chat kept with the thing when it
+    made it (offer_actions), and it runs here step by step on the room as it is
+    NOW. The hand's steps go to the running room as the engine's own
+    operations -- a grip with the hand's 800 N, strokes, letting go, heat --
+    while the page keeps the room running and draws what they do. A stand step
+    is turn_object on the room, which is then opened again. A step that cannot
+    be done stops the action with why: the hand is opened if it held anything,
+    and what was done stays done."""
+    if app.live.session is None: raise ValueError("the room is not open")
+    if not isinstance(body,dict): raise ValueError("expected {object, action, person}")
+    room=app.room
+    name=str(body.get("object",""))[:200]
+    offered=[action for action in (room.spec.get("actions") or []) if action.get("body")==name]
+    try: index=int(body.get("action"))
+    except (TypeError,ValueError): raise ValueError("action is the number of one of the thing's actions, from 0") from None
+    if not 0<=index<len(offered): raise ValueError(f"{name or 'that'} has no action {index+1}")
+    action=offered[index]
+    person=world_chat.where_the_person_is(body.get("person"))
+    if ((app.live.session.state or {}).get("hand") or {}).get("holding"):
+        raise ValueError("put down what you are holding first: the action needs your hand")
+    done,opened,holding,problem=[],None,None,None
+    try:
+        for step in action["steps"]:
+            do=step["do"]
+            if do=="stand":
+                now,said=_stand(app,room,name,step,person)
+                if now is None:
+                    problem=said
+                    break
+                opened=now
+                done.append(said)
+            elif do=="take_hold":
+                part=step.get("part") or name
+                at=[float(v) for v in _live_body(app,part).get("position_m")]
+                app.live.act({"session":app.live.session.id,"op":"wield","name":part,"grip":at})
+                holding=part
+                done.append(f"took hold of {part}")
+            elif do=="carry_to":
+                target=_action_point(app,step["to"],person,holding)
+                here=[float(v) for v in _live_body(app,holding).get("position_m")]
+                ended=_stroke_to(app,target,step.get("speed_m_s",0.5),here)
+                if ended!="reached":
+                    problem=f"{holding} did not get there: the hand's stroke {ended}"
+                    break
+                done.append(f"carried {holding}")
+            elif do=="put_down":
+                # Lowered straight down until what is under it stops it.
+                here=[float(v) for v in _live_body(app,holding).get("position_m")]
+                _stroke_to(app,[here[0],here[1]-2.0,here[2]],0.4,here)
+                app.live.act({"session":app.live.session.id,"op":"release"})
+                done.append(f"put {holding} down")
+                holding=None
+            elif do=="let_go":
+                app.live.act({"session":app.live.session.id,"op":"release"})
+                done.append(f"let go of {holding}")
+                holding=None
+            elif do=="push":
+                part=step.get("part") or name
+                at=[float(v) for v in _live_body(app,part).get("position_m")]
+                toward=_action_point(app,step["toward"],person,part)
+                way=[toward[k]-at[k] for k in range(3)]
+                size=math.sqrt(sum(v*v for v in way))
+                if size<1e-6:
+                    problem=f"{part} is already there"
+                    break
+                end=[at[k]+way[k]/size*min(float(step.get("distance_m",0.3)),size) for k in range(3)]
+                app.live.act({"session":app.live.session.id,"op":"wield","name":part,"grip":at})
+                holding=part
+                ended=_stroke_to(app,end,step.get("speed_m_s",0.4),at)
+                app.live.act({"session":app.live.session.id,"op":"release"})
+                holding=None
+                # Said by how far it went, not by what was asked: a 151 kg oak
+                # table the chat built as one block did not move at all under
+                # the hand's 800 N, and the action said "pushed" all the same.
+                now=[float(v) for v in _live_body(app,part).get("position_m")]
+                moved=math.sqrt(sum((now[k]-at[k])**2 for k in range(3)))
+                if moved<0.02:
+                    problem=(f"{part} did not move: the hand's 800 N could not push it"
+                             if ended in ("gave up","ran out of time")
+                             else f"{part} did not move: something is in its way")
+                    break
+                done.append(f"pushed {part} {moved:.2f} m"
+                            +("" if ended=="reached" else ", until something stopped it"))
+            elif do=="heat":
+                part=step.get("part") or name
+                app.live.act({"session":app.live.session.id,"op":"heat","target":part,"power_w":float(step.get("power_w",2000.0)),
+                              "seconds":float(step.get("seconds",10.0))})
+                done.append(f"heating {part}")
+            elif do=="wait":
+                time.sleep(float(step.get("seconds",1.0)))
+                done.append(f"waited {float(step.get('seconds',1.0)):g} s")
+    except ValueError as failure:
+        problem=str(failure)
+    if holding:
+        try: app.live.act({"session":app.live.session.id,"op":"release"})
+        except ValueError: pass
+    said={"action":action["label"],"done":done}
+    if problem: said["refused"]=problem
+    else: said["did"]=[action["label"]]
+    if opened is not None: said.update(reopened=True,session=opened["session"],state=opened)
+    return said
 
 
 # As many as a room's terrain may hold; see fracture_lab.normalise_terrain.

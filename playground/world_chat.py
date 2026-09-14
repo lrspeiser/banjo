@@ -124,6 +124,23 @@ heavy for their hand. Heavier than 73 kg they can carry it but not turn it by
 hand -- add_object's answer says too_heavy_for_a_hand -- so say so, and turn it
 for them with turn_object when they ask.
 
+ACTIONS. Whenever you make something, work out what a person would DO with it,
+and give it those actions with offer_actions in the same turn: each a label and
+a short program the room runs when they look at the thing and press its number
+key. Think about what it is for, not only where it goes. A chair: "Pull it out"
+(take_hold it, carry_to beside the table on the near side with gap_m 0.4,
+put_down) and "Push it in" (the same with gap_m 0.05). A door or a gate on a
+hinge: "Push it open" (push it toward a place beyond it). A beam or a pillar:
+"Stand it upright" (stand upright) and "Lay it where I'm facing" (stand lying,
+along facing). A pot or a log: "Heat it" (heat). Anything loose: "Bring it to
+me" (take_hold, carry_to a place of kind in_front with in_front_m 0.8 and
+height_m 1.0, put_down). A hand takes hold of up to 73 kg: a heavier thing, like
+a big table, is pushed ("Slide it closer": push it toward a place of kind
+in_front) or stood, never taken hold of. Give each step only the fields its kind
+uses -- a take_hold step has only part -- and every place its kind. Every
+program ends with the hand empty. Say in your answer that they can look at the
+thing and press 1, 2, 3. What already has actions is in actions_offered.
+
 AT AN ANGLE. A ramp, a leaning plank -- anything not square to the room -- is
 one object with rotation_deg [x, y, z] in degrees. On its own, x leans it about
 its x side, y turns it about the vertical and z tilts its x side up. Together
@@ -782,6 +799,9 @@ def _did(name: str, args: dict[str, Any], answer: dict[str, Any]) -> str:
         at = answer.get("at_m") or []
         return (f"stood {answer.get('turned')} {answer.get('stands')}"
                 + (f" at [{at[0]:.2f}, {at[2]:.2f}]" if len(at) == 3 else ""))
+    if name == "offer_actions":
+        return (f"gave {answer.get('offered')} {len(answer.get('actions') or [])} actions "
+                f"on the number keys")
     if name == "clear_world":
         return "cleared the room"
     if name == "drop":
@@ -975,6 +995,11 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
         if entry.get("interactions"):
             opening["things_a_person_uses"] = [room_world.banjo_mcp._use_said(p)
                                                for p in entry["interactions"]]
+        # And the actions already given to things in it (offer_actions), so a
+        # thing is not given the same ones again.
+        if entry.get("actions"):
+            opening["actions_offered"] = {name: [action["label"] for action in actions]
+                                          for name, actions in entry["actions"].items()}
         # Where the person is: what "near me" and "over there" refer to. A
         # model that cannot see the room has no other way to know.
         person = where_the_person_is(person)

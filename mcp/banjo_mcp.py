@@ -1350,6 +1350,297 @@ def tool_turn_object(args: dict[str, Any]) -> dict[str, Any]:
     return answer
 
 
+# ---------------------------------------------------------------------------
+# A thing's actions: what a person does with it, one key each
+# ---------------------------------------------------------------------------
+#
+# The owner, 2026-09-13: looking at a thing shows all your options, and the
+# model making it works out what a person would need to do with it -- "a bow
+# and arrow would have different actions than a chair" -- and is "given the
+# ability to program the execution of it". So whoever makes a thing offers its
+# actions: each a label and a short program of steps, every step something the
+# engine already does. The room shows them when the person looks at the thing,
+# one per number key, and runs the program when the key is pressed: the hand's
+# steps in the running room with the hand's own bounded strength, a stand step
+# as turn_object with all of its checks. Nothing here moves anything: what
+# happens is the engine's answer when the key is pressed.
+
+MAX_ACTIONS = 9             # one per number key
+MAX_STEPS = 12
+ACTION_LABEL_CHARS = 60
+ACTION_STEPS = ("stand", "take_hold", "carry_to", "put_down", "let_go", "push", "heat", "wait")
+ACTION_ALONG = ("facing", "across", "x", "z")
+ACTION_WHERE = ("here", "in_front")
+ACTION_SIDES = ("near", "far", "left", "right")
+# Where a step takes the hand, as the model is told it.
+ACTION_PLACE = {
+    "type": "object", "required": ["kind"],
+    "description": "Where the hand goes. kind says which, and only that kind's fields are "
+                   "read: in_front -- in_front_m metres in front of the person when the key "
+                   "is pressed, with height_m above the ground there (or resting on it); on "
+                   "-- a thing to put it on top of; beside -- a thing to put it next to, with "
+                   "side near (between it and the person), far, left or right as the person "
+                   "sees it, and gap_m; from -- a thing, with offset_m [dx, dy, dz] from its "
+                   "middle.",
+    "properties": {"kind": {"type": "string", "enum": ["in_front", "on", "beside", "from"]},
+                   "in_front_m": {"type": "number"}, "height_m": {"type": "number"},
+                   "on": {"type": "string"}, "beside": {"type": "string"},
+                   "side": {"type": "string", "enum": list(ACTION_SIDES)},
+                   "gap_m": {"type": "number"}, "from": {"type": "string"},
+                   "offset_m": {"type": "array", "items": {"type": "number"},
+                                "minItems": 3, "maxItems": 3}}}
+
+
+def _action_number(value: Any, what: str, low: float, high: float,
+                   default: float | None = None) -> float:
+    if value is None:
+        if default is None:
+            raise Refused(f"{what} is needed")
+        return default
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise Refused(f"{what} is a number from {low:g} to {high:g}") from None
+    if not (math.isfinite(number) and low <= number <= high):
+        raise Refused(f"{what} is from {low:g} to {high:g}, not {value!r}")
+    return number
+
+
+# What each kind of step, and each kind of place, reads. The room's chat fills
+# every field it is shown -- a pick was sent a bow's fields made of its own
+# parts, 2026-09-13 ([[banjo-chat-fills-every-field]]) -- and answers a refusal
+# by changing values, never by leaving any out: offered a table and a stool, it
+# sent every step every field six times over and gave up. So a step reads only
+# its kind's fields and a place only its kind's, and the rest is set aside and
+# said, as the interaction profiles do.
+STEP_FIELDS = {"stand": ("stand", "along", "where"), "take_hold": ("part",),
+               "carry_to": ("to", "speed_m_s"), "put_down": (), "let_go": (),
+               "push": ("part", "toward", "distance_m", "speed_m_s"),
+               "heat": ("part", "power_w", "seconds"), "wait": ("seconds",)}
+PLACE_FIELDS = {"in_front": ("in_front_m", "height_m"), "on": ("on",),
+                "beside": ("beside", "side", "gap_m"), "from": ("from", "offset_m")}
+
+
+def _given(value: Any) -> bool:
+    return value not in (None, "", [], {})
+
+
+def _action_place(place: Any, where: str, names: set[str], aside: list[str]) -> dict[str, Any]:
+    """A place a step takes the hand to, in the form it is kept in. Its kind
+    says which fields are read; without a kind, exactly one kind may be given."""
+    if not isinstance(place, dict):
+        raise Refused(f"{where}: a place is {{kind, ...}}, kind in_front, on, beside or from")
+    kind = place.get("kind")
+    if _given(kind):
+        kind = str(kind).strip().lower()
+        if kind not in PLACE_FIELDS:
+            raise Refused(f"{where}: kind is one of {', '.join(PLACE_FIELDS)}, not {kind!r}")
+    else:
+        present = [k for k in ("in_front_m", "on", "beside", "from") if _given(place.get(k))]
+        if len(present) != 1:
+            raise Refused(f"{where}: say which kind of place it is -- kind in_front, on, beside "
+                          f"or from -- since {' and '.join(present) or 'none of them'} "
+                          f"{'was' if len(present) == 1 else 'were'} given")
+        kind = "in_front" if present[0] == "in_front_m" else present[0]
+    extra = sorted(k for k, v in place.items()
+                   if k != "kind" and k not in PLACE_FIELDS[kind] and _given(v))
+    if extra:
+        aside.append(f"{where}: {', '.join(extra)} (a place {kind} has none)")
+    if kind == "in_front":
+        out: dict[str, Any] = {"kind": kind, "in_front_m": _action_number(
+            place.get("in_front_m"), f"{where}: in_front_m", 0.3, 3.0)}
+        if _given(place.get("height_m")):
+            out["height_m"] = _action_number(place["height_m"], f"{where}: height_m", 0.0, 2.5)
+        return out
+    other = str(place.get(kind) or "")
+    if other not in names:
+        raise Refused(f"{where}: there is nothing called {other!r}")
+    if kind == "on":
+        return {"kind": kind, "on": other}
+    if kind == "beside":
+        side = str(place.get("side") or "near").strip().lower()
+        if side not in ACTION_SIDES:
+            raise Refused(f"{where}: side is one of {', '.join(ACTION_SIDES)}, as the person "
+                          f"sees it")
+        return {"kind": kind, "beside": other, "side": side,
+                "gap_m": _action_number(place.get("gap_m"), f"{where}: gap_m", 0.0, 2.0, 0.3)}
+    offset = place.get("offset_m")
+    if not isinstance(offset, (list, tuple)) or len(offset) != 3:
+        raise Refused(f"{where}: from needs offset_m, [dx, dy, dz] in metres")
+    return {"kind": kind, "from": other,
+            "offset_m": [_action_number(v, f"{where}: offset_m", -5.0, 5.0) for v in offset]}
+
+
+def _masses(entry: dict[str, Any]) -> dict[str, float]:
+    """What each thing weighs, as the engine has it."""
+    if entry.get("world") is None:
+        return {}
+    return {o["name"]: float(o.get("mass_kg") or 0.0) for o in _describe(entry["world"])}
+
+
+def _unturnable(entry: dict[str, Any], body: dict[str, Any]) -> str | None:
+    """Why turn_object could never turn this thing, or None: what would make
+    every set-up offered for it a refusal."""
+    name = body["name"]
+    if body["shape"] != "box":
+        return f"{name} is a ball: it has no long side to stand it on"
+    if _held_by(entry, name):
+        return f"{name} is held by a joint, and a joint is made at fixed points"
+    if body.get("join"):
+        return f"{name} is built into one piece with everything joined as {body['join']!r}"
+    if any(b.get("body") == name for b in entry["scene"].get("blades") or []):
+        return f"{name} has an edge: it is held by its grip, with wield"
+    if any(p.get("body") == name for p in entry["scene"].get("tool_points") or []):
+        return f"{name} has a point that digs: it is held by its grip, with wield"
+    dims = [float(v) for v in body["dimensions_m"]]
+    if max(dims) - min(dims) < 1e-6:
+        return f"{name} is a cube: it stands the same whichever way up it is"
+    return None
+
+
+def _action_checked(entry: dict[str, Any], name: str, action: Any, names: set[str],
+                    masses: dict[str, float], aside: list[str]) -> dict[str, Any]:
+    """One action in the form it is kept in, or Refused with why. Checked the
+    way the room will run it: the hand holds one thing at a time, and the
+    person's hand is free again when the program ends."""
+    if not isinstance(action, dict):
+        raise Refused("each action is {label, steps}")
+    label = " ".join(str(action.get("label") or "").split())
+    if not label or len(label) > ACTION_LABEL_CHARS:
+        raise Refused(f"each action needs a label of at most {ACTION_LABEL_CHARS} characters, "
+                      f"the way a person would say it: {label[:80]!r}")
+    steps = action.get("steps")
+    if not isinstance(steps, list) or not 1 <= len(steps) <= MAX_STEPS:
+        raise Refused(f"{label!r}: steps is a list of 1 to {MAX_STEPS} steps")
+    body = next(b for b in entry["scene"]["bodies"] if b["name"] == name)
+    holding: str | None = None
+    kept: list[dict[str, Any]] = []
+    for i, step in enumerate(steps):
+        where = f"{label!r} step {i + 1}"
+        if not isinstance(step, dict):
+            raise Refused(f"{where}: a step is {{do, ...}}")
+        do = str(step.get("do") or "").strip().lower()
+        if do not in ACTION_STEPS:
+            raise Refused(f"{where}: do is one of {', '.join(ACTION_STEPS)}, not {do!r}")
+        part = str(step.get("part") or name) if do in ("take_hold", "push", "heat") else name
+        if do in ("take_hold", "push", "heat") and part not in names:
+            raise Refused(f"{where}: there is nothing called {part!r}")
+        extra = {k for k, v in step.items() if k != "do" and k not in STEP_FIELDS[do] and _given(v)}
+        if (do == "stand" and str(step.get("stand") or "upright").strip().lower() != "lying"
+                and _given(step.get("along"))):
+            extra.add("along")      # upright, its long side is vertical: no way along
+        if extra:
+            aside.append(f"{where}: {', '.join(sorted(extra))} (a {do} step has none)")
+        out: dict[str, Any] = {"do": do}
+        if do == "stand":
+            if holding:
+                raise Refused(f"{where}: stand is not done with {holding} in the hand: "
+                              f"put_down or let_go first")
+            why = _unturnable(entry, body)
+            if why:
+                raise Refused(f"{where}: {why}")
+            stand = str(step.get("stand") or "upright").strip().lower()
+            if stand not in ("upright", "lying"):
+                raise Refused(f"{where}: stand is 'upright' or 'lying', not {stand!r}")
+            out["stand"] = stand
+            if stand == "lying" and _given(step.get("along")):
+                along = str(step["along"]).strip().lower()
+                if along not in ACTION_ALONG:
+                    raise Refused(f"{where}: along is one of {', '.join(ACTION_ALONG)}, not "
+                                  f"{along!r}")
+                out["along"] = along
+            place = str(step.get("where") or "here").strip().lower()
+            if place not in ACTION_WHERE:
+                raise Refused(f"{where}: where is 'here' or 'in_front', not {place!r}")
+            out["where"] = place
+        elif do in ("take_hold", "push"):
+            if holding:
+                raise Refused(f"{where}: the hand already has {holding}: put_down or let_go "
+                              f"first")
+            target = next(b for b in entry["scene"]["bodies"] if b["name"] == part)
+            if target.get("anchored"):
+                raise Refused(f"{where}: {part} is fixed in place, and a hand cannot move it")
+            kg = masses.get(part)
+            if do == "take_hold" and kg is not None and kg > HAND_LIFTS_KG:
+                raise Refused(f"{where}: {part} weighs {kg:.0f} kg, more than the "
+                              f"{HAND_LIFTS_KG:.0f} kg a hand can hold up: give it a stand "
+                              f"step instead")
+            out["part"] = part
+            if do == "take_hold":
+                holding = part
+            else:
+                out["toward"] = _action_place(step.get("toward"), where, names, aside)
+                out["distance_m"] = _action_number(step.get("distance_m"),
+                                                   f"{where}: distance_m", 0.05, 1.5, 0.3)
+                out["speed_m_s"] = _action_number(step.get("speed_m_s"),
+                                                  f"{where}: speed_m_s", 0.1, 1.5, 0.4)
+        elif do == "carry_to":
+            if not holding:
+                raise Refused(f"{where}: carry_to needs something in the hand: take_hold first")
+            out["to"] = _action_place(step.get("to"), where, names, aside)
+            out["speed_m_s"] = _action_number(step.get("speed_m_s"),
+                                              f"{where}: speed_m_s", 0.1, 1.5, 0.5)
+        elif do in ("put_down", "let_go"):
+            if not holding:
+                raise Refused(f"{where}: {do} needs something in the hand")
+            holding = None
+        elif do == "heat":
+            out["part"] = part
+            out["power_w"] = _action_number(step.get("power_w"), f"{where}: power_w",
+                                            100.0, 10000.0, 2000.0)
+            out["seconds"] = _action_number(step.get("seconds"), f"{where}: seconds",
+                                            1.0, 60.0, 10.0)
+        elif do == "wait":
+            out["seconds"] = _action_number(step.get("seconds"), f"{where}: seconds",
+                                            0.1, 10.0, 1.0)
+        kept.append(out)
+    if holding:
+        raise Refused(f"{label!r} ends with {holding} still in the hand: end it with put_down "
+                      f"or let_go, so the person's hand is free")
+    return {"label": label, "steps": kept}
+
+
+def tool_offer_actions(args: dict[str, Any]) -> dict[str, Any]:
+    """Give a thing the actions a person takes with it, kept with it (above)."""
+    world_id = str(args.get("world_id"))
+    entry = _world(world_id)
+    name = str(args.get("name", ""))
+    if not any(b["name"] == name for b in entry["scene"]["bodies"]):
+        raise Refused(f"there is nothing called {name!r} in this world")
+    actions = args.get("actions")
+    if not isinstance(actions, list):
+        raise Refused("actions is a list, [{label, steps: [...]}, ...]; an empty list takes "
+                      "a thing's actions away")
+    if len(actions) > MAX_ACTIONS:
+        raise Refused(f"at most {MAX_ACTIONS} actions, one per number key: {len(actions)} "
+                      f"were given")
+    names = {b["name"] for b in entry["scene"]["bodies"]}
+    masses = _masses(entry) if actions else {}
+    aside: list[str] = []
+    kept = [_action_checked(entry, name, action, names, masses, aside) for action in actions]
+    labels = [action["label"].lower() for action in kept]
+    if len(set(labels)) != len(labels):
+        raise Refused("two actions have the same label, and the person has to be able to "
+                      "tell them apart. Nothing was changed.")
+    offered = {k: v for k, v in (entry.get("actions") or {}).items() if k != name}
+    if kept:
+        offered[name] = kept
+    entry["actions"] = offered
+    entry["story"].append(f"offered {len(kept)} action(s) for {name}")
+    answer: dict[str, Any] = {
+        "offered": name,
+        "actions": [{"key": i + 1, **action} for i, action in enumerate(kept)],
+        "note": "Shown when the person looks at it, one per number key. Each program runs "
+                "when its key is pressed: the hand's steps in the running room with the "
+                "hand's own 800 N, a stand step as turn_object with all its checks. What "
+                "happens is the engine's answer then, and a step that cannot be done stops "
+                "the action with why."}
+    if aside:
+        answer["not_read"] = ("; ".join(aside) + ". Set aside: a step reads only its own "
+                              "kind's fields, and a place only its kind's.")
+    return answer
+
+
 def tool_clear_world(args: dict[str, Any]) -> dict[str, Any]:
     """Empty a world of everything, joints and all, to build it again."""
     entry = _world(args.get("world_id"))
@@ -1368,6 +1659,8 @@ def tool_clear_world(args: dict[str, Any]) -> dict[str, Any]:
             {"object": p["object"], "why": "the world was cleared"}
             for p in entry["interactions"])
         entry["interactions"] = []
+    # Nor anything left to do anything with.
+    entry.pop("actions", None)
     entry["world"] = None
     if old is not None:
         old.close()
@@ -4343,6 +4636,60 @@ TOOLS = [
          "along": dict(VECTOR, description="Lying only: the level direction its longest "
                                            "side runs, like [1, 0, 0]. Left out, the way it "
                                            "runs now.")}}},
+    {"name": "offer_actions",
+     "description": "Give an object you made the actions a person would take with it: each "
+                    "a label and a short program the room runs when they look at the object "
+                    "and press its number key. Think about what the thing is FOR. A chair is "
+                    "pulled out from its table and pushed back in; a door is pushed open and "
+                    "shut; a beam is stood upright or laid where you face; a pot is heated; "
+                    "anything loose can be brought to the person. Every step is something the "
+                    "engine does: stand (turn_object, with all its checks), take_hold (the "
+                    "hand grips a part with its own 800 N -- at most 73 kg), carry_to a place, "
+                    "put_down (lowered onto what is under it and let go), let_go, push a part "
+                    "a distance toward a place (for things on joints: a door, a gate, a "
+                    "lever), heat a part, and wait. A place is relative to the person when the "
+                    "key is pressed (in_front_m) or to a thing (on, beside with a side as the "
+                    "person sees it, from with an offset). A program ends with the hand "
+                    "empty. Each step reads only the fields of its kind, and each place only "
+                    "those of its kind. Checked when offered -- the parts exist, a hand can "
+                    "move them -- "
+                    "and done for real when pressed, where everything is then: a step that "
+                    "cannot be done stops the action, with why. At most 9 actions; calling it "
+                    "again replaces an object's actions, and an empty list takes them away.",
+     "inputSchema": {"type": "object", "required": ["world_id", "name", "actions"], "properties": {
+         "world_id": {"type": "string"}, "name": {"type": "string"},
+         "actions": {"type": "array", "maxItems": MAX_ACTIONS, "items": {
+             "type": "object", "required": ["label", "steps"], "properties": {
+                 "label": {"type": "string",
+                           "description": "What the person reads beside the key, like \"Pull "
+                                          "it out from the table\": at most 60 characters."},
+                 "steps": {"type": "array", "minItems": 1, "maxItems": MAX_STEPS, "items": {
+                     "type": "object", "required": ["do"], "properties": {
+                         "do": {"type": "string", "enum": list(ACTION_STEPS)},
+                         "part": {"type": "string",
+                                  "description": "take_hold, push, heat: which thing; the "
+                                                 "object itself when left out."},
+                         "stand": {"type": "string", "enum": ["upright", "lying"],
+                                   "description": "stand: as turn_object."},
+                         "along": {"type": "string", "enum": list(ACTION_ALONG),
+                                   "description": "stand lying: facing -- where the person "
+                                                  "faces when they press the key; across -- "
+                                                  "square to that; or the room's x or z."},
+                         "where": {"type": "string", "enum": list(ACTION_WHERE),
+                                   "description": "stand: here (where it is then) or "
+                                                  "in_front (1.2 m in front of the person)."},
+                         "to": dict(ACTION_PLACE, description="carry_to: "
+                                    + ACTION_PLACE["description"]),
+                         "toward": dict(ACTION_PLACE, description="push: the way to push, "
+                                        "toward this place. " + ACTION_PLACE["description"]),
+                         "distance_m": {"type": "number",
+                                        "description": "push: how far, 0.05 to 1.5 m."},
+                         "speed_m_s": {"type": "number",
+                                       "description": "carry_to, push: how fast the hand "
+                                                      "goes, 0.1 to 1.5 m/s."},
+                         "power_w": {"type": "number", "description": "heat: 100 to 10,000 W."},
+                         "seconds": {"type": "number",
+                                     "description": "heat: 1 to 60 s; wait: 0.1 to 10 s."}}}}}}}}}},
     {"name": "clear_world",
      "description": "Take everything out of a world, joints and all, to build it "
                     "again from nothing. The world stays open under the same id; "
@@ -5302,6 +5649,7 @@ HANDLERS = {
     "remove_object": tool_remove_object,
     "move_object": tool_move_object,
     "turn_object": tool_turn_object,
+    "offer_actions": tool_offer_actions,
     "clear_world": tool_clear_world,
     "pick_up": tool_pick_up,
     "place": tool_place,

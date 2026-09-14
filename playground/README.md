@@ -181,6 +181,17 @@ There is one live world, so the lab page leaves the room on /world be: loaded
 while that room is open (`world_room_open` in `/api/status`), its stage waits
 until someone on the lab page presses Restart the scene.
 
+**A thing's actions.** When the room's chat makes something, it works out what
+a person would do with it and programs those actions (the MCP's
+`offer_actions`). A chair gets "Pull it out" and "Push it in", a door "Push it
+open", and a beam "Stand it upright" and "Lay it where I'm facing". Each program
+is made of steps the engine does: take hold of a part, carry it to a place, put
+it down, push it, heat it, wait, or stand it up. Looking at the thing lists its
+actions at the top of the actions box, one per number key. Pressing one runs the
+program on the room as it is (`POST /api/world/action`). The hand's steps act in
+the running room with the hand's own strength, so you watch them happen, and no
+model is asked.
+
 The chat tries what it built before it answers — in its own copy of the world it
 can pick things up, pull on them and let time pass — and every turn is logged
 with the calls it made and anything that was refused, one file per turn under
@@ -385,6 +396,7 @@ page from outside it.
 | `POST /api/jobs/{id}/open` | Open `{case_index}` in the native studio |
 | `POST /api/world/open` | Open the room on /world: `{scene}` (one of the rooms above) or `{qa: "<run>/<case>-<trial>"}` (a saved QA build); `fresh: true` builds it again from scratch |
 | `POST /api/world/ask` | One chat turn in the open room: `{message, story, person}` — `person` is where you are (`standing_m`, `eyes_m`, `facing`, `looking_at`, `looking_at_m`), checked and passed to the chat as `the_person`; a room the chat changed is opened again from what it left |
+| `POST /api/world/action` | Press one of a thing's actions: `{object, action, person}`, with `action` counted from 0. Runs its program on the room as it is: the hand's steps in the running room, and a stand step as `turn_object`, after which the room is opened again. Answers `{action, done, did}` (plus `reopened, session, state` after a stand), or `{action, done, refused}`, in which case the hand has been opened and what was done stays done. No model is asked |
 | `POST /api/live/open` | Open a live world from `{spec}`: the lab page's stage. There is one live world at a time, so this closes the room on /world |
 | `POST /api/live/act` | Step the open room, or take hold of, move, let go of or heat something in it. In a room with ground: `dig` and `deposit` change it (and are kept, so a reopened room still has them), `survey` says what is at a point, `discharge` sets the river, and `environment`, `environment_state` and `terrain` read the ground and the water |
 

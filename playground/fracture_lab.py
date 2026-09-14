@@ -110,6 +110,11 @@ DEFAULT: dict[str, Any] = {
     # which part the hand takes, which joint lets go. Never a speed: what an
     # object does is the engine's answer. docs/interaction-profiles.md.
     "interactions": [],
+    # The actions offered for its things (offer_actions): each a label and a
+    # short program the room runs when the person presses its number key. Part
+    # of the DOCUMENT, like the edges, so a saved room keeps them; never a pose
+    # or a speed -- what happens is the engine's answer when the key is pressed.
+    "actions": [],
     "striker": "iron",
     "plate_m": [0.25, 0.20, 0.01],
     "cell_m": 0.01,
@@ -668,6 +673,68 @@ def normalise_tool_points(points: Any, bodies: list[dict[str, Any]]) -> list[dic
 # The interaction templates the page knows how to drive. A profile names one;
 # the controls are the page's and what happens is the engine's.
 INTERACTION_TEMPLATES = interaction_profiles.TEMPLATES
+
+
+ACTION_STEPS = ("stand", "take_hold", "carry_to", "put_down", "let_go", "push", "heat", "wait")
+ACTION_STEP_FIELDS = {"do", "part", "stand", "along", "where", "to", "toward", "distance_m",
+                      "speed_m_s", "power_w", "seconds"}
+ACTION_PLACE_FIELDS = {"kind", "in_front_m", "height_m", "on", "beside", "side", "gap_m",
+                       "from", "offset_m"}
+
+
+def normalise_actions(actions: Any, bodies: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Check the actions offered for a room's things (see DEFAULT["actions"]).
+
+    Their shape, as the MCP's offer_actions keeps them, checked where a saved
+    room is read back: each for a thing in the room, with a label, one to twelve
+    steps of known kinds, and every thing a step names still in the room.
+    Whether a hand can move what a step names is the MCP's to say when they are
+    offered, and the engine's when a key is pressed. At most nine for a thing,
+    one per number key."""
+    if not isinstance(actions, list):
+        raise ValueError("actions must be a list")
+    named = {str(body.get("name", "")) for body in bodies}
+    out: list[dict[str, Any]] = []
+    per_body: dict[str, int] = {}
+    for i, action in enumerate(actions):
+        if not isinstance(action, dict):
+            raise ValueError(f"action {i} must be an object")
+        unknown = set(action) - {"body", "label", "steps"}
+        if unknown:
+            raise ValueError(f"action {i} cannot say {sorted(unknown)}")
+        body = str(action.get("body", ""))
+        if body not in named:
+            raise ValueError(f"action {i} is for {body!r}, and there is nothing called that")
+        label = " ".join(str(action.get("label") or "").split())
+        if not label or len(label) > 60:
+            raise ValueError(f"action {i} needs a label of at most 60 characters")
+        steps = action.get("steps")
+        if not isinstance(steps, list) or not 1 <= len(steps) <= 12:
+            raise ValueError(f"action {i} needs 1 to 12 steps")
+        for j, step in enumerate(steps):
+            if not isinstance(step, dict) or step.get("do") not in ACTION_STEPS:
+                raise ValueError(f"action {i} step {j + 1}: do must be one of {list(ACTION_STEPS)}")
+            unknown = set(step) - ACTION_STEP_FIELDS
+            if unknown:
+                raise ValueError(f"action {i} step {j + 1} cannot say {sorted(unknown)}")
+            if "part" in step and str(step["part"]) not in named:
+                raise ValueError(f"action {i} step {j + 1} names {step['part']!r}, and there "
+                                 f"is nothing called that")
+            for key in ("to", "toward"):
+                place = step.get(key)
+                if place is None:
+                    continue
+                if not isinstance(place, dict) or set(place) - ACTION_PLACE_FIELDS:
+                    raise ValueError(f"action {i} step {j + 1}: {key} is a place")
+                for ref in ("on", "beside", "from"):
+                    if ref in place and str(place[ref]) not in named:
+                        raise ValueError(f"action {i} step {j + 1}: {key} names "
+                                         f"{place[ref]!r}, and there is nothing called that")
+        per_body[body] = per_body.get(body, 0) + 1
+        if per_body[body] > 9:
+            raise ValueError(f"{body} is offered more than 9 actions, one per number key")
+        out.append({"body": body, "label": label, "steps": [dict(step) for step in steps]})
+    return out
 
 
 def normalise_interactions(profiles: Any, bodies: list[dict[str, Any]],
@@ -1491,6 +1558,7 @@ def validate(spec: Any) -> dict[str, Any]:
         result["interactions"] = normalise_interactions(result.get("interactions") or [],
                                                         result["bodies"], result["joints"],
                                                         result["tool_points"])
+        result["actions"] = normalise_actions(result.get("actions") or [], result["bodies"])
         result["duration_s"] = _number(result["duration_s"], LIMITS["duration_s"]["min"],
                                        LIMITS["duration_s"]["max"], "duration")
         result["seated"] = seat_bodies(result["bodies"], result["cell_m"])

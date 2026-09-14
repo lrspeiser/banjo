@@ -71,6 +71,9 @@ AUTHORING = {"add_object", "remove_object", "move_object", "turn_object", "clear
              # How a person uses a thing is part of what the room IS: the page
              # gives a bow its controls from it. And a copy of a thing is things.
              "interaction", "duplicate",
+             # And the actions a thing is given: the page puts them on the
+             # number keys from it.
+             "offer_actions",
              # The ground and the water are part of what the room IS: a trench
              # dug, a block cut, a river turned up.
              "make_terrain", "dig", "fill", "cut_block", "set_river",
@@ -217,6 +220,20 @@ _PASSED = ("join", "rotation_deg", "subtract", "roll", "color_rgba", "contents",
            "temperature_k")
 
 
+def _names_in(action: dict[str, Any]) -> set[str]:
+    """Every thing an action's steps name: what the hand takes, and where it goes."""
+    named: set[str] = set()
+    for step in action.get("steps") or []:
+        if step.get("part"):
+            named.add(str(step["part"]))
+        for key in ("to", "toward"):
+            place = step.get(key) or {}
+            for ref in ("on", "beside", "from"):
+                if place.get(ref):
+                    named.add(str(place[ref]))
+    return named
+
+
 def export_spec(entry: dict[str, Any], scene: dict[str, Any] | None = None,
                 joints: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """The MCP world as the room spec the live session is opened from."""
@@ -267,6 +284,14 @@ def export_spec(entry: dict[str, Any], scene: dict[str, Any] | None = None,
         uses.append(room_profile(profile))
     if uses:
         spec["interactions"] = uses
+    # The actions offered for its things (offer_actions), for as long as each
+    # thing -- and everything its steps name -- is still there. Whether one can
+    # still be done is the engine's to say when its key is pressed.
+    offered = [{"body": name, **action}
+               for name, actions in (entry.get("actions") or {}).items() if name in names
+               for action in actions if _names_in(action) <= names]
+    if offered:
+        spec["actions"] = offered
     # The ground as it was made and every edit since, and the rivers. Water
     # carried from a running world is never part of what the room IS: it is
     # handed to the one open at the moment it is reopened, and no further.
@@ -380,6 +405,20 @@ def open_room(spec: dict[str, Any], water_state: dict[str, Any] | None = None) -
         for profile in validated.get("interactions", []):
             banjo_mcp.HANDLERS["interaction"]({"world_id": world_id, "trial": False,
                                                 **mcp_profile(profile)})
+        # And the actions offered for its things, through the MCP's own call. A
+        # room opens on every turn, so a thing's actions that no longer check --
+        # it has since been anchored or joined to another, say -- are left out
+        # rather than refusing the room.
+        offered: dict[str, list[dict[str, Any]]] = {}
+        for action in validated.get("actions", []):
+            offered.setdefault(action["body"], []).append(
+                {k: v for k, v in action.items() if k != "body"})
+        for body_name, actions in offered.items():
+            try:
+                banjo_mcp.HANDLERS["offer_actions"]({"world_id": world_id, "name": body_name,
+                                                     "actions": actions})
+            except banjo_mcp.Refused:
+                continue
     except Exception:
         close_room(world_id)
         raise
