@@ -112,6 +112,30 @@
     <ul id="actions-list"></ul>
     <p id="actions-tip" hidden></p>
   </section>
+  <!-- The workbench: the lab's recorded runs, played back as a small copy on a
+       bench in front of you while the room goes on (the owner: recorded runs
+       play "on a bench in front of you"). K opens it. The list and the controls
+       are world.js's; the bench and the run on it are workbench.js's. -->
+  <section id="workbench" aria-label="Workbench">
+    <button type="button" id="workbench-toggle" aria-expanded="false">Workbench · recorded runs</button>
+    <div id="workbench-body" hidden>
+      <ul id="workbench-runs"></ul>
+      <div id="workbench-controls" hidden>
+        <p id="workbench-title"></p>
+        <div class="workbench-row">
+          <button type="button" id="workbench-play">Play</button>
+          <input type="range" id="workbench-frame" min="0" max="1000" value="0" aria-label="Where in the run">
+          <select id="workbench-speed" aria-label="How fast it plays">
+            <option value="0.1">0.1×</option>
+            <option value="0.25" selected>0.25×</option>
+            <option value="1">1×</option>
+          </select>
+        </div>
+        <p id="workbench-time"></p>
+        <button type="button" id="workbench-away" class="quiet">Put the bench away</button>
+      </div>
+    </div>
+  </section>
   <div id="chat" role="log" aria-live="polite"></div>
   <form id="ask">
     <input id="ask-text" type="text" autocomplete="off" spellcheck="false"

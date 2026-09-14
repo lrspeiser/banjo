@@ -19,6 +19,7 @@ import { BINDINGS, isKey, isButton, keyOf, controlsHint, holdPoint, windUpPoint,
          WIND_UP_S, TURNS, TURN_KEY_RATE, HOLD_RANGE_M, holdDistanceFor, radiusOf,
          turnPace, askTowards, uprightTurn } from "/interaction.js";
 import { makePicks } from "/picks.js";
+import { makeWorkbench } from "/workbench.js";
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -1220,6 +1221,9 @@ function showActions() {
         : `No tool here to dig with: press ${k("talk")} and ask the room to make you a pick.`;
     }
   }
+  rows.push([k("workbench"), workbench.state().open
+    ? "the workbench: play, pause and scrub its run in the panel"
+    : "watch a recorded run on a workbench in front of you"]);
   rows.push([k("talk"), "ask the room to build or change anything"]);
   const said = JSON.stringify([rows, tip]);
   if (said === actionsSaid) return;
@@ -1235,6 +1239,118 @@ function showActions() {
   $("actions-tip").hidden = !tip;
 }
 setInterval(showActions, 250);
+
+// ---------------------------------------------------------------------------
+// The workbench
+// ---------------------------------------------------------------------------
+//
+// The lab's recorded runs, played back as a small copy on a bench in front of
+// the person while the room goes on (the owner: recorded runs play "on a bench
+// in front of you"; workbench.js sets it out and draws it). K opens the list
+// here in the panel and lets the mouse go, so a run can be chosen with it. The
+// bench stays where it was set down until it is put away.
+const workbench = makeWorkbench({ scene, camera, groundAt, api });
+let runsListed = false, scrubbing = false, workbenchSaid = "";
+
+function openWorkbench(open = $("workbench-body").hidden) {
+  $("workbench-body").hidden = !open;
+  $("workbench-toggle").setAttribute("aria-expanded", String(open));
+  if (!open) return;
+  if (document.pointerLockElement) document.exitPointerLock?.();
+  if (!runsListed) listRuns();
+}
+
+async function listRuns() {
+  runsListed = true;
+  const list = $("workbench-runs");
+  const line = (words) => {
+    const li = document.createElement("li");
+    li.className = "none";
+    li.textContent = words;
+    return li;
+  };
+  list.replaceChildren(line("Looking for recorded runs…"));
+  try {
+    const { runs = [] } = await api("/api/runs");
+    if (!runs.length) {
+      list.replaceChildren(line("No recorded runs yet: the lab page records one each time it runs an experiment."));
+      return;
+    }
+    list.replaceChildren(...runs.map((run) => {
+      // "12 objects, 2496 cells at 20 mm: glass panel (glass), ..." -- what it
+      // is on one line, and what is in it on the next, cut to fit.
+      const [head, ...rest] = String(run.title).split(": ");
+      const li = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "quiet";
+      button.title = run.message ? `${run.title}\n\n${run.message}` : run.title;
+      const name = document.createElement("span");
+      name.className = "name";
+      name.textContent = head;
+      button.append(name);
+      if (rest.length) {
+        const what = document.createElement("span");
+        what.className = "what";
+        what.textContent = rest.join(": ");
+        button.append(what);
+      }
+      const when = document.createElement("span");
+      when.className = "when";
+      when.textContent = new Date(run.saved_unix_s * 1000).toLocaleString(undefined,
+        { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+        + ` · ${(run.recording_bytes / 1e6).toFixed(1)} MB to load`;
+      button.append(when);
+      button.addEventListener("click", () => setOut(run));
+      li.append(button);
+      return li;
+    }));
+  } catch (error) {
+    runsListed = false;
+    list.replaceChildren(line(`The runs could not be listed: ${error.message || error}`));
+  }
+}
+
+async function setOut(run) {
+  try { await workbench.open(run.id, run.case, run.title); }
+  catch (error) { say("bad", `That run could not be set out on the bench: ${error.message || error}`); }
+}
+
+$("workbench-toggle").addEventListener("click", () => openWorkbench());
+$("workbench-play").addEventListener("click", () => {
+  if (workbench.state().playing) workbench.pause(); else workbench.play();
+});
+// Dragging the slider holds the run wherever it is dragged to.
+const benchSlider = $("workbench-frame");
+benchSlider.addEventListener("pointerdown", () => { scrubbing = true; workbench.pause(); });
+addEventListener("pointerup", () => { scrubbing = false; });
+benchSlider.addEventListener("input", () => { workbench.pause(); workbench.seek(benchSlider.value / 1000); });
+$("workbench-speed").addEventListener("change", (e) => workbench.setSpeed(e.target.value));
+$("workbench-away").addEventListener("click", () => workbench.close());
+
+// The controls, said from the bench's own state and never ahead of it.
+function showWorkbench() {
+  const s = workbench.state();
+  const said = JSON.stringify(s);
+  if (said === workbenchSaid) return;
+  workbenchSaid = said;
+  $("workbench-controls").hidden = !s.open && !s.loading;
+  if (s.loading) {
+    $("workbench-title").textContent = `Setting out ${s.title}…`;
+    $("workbench-time").textContent = "";
+    return;
+  }
+  if (!s.open) return;
+  $("workbench-title").textContent = s.title;
+  $("workbench-title").title = s.title;
+  $("workbench-play").textContent = s.playing ? "Pause" : s.t >= s.duration ? "Play again" : "Play";
+  if (!scrubbing) benchSlider.value = String(s.duration > 0 ? Math.round(1000 * s.t / s.duration) : 0);
+  const pace = s.speed === 1 ? "as fast as it happened" : `slowed to ${s.speed}×`;
+  $("workbench-time").textContent = `${s.t.toFixed(3)} s of ${s.duration.toFixed(3)} s, ${pace}`
+    + ` · drawn at ${Math.round(100 * s.scale)}% of its size`
+    + (s.fractures ? ` · ${s.fractures} fractures so far` : "");
+}
+setInterval(showWorkbench, 100);
 
 // The sand and soil dug out of this room's ground and not put back, as the
 // engine counts them. Set from its numbers every time and never added to here:
@@ -1501,6 +1617,7 @@ addEventListener("keydown", (e) => {
   if (isKey("dig", e.code)) $("dig-it").click();
   if (isKey("heap", e.code)) $("heap-it").click();
   if (isKey("heat", e.code)) $("heat-it").click();
+  if (isKey("workbench", e.code)) openWorkbench();
   if (["KeyW","KeyA","KeyS","KeyD","KeyQ","KeyE","Space",
        "ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.code)) e.preventDefault();
 });
@@ -3527,6 +3644,7 @@ function frame() {
   animateHeat(now);
   animateWater(now);
   stepFoam(dt);
+  workbench.advance(now);
   render();
   world.framesSinceOpen++;
   requestAnimationFrame(frame);
@@ -4081,6 +4199,8 @@ window.banjoRoom = {
   // The pins and grooves drawn right now: none may be left over from a room
   // that is no longer open.
   pinsDrawn: () => pinGroup.children.length,
+  // The workbench: what is on it, and where its clock is (workbench.js).
+  workbench: () => workbench.state(),
   heatDrawn: () => ({ glowing: [...heat.glowing.keys()], flames: [...heat.flames.keys()],
                       columns: [...heat.columns.keys()] }),
   // The ground and the water as drawn, for checking what is on screen against

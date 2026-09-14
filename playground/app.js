@@ -2333,6 +2333,18 @@
   activateTab("fracture");
   loadStatus().then(noteChatKey);
   // The stage is a world, so it is running before anyone asks. Waiting behind a
-  // button meant the first thing anyone saw was a still frame of nothing.
-  setTimeout(() => { goLive().catch(() => {}); }, 400);
+  // button meant the first thing anyone saw was a still frame of nothing. But
+  // there is one live world, and opening another closes it: while the world
+  // page's room is open (status.world_room_open) this page leaves it be, and
+  // its stage goes live when someone here presses Restart the scene.
+  setTimeout(async () => {
+    try {
+      const status = await (await fetch("/api/status")).json();
+      if (status.world_room_open) {
+        showToast("The world page's room is open, so this stage waits: press Restart the scene to take the world here.");
+        return;
+      }
+    } catch { /* go live as it always did */ }
+    goLive().catch(() => {});
+  }, 400);
 })();

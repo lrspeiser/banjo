@@ -240,6 +240,9 @@ class Playground:
         # will; a live world is a running physics engine with a scene resident
         # in it, so there is one at a time and opening another closes the first.
         self.live = live_session.Live()
+        # Which page opened it: "world" (the room on /world, and the chat
+        # opening it again) or "lab" (the lab page's stage), for /api/status.
+        self.live_holder = None
         # The room on /world, held as the set of objects it was authored with
         # rather than as whatever the engine last reported. Those are different
         # things once something has broken: rebuilding a room out of two
@@ -262,6 +265,10 @@ class Playground:
     def status(self):
         return {"key_configured": bool(self.api_key), "model": self.model,
             "engine_ready": self.engine_path.is_file(), "studio_ready": self.studio_path.is_file(),
+            # Whether the one live world is the world page's room. Opening
+            # another closes it, so the lab page does not take it over by
+            # itself when it loads while this is true (app.js).
+            "world_room_open": self.live.session is not None and self.live_holder == "world",
             "csrf_token": self.csrf_token, "capabilities": [kind for kind in KINDS if kind != "unsupported"], "limitations": LIMITATIONS,
             "examples": ["Use the new coupled material solver to compare two fictional elastic and plastic materials under a small iron-density sphere impact. Show their actual deformation and contact evidence in 3D.",
                 "Compare an iron ball hitting glass, wood and iron panels at 2 m/s for 1 second.",
@@ -434,6 +441,52 @@ class Playground:
     def update(self, job_id, **fields):
         with self.lock: self.jobs[job_id].update(fields)
         if "status" in fields: self.log_event(job_id,"state",status=fields["status"],message=fields.get("message",""))
+
+    # The lab's recorded runs on disk, newest first: what the world page's
+    # workbench lists, to play one back on a bench in the room (workbench.js).
+    # A run is a case of a job -- a folder named by its id -- that recorded
+    # bodies moving; the live rooms' folders beside them are not runs. Nothing is
+    # registered here -- GET /api/jobs/<id> does that when one is chosen -- and
+    # only the newest `limit` job files are read.
+    def runs(self, limit=40):
+        try:
+            folders=[entry for entry in self.runs_path.iterdir()
+                     if re.fullmatch(r"[0-9a-f]{32}",entry.name) and entry.is_dir() and not entry.is_symlink()]
+        except FileNotFoundError: return {"runs":[]}
+        stamped=[]
+        for folder in folders:
+            try: stamped.append(((folder/"job.json").stat().st_mtime,folder))
+            except OSError: continue
+        runs=[]
+        for stamp,folder in sorted(stamped,key=lambda pair:pair[0],reverse=True):
+            if len(runs)>=limit: break
+            path=folder/"job.json"
+            try:
+                if path.is_symlink() or path.stat().st_size>16*1024*1024: continue
+                saved=strict_json(path.read_text(encoding="utf-8"))
+                cases=saved.get("cases")
+                # The other kinds of experiment record heat, pressure or one
+                # material's response, not bodies moving: nothing to set out.
+                experiment=(saved.get("plan") or {}).get("experiment")
+                if (saved.get("id")!=folder.name or saved.get("status") not in ("complete","blocked","error")
+                        or not isinstance(cases,list) or not 1<=len(cases)<=4
+                        or experiment in ("continuum_pressure_reference","dynamic_material_impact","thermal_material_experiment")):
+                    continue
+            except (OSError,ValueError,AttributeError,TypeError): continue
+            # Each case the job recorded is a run of its own: a comparison of
+            # three materials is three runs to set out.
+            for index,case in enumerate(cases):
+                recording=folder/f"playback-{index:02d}.json"
+                try:
+                    if (not isinstance(case,dict) or not case.get("playback_available")
+                            or not recording.is_file() or recording.is_symlink()): continue
+                    size=recording.stat().st_size
+                except OSError: continue
+                if size>64*1024*1024 or len(runs)>=limit: continue
+                runs.append({"id":folder.name,"case":index,"title":str(case.get("name") or "a recorded run")[:240],
+                             "message":str(saved.get("message") or "")[:400],"status":saved["status"],
+                             "saved_unix_s":stamp,"recording_bytes":size})
+        return {"runs":runs}
 
     def get(self, job_id):
         with self.lock:
@@ -1033,6 +1086,7 @@ class Handler(BaseHTTPRequestHandler):
             path=urlsplit(self.path).path
             app=self.server.app
             if path=="/api/status": return self.send(app.status())
+            if path=="/api/runs": return self.send(app.runs())
             if path=="/api/goal": return self.send({"markdown":(ROOT/"docs/project-goal-2026-09-06.md").read_text(encoding="utf-8") + "\n\n" + (ROOT/"docs/rules-engine-execution-plan.md").read_text(encoding="utf-8")})
             if path=="/api/goals": return self.send(strict_json((ROOT/"docs/execution-goals.json").read_text(encoding="utf-8")))
             if path=="/api/schema": return self.send({"language":"banjo-playground-1","schema":SCHEMA,"material_validation":"experimental; no calibrated fracture claim","limits":{"network_cells":850,"objects":12,"sweep_cases":4,"duration_s":3,"dynamic_material_duration_s":.1,"dynamic_material_cases":3,"dynamic_material_step_calls_per_case":200000,"recording_bytes":64*1024*1024,**LIMITS}})
@@ -1058,7 +1112,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(job)
             allowed={"/":"index.html","/index.html":"index.html","/app.js":"app.js","/style.css":"style.css","/scene.js":"scene.js",
                 "/world":"world.html","/world.html":"world.html","/world.js":"world.js","/world.css":"world.css",
-                "/blades.js":"blades.js","/interaction.js":"interaction.js","/picks.js":"picks.js",
+                "/blades.js":"blades.js","/interaction.js":"interaction.js","/picks.js":"picks.js","/workbench.js":"workbench.js",
                 "/vendor/three.module.js":"vendor/three.module.js","/vendor/three.core.js":"vendor/three.core.js"}
             if path not in allowed: return self.send({"error":"Not found"},404)
             file=STATIC/allowed[path]
@@ -1140,6 +1194,7 @@ class Handler(BaseHTTPRequestHandler):
                         room=world_room.Room("yard")
                         room.scene,room.spec=key,spec
                     opened=app.live.open(app,{"spec":room.spec})
+                    app.live_holder="world"
                     rooms[key]=app.room=room
                     opened["scene"]=key
                     opened["scenes"]=sorted(world_room.SCENES)
@@ -1168,6 +1223,7 @@ class Handler(BaseHTTPRequestHandler):
                     opened["kept_problem"]=(f"the room kept from before would not open "
                                             f"({str(problem)[:200]}); it was set aside and the "
                                             f"room opened as first made")
+                app.live_holder="world"
                 if body.get("fresh"): room_store.keep(app,room)
                 opened["scene"]=app.room.scene
                 opened["scenes"]=sorted(world_room.SCENES)
@@ -1222,6 +1278,7 @@ class Handler(BaseHTTPRequestHandler):
                         # flight lands back where it was authored to; that is
                         # the cost, and it is said out loud rather than hidden.
                         opened=app.live.open(app,{"spec":with_water(session,app.room.spec,ground_was)})
+                        app.live_holder="world"
                         answer["reopened"]=True
                         answer["session"]=opened["session"]
                         answer["state"]=opened
@@ -1239,7 +1296,11 @@ class Handler(BaseHTTPRequestHandler):
                                          " screen is the last one. Ask for something to"
                                          " be added and it will be built.").strip()
                 return self.send(answer)
-            if path=="/api/live/open": return self.send(self.server.app.live.open(self.server.app,body))
+            if path=="/api/live/open":
+                opened=self.server.app.live.open(self.server.app,body)
+                # The lab page's stage now: the world page's room was closed by it.
+                self.server.app.live_holder="lab"
+                return self.send(opened)
             if path=="/api/live/act":
                 answer=self.server.app.live.act(body)
                 remember_ground(self.server.app,body,answer)

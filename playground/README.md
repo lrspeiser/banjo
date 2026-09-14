@@ -167,6 +167,20 @@ run on the room held as an MCP world (`playground/room_world.py`). Anything the
 MCP can do, the chat can do, and `tests/chat_tool_parity_tests.py` fails if a
 tool reaches the MCP and not the chat without a written reason.
 
+**The workbench** (K) plays back a run the lab recorded, as a small copy on a
+bench set down 1.5 m in front of you, while the room goes on. The panel lists
+the recorded runs on disk, newest first (`GET /api/runs`). The one chosen is
+fitted to the tabletop -- every body's whole path, turned as it turns, less the
+one piece in a hundred thrown farthest -- and plays slowed to 0.25× (0.1× and 1×
+in the panel), with a slider to hold it anywhere. It is a picture of a run that
+has already happened (`playground/workbench.js`): it is not in the engine, and
+nothing in the room can touch it. Between two recorded frames each body is eased
+from the one to the next.
+
+There is one live world, so the lab page leaves the room on /world be: loaded
+while that room is open (`world_room_open` in `/api/status`), its stage waits
+until someone on the lab page presses Restart the scene.
+
 The chat tries what it built before it answers — in its own copy of the world it
 can pick things up, pull on them and let time pass — and every turn is logged
 with the calls it made and anything that was refused, one file per turn under
@@ -359,17 +373,19 @@ page from outside it.
 
 | Request | Purpose |
 |---|---|
-| `GET /api/status` | Engine/model availability, capabilities and a local session token; never the GPT key |
+| `GET /api/status` | Engine/model availability, capabilities and a local session token; never the GPT key. `world_room_open` says whether the one live world is the room on /world, so the lab page does not take it over when it loads |
 | `GET /api/goal` | The full current goal as Markdown |
 | `GET /api/schema` | Executable language schema and admission budgets |
 | `POST /api/chat` | Submit `{message, previous_plan, request_id, auto_open}`; receive a job ID |
 | `GET /api/jobs/{id}` | Poll status, generated plan, cases, reports, limits and timing |
 | `GET /api/jobs/{id}/package/{case_index}` | Export the exact generated package |
 | `GET /api/jobs/{id}/playback/{case_index}` | Bounded server-owned native recording |
+| `GET /api/runs` | The recorded runs on disk, newest first (at most 40), one per recorded case of a job: `{runs: [{id, case, title, message, status, saved_unix_s, recording_bytes}]}`. The workbench on /world lists these, then sets one out with `GET /api/jobs/{id}` and `GET /api/jobs/{id}/playback/{case}` |
 | `POST /api/jobs/{id}/rerun` | Apply `{case_index, action, value, request_id}` from a declared physical control; no model call |
 | `POST /api/jobs/{id}/open` | Open `{case_index}` in the native studio |
 | `POST /api/world/open` | Open the room on /world: `{scene}` (one of the rooms above) or `{qa: "<run>/<case>-<trial>"}` (a saved QA build); `fresh: true` builds it again from scratch |
 | `POST /api/world/ask` | One chat turn in the open room: `{message, story, person}` — `person` is where you are (`standing_m`, `eyes_m`, `facing`, `looking_at`, `looking_at_m`), checked and passed to the chat as `the_person`; a room the chat changed is opened again from what it left |
+| `POST /api/live/open` | Open a live world from `{spec}`: the lab page's stage. There is one live world at a time, so this closes the room on /world |
 | `POST /api/live/act` | Step the open room, or take hold of, move, let go of or heat something in it. In a room with ground: `dig` and `deposit` change it (and are kept, so a reopened room still has them), `survey` says what is at a point, `discharge` sets the river, and `environment`, `environment_state` and `terrain` read the ground and the water |
 
 The server answers in HTTP/1.1 and keeps a connection open between requests.
@@ -398,6 +414,8 @@ python tests/qa_open_tests.py
 python tests/qa.py --recipes
 node --check playground/app.js
 node --check playground/world.js
+node --check playground/workbench.js
+python tests/workbench_tests.py -v
 ctest --test-dir build/win-joint-double -C Release --output-on-failure
 build/win-joint-double/Release/banjo_object_state_probe.exe
 ```

@@ -42,6 +42,9 @@ export const BINDINGS = {
   dig:       { label: "F", keys: ["KeyF"] },
   heap:      { label: "H", keys: ["KeyH"] },
   heat:      { label: "B", keys: ["KeyB"] },
+  // The workbench: the lab's recorded runs, played back on a bench in front of
+  // you (workbench.js).
+  workbench: { label: "K", keys: ["KeyK"] },
 };
 export const keyOf = (action) => BINDINGS[action].label;
 export const isKey = (action, code) => (BINDINGS[action].keys || []).includes(code);
@@ -71,6 +74,7 @@ export function controlsHint() {
     + ` <b>${keyOf("upright")}</b> stand it upright, <b>wheel</b> further or nearer`
     + ` · <b>${keyOf("talk")}</b> talk to the room`
     + ` · <b>${keyOf("dig")}</b> dig here · <b>${keyOf("heap")}</b> heap here · <b>${keyOf("heat")}</b> heat it`
+    + ` · <b>${keyOf("workbench")}</b> the workbench`
     + ` · <b>R</b> release a latch · <b>L</b> if it lagged · <b>Esc</b> release the mouse`;
 }
 
