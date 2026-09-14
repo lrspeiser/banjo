@@ -1919,5 +1919,102 @@ class TheArmoury(unittest.TestCase):
         self.assertGreater(math.degrees(math.atan2(half_width, height)), 8.0)
 
 
+class AThingOnAJointIsWorkedByHand(unittest.TestCase):
+    """The owner, 2026-09-14: one click on the castle gate's winch gave no "Turn
+    the winch half way" -- and that is to be so for everything on a joint, all
+    the time. A built-in turn carries what stands off the pin round it with the
+    hand's own strokes; the engine says how far it went and what else moved, and
+    the hand keeps hold so a raised gate stays up."""
+
+    @unittest.skipUnless(ENGINE, "the live engine is not built")
+    def test_the_winch_raises_its_gate_and_the_oak_gate_opens_and_closes(self):
+        import threading
+        import time
+        import server
+        live = live_session.Live()
+        self.addCleanup(live.shutdown)
+
+        class App:
+            engine_path = ENGINE
+            runs_path = ROOT / "build/playground-runs"
+            live_inprocess = False
+
+        App.runs_path.mkdir(parents=True, exist_ok=True)
+        app = App()
+        app.live = live
+        app.room = world_room.Room("tests-gates")
+        live.open(app, {"spec": app.room.spec})
+        running = threading.Event()
+        running.set()
+
+        def keep_running():            # the page's part: the room runs while the hand works
+            while running.is_set():
+                try:
+                    live.session.send(op="step", dt=1 / 240.0, n=4, moved=True)
+                except Exception:
+                    return
+                time.sleep(0.005)
+        runner = threading.Thread(target=keep_running, daemon=True)
+        runner.start()
+        person = {"standing_m": [1.0, 0.0, 1.6], "facing": [0.0, 0.0, -1.0]}
+
+        def joint(kind, part):
+            return next(j for j in live.session.send(op="joints")["joints"]
+                        if j["kind"] == kind and part in f"{j.get('a')} {j.get('b')}")
+
+        def let_go():
+            live.session.send(op="release")
+            time.sleep(0.6)            # the room says the hand is empty before the next
+        try:
+            said = server.run_action(app, {"object": "castle-gate-winch: winch handle",
+                                           "builtin": "turn", "stop": "all_the_way",
+                                           "person": person})
+            self.assertNotIn("refused", said)
+            self.assertEqual(said.get("holding"), "castle-gate-winch: winch handle")
+            # Half a turn round, which the engine reads as 180 or -180 -- and
+            # where a second press finds it, rather than a whole turn off.
+            self.assertGreater(abs(joint("hinge", "winch wheel")["degrees"]), 170.0, said)
+            self.assertGreater(joint("slider", "castle gate")["metres"], 0.25, said)
+            self.assertIn("castle gate rose", said["done"][-1])
+            # Still held -- a winch has no ratchet, and let go its gate drops --
+            # the next press goes on from the hold: "all the way" is already
+            # there, and back to where it started lowers the gate.
+            again = server.run_action(app, {"object": "castle-gate-winch: winch handle",
+                                            "builtin": "turn", "stop": "all_the_way",
+                                            "person": person})
+            self.assertIn("already there", again.get("refused", ""), again)
+            self.assertEqual(again.get("holding"), "castle-gate-winch: winch handle")
+            lowered = server.run_action(app, {"object": "castle-gate-winch: winch handle",
+                                              "builtin": "turn", "stop": "back_to_start",
+                                              "person": person})
+            self.assertNotIn("refused", lowered)
+            self.assertLess(abs(joint("hinge", "winch wheel")["degrees"]), 10.0, lowered)
+            self.assertLess(joint("slider", "castle gate")["metres"], 0.05, lowered)
+            self.assertIn("castle gate came down", lowered["done"][-1])
+            # A program that needs the hand free is refused while it holds.
+            with self.assertRaisesRegex(ValueError, "put down what you are holding"):
+                server.run_action(app, {"object": "castle-gate-winch: winch handle",
+                                        "builtin": "put_on_ground", "person": person})
+            let_go()
+            # 110 kg of oak, more than the hand can lift: it hangs on its pin
+            # and is pushed round with none of its weight. Its pin is on its
+            # own middle at the post's face, and its stops let it open towards
+            # the post, so it meets the post's corner 60 degrees round -- its
+            # back face, 0.04 m off the pin, reaches the corner 0.08 m off it
+            # when cos is a half -- and the hand says it could go no further.
+            opened = server.run_action(app, {"object": "hinged-gate: oak gate", "builtin": "turn",
+                                             "stop": "all_the_way", "person": person})
+            self.assertGreater(joint("hinge", "hinged-gate")["degrees"], 55.0, opened)
+            self.assertIn("could turn it no further", opened.get("refused", ""), opened)
+            self.assertEqual(opened.get("holding"), "hinged-gate: oak gate")
+            closed = server.run_action(app, {"object": "hinged-gate: oak gate", "builtin": "turn",
+                                             "stop": "all_the_way_back", "person": person})
+            self.assertNotIn("refused", closed)
+            self.assertLess(joint("hinge", "hinged-gate")["degrees"], 10.0, closed)
+        finally:
+            running.clear()
+            runner.join(timeout=3)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

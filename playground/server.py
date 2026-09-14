@@ -1555,7 +1555,12 @@ def _stroke_to(app,target,speed,start):
     """Move what the hand holds to a point with the hand's own stroke, and wait
     -- while the page keeps the room running -- for the engine to say how the
     stroke ended: reached, blocked or gave up. The force is the hand's."""
-    app.live.act({"session":app.live.session.id,"op":"stroke","path":[list(start),list(target)],"speed_m_s":float(speed),
+    return _stroke_along(app,[start,target],speed)
+
+
+def _stroke_along(app,path,speed):
+    """The same along a path of up to sixteen points: round a pin, for a turn."""
+    app.live.act({"session":app.live.session.id,"op":"stroke","path":[list(p) for p in path],"speed_m_s":float(speed),
                   "accel_m_s2":2.0,"lead_m":0.05,"let_go":False,"give_up_s":ACTION_STROKE_S})
     began=time.monotonic()
     started=False
@@ -1603,6 +1608,203 @@ def _stand(app,room,name,step,person):
     return opened,f"stood {name} {answer.get('stands')} on {answer.get('on')}"
 
 
+# Turning a thing on a pin, or sliding it in a groove, by hand: what the page
+# offers everything on a joint, in every room, and what a chat's program asks
+# for with a turn or a slide step. The owner, 2026-09-14: clicking the castle
+# gate's winch gave no "Turn the winch half way", and that is to be so for all
+# things, always. The hand takes hold of whatever stands off the pin furthest --
+# a winch's handle, not its wheel's middle -- and carries it round the pin's
+# axis with its own stroke, so how far it goes is the engine's answer to the
+# hand's 800 N against all the pin turns: the gate on the winch's rope with it.
+# A hinge's degrees count right-handed about the axis it reports: measured, a
+# winch's handle carried 30 degrees that way read +26.6, a gate carried 20 +18.1.
+TURN_STEP_DEG=12.0          # between the points of a turn's arc
+TURN_SPEED_M_S=0.4          # a person working a handle round
+SLIDE_SPEED_M_S=0.3
+JOINT_STOPS=("all_the_way","half_way","all_the_way_back","back_to_start")
+JOINT_LABELS={("turn","all_the_way"):"Turn it all the way",("turn","half_way"):"Turn it half way",
+              ("turn","all_the_way_back"):"Turn it all the way back",
+              ("turn","back_to_start"):"Turn it back to where it started",
+              ("slide","all_the_way"):"Slide it all the way",("slide","half_way"):"Slide it half way",
+              ("slide","all_the_way_back"):"Slide it all the way back",
+              ("slide","back_to_start"):"Slide it back to where it started"}
+
+
+def _unit(v):
+    size=math.sqrt(sum(float(x)*float(x) for x in v)) or 1.0
+    return [float(x)/size for x in v]
+
+
+def _governing(joints,part,kind):
+    """The pin ("hinge") or groove ("slider") that part turns or slides on --
+    its own, or that of what it is fixed to -- and the bodies that go with it:
+    part and everything fixed to it. (None, those) when there is none."""
+    group,these={part},[part]
+    while these:
+        n=these.pop()
+        for j in joints:
+            if j.get("attached") and j.get("kind")=="fixing" and n in (j.get("a"),j.get("b")):
+                other=j["b"] if j.get("a")==n else j["a"]
+                if other not in group:
+                    group.add(other)
+                    these.append(other)
+    for j in joints:
+        if j.get("attached") and j.get("kind")==kind and (j.get("a") in group)!=(j.get("b") in group):
+            return j,group
+    return None,group
+
+
+def _joint_target(now,lo,hi,step,whole):
+    """Where a turn (degrees; whole is a full turn) or a slide (metres; whole is
+    None) is asked to end: at a stop by name, or an amount from where it is --
+    a hair inside the joint's own stops, which the hand would only push on."""
+    stop=step.get("stop")
+    span=whole or 0.0
+    if stop=="all_the_way": target=float(hi) if hi is not None else now+span
+    elif stop=="half_way": target=now+((float(hi)-now)/2 if hi is not None else span/2)
+    elif stop=="all_the_way_back": target=float(lo) if lo is not None else now-span
+    elif stop=="back_to_start": target=0.0
+    else: target=now+float(step.get("degrees" if whole else "distance_m") or 0.0)
+    inset=1.0 if whole else 0.01
+    if lo is not None: target=max(target,float(lo)+inset)
+    if hi is not None: target=min(target,float(hi)-inset)
+    return target
+
+
+def _goes_right_round(lo,hi):
+    """A wheel: a pin with no stops, or with stops a whole turn apart -- which
+    the engine reads from -180 to 180 degrees, joined half a turn round."""
+    return lo is None or hi is None or float(hi)-float(lo)>=359.0
+
+
+def _wrapped(degrees):
+    """The same turn, from -180 to 180 degrees."""
+    return degrees-360.0*math.ceil((degrees-180.0)/360.0)
+
+
+def _round_target(now,step):
+    """(where a wheel is, where it is asked to go). Its far stop is half a turn
+    from where it started, the way its degrees count, and its near stop half a
+    turn the other way -- the same place -- so at the join it is taken to be all
+    the way round, and pressing "all the way" again finds it there rather than a
+    whole turn off. A named stop is reached the short way; an amount of degrees
+    is turned as asked, a whole turn if so."""
+    if now<=-178.0: now+=360.0
+    stop=step.get("stop")
+    if stop=="all_the_way": target=179.0
+    elif stop=="half_way": target=now+(179.0-now)/2
+    elif stop=="all_the_way_back": target=-179.0
+    elif stop=="back_to_start": target=0.0
+    else: return now,now+float(step.get("degrees") or 0.0)
+    amount=target-now
+    if abs(amount)>180.5: amount=_wrapped(amount)
+    return now,now+amount
+
+
+def _rotated(p,axis,at,angle):
+    """p turned by angle (radians, right-handed) about the line through at along axis."""
+    r=[p[k]-at[k] for k in range(3)]
+    c,s=math.cos(angle),math.sin(angle)
+    cross=[axis[1]*r[2]-axis[2]*r[1],axis[2]*r[0]-axis[0]*r[2],axis[0]*r[1]-axis[1]*r[0]]
+    along=sum(axis[k]*r[k] for k in range(3))
+    return [at[k]+r[k]*c+cross[k]*s+axis[k]*along*(1-c) for k in range(3)]
+
+
+def _off_axis(p,axis,at):
+    r=[p[k]-at[k] for k in range(3)]
+    along=sum(axis[k]*r[k] for k in range(3))
+    return math.sqrt(max(0.0,sum(v*v for v in r)-along*along))
+
+
+def _positions(app):
+    return {b["name"]:[float(v) for v in b.get("position_m") or [0.0,0.0,0.0]]
+            for b in (app.live.session.state or {}).get("bodies",[])}
+
+
+def _what_else_moved(before,after,group):
+    """What moved most besides what was worked -- the gate a winch raised --
+    in plain words, or None when nothing else moved 2 cm."""
+    best=None
+    for name,p0 in before.items():
+        if name in group or name not in after: continue
+        d=[after[name][k]-p0[k] for k in range(3)]
+        size=math.sqrt(sum(v*v for v in d))
+        if size>=0.02 and (best is None or size>best[1]): best=(name,size,d)
+    if best is None: return None
+    name,size,d=best
+    if abs(d[1])>=0.7*size: return f"{name} {'rose' if d[1]>0 else 'came down'} {abs(d[1]):.2f} m"
+    return f"{name} moved {size:.2f} m"
+
+
+def _worked(app,part,step,kind,holding=None):
+    """A turn ("hinge") or a slide ("slider") step: the hand takes hold of what
+    stands off the pin (for a groove, the part) -- going on from holding, when
+    that is part of the same thing -- carries it round the pin or along the
+    groove with its own strokes, and keeps hold. Returns (what it did, what it
+    holds, why it fell short or None); ValueError when it cannot begin."""
+    turning=kind=="hinge"
+    joints=app.live.act({"session":app.live.session.id,"op":"joints"})["joints"]
+    joint,group=_governing(joints,part,kind)
+    if joint is None:
+        raise ValueError(f"{part} does not {'turn on a pin' if turning else 'slide in a groove'},"
+                         f" and nothing it is fixed to does")
+    if holding and holding not in group:
+        raise ValueError(f"the hand already has {holding}: let go of it first")
+    axis=_unit(joint.get("axis") or [0.0,1.0,0.0])
+    at=[float(v) for v in joint.get("at") or [0.0,0.0,0.0]]
+    now=float(joint.get("degrees" if turning else "metres") or 0.0)
+    lo=joint.get("lower_deg" if turning else "lower_m")
+    hi=joint.get("upper_deg" if turning else "upper_m")
+    wheel=turning and _goes_right_round(lo,hi)
+    if wheel: now,target=_round_target(now,step)
+    else: target=_joint_target(now,lo,hi,step,360.0 if turning else None)
+    amount=target-now
+    if abs(amount)<(2.0 if turning else 0.02):
+        raise ValueError(f"{part} is already there, at {now:.0f} degrees" if turning
+                         else f"{part} is already there, {now:.2f} m along its groove")
+    before=_positions(app)
+    moving=joint["b"] if joint.get("b") in group else joint["a"]
+    if turning:
+        grip=max((n for n in group if n in before),key=lambda n:_off_axis(before[n],axis,at),default=None)
+        if grip is None or _off_axis(before[grip],axis,at)<0.05:
+            raise ValueError(f"nothing of {part} stands off its pin far enough for a hand to turn it by")
+        start=before[grip]
+        count=max(1,math.ceil(abs(amount)/TURN_STEP_DEG))
+        path=[_rotated(start,axis,at,math.radians(amount*k/count)) for k in range(1,count+1)]
+        speed=TURN_SPEED_M_S
+    else:
+        grip=part if part in before else moving
+        start=before[grip]
+        path=[[start[k]+axis[k]*amount for k in range(3)]]
+        speed=SLIDE_SPEED_M_S
+    # Taken hold of as the page's E takes hold of a thing on a joint: hauled,
+    # with the hand's 800 N at its middle and no wrist. Wielded, the wrist held
+    # the winch's handle square while the wheel had to turn it, and the hand
+    # stalled at 36 of the 179 degrees asked.
+    app.live.act({"session":app.live.session.id,"op":"grab","name":grip})
+    here=start
+    for i in range(0,len(path),15):
+        chunk=path[i:i+15]
+        ended=_stroke_along(app,[here]+chunk,speed)
+        here=chunk[-1]
+        if ended!="reached": break
+    joints=app.live.act({"session":app.live.session.id,"op":"joints"})["joints"]
+    reached=next((float(j.get("degrees" if turning else "metres") or 0.0) for j in joints
+                  if j.get("id")==joint.get("id")),now)
+    # Measured, a winch's wheel taken half a turn to 179 degrees came to rest a
+    # degree past, and read -180: read where it was asked to go, not across the join.
+    if wheel: reached=target+_wrapped(reached-target)
+    went=reached-now
+    moved=_what_else_moved(before,_positions(app),group)
+    said=(f"turned {moving} {went:+.0f} degrees, to {reached:.0f}" if turning
+          else f"slid {moving} {went:+.2f} m, to {reached:.2f} m")+(f"; {moved}" if moved else "")
+    if abs(reached-target)>(10.0 if turning else 0.05):
+        return said,grip,(f"the hand turned it {went:+.0f} of the {amount:+.0f} degrees asked, and could turn it no further"
+                          if turning else
+                          f"the hand slid it {went:+.2f} of the {amount:+.2f} m asked, and could move it no further")
+    return said,grip,None
+
+
 def run_action(app,body):
     """One of a thing's actions, pressed on the page (POST /api/world/action).
 
@@ -1620,8 +1822,14 @@ def run_action(app,body):
     name=str(body.get("object",""))[:200]
     if body.get("builtin") is not None:
         key=str(body.get("builtin"))
-        if key not in BUILTIN_ACTIONS: raise ValueError(f"there is no built-in action {key!r}")
-        action=BUILTIN_ACTIONS[key]
+        if key in ("turn","slide"):
+            # Everything on a pin or in a groove has these, to the joint's stops.
+            stop=str(body.get("stop") or "")
+            if stop not in JOINT_STOPS:
+                raise ValueError(f"a built-in {key} stops {', '.join(JOINT_STOPS)}, not {stop!r}")
+            action={"label":JOINT_LABELS[(key,stop)],"steps":[{"do":key,"stop":stop}]}
+        elif key in BUILTIN_ACTIONS: action=BUILTIN_ACTIONS[key]
+        else: raise ValueError(f"there is no built-in action {key!r}")
     else:
         offered=[action for action in (room.spec.get("actions") or []) if action.get("body")==name]
         try: index=int(body.get("action"))
@@ -1629,11 +1837,15 @@ def run_action(app,body):
         if not 0<=index<len(offered): raise ValueError(f"{name or 'that'} has no action {index+1}")
         action=offered[index]
     person=world_chat.where_the_person_is(body.get("person"))
-    if ((app.live.session.state or {}).get("hand") or {}).get("holding"):
+    # The hand may already hold what a turn or a slide works -- a winch kept
+    # turned, its gate up: "Lower the gate" goes on from that hold, since
+    # letting go first would drop the gate. Anything else needs the hand free.
+    held=((app.live.session.state or {}).get("hand") or {}).get("holding")
+    if held and action["steps"][0]["do"] not in ("turn","slide"):
         raise ValueError("put down what you are holding first: the action needs your hand")
-    done,opened,holding,problem=[],None,None,None
+    done,opened,holding,problem,index=[],None,held or None,None,0
     try:
-        for step in action["steps"]:
+        for index,step in enumerate(action["steps"]):
             do=step["do"]
             if do=="stand":
                 now,said=_stand(app,room,name,step,person)
@@ -1706,6 +1918,14 @@ def run_action(app,body):
                     break
                 done.append(f"pushed {part} {moved:.2f} m"
                             +("" if ended=="reached" else ", until something stopped it"))
+            elif do in ("turn","slide"):
+                line,grip,short=_worked(app,step.get("part") or name,step,
+                                        "hinge" if do=="turn" else "slider",holding)
+                holding=grip
+                done.append(line)
+                if short:
+                    problem=short
+                    break
             elif do=="heat":
                 part=step.get("part") or name
                 app.live.act({"session":app.live.session.id,"op":"heat","target":part,"power_w":float(step.get("power_w",2000.0)),
@@ -1716,12 +1936,20 @@ def run_action(app,body):
                 done.append(f"waited {float(step.get('seconds',1.0)):g} s")
     except ValueError as failure:
         problem=str(failure)
-    if holding:
+    # A program that ends on a turn or a slide keeps hold -- there, short of it,
+    # or already there -- so what it raised stays up until the person lets go:
+    # the page takes the hold over. Anything else the hand has is let go of.
+    ends_working=action["steps"][-1]["do"] in ("turn","slide")
+    kept=bool(holding and ends_working and (not problem or index==len(action["steps"])-1))
+    # A turn or a slide that failed part way may hold what it took hold of.
+    worked=any(step["do"] in ("turn","slide") for step in action["steps"][:index+1])
+    if not kept and (holding or worked):
         try: app.live.act({"session":app.live.session.id,"op":"release"})
         except ValueError: pass
     said={"action":action["label"],"done":done}
     if problem: said["refused"]=problem
     else: said["did"]=[action["label"]]
+    if kept: said["holding"]=holding
     if opened is not None: said.update(reopened=True,session=opened["session"],state=opened)
     return said
 

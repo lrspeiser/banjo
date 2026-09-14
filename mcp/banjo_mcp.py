@@ -1382,7 +1382,11 @@ def tool_turn_object(args: dict[str, Any]) -> dict[str, Any]:
 MAX_ACTIONS = 9             # one per number key
 MAX_STEPS = 12
 ACTION_LABEL_CHARS = 60
-ACTION_STEPS = ("stand", "take_hold", "carry_to", "put_down", "let_go", "push", "heat", "wait")
+ACTION_STEPS = ("stand", "take_hold", "carry_to", "put_down", "let_go", "push", "turn", "slide",
+                "heat", "wait")
+# Where a turn or a slide ends, by name: the joint's far stop, half way there,
+# its near stop, or where it was when the room was made.
+ACTION_STOPS = ("all_the_way", "half_way", "all_the_way_back", "back_to_start")
 ACTION_ALONG = ("facing", "across", "x", "z")
 ACTION_WHERE = ("here", "in_front")
 ACTION_SIDES = ("near", "far", "left", "right")
@@ -1430,7 +1434,27 @@ def _action_number(value: Any, what: str, low: float, high: float,
 STEP_FIELDS = {"stand": ("stand", "along", "where"), "take_hold": ("part",),
                "carry_to": ("to", "speed_m_s"), "put_down": (), "let_go": (),
                "push": ("part", "toward", "distance_m", "speed_m_s"),
+               "turn": ("part", "degrees", "stop"), "slide": ("part", "distance_m", "stop"),
                "heat": ("part", "power_w", "seconds"), "wait": ("seconds",)}
+
+
+def _worked_by(entry: dict[str, Any], part: str, tool: str) -> bool:
+    """Whether part -- or anything fixed to it, as a winch's handle is to its
+    wheel -- turns on a hinge or slides on a slide in this world: what a turn or
+    a slide step works it by."""
+    records = entry.get("joints", [])
+    group, these = {part}, [part]
+    while these:
+        n = these.pop()
+        for r in records:
+            a, b = r["args"].get("a"), r["args"].get("b")
+            if r.get("tool") == "fix" and n in (a, b):
+                other = b if a == n else a
+                if other not in group:
+                    group.add(other)
+                    these.append(other)
+    return any(r.get("tool") == tool
+               and (r["args"].get("a") in group) != (r["args"].get("b") in group) for r in records)
 PLACE_FIELDS = {"in_front": ("in_front_m", "height_m"), "on": ("on",),
                 "beside": ("beside", "side", "gap_m"), "from": ("from", "offset_m")}
 
@@ -1536,8 +1560,9 @@ def _action_checked(entry: dict[str, Any], name: str, action: Any, names: set[st
         do = str(step.get("do") or "").strip().lower()
         if do not in ACTION_STEPS:
             raise Refused(f"{where}: do is one of {', '.join(ACTION_STEPS)}, not {do!r}")
-        part = str(step.get("part") or name) if do in ("take_hold", "push", "heat") else name
-        if do in ("take_hold", "push", "heat") and part not in names:
+        named = ("take_hold", "push", "turn", "slide", "heat")
+        part = str(step.get("part") or name) if do in named else name
+        if do in named and part not in names:
             raise Refused(f"{where}: there is nothing called {part!r}")
         extra = {k for k, v in step.items() if k != "do" and k not in STEP_FIELDS[do] and _given(v)}
         if (do == "stand" and str(step.get("stand") or "upright").strip().lower() != "lying"
@@ -1598,6 +1623,34 @@ def _action_checked(entry: dict[str, Any], name: str, action: Any, names: set[st
             if not holding:
                 raise Refused(f"{where}: {do} needs something in the hand")
             holding = None
+        elif do in ("turn", "slide"):
+            # The hand takes hold of what stands off the pin (for a groove, the
+            # part) and carries it round or along -- so the hand must be free,
+            # and there must be a pin or a groove to work it by.
+            if holding:
+                raise Refused(f"{where}: a {do} takes hold itself, and the hand already has "
+                              f"{holding}: put_down or let_go first")
+            tool = "hinge" if do == "turn" else "slide"
+            if not _worked_by(entry, part, tool):
+                raise Refused(f"{where}: {part} does not "
+                              f"{'turn on a pin' if do == 'turn' else 'slide in a groove'}, and "
+                              f"nothing it is fixed to does: give it a {tool} first")
+            out["part"] = part
+            stop = str(step.get("stop") or "").strip().lower()
+            amount = "degrees" if do == "turn" else "distance_m"
+            if stop:
+                if stop not in ACTION_STOPS:
+                    raise Refused(f"{where}: stop is one of {', '.join(ACTION_STOPS)}, not {stop!r}")
+                out["stop"] = stop
+                if _given(step.get(amount)):
+                    aside.append(f"{where}: {amount} (a stop was given, and it says how far)")
+            elif do == "turn":
+                out["degrees"] = _action_number(step.get("degrees"), f"{where}: degrees",
+                                                -360.0, 360.0)
+            else:
+                out["distance_m"] = _action_number(step.get("distance_m"),
+                                                   f"{where}: distance_m", -3.0, 3.0)
+            holding = part
         elif do == "heat":
             out["part"] = part
             out["power_w"] = _action_number(step.get("power_w"), f"{where}: power_w",
@@ -1608,9 +1661,12 @@ def _action_checked(entry: dict[str, Any], name: str, action: Any, names: set[st
             out["seconds"] = _action_number(step.get("seconds"), f"{where}: seconds",
                                             0.1, 10.0, 1.0)
         kept.append(out)
-    if holding:
+    # Only a last turn or slide may end holding what it worked: that keeps what
+    # it raised up until the person lets go.
+    if holding and kept[-1]["do"] not in ("turn", "slide"):
         raise Refused(f"{label!r} ends with {holding} still in the hand: end it with put_down "
-                      f"or let_go, so the person's hand is free")
+                      f"or let_go, so the person's hand is free (only a last turn or slide "
+                      f"keeps hold, so what it raised stays up)")
     return {"label": label, "steps": kept}
 
 
@@ -4702,10 +4758,18 @@ TOOLS = [
                     "hand grips a part with its own 800 N -- at most 73 kg), carry_to a place, "
                     "put_down (lowered onto what is under it and let go), let_go, push a part "
                     "a distance toward a place (for things on joints: a door, a gate, a "
-                    "lever), heat a part, and wait. A place is relative to the person when the "
+                    "lever), turn a part round the pin it turns on -- its own, or that of "
+                    "what it is fixed to, as a winch's handle is to its wheel -- by degrees "
+                    "or to a stop (all_the_way, half_way, all_the_way_back, back_to_start), "
+                    "slide a part along its groove the same way, heat a part, and wait. A "
+                    "winch's \"Raise the gate\" is a turn of its handle, stop all_the_way. "
+                    "A place is relative to the person when the "
                     "key is pressed (in_front_m) or to a thing (on, beside with a side as the "
                     "person sees it, from with an offset). A program ends with the hand "
-                    "empty. Each step reads only the fields of its kind, and each place only "
+                    "empty, unless its last step is a turn or a slide, which keeps hold so "
+                    "what it raised stays up, and its programs that begin with a turn or a "
+                    "slide run from that hold. Each step reads only the fields of its kind, "
+                    "and each place only "
                     "those of its kind. Checked when offered -- the parts exist, a hand can "
                     "move them -- "
                     "and done for real when pressed, where everything is then: a step that "
@@ -4722,8 +4786,20 @@ TOOLS = [
                      "type": "object", "required": ["do"], "properties": {
                          "do": {"type": "string", "enum": list(ACTION_STEPS)},
                          "part": {"type": "string",
-                                  "description": "take_hold, push, heat: which thing; the "
-                                                 "object itself when left out."},
+                                  "description": "take_hold, push, turn, slide, heat: which "
+                                                 "thing; the object itself when left out."},
+                         "degrees": {"type": "number",
+                                     "description": "turn: how far, -360 to 360, right-handed "
+                                                    "about the pin's axis -- or give stop "
+                                                    "instead."},
+                         "stop": {"type": "string", "enum": list(ACTION_STOPS),
+                                  "description": "turn, slide: all_the_way (to its far "
+                                                 "stop), half_way (half way there), "
+                                                 "all_the_way_back (to its near stop) or "
+                                                 "back_to_start (where it was when the room "
+                                                 "was made). The hand keeps hold after a "
+                                                 "last turn or slide, so what it raised "
+                                                 "stays up until the person lets go."},
                          "stand": {"type": "string", "enum": ["upright", "lying"],
                                    "description": "stand: as turn_object."},
                          "along": {"type": "string", "enum": list(ACTION_ALONG),
@@ -4738,7 +4814,9 @@ TOOLS = [
                          "toward": dict(ACTION_PLACE, description="push: the way to push, "
                                         "toward this place. " + ACTION_PLACE["description"]),
                          "distance_m": {"type": "number",
-                                        "description": "push: how far, 0.05 to 1.5 m."},
+                                        "description": "push: how far, 0.05 to 1.5 m. slide: "
+                                                       "how far along its groove, -3 to 3 m "
+                                                       "-- or give stop instead."},
                          "speed_m_s": {"type": "number",
                                        "description": "carry_to, push: how fast the hand "
                                                       "goes, 0.1 to 1.5 m/s."},

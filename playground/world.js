@@ -1208,7 +1208,13 @@ function showActions() {
     rows.push([k("interact"), "let go of the bow"]);
   } else if (held) {
     if (held.throwable) rows.push([k("primary"), "hold to wind up, let go to throw"]);
-    rows.push([k("interact"), `put ${held.name} down`]);
+    if (workingJoint()) {
+      // Its turns and slides go on from the hold, by their numbers (runAction).
+      allActionsFor(held.name).forEach((action, i) => {
+        if (goesOnFromHold(held.name, action)) rows.push([String(i + 1), action.label]);
+      });
+      rows.push([k("interact"), `let go of ${held.name}`]);
+    } else rows.push([k("interact"), `put ${held.name} down`]);
     rows.push([k("talk"), `ask the room to turn or move ${held.name}`]);
   } else if (on) {
     const entry = world.bodies.get(on);
@@ -1634,9 +1640,16 @@ addEventListener("keydown", (e) => {
   if (isKey("workbench", e.code)) openWorkbench();
   if (e.key === "Escape") world.menuFor = null;
   // One of the actions of what the crosshair is on, by its number -- with
-  // nothing in hand, where the number keys are not the hand's "more" menu.
-  if (!world.held && /^Digit[1-9]$/.test(e.code) && world.aim && world.aim.name
-      && allActionsFor(world.aim.name).length) runAction(world.aim.name, Number(e.code.slice(5)) - 1);
+  // nothing in hand, where the number keys are not the hand's "more" menu --
+  // or of the thing on a joint the hand is working: a winch kept turned is
+  // lowered from where it is held, since letting go would drop its gate.
+  if (/^Digit[1-9]$/.test(e.code) && !world.use.more) {
+    const n = Number(e.code.slice(5)) - 1;
+    if (!world.held && world.aim && world.aim.name && allActionsFor(world.aim.name).length)
+      runAction(world.aim.name, n);
+    else if (workingJoint() && goesOnFromHold(world.held.name, allActionsFor(world.held.name)[n]))
+      runAction(world.held.name, n);
+  }
   if (["KeyW","KeyA","KeyS","KeyD","KeyQ","KeyE","Space",
        "ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.code)) e.preventDefault();
 });
@@ -4119,13 +4132,90 @@ function builtinsFor(name) {
     }
     if (high > Math.min(...d) / 2 + 0.005) out.push({ key: "lay_down", label: "Lay it down where I'm facing" });
   }
+  // On a pin or in a groove -- its own, or that of what it is fixed to, like a
+  // winch's handle -- it is worked, not carried: turned or slid by the hand to
+  // the joint's stops (server.py's turn and slide). For everything on a joint,
+  // in every room, whoever made it: the stops are the joint's own.
+  const joint = jointed && guideFor(name);
+  if (joint && joint.kind === "hinge") {
+    // A wheel -- no stops, or stops a whole turn apart -- is all the way round
+    // half a turn either way, so "all the way back" would be the same place.
+    const wheel = joint.lower_deg == null || joint.upper_deg == null
+      || joint.upper_deg - joint.lower_deg >= 359;
+    out.push({ label: "Turn it all the way", ask: { builtin: "turn", stop: "all_the_way" } });
+    out.push({ label: "Turn it half way", ask: { builtin: "turn", stop: "half_way" } });
+    if (!wheel) {
+      out.push({ label: "Turn it all the way back", ask: { builtin: "turn", stop: "all_the_way_back" } });
+    }
+    if (wheel || (joint.lower_deg < -1 && joint.upper_deg > 1)) {
+      out.push({ label: "Turn it back to where it started", ask: { builtin: "turn", stop: "back_to_start" } });
+    }
+  } else if (joint && joint.kind === "slider") {
+    out.push({ label: "Slide it all the way", ask: { builtin: "slide", stop: "all_the_way" } });
+    out.push({ label: "Slide it half way", ask: { builtin: "slide", stop: "half_way" } });
+    out.push({ label: "Slide it all the way back", ask: { builtin: "slide", stop: "all_the_way_back" } });
+  }
   return out.filter((builtin) => !own.has(builtin.label.toLowerCase()));
+}
+
+// The hand kept hold at the end of an action -- a winch turned all the way and
+// held there, so its gate stays up. The page takes the hold over as if the
+// person had taken hold of it where it now is: the crosshair hauls it on from
+// here, and E, or a click, lets go.
+function adoptHold(name) {
+  const entry = world.bodies.get(name);
+  if (!entry || world.held) return;
+  const distance = clamp(entry.mesh.position.distanceTo(camera.position), 0.6, 4.0);
+  const from = camera.position.clone().add(forwardVector().multiplyScalar(distance));
+  world.held = { name, loose: false, distance, offset: entry.mesh.position.clone().sub(from) };
+  world.use = { mode: "carrying", name, kg: entry.mass || 0, latched: !!latchOn(name), loose: false };
+  const joint = guideFor(name);
+  const middle = entry.mesh.position.clone();
+  const grabbed = joint && alongGuide(joint, middle, camera.position, forwardVector());
+  if (grabbed) {
+    world.held.guide = { joint, middle, grabbed };
+    world.use.guide = joint.kind;
+  }
+  $("crosshair").classList.add("holding");
+  $("label").hidden = true;
+  $("carry").hidden = false;
+  showUse();
+}
+
+// The hand on a thing on a joint -- hauled round its pin or along its groove,
+// not carried, thrown, wielded or drawn.
+function workingJoint() {
+  const held = world.held;
+  return !!(held && !held.loose && !held.throwable && !held.pick && !held.bow && !held.blade);
+}
+
+// Whether an action goes on from the hand's hold on a thing on a joint: one
+// that begins with a turn or a slide (server.py run_action). Anything else
+// needs the hand free.
+function goesOnFromHold(name, action) {
+  if (!action) return false;
+  if (action.ask.builtin === "turn" || action.ask.builtin === "slide") return true;
+  const own = action.ask.action != null ? actionsFor(name)[action.ask.action] : null;
+  return !!(own && own.steps && own.steps[0] && ["turn", "slide"].includes(own.steps[0].do));
+}
+
+// The page lets go of its side of a hold while the server's hand works it --
+// its hauling would take the hand back from the stroke -- and takes it back
+// after (adoptHold). The engine's hand keeps hold throughout.
+function setHoldAside() {
+  world.held = null;
+  $("crosshair").classList.remove("holding");
+  $("carry").hidden = true;
+  clearGuides();
+  world.use = { mode: "none" };
+  showUse();
 }
 
 // Its own actions first, then the built-in ones: one list, one number each.
 function allActionsFor(name) {
   return actionsFor(name).map((action, i) => ({ label: action.label, ask: { action: i } }))
-    .concat(builtinsFor(name).map((builtin) => ({ label: builtin.label, ask: { builtin: builtin.key } })));
+    .concat(builtinsFor(name).map((builtin) => ({ label: builtin.label,
+                                                  ask: builtin.ask || { builtin: builtin.key } })));
 }
 
 async function runAction(name, index) {
@@ -4133,6 +4223,10 @@ async function runAction(name, index) {
   if (!action || world.asking || world.acting) return;
   world.acting = true;
   world.menuFor = null;
+  // Going on from a hold -- the winch kept turned -- the hand is the server's
+  // for the action.
+  const aside = !!world.held;
+  if (aside) setHoldAside();
   const waiting = waitingFor(`${action.label}: doing it`);
   try {
     const answer = await api("/api/world/action", { object: name, ...action.ask,
@@ -4145,9 +4239,17 @@ async function runAction(name, index) {
       say("world", `${action.label}: ${done || "done"}.`, answer.did);
     }
     if (answer.reopened) adoptRebuilt(answer);
+    if (answer.holding) {
+      adoptHold(answer.holding);
+      say("world", `You are holding ${answer.holding} there: move the crosshair to work it on, `
+        + `press the number of one of its actions to go on from here, `
+        + `or ${keyOf("interact")} to let go.`);
+    }
   } catch (error) {
     waiting.done();
     say("bad", `${action.label}: ${error.message || error}`);
+    // Whatever the hand was doing, the page no longer holds its side of it.
+    if (aside) { try { await act("release"); } catch (_) { /* the room says why */ } }
   } finally { world.acting = false; }
 }
 

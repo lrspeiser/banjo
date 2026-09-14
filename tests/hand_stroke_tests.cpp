@@ -20,6 +20,9 @@
 //    and is blocked there; a stiffer spring stops it sooner. That is a draw.
 // 7. Moving the hand takes it back from a stroke, and the thing stays held.
 // 8. A preview changes nothing.
+// 9. A thing on a joint hangs on it. A gate heavier than the hand could lift
+//    is still pushed round its upright pins; the same oak in upright grooves
+//    is lifted by the hand's strength or not at all.
 
 #include "fastlattice/LiveWorld.hpp"
 
@@ -392,6 +395,88 @@ void aBoxThrownAlongAPlankSlidesAlongIt() {
                              " m/s off a box sliding along a plank: that is not friction");
 }
 
+// A thing on a joint hangs on it: the joint holds its weight up, and the hand
+// has only to move it the way the joint lets it go. The stroke once counted the
+// whole weight against the hand, so the playground's 110 kg oak gate -- more
+// than 800 N of it -- left the hand nothing to move it with: a turn of it never
+// began, and the stroke gave up with the gate where it was. Round upright pins
+// none of the weight lies along the way it goes; up upright grooves all of it
+// does, and there the hand lifts what its strength holds up, or nothing.
+constexpr double kPi = 3.14159265358979323846;
+
+struct Hauled {
+    double mass_kg{};
+    double went{};          // degrees round the pin, or metres up the grooves
+    std::string ended;
+};
+
+Hauled haulTheGate(bool on_pins) {
+    TileImpactRequest r;
+    r.cell_size_m = 0.04;
+    r.backend = BackendKind::CpuParallel;
+    SceneBody post;
+    post.name = "post";
+    post.shape = BodyShape::Box;
+    post.material = MaterialPreset::Oak;
+    post.dimensions_m = {0.16, 2.0, 0.16};
+    post.center_m = {0.0, 1.0, 0.0};
+    post.anchored = true;
+    SceneBody gate = post;
+    gate.name = "gate";
+    gate.dimensions_m = {1.2, 1.6, 0.08};
+    gate.center_m = {0.7, 1.0, 0.0};
+    gate.anchored = false;
+    r.bodies = {post, gate};
+    const auto live = LiveWorld::open(r);
+    const Vec3 pin{0.1, 1.0, 0.0}, up{0.0, 1.0, 0.0};
+    require(on_pins ? live->hinge("post", "gate", pin, up, 0.0, 100.0, 10.0) != 0
+                    : live->slide("post", "gate", pin, up, 0.0, 1.0, 0.0) != 0,
+            "the gate's joint would not go on");
+    Hauled out;
+    out.mass_kg = named(live->poses(), "gate").mass_kg;
+    require(live->grab("gate"), "could not take hold of the gate");
+    const Vec3 from = named(live->poses(), "gate").position_m;
+    LiveStroke s;
+    if (on_pins) {
+        // Thirty degrees round the pin, right-handed about it, the way a pin's
+        // degrees count.
+        const double x = from.x - pin.x, z = from.z - pin.z;
+        for (int k = 0; k <= 3; ++k) {
+            const double a = 10.0 * k * kPi / 180.0;
+            s.path_m.push_back({pin.x + x * std::cos(a) + z * std::sin(a), from.y,
+                                pin.z - x * std::sin(a) + z * std::cos(a)});
+        }
+    } else {
+        s.path_m = {from, Vec3{from.x, from.y + 0.3, from.z}};
+    }
+    s.speed_m_s = 0.4;
+    s.accel_m_s2 = 2.0;
+    s.lead_m = kLead;
+    s.let_go_at_end = false;
+    s.give_up_s = 3.0;
+    std::string why;
+    require(live->stroke(s, why), "the hauled gate refused a stroke: " + why);
+    for (int i = 0; i < 1200 && live->hand().stroking; ++i) live->step(kDt);
+    out.ended = live->hand().stroke_ended;
+    for (const LiveJoint &j : live->joints())
+        if (j.kind == (on_pins ? "hinge" : "slider")) out.went = on_pins ? j.at * 180.0 / kPi : j.at;
+    require(live->held() == "gate", "the stroke let go of the gate");
+    return out;
+}
+
+void aGateTooHeavyToLiftStillSwings() {
+    const Hauled round = haulTheGate(true);
+    const Hauled up = haulTheGate(false);
+    std::cout << "  " << round.mass_kg << " kg of oak: round its pins " << round.ended << " at "
+              << round.went << " of 30 degrees; up its grooves " << up.ended << " at "
+              << up.went * 1000.0 << " of 300 mm\n";
+    require(round.mass_kg * kGravity > kStrength, "the gate is light enough to lift: it tests nothing");
+    require(round.ended == "reached" && round.went > 25.0,
+            "a gate on upright pins, pushed round with none of its weight, was not taken round");
+    require(up.ended == "gave up" && up.went < 0.01,
+            "the hand took more oak up its grooves than its strength can hold up");
+}
+
 } // namespace
 
 int main() {
@@ -404,6 +489,7 @@ int main() {
         {"moving the hand takes it back", movingTheHandTakesItBack},
         {"a preview changes nothing", aPreviewChangesNothing},
         {"a box thrown along a plank slides along it", aBoxThrownAlongAPlankSlidesAlongIt},
+        {"a gate too heavy to lift still swings on its pins", aGateTooHeavyToLiftStillSwings},
     };
     int failed = 0;
     for (const auto &[name, test] : tests) {

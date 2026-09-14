@@ -675,9 +675,10 @@ def normalise_tool_points(points: Any, bodies: list[dict[str, Any]]) -> list[dic
 INTERACTION_TEMPLATES = interaction_profiles.TEMPLATES
 
 
-ACTION_STEPS = ("stand", "take_hold", "carry_to", "put_down", "let_go", "push", "heat", "wait")
+ACTION_STEPS = ("stand", "take_hold", "carry_to", "put_down", "let_go", "push", "turn", "slide",
+                "heat", "wait")
 ACTION_STEP_FIELDS = {"do", "part", "stand", "along", "where", "to", "toward", "distance_m",
-                      "speed_m_s", "power_w", "seconds"}
+                      "degrees", "stop", "speed_m_s", "power_w", "seconds"}
 ACTION_PLACE_FIELDS = {"kind", "in_front_m", "height_m", "on", "beside", "side", "gap_m",
                        "from", "offset_m"}
 

@@ -7043,9 +7043,19 @@ void LiveWorld::beginHandStep(double dt_s) {
     I.hand_step.spin_from = I.world->snapshot(id).angular_velocity_rad_s;
     if (!I.stroke) return;
     const Impl::Stroke &s = *I.stroke;
+    // Wielded, the hand holds the whole weight up. Hauled, the thing hangs on
+    // its joint, which holds up all of its weight but what lies along the way
+    // the hand is taking it: a gate is pushed round its upright pins with none
+    // of it, a grate up its grooves with all of it. Counting the whole of it, a
+    // 110 kg oak gate -- more than the hand can lift -- left the hand nothing to
+    // move it with, and a stroke round its pins never began.
+    Vec3 bearing = I.request.gravity_m_s2;
+    if (!I.wielding) {
+        const Vec3 way = pathDirection(s.asked.path_m, s.at_m, s.target_along_m);
+        bearing = dot(bearing, way) * way;
+    }
     const double most = handAcceleration(I.hand_strength_n, I.hand_mass_kg,
-                                         I.world->mechanicalState(id).mass_kg,
-                                         I.request.gravity_m_s2);
+                                         I.world->mechanicalState(id).mass_kg, bearing);
     const StrokeHand next = advanceStrokeHand(s.asked, s.length_m, s.target_along_m,
                                               s.target_speed_m_s,
                                               alongNearest(s.asked.path_m, s.at_m, grip), most,

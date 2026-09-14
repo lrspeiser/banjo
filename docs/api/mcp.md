@@ -176,6 +176,8 @@ Every step is something the engine already does:
 | `push` | Grips a part, pushes it `distance_m` toward a place and lets go, so a door, gate or lever goes where its joints let it |
 | `heat` | `power_w` into a part for `seconds` |
 | `wait` | Lets the room run for `seconds` |
+| `turn` | Takes hold of whatever stands off the pin that a part turns on (its own pin, or that of what it is fixed to, as a winch's handle is to its wheel). Carries it round the pin's axis with the hand's own strokes, by `degrees` (right-handed about the axis) or to a `stop`: `all_the_way`, `half_way`, `all_the_way_back` or `back_to_start`. It says how far it went and what else moved |
+| `slide` | The same along the groove a part slides in, by `distance_m` or to a `stop` |
 
 A place is where the hand takes the middle of what it moves. Its `kind` says
 which of these it is, and only that kind's fields are read; without a `kind`,
@@ -190,7 +192,12 @@ aside, not refused, and the answer lists them under `not_read`.
 When actions are offered, the tool checks them the way the room will run them.
 The hand holds one thing at a time. Every part named exists and is not fixed in
 place. What is taken hold of weighs 73 kg or less; anything heavier gets `stand`
-steps instead. The program ends with the hand empty.
+steps instead. A `turn` needs a pin and a `slide` a groove, its part's own or
+that of what the part is fixed to. The program ends with the hand empty, unless
+its last step is a `turn` or a `slide`. That step keeps hold, so what it raised
+stays up until the person lets go. While it is held, the room runs that thing's
+programs that begin with a `turn` or a `slide` from the hold, so "Lower the gate"
+does not drop it first.
 
 When a key is pressed, the program runs on the room as it is then, and
 everything it does is the engine's answer. A stroke that is blocked, or a stand
@@ -203,8 +210,15 @@ later edit and a restart. The page presses one with `POST /api/world/action`
 actions that no model offers, run the same way and listed after its own: "Put
 it on the ground in front of me" (`put_on_ground`) for what a hand can lift, and
 "Stand it upright" (`stand_upright`) and "Lay it down where I'm facing"
-(`lay_down`) for a box longer than it is wide. The room's chat is told not to
-offer those again.
+(`lay_down`) for a box longer than it is wide. Everything on a pin gets "Turn it
+all the way", "Turn it half way" and "Turn it all the way back", plus "Turn it back
+to where it started" when it turns both ways from there. A wheel, whose stops are
+a whole turn apart, goes half a turn for "all the way" and has no "all the way
+back", which would be the same place. Everything in a groove
+gets the same with "Slide" (`turn` and `slide` with a `stop`). These are offered
+in every room, whoever made the thing, with the stops taken from the joint. The
+room's chat is told not to offer them again under another name, and to name its
+own after what the thing is for: "Raise the gate", not "Turn it".
 
 ## What a person knows
 

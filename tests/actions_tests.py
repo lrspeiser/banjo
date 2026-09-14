@@ -248,6 +248,44 @@ class HandInLive(StandInLive):
         return {"ok": True}
 
 
+@NEEDS_LIBRARY
+class OfferingATurnOrASlide(unittest.TestCase):
+    """The chat can program a winch: a turn step on what turns on a pin -- its
+    own, or through what it is fixed to -- and a slide on what slides. A last
+    turn keeps hold, so the gate it raised stays up."""
+
+    def setUp(self):
+        import world_room
+        self.world_id = room_world.open_room(world_room.Room("tests-gates").spec)
+        self.addCleanup(room_world.close_room, self.world_id)
+
+    def offer(self, name, actions):
+        return room_world.call(self.world_id, "offer_actions", {"name": name, "actions": actions})
+
+    def test_a_winch_is_raised_and_lowered_by_turning_its_handle(self):
+        said = self.offer("castle-gate-winch: winch handle", [
+            {"label": "Raise the gate", "steps": [{"do": "turn", "stop": "all_the_way"}]},
+            {"label": "Lower the gate", "steps": [{"do": "turn", "stop": "back_to_start"},
+                                                  {"do": "let_go"}]},
+            {"label": "Give it a quarter turn", "steps": [{"do": "turn", "degrees": 90}]}])
+        self.assertNotIn("error", said)
+        first = [action["steps"][0] for action in said["actions"]]
+        self.assertEqual(first[0], {"do": "turn", "part": "castle-gate-winch: winch handle",
+                                    "stop": "all_the_way"})
+        self.assertEqual(first[2]["degrees"], 90.0)
+
+    def test_a_turn_needs_a_pin_and_a_slide_a_groove(self):
+        refused = self.offer("castle-gate-winch: castle gate", [
+            {"label": "Spin it", "steps": [{"do": "turn", "degrees": 90}]}])
+        self.assertIn("does not turn on a pin", refused["error"])
+        slid = self.offer("castle-gate-winch: castle gate", [
+            {"label": "Lift the gate", "steps": [{"do": "slide", "stop": "all_the_way"}]}])
+        self.assertNotIn("error", slid)
+        held = self.offer("castle-gate-winch: winch handle", [
+            {"label": "Hold it", "steps": [{"do": "take_hold"}]}])
+        self.assertIn("still in the hand", held["error"])
+
+
 class RunningAnAction(PlaygroundTestCase):
     """POST /api/world/action runs a thing's program on the room as it is."""
 
