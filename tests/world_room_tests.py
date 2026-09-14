@@ -28,6 +28,25 @@ ENGINE = next((p for p in [
 ] if p.is_file()), None)
 
 
+class TheMenuHasOneWorld(unittest.TestCase):
+    """The owner, 2026-09-14: "wipe all the items and worlds in our sim dropdown
+    and start over with a new world with everything in it". The menu offers the
+    world alone. The rooms the tests and the docs name are kept, off the menu,
+    and a link opens one (/world?scene=yard)."""
+
+    def test_the_menu_offers_the_world_and_the_rooms_stay_for_links(self):
+        import re
+        page = (ROOT / "playground" / "world.html").read_text(encoding="utf-8")
+        menu = re.search(r'<select id="scene"[^>]*>(.*?)</select>', page, re.S).group(1)
+        self.assertEqual(re.findall(r'<option value="([^"]+)"', menu), ["world"])
+        for room in ("tests-gates", "tests-ropes", "tests-motion", "bench", "courtyard",
+                     "yard", "armoury", "valley", "watershed", "clearing"):
+            self.assertIn(room, world_room.SCENES)
+        self.assertEqual(world_room.Room("world").spec["terrain"]["generate"], "valley")
+        script = (ROOT / "playground" / "world.js").read_text(encoding="utf-8")
+        self.assertIn('get("scene")', script)
+
+
 class TheRoomAsAuthored(unittest.TestCase):
     def test_every_material_in_the_catalogue_is_in_it(self):
         """The room is there to be experimented on, so it has to carry the whole
@@ -2014,6 +2033,261 @@ class AThingOnAJointIsWorkedByHand(unittest.TestCase):
         finally:
             running.clear()
             runner.join(timeout=3)
+
+
+class TheWorldsHandThingsByRecipe(unittest.TestCase):
+    """The bow, the pick and the table with its chair, built by build_recipe on
+    the world's east terrace: the bow and the pick are tried as they are
+    declared, and the chair is pulled out and pushed in by the engine's hand."""
+
+    @unittest.skipUnless(ENGINE, "the live engine is not built")
+    def test_the_bow_shoots_the_pick_digs_and_the_chair_is_pulled_out(self):
+        import threading
+        import time
+        import server
+        world_id = room_world.open_room(world_room.valley())   # the world's ground, bare
+        try:
+            bow = room_world.call(world_id, "build_recipe", {"recipe": "bow", "at_m": [15.6, -3.4]})
+            self.assertNotIn("error", bow, bow)
+            shot = bow["and"]["interaction"]["trial"]
+            self.assertTrue(shot.get("tried"), shot)
+            self.assertNotEqual(shot.get("sound"), False, shot)
+            self.assertGreater(shot["left_m_s"], 6.0, shot)
+            pick = room_world.call(world_id, "build_recipe", {"recipe": "pick", "at_m": [13.0, -5.6]})
+            self.assertNotIn("error", pick, pick)
+            swing = pick["and"]["interaction"]["trial"]
+            self.assertTrue(swing.get("tried"), swing)
+            depths = []
+
+            def walk(value):
+                if isinstance(value, dict):
+                    if "went_in_mm" in value:
+                        depths.append(value["went_in_mm"])
+                    for v in value.values():
+                        walk(v)
+                elif isinstance(value, list):
+                    for v in value:
+                        walk(v)
+            walk(swing)
+            self.assertTrue(depths and max(depths) > 50.0, swing)
+            table = room_world.call(world_id, "build_recipe", {"recipe": "table", "at_m": [10.4, -3.4]})
+            self.assertNotIn("error", table, table)
+            self.assertEqual(table["actions_offered"],
+                             {"oak chair seat": ["Pull the chair out", "Push the chair in"]})
+            y0 = table["ground_y_m"]
+            spec = room_world.export_spec(room_world.entry_of(world_id))
+        finally:
+            room_world.close_room(world_id)
+
+        live = live_session.Live()
+        self.addCleanup(live.shutdown)
+
+        class App:
+            engine_path = ENGINE
+            runs_path = ROOT / "build/playground-runs"
+            live_inprocess = False
+
+        App.runs_path.mkdir(parents=True, exist_ok=True)
+        app = App()
+        app.live = live
+        app.room = world_room.Room("world")
+        app.room.spec = spec
+        live.open(app, {"spec": spec})
+        running = threading.Event()
+        running.set()
+
+        def keep_running():            # the page's part: the room runs while the hand works
+            while running.is_set():
+                try:
+                    live.session.send(op="step", dt=1 / 240.0, n=4, moved=True)
+                except Exception:
+                    return
+                time.sleep(0.005)
+        runner = threading.Thread(target=keep_running, daemon=True)
+        runner.start()
+        person = {"standing_m": [10.4, y0, -1.6], "facing": [0.0, 0.0, -1.0]}
+
+        def body(name):
+            return next(b for b in live.session.state["bodies"] if b["name"] == name)
+        try:
+            time.sleep(2.0)            # set down on the ground it was built just over
+            self.assertAlmostEqual(body("oak table top")["position_m"][1], y0 + 0.74, delta=0.06,
+                                   msg="the table did not stand on its legs")
+            was = body("oak chair seat")["position_m"]
+            out = server.run_action(app, {"object": "oak chair seat", "action": 0, "person": person})
+            self.assertNotIn("refused", out, out)
+            time.sleep(1.0)
+            now = body("oak chair seat")["position_m"]
+            self.assertGreater(now[2] - was[2], 0.2, (was, now, out))
+            back = server.run_action(app, {"object": "oak chair seat", "action": 1, "person": person})
+            self.assertNotIn("refused", back, back)
+            time.sleep(1.0)
+            self.assertLess(body("oak chair seat")["position_m"][2], now[2] - 0.2, back)
+        finally:
+            running.clear()
+            runner.join(timeout=3)
+
+
+class TheWorldsThingsOnJoints(unittest.TestCase):
+    """The MCP's recipes for things on joints (banjo_mcp.RECIPES), built by
+    build_recipe on the world's own west terrace, as the chat builds them, and
+    worked by the engine's hand: each must do what the guide says it did when it
+    was tried."""
+
+    @unittest.skipUnless(ENGINE, "the live engine is not built")
+    def test_each_recipe_does_what_the_guide_says(self):
+        import threading
+        import time
+        import server
+        import world_chat
+        places = [(-6.6, -2.6), (-10.4, -2.6), (-13.4, -2.6), (-15.6, -2.6)]
+        grounds = []
+        world_id = room_world.open_room(world_room.valley())   # the world's ground, bare
+        try:
+            for (px, pz), which in zip(places, ("gate", "portcullis", "door", "bell")):
+                answer = room_world.call(world_id, "build_recipe", {"recipe": which, "at_m": [px, pz]})
+                self.assertNotIn("error", answer, answer)
+                grounds.append(answer["ground_y_m"])
+            self.assertEqual(answer["actions_offered"], {"iron bell": ["Ring the bell"]})
+            # One where the first gate stands would overlap it: refused whole,
+            # nothing of it left. One on clear ground has its parts numbered.
+            count = len(room_world.entry_of(world_id)["scene"]["bodies"])
+            self.assertIn("error", room_world.call(world_id, "build_recipe",
+                                                   {"recipe": "gate", "at_m": [-6.6, -2.6]}))
+            self.assertEqual(len(room_world.entry_of(world_id)["scene"]["bodies"]), count)
+            second = room_world.call(world_id, "build_recipe", {"recipe": "gate", "at_m": [-12.0, -5.6]})
+            self.assertNotIn("error", second, second)
+            self.assertIn("oak gate 2", second["parts"])
+            self.assertEqual(second["actions_offered"], {"oak gate 2": ["Open the gate", "Close the gate"]})
+            spec = room_world.export_spec(room_world.entry_of(world_id))
+        finally:
+            room_world.close_room(world_id)
+        self.assertIn("build_recipe", world_chat.GUIDE)
+        self.assertIn('"portcullis": a portcullis in a gateway', world_chat.GUIDE)
+
+        live = live_session.Live()
+        self.addCleanup(live.shutdown)
+
+        class App:
+            engine_path = ENGINE
+            runs_path = ROOT / "build/playground-runs"
+            live_inprocess = False
+
+        App.runs_path.mkdir(parents=True, exist_ok=True)
+        app = App()
+        app.live = live
+        app.room = world_room.Room("world")
+        app.room.spec = spec
+        live.open(app, {"spec": spec})
+        running = threading.Event()
+        running.set()
+
+        def keep_running():            # the page's part: the room runs while the hand works
+            while running.is_set():
+                try:
+                    live.session.send(op="step", dt=1 / 240.0, n=4, moved=True)
+                except Exception:
+                    return
+                time.sleep(0.005)
+        runner = threading.Thread(target=keep_running, daemon=True)
+        runner.start()
+        person = {"standing_m": [-10.0, 0.9, -1.2], "facing": [0.0, 0.0, -1.0]}
+
+        def joints():
+            return live.session.send(op="joints")["joints"]
+
+        def joint(kind, part):
+            return next(j for j in joints() if j["kind"] == kind and part in (j.get("a"), j.get("b")))
+
+        def turn(name, stop):
+            return server.run_action(app, {"object": name, "builtin": "turn", "stop": stop,
+                                           "person": person})
+
+        def let_go():
+            live.session.send(op="release")
+            time.sleep(0.6)
+        try:
+            time.sleep(1.0)
+            # The gate: held shut by its latch, and let go of, it opens and shuts.
+            self.assertIn("held fast", turn("oak gate", "all_the_way").get("refused", ""))
+            latch = next(j for j in joints() if j["kind"] == "fixing" and "oak gate" in (j["a"], j["b"]))
+            live.session.send(op="unhinge", joint=latch["id"])
+            time.sleep(0.3)
+            opened = turn("oak gate", "all_the_way")
+            self.assertGreater(joint("hinge", "oak gate")["degrees"], 85.0, opened)
+            shut = turn("oak gate", "all_the_way_back")
+            self.assertLess(joint("hinge", "oak gate")["degrees"], 5.0, shut)
+            let_go()
+            # The portcullis: half a turn of the winch raises it 0.64 m.
+            up = turn("winch handle", "all_the_way")
+            self.assertGreater(joint("slider", "portcullis")["metres"], 0.55, up)
+            down = turn("winch handle", "back_to_start")
+            self.assertLess(joint("slider", "portcullis")["metres"], 0.05, down)
+            let_go()
+            # The door: opened by the hand, and let go of, its spring shuts it.
+            opened = turn("oak door", "all_the_way")
+            self.assertGreater(joint("hinge", "oak door")["degrees"], 85.0, opened)
+            let_go()
+            time.sleep(2.0)
+            self.assertLess(joint("hinge", "oak door")["degrees"], 10.0, "the spring left the door open")
+            # The bell: hangs still at its rope's length.
+            bell = next(b for b in live.session.state["bodies"] if b["name"] == "iron bell")
+            self.assertAlmostEqual(bell["position_m"][1], grounds[3] + 1.6, delta=0.05)
+        finally:
+            running.clear()
+            runner.join(timeout=3)
+
+
+class TheWorldAsShipped(unittest.TestCase):
+    """The world the menu offers (rooms/world.json), as its chat built it: the
+    mechanisms it built by recipe are in it with their actions, it fits the
+    room's cells, and it runs at realtime."""
+
+    def spec(self):
+        if not (world_room.ROOMS / "world.json").is_file():
+            self.skipTest("rooms/world.json is not there: the world is the ground bare")
+        return world_room.Room("world").spec
+
+    def test_what_was_built_is_in_it_with_its_actions(self):
+        spec = self.spec()
+        names = {b["name"] for b in spec["bodies"]}
+        for part in ("oak gate", "portcullis", "winch handle", "oak door", "iron bell",
+                     "bow grip upper", "pick haft", "oak table top", "oak chair seat"):
+            self.assertIn(part, names)
+        offered = {(a["body"], a["label"]) for a in spec.get("actions") or []}
+        for thing, label in (("oak gate", "Open the gate"), ("winch handle", "Raise the portcullis"),
+                             ("oak door", "Open the door"), ("iron bell", "Ring the bell"),
+                             ("oak chair seat", "Pull the chair out")):
+            self.assertIn((thing, label), offered)
+        templates = {p.get("template") for p in spec.get("interactions") or []}
+        self.assertLessEqual({"draw-and-release", "swing-and-lever"}, templates)
+        checked = fracture_lab.validate(spec)
+        self.assertLessEqual(checked["cells"],
+                             fracture_lab.ALGORITHMS[checked["algorithm"]]["max_cells"])
+
+    @unittest.skipUnless(ENGINE, "the live engine is not built")
+    @unittest.skipIf(os.environ.get("CI"), "a CI runner is not the machine the room runs on")
+    def test_it_runs_at_realtime(self):
+        """The owner's rule: nothing runs more than 10% slower than the time it
+        shows, including how everything looks at rest."""
+        import time
+        spec = self.spec()
+        live = live_session.Live()
+        self.addCleanup(live.shutdown)
+
+        class App:
+            engine_path = ENGINE
+            runs_path = ROOT / "build/playground-runs"
+            live_inprocess = False
+
+        App.runs_path.mkdir(parents=True, exist_ok=True)
+        live.open(App(), {"spec": spec})
+        live.session.send(op="step", dt=1 / 240.0, n=48, moved=True)   # its first fifth of a second
+        began = time.perf_counter()
+        for _ in range(300):                                             # 5 s of the world's time
+            live.session.send(op="step", dt=1 / 240.0, n=4, moved=True)
+        wall = time.perf_counter() - began
+        self.assertLess(wall, 5.0 * 1.1, f"5 s of the world took {wall:.2f} s")
 
 
 if __name__ == "__main__":

@@ -624,7 +624,8 @@ could still take, and the cold twin held.
 
 ## Watching it
 
-Start the playground against this branch's build and choose *An empty yard*:
+Start the playground against this branch's build and open the empty yard, which
+is off the menu, by its link (`/world?scene=yard`):
 
     python -u playground/server.py --port 8774 \
         --engine <checkout>/build/heat/Release/banjo_platform_cli.exe \

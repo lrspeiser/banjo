@@ -195,7 +195,8 @@ it down where I'm facing". Everything on a pin, in any room, gets "Turn it all
 the way", "Turn it half way" and "Turn it all the way back", plus "Turn it back to
 where it started" when it turns both ways. A wheel, which turns right round, goes
 half a turn for "all the way" and has no "all the way back", which would be the
-same place. Everything in a groove gets the same with "Slide". The hand takes hold of what stands off the pin, carries it round
+same place. Everything in a groove gets the same with "Slide". Anything held shut
+by a latch gets "Release the latch", which lets go of the fixing as R does. The hand takes hold of what stands off the pin, carries it round
 with its own strokes, says how far it went and what else moved ("the castle gate
 rose 0.32 m"), and keeps hold, so a raised gate stays up until you press E. While
 you hold it, its number keys still run what begins with a turn or a slide, from
@@ -283,13 +284,42 @@ and after it has run (`tests/qa_browser.py`). A run writes
 Trials cost a model conversation each — 140k to 230k tokens in, as measured — so
 the suite is run on purpose, not from ctest.
 
+### The world
+
+The menu has one room, **The world**: the owner asked, on 2026-09-14, for one
+world with everything in it, built by asking. It is the valley's ground: a river
+running west to east, a pond, a hill a person arrives on, and a level terrace on
+either side of the hill. Everything on it was built by the room's chat, through
+the MCP, with the product cheat sheet in its guide:
+- the west terrace has the things on joints;
+- the east terrace has the things a hand takes up;
+- the river and the pond have the ground work.
+
+You arrive on the hill, looking down the valley toward the pond and the river.
+- To your right and a little behind is the west terrace, with a row of things on
+  joints: the latched gate, the castle gateway with its portcullis and winch,
+  the door that shuts itself, and the bell.
+- Ahead and to your left is the east terrace: the table and chair, a crate, a
+  pot, a plank and a ball, the bow, the sword, the pick, and a hearth with a
+  pot on it.
+- A channel runs from the pond to the river, and an earth dam stands across the
+  river beside it.
+
+Click a thing to see what it does, and press its number.
+
+The other rooms named in this README are off the menu and kept for the tests and
+the QA: the bench, the courtyard, the yard, the armoury, the valley, the
+watershed, the clearing and the three test rooms. A link opens each one, e.g.
+`/world?scene=yard`.
+
 ### The test rooms
 
 `python tests/qa.py --rooms` builds every recipe through the MCP exactly as the
 QA does and lays them out side by side, each part named after its case — aim at
 one and the page says, say, "hoist: iron weight" — with a concrete stop wherever
 a thrown or rolling ball would carry on into the next build. They are written to
-`playground/rooms/`, and the room opens on the first:
+`playground/rooms/`, off the menu; a link opens each (`/world?scene=tests-gates`,
+`tests-ropes`, `tests-motion`):
 
 - **Tests: gates and wheels** (13,920 cells) — the hinged gate, and the castle
   gates worked by a winch and by a capstan.
@@ -428,9 +458,9 @@ page from outside it.
 | `POST /api/jobs/{id}/rerun` | Apply `{case_index, action, value, request_id}` from a declared physical control; no model call |
 | `POST /api/jobs/{id}/open` | Open `{case_index}` in the native studio |
 | `POST /api/world/open` | Open the room on /world: `{scene}` (one of the rooms above) or `{qa: "<run>/<case>-<trial>"}` (a saved QA build); `fresh: true` builds it again from scratch |
-| `POST /api/world/ask` | One chat turn in the open room: `{message, story, person}` — `person` is where you are (`standing_m`, `eyes_m`, `facing`, `looking_at`, `looking_at_m`), checked and passed to the chat as `the_person`; a room the chat changed is opened again from what it left |
+| `POST /api/world/ask` | One chat turn in the open room: `{session, message, story, person}` — `session` is the room the page has open (from `/api/world/open`), and a page whose room was opened again elsewhere is refused, with no model asked; `person` is where you are (`standing_m`, `eyes_m`, `facing`, `looking_at`, `looking_at_m`), checked and passed to the chat as `the_person`; a room the chat changed is opened again from what it left |
 | `GET /api/knowledge` | The person's notebook, as the MCP's `read_knowledge` says it: each design they have met by its standing, with the evidence each rests on (what the engine measured their own tool doing, scoped to what was tried); what is blocked and by what; and what the engine does not model. A `POST /api/live/act` whose body gives `notebook_seen` (the revision the page has shown) gets `notebook` in its answer whenever the server's is newer |
-| `POST /api/world/action` | Press one of a thing's actions: `{object, action, person}`, with `action` counted from 0 among its own, or `{object, builtin, person}` for one every loose thing has (`put_on_ground`, `stand_upright`, `lay_down`; a hand takes hold of at most 73 kg, and nothing fixed in place), or `{object, builtin: "turn" or "slide", stop, person}` for anything on a pin or in a groove (`stop` is `all_the_way`, `half_way`, `all_the_way_back` or `back_to_start`). An answer with `holding` says the hand kept hold after a last turn or slide. Runs its program on the room as it is: the hand's steps in the running room, and a stand step as `turn_object`, after which the room is opened again. Answers `{action, done, did}` (plus `reopened, session, state` after a stand), or `{action, done, refused}`, in which case the hand has been opened and what was done stays done. No model is asked |
+| `POST /api/world/action` | Press one of a thing's actions, on the room the page has open: every press carries its `session` (from `/api/world/open`), and one from a page whose room was opened again elsewhere is refused, with nothing done. `{session, object, action, person}`, with `action` counted from 0 among its own, or `{object, builtin, person}` for one every loose thing has (`put_on_ground`, `stand_upright`, `lay_down`; a hand takes hold of at most 73 kg, and nothing fixed in place), or `{object, builtin: "turn" or "slide", stop, person}` for anything on a pin or in a groove (`stop` is `all_the_way`, `half_way`, `all_the_way_back` or `back_to_start`). An answer with `holding` says the hand kept hold after a last turn or slide. Runs its program on the room as it is: the hand's steps in the running room, and a stand step as `turn_object`, after which the room is opened again. Answers `{action, done, did}` (plus `reopened, session, state` after a stand), or `{action, done, refused}`, in which case the hand has been opened and what was done stays done. No model is asked |
 | `POST /api/live/open` | Open a live world from `{spec}`: the lab page's stage. There is one live world at a time, so this closes the room on /world |
 | `POST /api/live/act` | Step the open room, or take hold of, move, let go of or heat something in it. In a room with ground: `dig` and `deposit` change it (and are kept, so a reopened room still has them), `survey` says what is at a point, `discharge` sets the river, and `environment`, `environment_state` and `terrain` read the ground and the water |
 

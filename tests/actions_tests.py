@@ -70,7 +70,7 @@ BRING = {"label": "Bring it to me", "steps": [
     {"do": "take_hold"},
     {"do": "carry_to", "to": {"in_front_m": 0.8, "height_m": 1.0}},
     {"do": "put_down"}]}
-STAND_UP = {"label": "Stand it upright", "steps": [{"do": "stand", "stand": "upright"}]}
+STAND_UP = {"label": "Stand the beam on end", "steps": [{"do": "stand", "stand": "upright"}]}
 # Facing -z, three metres from the table: the table is in front of them.
 PERSON = {"standing_m": [0.0, 0.0, 3.0], "facing": [0.0, 0.0, -1.0]}
 
@@ -140,7 +140,7 @@ class OfferActions(unittest.TestCase):
         spec = room_world.export_spec(room_world.entry_of(self.world))
         self.assertEqual([(a["body"], a["label"]) for a in spec["actions"]],
                          [("stool", "Pull it out"), ("stool", "Push it in"),
-                          ("stool", "Bring it to me"), ("oak beam", "Stand it upright")])
+                          ("stool", "Bring it to me"), ("oak beam", "Stand the beam on end")])
         # Opened again from that spec -- after a restart, or the next edit --
         # they are all still there.
         again = room_world.open_room(spec)
@@ -198,13 +198,26 @@ class OfferActions(unittest.TestCase):
             {"do": "put_down"}]}])
         self.assertIn("say which kind of place", answer["error"])
 
+    def test_a_label_the_page_already_offers_is_refused(self):
+        """The room's chat programmed "Release the latch" onto a latch bar three
+        times; the page offers it on anything a latch holds shut."""
+        import server
+        for label in ("Release the latch", "Turn it all the way", "stand it upright"):
+            said = self.offer("oak beam", [{"label": label,
+                                            "steps": [{"do": "stand", "stand": "upright"}]}])
+            self.assertIn("page's own menu", said.get("error", ""), label)
+        page = ({label.lower() for label in server.JOINT_LABELS.values()}
+                | {action["label"].lower() for action in server.BUILTIN_ACTIONS.values()}
+                | {"release the latch"})
+        self.assertEqual(page, set(room_world.banjo_mcp.PAGE_OFFERS))
+
     def test_an_action_naming_a_thing_that_is_gone_goes_with_it(self):
         self.offer("stool", [PULL_OUT, BRING])
         self.offer("oak beam", [STAND_UP])
         room_world.call(self.world, "remove_object", {"name": "table"})
         spec = room_world.export_spec(room_world.entry_of(self.world))
         self.assertEqual([(a["body"], a["label"]) for a in spec["actions"]],
-                         [("stool", "Bring it to me"), ("oak beam", "Stand it upright")])
+                         [("stool", "Bring it to me"), ("oak beam", "Stand the beam on end")])
 
 
 class HandInLive(StandInLive):
@@ -286,6 +299,40 @@ class OfferingATurnOrASlide(unittest.TestCase):
         self.assertIn("still in the hand", held["error"])
 
 
+class WhatElseATurnMoved(unittest.TestCase):
+    """A turn or a slide says what else it moved: what is joined to the thing
+    worked, and nothing else. Measured on the world: a bell still swinging on
+    the far terrace from being rung was said to have moved 0.28 m with a turn
+    of the bow."""
+
+    JOINTS = [
+        {"kind": "hinge", "a": "winch post", "b": "winch wheel", "attached": True},
+        {"kind": "fixing", "a": "winch wheel", "b": "winch handle", "attached": True},
+        {"kind": "pulley", "a": "winch wheel", "b": "portcullis", "attached": True},
+        {"kind": "slider", "a": "gateway post", "b": "portcullis", "attached": True},
+        {"kind": "link", "a": "gateway post", "b": "lantern", "attached": True},
+        {"kind": "link", "a": "bell beam", "b": "iron bell", "attached": True},
+    ]
+    THINGS = {"winch post": {"anchored": True}, "gateway post": {"anchored": True},
+              "bell beam": {"anchored": True}}
+    BEFORE = {"winch wheel": [0.0, 1.0, 0.0], "winch handle": [0.0, 1.24, 0.16],
+              "portcullis": [2.0, 0.5, 0.0], "lantern": [2.0, 2.0, 0.0], "iron bell": [9.0, 1.0, 0.0]}
+
+    def test_what_a_winch_can_move_goes_through_its_rope_and_stops_at_posts(self):
+        joined = playground_server._joined({"winch wheel", "winch handle"}, self.JOINTS, self.THINGS)
+        self.assertEqual(joined, {"winch wheel", "winch handle", "portcullis"})
+
+    def test_the_gate_a_winch_raises_is_said_and_a_swinging_bell_is_not(self):
+        group = {"winch wheel", "winch handle"}
+        joined = playground_server._joined(group, self.JOINTS, self.THINGS)
+        after = dict(self.BEFORE, **{"winch handle": [0.0, 0.76, 0.16], "portcullis": [2.0, 0.6, 0.0],
+                                     "iron bell": [9.28, 1.0, 0.0]})
+        self.assertEqual(playground_server._what_else_moved(self.BEFORE, after, group, joined),
+                         "portcullis rose 0.10 m")
+        after = dict(self.BEFORE, **{"iron bell": [9.28, 1.0, 0.0]})
+        self.assertIsNone(playground_server._what_else_moved(self.BEFORE, after, group, joined))
+
+
 class RunningAnAction(PlaygroundTestCase):
     """POST /api/world/action runs a thing's program on the room as it is."""
 
@@ -324,7 +371,8 @@ class RunningAnAction(PlaygroundTestCase):
 
     def press(self, app, name, index):
         return self.post(app, "/api/world/action",
-                         {"object": name, "action": index, "person": PERSON})
+                         {"session": app.live.session.id, "object": name, "action": index,
+                          "person": PERSON})
 
     def test_bring_it_to_me_is_a_grip_a_stroke_and_setting_it_down(self):
         app = self.start([dict(BRING, body="stool")])
@@ -334,8 +382,11 @@ class RunningAnAction(PlaygroundTestCase):
         self.assertEqual([a["op"] for a in app.live.acts], ["wield", "stroke", "stroke", "release"])
         self.assertEqual(app.live.acts[0]["grip"], [0.0, 0.225, 1.0], "gripped at its middle")
         carried = app.live.acts[1]["path"][-1]
-        # 0.8 m in front of them, a metre off the ground.
-        self.assertEqual([round(v, 3) for v in carried], [0.0, 1.0, 2.2])
+        # 0.8 m in front of them, its bottom a metre (and 2 cm) off the ground:
+        # its middle half the stool's 0.45 m above that. height_m is where its
+        # bottom is -- read as its middle, "on the ground" (height_m 0) carried
+        # a crate half into the ground and the stroke was blocked.
+        self.assertEqual([round(v, 3) for v in carried], [0.0, 1.245, 2.2])
         self.assertLess(app.live.acts[2]["path"][-1][1], carried[1] - 1.5,
                         "put down: lowered until what is under it stops it")
 
@@ -384,7 +435,8 @@ class RunningAnAction(PlaygroundTestCase):
         # ground", the owner's words.
         app = self.start([])
         status, answer = self.post(app, "/api/world/action",
-                                   {"object": "stool", "builtin": "put_on_ground", "person": PERSON})
+                                   {"session": app.live.session.id, "object": "stool",
+                                    "builtin": "put_on_ground", "person": PERSON})
         self.assertEqual(status, 200, answer)
         self.assertEqual(answer["did"], ["Put it on the ground in front of me"], answer)
         self.assertEqual([a["op"] for a in app.live.acts], ["wield", "stroke", "stroke", "release"])
@@ -402,7 +454,8 @@ class RunningAnAction(PlaygroundTestCase):
         stool = next(b for b in app.live.session.state["bodies"] if b["name"] == "stool")
         stool["mass_kg"] = 140.0
         status, answer = self.post(app, "/api/world/action",
-                                   {"object": "stool", "builtin": "put_on_ground", "person": PERSON})
+                                   {"session": app.live.session.id, "object": "stool",
+                                    "builtin": "put_on_ground", "person": PERSON})
         self.assertEqual(status, 200, answer)
         self.assertIn("more than", answer["refused"])
         self.assertEqual(app.live.acts, [])
@@ -410,7 +463,8 @@ class RunningAnAction(PlaygroundTestCase):
     def test_a_built_in_that_is_not_there_is_an_error(self):
         app = self.start([])
         status, answer = self.post(app, "/api/world/action",
-                                   {"object": "stool", "builtin": "juggle", "person": PERSON})
+                                   {"session": app.live.session.id, "object": "stool",
+                                    "builtin": "juggle", "person": PERSON})
         self.assertEqual(status, 400)
         self.assertIn("no built-in action", answer["error"])
 
@@ -421,6 +475,24 @@ class RunningAnAction(PlaygroundTestCase):
         self.assertEqual(status, 400)
         self.assertIn("put down what you are holding first", answer["error"])
         self.assertEqual(app.live.acts, [])
+
+    def test_a_page_that_no_longer_has_the_room_is_refused_and_nothing_moves(self):
+        # The playground runs one room at a time. Measured on 8781: a checker's
+        # page that had lost its room to the owner's went on pressing "Put it
+        # on the ground in front of me", and each press carried the oak plank
+        # about in the owner's room, from where the checker stood.
+        app = self.start([dict(BRING, body="stool")])
+        stale = app.live.session.id
+        app.live.open(app, {"spec": app.room.spec})      # opened again, by another page
+        app.live.acts.clear()
+        for body in ({"session": stale, "object": "stool", "action": 0, "person": PERSON},
+                     {"session": stale, "object": "stool", "builtin": "put_on_ground",
+                      "person": PERSON},
+                     {"object": "stool", "action": 0, "person": PERSON}):
+            status, answer = self.post(app, "/api/world/action", body)
+            self.assertEqual(status, 400, answer)
+            self.assertIn("no longer has the room", answer["error"])
+        self.assertEqual(app.live.acts, [], "the hand never moved")
 
     def test_an_action_that_is_not_there_is_an_error(self):
         app = self.start([dict(BRING, body="stool")])

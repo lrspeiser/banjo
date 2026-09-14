@@ -249,7 +249,7 @@ class Playground:
         # rather than as whatever the engine last reported. Those are different
         # things once something has broken: rebuilding a room out of two
         # hundred shards is not what anyone means by "add a ball to it".
-        self.room = world_room.Room()
+        self.room = world_room.Room("world")
         self.lock = threading.RLock()
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="banjo-playground")
         self.studios = []
@@ -1206,8 +1206,8 @@ class Handler(BaseHTTPRequestHandler):
                     opened["scene"]=key
                     opened["scenes"]=sorted(world_room.SCENES)
                     return self.send(opened)
-                scene=str(body.get("scene","bench"))
-                if scene not in world_room.SCENES: scene="bench"
+                scene=str(body.get("scene","world"))
+                if scene not in world_room.SCENES: scene="world"
                 # Kept on disk as well (room_store): a room this server has not
                 # opened since it started is read back as it was left, so a
                 # restart -- the sims are restarted whenever work lands -- keeps
@@ -1242,8 +1242,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(opened)
             if path=="/api/world/ask":
                 app=self.server.app
+                _this_pages_room(app,body)
                 session=app.live.session
-                if session is None: raise ValueError("the room is not open")
                 message=str(body.get("message",""))[:2000]
                 trace=[]
                 from time import perf_counter as _now
@@ -1306,7 +1306,9 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/world/action":
                 # One of a thing's actions (offer_actions), run step by step --
                 # no model is asked: the room's chat wrote the program when it
-                # made the thing. See run_action.
+                # made the thing. See run_action. Only on the room the page
+                # has open (_this_pages_room).
+                _this_pages_room(self.server.app,body)
                 return self.send(run_action(self.server.app,body))
             if path=="/api/live/open":
                 opened=self.server.app.live.open(self.server.app,body)
@@ -1528,7 +1530,13 @@ def _action_point(app,place,person,moving):
         # several parts that is not the middle of its box, and worked out from
         # the box, a joined stool was carried with its legs 9 cm in the ground
         # and the hand's stroke was blocked.
-        y=sy+float(place["height_m"]) if "height_m" in place else max(here[1]+0.05,sy+_reach(mover,up)+0.02)
+        # height_m is how far its bottom is above the ground there, as the MCP
+        # says it; 0 is resting on it, and is carried clear like none. Taken as
+        # its middle's height, "on the ground in front of me" (height_m 0)
+        # carried a crate half into the terrace, and the stroke was blocked.
+        rest=sy+_reach(mover,up)+0.02
+        high=float(place.get("height_m") or 0.0)
+        y=rest+high if high>0.0 else max(here[1]+0.05,rest)
         return [sx+ahead*fx,y,sz+ahead*fz]
     other=_live_body(app,place.get("on") or place.get("beside") or place.get("from"))
     at=[float(v) for v in other.get("position_m") or [0.0,0.0,0.0]]
@@ -1721,12 +1729,32 @@ def _positions(app):
             for b in (app.live.session.state or {}).get("bodies",[])}
 
 
-def _what_else_moved(before,after,group):
+def _joined(group,joints,things):
+    """The worked thing and everything joined to it -- by a pin, a groove, a
+    rope over a pulley, a spring or a fixing -- going on through things that
+    move and stopping at anything fixed in place: all that working it can move."""
+    reach,these=set(group),list(group)
+    while these:
+        n=these.pop()
+        for j in joints:
+            if not j.get("attached") or n not in (j.get("a"),j.get("b")): continue
+            other=j.get("b") if j.get("a")==n else j.get("a")
+            if other and other not in reach and not (things.get(other) or {}).get("anchored"):
+                reach.add(other)
+                these.append(other)
+    return reach
+
+
+def _what_else_moved(before,after,group,joined=None):
     """What moved most besides what was worked -- the gate a winch raised --
-    in plain words, or None when nothing else moved 2 cm."""
+    in plain words, or None when nothing else moved 2 cm. Only among what is
+    joined to it, when that is given: measured on the world, a bell still
+    swinging on the far terrace from being rung was said to have moved 0.28 m
+    with a turn of the bow."""
     best=None
     for name,p0 in before.items():
         if name in group or name not in after: continue
+        if joined is not None and name not in joined: continue
         d=[after[name][k]-p0[k] for k in range(3)]
         size=math.sqrt(sum(v*v for v in d))
         if size>=0.02 and (best is None or size>best[1]): best=(name,size,d)
@@ -1750,6 +1778,13 @@ def _worked(app,part,step,kind,holding=None):
                          f" and nothing it is fixed to does")
     if holding and holding not in group:
         raise ValueError(f"the hand already has {holding}: let go of it first")
+    # Fixed to something that does not move -- a gate's latch bar to its post --
+    # it is held fast, and the hand would only be pulling on the post.
+    things={b.get("name"):b for b in (app.live.session.state or {}).get("bodies",[])}
+    fast=next((n for n in sorted(group) if (things.get(n) or {}).get("anchored")),None)
+    if fast is not None:
+        raise ValueError(f"{part} is held fast to {fast}: release the latch first"
+                         f" (R, or the right mouse)")
     axis=_unit(joint.get("axis") or [0.0,1.0,0.0])
     at=[float(v) for v in joint.get("at") or [0.0,0.0,0.0]]
     now=float(joint.get("degrees" if turning else "metres") or 0.0)
@@ -1795,7 +1830,7 @@ def _worked(app,part,step,kind,holding=None):
     # degree past, and read -180: read where it was asked to go, not across the join.
     if wheel: reached=target+_wrapped(reached-target)
     went=reached-now
-    moved=_what_else_moved(before,_positions(app),group)
+    moved=_what_else_moved(before,_positions(app),group,_joined(group,joints,things))
     said=(f"turned {moving} {went:+.0f} degrees, to {reached:.0f}" if turning
           else f"slid {moving} {went:+.2f} m, to {reached:.2f} m")+(f"; {moved}" if moved else "")
     if abs(reached-target)>(10.0 if turning else 0.05):
@@ -1803,6 +1838,21 @@ def _worked(app,part,step,kind,holding=None):
                           if turning else
                           f"the hand slid it {went:+.2f} of the {amount:+.2f} m asked, and could move it no further")
     return said,grip,None
+
+
+def _this_pages_room(app,body):
+    """A page acts on the room it has open, and on no other. The playground runs
+    one room at a time, so a page whose room was opened again -- in another tab,
+    by another person, by the lab -- no longer has one. Measured 2026-09-14 on
+    8781: a checker's page that had lost its room to the owner's went on
+    pressing "Put it on the ground in front of me", and each press carried the
+    oak plank about in the owner's room, from where the checker stood."""
+    session=app.live.session
+    if session is None: raise ValueError("the room is not open")
+    asked=str(body.get("session") or "") if isinstance(body,dict) else ""
+    if asked!=session.id:
+        raise ValueError("this page no longer has the room: it was opened again, in another tab or"
+                         " page, so nothing was done here. Reload the page to take the room back")
 
 
 def run_action(app,body):

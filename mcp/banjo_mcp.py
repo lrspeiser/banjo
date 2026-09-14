@@ -816,7 +816,16 @@ def tool_add_object(args: dict[str, Any]) -> dict[str, Any]:
     # on top of it instead: the ground under a thing is the one height a caller
     # cannot work out for itself, and a body started inside a hill is thrown
     # out of it.
-    rests = _set_down(entry, added) if set_down else None
+    # Wholly inside the ground -- a height worked out as if the ground were at 0,
+    # where it is not -- it is set down on whatever is under it, as [x, z] would.
+    # Measured, the room's chat gave a pot and a log heights of 0.24 and 0.14 on
+    # ground at 0.6, and lifted onto the bare ground there they were refused six
+    # times for overlapping the hearth stone that stood on it.
+    buried = not set_down and _buried(entry, added)
+    rests = _set_down(entry, added) if (set_down or buried) else None
+    if buried:
+        rests["note"] = ("it was given a height wholly inside the ground -- the ground here is "
+                         "not at 0 -- so it was set down on what is under it, as [x, z] does")
     # A part of a piece set down on top of another part of the same piece is
     # never where a part goes. Measured, the playground's chat gave a pick's arm
     # [x, z] twice, the arm went onto its own haft, and the hand then held the
@@ -830,8 +839,8 @@ def tool_add_object(args: dict[str, Any]) -> dict[str, Any]:
                           f"that piece. Give every part of one piece its exact [x, y, z], side "
                           f"by side as they join: on the ground, its centre at half its own "
                           f"height; otherwise where it meets the part before it.")
-    seated = None if set_down else _seat_on_ground(entry, added)
-    held_up = None if set_down else _held_up(entry, added)
+    seated = None if (set_down or buried) else _seat_on_ground(entry, added)
+    held_up = None if (set_down or buried) else _held_up(entry, added)
     scene = dict(entry["scene"], bodies=list(entry["scene"]["bodies"]) + [added])
     lost = _rebuild(entry, scene, world_id)
     answer: dict[str, Any] = {
@@ -1387,6 +1396,16 @@ ACTION_STEPS = ("stand", "take_hold", "carry_to", "put_down", "let_go", "push", 
 # Where a turn or a slide ends, by name: the joint's far stop, half way there,
 # its near stop, or where it was when the room was made.
 ACTION_STOPS = ("all_the_way", "half_way", "all_the_way_back", "back_to_start")
+# What the page already offers everything it applies to (world.js builtinsFor;
+# server.py BUILTIN_ACTIONS and JOINT_LABELS -- actions_tests ties the three).
+# Offered again as a thing's own, it is the same thing twice on its menu: the
+# room's chat spent three rounds programming "Release the latch" onto a latch
+# bar, and the third was a program that did nothing a person needs.
+PAGE_OFFERS = frozenset({
+    "put it on the ground in front of me", "stand it upright", "lay it down where i'm facing",
+    "turn it all the way", "turn it half way", "turn it all the way back",
+    "turn it back to where it started", "slide it all the way", "slide it half way",
+    "slide it all the way back", "slide it back to where it started", "release the latch"})
 ACTION_ALONG = ("facing", "across", "x", "z")
 ACTION_WHERE = ("here", "in_front")
 ACTION_SIDES = ("near", "far", "left", "right")
@@ -1395,7 +1414,8 @@ ACTION_PLACE = {
     "type": "object", "required": ["kind"],
     "description": "Where the hand goes. kind says which, and only that kind's fields are "
                    "read: in_front -- in_front_m metres in front of the person when the key "
-                   "is pressed, with height_m above the ground there (or resting on it); on "
+                   "is pressed, its bottom height_m above the ground there (0, or none, is "
+                   "resting on it); on "
                    "-- a thing to put it on top of; beside -- a thing to put it next to, with "
                    "side near (between it and the person), far, left or right as the person "
                    "sees it, and gap_m; from -- a thing, with offset_m [dx, dy, dz] from its "
@@ -1547,6 +1567,9 @@ def _action_checked(entry: dict[str, Any], name: str, action: Any, names: set[st
     if not label or len(label) > ACTION_LABEL_CHARS:
         raise Refused(f"each action needs a label of at most {ACTION_LABEL_CHARS} characters, "
                       f"the way a person would say it: {label[:80]!r}")
+    if label.lower() in PAGE_OFFERS:
+        raise Refused(f"{label!r} is on the page's own menu already, for everything it applies "
+                      f"to: offer what the page does not, named for what the thing is for")
     steps = action.get("steps")
     if not isinstance(steps, list) or not 1 <= len(steps) <= MAX_STEPS:
         raise Refused(f"{label!r}: steps is a list of 1 to {MAX_STEPS} steps")
@@ -2725,6 +2748,342 @@ def tool_duplicate(args: dict[str, Any]) -> dict[str, Any]:
         answer["things_a_person_uses"] = tried
     if lost:
         answer["joints_lost"] = lost
+    return answer
+
+
+# ---------------------------------------------------------------------------
+# Recipes: mechanisms built exactly, at a place
+# ---------------------------------------------------------------------------
+#
+# The playground's chat, 2026-09-14, given a gate as a recipe of seven calls with
+# every point an offset from the place: it gave the parts [x, z], so each was set
+# down on the ground and the gate dragged on it; it put the pin 0.22 m inside the
+# gate's edge instead of 0.52; and its latch bar lay 0.36 m off, on the ground.
+# So a mechanism the engine has been tried on is built here, number for number,
+# at a place the caller names: the ground's height there is surveyed, everything
+# is laid on the room's cells, and its actions are offered under its parts' real
+# names. Each was built in the playground's world and worked by the engine's hand
+# (tests/world_room_tests.py TheWorldsThingsOnJoints). A tuple is an offset from
+# the place [px, pz] and the ground y0; a list is as it stands.
+RECIPES: dict[str, dict[str, Any]] = {
+    "gate": {
+        "title": "a gate between two posts, held shut by a latch bar",
+        "tried": "held shut by its latch; the latch let go of, it opened 89 degrees and shut",
+        "parts": [
+            {"name": "gate post", "shape": "box", "material": "concrete",
+             "size_m": [0.08, 1.6, 0.08], "position_m": (-0.64, 0.8, 0.0), "anchored": True},
+            {"name": "gate far post", "shape": "box", "material": "concrete",
+             "size_m": [0.08, 1.6, 0.08], "position_m": (0.64, 0.8, 0.0), "anchored": True},
+            {"name": "oak gate", "shape": "box", "material": "oak",
+             "size_m": [1.12, 1.2, 0.04], "position_m": (0.0, 0.72, 0.02)},
+            {"name": "gate latch bar", "shape": "box", "material": "iron",
+             "size_m": [0.24, 0.04, 0.04], "position_m": (0.6, 1.02, 0.1)}],
+        "joints": [
+            ("hinge", {"a": "gate post", "b": "oak gate", "at_m": (-0.52, 0.72, 0.02),
+                       "axis": [0, 1, 0], "lower_deg": 0, "upper_deg": 90, "friction_n_m": 5}),
+            ("fix", {"a": "oak gate", "b": "gate latch bar", "at_m": (0.52, 1.02, 0.06),
+                     "axis": [0, 0, 1]}),
+            ("fix", {"a": "gate far post", "b": "gate latch bar", "at_m": (0.64, 1.02, 0.06),
+                     "axis": [0, 0, 1]})],
+        "actions": {"oak gate": [
+            {"label": "Open the gate", "steps": [{"do": "turn", "stop": "all_the_way"}]},
+            {"label": "Close the gate", "steps": [{"do": "turn", "stop": "all_the_way_back"}]}]},
+        "use": "the page gives the gate \"Release the latch\" too, and it opens only once the "
+               "latch is let go of (that, or R)",
+    },
+    "portcullis": {
+        "title": "a portcullis in a gateway, raised by a winch beside it",
+        "tried": "half a turn of the handle raised it 0.64 m, and turned back it came down",
+        "parts": [
+            {"name": "gateway left post", "shape": "box", "material": "concrete",
+             "size_m": [0.08, 2.0, 0.08], "position_m": (-0.68, 1.0, -0.08), "anchored": True},
+            {"name": "gateway right post", "shape": "box", "material": "concrete",
+             "size_m": [0.08, 2.0, 0.08], "position_m": (0.68, 1.0, -0.08), "anchored": True},
+            {"name": "gateway lintel", "shape": "box", "material": "oak",
+             "size_m": [1.44, 0.08, 0.08], "position_m": (0.0, 2.04, -0.08), "anchored": True},
+            {"name": "portcullis", "shape": "box", "material": "oak",
+             "size_m": [1.28, 1.04, 0.04], "position_m": (0.0, 0.56, 0.02)},
+            {"name": "winch post", "shape": "box", "material": "concrete",
+             "size_m": [0.08, 1.2, 0.08], "position_m": (1.6, 0.6, -0.08), "anchored": True},
+            {"name": "winch wheel", "shape": "box", "material": "oak",
+             "size_m": [0.64, 0.64, 0.08], "position_m": (1.6, 1.0, 0.04)},
+            {"name": "winch handle", "shape": "box", "material": "oak",
+             "size_m": [0.08, 0.08, 0.16], "position_m": (1.6, 1.24, 0.16)}],
+        "joints": [
+            ("slide", {"a": "gateway left post", "b": "portcullis", "at_m": (0.0, 0.56, 0.02),
+                       "axis": [0, 1, 0], "lower_m": 0.0, "upper_m": 1.0, "friction_n": 100}),
+            ("hinge", {"a": "winch post", "b": "winch wheel", "at_m": (1.6, 1.0, 0.04),
+                       "axis": [0, 0, 1], "lower_deg": -180, "upper_deg": 180, "friction_n_m": 2}),
+            ("fix", {"a": "winch wheel", "b": "winch handle", "at_m": (1.6, 1.24, 0.08),
+                     "axis": [0, 0, 1]}),
+            ("reeve", {"a": "winch wheel", "b": "portcullis", "at_a_m": (1.6, 1.32, 0.04),
+                       "at_b_m": (0.0, 1.08, 0.02), "over_a_m": (1.6, 1.96, 0.04),
+                       "over_b_m": (0.0, 1.96, 0.02), "ratio": 1})],
+        "actions": {"winch handle": [
+            {"label": "Raise the portcullis", "steps": [{"do": "turn", "stop": "all_the_way"}]},
+            {"label": "Lower the portcullis", "steps": [{"do": "turn", "stop": "back_to_start"}]}]},
+        "use": "the hand keeps hold of the handle after a turn, so the portcullis stays up until "
+               "they let go; the winch has no ratchet, so let go of it comes down",
+    },
+    "door": {
+        "title": "a door in a frame that shuts itself on a spring",
+        "tried": "opened 89 degrees by the hand, and let go of it was shut within a second",
+        "parts": [
+            {"name": "door hinge post", "shape": "box", "material": "oak",
+             "size_m": [0.08, 2.2, 0.08], "position_m": (-0.48, 1.1, 0.0), "anchored": True},
+            {"name": "door latch post", "shape": "box", "material": "oak",
+             "size_m": [0.08, 2.2, 0.08], "position_m": (0.48, 1.1, 0.0), "anchored": True},
+            {"name": "door lintel", "shape": "box", "material": "oak",
+             "size_m": [1.04, 0.08, 0.08], "position_m": (0.0, 2.24, 0.0), "anchored": True},
+            {"name": "oak door", "shape": "box", "material": "oak",
+             "size_m": [0.8, 2.0, 0.04], "position_m": (0.0, 1.08, 0.02)}],
+        "joints": [
+            ("hinge", {"a": "door hinge post", "b": "oak door", "at_m": (-0.36, 1.08, 0.02),
+                       "axis": [0, 1, 0], "lower_deg": 0, "upper_deg": 90, "friction_n_m": 2}),
+            ("spring", {"a": "door hinge post", "b": "oak door", "at_a_m": (-0.06, 1.9, 0.42),
+                        "at_b_m": (0.04, 1.9, 0.02), "rest_m": 0.4123, "stiffness_n_m": 300,
+                        "damping_n_s_m": 40})],
+        "actions": {"oak door": [
+            {"label": "Open the door", "steps": [{"do": "turn", "stop": "all_the_way"}]}]},
+        "use": "let go of, its spring shuts it",
+    },
+    "bell": {
+        "title": "a bell on a rope from a frame",
+        "tried": "it hangs still at its rope's length",
+        "parts": [
+            {"name": "bell post", "shape": "box", "material": "oak",
+             "size_m": [0.08, 2.4, 0.08], "position_m": (-0.48, 1.2, 0.0), "anchored": True},
+            {"name": "bell far post", "shape": "box", "material": "oak",
+             "size_m": [0.08, 2.4, 0.08], "position_m": (0.48, 1.2, 0.0), "anchored": True},
+            {"name": "bell beam", "shape": "box", "material": "oak",
+             "size_m": [1.04, 0.08, 0.08], "position_m": (0.0, 2.44, 0.0), "anchored": True},
+            {"name": "iron bell", "shape": "sphere", "material": "iron",
+             "size_m": [0.16, 0.16, 0.16], "position_m": (0.0, 1.6, 0.0)}],
+        "joints": [
+            ("tie", {"a": "bell beam", "b": "iron bell", "at_a_m": (0.0, 2.4, 0.0),
+                     "at_b_m": (0.0, 1.68, 0.0), "length_m": 0.72})],
+        "actions": {"iron bell": [
+            {"label": "Ring the bell", "steps": [
+                {"do": "push", "part": "iron bell",
+                 "toward": {"kind": "from", "from": "iron bell", "offset_m": [0.0, 0.0, -0.5]},
+                 "distance_m": 0.3}]}]},
+        "use": "taken hold of, it swings on its rope",
+    },
+    # The courtyard's own bow, number for number (the room's guide carries it
+    # too): tried there, drawn 0.44 m by 214 N it held 42 J.
+    "bow": {
+        "title": "a bow on its stand with an arrow on the string, ready to draw",
+        "tried": "drawn 0.44 m by 214 N it held 42 J, and the arrow left at 8.3 m/s",
+        "parts": [
+            {"name": "bow grip upper", "shape": "box", "material": "oak",
+             "size_m": [0.04, 0.16, 0.12], "position_m": (0.0, 1.40, 0.0), "anchored": True},
+            {"name": "bow grip lower", "shape": "box", "material": "oak",
+             "size_m": [0.04, 0.16, 0.12], "position_m": (0.0, 1.12, 0.0), "anchored": True},
+            {"name": "bow grip near cheek", "shape": "box", "material": "oak",
+             "size_m": [0.04, 0.04, 0.04], "position_m": (0.0, 1.22, 0.06), "anchored": True},
+            {"name": "bow grip far cheek", "shape": "box", "material": "oak",
+             "size_m": [0.04, 0.04, 0.04], "position_m": (0.0, 1.22, -0.06), "anchored": True},
+            {"name": "upper limb tip", "shape": "box", "material": "oak",
+             "size_m": [0.04, 0.04, 0.04], "position_m": (-0.16, 1.62, 0.0)},
+            {"name": "lower limb tip", "shape": "box", "material": "oak",
+             "size_m": [0.04, 0.04, 0.04], "position_m": (-0.16, 0.82, 0.0)},
+            {"name": "bowstring", "shape": "box", "material": "oak",
+             "size_m": [0.04, 0.16, 0.04], "position_m": (-0.16, 1.22, 0.0)},
+            {"name": "arrow", "shape": "box", "material": "oak",
+             "size_m": [0.6, 0.04, 0.04], "position_m": (0.2, 1.22, 0.0)}],
+        "joints": [
+            ("hinge", {"a": "bow grip upper", "b": "upper limb tip", "at_m": (0.0, 1.34, 0.0),
+                       "axis": [0, 0, 1], "lower_deg": -60, "upper_deg": 60, "friction_n_m": 0}),
+            ("hinge", {"a": "bow grip lower", "b": "lower limb tip", "at_m": (0.0, 1.10, 0.0),
+                       "axis": [0, 0, 1], "lower_deg": -60, "upper_deg": 60, "friction_n_m": 0}),
+            ("spring", {"a": "bow grip upper", "b": "upper limb tip", "at_a_m": (0.36, 1.34, 0.0),
+                        "at_b_m": (-0.16, 1.62, 0.0), "rest_m": 0, "stiffness_n_m": 6000,
+                        "damping_n_s_m": 20}),
+            ("spring", {"a": "bow grip lower", "b": "lower limb tip", "at_a_m": (0.36, 1.10, 0.0),
+                        "at_b_m": (-0.16, 0.82, 0.0), "rest_m": 0, "stiffness_n_m": 6000,
+                        "damping_n_s_m": 20}),
+            ("tie", {"a": "upper limb tip", "b": "bowstring", "at_a_m": (-0.16, 1.62, 0.0),
+                     "at_b_m": (-0.16, 1.30, 0.0), "length_m": 0}),
+            ("tie", {"a": "lower limb tip", "b": "bowstring", "at_a_m": (-0.16, 0.82, 0.0),
+                     "at_b_m": (-0.16, 1.14, 0.0), "length_m": 0}),
+            ("fix", {"a": "bowstring", "b": "arrow", "at_m": (-0.13, 1.22, 0.0), "axis": [1, 0, 0],
+                     "comes_off_n": 20})],
+        "then": [
+            ("interaction", {"object": "the bow", "template": "draw-and-release",
+                             "parts": ["bow grip upper", "bow grip lower", "bow grip near cheek",
+                                       "bow grip far cheek", "upper limb tip", "lower limb tip",
+                                       "bowstring", "arrow"],
+                             "draw": {"part": "bowstring", "axis": [-1, 0, 0], "max_m": 0.45},
+                             "nock": {"a": "bowstring", "b": "arrow"},
+                             "limbs": [["bow grip upper", "upper limb tip"],
+                                       ["bow grip lower", "lower limb tip"]],
+                             "projectile": "arrow"})],
+        "actions": {},
+        "use": "it shoots along +x. E on any part takes it up; they hold the left mouse to draw "
+               "and let go to shoot, and the right mouse lets the string down",
+    },
+    # The guide's pick, number for number: one piece of oak, the haft first.
+    "pick": {
+        "title": "an oak pick lying on the ground, to dig with",
+        "tried": "swung, it went 120 mm into the soil at 9.2 m/s; levered, it broke out 5.6 L of "
+                 "soil; the rock stopped it",
+        "parts": [
+            {"name": "pick haft", "shape": "box", "material": "oak", "size_m": [0.8, 0.04, 0.04],
+             "position_m": (0.0, 0.02, 0.02), "join": "pick"},
+            {"name": "pick arm", "shape": "box", "material": "oak", "size_m": [0.04, 0.04, 0.28],
+             "position_m": (0.38, 0.02, -0.14), "join": "pick"}],
+        "joints": [],
+        "then": [
+            ("tool_point", {"body": "pick haft", "tip_m": (0.38, 0.02, -0.28), "pointing": [0, 0, -1],
+                            "grip_m": (-0.36, 0.02, 0.02), "width_m": 0.04, "thickness_m": 0.04,
+                            "angle_deg": 30, "length_m": 0.2}),
+            ("interaction", {"object": "the pick", "template": "swing-and-lever",
+                             "parts": ["pick haft", "pick arm"], "tool": "pick haft"})],
+        "actions": {},
+        "use": "they press E on it and it is held ready by its grip, point down; a click swings it "
+               "at the ground under the crosshair, and the right mouse levers it out",
+    },
+    # Light enough to take hold of, and a few hundred cells rather than the
+    # 4,172 two solid blocks cost: a top and a seat on legs fixed to them, every
+    # face on the room's 0.04 m cells.
+    "table": {
+        "title": "a small oak table with a chair drawn up to it",
+        "tried": "it stood on its legs, and the hand pulled the chair out and pushed it back in",
+        "parts": [
+            {"name": "oak table top", "shape": "box", "material": "oak",
+             "size_m": [0.8, 0.04, 0.56], "position_m": (0.0, 0.74, 0.0)},
+            {"name": "table leg 1", "shape": "box", "material": "oak",
+             "size_m": [0.04, 0.72, 0.04], "position_m": (-0.38, 0.36, -0.26)},
+            {"name": "table leg 2", "shape": "box", "material": "oak",
+             "size_m": [0.04, 0.72, 0.04], "position_m": (0.38, 0.36, -0.26)},
+            {"name": "table leg 3", "shape": "box", "material": "oak",
+             "size_m": [0.04, 0.72, 0.04], "position_m": (-0.38, 0.36, 0.26)},
+            {"name": "table leg 4", "shape": "box", "material": "oak",
+             "size_m": [0.04, 0.72, 0.04], "position_m": (0.38, 0.36, 0.26)},
+            {"name": "oak chair seat", "shape": "box", "material": "oak",
+             "size_m": [0.4, 0.04, 0.4], "position_m": (0.0, 0.46, 0.56)},
+            {"name": "chair leg 1", "shape": "box", "material": "oak",
+             "size_m": [0.04, 0.44, 0.04], "position_m": (-0.18, 0.22, 0.38)},
+            {"name": "chair leg 2", "shape": "box", "material": "oak",
+             "size_m": [0.04, 0.44, 0.04], "position_m": (0.18, 0.22, 0.38)},
+            {"name": "chair leg 3", "shape": "box", "material": "oak",
+             "size_m": [0.04, 0.44, 0.04], "position_m": (-0.18, 0.22, 0.74)},
+            {"name": "chair leg 4", "shape": "box", "material": "oak",
+             "size_m": [0.04, 0.44, 0.04], "position_m": (0.18, 0.22, 0.74)},
+            {"name": "chair back", "shape": "box", "material": "oak",
+             "size_m": [0.4, 0.44, 0.04], "position_m": (0.0, 0.70, 0.74)}],
+        "joints": [
+            ("fix", {"a": "oak table top", "b": "table leg 1", "at_m": (-0.38, 0.72, -0.26), "axis": [0, 1, 0]}),
+            ("fix", {"a": "oak table top", "b": "table leg 2", "at_m": (0.38, 0.72, -0.26), "axis": [0, 1, 0]}),
+            ("fix", {"a": "oak table top", "b": "table leg 3", "at_m": (-0.38, 0.72, 0.26), "axis": [0, 1, 0]}),
+            ("fix", {"a": "oak table top", "b": "table leg 4", "at_m": (0.38, 0.72, 0.26), "axis": [0, 1, 0]}),
+            ("fix", {"a": "oak chair seat", "b": "chair leg 1", "at_m": (-0.18, 0.44, 0.38), "axis": [0, 1, 0]}),
+            ("fix", {"a": "oak chair seat", "b": "chair leg 2", "at_m": (0.18, 0.44, 0.38), "axis": [0, 1, 0]}),
+            ("fix", {"a": "oak chair seat", "b": "chair leg 3", "at_m": (-0.18, 0.44, 0.74), "axis": [0, 1, 0]}),
+            ("fix", {"a": "oak chair seat", "b": "chair leg 4", "at_m": (0.18, 0.44, 0.74), "axis": [0, 1, 0]}),
+            ("fix", {"a": "oak chair seat", "b": "chair back", "at_m": (0.0, 0.48, 0.74), "axis": [0, 1, 0]})],
+        "actions": {"oak chair seat": [
+            {"label": "Pull the chair out", "steps": [
+                {"do": "take_hold"},
+                {"do": "carry_to", "to": {"kind": "beside", "beside": "oak table top", "side": "near",
+                                          "gap_m": 0.4}},
+                {"do": "put_down"}]},
+            {"label": "Push the chair in", "steps": [
+                {"do": "take_hold"},
+                {"do": "carry_to", "to": {"kind": "beside", "beside": "oak table top", "side": "near",
+                                          "gap_m": 0.05}},
+                {"do": "put_down"}]}]},
+        "use": "the chair is drawn up on the table's +z side, the side to stand on",
+    },
+}
+
+
+def tool_build_recipe(args: dict[str, Any]) -> dict[str, Any]:
+    """A mechanism the engine has been tried on, built exactly at a place: its
+    parts, its joints and its actions, or nothing at all."""
+    world_id = str(args.get("world_id"))
+    entry = _world(world_id)
+    which = str(args.get("recipe") or "").strip().lower()
+    if which not in RECIPES:
+        raise Refused(f"recipe is one of {', '.join(RECIPES)}, not {which!r}")
+    recipe = RECIPES[which]
+    cell = float(entry["cell_m"])
+    px, pz = (round(v / cell) * cell for v in _xz(args.get("at_m"), "at_m"))
+    # The ground there, up to the next whole cell, so nothing starts inside it:
+    # 0 on a floor.
+    y0 = 0.0
+    if _has_terrain(entry):
+        here = entry["world"].survey(px, pz)
+        if not here.get("on_the_ground"):
+            raise Refused(f"[{px:g}, {pz:g}] is off the edge of the ground")
+        if here.get("water"):
+            raise Refused(f"[{px:g}, {pz:g}] is in the water: build it on dry ground")
+        y0 = math.ceil(float(here["ground_m"]) / cell - 1e-9) * cell
+    # Its parts' names, all numbered when another thing has one of them already
+    # -- and with them its pieces' join names and what a person calls it, so a
+    # second pick is a piece of its own.
+    then = recipe.get("then", [])
+    taken = {b["name"] for b in entry["scene"]["bodies"]}
+    own = [p["name"] for p in recipe["parts"]]
+    also = sorted({p["join"] for p in recipe["parts"] if p.get("join")}
+                  | {call["object"] for _, call in then if "object" in call})
+    number = 1
+    while any((n if number == 1 else f"{n} {number}") in taken for n in own):
+        number += 1
+    renamed = {n: (n if number == 1 else f"{n} {number}") for n in own + also}
+
+    def made(value: Any) -> Any:
+        if isinstance(value, tuple):
+            return [round(px + value[0], 4), round(y0 + value[1], 4), round(pz + value[2], 4)]
+        if isinstance(value, str):
+            return renamed.get(value, value)
+        if isinstance(value, list):
+            return [made(v) for v in value]
+        if isinstance(value, dict):
+            return {k: made(v) for k, v in value.items()}
+        return value
+
+    was_scene = entry["scene"]
+    joints: list[dict[str, Any]] = []
+    offered: dict[str, list[str]] = {}
+    said: dict[str, Any] = {}
+    try:
+        for part in recipe["parts"]:
+            tool_add_object({"world_id": world_id, "object": made(part)})
+        for tool, call in recipe["joints"]:
+            answer = HANDLERS[tool]({"world_id": world_id, **made(call)})
+            joints.append({"joint": answer.get("joint"), "tool": tool,
+                           "a": renamed[call["a"]], "b": renamed[call["b"]]})
+        # Its point, and how a person uses it -- which tries it, and says what
+        # the try measured.
+        for tool, call in then:
+            answer = HANDLERS[tool]({"world_id": world_id, **made(call)})
+            said[tool] = {k: v for k, v in answer.items() if k != "objects"}
+        for thing, actions in recipe["actions"].items():
+            answer = tool_offer_actions({"world_id": world_id, "name": renamed[thing],
+                                         "actions": made(actions)})
+            offered[renamed[thing]] = [a["label"] for a in answer["actions"]]
+    except Refused:
+        # Nothing half made: its parts go, and every joint, point, use and action
+        # made on them.
+        mine = set(renamed.values())
+        entry["joints"] = [r for r in entry.get("joints", [])
+                           if r["args"].get("a") not in mine and r["args"].get("b") not in mine]
+        entry["interactions"] = [p for p in entry.get("interactions", [])
+                                 if not set(p.get("parts") or []) & mine]
+        entry["actions"] = {k: v for k, v in (entry.get("actions") or {}).items() if k not in mine}
+        _rebuild(entry, was_scene, world_id)
+        raise
+    answer = {"built": recipe["title"], "at_m": [round(px, 4), round(pz, 4)],
+              "ground_y_m": round(y0, 4), "parts": [renamed[n] for n in own], "joints": joints,
+              "actions_offered": offered, "use": made(recipe["use"]),
+              "say": "Say what was built and where, what they can do with it, and that they can "
+                     "click on it to see its actions.",
+              "objects": _describe(entry["world"])}
+    if recipe["tried"]:
+        answer["tried"] = recipe["tried"]
+    if said:
+        answer["and"] = said
     return answer
 
 
@@ -3994,6 +4353,17 @@ def _reach(body: dict[str, Any]) -> list[float]:
     return [sum(abs(turn[i][j]) * size[j] / 2.0 for j in range(3)) for i in range(3)]
 
 
+def _buried(entry: dict[str, Any], body: dict[str, Any]) -> bool:
+    """Whether a body asked for at [x, y, z] is wholly inside the ground: its top
+    below the ground's highest point under it."""
+    if not _has_terrain(entry):
+        return False
+    half = _reach(body)
+    x, y, z = body["center_m"]
+    ground = _ground_under(entry["world"], x, z, half[0], half[2])
+    return ground > -1.0e8 and y + half[1] < ground
+
+
 def _seat_on_ground(entry: dict[str, Any], body: dict[str, Any]) -> dict[str, Any] | None:
     """Lift a body asked for inside the ground to rest on top of it."""
     if not _has_terrain(entry):
@@ -5198,6 +5568,24 @@ TOOLS = [
                                     "'the stiff bow'."},
          "trial": {"type": "boolean",
                    "description": "Try a copied bow. True by default."}}}},
+    {"name": "build_recipe",
+     "description": "Build a mechanism the engine has been tried on, exactly, at a place: "
+                    "every part, every joint and the actions a person takes with it, under "
+                    "its parts' real names. The ground's height there is surveyed and "
+                    "everything is laid on the room's cells, so nothing overlaps and nothing "
+                    "floats. Use it for these rather than making their parts one by one: "
+                    + "; ".join(f"{k}: {r['title']}" for k, r in RECIPES.items())
+                    + ". It is built along x from the place. A second one's parts are "
+                    "numbered. If any part would overlap what is there, nothing is built and "
+                    "the answer says why.",
+     "inputSchema": {"type": "object",
+                     "required": ["world_id", "recipe", "at_m"],
+                     "properties": {
+         "world_id": {"type": "string"},
+         "recipe": {"type": "string", "enum": list(RECIPES)},
+         "at_m": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2,
+                  "description": "The place, [x, z] on the ground: for something asked for "
+                                 "near the person, the first of put_new_things_m."}}}},
     {"name": "joints",
      "description": "Every pin in the world and where each has turned to. The two "
                     "names a pin holds can change -- a pin whose wood is smashed "
@@ -5810,6 +6198,7 @@ HANDLERS = {
     "spring": _recorded("spring"),
     "interaction": tool_interaction,
     "duplicate": tool_duplicate,
+    "build_recipe": tool_build_recipe,
     "overloaded": tool_overloaded,
     "joints": tool_joints,
     "hinge_friction": tool_hinge_friction,

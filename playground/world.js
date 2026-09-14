@@ -2115,6 +2115,32 @@ function guideFor(name) {
   return null;
 }
 
+// The fixing that holds a thing fast: on the way from it, through what it is
+// fixed to, to something anchored -- the one nearest the thing, so a gate's
+// latch bar stays on its post when the gate is let go of. Null when nothing
+// fixed to it is fixed to anything that does not move.
+function latchHolding(name) {
+  const via = new Map([[name, null]]);
+  let these = [name];
+  while (these.length) {
+    const next = [];
+    for (const n of these) {
+      for (const j of world.joints) {
+        if (!j.attached || j.kind !== "fixing" || (j.a !== n && j.b !== n)) continue;
+        const other = j.a === n ? j.b : j.a;
+        if (via.has(other)) continue;
+        const first = via.get(n) || j;
+        const entry = world.bodies.get(other);
+        if (entry && entry.anchored) return first;
+        via.set(other, first);
+        next.push(other);
+      }
+    }
+    these = next;
+  }
+  return null;
+}
+
 // Where the view meets what a joint lets a thing move along: the plane a pin
 // turns it in, through its middle, or the line a groove slides it along. Null
 // when the view runs along the plane or the groove, or meets it out of reach.
@@ -4136,6 +4162,10 @@ function builtinsFor(name) {
   // winch's handle -- it is worked, not carried: turned or slid by the hand to
   // the joint's stops (server.py's turn and slide). For everything on a joint,
   // in every room, whoever made it: the stops are the joint's own.
+  // Held fast by a latch -- fixed, through what it is fixed to, to something
+  // that does not move -- it is let go of from here as with R.
+  const latch = jointed && latchHolding(name);
+  if (latch) out.push({ label: "Release the latch", ask: { latch: latch.id } });
   const joint = jointed && guideFor(name);
   if (joint && joint.kind === "hinge") {
     // A wheel -- no stops, or stops a whole turn apart -- is all the way round
@@ -4155,7 +4185,26 @@ function builtinsFor(name) {
     out.push({ label: "Slide it half way", ask: { builtin: "slide", stop: "half_way" } });
     out.push({ label: "Slide it all the way back", ask: { builtin: "slide", stop: "all_the_way_back" } });
   }
-  return out.filter((builtin) => !own.has(builtin.label.toLowerCase()));
+  // One of its own that does what a built-in does -- "Open the gate", a turn to
+  // its far stop -- takes the built-in's place on the menu.
+  // And "Stand the plank upright", a stand step, takes "Stand it upright"'s.
+  // And "Put the crate on the ground in front of me" -- taken up, carried to
+  // in front of the person, put down -- takes "Put it on the ground in front of me"'s.
+  const same = new Set(actionsFor(name).map((a) => {
+    const steps = a.steps || [];
+    const s = steps[0] || {};
+    if (steps.length === 1 && (s.do === "turn" || s.do === "slide") && s.stop) return `${s.do}:${s.stop}`;
+    if (steps.length === 1 && s.do === "stand")
+      return s.stand === "lying" ? "lay_down:undefined" : "stand_upright:undefined";
+    if (steps.length === 3 && s.do === "take_hold" && steps[1].do === "carry_to"
+        && steps[1].to && steps[1].to.kind === "in_front" && steps[2].do === "put_down")
+      return "put_on_ground:undefined";
+    return null;
+  }).filter(Boolean));
+  return out.filter((builtin) => {
+    const ask = builtin.ask || { builtin: builtin.key };
+    return !own.has(builtin.label.toLowerCase()) && !same.has(`${ask.builtin}:${ask.stop}`);
+  });
 }
 
 // The hand kept hold at the end of an action -- a winch turned all the way and
@@ -4221,6 +4270,16 @@ function allActionsFor(name) {
 async function runAction(name, index) {
   const action = allActionsFor(name)[index];
   if (!action || world.asking || world.acting) return;
+  if (action.ask.latch != null) {
+    // The fixing that holds it fast is let go of, as R does.
+    try {
+      await act("unhinge", { joint: action.ask.latch });
+      say("you", `Released the latch holding ${name}.`);
+      remember(`released the latch holding ${name}`);
+      await refreshJoints();
+    } catch (error) { say("bad", `${action.label}: ${error.message || error}`); }
+    return;
+  }
   world.acting = true;
   world.menuFor = null;
   // Going on from a hold -- the winch kept turned -- the hand is the server's
@@ -4229,8 +4288,10 @@ async function runAction(name, index) {
   if (aside) setHoldAside();
   const waiting = waitingFor(`${action.label}: doing it`);
   try {
-    const answer = await api("/api/world/action", { object: name, ...action.ask,
-                                                     person: whereIAm() });
+    // On the room this page has open: a page whose room was opened again
+    // elsewhere is refused, and nothing is done in the room somebody else has.
+    const answer = await api("/api/world/action", { session: world.session, object: name,
+                                                     ...action.ask, person: whereIAm() });
     waiting.done();
     const done = (answer.done || []).join(", ");
     if (answer.refused) {
@@ -4304,6 +4365,12 @@ $("scene").addEventListener("change", () => {
     url.searchParams.delete("qa");
     history.replaceState(history.state, "", url);
     showBuild(null);
+  }
+  // And a room opened by its link: the link stops naming it too.
+  if (sceneLink() !== null && $("scene").value !== sceneLink()) {
+    const url = new URL(location.href);
+    url.searchParams.delete("scene");
+    history.replaceState(history.state, "", url);
   }
   open();
 });
@@ -4399,6 +4466,24 @@ const QA_OPTION = "qa-build";
 function qaBuild() {
   return new URLSearchParams(location.search).get("qa");
 }
+// A room off the menu, by its link: /world?scene=yard. The menu has one room,
+// the world, with everything in it (the owner, 2026-09-14); the rooms the tests
+// and the docs name are still there, and a link opens one the way a QA build's
+// link does.
+function sceneLink() {
+  return new URLSearchParams(location.search).get("scene");
+}
+function showSceneLink(name) {
+  if (!name) return;
+  let option = [...$("scene").options].find((o) => o.value === name);
+  if (!option) {
+    option = document.createElement("option");
+    option.value = name;
+    option.textContent = name;
+    $("scene").append(option);
+  }
+  $("scene").value = name;
+}
 // Held: the room opens and is drawn, and its clock waits until it is let go.
 // /world?qa=<id>&hold=1 is how the QA's pictures begin at the moment the build
 // does -- otherwise a ball dropped from two metres has landed before a camera
@@ -4442,6 +4527,8 @@ async function open() {
     const data = await api("/api/world/open", qa !== null ? { qa } : { scene: $("scene").value });
     world.session = data.session;
     world.scene = data.scene || null;   // what the server says it opened
+    // A link naming no room opens the world: the menu says which room opened.
+    if (qa === null && data.scene && $("scene").value !== data.scene) showSceneLink(data.scene);
     world.openError = null;
     world.lastTick = 0;
     world.lost = 0;
@@ -4622,4 +4709,5 @@ window.banjoRoom = {
 setInterval(() => sendTrace("routine"), TRACE_EVERY_MS);
 setInterval(tick, 33);
 setInterval(aim, 90);
+if (qaBuild() === null) showSceneLink(sceneLink());
 open();

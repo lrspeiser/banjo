@@ -79,6 +79,7 @@ broke.
 | `fix` / `spring` | a latch or bracket that holds two things as one piece; an elastic element that pushes and pulls. `fix`, `spring` and `tie` take `member`: what the joint is MADE of, so heat changes what it can take ([Heat and strength](#heat-and-strength)) |
 | `interaction` | say how a person **uses** a thing you built — draw-and-release, a bow; or swing-and-lever, a tool with a `tool_point` swung into the ground and levered, tried by being swung into the nearest level soil, levered out, and swung onto the nearest bare rock — so the playground gives them its controls. Held to what is built (a part that is not there, a nock that holds both ways or lets go backwards, a limb that is not an elastic are refused), never a speed, kept through every rebuild and withdrawn with the reason when what it names is taken away; and **tried** in a scratch world with a person's 800 N hand, returning what was drawn, what the limbs held and what the projectile left with, and `sound` false with why when the engine did not follow the shot. [Things a person uses](#things-a-person-uses) |
 | `duplicate` | make **another** of something already built, somewhere else, exactly: the bodies named, every joint between them with its points moved with it, their edges and how a person uses them. What should differ is said as `changes`, by kind of joint (`{"spring": {"stiffness_n_m": 8000}}`); the offset is rounded to whole cells; where the world refuses overlaps (the playground's room does) a copy that would overlap is refused and nothing is left half made; a copied bow is tried. [Things a person uses](#things-a-person-uses) |
+| `build_recipe` | build a mechanism the engine has been tried on, **exactly**, at a place `[x, z]`: every part, every joint and its actions, on the ground surveyed there and laid on the room's cells — `gate` (between two posts, with a latch bar), `portcullis` (raised by a winch beside it), `door` (that shuts itself on a spring), `bell` (on a rope from a frame). A second one's parts are numbered; if any part would overlap what is there, nothing is built. It exists because a model given a gate as seven calls of offsets set its parts down on the ground and put its pin 0.22 m inside the gate's edge |
 | `joints` / `hinge_friction` / `unhinge` | read them, stiffen them, take one out |
 | `overloaded` | what is carrying more than it can hold, worked out from statics — the only way a loaded shelf is ever noticed |
 | `list_substances` | what matter is made of: substances, reactions (with where every number came from) and the catalogue's compositions — oak is dry wood, moisture and ash, which is why an oak log can burn |
@@ -184,7 +185,8 @@ which of these it is, and only that kind's fields are read; without a `kind`,
 exactly one may be given. A step likewise reads only its own kind's fields. The
 room's chat fills every field it is shown, so fields that do not apply are set
 aside, not refused, and the answer lists them under `not_read`.
-- `in_front_m`, in front of the person when the key is pressed, with `height_m`;
+- `in_front_m`, in front of the person when the key is pressed, its bottom
+  `height_m` above the ground there (0, or none, is resting on it);
 - `on` a thing;
 - `beside` a thing, on a `side` near, far, left or right as the person sees it, with `gap_m`;
 - `from` a thing, at `offset_m`.
@@ -206,7 +208,8 @@ was done stays done. A thing may have at most nine actions, one per number key.
 Calling the tool again replaces them, and an empty list takes them away. The
 playground keeps them in the room's spec (`actions`), so they survive every
 later edit and a restart. The page presses one with `POST /api/world/action`
-(playground/README.md). The playground also gives every loose thing built-in
+(playground/README.md), on the room it has open: a press from a page whose room
+was opened again elsewhere is refused, with nothing done. The playground also gives every loose thing built-in
 actions that no model offers, run the same way and listed after its own: "Put
 it on the ground in front of me" (`put_on_ground`) for what a hand can lift, and
 "Stand it upright" (`stand_upright`) and "Lay it down where I'm facing"
@@ -214,11 +217,14 @@ it on the ground in front of me" (`put_on_ground`) for what a hand can lift, and
 all the way", "Turn it half way" and "Turn it all the way back", plus "Turn it back
 to where it started" when it turns both ways from there. A wheel, whose stops are
 a whole turn apart, goes half a turn for "all the way" and has no "all the way
-back", which would be the same place. Everything in a groove
+back", which would be the same place. Anything a latch holds shut gets "Release
+the latch", which the page does itself, as R does. Everything in a groove
 gets the same with "Slide" (`turn` and `slide` with a `stop`). These are offered
 in every room, whoever made the thing, with the stops taken from the joint. The
-room's chat is told not to offer them again under another name, and to name its
-own after what the thing is for: "Raise the gate", not "Turn it".
+room's chat is told to name its own after what the thing is for: "Raise the gate",
+not "Turn it". `offer_actions` refuses a label the page already offers, and one
+of a thing's own that does what a built-in does takes that one's place on the
+menu.
 
 ## What a person knows
 

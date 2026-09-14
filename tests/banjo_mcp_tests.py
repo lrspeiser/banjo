@@ -1311,6 +1311,21 @@ class TheTools(unittest.TestCase):
              "anchored": True}])["world_id"]
         return world_id, self.client.call("make_terrain", world_id=world_id, kind="valley")
 
+    def test_a_recipe_is_built_exactly_where_it_is_asked_with_its_actions(self):
+        """build_recipe over the protocol, as any MCP client asks it: a door that
+        shuts itself, on the valley's west terrace -- every part, its joints and
+        its action, on the ground surveyed there, rounded up to the next cell."""
+        import math
+        world_id, _ = self.valley()
+        ground = self.client.call("survey", world_id=world_id, at_m=[-12.0, -4.0])["ground_m"]
+        door = self.client.call("build_recipe", world_id=world_id, recipe="door", at_m=[-12.0, -4.0])
+        self.assertEqual(door["parts"], ["door hinge post", "door latch post", "door lintel", "oak door"])
+        self.assertEqual([j["tool"] for j in door["joints"]], ["hinge", "spring"])
+        self.assertEqual(door["actions_offered"], {"oak door": ["Open the door"]})
+        self.assertAlmostEqual(door["ground_y_m"], math.ceil(ground / 0.04 - 1e-9) * 0.04, places=4)
+        self.assertIn("recipe is one of", self.client.refuse("build_recipe", world_id=world_id,
+                                                              recipe="rocket", at_m=[-12.0, -4.0]))
+
     def test_a_valley_within_a_river_network(self):
         """make_terrain(beyond_the_edges): the river comes down a reach from a
         reservoir onto where it comes in, and leaves down another to a
@@ -1473,6 +1488,23 @@ class TheTools(unittest.TestCase):
         self.assertLess(wet["set_down"]["its_top_m"], wet["in_water"]["surface_m"],
                         "it should rest on the river's bed, under the water")
 
+    def test_a_height_given_as_if_the_ground_were_at_0_is_set_down_on_what_is_there(self):
+        """The room's chat gave a pot [x, 0.24, z] on a terrace 0.6 m up, as if
+        the ground were at 0; lifted onto the bare ground it overlapped the
+        hearth stone standing there, six refusals in a row. Wholly inside the
+        ground, a thing is set down on what is under it, as [x, z] does."""
+        world_id, _ = self.valley()
+        slab = self.client.call("add_object", world_id=world_id, object={
+            "name": "stone slab", "shape": "box", "material": "concrete",
+            "size_m": [0.8, 0.08, 0.64], "position_m": [-12.0, -4.0], "anchored": True})
+        pot = self.client.call("add_object", world_id=world_id, object={
+            "name": "iron pot", "shape": "box", "material": "iron",
+            "size_m": [0.16, 0.16, 0.16], "position_m": [-12.0, 0.16, -4.0]})
+        self.assertEqual(pot["set_down"]["on"], "stone slab", pot)
+        self.assertIn("inside the ground", pot["set_down"]["note"])
+        self.assertAlmostEqual(pot["set_down"]["its_top_m"],
+                               slab["set_down"]["its_top_m"] + 0.08, delta=0.01)
+
     def test_a_ball_set_down_on_the_sandy_bank_stays_and_the_survey_says_why(self):
         """Rolling resistance: the survey gives the ground's share there and which
         balls rest on it, and a rubber ball set down on the sand by the river --
@@ -1515,7 +1547,8 @@ class TheTools(unittest.TestCase):
             placed = self.client.call("add_object", world_id=world_id, object={
                 "name": f"dam stone {k}", "shape": "box", "material": "concrete",
                 "size_m": [0.48, 0.96, 0.48], "position_m": [0.62, 0.5, z]})
-            self.assertIn("seated_on_the_ground", placed, "a block asked for inside the ground")
+            self.assertTrue("seated_on_the_ground" in placed or "set_down" in placed,
+                            "a block asked for inside the ground")
             z += 0.48
         self.client.call("run", world_id=world_id, seconds=20)
         after = self.client.call("water_state", world_id=world_id)

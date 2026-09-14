@@ -235,7 +235,7 @@ the playground against this build:
 
 and open http://127.0.0.1:8767/world.
 
-**A hearth.** Choose *An empty yard* and ask: *"Build a hearth of oak logs on a
+**A hearth.** Open the empty yard (`/world?scene=yard`, off the menu) and ask: *"Build a hearth of oak logs on a
 stone slab with an iron kettle beside it, and light it."* The chat places a
 concrete slab, three oak logs and an iron kettle, and puts 10 kW under each of
 the two lower logs for 90 s (11 rounds, 112,522 tokens in, 650 out, 21 s). In
@@ -252,7 +252,7 @@ stayed below 5e-5 J. Then, with the mouse:
   from the hearth: it keeps burning on its own, at 986 K and 14.1 kW, and its
   flame goes with it.
 
-**A heated piston.** Choose *An empty yard* and ask: *"Build a cylinder with an
+**A heated piston.** Open the empty yard (`/world?scene=yard`) and ask: *"Build a cylinder with an
 iron piston in it and a weight on the piston, with gas under the piston, and
 heat the gas so it lifts the weight."* The chat builds a concrete cylinder with
 a glass window, an iron piston on a slide with an iron weight on it, and argon

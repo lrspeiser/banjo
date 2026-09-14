@@ -1,5 +1,62 @@
 # Development status and handoff
 
+**One world, built by its chat, and `build_recipe` for the mechanisms the engine has been tried on.** Branch `agent/world` from `8085afe`. The owner: "wipe all the items and worlds in our sim dropdown and start over with a new world with everything in it and with our latest build flow with the llm prompts updated and tested".
+- The menu has one room, "The world" (`world_room.world`). It is the valley's ground: a river running west to east, a pond, the hill a person arrives on, and a level terrace on either side of the hill. Everything on it is built by the room's chat, one request at a time, typed into the page's chat box (the scratchpad's `headless_build_world.py`). The old rooms are off the menu and stay for the tests and the QA; a link opens one (`/world?scene=yard`, world.js `sceneLink`).
+- The first build showed the guide was not enough for things of several parts. Asked for a latched gate, the chat (gpt-5-mini):
+  - gave every part [x, z], so each was set down on the ground;
+  - put the pin 0.22 m inside the gate's edge instead of 0.52, and left the latch bar 0.36 m off, on the ground;
+  - spent four rounds programming "Release the latch", which the page offers;
+  - offered "Open the gate" but not "Close the gate".
+  That took 20 rounds and 723,000 input tokens. Its bow took 1.14 million, and came with one action, "Nock the arrow", which a person does not need.
+- So the MCP has `build_recipe`, which builds a mechanism the engine has been tried on, number for number, at a place `[x, z]`:
+  - on the ground surveyed there, laid on the room's cells;
+  - with its actions offered and its use declared under its parts' real names;
+  - with a second one's parts numbered;
+  - and nothing built at all if a part would overlap.
+  There are seven recipes (banjo_mcp.RECIPES): a gate with a latch bar, a portcullis and its winch, a door that shuts itself on a spring, a bell on a rope, the courtyard's bow, the guide's pick, and a table with a chair. The guide's THINGS BUILT BY RECIPE is written from the same table.
+- Measured on the real engine, on the world's own terraces (world_room_tests `TheWorldsThingsOnJoints`, `TheWorldsHandThingsByRecipe`):
+  - the gate refuses to turn while latched, then opens 89 degrees and shuts;
+  - half a turn of the winch raises the portcullis 0.64 m, and turning it back lowers it;
+  - the door, opened 89 degrees, is shut again within a second of being let go;
+  - the bell hangs still;
+  - the bow's own trial shoots the arrow off at more than 6 m/s;
+  - the pick goes 122 mm into the terrace's sand;
+  - the hand pulls the chair out 0.2 m or more, and pushes it back in.
+- The page:
+  - "Release the latch" is on anything a latch holds shut (world.js `latchHolding`).
+  - A thing's own one-step action takes the place of the built-in it duplicates: "Open the gate" for "Turn it all the way", "Stand the plank upright" for "Stand it upright".
+  - A turn on something held fast to an anchored post says to release the latch first, instead of pulling on the post.
+- The chat's guide:
+  - It says to build at once where put_new_things_m says, never asking where. The chat had asked "Where should I put the gateway?" with a clear place in front of the person.
+  - It gets one follow-up, as a note from the room, when a turn made things and offered them nothing. Not after digging: asked then, the chat told the person "You're right" and offered to put up a marker post to hang actions on (chat_history_tests `ThingsMadeAreGivenActions`).
+  - A dam or a bank is earth, dug and filled, which costs no cells; a 0.4 m stone costs 1,000 of the room's 16,000.
+- What the chat built, as the world ships (playground/rooms/world.json: 50 bodies, 26 joints, 21 actions, 8,343 of 16,000 cells):
+  - on the west terrace, the latched gate, the gateway with its portcullis and winch, the self-closing door and the bell;
+  - on the east terrace, the table and chair, a crate, a pot, a plank and a ball, the bow, a sword (its edge declared with `blade`), the pick, and a hearth with a pot and two logs;
+  - a channel from the pond to the river, and an earth dam across the river beside it.
+- What each cost:
+  - The seven mechanisms came by recipe, each in 2 rounds, 62,000-78,000 input tokens and 11-40 s.
+  - By hand, the loose things took 7 rounds (295,000 tokens), the sword 10 (409,000) and the hearth 15 (798,000).
+  - The room ran at 0.995-1.006 of realtime after every request.
+- One claim was false. Asked for the table, the chat called no tool and answered "Built a small oak table ... I tried it", in the recipe's own words. A turn that says it built something while nothing changed now gets one note from the room (chat_history_tests `AClaimWithNothingDoneIsQuestioned`). Asked again, it built the table by recipe.
+- The same guards cover the other waste the builds showed:
+  - add_object sets a thing given a height wholly inside the ground down on what is under it; the pot and a log given heights as if the ground were at 0 had been refused six times;
+  - offer_actions refuses a label the page already offers;
+  - the guide says the page gives a blade its controls, after three refused "wield it" programs;
+  - a place in front of the person reads `height_m` as the height of the thing's bottom above the ground, as the MCP says it (server.py `_action_point`). Read as its middle, the chat's "Put the crate on the ground in front of me" (`height_m` 0) carried the crate half into the terrace, and the hand's stroke was blocked; so it did for the pot and the ball.
+- Two pages on one server. On 8781 the owner opened the world while my checker's page (headless Chrome) was using it. The playground runs one room at a time, so the checker's page lost it ("the room stopped: that live world is no longer open"). It went on pressing numbers, and `POST /api/world/action` ran each press on the room that was open -- the owner's -- from where the checker stood: the oak plank was carried about beside things the owner never went near, and one of the owner's frames took 57 s while the server worked the checker's carry. A press and a chat turn now carry the page's `session`, and one from a page that has lost its room is refused with nothing done (server.py `_this_pages_room`; actions_tests `test_a_page_that_no_longer_has_the_room_is_refused_and_nothing_moves`, room_store_tests `APageThatLostItsRoom`). My checks run on a port of their own.
+- A turn or a slide says what else it moved only among what is joined to the thing worked -- by pins, grooves, ropes over pulleys, springs and fixings, stopping at anything fixed in place (server.py `_joined`). In the page, a bell still swinging on the far terrace from being rung was said to have moved 0.28 m with a turn of the bow (actions_tests `WhatElseATurnMoved`).
+- Measured in the page on my own server (8782; headless Chrome with CDP clicks and keys, the scratchpad's `headless_world_check.py`, `headless_world_gate.py`, `headless_scene_link.py` and `headless_two_pages.py`), every thing that has a menu worked by its numbers:
+  - the oak gate refuses to turn while latched; released, it opens to 89.2 degrees and shuts to 0.9;
+  - the winch raises the portcullis 0.64 m and lowers it, and half way raises it 0.35 m; the portcullis slides 0.99 m up its groove and back;
+  - the door opens 90 degrees and comes back to 0; the bell swings 0.29 m;
+  - the crate, the pot, the plank, the ball and the sword are each put on the ground in front of the person; the logs go on the hearth; the iron pot, the logs and the hearth heat;
+  - the chair is pulled out and pushed back in;
+  - the bow's limbs bend under the hand until it can bend them no further, and the arrow comes off the string;
+  - a link opens an old room (`/world?scene=yard`), and the menu otherwise has the world alone;
+  - a page that has lost its room to another is refused, and the crate in the other page's room moves 0.0 mm.
+  The room ran at 0.993-0.996 of realtime.
+
 **Everything on a joint is turned or slid by its number, and the chat has a cheat sheet of products.** Branch `agent/controls` from `4e5cd40`. The owner, on 8768: one click on the castle gate's winch gave no "Turn the winch half way" or "Turn fully" -- "focus on this being an issue for all times".
 - In every room, whoever built it (world.js `builtinsFor`), a thing on a pin lists "Turn it all the way", "Turn it half way", "Turn it all the way back", and "Turn it back to where it started" when it turns both ways from there. A thing in a groove gets the same with "Slide". A wheel -- its stops a whole turn apart -- goes half a turn for "all the way" and has no "all the way back", which would be the same place.
 - They run on the engine's hand (server.py `_worked`). It takes hold of what stands furthest off the pin (a winch's handle) the way the page's E does: hauled, with 800 N at its middle and no wrist. It strokes that round the pin's axis in 12 degree steps, then reads the joint back, e.g. "turned the winch wheel +180 degrees, to 180; the castle gate rose 0.32 m". A program that ends on a turn or a slide keeps hold, so a raised gate stays up; the page takes the hold over, and while it holds, the thing's turns and slides still run by number from the hold. E lets go, and a winch has no ratchet, so its gate then drops.

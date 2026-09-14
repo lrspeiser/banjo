@@ -228,8 +228,9 @@ Two measurements that are NOT the 5/7 law, said rather than asserted:
 
 ## Where to see it
 
-- **The playground.** In "A valley with a river" a ball set down on the sandy
-  bank stays; in "An empty yard" a ball rolled across the floor slows and
+- **The playground.** In the valley (`/world?scene=valley`) a ball set down on
+  the sandy bank stays; in the empty yard (`/world?scene=yard`) a ball rolled
+  across the floor slows and
   stops where `v^2 / (2 * 5/7 c g)` says.
 - **C API** (ABI 16): `banjo_materials()`, `banjo_rolling_report(world)`, and
   `rolling_resistance` in `banjo_survey`. See [api/c-api.md](api/c-api.md#rolling-resistance).

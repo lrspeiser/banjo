@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import time
 from typing import Any
 from urllib import error, request
@@ -43,6 +44,42 @@ MAX_TURN_S = 420.0
 TIMEOUT_S = 90
 # What one answer may spend, its thinking included.
 MAX_OUTPUT_TOKENS = 6000
+# Said to the chat, once a turn, when it changed the room and offered nothing.
+NOTHING_OFFERED = ("A note from the room, not from the person: nothing you made this turn has "
+                   "actions yet. If a person would do something with one of those things that "
+                   "the page does not already offer -- see ACTIONS and PRODUCTS -- give it "
+                   "those actions now with offer_actions. Either way, then answer the person "
+                   "as you were going to, without mentioning this note.")
+# Said to the chat, once a turn, when it answered as if it had built something
+# and nothing in the room had changed.
+NOTHING_DONE = ("A note from the room, not from the person: nothing in the room changed this "
+                "turn, so nothing you describe as built is there. If they asked for something "
+                "to be made or changed, do it now with the tools; if not, answer as you were "
+                "going to, without mentioning this note.")
+CLAIMS = re.compile(r"\b(built|made|added|placed|put|set up|dug|heaped|hung|laid)\b", re.IGNORECASE)
+
+def _things_on_joints() -> str:
+    """THINGS BUILT BY RECIPE, as the guide says it: the MCP's own recipes,
+    which build_recipe builds (banjo_mcp.RECIPES)."""
+    lines = [
+        "THINGS BUILT BY RECIPE. build_recipe builds these exactly -- every part, joint,",
+        "point and action, on the ground at a place [x, z] (for something asked for",
+        "near the person, the first of put_new_things_m), along x from there. Use it",
+        "for them rather than making their parts one by one: it offers their actions,",
+        "and declares how a person uses them, itself. Nothing of it is there until",
+        "build_recipe has been called and has answered. Then say what its answer",
+        "says: what was built and where, what they can do with it, what its try",
+        "measured, and that they can click on it. Anything more they asked for, add",
+        "with the other tools."]
+    for key, recipe in room_world.banjo_mcp.RECIPES.items():
+        offered = "; ".join(f"on the {thing}, " + ", ".join(f'"{a["label"]}"' for a in acts)
+                            for thing, acts in recipe["actions"].items())
+        tried = (f" (when it was tried in the engine: {recipe['tried']})"
+                 if recipe["tried"] else "")
+        lines.append(f'- "{key}": {recipe["title"]}{tried}. '
+                     + (f"It offers {offered}." if offered else f"How it is used: {recipe['use']}."))
+    return "\n".join(lines)
+
 
 GUIDE = """You are the room. Someone is standing in a physics simulation, talking
 to you, and you build what they ask for out of real matter with the tools you
@@ -87,6 +124,9 @@ in_the_air -- it looks down from nine points of its bottom and can see the
 floor between the legs -- so leave it there and fix it to each leg. A thing more than a metre deep goes further out along
 facing, by half its depth less half a metre, so it does not touch them. When
 put_new_things_m is empty the ground near them is taken: say so and ask where.
+Otherwise never ask where, or whether, before building what they asked for --
+unless they asked you to ask: build it at once at the first of
+put_new_things_m, and say where it went.
 "There", "over there" and "that" mean what they are looking at. If the point in front of them is water or a steep
 bank, use one_metre_to_the_left_m or one_metre_to_the_right_m instead, whichever
 survey says is dry and level. Without the_person you do not know where they
@@ -155,8 +195,10 @@ thing on a pin "Turn it all the way", "Turn it half way", "Turn it all the way
 back" and "Turn it back to where it started", as they apply (a wheel's "all the
 way" is half a turn), and
 every thing in a groove "Slide it all the way", "... half way", "... all the
-way back": never offer those again, under any name -- offer what they do not,
-named for what the thing is for ("Raise the gate", not "Turn it"). A hand takes
+way back", and every thing a latch holds shut "Release the latch": never offer
+those again by those names. Name yours for what the thing is for ("Raise the
+gate", not "Turn it"); one that does what a built-in does -- "Open the gate", a
+turn to its far stop -- takes that one's place on the menu. A hand takes
 hold of up to 73 kg: a heavier thing is pushed or stood, never taken hold of.
 Give each step only the fields its kind uses and every place its kind. A
 program ends with the hand empty -- except one whose last step is a turn or a
@@ -169,6 +211,10 @@ does. What already has actions is in actions_offered.
 PRODUCTS: HOW TO BUILD IT, ITS KEYS, WHAT TO OFFER. Keys for everything: one
 click on a thing lists its actions and 1 to 9 run them; E or a double-click
 takes hold; E puts down; / talks to you.
+- FIRST: a gate between two posts (with its latch), a portcullis and its winch,
+  a door that shuts itself, a bell on a rope, a bow, a pick, a table with a
+  chair -- build_recipe builds each of these exactly, with its actions. Never
+  build one of them part by part (THINGS BUILT BY RECIPE below).
 - A loose thing (a crate, a pot, a plank, a ball): add_object. Keys, holding
   it: hold the left mouse and let go to throw; Z X turn it, T G tip it away or
   back, C V tip it sideways, U stands it upright, the wheel holds it nearer or
@@ -178,36 +224,45 @@ takes hold; E puts down; / talks to you.
   fixed to it with fix. Offer: a chair "Pull it out" and "Push it in"
   (take_hold, carry_to beside the table on the near side with gap_m 0.4 or
   0.05, put_down); a heavy table "Slide it closer" (push toward a place of kind
-  in_front).
+  in_front). A table with a chair drawn up to it: build_recipe "table".
 - A thing that turns on a pin (a gate, a door, a lid, a lever): hinge, with its
   axis and stops. Keys: take hold, then move the crosshair round the pin.
   Offer: "Open the gate" (turn, stop all_the_way), "Close the gate" (turn, stop
-  all_the_way_back).
+  all_the_way_back). A gate between posts with a latch, and a door that shuts
+  itself: THINGS BUILT BY RECIPE below.
 - A thing that slides (a portcullis, a drawer, a sliding door): slide, with its
   axis and travel. Offer: "Pull the drawer out" (slide, stop all_the_way),
   "Push the drawer in" (slide, stop all_the_way_back).
 - A winch or a capstan (a wheel on a hinge, a handle fixed to it, a rope over a
   point to what it raises -- reeve, with a ratio): offer, on the handle, "Raise
   the gate" (turn, stop all_the_way) and "Lower the gate" (turn, stop
-  back_to_start).
+  back_to_start). A portcullis and its winch: THINGS BUILT BY RECIPE below.
 - A rope, a chain, a hanging sign or a bell: tie, or reeve over a point; links
-  for a chain. Keys: take hold and haul it.
-- A spring (a door that closes itself, a catapult's arm): spring.
-- A latch (a bar that holds a gate shut): fix. Keys: R, or the right mouse,
-  releases it.
-- A bow: its recipe below, then interaction draw-and-release. Keys, holding it:
-  the left mouse draws and letting go shoots; the right mouse lets it down.
+  for a chain. Keys: take hold and haul it. A bell: THINGS BUILT BY RECIPE below.
+- A spring (a door that shuts itself, a catapult's arm): spring. The door:
+  THINGS BUILT BY RECIPE below.
+- A latch (a bar that holds a gate shut): a bar fixed to the gate and to its
+  post. Keys: R, or the right mouse, releases it, and the page offers "Release
+  the latch".
+- A bow: build_recipe "bow" (its recipe below is what that builds). Keys,
+  holding it: the left mouse draws and letting go shoots; the right mouse lets
+  it down.
 - A blade (a sword, a knife, an axe): blade, on the part with the edge. Keys: a
   double-click takes it by its grip, dragging the view swings it, the right
-  mouse turns the edge; a click lets go.
-- A tool that digs (a pick): its recipe below -- tool_point, then interaction
-  swing-and-lever. Keys: a click swings it at the ground under the crosshair;
-  the right mouse levers it out.
+  mouse turns the edge; a click lets go. The page gives it those: offer no
+  action to take it up or swing it -- a program ends with the hand empty.
+- A tool that digs (a pick): build_recipe "pick" (its recipe below is what
+  that builds). Keys: a click swings it at the ground under the crosshair; the
+  right mouse levers it out.
 - Heat (a fire under a pot, a piston over gas): heat, enclose_gas. Key: B heats
   what the crosshair is on. Offer: "Heat it" (heat).
 - Ground and water (a pit, a dam, a channel): dig, fill, cut_block, set_river.
+  A dam or a bank is earth: dig, then fill with what the digging carried.
+  Earth costs no cells; a 0.4 m stone costs 1,000 of the room's 16,000.
   Keys: F digs where the crosshair meets the ground; H heaps back what is
   carried.
+
+{THINGS_ON_JOINTS}
 
 AT AN ANGLE. A ramp, a leaning plank -- anything not square to the room -- is
 one object with rotation_deg [x, y, z] in degrees. On its own, x leans it about
@@ -784,6 +839,7 @@ world again from what you authored, so try it after your last change.
 ANSWER in two or three plain sentences: what you built, from what, and what you
 measured when you tried it. Name things by what they are made of. Never say
 something works, broke, bent or bounced unless a tool told you it did."""
+GUIDE = GUIDE.replace("{THINGS_ON_JOINTS}", _things_on_joints())
 
 
 def ran_out(result: dict[str, Any]) -> bool:
@@ -888,6 +944,9 @@ def _did(name: str, args: dict[str, Any], answer: dict[str, Any]) -> str:
         at = answer.get("at_m") or []
         return (f"stood {answer.get('turned')} {answer.get('stands')}"
                 + (f" at [{at[0]:.2f}, {at[2]:.2f}]" if len(at) == 3 else ""))
+    if name == "build_recipe":
+        at = answer.get("at_m") or [0.0, 0.0]
+        return f"built {answer.get('built')} at [{at[0]:.2f}, {at[1]:.2f}]"
     if name == "offer_actions":
         return (f"gave {answer.get('offered')} {len(answer.get('actions') or [])} actions "
                 f"on the number keys")
@@ -1206,7 +1265,7 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
         conversation: list[dict[str, Any]] = _earlier_turns(history) + [
             {"role": "user", "content": json.dumps(opening, allow_nan=False)}]
         did: list[str] = []
-        changed = False
+        changed = offered = reminded = made = False
         usage = {"input_tokens": 0, "output_tokens": 0}
         reply = ""
         rounds = 0
@@ -1259,6 +1318,27 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
 
             if not calls:
                 reply = "".join(said).strip() or "Done."
+                # Made something and gave it nothing to do: asked once more.
+                # Asked for a latched gate, the chat spent 21 calls on where its
+                # posts went and answered without offer_actions, so the gate had
+                # nothing on its menu but the page's own turns. Only for things
+                # made: asked after digging a channel, it told the person "You're
+                # right" and offered to put a marker post up to hang actions on.
+                if made and not offered and not reminded:
+                    reminded = True
+                    conversation.extend(o for o in outputs
+                                        if o.get("type") in ("reasoning", "message"))
+                    conversation.append({"role": "user", "content": NOTHING_OFFERED})
+                    continue
+                # Said it built something, and nothing changed: asked once more.
+                # Asked for a table and a chair, the chat called no tool and
+                # answered "Built a small oak table ..." in its recipe's words.
+                if not changed and not reminded and CLAIMS.search(reply):
+                    reminded = True
+                    conversation.extend(o for o in outputs
+                                        if o.get("type") in ("reasoning", "message"))
+                    conversation.append({"role": "user", "content": NOTHING_DONE})
+                    continue
                 break
 
             # Carry the model's own turn forward -- its reasoning and its calls --
@@ -1278,6 +1358,10 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
                 if name in room_world.AUTHORING and "error" not in answer:
                     changed = True
                     did.append(_did(name, args, answer))
+                if name == "offer_actions" and "error" not in answer:
+                    offered = True
+                if name in ("add_object", "duplicate") and "error" not in answer:
+                    made = True
                 round_record["calls"].append({"name": name, "arguments": args,
                                               "answer": answer})
                 conversation.append({"type": "function_call_output",

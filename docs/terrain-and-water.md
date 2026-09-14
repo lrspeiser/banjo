@@ -303,7 +303,9 @@ the chat's tools load pointed at it too (ABI 15):
 
 and open http://127.0.0.1:8773/world.
 
-1. **The river flowing.** Choose *A valley with a river* at the bottom right.
+1. **The river flowing.** Open http://127.0.0.1:8773/world?scene=valley. The
+   valley is off the menu now; the menu's one room, the world, is built on the
+   same ground.
    You stand above the pond looking along the valley. The river runs west to
    east; the foam on it is carried by the engine's own velocity field. Aim at
    the water and the label says the depth and speed under the crosshair, and

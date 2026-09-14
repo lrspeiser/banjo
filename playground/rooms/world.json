@@ -1,0 +1,2361 @@
+{
+ "algorithm": "lattice",
+ "cell_m": 0.04,
+ "plasticity": "on",
+ "bodies": [
+  {
+   "name": "marker stone",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    80.0,
+    80.0,
+    80.0
+   ],
+   "center_mm": [
+    -18000.0,
+    -2600.0,
+    -14000.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "8a8f99ff"
+  },
+  {
+   "name": "gate post",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    80.0,
+    1600.0,
+    80.0
+   ],
+   "center_mm": [
+    -7240.0,
+    1680.0,
+    -2200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "8a8f99ff"
+  },
+  {
+   "name": "gate far post",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    80.0,
+    1600.0,
+    80.0
+   ],
+   "center_mm": [
+    -5960.0,
+    1680.0,
+    -2200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "8a8f99ff"
+  },
+  {
+   "name": "oak gate",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    1120.0,
+    1200.0,
+    40.0
+   ],
+   "center_mm": [
+    -6600.0,
+    1600.0,
+    -2180.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "c9a06aff"
+  },
+  {
+   "name": "gate latch bar",
+   "shape": "box",
+   "material": "iron",
+   "size_mm": [
+    240.0,
+    40.0,
+    40.0
+   ],
+   "center_mm": [
+    -6000.0,
+    1900.0,
+    -2100.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "d0d4dcff"
+  },
+  {
+   "name": "gateway left post",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    80.0,
+    2000.0,
+    80.0
+   ],
+   "center_mm": [
+    -11480.0,
+    1880.0,
+    -2280.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "8a8f99ff"
+  },
+  {
+   "name": "gateway right post",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    80.0,
+    2000.0,
+    80.0
+   ],
+   "center_mm": [
+    -10120.0,
+    1880.0,
+    -2280.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "8a8f99ff"
+  },
+  {
+   "name": "gateway lintel",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    1440.0,
+    80.0,
+    80.0
+   ],
+   "center_mm": [
+    -10800.0,
+    2920.0,
+    -2280.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "c9a06aff"
+  },
+  {
+   "name": "portcullis",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    1280.0,
+    1040.0,
+    40.0
+   ],
+   "center_mm": [
+    -10800.0,
+    1440.0,
+    -2180.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "c9a06aff"
+  },
+  {
+   "name": "winch post",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    80.0,
+    1200.0,
+    80.0
+   ],
+   "center_mm": [
+    -9200.0,
+    1480.0,
+    -2280.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "8a8f99ff"
+  },
+  {
+   "name": "winch wheel",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    640.0,
+    640.0,
+    80.0
+   ],
+   "center_mm": [
+    -9200.0,
+    1880.0,
+    -2160.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "c9a06aff"
+  },
+  {
+   "name": "winch handle",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    80.0,
+    80.0,
+    160.0
+   ],
+   "center_mm": [
+    -9200.0,
+    2120.0,
+    -2040.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "c9a06aff"
+  },
+  {
+   "name": "door hinge post",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    80.0,
+    2200.0,
+    80.0
+   ],
+   "center_mm": [
+    -14080.0,
+    2020.0,
+    -2200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "c9a06aff"
+  },
+  {
+   "name": "door latch post",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    80.0,
+    2200.0,
+    80.0
+   ],
+   "center_mm": [
+    -13120.0,
+    2020.0,
+    -2200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "c9a06aff"
+  },
+  {
+   "name": "door lintel",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    1040.0,
+    80.0,
+    80.0
+   ],
+   "center_mm": [
+    -13600.0,
+    3160.0,
+    -2200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "c9a06aff"
+  },
+  {
+   "name": "oak door",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    800.0,
+    2000.0,
+    40.0
+   ],
+   "center_mm": [
+    -13600.0,
+    2000.0,
+    -2180.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "c9a06aff"
+  },
+  {
+   "name": "bell post",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    80.0,
+    2400.0,
+    80.0
+   ],
+   "center_mm": [
+    -16280.0,
+    2160.0,
+    -2200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "c9a06aff"
+  },
+  {
+   "name": "bell far post",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    80.0,
+    2400.0,
+    80.0
+   ],
+   "center_mm": [
+    -15320.0,
+    2160.0,
+    -2200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "c9a06aff"
+  },
+  {
+   "name": "bell beam",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    1040.0,
+    80.0,
+    80.0
+   ],
+   "center_mm": [
+    -15800.0,
+    3400.0,
+    -2200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "c9a06aff"
+  },
+  {
+   "name": "iron bell",
+   "shape": "sphere",
+   "material": "iron",
+   "size_mm": [
+    160.0,
+    160.0,
+    160.0
+   ],
+   "center_mm": [
+    -15800.0,
+    2560.0,
+    -2200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "d0d4dcff"
+  },
+  {
+   "name": "oak crate",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    400.0,
+    400.0,
+    400.0
+   ],
+   "center_mm": [
+    13000.0,
+    810.6,
+    -3200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "c9a06aff"
+  },
+  {
+   "name": "ceramic pot",
+   "shape": "box",
+   "material": "ceramic",
+   "size_mm": [
+    120.0,
+    120.0,
+    120.0
+   ],
+   "center_mm": [
+    12200.0,
+    675.9,
+    -3200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "efe6d8ff"
+  },
+  {
+   "name": "oak plank",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    800.0,
+    40.0,
+    200.0
+   ],
+   "center_mm": [
+    13800.0,
+    618.2,
+    -3200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "c9a06aff"
+  },
+  {
+   "name": "rubber ball",
+   "shape": "sphere",
+   "material": "rubber",
+   "size_mm": [
+    160.0,
+    160.0,
+    160.0
+   ],
+   "center_mm": [
+    13400.0,
+    720.2,
+    -3200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "9fd3ffff"
+  },
+  {
+   "name": "bow grip upper",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    160.0,
+    120.0
+   ],
+   "center_mm": [
+    15800.0,
+    2000.0,
+    -3200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "c9a06aff"
+  },
+  {
+   "name": "bow grip lower",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    160.0,
+    120.0
+   ],
+   "center_mm": [
+    15800.0,
+    1720.0,
+    -3200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "c9a06aff"
+  },
+  {
+   "name": "bow grip near cheek",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    40.0,
+    40.0
+   ],
+   "center_mm": [
+    15800.0,
+    1820.0,
+    -3140.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "c9a06aff"
+  },
+  {
+   "name": "bow grip far cheek",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    40.0,
+    40.0
+   ],
+   "center_mm": [
+    15800.0,
+    1820.0,
+    -3260.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "c9a06aff"
+  },
+  {
+   "name": "upper limb tip",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    40.0,
+    40.0
+   ],
+   "center_mm": [
+    15640.0,
+    2220.0,
+    -3200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "c9a06aff"
+  },
+  {
+   "name": "lower limb tip",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    40.0,
+    40.0
+   ],
+   "center_mm": [
+    15640.0,
+    1420.0,
+    -3200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "c9a06aff"
+  },
+  {
+   "name": "bowstring",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    160.0,
+    40.0
+   ],
+   "center_mm": [
+    15640.0,
+    1820.0,
+    -3200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "c9a06aff"
+  },
+  {
+   "name": "arrow",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    600.0,
+    40.0,
+    40.0
+   ],
+   "center_mm": [
+    16000.0,
+    1820.0,
+    -3200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "c9a06aff"
+  },
+  {
+   "name": "sword",
+   "shape": "box",
+   "material": "iron",
+   "size_mm": [
+    640.0,
+    40.0,
+    40.0
+   ],
+   "center_mm": [
+    10400.0,
+    662.1,
+    -5600.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "d0d4dcff"
+  },
+  {
+   "name": "pick haft",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    800.0,
+    40.0,
+    40.0
+   ],
+   "center_mm": [
+    13000.0,
+    623.1,
+    -5580.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false,
+   "join": "pick",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "c9a06aff"
+  },
+  {
+   "name": "pick arm",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    40.0,
+    280.0
+   ],
+   "center_mm": [
+    13380.0,
+    620.0,
+    -5740.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false,
+   "join": "pick",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "c9a06aff"
+  },
+  {
+   "name": "hearth",
+   "shape": "box",
+   "material": "concrete",
+   "size_mm": [
+    800.0,
+    80.0,
+    640.0
+   ],
+   "center_mm": [
+    15800.0,
+    614.3,
+    -5600.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": true,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "8a8f99ff"
+  },
+  {
+   "name": "iron pot",
+   "shape": "box",
+   "material": "iron",
+   "size_mm": [
+    160.0,
+    160.0,
+    160.0
+   ],
+   "center_mm": [
+    15800.0,
+    736.3,
+    -5600.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "d0d4dcff"
+  },
+  {
+   "name": "log 1",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    120.0,
+    120.0,
+    480.0
+   ],
+   "center_mm": [
+    15720.0,
+    878.3,
+    -5600.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "c9a06aff"
+  },
+  {
+   "name": "log 2",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    120.0,
+    120.0,
+    480.0
+   ],
+   "center_mm": [
+    15880.0,
+    878.3,
+    -5600.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false,
+   "join": "",
+   "rotation_deg": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "subtract": false,
+   "roll": false,
+   "color_rgba": "c9a06aff"
+  },
+  {
+   "name": "oak table top",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    800.0,
+    40.0,
+    560.0
+   ],
+   "center_mm": [
+    10400.0,
+    1420.0,
+    -3200.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "table leg 1",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    720.0,
+    40.0
+   ],
+   "center_mm": [
+    10020.0,
+    1040.0,
+    -3460.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "table leg 2",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    720.0,
+    40.0
+   ],
+   "center_mm": [
+    10780.0,
+    1040.0,
+    -3460.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "table leg 3",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    720.0,
+    40.0
+   ],
+   "center_mm": [
+    10020.0,
+    1040.0,
+    -2940.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "table leg 4",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    720.0,
+    40.0
+   ],
+   "center_mm": [
+    10780.0,
+    1040.0,
+    -2940.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "oak chair seat",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    400.0,
+    40.0,
+    400.0
+   ],
+   "center_mm": [
+    10400.0,
+    1140.0,
+    -2640.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "chair leg 1",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    440.0,
+    40.0
+   ],
+   "center_mm": [
+    10220.0,
+    900.0,
+    -2820.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "chair leg 2",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    440.0,
+    40.0
+   ],
+   "center_mm": [
+    10580.0,
+    900.0,
+    -2820.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "chair leg 3",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    440.0,
+    40.0
+   ],
+   "center_mm": [
+    10220.0,
+    900.0,
+    -2460.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "chair leg 4",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    40.0,
+    440.0,
+    40.0
+   ],
+   "center_mm": [
+    10580.0,
+    900.0,
+    -2460.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  },
+  {
+   "name": "chair back",
+   "shape": "box",
+   "material": "oak",
+   "size_mm": [
+    400.0,
+    440.0,
+    40.0
+   ],
+   "center_mm": [
+    10400.0,
+    1380.0,
+    -2460.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchored": false
+  }
+ ],
+ "joints": [
+  {
+   "kind": "hinge",
+   "a": "gate post",
+   "b": "oak gate",
+   "at_mm": [
+    -7120.0,
+    1600.0,
+    -2180.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "lower_deg": 0.0,
+   "upper_deg": 90.0,
+   "friction_n_m": 5.0
+  },
+  {
+   "kind": "fixing",
+   "a": "oak gate",
+   "b": "gate latch bar",
+   "at_mm": [
+    -6080.0,
+    1900.0,
+    -2140.0
+   ],
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "holds_tension_n": 0.0,
+   "holds_shear_n": 0.0
+  },
+  {
+   "kind": "fixing",
+   "a": "gate far post",
+   "b": "gate latch bar",
+   "at_mm": [
+    -5960.0,
+    1900.0,
+    -2140.0
+   ],
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "holds_tension_n": 0.0,
+   "holds_shear_n": 0.0
+  },
+  {
+   "kind": "slider",
+   "a": "gateway left post",
+   "b": "portcullis",
+   "at_mm": [
+    -10800.0,
+    1440.0,
+    -2180.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "lower_mm": 0.0,
+   "upper_mm": 1000.0,
+   "friction_n": 100.0
+  },
+  {
+   "kind": "hinge",
+   "a": "winch post",
+   "b": "winch wheel",
+   "at_mm": [
+    -9200.0,
+    1880.0,
+    -2160.0
+   ],
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "lower_deg": -180.0,
+   "upper_deg": 180.0,
+   "friction_n_m": 2.0
+  },
+  {
+   "kind": "fixing",
+   "a": "winch wheel",
+   "b": "winch handle",
+   "at_mm": [
+    -9200.0,
+    2120.0,
+    -2120.0
+   ],
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "holds_tension_n": 0.0,
+   "holds_shear_n": 0.0
+  },
+  {
+   "kind": "pulley",
+   "a": "winch wheel",
+   "b": "portcullis",
+   "at_mm": [
+    -9200.0,
+    2200.0,
+    -2160.0
+   ],
+   "to_mm": [
+    -10800.0,
+    1960.0,
+    -2180.0
+   ],
+   "over_a_mm": [
+    -9200.0,
+    2840.0,
+    -2160.0
+   ],
+   "over_b_mm": [
+    -10800.0,
+    2840.0,
+    -2180.0
+   ],
+   "ratio": 1.0,
+   "length_mm": 0.0
+  },
+  {
+   "kind": "hinge",
+   "a": "door hinge post",
+   "b": "oak door",
+   "at_mm": [
+    -13960.0,
+    2000.0,
+    -2180.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "lower_deg": 0.0,
+   "upper_deg": 90.0,
+   "friction_n_m": 2.0
+  },
+  {
+   "kind": "elastic",
+   "a": "door hinge post",
+   "b": "oak door",
+   "at_mm": [
+    -13660.0,
+    2820.0,
+    -1780.0
+   ],
+   "to_mm": [
+    -13560.0,
+    2820.0,
+    -2180.0
+   ],
+   "rest_mm": 412.3,
+   "stiffness_n_m": 300.0,
+   "damping_n_s_m": 40.0
+  },
+  {
+   "kind": "link",
+   "a": "bell beam",
+   "b": "iron bell",
+   "at_mm": [
+    -15800.0,
+    3360.0,
+    -2200.0
+   ],
+   "to_mm": [
+    -15800.0,
+    2640.0,
+    -2200.0
+   ],
+   "length_mm": 720.0,
+   "breaks_at_n": 0.0
+  },
+  {
+   "kind": "hinge",
+   "a": "bow grip upper",
+   "b": "upper limb tip",
+   "at_mm": [
+    15800.0,
+    1940.0,
+    -3200.0
+   ],
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "lower_deg": -60.0,
+   "upper_deg": 60.0,
+   "friction_n_m": 0.0
+  },
+  {
+   "kind": "hinge",
+   "a": "bow grip lower",
+   "b": "lower limb tip",
+   "at_mm": [
+    15800.0,
+    1700.0,
+    -3200.0
+   ],
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "lower_deg": -60.0,
+   "upper_deg": 60.0,
+   "friction_n_m": 0.0
+  },
+  {
+   "kind": "elastic",
+   "a": "bow grip upper",
+   "b": "upper limb tip",
+   "at_mm": [
+    16160.0,
+    1940.0,
+    -3200.0
+   ],
+   "to_mm": [
+    15640.0,
+    2220.0,
+    -3200.0
+   ],
+   "rest_mm": 0.0,
+   "stiffness_n_m": 6000.0,
+   "damping_n_s_m": 20.0
+  },
+  {
+   "kind": "elastic",
+   "a": "bow grip lower",
+   "b": "lower limb tip",
+   "at_mm": [
+    16160.0,
+    1700.0,
+    -3200.0
+   ],
+   "to_mm": [
+    15640.0,
+    1420.0,
+    -3200.0
+   ],
+   "rest_mm": 0.0,
+   "stiffness_n_m": 6000.0,
+   "damping_n_s_m": 20.0
+  },
+  {
+   "kind": "link",
+   "a": "upper limb tip",
+   "b": "bowstring",
+   "at_mm": [
+    15640.0,
+    2220.0,
+    -3200.0
+   ],
+   "to_mm": [
+    15640.0,
+    1900.0,
+    -3200.0
+   ],
+   "length_mm": 0.0,
+   "breaks_at_n": 0.0
+  },
+  {
+   "kind": "link",
+   "a": "lower limb tip",
+   "b": "bowstring",
+   "at_mm": [
+    15640.0,
+    1420.0,
+    -3200.0
+   ],
+   "to_mm": [
+    15640.0,
+    1740.0,
+    -3200.0
+   ],
+   "length_mm": 0.0,
+   "breaks_at_n": 0.0
+  },
+  {
+   "kind": "fixing",
+   "a": "bowstring",
+   "b": "arrow",
+   "at_mm": [
+    15670.0,
+    1820.0,
+    -3200.0
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "holds_tension_n": 0.0,
+   "holds_shear_n": 0.0,
+   "comes_off_n": 20.0
+  },
+  {
+   "kind": "fixing",
+   "a": "oak table top",
+   "b": "table leg 1",
+   "at_mm": [
+    10020.0,
+    1400.0,
+    -3460.0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "holds_tension_n": 0.0,
+   "holds_shear_n": 0.0
+  },
+  {
+   "kind": "fixing",
+   "a": "oak table top",
+   "b": "table leg 2",
+   "at_mm": [
+    10780.0,
+    1400.0,
+    -3460.0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "holds_tension_n": 0.0,
+   "holds_shear_n": 0.0
+  },
+  {
+   "kind": "fixing",
+   "a": "oak table top",
+   "b": "table leg 3",
+   "at_mm": [
+    10020.0,
+    1400.0,
+    -2940.0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "holds_tension_n": 0.0,
+   "holds_shear_n": 0.0
+  },
+  {
+   "kind": "fixing",
+   "a": "oak table top",
+   "b": "table leg 4",
+   "at_mm": [
+    10780.0,
+    1400.0,
+    -2940.0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "holds_tension_n": 0.0,
+   "holds_shear_n": 0.0
+  },
+  {
+   "kind": "fixing",
+   "a": "oak chair seat",
+   "b": "chair leg 1",
+   "at_mm": [
+    10220.0,
+    1120.0,
+    -2820.0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "holds_tension_n": 0.0,
+   "holds_shear_n": 0.0
+  },
+  {
+   "kind": "fixing",
+   "a": "oak chair seat",
+   "b": "chair leg 2",
+   "at_mm": [
+    10580.0,
+    1120.0,
+    -2820.0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "holds_tension_n": 0.0,
+   "holds_shear_n": 0.0
+  },
+  {
+   "kind": "fixing",
+   "a": "oak chair seat",
+   "b": "chair leg 3",
+   "at_mm": [
+    10220.0,
+    1120.0,
+    -2460.0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "holds_tension_n": 0.0,
+   "holds_shear_n": 0.0
+  },
+  {
+   "kind": "fixing",
+   "a": "oak chair seat",
+   "b": "chair leg 4",
+   "at_mm": [
+    10580.0,
+    1120.0,
+    -2460.0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "holds_tension_n": 0.0,
+   "holds_shear_n": 0.0
+  },
+  {
+   "kind": "fixing",
+   "a": "oak chair seat",
+   "b": "chair back",
+   "at_mm": [
+    10400.0,
+    1160.0,
+    -2460.0
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "holds_tension_n": 0.0,
+   "holds_shear_n": 0.0
+  }
+ ],
+ "thermo": {
+  "heaters": [
+   {
+    "target": "log 1",
+    "power_w": 10000.0,
+    "seconds": 90.0,
+    "start_s": 0.0,
+    "label": "heater"
+   },
+   {
+    "target": "log 2",
+    "power_w": 10000.0,
+    "seconds": 90.0,
+    "start_s": 0.0,
+    "label": "heater"
+   }
+  ]
+ },
+ "blades": [
+  {
+   "body": "sword",
+   "heel_mm": [
+    10720.0,
+    662.1,
+    -5620.0
+   ],
+   "tip_mm": [
+    10080.0,
+    662.1,
+    -5620.0
+   ],
+   "facing": [
+    0.0,
+    0.0,
+    -1.0
+   ],
+   "grip_mm": [
+    10780.0,
+    662.1,
+    -5580.0
+   ],
+   "thickness_mm": 40.0,
+   "edge_radius_mm": 0.2,
+   "bevel_deg": 30.0
+  }
+ ],
+ "tool_points": [
+  {
+   "body": "pick haft",
+   "tip_mm": [
+    13380.0,
+    620.0,
+    -5880.0
+   ],
+   "pointing": [
+    0.0,
+    0.0,
+    -1.0
+   ],
+   "grip_mm": [
+    12640.0,
+    620.0,
+    -5580.0
+   ],
+   "width_mm": 40.0,
+   "thickness_mm": 40.0,
+   "angle_deg": 30.0,
+   "length_mm": 200.0
+  }
+ ],
+ "interactions": [
+  {
+   "object": "the bow",
+   "template": "draw-and-release",
+   "parts": [
+    "bow grip upper",
+    "bow grip lower",
+    "bow grip near cheek",
+    "bow grip far cheek",
+    "upper limb tip",
+    "lower limb tip",
+    "bowstring",
+    "arrow"
+   ],
+   "nock": {
+    "a": "bowstring",
+    "b": "arrow"
+   },
+   "limbs": [
+    [
+     "bow grip upper",
+     "upper limb tip"
+    ],
+    [
+     "bow grip lower",
+     "lower limb tip"
+    ]
+   ],
+   "projectile": "arrow",
+   "draw": {
+    "part": "bowstring",
+    "axis": [
+     -1.0,
+     0.0,
+     0.0
+    ],
+    "max_mm": 450.0,
+    "speed_mm_s": 400.0
+   }
+  },
+  {
+   "object": "the pick",
+   "template": "swing-and-lever",
+   "parts": [
+    "pick haft",
+    "pick arm"
+   ],
+   "tool": "pick haft"
+  }
+ ],
+ "actions": [
+  {
+   "body": "oak gate",
+   "label": "Open the gate",
+   "steps": [
+    {
+     "do": "turn",
+     "part": "oak gate",
+     "stop": "all_the_way"
+    }
+   ]
+  },
+  {
+   "body": "oak gate",
+   "label": "Close the gate",
+   "steps": [
+    {
+     "do": "turn",
+     "part": "oak gate",
+     "stop": "all_the_way_back"
+    }
+   ]
+  },
+  {
+   "body": "winch handle",
+   "label": "Raise the portcullis",
+   "steps": [
+    {
+     "do": "turn",
+     "part": "winch handle",
+     "stop": "all_the_way"
+    }
+   ]
+  },
+  {
+   "body": "winch handle",
+   "label": "Lower the portcullis",
+   "steps": [
+    {
+     "do": "turn",
+     "part": "winch handle",
+     "stop": "back_to_start"
+    }
+   ]
+  },
+  {
+   "body": "oak door",
+   "label": "Open the door",
+   "steps": [
+    {
+     "do": "turn",
+     "part": "oak door",
+     "stop": "all_the_way"
+    }
+   ]
+  },
+  {
+   "body": "iron bell",
+   "label": "Ring the bell",
+   "steps": [
+    {
+     "do": "push",
+     "part": "iron bell",
+     "toward": {
+      "kind": "from",
+      "from": "iron bell",
+      "offset_m": [
+       0.0,
+       0.0,
+       -0.5
+      ]
+     },
+     "distance_m": 0.3,
+     "speed_m_s": 0.4
+    }
+   ]
+  },
+  {
+   "body": "oak crate",
+   "label": "Put the crate on the ground in front of me",
+   "steps": [
+    {
+     "do": "take_hold",
+     "part": "oak crate"
+    },
+    {
+     "do": "carry_to",
+     "to": {
+      "kind": "in_front",
+      "in_front_m": 1.2,
+      "height_m": 0.0
+     },
+     "speed_m_s": 0.4
+    },
+    {
+     "do": "put_down"
+    }
+   ]
+  },
+  {
+   "body": "ceramic pot",
+   "label": "Put the pot on the ground in front of me",
+   "steps": [
+    {
+     "do": "take_hold",
+     "part": "ceramic pot"
+    },
+    {
+     "do": "carry_to",
+     "to": {
+      "kind": "in_front",
+      "in_front_m": 1.2,
+      "height_m": 0.0
+     },
+     "speed_m_s": 0.4
+    },
+    {
+     "do": "put_down"
+    }
+   ]
+  },
+  {
+   "body": "oak plank",
+   "label": "Stand the plank upright",
+   "steps": [
+    {
+     "do": "stand",
+     "stand": "upright",
+     "where": "here"
+    }
+   ]
+  },
+  {
+   "body": "oak plank",
+   "label": "Lay the plank down where I'm facing",
+   "steps": [
+    {
+     "do": "stand",
+     "stand": "lying",
+     "along": "facing",
+     "where": "in_front"
+    }
+   ]
+  },
+  {
+   "body": "rubber ball",
+   "label": "Put the ball on the ground in front of me",
+   "steps": [
+    {
+     "do": "take_hold",
+     "part": "rubber ball"
+    },
+    {
+     "do": "carry_to",
+     "to": {
+      "kind": "in_front",
+      "in_front_m": 1.2,
+      "height_m": 0.0
+     },
+     "speed_m_s": 0.6
+    },
+    {
+     "do": "put_down"
+    }
+   ]
+  },
+  {
+   "body": "sword",
+   "label": "Put the sword on the ground in front of me",
+   "steps": [
+    {
+     "do": "take_hold",
+     "part": "sword"
+    },
+    {
+     "do": "carry_to",
+     "to": {
+      "kind": "in_front",
+      "in_front_m": 1.2,
+      "height_m": 0.0
+     },
+     "speed_m_s": 0.5
+    },
+    {
+     "do": "put_down"
+    }
+   ]
+  },
+  {
+   "body": "iron pot",
+   "label": "Put the pot on the ground in front of me",
+   "steps": [
+    {
+     "do": "take_hold",
+     "part": "iron pot"
+    },
+    {
+     "do": "put_down"
+    }
+   ]
+  },
+  {
+   "body": "iron pot",
+   "label": "Heat the pot (10 kW for 60 s)",
+   "steps": [
+    {
+     "do": "heat",
+     "part": "iron pot",
+     "power_w": 10000.0,
+     "seconds": 60.0
+    }
+   ]
+  },
+  {
+   "body": "log 1",
+   "label": "Put the log on the hearth",
+   "steps": [
+    {
+     "do": "take_hold",
+     "part": "log 1"
+    },
+    {
+     "do": "put_down"
+    }
+   ]
+  },
+  {
+   "body": "log 1",
+   "label": "Heat the log (10 kW for 60 s)",
+   "steps": [
+    {
+     "do": "heat",
+     "part": "log 1",
+     "power_w": 10000.0,
+     "seconds": 60.0
+    }
+   ]
+  },
+  {
+   "body": "log 2",
+   "label": "Put the log on the hearth",
+   "steps": [
+    {
+     "do": "take_hold",
+     "part": "log 2"
+    },
+    {
+     "do": "put_down"
+    }
+   ]
+  },
+  {
+   "body": "log 2",
+   "label": "Heat the log (10 kW for 60 s)",
+   "steps": [
+    {
+     "do": "heat",
+     "part": "log 2",
+     "power_w": 10000.0,
+     "seconds": 60.0
+    }
+   ]
+  },
+  {
+   "body": "hearth",
+   "label": "Heat the logs (10 kW each for 60 s)",
+   "steps": [
+    {
+     "do": "heat",
+     "part": "log 1",
+     "power_w": 10000.0,
+     "seconds": 60.0
+    },
+    {
+     "do": "heat",
+     "part": "log 2",
+     "power_w": 10000.0,
+     "seconds": 60.0
+    }
+   ]
+  },
+  {
+   "body": "oak chair seat",
+   "label": "Pull the chair out",
+   "steps": [
+    {
+     "do": "take_hold",
+     "part": "oak chair seat"
+    },
+    {
+     "do": "carry_to",
+     "to": {
+      "kind": "beside",
+      "beside": "oak table top",
+      "side": "near",
+      "gap_m": 0.4
+     },
+     "speed_m_s": 0.5
+    },
+    {
+     "do": "put_down"
+    }
+   ]
+  },
+  {
+   "body": "oak chair seat",
+   "label": "Push the chair in",
+   "steps": [
+    {
+     "do": "take_hold",
+     "part": "oak chair seat"
+    },
+    {
+     "do": "carry_to",
+     "to": {
+      "kind": "beside",
+      "beside": "oak table top",
+      "side": "near",
+      "gap_m": 0.05
+     },
+     "speed_m_s": 0.5
+    },
+    {
+     "do": "put_down"
+    }
+   ]
+  }
+ ],
+ "terrain": {
+  "generate": "valley",
+  "edits": [
+   {
+    "dig": {
+     "from_m": [
+      4.77,
+      -2.73
+     ],
+     "to_m": [
+      4.77,
+      2.27
+     ],
+     "width_m": 0.8,
+     "depth_m": 0.7
+    }
+   },
+   {
+    "deposit": {
+     "at_m": [
+      4.62,
+      2.25
+     ],
+     "radius_m": 0.8,
+     "sand_m3": 0.0,
+     "soil_m3": 2.901
+    }
+   },
+   {
+    "deposit": {
+     "at_m": [
+      4.62,
+      2.25
+     ],
+     "radius_m": 0.8,
+     "sand_m3": 0.472,
+     "soil_m3": 0.0
+    }
+   }
+  ]
+ }
+}

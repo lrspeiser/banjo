@@ -968,7 +968,28 @@ def _saved_room(name: str):
     return scene
 
 
+def world() -> dict[str, Any]:
+    """The world: one room with everything in it, built by asking.
+
+    The owner, 2026-09-14: "wipe all the items and worlds in our sim dropdown
+    and start over with a new world with everything in it", built with the
+    room's own chat and its latest prompts rather than laid out by hand. It
+    starts as the valley's ground, made by the engine: a river running west to
+    east, a pond, a hill a person arrives on, and a level terrace either side of
+    it (about 0.9 m up at x -17 to -5, z -7 to -1; about 0.6 m up at x 9 to 18,
+    z -7 to -2). Everything a person makes and uses is built on it by the chat.
+    The rooms below stay for the tests and the QA's builds, off the menu.
+
+    It is kept as the chat built it, in rooms/world.json: the scratchpad's
+    headless_build_world.py typed each request into the page's chat box, on
+    this ground bare. Without that file it is the ground bare.
+    """
+    kept = ROOMS / "world.json"
+    return json.loads(kept.read_text(encoding="utf-8")) if kept.is_file() else valley()
+
+
 SCENES = {
+    "world": world,
     "tests-gates": _saved_room("tests-gates"),
     "tests-ropes": _saved_room("tests-ropes"),
     "tests-motion": _saved_room("tests-motion"),

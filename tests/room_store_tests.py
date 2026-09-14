@@ -115,9 +115,27 @@ class KeptRoomsTestCase(PlaygroundTestCase):
 
     def ask(self, app, message, chat=the_chat_builds_a_crate):
         with mock.patch.object(world_chat, "ask", side_effect=chat):
-            status, answer = self.post(app, "/api/world/ask", {"message": message})
+            status, answer = self.post(app, "/api/world/ask",
+                                       {"session": app.live.session.id, "message": message})
         self.assertEqual(status, 200, answer)
         return answer
+
+
+class APageThatLostItsRoom(KeptRoomsTestCase):
+    """The playground runs one room at a time, and a page whose room was opened
+    again -- in another tab, by another person -- no longer has it. Its chat
+    would build in the room somebody else has open."""
+
+    def test_its_chat_is_refused_and_asks_no_model(self):
+        app = self.start()
+        stale = self.open(app, scene="yard")["session"]
+        self.open(app, scene="yard")               # opened again, by another page
+        with mock.patch.object(world_chat, "ask", side_effect=the_chat_builds_a_crate) as chat:
+            status, answer = self.post(app, "/api/world/ask",
+                                       {"session": stale, "message": "an oak crate, please"})
+        self.assertEqual(status, 400, answer)
+        self.assertIn("no longer has the room", answer["error"])
+        chat.assert_not_called()
 
 
 class ARoomOutlivesItsServer(KeptRoomsTestCase):

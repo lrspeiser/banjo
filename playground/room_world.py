@@ -71,6 +71,8 @@ AUTHORING = {"add_object", "remove_object", "move_object", "turn_object", "clear
              # How a person uses a thing is part of what the room IS: the page
              # gives a bow its controls from it. And a copy of a thing is things.
              "interaction", "duplicate",
+             # A mechanism built by its recipe is things, joints and actions.
+             "build_recipe",
              # And the actions a thing is given: the page puts them on the
              # number keys from it.
              "offer_actions",

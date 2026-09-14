@@ -83,6 +83,88 @@ class TheConversationGoesToTheModel(unittest.TestCase):
             self.assertIn(words, world_chat.GUIDE)
 
 
+class ThingsMadeAreGivenActions(unittest.TestCase):
+    """A turn that made things and offered them nothing is asked once more: the
+    room's chat, asked for a latched gate, answered without offer_actions. A turn
+    that made nothing is not: asked after digging a channel, the chat told the
+    person "You're right" and offered a marker post to hang actions on."""
+
+    @unittest.skipUnless(LIBRARY and Path(LIBRARY).is_file(), "the library is not built")
+    def test_asked_once_more_only_when_something_was_made(self):
+        for makes in (True, False):
+            sent: list[list[dict]] = []
+
+            def model(api_key, model_name, conversation, makes=makes):
+                sent.append(list(conversation))
+                if len(sent) == 1:
+                    call = ({"name": "add_object", "arguments": json.dumps({"object": {
+                                "name": "test crate", "shape": "box", "material": "oak",
+                                "size_m": [0.3, 0.3, 0.3], "position_m": [0.0, 1.0]}})}
+                            if makes else {"name": "describe_world", "arguments": "{}"})
+                    return {"status": "completed", "usage": {},
+                            "output": [dict(call, type="function_call", call_id="c1")]}
+                return {"status": "completed", "usage": {},
+                        "output": [{"type": "message",
+                                    "content": [{"type": "output_text", "text": f"answer {len(sent)}"}]}]}
+
+            real, world_chat._call = world_chat._call, model
+            try:
+                answer = world_chat.ask("key", "a model", world_room.Room("yard"), {"bodies": []},
+                                        "a crate, please", [])
+            finally:
+                world_chat._call = real
+            noted = [m for m in sent[-1] if isinstance(m, dict)
+                     and m.get("content") == world_chat.NOTHING_OFFERED]
+            if makes:
+                self.assertEqual((len(sent), len(noted), answer["reply"]), (3, 1, "answer 3"))
+            else:
+                self.assertEqual((len(sent), len(noted), answer["reply"]), (2, 0, "answer 2"))
+
+
+class WhatWasDoneIsSaidInWords(unittest.TestCase):
+    def test_a_recipe_built_is_said_by_what_it_is_and_where(self):
+        """Under the chat's answer the page showed "did: build_recipe None to
+        None" for a table and chair built by recipe."""
+        said = world_chat._did("build_recipe", {"recipe": "table", "at_m": [10.4, -3.2]},
+                               {"built": "a small oak table with a chair drawn up to it",
+                                "at_m": [10.4, -3.2]})
+        self.assertEqual(said, "built a small oak table with a chair drawn up to it at [10.40, -3.20]")
+
+
+class AClaimWithNothingDoneIsQuestioned(unittest.TestCase):
+    """Asked for a table and a chair, the room's chat called no tool and
+    answered "Built a small oak table ... I tried it: the table stood on its
+    legs" -- the recipe's own words from its guide -- and nothing was there. A
+    turn that says it built something with nothing changed is asked once more;
+    an answer that claims nothing is not."""
+
+    @unittest.skipUnless(LIBRARY and Path(LIBRARY).is_file(), "the library is not built")
+    def test_asked_again_only_when_it_says_it_built_and_nothing_changed(self):
+        for first, again in (("Built a small oak table with an oak chair drawn up to it.", True),
+                             ("That is the castle gate's winch.", False)):
+            sent: list[list[dict]] = []
+
+            def model(api_key, model_name, conversation, first=first):
+                sent.append(list(conversation))
+                text = first if len(sent) == 1 else "answer 2"
+                return {"status": "completed", "usage": {},
+                        "output": [{"type": "message",
+                                    "content": [{"type": "output_text", "text": text}]}]}
+
+            real, world_chat._call = world_chat._call, model
+            try:
+                answer = world_chat.ask("key", "a model", world_room.Room("yard"), {"bodies": []},
+                                        "a table and a chair, please", [])
+            finally:
+                world_chat._call = real
+            noted = [m for m in sent[-1] if isinstance(m, dict)
+                     and m.get("content") == world_chat.NOTHING_DONE]
+            if again:
+                self.assertEqual((len(sent), len(noted), answer["reply"]), (2, 1, "answer 2"))
+            else:
+                self.assertEqual((len(sent), len(noted), answer["reply"]), (1, 0, first))
+
+
 class WhyAnAnswerCameBackUnfinished(unittest.TestCase):
     """The page said "try a shorter request" whatever had gone wrong, and a
     one-line request once failed that way. The answer says why, so that is
@@ -138,7 +220,7 @@ class WhyAnAnswerCameBackUnfinished(unittest.TestCase):
                         "incomplete_details": {"reason": "max_output_tokens"}}
             return {"status": "completed", "usage": {"output_tokens": 700},
                     "output": [{"type": "message",
-                                "content": [{"type": "output_text", "text": "Built it."}]}]}
+                                "content": [{"type": "output_text", "text": "Here is a tower."}]}]}
 
         trace: list = []
         real, world_chat._call = world_chat._call, model
@@ -147,7 +229,9 @@ class WhyAnAnswerCameBackUnfinished(unittest.TestCase):
                                     "a tower", [], history=[], trace=trace)
         finally:
             world_chat._call = real
-        self.assertEqual(answer["reply"], "Built it.")
+        # (Not "Built it.": with no tool called, that is a claim the room
+        # questions -- AClaimWithNothingDoneIsQuestioned.)
+        self.assertEqual(answer["reply"], "Here is a tower.")
         self.assertEqual(len(sent), 2)
         self.assertEqual(sent[0], sent[1], "nothing of the unfinished answer goes with the second")
         self.assertEqual(answer["usage"]["output_tokens"], 6700, "both answers are paid for and counted")
