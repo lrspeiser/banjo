@@ -3,9 +3,11 @@
 **Status:** design recorded 2026-09-13 on branch `agent/progression`. Increment 1
 (the physics: a tool's point, a swing, and what the ground does about it) is
 described in [ground work](ground-work.md) and measured in section 7 below.
-Increments 2 to 5 are plans, not claims: each moves to the
-[development status](development-status.md) only with its own tests, a check in
-the playground in 3D and green CI.
+Increment 2's first part, the notebook (the registries, the journal, the
+evaluator, `read_knowledge` and the page's panel), is built and measured in
+section 7 too. The rest of increment 2, and increments 3 to 5, are plans, not
+claims: each moves to the [development status](development-status.md) only with
+its own tests, a check in the playground in 3D and green CI.
 
 The rule this whole design serves is the owner's:
 
@@ -377,3 +379,30 @@ engine means anything until a tool can do something physical to the ground.
 
 Increment 1's numbers are in [ground work](ground-work.md#measured), with the
 page check and the regression it passed.
+
+Increment 2's first part, the notebook, was measured in the page on 8781. The
+room's own chat built the pick in a fresh clearing:
+- The swing went 123 mm into the soil at 9.3 m/s, and the pry broke out 5.73 L
+  (9.17 kg). The notebook took it as one-piece-wooden-pick revision 1,
+  "demonstrated: loosens the tested soil", with ground-work-v1's limitations.
+- A swing at the rock was stopped at 8.7 m/s. It was recorded, not claimed.
+- Put down on the rock afterwards, the pick met it at 3.7 m/s. That was at first
+  credited as a swing the rock stopped. Now only a meeting that opens within
+  one of the person's strikes (its 2 s stroke) counts.
+- The notebook was the same after a page reload and after a server restart.
+- Asked what the notebook says, the chat said what it holds. When it was left
+  to call `read_knowledge` itself, it answered from the conversation instead
+  and said the notebook held a trial it never did. So the chat is now given the
+  notebook in its opening.
+
+Built so far:
+- the registries (`progression/*.json`) and their load checks;
+- the journal: one per server, `journal.json` in its rooms' folder;
+- the evaluator, fed by every reply of the live room (`server.hear`);
+- MCP `read_knowledge`, `GET /api/knowledge` and the notebook panel.
+
+Not built yet:
+- `assess_goal`, `inspect_design` and `list_learning_opportunities`;
+- `evaluate_experiment`, for a world outside the playground;
+- any way to learn a technique (a lesson, a teacher, a document);
+- evidence for the in-process lane, whose steps hand over no ground work.

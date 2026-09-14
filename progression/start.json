@@ -1,0 +1,7 @@
+{
+ "format": "banjo.progression.start.v1",
+ "about": "What the starting area holds and teaches. The graph is refused when it is loaded unless each first tool has a route open from here: a player must not need a pickaxe to obtain the only material capable of making their first pickaxe (docs/knowledge-and-progression.md, 3.3).",
+ "holds": [{"found": "one-piece-wooden-pick"}],
+ "teaches": [],
+ "first_tools": ["one-piece-wooden-pick"]
+}

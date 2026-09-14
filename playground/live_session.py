@@ -112,6 +112,9 @@ class Session:
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding="utf-8", errors="replace", bufsize=1, cwd=str(directory))
         self.opened_at = time.time()
+        # Who hears every reply after it is read: the server's keeper of what
+        # the person's own hand did (server.hear). None hears nothing.
+        self.on_reply: Any = None
         self.state: dict[str, Any] = {}
         self.state = self._read("opening the world")
         if not self.state.get("ok"):
@@ -191,6 +194,16 @@ class Session:
                 _log.info("banjo: %s %s, %.0f ms (t=%.2f s)",
                           kind, wait.get("object"), wait.get("cost_ms", 0.0),
                           wait.get("at_s", 0.0))
+        # Every reply, not only the page's steps: the engine hands a closed
+        # ground-work record over in exactly one reply and then forgets it, and
+        # the calls an action or an opening makes carry them too. A listener
+        # that fails is logged and never stops the room.
+        listener = self.on_reply
+        if listener is not None:
+            try:
+                listener(self, state)
+            except Exception:
+                _log.exception("banjo: a reply's listener failed")
         return state
 
     def _whole(self, reply: dict[str, Any]) -> dict[str, Any]:
@@ -299,6 +312,13 @@ class Live:
             else:
                 session = Session(app.engine_path, spec, app.runs_path)
             self.session = session
+            # What the person's own hand does to the ground goes to their
+            # notebook (server.hear), read against the room document this world
+            # was opened from -- bodies as the room spells them, its tool points
+            # and interactions. The in-process lane hands no ground work over on
+            # its steps, so there it hears nothing.
+            session.room_spec = spec
+            session.on_reply = getattr(app, "on_live_reply", None)
         # What the world said as it opened. Only the opening carries the whole
         # of the ground and the water; every call that puts a pin, an edge or a
         # point in replaces the session's picture with its own reply, which

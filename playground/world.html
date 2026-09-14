@@ -107,6 +107,14 @@
     <div class="inv-row"><span class="inv-label">Carrying</span><ul id="inv-carrying"></ul></div>
     <div class="inv-row"><span class="inv-label">To use</span><ul id="inv-tools"></ul></div>
   </section>
+  <!-- What the person knows: the notebook the server keeps from what the engine
+       measured their own tools doing (docs/knowledge-and-progression.md).
+       Filled by showNotebook() in world.js; nothing on this page writes it. -->
+  <section id="notebook" aria-label="Notebook">
+    <h2>Notebook</h2>
+    <p id="notebook-empty">Nothing tried yet. What your own tools do is written here as the engine measures it.</p>
+    <ul id="notebook-list"></ul>
+  </section>
   <!-- What can be done right now, each with the key that does it, and the tool
        to use when there is one (the owner: prompts that show what you can do, "in
        a box to the side", recommending "what tool you should use with a hot key

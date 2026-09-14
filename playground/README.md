@@ -196,6 +196,17 @@ is (`POST /api/world/action`). The hand's steps act in
 the running room with the hand's own strength, so you watch them happen, and no
 model is asked.
 
+The **Notebook** in the side panel is what the person knows
+([knowledge and progression](../docs/knowledge-and-progression.md),
+`mcp/progression.py`). It is written only from what the engine measured their
+own tool doing in their own room: each closed ground-work record in a live
+room's replies (a pick's swing and pry) becomes evidence, scoped to the design,
+the ground and the action tried. A result the engine marks "not supported" is a
+note, never evidence, and the same result never counts twice. A thing is a
+design by its construction, not its name. The notebook is kept in the rooms'
+folder as `journal.json`, so it outlives rebuilds and restarts. The room's chat
+is given it read-only; no tool writes to it.
+
 The chat tries what it built before it answers — in its own copy of the world it
 can pick things up, pull on them and let time pass — and every turn is logged
 with the calls it made and anything that was refused, one file per turn under
@@ -400,6 +411,7 @@ page from outside it.
 | `POST /api/jobs/{id}/open` | Open `{case_index}` in the native studio |
 | `POST /api/world/open` | Open the room on /world: `{scene}` (one of the rooms above) or `{qa: "<run>/<case>-<trial>"}` (a saved QA build); `fresh: true` builds it again from scratch |
 | `POST /api/world/ask` | One chat turn in the open room: `{message, story, person}` — `person` is where you are (`standing_m`, `eyes_m`, `facing`, `looking_at`, `looking_at_m`), checked and passed to the chat as `the_person`; a room the chat changed is opened again from what it left |
+| `GET /api/knowledge` | The person's notebook, as the MCP's `read_knowledge` says it: each design they have met by its standing, with the evidence each rests on (what the engine measured their own tool doing, scoped to what was tried); what is blocked and by what; and what the engine does not model. A `POST /api/live/act` whose body gives `notebook_seen` (the revision the page has shown) gets `notebook` in its answer whenever the server's is newer |
 | `POST /api/world/action` | Press one of a thing's actions: `{object, action, person}`, with `action` counted from 0 among its own, or `{object, builtin, person}` for one every loose thing has (`put_on_ground`, `stand_upright`, `lay_down`; a hand takes hold of at most 73 kg, and nothing fixed in place). Runs its program on the room as it is: the hand's steps in the running room, and a stand step as `turn_object`, after which the room is opened again. Answers `{action, done, did}` (plus `reopened, session, state` after a stand), or `{action, done, refused}`, in which case the hand has been opened and what was done stays done. No model is asked |
 | `POST /api/live/open` | Open a live world from `{spec}`: the lab page's stage. There is one live world at a time, so this closes the room on /world |
 | `POST /api/live/act` | Step the open room, or take hold of, move, let go of or heat something in it. In a room with ground: `dig` and `deposit` change it (and are kept, so a reopened room still has them), `survey` says what is at a point, `discharge` sets the river, and `environment`, `environment_state` and `terrain` read the ground and the water |

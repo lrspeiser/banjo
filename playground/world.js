@@ -160,8 +160,19 @@ function remember(what) {
   if (world.story.length > 60) world.story.shift();
 }
 
+// The notebook this page has shown (showNotebook): its revision, and the claims
+// in it already said.
+let notebookRevision = -1;
+const notebookSeen = new Set();
+
 async function act(op, extra) {
-  return api("/api/live/act", Object.assign({ session: world.session, op }, extra || {}));
+  // With the notebook revision this page has shown, so the answer carries the
+  // notebook whenever the server's is newer -- after a swing the engine
+  // measured, an action, or the chat -- and only then.
+  const answer = await api("/api/live/act", Object.assign(
+    { session: world.session, op, notebook_seen: notebookRevision }, extra || {}));
+  if (answer && answer.notebook) showNotebook(answer.notebook, notebookRevision >= 0);
+  return answer;
 }
 
 // ---------------------------------------------------------------------------
@@ -3967,6 +3978,41 @@ function adoptRebuilt(answer) {
 // the hand's steps in the running room with the hand's own strength, which
 // this page keeps running and draws, and a stand step as turn_object. No model
 // is asked. A step that cannot be done stops the action, with why.
+// What the person knows (docs/knowledge-and-progression.md): the notebook the
+// server keeps from what the engine measured their own tools doing. What was
+// found or shown, each claim with its scope, what is blocked and by what, and
+// what the engine does not model -- apart. Nothing on this page writes to it.
+// A new claim is said in the conversation as it arrives; the ones there already
+// when the page opened are not said again.
+function showNotebook(book, fresh) {
+  if (!book || typeof book.revision !== "number" || book.revision < notebookRevision) return;
+  notebookRevision = book.revision;
+  const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+  const rows = [];
+  for (const design of book.designs || []) {
+    rows.push(["design", `${design.name}${design.registered ? "" : " (a design of its own)"}:`
+      + ` ${(design.standing || []).join(", ")}`]);
+    for (const e of design.evidence || []) {
+      rows.push([e.claim.startsWith("demonstrated") ? "shown" : "noted",
+                 `${cap(e.said)}. ${cap(e.claim)} — ${e.scope}.`]);
+      if (fresh && !notebookSeen.has(e.id)) say("world", `Notebook: ${cap(e.said)}. ${cap(e.claim)}.`);
+      notebookSeen.add(e.id);
+    }
+  }
+  for (const t of book.techniques || []) rows.push(["known", `You know ${t.name}.`]);
+  for (const b of book.blocked || []) {
+    rows.push(["blocked", `Making ${b.name.toLowerCase()} yourself is blocked: ${b.because.join("; ")}.`]);
+  }
+  for (const n of book.not_modelled || []) rows.push(["noted", `Not modelled yet: ${n}.`]);
+  $("notebook-list").replaceChildren(...rows.map(([kind, text]) => {
+    const li = document.createElement("li");
+    li.className = `nb-${kind}`;
+    li.textContent = text;
+    return li;
+  }));
+  $("notebook-empty").hidden = (book.designs || []).length > 0;
+}
+
 function actionsFor(name) {
   return (world.actions || []).filter((action) => action.body === name);
 }

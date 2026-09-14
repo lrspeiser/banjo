@@ -353,6 +353,11 @@ class RunningAnAction(PlaygroundTestCase):
         carried = app.live.acts[1]["path"][-1]
         self.assertEqual([round(carried[0], 3), round(carried[2], 3)], [0.0, 2.0],
                          "a metre in front of them")
+        # Clear of the ground: 5 cm above where it rests now. Worked out from
+        # its box instead, a joined stool -- whose centre of mass is not its
+        # box's middle -- went with its legs in the ground and was blocked.
+        rests = app.live.acts[0]["grip"][1]          # where it stood when taken hold of
+        self.assertGreaterEqual(carried[1], rests + 0.05 - 1e-9)
 
     def test_a_built_in_a_hand_cannot_do_is_refused_before_the_hand_moves(self):
         app = self.start([])

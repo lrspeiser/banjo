@@ -1,0 +1,9 @@
+{
+ "format": "banjo.progression.processes.v1",
+ "about": "The manufacturing processes a technique or a route may name, and whether the engine runs each yet. A route through a process the engine does not run is blocked as not supported, never assumed to work (docs/knowledge-and-progression.md, 3.3 and 5).",
+ "processes": [
+  {"id": "shape-wood-v1", "supported": false,
+   "what": "Shaping a piece of wood at a workbench: quote, start, read and cancel, with the work delivered by the hand",
+   "arrives_with": "increment 3 (manufacturing)"}
+ ]
+}

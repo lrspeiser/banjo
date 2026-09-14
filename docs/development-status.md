@@ -1,5 +1,27 @@
 # Development status and handoff
 
+**A person's notebook: what the engine measured their own tools doing, kept apart from the world.** Branch `agent/knowledge` from `16f09ed`. This is increment 2's first part from [knowledge and progression](knowledge-and-progression.md), which a review the owner shared recommended as the next step in the tech chain.
+- `mcp/progression.py` holds three things:
+  - the curated graph (`progression/*.json`: a technique, a process the engine does not run yet, the one-piece wooden pick's design, and the start). It is checked when it loads: no cycles, every process and template registered, and a route to the first tool open from the start.
+  - one person's journal.
+  - the evaluator.
+- The playground's server hears every reply of the person's live room (`live_session.Session.on_reply`).
+  - A closed ground-work record from one of their strikes becomes evidence, filed under the design its tool's construction matches (never its name), or under a design of its own.
+  - A "not supported" result becomes a note.
+  - The same result never counts twice.
+- The notebook is kept as `journal.json` in the rooms' folder. It is shown in the side panel, served by `GET /api/knowledge` and by the MCP's new `read_knowledge`, and given to the room's chat in its opening. No tool writes to it.
+
+The numbers are in the doc's "Measured" section. The work turned up three bugs, all fixed:
+- My placement rule broke the chat's pick. Told to give a thing [x, z], the chat set the arm down on the haft's end, and the hand then held the pick by its head, so the swing met no ground. Every part of a thing of several objects now gets its exact [x, y, z].
+- Putting the pick down on the rock was credited as a swing the rock stopped. Now only a meeting within a strike's stroke counts.
+- Asked what the notebook said, the chat made it up without calling `read_knowledge`. It is now given the notebook in its opening.
+
+It also turned up a bug in "Put it on the ground in front of me", which was already on main in `16f09ed`, fixed here. The engine keeps a piece of several parts at its centre of mass, not at the middle of its box. Worked out from the box, a joined stool was carried with its legs 9 cm in the ground, and the hand's stroke was blocked. A thing with no height given is now carried 5 cm above the height it rests at, and put_down lowers it. Checked in the page after the fix: the stool moved 1.28 m and ended 1.00 m in front, still standing.
+
+It also turned up a finding about the engine, not fixed here. A stool of a seat and four 0.04 m legs, all given one join name, fell over within 2 s: the seat dropped from 0.46 m to 0.14 m. The joined piece weighed 3.85 kg, against 4.84 kg for its parts, so about half the legs' volume was missing. The same parts fixed to the seat stood. The guide now has legs fixed to a seat, and a pick's haft and arm still joined.
+
+`tests/knowledge_tests.py` has 20 tests and is registered in CMake, so CI's ctest runs it.
+
 **One click on a thing shows what can be done with it and a double-click takes hold; every loose thing has built-in actions; and what the chat makes goes on the ground close in front of the person.** Branch `agent/actions`, on top of `ba6da01`. The owner: "we should be able to click on an item without taking it, maybe double click to take it, click once to see the actions you can take. there is also things like place on ground that are missing", and "when making something always pass the view the user has and put the item on the ground in front of them (close)".
 - With the hand empty, one click lists the thing's actions in its label under the crosshair, numbered: the chat's own first, then the built-in ones, then "E or double-click · take hold". A second click on it within 0.4 s, or E, takes hold. A click on nothing, Esc, or the crosshair leaving it closes the list. With something in hand a click does what it did before: for a loose thing it winds up a throw, and E puts it down.
 - The built-in actions are `BUILTIN_ACTIONS` in playground/server.py, sent as `{object, builtin}` to `POST /api/world/action`. "Put it on the ground in front of me" (take hold, carry it a metre in front of the person, put it down) is offered for anything a hand can lift. "Stand it upright" is offered for a box whose longest side is not vertical, and "Lay it down where I'm facing" for one not already lying flat. The runner now checks every take_hold against the running room (fixed in place, over 73 kg), since nothing checks a built-in when it is offered.

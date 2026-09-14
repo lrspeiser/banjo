@@ -524,6 +524,14 @@ if(BANJO_BUILD_HEADLESS)
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/api_docs_tests.py)
         set_tests_properties(banjo_api_docs_tests PROPERTIES
             ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
+        # A person's notebook (docs/knowledge-and-progression.md): the graph's
+        # checks when it loads, which design a built thing is, the evaluator's
+        # rules, and that the room's chat reads the notebook and cannot write it.
+        add_test(NAME banjo_knowledge_tests
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/knowledge_tests.py)
+        set_tests_properties(banjo_knowledge_tests PROPERTIES
+            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
         add_test(NAME banjo_world_room_tests
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/world_room_tests.py)

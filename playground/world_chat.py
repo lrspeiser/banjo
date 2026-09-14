@@ -31,6 +31,7 @@ from typing import Any
 from urllib import error, request
 
 import room_world
+import progression  # noqa: E402  (mcp/, put on the path by room_world)
 
 # Rounds, not calls. A round can carry several calls, and a gate on a hinge with
 # a wheel to open it -- posts, leaf, wheel, handle, the joints, and a try of it
@@ -70,12 +71,18 @@ a list of clear places on the ground there, [x, z], the best first. The first
 thing you make goes at the first of them, a second thing at the second, beside
 it, and so on -- never on or in each other, never behind them, never where they
 stand. A thing that is one object is given its place as its position_m [x, z],
-so it is set down on the ground. A thing built of several objects -- a seat on
-four legs, a top on trestles -- is built at one place as one piece: the legs
-set down round it with [x, z], the seat at its exact [x, y, z] on their tops,
-and each leg joined to the seat with fix. add_object may say the seat is
+so it is set down on the ground. A thing built of several objects -- a pick's
+haft and arm, a seat on four legs -- is built at one place as one piece, EVERY
+part at its exact [x, y, z] (a part on the ground at half its own height; a seat
+on the legs' tops), and held together: a pick's haft and arm by one join name,
+as its recipe says; legs to a seat with fix, one fix to a leg -- NEVER the
+seat's join name. Joined, a seat and four 0.04 m legs fell over within two
+seconds; fixed, they stood.
+Never give one of its parts [x, z]: that sets the part down on whatever is under
+it, which is the part before it -- a pick's arm went onto its haft, and the hand
+then held the pick by its head. add_object may say a seat on thin legs is
 in_the_air -- it looks down from nine points of its bottom and can see the
-floor between thin legs -- so leave it there and fix it to each leg. A thing more than a metre deep goes further out along
+floor between the legs -- so leave it there and fix it to each leg. A thing more than a metre deep goes further out along
 facing, by half its depth less half a metre, so it does not touch them. When
 put_new_things_m is empty the ground near them is taken: say so and ask where.
 "There", "over there" and "that" mean what they are looking at. If the point in front of them is water or a steep
@@ -689,6 +696,18 @@ down and the point goes in. Right-click levers it and draws it out, and what
 it breaks out is carried. Aimed at the rock, the rock stops it. E puts it
 down. Tell them that in your answer.
 
+WHAT THE PERSON KNOWS. their_notebook, in what you are given, is their notebook
+as it stands (read_knowledge gives the same in full): what the engine measured
+their own tools doing -- "went 120 mm into the soil at 9.2 m/s and broke out
+5.6 L" -- each claim scoped to the design, the ground and the action tried; what
+is blocked, and by what; and what the engine does not model yet. When they ask
+what they know, what a thing of theirs can do, or what they could make, say what
+it holds, in its own words -- a claim holds only for what was tried -- and when
+it holds nothing yet, say that. Never say it records anything it does not: a
+trial in your copy is not in it. You cannot add to it. No tool does; only their
+own hand's results in their own room do. A tool you make for them is one they
+found, not one they made.
+
 TRY IT BEFORE YOU SAY IT WORKS. The world you build in is a real engine world.
 Use the mechanism the way a person would: pick_up the handle (or the leaf, or
 the grate), place it where a hand would pull it -- a quarter turn round the
@@ -964,6 +983,25 @@ def where_the_person_is(raw: Any) -> dict[str, Any] | None:
     return said
 
 
+def notebook_said(journal: Any) -> Any:
+    """The person's notebook as the chat is given it in the opening: each design
+    they have met by its standing, each claim with what the engine measured and
+    its scope, what is blocked and by what, and what the engine does not model.
+    The same as read_knowledge, shorter (mcp/progression.py)."""
+    try:
+        book = progression.notebook(journal, room_world.banjo_mcp._registry())
+    except room_world.banjo_mcp.Refused as failure:
+        return f"the notebook cannot be read: {failure}"
+    designs = [{"design": d["name"] + ("" if d["registered"] else " (a design of their own)"),
+                "standing": d["standing"],
+                "claims": [f"{e['said']}: {e['claim']} ({e['scope']})" for e in d["evidence"]]}
+               for d in book["designs"]]
+    return {"designs": designs or "nothing yet: no tool of theirs has been measured doing anything",
+            "blocked": [f"making {b['name'].lower()} themselves: " + "; ".join(b["because"])
+                        for b in book["blocked"]],
+            "not_modelled": book["not_modelled"]}
+
+
 # Where something made for the person goes when they do not say where (the
 # owner: "put the item on the ground in front of them (close)"): places on the
 # ground a metre in front of them with nothing there, the nearest first --
@@ -1030,7 +1068,8 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
         trace: list[dict[str, Any]] | None = None,
         water_state: dict[str, Any] | None = None,
         person: Any = None,
-        history: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        history: list[dict[str, Any]] | None = None,
+        journal: Any = None) -> dict[str, Any]:
     """One turn. Returns what to say, what was changed, and whether to reopen.
 
     `live_state` is the world as the ENGINE has it -- pieces, dents and all --
@@ -1054,6 +1093,10 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
 
     world_id = room_world.open_room(room.spec, water_state=water_state)
     entry = room_world.entry_of(world_id)
+    # The person's notebook, for read_knowledge -- read-only, since no tool
+    # writes to one (mcp/progression.py).
+    if journal is not None:
+        entry["journal"] = journal
     started = time.perf_counter()
     try:
         opening = {"what_you_were_asked": message,
@@ -1081,6 +1124,12 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
             # Where something made for them goes when they do not say where.
             person["put_new_things_m"] = clear_spots(person, live_state.get("bodies", []))
             opening["the_person"] = person
+        # What they know, as it stands, so that what the chat says of their
+        # notebook is what it holds. Left to ask read_knowledge, the model once
+        # answered from the conversation instead and said the notebook held a
+        # trial it never did.
+        if journal is not None:
+            opening["their_notebook"] = notebook_said(journal)
         if entry["scene"].get("terrain") and entry.get("world") is not None:
             # The ground and the water as they are now, so a dam or a channel
             # can be placed from the first round rather than after a survey.

@@ -33,6 +33,7 @@ import live_inprocess
 import world_chat
 import world_room
 import room_world
+import progression  # noqa: E402  (mcp/, put on the path by room_world)
 import room_store
 import access_gate
 import scene_chat
@@ -253,6 +254,10 @@ class Playground:
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="banjo-playground")
         self.studios = []
         self.reviewing = set()
+        # The person's notebook (journal_of), and what hears every reply of their
+        # live room for it (hear): docs/knowledge-and-progression.md.
+        self.journal = None
+        self.on_live_reply = lambda session, reply: hear(self, session, reply)
 
     def log_event(self, job_id, event, **fields):
         directory = self.runs_path / job_id
@@ -1088,6 +1093,7 @@ class Handler(BaseHTTPRequestHandler):
             app=self.server.app
             if path=="/api/status": return self.send(app.status())
             if path=="/api/runs": return self.send(app.runs())
+            if path=="/api/knowledge": return self.send(knowledge_view(app))
             if path=="/api/goal": return self.send({"markdown":(ROOT/"docs/project-goal-2026-09-06.md").read_text(encoding="utf-8") + "\n\n" + (ROOT/"docs/rules-engine-execution-plan.md").read_text(encoding="utf-8")})
             if path=="/api/goals": return self.send(strict_json((ROOT/"docs/execution-goals.json").read_text(encoding="utf-8")))
             if path=="/api/schema": return self.send({"language":"banjo-playground-1","schema":SCHEMA,"material_validation":"experimental; no calibrated fracture claim","limits":{"network_cells":850,"objects":12,"sweep_cases":4,"duration_s":3,"dynamic_material_duration_s":.1,"dynamic_material_cases":3,"dynamic_material_step_calls_per_case":200000,"recording_bytes":64*1024*1024,**LIMITS}})
@@ -1259,7 +1265,7 @@ class Handler(BaseHTTPRequestHandler):
                     answer=world_chat.ask(app.api_key,app.model,room,session.state,message,
                                           [str(s)[:200] for s in (body.get("story") or [])][-24:],
                                           trace=trace,water_state=live_water(session,room.spec),
-                                          person=person,history=room.chat)
+                                          person=person,history=room.chat,journal=journal_of(app))
                 except Exception as failure:
                     world_chat.remember_turn(room.chat,message,None,failure=str(failure)[:300])
                     room_store.keep(app,room)
@@ -1308,9 +1314,13 @@ class Handler(BaseHTTPRequestHandler):
                 self.server.app.live_holder="lab"
                 return self.send(opened)
             if path=="/api/live/act":
+                # The notebook revision the page has shown: the answer carries
+                # the notebook when the server's is newer (with_notebook).
+                seen=body.pop("notebook_seen",None) if isinstance(body,dict) else None
                 answer=self.server.app.live.act(body)
                 remember_ground(self.server.app,body,answer)
-                return self.send(answer)
+                if isinstance(body,dict) and body.get("op")=="strike": note_strike(self.server.app,answer)
+                return self.send(with_notebook(self.server.app,answer,seen))
             # Save the frame the 3D viewer is showing. The page cannot write
             # a file and cannot reach any other origin, so the one way a
             # result leaves the tab it was rendered in is through here.
@@ -1512,7 +1522,13 @@ def _action_point(app,place,person,moving):
         sx,sy,sz=person["standing_m"]
         fx,_,fz=person["facing"]
         ahead=float(place["in_front_m"])
-        y=sy+float(place["height_m"]) if "height_m" in place else sy+_reach(mover,up)+0.02
+        # With no height, carried clear of the ground -- 5 cm above the height
+        # it rests at now -- and put_down lowers it onto what is there. Where
+        # the engine keeps a thing is its centre of mass: for a piece of
+        # several parts that is not the middle of its box, and worked out from
+        # the box, a joined stool was carried with its legs 9 cm in the ground
+        # and the hand's stroke was blocked.
+        y=sy+float(place["height_m"]) if "height_m" in place else max(here[1]+0.05,sy+_reach(mover,up)+0.02)
         return [sx+ahead*fx,y,sz+ahead*fz]
     other=_live_body(app,place.get("on") or place.get("beside") or place.get("from"))
     at=[float(v) for v in other.get("position_m") or [0.0,0.0,0.0]]
@@ -1708,6 +1724,82 @@ def run_action(app,body):
     else: said["did"]=[action["label"]]
     if opened is not None: said.update(reopened=True,session=opened["session"],state=opened)
     return said
+
+
+# What a person knows (docs/knowledge-and-progression.md, increment 2). Their
+# notebook, kept beside their rooms, grows only from what the engine measured
+# their own hand doing in their own room: every reply of the live world passes
+# through hear (live_session.Session.on_reply), and nothing else writes to it --
+# not the chat, whose tools only read it, and not the page.
+_REGISTRY=None
+
+
+def registry():
+    """The curated graph, loaded and checked once (mcp/progression.py)."""
+    global _REGISTRY
+    if _REGISTRY is None: _REGISTRY=progression.Registry()
+    return _REGISTRY
+
+
+def journal_of(app):
+    """The person's notebook: one to a server, in its rooms' folder, so it
+    outlives every rebuild of a room and every restart. In memory only when the
+    server keeps no rooms."""
+    journal=getattr(app,"journal",None)
+    if journal is None:
+        store=getattr(app,"store",None)
+        journal=app.journal=progression.Journal(Path(store.folder)/"journal.json" if store is not None else None)
+    return journal
+
+
+def hear(app,session,reply):
+    """One reply of the person's live room. Each ground-work record in it that
+    has closed is the engine's measurement of their own tool meeting the ground:
+    evidence where it is evidence, a note where the engine says the regime is not
+    modelled, and nothing where it is neither -- once per result, however often
+    the same reply is read."""
+    records=reply.get("ground_work") if isinstance(reply,dict) else None
+    spec=getattr(session,"room_spec",None)
+    if not records or not isinstance(spec,dict): return
+    journal=journal_of(app)
+    at=time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
+    strikes=list(getattr(session,"strikes",None) or [])
+    for record in records:
+        if not isinstance(record,dict) or record.get("open"): continue
+        # Only what one of their strikes did: a tool put down or knocked
+        # into the ground meets it too, and that tests nothing it is for.
+        if not progression.from_a_strike(record,strikes): continue
+        why=progression.not_modelled(record)
+        if why:
+            journal.add_note(progression.result_key(session.id,record),why)
+            continue
+        evidence=progression.evidence_from(record,session_id=session.id,spec=spec,registry=registry(),at=at)
+        if evidence is not None: journal.add_evidence(evidence)
+
+
+def note_strike(app,answer):
+    """When one of the person's strikes began, in the world's own clock (the
+    reply's t): what their tool does to the ground within its stroke is theirs
+    to be credited with (hear)."""
+    session=app.live.session
+    if session is None or not isinstance(answer,dict) or answer.get("t") is None: return
+    strikes=getattr(session,"strikes",None)
+    if strikes is None: strikes=session.strikes=[]
+    strikes.append(float(answer["t"]))
+    del strikes[:-32]
+
+
+def knowledge_view(app):
+    """The person's notebook as read_knowledge says it (GET /api/knowledge)."""
+    return progression.notebook(journal_of(app),registry())
+
+
+def with_notebook(app,answer,seen):
+    """An act's answer, with the notebook in it when the server's is newer than
+    the one the page says it has shown -- and only then."""
+    if isinstance(seen,int) and isinstance(answer,dict) and journal_of(app).data["revision"]>seen:
+        answer=dict(answer,notebook=knowledge_view(app))
+    return answer
 
 
 # As many as a room's terrain may hold; see fracture_lab.normalise_terrain.

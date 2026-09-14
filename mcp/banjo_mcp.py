@@ -44,6 +44,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import banjo  # noqa: E402
 import interaction_profiles  # noqa: E402
+import progression  # noqa: E402
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER = {"name": "banjo", "version": "1.0.0"}
@@ -1639,6 +1640,46 @@ def tool_offer_actions(args: dict[str, Any]) -> dict[str, Any]:
         answer["not_read"] = ("; ".join(aside) + ". Set aside: a step reads only its own "
                               "kind's fields, and a place only its kind's.")
     return answer
+
+
+# ---------------------------------------------------------------------------
+# What a person knows (docs/knowledge-and-progression.md, increment 2)
+# ---------------------------------------------------------------------------
+#
+# The knowledge layer sits above the physics and never inside it: nothing here
+# changes a world, and no tool can add to what a person knows. A world can carry
+# the journal of the person it belongs to -- the playground attaches its
+# person's, read-only, to the chat's copy of their room -- and a world that
+# carries none knows nothing yet.
+
+_REGISTRY: progression.Registry | None = None
+
+
+def _registry() -> progression.Registry:
+    """The curated graph, loaded -- and checked -- the first time it is asked
+    for. A graph that does not hold together is refused here, with why, rather
+    than served; the rest of the MCP works without it."""
+    global _REGISTRY
+    if _REGISTRY is None:
+        try:
+            _REGISTRY = progression.Registry()
+        except progression.DefinitionError as failure:
+            raise Refused(f"the knowledge graph does not load: {failure}") from None
+    return _REGISTRY
+
+
+def tool_read_knowledge(args: dict[str, Any]) -> dict[str, Any]:
+    """What the person this world belongs to knows. Spends nothing."""
+    entry = _world(str(args.get("world_id")))
+    journal = entry.get("journal")
+    if not isinstance(journal, progression.Journal):
+        journal = progression.Journal()
+    said = progression.notebook(journal, _registry())
+    said["note"] = ("What this person knows and what the engine measured their things doing, "
+                    "each claim scoped to what was tried. No tool can add to it: it grows only "
+                    "from engine results of their own hand in their own world. A design "
+                    "demonstrated here is demonstrated only for the use and the ground named.")
+    return said
 
 
 def tool_clear_world(args: dict[str, Any]) -> dict[str, Any]:
@@ -4691,6 +4732,18 @@ TOOLS = [
                          "power_w": {"type": "number", "description": "heat: 100 to 10,000 W."},
                          "seconds": {"type": "number",
                                      "description": "heat: 1 to 60 s; wait: 0.1 to 10 s."}}}}}}}}}},
+    {"name": "read_knowledge",
+     "description": "What the person knows, from their notebook: the techniques they know; "
+                    "each design by its standing -- found, built, demonstrated for a stated "
+                    "use -- with the evidence it rests on, which is the engine's own numbers "
+                    "for what their tool did, scoped to what was tried and with the model's "
+                    "limitations; and what is blocked and by what (a technique not known, a "
+                    "process the engine does not run yet, no workbench). Read it before you "
+                    "say what they can make or do. It spends nothing and changes nothing, and "
+                    "no tool can add to it: it grows only from what the engine measured their "
+                    "own hand doing in their own world.",
+     "inputSchema": {"type": "object", "required": ["world_id"],
+                     "properties": {"world_id": {"type": "string"}}}},
     {"name": "clear_world",
      "description": "Take everything out of a world, joints and all, to build it "
                     "again from nothing. The world stays open under the same id; "
@@ -5651,6 +5704,7 @@ HANDLERS = {
     "move_object": tool_move_object,
     "turn_object": tool_turn_object,
     "offer_actions": tool_offer_actions,
+    "read_knowledge": tool_read_knowledge,
     "clear_world": tool_clear_world,
     "pick_up": tool_pick_up,
     "place": tool_place,

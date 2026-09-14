@@ -59,6 +59,7 @@ broke.
 | `move_object` | put an object somewhere else, at rest: an **edit**, not a push. Refused for a joined object, with the reason — a joint is made at fixed points |
 | `turn_object` | stand an object **upright** — its longest side vertical — or lay it down, its longest side level, and set it down at `at_m` [x, z] on whatever is under that point. An **edit**, like `move_object`, that the engine holds to what the world would do with it: it must not overlap anything, what is under it has to be under its middle on every side and flat (not the top of a ball), and the world is then **run** — from a third of a degree off how it was put, so a balance only an exact run could keep is found out — until it is still. Standing as it was put (moved under 20 mm, turned under 5 degrees) it is kept; otherwise it is refused with what happened and nothing changes. The answer says what it stands on and how far its long side came to rest from vertical. "Turn this upright and set it in front of me" is this call. [Turning a thing](#turning-a-thing) |
 | `offer_actions` | what a person can **do** with a thing, kept with it: up to nine short programs of up to twelve steps — stand, take_hold, carry_to, put_down, let_go, push, heat, wait — each checked when it is offered against what the engine says of the thing (a hand holds up at most 73 kg, a thing fixed in place is not moved, and a program ends with the hand empty). A client lists them when the thing is clicked and runs one on the world as it is then. A field a step's kind does not use is set aside and listed in `not_read`. [A thing's actions](#a-things-actions) |
+| `read_knowledge` | what the person knows: techniques, each design by its standing (found, built, demonstrated for a stated use) with the evidence it rests on — the engine's own numbers for what their tool did, scoped to what was tried, with the model's limitations — and what is blocked and by what. It spends nothing and changes nothing: no tool can add to it. [What a person knows](#what-a-person-knows) |
 | `clear_world` | empty a world, joints and all, to build it again. It stays open under the same id |
 | `pick_up` / `place` / `let_go` | the hand: take hold of something already in the world and move it. Without this a model can only add new objects from above — it can build a scene but never rearrange one. |
 | `collect` | sweep up the loose pieces near a point and say what they were made of, by material and by weight |
@@ -204,6 +205,30 @@ it on the ground in front of me" (`put_on_ground`) for what a hand can lift, and
 "Stand it upright" (`stand_upright`) and "Lay it down where I'm facing"
 (`lay_down`) for a box longer than it is wide. The room's chat is told not to
 offer those again.
+
+## What a person knows
+
+`read_knowledge` reads a person's notebook: the knowledge layer of
+[knowledge and progression](../knowledge-and-progression.md), increment 2. It
+answers with:
+- `techniques`: what they know how to do;
+- `designs`: each design they have met, by its standing (`found`, `built`,
+  `demonstrated`), with `evidence`. For each result the engine accepted, the
+  evidence gives what it measured (`said`), the claim that supports, its scope
+  (this design revision, this ground) and the model's limitations;
+- `blocked`: each route to making a design that is not open, and what closes it
+  (a technique not known, a process the engine does not run yet, no workbench).
+
+A thing is a design by its construction, never by its name: its parts' sizes
+and materials, whether they are one piece, and its point. A construction no
+registered design matches is a design of its own (`own:<hash>`), with claims of
+its own.
+
+Nothing adds to a notebook but the engine. No tool awards anything, a
+scratch-world trial earns nothing, and a result the engine marked "not
+supported" is not evidence. The playground keeps its person's notebook beside
+their rooms and gives the room's chat a read-only copy. A world with no
+person's notebook attached knows nothing yet.
 
 ## A joint outlives the next edit
 
