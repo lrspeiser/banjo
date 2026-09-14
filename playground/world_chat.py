@@ -501,7 +501,7 @@ is a test and nothing more, and it stays cut there: the person's room opens
 from what you authored, with the rope whole and the sword on its rests, and
 the cut is theirs to make.
 
-WHAT THE PERSON DOES WITH IT. They walk up to the sword and click it: it is
+WHAT THE PERSON DOES WITH IT. They walk up to the sword and double-click it: it is
 held at its grip a little below and to the right of their eye, pointing where
 they look, its edge facing LEFT, so it meets the rope lower than where they
 look. They look level at the middle of the rope, then a little to its right,
@@ -682,7 +682,7 @@ Its trial swings it into the nearest level soil, levers it out, and swings it at
 the nearest bare rock: say how deep it went, what came loose and what stopped
 it, in its numbers. Do not strike in your copy unless they ask: what a pick
 breaks out of the ground is gone from their room's ground too.
-WHAT THE PERSON DOES WITH IT: they walk up to the pick and press E (or click
+WHAT THE PERSON DOES WITH IT: they walk up to the pick and press E (or double-click
 it): it is held ready by its grip, point down. They aim the crosshair at the
 soil a metre or so in front of them and click: the hand swings it over and
 down and the point goes in. Right-click levers it and draws it out, and what
