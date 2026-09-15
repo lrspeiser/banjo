@@ -29,6 +29,12 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # while CI on Ubuntu stopped at libbanjo.so ("recompile with -fPIC"). Set
 # before any target and any fetched dependency, so Jolt gets it too.
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+# One floating-point model for everything linked into the engine, Jolt
+# included -- /fp:precise, or -ffp-contract=off -- and a check, once this file
+# has been read, that no target or file asks for another. Before any target and
+# any fetched dependency, for the same reason as the line above. Why, and what
+# it cost: cmake/FloatingPointModel.cmake and docs/floating-point-model.md.
+include(cmake/FloatingPointModel.cmake)
 
 function(banjo_enable_warnings target)
     if(MSVC)
@@ -222,45 +228,26 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
         src/sim/RollingBallExperiment.cpp)
     target_include_directories(banjo_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_link_libraries(banjo_runtime PUBLIC banjo_core Jolt)
-    # The drum's rope (rigid/DrumRope.cpp) is a Jolt constraint of our own, and
-    # instantiates Jolt's inline solver code -- the same AxisConstraintPart the
-    # kerf's SixDOF constraint uses. The linker keeps one copy of an inline
-    # function, the first it meets, and banjo_runtime comes before Jolt: a copy
-    # compiled here, without Jolt's floating-point flags, replaced the one Jolt
-    # compiled for itself, and moved a cut's work in banjo_blade_tests from
-    # 4.676 J to 4.192 J. So this file is compiled with Jolt's own
-    # floating-point model, which Jolt's Build/CMakeLists.txt sets in its own
-    # directory where no target of ours inherits it -- by the same rules. (Its
-    # architecture flags, /arch:AVX2 or -mavx2 and the rest, are PUBLIC on the
-    # Jolt target and reach every target of ours already.)
-    #
-    # And with Jolt's RTTI. Jolt is built without it (CPP_RTTI_ENABLED), so its
-    # classes have no type information; a class of ours derived from one, built
-    # with RTTI, asks for its base's, and GCC's link failed for want of
+    # The drum's rope (rigid/DrumRope.cpp) is a Jolt constraint of our own, a
+    # class derived from JPH::TwoBodyConstraint, so it is compiled with Jolt's
+    # RTTI setting. Jolt is built without RTTI (CPP_RTTI_ENABLED), so its
+    # classes have no type information, and a class of ours derived from one
+    # and built with RTTI asks for its base's: GCC's link failed for want of
     # `typeinfo for JPH::TwoBodyConstraint`. MSVC linked it; the rule is the
     # same for both.
-    if (MSVC)
-        if (CROSS_PLATFORM_DETERMINISTIC)
-            set(banjo_jolt_flags "/fp:precise;/fp:except-")
+    #
+    # Its floating-point model is everyone's (cmake/FloatingPointModel.cmake).
+    # It was once given Jolt's /fp:fast here, after its copy of Jolt's
+    # AxisConstraintPart replaced Jolt's own and moved a cut in
+    # banjo_blade_tests from 4.676 J to 4.192 J; that mended its own copies and
+    # left JoltWorld.cpp's and TetrahedronContact.cpp's as they were.
+    if (NOT CPP_RTTI_ENABLED)
+        if (MSVC)
+            set_source_files_properties(src/rigid/DrumRope.cpp PROPERTIES COMPILE_OPTIONS "/GR-")
         else()
-            set(banjo_jolt_flags "/fp:fast;/fp:except-")
-        endif()
-        if (NOT CPP_RTTI_ENABLED)
-            list(APPEND banjo_jolt_flags "/GR-")
-        endif()
-    else()
-        if (CROSS_PLATFORM_DETERMINISTIC OR NOT USE_FMADD)
-            set(banjo_jolt_flags "-ffp-contract=off")
-        elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "^x86")
-            set(banjo_jolt_flags "-ffp-contract=fast")
-        else()
-            set(banjo_jolt_flags "-ffp-contract=on")
-        endif()
-        if (NOT CPP_RTTI_ENABLED)
-            list(APPEND banjo_jolt_flags "-fno-rtti")
+            set_source_files_properties(src/rigid/DrumRope.cpp PROPERTIES COMPILE_OPTIONS "-fno-rtti")
         endif()
     endif()
-    set_source_files_properties(src/rigid/DrumRope.cpp PROPERTIES COMPILE_OPTIONS "${banjo_jolt_flags}")
     target_compile_features(banjo_runtime PUBLIC cxx_std_23)
     banjo_enable_warnings(banjo_runtime)
 
@@ -831,6 +818,15 @@ if(BANJO_BUILD_TESTS)
     target_compile_features(banjo_tests PRIVATE cxx_std_23)
     banjo_enable_warnings(banjo_tests)
     add_test(NAME banjo_tests COMMAND banjo_tests)
+
+    # The floating-point model's own check (cmake/FloatingPointModel.cmake):
+    # how it reads compiler options, and that a build whose targets break the
+    # model does not configure.
+    add_test(NAME banjo_fp_model_guard_tests
+             COMMAND ${CMAKE_COMMAND} -DBANJO_FP_MODEL_FAMILY=${BANJO_FP_MODEL_FAMILY}
+                     "-DGUARD_GENERATOR=${CMAKE_GENERATOR}"
+                     -DGUARD_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/fp_model_guard
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/fp_model_guard_tests.cmake)
 
     add_executable(banjo_material_tests tests/material_prediction_tests.cpp)
     target_link_libraries(banjo_material_tests PRIVATE banjo_core)

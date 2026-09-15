@@ -1,5 +1,18 @@
 # Development status and handoff
 
+**One floating-point model for everything linked into the engine.** Branch `agent/fp-model`, from `9317a5b`. docs/floating-point-model.md has the measurements.
+- The hazard: Jolt compiles itself `/fp:fast` (`-ffp-contract=fast`), and ours compiled `/fp:precise`. An inline function compiled in two objects under different rules leaves the linker to keep one copy, the first it meets, so link order decided the arithmetic. `db32cc5` gave `DrumRope.cpp` Jolt's flags after it moved a cut. On main the hazard was still live both ways:
+  - `banjo.dll` and the test binaries took `MotionProperties::GetInverseInertiaForRotation`, which Jolt's solver calls for every body it turns, from `JoltWorld.obj`'s `/fp:precise` copy;
+  - our tetrahedron contact ran Jolt's `/fp:fast` GJK and EPA.
+- The model: `/fp:precise` on MSVC, `-ffp-contract=off` on GCC and Clang, for Jolt and every target of ours. `cmake/FloatingPointModel.cmake` puts it on the top directory before any target, so it follows Jolt's own flags on Jolt's command lines and wins. Jolt keeps its FMA intrinsics. `DrumRope.cpp` keeps only Jolt's RTTI setting.
+- The guard: once `CMakeLists.txt` has been read, every C++ file of every target, Jolt's 138 included (414 in all), is checked for every configuration. A file that would compile to another model stops the configure and is named. `banjo_fp_model_guard_tests` checks its reading of 25 option lists and that a build breaking the model twice is refused, naming both files and nothing else.
+- Measured against the options, each built from `9317a5b` (ctest `-LE long -j4`, and the rooms at the page's cadence; the long physics are still running):
+  - (a) Jolt's `/fp:fast` on our four files that include Jolt: `motor_tests` failed. Under `/fp:fast` MSVC compiles `HUGE_VAL` to `1e+300`, so an anchored post had a finite inertia. And 40 of `JoltWorld.obj`'s copies of Jolt inlines still differed from Jolt's.
+  - (b) Jolt `CROSS_PLATFORM_DETERMINISTIC`: all pass but the load-timed foresight check, 26 tests print different numbers, and it costs the same. Alone it leaves GCC's contraction on our code.
+  - (c), chosen: all pass but the same check, which fails on base too under `-j4` and passes alone on every build. 27 tests print different numbers. The blade's 800 N cut is 4.67562 J (base 4.67583, floor 4.2). Chaotic counts moved, as they do for any change in the last digit: the pane struck by the door breaks into 7, not 6. The rooms cost what they did: 1.4 to 12% of world time, the worst frame a fracture's first run, about 200 ms, on every build.
+- Found on the way: `long-physics.yml` never ran on main. Every job stopped at Configure ("Could NOT find X11"), because the lab is on by default and that runner has no X11. It now configures with `-DBANJO_BUILD_LAB=OFF`.
+- Not covered: Jolt's other flags (no C++ exceptions, `/GS-`, no RTTI) still change the code of shared inlines, but not their arithmetic under one model.
+
 **The machine world begins: a battery, a motor on a pin with a brake, and a rope drum.** Branch `agent/machine-world`, from `7ff4581`. The owner's next direction (docs/machine-world.md) is a planet of machines. Creatures and tools there are machines that draw on stores of energy, and every joule is accounted for. Its first milestone is a battery hoist.
 - In the engine:
   - `LiveWorld::energyStore` is a battery: capacity, charge, voltage and most power.
