@@ -10,6 +10,10 @@
   - A saved world keeps stores, motors and drum ropes, and what each motor said of its last step: a braked hoist opened again says it is braking before it takes a step.
 - The runner takes the ops `store`, `motor`, `drive` and `drum`, and every step that has any machines carries `machines`.
 - The C API (ABI 23) and the Python binding carry all of it, merged from `agent/machine-capi`: `banjo_make_energy_store`, `banjo_make_motor`, `banjo_drive_motor`, `banjo_drum` and `banjo_inertia_about`, read back through `banjo_energy_stores`, `banjo_motors` and `banjo_drum_ropes` (docs/api/c-api.md, "Machines"). A drum's rope says which way it winds (`winds`).
+- The room's chat builds and works a hoist with its own MCP tools, merged from `agent/machine-mcp` (7120ef7): `drum`, `store`, `motor` and `drive`, a `drive` step in `offer_actions`, and `build_recipe` `"hoist"` (docs/api/mcp.md, "Machines"). Built by the recipe on the world's terrace and worked by its own actions on the runner:
+  - "Wind it up" lifted the 32 kg crate 0.4470 m in a second, for 0.4471 m of the drum's radius times its turn, the battery giving the 267.251 J the motor drew;
+  - "Stop" held it still, drawing nothing;
+  - "Let it down" (a command of -0.1) brought it down at 0.4170 m/s, where the motor's line says 0.4173, drawing nothing.
 - The playground:
   - A room's spec can have a `drum` joint and a `machines` block (`live_session._power`, checked in `fracture_lab.normalise_machines`). A motor names its pin by its two things and starts braked.
   - The action step `drive` (`server.run_action`) finds the motor by the thing it turns.
@@ -23,7 +27,7 @@
   - A saved hoist opened again said its braked motor was coasting until its first step, and its rope read 2.5 nm more out than was saved. The drum's turn since a step began was worked out in float, and a drum that had not turned at all came out turned 2.5e-8 rad. It is now worked out in double, and the saved world keeps the rope's own tally and what each motor said of its last step.
   - A braked hoist left alone does not creep: stepped for ten minutes it went to sleep, and the crate, the drum and the rope moved not at all.
   - A hoist opened again from a saved world had no machines in its opening. The runner said a restored world's pins, edges and points, but not its batteries and motors, so a host could not find the motor, and the page could not draw the rope or the panel, until the first step. The opening says them now, and the page takes them as it opens a room, as it takes its pins.
-  - A motor said what it was doing only after a step: told to brake, a hoist's motor said "coasting" until the next one. Once the page took a room's machines as it opened, CI's page journey on Linux read the opening before the first step came, and failed ("coasting" != "braking"); here the first step always came first. A motor now says what it will do the moment it is told, as the next step will decide it (`stateToBe`).
+  - A motor said what it was doing only after a step: told to brake, a hoist's motor said "coasting" until the next one. Once the page took a room's machines as it opened, CI's page journey on Linux read the opening before the first step came, and failed ("coasting" != "braking"); here the first step always came first. A motor now says what it will do the moment it is told, as the next step will decide it (`stateToBe`). And one with no brake, told to brake, said "braking" while it coasted; it now says "coasting" (found by the chat's tools, which make such a motor).
 - Tests:
   - `motor_tests` 9:
     - a flywheel's spin-up is within 0.14% of the line, and its work is the spin to 0.33%;
@@ -48,7 +52,7 @@
   - Python around the change: actions 25, room_store 24, inventory_room 9, world_room 55, the page journeys 3 and fracture_lab all pass.
   - `ctest -LE long -j4`: 129 of 130 before the saved world's machines. The one failure is live_world's timing check under load; run alone, 34 of 34.
 - Not yet:
-  - the chat's MCP tools for machines and a hoist recipe;
+  - the chat telling a motor what to do works on the room as the chat built it: the room is opened again from its spec, so the crate goes back to where it was made and the battery back to full. A thing's own actions work on the room as it is. Which the chat should do is the owner's call;
   - a drum on a body that breaks being re-hung onto its pieces;
   - the heat of the windings going to the thermal model;
   - opened again from a saved world, a braked crate settles 1.1 mm in its first second, the same 1.1 mm it settles in a fresh room when the brake first takes its weight. The likely cause is that a saved world does not keep the solver's warm start; not yet looked into.

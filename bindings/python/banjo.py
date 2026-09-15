@@ -820,7 +820,7 @@ class Motor:
     at its store's voltage; `command` is the share of that voltage, -1 to 1.
     `state` is "driving", "coasting", "braking", "flat" (told to drive, and its
     store is empty) or "gone" (its pin is not in anything), said as soon as it is
-    told. The speed, torque,
+    told; one with no brake, told to brake, is "coasting". The speed, torque,
     current and power are the last kept step's; the rest is since it was made:
     `turned_rad` is the whole turn, never wrapped, and its account is
 

@@ -517,6 +517,8 @@ void aMotorSaysAtOnceWhatItIsToldToDo() {
     const unsigned motor_spent = spent->motor(pin_spent, empty, kStall, kUnloaded);
     require(pin_spent != 0 && empty != 0 && motor_spent != 0, "the spent rig would not go together");
     told(*spent, motor_spent, 1.0, false, "flat");
+    // This one has no brake: told to brake, it coasts, and says so.
+    told(*spent, motor_spent, 0.0, true, "coasting");
 }
 
 } // namespace

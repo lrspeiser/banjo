@@ -1028,7 +1028,8 @@ nothing. While the pin coasts or brakes, what the pin's friction takes out of th
 turn is `friction_heat_j`. `state` is `"flat"` when it is told to drive and its
 store is empty, and `"gone"` when its pin is no longer in anything. It says what
 the motor is doing as it was last told from the moment it is told, before the
-next step: a hoist braked as its room opens reads `"braking"` at once. `turned_rad`
+next step: a hoist braked as its room opens reads `"braking"` at once. A motor
+with no brake, told to brake, coasts, and reads `"coasting"`. `turned_rad`
 counts every turn: a hinge's `at` wraps at ±180 degrees, and a motor's count does
 not.
 

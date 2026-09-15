@@ -911,7 +911,7 @@ struct LiveWorld::Impl {
         const LiveEnergyStore *store = energyStoreById(s.store);
         const double u = std::clamp(s.command, -1.0, 1.0);
         if (u == 0.0 || store == nullptr || !(store->charge_j > 0.0))
-            return u != 0.0 ? "flat" : s.brake ? "braking" : "coasting";
+            return u != 0.0 ? "flat" : s.brake && s.brake_torque_n_m > 0.0 ? "braking" : "coasting";
         return "driving";
     }
     // Wakes both of a pin's bodies.
@@ -952,7 +952,9 @@ struct LiveWorld::Impl {
             const bool empty = store == nullptr || !(store->charge_j > 0.0);
             if (u == 0.0 || empty) {
                 world->coastHinge(pin->rigid);
-                const bool braking = s.brake && u == 0.0;
+                // A motor with no brake, told to brake, has nothing to brake
+                // with: it coasts, and says so.
+                const bool braking = s.brake && u == 0.0 && s.brake_torque_n_m > 0.0;
                 const double friction = braking ? std::max(pin->friction, s.brake_torque_n_m) : pin->friction;
                 world->setJointFriction(pin->rigid, friction);
                 if (friction != m.friction_set) wakePin(*pin);

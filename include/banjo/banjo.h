@@ -869,7 +869,8 @@ typedef struct {
     int brake;
     /* "driving", "coasting", "braking", "flat" (told to drive, and its store
      * is empty) or "gone" (its pin is not in anything): what it is doing as it
-     * was last told, said from the moment it is told, before the next step. */
+     * was last told, said from the moment it is told, before the next step. A
+     * motor with no brake, told to brake, is "coasting". */
     const char *state;
     /* The last kept step. */
     double speed_rad_s;           /* b's turn relative to a's, about the pin */

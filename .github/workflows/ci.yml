@@ -73,6 +73,12 @@ jobs:
           BANJO_LIBRARY=build/ci/libbanjo.so BANJO_BUILD_DIR=build/ci python3 tests/inventory_tests.py -v
           python3 tests/inventory_model_tests.py -v
           BANJO_LIBRARY=build/ci/libbanjo.so BANJO_BUILD_DIR=build/ci python3 tests/inventory_room_tests.py -v
+          # A battery hoist in a room, on the engine's runner: built from the
+          # room's spelling and by the chat's own tools, worked by its actions,
+          # and opened again from a saved world. Absolute paths: the runner is
+          # started from its run's folder.
+          BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run BANJO_LIBRARY=$PWD/build/ci/libbanjo.so \
+            python3 tests/machine_room_tests.py -v
           python3 tests/workbench_tests.py -v
           python3 tests/playground_connection_tests.py -v
           # The world page as a person uses it, in headless Chrome on the real
