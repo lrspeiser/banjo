@@ -124,6 +124,21 @@ struct LivePick {
     Vec3 point_world_m{};
 };
 
+// Where a thing would go set down on a surface at a point, turned about the
+// vertical -- its underside on the surface, its middle over the point -- and
+// whether it fits there. Asked of the engine's own shapes; nothing moves. See
+// LiveWorld::placement.
+struct LivePlacement {
+    bool fits{};
+    Vec3 at_m{};                             // its centre of mass, set down there
+    double turn_wxyz[4]{1.0, 0.0, 0.0, 0.0}; // its rigid orientation there
+    double facing_wxyz[4]{1.0, 0.0, 0.0, 0.0}; // which way it would face: that with its shape's own turn on top
+    std::string rests_on;                    // what is under its middle
+    int supported_corners{};                 // corners of its footprint with something under them, of four
+    std::vector<std::pair<std::string, double>> touching;   // what it would go into, and how far, m
+    std::string why;                         // in words, for the person choosing where
+};
+
 // A motion the hand makes by itself, step by step, instead of being moved
 // through it a frame at a time by whoever is driving. See
 // docs/interaction-profiles.md.
@@ -883,6 +898,18 @@ public:
     // What is under a ray: the same question the solver answers, so a pointer
     // agrees with the physics instead of with a second copy of the shapes.
     // Costs no step; safe to ask every frame.
+    // Where `name` would go set down on a surface at `on_world_m` -- a point a
+    // host found with pick() -- turned `yaw_rad` about the vertical, and
+    // whether it fits: what it would go into, what it would rest on, and how
+    // much of its footprint has something under it. The engine's own shapes;
+    // nothing moves. The first half of placing a thing (docs/inventory-and-
+    // hands.md, section 5): the host carries it there if the person says so.
+    // `onto` names what the point is on, as pick() found it -- empty for the
+    // ground. It is lifted off that, and the ground, until it clears them (a
+    // slope, a rounded top); anything else it would go into is in the way.
+    [[nodiscard]] LivePlacement placement(const std::string &name, const Vec3 &on_world_m,
+                                          double yaw_rad, const std::string &onto = {}) const;
+
     [[nodiscard]] LivePick pick(const Vec3 &from_world_m,const Vec3 &direction,
                                 double max_distance_m = 1000.0) const;
 

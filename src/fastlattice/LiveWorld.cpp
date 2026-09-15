@@ -5083,6 +5083,124 @@ LivePick LiveWorld::pick(const Vec3 &from_world_m, const Vec3 &direction,
     return out;
 }
 
+LivePlacement LiveWorld::placement(const std::string &name, const Vec3 &on_world_m, double yaw_rad,
+                                   const std::string &onto) const {
+    LivePlacement out{};
+    const auto found = impl_->index_of.find(name);
+    if (found == impl_->index_of.end()) { out.why = "there is nothing called that here"; return out; }
+    const std::size_t i = found->second;
+    if (impl_->described[i].anchored) { out.why = "it is fixed in place"; return out; }
+    if (!impl_->inWorld(i)) { out.why = "it is not in the room: take it out of the bag first"; return out; }
+    const MatterBodyId id = impl_->body_of[i];
+    // Upright as it was made, turned about the vertical: a body's rigid frame is
+    // the one it was built in, and a thing is built standing the way it stands
+    // -- a stool on its feet, a plank flat, a cup on its base.
+    const Quat turn{std::cos(0.5 * yaw_rad), 0.0, std::sin(0.5 * yaw_rad), 0.0};
+    const auto [low, high] = impl_->world->shapeBoundsTurned(id, turn);
+    // Its underside on the surface, 2 mm clear of it, its middle over the point.
+    constexpr double kClearM = 0.002;
+    out.at_m = Vec3{on_world_m.x, on_world_m.y - low.y + kClearM, on_world_m.z};
+    out.turn_wxyz[0] = turn.w;
+    out.turn_wxyz[1] = turn.x;
+    out.turn_wxyz[2] = turn.y;
+    out.turn_wxyz[3] = turn.z;
+    // Which way it would face there, as poses() says of a body: the rigid turn
+    // with the one a whole box or ball carries inside its shape on top.
+    const Quat facing = compose(turn, impl_->shapeTurn(i));
+    out.facing_wxyz[0] = facing.w;
+    out.facing_wxyz[1] = facing.x;
+    out.facing_wxyz[2] = facing.y;
+    out.facing_wxyz[3] = facing.z;
+    const Vec3 down{0.0, -1.0, 0.0};
+    // What it is being set down on: the thing the point is on, as the host
+    // found it, or the ground. Not guessed from under the point: a ball lying
+    // on the spot is under it too, and a crate lifted off that ball would be
+    // put on top of it rather than said to be in its way.
+    MatterBodyId onto_id{};
+    bool onto_body = false;
+    if (const auto on = impl_->index_of.find(onto);
+        !onto.empty() && on != impl_->index_of.end() && on->second != i && impl_->inWorld(on->second)) {
+        onto_id = impl_->body_of[on->second];
+        onto_body = true;
+    }
+    // Raised off what it is set down on until it clears it -- on flat ground
+    // not at all, on a slope or a rounded top by however much its shape would
+    // go in (measured on the valley's hillside, a ball set 2 mm over the spot
+    // went into the slope above it everywhere steeper than about 15 degrees).
+    // Only off that, and the ground: anything else it would go into is a thing
+    // in the way, and is said.
+    // Clear of it, not merely within the 3 mm said of other things below: a
+    // 50 mm ball on a 20 degree slope goes 1 mm in, and let go there it would
+    // be pushed out with a jump.
+    const double start_y = out.at_m.y;
+    bool clear = false;
+    for (int k = 0; k < 8; ++k) {
+        double deepest = 0.0;
+        for (const PlacementOverlap &met : impl_->world->overlapsAt(id, out.at_m, turn, 0.0005))
+            if (!met.named || (onto_body && met.body_id == onto_id)) deepest = std::max(deepest, met.depth_m);
+        if (!(deepest > 0.0)) { clear = true; break; }
+        out.at_m.y += deepest + 0.001;
+    }
+    // Lifted more than half its own height, or still not clear: it is not being
+    // set ON that -- the crosshair is on a wall, or on the side of a crate -- and
+    // it is not put on top of it by being pushed up it. Measured on the page: a
+    // ball aimed at a crate's side went up the side and came out "fits, but
+    // little of it is on the oak crate".
+    if (!clear || out.at_m.y - start_y > std::max(0.02, 0.5 * (high.y - low.y))) {
+        out.at_m.y = start_y;
+        out.why = "that is too steep to set it on";
+        return out;
+    }
+    const double underside = out.at_m.y + low.y;
+    const std::string ground = impl_->environment ? "ground" : "floor";
+    const auto called = [&](bool named, MatterBodyId body) {
+        if (!named) return ground;
+        for (std::size_t j = 0; j < impl_->body_of.size(); ++j)
+            if (impl_->body_of[j] == body) return impl_->described[j].name;
+        return std::string("something");
+    };
+    // What is under its middle, and under each corner of its footprint -- a
+    // little in from the corners, so a rounded or tapered underside counts.
+    // Its own body is where the hand has it, not here, and is not an answer.
+    const RayHit under = impl_->world->castRay(Vec3{out.at_m.x, underside + 0.005, out.at_m.z}, down, 0.06);
+    if (under.hit && !(under.named && under.body_id == id)) out.rests_on = called(under.named, under.body_id);
+    double highest = -1e30, lowest = 1e30;
+    for (const double cx : {0.8 * low.x, 0.8 * high.x})
+        for (const double cz : {0.8 * low.z, 0.8 * high.z}) {
+            const RayHit corner = impl_->world->castRay(
+                Vec3{out.at_m.x + cx, underside + 0.005, out.at_m.z + cz}, down, 0.04);
+            if (!corner.hit || (corner.named && corner.body_id == id)) continue;
+            ++out.supported_corners;
+            highest = std::max(highest, corner.point_world_m.y);
+            lowest = std::min(lowest, corner.point_world_m.y);
+        }
+    // How steep what it stands on is, across its footprint -- steeper than 15
+    // degrees (tan = 0.268) is said: a ball on a slope fits, and then rolls,
+    // which is the engine's to show, not the copy's to hide.
+    const double across = 0.8 * std::max(high.x - low.x, high.z - low.z);
+    const bool sloped = out.supported_corners >= 2 && across > 1e-6 && highest - lowest > 0.268 * across;
+    // What it would go into, standing there: more than 3 mm, which a thing set
+    // down 2 mm clear of what it rests on cannot be by resting on it.
+    for (const PlacementOverlap &met : impl_->world->overlapsAt(id, out.at_m, turn, 0.003))
+        out.touching.emplace_back(called(met.named, met.body_id), met.depth_m);
+    if (!out.touching.empty()) {
+        out.why = out.touching.front().first == ground ? "the " + ground + " is too uneven there"
+                                                       : "it would go into the " + out.touching.front().first;
+    } else if (out.rests_on.empty()) {
+        out.why = "there is nothing under it to rest on";
+    } else if (out.supported_corners < 3) {
+        out.fits = true;
+        out.why = "it fits, but little of it is on the " + out.rests_on + ": it may tip off";
+    } else if (sloped) {
+        out.fits = true;
+        out.why = "it fits, on the " + out.rests_on + ", but that slopes: it may slide or roll";
+    } else {
+        out.fits = true;
+        out.why = "it fits here, on the " + out.rests_on;
+    }
+    return out;
+}
+
 std::string LiveWorld::held() const {
     return impl_->holding == static_cast<std::size_t>(-1)
                ? std::string{}

@@ -1,0 +1,218 @@
+// Where a thing would go set down, and whether it fits (LiveWorld::placement).
+//
+// The first half of placing a thing (docs/inventory-and-hands.md, section 5):
+// the page shows a see-through copy where the person is looking and asks the
+// engine this -- set down upright on the surface there, what would it go into,
+// what would it rest on, and how much of it has something under it. Asked of
+// the shapes the solver collides, and nothing in the room moves for it.
+
+#include "fastlattice/LiveWorld.hpp"
+
+#include <cmath>
+#include <iostream>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+namespace {
+
+using namespace banjo;
+using namespace banjo::fastlattice;
+
+constexpr double kPi = 3.14159265358979323846;
+
+void require(bool ok, const std::string &message) {
+    if (!ok) throw std::runtime_error(message);
+}
+
+// A concrete slab to stand things on, an oak crate on it, and an iron ball
+// beside the crate. The slab's top is y = 0; the crate's runs from x 0.8 to 1.2
+// and is 0.4 m up.
+TileImpactRequest room() {
+    TileImpactRequest r;
+    r.cell_size_m = 0.05;
+    r.backend = BackendKind::CpuParallel;
+    SceneBody slab;
+    slab.name = "slab";
+    slab.shape = BodyShape::Box;
+    slab.material = MaterialPreset::Concrete;
+    slab.dimensions_m = {3.0, 0.1, 3.0};
+    slab.center_m = {0.0, -0.05, 0.0};
+    slab.anchored = true;
+    SceneBody crate;
+    crate.name = "oak crate";
+    crate.shape = BodyShape::Box;
+    crate.material = MaterialPreset::Oak;
+    crate.dimensions_m = {0.4, 0.4, 0.4};
+    crate.center_m = {1.0, 0.2, 0.0};
+    SceneBody ball;
+    ball.name = "iron ball";
+    ball.shape = BodyShape::Sphere;
+    ball.material = MaterialPreset::Iron;
+    ball.dimensions_m = {0.1, 0.1, 0.1};
+    ball.center_m = {0.0, 0.05, 0.0};
+    r.bodies = {slab, crate, ball};
+    return r;
+}
+
+void onOpenSlabItFitsAndRestsOnTheSlab() {
+    const auto world = LiveWorld::open(room());
+    const LivePlacement p = world->placement("iron ball", Vec3{-1.0, 0.0, 0.5}, 0.0, "slab");
+    std::cout << "  on open slab: " << p.why << "; its middle " << p.at_m.y << " m up, "
+              << p.supported_corners << " corners with something under them\n";
+    require(p.fits, "the ball does not fit on open slab: " + p.why);
+    require(p.rests_on == "slab", "it rests on \"" + p.rests_on + "\", not the slab");
+    require(std::abs(p.at_m.y - 0.052) < 1e-4, "its underside is not 2 mm over the slab");
+    require(p.supported_corners == 4, "open slab left corners with nothing under them");
+    require(p.touching.empty(), "it goes into something on open slab");
+}
+
+void onTheCrateItRestsOnTheCrate() {
+    const auto world = LiveWorld::open(room());
+    const LivePlacement p = world->placement("iron ball", Vec3{1.0, 0.4, 0.0}, 0.0, "oak crate");
+    std::cout << "  on the crate: " << p.why << "\n";
+    require(p.fits && p.rests_on == "oak crate", "on the crate's top: " + p.why);
+    require(std::abs(p.at_m.y - 0.452) < 1e-4, "its underside is not 2 mm over the crate");
+}
+
+void overAnEdgeItFitsButIsSaidToTip() {
+    const auto world = LiveWorld::open(room());
+    // Its middle just inside the crate's edge at x = 1.2: half its footprint
+    // is over nothing.
+    const LivePlacement p = world->placement("iron ball", Vec3{1.19, 0.4, 0.0}, 0.0, "oak crate");
+    std::cout << "  at the crate's edge: " << p.why << ", " << p.supported_corners
+              << " corners with something under them\n";
+    require(p.fits, "the ball at the crate's edge did not fit at all: " + p.why);
+    require(p.supported_corners == 2, "at the edge " + std::to_string(p.supported_corners) +
+                                          " corners had something under them, not 2");
+    require(p.why.find("tip") != std::string::npos, "at the edge it was not said it may tip: " + p.why);
+}
+
+void theCrateWhereTheBallIsWouldGoIntoTheBall() {
+    const auto world = LiveWorld::open(room());
+    // Set on the slab where the ball lies: the slab is what it goes on, and the
+    // ball is in the way -- it is not lifted onto the ball.
+    const LivePlacement p = world->placement("oak crate", Vec3{0.0, 0.0, 0.0}, 0.0, "slab");
+    std::cout << "  the crate where the ball is: " << p.why << "\n";
+    require(!p.fits, "the crate fitted where the ball is");
+    require(!p.touching.empty() && p.touching.front().first == "iron ball",
+            "it was not the ball the crate would go into: " + p.why);
+}
+
+void turnedAboutTheVerticalItStaysUpright() {
+    const auto world = LiveWorld::open(room());
+    const double yaw = 0.25 * kPi;
+    const LivePlacement p = world->placement("oak crate", Vec3{-1.0, 0.0, -1.0}, yaw, "slab");
+    std::cout << "  the crate turned 45 degrees: " << p.why << "; its middle " << p.at_m.y << " m up\n";
+    require(p.fits, "the crate turned 45 degrees on open slab did not fit: " + p.why);
+    require(std::abs(p.turn_wxyz[0] - std::cos(0.5 * yaw)) < 1e-12 && p.turn_wxyz[1] == 0.0 &&
+                std::abs(p.turn_wxyz[2] - std::sin(0.5 * yaw)) < 1e-12 && p.turn_wxyz[3] == 0.0,
+            "the turn is not about the vertical alone");
+    // Turned about the vertical, a box's underside is where it was: 0.2 m down.
+    require(std::abs(p.at_m.y - 0.202) < 1e-4, "turned, its underside is not 2 mm over the slab");
+    // A box built square faces the way its rigid frame does.
+    for (int k = 0; k < 4; ++k)
+        require(std::abs(p.facing_wxyz[k] - p.turn_wxyz[k]) < 1e-12, "a square box's facing is not its turn");
+}
+
+// The slab, with a concrete ramp on it tilted 20 degrees about z, and the ball.
+TileImpactRequest rampRoom() {
+    TileImpactRequest r = room();
+    SceneBody ramp;
+    ramp.name = "ramp";
+    ramp.shape = BodyShape::Box;
+    ramp.material = MaterialPreset::Concrete;
+    ramp.dimensions_m = {1.0, 0.1, 1.0};
+    ramp.center_m = {-1.0, 0.3, -1.0};
+    ramp.rotation_deg = {0.0, 0.0, 20.0};
+    ramp.anchored = true;
+    r.bodies.push_back(ramp);
+    return r;
+}
+
+void onASlopeItIsLiftedClearAndSaidToRoll() {
+    const auto world = LiveWorld::open(rampRoom());
+    // Straight down onto the ramp's top from above its middle: the point a
+    // crosshair looking down would find.
+    const LivePick top = world->pick(Vec3{-1.0, 2.0, -1.0}, Vec3{0.0, -1.0, 0.0});
+    require(top.hit && top.name == "ramp", "the ray from above did not find the ramp's top");
+    const LivePlacement p = world->placement("iron ball", top.point_world_m, 0.0, top.name);
+    const double lifted = p.at_m.y - top.point_world_m.y;
+    std::cout << "  on the ramp: " << p.why << "; its middle " << lifted << " m over the spot\n";
+    require(p.fits, "the ball on a 20 degree ramp did not fit: " + p.why);
+    require(p.rests_on == "ramp", "on the ramp it rests on \"" + p.rests_on + "\"");
+    require(p.touching.empty(), "on the ramp it goes into something");
+    // A 50 mm ball touching a 20 degree slope stands 0.05 / cos 20 = 53.2 mm
+    // over the point under its middle -- more than the 52 mm a flat floor asks.
+    require(lifted > 0.0525 && lifted < 0.065, "it was not lifted clear of the slope, or lifted too far");
+    require(p.why.find("roll") != std::string::npos, "a slope was not said: " + p.why);
+}
+
+void onTheCratesSideItIsTooSteep() {
+    const auto world = LiveWorld::open(room());
+    // The crosshair on the crate's side, halfway up: not a place to set a thing.
+    const LivePick side = world->pick(Vec3{2.0, 0.2, 0.0}, Vec3{-1.0, 0.0, 0.0});
+    require(side.hit && side.name == "oak crate", "the ray did not find the crate's side");
+    const LivePlacement p = world->placement("iron ball", side.point_world_m, 0.0, side.name);
+    std::cout << "  on the crate's side: " << p.why << "\n";
+    require(!p.fits && p.why.find("steep") != std::string::npos,
+            "the crate's side was a place to set it: " + p.why);
+}
+
+void askingMovesNothing() {
+    const auto world = LiveWorld::open(room());
+    const auto before = world->poses();
+    (void)world->placement("oak crate", Vec3{0.0, 0.0, 0.0}, 0.7);
+    (void)world->placement("iron ball", Vec3{1.19, 0.4, 0.0}, 0.0);
+    (void)world->placement("iron ball", Vec3{-1.0, 0.0, 0.5}, 2.0);
+    const auto after = world->poses();
+    require(before.size() == after.size(), "asking changed how many things there are");
+    for (std::size_t i = 0; i < before.size(); ++i) {
+        const LiveBodyPose &a = before[i], &b = after[i];
+        const bool same = a.name == b.name && a.position_m.x == b.position_m.x &&
+                          a.position_m.y == b.position_m.y && a.position_m.z == b.position_m.z &&
+                          a.orientation_wxyz[0] == b.orientation_wxyz[0] &&
+                          a.orientation_wxyz[1] == b.orientation_wxyz[1] &&
+                          a.orientation_wxyz[2] == b.orientation_wxyz[2] &&
+                          a.orientation_wxyz[3] == b.orientation_wxyz[3];
+        require(same, "asking where " + a.name + " would go moved something");
+    }
+}
+
+void theSlabIsFixedAndWhatIsNotThereIsSaid() {
+    const auto world = LiveWorld::open(room());
+    const LivePlacement fixed = world->placement("slab", Vec3{0.0, 0.0, 0.0}, 0.0);
+    require(!fixed.fits && fixed.why == "it is fixed in place", "the slab: " + fixed.why);
+    const LivePlacement missing = world->placement("anvil", Vec3{0.0, 0.0, 0.0}, 0.0);
+    require(!missing.fits && missing.why == "there is nothing called that here", "an anvil: " + missing.why);
+}
+
+} // namespace
+
+int main() {
+    try {
+        onOpenSlabItFitsAndRestsOnTheSlab();
+        std::cout << "[PASS] on open slab it fits, 2 mm clear, resting on the slab\n";
+        onTheCrateItRestsOnTheCrate();
+        std::cout << "[PASS] on the crate it rests on the crate\n";
+        overAnEdgeItFitsButIsSaidToTip();
+        std::cout << "[PASS] over an edge it fits, and is said to tip\n";
+        theCrateWhereTheBallIsWouldGoIntoTheBall();
+        std::cout << "[PASS] the crate where the ball is would go into the ball\n";
+        turnedAboutTheVerticalItStaysUpright();
+        std::cout << "[PASS] turned about the vertical it stays upright\n";
+        onASlopeItIsLiftedClearAndSaidToRoll();
+        std::cout << "[PASS] on a slope it is lifted clear, and said to roll\n";
+        onTheCratesSideItIsTooSteep();
+        std::cout << "[PASS] on the crate's side it is too steep\n";
+        askingMovesNothing();
+        std::cout << "[PASS] asking moves nothing\n";
+        theSlabIsFixedAndWhatIsNotThereIsSaid();
+        std::cout << "[PASS] the slab is fixed, and what is not there is said\n";
+        std::cout << "\nall placement tests passed\n";
+        return 0;
+    } catch (const std::exception &error) {
+        std::cerr << "\n[FAIL] " << error.what() << "\n";
+        return 1;
+    }
+}

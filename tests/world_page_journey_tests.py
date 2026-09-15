@@ -192,7 +192,10 @@ class AReloadKeepsTheRoom(unittest.TestCase):
         try:
             page = json.dumps(self.js("""(() => {
               const r = banjoRoom, d = r.details ? r.details() : {};
+              const placing = r.world.placing;
               return {aim: r.world.aim && r.world.aim.name, held: r.world.held && r.world.held.name,
+                      placing: placing ? {why: placing.answer && placing.answer.why,
+                                          at: placing.answer && placing.answer.at_m} : null,
                       mode: r.world.use && r.world.use.mode, last: d.last, facts: d.facts,
                       rows: d.rows, errors: r.status().errors};
             })()"""))[:1500]
@@ -250,8 +253,11 @@ class AReloadKeepsTheRoom(unittest.TestCase):
         eye = self.js("banjoRoom.camera.position.toArray()")
         gx, gz = eye[0] + 2.0, eye[2]
         ground = self.js(f"banjoRoom.groundAt({gx}, {gz})") or 0.0
+        # Looking down at the ground 1.5 m ahead: within the 3 m a hand places
+        # things at.
+        ahead = self.js(f"banjoRoom.groundAt({gx}, {gz - 1.5})") or ground
         self.page.evaluate(f"banjoRoom.standAt({gx}, {ground + 1.62}, {gz}); "
-                           f"banjoRoom.lookAt({gx}, {ground + 0.4}, {gz - 2.0}); true")
+                           f"banjoRoom.lookAt({gx}, {ahead}, {gz - 1.5}); true")
         time.sleep(1.5)
         stood = self.js("banjoRoom.camera.position.toArray()")
 
@@ -265,10 +271,18 @@ class AReloadKeepsTheRoom(unittest.TestCase):
         self.assertLess(math.dist(now, stood), 0.3,
                         f"after a reload the person is not where they stood: {stood} -> {now}")
 
-        # E: put down there -- and after the next reload it is still there.
-        self.assertTrue(self.offering("Put it down"), f"E is not offering to put it down: {self.situation()}")
+        # E shows where it will go (the owner: "E shows, E places"): a
+        # see-through copy on the ground ahead, which the engine says fits. E
+        # again carries it there and lets go -- and after the next reload it
+        # is still there.
+        self.assertTrue(self.offering("Place it…"), f"E is not offering to place it: {self.situation()}")
         self.press_e()
-        self.assertTrue(self.wait_for("!banjoRoom.world.held", 30), f"E did not put it down: {self.situation()}")
+        self.assertTrue(self.wait_for("banjoRoom.world.placing && banjoRoom.world.placing.answer && "
+                                      "banjoRoom.world.placing.answer.fits", 30),
+                        f"the copy never said it fits: {self.situation()}")
+        self.assertTrue(self.offering("Put it here"), f"E is not offering to put it there: {self.situation()}")
+        self.press_e()
+        self.assertTrue(self.wait_for("!banjoRoom.world.held", 30), f"E did not put it there: {self.situation()}")
         put = self.at_rest(name)
         self.assertGreater(math.dist(put, authored), 1.0,
                            f"it was put down only {math.dist(put, authored):.2f} m from where the room had it")

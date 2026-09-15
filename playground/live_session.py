@@ -1021,6 +1021,22 @@ class Live:
             return session.send(op="joint_friction",
                                 joint=int(body.get("joint", 0)),
                                 friction_n=friction)
+        if op == "place_check":
+            # Where a thing would go set down on a surface, and whether it fits
+            # (LiveWorld::placement). Costs no step and changes nothing: the
+            # page's see-through copy asks it while someone chooses where. Still
+            # checked, because a point of NaNs would reach the engine otherwise.
+            on = body.get("on")
+            if not isinstance(on, list) or len(on) != 3:
+                raise LiveError("a placement's point needs three numbers")
+            point = [float(v) for v in on]
+            yaw = float(body.get("yaw_deg", 0.0))
+            if not all(math.isfinite(v) for v in point + [yaw]):
+                raise LiveError("a placement was given a point or a turn that is not a number")
+            # `onto`: what the point is on, as pick found it; empty is the ground.
+            return session.send(op="place_check", name=str(body.get("name", "")), on=point,
+                                yaw_deg=((yaw + 180.0) % 360.0) - 180.0,
+                                onto=str(body.get("onto") or "")[:200])
         if op == "pick":
             # A ray in world metres. Costs no step and changes nothing, so it is
             # not bounded the way a step is -- but it is still checked, because
