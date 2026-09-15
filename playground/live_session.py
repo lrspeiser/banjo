@@ -118,6 +118,17 @@ def _told(motor: dict[str, Any]) -> tuple[Any, Any]:
     return motor.get("command"), motor.get("brake")
 
 
+def _made_control(control: dict[str, Any]) -> dict[str, Any]:
+    """A machine's controller as it is made -- its name, its motor's pin, a
+    hoist's travel -- without what it was last told, which a world carried
+    into a changed room keeps, as a motor keeps its command."""
+    return {k: v for k, v in control.items() if k not in ("id", "power", "direction", "setting")}
+
+
+def _told_control(control: dict[str, Any]) -> tuple[Any, Any, Any]:
+    return control.get("power"), control.get("direction"), control.get("setting")
+
+
 def _declared(spec: dict[str, Any], machines: Any = None,
               made: dict[str, Any] | None = None) -> dict[str, Any]:
     """What a world was given of the room's declarations, each as the room
@@ -132,6 +143,7 @@ def _declared(spec: dict[str, Any], machines: Any = None,
                 if isinstance(entry, dict) and isinstance(entry.get("id"), int)]
     stores = dict((made or {}).get("stores") or {})
     motors = dict((made or {}).get("motors") or {})
+    controls = dict((made or {}).get("controls") or {})
     if isinstance(machines, dict):
         for store in machines.get("stores") or []:
             if isinstance(store.get("id"), int):
@@ -140,12 +152,18 @@ def _declared(spec: dict[str, Any], machines: Any = None,
             on = motor.get("on") or []
             if isinstance(motor.get("id"), int) and len(on) == 2:
                 motors.setdefault((str(on[0]), str(on[1])), motor["id"])
+        for control in machines.get("controls") or []:
+            if isinstance(control.get("id"), int):
+                controls.setdefault(str(control.get("name", "")), control["id"])
     declared = spec.get("machines") or {}
     return {"joints": ided("joints"), "blades": ided("blades"), "tool_points": ided("tool_points"),
             "stores": [(_plain(s), stores[s["name"]]) for s in declared.get("stores") or []
                        if isinstance(s, dict) and stores.get(s.get("name")) is not None],
             "motors": [(_made(m), _told(m), motors[tuple(m["on"])]) for m in declared.get("motors") or []
-                       if isinstance(m, dict) and motors.get(tuple(m.get("on") or ())) is not None]}
+                       if isinstance(m, dict) and motors.get(tuple(m.get("on") or ())) is not None],
+            "controls": [(_made_control(c), _told_control(c), controls[c["name"]])
+                         for c in declared.get("controls") or []
+                         if isinstance(c, dict) and controls.get(c.get("name")) is not None]}
 
 
 def carry_plan(was: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
@@ -163,11 +181,12 @@ def carry_plan(was: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
     Returns {"engine": what the runner is given, "pairs": for each list the
     spec's entry index -> the id it keeps, "told": motor index -> (command,
     brake)}."""
-    engine: dict[str, Any] = {"joints": [], "energy_stores": [], "motors": [], "blades": [],
-                              "tool_points": [], "declared_anew": []}
-    pairs: dict[str, dict[int, Any]] = {"joints": {}, "stores": {}, "motors": {}, "blades": {},
-                                        "tool_points": {}}
+    engine: dict[str, Any] = {"joints": [], "energy_stores": [], "motors": [], "controls": [],
+                              "blades": [], "tool_points": [], "declared_anew": []}
+    pairs: dict[str, dict[int, Any]] = {"joints": {}, "stores": {}, "motors": {}, "controls": {},
+                                        "blades": {}, "tool_points": {}}
     told: dict[int, tuple[Any, Any]] = {}
+    told_controls: dict[int, tuple[Any, Any, Any]] = {}
     anew: set[str] = set()
 
     def keep(pool: list, want: Any) -> Any:
@@ -215,8 +234,25 @@ def carry_plan(was: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
                 if _told(motor) != tuple(told_then):
                     told[i] = _told(motor)
                 break
+    # A controller is kept, as it was told, when it is made the same way; the
+    # engine keeps it only if its motor came back too.
+    controls = list(was.get("controls") or [])
+    for i, control in enumerate(machines.get("controls") or []):
+        if not isinstance(control, dict):
+            continue
+        for k, (made, told_then, ident) in enumerate(controls):
+            if made == _made_control(control):
+                del controls[k]
+                pairs["controls"][i] = ident
+                engine["controls"].append(ident)
+                # Told again only what the room now says it was told: one told
+                # nothing passes on its motor's, which the motor's own `told`
+                # carries.
+                if "power" in control and _told_control(control) != tuple(told_then):
+                    told_controls[i] = _told_control(control)
+                break
     engine["declared_anew"] = sorted(name for name in anew if name)
-    return {"engine": engine, "pairs": pairs, "told": told}
+    return {"engine": engine, "pairs": pairs, "told": told, "told_controls": told_controls}
 
 
 def remember_told(session: Any, motor: Any, command: float, brake: bool) -> None:
@@ -230,6 +266,20 @@ def remember_told(session: Any, motor: Any, command: float, brake: bool) -> None
     if isinstance(declared, dict):
         declared["motors"] = [(made, (command, brake) if ident == motor else told, ident)
                               for made, told, ident in declared.get("motors") or []]
+
+
+def remember_operated(session: Any, control: Any, power: Any, direction: Any, setting: Any) -> None:
+    """What a running world's machine has just been told by the room's chat
+    (operate, which works the room as it stands and writes what it said into
+    the spec too), kept as what the world was told, as remember_told keeps a
+    motor's: a later carry then does not tell it that again. What the person's
+    panel tells a machine is not kept here, nor written into the spec: the
+    world carried into a changed room keeps it, as it keeps where things were
+    moved to."""
+    declared = getattr(session, "declared", None)
+    if isinstance(declared, dict):
+        declared["controls"] = [(made, (power, direction, setting) if ident == control else told, ident)
+                                for made, told, ident in declared.get("controls") or []]
 
 
 def _three(value: Any, what: str) -> list[float]:
@@ -555,7 +605,22 @@ class Live:
             # spec first put it in the world, which is no longer where its wood
             # is. The spec's own entries take the ids the world has for them.
             adopted = self._adopt(spec, opening)
-            session.declared = _declared(spec, opening.get("machines"))
+            # Controllers the room declares that the saved world does not have
+            # -- a world saved before there were controllers -- go on its
+            # motors now, as a room just opened puts them on: the owner's hoist
+            # comes back after a restart with its panel.
+            machines_now = opening.get("machines") or {}
+            have = {str(c.get("name", "")) for c in machines_now.get("controls") or []}
+            missing = [c for c in (spec.get("machines") or {}).get("controls") or []
+                       if isinstance(c, dict) and str(c.get("name", "")) not in have]
+            made: dict[str, Any] = {"stores": {}, "controls": {}, "motors": {
+                tuple(str(v) for v in m.get("on") or []): m.get("id")
+                for m in machines_now.get("motors") or [] if len(m.get("on") or []) == 2}}
+            if missing:
+                powered = self._power(session, {"controls": missing}, pins, made=made)
+                if powered.get("machine_problems"):
+                    adopted["machine_problems"] = powered["machine_problems"]
+            session.declared = _declared(spec, opening.get("machines"), made)
             return {"session": session.id, "spec": spec, **opening, **adopted}
         if tier == "carried" and plan is not None:
             return self._carried(session, spec, opening, plan)
@@ -598,8 +663,9 @@ class Live:
         machines_now = opening.get("machines") or {}
         stores_now = {s.get("id") for s in machines_now.get("stores") or []}
         motors_now = {m.get("id") for m in machines_now.get("motors") or []}
-        made: dict[str, Any] = {"stores": {}, "motors": {}}
-        new_stores, new_motors, told = [], [], False
+        controls_now = {c.get("id") for c in machines_now.get("controls") or []}
+        made: dict[str, Any] = {"stores": {}, "motors": {}, "controls": {}}
+        new_stores, new_motors, new_controls, told = [], [], [], False
         for i, store in enumerate(machines.get("stores") or []):
             if pairs["stores"].get(i) in stores_now:
                 made["stores"][str(store.get("name", ""))] = pairs["stores"][i]
@@ -620,8 +686,27 @@ class Live:
                     hung.setdefault("machine_problems", []).append(
                         f"the motor on {' and '.join(motor.get('on') or [])} would not take what it was "
                         f"told: {error}")
-        if new_stores or new_motors:
-            powered = self._power(session, {"stores": new_stores, "motors": new_motors}, pins, made=made)
+        # A kept controller keeps what it was doing -- what the person's panel
+        # told it -- unless the room now tells it something else (the chat
+        # worked it), which it is told.
+        for i, control in enumerate(machines.get("controls") or []):
+            ident = pairs["controls"].get(i)
+            if ident not in controls_now:
+                new_controls.append(control)
+                continue
+            made["controls"][str(control.get("name", ""))] = ident
+            if i in plan.get("told_controls", {}):
+                power, direction, setting = plan["told_controls"][i]
+                try:
+                    session.send(op="operate", control=ident, sender="room", seq=0, power=bool(power),
+                                 direction=int(direction), setting=float(setting))
+                    told = True
+                except LiveError as error:
+                    hung.setdefault("machine_problems", []).append(
+                        f"the controller {control.get('name')} would not take what it was told: {error}")
+        if new_stores or new_motors or new_controls:
+            powered = self._power(session, {"stores": new_stores, "motors": new_motors,
+                                            "controls": new_controls}, pins, made=made)
             if powered.get("machine_problems"):
                 hung.setdefault("machine_problems", []).extend(powered["machine_problems"])
         blades = [b for b in spec.get("blades") or []]
@@ -645,7 +730,7 @@ class Live:
         out = {"session": session.id, "spec": spec, **opening, **hung, **armed, **tooled}
         # Machines as they are now, when something was declared or told since
         # the opening said them.
-        if (new_stores or new_motors or told) and isinstance(session.state.get("machines"), dict):
+        if (new_stores or new_motors or new_controls or told) and isinstance(session.state.get("machines"), dict):
             out["machines"] = session.state["machines"]
         return out
 
@@ -840,6 +925,9 @@ class Live:
                 made["stores"][name] = stores[name]
         hinges = {(str(p.get("a")), str(p.get("b"))): p.get("id")
                   for p in (pins or []) if isinstance(p, dict) and str(p.get("kind", "hinge")) == "hinge"}
+        # Each motor's id by its pin's two things -- those the world has
+        # already, and those that go in here -- for the controllers.
+        motor_ids: dict[tuple[str, ...], Any] = dict(made["motors"]) if made is not None else {}
         for motor in machines.get("motors") or []:
             on = [str(v) for v in (motor.get("on") or [])]
             joint = hinges.get(tuple(on)) if len(on) == 2 else None
@@ -855,6 +943,8 @@ class Live:
                     stall_torque_n_m=float(motor.get("stall_torque_n_m", 0.0)),
                     no_load_rad_s=float(motor.get("no_load_rpm", 0.0)) * 3.141592653589793 / 30.0,
                     brake_torque_n_m=float(motor.get("brake_torque_n_m", 0.0)))
+                if answer.get("motor") is not None:
+                    motor_ids[tuple(on)] = answer.get("motor")
                 if made is not None and answer.get("motor") is not None:
                     made["motors"][tuple(on)] = answer.get("motor")
                 brake = bool(motor.get("brake", float(motor.get("brake_torque_n_m", 0.0)) > 0.0))
@@ -863,6 +953,57 @@ class Live:
                     session.send(op="drive", motor=answer.get("motor"), command=command, brake=brake)
             except Exception as error:
                 problems.append(f"the motor on {on[0]} and {on[1]} would not go on: {error}")
+        # And the controller each machine is worked by (docs/machine-world.md,
+        # "Operating a machine"), on its motor: a hoist's with the rope on its
+        # drum and its travel, each told what the room last told it. `made`
+        # is given each one's id by its name.
+        if made is not None:
+            made.setdefault("controls", {})
+        # What each motor was told, by its pin's two things: the room's, for one
+        # that went in here, else the world's own, for one it has already.
+        commands: dict[tuple[str, ...], tuple[float, bool]] = {}
+        for motor in (session.state.get("machines") or {}).get("motors") or []:
+            if len(motor.get("on") or []) == 2:
+                commands[tuple(str(v) for v in motor["on"])] = (float(motor.get("command", 0.0)),
+                                                                bool(motor.get("brake", False)))
+        for motor in machines.get("motors") or []:
+            if len(motor.get("on") or []) == 2:
+                commands[tuple(str(v) for v in motor["on"])] = (
+                    float(motor.get("command", 0.0)),
+                    bool(motor.get("brake", float(motor.get("brake_torque_n_m", 0.0)) > 0.0)))
+        for control in machines.get("controls") or []:
+            name = str(control.get("name", ""))
+            on = [str(v) for v in (control.get("on") or [])]
+            ident = motor_ids.get(tuple(on))
+            if ident is None:
+                problems.append(f"the controller {name} has no motor on {' and '.join(on) or 'nothing'} "
+                                f"to work")
+                continue
+            rope = (next((p.get("id") for p in (pins or []) if isinstance(p, dict)
+                          and str(p.get("kind", "")) == "drum" and str(p.get("a")) in on), None)
+                    if "top_out_mm" in control else None)
+            try:
+                answer = session.send(
+                    op="control", name=name, motor=ident, rope=int(rope or 0),
+                    top_out_m=float(control.get("top_out_mm", 0.0)) / 1000.0,
+                    bottom_out_m=float(control.get("bottom_out_mm", 0.0)) / 1000.0)
+                made_id = answer.get("control")
+                if made is not None and made_id is not None:
+                    made["controls"][name] = made_id
+                if made_id is not None and "power" in control:
+                    told = (bool(control["power"]), int(control["direction"]), float(control["setting"]))
+                    if told != (False, 0, 1.0):
+                        session.send(op="operate", control=made_id, sender="room", seq=0, power=told[0],
+                                     direction=told[1], setting=told[2])
+                elif made_id is not None:
+                    # Told nothing itself, it passes on what its motor was told:
+                    # the motor is told that again, which the engine hands to
+                    # the controller -- so a hoist left winding winds on.
+                    command, brake = commands.get(tuple(on), (0.0, True))
+                    if command:
+                        session.send(op="drive", motor=ident, command=command, brake=brake)
+            except Exception as error:
+                problems.append(f"the controller {name} would not go on: {error}")
         return {"machine_problems": problems} if problems else {}
 
     @staticmethod
@@ -1257,6 +1398,34 @@ class Live:
                 raise LiveError("a motor's command is from -1 to 1")
             return session.send(op="drive", motor=motor, command=command,
                                 brake=bool(body.get("brake", False)))
+        if op == "operate":
+            # A machine's controller told what is meant (docs/machine-world.md,
+            # "Operating a machine"), by a sender and its count: power, a
+            # direction, a drive setting, each only if given. The engine drops
+            # a command no newer than one it has applied from that sender, and
+            # answers with the controller as it now stands.
+            try:
+                control = int(body.get("control"))
+                seq = int(body.get("seq", 0))
+            except (TypeError, ValueError):
+                raise LiveError("operate needs a controller's number, and a count that is a whole "
+                                "number") from None
+            if seq < 0:
+                raise LiveError("a command's count is a whole number from 0")
+            command: dict[str, Any] = {"op": "operate", "control": control,
+                                       "sender": str(body.get("sender") or "")[:64], "seq": seq}
+            if body.get("power") is not None:
+                command["power"] = bool(body.get("power"))
+            if body.get("direction") is not None:
+                if body.get("direction") not in (-1, 0, 1):
+                    raise LiveError("a direction is -1 (lower, reverse), 0 (stop) or 1 (raise, forward)")
+                command["direction"] = int(body.get("direction"))
+            if body.get("setting") is not None:
+                setting = float(body.get("setting"))
+                if not (math.isfinite(setting) and 0.0 <= setting <= 1.0):
+                    raise LiveError("a drive setting is from 0 to 1")
+                command["setting"] = setting
+            return session.send(**command)
         if op == "heat":
             # Kindling, a torch, a stove: external work into a body or a gas
             # region, from now. Whether it lights anything is the engine's

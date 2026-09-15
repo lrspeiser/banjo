@@ -216,9 +216,10 @@ takes hold; E puts down; / talks to you.
   a door that shuts itself, a bell on a rope, a bow, a pick, a table with a
   chair, a battery hoist -- build_recipe builds each of these exactly, with its
   actions. Never build one of them part by part (THINGS BUILT BY RECIPE below).
-- To WORK something for them -- open the gate, wind the hoist up, stop it, let
-  it down -- press its own action with use_action. It happens to the room as it
-  stands, just as their E does, and nothing goes back to where it was made.
+- To WORK something for them -- open the gate -- press its own action with
+  use_action; a machine with a motor -- wind the hoist up, stop it, let it
+  down -- work with operate, as their panel does. Either happens to the room as
+  it stands, just as their E does, and nothing goes back to where it was made.
 - A loose thing (a crate, a pot, a plank, a ball): add_object. Keys, holding
   it: hold the left mouse and let go to throw; Z X turn it, T G tip it away or
   back, C V tip it sideways, U stands it upright, the wheel holds it nearer or
@@ -248,12 +249,14 @@ takes hold; E puts down; / talks to you.
 - A machine that runs by itself (a hoist, a crane, a winch with a motor): a
   battery in a thing (store), a motor on a pin wired to it (motor, with a brake
   over what it holds up), and a rope that winds onto the drum on that pin
-  (drum). A battery hoist: build_recipe "hoist". Keys: one click on the drum
-  lists its actions. Offer, on the drum, "Wind it up" (drive, command 1),
-  "Stop" (drive, command 0, brake true) and "Let it down" (drive, command
-  -0.1). To work it for them, press those with use_action; drive tells its
-  motor directly. Both happen to the room as it stands, and it goes on doing
-  what it was told until it is told otherwise.
+  (drum). Every motor is worked by a controller, which the room gives it;
+  control names one and sets a hoist's travel. A battery hoist: build_recipe
+  "hoist". Keys: E on any part of a machine opens its panel -- Power, Raise,
+  Stop & hold, Lower, and a drive setting. To work it for them, use operate
+  with the machine's name or a part of it (direction raise, lower or stop): a
+  hoist stops by itself at the ends of its travel, and says what stands in its
+  way. It happens to the room as it stands, and it goes on doing what it was
+  told until it is told otherwise.
 - A latch (a bar that holds a gate shut): a bar fixed to the gate and to its
   post. Keys: R, or the right mouse, releases it, and the page offers "Release
   the latch".
@@ -1038,6 +1041,10 @@ def _did(name: str, args: dict[str, Any], answer: dict[str, Any]) -> str:
         return f"put a motor on the pin between {' and '.join((answer.get('motor') or {}).get('on') or [])}"
     if name == "drive":
         return f"told the motor turning {args.get('part')} {answer.get('command')}"
+    if name == "control":
+        return f"gave {answer.get('control')} a controller, worked from its panel"
+    if name == "operate":
+        return f"worked {answer.get('machine')}: {answer.get('does')}"
     return f"{name} {args.get('a')} to {args.get('b')}"
 
 
@@ -1428,9 +1435,14 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
                         # room, and told to the running room's motor.
                         answer = {**answer, **live(name, {**args, "command": answer["command"],
                                                           "brake": answer["brake"]})}
+                    if name == "operate" and live is not None and "error" not in answer:
+                        # The same for a machine's controller: what the
+                        # model's copy made of the words -- power, a
+                        # direction, a setting -- told to the running room's.
+                        answer = {**answer, **live(name, {**args, **answer["told"]})}
                 if name in room_world.LIVE and "error" not in answer:
                     worked = True
-                    recorded = recorded or name == "drive"
+                    recorded = recorded or name in ("drive", "operate")
                     did.append(_did(name, args, answer))
                 if name in room_world.AUTHORING and "error" not in answer:
                     changed = True

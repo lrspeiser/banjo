@@ -960,21 +960,39 @@ const ROPE_MATERIAL = new THREE.LineBasicMaterial({ color: 0xd9c9a8 });
 const LIMB_MATERIAL = new THREE.LineBasicMaterial({ color: 0xc4703a });
 const ROPE_PARTED = new THREE.LineBasicMaterial({ color: 0xd06a4a });
 
-function drawRopes() {
-  while (ropeGroup.children.length) {
-    const child = ropeGroup.children.pop();
-    child.geometry.dispose();
+// Each rope's line is made once and moved after: only its points change. It was
+// made again for every rope on every update -- a new geometry each time, for the
+// page to throw away -- which the owner's review found.
+const ropeLines = new Map();   // joint id -> THREE.Line
+
+function ropeLine(id, material, points) {
+  let line = ropeLines.get(id);
+  if (!line || line.material !== material || line.userData.points !== points.length) {
+    if (line) { ropeGroup.remove(line); line.geometry.dispose(); }
+    line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), material);
+    line.userData.points = points.length;
+    // Its ends move every frame; a bounding sphere kept up with them costs more
+    // than drawing a line that is off screen.
+    line.frustumCulled = false;
+    ropeLines.set(id, line);
+    ropeGroup.add(line);
+    return;
   }
+  const at = line.geometry.getAttribute("position");
+  points.forEach((p, i) => at.setXYZ(i, p.x, p.y, p.z));
+  at.needsUpdate = true;
+}
+
+function drawRopes() {
+  const drawn = new Set();
   for (const joint of world.joints) {
     if (!joint.attached) continue;    // parted: there is no rope to draw
     const a = world.bodies.get(joint.a);
     const b = world.bodies.get(joint.b);
     if (!a || !b) continue;
+    let points = null, material = ROPE_MATERIAL;
     if (joint.kind === "link") {
-      ropeGroup.add(new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints([a.mesh.position.clone(),
-                                                  b.mesh.position.clone()]),
-        ROPE_MATERIAL));
+      points = [a.mesh.position.clone(), b.mesh.position.clone()];
     } else if (joint.kind === "elastic") {
       // From where it is anchored on `a` -- which the engine reports, worked
       // out from where `a` now stands -- to `b`'s middle. A bow limb is
@@ -984,23 +1002,16 @@ function drawRopes() {
       // is what the joint report carries; when a spring is made off somewhere
       // other than the middle of `b`, this line is short by that much.
       const at = joint.at || [0, 0, 0];
-      ropeGroup.add(new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints([
-          new THREE.Vector3(at[0], at[1], at[2]), b.mesh.position.clone()]),
-        LIMB_MATERIAL));
+      points = [new THREE.Vector3(at[0], at[1], at[2]), b.mesh.position.clone()];
+      material = LIMB_MATERIAL;
     } else if (joint.kind === "pulley") {
       // Three runs, not one: up from the first body to its sheave, across
       // between the sheaves, and down to the second. Drawing it as a straight
       // line between the two bodies would show a rope passing through the
       // lintel, which is the one thing a pulley exists to avoid.
       const over = (p) => new THREE.Vector3(p[0], p[1], p[2]);
-      ropeGroup.add(new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints([
-          a.mesh.position.clone(),
-          over(joint.over_a || [0, 0, 0]),
-          over(joint.over_b || [0, 0, 0]),
-          b.mesh.position.clone()]),
-        ROPE_MATERIAL));
+      points = [a.mesh.position.clone(), over(joint.over_a || [0, 0, 0]),
+                over(joint.over_b || [0, 0, 0]), b.mesh.position.clone()];
     } else if (joint.kind === "drum") {
       // A rope on a drum: from where it leaves the drum -- the point on the
       // drum's rim it runs off towards the load, which moves as the load swings
@@ -1011,10 +1022,17 @@ function drawRopes() {
       const ends = now || joint;
       if (!ends.leaves || !ends.meets) continue;
       const at = (p) => new THREE.Vector3(p[0], p[1], p[2]);
-      ropeGroup.add(new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints([at(ends.leaves), at(ends.meets)]),
-        ROPE_MATERIAL));
+      points = [at(ends.leaves), at(ends.meets)];
     }
+    if (!points) continue;
+    ropeLine(joint.id, material, points);
+    drawn.add(joint.id);
+  }
+  for (const [id, line] of ropeLines) {
+    if (drawn.has(id)) continue;
+    ropeGroup.remove(line);
+    line.geometry.dispose();
+    ropeLines.delete(id);
   }
 }
 
@@ -1023,28 +1041,53 @@ function drawRopes() {
 function followMachines(machines) {
   world.machines = machines || null;
   drawMachines(world.machines);
+  showMachinePanel();
+  dressMachines();
+}
+
+// What a machine's controller was told, in a person's words.
+function commandedWords(c) {
+  const hoist = c.kind === "hoist";
+  if (c.direction === 0) return c.holds ? "stop and hold" : "stop";
+  const way = c.direction > 0 ? (hoist ? "raise" : "forward") : (hoist ? "lower" : "reverse");
+  return `${way} at ${Math.round(c.setting * 100)}%`;
 }
 
 // The machines in the side panel: what each battery holds, what each motor is
 // doing, and where what it drew went -- its work and its heat -- as the engine
-// counted them, and each drum's rope.
+// counted them, what each machine's controller was told and what stands in its
+// way, and each drum's rope. Every step that has machines comes here, so each
+// row is made once and only its words change after: the list was built again
+// from nothing on every update (the owner's review).
+const machineRows = new Map();   // key -> { li, what, much }
+
 function drawMachines(block) {
   const rows = [];
-  const row = (what, much) => {
-    const li = document.createElement("li");
-    const a = document.createElement("span");
-    a.className = "what";
-    a.textContent = what;
-    const b = document.createElement("span");
-    b.className = "much";
-    b.textContent = much;
-    li.append(a, b);
-    rows.push(li);
+  const row = (key, what, much) => {
+    let r = machineRows.get(key);
+    if (!r) {
+      const li = document.createElement("li");
+      const a = document.createElement("span");
+      a.className = "what";
+      const b = document.createElement("span");
+      b.className = "much";
+      li.append(a, b);
+      r = { li, what: a, much: b };
+      machineRows.set(key, r);
+    }
+    if (r.what.textContent !== what) r.what.textContent = what;
+    if (r.much.textContent !== much) r.much.textContent = much;
+    rows.push(r.li);
   };
   const joules = (j) => (Math.abs(j) >= 1000 ? `${(j / 1000).toFixed(2)} kJ` : `${Math.round(j)} J`);
   for (const s of (block && block.stores) || []) {
     const share = s.capacity_j > 0 ? Math.round(100 * s.charge_j / s.capacity_j) : 0;
-    row(s.name, `${joules(s.charge_j)} of ${joules(s.capacity_j)} (${share}%) · has given ${joules(s.given_j)}`);
+    row(`store ${s.id}`, s.name,
+        `${joules(s.charge_j)} of ${joules(s.capacity_j)} (${share}%) · has given ${joules(s.given_j)}`);
+  }
+  for (const c of (block && block.controls) || []) {
+    row(`control ${c.id}`, `${c.name}: its controller`,
+        `${c.power ? `on, told to ${commandedWords(c)}` : "off"}${c.condition ? ` · ${c.condition}` : ""}`);
   }
   for (const m of (block && block.motors) || []) {
     const turns = m.on && m.on.length === 2 ? m.on[1] : `pin ${m.joint}`;
@@ -1054,18 +1097,304 @@ function drawMachines(block) {
       : m.state === "braking" ? `braked, holding ${Math.abs(m.torque_n_m).toFixed(1)} N m`
       : m.state === "gone" ? "its pin is gone"
       : "coasting";
-    row(`motor turning ${turns}`, `${doing} · drew ${joules(m.drawn_j)}: ${joules(m.work_j)} of work,`
+    row(`motor ${m.id}`, `motor turning ${turns}`, `${doing} · drew ${joules(m.drawn_j)}: ${joules(m.work_j)} of work,`
       + ` ${joules(m.heat_j)} of heat`);
   }
   for (const r of (block && block.ropes) || []) {
     const joint = (world.joints || []).find((j) => j.id === r.joint);
-    row(joint ? `rope from ${joint.a} to ${joint.b}` : "rope on a drum",
+    row(`rope ${r.joint}`, joint ? `rope from ${joint.a} to ${joint.b}` : "rope on a drum",
       `${r.out_m.toFixed(2)} m out, ${r.wound_m.toFixed(2)} m on the drum · carries ${Math.round(r.tension_n)} N`);
   }
-  $("machine-list").replaceChildren(...rows);
-  $("machine-note").textContent = "what each motor drew is its work and its heat; nothing goes back"
-    + " into a battery, and a brake holds without drawing";
+  // The list itself is only put together again when its rows change.
+  const list = $("machine-list");
+  if (list.children.length !== rows.length || rows.some((li, i) => list.children[i] !== li)) {
+    list.replaceChildren(...rows);
+  }
+  const shown = new Set(rows);
+  for (const [key, r] of machineRows) if (!shown.has(r.li)) machineRows.delete(key);
+  const note = "what each motor drew is its work and its heat; nothing goes back into a battery, and a"
+    + " brake holds without drawing";
+  if ($("machine-note").textContent !== note) $("machine-note").textContent = note;
   $("machines").hidden = rows.length === 0;
+}
+
+// ---------------------------------------------------------------------------
+// A machine's panel (docs/machine-world.md, "Operating a machine")
+// ---------------------------------------------------------------------------
+//
+// A powered machine is worked like an appliance, not by grabbing its drum or by
+// pressing E through a list: E on any part of it opens its panel, which stays
+// until it is closed or another machine is chosen (the owner's review,
+// 2026-09-15). Each button says a state outright -- power on, power off, raise,
+// stop, lower -- and goes straight to the machine's controller in the engine
+// with this page's own count (POST /api/world/machine). The engine drops a
+// command no newer than one it has applied from this page, so a raise held up on
+// its way cannot undo a later stop. What the panel reads out is the engine's:
+// what the machine was told, what its shaft and its load are measured doing, and
+// what stands in the way. A command taken is never shown as motion.
+const machinePanel = {
+  id: null,        // the controller shown, by the engine's id
+  name: "",        // and by name, to find it again in a room opened again
+  sender: `page ${Math.random().toString(36).slice(2, 10)}`,
+  seq: 0,
+  said: "",        // what became of the last command sent from here
+  stale: false,
+  // Power On pressed and not yet answered: the drive buttons can be pressed at
+  // once, since the engine takes the page's commands in the order they were
+  // sent. Raise pressed a moment after On was lost while it waited.
+  poweringOn: false,
+};
+
+function controlsNow() {
+  return (world.machines && world.machines.controls) || [];
+}
+
+// The machines a thing is part of: either side of a motor's pin, and a hoist's
+// load (the runner's `parts`).
+function machinesOfPart(name) {
+  return controlsNow().filter((c) => (c.parts || []).includes(name));
+}
+
+function shownControl() {
+  const all = controlsNow();
+  return all.find((c) => c.id === machinePanel.id) || all.find((c) => c.name === machinePanel.name) || null;
+}
+
+function openMachinePanel(control) {
+  machinePanel.id = control.id;
+  machinePanel.name = control.name;
+  machinePanel.said = "";
+  machinePanel.stale = false;
+  $("machine-panel").hidden = false;
+  // The mouse is the person's again, to press the panel's buttons; a click in
+  // the room takes it back to looking round.
+  if (document.pointerLockElement) document.exitPointerLock?.();
+  showMachinePanel();
+  (control.power ? $("mp-stop") : $("mp-on")).focus({ preventScroll: true });
+}
+
+function closeMachinePanel() {
+  machinePanel.id = null;
+  machinePanel.name = "";
+  $("machine-panel").hidden = true;
+}
+
+function mergeControl(control) {
+  if (!world.machines) return;
+  const list = world.machines.controls || (world.machines.controls = []);
+  const at = list.findIndex((c) => c.id === control.id);
+  if (at >= 0) list[at] = control;
+  else list.push(control);
+}
+
+// One command to the machine shown, and what the engine said of it: "applied",
+// with the controller as it now stands -- the acknowledgement -- or "stale".
+async function commandMachine(what) {
+  const control = shownControl();
+  if (!control || !world.session) return;
+  machinePanel.seq += 1;
+  const seq = machinePanel.seq;
+  try {
+    const answer = await api("/api/world/machine", { session: world.session, control: control.id,
+                                                     sender: machinePanel.sender, seq, ...what });
+    if (answer.control) mergeControl(answer.control);
+    machinePanel.stale = answer.operated === "stale";
+    machinePanel.said = machinePanel.stale
+      ? "That arrived after a newer command, so the machine did not take it."
+      : "The machine took it.";
+  } catch (error) {
+    machinePanel.stale = true;
+    machinePanel.said = error.message || String(error);
+  }
+  showMachinePanel();
+}
+
+function setText(id, text) {
+  const el = $(id);
+  if (el.textContent !== text) el.textContent = text;
+}
+
+function setPressed(id, on, disabled = false) {
+  const button = $(id);
+  const want = on ? "true" : "false";
+  if (button.getAttribute("aria-pressed") !== want) button.setAttribute("aria-pressed", want);
+  if (button.disabled !== disabled) button.disabled = disabled;
+}
+
+// The panel, from the controller as the last step -- or the last command's
+// answer -- left it. With every step: only what changed is written.
+function showMachinePanel() {
+  if (machinePanel.id == null) return;
+  const c = shownControl();
+  if (!c) {
+    setText("mp-condition", "This machine is not in the room any more.");
+    for (const id of ["mp-on", "mp-off", "mp-back", "mp-stop", "mp-ahead"]) $(id).disabled = true;
+    $("mp-setting").disabled = true;
+    return;
+  }
+  machinePanel.id = c.id;
+  const hoist = c.kind === "hoist";
+  setText("mp-kind", hoist ? "Hoist" : "Machine");
+  setText("mp-name", titled(c.name));
+  setText("mp-back", hoist ? "Lower" : "Reverse");
+  setText("mp-ahead", hoist ? "Raise" : "Forward");
+  setText("mp-stop", c.holds ? "Stop & hold" : "Stop: it coasts");
+  setPressed("mp-on", c.power);
+  setPressed("mp-off", !c.power);
+  // Driving is for a machine that is on, or being turned on: off, its brake
+  // holds it.
+  const on = c.power || machinePanel.poweringOn;
+  setPressed("mp-back", c.power && c.direction < 0, !on);
+  setPressed("mp-stop", c.power && c.direction === 0, !on);
+  setPressed("mp-ahead", c.power && c.direction > 0, !on);
+  const slider = $("mp-setting");
+  if (slider.disabled) slider.disabled = false;
+  if (document.activeElement !== slider) {
+    const value = String(Math.round(c.setting * 100));
+    if (slider.value !== value) slider.value = value;
+  }
+  setText("mp-setting-value", `${slider.value}%`);
+  setText("mp-enabled", c.power ? "On" : "Off");
+  const told = commandedWords(c);
+  setText("mp-commanded", c.power ? told.charAt(0).toUpperCase() + told.slice(1) : "Nothing: it is off");
+  const rpm = Math.abs(c.speed_rpm) < 0.05 ? "0" : Math.abs(c.speed_rpm).toFixed(1);
+  let measured = `${rpm} turns a minute`;
+  if (hoist) {
+    const load = (c.parts || [])[2] || "its load";
+    const v = c.rope_speed_m_s || 0;
+    const going = Math.abs(v) < 0.005 ? "still" : v > 0 ? `rising ${v.toFixed(2)} m/s`
+      : `coming down ${(-v).toFixed(2)} m/s`;
+    measured += ` · ${load} ${going} · ${(c.out_m || 0).toFixed(2)} m of rope out`;
+  }
+  setText("mp-measured", measured);
+  setText("mp-condition", c.condition || "nothing in its way");
+  $("mp-condition").classList.toggle("attention",
+    /stalled|too weak|flat|held back|hand|gone|coasts/.test(c.condition || ""));
+  setText("mp-ack", machinePanel.said);
+  $("mp-ack").classList.toggle("stale", machinePanel.stale);
+  if ($("machine-panel").hidden) $("machine-panel").hidden = false;
+}
+
+$("mp-close").addEventListener("click", closeMachinePanel);
+$("mp-on").addEventListener("click", async () => {
+  machinePanel.poweringOn = true;
+  showMachinePanel();
+  try { await commandMachine({ power: true }); } finally { machinePanel.poweringOn = false; showMachinePanel(); }
+});
+$("mp-off").addEventListener("click", () => commandMachine({ power: false }));
+$("mp-back").addEventListener("click", () => commandMachine({ direction: -1 }));
+$("mp-stop").addEventListener("click", () => commandMachine({ direction: 0 }));
+$("mp-ahead").addEventListener("click", () => commandMachine({ direction: 1 }));
+$("mp-setting").addEventListener("input", () => setText("mp-setting-value", `${$("mp-setting").value}%`));
+$("mp-setting").addEventListener("change", () => commandMachine({ setting: Number($("mp-setting").value) / 100 }));
+
+// Which way a machine turns, on the machine itself (the owner's review): a
+// stripe painted along the part that turns, which turns with it, and an arrow
+// round its shaft in the shaft's own frame, the way the motor is driving it --
+// green raising or forward, amber lowering or in reverse -- shown only while it
+// drives.
+const STRIPE_PAINT = new THREE.MeshStandardMaterial({ color: 0xf0b429, roughness: 0.55, metalness: 0.1 });
+const ARROW_AHEAD = new THREE.MeshStandardMaterial({ color: 0x7ee08a, emissive: 0x1f4424, roughness: 0.45,
+                                                     side: THREE.DoubleSide });
+const ARROW_BACK = new THREE.MeshStandardMaterial({ color: 0xf0b429, emissive: 0x4a3510, roughness: 0.45,
+                                                    side: THREE.DoubleSide });
+const machineMarks = new Map();   // controller id -> { host, stripe, arrow, radius }
+
+// Along which of a box's own axes a direction in the world runs: 0, 1 or 2.
+function alongAxis(mesh, axisWorld) {
+  const local = new THREE.Vector3(axisWorld[0], axisWorld[1], axisWorld[2])
+    .applyQuaternion(mesh.quaternion.clone().invert());
+  const size = [Math.abs(local.x), Math.abs(local.y), Math.abs(local.z)];
+  return size.indexOf(Math.max(...size));
+}
+
+// Along the shaft (k) on the face across the next axis, a fifth as wide as the
+// third: in the turning part's own frame, so it turns with it.
+function stripeFor(dims, k) {
+  const j = (k + 1) % 3, i = (k + 2) % 3;
+  const size = [0, 0, 0];
+  size[k] = Math.max(dims[k] * 0.92, 0.01);
+  size[j] = 0.006;
+  size[i] = Math.max(dims[i] * 0.2, 0.01);
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(size[0], size[1], size[2]), STRIPE_PAINT);
+  const at = [0, 0, 0];
+  at[j] = dims[j] / 2 + 0.002;
+  stripe.position.set(at[0], at[1], at[2]);
+  return stripe;
+}
+
+// Most of a ring with a head on its end, the positive way round +z.
+function arrowFor(radius) {
+  const arrow = new THREE.Group();
+  const sweep = Math.PI * 1.4;
+  arrow.add(new THREE.Mesh(new THREE.TorusGeometry(radius, 0.011, 8, 40, sweep), ARROW_AHEAD));
+  const head = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.075, 14), ARROW_AHEAD);
+  head.position.set(radius * Math.cos(sweep), radius * Math.sin(sweep), 0);
+  head.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0),
+                                     new THREE.Vector3(-Math.sin(sweep), Math.cos(sweep), 0));
+  arrow.add(head);
+  return arrow;
+}
+
+function forgetMarks(marks) {
+  if (marks.stripe) { marks.stripe.parent?.remove(marks.stripe); marks.stripe.geometry.dispose(); }
+  if (marks.arrow) { scene.remove(marks.arrow); marks.arrow.traverse((o) => o.geometry?.dispose()); }
+}
+
+function dressMachines() {
+  const seen = new Set();
+  const motors = (world.machines && world.machines.motors) || [];
+  for (const c of controlsNow()) {
+    const motor = motors.find((m) => m.id === c.motor);
+    const pin = motor && (world.joints || []).find((j) => j.id === motor.joint);
+    if (!motor || !pin || !pin.attached || !motor.on) continue;
+    // The part that turns: of the pin's two, the one not fixed in place.
+    const [a, b] = motor.on;
+    const second = world.bodies.get(b);
+    const turning = second && !second.anchored ? b : a;
+    const body = world.bodies.get(turning);
+    if (!body || body.fromCells || !body.dims || body.shape === "sphere") continue;
+    seen.add(c.id);
+    let marks = machineMarks.get(c.id);
+    if (!marks) {
+      marks = { host: null, stripe: null, arrow: null, radius: 0 };
+      machineMarks.set(c.id, marks);
+    }
+    const axis = pin.axis || [0, 1, 0];
+    const k = alongAxis(body.mesh, axis);
+    // The stripe rides the turning part's own mesh, so it turns with it: put on
+    // again whenever that mesh is made again (a dent, a burn).
+    if (marks.host !== body.mesh) {
+      if (marks.stripe) { marks.stripe.parent?.remove(marks.stripe); marks.stripe.geometry.dispose(); }
+      marks.stripe = stripeFor(body.dims, k);
+      body.mesh.add(marks.stripe);
+      marks.host = body.mesh;
+    }
+    const radius = Math.max(...body.dims.filter((_, i) => i !== k)) * 0.72 + 0.04;
+    if (!marks.arrow || Math.abs(marks.radius - radius) > 1e-6) {
+      if (marks.arrow) { scene.remove(marks.arrow); marks.arrow.traverse((o) => o.geometry?.dispose()); }
+      marks.arrow = arrowFor(radius);
+      marks.radius = radius;
+      scene.add(marks.arrow);
+    }
+    // Just past the turning part's end, round the pin's axis, the way the motor
+    // drives: its command turns b about the axis relative to a.
+    const drives = c.power && c.command !== 0;
+    marks.arrow.visible = drives;
+    if (!drives) continue;
+    const along = new THREE.Vector3(axis[0], axis[1], axis[2]).normalize();
+    const way = Math.sign(c.command) * (turning === b ? 1 : -1);
+    marks.arrow.position.copy(body.mesh.position).addScaledVector(along, body.dims[k] / 2 + 0.03);
+    marks.arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), along);
+    marks.arrow.scale.set(way < 0 ? -1 : 1, 1, 1);
+    const paint = c.direction > 0 ? ARROW_AHEAD : ARROW_BACK;
+    marks.arrow.traverse((o) => { if (o.isMesh && o.material !== paint) o.material = paint; });
+  }
+  for (const [id, marks] of machineMarks) {
+    if (seen.has(id)) continue;
+    forgetMarks(marks);
+    machineMarks.delete(id);
+  }
 }
 
 function drawJoints(pins) {
@@ -1581,6 +1910,15 @@ function lastAction(text, tone = "did") {
 function choicesFor(name) {
   const entry = world.bodies.get(name);
   if (!entry) return [];
+  // A part of a machine opens the machine's panel first -- the owner's review,
+  // 2026-09-15: "E on a machine opens the panel" -- and what else it offers
+  // comes after, Tab away: working a machine by hand is the advanced choice.
+  const panels = machinesOfPart(name).map((c) => ({ label: `Open the ${c.name}'s panel`,
+                                                    run: () => openMachinePanel(c) }));
+  return [...panels, ...thingChoices(name, entry)];
+}
+
+function thingChoices(name, entry) {
   const pick = tools.profileOf(name), bow = profileOf(name), blade = bladeFor(name);
   const take = () => intend("pick");
   const actions = allActionsFor(name).map((action, i) => ({ label: action.label, run: () => runAction(name, i) }));
@@ -2213,6 +2551,9 @@ addEventListener("keydown", (e) => {
   // the number keys take a thing out of the bag's slots and put it back.
   // Esc while placing: the copy goes, and the thing stays in the hand.
   if (e.code === "Escape" && world.placing && !world.placing.carrying) stopPlacing(true);
+  // Esc closes a machine's panel when nothing else is using it -- and not
+  // while the mouse is looking round, where Esc gives the mouse back first.
+  else if (e.code === "Escape" && machinePanel.id != null && !document.pointerLockElement) closeMachinePanel();
   if (isKey("interact", e.code)) intend(doChoice);
   if (isKey("next", e.code)) nextChoice();
   if (isKey("stow", e.code)) toTheBag();
@@ -5466,6 +5807,10 @@ window.banjoRoom = {
   // how far out, whether the wrist turns it, the wish it is asking of the wrist
   // ([x, y, z, w]), and whether it is being drawn see-through.
   standUpright, talk,
+  // Which way each machine turns, as it is drawn on it: its stripe, and its
+  // arrow while it drives.
+  machineMarks: () => [...machineMarks].map(([id, m]) => ({
+    id, stripe: !!(m.stripe && m.stripe.parent), arrow: !!(m.arrow && m.arrow.visible) })),
   held: () => world.held && ({
     name: world.held.name, distance: world.held.distance, loose: !!world.held.loose,
     turnable: !!world.held.turn, wish: world.held.turn ? world.held.turn.asked.toArray() : null,

@@ -143,7 +143,14 @@ extern "C" {
  * are new structs. No struct or signature that was in 22 changed: the joint
  * kinds gained BANJO_JOINT_DRUM, which banjo_joints reports for a drum's rope,
  * and banjo_joint is laid out as it was. */
-#define BANJO_ABI_VERSION 23
+/* 24 added a machine's controller (docs/machine-world.md, "Operating a
+ * machine"; docs/api/c-api.md, "A machine's controller"): what a person means
+ * -- power, a direction, a drive setting -- turned into its motor's command
+ * before every step, holding a hoist to its travel (banjo_make_control,
+ * banjo_operate, banjo_control_count, banjo_controls). banjo_control is a new
+ * struct. No struct or signature that was in 23 changed; banjo_drive_motor on a
+ * motor with a controller tells the controller. */
+#define BANJO_ABI_VERSION 24
 
 /* What a call reported. Anything below zero is a failure and leaves the world
  * unchanged; banjo_last_error() says what happened. */
@@ -940,6 +947,63 @@ BANJO_API int banjo_motor_count(const banjo_world *world);
 /* Fills up to `max` and returns how many were written. The strings stay good
  * until the next call on this world. */
 BANJO_API int banjo_motors(const banjo_world *world, banjo_motor *out, int max);
+
+/* A machine's controller (docs/machine-world.md, "Operating a machine"): what a
+ * person or a program means -- power on or off, a direction, a drive setting --
+ * turned into its motor's command and brake before every step. It governs the
+ * motor's effort, never the motion: every command it sets is on the motor's
+ * line. A hoist's controller also reads its rope on the drum: it slows for the
+ * two ends of its travel and stops at them, and stops lowering when its load
+ * comes to rest on something. A motor driven into something that will not move
+ * for 1.5 s is stopped, and stays stopped until it is told something again. */
+typedef struct {
+    unsigned id;
+    const char *name;             /* the machine's */
+    unsigned motor;               /* what it works (banjo_make_motor) */
+    unsigned rope;                /* a hoist's rope on its drum (banjo_drum); 0 for a shaft */
+    double top_out_m;             /* a hoist's rope out at the top of its travel */
+    double bottom_out_m;          /* and at the bottom */
+    int forward;                  /* the sign of its motor's command that raises, or is forward */
+    int power;                    /* what it was last told: 1 on, 0 off */
+    int direction;                /* -1 lower or reverse, 0 stop, 1 raise or forward */
+    double setting;               /* the share of the battery's voltage it drives at, 0 to 1 */
+    const char *sender;           /* who told it last */
+    unsigned long long seq;       /* and their count */
+    double command;               /* what it has its motor doing */
+    int brake;
+    double speed_rpm;             /* measured: the shaft's turns a minute, the forward way */
+    double out_m;                 /* a hoist's rope out */
+    double rope_speed_m_s;        /* and how fast it comes in: its load rising, while taut */
+    /* What stands in its way, in words a person reads, or "" when nothing does:
+     * "off", "stopped, holding on its brake", "at the top", "slowing for the
+     * bottom", "stalled: it made no progress, so it stopped", ... */
+    const char *condition;
+} banjo_control;
+
+/* A controller for a motor: a hoist's when `rope` is a rope on a drum that the
+ * motor's pin turns -- `top_out_m` and `bottom_out_m` the rope out at the two
+ * ends of its travel, the top the less and the bottom no more than the rope --
+ * and a shaft's when `rope` is 0. Which way raises is worked out from the pin,
+ * the drum and which way the rope winds. It starts off, its motor stopped on
+ * its brake; from then on it works the motor, and banjo_drive_motor on that
+ * motor tells the controller (power on, the command's way and size). Returns
+ * its id, always above zero, or a negative banjo_status. (Named make_control
+ * because banjo_control is the struct.) */
+BANJO_API int banjo_make_control(banjo_world *world, const char *name, unsigned motor, unsigned rope,
+                                 double top_out_m, double bottom_out_m);
+/* What a controller is told, by a sender and that sender's count: `power` 1 or
+ * 0, or -1 to leave it; `direction` -1, 0 or 1, or -2 to leave it; `setting`
+ * from 0 to 1, or a NaN to leave it. A command from a sender no newer, by
+ * `seq`, than one already applied from that sender is stale and changes
+ * nothing, so a start held up on its way cannot undo a later stop; a `seq` of 0
+ * is no count, applied as it comes. Returns 1 applied, 0 stale, or a negative
+ * banjo_status. */
+BANJO_API int banjo_operate(banjo_world *world, unsigned control, const char *sender,
+                            unsigned long long seq, int power, int direction, double setting);
+BANJO_API int banjo_control_count(const banjo_world *world);
+/* Fills up to `max` and returns how many were written. The strings stay good
+ * until the next call on this world. */
+BANJO_API int banjo_controls(const banjo_world *world, banjo_control *out, int max);
 
 /* How hard a named thing is to turn about an axis through its centre of mass,
  * in kg m^2, from the inertia the solver uses: what a motor has to spin up.

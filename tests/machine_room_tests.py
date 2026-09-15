@@ -424,7 +424,11 @@ class AHoistTheChatBuilds(unittest.TestCase):
                          [[{"do": "drive", "part": "drum", "command": 1.0}],
                           [{"do": "drive", "part": "drum", "command": 0.0, "brake": True}],
                           [{"do": "drive", "part": "drum", "command": -0.1}]])
-        self.assertEqual(fracture_lab.validate(spec)["machines"], spec["machines"])
+        # Every motor is worked by a controller, and the room gives one the
+        # tools did not: a hoist's, its travel from 0.3 m of rope out to the
+        # rope's 2 m less 5 cm, told nothing of its own.
+        self.assertEqual(fracture_lab.validate(spec)["machines"], {**spec["machines"], "controls": [
+            {"name": "hoist", "on": ["post", "drum"], "top_out_mm": 300.0, "bottom_out_mm": 1950.0}]})
 
     def test_opened_it_winds_the_crate_up_by_the_drums_radius_times_its_turn(self):
         """Its own actions, pressed: the crate rises by the drum's radius times
@@ -798,6 +802,252 @@ class AMotorCommandLeavesTheHandAlone(unittest.TestCase):
             self.assertEqual(session.state["machines"]["motors"][0]["state"], state, f"{label} did not reach the motor")
             self.assertEqual((session.state.get("hand") or {}).get("holding"), "ball",
                              f"pressing {label!r} let go of the ball in the hand")
+
+
+def two_hoists_and_a_ball() -> dict:
+    """Two hoists on one post -- two drums, each on a pin of its own with a
+    motor of its own and a crate on its rope, and one battery -- and an iron
+    ball to carry: two motors on one frame."""
+    room = hoist_room()
+    room["bodies"] += [
+        {"name": "drum 2", "shape": "box", "material": "oak", "size_mm": [200, 200, 300],
+         "center_mm": [-800, 2000, 0]},
+        {"name": "crate 2", "shape": "box", "material": "iron", "size_mm": [150, 150, 150],
+         "center_mm": [-700, 425, 0]},
+        {"name": "ball", "shape": "sphere", "material": "iron", "size_mm": [100, 100, 100],
+         "center_mm": [1000, 50, 1000]}]
+    room["joints"] += [
+        {"kind": "hinge", "a": "post", "b": "drum 2", "at_mm": [-800, 2000, 0], "axis": [0, 0, 1]},
+        {"kind": "drum", "a": "drum 2", "b": "crate 2", "at_mm": [-800, 2000, 0], "axis": [0, 0, 1],
+         "radius_mm": RADIUS_M * 1000.0, "to_mm": [-700, 500, 0], "winds": 1, "length_mm": 2000}]
+    room["machines"]["motors"].append({"on": ["post", "drum 2"], "store": "battery", "stall_torque_n_m": 60,
+                                       "no_load_rpm": 95.5, "brake_torque_n_m": 200})
+    return room
+
+
+@unittest.skipIf(ENGINE is None or LIBRARY is None, "the live world runner or the C library is not built")
+class AMachineWorkedFromItsPanel(unittest.TestCase):
+    """The owner's review, 2026-09-15: a machine is worked from a panel, through
+    a controller in the engine, by the page's own route (POST
+    /api/world/machine) -- not through a thing's actions, the chat or the hand.
+    Two hoists on one post, each given a controller by the room: raised from its
+    panel, one stops by itself at the top of its travel while the other stays
+    still; a start held up on its way after a stop is dropped; what the hand
+    carries stays in it; the frame the two share names neither motor; and the
+    chat's operate works the same controller."""
+
+    def setUp(self):
+        import tempfile
+        import threading
+        from http.server import ThreadingHTTPServer
+        from unittest import mock
+        import room_store
+        import server
+        import world_room
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        folder = Path(temporary.name)
+        with mock.patch.object(server, "local_configuration",
+                               return_value=("a scripted model's key", "a scripted model")):
+            app = server.Playground(ENGINE, ENGINE, folder / "runs")
+        app.pool.shutdown(wait=False)
+        app.store = room_store.RoomStore(folder / "rooms")
+        self.addCleanup(app.live.shutdown)
+        for patcher in (mock.patch.dict(world_room.SCENES, {"tests-panel": two_hoists_and_a_ball}),
+                        mock.patch.object(server, "remember_chat")):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+        httpd.app = app
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+
+        def stop():
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=5)
+        self.addCleanup(stop)
+        self.app, self.port = app, httpd.server_port
+        status, opened = self.post("/api/world/open", {"scene": "tests-panel", "fresh": True})
+        self.assertEqual(status, 200, opened)
+        self.assertFalse(opened.get("machine_problems"), opened.get("machine_problems"))
+        self.session = self.app.live.session
+        self.step(0.3)
+
+    def post(self, path: str, body: dict) -> tuple[int, dict]:
+        import http.client
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=180)
+        try:
+            connection.request("POST", path, body=json.dumps(body),
+                               headers={"Content-Type": "application/json", "X-Banjo-Token": self.app.csrf_token})
+            response = connection.getresponse()
+            return response.status, json.loads(response.read())
+        finally:
+            connection.close()
+
+    def step(self, seconds: float) -> None:
+        for _ in range(max(1, round(seconds / (8 / 240.0)))):
+            self.session.send(op="step", dt=1 / 240.0, n=8)
+
+    def controls(self) -> dict:
+        return {c["name"]: c for c in self.session.state["machines"]["controls"]}
+
+    def operate(self, name: str, seq: int, **what) -> dict:
+        control = self.controls()[name]
+        status, answer = self.post("/api/world/machine", {"session": self.session.id, "control": control["id"],
+                                                          "sender": "page one", "seq": seq, **what})
+        self.assertEqual(status, 200, answer)
+        return answer
+
+    def crate_y(self, name: str = "crate") -> float:
+        return next(b for b in self.session.state["bodies"] if b["name"] == name)["position_m"][1]
+
+    def test_each_hoist_has_a_controller_that_starts_off_and_braked(self):
+        controls = self.controls()
+        self.assertEqual(sorted(controls), ["hoist", "hoist 2"])
+        hoist = controls["hoist"]
+        self.assertEqual((hoist["kind"], hoist["power"], hoist["condition"], hoist["holds"]),
+                         ("hoist", False, "off", True))
+        self.assertEqual(hoist["parts"], ["post", "drum", "crate"])
+        # Its travel, as the room gave it one: 0.3 m of rope out at the top, and
+        # the rope's 2 m less 5 cm at the bottom.
+        self.assertEqual((hoist["top_out_m"], hoist["bottom_out_m"]), (0.3, 1.95))
+
+    def test_raised_from_its_panel_it_stops_at_the_top_and_the_other_stays(self):
+        other = self.crate_y("crate 2")
+        self.assertEqual(self.operate("hoist", 1, power=True)["operated"], "applied")
+        answer = self.operate("hoist", 2, direction=1)
+        self.assertEqual(answer["operated"], "applied")
+        self.assertEqual((answer["control"]["power"], answer["control"]["direction"]), (True, 1))
+        for _ in range(40):
+            self.step(0.2)
+            if self.controls()["hoist"]["condition"] == "at the top":
+                break
+        hoist = self.controls()["hoist"]
+        print(f"\n   raised from its panel: it says {hoist['condition']!r} with {hoist['out_m']:.4f} m of rope out"
+              f" (its top is 0.3); the other hoist's crate moved {abs(self.crate_y('crate 2') - other):.5f} m",
+              flush=True)
+        self.assertEqual(hoist["condition"], "at the top")
+        self.assertAlmostEqual(hoist["out_m"], 0.3, delta=0.01)
+        self.assertLess(abs(self.crate_y("crate 2") - other), 0.002, "raising one hoist moved the other's crate")
+
+    def test_a_start_held_up_after_a_stop_changes_nothing(self):
+        self.operate("hoist", 1, power=True, direction=1)
+        self.step(0.5)
+        self.assertEqual(self.operate("hoist", 3, direction=0)["operated"], "applied")
+        self.step(0.5)
+        # The start sent before the stop, arriving after it.
+        late = self.operate("hoist", 2, direction=1)
+        self.assertEqual(late["operated"], "stale")
+        self.assertEqual(late["control"]["direction"], 0, "a stale start changed the controller")
+        y = self.crate_y()
+        self.step(1.0)
+        self.assertLess(abs(self.crate_y() - y), 0.002, "after a stale start, the crate moved")
+
+    def test_what_the_hand_carries_stays_in_it(self):
+        self.session.send(op="grab", name="ball")
+        self.step(0.3)
+        self.assertEqual((self.session.state.get("hand") or {}).get("holding"), "ball", "the hand did not take it")
+        for seq, what in enumerate(({"power": True, "direction": 1}, {"direction": 0}, {"direction": -1},
+                                    {"power": False}), start=1):
+            self.operate("hoist", seq, **what)
+            self.step(0.4)
+            self.assertEqual((self.session.state.get("hand") or {}).get("holding"), "ball",
+                             f"working the hoist ({what}) let go of the ball")
+
+    def test_the_frame_two_motors_share_names_neither(self):
+        import server
+        with self.assertRaises(ValueError) as said:
+            server._motor_for(self.app, "post")
+        self.assertIn("2 motors", str(said.exception))
+        self.assertEqual(server._motor_for(self.app, "drum 2")["on"], ["post", "drum 2"])
+        with self.assertRaises(ValueError):
+            server._control_for(self.app, "post")
+        self.assertEqual(server._control_for(self.app, "crate 2")["name"], "hoist 2")
+
+    def test_the_chat_works_the_same_controller(self):
+        import server
+        y = self.crate_y("crate 2")
+        said = server._chat_live(self.app, "operate", {"machine": "hoist 2", "power": True, "direction": 1,
+                                                       "setting": 1.0})
+        self.assertNotIn("error", said, said)
+        self.step(1.0)
+        self.assertGreater(self.crate_y("crate 2") - y, 0.3, "the chat's operate did not raise hoist 2")
+        # Kept as what the world was told, so a later change does not tell it
+        # that again (live_session.remember_operated).
+        declared = {made["name"]: told for made, told, _ in self.session.declared["controls"]}
+        self.assertEqual(declared["hoist 2"], (True, 1, 1.0))
+
+
+@unittest.skipIf(ENGINE is None, "the live world runner is not built")
+class AControllerComesBackAfterARestart(unittest.TestCase):
+    """Saved as the server saves it and opened again: a machine's controller
+    comes back as it was told, and a command older than one it had applied
+    before the restart is still stale after it."""
+
+    def test_it_comes_back_as_it_was_told(self):
+        class App:
+            engine_path = ENGINE
+            runs_path = ROOT / "build/playground-runs"
+            live_inprocess = False
+
+        first = live_session.Live()
+        self.addCleanup(first.shutdown)
+        first.open(App(), {"spec": hoist_room()})
+        control = first.session.state["machines"]["controls"][0]
+        said = first.session.send(op="operate", control=control["id"], sender="page one", seq=4, power=True,
+                                  direction=0, setting=0.6)
+        self.assertEqual(said["operated"], "applied")
+        for _ in range(10):
+            first.session.send(op="step", dt=1 / 240.0, n=8)
+        saved, why = first.snapshot()
+        self.assertIsNotNone(saved, why)
+        again = live_session.Live()
+        self.addCleanup(again.shutdown)
+        opened = again.open(App(), {"spec": hoist_room(), "snapshot": saved})
+        back = opened["machines"]["controls"][0]
+        self.assertEqual((back["name"], back["power"], back["direction"], back["setting"], back["sender"], back["seq"]),
+                         ("hoist", True, 0, 0.6, "page one", 4))
+        late = again.session.send(op="operate", control=back["id"], sender="page one", seq=3, direction=1)
+        self.assertEqual(late["operated"], "stale")
+
+    def test_a_world_saved_before_there_were_controllers_is_given_them(self):
+        """The owner's hoists, after the restart that brings controllers in: a
+        world saved with its motors and no controllers, opened again whole, has
+        the room's controllers put on its motors, and its hoist is worked from
+        them. The whole world's opening adopted what it had and made nothing
+        else, so the hoist came back with no panel."""
+        class App:
+            engine_path = ENGINE
+            runs_path = ROOT / "build/playground-runs"
+            live_inprocess = False
+
+        first = live_session.Live()
+        self.addCleanup(first.shutdown)
+        first.open(App(), {"spec": hoist_room()})
+        for _ in range(10):
+            first.session.send(op="step", dt=1 / 240.0, n=8)
+        saved, why = first.snapshot()
+        self.assertIsNotNone(saved, why)
+        # As a world was saved before there were controllers.
+        old = {k: v for k, v in saved.items() if k not in ("controls", "next_control")}
+        again = live_session.Live()
+        self.addCleanup(again.shutdown)
+        opened = again.open(App(), {"spec": hoist_room(), "snapshot": old})
+        self.assertEqual(opened["restored"]["tier"], "whole", opened["restored"].get("why"))
+        self.assertFalse(opened.get("machine_problems"), opened.get("machine_problems"))
+        for _ in range(3):
+            again.session.send(op="step", dt=1 / 240.0, n=8)
+        controls = again.session.state["machines"]["controls"]
+        self.assertEqual([c["name"] for c in controls], ["hoist"])
+        said = again.session.send(op="operate", control=controls[0]["id"], sender="page one", seq=1, power=True,
+                                  direction=1)
+        self.assertEqual(said["operated"], "applied")
+        crate = lambda: next(b for b in again.session.state["bodies"] if b["name"] == "crate")["position_m"][1]
+        y0 = crate()
+        for _ in range(30):
+            again.session.send(op="step", dt=1 / 240.0, n=8)
+        self.assertGreater(crate() - y0, 0.3, "the controller the old world was given did not raise the crate")
 
 
 class TheTestRoomIsAHoist(unittest.TestCase):

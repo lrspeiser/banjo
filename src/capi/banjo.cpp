@@ -119,6 +119,7 @@ struct banjo_world {
     std::vector<LiveEnergyStore> stores;
     std::vector<LiveMotor> motors;
     std::vector<LiveJoint> drums;
+    std::vector<banjo::fastlattice::LiveControl> controls;
 };
 
 namespace {
@@ -208,6 +209,28 @@ std::string motorRefusal(const LiveWorld &world, unsigned joint, unsigned store)
     for (const LiveMotor &m : world.motors())
         if (m.joint == joint) return pin + " has a motor already: motor " + std::to_string(m.id);
     return pin + " would not take that motor";
+}
+
+// Why a motor would not take a controller, in words, in the order the engine
+// refuses: the motor, a controller already on it, the rope, and the rope's
+// drum on the motor's pin.
+std::string controlRefusal(const LiveWorld &world, unsigned motor, unsigned rope) {
+    const std::vector<LiveMotor> motors = world.motors();
+    const auto m = std::find_if(motors.begin(), motors.end(), [&](const LiveMotor &x) { return x.id == motor; });
+    if (m == motors.end()) return "there is no motor " + std::to_string(motor) + " to control";
+    for (const banjo::fastlattice::LiveControl &c : world.controls())
+        if (c.motor == motor)
+            return "motor " + std::to_string(motor) + " has a controller already: operate " + std::to_string(c.id);
+    if (rope == 0) return "motor " + std::to_string(motor) + " would not take that controller";
+    const std::vector<LiveJoint> joints = world.joints();
+    const auto r = std::find_if(joints.begin(), joints.end(), [&](const LiveJoint &j) { return j.id == rope; });
+    if (r == joints.end() || r->kind != "drum")
+        return "joint " + std::to_string(rope) + " is not a rope on a drum (banjo_drum)";
+    const auto p = std::find_if(joints.begin(), joints.end(), [&](const LiveJoint &j) { return j.id == m->joint; });
+    if (p == joints.end() || (r->a != p->a && r->a != p->b))
+        return "the rope's drum, " + r->a + ", is not on motor " + std::to_string(motor) + "'s pin";
+    return "the bottom of its travel is more rope than the rope has, or the drum's axle does not run along the "
+           "motor's pin";
 }
 
 } // namespace
@@ -987,6 +1010,97 @@ int banjo_motors(const banjo_world *world, banjo_motor *out, int max) {
             o.heat_j = m.heat_j;
             o.drawn_j = m.drawn_j;
             o.friction_heat_j = m.friction_heat_j;
+        }
+        return count;
+    });
+}
+
+int banjo_make_control(banjo_world *world, const char *name, unsigned motor, unsigned rope, double top_out_m,
+                       double bottom_out_m) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    if (rope != 0 && !(std::isfinite(top_out_m) && std::isfinite(bottom_out_m) && top_out_m >= 0.0 &&
+                       bottom_out_m > top_out_m)) {
+        setError("a hoist's travel runs from the rope out at the top to the rope out at the bottom, in metres: the "
+                 "top zero or more, and the bottom more than the top");
+        return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        const unsigned control =
+            world->world->control(name ? name : "", motor, rope, top_out_m, bottom_out_m);
+        if (control == 0) {
+            setError(controlRefusal(*world->world, motor, rope));
+            return static_cast<int>(BANJO_BAD_ARGUMENT);
+        }
+        return static_cast<int>(control);
+    });
+}
+
+int banjo_operate(banjo_world *world, unsigned control, const char *sender, unsigned long long seq, int power,
+                  int direction, double setting) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    if (power < -1 || power > 1) {
+        setError("power is 1 (on), 0 (off), or -1 to leave it as it is");
+        return BANJO_BAD_ARGUMENT;
+    }
+    if (direction < -2 || direction > 1) {
+        setError("a direction is -1 (lower, reverse), 0 (stop) or 1 (raise, forward), or -2 to leave it");
+        return BANJO_BAD_ARGUMENT;
+    }
+    if (!std::isnan(setting) && !(setting >= 0.0 && setting <= 1.0)) {
+        setError("a drive setting is from 0 to 1, the share of the battery's voltage, or a NaN to leave it");
+        return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        LiveWorld::ControlCommand told;
+        told.sender = sender ? sender : "";
+        told.seq = seq;
+        if (power >= 0) told.power = power == 1;
+        if (direction >= -1) told.direction = direction;
+        if (!std::isnan(setting)) told.setting = setting;
+        const std::string answer = world->world->operate(control, told);
+        if (answer == "applied") return 1;
+        if (answer == "stale") return 0;
+        setError(answer);
+        return static_cast<int>(BANJO_BAD_ARGUMENT);
+    });
+}
+
+int banjo_control_count(const banjo_world *world) {
+    if (!world) { setError("no world"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        auto *mutable_world = const_cast<banjo_world *>(world);
+        mutable_world->controls = world->world->controls();
+        return static_cast<int>(mutable_world->controls.size());
+    });
+}
+
+int banjo_controls(const banjo_world *world, banjo_control *out, int max) {
+    if (!world || (!out && max > 0) || max < 0) { setError("no world or nowhere to write"); return BANJO_BAD_ARGUMENT; }
+    return guarded([&] {
+        auto *mutable_world = const_cast<banjo_world *>(world);
+        mutable_world->controls = world->world->controls();
+        const int count = std::min<int>(max, static_cast<int>(mutable_world->controls.size()));
+        for (int i = 0; i < count; ++i) {
+            const banjo::fastlattice::LiveControl &c = mutable_world->controls[static_cast<std::size_t>(i)];
+            banjo_control &o = out[i];
+            o.id = c.id;
+            o.name = c.name.c_str();
+            o.motor = c.motor;
+            o.rope = c.rope;
+            o.top_out_m = c.top_out_m;
+            o.bottom_out_m = c.bottom_out_m;
+            o.forward = c.forward;
+            o.power = c.power ? 1 : 0;
+            o.direction = c.direction;
+            o.setting = c.setting;
+            o.sender = c.sender.c_str();
+            o.seq = static_cast<unsigned long long>(c.seq);
+            o.command = c.command;
+            o.brake = c.brake ? 1 : 0;
+            o.speed_rpm = c.speed_rpm;
+            o.out_m = c.out_m;
+            o.rope_speed_m_s = c.rope_speed_m_s;
+            o.condition = c.condition.c_str();
         }
         return count;
     });

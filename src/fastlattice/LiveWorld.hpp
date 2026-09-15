@@ -4,7 +4,9 @@
 #include "terrain/Environment.hpp"
 #include "thermo/ThermoWorld.hpp"
 
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -437,6 +439,63 @@ struct LiveMotor {
     double work_j{}, heat_j{}, drawn_j{}, friction_heat_j{};
 };
 
+// A machine's controller (docs/machine-world.md, "Operating a machine"): what a
+// person or a program means -- power on or off, a direction, a drive setting --
+// turned into its motor's command and brake before every step. It governs the
+// motor's effort and never the motion: every command it sets is on the motor's
+// line, and how far the shaft turns is the world's answer. A hoist's
+// controller also reads its rope on the drum: it slows for the two ends of its
+// travel and stops at them, and stops when its load comes to rest on something.
+struct LiveControl {
+    unsigned id{};
+    std::string name;             // the machine's, as the host calls it
+    unsigned motor{};             // what it works (LiveWorld::motor)
+    // A hoist's rope on its drum (LiveWorld::drum), and the rope out at the
+    // top and at the bottom of its travel, metres; a shaft has no rope (0) and
+    // no travel.
+    unsigned rope{};
+    double top_out_m{}, bottom_out_m{};
+    // The sign of the motor's command that is forward: for a hoist the one
+    // that winds its rope on, raising the load, worked out from the pin, the
+    // drum and which way the rope winds.
+    int forward{1};
+    // What it was last told. `power` is whether it may drive at all; the
+    // direction is -1 (lower, reverse), 0 (stop) or 1 (raise, forward); the
+    // setting is the share of the battery's voltage it drives at -- an effort,
+    // not a speed. Lowering a hoist it comes on from the share that holds the
+    // load still, at no more than 2 of the voltage a second, so a motor that
+    // would drive the drum down faster than the load can fall never lets the
+    // rope go slack.
+    bool power{};
+    int direction{};
+    double setting{1.0};
+    // Who told it last, and their count. A command from a sender that is no
+    // newer than one already applied from that sender is dropped as stale, so
+    // a "raise" held up on its way cannot start a machine that a later "stop"
+    // stopped.
+    std::string sender;
+    std::uint64_t seq{};
+    // What it has its motor doing now.
+    double command{};
+    bool brake{};
+    // Measured, as the last kept step left it: the shaft's turns a minute the
+    // forward way, and for a hoist the rope out and how fast the rope comes in
+    // -- its load's speed, rising, while the rope is taut.
+    double speed_rpm{};
+    double out_m{};
+    double rope_speed_m_s{};
+    // What stands in its way, in words a person reads, or "" when nothing does
+    // and it does what it was told: "off"; "stopped, holding on its brake";
+    // "stopped: it coasts, with no brake to hold it"; "slowing for the top",
+    // "at the top", "slowing for the bottom", "at the bottom"; "the load is
+    // down: its rope is slack"; "stopping before it turns the other way";
+    // "stalled: it made no progress, so it stopped"; "too weak at this
+    // setting: the load turned it back, so it stopped"; "held back by its
+    // battery's power"; "its battery is flat"; "the hand is on it"; "its
+    // motor is gone".
+    std::string condition;
+};
+
 // What heat, composition and burning have done to what one body can carry.
 // See docs/thermal-mechanics.md and thermo/ThermalMechanics.hpp.
 struct LiveMaterialState {
@@ -831,7 +890,7 @@ struct LiveRestore {
         std::size_t placed{};     // whole things whose cells could not be found again, put back where left
         std::size_t fresh{};      // bodies as the scene has them: new, changed, or not carried
         std::size_t gone{};       // saved bodies of things the scene no longer has
-        std::size_t joints{}, energy_stores{}, motors{}, blades{}, tool_points{};
+        std::size_t joints{}, energy_stores{}, motors{}, controls{}, blades{}, tool_points{};
         std::size_t heat{};       // bodies whose heat came back
         bool hand{};              // the hand holds what it held
     };
@@ -856,7 +915,7 @@ struct LiveRestore {
 // has for it (LiveWorld::snapshot). One it does not name comes back no more: the
 // host declares what it has now in its place.
 struct LiveCarry {
-    std::set<unsigned> joints, energy_stores, motors, blades, tool_points;
+    std::set<unsigned> joints, energy_stores, motors, controls, blades, tool_points;
     // Things the host is about to declare something new on -- a pin, an edge, a
     // point -- written against where the scene authors them. Each comes back as
     // the scene has it, because a declaration made against where a thing was
@@ -1241,9 +1300,36 @@ public:
     // What a motor is told: a command from -1 to 1, and whether its brake is
     // on. The brake is friction on the pin, so it holds only while the motor
     // is not driving -- a command of zero. False if there is no such motor.
+    // A motor with a controller is worked by it: this tells the controller
+    // instead -- power on, the command's way as its direction (0 to stop) and
+    // its size as the setting -- so the controller's limits still hold.
     bool driveMotor(unsigned motor, double command, bool brake = false);
     [[nodiscard]] std::vector<LiveEnergyStore> energyStores() const;
     [[nodiscard]] std::vector<LiveMotor> motors() const;
+    // A controller for a motor (LiveControl): a hoist's when `rope` is a rope
+    // on a drum that the motor's pin turns -- `top_out_m` and `bottom_out_m`
+    // the rope out at the two ends of its travel, the top the less -- and a
+    // shaft's when `rope` is 0. Returns its id, above zero, or 0 when the motor
+    // or the rope is not there, the rope's drum is not on the motor's pin, the
+    // motor has a controller already, or the travel is not a hoist's. It starts
+    // off, its motor stopped on its brake.
+    unsigned control(const std::string &name, unsigned motor, unsigned rope = 0, double top_out_m = 0.0,
+                     double bottom_out_m = 0.0);
+    // What a controller is told, by a sender and that sender's count. What is
+    // left out stays as it was: states are said outright, never toggled.
+    struct ControlCommand {
+        std::string sender;
+        std::uint64_t seq{};
+        std::optional<bool> power;
+        std::optional<int> direction;     // -1, 0 or 1
+        std::optional<double> setting;    // 0 to 1
+    };
+    // "applied", or "stale" when that sender has had a command as new or newer
+    // applied already, and nothing changes. Anything else is why it is not a
+    // command: no such controller, a direction other than -1, 0 or 1, a
+    // setting outside 0 to 1.
+    std::string operate(unsigned control, const ControlCommand &command);
+    [[nodiscard]] std::vector<LiveControl> controls() const;
     // How hard a named thing is to turn about an axis through its centre of
     // mass, kg m^2, from the inertia the solver uses. Zero if it is not there.
     [[nodiscard]] double inertiaAbout(const std::string &name, const Vec3 &axis_world) const;

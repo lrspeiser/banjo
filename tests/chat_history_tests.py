@@ -350,6 +350,43 @@ class WorkingTheRoomAsItStands(unittest.TestCase):
         motor = room.spec["machines"]["motors"][0]
         self.assertEqual((motor["command"], motor["brake"]), (0.5, False))
 
+    @unittest.skipUnless(LIBRARY and Path(LIBRARY).is_file(), "the library is not built")
+    def test_a_machine_worked_from_its_controller_goes_to_the_running_room(self):
+        """Asked to raise the hoist, the chat works its controller (operate), as
+        the person's panel does: what its copy made of the words -- power on,
+        raise, at the setting it had -- goes to the running room through `live`,
+        is written into the room, and opens nothing."""
+        rounds = iter([
+            [{"type": "function_call", "call_id": "c1", "name": "operate",
+              "arguments": json.dumps({"machine": "hoist", "direction": "raise"})}],
+            [{"type": "message", "content": [{"type": "output_text", "text": "Raising it."}]}]])
+
+        def model(api_key, model_name, conversation):
+            return {"status": "completed", "usage": {}, "output": next(rounds)}
+
+        worked: list = []
+
+        def live(name, args):
+            worked.append((name, dict(args)))
+            return {"in_the_room": "told"}
+
+        room = world_room.Room("tests-machines")
+        real, world_chat._call = world_chat._call, model
+        try:
+            answer = world_chat.ask("key", "a model", room, {"bodies": []}, "raise the hoist", [], live=live)
+        finally:
+            world_chat._call = real
+        self.assertEqual([name for name, _ in worked], ["operate"])
+        told = worked[0][1]
+        self.assertEqual((told["machine"], told["power"], told["direction"], told["setting"]),
+                         ("hoist", True, 1, 1.0))
+        self.assertFalse(answer["changed"], "working the hoist would open the room again")
+        self.assertTrue(answer["worked"])
+        self.assertIn("worked hoist", " ".join(answer["did"]))
+        # Written into the room, as a motor's command is.
+        control = room.spec["machines"]["controls"][0]
+        self.assertEqual((control["name"], control["power"], control["direction"]), ("hoist", True, 1))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

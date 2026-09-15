@@ -322,6 +322,84 @@ Release checks drive the page with real input: start, stop and reverse while
 holding an unrelated thing; two motors on one frame; both hoist limits; a
 blocked load; a reload; a start arriving late after a stop.
 
+**What is built: increments 1 and 2 (agent/machine-control, 2026-09-15).**
+
+- **The controller** is in the engine (`LiveControl`, `LiveWorld::control` and
+  `LiveWorld::operate`). It runs before every step, on the motor's own line.
+  - It is told power, a direction (-1, 0 or 1) and a drive setting, each said
+    outright.
+  - A hoist's travel is its rope out. Which way raises is worked out from the
+    pin, the drum and which way the rope winds.
+  - A hoist slows for each end of its travel and stops at it. Its command near
+    an end comes from the motor's line and the load's weight.
+  - Reversing, it stops first.
+  - Lowering comes on from the share that holds the load still, so the rope
+    never goes slack. It stops when the load comes to rest on something.
+  - Raising a slack rope, it takes the slack up gently.
+  - A stretch of driving that gets nowhere stops it, saying why.
+  - Commands are ordered by sender and count: one no newer than the last
+    applied from its sender is stale and changes nothing.
+  - It is saved with the world and carried through a change, as a motor is.
+  - `drive` on a motor with a controller tells the controller.
+- **The runner** takes `control` and `operate`, and every step's `machines`
+  carries `controls`, each with the things its machine is made of (`parts`).
+  The C API is ABI 24 (`banjo_make_control`, `banjo_operate`,
+  `banjo_control_count`, `banjo_controls`), and the MCP has `control` and
+  `operate`, which the room's chat works the running room with.
+- **A room's `machines`** gain `controls`, and every motor has one. A controller
+  the room does not declare is given to it, told nothing of its own: it passes
+  on what its motor was told. `build_recipe "hoist"` gives its hoist one.
+- **The page's panel.** E on any part of a machine opens it, and it stays until
+  it is closed.
+  - Its buttons go to the controller by `POST /api/world/machine`, with the
+    page's own sender and count. The answer is the acknowledgement.
+  - It reads out Enabled, Commanded, Measured and Condition.
+  - The turning part carries a painted stripe that turns with it, and an arrow
+    round its shaft shows the way the motor drives it.
+  - The Machines list and the ropes are updated in place rather than rebuilt
+    every step.
+- **Identity:** the page's action runner no longer takes the first motor on a
+  thing. On the frame two motors share, it names both.
+- **Found on the way.** A motor that started to drive did not wake what hung on
+  its drum. A crate asleep under a braked drum missed the first step, the drum
+  wound its rope in under it, and the crate snatched the rope. A motor starting
+  to drive now wakes its pin's two bodies and what hangs from either.
+
+**Measured.** In the engine (`tests/machine_control_tests.cpp`, at 1/60 s). The
+hoist is motor_tests' own: a 26.6 kg crate on a 0.1 m drum, and a motor that
+stalls at 60 N m, runs at 10 rad/s unloaded and brakes with 200 N m.
+
+| check | result |
+|---|---|
+| raised at full, its top at 0.4 m of rope out | at the top in 3.03 s, with 0.4007 m out. It came in at 0.565 m/s, and at 0.111 m/s at most within 5 cm of the top |
+| lowered at full, its bottom at 1.6 m | at the bottom in 2.35 s, with 1.5994 m out. It went out at up to 1.433 m/s where the motor's line says 1.434, and at 0.110 m/s within 5 cm |
+| the rope, lowering | it carried at least 206.7 N of the crate's 260.6 N. Before the soft start it went slack, and the crate snatched it at 2.24 m/s |
+| told to lower while raising | it stopped first for 0.017 s, and was coming down 0.07 s after it was told |
+| a start (count 5) arriving after a stop (count 6) | stale, and nothing moved |
+| raised into a fixed beam | "stalled: it made no progress, so it stopped" after 3.03 s, and it drew nothing after |
+| raised at 0.3 of its voltage | "too weak at this setting: the load turned it back, so it stopped" after 1.52 s |
+| lowered onto a slab | "the load is down: its rope is slack" after 0.70 s, with 1.705 m out; the crate met the slab at 1.65 |
+| a flywheel forward at half its voltage, then reversed | 39.8 rpm, against 47.7 unloaded at half. It stopped first for 0.52 s, then turned at -27.4 rpm |
+| saved and opened again | on, stopped, setting 0.9, last told by the page's count 4; a start older than that count is still stale |
+
+In the page, with real input:
+
+- **`tests/world_page_journey_tests.py`, which CI runs.** Power On and Raise,
+  clicked, raised the crate 0.874 m in 1.5 s, by exactly the 0.874 m of rope
+  wound on. It stopped by itself at 0.300 m out, and the panel said "at the
+  top". A press the browser cancelled did nothing.
+- **In the valley, on a room the room's chat built (`headless_panel.py`):**
+  - the top was 0.300 m of rope out against 0.300, and the bottom 1.750 m
+    against 1.750, and the panel said so each time;
+  - a Raise held back behind a later Stop was dropped, and the panel said the
+    machine did not take it;
+  - after a reload mid-raise it went on raising;
+  - raised into a block the chat fixed over the crate, it stopped and said it
+    had stalled;
+  - a second drum and motor the chat put on the same post raised its own crate
+    1.142 m, while the first stayed still;
+  - it ran at 99.5% of realtime.
+
 ## The room's spelling
 
 A room's spec gains three things, which `playground/live_session.py` opens.

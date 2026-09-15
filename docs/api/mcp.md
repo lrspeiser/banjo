@@ -79,6 +79,7 @@ broke.
 | `fix` / `spring` | a latch or bracket that holds two things as one piece; an elastic element that pushes and pulls. `fix`, `spring` and `tie` take `member`: what the joint is MADE of, so heat changes what it can take ([Heat and strength](#heat-and-strength)) |
 | `drum` | a rope that **winds onto a drum**: from a drum on a pin of its own to a load, off the drum's rim at its tangent, so what is off the drum changes by the radius times the turn, for as many turns as there is rope. In metres like every joint: the drum's centre and axle, `radius_m`, where the rope is made off on the load, `length_m` and `out_m` (0: as it hangs); `winds`, when left out, is worked out from the side the load hangs on. Refused for a load over the drum itself, less rope out than the span it has to run, and a rope shorter than what is off the drum; warned for a drum on no pin and a rope that does not hang straight down ([Machines](#machines)) |
 | `store` / `motor` / `drive` | a **battery** in a named thing, in joules, volts and watts; a DC **motor** on a pin named by the two things it joins, wired to a battery by name, given by its stall torque, its unloaded speed in turns a minute and its brake; and what a motor is **told** from now on, found by the thing it turns: a command from -1 to 1, and its brake. `run` and `describe_world` say what each battery gave and each motor did ([Machines](#machines)) |
+| `control` / `operate` | a **controller** for a motor, named by the two things its pin joins -- a hoist's when the drum it turns has a rope on it, its travel the rope out at the top and at the bottom -- and **working** it as the person's panel does: `direction` raise, lower or stop (forward or reverse for a shaft), `power`, and a drive `setting`, the machine found by its name or any part of it. It slows for each end of a hoist's travel and stops at it, stops a motor that gets nowhere, and says what stands in its way ([A machine's controller](#a-machines-controller)) |
 | `use_action` | press one of a thing's **actions** (`offer_actions`), by its label or its number from 1: what the person's E does. In the playground's room the room runs it **as it stands** -- a hoist wound up from where its crate hangs -- and nothing is opened again, so nothing goes back to where it was made; `drive` there tells the running room's motor too. In the MCP's own world a drive step tells the motor, and an action with a step the person's hand takes is refused ([Machines](#machines)) |
 | `interaction` | say how a person **uses** a thing you built — draw-and-release, a bow; or swing-and-lever, a tool with a `tool_point` swung into the ground and levered, tried by being swung into the nearest level soil, levered out, and swung onto the nearest bare rock — so the playground gives them its controls. Held to what is built (a part that is not there, a nock that holds both ways or lets go backwards, a limb that is not an elastic are refused), never a speed, kept through every rebuild and withdrawn with the reason when what it names is taken away; and **tried** in a scratch world with a person's 800 N hand, returning what was drawn, what the limbs held and what the projectile left with, and `sound` false with why when the engine did not follow the shot. [Things a person uses](#things-a-person-uses) |
 | `duplicate` | make **another** of something already built, somewhere else, exactly: the bodies named, every joint between them with its points moved with it, their edges and how a person uses them. What should differ is said as `changes`, by kind of joint (`{"spring": {"stiffness_n_m": 8000}}`); the offset is rounded to whole cells; where the world refuses overlaps (the playground's room does) a copy that would overlap is refused and nothing is left half made; a copied bow is tried. [Things a person uses](#things-a-person-uses) |
@@ -526,6 +527,58 @@ The same hoist built with the four tools in the MCP's own world, through the
 binding (`tests/banjo_mcp_tests.py`), and through `room_world` into a room that
 the live runner opened (`tests/machine_room_tests.py`), rose by its radius times
 its turn to within a hundredth, with the battery giving what the motor drew.
+
+## A machine's controller
+
+The owner's review of 2026-09-15: a powered machine is worked from a panel, like
+an appliance, not by grabbing its drum or pressing E through a list of actions
+([machine-world.md](../machine-world.md), "Operating a machine"). `control`
+gives a motor a controller, and `operate` works it as the playground's panel
+does. Each is the engine's own call (`banjo_make_control` and `banjo_operate`,
+[c-api.md](c-api.md#a-machines-controller)), and the controller runs in the
+engine, before every step.
+
+- `control`:
+  - the motor, by the two things its pin joins (`on`);
+  - a `name`: `hoist` for a hoist, and the thing its motor turns otherwise,
+    numbered when the name is taken;
+  - a hoist's travel: `top_out_m`, 0.3 m of rope out when left out, and
+    `bottom_out_m`, the rope's length less 5 cm when left out.
+
+  It starts off, holding on its brake. Refused: no motor on that pin, and a
+  motor with a controller already.
+- `operate`:
+  - the machine, by its name or by any part of it (a part of two machines is
+    refused, naming both);
+  - `direction`: raise, lower or stop, or forward or reverse;
+  - `power`;
+  - a drive `setting` from 0 to 1, the share of its battery's voltage.
+
+  A direction that moves it turns the power on, unless `power` false is said.
+  The answer says what it does and what stands in its way. `run` and
+  `describe_world` carry each controller under `machines.controls`: what it was
+  told, its shaft's turns a minute, a hoist's rope, and its `condition`.
+
+What a controller does:
+
+- a hoist's slows for each end of its travel, stops at it and holds on its
+  brake;
+- lowering comes on gently, so the rope never goes slack;
+- it stops when the load comes to rest on something;
+- told the other way, it stops first;
+- driven into something that will not move, it stops within 3 s and says it
+  stalled.
+
+`build_recipe "hoist"` gives its hoist a controller named `hoist`. Its travel
+runs from 0.3 m of rope out to 1.75 m. The drum's three actions stay beside it,
+and now go through it, so they stop at the ends too.
+
+In the playground's room, every motor has a controller. One the room's spec
+does not give is given one, which passes on what its motor was told: a hoist a
+room left winding winds on. `operate` is one of the calls that work the room as
+it stands (`room_world.LIVE`): the running room's machine is told, and the room
+is not opened again. The page's panel goes to the same controller by a route
+of its own, `POST /api/world/machine`, with the page's own sender and count.
 
 ## What a session looks like
 

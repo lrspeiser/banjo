@@ -83,17 +83,18 @@ AUTHORING = {"add_object", "remove_object", "move_object", "turn_object", "clear
              # out of the ground stays out of it, like a dig.
              "tool_point", "strike",
              # A machine is part of what the room IS (docs/machine-world.md): a
-             # rope on a drum is a joint, and a battery and a motor are its
-             # `machines`.
-             "drum", "store", "motor"}
+             # rope on a drum is a joint, and a battery, a motor and the
+             # controller it is worked by are its `machines`.
+             "drum", "store", "motor", "control"}
 
 # The calls that work what is in the room as it stands, the way the person's E
-# does: the chat pressing one of a thing's actions, or telling its motor what to
-# do. They act on the running room, which is not opened again, so nothing in it
-# goes back to where it was made -- the owner, 2026-09-15: "nothing should be
-# resetting rooms". What a motor is told is still written into the room, so it
+# and their panel do: the chat pressing one of a thing's actions, telling a
+# motor what to do, or working a machine from its controller. They act on the
+# running room, which is not opened again, so nothing in it goes back to where
+# it was made -- the owner, 2026-09-15: "nothing should be resetting rooms".
+# What a motor or a controller is told is still written into the room, so it
 # goes on doing it if the room is opened again.
-LIVE = {"use_action", "drive"}
+LIVE = {"use_action", "drive", "operate"}
 
 # How many objects a room may be built up to. See check() in open_room.
 MAX_OBJECTS = 120
@@ -352,7 +353,25 @@ def machines_spec(machines: dict[str, Any], names: set[str],
     hinges = {(j["a"], j["b"]) for j in joints if j.get("kind") == "hinge"}
     motors = [dict(m, on=list(m["on"])) for m in machines.get("motors") or []
               if tuple(m["on"]) in hinges and m["store"] in kept]
-    return {"stores": stores, "motors": motors} if stores or motors else {}
+    # Each machine's controller on a motor still there, its travel in the
+    # room's millimetres.
+    working = {tuple(m["on"]) for m in motors}
+    controls = []
+    for c in machines.get("controls") or []:
+        if tuple(c["on"]) not in working:
+            continue
+        made: dict[str, Any] = {"name": c["name"], "on": list(c["on"])}
+        # What it was told, once it has been told something: one told nothing
+        # passes on what its motor was told.
+        if "power" in c:
+            made.update(power=bool(c["power"]), direction=int(c["direction"]), setting=float(c["setting"]))
+        if c.get("top_out_m") is not None:
+            made["top_out_mm"] = round(float(c["top_out_m"]) * 1000.0, 3)
+            made["bottom_out_mm"] = round(float(c["bottom_out_m"]) * 1000.0, 3)
+        controls.append(made)
+    if not stores and not motors:
+        return {}
+    return {"stores": stores, "motors": motors, **({"controls": controls} if controls else {})}
 
 
 def _authored_turn(body: dict[str, Any]) -> list[list[float]]:
@@ -448,6 +467,26 @@ def open_room(spec: dict[str, Any], water_state: dict[str, Any] | None = None) -
             made = banjo_mcp._machines(entry)["motors"][-1]
             if (made["command"], made["brake"]) != (motor["command"], motor["brake"]):
                 banjo_mcp._set_drive(entry, made, motor["command"], motor["brake"])
+        # And the controller each machine is worked by, through the MCP's own
+        # call, each told what the room last told it.
+        for control in machines.get("controls") or []:
+            banjo_mcp.HANDLERS["control"]({
+                "world_id": world_id, "name": control["name"], "on": list(control["on"]),
+                **({"top_out_m": control["top_out_mm"] / 1000.0,
+                    "bottom_out_m": control["bottom_out_mm"] / 1000.0} if "top_out_mm" in control else {})})
+            made = banjo_mcp._machines(entry)["controls"][-1]
+            if "power" in control:
+                told = (control["power"], control["direction"], control["setting"])
+                if told != (made["power"], made["direction"], made["setting"]):
+                    banjo_mcp._set_told(entry, made, *told)
+                # Told, even told off: the room said so, and says so again.
+                made["told"] = True
+            else:
+                # Told nothing itself, it passes on what its motor was told.
+                motor = next((m for m in banjo_mcp._machines(entry)["motors"] if m["on"] == made["on"]), None)
+                if motor is not None and motor["command"]:
+                    banjo_mcp._set_drive(entry, motor, motor["command"], motor["brake"])
+                    banjo_mcp._sync_control(entry, made)
         # And its edges, through the MCP's own call, so they are kept as a
         # model's would be.
         for edge in validated.get("blades", []):

@@ -905,8 +905,9 @@ struct LiveWorld::Impl {
         LiveMotor said;
         // The pin's reading as this step began, for the turn it makes.
         double at_before{};
-        // What this step's prepareMotors set: a drive, or friction to coast on.
-        bool drove{}, coasted_on_friction{};
+        // What this step's prepareMotors set: a drive, or friction to coast on;
+        // and whether its store's power held the drive under the line.
+        bool drove{}, coasted_on_friction{}, limited{};
         // The friction last put on the pin, so that a brake let off (or put
         // on) wakes what it held: a body still for half a second is asleep,
         // and a sleeping body does not notice that its pin has let go.
@@ -914,6 +915,47 @@ struct LiveWorld::Impl {
     };
     std::vector<Motor> motors;
     unsigned next_energy_store{1}, next_motor{1};
+    // A machine's controller (LiveControl), and what it keeps between steps.
+    struct Control {
+        LiveControl said;
+        // The last count applied from each of the most recent senders.
+        std::vector<std::pair<std::string, std::uint64_t>> seen;
+        // Stopped for want of progress, until it is told something again.
+        bool tripped{};
+        // A stretch of driving one way: its shaft's count when the stretch
+        // began, and how long it has gone on. Progress is judged over kStallS.
+        double turned_from{};
+        double driving_s{};
+        // How long it has been stopping before it turns the other way.
+        double reversing_s{};
+        // How long a hoist's rope has been slack with its load at rest.
+        double slack_s{};
+        // A hoist's rope out as the last kept step began: its rope's speed.
+        double out_before{-1.0};
+        // Whether it is driving a stretch now, and whether this step it is
+        // stopping before it turns the other way (decide), for settleControls.
+        bool stretch{}, reversing_now{};
+        // Told a direction: until it is going that way, it first stops what
+        // it was doing the other way. Only then -- a load that turns it back
+        // once it is going is judged by its progress, not stopped for again.
+        bool reversing{};
+        // Lowering a hoist, the command it has come on to so far, the forward
+        // way: from the share that holds the load still, ramped down to the
+        // setting by settleControls.
+        double ramp_u{};
+    };
+    std::vector<Control> controls;
+    unsigned next_control{1};
+    [[nodiscard]] Motor *motorById(unsigned id) {
+        for (Motor &m : motors)
+            if (m.said.id == id) return &m;
+        return nullptr;
+    }
+    [[nodiscard]] Control *controlOfMotor(unsigned motor) {
+        for (Control &c : controls)
+            if (c.said.motor == motor) return &c;
+        return nullptr;
+    }
     [[nodiscard]] SceneJoint *motorPin(unsigned id) {
         for (SceneJoint &joint : joints)
             if (joint.id == id) return &joint;
@@ -945,6 +987,16 @@ struct LiveWorld::Impl {
             if (found != index_of.end() && inWorld(found->second)) world->wake(body_of[found->second]);
         }
     }
+    // Wakes a pin's two bodies and whatever hangs from either on a rope wound
+    // on a drum: what a motor on the pin moves.
+    void wakeMachine(const SceneJoint &pin) {
+        wakePin(pin);
+        for (const SceneJoint &rope : joints) {
+            if (rope.kind != JoltWorld::JointKind::Drum || (rope.a != pin.a && rope.a != pin.b)) continue;
+            const auto found = index_of.find(rope.b);
+            if (found != index_of.end() && inWorld(found->second)) world->wake(body_of[found->second]);
+        }
+    }
     // Before the step's reversible trial: each motor's drive for this step,
     // from its line at the speed its pin has now, held to what its store can
     // give. A constraint's settings are not state the trial winds back, so they
@@ -953,7 +1005,10 @@ struct LiveWorld::Impl {
     void prepareMotors(double dt_s) {
         for (Motor &m : motors) {
             LiveMotor &s = m.said;
-            m.drove = m.coasted_on_friction = false;
+            // Whether it drove in the step before: one starting to drive wakes
+            // what it moves (below).
+            const bool drove_before = m.drove;
+            m.drove = m.coasted_on_friction = m.limited = false;
             SceneJoint *pin = motorPin(s.joint);
             if (pin == nullptr || pin->rigid == 0 || !world->hasJoint(pin->rigid)) {
                 s.state = "gone";
@@ -1003,9 +1058,16 @@ struct LiveWorld::Impl {
             const double along = (lean >= 0.0 ? 1.0 : -1.0) * omega;
             const double most_torque =
                 (-along + std::sqrt(along * along + 4.0 * windings * most_w)) / (2.0 * windings);
+            m.limited = most_torque < limit;
             limit = std::min(limit, most_torque);
             world->setJointFriction(pin->rigid, pin->friction);
             m.friction_set = pin->friction;
+            // Starting to drive, it wakes its pin's two bodies and what hangs
+            // from either on a drum's rope. A crate asleep under a braked drum
+            // was not in the step that turned the drum: the drum wound 7.7 mm of
+            // rope in under it, slack, and the crate snatched the rope when it
+            // woke (machine_control_tests, lowering from the top).
+            if (!drove_before) wakeMachine(*pin);
             world->driveHinge(pin->rigid, u * s.no_load_rad_s, limit);
             m.drove = limit > 0.0;
             s.state = "driving";
@@ -1057,6 +1119,255 @@ struct LiveWorld::Impl {
             }
         }
     }
+
+    // ---- a machine's controller (LiveControl) -------------------------------
+    // A hoist's rope as its controller reads it: whether it is there, how much
+    // is out, what it carries, the radius it winds at, and its load and how
+    // fast that is moving.
+    struct HoistRope {
+        bool there{};
+        double out_m{}, tension_n{}, radius_m{}, load_speed_m_s{}, load_mass_kg{};
+        std::string load;
+    };
+    [[nodiscard]] HoistRope hoistRope(unsigned id) const {
+        HoistRope r;
+        for (const SceneJoint &joint : joints) {
+            if (joint.id != id || joint.kind != JoltWorld::JointKind::Drum) continue;
+            if (joint.rigid == 0 || !world->hasJoint(joint.rigid)) break;
+            const JoltWorld::DrumReport now = world->drumState(joint.rigid);
+            r.there = true;
+            r.out_m = now.out_m;
+            r.tension_n = now.tension_n;
+            r.radius_m = joint.radius_m;
+            r.load = joint.b;
+            const auto found = index_of.find(joint.b);
+            if (found != index_of.end() && inWorld(found->second)) {
+                r.load_speed_m_s = length(world->snapshot(body_of[found->second]).linear_velocity_m_s);
+                // What it weighs, as the solver has it (as poses() says it).
+                r.load_mass_kg = world->mechanicalState(body_of[found->second]).mass_kg;
+            }
+            break;
+        }
+        return r;
+    }
+    // A direction kept in a named body's own frame, in the world's.
+    [[nodiscard]] Vec3 worldAxis(const std::string &name, const Vec3 &local) const {
+        const auto found = index_of.find(name);
+        if (found == index_of.end() || !inWorld(found->second)) return local;
+        return world->snapshot(body_of[found->second]).orientation_world.rotate(local);
+    }
+    // Whether the hand holds a part of a machine: either side of its motor's
+    // pin, or a hoist's load.
+    [[nodiscard]] bool handOn(const SceneJoint &pin, const HoistRope &rope) const {
+        if (holding == static_cast<std::size_t>(-1) || holding >= described.size()) return false;
+        const std::string &held = described[holding].name;
+        return held == pin.a || held == pin.b || (rope.there && held == rope.load);
+    }
+    // What a controller has its motor do in the next step: from what it was
+    // told, where its hoist's rope stands and how the kept steps have gone, the
+    // command and the brake the motor takes into the step (prepareMotors drives
+    // it on its own line from them), and what stands in the way. Before every
+    // step, with the step's length; and with 0 when it is told something, to say
+    // at once what it will do. Nothing is timed here: settleControls times what
+    // it did over kept steps only, as a motor's account is kept.
+    void decide(Control &c, double dt_s) {
+        // Turning the other way faster than this share of its unloaded speed,
+        // it stops first, for no longer than kReverseMostS.
+        constexpr double kReverseAtShare = 0.1;
+        constexpr double kReverseMostS = 1.0;
+        // A hoist slows within kSlowWithinM of rope of either end of its travel,
+        // to kApproachPerS metres a second for each metre left, and never below
+        // kCreepM_S; and a rope slack for kSlackS with its load at rest, its load
+        // is down.
+        constexpr double kSlowWithinM = 0.2;
+        constexpr double kApproachPerS = 2.0;
+        constexpr double kCreepM_S = 0.05;
+        constexpr double kSlackS = 0.25;
+        // A rope carrying less than kSlackN is slack; raising, a slack rope is
+        // taken up at no more than kTakeUpShare of the voltage.
+        constexpr double kSlackN = 1.0;
+        constexpr double kTakeUpShare = 0.15;
+        LiveControl &s = c.said;
+        c.reversing_now = false;
+        Motor *m = motorById(s.motor);
+        SceneJoint *pin = m != nullptr ? motorPin(m->said.joint) : nullptr;
+        if (m == nullptr || pin == nullptr || pin->rigid == 0 || !world->hasJoint(pin->rigid)) {
+            s.command = 0.0;
+            s.brake = false;
+            s.condition = "its motor is gone";
+            c.stretch = false;
+            return;
+        }
+        LiveMotor &motor = m->said;
+        const bool holds = motor.brake_torque_n_m > 0.0;
+        // The shaft's speed the forward way, as the last kept step left it.
+        const double speed = s.forward * motor.speed_rad_s;
+        const HoistRope rope = s.rope != 0 ? hoistRope(s.rope) : HoistRope{};
+        double u = 0.0;  // the command, the forward way
+        std::string why;
+        if (!s.power) {
+            why = "off";
+        } else if (s.direction == 0) {
+            why = holds ? "stopped, holding on its brake" : "stopped: it coasts, with no brake to hold it";
+        } else if (c.tripped) {
+            why = s.condition;  // what stopped it, until it is told something again
+        } else if (!(s.setting > 0.0)) {
+            why = "its drive setting is at nothing";
+        } else if (c.reversing && s.direction * speed < -kReverseAtShare * motor.no_load_rad_s &&
+                   c.reversing_s < kReverseMostS) {
+            c.reversing_now = true;
+            why = "stopping before it turns the other way";
+        } else {
+            c.reversing = false;
+            u = s.direction * s.setting;
+            if (rope.there && rope.radius_m > 0.0) {
+                // The rope's speed at the motor's unloaded speed, and the share
+                // of the voltage that holds the load still against its weight:
+                // from what it weighs, not from what the rope carried in the
+                // last step. A load speeding up pulls less, and a command
+                // worked out from that holds back less, and feeds on itself --
+                // the rope fell to 56 N of the crate's 261 slowing for the
+                // bottom. With no load to weigh, from the rope.
+                const double unloaded = rope.radius_m * motor.no_load_rad_s;
+                const double carried =
+                    rope.load_mass_kg > 0.0 ? rope.load_mass_kg * length(request.gravity_m_s2) : rope.tension_n;
+                const double hold = carried * rope.radius_m / motor.stall_torque_n_m;
+                // A stretch of lowering comes on from where the motor is: the
+                // share that holds the load still, or what it drives at now if
+                // that is further down already.
+                if (!c.stretch)
+                    c.ramp_u = s.direction < 0 && motor.command != 0.0 ? std::min(hold, s.forward * motor.command)
+                                                                        : hold;
+                // The rope left before the end it is going to, against how far
+                // the rope goes in this step.
+                const double left = s.direction > 0 ? rope.out_m - s.top_out_m : s.bottom_out_m - rope.out_m;
+                if (left <= std::abs(s.rope_speed_m_s) * dt_s) {
+                    u = 0.0;
+                    why = s.direction > 0 ? "at the top" : "at the bottom";
+                } else if (s.direction < 0 && c.slack_s >= kSlackS) {
+                    u = 0.0;
+                    why = "the load is down: its rope is slack";
+                } else {
+                    // Lowering, it drives at the setting as raising does -- the
+                    // load's weight turns the motor past its unloaded speed, and
+                    // the motor's line holds it back -- but it comes on from the
+                    // share that holds the load still, no faster than
+                    // settleControls ramps it: from rest, a motor let drive the
+                    // drum down at once outruns a load that can only fall, the
+                    // rope goes slack, and the load snatches it when it catches
+                    // up (2.24 m/s, where the line says 1.43).
+                    if (s.direction < 0) u = std::max(u, c.ramp_u);
+                    if (left < kSlowWithinM) {
+                        // Near an end: the command that gives the rope the speed
+                        // it should have this near, from the motor's line and
+                        // the torque the load puts on the drum -- never more
+                        // effort the way it was told than it was told, and
+                        // holding back as much as a load coming down needs.
+                        const double want = std::max(kCreepM_S, kApproachPerS * left);
+                        const double line = hold + s.direction * want / unloaded;
+                        u = s.direction > 0 ? std::clamp(line, 0.0, s.setting)
+                                            : std::max(std::clamp(line, -s.setting, 1.0), c.ramp_u);
+                        why = s.direction > 0 ? "slowing for the top" : "slowing for the bottom";
+                    } else if (s.direction > 0 && rope.tension_n < kSlackN) {
+                        // Raising on a slack rope: taken up gently, so the load
+                        // is not snatched off what it rests on.
+                        u = std::min(u, kTakeUpShare);
+                    }
+                }
+            }
+        }
+        const bool drives = u != 0.0;
+        if (drives && !c.stretch) {
+            c.stretch = true;
+            c.turned_from = s.forward * motor.turned_rad;
+            c.driving_s = 0.0;
+        } else if (!drives) {
+            c.stretch = false;
+            c.driving_s = 0.0;
+        }
+        motor.command = std::clamp(s.forward * u, -1.0, 1.0);
+        motor.brake = !drives && holds;
+        motor.state = stateToBe(motor);
+        s.command = motor.command;
+        s.brake = motor.brake;
+        if (why.empty() && drives) {
+            if (motor.state == "flat") why = "its battery is flat";
+            else if (m->limited) why = "held back by its battery's power";
+        }
+        if (why.empty() && handOn(*pin, rope)) why = "the hand is on it";
+        s.condition = why;
+    }
+    // A controller told something: what was said replaces what it had; a stall
+    // it stopped for is forgotten and progress is judged afresh; and what it
+    // will do is said at once.
+    void tell(Control &c, std::optional<bool> power, std::optional<int> direction, std::optional<double> setting,
+              const std::string &sender, std::uint64_t seq) {
+        LiveControl &s = c.said;
+        if (power) s.power = *power;
+        if (direction) s.direction = std::clamp(*direction, -1, 1);
+        if (setting) s.setting = std::clamp(*setting, 0.0, 1.0);
+        s.sender = sender;
+        s.seq = seq;
+        c.tripped = false;
+        c.stretch = false;
+        c.reversing = true;
+        c.driving_s = c.reversing_s = c.slack_s = 0.0;
+        decide(c, 0.0);
+    }
+    void prepareControls(double dt_s) {
+        for (Control &c : controls) decide(c, dt_s);
+    }
+    // After a kept step: what each controller's machine did -- its shaft's
+    // speed, a hoist's rope -- and the timing of what it decided: a stretch of
+    // driving that got nowhere in kStallS stops it, since a motor driven into
+    // something that will not move only heats; lowering, its command comes on
+    // at kRampPerS of the voltage a second. Then what it will do next, said at
+    // once, as a motor says what it was told before the step that does it.
+    void settleControls(double dt_s) {
+        constexpr double kStallS = 1.5;
+        constexpr double kProgressRad = 0.05;
+        constexpr double kSlackN = 1.0;
+        constexpr double kRestM_S = 0.05;
+        constexpr double kRampPerS = 2.0;
+        constexpr double kRpmPerRadS = 60.0 / (2.0 * 3.14159265358979323846);
+        for (Control &c : controls) {
+            LiveControl &s = c.said;
+            const Motor *m = motorById(s.motor);
+            if (m == nullptr) continue;
+            const LiveMotor &motor = m->said;
+            s.speed_rpm = s.forward * motor.speed_rad_s * kRpmPerRadS;
+            HoistRope rope;
+            if (s.rope != 0) rope = hoistRope(s.rope);
+            if (rope.there) {
+                if (c.out_before >= 0.0 && dt_s > 0.0) s.rope_speed_m_s = (c.out_before - rope.out_m) / dt_s;
+                s.out_m = rope.out_m;
+                c.out_before = rope.out_m;
+            }
+            c.reversing_s = c.reversing_now ? c.reversing_s + dt_s : 0.0;
+            const bool lowering = s.power && s.direction < 0 && !c.tripped;
+            c.slack_s = lowering && rope.there && rope.tension_n < kSlackN && rope.load_speed_m_s < kRestM_S
+                            ? c.slack_s + dt_s
+                            : 0.0;
+            if (lowering && rope.there && c.stretch) c.ramp_u = std::max(-s.setting, c.ramp_u - kRampPerS * dt_s);
+            if (c.stretch && s.command != 0.0) {
+                c.driving_s += dt_s;
+                if (c.driving_s >= kStallS) {
+                    const double progress = s.direction * (s.forward * motor.turned_rad - c.turned_from);
+                    if (progress < kProgressRad) {
+                        c.tripped = true;
+                        c.stretch = false;
+                        s.condition = progress < -kProgressRad
+                                          ? "too weak at this setting: the load turned it back, so it stopped"
+                                          : "stalled: it made no progress, so it stopped";
+                    }
+                    c.driving_s = 0.0;
+                    c.turned_from = s.forward * motor.turned_rad;
+                }
+            }
+            decide(c, dt_s);
+        }
+    }
+
     void rememberJointAngles(const JoltWorld &in) {
         for (SceneJoint &joint : joints)
             if (joint.rigid != 0 && in.hasJoint(joint.rigid))
@@ -2951,6 +3262,45 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
     }
     impl.next_energy_store = doc.value("next_energy_store", 1U);
     impl.next_motor = doc.value("next_motor", 1U);
+    // Each machine's controller, as it was told; carried while its motor, and a
+    // hoist's rope, came back and the host still declares it the same way.
+    for (const nlohmann::json &o : doc.value("controls", nlohmann::json::array())) {
+        Impl::Control c{};
+        c.said.id = o.at("id").get<unsigned>();
+        c.said.name = o.at("name").get<std::string>();
+        c.said.motor = o.at("motor").get<unsigned>();
+        c.said.rope = o.at("rope").get<unsigned>();
+        c.said.top_out_m = numberFrom(o.at("top_out_m"));
+        c.said.bottom_out_m = numberFrom(o.at("bottom_out_m"));
+        c.said.forward = o.at("forward").get<int>() < 0 ? -1 : 1;
+        c.said.power = o.at("power").get<bool>();
+        c.said.direction = std::clamp(o.at("direction").get<int>(), -1, 1);
+        c.said.setting = std::clamp(numberFrom(o.at("setting")), 0.0, 1.0);
+        c.said.sender = o.value("sender", std::string{});
+        c.said.seq = o.value("seq", std::uint64_t{0});
+        for (const nlohmann::json &p : o.value("seen", nlohmann::json::array()))
+            if (p.is_array() && p.size() == 2)
+                c.seen.emplace_back(p[0].get<std::string>(), p[1].get<std::uint64_t>());
+        c.tripped = o.value("tripped", false);
+        c.said.condition = o.value("condition", std::string{});
+        if (carrying) {
+            const bool declared = kept(asked.controls, c.said.id);
+            const bool motor = std::any_of(impl.motors.begin(), impl.motors.end(),
+                                           [&](const Impl::Motor &m) { return m.said.id == c.said.motor; });
+            const bool rope = c.said.rope == 0 ||
+                              std::any_of(impl.joints.begin(), impl.joints.end(),
+                                          [&](const Impl::SceneJoint &j) { return j.id == c.said.rope; });
+            if (!declared || !motor || !rope) {
+                if (declared)
+                    lost.push_back("the controller of " + c.said.name + ": its " + (motor ? "rope" : "motor") +
+                                   " did not come back as it was, so it is as the room declares it");
+                continue;
+            }
+            ++said.carried.controls;
+        }
+        impl.controls.push_back(std::move(c));
+    }
+    impl.next_control = doc.value("next_control", 1U);
     // Anything still attached with nothing standing in for it as it was saved
     // is hung now, as after any rearrangement of the bodies.
     live->rehangJoints();
@@ -3328,7 +3678,9 @@ void LiveWorld::step(double dt_s) {
     // trial, because making or changing it changes the world's configuration.
     if (!impl_->tools.empty()) impl_->tools.prepare(toolHost(), dt_s);
     // A motor's drive, the same way round: set before the trial, from its line
-    // at the speed its pin has now (docs/machine-world.md).
+    // at the speed its pin has now (docs/machine-world.md) -- after its
+    // controller, if it has one, has said what the motor is to do this step.
+    if (!impl_->controls.empty()) impl_->prepareControls(dt_s);
     if (!impl_->motors.empty()) impl_->prepareMotors(dt_s);
     if (impl_->body_of.size() + 8 <= 2000) {
         bool committed = false;
@@ -3378,6 +3730,7 @@ void LiveWorld::step(double dt_s) {
         // What each motor did, once the step is kept: a refused step takes
         // nothing from a store.
         if (!impl_->motors.empty()) impl_->settleMotors(dt_s);
+        if (!impl_->controls.empty()) impl_->settleControls(dt_s);
         // What each edge took this step, the kerfs it bought, and whatever came
         // apart. After the trial, for the same reason prepareCuts is before it.
         settleCuts(dt_s);
@@ -3413,6 +3766,7 @@ void LiveWorld::step(double dt_s) {
     impl_->time_s += dt_s;
     impl_->rememberJointAngles(*impl_->world);
     if (!impl_->motors.empty()) impl_->settleMotors(dt_s);
+    if (!impl_->controls.empty()) impl_->settleControls(dt_s);
     settleCuts(dt_s);
     if (!impl_->tools.empty()) impl_->tools.settle(toolHost(), dt_s);
     partOverloadedLinks();
@@ -4124,6 +4478,17 @@ bool LiveWorld::driveMotor(unsigned motor, double command, bool brake) {
     if (!std::isfinite(command)) return false;
     for (Impl::Motor &m : impl_->motors) {
         if (m.said.id != motor) continue;
+        // A motor with a controller is worked by it: what it is told here is
+        // told to the controller -- power on, the command's way as its
+        // direction and its size as the setting -- so its limits still hold,
+        // and stopped it holds on its brake if it has one.
+        if (Impl::Control *c = impl_->controlOfMotor(motor)) {
+            const double u = std::clamp(command, -1.0, 1.0);
+            const int way = u > 0.0 ? 1 : u < 0.0 ? -1 : 0;
+            impl_->tell(*c, true, way * c->said.forward,
+                        u != 0.0 ? std::optional<double>(std::abs(u)) : std::nullopt, "drive", 0);
+            return true;
+        }
         m.said.command = std::clamp(command, -1.0, 1.0);
         m.said.brake = brake;
         // Said at once: the next step does what it is told.
@@ -4139,6 +4504,80 @@ std::vector<LiveMotor> LiveWorld::motors() const {
     std::vector<LiveMotor> out;
     out.reserve(impl_->motors.size());
     for (const Impl::Motor &m : impl_->motors) out.push_back(m.said);
+    return out;
+}
+
+unsigned LiveWorld::control(const std::string &name, unsigned motor, unsigned rope, double top_out_m,
+                            double bottom_out_m) {
+    Impl::Motor *m = impl_->motorById(motor);
+    if (m == nullptr || impl_->controlOfMotor(motor) != nullptr) return 0;
+    const Impl::SceneJoint *pin = impl_->motorPin(m->said.joint);
+    if (pin == nullptr) return 0;
+    int forward = 1;
+    if (rope != 0) {
+        const Impl::SceneJoint *drum = nullptr;
+        for (const Impl::SceneJoint &joint : impl_->joints)
+            if (joint.id == rope && joint.kind == JoltWorld::JointKind::Drum) drum = &joint;
+        if (drum == nullptr || (drum->a != pin->a && drum->a != pin->b)) return 0;
+        if (!(top_out_m >= 0.0) || !(bottom_out_m > top_out_m) || !std::isfinite(bottom_out_m) ||
+            bottom_out_m > drum->upper)
+            return 0;
+        // Which way the motor's command winds the rope on. The motor turns the
+        // pin's b about the pin's axis, relative to its a, and the rope winds on
+        // as its drum turns the `winds` way about the rope's own axle; both axes
+        // are kept in their bodies' own frames, and are compared in the world's.
+        const Vec3 about = impl_->worldAxis(pin->a, pin->axis_local_a);
+        const Vec3 axle = impl_->worldAxis(drum->a, drum->axis_local_a);
+        const double along = about.x * axle.x + about.y * axle.y + about.z * axle.z;
+        if (std::abs(along) < 0.5) return 0;  // the drum does not turn about the pin
+        forward = (drum->a == pin->b ? 1 : -1) * (along > 0.0 ? 1 : -1) * (drum->winds < 0 ? -1 : 1);
+    }
+    Impl::Control c{};
+    c.said.id = impl_->next_control++;
+    c.said.name = name.empty() ? "machine " + std::to_string(c.said.id) : name;
+    c.said.motor = motor;
+    c.said.rope = rope;
+    c.said.top_out_m = rope != 0 ? top_out_m : 0.0;
+    c.said.bottom_out_m = rope != 0 ? bottom_out_m : 0.0;
+    c.said.forward = forward;
+    impl_->controls.push_back(std::move(c));
+    // Off, its motor stopped on its brake: said at once.
+    impl_->decide(impl_->controls.back(), 0.0);
+    return impl_->controls.back().said.id;
+}
+
+std::string LiveWorld::operate(unsigned control, const ControlCommand &command) {
+    Impl::Control *c = nullptr;
+    for (Impl::Control &each : impl_->controls)
+        if (each.said.id == control) c = &each;
+    if (c == nullptr) return "there is no controller " + std::to_string(control);
+    if (command.direction && (*command.direction < -1 || *command.direction > 1))
+        return "a direction is -1 (lower, reverse), 0 (stop) or 1 (raise, forward)";
+    if (command.setting && !(*command.setting >= 0.0 && *command.setting <= 1.0))
+        return "a drive setting is from 0 to 1: the share of the battery's voltage it drives at";
+    if (command.sender.size() > 64) return "a sender's name is 64 characters at most";
+    // The last count applied from each of the most recent senders, the latest
+    // last: a command no newer than its sender's last is stale and changes
+    // nothing. A count of 0 is no count: applied as it comes.
+    if (command.seq != 0) {
+        for (std::size_t i = 0; i < c->seen.size(); ++i) {
+            if (c->seen[i].first != command.sender) continue;
+            if (command.seq <= c->seen[i].second) return "stale";
+            c->seen.erase(c->seen.begin() + static_cast<std::ptrdiff_t>(i));
+            break;
+        }
+        c->seen.emplace_back(command.sender, command.seq);
+        constexpr std::size_t kSendersKept = 8;
+        if (c->seen.size() > kSendersKept) c->seen.erase(c->seen.begin());
+    }
+    impl_->tell(*c, command.power, command.direction, command.setting, command.sender, command.seq);
+    return "applied";
+}
+
+std::vector<LiveControl> LiveWorld::controls() const {
+    std::vector<LiveControl> out;
+    out.reserve(impl_->controls.size());
+    for (const Impl::Control &c : impl_->controls) out.push_back(c.said);
     return out;
 }
 
@@ -11238,8 +11677,32 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                           {"drawn_j", savedNumber(m.said.drawn_j)},
                           {"friction_heat_j", savedNumber(m.said.friction_heat_j)}});
     doc["motors"] = std::move(motors);
+    // And each machine's controller: what it was told and by whom, the counts
+    // it has applied, and a stall it stopped for.
+    nlohmann::json controls = nlohmann::json::array();
+    for (const Impl::Control &c : I.controls) {
+        nlohmann::json seen = nlohmann::json::array();
+        for (const auto &[sender, count] : c.seen) seen.push_back({sender, count});
+        controls.push_back({{"id", c.said.id},
+                            {"name", c.said.name},
+                            {"motor", c.said.motor},
+                            {"rope", c.said.rope},
+                            {"top_out_m", savedNumber(c.said.top_out_m)},
+                            {"bottom_out_m", savedNumber(c.said.bottom_out_m)},
+                            {"forward", c.said.forward},
+                            {"power", c.said.power},
+                            {"direction", c.said.direction},
+                            {"setting", savedNumber(c.said.setting)},
+                            {"sender", c.said.sender},
+                            {"seq", c.said.seq},
+                            {"seen", std::move(seen)},
+                            {"tripped", c.tripped},
+                            {"condition", c.said.condition}});
+    }
+    doc["controls"] = std::move(controls);
     doc["next_energy_store"] = I.next_energy_store;
     doc["next_motor"] = I.next_motor;
+    doc["next_control"] = I.next_control;
 
     nlohmann::json blades = nlohmann::json::array();
     for (const Impl::Blade &blade : I.blades)
@@ -11400,6 +11863,7 @@ LiveCarry LiveWorld::carryAll(const std::string &snapshot) {
     ids("joints", all.joints);
     ids("energy_stores", all.energy_stores);
     ids("motors", all.motors);
+    ids("controls", all.controls);
     ids("blades", all.blades);
     ids("tool_points", all.tool_points);
     return all;

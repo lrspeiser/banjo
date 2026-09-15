@@ -26,6 +26,48 @@
      (inventory_room.py), and shown only while the bag has something in it. -->
 <ol id="hotbar" aria-label="Your bag, by number key" hidden></ol>
 
+<!-- A machine's panel (docs/machine-world.md, "Operating a machine"): E on any
+     part of a machine opens it, and it stays until it is closed or another
+     machine is chosen. Its buttons go straight to the machine's controller in
+     the engine (POST /api/world/machine), each saying a state outright, and what
+     it reads out is the engine's: what the machine was told, what its shaft and
+     its load are measured doing, and what stands in the way. Filled by
+     showMachinePanel() in world.js. -->
+<section id="machine-panel" aria-label="Machine panel" hidden>
+  <header class="mp-head">
+    <div>
+      <p class="mp-kind" id="mp-kind">Machine</p>
+      <h2 id="mp-name">&nbsp;</h2>
+    </div>
+    <button type="button" id="mp-close" class="quiet" aria-label="Close the panel">&times;</button>
+  </header>
+  <div class="mp-power" role="group" aria-label="Power">
+    <span class="mp-label">Power</span>
+    <div class="mp-seg">
+      <button type="button" id="mp-on" aria-pressed="false">On</button>
+      <button type="button" id="mp-off" aria-pressed="true">Off</button>
+    </div>
+  </div>
+  <div class="mp-drive" role="group" aria-label="Direction">
+    <button type="button" id="mp-back" aria-pressed="false">Lower</button>
+    <button type="button" id="mp-stop" aria-pressed="true">Stop &amp; hold</button>
+    <button type="button" id="mp-ahead" aria-pressed="false">Raise</button>
+  </div>
+  <label class="mp-setting" for="mp-setting">
+    <span class="mp-label">Drive setting</span>
+    <input type="range" id="mp-setting" min="0" max="100" step="5" value="100">
+    <output id="mp-setting-value" for="mp-setting">100%</output>
+  </label>
+  <p class="mp-hint">A share of the battery's voltage, not a speed: what the machine does with it is below.</p>
+  <dl class="mp-read">
+    <dt>Enabled</dt><dd id="mp-enabled">Off</dd>
+    <dt>Commanded</dt><dd id="mp-commanded">&mdash;</dd>
+    <dt>Measured</dt><dd id="mp-measured">&mdash;</dd>
+    <dt>Condition</dt><dd id="mp-condition">&mdash;</dd>
+  </dl>
+  <p class="mp-ack" id="mp-ack" aria-live="polite"></p>
+</section>
+
 <section id="panel">
   <header>
     <h1>Banjo</h1>

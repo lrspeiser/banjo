@@ -2170,6 +2170,10 @@ def tool_spring(args: dict[str, Any]) -> dict[str, Any]:
 MACHINE_STORE_FIELDS = ("name", "body", "capacity_j", "charge_j", "voltage_v", "max_power_w")
 MACHINE_MOTOR_FIELDS = ("on", "store", "stall_torque_n_m", "no_load_rpm", "brake_torque_n_m",
                         "command", "brake")
+# A machine's controller (docs/machine-world.md, "Operating a machine"): the
+# motor it works, by its pin's two things, a hoist's travel as rope out, and
+# what it was last told. A shaft's travel is None.
+MACHINE_CONTROL_FIELDS = ("name", "on", "top_out_m", "bottom_out_m", "power", "direction", "setting")
 G_M_S2 = 9.81
 
 
@@ -2179,6 +2183,7 @@ def _machines(entry: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     block = entry.setdefault("machines", {})
     block.setdefault("stores", [])
     block.setdefault("motors", [])
+    block.setdefault("controls", [])
     return block
 
 
@@ -2188,7 +2193,14 @@ def machines_as_built(entry: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     block = _machines(entry)
     return {"stores": [{k: s[k] for k in MACHINE_STORE_FIELDS} for s in block["stores"]],
             "motors": [{k: (list(m[k]) if k == "on" else m[k]) for k in MACHINE_MOTOR_FIELDS}
-                       for m in block["motors"]]}
+                       for m in block["motors"]],
+            # A controller's told state only once it has been told something
+            # (_set_told): one told nothing passes on what its motor was told,
+            # which "told off" would not.
+            "controls": [{k: (list(c[k]) if k == "on" else c[k]) for k in MACHINE_CONTROL_FIELDS
+                          if c.get(k) is not None
+                          and (c.get("told") or k not in ("power", "direction", "setting"))}
+                         for c in block["controls"]]}
 
 
 def _pin_between(entry: dict[str, Any], on: Any) -> dict[str, Any] | None:
@@ -2213,6 +2225,47 @@ def _motors_turning(entry: dict[str, Any], part: str) -> list[dict[str, Any]]:
     drive step, find a motor -- by the thing it turns, as the room's page does
     (server._motor_for)."""
     return [m for m in _machines(entry)["motors"] if part in m["on"]]
+
+
+def _control_named(entry: dict[str, Any], name: str) -> dict[str, Any] | None:
+    return next((c for c in _machines(entry)["controls"] if c["name"] == name), None)
+
+
+def _hoist_rope(entry: dict[str, Any], on: Any) -> tuple[dict[str, Any], int] | None:
+    """The rope on a drum a motor's pin turns, and +1 if the motor's positive
+    command winds it on: what makes the machine a hoist. None for a shaft."""
+    found = _drum_sense(entry, {"on": list(on)})
+    return found[0] if found else None
+
+
+def _control_parts(entry: dict[str, Any], control: dict[str, Any]) -> list[str]:
+    """What a machine is made of, as a person points at it: its motor's pin's
+    two things, and a hoist's load."""
+    parts = list(control["on"])
+    rope = _hoist_rope(entry, control["on"])
+    if rope is not None and str(rope[0]["args"].get("b")) not in parts:
+        parts.append(str(rope[0]["args"].get("b")))
+    return parts
+
+
+def _machine_found(entry: dict[str, Any], which: str) -> dict[str, Any]:
+    """A machine's controller, by its name or by a part of it that is in one
+    machine only -- as the playground's panel finds it from what a person looks
+    at."""
+    named = _control_named(entry, which)
+    if named is not None:
+        return named
+    controls = _machines(entry)["controls"]
+    found = [c for c in controls if which in _control_parts(entry, c)]
+    if len(found) > 1:
+        raise Refused(f"{which} is part of {len(found)} machines -- {', '.join(c['name'] for c in found)}: "
+                      f"name the one you mean")
+    if found:
+        return found[0]
+    have = [c["name"] for c in controls]
+    raise Refused(f"there is no machine called {which!r}"
+                  + (f": this world has {', '.join(repr(h) for h in have)}" if have else
+                     ": a motor is worked from a controller, which control gives it"))
 
 
 def _machine_checked(entry: dict[str, Any]) -> None:
@@ -2514,6 +2567,170 @@ def tool_motor(args: dict[str, Any]) -> dict[str, Any]:
     return answer
 
 
+def _add_control(entry: dict[str, Any], record: dict[str, Any]) -> None:
+    """A controller, as the room spells it, into the world and the record, and
+    told what it was last told: held to the world's own conditions first, so
+    nothing is left half made."""
+    controls = _machines(entry)["controls"]
+    controls.append(record)
+    try:
+        _machine_checked(entry)
+        world = _live(entry)
+        motor = next(m for m in _machines(entry)["motors"] if m["on"] == record["on"])
+        rope = _hoist_rope(entry, record["on"]) if record.get("top_out_m") is not None else None
+        record["live"] = world.control(record["name"], motor["live"], rope[0]["live"] if rope else 0,
+                                       record.get("top_out_m") or 0.0, record.get("bottom_out_m") or 0.0)
+        if (record["power"], record["direction"], record["setting"]) != (False, 0, 1.0):
+            world.operate(record["live"], "room", 0, record["power"], record["direction"], record["setting"])
+    except banjo.BanjoError as error:
+        controls.remove(record)
+        raise Refused(str(error)) from None
+    except Refused:
+        controls.remove(record)
+        raise
+
+
+def _set_told(entry: dict[str, Any], control: dict[str, Any], power: Any, direction: Any,
+              setting: Any) -> None:
+    """What a controller is told from now on, into its record -- so the room's
+    spec, and every rebuild, has it -- and into the world. What is None stays."""
+    was = (control["power"], control["direction"], control["setting"], control.get("told", False))
+    if power is not None:
+        control["power"] = bool(power)
+    if direction is not None:
+        control["direction"] = int(direction)
+    if setting is not None:
+        control["setting"] = float(setting)
+    control["told"] = True
+    try:
+        _machine_checked(entry)
+        _live(entry).operate(control["live"], "chat", 0, power, direction, setting)
+    except banjo.BanjoError as error:
+        control["power"], control["direction"], control["setting"], control["told"] = was
+        raise Refused(str(error)) from None
+    except Refused:
+        control["power"], control["direction"], control["setting"], control["told"] = was
+        raise
+
+
+def _sync_control(entry: dict[str, Any], control: dict[str, Any]) -> None:
+    """A controller's record told what the engine's controller has now: after
+    its motor was told something directly, which the engine hands to it."""
+    now = next((c for c in _live(entry).controls() if c.id == control.get("live")), None)
+    if now is not None:
+        control["power"], control["direction"], control["setting"] = now.power, now.direction, now.setting
+
+
+def tool_control(args: dict[str, Any]) -> dict[str, Any]:
+    """Give a motor a controller: what a person works the machine with."""
+    entry = _world(args.get("world_id"))
+    _live(entry)
+    on = args.get("on")
+    if not isinstance(on, (list, tuple)) or len(on) != 2 or not all(isinstance(n, str) for n in on):
+        raise Refused("on is the two things the motor's pin joins, as motor was given them -- like "
+                      "[\"hoist post\", \"hoist drum\"]")
+    motor = next((m for m in _machines(entry)["motors"] if sorted(m["on"]) == sorted(on)), None)
+    if motor is None:
+        raise Refused(f"there is no motor on a pin between {on[0]} and {on[1]}: put one on with motor "
+                      f"first")
+    if any(c["on"] == motor["on"] for c in _machines(entry)["controls"]):
+        raise Refused(f"the motor on {motor['on'][0]} and {motor['on'][1]} has a controller already: "
+                      f"operate works it")
+    rope = _hoist_rope(entry, motor["on"])
+    # Named for what it is, numbered when the name is taken: operate finds it
+    # by its name.
+    base = " ".join(str(args.get("name") or ("hoist" if rope else motor["on"][1])).split())[:60]
+    name, count = base, 1
+    while _control_named(entry, name) is not None:
+        count += 1
+        name = f"{base} {count}"
+    record: dict[str, Any] = {"name": name, "on": list(motor["on"]), "top_out_m": None,
+                              "bottom_out_m": None, "power": False, "direction": 0, "setting": 1.0,
+                              "told": False}
+    if rope is not None:
+        length = float(rope[0]["args"].get("length_m", 0.0))
+        top = _action_number(args.get("top_out_m"), "top_out_m", 0.0, length, min(0.3, length / 2.0))
+        bottom = _action_number(args.get("bottom_out_m"), "bottom_out_m", top + 0.01, length,
+                                max(top + 0.01, length - 0.05))
+        record.update(top_out_m=top, bottom_out_m=bottom)
+    _add_control(entry, record)
+    load = str(rope[0]["args"].get("b")) if rope else None
+    answer: dict[str, Any] = {
+        "control": name, "on": record["on"], "kind": "hoist" if rope else "shaft",
+        "state": "off, holding on its brake" if motor["brake_torque_n_m"] > 0.0 else "off",
+        "note": (f"{name} is worked from its panel in the playground: E on any part of it opens it -- "
+                 f"Power, then " + ("Raise, Stop & hold and Lower" if rope else "Forward, Stop and Reverse")
+                 + ", and a drive setting. operate works it for a person. It slows for each end of "
+                   "its travel and stops at it" if rope else
+                 f"{name} is worked from its panel in the playground: E on any part of it opens it -- "
+                 f"Power, then Forward, Stop and Reverse, and a drive setting. operate works it for a "
+                 f"person.")
+        + " A motor that gets nowhere for 1.5 s is stopped, and says so."}
+    if rope is not None:
+        answer["travel_m"] = [record["top_out_m"], record["bottom_out_m"]]
+        answer["hoist"] = (f"raising winds the rope to {load} on until {record['top_out_m']:g} m of it is "
+                           f"out; lowering lets it out to {record['bottom_out_m']:g} m -- coming on gently, "
+                           f"so the rope never goes slack -- and stops if {load} comes to rest on "
+                           f"something first")
+    if motor["brake_torque_n_m"] <= 0.0:
+        answer["warnings"] = ["its motor has no brake, so stopped it coasts: whatever hangs on it runs "
+                              "it down"]
+    return answer
+
+
+# A person's words for a direction: a hoist raises and lowers, a shaft runs
+# forward and in reverse, and either stops.
+_DIRECTIONS = {"raise": 1, "up": 1, "forward": 1, "lower": -1, "down": -1, "reverse": -1, "back": -1,
+               "stop": 0}
+
+
+def tool_operate(args: dict[str, Any]) -> dict[str, Any]:
+    """Work a machine from its controller, as a person does from its panel."""
+    entry = _world(args.get("world_id"))
+    world = _live(entry)
+    control = _machine_found(entry, " ".join(str(args.get("machine") or "").split()))
+    power = args.get("power")
+    if power is not None and not isinstance(power, bool):
+        raise Refused("power is true or false")
+    direction = None
+    if args.get("direction") is not None:
+        key = str(args.get("direction")).strip().lower()
+        if key not in _DIRECTIONS:
+            raise Refused("direction is raise, lower or stop -- forward or reverse for a shaft")
+        direction = _DIRECTIONS[key]
+    setting = (None if args.get("setting") is None
+               else _action_number(args.get("setting"), "setting", 0.0, 1.0))
+    if power is None and direction is None and setting is None:
+        raise Refused("say what to do: a direction, power, or a drive setting")
+    # A direction that moves it means the power on, unless power false is said.
+    if direction and power is None:
+        power = True
+    _set_told(entry, control, power, direction, setting)
+    now = next((c for c in world.controls() if c.id == control.get("live")), None)
+    hoist = control.get("top_out_m") is not None
+    words = {1: "raise" if hoist else "forward", -1: "lower" if hoist else "reverse", 0: "stop"}
+    if not control["power"]:
+        does = "off: its motor is stopped, holding on its brake if it has one"
+    elif control["direction"] == 0:
+        does = "stopped" + (f": {now.condition}" if now is not None and now.condition else "")
+    else:
+        does = ({1: "raising" if hoist else "running forward",
+                 -1: "lowering" if hoist else "running in reverse"}[control["direction"]]
+                + f" at {control['setting'] * 100:.0f}% of its battery's voltage"
+                + (f" -- {now.condition}" if now is not None and now.condition else ""))
+    answer: dict[str, Any] = {
+        "machine": control["name"], "power": control["power"], "direction": words[control["direction"]],
+        "setting": control["setting"], "does": does,
+        "told": {"power": control["power"], "direction": control["direction"], "setting": control["setting"]},
+        "note": "Nothing moves until time passes: run says what it did. It goes on doing this until it is "
+                "told otherwise" + (", and stops by itself at the ends of its travel, slowing for each"
+                                    if hoist else "") + ". In the playground's room the running room's "
+                "machine is told too, and the room is not opened again."}
+    if hoist:
+        answer["travel_m"] = [control["top_out_m"], control["bottom_out_m"]]
+    return answer
+
+
 def tool_use_action(args: dict[str, Any]) -> dict[str, Any]:
     """Press one of a thing's actions (offer_actions): what E does in the
     playground. In the playground's room the room itself runs it, as it stands;
@@ -2579,6 +2796,11 @@ def tool_drive(args: dict[str, Any]) -> dict[str, Any]:
                      "is off while it drives")
         brake = False
     _set_drive(entry, motor, command, brake)
+    # A motor with a controller is worked by it: the engine tells the
+    # controller, and its record says what it now has.
+    control = next((c for c in _machines(entry)["controls"] if c["on"] == motor["on"]), None)
+    if control is not None:
+        _sync_control(entry, control)
     if command == 0.0:
         if brake and motor["brake_torque_n_m"] > 0.0:
             does = (f"stopped, with its brake on: it holds {motor['on'][1]} where it is and draws "
@@ -2654,6 +2876,27 @@ def _remake_machines(entry: dict[str, Any], world: banjo.World | None) -> list[s
             continue
         motors.append(motor)
     block["motors"] = motors
+    # And the controllers, on the motors made again, each told what it was
+    # last told.
+    controls = []
+    for control in block["controls"]:
+        words = f"the controller {control['name']}"
+        motor = next((m for m in motors if m["on"] == control["on"]), None)
+        if world is None or motor is None:
+            lost.append(f"{words}: " + ("the world is empty" if world is None else "its motor is gone"))
+            continue
+        rope = _hoist_rope(entry, control["on"]) if control.get("top_out_m") is not None else None
+        try:
+            control["live"] = world.control(control["name"], motor["live"], rope[0]["live"] if rope else 0,
+                                            control.get("top_out_m") or 0.0, control.get("bottom_out_m") or 0.0)
+            if (control["power"], control["direction"], control["setting"]) != (False, 0, 1.0):
+                world.operate(control["live"], "room", 0, control["power"], control["direction"],
+                              control["setting"])
+        except banjo.BanjoError as error:
+            lost.append(f"{words}: {error}")
+            continue
+        controls.append(control)
+    block["controls"] = controls
     return lost
 
 
@@ -2675,6 +2918,9 @@ def _drop_machines(entry: dict[str, Any], bodies: Any = (), pins: Any = ()) -> l
         else:
             motors.append(motor)
     block["motors"] = motors
+    working = {tuple(m["on"]) for m in motors}
+    said += [f"the controller {c['name']}" for c in block["controls"] if tuple(c["on"]) not in working]
+    block["controls"] = [c for c in block["controls"] if tuple(c["on"]) in working]
     return said
 
 
@@ -2712,6 +2958,18 @@ def _machines_said(entry: dict[str, Any]) -> dict[str, Any] | None:
                                    "drawn_j": round(now.drawn_j, 3), "work_j": round(now.work_j, 3),
                                    "heat_j": round(now.heat_j, 3),
                                    "friction_heat_j": round(now.friction_heat_j, 3)})
+    controls = {c.id: c for c in world.controls()}
+    said["controls"] = []
+    for control in block["controls"]:
+        now = controls.get(control.get("live"))
+        if now is not None:
+            said["controls"].append({
+                "name": control["name"], "on": control["on"], "kind": "hoist" if now.rope else "shaft",
+                "power": now.power, "direction": now.direction, "setting": round(now.setting, 4),
+                "condition": now.condition, "command": round(now.command, 4), "brake": now.brake,
+                "speed_rpm": round(now.speed_rpm, 3),
+                **({"out_m": round(now.out_m, 4), "rope_speed_m_s": round(now.rope_speed_m_s, 4),
+                    "travel_m": [round(now.top_out_m, 4), round(now.bottom_out_m, 4)]} if now.rope else {})})
     stable = {r["live"]: r["id"] for r in entry.get("joints", [])}
     said["ropes"] = [{"joint": stable.get(r.id, r.id), "drum": r.drum, "load": r.load,
                       "out_m": round(r.out_m, 4), "on_the_drum_m": round(r.wound_m, 4),
@@ -3780,14 +4038,23 @@ RECIPES: dict[str, dict[str, Any]] = {
             ("store", {"name": "hoist battery", "body": "hoist battery", "capacity_j": 20000,
                        "voltage_v": 24}),
             ("motor", {"on": ["hoist post", "hoist drum"], "store": "hoist battery",
-                       "stall_torque_n_m": 60, "no_load_rpm": 95.5, "brake_torque_n_m": 200})],
+                       "stall_torque_n_m": 60, "no_load_rpm": 95.5, "brake_torque_n_m": 200}),
+            # Worked from a panel (docs/machine-world.md, "Operating a
+            # machine"), not from actions: its travel runs from 0.3 m of rope
+            # out, the crate's top 0.22 m under the drum, to 1.75 m, the crate 9
+            # cm off the ground.
+            ("control", {"name": "hoist", "on": ["hoist post", "hoist drum"], "top_out_m": 0.3,
+                         "bottom_out_m": 1.75})],
+        # The same three as before there was a panel, worked through the same
+        # controller, so they too stop at the ends of its travel.
         "actions": {"hoist drum": [
             {"label": "Wind it up", "steps": [{"do": "drive", "command": 1.0}]},
             {"label": "Stop", "steps": [{"do": "drive", "command": 0.0, "brake": True}]},
             {"label": "Let it down", "steps": [{"do": "drive", "command": -0.1}]}]},
-        "use": "click on the drum for its actions: Wind it up winds the crate up, Stop stops it with "
-               "the brake on, and Let it down lets it down; the motor keeps doing what it was last "
-               "told, so stop it before the crate reaches the drum",
+        "use": "E on any part of it -- the drum, the post or the crate -- opens its panel: Power, then "
+               "Raise, Stop & hold or Lower, and a drive setting. It stops by itself at the top and "
+               "the bottom of its travel, slowing for each, and holds the crate on its brake. Its "
+               "drum's actions, Wind it up, Stop and Let it down, work it through the same controller",
     },
 }
 
@@ -4084,8 +4351,10 @@ def tool_build_recipe(args: dict[str, Any]) -> dict[str, Any]:
     answer = {"built": recipe["title"], "at_m": [round(px, 4), round(pz, 4)],
               "ground_y_m": round(y0, 4), "parts": [renamed[n] for n in own], "joints": joints,
               "actions_offered": offered, "use": made(recipe["use"]),
-              "say": "Say what was built and where, what they can do with it, and that they can "
-                     "click on it to see its actions.",
+              "say": ("Say what was built and where, and that E on any part of it opens its panel to "
+                      "work it." if any(tool == "control" for tool, _ in then) else
+                      "Say what was built and where, what they can do with it, and that they can "
+                      "click on it to see its actions."),
               "objects": _describe(entry["world"])}
     if recipe["tried"]:
         answer["tried"] = recipe["tried"]
@@ -6627,6 +6896,62 @@ TOOLS = [
          "brake": {"type": "boolean",
                    "description": "Stopped (command 0), whether its brake goes on: on unless "
                                   "said."}}}},
+    {"name": "control",
+     "description": "Give a motor a CONTROLLER, so a person works the machine from a panel, like an "
+                    "appliance: Power, then Raise / Stop & hold / Lower for a hoist (Forward / Stop / "
+                    "Reverse for anything else a motor turns), and a drive setting. Name the motor by "
+                    "the two things its pin joins (`on`, as motor was given them). A motor turning a "
+                    "drum with a rope on it makes a HOIST: its travel runs from top_out_m of rope out "
+                    "(0.3 m when left out) to bottom_out_m (the rope's length less 5 cm), and it slows "
+                    "for each end, stops at it and holds on its brake; lowering, it comes on gently, "
+                    "so the rope never goes slack, and stops when the load comes to rest on "
+                    "something. A motor that gets nowhere for 1.5 s is "
+                    "stopped, and says so. It starts off, holding on its brake. In the playground a "
+                    "person opens its panel with E on any part of it. build_recipe \"hoist\" gives "
+                    "its hoist one, and a room gives every motor without one a controller of its "
+                    "own. Refused, with why: no motor on that pin, and a motor with a controller "
+                    "already.",
+     "inputSchema": {"type": "object", "required": ["world_id", "on"],
+                     "properties": {
+         "world_id": {"type": "string"},
+         "on": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 2,
+                "description": "The two things its motor's pin joins, like [\"hoist post\", \"hoist "
+                               "drum\"]."},
+         "name": {"type": "string",
+                  "description": "What to call the machine, like 'hoist': operate finds it by this. "
+                                 "Left out, a hoist is 'hoist', and anything else is named for what "
+                                 "its motor turns."},
+         "top_out_m": {"type": "number",
+                       "description": "A hoist's rope out at the top of its travel, in metres: 0.3 "
+                                      "when left out."},
+         "bottom_out_m": {"type": "number",
+                          "description": "A hoist's rope out at the bottom of its travel: the rope's "
+                                         "length less 0.05 m when left out."}}}},
+    {"name": "operate",
+     "description": "Work a machine from its controller (control), as a person does from its "
+                    "panel: `direction` raise, lower or stop -- forward or reverse for a shaft -- "
+                    "`power` true or false, and a drive `setting` from 0 to 1, the share of its "
+                    "battery's voltage it drives at: an effort, not a speed -- a heavy load raises "
+                    "slower, and comes down faster than the motor turns unloaded, its weight held "
+                    "back by the motor's line. Each only if given, and a direction that moves "
+                    "it turns the power on unless power false is said. A hoist stops by itself at "
+                    "the ends of its travel, slowing for each. The machine is found by its name or by "
+                    "any part of it, like 'hoist drum'. To work a machine for the person (\"raise the "
+                    "crate\", \"stop the hoist\", \"let it down slowly\"), this is the call. In the "
+                    "playground's room it works the running room's machine, which is not opened "
+                    "again. Nothing moves until time passes: run says what it did, and each "
+                    "machine's `condition` says what stands in its way. Refused, with why: no "
+                    "machine of that name, a part of two machines, and a setting past 0 or 1.",
+     "inputSchema": {"type": "object", "required": ["world_id", "machine", "direction"],
+                     "properties": {
+         "world_id": {"type": "string"},
+         "machine": {"type": "string",
+                     "description": "Its name, like 'hoist', or any part of it, like 'hoist drum'."},
+         "direction": {"type": "string", "enum": ["raise", "lower", "stop", "forward", "reverse"]},
+         "power": {"type": "boolean", "description": "On or off. Left out, a direction that moves "
+                                                     "it turns it on."},
+         "setting": {"type": "number",
+                     "description": "0 to 1. Left out, it stays as it was: 1 when made."}}}},
     {"name": "use_action",
      "description": "Press one of a thing's actions (offer_actions), by its label or its number "
                     "from 1: what the person's E does in the playground. There the room itself "
@@ -7425,6 +7750,8 @@ HANDLERS = {
     "store": tool_store,
     "motor": tool_motor,
     "drive": tool_drive,
+    "control": tool_control,
+    "operate": tool_operate,
     "interaction": tool_interaction,
     "duplicate": tool_duplicate,
     "build_recipe": tool_build_recipe,

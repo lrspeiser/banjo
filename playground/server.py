@@ -1384,6 +1384,12 @@ class Handler(BaseHTTPRequestHandler):
                 # has open (_this_pages_room).
                 _this_pages_room(self.server.app,body)
                 return self.send(run_action(self.server.app,body))
+            if path=="/api/world/machine":
+                # A machine worked from its panel (operate_machine): power, a
+                # direction, a drive setting, by the page's own count, straight
+                # to its controller. Only on the room the page has open.
+                _this_pages_room(self.server.app,body)
+                return self.send(operate_machine(self.server.app,body))
             if path=="/api/world/tool":
                 # What the tool in the person's hand does where they look
                 # (tool_use.resolve): its action, whether it can be done there
@@ -2100,11 +2106,56 @@ def _this_pages_room(app,body):
 
 def _motor_for(app,part):
     """The motor that turns `part`, from the machines the last step reported
-    (docs/machine-world.md): a motor is known by the two things its pin joins."""
+    (docs/machine-world.md): a motor is known by the two things its pin joins.
+    Two motors on pins of one thing -- two drums on one frame -- are not
+    guessed between, as the first that matched was: the thing a motor turns
+    names it, and the frame they share names neither."""
     state=(app.live.session.state or {}) if app.live.session else {}
-    for motor in ((state.get("machines") or {}).get("motors") or []):
-        if part in (motor.get("on") or []): return motor
+    found=[m for m in ((state.get("machines") or {}).get("motors") or []) if part in (m.get("on") or [])]
+    if len(found)>1:
+        turning=[m for m in found if (m.get("on") or [None,None])[1]==part]
+        if len(turning)==1: return turning[0]
+        raise ValueError(f"{len(found)} motors are on pins of {part}, between "
+                         +"; ".join(" and ".join(m.get("on") or []) for m in found)
+                         +": name the thing the one you mean turns")
+    if found: return found[0]
     raise ValueError(f"nothing turns {part} with a motor")
+
+def _control_for(app,which):
+    """A machine's controller in the running room, by its name or by a part of
+    it that is in one machine only, from the machines the last step reported."""
+    state=(app.live.session.state or {}) if app.live.session else {}
+    controls=(state.get("machines") or {}).get("controls") or []
+    named=[c for c in controls if c.get("name")==which]
+    if named: return named[0]
+    found=[c for c in controls if which in (c.get("parts") or [])]
+    if len(found)>1:
+        raise ValueError(f"{which} is part of {len(found)} machines, "
+                         +", ".join(str(c.get("name","")) for c in found)+": name the one you mean")
+    if found: return found[0]
+    raise ValueError(f"there is no machine called {which!r} in the room")
+
+def operate_machine(app,body):
+    """One command to a machine's controller (docs/machine-world.md, "Operating
+    a machine"), from the page's panel (POST /api/world/machine) or the room's
+    chat (operate): {control, sender, seq, power, direction, setting}, each of
+    the last three only if given. It goes straight to the controller -- not
+    through a thing's actions, the chat's model or the hand -- and what the
+    engine said comes back: "applied", or "stale" for a command no newer than
+    one it has applied from that sender, with the controller as it now stands.
+    That answer is the acknowledgement the panel waits for; what the machine
+    then does comes with every step."""
+    if app.live.session is None: raise ValueError("the room is not open")
+    if not isinstance(body,dict): raise ValueError("expected {control, sender, seq, power, direction, setting}")
+    command={"session":app.live.session.id,"op":"operate","control":body.get("control"),
+             "sender":str(body.get("sender") or "")[:64],"seq":body.get("seq",0)}
+    for key in ("power","direction","setting"):
+        if body.get(key) is not None: command[key]=body[key]
+    said=app.live.act(command)
+    # Kept with the world as it now stands, so a restart finds the machine as
+    # it was told.
+    if said.get("operated")=="applied": keep_world(app,"a machine was told what to do")
+    return {"operated":said.get("operated"),"control":said.get("control")}
 
 def _chat_live(app,name,args,person=None):
     """What the room's chat does to the room as it stands (room_world.LIVE): one
@@ -2139,7 +2190,35 @@ def _chat_live(app,name,args,person=None):
             # here, so a room it changes later carries the motor as it is then
             # rather than telling it this again.
             live_session.remember_told(app.live.session,motor["id"],command,brake)
+            # A motor with a controller is worked by it, and the engine hands
+            # it what drive said: power on, the command's way and size. The
+            # chat's copy writes that into the room's controller too, so it is
+            # kept as told as well -- or a later change would tell it again
+            # over whatever the person's panel or E did since.
+            # A controller told nothing of its own passes on the motor's, which
+            # remember_told has just kept.
+            state=app.live.session.state or {}
+            control=next((c for c in ((state.get("machines") or {}).get("controls") or [])
+                          if c.get("motor")==motor["id"]),None)
+            declared=getattr(app.live.session,"declared",None) or {}
+            told=next((t for _,t,i in declared.get("controls") or [] if control is not None and i==control["id"]),None)
+            if control is not None and told is not None and told[0] is not None:
+                way=0 if command==0.0 else (1 if command*int(control.get("forward",1))>0 else -1)
+                live_session.remember_operated(app.live.session,control["id"],True,way,
+                                               abs(command) if command else float(control.get("setting",1.0)))
             return {"in_the_room":f"the running room's motor turning {part} was told it too; nothing was opened again"}
+        if name=="operate":
+            # A machine worked from its controller, as the person's panel works
+            # it: what the model's copy made of the words, told to the running
+            # room's machine, and kept as what it was told (remember_operated).
+            control=_control_for(app,str(args.get("machine") or ""))
+            said=operate_machine(app,{"control":control["id"],"sender":"chat","seq":0,
+                                      **{k:args[k] for k in ("power","direction","setting") if args.get(k) is not None}})
+            live_session.remember_operated(app.live.session,control["id"],args.get("power"),args.get("direction"),
+                                           args.get("setting"))
+            now=said.get("control") or {}
+            return {"in_the_room":f"the running room's {control.get('name')} was told it too; nothing was opened again",
+                    **({"condition_now":now.get("condition")} if now.get("condition") else {})}
         return {"error":f"{name} is not something done to the room as it stands"}
     except Exception as failure:
         return {"error":str(failure)}

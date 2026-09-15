@@ -79,14 +79,20 @@ numbered 19 on its branch and landed second, so no header was ever 19:
   `banjo_motor` and `banjo_drum_rope` (see [Machines](#machines)). It changed no
   function or struct that was already there; the joint kinds gained
   `BANJO_JOINT_DRUM`, which `banjo_joints` reports for a drum's rope.
+- **24** added a machine's controller ([machine-world.md](../machine-world.md),
+  "Operating a machine"): `banjo_make_control`, `banjo_operate`,
+  `banjo_control_count` and `banjo_controls`, with the new struct
+  `banjo_control` (see [A machine's controller](#a-machines-controller)). It
+  changed no function or struct that was already there; `banjo_drive_motor` on a
+  motor with a controller tells the controller.
 
-A library at 23 has all of them, and none was ever 19. Nothing that was in 12
-changed, and nothing that was in 14 changed in 15. None of 16 to 23 changed a
+A library at 24 has all of them, and none was ever 19. Nothing that was in 12
+changed, and nothing that was in 14 changed in 15. None of 16 to 24 changed a
 function that was already there, but structs grew at their ends --
 `banjo_joint`, `banjo_overload` and `banjo_energy` in 16, `banjo_body` and
 `banjo_joint` again in 17, `banjo_body` and `banjo_body_mechanics` in 21 -- so a
 caller built against an older header must be rebuilt, and every field that was
-there keeps its place and its meaning. 18, 20, 22 and 23 changed no struct.
+there keeps its place and its meaning. 18, 20, 22, 23 and 24 changed no struct.
 
 ---
 
@@ -999,6 +1005,12 @@ else is refused), and whether its brake is on. The brake is friction on the pin,
 so it holds only while the motor is not driving, at a command of 0, and **holding
 draws nothing**: a braked hoist holds its crate on the brake, not on current.
 
+A motor that starts to drive wakes its pin's two bodies and whatever hangs from
+either on a drum's rope. A crate asleep under a braked drum was otherwise not in
+the step that turned the drum, which wound its rope in under it, slack, for a
+step. A motor with a controller is worked by it, and this tells the controller
+instead (see [A machine's controller](#a-machines-controller)).
+
 ### `int banjo_motor_count(const banjo_world *world)`
 ### `int banjo_motors(const banjo_world *world, banjo_motor *out, int max)`
 
@@ -1106,6 +1118,138 @@ opened again from a saved world has its battery, its motor and its brake as
 they stood.
 
 ---
+
+### A machine's controller
+
+A powered machine is worked from a controller, as a person works an appliance
+from its panel ([machine-world.md](../machine-world.md), "Operating a
+machine"). What is meant -- power on or off, a direction, a drive setting -- is
+turned into the motor's command and brake before every step. It governs the
+motor's effort and never the motion: every command it sets is on the motor's
+line, and how far the shaft turns is the world's answer. A motor with a
+controller is worked by it, and `banjo_drive_motor` on that motor tells the
+controller instead: power on, the command's way as its direction and its size as
+the setting, so its limits still hold.
+
+A hoist's controller, whose motor turns a drum with a rope on it, also reads
+the rope:
+
+- It slows for the two ends of its travel. The ends are the rope out at the top
+  and at the bottom. It slows to 2 m/s for each metre of rope left, never
+  below 0.05 m/s, with the command worked out from the motor's line and the
+  load's weight. It stops at each end on its brake.
+- Lowering, its command comes on from the share that holds the load still, at
+  no more than 2 of the voltage a second. From rest, a motor let drive the drum
+  down at once outruns a load that can only fall. The rope goes slack, and the
+  load snatches it when it catches up.
+- Lowering, it stops when the load comes to rest on something: its rope slack
+  for a quarter of a second with the load still.
+- Raising a load that rests on something, it takes the slack up gently.
+
+Any controller:
+
+- Told to turn the other way while it turns, it stops first, for no longer
+  than a second. It stops on its brake if it has one.
+- Stopped, it holds on its brake if its motor has one. Otherwise it coasts, and
+  says so.
+- Driven for a second and a half without getting anywhere (less than a
+  twentieth of a radian the way it was told), it stops. It says it stalled, or,
+  when the load turned it back, that the setting is too weak. It stays stopped
+  until it is told something again.
+- It drops a command no newer than one it has applied from the same sender
+  (`seq`), so a start held up on its way cannot undo a later stop. A `seq` of 0
+  is no count, applied as it comes.
+- It is saved with the world, and comes back as it was told, with the counts it
+  has applied.
+
+### `int banjo_make_control(banjo_world *world, const char *name, unsigned motor, unsigned rope, double top_out_m, double bottom_out_m)`
+
+A controller for a motor:
+
+- a hoist's when `rope` is a rope on a drum that the motor's pin turns, with
+  its travel from `top_out_m` to `bottom_out_m` of rope out (the top the less,
+  and the bottom no more than the rope);
+- a shaft's when `rope` is 0.
+
+Which way raises is worked out from the pin, the drum and which way the rope
+winds. It starts off, its motor stopped on its brake. Returns its id, always
+above zero.
+
+Refused, with the reason, for a motor that is not there, a motor with a
+controller already, a rope that is not on a drum on the motor's pin, and a
+travel the rope does not have. (`make_control` because `banjo_control` is the
+struct.)
+
+### `int banjo_operate(banjo_world *world, unsigned control, const char *sender, unsigned long long seq, int power, int direction, double setting)`
+
+What a controller is told:
+
+- `power`: 1 or 0, or -1 to leave it as it is;
+- `direction`: -1 (lower, reverse), 0 (stop) or 1 (raise, forward), or -2 to
+  leave it;
+- `setting`: the share of the battery's voltage it drives at, from 0 to 1, or a
+  NaN to leave it.
+
+States are said outright, never toggled. Returns 1 when the command was applied
+and 0 when it was stale. Refused, with the reason, for a controller that is not
+there and for values out of range.
+
+### `int banjo_control_count(const banjo_world *world)`
+### `int banjo_controls(const banjo_world *world, banjo_control *out, int max)`
+
+```c
+typedef struct {
+    unsigned id;
+    const char *name;             /* the machine's */
+    unsigned motor;               /* what it works */
+    unsigned rope;                /* a hoist's rope on its drum; 0 for a shaft */
+    double top_out_m, bottom_out_m;
+    int forward;                  /* the sign of its motor's command that raises, or is forward */
+    int power, direction;         /* what it was last told */
+    double setting;
+    const char *sender;           /* who told it last, */
+    unsigned long long seq;       /* and their count */
+    double command;               /* what it has its motor doing */
+    int brake;
+    double speed_rpm;             /* measured: its shaft, the forward way */
+    double out_m;                 /* a hoist's rope out, */
+    double rope_speed_m_s;        /* and how fast it comes in */
+    const char *condition;        /* what stands in its way; "" when nothing does */
+} banjo_control;
+```
+
+`condition` says what stands in its way, in words a person reads, or "" when
+nothing does. It is one of:
+
+- "off"
+- "stopped, holding on its brake"
+- "stopped: it coasts, with no brake to hold it"
+- "slowing for the top", "at the top"
+- "slowing for the bottom", "at the bottom"
+- "the load is down: its rope is slack"
+- "stopping before it turns the other way"
+- "stalled: it made no progress, so it stopped"
+- "too weak at this setting: the load turned it back, so it stopped"
+- "held back by its battery's power"
+- "its battery is flat"
+- "the hand is on it"
+- "its motor is gone"
+
+It is said from the moment the controller is told something, before the next
+step, as a motor's `state` is.
+
+**Measured** in the engine (`tests/machine_control_tests.cpp`), on the hoist in
+the Machines example above:
+
+- Raised at full, it stopped at the top in 3.03 s, with 0.4007 m of rope out
+  against a top of 0.4. It came in at 0.111 m/s at most over the last 5 cm.
+- Lowered at full, it stopped with 1.5994 m out against a bottom of 1.6. It went
+  out at up to 1.433 m/s where the motor's line says 1.434, and the rope carried
+  at least 206.7 N of the crate's 260.6 N.
+- Raised into a fixed beam, it said it stalled after 3.03 s.
+- A start arriving after a later stop was stale.
+
+The rest is in [machine-world.md](../machine-world.md), "Operating a machine".
 
 ## Reading the world
 

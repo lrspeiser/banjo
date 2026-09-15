@@ -1527,6 +1527,37 @@ class TheTools(unittest.TestCase):
         refused = self.client.refuse("use_action", world_id=world_id, name="hoist drum", action="Fly")
         self.assertIn("Wind it up, Stop, Let it down", refused)
 
+    def test_a_hoist_is_worked_from_its_controller(self):
+        """build_recipe "hoist" gives its hoist a controller (control), and
+        operate works it as the playground's panel does: raised, the crate
+        rises and stops by itself at the top of its travel; stopped, it holds on
+        its brake; the machine is found by its name or by any part of it; and
+        what is not a command is refused with why."""
+        world_id = self.client.call("create_world", cell_size_m=0.04, objects=[
+            {"name": "marker stone", "shape": "box", "material": "concrete",
+             "size_m": [0.08, 0.08, 0.08], "position_m": [4.0, 0.04, 4.0], "anchored": True}])["world_id"]
+        hoist = self.client.call("build_recipe", world_id=world_id, recipe="hoist", at_m=[1.0, -1.0])
+        made = hoist["and"]["control"]
+        self.assertEqual((made["control"], made["kind"], made["travel_m"]), ("hoist", "hoist", [0.3, 1.75]))
+        raised = self.client.call("operate", world_id=world_id, machine="hoist", direction="raise")
+        self.assertEqual((raised["power"], raised["direction"], raised["setting"]), (True, "raise", 1.0))
+        ran = self.client.call("run", world_id=world_id, seconds=5.0)
+        control = ran["machines"]["controls"][0]
+        self.assertEqual(control["condition"], "at the top", control)
+        self.assertAlmostEqual(control["out_m"], 0.3, delta=0.01)
+        stopped = self.client.call("operate", world_id=world_id, machine="hoist crate", direction="stop")
+        self.assertEqual(stopped["machine"], "hoist")
+        held = self.client.call("run", world_id=world_id, seconds=1.0)["machines"]["controls"][0]
+        self.assertEqual(held["condition"], "stopped, holding on its brake")
+        self.assertIn("there is no machine called",
+                      self.client.refuse("operate", world_id=world_id, machine="crane", direction="raise"))
+        self.assertIn("setting", self.client.refuse("operate", world_id=world_id, machine="hoist",
+                                                    direction="raise", setting=1.5))
+        self.assertIn("has a controller already",
+                      self.client.refuse("control", world_id=world_id, on=["hoist post", "hoist drum"]))
+        second = self.client.call("build_recipe", world_id=world_id, recipe="hoist", at_m=[3.0, -1.0])
+        self.assertEqual(second["and"]["control"]["control"], "hoist 2")
+
     def test_a_hoist_asked_for_with_a_tool_filled_in_is_built_and_says_so(self):
         """The chat fills every field it is shown: asked for a hoist, it filled
         build_recipe's `tool` in, was refused twice, and built nothing. What only

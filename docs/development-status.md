@@ -71,6 +71,25 @@
   - The action step `drive` (`server.run_action`) finds the motor by the thing it turns.
   - The page draws a drum's rope and has a Machines panel.
   - docs/machine-world.md, "The room's spelling", has all of it.
+- A machine's controller and its panel (agent/machine-control; docs/machine-world.md, "Operating a machine"): increments 1 and 2 of the owner's review of 2026-09-15.
+  - In the engine (`LiveControl`, `LiveWorld::control`, `LiveWorld::operate`), before every step, on the motor's own line:
+    - power, a direction and a drive setting, each said outright;
+    - a hoist's travel as rope out, slowed for and stopped at both ends;
+    - reversing stops first;
+    - lowering comes on from the holding share, so the rope never goes slack, and stops when the load comes to rest;
+    - a stretch of driving that gets nowhere stops it, saying why;
+    - commands ordered per sender, a stale one dropped;
+    - saved and carried with the world;
+    - `drive` on a controlled motor tells its controller.
+  - The runner takes `control` and `operate`. Steps carry `machines.controls`. The C API is ABI 24 (`banjo_make_control`, `banjo_operate`, `banjo_control_count`, `banjo_controls`). The MCP has `control` and `operate` (in `room_world.LIVE`, so the chat works the running room). A room's `machines` gain `controls`, and every motor gets one. `build_recipe "hoist"` gives its hoist one.
+  - The page: E on any part of a machine opens its panel.
+    - The panel has Power On and Off; Lower, Stop & hold and Raise (Reverse, Stop and Forward for a shaft); and a drive setting.
+    - It reads out Enabled, Commanded, Measured and Condition. Its buttons go to `POST /api/world/machine` with the page's own count, and the answer is the acknowledgement.
+    - A stripe on the turning part turns with it, and an arrow round the shaft shows the way it is driven.
+    - The Machines list and the ropes are updated in place.
+  - Found on the way:
+    - A motor starting to drive did not wake what hung on its drum, so a sleeping crate snatched the rope on the first step. It now wakes its pin's bodies and their ropes' loads.
+    - The page's action runner took the first motor on a thing; on a shared frame it now names both.
 - Found on the way:
   - Every moving piece but a whole ball carries Jolt damping of 0.02/s. It is a numerical stand-in, not a law. A flywheel on a frictionless pin lost 6% of its motor's work to it. What a motor turns now loses it. Whether everything on a pin should is the owner's decision D4.
   - `DrumRope.cpp` instantiates Jolt's inline solver code. Its copy, compiled with our `/fp:precise`, replaced Jolt's own `/fp:fast` copy at link, in the kerf too. That moved a cut in banjo_blade_tests from 4.676 J to 4.192 J.

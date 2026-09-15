@@ -1110,6 +1110,15 @@ if(BANJO_BUILD_TESTS)
             banjo_enable_warnings(banjo_motor_tests)
             add_test(NAME banjo_motor_tests COMMAND banjo_motor_tests)
 
+            # A machine's controller (docs/machine-world.md, "Operating a
+            # machine"): a hoist held to its travel, a reverse that stops
+            # first, a motor that gets nowhere stopped, a late command dropped,
+            # and a restart that gives it back as it was told.
+            add_executable(banjo_machine_control_tests tests/machine_control_tests.cpp)
+            target_link_libraries(banjo_machine_control_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_machine_control_tests)
+            add_test(NAME banjo_machine_control_tests COMMAND banjo_machine_control_tests)
+
             # Things that slide: a portcullis in its grooves, a sliding door, a
             # bolt across a door. The test that matters is the first one -- a
             # raised grate falls when you let go, because nothing here knows

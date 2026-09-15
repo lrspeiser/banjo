@@ -611,7 +611,7 @@ def normalise_machines(machines: Any, bodies: list[dict[str, Any]],
         return {}
     if not isinstance(machines, dict):
         raise ValueError("machines must be an object with stores and motors")
-    unknown = set(machines) - {"stores", "motors"}
+    unknown = set(machines) - {"stores", "motors", "controls"}
     if unknown:
         raise ValueError(f"machines has fields it does not know: {sorted(unknown)}")
     named = {str(body.get("name", "")) for body in bodies}
@@ -666,7 +666,70 @@ def normalise_machines(machines: Any, bodies: list[dict[str, Any]],
                        "brake": bool(motor.get("brake", brake > 0.0))})
     if len(motors) > 64:
         raise ValueError("a room may hold at most 64 motors")
-    return {"stores": stores, "motors": motors}
+    # Every motor is worked by a controller (docs/machine-world.md, "Operating a
+    # machine"), which a person works from its panel: one the room does not
+    # declare is given one, off, so a hoist made before there were controllers
+    # has its panel too. A motor turning a drum with a rope on it is a hoist,
+    # whose travel runs from top_out_mm of rope out to bottom_out_mm.
+    controls: list[dict[str, Any]] = []
+
+    def travel(made: dict[str, Any], rope: dict[str, Any], given: dict[str, Any]) -> None:
+        length = float(rope.get("length_mm", 0.0))
+        top = _number(given.get("top_out_mm", min(300.0, length / 2.0)), 0.0, length,
+                      f"control {made['name']!r} top_out_mm")
+        made["top_out_mm"] = top
+        made["bottom_out_mm"] = _number(given.get("bottom_out_mm", max(top + 10.0, length - 50.0)),
+                                        top + 1.0, length, f"control {made['name']!r} bottom_out_mm")
+
+    for i, control in enumerate(machines.get("controls") or []):
+        if not isinstance(control, dict):
+            raise ValueError(f"control {i} is not an object")
+        on = [str(v) for v in control.get("on") or []]
+        motor = next((m for m in motors if sorted(m["on"]) == sorted(on)), None) if len(on) == 2 else None
+        if motor is None:
+            raise ValueError(f"control {i} works the motor on the pin between {on}, and there is none")
+        if any(c["on"] == motor["on"] for c in controls):
+            raise ValueError(f"control {i}: the motor on {motor['on'][0]} and {motor['on'][1]} has a "
+                             f"controller already")
+        name = " ".join(str(control.get("name") or "").split())[:60]
+        if not name or any(c["name"] == name for c in controls):
+            raise ValueError(f"control {i} needs a name of its own")
+        made: dict[str, Any] = {"name": name, "on": list(motor["on"])}
+        # What it was told -- power, a direction, a setting -- when the room
+        # says. One the room says none of that about passes on what its motor
+        # was told (live_session._power, room_world.open_room).
+        if any(key in control for key in ("power", "direction", "setting")):
+            direction = control.get("direction", 0)
+            if direction not in (-1, 0, 1):
+                raise ValueError(f"control {name!r}: direction is -1, 0 or 1")
+            made.update(power=bool(control.get("power", False)), direction=int(direction),
+                        setting=_number(control.get("setting", 1.0), 0.0, 1.0, f"control {name!r} setting"))
+        rope = _hoist_rope(motor["on"], joints)
+        if rope is not None:
+            travel(made, rope, control)
+        controls.append(made)
+    for motor in motors:
+        if any(c["on"] == motor["on"] for c in controls):
+            continue
+        rope = _hoist_rope(motor["on"], joints)
+        base = "hoist" if rope is not None else motor["on"][1]
+        name, count = base, 1
+        while any(c["name"] == name for c in controls):
+            count += 1
+            name = f"{base} {count}"
+        # Told nothing of its own: it passes on what its motor was told, so a
+        # hoist a room left winding goes on winding, through its controller.
+        made = {"name": name, "on": list(motor["on"])}
+        if rope is not None:
+            travel(made, rope, {})
+        controls.append(made)
+    return {"stores": stores, "motors": motors, **({"controls": controls} if controls else {})}
+
+
+def _hoist_rope(on: list[str], joints: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The rope on a drum a motor's pin turns -- the drum one of the two things
+    the pin joins -- which makes the machine a hoist; None for anything else."""
+    return next((j for j in joints if j.get("kind") == "drum" and j.get("a") in on), None)
 
 
 def normalise_blades(blades: Any, bodies: list[dict[str, Any]]) -> list[dict[str, Any]]:

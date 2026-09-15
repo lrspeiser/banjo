@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import ctypes
 import json
+import math
 import os
 import sys
 from dataclasses import dataclass
@@ -44,7 +45,7 @@ from typing import Any, Iterator
 # a DC motor on a pin with a brake, a rope that winds onto a drum, and how hard
 # a thing is to turn (energy_store, motor, drive_motor, drum, inertia_about).
 # Checked for equality below, so this has to match exactly.
-ABI_VERSION = 23
+ABI_VERSION = 24
 
 NOTHING, HELD, DENTED, BROKE = 0, 1, 2, 3
 OUTCOMES = {0: "nothing", 1: "held", 2: "dented", 3: "broke"}
@@ -427,6 +428,27 @@ class _Motor(ctypes.Structure):
                 ("heat_j", ctypes.c_double),
                 ("drawn_j", ctypes.c_double),
                 ("friction_heat_j", ctypes.c_double)]
+
+
+class _Control(ctypes.Structure):
+    _fields_ = [("id", ctypes.c_uint),
+                ("name", ctypes.c_char_p),
+                ("motor", ctypes.c_uint),
+                ("rope", ctypes.c_uint),
+                ("top_out_m", ctypes.c_double),
+                ("bottom_out_m", ctypes.c_double),
+                ("forward", ctypes.c_int),
+                ("power", ctypes.c_int),
+                ("direction", ctypes.c_int),
+                ("setting", ctypes.c_double),
+                ("sender", ctypes.c_char_p),
+                ("seq", ctypes.c_ulonglong),
+                ("command", ctypes.c_double),
+                ("brake", ctypes.c_int),
+                ("speed_rpm", ctypes.c_double),
+                ("out_m", ctypes.c_double),
+                ("rope_speed_m_s", ctypes.c_double),
+                ("condition", ctypes.c_char_p)]
 
 
 class _DrumRope(ctypes.Structure):
@@ -848,6 +870,43 @@ class Motor:
     heat_j: float
     drawn_j: float
     friction_heat_j: float
+
+
+@dataclass(frozen=True)
+class Control:
+    """A machine's controller (ABI 24, docs/machine-world.md, "Operating a
+    machine"): what a person or a program means -- power, a direction, a drive
+    setting -- turned into its motor's command and brake before every step.
+
+    A hoist's (`rope` a rope on a drum its motor's pin turns) slows for the two
+    ends of its travel, `top_out_m` and `bottom_out_m` of rope out, and stops at
+    them; it stops lowering when its load comes to rest on something. A motor
+    driven into something that will not move for 1.5 s is stopped until it is
+    told something again. `power`, `direction` (-1 lower or reverse, 0 stop, 1
+    raise or forward) and `setting` (the share of the battery's voltage, 0 to 1)
+    are what it was last told, by `sender` with its count `seq`; `command` and
+    `brake` are what it has its motor doing; `speed_rpm` (the forward way),
+    `out_m` and `rope_speed_m_s` (the rope coming in) are measured; `condition`
+    says what stands in its way, "" when nothing does.
+    """
+    id: int
+    name: str
+    motor: int
+    rope: int               # 0 for a shaft
+    top_out_m: float
+    bottom_out_m: float
+    forward: int            # the sign of its motor's command that raises, or is forward
+    power: bool
+    direction: int
+    setting: float
+    sender: str
+    seq: int
+    command: float
+    brake: bool
+    speed_rpm: float
+    out_m: float
+    rope_speed_m_s: float
+    condition: str
 
 
 @dataclass(frozen=True)
@@ -1347,6 +1406,17 @@ def library(path: str | os.PathLike[str] | None = None) -> ctypes.CDLL:
     lib.banjo_drum_rope_count.restype = ctypes.c_int
     lib.banjo_drum_ropes.argtypes = [ctypes.c_void_p, ctypes.POINTER(_DrumRope), ctypes.c_int]
     lib.banjo_drum_ropes.restype = ctypes.c_int
+    # ABI 24: a machine's controller.
+    lib.banjo_make_control.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint, ctypes.c_uint,
+                                       ctypes.c_double, ctypes.c_double]
+    lib.banjo_make_control.restype = ctypes.c_int
+    lib.banjo_operate.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_char_p, ctypes.c_ulonglong,
+                                  ctypes.c_int, ctypes.c_int, ctypes.c_double]
+    lib.banjo_operate.restype = ctypes.c_int
+    lib.banjo_control_count.argtypes = [ctypes.c_void_p]
+    lib.banjo_control_count.restype = ctypes.c_int
+    lib.banjo_controls.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Control), ctypes.c_int]
+    lib.banjo_controls.restype = ctypes.c_int
     lib.banjo_decline_break.restype = ctypes.c_int
     lib.banjo_last_outcome.argtypes = [ctypes.c_void_p]
     lib.banjo_last_outcome.restype = ctypes.c_int
@@ -2037,6 +2107,51 @@ class World:
                       turned_rad=m.turned_rad, work_j=m.work_j, heat_j=m.heat_j,
                       drawn_j=m.drawn_j, friction_heat_j=m.friction_heat_j)
                 for m in out[:written]]
+
+    def control(self, name: str, motor: int, rope: int = 0, top_out_m: float = 0.0,
+                bottom_out_m: float = 0.0) -> int:
+        """Put a controller on a motor (see `Control`): a hoist's when `rope` is
+        a rope on a drum the motor's pin turns, its travel from `top_out_m` to
+        `bottom_out_m` of rope out; a shaft's when `rope` is 0. It starts off,
+        its motor stopped on its brake, and from then on it works the motor:
+        `drive_motor` on that motor tells the controller. Returns its id
+        (banjo_make_control)."""
+        return self._check(
+            self._lib.banjo_make_control(self._alive(), name.encode("utf-8"), int(motor), int(rope),
+                                         float(top_out_m), float(bottom_out_m)),
+            f"putting a controller on motor {motor}")
+
+    def operate(self, control: int, sender: str = "", seq: int = 0, power: bool | None = None,
+                direction: int | None = None, setting: float | None = None) -> bool:
+        """Tell a controller what is meant, by a sender and its count: power,
+        a direction (-1 lower or reverse, 0 stop, 1 raise or forward) and a
+        drive setting (0 to 1), each only if given -- states are said outright,
+        never toggled. True if it was applied; False if it was stale, a command
+        from `sender` no newer than one already applied from it, and nothing
+        changed. A `seq` of 0 is no count, applied as it comes (banjo_operate)."""
+        answer = self._check(
+            self._lib.banjo_operate(self._alive(), int(control), sender.encode("utf-8"), int(seq),
+                                    -1 if power is None else (1 if power else 0),
+                                    -2 if direction is None else int(direction),
+                                    math.nan if setting is None else float(setting)),
+            f"telling controller {control} what to do")
+        return answer == 1
+
+    def controls(self) -> list[Control]:
+        """Every machine's controller: what it was told, what it has its motor
+        doing, what it measured, and what stands in its way. See `Control`."""
+        count = self._check(self._lib.banjo_control_count(self._alive()), "counting the controllers")
+        if count <= 0:
+            return []
+        out = (_Control * count)()
+        written = self._check(self._lib.banjo_controls(self._alive(), out, count), "reading the controllers")
+        return [Control(id=int(c.id), name=(c.name or b"").decode("utf-8"), motor=int(c.motor),
+                        rope=int(c.rope), top_out_m=c.top_out_m, bottom_out_m=c.bottom_out_m,
+                        forward=int(c.forward), power=bool(c.power), direction=int(c.direction),
+                        setting=c.setting, sender=(c.sender or b"").decode("utf-8"), seq=int(c.seq),
+                        command=c.command, brake=bool(c.brake), speed_rpm=c.speed_rpm, out_m=c.out_m,
+                        rope_speed_m_s=c.rope_speed_m_s, condition=(c.condition or b"").decode("utf-8"))
+                for c in out[:written]]
 
     def inertia_about(self, name: str, axis: Any) -> float:
         """How hard a named thing is to turn about an axis through its centre of

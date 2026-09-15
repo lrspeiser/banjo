@@ -210,6 +210,39 @@ kbd {
               color: var(--dim); }
 #details-last.refused #details-last-text { color: var(--warm); }
 
+/* A machine's panel: over the view at the bottom left, clear of the side view,
+   like the front of an appliance. Pressed buttons are lit; a machine that is
+   off has its drive buttons greyed, since off its brake holds it. */
+#machine-panel {
+  position: fixed; left: 14px; bottom: 14px; z-index: 7; width: min(310px, calc(100vw - var(--panel-w) - 28px));
+  display: grid; gap: 8px; padding: 10px 12px 12px; font-size: 12px; color: var(--ink);
+  background: rgb(16 23 27 / .95); border: 1px solid var(--edge); border-radius: 10px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / .45);
+}
+#machine-panel[hidden] { display: none; }
+.mp-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.mp-kind { margin: 0; font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
+#mp-name { margin: 0; font-size: 16px; font-weight: 650; line-height: 1.25; text-wrap: balance; }
+#mp-close { padding: 1px 9px; font-size: 17px; line-height: 1.2; }
+.mp-label { color: var(--dim); }
+.mp-power { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 8px; }
+.mp-seg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.mp-drive { display: grid; grid-template-columns: 1fr 1.25fr 1fr; gap: 4px; }
+#machine-panel button { padding: 7px 8px; }
+#machine-panel button[aria-pressed="true"] { background: #243a2a; border-color: #5f9a63; color: #eaf7e4; }
+#mp-off[aria-pressed="true"], #mp-stop[aria-pressed="true"] { background: #3a301c; border-color: var(--warm); color: #fbefd2; }
+.mp-setting { display: grid; grid-template-columns: 96px minmax(0, 1fr) 4ch; align-items: center; gap: 8px; }
+#mp-setting { width: 100%; accent-color: var(--warm); }
+#mp-setting-value { text-align: right; font-variant-numeric: tabular-nums; }
+.mp-hint { margin: -4px 0 0; color: var(--dim); font-size: 11px; }
+.mp-read { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 3px 8px; margin: 0;
+           padding-top: 7px; border-top: 1px solid var(--edge); }
+.mp-read dt { color: var(--dim); }
+.mp-read dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+#mp-condition.attention { color: var(--warm); font-weight: 600; }
+.mp-ack { margin: 0; min-height: 1.2em; color: var(--dim); font-size: 11px; }
+.mp-ack.stale { color: var(--warm); }
+
 /* 3. The tabs: a fixed share of the height, each scrolling in itself. */
 #tabs { flex: 0 0 27vh; min-height: 150px; display: flex; flex-direction: column; }
 [role="tablist"] { display: flex; padding: 0 10px; border-bottom: 1px solid var(--edge); }

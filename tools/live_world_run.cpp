@@ -260,7 +260,8 @@ nlohmann::json restoredJson(const LiveRestore &restored) {
     if (restored.tier == "carried") {
         const LiveRestore::Carried &n = restored.carried;
         out["carried"] = {{"placed", n.placed}, {"fresh", n.fresh}, {"gone", n.gone}, {"joints", n.joints},
-                          {"energy_stores", n.energy_stores}, {"motors", n.motors}, {"blades", n.blades},
+                          {"energy_stores", n.energy_stores}, {"motors", n.motors},
+                          {"controls", n.controls}, {"blades", n.blades},
                           {"tool_points", n.tool_points}, {"heat", n.heat}, {"hand", n.hand}};
         out["not_carried"] = restored.not_carried;
         out["woken"] = restored.woken;
@@ -280,6 +281,7 @@ LiveCarry carryFrom(const nlohmann::json &doc) {
     ids("joints", carry.joints);
     ids("energy_stores", carry.energy_stores);
     ids("motors", carry.motors);
+    ids("controls", carry.controls);
     ids("blades", carry.blades);
     ids("tool_points", carry.tool_points);
     if (doc.contains("declared_anew"))
@@ -322,10 +324,54 @@ LiveStroke readStroke(const nlohmann::json &command) {
 // every step that has any: a battery's charge, a motor's power and a hoist's
 // rope change every step, and a host that polled for them would draw them a
 // poll behind, as the bow's meter did at 4 Hz.
+// A machine's controller, as a host shows it (docs/machine-world.md,
+// "Operating a machine"): what it was told and by whom, what it has its motor
+// doing, what the machine is measured doing, and what stands in the way -- with
+// the things it is made of, by name (its motor's pin's two, and a hoist's
+// load), since a host finds the machine from the thing a person looks at, and
+// whether its motor has a brake to stop and hold with.
+nlohmann::json controlOf(const LiveControl &c, const std::vector<LiveMotor> &motors,
+                         const std::vector<LiveJoint> &joints) {
+    nlohmann::json parts = nlohmann::json::array();
+    bool holds = false;
+    for (const LiveMotor &m : motors) {
+        if (m.id != c.motor) continue;
+        holds = m.brake_torque_n_m > 0.0;
+        for (const LiveJoint &joint : joints)
+            if (joint.id == m.joint) parts = {joint.a, joint.b};
+    }
+    if (c.rope != 0)
+        for (const LiveJoint &joint : joints)
+            if (joint.id == c.rope && std::find(parts.begin(), parts.end(), joint.b) == parts.end())
+                parts.push_back(joint.b);
+    return {{"id", c.id},
+            {"name", c.name},
+            {"kind", c.rope != 0 ? "hoist" : "shaft"},
+            {"motor", c.motor},
+            {"rope", c.rope},
+            {"parts", std::move(parts)},
+            {"holds", holds},
+            {"top_out_m", tidy(c.top_out_m)},
+            {"bottom_out_m", tidy(c.bottom_out_m)},
+            {"forward", c.forward},
+            {"power", c.power},
+            {"direction", c.direction},
+            {"setting", tidy(c.setting)},
+            {"sender", c.sender},
+            {"seq", c.seq},
+            {"command", tidy(c.command)},
+            {"brake", c.brake},
+            {"speed_rpm", tidy(c.speed_rpm)},
+            {"out_m", tidy(c.out_m)},
+            {"rope_speed_m_s", tidy(c.rope_speed_m_s)},
+            {"condition", c.condition}};
+}
+
 nlohmann::json machinesOf(const LiveWorld &world) {
     const std::vector<LiveEnergyStore> stores = world.energyStores();
     const std::vector<LiveMotor> motors = world.motors();
     const std::vector<LiveJoint> joints = world.joints();
+    const std::vector<LiveControl> controls = world.controls();
     nlohmann::json ropes = nlohmann::json::array();
     for (const LiveJoint &joint : joints) {
         if (joint.kind != "drum" || !joint.attached) continue;
@@ -336,9 +382,10 @@ nlohmann::json machinesOf(const LiveWorld &world) {
                          {"leaves", vec(joint.leaves_m)},
                          {"meets", vec(joint.meets_m)}});
     }
-    if (stores.empty() && motors.empty() && ropes.empty()) return nullptr;
+    if (stores.empty() && motors.empty() && ropes.empty() && controls.empty()) return nullptr;
     nlohmann::json out{{"stores", nlohmann::json::array()}, {"motors", nlohmann::json::array()},
-                       {"ropes", std::move(ropes)}};
+                       {"ropes", std::move(ropes)}, {"controls", nlohmann::json::array()}};
+    for (const LiveControl &c : controls) out["controls"].push_back(controlOf(c, motors, joints));
     for (const LiveEnergyStore &s : stores)
         out["stores"].push_back({{"id", s.id},
                                  {"name", s.name},
@@ -1822,6 +1869,37 @@ int main(int argc, char **argv) {
                     if (!world->driveMotor(command.at("motor").get<unsigned>(), command.value("command", 0.0),
                                            command.value("brake", false)))
                         throw std::invalid_argument("there is no such motor");
+                } else if (op == "control") {
+                    // A machine's controller (docs/machine-world.md, "Operating a
+                    // machine"): a hoist's, on a motor and the rope on its drum,
+                    // with the rope out at the two ends of its travel; or a
+                    // shaft's, on a motor alone.
+                    const unsigned control = world->control(
+                        command.value("name", std::string{}), command.at("motor").get<unsigned>(),
+                        command.value("rope", 0U), command.value("top_out_m", 0.0), command.value("bottom_out_m", 0.0));
+                    if (control == 0)
+                        throw std::invalid_argument(
+                            "a controller goes on a motor that has none; a hoist's rope is on a drum the motor's pin "
+                            "turns, and its travel runs from the rope out at the top to the rope out at the bottom, "
+                            "the top the less and the bottom no more than the rope");
+                    reply["control"] = control;
+                } else if (op == "operate") {
+                    // What a controller is told, by a sender and its count --
+                    // power, a direction, a drive setting, each only if given --
+                    // answered "applied" or "stale", with the controller as it
+                    // now stands: the acknowledgement a panel waits for.
+                    LiveWorld::ControlCommand told;
+                    told.sender = command.value("sender", std::string{});
+                    told.seq = command.value("seq", std::uint64_t{0});
+                    if (command.contains("power")) told.power = command.at("power").get<bool>();
+                    if (command.contains("direction")) told.direction = command.at("direction").get<int>();
+                    if (command.contains("setting")) told.setting = command.at("setting").get<double>();
+                    const unsigned id = command.at("control").get<unsigned>();
+                    const std::string answer = world->operate(id, told);
+                    if (answer != "applied" && answer != "stale") throw std::invalid_argument(answer);
+                    reply["operated"] = answer;
+                    for (const LiveControl &c : world->controls())
+                        if (c.id == id) reply["control"] = controlOf(c, world->motors(), world->joints());
                 } else if (op == "unhinge") {
                     world->unhinge(command.at("joint").get<unsigned>());
                 } else if (op == "joint_friction") {
