@@ -662,9 +662,12 @@ function placeBeyond(block) {
 // Where the person stood, kept for this tab: sessionStorage lasts through a
 // reload and goes with the tab. A reload rejoins the room as it stands
 // (server.py _rejoin), and puts the person back where they were rather than at
-// the valley's view point.
+// the valley's view point. Kept when the room has stopped too: a server that
+// went away leaves the page with no session, and when it is back it gives the
+// room back whole -- the reload after that is the one that most needs it. It
+// is only used for a room as it stood (asItStood), so keeping it costs nothing.
 function keepView() {
-  if (!world.scene || !world.session) return;
+  if (!world.scene) return;
   const look = camera.position.clone().add(forwardVector().multiplyScalar(4));
   try {
     sessionStorage.setItem(`banjo.view.${world.scene}`,

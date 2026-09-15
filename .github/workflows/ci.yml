@@ -76,8 +76,9 @@ jobs:
           python3 tests/workbench_tests.py -v
           python3 tests/playground_connection_tests.py -v
           # The world page as a person uses it, in headless Chrome on the real
-          # engine: a reload keeps the room. Required here, so a browser that
-          # went missing fails the build instead of the test skipping.
+          # engine: a reload keeps the room, and a restart gives it back as it
+          # stood. Required here, so a browser that went missing fails the
+          # build instead of the test skipping.
           BANJO_BUILD_DIR=build/ci BANJO_CHROME=/usr/bin/google-chrome \
             BANJO_CHROME_ARGS="--no-sandbox --enable-unsafe-swiftshader" \
             BANJO_BROWSER_TESTS=required python3 tests/world_page_journey_tests.py -v
