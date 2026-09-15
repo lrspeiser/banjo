@@ -177,6 +177,30 @@ class AReloadKeepsTheRoom(unittest.TestCase):
         errors = self.js("banjoRoom.status().errors")
         self.assertFalse(errors, f"page errors {when}: {errors}")
 
+    def offering(self, what):
+        """Whether the side view marks `what` as the thing E does now -- what a
+        person reads before pressing it. The page works that out in the frame
+        after the crosshair lands on something, and in CI's software drawing a
+        frame can be a second away: E pressed the moment the crosshair was on
+        the ball did nothing there."""
+        return self.wait_for("banjoRoom.details().rows.some((r) => r[2] === 'chosen' && "
+                             f"r[1] === {json.dumps(what)})", 30)
+
+    def situation(self):
+        """What the page says of itself and the server's last lines, for a
+        failure to explain itself."""
+        try:
+            page = json.dumps(self.js("""(() => {
+              const r = banjoRoom, d = r.details ? r.details() : {};
+              return {aim: r.world.aim && r.world.aim.name, held: r.world.held && r.world.held.name,
+                      mode: r.world.use && r.world.use.mode, last: d.last, facts: d.facts,
+                      rows: d.rows, errors: r.status().errors};
+            })()"""))[:1500]
+        except Exception as error:   # the page itself is what went wrong
+            page = f"(the page could not say: {error})"
+        tail = self.log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-12:]
+        return page + "\n  server: " + "\n  server: ".join(tail)
+
     def reload(self, why):
         self.no_page_errors(f"before {why}")
         origin = self.js("performance.timeOrigin")
@@ -195,6 +219,13 @@ class AReloadKeepsTheRoom(unittest.TestCase):
         self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world"})
         self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.status().scene === 'world' && "
                                       "banjoRoom.ready()", 300), "the world room did not open")
+        # How fast this machine draws the room, for reading a failure by: CI
+        # draws it in software.
+        frames = self.page.evaluate(
+            "new Promise((done) => { let n = 0; const t0 = performance.now(); const tick = () => {"
+            " n++; if (performance.now() - t0 < 1000) requestAnimationFrame(tick); else done(n); };"
+            " requestAnimationFrame(tick); })", await_promise=True, timeout=30)
+        print(f"\n   the page draws {frames} frames a second here", flush=True)
         things = self.js(THINGS)
         ball = next((b for b in things if not b["anchored"] and 0 < b["mass"] < 20 and "ball" in b["name"]),
                     None)
@@ -210,11 +241,12 @@ class AReloadKeepsTheRoom(unittest.TestCase):
                            f"banjoRoom.lookAt({x}, {y}, {z}); true")
         self.assertTrue(self.wait_for(f"banjoRoom.world.aim && banjoRoom.world.aim.name === {q}", 10),
                         f"the crosshair is not on {name}")
+        self.assertTrue(self.offering("Pick it up"), f"E is not offering to pick {name} up: {self.situation()}")
         self.press_e()
         self.assertTrue(self.wait_for(f"banjoRoom.world.held && banjoRoom.world.held.name === {q} && "
                                       f"banjoRoom.world.inventory.hands.right && "
-                                      f"banjoRoom.world.inventory.hands.right.name === {q}", 20),
-                        f"E did not pick {name} up into the right hand")
+                                      f"banjoRoom.world.inventory.hands.right.name === {q}", 30),
+                        f"E did not pick {name} up into the right hand: {self.situation()}")
         eye = self.js("banjoRoom.camera.position.toArray()")
         gx, gz = eye[0] + 2.0, eye[2]
         ground = self.js(f"banjoRoom.groundAt({gx}, {gz})") or 0.0
@@ -234,9 +266,9 @@ class AReloadKeepsTheRoom(unittest.TestCase):
                         f"after a reload the person is not where they stood: {stood} -> {now}")
 
         # E: put down there -- and after the next reload it is still there.
-        time.sleep(1.0)
+        self.assertTrue(self.offering("Put it down"), f"E is not offering to put it down: {self.situation()}")
         self.press_e()
-        self.assertTrue(self.wait_for("!banjoRoom.world.held", 20), "E did not put it down")
+        self.assertTrue(self.wait_for("!banjoRoom.world.held", 30), f"E did not put it down: {self.situation()}")
         put = self.at_rest(name)
         self.assertGreater(math.dist(put, authored), 1.0,
                            f"it was put down only {math.dist(put, authored):.2f} m from where the room had it")
