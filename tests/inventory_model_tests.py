@@ -140,5 +140,36 @@ class WhatAPersonHasChangesOnlyByRequest(unittest.TestCase):
         self.assertEqual(doubled.stowed, [], "an item in a hand was also kept in the inventory")
 
 
+class WhatAPersonHasIsKeptWithTheRoom(unittest.TestCase):
+    """room_store keeps the record with the room, so a server restart -- the sims
+    are restarted whenever work lands -- does not hand the bag's things back."""
+
+    def test_the_room_store_keeps_the_record_and_reads_it_back(self):
+        import tempfile
+        import room_store
+        import world_room
+        with tempfile.TemporaryDirectory() as folder:
+            store = room_store.RoomStore(folder)
+            room = world_room.Room("world")
+            room.inventory = inventory.Inventory({"revision": 2, "stowed": ["b-cup0000001"],
+                                                  "facing": {"b-cup0000001": [1, 0, 0, 0]}})
+            self.assertTrue(store.save(room))
+            back = store.load("world")
+            self.assertEqual(back.inventory_record, room.inventory.record())
+            self.assertEqual(inventory.Inventory(back.inventory_record).stowed, ["b-cup0000001"])
+
+    def test_a_room_kept_before_there_was_an_inventory_reads_as_a_person_with_nothing(self):
+        import tempfile
+        import room_store
+        import world_room
+        with tempfile.TemporaryDirectory() as folder:
+            store = room_store.RoomStore(folder)
+            self.assertTrue(store.save(world_room.Room("world")))
+            back = store.load("world")
+            self.assertIsNone(back.inventory_record)
+            nothing = inventory.Inventory(back.inventory_record)
+            self.assertEqual((nothing.stowed, nothing.hands), ([], {"right": None, "left": None}))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

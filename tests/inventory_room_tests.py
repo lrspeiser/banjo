@@ -104,6 +104,23 @@ class WhatTakingAndHoldingDoToTheThing(unittest.TestCase):
                         f"the ball put down in front of the person is at {landed}")
         self.assertEqual(down["record"]["stowed"], [])
 
+    def test_a_room_opened_again_sets_the_bags_things_aside_and_empties_the_hand_into_the_bag(self):
+        """A room opens from its spec -- after the chat changes it, or a restart
+        -- so the bag's things open standing in it. They are set aside again
+        before the page draws anything, and a thing in the hand goes to the bag,
+        since the engine's hand is empty in a room just opened."""
+        self.ask("t1", 0, "take")
+        self.ask("e1", 1, "equip")
+        opened = self.live.open(self.app, {"spec": self.app.room.spec})
+        self.session = opened["session"]
+        self.assertIn("ball", [b["name"] for b in opened["bodies"]])
+        shown = inventory_room.after_open(self.app, opened)
+        self.assertNotIn("ball", [b["name"] for b in opened["bodies"]],
+                         "the page would draw the bag's ball in the room opened again")
+        self.assertNotIn("ball", self.bodies(), "the bag's ball stands in the room opened again")
+        self.assertIsNone(shown["hands"]["right"])
+        self.assertEqual(shown["stowed"], [{"id": "b-ball000001", "name": "ball"}])
+
     def test_the_floor_is_not_taken_and_a_stale_revision_changes_nothing(self):
         floor = inventory_room.request(self.app, {"request": "f1", "revision": 0, "op": "take",
                                                   "item": "floor", "person": PERSON})

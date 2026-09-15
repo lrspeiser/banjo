@@ -10,7 +10,10 @@ a room, and a room is read back the first time it is opened after a restart.
 
 What is kept is exactly what a page reload keeps: the authored room and its
 conversation. Where things were moved to by hand, and what broke, belong to the
-running world and go when it does.
+running world and go when it does. And what the person has (inventory.py):
+which things are in their bag and in their hands, so a restart does not hand
+the bag's things back to the room. It is optional -- a room kept before there
+was one reads as a person with nothing -- so the format is unchanged.
 
 One folder to a server (build/playground-rooms/<port> by default), because the
 three sims share one checkout and one person's world must not be another port's
@@ -53,6 +56,12 @@ class RoomStore:
             return False
         record = {"format": FORMAT, "scene": room.scene, "saved_unix_s": round(time.time(), 3),
                   "spec": room.spec, "chat": room.chat}
+        # What the person has: the record itself once it is in use
+        # (inventory_room.inventory_of), else what was kept and not yet used.
+        kept = getattr(room, "inventory", None)
+        has = kept.record() if callable(getattr(kept, "record", None)) else getattr(room, "inventory_record", None)
+        if isinstance(has, dict):
+            record["inventory"] = has
         text = json.dumps(record, allow_nan=False)
         path = self.path_of(room.scene)
         with self.lock:
@@ -85,6 +94,7 @@ class RoomStore:
         room.spec = record["spec"]
         room.chat = [turn for turn in record.get("chat", []) if isinstance(turn, dict)]
         room.kept_since = record.get("saved_unix_s")
+        room.inventory_record = record["inventory"] if isinstance(record.get("inventory"), dict) else None
         return room
 
     def set_aside(self, scene: str, why: str) -> None:

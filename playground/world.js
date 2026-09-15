@@ -109,6 +109,7 @@ const world = {
   stock: new Map(),       // material -> { kg, pieces }
   sweptSince: new Map(),  // material -> kg, waiting to be announced
   carriedGround: null,    // sand and soil out of this room's ground: the engine's count
+  inventory: null,        // what the person has: the server's record, as it shows it
   workingOn: "",          // what the engine is working out, for the frame record
   held: null,             // { name, distance }
   aim: null,              // what the crosshair is on, from the engine
@@ -1131,10 +1132,92 @@ function showStock() {
 // that use it. Built from what the page already knows, and redrawn only when
 // that changes.
 let inventorySaid = "";
+
+// Whether the thing in the engine's hand came out of the bag: the record says
+// the hand in the world holds it.
+function fromBagInHand(name) {
+  const inv = world.inventory;
+  const hand = inv && inv.hands && inv.hands[inv.hand_in_the_world];
+  return !!(name && hand && hand.name === name);
+}
+
+// The page's side of a hold the room has already ended -- set aside, or let go
+// of by the server: what dropIt does, without asking the room to let go again.
+function forgetHold() {
+  world.drawn = null;
+  world.held = null;
+  $("crosshair").classList.remove("holding");
+  $("carry").hidden = true;
+  clearGuides();
+  aimArc.hide();
+  world.use = { mode: "none" };
+  showUse();
+}
+
+// A thing the server has put in the hand (the bag's Hold): held by its middle,
+// as taking hold of a loose thing a hand can lift always is (pickUp).
+function adoptGrip(name) {
+  const entry = world.bodies.get(name);
+  if (!entry) return;
+  world.held = { name, throwable: true, loose: true,
+                 distance: holdDistanceFor(radiusOf(entry)), turn: startTurning(entry) };
+  world.use = { mode: "ready", name, kg: entry.mass,
+                noun: entry.shape === "sphere" ? "ball" : "thing",
+                latched: !!latchOn(name), turnable: entry.shape !== "sphere",
+                bringing: { from: entry.mesh.position.clone(), since: performance.now() } };
+  $("crosshair").classList.add("holding");
+  $("label").hidden = true;
+  $("carry").hidden = false;
+  showUse();
+}
+
+// What the person has is the server's record (inventory_room.py): the page
+// asks for a change and shows the answer -- it never decides it. Each change
+// has its own id, so a retry is never done twice, and carries the revision the
+// page last saw, so a stale one is refused rather than guessed at.
+async function inventoryChange(op, item, quiet = false) {
+  if (!world.session) return null;
+  let answer;
+  try {
+    answer = await api("/api/world/inventory", {
+      session: world.session, request: crypto.randomUUID(), op, item,
+      revision: world.inventory && world.inventory.record ? world.inventory.record.revision : null,
+      person: whereIAm() });
+  } catch (error) {
+    if (!quiet) say("bad", String(error.message || error));
+    return null;
+  }
+  if (answer.shown) world.inventory = answer.shown;
+  inventorySaid = "";
+  showInventory();
+  if (!answer.ok) {
+    if (!quiet) say("bad", answer.why);
+    return answer;
+  }
+  const room = answer.room || {};
+  if (room.set_aside) {
+    // Out of the world: not in the hand, and not drawn from now on.
+    if (world.held && world.held.name === room.set_aside) forgetHold();
+    const entry = world.bodies.get(room.set_aside);
+    if (entry) { forget(entry.mesh); world.bodies.delete(room.set_aside); }
+  }
+  if (room.let_go && world.held && world.held.name === room.let_go) forgetHold();
+  if (room.brought_back) {
+    // Back in the world: drawn from what the room says of it now.
+    draw(await act("poses"));
+    if (room.held) adoptGrip(room.brought_back);
+  }
+  if (!quiet) say("you", answer.did);
+  return answer;
+}
+
 function showInventory() {
+  const inv = world.inventory;
   const held = world.held && world.held.name;
   const entry = held ? world.bodies.get(held) : null;
-  const holding = held ? `${held}${entry && entry.mass ? ` · ${grams(entry.mass)}` : ""}` : "nothing";
+  const mass = entry && entry.mass ? ` · ${grams(entry.mass)}` : "";
+  const left = inv && inv.hands && inv.hands.left ? inv.hands.left.name : null;
+  const bag = inv && Array.isArray(inv.stowed) ? inv.stowed.filter(Boolean) : [];
   const carrying = [...world.stock].sort((a, b) => b[1].kg - a[1].kg)
     .map(([what, have]) => ({ what, much: grams(have.kg) }));
   const uses = [
@@ -1143,10 +1226,27 @@ function showInventory() {
     ...(world.profiles || []).map((p) => ({ what: p.object,
       keys: "E take up · hold Left mouse to draw · let go to shoot" })),
   ];
-  const said = JSON.stringify([holding, carrying, uses]);
+  const said = JSON.stringify([held, mass, fromBagInHand(held), left, bag, carrying, uses]);
   if (said === inventorySaid) return;
   inventorySaid = said;
-  $("inv-holding").textContent = holding;
+  // A button in the panel is not the room: clicking one never also acts in the
+  // world, and it lets go of the focus, so Space cannot click it again.
+  const button = (label, op, item) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    b.addEventListener("click", (e) => { e.stopPropagation(); b.blur(); inventoryChange(op, item); });
+    return b;
+  };
+  $("inv-right").replaceChildren(document.createTextNode(held ? `${held}${mass}` : "free"));
+  if (fromBagInHand(held)) $("inv-right").append(button("Stow", "stow", held), button("Put down", "drop", held));
+  $("inv-left").textContent = left || "free";
+  $("inv-bag").replaceChildren(...(bag.length ? bag.map((thing) => {
+    const li = document.createElement("li");
+    li.textContent = thing.name;
+    li.append(button("Hold", "equip", thing.id), button("Put down", "drop", thing.id));
+    return li;
+  }) : [Object.assign(document.createElement("li"), { className: "none", textContent: "nothing yet" })]));
   const rows = (items, none) => (items.length ? items : [{ none }]).map((item) => {
     const li = document.createElement("li");
     if (item.none) { li.className = "none"; li.textContent = item.none; return li; }
@@ -1224,7 +1324,10 @@ function showActions() {
     if (pick) rows.push([k("interact"), `take up ${pick.object} by its grip`]);
     else if (bow) rows.push([k("interact"), `take up ${bow.object}`]);
     else if (bladeFor(on)) rows.push(["double-click", `take ${on} by the grip`]);
-    else if (entry && throwable(entry, onAJoint(on))) rows.push([k("interact"), `take hold of ${on}`]);
+    else if (entry && throwable(entry, onAJoint(on))) {
+      rows.push([k("interact"), `put ${on} in your bag`]);
+      rows.push([`Alt+${k("interact")}`, `take hold of ${on}`]);
+    }
     rows.push([k("heat"), `heat ${on}`]);
     // Its own actions first: what the room's chat worked out a person does
     // with this thing when it made it, one per number key (offer_actions).
@@ -2040,7 +2143,8 @@ function showLabel(found) {
       + (bladeFor(found.name) ? " · has an edge: double-click to take it by the grip" : "")
       + (!bladeFor(found.name) && !tools.profileOf(found.name) && throwable(entry, onAJoint(found.name))
           ? ` · ${entry.mass < 10 ? entry.mass.toFixed(2) : entry.mass.toFixed(1)} kg`
-            + ` · click: what you can do · ${keyOf("interact")} or double-click: take hold` : "")
+            + ` · click: what you can do · ${keyOf("interact")} or double-click: into your bag`
+            + ` · Alt+${keyOf("interact")}: take hold` : "")
       // On a pin, in a groove, fixed to something that is: worked by hand, and
       // nothing said so -- the winch's handle showed only its size.
       + (!bladeFor(found.name) && !profileOf(found.name) && !tools.profileOf(found.name)
@@ -2307,6 +2411,14 @@ async function pickUp() {
         + ` swing it; right-click turns the edge.`);
       return;
     }
+    // An ordinary thing a person can lift goes into the bag -- the owner's spec:
+    // "On an ordinary collectible object, put it into inventory; let the user
+    // equip it from its card" -- and the panel's Hold takes it into the hand.
+    // Alt+E still takes a direct grip, as the advanced hold always has.
+    if (entry && !(keys.has("AltLeft") || keys.has("AltRight")) && throwable(entry, onAJoint(name))) {
+      await inventoryChange("take", name);
+      return;
+    }
     // A loose thing a hand can lift is taken by a GRIP, not carried: held at
     // its middle by the bounded hand, so that bringing it in, winding it up
     // and throwing it are the hand's force acting on its mass. Anything on a
@@ -2410,6 +2522,8 @@ async function dropIt() {
   showUse();
   try {
     await act("release");
+    // Dropped from the hand, a thing from the bag is in the world now.
+    if (fromBagInHand(name)) inventoryChange("drop", name, true);
     remember(at ? `let go of ${name} at ${at.x.toFixed(2)}, ${at.y.toFixed(2)}, ${at.z.toFixed(2)} m`
                 : `let go of ${name}`);
     say("you", at ? `Let go of ${name} at ${at.y.toFixed(2)} m up.` : `Let go of ${name}.`);
@@ -2612,6 +2726,9 @@ function letGoOf(hand) {
   const speed = Math.hypot(v[0], v[1], v[2]);
   const thrown = use.mode === "throwing";
   world.held = null;
+  // A thing from the bag that has left the hand -- thrown, or put down: the
+  // record says so too. The room has already let go; this only tells it.
+  if (fromBagInHand(name)) inventoryChange("drop", name, true);
   $("crosshair").classList.remove("holding");
   $("carry").hidden = true;
   clearGuides();
@@ -4058,6 +4175,9 @@ $("ask").addEventListener("submit", async (e) => {
 function adoptRebuilt(answer) {
   traceOldWorld();
   world.session = answer.session;
+  // What the person has in the rebuilt room: the bag's things set aside again,
+  // and a thing that was in the hand back in the bag (inventory_room.after_open).
+  if (answer.state && answer.state.inventory) world.inventory = answer.state.inventory;
   // A rebuilt room: its own profiles and set-ups, and nothing of the old one
   // in hand.
   rememberProfiles(answer.state && answer.state.spec);
@@ -4551,6 +4671,8 @@ async function open() {
   try {
     const data = await api("/api/world/open", qa !== null ? { qa } : { scene: $("scene").value });
     world.session = data.session;
+    // What the person has, with the bag's things already set aside by the server.
+    world.inventory = data.inventory || null;
     world.scene = data.scene || null;   // what the server says it opened
     // A link naming no room opens the world: the menu says which room opened.
     if (qa === null && data.scene && $("scene").value !== data.scene) showSceneLink(data.scene);

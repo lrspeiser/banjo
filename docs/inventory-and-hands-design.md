@@ -185,6 +185,24 @@ hand.
   operations and its reply. Each hand has its own force and torque, and the
   whole person shares one limit, rather than the single hand's budget doubled.
 
+## The first slice's page
+
+- **E on an ordinary liftable thing puts it in the bag** (`take`), and the page
+  says "Oak cup added to inventory."
+  - Alt+E still takes a direct grip, as the advanced hold does today.
+  - Tools, bows, blades and things on joints keep their own E.
+- **The panel's "Holding" row becomes three rows:** the right hand, the left
+  hand, and "In your bag".
+  - Each thing in the bag has two buttons, Hold (`equip`) and Put down (`drop`).
+  - A thing in the hand has Stow (`stow`), and Put down, which goes through the
+    page's own careful putDown.
+  - The rows are drawn from the server's record, which arrives with each room
+    opened or rebuilt and each change. The page never decides it.
+- **The engine has one hand.** The dominant hand is the one that holds, and the
+  left hand's row says so until the second hand comes with the bow.
+- **Panel buttons are not the canvas,** so clicking one never also acts in the
+  world. Tab stays as it is until increment 2 makes it the inventory.
+
 ## The first slice to test in 3D
 
 1. E on a small loose thing (a cup, the sword):

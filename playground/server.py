@@ -35,6 +35,7 @@ import world_room
 import room_world
 import progression  # noqa: E402  (mcp/, put on the path by room_world)
 import room_store
+import inventory_room
 import tool_use
 import access_gate
 import scene_chat
@@ -1208,6 +1209,7 @@ class Handler(BaseHTTPRequestHandler):
                     opened=app.live.open(app,{"spec":room.spec})
                     app.live_holder="world"
                     rooms[key]=app.room=room
+                    opened["inventory"]=inventory_room.after_open(app,opened)
                     opened["scene"]=key
                     opened["scenes"]=sorted(world_room.SCENES)
                     return self.send(opened)
@@ -1236,6 +1238,9 @@ class Handler(BaseHTTPRequestHandler):
                                             f"({str(problem)[:200]}); it was set aside and the "
                                             f"room opened as first made")
                 app.live_holder="world"
+                # What the person has is put back where the record says: the
+                # bag's things are set aside again (inventory_room.after_open).
+                opened["inventory"]=inventory_room.after_open(app,opened)
                 if body.get("fresh"): room_store.keep(app,room)
                 opened["scene"]=app.room.scene
                 opened["scenes"]=sorted(world_room.SCENES)
@@ -1291,6 +1296,7 @@ class Handler(BaseHTTPRequestHandler):
                         # the cost, and it is said out loud rather than hidden.
                         opened=app.live.open(app,{"spec":with_water(session,app.room.spec,ground_was)})
                         app.live_holder="world"
+                        opened["inventory"]=inventory_room.after_open(app,opened)
                         answer["reopened"]=True
                         answer["session"]=opened["session"]
                         answer["state"]=opened
@@ -1327,6 +1333,20 @@ class Handler(BaseHTTPRequestHandler):
                 # the person's, so what it does is credited to their notebook.
                 _this_pages_room(self.server.app,body)
                 return self.send(tool_use.run(self.server.app,body,note=note_strike))
+            if path=="/api/world/inventory":
+                # One change to what the person has (inventory_room.request):
+                # taken into the bag, held, stowed or put down -- done once
+                # however often it is asked, only on the room the page has
+                # open, and kept with the room when it is done.
+                app=self.server.app
+                _this_pages_room(app,body)
+                answer=inventory_room.request(app,body)
+                if answer.get("ok"): room_store.keep(app,app.room)
+                return self.send(answer)
+            if path=="/api/world/inventory/shown":
+                # And what the person has now, as the page shows it.
+                _this_pages_room(self.server.app,body)
+                return self.send(inventory_room.shown(self.server.app))
             if path=="/api/live/open":
                 opened=self.server.app.live.open(self.server.app,body)
                 # The lab page's stage now: the world page's room was closed by it.
@@ -1630,6 +1650,8 @@ def _stand(app,room,name,step,person):
     room_store.keep(app,room)
     opened=app.live.open(app,{"spec":with_water(session,room.spec,ground_was)})
     app.live_holder="world"
+    # The bag's things open standing in the room again: set aside once more.
+    opened["inventory"]=inventory_room.after_open(app,opened)
     return opened,f"stood {name} {answer.get('stands')} on {answer.get('on')}"
 
 

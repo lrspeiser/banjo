@@ -63,6 +63,55 @@ def shown(app: Any) -> dict[str, Any]:
             "hand_in_the_world": record["dominant"]}
 
 
+def after_open(app: Any, opened: dict[str, Any] | None = None) -> dict[str, Any]:
+    """After the room is opened, or opened again because the chat changed it:
+    put what the person has back where the record says.
+
+    A room opens from its spec, so the bag's things open standing in the world:
+    each is set aside again. A thing that was in a hand goes back into the bag,
+    since the engine's hand is empty in a room just opened. A thing the room no
+    longer has, or that cannot be set aside now (the chat joined it to
+    something), leaves the record -- the record says only what is true of the
+    room. Returns what the page shows."""
+    record = inventory_of(app)
+    session = app.live.session
+    if session is None:
+        return shown(app)
+    items = {item["id"]: item for item in inventory.items_of(app.room.spec)}
+    changed = False
+    for hand in inventory.HANDS:
+        if record.hands[hand]:
+            if record.hands[hand] not in record.stowed:
+                record.stowed.append(record.hands[hand])
+            record.hands[hand] = None
+            changed = True
+    present = {b.get("name") for b in (session.state or {}).get("bodies") or []}
+    parked: set[str] = set()
+    for item in list(record.stowed):
+        thing = items.get(item)
+        if thing is None or thing["installed"] or not thing["one_piece"]:
+            record.stowed.remove(item)
+            changed = True
+            continue
+        if thing["name"] not in present:
+            continue
+        try:
+            app.live.act({"session": session.id, "op": "park", "name": thing["name"]})
+            parked.add(thing["name"])
+        except Exception:   # the engine would not set it aside: it stays in the world
+            record.stowed.remove(item)
+            changed = True
+    if changed:
+        record.revision += 1
+    # The answer the page draws the room from was made before these were set
+    # aside, and the engine's next replies will not say they went -- a whole
+    # reply leaves it nothing to compare with -- so they are taken out of it
+    # here, and the page never draws them.
+    if isinstance(opened, dict) and parked:
+        opened["bodies"] = [b for b in opened.get("bodies") or [] if b.get("name") not in parked]
+    return shown(app)
+
+
 def request(app: Any, body: Any) -> dict[str, Any]:
     """One change to what the person has (POST /api/world/inventory).
 
