@@ -1672,6 +1672,78 @@ JoltWorld::JointReport JoltWorld::jointState(unsigned joint) const {
     return out;
 }
 
+void JoltWorld::driveHinge(unsigned joint, double target_rad_s, double torque_limit_n_m) {
+    if (!std::isfinite(target_rad_s) || !(torque_limit_n_m >= 0.0) || !std::isfinite(torque_limit_n_m))
+        throw std::invalid_argument("a pin is driven at a finite speed with a torque of zero or more");
+    const auto found = impl_->joints_.find(joint);
+    if (found == impl_->joints_.end() || found->second.kind != JointKind::Hinge) return;
+    auto *pin = static_cast<JPH::HingeConstraint *>(found->second.constraint.GetPtr());
+    if (torque_limit_n_m == 0.0) {
+        pin->SetMotorState(JPH::EMotorState::Off);
+        return;
+    }
+    pin->GetMotorSettings().SetTorqueLimit(static_cast<float>(torque_limit_n_m));
+    pin->SetTargetAngularVelocity(static_cast<float>(target_rad_s));
+    pin->SetMotorState(JPH::EMotorState::Velocity);
+    // A body asleep does not feel a motor any more than it feels a push.
+    wake(found->second.a);
+    wake(found->second.b);
+}
+
+void JoltWorld::coastHinge(unsigned joint) {
+    const auto found = impl_->joints_.find(joint);
+    if (found == impl_->joints_.end() || found->second.kind != JointKind::Hinge) return;
+    static_cast<JPH::HingeConstraint *>(found->second.constraint.GetPtr())->SetMotorState(JPH::EMotorState::Off);
+}
+
+double JoltWorld::hingeMotorImpulse(unsigned joint) const {
+    const auto found = impl_->joints_.find(joint);
+    if (found == impl_->joints_.end() || found->second.kind != JointKind::Hinge) return 0.0;
+    return static_cast<double>(
+        static_cast<const JPH::HingeConstraint *>(found->second.constraint.GetPtr())->GetTotalLambdaMotor());
+}
+
+double JoltWorld::hingeRate(unsigned joint) const {
+    const auto found = impl_->joints_.find(joint);
+    if (found == impl_->joints_.end() || found->second.kind != JointKind::Hinge) return 0.0;
+    const auto *pin = static_cast<const JPH::HingeConstraint *>(found->second.constraint.GetPtr());
+    auto &bodies = impl_->physics_->GetBodyInterface();
+    const JPH::BodyID one = impl_->bodies_.at(found->second.a);
+    const JPH::BodyID two = impl_->bodies_.at(found->second.b);
+    // Body 1's axis, carried into the world by body 1's pose: the axis Jolt's
+    // motor part acts about (HingeConstraint::CalculateA1AndTheta).
+    const JPH::Vec3 axis = bodies.GetRotation(one) * pin->GetLocalSpaceHingeAxis1();
+    return static_cast<double>((bodies.GetAngularVelocity(two) - bodies.GetAngularVelocity(one)).Dot(axis));
+}
+
+double JoltWorld::inertiaAbout(MatterBodyId body_id, const Vec3 &axis_world) const {
+    const auto found = impl_->bodies_.find(body_id);
+    if (found == impl_->bodies_.end()) throw std::invalid_argument("rigid body is missing");
+    const double reach = std::sqrt(axis_world.x * axis_world.x + axis_world.y * axis_world.y +
+                                   axis_world.z * axis_world.z);
+    if (!(reach > 1e-12)) throw std::invalid_argument("an axis needs a direction");
+    auto &bodies = impl_->physics_->GetBodyInterface();
+    // The world-frame inverse inertia, inverted back. A body that does not
+    // turn at all has none to invert.
+    const JPH::Mat44 inverse = bodies.GetInverseInertia(found->second);
+    if (!(std::abs(inverse.GetDeterminant3x3()) > 1e-30F)) return HUGE_VAL;
+    const JPH::Mat44 inertia = inverse.Inversed3x3();
+    const JPH::Vec3 n = toJolt(Vec3{axis_world.x / reach, axis_world.y / reach, axis_world.z / reach});
+    return static_cast<double>(n.Dot(inertia.Multiply3x3(n)));
+}
+
+void JoltWorld::setDamping(MatterBodyId body_id, double linear_per_s, double angular_per_s) {
+    if (!(linear_per_s >= 0.0) || !(angular_per_s >= 0.0) || !std::isfinite(linear_per_s + angular_per_s))
+        throw std::invalid_argument("damping is a share of the speed per second, zero or more");
+    const auto found = impl_->bodies_.find(body_id);
+    if (found == impl_->bodies_.end()) return;
+    JPH::BodyLockWrite lock(impl_->physics_->GetBodyLockInterface(), found->second);
+    if (!lock.Succeeded() || !lock.GetBody().IsDynamic()) return;
+    JPH::MotionProperties *motion = lock.GetBody().GetMotionProperties();
+    motion->SetLinearDamping(static_cast<float>(linear_per_s));
+    motion->SetAngularDamping(static_cast<float>(angular_per_s));
+}
+
 void JoltWorld::setJointFriction(unsigned joint, double friction) {
     if (!(friction >= 0.0) || !std::isfinite(friction))
         throw std::invalid_argument("joint friction must be zero or more");

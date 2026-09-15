@@ -869,6 +869,149 @@ struct LiveWorld::Impl {
     };
     std::vector<SceneJoint> joints;
     unsigned next_joint{1};
+
+    // ---- machines (docs/machine-world.md) ----------------------------------
+    std::vector<LiveEnergyStore> energy_stores;
+    struct Motor {
+        LiveMotor said;
+        // The pin's reading as this step began, for the turn it makes.
+        double at_before{};
+        // What this step's prepareMotors set: a drive, or friction to coast on.
+        bool drove{}, coasted_on_friction{};
+        // The friction last put on the pin, so that a brake let off (or put
+        // on) wakes what it held: a body still for half a second is asleep,
+        // and a sleeping body does not notice that its pin has let go.
+        double friction_set{-1.0};
+    };
+    std::vector<Motor> motors;
+    unsigned next_energy_store{1}, next_motor{1};
+    [[nodiscard]] SceneJoint *motorPin(unsigned id) {
+        for (SceneJoint &joint : joints)
+            if (joint.id == id) return &joint;
+        return nullptr;
+    }
+    [[nodiscard]] LiveEnergyStore *energyStoreById(unsigned id) {
+        for (LiveEnergyStore &store : energy_stores)
+            if (store.id == id) return &store;
+        return nullptr;
+    }
+    // Wakes both of a pin's bodies.
+    void wakePin(const SceneJoint &pin) {
+        for (const std::string *name : {&pin.a, &pin.b}) {
+            const auto found = index_of.find(*name);
+            if (found != index_of.end() && inWorld(found->second)) world->wake(body_of[found->second]);
+        }
+    }
+    // Before the step's reversible trial: each motor's drive for this step,
+    // from its line at the speed its pin has now, held to what its store can
+    // give. A constraint's settings are not state the trial winds back, so they
+    // are set here -- as a tool's bite in the ground is -- and a retry after a
+    // refused step sets the same again.
+    void prepareMotors(double dt_s) {
+        for (Motor &m : motors) {
+            LiveMotor &s = m.said;
+            m.drove = m.coasted_on_friction = false;
+            SceneJoint *pin = motorPin(s.joint);
+            if (pin == nullptr || pin->rigid == 0 || !world->hasJoint(pin->rigid)) {
+                s.state = "gone";
+                continue;
+            }
+            m.at_before = world->jointState(pin->rigid).at;
+            // What a motor turns runs in bearings: its losses are the pin's
+            // friction and the motor's windings. The engine's slight drag on
+            // every moving piece but a ball -- 0.02 of its speed a second, a
+            // numerical stand-in and not a law -- would be a third, and one no
+            // account names, so it is taken off. Every step, because a piece
+            // rebuilt after a break or a cut comes back with it.
+            for (const std::string *name : {&pin->a, &pin->b}) {
+                const auto found = index_of.find(*name);
+                if (found != index_of.end() && inWorld(found->second))
+                    world->setDamping(body_of[found->second], 0.0, 0.0);
+            }
+            LiveEnergyStore *store = energyStoreById(s.store);
+            const double u = std::clamp(s.command, -1.0, 1.0);
+            const bool empty = store == nullptr || !(store->charge_j > 0.0);
+            if (u == 0.0 || empty) {
+                world->coastHinge(pin->rigid);
+                const bool braking = s.brake && u == 0.0;
+                const double friction = braking ? std::max(pin->friction, s.brake_torque_n_m) : pin->friction;
+                world->setJointFriction(pin->rigid, friction);
+                if (friction != m.friction_set) wakePin(*pin);
+                m.friction_set = friction;
+                m.coasted_on_friction = friction > 0.0;
+                s.state = u != 0.0 ? "flat" : braking ? "braking" : "coasting";
+                continue;
+            }
+            // The line at this share of the voltage: its stall torque at a
+            // standstill, nothing at its unloaded speed, and braking past it.
+            const double omega = world->hingeRate(pin->rigid);
+            const double lean = u - omega / s.no_load_rad_s;
+            double limit = std::abs(s.stall_torque_n_m * lean);
+            // What a torque t costs the store at this speed: the work t*omega
+            // and the windings' t^2 * no_load / stall (I^2 R, with the torque
+            // constant V / no_load and R = V^2 / (stall * no_load), so the
+            // voltage cancels). Held to the store's power, and to its charge
+            // over this step.
+            const double windings = s.no_load_rad_s / s.stall_torque_n_m;
+            double most_w = store->charge_j / dt_s;
+            if (store->max_power_w > 0.0) most_w = std::min(most_w, store->max_power_w);
+            const double along = (lean >= 0.0 ? 1.0 : -1.0) * omega;
+            const double most_torque =
+                (-along + std::sqrt(along * along + 4.0 * windings * most_w)) / (2.0 * windings);
+            limit = std::min(limit, most_torque);
+            world->setJointFriction(pin->rigid, pin->friction);
+            m.friction_set = pin->friction;
+            world->driveHinge(pin->rigid, u * s.no_load_rad_s, limit);
+            m.drove = limit > 0.0;
+            s.state = "driving";
+        }
+    }
+    // After a kept step: what each motor did, from the impulse the solver
+    // applied in it and the turn its pin made.
+    void settleMotors(double dt_s) {
+        constexpr double kTurn = 2.0 * 3.14159265358979323846;
+        for (Motor &m : motors) {
+            LiveMotor &s = m.said;
+            SceneJoint *pin = motorPin(s.joint);
+            if (pin == nullptr || pin->rigid == 0 || !world->hasJoint(pin->rigid)) {
+                s.state = "gone";
+                s.speed_rad_s = s.torque_n_m = s.current_a = s.power_w = 0.0;
+                continue;
+            }
+            // The reading wraps at +-pi, and a step turns a pin far less than
+            // half a turn: the turn is the short way round.
+            double turn = world->jointState(pin->rigid).at - m.at_before;
+            turn -= kTurn * std::round(turn / kTurn);
+            s.turned_rad += turn;
+            s.speed_rad_s = world->hingeRate(pin->rigid);
+            const double torque =
+                m.drove || m.coasted_on_friction ? world->hingeMotorImpulse(pin->rigid) / dt_s : 0.0;
+            const double work = torque * turn;
+            s.torque_n_m = torque;
+            if (!m.drove) {
+                // Coasting or braking: what the pin's friction took.
+                s.friction_heat_j += std::max(-work, 0.0);
+                s.current_a = s.power_w = 0.0;
+                continue;
+            }
+            const double heat = torque * torque * (s.no_load_rad_s / s.stall_torque_n_m) * dt_s;
+            const double asked = std::max(work + heat, 0.0);
+            s.work_j += work;
+            // Nothing goes back into the store: what a load driving the motor
+            // gives back is heat, as the windings' is.
+            s.heat_j += heat + std::max(-(work + heat), 0.0);
+            s.drawn_j += asked;
+            s.power_w = asked / dt_s;
+            LiveEnergyStore *store = energyStoreById(s.store);
+            if (store != nullptr) {
+                const double given = std::min(asked, store->charge_j);
+                store->short_j += asked - given;
+                store->charge_j -= given;
+                store->given_j += given;
+                s.current_a = torque * s.no_load_rad_s / store->voltage_v;
+            }
+        }
+    }
     void rememberJointAngles(const JoltWorld &in) {
         for (SceneJoint &joint : joints)
             if (joint.rigid != 0 && in.hasJoint(joint.rigid))
@@ -2325,6 +2468,9 @@ void LiveWorld::step(double dt_s) {
     // ground's resistance at the depth it has reached -- is set before the
     // trial, because making or changing it changes the world's configuration.
     if (!impl_->tools.empty()) impl_->tools.prepare(toolHost(), dt_s);
+    // A motor's drive, the same way round: set before the trial, from its line
+    // at the speed its pin has now (docs/machine-world.md).
+    if (!impl_->motors.empty()) impl_->prepareMotors(dt_s);
     if (impl_->body_of.size() + 8 <= 2000) {
         bool committed = false;
         try {
@@ -2370,6 +2516,9 @@ void LiveWorld::step(double dt_s) {
         }
         impl_->time_s += dt_s;
         impl_->rememberJointAngles(*impl_->world);
+        // What each motor did, once the step is kept: a refused step takes
+        // nothing from a store.
+        if (!impl_->motors.empty()) impl_->settleMotors(dt_s);
         // What each edge took this step, the kerfs it bought, and whatever came
         // apart. After the trial, for the same reason prepareCuts is before it.
         settleCuts(dt_s);
@@ -2404,6 +2553,7 @@ void LiveWorld::step(double dt_s) {
     advanceGas();
     impl_->time_s += dt_s;
     impl_->rememberJointAngles(*impl_->world);
+    if (!impl_->motors.empty()) impl_->settleMotors(dt_s);
     settleCuts(dt_s);
     if (!impl_->tools.empty()) impl_->tools.settle(toolHost(), dt_s);
     partOverloadedLinks();
@@ -3060,6 +3210,71 @@ std::vector<LiveJoint> LiveWorld::joints() const {
         out.push_back(std::move(said));
     }
     return out;
+}
+
+unsigned LiveWorld::energyStore(const std::string &name, const std::string &body, double capacity_j,
+                                double charge_j, double voltage_v, double max_power_w) {
+    if (!body.empty() && impl_->index_of.find(body) == impl_->index_of.end()) return 0;
+    if (!(capacity_j > 0.0) || !std::isfinite(capacity_j) || !(charge_j >= 0.0) || charge_j > capacity_j ||
+        !(voltage_v > 0.0) || !std::isfinite(voltage_v) || !(max_power_w >= 0.0) || !std::isfinite(max_power_w))
+        return 0;
+    LiveEnergyStore store{};
+    store.id = impl_->next_energy_store++;
+    store.name = name.empty() ? "store " + std::to_string(store.id) : name;
+    store.body = body;
+    store.capacity_j = capacity_j;
+    store.charge_j = charge_j;
+    store.voltage_v = voltage_v;
+    store.max_power_w = max_power_w;
+    impl_->energy_stores.push_back(store);
+    return store.id;
+}
+
+unsigned LiveWorld::motor(unsigned joint, unsigned store, double stall_torque_n_m, double no_load_rad_s,
+                          double brake_torque_n_m) {
+    const Impl::SceneJoint *pin = impl_->motorPin(joint);
+    if (pin == nullptr || pin->kind != JoltWorld::JointKind::Hinge) return 0;
+    if (impl_->energyStoreById(store) == nullptr) return 0;
+    if (!(stall_torque_n_m > 0.0) || !std::isfinite(stall_torque_n_m) || !(no_load_rad_s > 0.0) ||
+        !std::isfinite(no_load_rad_s) || !(brake_torque_n_m >= 0.0) || !std::isfinite(brake_torque_n_m))
+        return 0;
+    for (const Impl::Motor &m : impl_->motors)
+        if (m.said.joint == joint) return 0;
+    Impl::Motor m{};
+    m.said.id = impl_->next_motor++;
+    m.said.joint = joint;
+    m.said.store = store;
+    m.said.stall_torque_n_m = stall_torque_n_m;
+    m.said.no_load_rad_s = no_load_rad_s;
+    m.said.brake_torque_n_m = brake_torque_n_m;
+    impl_->motors.push_back(m);
+    return m.said.id;
+}
+
+bool LiveWorld::driveMotor(unsigned motor, double command, bool brake) {
+    if (!std::isfinite(command)) return false;
+    for (Impl::Motor &m : impl_->motors) {
+        if (m.said.id != motor) continue;
+        m.said.command = std::clamp(command, -1.0, 1.0);
+        m.said.brake = brake;
+        return true;
+    }
+    return false;
+}
+
+std::vector<LiveEnergyStore> LiveWorld::energyStores() const { return impl_->energy_stores; }
+
+std::vector<LiveMotor> LiveWorld::motors() const {
+    std::vector<LiveMotor> out;
+    out.reserve(impl_->motors.size());
+    for (const Impl::Motor &m : impl_->motors) out.push_back(m.said);
+    return out;
+}
+
+double LiveWorld::inertiaAbout(const std::string &name, const Vec3 &axis_world) const {
+    const auto found = impl_->index_of.find(name);
+    if (found == impl_->index_of.end() || !impl_->inWorld(found->second)) return 0.0;
+    return impl_->world->inertiaAbout(impl_->body_of[found->second], axis_world);
 }
 
 void LiveWorld::setJointFriction(unsigned joint, double friction_torque_n_m) {

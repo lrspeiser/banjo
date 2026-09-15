@@ -1028,6 +1028,14 @@ if(BANJO_BUILD_TESTS)
             banjo_enable_warnings(banjo_placement_tests)
             add_test(NAME banjo_placement_tests COMMAND banjo_placement_tests)
 
+            # Motors on pins and the stores of energy they draw on: the machine
+            # world's first joint that is driven, checked against the motor's
+            # line and the energy it takes (docs/machine-world.md).
+            add_executable(banjo_motor_tests tests/motor_tests.cpp)
+            target_link_libraries(banjo_motor_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_motor_tests)
+            add_test(NAME banjo_motor_tests COMMAND banjo_motor_tests)
+
             # Things that slide: a portcullis in its grooves, a sliding door, a
             # bolt across a door. The test that matters is the first one -- a
             # raised grate falls when you let go, because nothing here knows

@@ -690,6 +690,30 @@ public:
     [[nodiscard]] bool hasJoint(unsigned joint) const;
     [[nodiscard]] JointReport jointState(unsigned joint) const;
     void setJointFriction(unsigned joint, double friction);
+    // A pin that is driven: Jolt's own motor on the hinge, aiming at a speed
+    // with a torque it may not exceed. LiveWorld's motors set both every step,
+    // before the step's reversible trial, because a constraint's settings are
+    // not part of the state the trial winds back. The speed is b's turn
+    // relative to a's about the pin's axis as it stands in a -- the axis the
+    // motor acts about. A limit of zero lets it coast, and coasting is what
+    // lets the pin's own friction act again: Jolt turns a hinge's friction and
+    // its motor with the same part, so while it drives it has no friction.
+    void driveHinge(unsigned joint, double target_rad_s, double torque_limit_n_m);
+    void coastHinge(unsigned joint);
+    // The angular impulse that part applied in the last step, newton metre
+    // seconds about that axis: the motor's while it drives, the friction's
+    // while it coasts, zero when it has neither. Positive turns b the positive
+    // way relative to a.
+    [[nodiscard]] double hingeMotorImpulse(unsigned joint) const;
+    // How fast b is turning relative to a about the pin's axis, rad/s.
+    [[nodiscard]] double hingeRate(unsigned joint) const;
+    // How hard a body is to turn about an axis through its centre of mass, in
+    // kg m^2, from the inertia the solver is using; infinite for a body that
+    // does not turn at all.
+    [[nodiscard]] double inertiaAbout(MatterBodyId body_id, const Vec3 &axis_world) const;
+    // The drag Jolt puts on a moving body's speed, as a share of it per second,
+    // linear and turning. Nothing for a body that does not move. Between steps.
+    void setDamping(MatterBodyId body_id, double linear_per_s, double angular_per_s);
     // Take the pin out. What was hanging on it falls.
     void removeJoint(unsigned joint);
     [[nodiscard]] std::vector<unsigned> jointsOn(MatterBodyId body_id) const;

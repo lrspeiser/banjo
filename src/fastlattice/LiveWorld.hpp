@@ -365,6 +365,69 @@ struct LiveJoint {
     double parted_load_n{}, parted_capacity_n{};
 };
 
+// A store of energy: a battery (docs/machine-world.md). Joules in it and what
+// it can hold, a voltage for the current it gives, and the most power it can
+// give. Nothing goes back into it but from a declared source, and a step that
+// is taken back takes nothing out of it.
+struct LiveEnergyStore {
+    unsigned id{};
+    std::string name;
+    std::string body;             // what it is in; "" for nothing
+    double capacity_j{};
+    double charge_j{};
+    double voltage_v{};
+    // The most it gives, watts; zero for no limit but its charge.
+    double max_power_w{};
+    // All it has given since it was made, joules.
+    double given_j{};
+    // What steps asked of it that it no longer had, joules. A motor's drive is
+    // held to what is left before each step, from the speed the step starts
+    // at; a step that ends faster did a little more work than that, and the
+    // little is this. Reported rather than folded in anywhere.
+    double short_j{};
+};
+
+// A motor on a pin, wired to a store: a DC motor's torque-speed line, from the
+// two numbers a maker gives -- the torque it stalls at and the speed it runs at
+// unloaded, both at the store's voltage. The command runs from -1 to 1, the
+// share of that voltage applied. A brake holds the pin by friction, and draws
+// nothing.
+//
+// Its account, one kept step at a time, from the impulse the solver applied:
+//   work_j   the torque times the turn: what it did to what it drives;
+//   heat_j   what it turned into heat -- its windings' I^2 R, and whatever a
+//            load driving it gave back, since nothing goes back into the store;
+//   drawn_j  what it asked of the store: its work plus its heat, while it
+//            drives, and never less than nothing.
+// While the pin coasts or brakes, what the pin's friction takes out of the turn
+// is friction_heat_j.
+//
+// What it turns runs in bearings: the pin's friction and the motor's windings
+// are its losses, and the engine's slight drag on moving pieces (0.02 of their
+// speed a second on everything but a ball, a numerical stand-in rather than a
+// law) is taken off the pin's two bodies while the motor is on it.
+struct LiveMotor {
+    unsigned id{};
+    unsigned joint{};             // the pin (LiveWorld::hinge)
+    unsigned store{};             // what it draws on (LiveWorld::energyStore)
+    double stall_torque_n_m{};
+    double no_load_rad_s{};
+    double brake_torque_n_m{};
+    double command{};
+    bool brake{};
+    // "driving", "coasting", "braking", "flat" (told to drive, and its store
+    // is empty) or "gone" (its pin is not in anything).
+    std::string state{"coasting"};
+    // The last kept step.
+    double speed_rad_s{};         // b's turn relative to a's, about the pin
+    double torque_n_m{};
+    double current_a{};
+    double power_w{};             // asked of the store
+    // Since it was made.
+    double turned_rad{};          // the whole turn, not wrapped at +-180 degrees
+    double work_j{}, heat_j{}, drawn_j{}, friction_heat_j{};
+};
+
 // What heat, composition and burning have done to what one body can carry.
 // See docs/thermal-mechanics.md and thermo/ThermalMechanics.hpp.
 struct LiveMaterialState {
@@ -1103,6 +1166,29 @@ public:
     void setJointFriction(unsigned joint, double friction_torque_n_m);
     // Take the pin out. What hung on it falls.
     void unhinge(unsigned joint);
+
+    // ---- machines: stores of energy and motors (docs/machine-world.md) ----
+    //
+    // A store of energy in a named body, or in nothing: what it can hold and
+    // what it holds, joules; its voltage; and the most power it gives, zero
+    // for no limit but its charge. Returns its id, above zero, or 0 if the body
+    // is not there or the numbers are not a store's.
+    unsigned energyStore(const std::string &name, const std::string &body, double capacity_j,
+                         double charge_j, double voltage_v = 24.0, double max_power_w = 0.0);
+    // A motor on a pin, drawing on a store. Returns its id, above zero, or 0 if
+    // the pin or the store is not there, the pin is not a hinge, the pin has a
+    // motor already, or the numbers are not a motor's.
+    unsigned motor(unsigned joint, unsigned store, double stall_torque_n_m, double no_load_rad_s,
+                   double brake_torque_n_m = 0.0);
+    // What a motor is told: a command from -1 to 1, and whether its brake is
+    // on. The brake is friction on the pin, so it holds only while the motor
+    // is not driving -- a command of zero. False if there is no such motor.
+    bool driveMotor(unsigned motor, double command, bool brake = false);
+    [[nodiscard]] std::vector<LiveEnergyStore> energyStores() const;
+    [[nodiscard]] std::vector<LiveMotor> motors() const;
+    // How hard a named thing is to turn about an axis through its centre of
+    // mass, kg m^2, from the inertia the solver uses. Zero if it is not there.
+    [[nodiscard]] double inertiaAbout(const std::string &name, const Vec3 &axis_world) const;
 
     // ---- heat, chemistry and gas ----------------------------------------
     //
