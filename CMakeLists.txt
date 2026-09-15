@@ -222,6 +222,31 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
         src/sim/RollingBallExperiment.cpp)
     target_include_directories(banjo_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_link_libraries(banjo_runtime PUBLIC banjo_core Jolt)
+    # The drum's rope (rigid/DrumRope.cpp) is a Jolt constraint of our own, and
+    # instantiates Jolt's inline solver code -- the same AxisConstraintPart the
+    # kerf's SixDOF constraint uses. The linker keeps one copy of an inline
+    # function, the first it meets, and banjo_runtime comes before Jolt: a copy
+    # compiled here, without Jolt's floating-point flags, replaced the one Jolt
+    # compiled for itself, and moved a cut's work in banjo_blade_tests from
+    # 4.676 J to 4.192 J. So this file is compiled with Jolt's own
+    # floating-point model, which Jolt's Build/CMakeLists.txt sets in its own
+    # directory where no target of ours inherits it -- by the same rules. (Its
+    # architecture flags, /arch:AVX2 or -mavx2 and the rest, are PUBLIC on the
+    # Jolt target and reach every target of ours already.)
+    if (MSVC)
+        if (CROSS_PLATFORM_DETERMINISTIC)
+            set(banjo_jolt_fp "/fp:precise;/fp:except-")
+        else()
+            set(banjo_jolt_fp "/fp:fast;/fp:except-")
+        endif()
+    elseif (CROSS_PLATFORM_DETERMINISTIC OR NOT USE_FMADD)
+        set(banjo_jolt_fp "-ffp-contract=off")
+    elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "^x86")
+        set(banjo_jolt_fp "-ffp-contract=fast")
+    else()
+        set(banjo_jolt_fp "-ffp-contract=on")
+    endif()
+    set_source_files_properties(src/rigid/DrumRope.cpp PROPERTIES COMPILE_OPTIONS "${banjo_jolt_fp}")
     target_compile_features(banjo_runtime PUBLIC cxx_std_23)
     banjo_enable_warnings(banjo_runtime)
 
