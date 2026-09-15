@@ -61,7 +61,9 @@ class Client:
                                  f"{self.process.stderr.read()[:2000]}")
         return json.loads(line)
 
-    def call(self, tool: str, **arguments):
+    # The tool's name is positional only, so that a call can say its own
+    # `tool` (build_recipe has one) among its arguments.
+    def call(self, tool: str, /, **arguments):
         """One tool call, unwrapped to what it actually answered."""
         reply = self.send("tools/call", {"name": tool, "arguments": arguments})
         result = reply["result"]
@@ -70,7 +72,7 @@ class Client:
             raise AssertionError(f"{tool} refused: {text}")
         return json.loads(text)
 
-    def refuse(self, tool: str, **arguments) -> str:
+    def refuse(self, tool: str, /, **arguments) -> str:
         reply = self.send("tools/call", {"name": tool, "arguments": arguments})
         result = reply["result"]
         assert result.get("isError"), f"{tool} was expected to refuse and did not"
@@ -1495,6 +1497,20 @@ class TheTools(unittest.TestCase):
         self.assertAlmostEqual(door["ground_y_m"], math.ceil(ground / 0.04 - 1e-9) * 0.04, places=4)
         self.assertIn("recipe is one of", self.client.refuse("build_recipe", world_id=world_id,
                                                               recipe="rocket", at_m=[-12.0, -4.0]))
+
+    def test_a_hoist_asked_for_with_a_tool_filled_in_is_built_and_says_so(self):
+        """The chat fills every field it is shown: asked for a hoist, it filled
+        build_recipe's `tool` in, was refused twice, and built nothing. What only
+        shapes a tool that works the ground is left out of anything else, and
+        the answer says so."""
+        world_id = self.client.call("create_world", cell_size_m=0.04, objects=[
+            {"name": "marker stone", "shape": "box", "material": "concrete",
+             "size_m": [0.08, 0.08, 0.08], "position_m": [4.0, 0.04, 4.0], "anchored": True}])["world_id"]
+        hoist = self.client.call("build_recipe", world_id=world_id, recipe="hoist", at_m=[1.0, -1.0],
+                                 tool={"call_it": "the battery hoist", "material": "iron"})
+        self.assertEqual(hoist["parts"], ["hoist post", "hoist drum", "hoist crate", "hoist battery"])
+        self.assertIn("left out of the hoist", hoist["left_out"])
+        self.assertEqual(hoist["actions_offered"], {"hoist drum": ["Wind it up", "Stop", "Let it down"]})
 
     def test_a_battery_hoist_is_built_by_recipe_and_winds(self):
         """build_recipe "hoist" over the protocol: a post, a drum on a pin with a

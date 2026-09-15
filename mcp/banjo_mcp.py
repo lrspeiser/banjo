@@ -3958,10 +3958,17 @@ def tool_build_recipe(args: dict[str, Any]) -> dict[str, Any]:
     # What makes a tool the one the person asked for (_tool_recipe), less the
     # blanks the chat fills in.
     options = _unblanked(args.get("tool")) if isinstance(args.get("tool"), dict) else None
+    left_out = None
+    if options and which not in TOOL_KINDS:
+        # The chat fills every field it is shown, this one too, whatever the
+        # recipe: asked for a hoist, it filled `tool` in, was refused, changed
+        # what it had filled in, was refused again, and the turn ran out with
+        # nothing built. What only shapes a tool is left out of anything else,
+        # and the answer says so.
+        left_out = (f"tool shapes only a tool that works the ground ({', '.join(TOOL_KINDS)}), "
+                    f"so it was left out of the {which}")
+        options = None
     if options:
-        if which not in TOOL_KINDS:
-            raise Refused(f"tool shapes a tool that works the ground -- {', '.join(TOOL_KINDS)} -- "
-                          f"not the {which}")
         recipe = _tool_recipe(which, options, cell)
     px, pz = (round(v / cell) * cell for v in _xz(args.get("at_m"), "at_m"))
     # The ground there, up to the next whole cell, so nothing starts inside it:
@@ -4045,6 +4052,8 @@ def tool_build_recipe(args: dict[str, Any]) -> dict[str, Any]:
         answer["tried"] = recipe["tried"]
     if said:
         answer["and"] = said
+    if left_out:
+        answer["left_out"] = left_out
     return answer
 
 

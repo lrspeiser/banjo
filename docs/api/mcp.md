@@ -496,7 +496,10 @@ down from the drum's +x rim to the middle of its top; a 20 kJ, 24 V battery
 beside the post; and a motor on the drum's pin that stalls at 60 N m, runs at
 95.5 turns a minute unloaded and has a 200 N m brake. Its actions, on the drum,
 are "Wind it up" (drive 1), "Stop" (drive 0 with the brake) and "Let it down"
-(drive -0.1).
+(drive -0.1). A `tool` filled in, which only shapes a tool that works the
+ground, is left out of the hoist, as it is of every recipe that is not such a
+tool, and the answer says so under `left_out`: the chat fills every field it
+is shown, and refused, it filled `tool` in again until the turn ran out.
 
 "Let it down" is -0.1 because the crate lets itself down. Driven backwards with
 a load pulling the same way, a DC motor turns faster than it would unloaded, and
