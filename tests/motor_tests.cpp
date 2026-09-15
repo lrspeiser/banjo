@@ -486,6 +486,39 @@ void aRestartGivesTheHoistBackAsItStood() {
     require(std::abs(rise - taken) < 0.01 * taken, "opened again, the crate did not rise by the rope taken on");
 }
 
+// A motor says what it is doing from the moment it is told, and the step that
+// follows does just that. A room opened with its hoist braked said "coasting"
+// until its first step, and a page that drew the opening showed it so.
+void aMotorSaysAtOnceWhatItIsToldToDo() {
+    const auto world = LiveWorld::open(flywheelRoom());
+    const unsigned pin = world->hinge("post", "flywheel", kAxle, kUp);
+    const unsigned battery = world->energyStore("battery", "post", 20000.0, 20000.0);
+    const unsigned drive = world->motor(pin, battery, kStall, kUnloaded, 50.0);
+    require(pin != 0 && battery != 0 && drive != 0, "the rig would not go together");
+    require(world->motors().front().state == "coasting",
+            "made, the motor says it is " + world->motors().front().state + ", not coasting");
+    const auto told = [](LiveWorld &in, unsigned motor, double command, bool brake, const std::string &says) {
+        in.driveMotor(motor, command, brake);
+        const std::string now = in.motors().front().state;
+        run(in, 0.1, [] {});
+        const std::string after = in.motors().front().state;
+        std::cout << "  told " << command << (brake ? " with its brake" : "") << ": it says it is " << now
+                  << " at once, and " << after << " after the steps that follow\n";
+        require(now == says, "told, the motor says it is " + now + ", not " + says);
+        require(after == says, "stepped, the motor says it is " + after + ", not " + says);
+    };
+    told(*world, drive, 0.0, true, "braking");
+    told(*world, drive, 1.0, false, "driving");
+    told(*world, drive, 0.0, false, "coasting");
+    // Told to drive from a store with nothing in it.
+    const auto spent = LiveWorld::open(flywheelRoom());
+    const unsigned pin_spent = spent->hinge("post", "flywheel", kAxle, kUp);
+    const unsigned empty = spent->energyStore("battery", "post", 100.0, 0.0);
+    const unsigned motor_spent = spent->motor(pin_spent, empty, kStall, kUnloaded);
+    require(pin_spent != 0 && empty != 0 && motor_spent != 0, "the spent rig would not go together");
+    told(*spent, motor_spent, 1.0, false, "flat");
+}
+
 } // namespace
 
 int main() {
@@ -502,6 +535,7 @@ int main() {
         {"a load driving the motor gives nothing back", aLoadDrivingTheMotorGivesNothingBack},
         {"a hoist winds its rope on and lifts the crate", aHoistWindsItsRopeOnAndLiftsTheCrate},
         {"a restart gives the hoist back as it stood", aRestartGivesTheHoistBackAsItStood},
+        {"a motor says at once what it is told to do", aMotorSaysAtOnceWhatItIsToldToDo},
     };
     int failed = 0;
     for (const auto &[name, check] : checks) {

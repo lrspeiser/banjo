@@ -900,6 +900,20 @@ struct LiveWorld::Impl {
             if (store.id == id) return &store;
         return nullptr;
     }
+    // What a motor will do at the next step, as prepareMotors will decide it
+    // from its command, its brake and its store: said as soon as it is told,
+    // so that a report between being told and the next step -- a room's
+    // opening, with its hoist braked -- says what it is doing, not the last
+    // step's.
+    [[nodiscard]] std::string stateToBe(const LiveMotor &s) {
+        const SceneJoint *pin = motorPin(s.joint);
+        if (pin == nullptr || pin->rigid == 0 || !world->hasJoint(pin->rigid)) return "gone";
+        const LiveEnergyStore *store = energyStoreById(s.store);
+        const double u = std::clamp(s.command, -1.0, 1.0);
+        if (u == 0.0 || store == nullptr || !(store->charge_j > 0.0))
+            return u != 0.0 ? "flat" : s.brake ? "braking" : "coasting";
+        return "driving";
+    }
     // Wakes both of a pin's bodies.
     void wakePin(const SceneJoint &pin) {
         for (const std::string *name : {&pin.a, &pin.b}) {
@@ -3332,6 +3346,7 @@ unsigned LiveWorld::motor(unsigned joint, unsigned store, double stall_torque_n_
     m.said.stall_torque_n_m = stall_torque_n_m;
     m.said.no_load_rad_s = no_load_rad_s;
     m.said.brake_torque_n_m = brake_torque_n_m;
+    m.said.state = impl_->stateToBe(m.said);
     impl_->motors.push_back(m);
     return m.said.id;
 }
@@ -3342,6 +3357,8 @@ bool LiveWorld::driveMotor(unsigned motor, double command, bool brake) {
         if (m.said.id != motor) continue;
         m.said.command = std::clamp(command, -1.0, 1.0);
         m.said.brake = brake;
+        // Said at once: the next step does what it is told.
+        m.said.state = impl_->stateToBe(m.said);
         return true;
     }
     return false;

@@ -100,6 +100,9 @@ class AHoistInARoom(unittest.TestCase):
     def test_it_opens_with_its_machines_and_the_brake_on(self):
         self.assertFalse(self.opened.get("joint_problems"), self.opened.get("joint_problems"))
         self.assertFalse(self.opened.get("machine_problems"), self.opened.get("machine_problems"))
+        # Braked as it opens, before any step: a page drawing the opening
+        # shows the brake on, not the state of a step not yet taken.
+        self.assertEqual(self.opened["machines"]["motors"][0]["state"], "braking")
         self.step(0.5)
         machines = self.machines()
         self.assertEqual([s["name"] for s in machines["stores"]], ["battery"])

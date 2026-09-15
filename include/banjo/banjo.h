@@ -868,7 +868,8 @@ typedef struct {
     double command;               /* -1 to 1: the share of the store's voltage */
     int brake;
     /* "driving", "coasting", "braking", "flat" (told to drive, and its store
-     * is empty) or "gone" (its pin is not in anything). */
+     * is empty) or "gone" (its pin is not in anything): what it is doing as it
+     * was last told, said from the moment it is told, before the next step. */
     const char *state;
     /* The last kept step. */
     double speed_rad_s;           /* b's turn relative to a's, about the pin */

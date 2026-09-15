@@ -1026,7 +1026,9 @@ its windings' I²R and whatever a load driving it gave back; `drawn_j` is what i
 asked of the store, `work_j + heat_j` while it drives and never less than
 nothing. While the pin coasts or brakes, what the pin's friction takes out of the
 turn is `friction_heat_j`. `state` is `"flat"` when it is told to drive and its
-store is empty, and `"gone"` when its pin is no longer in anything. `turned_rad`
+store is empty, and `"gone"` when its pin is no longer in anything. It says what
+the motor is doing as it was last told from the moment it is told, before the
+next step: a hoist braked as its room opens reads `"braking"` at once. `turned_rad`
 counts every turn: a hinge's `at` wraps at ±180 degrees, and a motor's count does
 not.
 

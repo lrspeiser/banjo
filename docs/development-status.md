@@ -23,8 +23,9 @@
   - A saved hoist opened again said its braked motor was coasting until its first step, and its rope read 2.5 nm more out than was saved. The drum's turn since a step began was worked out in float, and a drum that had not turned at all came out turned 2.5e-8 rad. It is now worked out in double, and the saved world keeps the rope's own tally and what each motor said of its last step.
   - A braked hoist left alone does not creep: stepped for ten minutes it went to sleep, and the crate, the drum and the rope moved not at all.
   - A hoist opened again from a saved world had no machines in its opening. The runner said a restored world's pins, edges and points, but not its batteries and motors, so a host could not find the motor, and the page could not draw the rope or the panel, until the first step. The opening says them now, and the page takes them as it opens a room, as it takes its pins.
+  - A motor said what it was doing only after a step: told to brake, a hoist's motor said "coasting" until the next one. Once the page took a room's machines as it opened, CI's page journey on Linux read the opening before the first step came, and failed ("coasting" != "braking"); here the first step always came first. A motor now says what it will do the moment it is told, as the next step will decide it (`stateToBe`).
 - Tests:
-  - `motor_tests` 8:
+  - `motor_tests` 9:
     - a flywheel's spin-up is within 0.14% of the line, and its work is the spin to 0.33%;
     - a stalled motor's heat is I²R exactly;
     - a flat battery never goes below empty;
@@ -32,7 +33,8 @@
     - a brake holds without drawing;
     - nothing regenerates: the lost spin becomes heat to 0.17%;
     - the hoist: rise = r × turn, and the motor's work is height plus motion to 0.26%;
-    - a restart round trip: the battery's charge, the motor's account and brake and what it said of its last step, the rope off the drum and on it, and the crate's height all come back exactly, and it winds on after.
+    - a restart round trip: the battery's charge, the motor's account and brake and what it said of its last step, the rope off the drum and on it, and the crate's height all come back exactly, and it winds on after;
+    - a motor says at once what it is told to do: braking, driving, coasting and flat, the same the moment it is told and after the steps that follow.
   - `banjo_ffi_tests` 22, through the library: the flywheel and the hoist give motor_tests' numbers, what is not a machine is refused, and a saved hoist opens again exactly as it was saved and winds on (0.2691 m in 0.5 s, the battery giving the 301.728 J the motor drew).
   - `machine_room_tests` 6, through the live session and the runner:
     - driven for a second, the drum turned 0.86 times, took on 0.5374 m of rope, the crate rose 0.5374 m, and the battery gave 280.1 J;
