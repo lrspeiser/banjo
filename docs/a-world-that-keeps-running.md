@@ -331,7 +331,8 @@ it stands: `{"ok": true, "snapshot": {"format": "banjo.world.v1", ...}}`
 (`LiveWorld::snapshot`). Started again with `--snapshot FILE` beside `--scene`,
 the runner opens the same scene into it, and its opening reply says what came
 back: `"restored": {"tier": "whole", "why", "saved_t_s", "bodies", "not_kept",
-"parked"}`, with the joints, edges and tool points the world already has.
+"parked"}`, with the joints, edges and tool points the world already has, and
+its batteries and motors (`machines`, docs/machine-world.md).
 
 The scene is built again first, and it builds the same cells under the same
 numbers. Each saved body is then made from its own cells at its saved centre of
