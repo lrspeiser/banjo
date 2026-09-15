@@ -182,6 +182,21 @@ class TheRoomIsToldWhereThePersonIs(unittest.TestCase):
         self.assertIn("A STRUCTURE -- a ramp to ride, a bridge, a stair, a tower -- is not a thing to take",
                       guide)
 
+    def test_a_structure_goes_out_in_front_across_the_view_where_nothing_stands(self):
+        """A structure is not a thing to take: its middle out in front of them,
+        its line across their view, and not where something already stands --
+        a second one asked for from the same place went onto the first (the
+        owner's review of 2026-09-15; STRUCTURES in the guide)."""
+        person = world_chat.where_the_person_is({"standing_m": [0.0, 0.0, 3.0], "facing": [0.0, 0.0, -1.0]})
+        middle, way = world_chat._structure_place(person, [])
+        self.assertEqual((middle, way), ([0.0, -3.0], [1.0, 0.0, 0.0]), "6 m out, across their view")
+        jump = {"name": "ski jump", "shape": "box", "position_m": [0.0, 1.2, -3.0], "dimensions_m": [6.5, 2.4, 0.6]}
+        middle, _ = world_chat._structure_place(person, [jump])
+        self.assertEqual(middle, [0.0, -7.0], "past the ski jump already there")
+        # Turned a little, the line keeps to the room's nearest axis.
+        person = world_chat.where_the_person_is({"standing_m": [0.0, 0.0, 0.0], "facing": [0.3, 0.0, -1.0]})
+        self.assertEqual(world_chat._structure_place(person, [])[1], [1.0, 0.0, 0.0])
+
     def test_new_places_are_on_the_rooms_cell_grid(self):
         """A recipe worked out from the place keeps a joined piece on the grid:
         off it, a haft was lost from its pick (0.36 kg of 1.21)."""

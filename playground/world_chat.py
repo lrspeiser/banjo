@@ -1111,19 +1111,41 @@ def _now(live_state: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
-def _structure_place(person: dict[str, Any]) -> tuple[list[float], list[float]]:
-    """Where a structure goes when they did not say: its middle STRUCTURE_OUT_M
-    in front of them, and its line across their view -- along whichever of the
-    room's x and z is nearest to that, so its boards turn only by their tilt
-    and a quarter turn."""
+# Where a structure's middle may go, in front of the person: (metres ahead,
+# metres to their right), the first with room for it -- STRUCTURE_OUT_M out,
+# then further, then beside the first. Room for it is a strip along its line,
+# STRUCTURE_ROOM_M long and STRUCTURE_WIDE_M across, with nothing standing in
+# it: a second structure asked for from where they stand went where the first
+# already was.
+STRUCTURE_SPOTS = ((STRUCTURE_OUT_M, 0.0), (10.0, 0.0), (STRUCTURE_OUT_M, 9.0), (STRUCTURE_OUT_M, -9.0),
+                   (14.0, 0.0))
+STRUCTURE_ROOM_M = 12.0
+STRUCTURE_WIDE_M = 3.0
+
+
+def _structure_place(person: dict[str, Any],
+                     bodies: list[dict[str, Any]] = ()) -> tuple[list[float], list[float]]:
+    """Where a structure goes when they did not say: its middle out in front
+    of them where nothing stands (STRUCTURE_SPOTS), and its line across their
+    view -- along whichever of the room's x and z is nearest to that, so its
+    boards turn only by their tilt and a quarter turn. The first spot, if none
+    has room: the chat is refused an overlap and says so."""
     sx, _, sz = person["standing_m"]
     fx, _, fz = person["facing"]
-    across = (-fz, fx)     # their right, as one_metre_to_the_right_m has it
-    if abs(across[0]) >= abs(across[1]):
-        way = [1.0 if across[0] > 0 else -1.0, 0.0, 0.0]
+    rx, rz = -fz, fx       # their right, as one_metre_to_the_right_m has it
+    if abs(rx) >= abs(rz):
+        way = [1.0 if rx > 0 else -1.0, 0.0, 0.0]
     else:
-        way = [0.0, 0.0, 1.0 if across[1] > 0 else -1.0]
-    return [round(sx + fx * STRUCTURE_OUT_M, 2), round(sz + fz * STRUCTURE_OUT_M, 2)], way
+        way = [0.0, 0.0, 1.0 if rz > 0 else -1.0]
+    reach = (STRUCTURE_ROOM_M / 2.0, STRUCTURE_WIDE_M / 2.0) if way[0] else (STRUCTURE_WIDE_M / 2.0,
+                                                                            STRUCTURE_ROOM_M / 2.0)
+    footprints = _footprints(person, list(bodies))
+    spots = [[round(sx + fx * ahead + rx * right, 2), round(sz + fz * ahead + rz * right, 2)]
+             for ahead, right in STRUCTURE_SPOTS]
+    for mx, mz in spots:
+        if not any(abs(mx - bx) < reach[0] + hx and abs(mz - bz) < reach[1] + hz for bx, bz, hx, hz in footprints):
+            return [mx, mz], way
+    return spots[0], way
 
 
 def _constructions_due(entry: dict[str, Any], declared_now: set[str], changed_names: set[str]) -> list[str]:
@@ -1371,15 +1393,13 @@ NEW_THING_APART_M = 0.7     # how far apart two new things' middles are
 ABOVE_THE_GROUND_M = 1.6    # a thing whose bottom is higher (a lamp) leaves the ground free
 
 
-def clear_spots(person: dict[str, Any], bodies: list[dict[str, Any]],
-                wanted: int = 3, grid_m: float = 0.04) -> list[list[float]]:
-    """Up to `wanted` places [x, z] on the ground close in front of the person
-    with nothing standing there, the best first, and apart from each other --
-    so a second thing goes beside the first, not on it. What the room has is
-    each body's footprint as it is turned, from the running room's state; what
-    is held moves with them and takes no ground."""
-    sx, sy, sz = person["standing_m"]
-    fx, _, fz = person["facing"]
+def _footprints(person: dict[str, Any], bodies: list[dict[str, Any]]) -> list[tuple[float, float, float, float]]:
+    """Where each body stands on the ground, as a level box round it as it is
+    turned: (x, z, half its extent in x, half in z), from the running room's
+    state. What is held moves with the person and takes no ground; nor does
+    what is over their head (a lamp) or no higher than the ground (a floor
+    slab, a rug)."""
+    sy = person["standing_m"][1]
     footprints = []
     for body in bodies:
         if body.get("held"):
@@ -1399,11 +1419,22 @@ def clear_spots(person: dict[str, Any], bodies: list[dict[str, Any]],
                     (2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)),
                     (2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)))
             half = [sum(abs(turn[r][i]) * dims[i] / 2.0 for i in range(3)) for r in range(3)]
-        # Above their head (a lamp), or no higher than the ground (a floor slab,
-        # a rug): the ground is free.
         if at[1] - half[1] > sy + ABOVE_THE_GROUND_M or at[1] + half[1] <= sy + 0.02:
             continue
         footprints.append((at[0], at[2], half[0], half[2]))
+    return footprints
+
+
+def clear_spots(person: dict[str, Any], bodies: list[dict[str, Any]],
+                wanted: int = 3, grid_m: float = 0.04) -> list[list[float]]:
+    """Up to `wanted` places [x, z] on the ground close in front of the person
+    with nothing standing there, the best first, and apart from each other --
+    so a second thing goes beside the first, not on it. What the room has is
+    each body's footprint as it is turned, from the running room's state; what
+    is held moves with them and takes no ground."""
+    sx, sy, sz = person["standing_m"]
+    fx, _, fz = person["facing"]
+    footprints = _footprints(person, bodies)
     chosen: list[list[float]] = []
     for ahead, left in NEW_THING_SPOTS:
         cx, cz = sx + fx * ahead + fz * left, sz + fz * ahead - fx * left
@@ -1498,7 +1529,8 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
                                                      grid_m=float(entry["cell_m"]))
             # And where a structure goes: not in their hand's reach, but out in
             # front of them with its line across their view.
-            person["structure_middle_m"], person["across_the_view"] = _structure_place(person)
+            person["structure_middle_m"], person["across_the_view"] = _structure_place(
+                person, live_state.get("bodies", []))
             opening["the_person"] = person
         # What they know, as it stands, so that what the chat says of their
         # notebook is what it holds. Left to ask read_knowledge, the model once
