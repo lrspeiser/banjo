@@ -42,7 +42,8 @@ const LIFT_MS = 700;
 const RING = { ok: 0x4fbf6a, far: 0xf0b429, near: 0xf0b429, warn: 0xe0533d, no: 0x8a949c };
 
 export function makeTools(ctx) {
-  const { world, act, api, say, remember, showUse, camera, carryGround, scene, whereIAm, $ } = ctx;
+  const { world, act, api, say, remember, showUse, camera, carryGround, scene, whereIAm,
+          lastAction, takeIntoHand, showHolding } = ctx;
 
   const ring = new THREE.Mesh(
     new THREE.RingGeometry(0.11, 0.16, 40),
@@ -129,25 +130,57 @@ export function makeTools(ctx) {
     return { hand: [grip.x, grip.y, grip.z], hand_q: [q.w, q.x, q.y, q.z] };
   }
 
-  async function takeUp(profile) {
-    let point = null;
+  // The tool's point as the engine has it now, still attached: what the tool is
+  // held by, and ready from.
+  async function pointOf(profile) {
     try {
       const answer = await act("tool_points", {});
-      point = (answer.tool_points || []).find((p) => p.body === profile.tool && p.attached) || null;
+      const point = (answer.tool_points || []).find((p) => p.body === profile.tool && p.attached) || null;
+      if (!point) lastAction(`${profile.object} has no point that can go into the ground any more.`, "refused");
+      return point;
     } catch (error) {
       say("bad", String(error.message || error));
-      return;
+      return null;
     }
-    if (!point) {
-      say("world", `${profile.object} has no point that can go into the ground any more.`);
-      return;
-    }
+  }
+
+  // E on a tool, or beside one: taken up by its handle through the record
+  // (world.js takeIntoHand), so what the hand holds is what the person has --
+  // the server's hand grips it there, and the page holds it ready (adopt). A
+  // tool the record does not keep is gripped by the page's own hand, as it
+  // always was.
+  async function takeUp(profile) {
+    const point = await pointOf(profile);
+    if (!point) return;
+    const took = takeIntoHand ? await takeIntoHand(profile.tool, point) : "not kept";
+    if (took !== "not kept") return;          // held and made ready, or refused with why
     try {
       await act("wield", { name: profile.tool, grip: point.grip });
     } catch (error) {
       say("bad", String(error.message || error));
       return;
     }
+    hold(profile, point);
+  }
+
+  // A tool the server's hand already holds -- taken up through the record by its
+  // handle (`point`), or out of the bag, gripped by its middle: held by its
+  // handle from here, lifted, and made ready.
+  async function adopt(profile, point) {
+    if (!point) {
+      point = await pointOf(profile);
+      if (!point) return;
+      try {
+        await act("wield", { name: profile.tool, grip: point.grip });
+      } catch (error) {
+        say("bad", String(error.message || error));
+        return;
+      }
+    }
+    hold(profile, point);
+  }
+
+  function hold(profile, point) {
     const entry = world.bodies.get(profile.tool);
     world.held = { name: profile.tool, pick: profile, point, axes: axesOf(point), distance: 1 };
     world.use = { mode: "tool-lifting", name: profile.object, kg: entry ? entry.mass : 0,
@@ -155,11 +188,10 @@ export function makeTools(ctx) {
                   liftTo: [point.grip[0], point.grip[1] + LIFT_M, point.grip[2]],
                   since: performance.now() };
     askedAt = 0;
-    $("crosshair").classList.add("holding");
-    $("label").hidden = true;
+    showHolding(true);
     remember(`took up ${profile.object} by its grip`);
-    say("you", `Took up ${profile.object} by the grip. The ring on the ground shows where it will`
-      + ` come down: click to use it there, and hold the button to keep going.`);
+    lastAction(`Took up ${profile.object} by the grip: the ring on the ground shows where it will`
+      + " come down. Click to use it there, and hold the button to keep going.");
     showUse();
   }
 
@@ -200,7 +232,8 @@ export function makeTools(ctx) {
 
   // One use, the whole of it, done by the server with the bounded hand
   // (tool_use.run). From here the page stops holding the tool ready, so no
-  // step of this page's can cancel the swing.
+  // step of this page's can cancel the swing. What it came to is said in the
+  // side view's details (lastAction), not the chat.
   async function useOnce() {
     const held = world.held, use = world.use;
     if (!held || !held.pick || use.mode !== "tool-ready") return;
@@ -219,11 +252,11 @@ export function makeTools(ctx) {
     use.last = answer;                        // each stroke and how it ended (done)
     if (answer && answer.refused) {
       use.result = answer.refused;
-      say("bad", `${answer.action}: ${answer.refused}`);
+      lastAction(`${answer.action}: ${answer.refused}`, "refused");
     } else if (answer) {
       use.result = answer.said;
       use.detail = answer.detail || "";
-      say("world", answer.said + (answer.detail ? ` ${answer.detail}` : ""), answer.did);
+      lastAction(answer.said + (answer.detail ? ` ${answer.detail}` : ""));
       remember(`${answer.action}: ${answer.said}`);
     }
     if (answer && answer.carried) carryGround(answer.carried);
@@ -278,11 +311,16 @@ export function makeTools(ctx) {
     world.held = null;
     world.use = { mode: "none" };
     ring.visible = false;
-    $("crosshair").classList.remove("holding");
+    showHolding(false);
     showUse();
     try { await act("release"); } catch (error) { say("bad", String(error.message || error)); }
-    if (text) say("you", text);
+    if (text) lastAction(text);
   }
 
-  return { profileOf, nearTool, takeUp, press, release, stop, hand, follow, followAim, putDown };
+  // The tool has left the hand some other way -- set aside into the bag, or the
+  // room opened again: its ring goes with it.
+  function forget() { ring.visible = false; }
+
+  return { profileOf, nearTool, takeUp, adopt, press, release, stop, hand, follow, followAim,
+           putDown, forget };
 }

@@ -159,8 +159,9 @@ pillar lying still along z as having turned 90 degrees, and refused it.
 
 `offer_actions` gives a thing the actions a person takes with it. Each is a
 label and a short program of steps, and the room runs the program when the
-person chooses it: in the playground a click on the thing lists its actions by
-number, and the number key runs one. The owner asked
+person chooses it: in the playground the side view lists a thing's actions while
+the crosshair is on it, E does the one it marks, and Tab moves E on to the next.
+The owner asked
 for this on 2026-09-13. The model making a thing works out "what the user would
 need to do", since "a bow and arrow would have different actions than a chair",
 and is "given the ability to program the execution of it".
@@ -204,7 +205,8 @@ does not drop it first.
 When a key is pressed, the program runs on the room as it is then, and
 everything it does is the engine's answer. A stroke that is blocked, or a stand
 that is refused, stops the action with the reason; the hand is opened and what
-was done stays done. A thing may have at most nine actions, one per number key.
+was done stays done. A thing may have at most nine actions, few enough to step
+through with Tab.
 Calling the tool again replaces them, and an empty list takes them away. The
 playground keeps them in the room's spec (`actions`), so they survive every
 later edit and a restart. The page presses one with `POST /api/world/action`

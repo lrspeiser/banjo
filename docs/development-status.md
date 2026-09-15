@@ -1,5 +1,41 @@
 # Development status and handoff
 
+**The side view and the keys: E picks up, Q bags, 1–9 are the bag's slots.** Branch `agent/inventory-hands` from `9af65cb`. The owner, on 8797, after trying the bag: "there is way too much text on the screen. we need a simple chat sideview, and then all the other text needs to be in tabs in part of the side view. also it's still really hard to interact with an item. I pick it up and it goes in my bag, but then its not easy to put it back down without escaping the mouse and clicking on it." Their answers: E picks a loose thing up into the hand and puts it down again; Q bags it; the bag is numbered slots along the bottom of the view; the chat on top with tabs below; and over the view only the name of what the crosshair is on ("Iron Kettle"), its details in the side view.
+- The side view has three parts:
+  - the conversation;
+  - the details of what is looked at or held: its name, what it is made of and weighs, what E, Tab, Q and the mouse do now, the measured wind-up or draw, and what the last thing done came to;
+  - tabs for the Bag, Notes, Room (its clock, the heat and the water, and its buttons), Bench and Keys.
+- Gone from over the view: the floating help, the label's menu, the carry readout, the corner list, and the heat and water boxes. A wind-up or a draw fills the crosshair's ring instead.
+- E does what the details mark:
+  - a loose thing is picked up first (`take_up`: the room's hand grips it where it lies, a tool by its handle);
+  - a thing on a joint does first what the chat gave it.
+- Tab moves E on to the next choice, so a thing's actions are still on keys while the number keys are the bag's.
+- Q stows what the record says the hand holds, or takes what the crosshair is on.
+- 1–9 take a slot into the hand, and the same number puts it back into that slot. The record keeps a thing's slot while a hand holds it (`home`), and `stowed` has gaps.
+- Down moved from Q to Shift+Space.
+- Where the text goes: what the hand does is said in the details. The chat keeps the conversation and what happens in the room.
+- The same wording is now in:
+  - the chat's guide;
+  - the MCP's offer_actions description, note and refusal;
+  - the README (with the two inventory routes added to its HTTP table);
+  - the MCP and interaction-profile docs;
+  - the design doc.
+- Found on the way:
+  - A thing from the bag put down with E ended in the page's settleDown, which never told the record. The next room opened would have put it back in the bag.
+  - The page's changes to the record now go one at a time, in order, each against the revision the one before left. A stale one is asked again once.
+  - A refusal from the record now means only "not in the bag". The page's own grip then takes the thing, as before.
+- Measured in the page on my server with untouched ground: the scratchpad's `headless_redesign.py` and `headless_redesign_tool.py`, in headless Chrome at 1280×800. No page errors.
+  - The rubber ball (2.25 kg):
+    - E picked it up into the right hand, and E put it down on the ground in front.
+    - Tab moved E on to "Put the ball on the ground in front of me", and E did it.
+    - Q put it in slot 1; 1 took it out, and 1 put it back.
+    - A 0.6 s wind-up filled the ring to 64%, and the ball left at 17.0 m/s.
+  - Shift+Space took the view down 1.37 m.
+  - The pick:
+    - E took it up by its handle through the record, and Q bagged it.
+    - Its slot held it through a reload.
+    - 1 brought it back held ready, and a click dug 48.0 L of soil.
+
 **Tools by name: the room's chat makes a mattock that works.** Branch `agent/tool-recipes` from `37a0c02`. Asked in the page for "a mattock for breaking up hard soil", the chat had twice laid one out by hand that was not a tool (317,000 and 691,000 input tokens). gpt-5-mini follows a recipe it is handed by name, not a layout it is told.
 - `build_recipe` has three tools that work the ground: "pick", "mattock" and "hoe" (banjo_mcp `TOOL_KINDS`, laid out by `_tool_recipe`). Every face is on the room's cells, the point's tip is on the head's end face, and the grip is one cell in from the haft's far end. The pick comes out number for number as before.
 - `tool` makes it the one the person asked for: `call_it`; `material` (the whole tool's); head and haft sizes; the point's shape; and `use` (label, past, swing, lever, reach_m, repeat). Blanks the chat fills in are dropped, and a tool the hand's 60 N m wrist cannot hold level is not built at all.

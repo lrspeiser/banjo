@@ -140,6 +140,96 @@ class WhatAPersonHasChangesOnlyByRequest(unittest.TestCase):
         self.assertEqual(doubled.stowed, [], "an item in a hand was also kept in the inventory")
 
 
+class TheBagKeepsItsSlots(unittest.TestCase):
+    """The page numbers the bag's slots 1 to 9, and the number that took a thing
+    out puts it back (the owner, 2026-09-14): a thing keeps its slot while a hand
+    holds it, and nothing else is put there meanwhile."""
+
+    def setUp(self):
+        names = ("cup", "jug", "bowl", "pan")
+        self.room = {"bodies": [body(n, f"b-{n}{i:06d}", center_mm=[200 * i, 40, 0])
+                                for i, n in enumerate(names)]}
+        self.items = inventory.items_of(self.room)
+        self.ids = {i["name"]: i["id"] for i in self.items}
+        self.inv = inventory.Inventory()
+        self.asked = 0
+
+    def ask(self, op, name):
+        self.asked += 1
+        answer = self.inv.request(f"r{self.asked}", None, op, self.ids[name], self.items,
+                                  lambda plan: None)
+        self.assertTrue(answer["ok"], answer)
+        return answer
+
+    def slots(self, *names):
+        return [self.ids[n] if n else None for n in names]
+
+    def test_a_thing_held_from_its_slot_goes_back_to_it_and_its_slot_is_kept_meanwhile(self):
+        for name in ("cup", "jug", "bowl"):
+            self.ask("take", name)
+        self.assertEqual(self.inv.stowed, self.slots("cup", "jug", "bowl"))
+        self.ask("equip", "jug")
+        self.assertEqual(self.inv.stowed, self.slots("cup", None, "bowl"))
+        self.assertEqual(self.inv.slot_of(self.ids["jug"]), 1)
+        self.ask("take", "pan")
+        self.assertEqual(self.inv.stowed, self.slots("cup", None, "bowl", "pan"),
+                         "a thing taken in took the slot kept for the jug in the hand")
+        self.ask("stow", "jug")
+        self.assertEqual(self.inv.stowed, self.slots("cup", "jug", "bowl", "pan"))
+        self.assertEqual(self.inv.home, {})
+
+    def test_a_thing_put_down_from_the_hand_frees_its_slot_for_the_next(self):
+        self.ask("take", "cup")
+        self.ask("take", "jug")
+        self.ask("equip", "cup")
+        self.ask("drop", "cup")
+        self.assertEqual((self.inv.stowed, self.inv.home), (self.slots(None, "jug"), {}))
+        self.ask("take", "bowl")
+        self.assertEqual(self.inv.stowed, self.slots("bowl", "jug"))
+
+    def test_a_thing_taken_up_from_the_world_has_no_slot_until_it_is_stowed_in_the_first_free(self):
+        for name in ("cup", "jug", "bowl"):
+            self.ask("take", name)
+        self.ask("equip", "jug")
+        self.ask("drop", "jug")
+        took = self.ask("take_up", "pan")
+        self.assertEqual(took["to"], "right")
+        self.assertIsNone(self.inv.slot_of(self.ids["pan"]))
+        self.ask("stow", "pan")
+        self.assertEqual(self.inv.stowed, self.slots("cup", "pan", "bowl"))
+
+    def test_a_room_opened_again_puts_the_hands_thing_back_in_its_own_slot(self):
+        for name in ("cup", "jug", "bowl"):
+            self.ask("take", name)
+        self.ask("equip", "cup")
+        kept = inventory.Inventory(self.inv.record())
+        self.assertEqual(kept.home, {self.ids["cup"]: 0})
+        self.assertTrue(kept.back_to_bag("right"))
+        self.assertEqual(kept.stowed, self.slots("cup", "jug", "bowl"))
+        self.assertEqual((kept.hands["right"], kept.home), (None, {}))
+        self.assertFalse(kept.back_to_bag("right"), "an empty hand put something back")
+
+    def test_slots_with_gaps_keep_and_read_back_and_a_record_from_before_reads_the_same(self):
+        for name in ("cup", "jug", "bowl"):
+            self.ask("take", name)
+        self.ask("equip", "jug")
+        self.ask("drop", "jug")
+        kept = self.inv.record()
+        self.assertEqual(kept["stowed"], self.slots("cup", None, "bowl"))
+        self.assertEqual(inventory.Inventory(kept).record(), kept)
+        before = inventory.Inventory({"revision": 2, "stowed": ["b-a", "b-b"]})
+        self.assertEqual((before.stowed, before.home), (["b-a", "b-b"], {}))
+
+    def test_a_broken_piece_is_refused_as_not_one_of_the_rooms_things(self):
+        piece = self.inv.request("x1", None, "take_up", "cup piece 3", self.items, lambda plan: None)
+        self.assertFalse(piece["ok"])
+        self.assertTrue(piece.get("unknown"), "a broken piece read as a thing that cannot be taken")
+        gone = self.inv.request("x2", None, "take", self.ids["cup"], self.items,
+                                lambda plan: (_ for _ in ()).throw(ValueError("it is breaking")))
+        self.assertFalse(gone["ok"])
+        self.assertNotIn("unknown", gone)
+
+
 class WhatAPersonHasIsKeptWithTheRoom(unittest.TestCase):
     """room_store keeps the record with the room, so a server restart -- the sims
     are restarted whenever work lands -- does not hand the bag's things back."""

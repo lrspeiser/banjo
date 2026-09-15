@@ -1,6 +1,6 @@
 // One control language for everything a hand can use. docs/interaction-profiles.md.
 //
-// Objects name SEMANTIC actions -- interact, primary, secondary, more -- and
+// Objects name SEMANTIC actions -- interact, primary, secondary, next -- and
 // never keys. This file maps them to the player's bindings, says in words what
 // each does in the state the hand is in, and draws where a throw will go. What
 // any of it DOES is the engine's: a throw is a stroke of the bounded hand, the
@@ -10,20 +10,27 @@
 import * as THREE from "/vendor/three.module.js";
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
-// Names come from whoever built the room -- the chat, the MCP, a person -- and
-// the help is HTML, so they go in as text.
-const esc = (s) => String(s ?? "").replace(/[&<>"]/g,
-  (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
 // The player's bindings. One table, and every word of help is written from it,
 // so what the screen says to press is always what pressing does.
+//
+// The owner, 2026-09-14: E picks up what you look at -- or does its main thing --
+// and puts it down again; Q puts it in the bag; 1-9 take a thing out of the
+// bag's slots and the same number puts it back; the left mouse throws. Tab moves
+// E on to the next thing that can be done, which the side view lists, so nothing
+// needs the mouse let go of. Down moved off Q, which is the bag now.
 export const BINDINGS = {
   interact:  { label: "E", keys: ["KeyE"] },
   primary:   { label: "Left mouse", button: 0 },
   secondary: { label: "Right mouse", button: 2 },
-  more:      { label: "Tab", keys: ["Tab"] },
+  next:      { label: "Tab", keys: ["Tab"] },
+  stow:      { label: "Q", keys: ["KeyQ"] },
+  slots:     { label: "1–9", keys: ["Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6",
+                                    "Digit7", "Digit8", "Digit9", "Numpad1", "Numpad2", "Numpad3",
+                                    "Numpad4", "Numpad5", "Numpad6", "Numpad7", "Numpad8", "Numpad9"] },
   up:        { label: "Space", keys: ["Space"] },
-  down:      { label: "Q", keys: ["KeyQ"] },
+  // Space with Shift held: the way a game's flying camera goes down.
+  down:      { label: "Shift+Space", keys: ["Space"], shift: true },
   // Turning what the hand holds. Each asks the hand's wrist to turn it; the
   // wrist does that with the torque it has (see "Turning what is held").
   turnLeft:  { label: "Z", keys: ["KeyZ"] },
@@ -61,22 +68,38 @@ export const TURNS = [
   { action: "tipRight", axis: [0, 0, 1], sign: -1 },
 ];
 
-// The line along the bottom of the screen, written from the table.
-export function controlsHint() {
-  return `<b>W A S D</b> walk · <b>${keyOf("up")}</b> up · <b>${keyOf("down")}</b> down`
-    + ` · <b>Shift</b> run · <b>drag</b> or <b>arrow keys</b> look`
-    + ` · <b>click</b> a thing: what you can do with it, by number`
-    + ` · <b>${keyOf("interact")}</b> or <b>double-click</b> take hold, <b>${keyOf("interact")}</b> put down`
-    + ` · hold <b>${keyOf("primary")}</b> to wind up a throw, let go to throw`
-    + ` · <b>${keyOf("secondary")}</b> cancel · <b>${keyOf("more")}</b> more`
-    + ` · holding something: <b>${keyOf("turnLeft")} ${keyOf("turnRight")}</b> turn,`
-    + ` <b>${keyOf("tipAway")} ${keyOf("tipBack")}</b> tip away or back,`
-    + ` <b>${keyOf("tipLeft")} ${keyOf("tipRight")}</b> tip sideways,`
-    + ` <b>${keyOf("upright")}</b> stand it upright, <b>wheel</b> further or nearer`
-    + ` · <b>${keyOf("talk")}</b> talk to the room`
-    + ` · <b>${keyOf("dig")}</b> dig here · <b>${keyOf("heap")}</b> heap here · <b>${keyOf("heat")}</b> heat it`
-    + ` · <b>${keyOf("workbench")}</b> the workbench`
-    + ` · <b>R</b> release a latch · <b>L</b> if it lagged · <b>Esc</b> release the mouse`;
+// Every control, as rows of [keys, what they do], written from the table: the
+// side view's Keys tab. Nothing else on the page lists them all.
+export function controls() {
+  const k = keyOf;
+  return [
+    ["W A S D", "walk"],
+    ["Shift", "run"],
+    [k("up"), "go up"],
+    [k("down"), "go down"],
+    ["Drag, arrow keys", "look; click the room to look with the mouse"],
+    [k("interact"), "pick up what you look at, or do what the side view marks with E; again, put it down"],
+    [k("next"), "move E on to the next thing the side view lists"],
+    [k("stow"), "put what you hold, or what you look at, in your bag"],
+    [k("slots"), "take that slot of your bag into your hand; the same number puts it back"],
+    [k("primary"), "hold to wind up, let go to throw · use a tool where its ring is · hold to draw a bow"],
+    [k("secondary"), "lower a throw, let a string down, stop a tool · release a latch"],
+    [`${k("turnLeft")} ${k("turnRight")}`, "turn what you hold"],
+    [`${k("tipAway")} ${k("tipBack")}`, "tip it away or back"],
+    [`${k("tipLeft")} ${k("tipRight")}`, "tip it sideways"],
+    [k("upright"), "stand it upright"],
+    [k("reach"), "hold it further out or nearer"],
+    [`Alt+${k("interact")}`, "take hold of exactly the part you look at"],
+    ["Double-click", "what E does"],
+    [k("talk"), "talk to the room"],
+    [k("dig"), "dig where you look"],
+    [k("heap"), "heap what you carry where you look"],
+    [k("heat"), "heat what you look at"],
+    [k("workbench"), "the workbench's recorded runs"],
+    ["R", "release a latch"],
+    ["L", "mark that it lagged"],
+    ["Esc", "let the mouse go"],
+  ];
 }
 
 // ---------------------------------------------------------------------------
@@ -277,109 +300,111 @@ function bowNote(use) {
   return bits.join(" · ");
 }
 
-// Only what can be done in the state the hand is in is offered, in the player's
-// keys. `use` is the page's own record of the hand: { mode, name, kg, reached,
-// preview, result, more, bow, turnable, loose }.
-export function helpFor(use) {
-  const k = (action) => `<kbd>${keyOf(action)}</kbd>`;
-  const kg = use.kg ? ` · ${use.kg < 10 ? use.kg.toFixed(2) : use.kg.toFixed(1)} kg` : "";
-  const title = `<b>${esc(use.name)}</b>${kg}`;
-  const out = { title, line: "", meter: null, note: "", turn: "" };
+// What the hand can do in the state it is in, in the player's own keys: rows of
+// [keys, what they do], a meter while the engine is measuring one, and a note.
+// The side view lists them under what is held (world.js showDetails), after E,
+// Tab and Q, which it works out itself. Only what can be done in this state is
+// offered. Plain text: the names in it come from whoever built the room, and the
+// page sets them as text, never as markup. `use` is the page's own record of the
+// hand: { mode, name, kg, noun, reached, preview, bow, turnable, loose, guide,
+// target }.
+export function handHelp(use) {
+  const k = keyOf;
+  const rows = [];
+  let meter = null, note = "";
   const preview = use.preview && use.preview.possible
-    ? `this throw would leave your hand at ${use.preview.speed.toFixed(1)} m/s`
+    ? `This throw would leave your hand at ${use.preview.speed.toFixed(1)} m/s`
       + (use.preview.hitName ? ` and hit ${use.preview.hitName}` : use.preview.hit ? " and come down on the ground" : "")
-      + ` — a preview of this hand on this ${use.noun}, not of what it meets on the way`
+      + ` — a preview of this hand on this ${use.noun || "thing"}, not of what it meets on the way.`
     : use.preview && use.preview.why ? use.preview.why : "";
   switch (use.mode) {
     case "ready":
-      out.line = `Hold ${k("primary")} to wind up · let go to throw · ${k("interact")} put it down · ${k("more")} more`;
-      out.note = preview;
+      rows.push([[k("primary")], "hold to wind up, let go to throw"]);
+      note = preview;
       break;
     case "preparing":
-      out.line = `Let go of ${k("primary")} to throw · ${k("secondary")} lower it`;
-      out.meter = { label: "Wind-up", fraction: use.reached || 0,
-                    value: `${Math.round(100 * (use.reached || 0))}%` };
-      out.note = preview;
+      rows.push([[k("primary")], "let go to throw"], [[k("secondary")], "lower it"]);
+      meter = { label: "Wind-up", fraction: use.reached || 0,
+                value: `${Math.round(100 * (use.reached || 0))}%` };
+      note = preview;
       break;
     case "throwing":
-      out.line = "Throwing…";
+      note = "Throwing…";
       break;
     case "placing":
-      out.line = "Putting it down…";
+      note = "Putting it down…";
       break;
     case "blocked":
-      out.line = `Something is in the way · ${k("interact")} put it down · hold ${k("primary")} to try again`;
+      rows.push([[k("primary")], "hold to try the throw again"]);
+      note = "Something is in the way.";
       break;
     case "carrying":
-      out.line = `${k("primary")} or ${k("interact")} put it down · ${k("more")} more`;
       // A thing on a pin or in a groove follows the crosshair over what the
       // joint lets it move along (world.js haulTarget): say so, or a winch
       // looks like it cannot be worked at all.
       if (use.guide === "hinge") {
-        out.note = "It turns on a pin: move the crosshair round the pin and it follows -- round and round to crank a wheel";
+        note = "It turns on a pin: move the crosshair round the pin and it follows — round and round to crank a wheel.";
       } else if (use.guide === "slider") {
-        out.note = "It slides in a groove: move the crosshair along the groove and it follows";
+        note = "It slides in a groove: move the crosshair along the groove and it follows.";
       }
       break;
-    case "thrown":
-    case "loosed":
-    case "notice":
-      out.line = esc(use.result);
-      break;
     case "bow-ready":
-      out.line = use.bow && use.bow.strung === false
-        ? `The string is cut — it cannot be drawn · ${k("interact")} let go of the bow`
-        : `Hold ${k("primary")} to draw · let go to shoot · ${k("interact")} let go of the bow`;
-      out.note = bowNote(use);
+      if (use.bow && use.bow.strung === false) {
+        note = "The string is cut — it cannot be drawn.";
+      } else {
+        rows.push([[k("primary")], "hold to draw, let go to shoot"]);
+        note = bowNote(use);
+      }
       break;
     case "drawing": {
       const b = use.bow || {};
       const fraction = b.max > 0 ? Math.min(1, (b.drawn || 0) / b.max) : 0;
-      out.line = `Let go of ${k("primary")} to shoot · ${k("secondary")} let the string down`;
-      out.meter = { label: "Draw", fraction,
-                    value: `${Math.round(100 * fraction)}% · ${Math.round(1000 * (b.drawn || 0))} mm` };
-      out.note = bowNote(use);
+      rows.push([[k("primary")], "let go to shoot"], [[k("secondary")], "let the string down"]);
+      meter = { label: "Draw", fraction,
+                value: `${Math.round(100 * fraction)}% · ${Math.round(1000 * (b.drawn || 0))} mm` };
+      note = bowNote(use);
       break;
     }
     case "letting-down":
-      out.line = "Letting the string down…";
+      note = "Letting the string down…";
       break;
     // A tool (tools.js): what its click does where the ring is, as the server
-    // says it (tool_use.resolve), why it cannot be done there when it cannot,
-    // and what the last use came to.
+    // says it (tool_use.resolve), and why it cannot be done there when it cannot.
+    case "tool-lifting":
+      note = "Lifting it…";
+      break;
     case "tool-ready": {
       const t = use.target || {};
-      out.line = `Click ${k("primary")} to ${esc((t.label || "use it").toLowerCase())}`
-        + (t.repeat ? " · hold to keep going" : "") + ` · ${k("interact")} put it down`;
-      const why = t.reason ? esc(t.reason) : "";
-      const last = esc(use.result || "");
-      out.note = t.enabled === false ? why : [why, last].filter(Boolean).join(" · ");
+      if (t.enabled !== false) {
+        rows.push([[k("primary")], (t.label || "use it").toLowerCase() + (t.repeat ? "; hold to keep going" : "")]);
+      }
+      note = t.reason || "";
       break;
     }
     case "tool-working": {
       const t = use.target || {};
-      out.line = `${esc(t.label || "Working")}… · ${k("secondary")} stop after this one`;
+      rows.push([[k("secondary")], "stop after this one"]);
+      note = `${t.label || "Working"}…`;
       break;
     }
     default:
-      out.line = "";
+      break;
   }
-  if (use.more && (use.mode === "ready" || use.mode === "carrying" || use.mode === "blocked")) {
-    out.line = `<kbd>1</kbd> let go of it here · <kbd>2</kbd> put it down gently`
-      + (use.latched ? ` · <kbd>3</kbd> release its latch` : "") + ` · ${k("more")} back`;
-  }
-  // Turning it, and how far out it is held: offered for a loose thing in the
-  // hand. The wrist turns what the hand can hold up; what it cannot, it says,
-  // and the room can be asked instead.
-  if (use.turnable && (use.mode === "ready" || use.mode === "blocked")) {
-    out.turn = `${k("turnLeft")}${k("turnRight")} turn · ${k("tipAway")}${k("tipBack")} tip away or back`
-      + ` · ${k("tipLeft")}${k("tipRight")} tip sideways · ${k("upright")} stand it upright`
-      + ` · wheel further or nearer · ${k("talk")} ask the room`;
+  // Turning it, and how far out it is held: for a loose thing in the hand. The
+  // wrist turns what the hand can hold up; what it cannot, it says, and the
+  // room can be asked instead.
+  if (use.mode === "ready" || use.mode === "blocked") {
+    if (use.turnable) {
+      rows.push([[k("turnLeft"), k("turnRight"), k("tipAway"), k("tipBack"), k("tipLeft"), k("tipRight")],
+                 "turn it, or tip it away, back or sideways"],
+                [[k("upright")], "stand it upright"]);
+    }
+    rows.push([[k("reach")], "hold it further out or nearer"]);
   } else if (use.loose && use.mode === "carrying") {
-    out.turn = `Too heavy for your hand to turn · wheel further or nearer`
-      + ` · ${k("talk")} ask the room to turn it`;
+    rows.push([[k("reach")], "hold it further out or nearer"]);
+    note = note || `Too heavy for your hand to turn: ${k("talk")} asks the room to turn it.`;
   }
-  return out;
+  return { rows, meter, note };
 }
 
 // ---------------------------------------------------------------------------

@@ -11,86 +11,20 @@
 <canvas id="stage"></canvas>
 
 <!-- The crosshair is the pointer. In a first-person view the mouse aims the
-     camera, so what you are pointing at is always the middle of the screen. -->
+     camera, so what you are pointing at is always the middle of the screen. Its
+     ring fills as a throw is wound up or a string drawn -- the engine's measured
+     share of the way; the numbers are in the side view. -->
 <div id="crosshair" aria-hidden="true"><span></span></div>
 
-<!-- What the crosshair is on, and what it is made of. -->
-<div id="label" hidden>
-  <strong id="label-name"></strong>
-  <span id="label-material"></span>
-  <span id="label-size"></span>
-  <!-- What can be done with it, once a click has opened it (world.js updateMenu). -->
-  <div id="label-actions" hidden></div>
-</div>
+<!-- Over the view, only the NAME of what the crosshair is on (the owner,
+     2026-09-14: "when you mouse over something show the name of it, like 'Iron
+     Kettle'"). What it is and what can be done with it are in the side view. -->
+<div id="label" hidden><strong id="label-name"></strong></div>
 
-<!-- What the hand can do right now, in the player's own keys: the same place
-     and the same pattern for everything a hand can use. Written from one table
-     of bindings (interaction.js), so it always says what pressing does, and
-     the meter is a measured number, never a timer. -->
-<div id="use" hidden>
-  <div id="use-title"></div>
-  <div id="use-meter" hidden>
-    <span id="use-meter-label"></span>
-    <span class="use-bar"><i id="use-meter-fill"></i></span>
-    <output id="use-meter-value"></output>
-  </div>
-  <div id="use-line"></div>
-  <div id="use-note"></div>
-  <!-- Turning what is held, and how far out: the same table of bindings. -->
-  <div id="use-turn"></div>
-</div>
-
-<!-- Bottom left, stacked: what is carried, above the clock and the keys. -->
-<div id="corner">
-<!-- What has been picked up off the floor, by what it is. Walking over
-     debris collects it, so this fills as the room gets tidier -- and the sand
-     and soil Dig here takes out of the ground, which Heap here puts back. -->
-<div id="stock" hidden>
-  <h2>Carried</h2>
-  <ul id="stock-list"></ul>
-</div>
-
-<div id="hud">
-  <div id="hud-clock">—</div>
-  <div id="hud-hint"><b>W A S D</b> walk · <b>Q E</b> up and down · <b>Shift</b> run
-    · <b>drag</b> or <b>arrow keys</b> look · <b>click</b> a thing: what you can do with it
-    · <b>E</b> or <b>double-click</b> take hold, <b>E</b> put it down · <b>F</b> throw
-    · <b>right-click</b> or <b>R</b> release a latch · <b>Heat it</b> warms what the crosshair is on (through a window, the gas behind it)
-    · <b>Dig here</b> digs where the crosshair is on the ground and carries what comes out; <b>Heap here</b> puts it back
-    · <b>L</b> if it lagged · <b>Esc</b> release the mouse</div>
-</div>
-</div>
-
-<!-- Where the held thing is, in metres, and what is under it. Carrying
-     something you cannot place is the whole difficulty of doing this by hand,
-     so the numbers and the drop line are always on while something is held. -->
-<div id="carry" hidden>
-  <div class="carry-row"><span class="axis x">X</span><output id="carry-x">0.00</output><span class="unit">m</span></div>
-  <div class="carry-row"><span class="axis y">Y</span><output id="carry-y">0.00</output><span class="unit">m</span></div>
-  <div class="carry-row"><span class="axis z">Z</span><output id="carry-z">0.00</output><span class="unit">m</span></div>
-  <div class="carry-drop">drops onto <b id="carry-onto">the floor</b>, <output id="carry-fall">0.00</output> m below</div>
-</div>
-
-<!-- The water, as the engine reports it: how much there is, what the river
-     brings in and takes out, and what it costs to run -- the columns the
-     solver actually computed, out of all of them. The surface drawn in the
-     room is a picture of these numbers. Before the heat panel, which moves
-     down under it when both are showing. -->
-<div id="water" hidden>
-  <h2>Water</h2>
-  <p id="water-line"></p>
-  <p id="water-cost"></p>
-  <p id="water-beyond" hidden></p>
-</div>
-
-<!-- Heat, fire and gas, as the engine reports them. The glow, the flames and
-     the gas column in the room are pictures of these numbers; they are never
-     the source of any heat or force. -->
-<div id="heat" hidden>
-  <h2>Heat</h2>
-  <ul id="heat-list"></ul>
-  <p id="heat-note"></p>
-</div>
+<!-- The bag's first nine slots, by the number key that takes each into the hand;
+     the same number puts it back. Drawn from the server's record
+     (inventory_room.py), and shown only while the bag has something in it. -->
+<ol id="hotbar" aria-label="Your bag, by number key" hidden></ol>
 
 <section id="panel">
   <header>
@@ -99,82 +33,136 @@
     <!-- Which saved build is open, when the link names one (?qa=<run>/<case>-<trial>). -->
     <p id="panel-build" hidden></p>
   </header>
-  <!-- What the person has, always here beside the conversation (the owner,
-       2026-09-13: the chat side view at all times, "along with any data related
-       to the user's inventory"). Filled by showInventory() in world.js. -->
-  <section id="inventory" aria-label="What you have">
-    <!-- Both hands and the bag: the server's record (inventory_room.py), drawn
-         here and never decided here. -->
-    <div class="inv-row"><span class="inv-label">Right hand</span><span id="inv-right">free</span></div>
-    <div class="inv-row"><span class="inv-label">Left hand</span><span id="inv-left">free</span></div>
-    <div class="inv-row"><span class="inv-label">Bag</span><ul id="inv-bag"></ul></div>
-    <div class="inv-row"><span class="inv-label">Carrying</span><ul id="inv-carrying"></ul></div>
-    <div class="inv-row"><span class="inv-label">To use</span><ul id="inv-tools"></ul></div>
+
+  <!-- 1. The conversation with the room: what is asked, what it answers, and
+       what happens in the room. What the person's own hands do is said in the
+       details below, not here. -->
+  <section id="talk" aria-label="Talk to the room">
+    <div id="chat" role="log" aria-live="polite"></div>
+    <form id="ask">
+      <input id="ask-text" type="text" autocomplete="off" spellcheck="false"
+             placeholder="Press / and ask — &ldquo;make me a hoe&rdquo;">
+      <button type="submit" id="ask-send">Send</button>
+    </form>
   </section>
-  <!-- What the person knows: the notebook the server keeps from what the engine
-       measured their own tools doing (docs/knowledge-and-progression.md).
-       Filled by showNotebook() in world.js; nothing on this page writes it. -->
-  <section id="notebook" aria-label="Notebook">
-    <h2>Notebook</h2>
-    <p id="notebook-empty">Nothing tried yet. What your own tools do is written here as the engine measures it.</p>
-    <ul id="notebook-list"></ul>
+
+  <!-- 2. What the crosshair is on, or what the hand holds: what it is, what can
+       be done with it now, each with its key -- E marks the one E does and Tab
+       moves it on -- and what the last thing you did came to. Filled by
+       showDetails() in world.js. -->
+  <section id="details" aria-label="What you look at" aria-live="polite">
+    <h2 id="details-name">&nbsp;</h2>
+    <p id="details-facts"></p>
+    <div id="details-meter" hidden>
+      <span id="details-meter-label"></span>
+      <span class="meter-bar"><i id="details-meter-fill"></i></span>
+      <output id="details-meter-value"></output>
+    </div>
+    <ul id="details-actions"></ul>
+    <p id="details-note"></p>
+    <p id="details-last" hidden><span class="last-label">Last</span><span id="details-last-text"></span></p>
   </section>
-  <!-- What can be done right now, each with the key that does it, and the tool
-       to use when there is one (the owner: prompts that show what you can do, "in
-       a box to the side", recommending "what tool you should use with a hot key
-       to use it"). Filled by showActions() in world.js. -->
-  <section id="actions" aria-label="What you can do">
-    <ul id="actions-list"></ul>
-    <p id="actions-tip" hidden></p>
-  </section>
-  <!-- The workbench: the lab's recorded runs, played back as a small copy on a
-       bench in front of you while the room goes on (the owner: recorded runs
-       play "on a bench in front of you"). K opens it. The list and the controls
-       are world.js's; the bench and the run on it are workbench.js's. -->
-  <section id="workbench" aria-label="Workbench">
-    <button type="button" id="workbench-toggle" aria-expanded="false">Workbench · recorded runs</button>
-    <div id="workbench-body" hidden>
-      <ul id="workbench-runs"></ul>
-      <div id="workbench-controls" hidden>
-        <p id="workbench-title"></p>
-        <div class="workbench-row">
-          <button type="button" id="workbench-play">Play</button>
-          <input type="range" id="workbench-frame" min="0" max="1000" value="0" aria-label="Where in the run">
-          <select id="workbench-speed" aria-label="How fast it plays">
-            <option value="0.1">0.1×</option>
-            <option value="0.25" selected>0.25×</option>
-            <option value="1">1×</option>
-          </select>
-        </div>
-        <p id="workbench-time"></p>
-        <button type="button" id="workbench-away" class="quiet">Put the bench away</button>
+
+  <!-- 3. Everything else, a tab at a time. -->
+  <section id="tabs">
+    <div role="tablist" aria-label="More about the room">
+      <button type="button" role="tab" id="tab-bag" aria-controls="pane-bag" aria-selected="true">Bag</button>
+      <button type="button" role="tab" id="tab-notes" aria-controls="pane-notes" aria-selected="false">Notes</button>
+      <button type="button" role="tab" id="tab-room" aria-controls="pane-room" aria-selected="false">Room</button>
+      <button type="button" role="tab" id="tab-bench" aria-controls="pane-bench" aria-selected="false">Bench</button>
+      <button type="button" role="tab" id="tab-keys" aria-controls="pane-keys" aria-selected="false">Keys</button>
+    </div>
+
+    <!-- What the person has: both hands and the bag's slots -- the server's
+         record (inventory_room.py), drawn here and never decided here -- what is
+         carried, and what in this room can be used. Filled by showInventory(). -->
+    <div role="tabpanel" id="pane-bag" aria-labelledby="tab-bag">
+      <section id="inventory" aria-label="What you have">
+        <div class="inv-row"><span class="inv-label">Right hand</span><span id="inv-right">free</span></div>
+        <div class="inv-row"><span class="inv-label">Left hand</span><span id="inv-left">free</span></div>
+        <div class="inv-row"><span class="inv-label">Bag</span><ol id="inv-bag"></ol></div>
+        <div class="inv-row"><span class="inv-label">Carrying</span><ul id="inv-carrying"></ul></div>
+        <div class="inv-row"><span class="inv-label">To use</span><ul id="inv-tools"></ul></div>
+      </section>
+    </div>
+
+    <!-- What the person knows: the notebook the server keeps from what the engine
+         measured their own tools doing (docs/knowledge-and-progression.md).
+         Filled by showNotebook() in world.js; nothing on this page writes it. -->
+    <div role="tabpanel" id="pane-notes" aria-labelledby="tab-notes" hidden>
+      <section id="notebook" aria-label="Notebook">
+        <p id="notebook-empty">Nothing tried yet. What your own tools do is written here as the engine measures it.</p>
+        <ul id="notebook-list"></ul>
+      </section>
+    </div>
+
+    <!-- The room: its clock, the water and the heat as the engine reports them,
+         and the room's own buttons, each also on a key. -->
+    <div role="tabpanel" id="pane-room" aria-labelledby="tab-room" hidden>
+      <p id="room-clock">—</p>
+      <!-- The water: how much there is, what the river brings in and takes out,
+           and what it costs to run -- the columns the solver actually computed.
+           The surface drawn in the room is a picture of these numbers. -->
+      <section id="water" hidden>
+        <h3>Water</h3>
+        <p id="water-line"></p>
+        <p id="water-cost"></p>
+        <p id="water-beyond" hidden></p>
+      </section>
+      <!-- Heat, fire and gas. The glow, the flames and the gas column in the room
+           are pictures of these numbers; they are never the source of any heat
+           or force. -->
+      <section id="heat" hidden>
+        <h3>Heat</h3>
+        <ul id="heat-list"></ul>
+        <p id="heat-note"></p>
+      </section>
+      <div id="room-controls">
+        <!-- Which room. The menu has one, the world; a link opens another
+             (/world?scene=yard), and a QA build's link names its build. -->
+        <select id="scene" class="quiet" aria-label="Which room">
+          <option value="world">The world</option>
+        </select>
+        <button type="button" id="dig-it" class="quiet"
+                title="F: dig a pit 0.8 m across and 0.4 m deep where the crosshair is on the ground; what comes out is carried">Dig here</button>
+        <button type="button" id="heap-it" class="quiet"
+                title="H: heap up to 0.2 m³ of the sand and soil you carry where the crosshair is on the ground">Heap here</button>
+        <button type="button" id="heat-it" class="quiet"
+                title="B: 10 kW for a minute into what the crosshair is on; aimed at a piston, or through a window at the gas behind it, 800 W into the gas">Heat it</button>
+        <button type="button" id="reset" class="quiet">Start the room again</button>
+        <span id="panel-count"></span>
       </div>
     </div>
+
+    <!-- The workbench: the lab's recorded runs, played back as a small copy on a
+         bench in front of you while the room goes on (the owner: recorded runs
+         play "on a bench in front of you"). K opens this tab. The list and the
+         controls are world.js's; the bench and the run on it are workbench.js's. -->
+    <div role="tabpanel" id="pane-bench" aria-labelledby="tab-bench" hidden>
+      <section id="workbench" aria-label="Workbench">
+        <ul id="workbench-runs"></ul>
+        <div id="workbench-controls" hidden>
+          <p id="workbench-title"></p>
+          <div class="workbench-row">
+            <button type="button" id="workbench-play">Play</button>
+            <input type="range" id="workbench-frame" min="0" max="1000" value="0" aria-label="Where in the run">
+            <select id="workbench-speed" aria-label="How fast it plays">
+              <option value="0.1">0.1×</option>
+              <option value="0.25" selected>0.25×</option>
+              <option value="1">1×</option>
+            </select>
+          </div>
+          <p id="workbench-time"></p>
+          <button type="button" id="workbench-away" class="quiet">Put the bench away</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- Every control, from the one table of bindings (interaction.js). -->
+    <div role="tabpanel" id="pane-keys" aria-labelledby="tab-keys" hidden>
+      <dl id="keys-list"></dl>
+    </div>
   </section>
-  <div id="chat" role="log" aria-live="polite"></div>
-  <form id="ask">
-    <input id="ask-text" type="text" autocomplete="off" spellcheck="false"
-           placeholder="Press / and ask — &ldquo;turn this upright and set it in front of me&rdquo;">
-    <button type="submit" id="ask-send">Send</button>
-  </form>
-  <footer>
-    <!-- Which room. The bench is the materials room; the courtyard has a gate
-         hung on a pin, which swings because it is pushed rather than because
-         anything plays an animation of a gate opening. -->
-    <!-- The three test rooms come first, so the room opens on them: every
-         build the QA proves, side by side (tests/qa.py writes them). -->
-    <select id="scene" class="quiet" aria-label="Which room">
-      <option value="world">The world</option>
-    </select>
-    <button type="button" id="dig-it" class="quiet"
-            title="Dig a pit 0.8 m across and 0.4 m deep where the crosshair is on the ground; what comes out is carried">Dig here</button>
-    <button type="button" id="heap-it" class="quiet"
-            title="Heap up to 0.2 m³ of the sand and soil you carry where the crosshair is on the ground">Heap here</button>
-    <button type="button" id="heat-it" class="quiet"
-            title="10 kW for a minute into what the crosshair is on; aimed at a piston, or through a window at the gas behind it, 800 W into the gas">Heat it</button>
-    <button type="button" id="reset" class="quiet">Start the room again</button>
-    <span id="panel-count"></span>
-  </footer>
 </section>
 
 <script type="module" src="/world.js"></script>

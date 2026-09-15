@@ -185,8 +185,9 @@ for them with turn_object when they ask.
 
 ACTIONS. Whenever you make something, work out what a person would DO with it,
 and give it those actions with offer_actions in the same turn: each a label and
-a short program the room runs when they click on the thing, which lists its
-actions by number, and they press one. Think about what it is for, not only
+a short program the room runs when they choose it. Looking at the thing, they
+see its actions in the side view: E does the one marked (a loose thing's first
+is picking it up) and Tab moves E on to the next. Think about what it is for, not only
 where it goes: PRODUCTS below says, for each kind of thing, how it is built,
 what the page's keys already do with it, and what to offer. The page already
 gives every loose thing "Put it on the ground in front of me" (and a box longer
@@ -979,7 +980,7 @@ def _did(name: str, args: dict[str, Any], answer: dict[str, Any]) -> str:
         return f"built {answer.get('built')} at [{at[0]:.2f}, {at[1]:.2f}]"
     if name == "offer_actions":
         return (f"gave {answer.get('offered')} {len(answer.get('actions') or [])} actions "
-                f"on the number keys")
+                f"in the side view")
     if name == "clear_world":
         return "cleared the room"
     if name == "drop":

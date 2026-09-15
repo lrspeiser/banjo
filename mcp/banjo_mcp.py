@@ -1390,13 +1390,14 @@ def tool_turn_object(args: dict[str, Any]) -> dict[str, Any]:
 # and arrow would have different actions than a chair" -- and is "given the
 # ability to program the execution of it". So whoever makes a thing offers its
 # actions: each a label and a short program of steps, every step something the
-# engine already does. The room shows them when the person looks at the thing,
-# one per number key, and runs the program when the key is pressed: the hand's
-# steps in the running room with the hand's own bounded strength, a stand step
-# as turn_object with all of its checks. Nothing here moves anything: what
-# happens is the engine's answer when the key is pressed.
+# engine already does. The room shows them when the person looks at the thing
+# -- the playground's side view, where E does the one it marks and Tab moves E
+# on -- and runs the program when one is chosen: the hand's steps in the
+# running room with the hand's own bounded strength, a stand step as
+# turn_object with all of its checks. Nothing here moves anything: what happens
+# is the engine's answer when it is chosen.
 
-MAX_ACTIONS = 9             # one per number key
+MAX_ACTIONS = 9             # few enough for a person to step through with Tab
 MAX_STEPS = 12
 ACTION_LABEL_CHARS = 60
 ACTION_STEPS = ("stand", "take_hold", "carry_to", "put_down", "let_go", "push", "turn", "slide",
@@ -1713,8 +1714,8 @@ def tool_offer_actions(args: dict[str, Any]) -> dict[str, Any]:
         raise Refused("actions is a list, [{label, steps: [...]}, ...]; an empty list takes "
                       "a thing's actions away")
     if len(actions) > MAX_ACTIONS:
-        raise Refused(f"at most {MAX_ACTIONS} actions, one per number key: {len(actions)} "
-                      f"were given")
+        raise Refused(f"at most {MAX_ACTIONS} actions, few enough for a person to step "
+                      f"through: {len(actions)} were given")
     names = {b["name"] for b in entry["scene"]["bodies"]}
     masses = _masses(entry) if actions else {}
     aside: list[str] = []
@@ -1731,8 +1732,9 @@ def tool_offer_actions(args: dict[str, Any]) -> dict[str, Any]:
     answer: dict[str, Any] = {
         "offered": name,
         "actions": [{"key": i + 1, **action} for i, action in enumerate(kept)],
-        "note": "Shown when the person looks at it, one per number key. Each program runs "
-                "when its key is pressed: the hand's steps in the running room with the "
+        "note": "Shown when the person looks at it, in the order given (in the playground, "
+                "E does the one marked and Tab moves E on). Each program runs when it is "
+                "chosen: the hand's steps in the running room with the "
                 "hand's own 800 N, a stand step as turn_object with all its checks. What "
                 "happens is the engine's answer then, and a step that cannot be done stops "
                 "the action with why."}
@@ -5354,8 +5356,8 @@ TOOLS = [
                                            "runs now.")}}},
     {"name": "offer_actions",
      "description": "Give an object you made the actions a person would take with it: each "
-                    "a label and a short program the room runs when they click on the object, "
-                    "which lists its actions by number, and press one. Think about what the "
+                    "a label and a short program the room runs when they choose it -- looking "
+                    "at the object lists its actions, in the order given. Think about what the "
                     "thing is FOR. A chair is "
                     "pulled out from its table and pushed back in; a door is pushed open and "
                     "shut; a beam is stood upright or laid where you face; a pot is heated; "

@@ -73,8 +73,8 @@ AUTHORING = {"add_object", "remove_object", "move_object", "turn_object", "clear
              "interaction", "duplicate",
              # A mechanism built by its recipe is things, joints and actions.
              "build_recipe",
-             # And the actions a thing is given: the page puts them on the
-             # number keys from it.
+             # And the actions a thing is given: the page lists them in its
+             # side view from it.
              "offer_actions",
              # The ground and the water are part of what the room IS: a trench
              # dug, a block cut, a river turned up.

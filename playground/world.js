@@ -14,8 +14,8 @@
 import * as THREE from "/vendor/three.module.js";
 import { rememberBlades, bladeFor, STANCES, takeHold, handTarget, dressBlades, showKerfs,
          narrateCuts } from "/blades.js";
-import { BINDINGS, isKey, isButton, keyOf, controlsHint, holdPoint, windUpPoint,
-         windUpReached, throwStroke, placeStroke, throwable, helpFor, AimArc,
+import { BINDINGS, isKey, isButton, keyOf, controls, holdPoint, windUpPoint,
+         windUpReached, throwStroke, placeStroke, throwable, handHelp, AimArc,
          WIND_UP_S, TURNS, TURN_KEY_RATE, HOLD_RANGE_M, holdDistanceFor, radiusOf,
          turnPace, askTowards, uprightTurn } from "/interaction.js";
 import { makeTools } from "/tools.js";
@@ -113,6 +113,13 @@ const world = {
   workingOn: "",          // what the engine is working out, for the frame record
   held: null,             // { name, distance }
   aim: null,              // what the crosshair is on, from the engine
+  // The side view's details (showDetails): which of what can be done E does
+  // (Tab moves it on), what the last thing done came to, the action running,
+  // and where what is held would come down.
+  choice: { of: "", index: 0 },
+  last: null,             // { text, tone: "did" | "refused" }
+  doing: null,            // the label of the action running
+  carry: null,            // "over the floor, 0.83 m up · at x, y, z m"
   busy: false,
   lastTick: 0,
   // After a request that got no answer (see tick()).
@@ -1111,7 +1118,7 @@ function tellLater() {
     world.sweptSince.clear();
     if (!lots.length) return;
     const said = lots.map(([what, kg]) => `${grams(kg)} of ${what}`).join(", ");
-    say("world", `Collected ${said}.`);
+    lastAction(`Collected ${said}.`);
   }, 700);
 }
 
@@ -1121,24 +1128,56 @@ function grams(kg) {
 }
 
 function showStock() {
-  // What is carried is shown in the panel now, with everything else the person
-  // has (showInventory); the corner list stays hidden.
-  $("stock").hidden = true;
+  // What is carried is in the side view's Bag tab, with everything else the
+  // person has (showInventory).
   showInventory();
 }
 
-// What the person has, always in the panel beside the conversation: what is in
-// their hand, what they carry, and what in this room can be used, with the keys
-// that use it. Built from what the page already knows, and redrawn only when
-// that changes.
+// What the person has: in the side view's Bag tab, and the bag's first nine
+// slots along the bottom of the view, by the number keys that take each out.
+// Built from the server's record and what the page already knows, and redrawn
+// only when that changes.
 let inventorySaid = "";
+// How many of the bag's slots have a number key: 1 to 9.
+const SLOT_KEYS = 9;
 
-// Whether the thing in the engine's hand came out of the bag: the record says
-// the hand in the world holds it.
-function fromBagInHand(name) {
+// A name as the view and the side view say it: "iron kettle" is "Iron Kettle".
+function titled(name) {
+  return String(name || "").replace(/(^|[\s(-])(\p{Ll})/gu, (_, before, letter) => before + letter.toUpperCase());
+}
+// A sentence as the details say it: a capital, and a stop at the end.
+function sentence(text) {
+  const s = String(text || "").trim();
+  if (!s) return s;
+  const said = s[0].toUpperCase() + s.slice(1);
+  return /[.!?…]$/.test(said) ? said : `${said}.`;
+}
+
+// What the hand holds, by what a person calls it: the bow, not its string.
+function heldName() {
+  const held = world.held;
+  return !held ? "" : held.bow ? held.bow.object : held.pick ? held.pick.object : held.name;
+}
+
+// Whether the record says the hand the engine has holds this thing: taken up
+// with E, or out of the bag.
+function recordHolds(name) {
   const inv = world.inventory;
   const hand = inv && inv.hands && inv.hands[inv.hand_in_the_world];
   return !!(name && hand && hand.name === name);
+}
+
+// The page's hand has let go of a thing into the world -- put down, dropped,
+// thrown: when the record says the hand held it, the record is told. The room
+// has already let go; this only tells it.
+function leftTheHand(name) {
+  if (recordHolds(name)) inventoryChange("drop", name, { quiet: true });
+}
+
+// The crosshair, and the name over the view, with something in the hand or not.
+function showHolding(on) {
+  $("crosshair").classList.toggle("holding", !!on);
+  if (on) $("label").hidden = true;
 }
 
 // The page's side of a hold the room has already ended -- set aside, or let go
@@ -1146,52 +1185,84 @@ function fromBagInHand(name) {
 function forgetHold() {
   world.drawn = null;
   world.held = null;
-  $("crosshair").classList.remove("holding");
-  $("carry").hidden = true;
+  showHolding(false);
   clearGuides();
   aimArc.hide();
+  tools.forget();
   world.use = { mode: "none" };
   showUse();
 }
 
-// A thing the server has put in the hand (the bag's Hold): held by its middle,
-// as taking hold of a loose thing a hand can lift always is (pickUp).
-function adoptGrip(name) {
+// A thing the server has put in the hand -- taken up with E, or out of the bag:
+// held where the server gripped it, as taking hold of a loose thing a hand can
+// lift always is. A tool is held ready by its handle instead (tools.js), from
+// `point`, the grip it was taken up by, when there is one.
+function adoptGrip(name, point) {
   const entry = world.bodies.get(name);
   if (!entry) return;
+  const tool = tools.profileOf(name);
+  if (tool) { tools.adopt(tool, point || null); return; }
+  const blade = bladeFor(name);
+  if (blade) {
+    // A blade out of the bag is held by its grip, its edge facing down, the way
+    // E takes one up (pickUp): the hand takes it again where its blade says.
+    act("wield", { name }).then(() => {
+      world.held = Object.assign({ name, blade, distance: 0.8 }, takeHold(camera, entry, blade, 0.8));
+      showHolding(true);
+      showUse();
+    }).catch((error) => say("bad", String(error.message || error)));
+    return;
+  }
   world.held = { name, throwable: true, loose: true,
                  distance: holdDistanceFor(radiusOf(entry)), turn: startTurning(entry) };
   world.use = { mode: "ready", name, kg: entry.mass,
                 noun: entry.shape === "sphere" ? "ball" : "thing",
                 latched: !!latchOn(name), turnable: entry.shape !== "sphere",
                 bringing: { from: entry.mesh.position.clone(), since: performance.now() } };
-  $("crosshair").classList.add("holding");
-  $("label").hidden = true;
-  $("carry").hidden = false;
+  showHolding(true);
   showUse();
 }
 
 // What the person has is the server's record (inventory_room.py): the page
 // asks for a change and shows the answer -- it never decides it. Each change
 // has its own id, so a retry is never done twice, and carries the revision the
-// page last saw, so a stale one is refused rather than guessed at.
-async function inventoryChange(op, item, quiet = false) {
+// page last saw, so a stale one is refused rather than guessed at. They go one
+// at a time, in the order they were asked for: a thing put down and another
+// picked up straight after reach the record in that order, each against the
+// revision the one before it left.
+//
+// `options`: quiet (what came of it is not said in the details -- a failure to
+// reach the server always is), grip (take_up: where the hand takes hold) and
+// point (a tool's point, which it is then held ready by).
+let inventoryQueue = Promise.resolve();
+function inventoryChange(op, item, options = {}) {
+  const run = inventoryQueue.then(() => changeInventory(op, item, options));
+  inventoryQueue = run.catch(() => {});
+  return run;
+}
+
+async function changeInventory(op, item, options, again = false) {
   if (!world.session) return null;
+  const revision = world.inventory && world.inventory.record ? world.inventory.record.revision : null;
   let answer;
   try {
-    answer = await api("/api/world/inventory", {
-      session: world.session, request: crypto.randomUUID(), op, item,
-      revision: world.inventory && world.inventory.record ? world.inventory.record.revision : null,
-      person: whereIAm() });
+    const ask = { session: world.session, request: crypto.randomUUID(), op, item, revision,
+                  person: whereIAm() };
+    if (options.grip) ask.grip = options.grip;
+    answer = await api("/api/world/inventory", ask);
   } catch (error) {
-    if (!quiet) say("bad", String(error.message || error));
+    say("bad", String(error.message || error));
     return null;
   }
   if (answer.shown) world.inventory = answer.shown;
   inventorySaid = "";
   showInventory();
   if (!answer.ok) {
-    if (!quiet) say("bad", answer.why);
+    // Changed since this page last saw it -- the chat changed the room, say:
+    // asked again, once, against the record as it is now.
+    const now = answer.record ? answer.record.revision : revision;
+    if (!again && now !== revision) return changeInventory(op, item, options, true);
+    if (!options.quiet) lastAction(answer.why, "refused");
     return answer;
   }
   const room = answer.room || {};
@@ -1207,8 +1278,86 @@ async function inventoryChange(op, item, quiet = false) {
     draw(await act("poses"));
     if (room.held) adoptGrip(room.brought_back);
   }
-  if (!quiet) say("you", answer.did);
+  if (room.taken_up) adoptGrip(room.taken_up, options.point);
+  remember(answer.did.replace(/\.$/, "").replace(/^./, (c) => c.toLowerCase()));
+  if (!options.quiet) lastAction(answer.did);
   return answer;
+}
+
+// Into the hand through the record (take_up): the server's hand takes hold --
+// of a tool, by its handle -- and the record says the hand holds it. "held"
+// when it did. "not kept" when the record would not keep it: a broken piece,
+// which the room's spec does not have, or a thing it cannot keep as it is. That
+// says only that it cannot go in the bag, never that a hand cannot hold it, so
+// the page's own grip then takes it, as it always did, and Q says why. Null
+// when the server could not be reached, which is said.
+async function takeIntoHand(name, point) {
+  const answer = await inventoryChange("take_up", name,
+                                      { quiet: true, grip: point ? point.grip : null, point });
+  if (!answer) return null;
+  return answer.ok ? "held" : "not kept";
+}
+
+// A hand in the middle of a throw, a draw or a tool's stroke, or of one of a
+// thing's actions, is busy: the bag and its slots wait until it is done.
+const HAND_BUSY = new Set(["preparing", "throwing", "placing", "drawing", "letting-down",
+                           "tool-working", "tool-lifting"]);
+function handBusy() {
+  if (world.acting || (world.held && HAND_BUSY.has(world.use.mode))) {
+    lastAction("Your hand is busy: finish or stop what it is doing first.", "refused");
+    return true;
+  }
+  return false;
+}
+
+// Q: into the bag -- what the hand holds or, with the hand empty, what the
+// crosshair is on. The room sets it aside (inventory_room.py).
+async function toTheBag() {
+  if (handBusy()) return;
+  const on = world.aim && world.aim.name;
+  const name = world.held ? world.held.name
+    : on ? (tools.profileOf(on) ? tools.profileOf(on).tool : on) : null;
+  if (!name) { lastAction("Look at what to put in your bag, or hold it, first.", "refused"); return; }
+  const said = world.held ? titled(heldName()) : titled(name);
+  const answer = await inventoryChange(world.held && recordHolds(name) ? "stow" : "take", name);
+  if (answer && !answer.ok && answer.unknown)
+    lastAction(`${said} is a broken piece: only whole things go in the bag.`, "refused");
+}
+
+// 1-9: that slot of the bag into the hand -- and, with the thing from that slot
+// in the hand, back into it (the owner: "the same number again puts it back").
+// A thing of the record's in the hand is stowed first, so a number swaps what
+// is held; anything else in the hand is put down first, with E.
+async function fromSlot(i) {
+  const inv = world.inventory;
+  if (!inv || handBusy()) return;
+  const hand = inv.hands && inv.hands[inv.hand_in_the_world];
+  const ours = !!(world.held && recordHolds(world.held.name));
+  if (ours && hand && hand.slot === i) { await inventoryChange("stow", world.held.name); return; }
+  const thing = (inv.stowed || [])[i];
+  if (!thing) { lastAction(`Slot ${i + 1} of your bag is empty.`, "refused"); return; }
+  if (world.held && !ours) {
+    lastAction(`Your hand holds ${heldName()}: ${keyOf("interact")} puts it down first.`, "refused");
+    return;
+  }
+  if (ours) {
+    const stowed = await inventoryChange("stow", world.held.name);
+    if (!stowed || !stowed.ok) return;
+  }
+  await inventoryChange("equip", thing.id);
+}
+
+// What a thing in the bag is called: a tool by what it is ("the pick"), not by
+// the name of its first part ("pick haft"), which is the record's name for it.
+function bagName(thing) {
+  const tool = tools.profileOf(thing.name);
+  return titled(tool ? tool.object : thing.name);
+}
+
+// A thing's colour in its slot: the colour the room draws its material with.
+function slotColour(material) {
+  const seen = MATERIAL_LOOK[material];
+  return `#${(seen ? seen.color : 0x9aa6ae).toString(16).padStart(6, "0")}`;
 }
 
 function showInventory() {
@@ -1216,19 +1365,21 @@ function showInventory() {
   const held = world.held && world.held.name;
   const entry = held ? world.bodies.get(held) : null;
   const mass = entry && entry.mass ? ` · ${grams(entry.mass)}` : "";
+  const hand = inv && inv.hands ? inv.hands[inv.hand_in_the_world] : null;
   const left = inv && inv.hands && inv.hands.left ? inv.hands.left.name : null;
-  const bag = inv && Array.isArray(inv.stowed) ? inv.stowed.filter(Boolean) : [];
+  const slots = inv && Array.isArray(inv.stowed) ? inv.stowed : [];
   const carrying = [...world.stock].sort((a, b) => b[1].kg - a[1].kg)
     .map(([what, have]) => ({ what, much: grams(have.kg) }));
   const uses = [
     ...(world.tools || []).map((p) => ({ what: p.object,
-      keys: "E take up · Left mouse use it where the ring is · hold to keep going" })),
+      keys: `${keyOf("interact")} take it up · ${keyOf("primary")} use it where the ring is · hold to keep going` })),
     ...(world.profiles || []).map((p) => ({ what: p.object,
-      keys: "E take up · hold Left mouse to draw · let go to shoot" })),
+      keys: `${keyOf("interact")} take it up · hold ${keyOf("primary")} to draw · let go to shoot` })),
   ];
-  const said = JSON.stringify([held, mass, fromBagInHand(held), left, bag, carrying, uses]);
+  const said = JSON.stringify([held, heldName(), mass, recordHolds(held), hand, left, slots, carrying, uses]);
   if (said === inventorySaid) return;
   inventorySaid = said;
+  showHotbar(slots, hand);
   // A button in the panel is not the room: clicking one never also acts in the
   // world, and it lets go of the focus, so Space cannot click it again.
   const button = (label, op, item) => {
@@ -1238,15 +1389,20 @@ function showInventory() {
     b.addEventListener("click", (e) => { e.stopPropagation(); b.blur(); inventoryChange(op, item); });
     return b;
   };
-  $("inv-right").replaceChildren(document.createTextNode(held ? `${held}${mass}` : "free"));
-  if (fromBagInHand(held)) $("inv-right").append(button("Stow", "stow", held), button("Put down", "drop", held));
-  $("inv-left").textContent = left || "free";
-  $("inv-bag").replaceChildren(...(bag.length ? bag.map((thing) => {
+  $("inv-right").replaceChildren(document.createTextNode(held ? `${titled(heldName())}${mass}` : "free"));
+  if (recordHolds(held)) $("inv-right").append(button("Stow", "stow", held), button("Put down", "drop", held));
+  $("inv-left").textContent = left ? titled(left) : "free";
+  const bag = slots.map((thing, i) => [thing, i]).filter(([thing]) => thing);
+  $("inv-bag").replaceChildren(...(bag.length ? bag.map(([thing, i]) => {
     const li = document.createElement("li");
-    li.textContent = thing.name;
-    li.append(button("Hold", "equip", thing.id), button("Put down", "drop", thing.id));
+    const key = document.createElement("span");
+    key.className = "slot-key";
+    key.textContent = i < SLOT_KEYS ? String(i + 1) : "";
+    li.append(key, document.createTextNode(bagName(thing)),
+              button("Hold", "equip", thing.id), button("Put down", "drop", thing.id));
     return li;
-  }) : [Object.assign(document.createElement("li"), { className: "none", textContent: "nothing yet" })]));
+  }) : [Object.assign(document.createElement("li"), { className: "none",
+         textContent: `nothing yet: ${keyOf("stow")} puts what you hold, or look at, in it` })]));
   const rows = (items, none) => (items.length ? items : [{ none }]).map((item) => {
     const li = document.createElement("li");
     if (item.none) { li.className = "none"; li.textContent = item.none; return li; }
@@ -1258,10 +1414,10 @@ function showInventory() {
       li.append(much);
     }
     if (item.keys) {
-      const keys = document.createElement("span");
-      keys.className = "keys";
-      keys.textContent = item.keys;
-      li.append(keys);
+      const keysSaid = document.createElement("span");
+      keysSaid.className = "keys";
+      keysSaid.textContent = item.keys;
+      li.append(keysSaid);
     }
     return li;
   });
@@ -1269,6 +1425,36 @@ function showInventory() {
   $("inv-tools").replaceChildren(...rows(uses, "nothing here yet"));
 }
 setInterval(showInventory, 250);
+
+// The bag's first nine slots along the bottom of the view: each with its number,
+// the colour of what it is made of (round for a ball), and its name. A slot
+// whose thing is in the hand stays marked, since its number puts it back.
+// Hidden while nothing of the bag is in them.
+function showHotbar(slots, hand) {
+  const bar = $("hotbar");
+  const home = hand && Number.isInteger(hand.slot) ? hand.slot : -1;
+  const any = slots.slice(0, SLOT_KEYS).some(Boolean) || (home >= 0 && home < SLOT_KEYS);
+  bar.hidden = !any;
+  if (!any) { bar.replaceChildren(); return; }
+  bar.replaceChildren(...Array.from({ length: SLOT_KEYS }, (_, i) => {
+    const thing = slots[i] || (i === home ? hand : null);
+    const li = document.createElement("li");
+    li.className = `slot${thing ? "" : " empty"}${i === home ? " in-hand" : ""}`;
+    const number = document.createElement("b");
+    number.textContent = String(i + 1);
+    li.append(number);
+    if (thing) {
+      const swatch = document.createElement("i");
+      swatch.style.setProperty("--c", slotColour(thing.material));
+      if (thing.shape === "sphere") swatch.className = "sphere";
+      const name = document.createElement("span");
+      name.textContent = bagName(thing);
+      li.append(swatch, name);
+      li.title = `${i + 1}: ${bagName(thing)}${i === home ? ", in your hand" : ""}`;
+    }
+    return li;
+  }));
+}
 
 // What the ground under a point is made of, from the engine's own map of its
 // surface -- as the label says it. Null off the ground, or in a room without.
@@ -1280,90 +1466,263 @@ function groundMadeOf(at) {
   return ["rock", "soil", "sand"][ground.surfaces[j * g.nx + i]] || null;
 }
 
-// What the person can do right now, under what they have in the panel (the
-// owner: prompts that show what you can do, "in a box to the side", that
-// "recommend what tool you should use with a hot key to use it"). From what the
-// page already knows -- what is in the hand and the state it is in, what the
-// crosshair is on, what is carried, what in this room can be used -- as one
-// line to a key. It says only what the engine has shown: rock stops an oak
-// point, so on rock the pick is not offered.
-let actionsSaid = "";
-function showActions() {
-  const k = (action) => keyOf(action);
-  const rows = [];
-  let tip = "";
-  const held = world.held, use = world.use || {};
-  const on = !held && world.aim && world.aim.name ? world.aim.name : null;
-  const underfoot = !held && !on ? groundMadeOf(world.groundAim) : null;
-  const tool = (world.tools || [])[0] || null;
-  if (held && held.pick) {
-    // A tool: what it does where the crosshair meets the ground, as the server
-    // says it (tools.js, tool_use.resolve) -- the same answer the ring is drawn from.
-    const target = use.target || {};
-    rows.push([k("primary"), `${(target.label || "use it").toLowerCase()}`
-      + (target.repeat ? " · hold to keep going" : "")]);
-    rows.push([k("secondary"), "stop after this one"]);
-    rows.push([k("interact"), `put ${held.pick.object} down`]);
-    if (target.reason) tip = target.reason;
-  } else if (held && held.bow) {
-    rows.push([k("primary"), "hold to draw, let go to shoot"]);
-    rows.push([k("interact"), "let go of the bow"]);
-  } else if (held) {
-    if (held.throwable) rows.push([k("primary"), "hold to wind up, let go to throw"]);
-    if (workingJoint()) {
-      // Its turns and slides go on from the hold, by their numbers (runAction).
-      allActionsFor(held.name).forEach((action, i) => {
-        if (goesOnFromHold(held.name, action)) rows.push([String(i + 1), action.label]);
-      });
-      rows.push([k("interact"), `let go of ${held.name}`]);
-    } else rows.push([k("interact"), `put ${held.name} down`]);
-    rows.push([k("talk"), `ask the room to turn or move ${held.name}`]);
-  } else if (on) {
-    const entry = world.bodies.get(on);
-    const pick = tools.profileOf(on), bow = profileOf(on);
-    if (pick) rows.push([k("interact"), `take up ${pick.object} by its grip`]);
-    else if (bow) rows.push([k("interact"), `take up ${bow.object}`]);
-    else if (bladeFor(on)) rows.push(["double-click", `take ${on} by the grip`]);
-    else if (entry && throwable(entry, onAJoint(on))) {
-      rows.push([k("interact"), `put ${on} in your bag`]);
-      rows.push([`Alt+${k("interact")}`, `take hold of ${on}`]);
-    }
-    rows.push([k("heat"), `heat ${on}`]);
-    // Its own actions first: what the room's chat worked out a person does
-    // with this thing when it made it, one per number key (offer_actions).
-    rows.unshift(...allActionsFor(on).map((action, i) => [String(i + 1), action.label]));
-  } else if (underfoot) {
-    if (underfoot !== "rock") rows.push([k("dig"), `dig here, in the ${underfoot}`]);
-    const carried = world.carriedGround
-      ? (Number(world.carriedGround.soil_kg) || 0) + (Number(world.carriedGround.sand_kg) || 0) : 0;
-    if (carried > 0.0005) rows.push([k("heap"), "heap what you carry here"]);
-    if (underfoot === "rock") {
-      if (tool) tip = `Bare rock: a point no harder than the rock stops on it.`;
-    } else {
-      tip = tool
-        ? `The tool for this ground: ${tool.object}. Look at it, or beside it, and press`
-          + ` ${k("interact")} to take it up; then ${k("primary")} uses it where the ring is.`
-        : `No tool here to dig with: press ${k("talk")} and ask the room to make you a pick.`;
-    }
+// ---------------------------------------------------------------------------
+// What you look at, or hold: the side view's details
+// ---------------------------------------------------------------------------
+//
+// The owner, 2026-09-14: over the view only the name of what the crosshair is
+// on, and "the details about it in the side view". What it is, and what can be
+// done with it now, each with its key. E does the one marked E -- what a person
+// would do first: pick a loose thing up, open a gate -- and Tab moves E on to
+// the next, so every one of them is on a key and nothing needs the mouse let go
+// of. Under them, what the last thing you did came to. It says only what the
+// engine has shown: rock stops an oak point, so on rock no digging is offered.
+
+// What the last thing the person did came to -- "Ball left your hand at 7.2
+// m/s" -- or why it could not be done. Said in the details, not the chat: the
+// chat is the conversation with the room.
+function lastAction(text, tone = "did") {
+  if (!text) return;
+  world.last = { text: sentence(text), tone };
+  showDetails(true);
+}
+
+// What E can do with the thing the crosshair is on, with the hand empty, in
+// order; E does the first unless Tab has moved it on. Each is { label, run }.
+// A loose thing is picked up first (the owner: "E on a loose thing: pick it
+// up"); a thing on a joint does first what the room's chat gave it -- "Open the
+// gate" -- and otherwise is taken hold of by hand; then the rest of its actions.
+function choicesFor(name) {
+  const entry = world.bodies.get(name);
+  if (!entry) return [];
+  const pick = tools.profileOf(name), bow = profileOf(name), blade = bladeFor(name);
+  const take = () => intend("pick");
+  const actions = allActionsFor(name).map((action, i) => ({ label: action.label, run: () => runAction(name, i) }));
+  if (pick) return [{ label: `Take up ${pick.object}`, run: take }, ...actions];
+  if (bow) return [{ label: `Take up ${bow.object}`, run: take }, ...actions];
+  if (blade) return [{ label: "Take it by the grip", run: take }, ...actions];
+  if (entry.anchored) return actions;
+  if (onAJoint(name)) {
+    const own = actionsFor(name).length;
+    return [...actions.slice(0, own), { label: "Take hold of it and work it by hand", run: take },
+            ...actions.slice(own)];
   }
-  rows.push([k("workbench"), workbench.state().open
-    ? "the workbench: play, pause and scrub its run in the panel"
-    : "watch a recorded run on a workbench in front of you"]);
-  rows.push([k("talk"), "ask the room to build or change anything"]);
-  const said = JSON.stringify([rows, tip]);
-  if (said === actionsSaid) return;
-  actionsSaid = said;
-  $("actions-list").replaceChildren(...rows.map(([key, words]) => {
+  if (throwable(entry, false)) return [{ label: "Pick it up", run: take }, ...actions];
+  return [{ label: "Take hold of it and carry it", run: take }, ...actions];
+}
+
+// ...and with something in the hand: what E does with it -- puts it down, or
+// lets go of what is held on a joint -- then what else can be done from there.
+function heldChoices() {
+  const held = world.held;
+  if (!held) return [];
+  const name = held.name;
+  if (held.pick) return [{ label: `Put ${held.pick.object} down`, run: () => intend("put down") }];
+  if (held.bow) {
+    return [{ label: world.use.mode === "drawing" ? "Let the string down" : `Let go of ${held.bow.object}`,
+              run: () => intend("put down") }];
+  }
+  if (held.blade) return [{ label: `Let go of ${name}`, run: () => intend("drop") }];
+  const latch = latchOn(name) ? [{ label: "Release its latch", run: () => unlatch() }] : [];
+  if (workingJoint()) {
+    const out = [{ label: `Let go of ${name}`, run: () => intend("drop") }];
+    allActionsFor(name).forEach((action, i) => {
+      if (goesOnFromHold(name, action)) out.push({ label: action.label, run: () => runAction(name, i) });
+    });
+    return [...out, ...latch];
+  }
+  return [{ label: "Put it down", run: () => intend("put down") },
+          { label: "Let go of it here", run: () => intend("drop") }, ...latch];
+}
+
+function choices() {
+  if (world.held) return { of: `held:${world.held.name}`, list: heldChoices() };
+  const on = world.aim && world.aim.name;
+  if (on) return { of: `on:${on}`, list: choicesFor(on) };
+  // Nothing under the crosshair: a tool lying beside where it meets the ground
+  // is still taken up by E (tools.js nearTool).
+  const near = world.groundAim && !world.acting ? tools.nearTool() : null;
+  return near ? { of: `near:${near.tool}`, list: [{ label: `Take up ${near.object}`, run: () => intend("pick") }] }
+              : { of: "", list: [] };
+}
+
+// Which one E does: the first, or the one Tab moved it on to -- back to the
+// first whenever what the crosshair is on, or what is held, changes.
+function chosen() {
+  const { of, list } = choices();
+  if (world.choice.of !== of) world.choice = { of, index: 0 };
+  if (world.choice.index >= list.length) world.choice.index = 0;
+  return { list, index: world.choice.index };
+}
+
+// E.
+function doChoice() {
+  const { list, index } = chosen();
+  world.choice.index = 0;
+  if (list[index]) list[index].run();
+}
+
+// Tab: E moves on to the next.
+function nextChoice() {
+  const { list } = chosen();
+  if (list.length > 1) world.choice.index = (world.choice.index + 1) % list.length;
+  showDetails(true);
+}
+
+// What the details say about a thing: what it is made of, what it weighs, how
+// big it is and how far away, and what holds it -- the engine's numbers.
+function factsOf(name, entry, distance) {
+  if (!entry) return "";
+  const out = [];
+  const part = tools.profileOf(name) || profileOf(name);
+  if (part && part.object !== name) out.push(`its ${name}`);
+  if (entry.material) out.push(entry.material);
+  if (entry.mass && !entry.anchored) out.push(grams(entry.mass));
+  const d = entry.dims;
+  if (d) {
+    out.push(entry.shape === "sphere" ? `${Math.round(d[0] * 1000)} mm across`
+      : `${Math.round(d[0] * 1000)} × ${Math.round(d[1] * 1000)} × ${Math.round(d[2] * 1000)} mm`);
+  }
+  if (Number.isFinite(distance)) out.push(`${distance.toFixed(1)} m away`);
+  if (entry.anchored) out.push("fixed in place");
+  else if (onAJoint(name)) {
+    const guide = guideFor(name);
+    out.push(!guide ? "joined to something" : guide.kind === "slider" ? "slides in a groove" : "turns on a pin");
+  } else if (!throwable(entry, false) && entry.mass) out.push("too heavy for one hand to throw");
+  // The true depth, beside a hollow drawn deeper than that so it can be seen at
+  // all: saying so is what makes the drawing honest rather than a claim.
+  if (entry.dentMm > 0) {
+    out.push(`dented ${entry.dentMm < 1 ? entry.dentMm.toFixed(2) : entry.dentMm.toFixed(1)} mm`
+      + " (drawn deeper so you can see it)");
+  }
+  const hot = heat.last && (heat.last.bodies || []).find((b) => b.name === name);
+  if (hot) out.push(`${Math.round(hot.t_k)} K`);
+  if (bladeFor(name)) out.push("has an edge");
+  return out.join(" · ");
+}
+
+// Everything the details say, worked out from what the page knows now: the
+// thing held, else the thing looked at, else the ground looked at.
+function detailsModel() {
+  const k = keyOf;
+  const rows = [];
+  const model = { name: "", facts: "", rows, note: "", meter: null,
+                  last: world.last ? { ...world.last } : null };
+  const { list, index } = chosen();
+  const choiceRows = () => {
+    list.forEach((choice, i) => rows.push(i === index ? [[k("interact")], choice.label, "chosen"]
+                                                       : [[], choice.label, "other"]));
+    if (list.length > 1) rows.push([[k("next")], "E does the next one"]);
+  };
+  const held = world.held;
+  if (held) {
+    const entry = world.bodies.get(held.name);
+    model.name = titled(heldName());
+    const facts = [];
+    if (entry && entry.material) facts.push(entry.material);
+    if (entry && entry.mass) facts.push(grams(entry.mass));
+    const ours = recordHolds(held.name);
+    facts.push(ours ? "in your right hand" : held.bow ? "its string in your hand" : "held by your hand");
+    const inv = world.inventory;
+    const slot = ours && inv && inv.hands ? (inv.hands[inv.hand_in_the_world] || {}).slot : null;
+    if (Number.isInteger(slot) && slot < SLOT_KEYS) facts.push(`${slot + 1} puts it back in your bag`);
+    model.facts = facts.join(" · ");
+    choiceRows();
+    if (ours || held.throwable || held.pick || held.blade) rows.push([[k("stow")], "put it in your bag"]);
+    if (held.blade) rows.push([[k("secondary")], "turn the edge a quarter: left, down, right, up"]);
+    const help = handHelp(world.use);
+    rows.push(...help.rows);
+    model.meter = help.meter;
+    model.note = [help.note, world.carry].filter(Boolean).join(" · ");
+  } else if (world.aim && world.aim.name) {
+    const name = world.aim.name;
+    const entry = world.bodies.get(name);
+    const part = tools.profileOf(name) || profileOf(name);
+    model.name = titled(part ? part.object : name);
+    model.facts = factsOf(name, entry, world.aim.distance_m);
+    choiceRows();
+    if (entry && !entry.anchored && (tools.profileOf(name) || throwable(entry, onAJoint(name))))
+      rows.push([[k("stow")], "put it in your bag"]);
+    rows.push([[k("heat")], "heat it"]);
+  } else if (world.groundAim) {
+    const underfoot = groundMadeOf(world.groundAim);
+    choiceRows();
+    if (!ground.grid || !underfoot) {
+      model.name = "The Floor";
+      model.facts = "flat concrete: there is nothing to dig";
+    } else {
+      const [x, , z] = world.groundAim;
+      const water = waterAt(x, z);
+      model.name = water && water.depth > 0.05 ? "Water" : titled(underfoot);
+      model.facts = [`the ground, ${underfoot}`, `${groundAt(x, z).toFixed(2)} m up`,
+                     water && water.depth > 0.005
+                       ? `under ${(water.depth * 100).toFixed(0)} cm of water flowing ${Math.hypot(water.u, water.w).toFixed(2)} m/s`
+                       : ""].filter(Boolean).join(" · ");
+      if (underfoot !== "rock") rows.push([[k("dig")], `dig here, in the ${underfoot}`]);
+      const carried = world.carriedGround
+        ? (Number(world.carriedGround.soil_kg) || 0) + (Number(world.carriedGround.sand_kg) || 0) : 0;
+      if (carried > 0.0005) rows.push([[k("heap")], "heap what you carry here"]);
+      const tool = (world.tools || [])[0] || null;
+      model.note = underfoot === "rock"
+        ? (tool ? "Bare rock: a point no harder than the rock stops on it." : "")
+        : !tool ? `No tool here to dig with: ${k("talk")} and ask the room to make you a pick.`
+          : list.length ? ""
+            : `The tool for this ground: ${tool.object}. Look at it and press ${k("interact")} to take it up;`
+              + ` then ${k("primary")} uses it where the ring is.`;
+    }
+  } else {
+    model.facts = "Look at something to see what it is and what you can do with it.";
+    rows.push([[k("talk")], "ask the room to build or change anything"]);
+  }
+  if (world.doing) model.note = `${world.doing}: doing it…`;
+  return model;
+}
+
+// The details, drawn from the model: only when it has changed, several times a
+// second, and at once when the hand's state changes (showUse). The crosshair's
+// ring fills with the meter.
+let detailsSaid = "";
+let lastDetails = { name: "", facts: "", rows: [], note: "", meter: null, last: null };
+function showDetails(now = false) {
+  const model = detailsModel();
+  const said = JSON.stringify(model);
+  if (!now && said === detailsSaid) return;
+  detailsSaid = said;
+  lastDetails = model;
+  $("details-name").textContent = model.name || " ";
+  $("details-facts").textContent = model.facts;
+  $("details-actions").replaceChildren(...model.rows.map(([keysOf, what, kind]) => {
     const li = document.createElement("li");
-    const kbd = document.createElement("kbd");
-    kbd.textContent = key;
-    li.append(kbd, document.createTextNode(words));
+    if (kind) li.className = kind;
+    const cell = document.createElement("span");
+    cell.className = "keys";
+    for (const key of keysOf) {
+      const kbd = document.createElement("kbd");
+      kbd.textContent = key;
+      cell.append(kbd);
+    }
+    const words = document.createElement("span");
+    words.className = "what";
+    words.textContent = what;
+    li.append(cell, words);
     return li;
   }));
-  $("actions-tip").textContent = tip;
-  $("actions-tip").hidden = !tip;
+  $("details-note").textContent = model.note;
+  const meter = model.meter;
+  $("details-meter").hidden = !meter;
+  if (meter) {
+    $("details-meter-label").textContent = meter.label;
+    $("details-meter-fill").style.width = `${Math.round(100 * meter.fraction)}%`;
+    $("details-meter-value").textContent = meter.value;
+  }
+  $("details-last").hidden = !model.last;
+  $("details-last").classList.toggle("refused", !!model.last && model.last.tone === "refused");
+  $("details-last-text").textContent = model.last ? model.last.text : "";
+  const cross = $("crosshair");
+  cross.classList.toggle("metering", !!meter);
+  if (meter) cross.style.setProperty("--fill", String(Math.max(0, Math.min(1, meter.fraction))));
 }
-setInterval(showActions, 250);
+setInterval(showDetails, 150);
 
 // ---------------------------------------------------------------------------
 // The workbench
@@ -1371,18 +1730,31 @@ setInterval(showActions, 250);
 //
 // The lab's recorded runs, played back as a small copy on a bench in front of
 // the person while the room goes on (the owner: recorded runs play "on a bench
-// in front of you"; workbench.js sets it out and draws it). K opens the list
-// here in the panel and lets the mouse go, so a run can be chosen with it. The
+// in front of you"; workbench.js sets it out and draws it). K opens the side
+// view's Bench tab and lets the mouse go, so a run can be chosen with it. The
 // bench stays where it was set down until it is put away.
 const workbench = makeWorkbench({ scene, camera, groundAt, api });
 let runsListed = false, scrubbing = false, workbenchSaid = "";
 
-function openWorkbench(open = $("workbench-body").hidden) {
-  $("workbench-body").hidden = !open;
-  $("workbench-toggle").setAttribute("aria-expanded", String(open));
-  if (!open) return;
+// The side view's tabs, one shown at a time (the owner: "all the other text
+// needs to be in tabs in part of the side view"). A tab lets go of the focus
+// once clicked, so the keys go back to the room.
+const TABS = ["bag", "notes", "room", "bench", "keys"];
+function showTab(which) {
+  for (const tab of TABS) {
+    $(`tab-${tab}`).setAttribute("aria-selected", String(tab === which));
+    $(`pane-${tab}`).hidden = tab !== which;
+  }
+  if (which === "bench" && !runsListed) listRuns();
+}
+for (const tab of TABS) {
+  $(`tab-${tab}`).addEventListener("click", (e) => { e.currentTarget.blur(); showTab(tab); });
+}
+
+// K: the Bench tab, with the mouse let go so a run can be chosen with it.
+function openWorkbench() {
+  showTab("bench");
   if (document.pointerLockElement) document.exitPointerLock?.();
-  if (!runsListed) listRuns();
 }
 
 async function listRuns() {
@@ -1441,7 +1813,6 @@ async function setOut(run) {
   catch (error) { say("bad", `That run could not be set out on the bench: ${error.message || error}`); }
 }
 
-$("workbench-toggle").addEventListener("click", () => openWorkbench());
 $("workbench-play").addEventListener("click", () => {
   if (workbench.state().playing) workbench.pause(); else workbench.play();
 });
@@ -1699,7 +2070,7 @@ function traceNewWorld(t) {
 // L for "that lagged". Marks the moment and sends everything immediately, so
 // there is a report in the log that lines up with what was just seen.
 function markLag() {
-  say("world", "Noted — the last few seconds are in the server log.");
+  lastAction("Noted: the last few seconds are in the server log.");
   sendTrace("somebody said it lagged");
 }
 
@@ -1722,14 +2093,16 @@ addEventListener("keydown", (e) => {
   // "/" opens the room's chat, as it does in a game: say what you want -- "turn
   // this upright and set it in front of me" -- and the room does it.
   if (e.key === "/" || isKey("talk", e.code)) { e.preventDefault(); talk(); return; }
-  if (isKey("more", e.code)) e.preventDefault();   // not the browser's focus hop
+  if (isKey("next", e.code)) e.preventDefault();   // not the browser's focus hop
   if (e.repeat) return;
   keys.add(e.code);
-  // The one control language (interaction.js): interact takes hold and puts
-  // down; more says what else the thing in the hand can do, by number.
-  if (isKey("interact", e.code)) intend(world.held ? "put down" : "pick");
-  if (isKey("more", e.code) && world.held) { world.use.more = !world.use.more; showUse(); }
-  if (world.use.more && /^Digit[123]$/.test(e.code)) moreAction(Number(e.code.slice(5)));
+  // The one control language (interaction.js): E does what the side view marks
+  // -- picks up, puts down, opens -- and Tab moves it on; Q puts in the bag, and
+  // the number keys take a thing out of the bag's slots and put it back.
+  if (isKey("interact", e.code)) intend(doChoice);
+  if (isKey("next", e.code)) nextChoice();
+  if (isKey("stow", e.code)) toTheBag();
+  if (isKey("slots", e.code)) fromSlot(Number(e.code.slice(-1)) - 1);
   // Turning what is held: the keys are read every frame while they are down
   // (turnFromKeys); U stands it on end. On something the wrist cannot turn,
   // the first press says why.
@@ -1737,31 +2110,28 @@ addEventListener("keydown", (e) => {
   if (TURNS.some((t) => isKey(t.action, e.code))) turnKeyPressed();
   if (e.code === "KeyR") unlatch();
   if (e.code === "KeyL") markLag();
-  // The panel's buttons from the keyboard (interaction.js BINDINGS), so what the
-  // actions box offers, it offers with the key that does it.
+  // The room's buttons from the keyboard (interaction.js BINDINGS), so what the
+  // side view offers, it offers with the key that does it.
   if (isKey("dig", e.code)) $("dig-it").click();
   if (isKey("heap", e.code)) $("heap-it").click();
   if (isKey("heat", e.code)) $("heat-it").click();
   if (isKey("workbench", e.code)) openWorkbench();
-  if (e.key === "Escape") world.menuFor = null;
-  // One of the actions of what the crosshair is on, by its number -- with
-  // nothing in hand, where the number keys are not the hand's "more" menu --
-  // or of the thing on a joint the hand is working: a winch kept turned is
-  // lowered from where it is held, since letting go would drop its gate.
-  if (/^Digit[1-9]$/.test(e.code) && !world.use.more) {
-    const n = Number(e.code.slice(5)) - 1;
-    if (!world.held && world.aim && world.aim.name && allActionsFor(world.aim.name).length)
-      runAction(world.aim.name, n);
-    else if (workingJoint() && goesOnFromHold(world.held.name, allActionsFor(world.held.name)[n]))
-      runAction(world.held.name, n);
-  }
   if (["KeyW","KeyA","KeyS","KeyD","KeyQ","KeyE","Space",
        "ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.code)) e.preventDefault();
 });
 addEventListener("keyup", (e) => keys.delete(e.code));
 addEventListener("blur", () => keys.clear());
-// The controls, said from the same table the keys are read from.
-$("hud-hint").innerHTML = controlsHint();
+// Every control, in the side view's Keys tab, said from the same table the keys
+// are read from.
+$("keys-list").replaceChildren(...controls().flatMap(([keysSaid, what]) => {
+  const dt = document.createElement("dt");
+  const kbd = document.createElement("kbd");
+  kbd.textContent = keysSaid;
+  dt.append(kbd);
+  const dd = document.createElement("dd");
+  dd.textContent = what;
+  return [dt, dd];
+}));
 
 // "/": the chat's box, ready to type in. The mouse is let go so the person can
 // see what they type and click Send, and a key held down to walk stops walking.
@@ -1806,7 +2176,7 @@ canvas.addEventListener("contextmenu", (e) => {
   // blade's own length: left, down, right, up.
   if (world.held && world.held.blade) {
     world.held.stance = (world.held.stance + 1) % STANCES.length;
-    say("you", `Turned the edge to face ${STANCES[world.held.stance].name}.`);
+    lastAction(`Turned the edge to face ${STANCES[world.held.stance].name}.`);
     return;
   }
   unlatch();
@@ -1819,9 +2189,9 @@ let drag = null;
 // down used to pick the bow straight up again, and after lowering a wind-up it
 // dropped the ball.
 let primaryUsed = false;
-// One click on a thing shows what can be done with it, beside it; a second
-// click on it straight after takes hold of it (the owner: "click once to see
-// the actions you can take", "maybe double click to take it").
+// A click takes the mouse, to look with; a second click on the same thing
+// straight after does what E does -- picks it up, or what the side view marks
+// (the owner: "maybe double click to take it").
 let lastClick = null;
 const DOUBLE_CLICK_MS = 400;
 canvas.addEventListener("pointerdown", (e) => {
@@ -1886,24 +2256,20 @@ canvas.addEventListener("pointerup", (e) => {
   // the pick's point in the ground used to come here and drop it.
   if (world.held && world.held.pick) return;
   if (world.held) { intend("drop"); return; }
-  // With the hand empty a click no longer takes hold: it opens what can be
-  // done with the thing, and a second click on it straight after takes hold.
-  // A click on nothing closes what was open.
+  // With the hand empty a click only takes the mouse; a second click on the
+  // same thing straight after does what E does.
   const on = world.aim && world.aim.name;
   const now = performance.now();
   if (on && lastClick && lastClick.name === on && now - lastClick.at < DOUBLE_CLICK_MS) {
     lastClick = null;
-    world.menuFor = null;
-    intend("pick");
+    intend(doChoice);
   } else {
     lastClick = on ? { name: on, at: now } : null;
-    world.menuFor = on || null;
   }
 });
 
 document.addEventListener("pointerlockchange", () => {
   looking = document.pointerLockElement === canvas;
-  $("hud-hint").style.opacity = looking ? "0.5" : "1";
 });
 
 function turn(dx, dy) {
@@ -1938,9 +2304,10 @@ function walk(dt) {
   if (keys.has("KeyD")) move.add(right);
   if (keys.has("KeyA")) move.sub(right);
   if (move.lengthSq() > 0) move.normalize().multiplyScalar(speed);
-  // Up and down from the bindings. E used to be up as well; it is interact now.
-  if (BINDINGS.up.keys.some((k) => keys.has(k))) move.y += speed;
-  if (BINDINGS.down.keys.some((k) => keys.has(k))) move.y -= speed;
+  // Up, and down with Shift held (interaction.js BINDINGS). E used to be up and
+  // Q down: E is the hand's and Q the bag's now.
+  const shifted = keys.has("ShiftLeft") || keys.has("ShiftRight");
+  if (BINDINGS.up.keys.some((k) => keys.has(k))) move.y += shifted ? -speed : speed;
   camera.position.add(move);
   // Not below the floor, and not so high the room is a map. On uneven ground
   // the floor is the ground under you.
@@ -2000,9 +2367,9 @@ function standUpright() {
   const entry = world.bodies.get(held.name);
   if (!entry) return;
   const wanted = uprightTurn(facingTurn().multiply(held.turn.want), entry.dims, entry.shape);
-  if (!wanted) { say("world", `${held.name} has no long side to stand it on.`); return; }
+  if (!wanted) { lastAction(`${held.name} has no long side to stand it on.`, "refused"); return; }
   held.turn.want = facingTurn().invert().multiply(wanted);
-  say("you", `Standing ${held.name} upright.`);
+  lastAction(`Standing ${held.name} upright.`);
   remember(`stood ${held.name} upright in the hand`);
 }
 
@@ -2024,15 +2391,15 @@ function turnKeyPressed() {
   held.saidTurn = true;
   const entry = world.bodies.get(held.name);
   if (held.blade) {
-    say("world", "A blade is turned with the right mouse: its edge faces left, down, right or up.");
+    lastAction("A blade is turned with the right mouse: its edge faces left, down, right or up.", "refused");
   } else if (!held.loose) {
-    say("world", `${held.bow ? held.bow.object : held.name} is attached to other things:`
-      + ` it turns only the way they let it.`);
+    lastAction(`${held.bow ? held.bow.object : held.name} is attached to other things:`
+      + ` it turns only the way they let it.`, "refused");
   } else {
-    say("world", `${held.name} is ${entry ? Math.round(entry.mass) : "too many"} kg — too heavy`
+    lastAction(`${held.name} is ${entry ? Math.round(entry.mass) : "too many"} kg — too heavy`
       + ` for one hand to hold up and turn (it holds up to about`
       + ` ${Math.floor(0.9 * 800 / 9.80665)} kg and can still move it). Press`
-      + ` ${keyOf("talk")} and ask the room to turn it.`);
+      + ` ${keyOf("talk")} and ask the room to turn it.`, "refused");
   }
 }
 
@@ -2071,96 +2438,29 @@ async function aim() {
   } catch { /* the next frame asks again */ } finally { aimBusy = false; }
 }
 
-// What can be done with the thing a click opened, listed in its label: its own
-// actions, then the built-in ones, then taking hold. Closed when the crosshair
-// leaves it, on Esc, or once one of them has been done.
-function updateMenu(found) {
-  const list = $("label-actions");
-  if (!found || found.name !== world.menuFor) {
-    if (world.menuFor) world.menuFor = null;
-    list.hidden = true;
-    return;
-  }
-  const rows = allActionsFor(found.name).map((action, i) => `${i + 1} · ${action.label}`);
-  rows.push(`${keyOf("interact")} or double-click · take hold`);
-  const said = rows.join("\n");
-  if (list.dataset.said !== said) {
-    list.dataset.said = said;
-    list.replaceChildren(...rows.map((row) => {
-      const line = document.createElement("span");
-      line.textContent = row;
-      return line;
-    }));
-  }
-  list.hidden = false;
-}
-
+// The name of what the crosshair is on, just under it, and nothing else (the
+// owner: "when you mouse over something show the name of it, like 'Iron
+// Kettle'"). What it is and what can be done with it are the side view's
+// (showDetails). On the ground, what the ground is there.
 function showLabel(found) {
-  updateMenu(found);
   const box = $("label");
   const cross = $("crosshair");
-  if (!found && world.groundAim && ground.grid) {
-    // The ground itself: what it is made of there, and the water on it --
-    // from the engine's own numbers, already here, so no question is asked.
-    const [x, , z] = world.groundAim;
-    const g = ground.grid;
-    const i = Math.round((x - g.x0) / g.dx), j = Math.round((z - g.z0) / g.dx);
-    const made = ["rock", "soil", "sand"][ground.surfaces[j * g.nx + i]] || "ground";
-    const water = waterAt(x, z);
-    box.hidden = false;
-    $("label-name").textContent = "the ground";
-    $("label-material").textContent = made;
-    $("label-size").textContent = water && water.depth > 0.005
-      ? `under ${(water.depth * 100).toFixed(0)} cm of water flowing ${Math.hypot(water.u, water.w).toFixed(2)} m/s`
-      : `${groundAt(x, z).toFixed(2)} m up`;
+  let name = "";
+  if (found) {
+    const part = tools.profileOf(found.name) || profileOf(found.name);
+    const entry = world.bodies.get(found.name);
+    name = titled(part ? part.object : found.name);
+    cross.classList.toggle("on", !entry?.anchored || !!part);
+  } else {
     cross.classList.toggle("on", false);
-    return;
+    if (world.groundAim && ground.grid) {
+      const [x, , z] = world.groundAim;
+      const water = waterAt(x, z);
+      name = water && water.depth > 0.05 ? "Water" : titled(groundMadeOf(world.groundAim) || "the ground");
+    }
   }
-  if (!found) {
-    box.hidden = true;
-    cross.classList.toggle("on", false);
-    return;
-  }
-  const entry = world.bodies.get(found.name);
-  box.hidden = false;
-  $("label-name").textContent = found.name;
-  $("label-material").textContent = entry?.material || "";
-  const d = entry?.dims;
-  $("label-size").textContent = d
-    ? `${Math.round(d[0]*1000)} × ${Math.round(d[1]*1000)} × ${Math.round(d[2]*1000)} mm`
-      + (entry.anchored ? " · fixed in place" : "")
-      // The true depth, beside a hollow drawn deeper than that so it can be
-      // seen at all. Saying so is what makes the drawing honest rather than a
-      // claim about the shape.
-      // The true depth, beside a hollow drawn deeper than that so it can be
-      // seen at all. Saying so is what makes the drawing honest rather than a
-      // claim about the shape -- and a dent this shallow does not stop the
-      // thing rolling, which is why it is worth being plain about the size.
-      + (entry.dentMm > 0
-          ? ` · dented ${entry.dentMm < 1 ? entry.dentMm.toFixed(2) : entry.dentMm.toFixed(1)} mm`
-            + ` (drawn deeper so you can see it)` : "")
-      + ` · ${found.distance_m.toFixed(2)} m away`
-      + (bladeFor(found.name) ? " · has an edge: double-click to take it by the grip" : "")
-      + (!bladeFor(found.name) && !tools.profileOf(found.name) && throwable(entry, onAJoint(found.name))
-          ? ` · ${entry.mass < 10 ? entry.mass.toFixed(2) : entry.mass.toFixed(1)} kg`
-            + ` · click: what you can do · ${keyOf("interact")} or double-click: into your bag`
-            + ` · Alt+${keyOf("interact")}: take hold` : "")
-      // On a pin, in a groove, fixed to something that is: worked by hand, and
-      // nothing said so -- the winch's handle showed only its size.
-      + (!bladeFor(found.name) && !profileOf(found.name) && !tools.profileOf(found.name)
-         && !entry.anchored && onAJoint(found.name)
-          ? ` · on a joint: ${keyOf("interact")} or double-click to take hold, then move the crosshair to work it`
-          : "")
-      + (profileOf(found.name)
-          ? ` · part of ${profileOf(found.name).object}: ${keyOf("interact")} or double-click to take it up`
-          : "")
-      + (tools.profileOf(found.name)
-          ? ` · part of ${tools.profileOf(found.name).object}: ${keyOf("interact")} or double-click to take it`
-            + ` up by its grip`
-          : "")
-    : "";
-  cross.classList.toggle("on", !entry?.anchored || !!profileOf(found.name)
-                               || !!tools.profileOf(found.name));
+  box.hidden = !name;
+  $("label-name").textContent = name;
 }
 
 // A click always lands.
@@ -2173,7 +2473,9 @@ function showLabel(found) {
 let wants = null;
 function intend(what) {
   if (world.busy) { wants = what; return; }
-  if (what === "pick") pickUp();
+  // E's choice (doChoice), done now or at the top of the next tick like the rest.
+  if (typeof what === "function") what();
+  else if (what === "pick") pickUp();
   else if (what === "drop") dropIt();
   else if (what === "put down") putDown();
   else if (what === "let fly") letFly();
@@ -2309,12 +2611,12 @@ async function unlatch() {
   if (!name) return;
   const latch = latchOn(name);
   if (!latch) {
-    say("world", `nothing is latched to ${name}.`);
+    lastAction(`Nothing is latched to ${name}.`, "refused");
     return;
   }
   try {
     await act("unhinge", { joint: latch.id });
-    say("you", `Released the fixing between ${latch.a} and ${latch.b}.`);
+    lastAction(`Released the fixing between ${latch.a} and ${latch.b}.`);
     remember(`released the fixing holding ${latch.b} to ${latch.a}`);
   } catch (error) { say("bad", String(error.message || error)); }
 }
@@ -2377,8 +2679,7 @@ async function pickUp() {
     return;
   }
   // An action has the hand while it runs (runAction).
-  if (world.acting) { say("world", "Your hand is busy with an action."); return; }
-  world.menuFor = null;
+  if (world.acting) { lastAction("Your hand is busy with an action.", "refused"); return; }
   const name = world.aim.name;
   const entry = world.bodies.get(name);
   // A part of something with a profile takes up the whole of it -- the bow,
@@ -2391,7 +2692,7 @@ async function pickUp() {
   const tool = !(keys.has("AltLeft") || keys.has("AltRight")) && tools.profileOf(name);
   if (tool) { await tools.takeUp(tool); return; }
   if (entry?.anchored) {
-    say("world", `${name} is fixed in place — it is the room, not a prop.`);
+    lastAction(`${name} is fixed in place: it is the room, not a prop.`, "refused");
     return;
   }
   try {
@@ -2404,20 +2705,24 @@ async function pickUp() {
       const reach = clamp(world.aim.distance_m, 0.45, 1.1);
       world.held = Object.assign({ name, blade, distance: reach },
                                  takeHold(camera, entry, blade, reach));
-      $("crosshair").classList.add("holding");
-      $("label").hidden = true;
+      showHolding(true);
       remember(`took up the ${name} by its grip`);
-      say("you", `Took up ${name} by the grip, its edge facing ${STANCES[0].name}. Turn to`
+      lastAction(`Took up ${name} by the grip, its edge facing ${STANCES[0].name}. Turn to`
         + ` swing it; right-click turns the edge.`);
       return;
     }
-    // An ordinary thing a person can lift goes into the bag -- the owner's spec:
-    // "On an ordinary collectible object, put it into inventory; let the user
-    // equip it from its card" -- and the panel's Hold takes it into the hand.
-    // Alt+E still takes a direct grip, as the advanced hold always has.
-    if (entry && !(keys.has("AltLeft") || keys.has("AltRight")) && throwable(entry, onAJoint(name))) {
-      await inventoryChange("take", name);
-      return;
+    // A loose thing a hand can lift goes into the hand (the owner, 2026-09-14:
+    // "E on a loose thing: pick it up"; E again puts it down, Q puts it in the
+    // bag), through the record, so what the hand holds is what the person has:
+    // the server's hand grips it at its middle where it lies (inventory_room's
+    // take_up). A thing the record does not keep -- a broken piece -- is taken
+    // by the page's own grip below, as it always was; Alt+E takes that grip on
+    // anything, the advanced hold.
+    const alt = keys.has("AltLeft") || keys.has("AltRight");
+    if (entry && !alt && throwable(entry, onAJoint(name))) {
+      const took = await takeIntoHand(name);
+      if (took === "held") lastAction(`Picked up ${name}, ${grams(entry.mass)}.`);
+      if (took !== "not kept") return;
     }
     // A loose thing a hand can lift is taken by a GRIP, not carried: held at
     // its middle by the bounded hand, so that bringing it in, winding it up
@@ -2434,11 +2739,9 @@ async function pickUp() {
                     noun: entry.shape === "sphere" ? "ball" : "thing",
                     latched: !!latchOn(name), turnable: entry.shape !== "sphere",
                     bringing: { from: at.clone(), since: performance.now() } };
-      $("crosshair").classList.add("holding");
-      $("label").hidden = true;
-      $("carry").hidden = false;
+      showHolding(true);
       remember(`took hold of the ${entry.material || ""} ${name}`.replace(/\s+/g, " "));
-      say("you", `Took hold of ${name} — ${entry.mass < 10 ? entry.mass.toFixed(2) : entry.mass.toFixed(1)} kg.`);
+      lastAction(`Took hold of ${name}, ${grams(entry.mass)}.`);
       showUse();
       return;
     }
@@ -2485,11 +2788,9 @@ async function pickUp() {
       world.drawn = { name, from: entry.mesh.position.clone(),
                       latch: latchOn(name).id };
     }
-    $("crosshair").classList.add("holding");
-    $("label").hidden = true;
-    $("carry").hidden = false;
+    showHolding(true);
     remember(`picked up the ${entry?.material || ""} ${name}`.replace(/\s+/g, " "));
-    say("you", `Picked up ${name}.`);
+    lastAction(`Took hold of ${name}.`);
     showUse();
   } catch (error) { say("bad", String(error.message || error)); }
 }
@@ -2508,25 +2809,25 @@ async function dropIt() {
                       best: 0, stored };
     world.drawn = null;
     if (stored > 0.05) {
-      say("you", `Loosed. The limbs were holding ${stored.toFixed(1)} J.`);
+      lastAction(`Loosed. The limbs were holding ${stored.toFixed(1)} J.`);
       remember(`loosed ${name} with ${stored.toFixed(1)} J in the limbs`);
     }
   }
   world.drawn = null;
   world.held = null;
-  $("crosshair").classList.remove("holding");
-  $("carry").hidden = true;
+  showHolding(false);
   clearGuides();
   aimArc.hide();
   world.use = { mode: "none" };
   showUse();
   try {
     await act("release");
-    // Dropped from the hand, a thing from the bag is in the world now.
-    if (fromBagInHand(name)) inventoryChange("drop", name, true);
+    // Dropped from the hand, a thing the record says the hand held is in the
+    // world now.
+    leftTheHand(name);
     remember(at ? `let go of ${name} at ${at.x.toFixed(2)}, ${at.y.toFixed(2)}, ${at.z.toFixed(2)} m`
                 : `let go of ${name}`);
-    say("you", at ? `Let go of ${name} at ${at.y.toFixed(2)} m up.` : `Let go of ${name}.`);
+    lastAction(at ? `Let go of ${name} at ${at.y.toFixed(2)} m up.` : `Let go of ${name}.`);
   } catch (error) { say("bad", String(error.message || error)); }
 }
 
@@ -2547,13 +2848,13 @@ const aimArc = new AimArc(scene);
 
 function startWindUp() {
   Object.assign(world.use, { mode: "preparing", since: performance.now(), asked: 0,
-                             reached: 0, more: false, bringing: null });
+                             reached: 0, bringing: null });
   showUse();
 }
 
 function cancelWindUp() {
   Object.assign(world.use, { mode: "ready", asked: 0 });
-  say("you", `Lowered ${world.use.name}.`);
+  lastAction(`Lowered ${world.use.name}.`);
   showUse();
 }
 
@@ -2584,7 +2885,11 @@ async function letFly() {
 async function putDown() {
   const held = world.held;
   if (!held) return;
-  if (held.pick) { await tools.putDown(`You put down ${held.pick.object}.`); return; }
+  if (held.pick) {
+    await tools.putDown(`You put down ${held.pick.object}.`);
+    leftTheHand(held.name);
+    return;
+  }
   if (held.bow) {
     // A bow is not dropped with its string drawn: let down first, then let go.
     if (world.use.mode === "drawing") await letDown();
@@ -2601,7 +2906,6 @@ async function putDown() {
   const restsAt = dropOnto.y + halfHeight(entry) + 0.002;
   if (dropOnto.empty || centre.y - restsAt < 0.02) { await dropIt(); return; }
   world.use.mode = "placing";
-  world.use.more = false;
   showUse();
   if (!held.throwable) {
     // Carried, which is placement: so it is set down by being placed lower and
@@ -2625,25 +2929,18 @@ async function settleDown() {
   if (!held || world.use.mode !== "placing") return;
   const name = held.name;
   world.held = null;
-  $("crosshair").classList.remove("holding");
-  $("carry").hidden = true;
+  showHolding(false);
   clearGuides();
   aimArc.hide();
   world.use = { mode: "none" };
   showUse();
   try {
     await act("release");
-    say("you", `Put ${name} down.`);
+    // Put down, a thing the record says the hand held is in the world now.
+    leftTheHand(name);
+    lastAction(`Put ${name} down.`);
     remember(`put ${name} down`);
   } catch (error) { say("bad", String(error.message || error)); }
-}
-
-function moreAction(n) {
-  world.use.more = false;
-  if (n === 1) intend("drop");
-  else if (n === 2) intend("put down");
-  else if (n === 3) unlatch();
-  showUse();
 }
 
 // Where the hand wants a throwable thing this tick: brought in to the hand,
@@ -2714,7 +3011,7 @@ function followTheHand(hand) {
   }
   if (!hand.stroking && ["blocked", "gave up", "cancelled"].includes(hand.stroke_ended)) {
     use.mode = "blocked";
-    say("world", `${use.name} would not go any further — something is in the way.`);
+    lastAction(`${use.name} would not go any further: something is in the way.`, "refused");
     showUse();
   }
 }
@@ -2726,11 +3023,10 @@ function letGoOf(hand) {
   const speed = Math.hypot(v[0], v[1], v[2]);
   const thrown = use.mode === "throwing";
   world.held = null;
-  // A thing from the bag that has left the hand -- thrown, or put down: the
-  // record says so too. The room has already let go; this only tells it.
-  if (fromBagInHand(name)) inventoryChange("drop", name, true);
-  $("crosshair").classList.remove("holding");
-  $("carry").hidden = true;
+  // A thing of the record's that has left the hand -- thrown, or put down: the
+  // record says so too.
+  leftTheHand(name);
+  showHolding(false);
   clearGuides();
   aimArc.hide();
   if (thrown) {
@@ -2739,12 +3035,12 @@ function letGoOf(hand) {
     const text = `${name} left your hand at ${speed.toFixed(1)} m/s — the throw was`
       + ` ${work.toFixed(work < 10 ? 1 : 0)} J of your hand's work on`
       + ` ${kg < 10 ? kg.toFixed(2) : kg.toFixed(1)} kg.`;
-    say("world", text);
+    lastAction(text);
     remember(`threw ${name}: it left the hand at ${speed.toFixed(1)} m/s after`
       + ` ${work.toFixed(1)} J of the hand's work`);
     world.use = { mode: "thrown", name, kg, result: text, until: performance.now() + 4000 };
   } else {
-    say("you", `Put ${name} down.`);
+    lastAction(`Put ${name} down.`);
     remember(`put ${name} down`);
     world.use = { mode: "none" };
   }
@@ -2787,24 +3083,10 @@ async function previewThrow() {
   } catch { /* the next tick asks again */ } finally { previewBusy = false; }
 }
 
+// The hand's state changed: the side view's details say so now, and the
+// crosshair's ring shows the meter (showDetails).
 function showUse() {
-  const use = world.use;
-  const box = $("use");
-  if (!use || use.mode === "none") { box.hidden = true; return; }
-  const help = helpFor(use);
-  box.hidden = false;
-  // Beside the crosshair while something is held, out of the way of it.
-  box.classList.toggle("beside", !!world.held);
-  $("use-title").innerHTML = help.title;
-  $("use-line").innerHTML = help.line;
-  $("use-note").textContent = help.note;
-  $("use-turn").innerHTML = help.turn || "";
-  $("use-meter").hidden = !help.meter;
-  if (help.meter) {
-    $("use-meter-label").textContent = help.meter.label;
-    $("use-meter-fill").style.width = `${Math.round(100 * help.meter.fraction)}%`;
-    $("use-meter-value").textContent = help.meter.value;
-  }
+  showDetails(true);
 }
 
 // ---------------------------------------------------------------------------
@@ -2822,7 +3104,7 @@ function showUse() {
 
 function rememberProfiles(spec) {
   // The actions the room's chat gave its things (offer_actions), each
-  // {body, label, steps}: on the number keys when the crosshair is on that thing.
+  // {body, label, steps}: in the side view's details when the crosshair is on it.
   world.actions = (spec && spec.actions) || [];
   world.profiles = ((spec && spec.interactions) || [])
     .filter((p) => p.template === "draw-and-release");
@@ -2836,7 +3118,7 @@ function rememberProfiles(spec) {
 // is and does it (tool_use.py), each stroke the engine's; tools.js holds the
 // tool ready, draws the ring and sends the click.
 const tools = makeTools({ world, act, api, say, remember, showUse, camera, carryGround, scene,
-                          whereIAm, $ });
+                          whereIAm, lastAction, takeIntoHand, showHolding });
 
 function profileOf(name) {
   return world.profiles.find((p) => p.parts.includes(name)) || null;
@@ -2873,9 +3155,7 @@ function bowState(profile) {
 }
 
 function notice(name, text) {
-  world.use = { mode: "notice", name, result: text, until: performance.now() + 4000 };
-  say("world", text);
-  showUse();
+  lastAction(text, "refused");
 }
 
 async function takeUpBow(profile) {
@@ -2893,22 +3173,21 @@ async function takeUpBow(profile) {
                 brace: (profile.brace || entry.mesh.position).clone(),
                 bow: { arrowReady: state.arrowReady, strung: true, drawn: 0,
                        max: profile.draw.max_mm / 1000, storedJ: state.stored, pullN: 0 } };
-  $("crosshair").classList.add("holding");
-  $("label").hidden = true;
+  showHolding(true);
   remember(`took up ${profile.object} by its string`);
-  say("you", `Took up ${profile.object}` + (state.arrowReady ? ", an arrow on the string."
-                                                              : " — there is no arrow on the string."));
+  lastAction(`Took up ${profile.object}` + (state.arrowReady ? ", an arrow on the string."
+                                                              : ": there is no arrow on the string."));
   showUse();
 }
 
 async function releaseBow(text) {
   world.held = null;
   world.use = { mode: "none" };
-  $("crosshair").classList.remove("holding");
+  showHolding(false);
   aimArc.hide();
   showUse();
   try { await act("release"); } catch (error) { say("bad", String(error.message || error)); }
-  if (text) say("you", text);
+  if (text) lastAction(text);
 }
 
 async function startDraw() {
@@ -2952,7 +3231,7 @@ async function loose() {
   // step is in flight waits for the next tick, and runs before its step.
   const state = bowState(profile);
   world.held = null;
-  $("crosshair").classList.remove("holding");
+  showHolding(false);
   aimArc.hide();
   // How far ahead of the string the arrow sits, along the shot, while it is
   // nocked: once it is further than that, it has come off (see followTheBow).
@@ -3021,11 +3300,11 @@ function followTheBow(state) {
         use.result = `The arrow left at ${use.left.toFixed(1)} m/s — the limbs held`
           + ` ${use.stored.toFixed(1)} J and ${Math.round(100 * share)}% of it went into the arrow;`
           + ` the string and the limb tips kept the rest.`;
-        say("world", use.result);
+        lastAction(use.result);
         remember(`the arrow left ${use.profile.object} at ${use.left.toFixed(1)} m/s`);
       } else if (use.arrowReady) {
         use.result = "The arrow never came clear of the string.";
-        say("world", use.result);
+        lastAction(use.result, "refused");
       }
       showUse();
     }
@@ -3531,13 +3810,13 @@ async function askWhatIsBelow(at, clear) {
     const found = await act("pick", { from: [at.x, from, at.z],
                                       dir: [0, -1, 0], max_m: 60 });
     dropOnto = found.hit
-      ? { name: found.name || "the floor", y: from - found.distance_m }
+      ? { name: found.name || (ground.grid ? "the ground" : "the floor"), y: from - found.distance_m }
       : { name: "nothing below", y: 0, empty: true };
   } catch { /* keep the last answer */ } finally { dropBusy = false; }
 }
 
 function updateGuides() {
-  if (!world.held) return;
+  if (!world.held) { world.carry = null; return; }
   const entry = world.bodies.get(world.held.name);
   if (!entry) return;
   const at = entry.mesh.position;
@@ -3555,11 +3834,10 @@ function updateGuides() {
   landing.position.set(at.x, dropOnto.y + 0.004, at.z);
   landing.visible = !dropOnto.empty;
 
-  $("carry-x").textContent = at.x.toFixed(2);
-  $("carry-y").textContent = at.y.toFixed(2);
-  $("carry-z").textContent = at.z.toFixed(2);
-  $("carry-onto").textContent = dropOnto.name;
-  $("carry-fall").textContent = Math.max(0, bottom - dropOnto.y).toFixed(2);
+  // Said in the side view's details, under what is held.
+  world.carry = `${dropOnto.empty ? "over nothing" : `over ${dropOnto.name}`},`
+    + ` ${Math.max(0, bottom - dropOnto.y).toFixed(2)} m up · at ${at.x.toFixed(2)}, ${at.y.toFixed(2)},`
+    + ` ${at.z.toFixed(2)} m`;
 }
 
 // ---------------------------------------------------------------------------
@@ -3621,7 +3899,8 @@ async function tick() {
   try {
     // Whatever was clicked for while the last step was in flight.
     if (wants) { const what = wants; wants = null; 
-      if (what === "pick") await pickUp();
+      if (typeof what === "function") await what();
+      else if (what === "pick") await pickUp();
       else if (what === "drop") await dropIt();
       else if (what === "put down") await putDown();
       else if (what === "let fly") await letFly();
@@ -3837,9 +4116,8 @@ async function tick() {
     }
     if (here < 150) world.warnedFull = false;
     world.clock = state.t;
-    $("hud-clock").textContent = `${state.t.toFixed(1)} s · ${steps} steps`;
-    $("panel-state").textContent = world.held
-      ? `Holding ${world.held.name}.` : "Live.";
+    $("room-clock").textContent = `The room's clock: ${state.t.toFixed(1)} s · ${steps} steps a frame`;
+    $("panel-state").textContent = world.held ? `Holding ${heldName()}.` : "Live.";
     // After the line above, not before it: a draw has something better to say
     // than "holding", and saying it first only to be overwritten is how it
     // came to say "Holding bowstring." through an entire draw.
@@ -3944,7 +4222,7 @@ async function watchTheDraw() {
     await act("unhinge", { joint: loose.latch });
     const pins = await refreshJoints();
     const off = (pins || []).find((p) => p.id === loose.latch);
-    say("world", `the nock let go ${(back * 1000).toFixed(0)} mm from brace.`
+    lastAction(`The nock let go ${(back * 1000).toFixed(0)} mm from brace.`
       + ` Nothing chose a speed for what was on it: it left with whatever the`
       + ` ${loose.stored.toFixed(1)} J in the limbs could give it, less what the`
       + ` string and the tips kept.`);
@@ -4186,9 +4464,9 @@ function adoptRebuilt(answer) {
   world.loosing = null;
   aimArc.hide();
   // Asked with something in hand ("turn this upright"), the new room has
-  // nothing in the hand: the carry readout, the ring and the drop line go.
-  $("crosshair").classList.remove("holding");
-  $("carry").hidden = true;
+  // nothing in the hand: the ring and the drop line go.
+  showHolding(false);
+  tools.forget();
   clearGuides();
   showUse();
   world.bodies.forEach((e) => forget(e.mesh));
@@ -4232,8 +4510,9 @@ function adoptRebuilt(answer) {
 // What the room's chat worked out a person does with a thing when it made it
 // (offer_actions in the MCP): each a label and a short program -- take hold of
 // a part, carry it somewhere, put it down, push it, heat it, stand it upright.
-// Shown in the actions box when the crosshair is on the thing, one per number
-// key. Pressing one asks the server to run the program on the room as it is:
+// Shown in the side view's details when the crosshair is on the thing: E does
+// the one marked, and Tab moves it on. Doing one asks the server to run the
+// program on the room as it is:
 // the hand's steps in the running room with the hand's own strength, which
 // this page keeps running and draws, and a stand step as turn_object. No model
 // is asked. A step that cannot be done stops the action, with why.
@@ -4370,9 +4649,7 @@ function adoptHold(name) {
     world.held.guide = { joint, middle, grabbed };
     world.use.guide = joint.kind;
   }
-  $("crosshair").classList.add("holding");
-  $("label").hidden = true;
-  $("carry").hidden = false;
+  showHolding(true);
   showUse();
 }
 
@@ -4398,8 +4675,7 @@ function goesOnFromHold(name, action) {
 // after (adoptHold). The engine's hand keeps hold throughout.
 function setHoldAside() {
   world.held = null;
-  $("crosshair").classList.remove("holding");
-  $("carry").hidden = true;
+  showHolding(false);
   clearGuides();
   world.use = { mode: "none" };
   showUse();
@@ -4419,44 +4695,42 @@ async function runAction(name, index) {
     // The fixing that holds it fast is let go of, as R does.
     try {
       await act("unhinge", { joint: action.ask.latch });
-      say("you", `Released the latch holding ${name}.`);
+      lastAction(`Released the latch holding ${name}.`);
       remember(`released the latch holding ${name}`);
       await refreshJoints();
     } catch (error) { say("bad", `${action.label}: ${error.message || error}`); }
     return;
   }
   world.acting = true;
-  world.menuFor = null;
   // Going on from a hold -- the winch kept turned -- the hand is the server's
   // for the action.
   const aside = !!world.held;
   if (aside) setHoldAside();
-  const waiting = waitingFor(`${action.label}: doing it`);
+  // Said in the details while it runs, and what it came to after.
+  world.doing = action.label;
+  showDetails(true);
   try {
     // On the room this page has open: a page whose room was opened again
     // elsewhere is refused, and nothing is done in the room somebody else has.
     const answer = await api("/api/world/action", { session: world.session, object: name,
                                                      ...action.ask, person: whereIAm() });
-    waiting.done();
     const done = (answer.done || []).join(", ");
     if (answer.refused) {
-      say("bad", `${action.label}: ${answer.refused}` + (done ? ` (done first: ${done})` : ""));
+      lastAction(`${action.label}: ${answer.refused}` + (done ? ` (done first: ${done})` : ""), "refused");
     } else {
-      say("world", `${action.label}: ${done || "done"}.`, answer.did);
+      lastAction(`${action.label}: ${done || "done"}.`);
     }
     if (answer.reopened) adoptRebuilt(answer);
     if (answer.holding) {
       adoptHold(answer.holding);
-      say("world", `You are holding ${answer.holding} there: move the crosshair to work it on, `
-        + `press the number of one of its actions to go on from here, `
-        + `or ${keyOf("interact")} to let go.`);
+      lastAction(`You are holding ${answer.holding} there: move the crosshair to work it on,`
+        + ` or ${keyOf("interact")} to let go; ${keyOf("next")} moves E on to its turns, from here.`);
     }
   } catch (error) {
-    waiting.done();
     say("bad", `${action.label}: ${error.message || error}`);
     // Whatever the hand was doing, the page no longer holds its side of it.
     if (aside) { try { await act("release"); } catch (_) { /* the room says why */ } }
-  } finally { world.acting = false; }
+  } finally { world.acting = false; world.doing = null; showDetails(true); }
 }
 
 $("reset").addEventListener("click", () => open());
@@ -4488,7 +4762,7 @@ $("heat-it").addEventListener("click", async () => {
   if (!world.session) return;
   const name = world.held ? world.held.name : world.aim && world.aim.name;
   if (!name) {
-    say("world", "Point the crosshair at something first: the heat goes into whatever it is on.");
+    lastAction("Point the crosshair at something first: the heat goes into whatever it is on.", "refused");
     return;
   }
   const region = heat.last && ((heat.last.regions || []).find((r) => r.piston === name)
@@ -4498,7 +4772,7 @@ $("heat-it").addEventListener("click", async () => {
   const seconds = region ? 30 : 60;
   try {
     await act("heat", { target, power_w: power, seconds });
-    say("you", `Heating ${target} at ${power / 1000} kW for ${seconds} s.`);
+    lastAction(`Heating ${target} at ${power / 1000} kW for ${seconds} s.`);
     remember(`heated ${target} at ${power / 1000} kW for ${seconds} s`);
   } catch (error) { say("bad", String(error.message || error)); }
 });
@@ -4534,19 +4808,19 @@ async function digAt(x, z, width = 0.8, depth = 0.4) {
 $("dig-it").addEventListener("click", async () => {
   if (!world.session) return;
   if (!ground.grid) {
-    say("world", "This room's floor is flat concrete: there is nothing to dig. The valley has ground.");
+    lastAction("This room's floor is flat concrete: there is nothing to dig. The valley has ground.", "refused");
     return;
   }
   const at = world.groundAim;
   if (!at) {
-    say("world", "Point the crosshair at the ground first: the spade goes in where it is.");
+    lastAction("Point the crosshair at the ground first: the spade goes in where it is.", "refused");
     return;
   }
   try {
     const answer = await digAt(at[0], at[2]);
     const d = answer.dug || {};
     carryGround(answer.carried);
-    say("you", `Dug ${((d.sand_m3 || 0) + (d.soil_m3 || 0)).toFixed(2)} m³ (${grams(d.kg || 0)}) at`
+    lastAction(`Dug ${((d.sand_m3 || 0) + (d.soil_m3 || 0)).toFixed(2)} m³ (${grams(d.kg || 0)}) at`
       + ` [${at[0].toFixed(1)}, ${at[2].toFixed(1)}]: ${(d.sand_m3 || 0).toFixed(2)} of sand,`
       + ` ${(d.soil_m3 || 0).toFixed(2)} of soil; ${d.chunks_rebuilt} collider(s) rebuilt,`
       + ` ${d.bodies_woken} thing(s) woken. Carrying ${carriedSaid()}.`);
@@ -4571,19 +4845,19 @@ async function heapAt(x, z, sand, soil, radius = 0.8) {
 $("heap-it").addEventListener("click", async () => {
   if (!world.session) return;
   if (!ground.grid) {
-    say("world", "This room's floor is flat concrete: there is no ground to heap on. The valley has ground.");
+    lastAction("This room's floor is flat concrete: there is no ground to heap on. The valley has ground.", "refused");
     return;
   }
   const at = world.groundAim;
   if (!at) {
-    say("world", "Point the crosshair at the ground first: the heap goes where it is.");
+    lastAction("Point the crosshair at the ground first: the heap goes where it is.", "refused");
     return;
   }
   const have = world.carriedGround || {};
   const sand = Number(have.sand_m3) || 0;
   const soil = Number(have.soil_m3) || 0;
   if (sand + soil <= 1e-6) {
-    say("world", "You are carrying no sand or soil. Dig here first: what comes out is carried.");
+    lastAction("You are carrying no sand or soil. Dig here first: what comes out is carried.", "refused");
     return;
   }
   const share = Math.min(1, HEAP_M3 / (sand + soil));
@@ -4591,7 +4865,7 @@ $("heap-it").addEventListener("click", async () => {
     const answer = await heapAt(at[0], at[2], sand * share, soil * share);
     const h = answer.heaped || {};
     carryGround(answer.carried);
-    say("you", `Heaped ${((h.sand_m3 || 0) + (h.soil_m3 || 0)).toFixed(2)} m³ (${grams(h.kg || 0)}) at`
+    lastAction(`Heaped ${((h.sand_m3 || 0) + (h.soil_m3 || 0)).toFixed(2)} m³ (${grams(h.kg || 0)}) at`
       + ` [${at[0].toFixed(1)}, ${at[2].toFixed(1)}]: ${(h.sand_m3 || 0).toFixed(2)} of sand,`
       + ` ${(h.soil_m3 || 0).toFixed(2)} of soil. Carrying ${carriedSaid()}.`);
     remember(`heaped sand and soil at [${at[0].toFixed(1)}, ${at[2].toFixed(1)}]`);
@@ -4689,10 +4963,12 @@ async function open() {
     world.held = null;
     world.use = { mode: "none" };
     world.loosing = null;
+    world.last = null;
     rememberProfiles(data.spec);
     aimArc.hide();
+    showHolding(false);
+    tools.forget();
     showUse();
-    $("carry").hidden = true;
     world.bodies.forEach((e) => forget(e.mesh));
     world.bodies.clear();
     world.joints = [];
@@ -4734,9 +5010,9 @@ async function open() {
     say("world",
       `${data.bodies.length} things, made of ${
         [...new Set(data.bodies.map((b) => b.material).filter(Boolean))].join(", ")
-      }. Click the room to look around and walk with W A S D. Click a thing to see what`
-      + ` you can do with it; double-click it, or press ${keyOf("interact")}, to take hold of it.`
-      + ` Ask me to change anything.`);
+      }. Click the room to look around, and walk with W A S D. ${keyOf("interact")} picks up`
+      + ` what you look at and puts it down again, and ${keyOf("stow")} puts it in your bag;`
+      + ` what else you can do is under this conversation. Ask me to build or change anything.`);
     // Said, not dropped, as when the chat rebuilds the room: a gate that does
     // not swing reads as broken physics rather than as a pin in the wrong place.
     if (data.joint_problems && data.joint_problems.length)
@@ -4744,7 +5020,7 @@ async function open() {
     const edged = (data.blades || []).map((b) => b.body);
     if (edged.length) {
       say("world", `${edged.join(", ")} ${edged.length > 1 ? "have edges" : "has an edge"}.`
-        + ` Click it to take it by the grip; turn to swing it, and right-click to turn the`
+        + ` ${keyOf("interact")} takes it by the grip; turn to swing it, and right-click to turn the`
         + ` edge (left, down, right, up). It cuts what its edge meets hard enough, and`
         + ` nothing else.`);
     }
@@ -4791,9 +5067,18 @@ window.banjoRoom = {
     seeThrough: !!world.seeThrough }),
   // The hand as the control language sees it, and what the help says about it.
   use: () => ({ ...world.use, grip: world.use.grip && world.use.grip.toArray() }),
-  help: () => ({ shown: !$("use").hidden, title: $("use-title").textContent,
-                 line: $("use-line").textContent, note: $("use-note").textContent,
-                 meter: $("use-meter").hidden ? null : $("use-meter-value").textContent }),
+  help: () => ({ shown: !!world.held, title: lastDetails.name,
+                 line: lastDetails.rows.map(([k, what]) => `${k.join(" ")} ${what}`.trim()).join(" · "),
+                 note: lastDetails.note, meter: lastDetails.meter ? lastDetails.meter.value : null }),
+  // The side view's details as drawn -- name, facts, rows of [keys, what, kind],
+  // note, meter and last -- the name over the view, and the bag's slots.
+  details: () => ({ ...lastDetails, label: $("label").hidden ? null : $("label-name").textContent }),
+  hotbar: () => ({ shown: !$("hotbar").hidden,
+                   slots: [...$("hotbar").children].map((li) => ({
+                     key: li.querySelector("b").textContent,
+                     name: li.querySelector("span") ? li.querySelector("span").textContent : null,
+                     inHand: li.classList.contains("in-hand") })) }),
+  doChoice, nextChoice, toTheBag, fromSlot, showTab,
   arcShown: () => aimArc.group.visible,
   // For measuring what a frame costs: building the meshes for a shattered pane
   // is the expensive part of a break, and it cannot be seen from outside.

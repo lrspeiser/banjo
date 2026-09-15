@@ -167,12 +167,35 @@ run on the room held as an MCP world (`playground/room_world.py`). Anything the
 MCP can do, the chat can do, and `tests/chat_tool_parity_tests.py` fails if a
 tool reaches the MCP and not the chat without a written reason.
 
+**The side view** has three parts (the owner, 2026-09-14: "a simple chat
+sideview, and then all the other text needs to be in tabs"). On top is the
+conversation with the room. Under it is what the crosshair is on, or what the
+hand holds: its name, what it is made of and weighs, what can be done with it
+now, each with its key, and what the last thing you did came to. Below are tabs
+for the Bag, the Notes, the Room (its clock, the heat and the water, and its
+buttons), the Bench and the Keys. Over the view there is only the crosshair,
+the name of what it is on, and the bag's slots.
+
+The keys:
+- **E** picks up what you look at, or does what the side view marks with E;
+  again, it puts it down.
+- **Tab** moves E on to the next thing the side view lists, so every one of a
+  thing's actions is on a key.
+- **Q** puts what you hold, or what you look at, in the bag.
+- **1–9** take that slot of the bag into your hand, and the same number puts it
+  back in its slot.
+- The left mouse throws: hold it to wind up, and the crosshair's ring fills.
+- Space goes up, and Shift+Space down.
+
+What the bag and the hands hold is the server's record
+(`playground/inventory.py`), kept with the room.
+
 **The workbench** (K) plays back a run the lab recorded, as a small copy on a
-bench set down 1.5 m in front of you, while the room goes on. The panel lists
-the recorded runs on disk, newest first (`GET /api/runs`). The one chosen is
+bench set down 1.5 m in front of you, while the room goes on. The side view's
+Bench tab lists the recorded runs on disk, newest first (`GET /api/runs`). The one chosen is
 fitted to the tabletop -- every body's whole path, turned as it turns, less the
 one piece in a hundred thrown farthest -- and plays slowed to 0.25× (0.1× and 1×
-in the panel), with a slider to hold it anywhere. It is a picture of a run that
+in the tab), with a slider to hold it anywhere. It is a picture of a run that
 has already happened (`playground/workbench.js`): it is not in the engine, and
 nothing in the room can touch it. Between two recorded frames each body is eased
 from the one to the next.
@@ -186,9 +209,9 @@ a person would do with it and programs those actions (the MCP's
 `offer_actions`). A chair gets "Pull it out" and "Push it in", a door "Push it
 open", and a beam "Stand it upright" and "Lay it where I'm facing". Each program
 is made of steps the engine does: take hold of a part, carry it to a place, put
-it down, push it, heat it, wait, or stand it up. A click on the thing lists its
-actions beside it, one per number key: a click no longer takes hold of it -- a
-second click straight after does, as does the take-hold key. Every loose thing
+it down, push it, heat it, wait, or stand it up. Looking at the thing lists its
+actions in the side view: E does the one marked -- picking a loose thing up comes
+first -- and Tab moves E on to the next. Every loose thing
 has built-in actions too, whatever the chat gave it: "Put it on the ground in
 front of me", and, for a box longer than it is wide, "Stand it upright" and "Lay
 it down where I'm facing". Everything on a pin, in any room, gets "Turn it all
@@ -199,10 +222,10 @@ same place. Everything in a groove gets the same with "Slide". Anything held shu
 by a latch gets "Release the latch", which lets go of the fixing as R does. The hand takes hold of what stands off the pin, carries it round
 with its own strokes, says how far it went and what else moved ("the castle gate
 rose 0.32 m"), and keeps hold, so a raised gate stays up until you press E. While
-you hold it, its number keys still run what begins with a turn or a slide, from
-the hold: "Turn it back to where it started" lowers the gate (a winch has no
+you hold it, Tab moves E on to what begins with a turn or a slide, which runs
+from the hold: "Turn it back to where it started" lowers the gate (a winch has no
 ratchet, so let go, its gate drops).
-Pressing a number runs the program on the room as it is
+Doing one runs the program on the room as it is
 (`POST /api/world/action`). The hand's steps act in
 the running room with the hand's own strength, so you watch them happen, and no
 model is asked.
@@ -210,12 +233,12 @@ model is asked.
 A thing on a pin or in a groove -- a gate, a winch's handle, a portcullis -- is
 hauled, not carried. Taken hold of, it follows the crosshair over the plane its
 pin turns it in, or along its groove, from where it was taken hold of, so
-moving the crosshair round a winch's axle cranks it. The label and the help line
-say so. It used to follow a point at a fixed distance along the view, which
+moving the crosshair round a winch's axle cranks it. The side view says
+so. It used to follow a point at a fixed distance along the view, which
 falls short of a winch's rim below the axle: half a turn of the crosshair turned
 the winch 1 degree.
 
-The **Notebook** in the side panel is what the person knows
+The **Notebook**, the side view's Notes tab, is what the person knows
 ([knowledge and progression](../docs/knowledge-and-progression.md),
 `mcp/progression.py`). It is written only from what the engine measured their
 own tool doing in their own room: each closed ground-work record in a live
@@ -305,7 +328,8 @@ You arrive on the hill, looking down the valley toward the pond and the river.
 - A channel runs from the pond to the river, and an earth dam stands across the
   river beside it.
 
-Click a thing to see what it does, and press its number.
+Look at a thing and the side view says what it is and what you can do with it: E
+does the one it marks, and Tab moves E on to the next.
 
 The other rooms named in this README are off the menu and kept for the tests and
 the QA: the bench, the courtyard, the yard, the armoury, the valley, the
@@ -358,7 +382,7 @@ In **an empty yard**, ask:
 The chat builds both with `add_object`, `fix` (with `member`) and `heat`. In the
 room the heated peg tints, then darkens as its surface chars -- the darkening is
 the share of its section that is char or gone, a picture of that number like
-the glow -- and the Heat panel lists what strength it has left and what its
+the glow -- and the Room tab's Heat lists what strength it has left and what its
 fixing carries against what it can still take ("oak peg in gatepost: carries
 317 N of 402 N (800 N cold)"). About 50 s in, the gate gives way: the log says
 why, in the numbers that decided it, and the gate falls through the rigid world.
@@ -407,8 +431,8 @@ still hangs from the lintel.
 *A valley with a river* is generated ground with a river running west to east
 and a pond beside it. The ground and the water are the engine's own heights
 and depths, drawn as they are; the foam on the river is carried by the engine's
-velocity field. Aim at the water and the label says how deep it is and how fast
-it is moving. The Water panel says what is standing, what the river brings in
+velocity field. Aim at the water and the side view says how deep it is and how
+fast it is moving. The Room tab's Water says what is standing, what the river brings in
 and takes out, how many columns the solver is computing, and what is
 unaccounted for — zero to within rounding, or something is wrong. **Dig here**
 digs a pit where the crosshair is on the ground, 0.8 m across and 0.4 m deep;
@@ -440,8 +464,9 @@ fronts are smeared, and no sediment moves while anyone is there.
 own, to be tried by hand; the report links each one. `&hold=1` opens it drawn
 and held, its clock stopped until `banjoRoom.resume()` — which is how the
 pictures begin at the moment the build does. `window.banjoRoom` also has
-`ready()`, `status()`, `hold()`, `lookAt()` and `standAt()`, for driving the
-page from outside it.
+`ready()`, `status()`, `details()` (the side view's details as drawn),
+`hotbar()` (the bag's slots), `hold()`, `lookAt()` and `standAt()`, for driving
+the page from outside it.
 
 ## Local HTTP contract
 
@@ -463,6 +488,8 @@ page from outside it.
 | `POST /api/world/action` | Press one of a thing's actions, on the room the page has open: every press carries its `session` (from `/api/world/open`), and one from a page whose room was opened again elsewhere is refused, with nothing done. `{session, object, action, person}`, with `action` counted from 0 among its own, or `{object, builtin, person}` for one every loose thing has (`put_on_ground`, `stand_upright`, `lay_down`; a hand takes hold of at most 73 kg, and nothing fixed in place), or `{object, builtin: "turn" or "slide", stop, person}` for anything on a pin or in a groove (`stop` is `all_the_way`, `half_way`, `all_the_way_back` or `back_to_start`). An answer with `holding` says the hand kept hold after a last turn or slide. Runs its program on the room as it is: the hand's steps in the running room, and a stand step as `turn_object`, after which the room is opened again. Answers `{action, done, did}` (plus `reopened, session, state` after a stand), or `{action, done, refused}`, in which case the hand has been opened and what was done stays done. No model is asked |
 | `POST /api/world/tool` | What the tool in the person's hand does where they look, from `{session, person, at_m}` (`at_m` where the crosshair meets the ground, or null): `{id, object, tool, template, label, input, hands, repeat, enabled, reason, target, ring}` -- `ring.state` is `ok` where it can work, `far` or `near` where it cannot reach, `warn` on bare rock or wet ground (it may be tried, and the engine says what happened), `no` where there is no ground. The same answer the page draws its ring from; asking changes nothing (playground/tool_use.py) |
 | `POST /api/world/tool/use` | Do it, the whole of it, with the bounded hand while the page keeps the room running: the tool held still, swung at the target, pried if the point went in (unless its profile's `use` says `pry: false`), drawn out. `{session, person, at_m}`; answers `{action, did, done, said, detail, result, carried, repeat}` -- `said` in plain words, `detail` in the engine's numbers, `done` each stroke and how it ended, `result` the ground's record -- or `{action, refused, done}` where it cannot be done. The swing is credited to the person's notebook like one the page made |
+| `POST /api/world/inventory` | One change to what the person has, on the room the page has open: `{session, request, revision, op, item, person, grip}`. `op` is `take` (the world into the bag), `take_up` (the world into the hand: the room's hand grips it at `grip`, a tool's handle, or at its middle), `equip` (the bag into the hand), `stow` (the hand into the bag) or `drop` (the hand or the bag into the world, in front of the person). `request` is the change's own id, so a retry is answered as the first time and done once; `revision` is the record's revision the page last saw, and a stale one is refused with the record as it is. Answers `{ok, did, op, item, to, record, room, shown}`, or `{ok: false, why, record, shown}` -- with `unknown: true` when the thing is not one of the room's items (a broken piece). The bag is slots: `record.stowed` lists them in order, `null` for an empty one, and a thing in a hand keeps its slot in `record.home`, which stowing puts it back in (playground/inventory.py) |
+| `POST /api/world/inventory/shown` | What the person has now, as the page shows it: `{record, hands: {right, left}, stowed, hand_in_the_world}`, each thing `{id, name, material, shape}`, and a hand's thing with the `slot` kept for it |
 | `POST /api/live/open` | Open a live world from `{spec}`: the lab page's stage. There is one live world at a time, so this closes the room on /world |
 | `POST /api/live/act` | Step the open room, or take hold of, move, let go of or heat something in it. In a room with ground: `dig` and `deposit` change it (and are kept, so a reopened room still has them), `survey` says what is at a point, `discharge` sets the river, and `environment`, `environment_state` and `terrain` read the ground and the water |
 

@@ -12,10 +12,12 @@ than into a hand that cannot hold it yet. Two hands come with the bow, increment
 4 of the owner's spec.
 
 A thing comes out of the bag where the person can see it: held in front of them,
-or put down there -- at rest, facing as it did when it went in.
+or put down there -- at rest, facing as it did when it went in. A thing taken up
+from the world is gripped where it lies, or where the page says its handle is.
 """
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import inventory
@@ -27,6 +29,9 @@ import world_chat
 HOLD_OUT_M, HOLD_DOWN_M = 0.5, 0.35
 # And where one is put down from the bag: further out, and let fall from there.
 PUT_OUT_M, PUT_DOWN_M = 0.7, 0.9
+# How far from a thing's middle a grip the page gives may be: a pick's handle is
+# half a metre from its middle, and a grip further than this is not on it.
+GRIP_REACH_M = 1.5
 
 
 def inventory_of(app: Any) -> inventory.Inventory:
@@ -48,16 +53,47 @@ def _body(app: Any, name: str | None) -> dict[str, Any] | None:
     return next((b for b in _state(app).get("bodies") or [] if b.get("name") == name), None)
 
 
-def shown(app: Any) -> dict[str, Any]:
-    """The record as the page shows it: each hand and the bag, by name."""
-    record = inventory_of(app).record()
-    names = {item["id"]: item["name"] for item in inventory.items_of(app.room.spec)}
+def _grip(asked: Any, now: dict[str, Any]) -> list[float]:
+    """Where the hand takes hold of a thing it takes up: where the page says --
+    a tool by its handle -- or, said nowhere, its middle where it is now."""
+    middle = [float(v) for v in now["position_m"]]
+    if asked is None:
+        return [round(v, 4) for v in middle]
+    if not isinstance(asked, (list, tuple)) or len(asked) != 3:
+        raise ValueError("a grip is three numbers, metres")
+    grip = [float(v) for v in asked]
+    if not all(math.isfinite(v) for v in grip):
+        raise ValueError("a grip is three numbers, metres")
+    if math.dist(grip, middle) > GRIP_REACH_M:
+        raise ValueError(f"that grip is not on it: {math.dist(grip, middle):.1f} m from its middle")
+    return [round(v, 4) for v in grip]
 
-    def named(item: str | None) -> dict[str, str] | None:
-        return {"id": item, "name": names.get(item, item)} if item else None
+
+def shown(app: Any) -> dict[str, Any]:
+    """The record as the page shows it: each hand and the bag's slots, by name,
+    with what each thing is made of and its shape. An empty slot is None, so the
+    page numbers the slots as the record does; a thing in a hand carries the slot
+    kept for it (`slot`), which its number puts it back into."""
+    record = inventory_of(app).record()
+    spec = app.room.spec
+    bodies = {str(b["name"]): b for b in spec.get("bodies") or [] if isinstance(b, dict) and b.get("name")}
+    items = {item["id"]: item for item in inventory.items_of(spec)}
+
+    def named(item: str | None, slot: int | None = None) -> dict[str, Any] | None:
+        if not item:
+            return None
+        thing = items.get(item)
+        first = bodies.get(thing["name"]) if thing else None
+        out: dict[str, Any] = {"id": item, "name": thing["name"] if thing else item}
+        if first:
+            out["material"] = str(first.get("material") or "")
+            out["shape"] = str(first.get("shape") or "box")
+        if slot is not None:
+            out["slot"] = slot
+        return out
 
     return {"record": record,
-            "hands": {hand: named(item) for hand, item in record["hands"].items()},
+            "hands": {hand: named(item, record["home"].get(item)) for hand, item in record["hands"].items()},
             "stowed": [named(item) for item in record["stowed"]],
             # The hand the engine has: the only one that holds anything yet.
             "hand_in_the_world": record["dominant"]}
@@ -69,40 +105,37 @@ def after_open(app: Any, opened: dict[str, Any] | None = None) -> dict[str, Any]
 
     A room opens from its spec, so the bag's things open standing in the world:
     each is set aside again. A thing that was in a hand goes back into the bag,
-    since the engine's hand is empty in a room just opened. A thing the room no
-    longer has, or that cannot be set aside now (the chat joined it to
-    something), leaves the record -- the record says only what is true of the
-    room. Returns what the page shows."""
+    into the slot kept for it, since the engine's hand is empty in a room just
+    opened. A thing the room no longer has, or that cannot be set aside now (the
+    chat joined it to something), leaves the record -- the record says only what
+    is true of the room. Returns what the page shows."""
     record = inventory_of(app)
     session = app.live.session
     if session is None:
         return shown(app)
     items = {item["id"]: item for item in inventory.items_of(app.room.spec)}
-    changed = False
-    for hand in inventory.HANDS:
-        if record.hands[hand]:
-            if record.hands[hand] not in record.stowed:
-                record.stowed.append(record.hands[hand])
-            record.hands[hand] = None
-            changed = True
-    present = {b.get("name") for b in (session.state or {}).get("bodies") or []}
     parked: set[str] = set()
-    for item in list(record.stowed):
-        thing = items.get(item)
-        if thing is None or thing["installed"] or not thing["one_piece"]:
-            record.stowed.remove(item)
-            changed = True
-            continue
-        if thing["name"] not in present:
-            continue
-        try:
-            app.live.act({"session": session.id, "op": "park", "name": thing["name"]})
-            parked.add(thing["name"])
-        except Exception:   # the engine would not set it aside: it stays in the world
-            record.stowed.remove(item)
-            changed = True
-    if changed:
-        record.revision += 1
+    with record.lock:
+        changed = False
+        for hand in inventory.HANDS:
+            changed = record.back_to_bag(hand) or changed
+        present = {b.get("name") for b in (session.state or {}).get("bodies") or []}
+        for item in [i for i in record.stowed if i]:
+            thing = items.get(item)
+            if thing is None or thing["installed"] or not thing["one_piece"]:
+                record.forget(item)
+                changed = True
+                continue
+            if thing["name"] not in present:
+                continue
+            try:
+                app.live.act({"session": session.id, "op": "park", "name": thing["name"]})
+                parked.add(thing["name"])
+            except Exception:   # the engine would not set it aside: it stays in the world
+                record.forget(item)
+                changed = True
+        if changed:
+            record.revision += 1
     # The answer the page draws the room from was made before these were set
     # aside, and the engine's next replies will not say they went -- a whole
     # reply leaves it nothing to compare with -- so they are taken out of it
@@ -118,9 +151,11 @@ def request(app: Any, body: Any) -> dict[str, Any]:
     The body carries:
     - request: its own id;
     - revision: the record's revision the page last saw;
-    - op: take, equip, stow or drop;
+    - op: take, take_up, equip, stow or drop;
     - item: an id, or the name of any of its parts, which is what the page knows;
-    - person: where they are.
+    - person: where they are;
+    - grip (take_up, optional): where the hand takes hold, [x, y, z] metres on
+      the thing -- a tool's handle; its middle when not given.
 
     The answer is the record's (inventory.Inventory.request) with the room's part,
     and what the page shows now."""
@@ -147,14 +182,27 @@ def request(app: Any, body: Any) -> dict[str, Any]:
             raise ValueError("the room is not open")
         sid = session.id
         holding = ((session.state or {}).get("hand") or {}).get("holding") or ""
+        # In the engine's hand: the record says the hand the engine has holds
+        # it, or the engine's last word says so. The record is asked first: the
+        # engine's last word can be a step old, and a thing the page has let go
+        # of already is let go of again for nothing.
+        in_hand = plan["from"] == record.dominant or holding == name
         if plan["to"] == "stowed":
-            if holding == name:
+            if in_hand:
                 app.live.act({"session": sid, "op": "release"})
             now = _body(app, name)
             if now and now.get("orientation_wxyz"):
                 record.facing[item] = [float(v) for v in now["orientation_wxyz"]]
             app.live.act({"session": sid, "op": "park", "name": name})
             return {"set_aside": name}
+        if plan["from"] == "world" and plan["to"] in inventory.HANDS:
+            # Taken up: the engine's hand grips it where it lies.
+            now = _body(app, name)
+            if now is None or not now.get("position_m"):
+                raise ValueError(f"{inventory.said_name(name or asked)} is not in the room to take up")
+            grip = _grip(body.get("grip"), now)
+            app.live.act({"session": sid, "op": "wield", "name": name, "grip": grip})
+            return {"taken_up": name, "held": True, "grip_m": grip}
         if plan["from"] == "stowed":
             if person is None or not person.get("eyes_m"):
                 raise ValueError("the page did not say where you are")

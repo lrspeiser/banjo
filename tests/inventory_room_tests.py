@@ -2,7 +2,7 @@
 real running room: taking a thing sets it aside in the engine, holding it brings
 it back into the hand in front of the person, stowing sets it aside again, and
 putting it down brings it back where they can see it -- each change done once,
-however often it is asked for.
+however often it is asked for. Taken up from where it lies, it is gripped there.
 
 It needs the live engine (build/integration, as live_session_tests does), and
 skips without it.
@@ -31,6 +31,7 @@ ENGINE = BUILD / ("banjo_platform_cli.exe" if os.name == "nt" else "banjo_platfo
 
 # Standing 0.8 m back from the middle of the floor, looking along -z, eyes at 1.66 m.
 PERSON = {"standing_m": [0.0, 0.04, 0.8], "facing": [0.0, 0.0, -1.0], "eyes_m": [0.0, 1.66, 0.8]}
+BALL = {"id": "b-ball000001", "name": "ball", "material": "iron", "shape": "sphere"}
 
 
 def spec():
@@ -68,6 +69,9 @@ class WhatTakingAndHoldingDoToTheThing(unittest.TestCase):
     def bodies(self):
         return {b["name"]: b for b in self.live.act({"session": self.session, "op": "poses"})["bodies"]}
 
+    def held(self):
+        return self.live.act({"session": self.session, "op": "poses"}).get("held")
+
     def ask(self, request, revision, op, **more):
         return inventory_room.request(self.app, dict({"request": request, "revision": revision, "op": op,
                                                       "item": "ball", "person": PERSON}, **more))
@@ -82,11 +86,14 @@ class WhatTakingAndHoldingDoToTheThing(unittest.TestCase):
                          {k: v for k, v in took.items() if k != "shown"},
                          "a retry was not answered as the first time")
         self.assertEqual(again["shown"]["record"]["revision"], 1, "a retry changed the record again")
-        self.assertEqual(took["shown"]["stowed"], [{"id": "b-ball000001", "name": "ball"}])
+        self.assertEqual(took["shown"]["stowed"], [BALL])
 
         held = self.ask("e1", 1, "equip")
         self.assertTrue(held["ok"], held)
         self.assertEqual(held["to"], "right")
+        self.assertEqual(held["shown"]["hands"]["right"], dict(BALL, slot=0),
+                         "the hand's ball does not carry the slot its number puts it back in")
+        self.assertEqual(held["shown"]["stowed"], [])
         state = self.live.act({"session": self.session, "op": "poses"})
         self.assertEqual(state.get("held"), "ball", "the hand does not hold what the record says")
         at = self.bodies()["ball"]["position_m"]
@@ -96,7 +103,7 @@ class WhatTakingAndHoldingDoToTheThing(unittest.TestCase):
         stowed = self.ask("s1", 2, "stow")
         self.assertTrue(stowed["ok"], stowed)
         self.assertNotIn("ball", self.bodies())
-        self.assertEqual(self.live.act({"session": self.session, "op": "poses"}).get("held"), "")
+        self.assertEqual(self.held(), "")
 
         down = self.ask("d1", 3, "drop")
         self.assertTrue(down["ok"], down)
@@ -106,11 +113,43 @@ class WhatTakingAndHoldingDoToTheThing(unittest.TestCase):
                         f"the ball put down in front of the person is at {landed}")
         self.assertEqual(down["record"]["stowed"], [])
 
+    def test_taken_up_the_ball_is_gripped_where_it_lies_and_let_go_it_is_the_worlds_again(self):
+        """E on a loose thing: into the hand, not the bag (the owner, 2026-09-14).
+        The engine's hand grips it where it lies -- or where the page says, a
+        tool by its handle -- and put down, the record lets it go. The release
+        does not wait on the engine's word that the hand holds it, which can be
+        a step old: no poses are asked for between these."""
+        lay = self.bodies()["ball"]["position_m"]
+        took = self.ask("u1", 0, "take_up")
+        self.assertTrue(took["ok"], took)
+        self.assertEqual((took["to"], took["room"]["taken_up"]), ("right", "ball"))
+        self.assertTrue(math.dist(took["room"]["grip_m"], lay) < 1e-3,
+                        f"gripped at {took['room']['grip_m']}, not where it lay at {lay}")
+        self.assertEqual(took["shown"]["hands"]["right"], BALL, "a thing from the world has no slot yet")
+        down = self.ask("d1", 1, "drop")
+        self.assertTrue(down["ok"], down)
+        self.assertEqual(self.held(), "", "put down, the ball was still in the engine's hand")
+        self.assertIn("ball", self.bodies())
+
+        far = self.ask("u2", 2, "take_up", grip=[5.0, 0.5, 0.0])
+        self.assertFalse(far["ok"])
+        self.assertIn("not on it", far["why"])
+        self.assertEqual(self.held(), "")
+        near = [lay[0] + 0.03, lay[1], lay[2]]
+        took = self.ask("u3", 2, "take_up", grip=near)
+        self.assertTrue(took["ok"], took)
+        self.assertEqual(took["room"]["grip_m"], [round(v, 4) for v in near])
+        stowed = self.ask("s1", 3, "stow")
+        self.assertTrue(stowed["ok"], stowed)
+        self.assertEqual(stowed["shown"]["stowed"], [BALL])
+        self.assertNotIn("ball", self.bodies())
+
     def test_a_room_opened_again_sets_the_bags_things_aside_and_empties_the_hand_into_the_bag(self):
         """A room opens from its spec -- after the chat changes it, or a restart
         -- so the bag's things open standing in it. They are set aside again
         before the page draws anything, and a thing in the hand goes to the bag,
-        since the engine's hand is empty in a room just opened."""
+        into the slot kept for it, since the engine's hand is empty in a room
+        just opened."""
         self.ask("t1", 0, "take")
         self.ask("e1", 1, "equip")
         opened = self.live.open(self.app, {"spec": self.app.room.spec})
@@ -121,7 +160,8 @@ class WhatTakingAndHoldingDoToTheThing(unittest.TestCase):
                          "the page would draw the bag's ball in the room opened again")
         self.assertNotIn("ball", self.bodies(), "the bag's ball stands in the room opened again")
         self.assertIsNone(shown["hands"]["right"])
-        self.assertEqual(shown["stowed"], [{"id": "b-ball000001", "name": "ball"}])
+        self.assertEqual(shown["stowed"], [BALL])
+        self.assertEqual(shown["record"]["home"], {})
 
     def test_the_floor_is_not_taken_and_a_stale_revision_changes_nothing(self):
         floor = inventory_room.request(self.app, {"request": "f1", "revision": 0, "op": "take",

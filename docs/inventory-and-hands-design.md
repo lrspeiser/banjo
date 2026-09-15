@@ -70,7 +70,13 @@ hand.
   - its id is the smallest id among its bodies, and its name is its first part's
     name, which is also the engine's name for a join group's piece.
 - **`Inventory`** is the record: `{revision, dominant, hands: {right, left},
-  stowed: [ids]}`. An item not in it is in the world.
+  stowed, home, facing}`. An item not in it is in the world.
+  - `stowed` is the bag's slots in order: an id, or `null` for an empty one.
+  - `home` keeps, for a thing in a hand, the slot it came out of, so stowing it
+    puts it back there: the number that took it out is the number that puts it
+    back. A thing taken in goes to the first slot that is neither filled nor
+    kept for another.
+  - `facing` is how each thing faced as it went in, so it comes out the same.
 - **The ops:**
   - `take`: from the world into the inventory;
   - `take_up`: into a free hand, the dominant hand first. With both hands full it
@@ -80,6 +86,9 @@ hand.
     refused;
   - `stow`: from a hand into the inventory;
   - `drop`: from a hand or the inventory into the world.
+  - A thing that is not one of the room's items -- a broken piece, which the
+    spec does not have -- is refused as `unknown`, so the page can take it by
+    its own grip instead.
 - **`request(id, expected_revision, op, item, items, act)`:**
   - it answers a repeated id as the first time, without acting again;
   - it refuses a stale revision, with the record as it is now;
@@ -89,8 +98,14 @@ hand.
 
 ## Transactions
 
-- `POST /api/world/inventory {session, request, expected_revision, op, item,
-  hand}`. The op is one of `take`, `stow`, `equip`, `unequip` or `drop`.
+- `POST /api/world/inventory {session, request, revision, op, item, person,
+  grip}`. The op is one of `take`, `take_up`, `equip`, `stow` or `drop`. `grip`
+  (take_up) is where the hand takes hold -- a tool's handle -- and the thing's
+  middle when it is not given. `POST /api/world/inventory/shown {session}` is
+  the record as the page shows it.
+- The page sends its changes one at a time, in the order they were made, so a
+  thing put down and another picked up straight after reach the record in that
+  order. One refused as stale is asked again once, against the record as it is.
 - The same request sent twice gets the first answer, so a retry never takes a
   thing twice.
 - An `expected_revision` that is out of date is refused, with the record as it
@@ -185,7 +200,7 @@ hand.
   operations and its reply. Each hand has its own force and torque, and the
   whole person shares one limit, rather than the single hand's budget doubled.
 
-## The first slice's page
+## The first slice's page (E into the bag: replaced by the second slice, below)
 
 - **E on an ordinary liftable thing puts it in the bag** (`take`), and the page
   says "Oak cup added to inventory."
@@ -227,3 +242,51 @@ Tests go with it:
   - two callers cannot both take one item;
   - v1 and v2 files both read.
 - Browser: steps 1-4 in headless Chrome.
+
+## The second slice: the side view and the keys (2026-09-14)
+
+The owner, after trying the bag: "there is way too much text on the screen. we
+need a simple chat sideview, and then all the other text needs to be in tabs in
+part of the side view. also it's still really hard to interact with an item. I
+pick it up and it goes in my bag, but then its not easy to put it back down
+without escaping the mouse and clicking on it." Their answers to four
+questions:
+- E on a loose thing picks it up into the hand; E again puts it down; Q puts it
+  in the bag; the left mouse throws.
+- The bag's things sit in numbered slots along the bottom of the view: 1-9
+  takes one into the hand, and the same number puts it back.
+- The side view has the chat on top and tabs below.
+- Over the view only the name of what the crosshair is on ("Iron Kettle"), with
+  its details in the side view: "if needed we can have three windows on the
+  side, chat, view details and tabs for inventory, etc."
+
+As built:
+- **E** on a loose thing a hand can lift is `take_up`: the room's hand grips it
+  where it lies. E again puts it down with the page's careful putDown, and when
+  the hand lets go -- put down, dropped or thrown -- the record is told `drop`.
+  A thing the record does not keep (`unknown`) is taken by the page's own grip,
+  as it always was, and so is anything with Alt+E.
+- **A tool** is taken up the same way, by its handle (`grip`), and then held
+  ready as before. One out of the bag is gripped by its handle once it is out.
+- **A blade** is taken by its grip with E, the page's own hold as before. Q
+  puts it in the bag (`take`), and out of the bag it is held by its grip again,
+  its edge facing down.
+- **Q** is `stow` for what the record says the hand holds, and `take` for
+  anything else: what the crosshair is on, or a thing the page holds by its own
+  grip.
+- **1-9** is `equip` for that slot's thing. With the thing from that slot in the
+  hand, the number is `stow` and it goes back into its slot. With another of the
+  record's things in the hand, that one is stowed first, so a number swaps what
+  is held. Anything else in the hand has to be put down first.
+- **Tab** moves E on to the next of what can be done: a thing's own actions,
+  the built-in ones, and taking hold of it by hand. So the number keys are the
+  bag's, and every action is still on a key. It comes back to the first when
+  the crosshair leaves the thing.
+- **Down** moved from Q to Shift+Space.
+- **The side view**: the conversation; the details of what is looked at or held
+  (name, facts, what E, Tab, Q and the mouse do now, the measured meter, and
+  what the last thing done came to); and tabs for the Bag, Notes, Room, Bench
+  and Keys. What the hand does is said in the details, not the chat.
+- **Found on the way:** a thing from the bag put down with E ended in the page's
+  settleDown, which never told the record. The record kept it in the hand, and
+  the next room opened would have put it in the bag.

@@ -1,4 +1,6 @@
-/* A room, and a panel down the side. Everything else is the room. */
+/* A room, and a side view down the right. Over the room itself: the crosshair,
+   the name of what it is on, and the bag's slots -- nothing else (the owner,
+   2026-09-14: "there is way too much text on the screen"). */
 :root {
   --ink: #e8ecef;
   --dim: #9aa6ae;
@@ -9,6 +11,7 @@
   --y: #7ee08a;
   --z: #6ba8ff;
   --warm: #f0b429;
+  --panel-w: 360px;
 }
 
 * { box-sizing: border-box; }
@@ -41,163 +44,73 @@ html, body {
 }
 #crosshair.on span { border-color: var(--warm); transform: scale(1); }
 #crosshair.holding span { border-color: var(--y); transform: scale(1); }
+/* A wind-up or a draw: the ring fills round as far as the engine says it has
+   got (--fill, 0 to 1). A picture of the number the side view gives. */
+#crosshair.metering span {
+  border-color: transparent; transform: scale(1.5); transition: none;
+  background: conic-gradient(var(--warm) calc(var(--fill, 0) * 1turn), rgb(255 255 255 / .22) 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px));
+          mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px));
+}
 
-/* What you are pointing at. */
+/* The name of what the crosshair is on, just under it. */
 #label {
-  position: fixed; left: 50%; top: calc(50% + 26px); transform: translateX(-50%);
-  z-index: 5; pointer-events: none; text-align: center;
-  background: rgba(8,12,14,.82); border: 1px solid var(--edge); border-radius: 8px;
-  padding: 6px 12px; min-width: 160px; backdrop-filter: blur(6px);
+  position: fixed; left: 50%; top: calc(50% + 20px); transform: translateX(-50%);
+  z-index: 5; pointer-events: none; white-space: nowrap;
+  padding: 1px 8px; border-radius: 4px; background: rgb(8 12 14 / .55);
+  font-size: 14px; font-weight: 600; text-shadow: 0 1px 2px #000;
 }
-#label strong { display: block; font-size: 15px; }
-#label span { display: block; color: var(--dim); font-size: 12px; }
-#label-material { color: var(--warm) !important; text-transform: lowercase; }
-/* What a click opened: the thing's actions, one per number key. */
-#label-actions { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--edge); text-align: left; }
-#label-actions span { color: var(--ink); font-size: 12px; line-height: 1.55; }
 
-/* What the hand can do right now. Bottom centre, the same place for a ball and
-   a bow, so the pattern is learned once. */
-#use {
-  /* Above the controls line at the bottom left, which wraps to four lines on a
-     laptop screen and was being covered. */
-  position: fixed; left: 50%; bottom: 122px; transform: translateX(-50%);
-  z-index: 6; pointer-events: none; text-align: center;
-  background: rgba(8,12,14,.86); border: 1px solid var(--edge); border-radius: 10px;
-  padding: 8px 16px; min-width: 280px; max-width: min(70ch, calc(100vw - 440px));
-  backdrop-filter: blur(6px);
+/* The bag's slots along the bottom, under the crosshair -- or as near under it
+   as the side view leaves room for. */
+#hotbar {
+  position: fixed; bottom: 14px; z-index: 5; pointer-events: none;
+  left: min(50vw, calc(100vw - var(--panel-w) - 262px)); transform: translateX(-50%);
+  display: flex; gap: 4px; margin: 0; padding: 0; list-style: none;
 }
-#use-title { font-size: 15px; }
-#use-title b { font-weight: 650; }
-#use-line { font-size: 13px; margin-top: 3px; }
-#use-note { color: var(--dim); font-size: 12px; margin-top: 4px; }
-#use-note:empty { display: none; }
-#use-turn { font-size: 12px; margin-top: 5px; color: var(--dim); }
-#use-turn:empty { display: none; }
-/* While something is held the help sits to the left of the crosshair: what is
-   held is carried low on the right, and there the help was covering it -- a
-   pillar held lying down could not be seen at all. The label that sits under
-   the crosshair is not shown while holding, so the two never meet. */
-#use.beside {
-  left: auto; right: calc(50% + 28px); bottom: auto; top: calc(50% + 14px);
-  transform: none; text-align: left; max-width: min(46ch, calc(50vw - 60px));
+.slot {
+  position: relative; width: 54px; height: 54px; border-radius: 6px;
+  background: rgb(8 12 14 / .72); border: 1px solid var(--edge); backdrop-filter: blur(4px);
 }
-#use kbd {
-  font: 600 11px/1 ui-sans-serif, system-ui, sans-serif; color: var(--ink);
-  border: 1px solid #3a464e; border-bottom-width: 2px; border-radius: 4px;
-  padding: 2px 5px; background: #172026;
+.slot b { position: absolute; left: 5px; top: 2px; font-size: 10px; font-weight: 650; color: var(--dim); }
+/* What it is made of, by the colour the room draws that material with, and
+   round for a ball. */
+.slot i {
+  position: absolute; left: 50%; top: 11px; width: 16px; height: 16px; margin-left: -8px;
+  border-radius: 3px; background: var(--c, #9aa6ae);
 }
-#use-meter {
-  display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 6px;
-  font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums;
+.slot i.sphere { border-radius: 50%; }
+.slot span {
+  position: absolute; left: 3px; right: 3px; bottom: 3px; text-align: center;
+  font-size: 9.5px; line-height: 1.15; overflow: hidden;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
 }
-#use-meter[hidden] { display: none; }
-.use-bar {
-  position: relative; width: 180px; height: 6px; border-radius: 3px;
-  background: #1d272d; overflow: hidden;
-}
-.use-bar i { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--warm); }
-#use-meter-value { min-width: 4ch; text-align: right; color: var(--ink); }
+.slot.empty { opacity: .4; }
+/* Out of its slot and in the hand: its number puts it back. */
+.slot.in-hand { border-color: var(--y); box-shadow: inset 0 0 0 1px var(--y); }
+.slot.in-hand i, .slot.in-hand span { opacity: .45; }
 
-/* Bottom left, stacked: what is carried above the clock and the keys, so a
-   long Carried list and a hint wrapped onto four lines never sit on each other
-   (they did, with the list pinned 92 px up and the clock under it). */
-#corner {
-  position: fixed; left: 16px; bottom: 16px; z-index: 5; pointer-events: none;
-  display: flex; flex-direction: column; align-items: flex-start; gap: 10px;
-}
-#hud {
-  max-width: min(52ch, calc(100vw - 420px));
-}
-#hud-clock { font-variant-numeric: tabular-nums; color: var(--dim); font-size: 12px; }
-#hud-hint { color: var(--dim); font-size: 12px; margin-top: 4px; }
-#hud-hint b { color: var(--ink); font-weight: 600; }
-
-/* The carried thing's coordinates. Tabular so the digits do not dance while
-   it moves. */
-#carry {
-  position: fixed; right: 380px; top: 18px; z-index: 5; pointer-events: none;
-  background: rgba(8,12,14,.82); border: 1px solid var(--edge); border-radius: 8px;
-  padding: 10px 14px; font-variant-numeric: tabular-nums; backdrop-filter: blur(6px);
-}
-.carry-row { display: flex; gap: 8px; align-items: baseline; }
-.carry-row output { min-width: 6ch; text-align: right; }
-.axis { font-weight: 700; width: 1.4ch; }
-.axis.x { color: var(--x); } .axis.y { color: var(--y); } .axis.z { color: var(--z); }
-.unit { color: var(--dim); font-size: 11px; }
-.carry-drop { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--edge);
-              color: var(--dim); font-size: 12px; }
-.carry-drop b { color: var(--ink); }
-
-/* The panel. */
+/* The side view. */
 #panel {
-  position: fixed; right: 0; top: 0; bottom: 0; width: 360px; z-index: 6;
+  position: fixed; right: 0; top: 0; bottom: 0; width: var(--panel-w); z-index: 6;
   background: var(--panel); border-left: 1px solid var(--edge);
   display: flex; flex-direction: column;
 }
-#panel header { padding: 14px 16px 10px; border-bottom: 1px solid var(--edge); }
-#panel h1 { margin: 0; font-size: 15px; letter-spacing: .12em; text-transform: uppercase; }
-#panel-state { margin: 4px 0 0; color: var(--dim); font-size: 12px; }
-#panel-build { margin: 4px 0 0; color: var(--warm); font-size: 12px; }
-/* What the person has, always in the panel: held, carried, and what here can be
- * used, with the keys that use it. */
-#inventory { padding: 10px 16px; border-bottom: 1px solid var(--edge); display: grid; gap: 6px;
-             font-size: 12px; }
-.inv-row { display: grid; grid-template-columns: 76px 1fr; gap: 8px; align-items: baseline; }
-/* What can be done with a thing in a hand or in the bag: small, beside it. */
-#inventory button { margin-left: 6px; padding: 1px 6px; font: inherit; font-size: 11px; color: var(--ink);
-                    background: transparent; border: 1px solid var(--edge); border-radius: 3px;
-                    cursor: pointer; }
-#inventory button:hover, #inventory button:focus-visible { border-color: var(--warm); }
-.inv-label { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
-#inventory ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-#inventory .much { margin-left: 6px; color: var(--warm); font-variant-numeric: tabular-nums; }
-#inventory .keys { display: block; color: var(--dim); font-size: 11px; }
-#inventory .none { color: var(--dim); }
-/* What can be done right now, each with its key, and the tool to use. */
-/* The notebook: what the engine measured the person's own tools doing. */
-#notebook { padding: 8px 16px; border-bottom: 1px solid var(--edge); font-size: 12px;
-            max-height: 26vh; overflow-y: auto; }
-#notebook h2 { margin: 0 0 4px; font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
-               color: var(--dim); font-weight: 600; }
-#notebook p { margin: 0 0 4px; color: var(--dim); }
-#notebook ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; }
-#notebook li { color: var(--ink); line-height: 1.45; }
-#notebook li.nb-design { font-weight: 600; margin-top: 4px; }
-#notebook li.nb-shown { padding-left: 8px; border-left: 2px solid #3f8f5a; }
-#notebook li.nb-noted { color: var(--dim); padding-left: 8px; border-left: 2px solid var(--edge); }
-#notebook li.nb-blocked { color: var(--warm); padding-left: 8px; border-left: 2px solid var(--warm); }
-#actions { padding: 8px 16px; border-bottom: 1px solid var(--edge); font-size: 12px; }
-#actions ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
-#actions kbd { display: inline-block; min-width: 1.5em; margin-right: 6px; padding: 0 5px;
-               border: 1px solid var(--edge); border-radius: 4px; background: #0a1013;
-               color: var(--ink); font-family: inherit; font-size: 11px; line-height: 1.6;
-               text-align: center; }
-#actions-tip { margin: 6px 0 0; color: var(--warm); }
-/* The workbench: the recorded runs, and the controls for the one on the bench. */
-#workbench { padding: 6px 16px; border-bottom: 1px solid var(--edge); font-size: 12px; }
-#workbench [hidden] { display: none; }
-#workbench-toggle { width: 100%; text-align: left; background: none; border: 0; padding: 4px 0;
-                    color: var(--dim); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; }
-#workbench-toggle:hover, #workbench-toggle[aria-expanded="true"] { color: var(--ink); background: none; }
-/* minmax(0, 1fr): a name cut to one line must not widen the column past the panel. */
-#workbench-runs { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 2px;
-                  grid-template-columns: minmax(0, 1fr); max-height: 150px; overflow-y: auto; }
-#workbench-runs button { width: 100%; min-width: 0; overflow: hidden; text-align: left; padding: 4px 8px;
-                         font-size: 12px; line-height: 1.35; }
-#workbench-runs .name { display: block; }
-#workbench-runs .what { display: block; color: var(--dim); white-space: nowrap; overflow: hidden;
-                        text-overflow: ellipsis; }
-#workbench-runs .when { display: block; color: var(--dim); font-size: 11px; }
-#workbench-runs li.none { color: var(--dim); padding: 2px 0; }
-#workbench-controls { margin-top: 6px; display: grid; gap: 4px; }
-#workbench-title { margin: 0; color: var(--ink); display: -webkit-box; -webkit-line-clamp: 2;
-                   -webkit-box-orient: vertical; overflow: hidden; }
-.workbench-row { display: flex; gap: 6px; align-items: center; }
-.workbench-row input[type="range"] { flex: 1; min-width: 0; }
-#workbench-time { margin: 0; color: var(--dim); font-variant-numeric: tabular-nums; }
+#panel header {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
+  padding: 10px 16px 8px; border-bottom: 1px solid var(--edge);
+}
+#panel h1 { margin: 0; font-size: 13px; letter-spacing: .14em; text-transform: uppercase; }
+#panel-state {
+  flex: 1; min-width: 0; margin: 0; color: var(--dim); font-size: 12px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#panel-build { flex-basis: 100%; margin: 0; color: var(--warm); font-size: 12px; }
 
-#chat { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex;
+/* 1. The conversation: whatever height the other two leave. */
+#talk { flex: 1 1 0; min-height: 30vh; display: flex; flex-direction: column;
+        border-bottom: 1px solid var(--edge); }
+#chat { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 16px; display: flex;
         flex-direction: column; gap: 10px; }
 .turn { border-left: 2px solid var(--edge); padding-left: 10px; }
 .turn .who { display: block; font-size: 10px; letter-spacing: .14em;
@@ -237,130 +150,143 @@ html, body {
 .turn .did { margin: 4px 0 0; font-size: 12px; color: var(--dim); }
 .turn .did code { color: var(--warm); font-size: 11px; }
 
-#ask { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--edge); }
+#ask { display: flex; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--edge); }
 #ask input {
   flex: 1; min-width: 0; background: #0a1013; color: var(--ink);
-  border: 1px solid var(--edge); border-radius: 6px; padding: 8px 10px; font: inherit;
+  border: 1px solid var(--edge); border-radius: 6px; padding: 7px 10px; font: inherit;
 }
 #ask input:focus { outline: 2px solid var(--z); outline-offset: 1px; }
 button {
   background: #1b2630; color: var(--ink); border: 1px solid var(--edge);
-  border-radius: 6px; padding: 8px 12px; font: inherit; cursor: pointer;
+  border-radius: 6px; padding: 7px 12px; font: inherit; cursor: pointer;
 }
 button:hover { background: #24323e; }
 button:disabled { opacity: .5; cursor: default; }
+button:focus-visible { outline: 2px solid var(--z); outline-offset: 1px; }
 button.quiet { background: transparent; }
 
+/* A key, drawn as one. */
+kbd {
+  display: inline-block; min-width: 1.6em; padding: 0 5px; border: 1px solid #3a464e;
+  border-bottom-width: 2px; border-radius: 4px; background: #0a1013; color: var(--ink);
+  font: 600 11px/1.55 ui-sans-serif, system-ui, sans-serif; text-align: center; white-space: nowrap;
+}
+
+/* 2. What you look at, or hold: sized to what it says, and never more than
+   three tenths of the height -- the conversation keeps the most. */
+#details {
+  flex: 0 0 auto; max-height: 30vh; overflow-y: auto;
+  padding: 10px 16px 12px; border-bottom: 1px solid var(--edge); font-size: 12px;
+}
+#details-name { margin: 0; font-size: 16px; font-weight: 650; line-height: 1.3; text-wrap: balance; }
+#details-facts { margin: 2px 0 0; color: var(--dim); }
+#details-facts:empty { display: none; }
+#details-actions { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 1px; }
+#details-actions:empty { display: none; }
+#details-actions li {
+  display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 8px; align-items: center;
+  padding: 2px 6px; border-radius: 4px;
+}
+/* A key, or several: as many as fit a line, then the next line. */
+#details-actions li .keys { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px; }
+/* The one E does. */
+#details-actions li.chosen { background: rgb(240 180 41 / .13); }
+#details-actions li.chosen .what { color: var(--ink); font-weight: 600; }
+#details-actions li.other .what { color: var(--dim); }
+#details-note { margin: 6px 0 0; color: var(--dim); }
+#details-note:empty { display: none; }
+#details-meter {
+  display: flex; align-items: center; gap: 8px; margin-top: 8px;
+  color: var(--dim); font-variant-numeric: tabular-nums;
+}
+#details-meter[hidden] { display: none; }
+.meter-bar { position: relative; flex: 1; height: 6px; border-radius: 3px; background: #1d272d; overflow: hidden; }
+.meter-bar i { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--warm); }
+#details-meter-value { min-width: 4ch; text-align: right; color: var(--ink); }
+/* What the last thing you did came to. */
+#details-last { margin: 8px 0 0; padding-top: 6px; border-top: 1px solid var(--edge); }
+#details-last[hidden] { display: none; }
+.last-label { margin-right: 8px; font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+              color: var(--dim); }
+#details-last.refused #details-last-text { color: var(--warm); }
+
+/* 3. The tabs: a fixed share of the height, each scrolling in itself. */
+#tabs { flex: 0 0 27vh; min-height: 150px; display: flex; flex-direction: column; }
+[role="tablist"] { display: flex; padding: 0 10px; border-bottom: 1px solid var(--edge); }
+[role="tab"] {
+  background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+  padding: 7px 8px 5px; color: var(--dim); font-size: 11px; letter-spacing: .1em;
+  text-transform: uppercase;
+}
+[role="tab"]:hover { background: none; color: var(--ink); }
+[role="tab"][aria-selected="true"] { color: var(--ink); border-bottom-color: var(--warm); }
+[role="tabpanel"] { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 16px; font-size: 12px; }
+[role="tabpanel"][hidden] { display: none; }
+
+/* What the person has. */
+#inventory { display: grid; gap: 6px; }
+.inv-row { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 8px; align-items: baseline; }
+.inv-label { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
+#inventory ul, #inventory ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+#inventory .slot-key { display: inline-block; min-width: 1.3em; margin-right: 4px; color: var(--dim);
+                       font-variant-numeric: tabular-nums; }
+/* What can be done with a thing in a hand or in the bag: small, beside it. */
+#inventory button { margin-left: 6px; padding: 1px 6px; font-size: 11px;
+                    background: transparent; border-radius: 3px; }
+#inventory button:hover, #inventory button:focus-visible { border-color: var(--warm); }
+#inventory .much { margin-left: 6px; color: var(--warm); font-variant-numeric: tabular-nums; }
+#inventory .keys { display: block; color: var(--dim); font-size: 11px; }
+#inventory .none { color: var(--dim); }
+
+/* The notebook: what the engine measured the person's own tools doing. */
+#notebook p { margin: 0 0 4px; color: var(--dim); }
+#notebook ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; }
+#notebook li { color: var(--ink); line-height: 1.45; }
+#notebook li.nb-design { font-weight: 600; margin-top: 4px; }
+#notebook li.nb-shown { padding-left: 8px; border-left: 2px solid #3f8f5a; }
+#notebook li.nb-noted { color: var(--dim); padding-left: 8px; border-left: 2px solid var(--edge); }
+#notebook li.nb-blocked { color: var(--warm); padding-left: 8px; border-left: 2px solid var(--warm); }
+
+/* The room. */
+#room-clock { margin: 0; color: var(--dim); font-variant-numeric: tabular-nums; }
+#pane-room h3 { margin: 10px 0 4px; font-size: 10px; font-weight: 600; letter-spacing: .12em;
+                text-transform: uppercase; color: var(--dim); }
+#water p { margin: 2px 0; font-variant-numeric: tabular-nums; }
+#water-cost { color: var(--dim); font-size: 11px; }
+#heat-list { margin: 0; padding: 0; list-style: none; }
+#heat-list li { display: flex; justify-content: space-between; gap: 14px; padding: 2px 0; }
+#heat-list .much { font-variant-numeric: tabular-nums; color: rgb(255 196 140 / .95); text-align: right; }
+#heat-note { margin: 6px 0 0; color: var(--dim); font-size: 11px; }
 /* Wraps, so every button stays on the panel however many a room has. */
-#panel footer { display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: center;
-                gap: 8px; padding: 10px 16px; border-top: 1px solid var(--edge);
-                color: var(--dim); font-size: 12px; }
+#room-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px;
+                 color: var(--dim); }
+
+/* The workbench: the recorded runs, and the controls for the one on the bench. */
+#workbench [hidden] { display: none; }
+/* minmax(0, 1fr): a name cut to one line must not widen the column past the panel. */
+#workbench-runs { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px;
+                  grid-template-columns: minmax(0, 1fr); max-height: 150px; overflow-y: auto; }
+#workbench-runs button { width: 100%; min-width: 0; overflow: hidden; text-align: left; padding: 4px 8px;
+                         font-size: 12px; line-height: 1.35; }
+#workbench-runs .name { display: block; }
+#workbench-runs .what { display: block; color: var(--dim); white-space: nowrap; overflow: hidden;
+                        text-overflow: ellipsis; }
+#workbench-runs .when { display: block; color: var(--dim); font-size: 11px; }
+#workbench-runs li.none { color: var(--dim); padding: 2px 0; }
+#workbench-controls { margin-top: 6px; display: grid; gap: 4px; }
+#workbench-title { margin: 0; color: var(--ink); display: -webkit-box; -webkit-line-clamp: 2;
+                   -webkit-box-orient: vertical; overflow: hidden; }
+.workbench-row { display: flex; gap: 6px; align-items: center; }
+.workbench-row input[type="range"] { flex: 1; min-width: 0; }
+#workbench-time { margin: 0; color: var(--dim); font-variant-numeric: tabular-nums; }
+
+/* Every control. */
+#keys-list { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 10px; margin: 0; }
+#keys-list dt { text-align: right; }
+#keys-list dd { margin: 0; color: var(--dim); }
 
 @media (max-width: 900px) {
-  #panel { width: 300px; }
-  #carry { right: 320px; }
-  #hud { max-width: calc(100vw - 340px); }
+  :root { --panel-w: 300px; }
+  .slot { width: 46px; height: 46px; }
+  .slot i { top: 9px; width: 13px; height: 13px; margin-left: -6.5px; }
 }
-
-/* What has been swept up off the floor.
-   Bottom left, opposite the carry readout, because both are about what you are
-   holding and neither should be where the crosshair is. */
-#stock {
-  min-width: 168px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: rgb(12 16 22 / 0.72);
-  border: 1px solid rgb(255 255 255 / 0.09);
-  backdrop-filter: blur(6px);
-  font-size: 12px;
-  pointer-events: none;
-}
-#stock h2 {
-  margin: 0 0 6px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgb(255 255 255 / 0.45);
-}
-#stock-list { margin: 0; padding: 0; list-style: none; }
-#stock-list li {
-  display: flex;
-  justify-content: space-between;
-  gap: 18px;
-  padding: 2px 0;
-  color: rgb(233 237 243 / 0.92);
-}
-#stock-list .what { text-transform: capitalize; }
-/* Digits line up so a total that is growing reads as one column. */
-#stock-list .much { font-variant-numeric: tabular-nums; color: rgb(150 200 255 / 0.95); }
-/* A tally that just changed, so the eye is drawn to what was added. */
-#stock-list li.just-in .much { color: rgb(180 235 190); }
-
-/* Heat, fire and gas: top left, out of the way of the crosshair and of what is
-   carried. The numbers are the engine's; the glow and the flames in the room
-   are pictures of them. */
-#heat {
-  position: fixed;
-  left: 16px;
-  top: 16px;
-  min-width: 220px;
-  max-width: min(46ch, calc(100vw - 420px));
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: rgb(12 16 22 / 0.72);
-  border: 1px solid rgb(255 255 255 / 0.09);
-  backdrop-filter: blur(6px);
-  font-size: 12px;
-  pointer-events: none;
-  z-index: 5;
-}
-#heat h2 {
-  margin: 0 0 6px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgb(255 180 120 / 0.8);
-}
-#heat-list { margin: 0; padding: 0; list-style: none; }
-#heat-list li {
-  display: flex;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 2px 0;
-  color: rgb(233 237 243 / 0.92);
-}
-#heat-list .much { font-variant-numeric: tabular-nums; color: rgb(255 196 140 / 0.95);
-                   text-align: right; }
-#heat-note { margin: 6px 0 0; color: var(--dim); font-size: 11px; }
-
-/* The water: top left, where the heat panel goes -- which moves down under
-   it when a room has both. The surface drawn in the room is a picture of
-   these numbers. */
-#water {
-  position: fixed;
-  left: 16px;
-  top: 16px;
-  min-width: 220px;
-  max-width: min(46ch, calc(100vw - 420px));
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: rgb(12 16 22 / 0.72);
-  border: 1px solid rgb(255 255 255 / 0.09);
-  backdrop-filter: blur(6px);
-  font-size: 12px;
-  pointer-events: none;
-  z-index: 5;
-}
-#water h2 {
-  margin: 0 0 6px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgb(140 205 235 / 0.85);
-}
-#water p { margin: 2px 0; color: rgb(233 237 243 / 0.92); font-variant-numeric: tabular-nums; }
-#water-cost { color: var(--dim); font-size: 11px; }
-#water:not([hidden]) ~ #heat { top: 104px; }

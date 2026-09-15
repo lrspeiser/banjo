@@ -112,7 +112,8 @@ DEFAULT: dict[str, Any] = {
     # object does is the engine's answer. docs/interaction-profiles.md.
     "interactions": [],
     # The actions offered for its things (offer_actions): each a label and a
-    # short program the room runs when the person presses its number key. Part
+    # short program the room runs when the person chooses it (E, in the side
+    # view). Part
     # of the DOCUMENT, like the edges, so a saved room keeps them; never a pose
     # or a speed -- what happens is the engine's answer when the key is pressed.
     "actions": [],
@@ -691,8 +692,8 @@ def normalise_actions(actions: Any, bodies: list[dict[str, Any]]) -> list[dict[s
     room is read back: each for a thing in the room, with a label, one to twelve
     steps of known kinds, and every thing a step names still in the room.
     Whether a hand can move what a step names is the MCP's to say when they are
-    offered, and the engine's when a key is pressed. At most nine for a thing,
-    one per number key."""
+    offered, and the engine's when one is done. At most nine for a thing, few
+    enough to step through with Tab."""
     if not isinstance(actions, list):
         raise ValueError("actions must be a list")
     named = {str(body.get("name", "")) for body in bodies}
@@ -734,7 +735,8 @@ def normalise_actions(actions: Any, bodies: list[dict[str, Any]]) -> list[dict[s
                                          f"{place[ref]!r}, and there is nothing called that")
         per_body[body] = per_body.get(body, 0) + 1
         if per_body[body] > 9:
-            raise ValueError(f"{body} is offered more than 9 actions, one per number key")
+            raise ValueError(f"{body} is offered more than 9 actions: a person steps through "
+                             f"at most 9 with Tab")
         out.append({"body": body, "label": label, "steps": [dict(step) for step in steps]})
     return out
 

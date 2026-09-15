@@ -45,19 +45,24 @@ scheme for an object.
 
 | Action | Default binding | Ball | Bow |
 |---|---|---|---|
-| Interact | E, or a click with an empty hand | Take hold / put down | Take up the bow (the string, arrow nocked) |
+| Interact | E, or a double-click | Pick it up / put it down: what the side view marks with E | Take up the bow (the string, arrow nocked) |
+| Next | Tab | E moves on to the next thing the side view lists: let go of it here, a thing's own actions | the same |
+| Bag | Q | Put what is held, or what the crosshair is on, in the bag | — |
+| Bag slots | 1–9 | Take that slot's thing into the hand; the same number puts it back in its slot | — |
 | Move view | mouse, drag, arrow keys | Throw direction | Where to shoot |
 | Hold primary | left mouse held | Wind up — longer is a harder throw | Draw the string |
 | Release primary | left mouse released | Throw | Loose |
 | Secondary | right mouse | Lower the arm (cancel) | Let the string down |
-| More actions | Tab | Place, drop | Take the arrow off, release a latch |
 | Advanced | Alt + Interact | Grab exactly the part under the crosshair | Grab the bowstring itself |
 | Turn, tip | Z X; T G; C V | A loose thing: turn it about the vertical; tip it away or back; tip it sideways (section 7) | — |
 | Upright | U | Stand it on its longest side | — |
 | Reach | mouse wheel | Hold it further out or nearer | — |
 | Talk | / | Open the room's chat, which is told what you hold and look at | the same |
 
-E used to move the view up; up is Space (as it was already) and down is Q. Only
+E used to move the view up; up is Space, and down is Shift+Space (Q was down until
+it became the bag's, 2026-09-14). The side view lists what each key does in the
+state the hand is in, and over the view there is only the name of what the
+crosshair is on. Only
 the actions available **in the current state** are shown: an unloaded bow offers
 loading, a bow whose string is cut says why it cannot be drawn.
 

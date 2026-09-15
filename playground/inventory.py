@@ -14,6 +14,11 @@ Items are worked out from the room's spec each time, never kept twice:
   items;
 - a thing with any part anchored, or joined through its joints to anything
   anchored, is INSTALLED -- a gate on its post -- and is operated, never taken.
+
+The bag is slots, numbered as the page's number keys number them: a thing keeps
+the slot it went into, a thing taken out of one into a hand keeps that slot for
+as long as it is held, and stowed again it goes back there -- so the number that
+took it out is the number that puts it back.
 """
 from __future__ import annotations
 
@@ -98,10 +103,20 @@ class Inventory:
         self.dominant = record.get("dominant") if record.get("dominant") in HANDS else "right"
         hands = record.get("hands") if isinstance(record.get("hands"), dict) else {}
         self.hands: dict[str, str | None] = {h: (str(hands[h]) if hands.get(h) else None) for h in HANDS}
-        self.stowed: list[str] = []
+        # The bag's slots in order: an item, or None for an empty slot. A record
+        # kept before there were slots has no gaps in it, and reads the same.
+        self.stowed: list[str | None] = []
         for item in record.get("stowed") or []:
-            if item and str(item) not in self.stowed and str(item) not in self.hands.values():
-                self.stowed.append(str(item))
+            keep = bool(item) and str(item) not in self.stowed and str(item) not in self.hands.values()
+            self.stowed.append(str(item) if keep else None)
+        self._trim()
+        # The slot each thing in a hand came out of, kept for it while it is
+        # held, so stowing it puts it back there.
+        home = record.get("home") if isinstance(record.get("home"), dict) else {}
+        held = {item for item in self.hands.values() if item}
+        self.home: dict[str, int] = {
+            str(item): slot for item, slot in home.items()
+            if str(item) in held and isinstance(slot, int) and not isinstance(slot, bool) and 0 <= slot < 1000}
         # Which way each thing faced as it went into the bag (w, x, y, z), so it
         # comes back out facing the same way: a cup upright, not as it was built.
         facing = record.get("facing") if isinstance(record.get("facing"), dict) else {}
@@ -113,7 +128,7 @@ class Inventory:
     def record(self) -> dict[str, Any]:
         """The record as it is kept (room_store) and shown (the page)."""
         return {"revision": self.revision, "dominant": self.dominant,
-                "hands": dict(self.hands), "stowed": list(self.stowed),
+                "hands": dict(self.hands), "stowed": list(self.stowed), "home": dict(self.home),
                 "facing": {item: list(q) for item, q in self.facing.items()}}
 
     def where(self, item: str) -> str:
@@ -124,6 +139,58 @@ class Inventory:
             if self.hands[hand] == item:
                 return hand
         return "world"
+
+    def slot_of(self, item: str) -> int | None:
+        """The bag's slot a thing is in, or, while a hand holds it, the one kept
+        for it."""
+        return self.stowed.index(item) if item in self.stowed else self.home.get(item)
+
+    def _trim(self) -> None:
+        while self.stowed and self.stowed[-1] is None:
+            self.stowed.pop()
+
+    def _stow(self, item: str) -> None:
+        """Into the bag: back into the slot kept for it when that is free, or
+        else the first slot that is neither filled nor kept for another thing."""
+        slot = self.home.pop(item, None)
+        kept = set(self.home.values())
+
+        def free(i: int) -> bool:
+            return (i >= len(self.stowed) or self.stowed[i] is None) and i not in kept
+
+        if slot is None or not free(slot):
+            slot = next(i for i in range(len(self.stowed) + len(kept) + 1) if free(i))
+        self.stowed.extend([None] * (slot + 1 - len(self.stowed)))
+        self.stowed[slot] = item
+
+    def _unstow(self, item: str) -> int:
+        slot = self.stowed.index(item)
+        self.stowed[slot] = None
+        self._trim()
+        return slot
+
+    def back_to_bag(self, hand: str) -> bool:
+        """What a hand holds, back into the bag, into the slot kept for it: a room
+        just opened has nothing in the engine's hand. Whether there was anything."""
+        item = self.hands.get(hand)
+        if not item:
+            return False
+        self.hands[hand] = None
+        if item in self.stowed:
+            self.home.pop(item, None)
+        else:
+            self._stow(item)
+        return True
+
+    def forget(self, item: str) -> None:
+        """Out of the record: the thing is in the world, because the room no
+        longer has it as an item or it could not be set aside."""
+        if item in self.stowed:
+            self._unstow(item)
+        for hand in HANDS:
+            if self.hands[hand] == item:
+                self.hands[hand] = None
+        self.home.pop(item, None)
 
     def _free_hand(self, asked: str | None) -> str | None:
         if asked in HANDS:
@@ -146,11 +213,14 @@ class Inventory:
         - stow: from a hand into the inventory;
         - drop: from a hand or the inventory into the world, in front of the
           person.
-        """
+
+        A thing that is not one of the room's items -- a broken piece, which the
+        room's spec does not have -- is refused as `unknown`, so the asker can
+        tell it from a thing that is there and cannot be taken."""
         known = {entry["id"]: entry for entry in items}
         thing = known.get(item)
         if thing is None:
-            return {"ok": False, "why": "there is nothing like that here"}
+            return {"ok": False, "why": "there is nothing like that here", "unknown": True}
         name, here = thing["name"], self.where(item)
         if op in ("take", "take_up"):
             if here != "world":
@@ -198,13 +268,17 @@ class Inventory:
     def _apply(self, plan: dict[str, Any]) -> None:
         item, came, goes = plan["item"], plan["from"], plan["to"]
         if came == "stowed":
-            self.stowed.remove(item)
+            slot = self._unstow(item)
+            if goes in HANDS:
+                self.home[item] = slot
         elif came in HANDS:
             self.hands[came] = None
         if goes == "stowed":
-            self.stowed.append(item)
+            self._stow(item)
         elif goes in HANDS:
             self.hands[goes] = item
+        else:
+            self.home.pop(item, None)
 
     def request(self, request_id: str, expected_revision: int | None, op: str, item: str,
                 items: list[dict[str, Any]], act: Callable[[dict[str, Any]], Any] | None = None,
@@ -224,8 +298,10 @@ class Inventory:
                 return self._remember(request_id, answer)
             plan = self.plan(op, item, items, hand, kg, lift_kg)
             if not plan["ok"]:
-                return self._remember(request_id, {"ok": False, "why": plan["why"],
-                                                   "record": self.record()})
+                refused = {"ok": False, "why": plan["why"], "record": self.record()}
+                if plan.get("unknown"):
+                    refused["unknown"] = True
+                return self._remember(request_id, refused)
             try:
                 said = act(plan) if act is not None else None
             except Exception as refused:   # the room could not do it: nothing changes
