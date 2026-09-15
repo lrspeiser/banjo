@@ -89,7 +89,9 @@ class ThingsKeepWhoTheyAre(unittest.TestCase):
         self.assertEqual(again, ids)
 
 
-ENGINE = (Path(os.environ["BANJO_BUILD_DIR"]) if os.environ.get("BANJO_BUILD_DIR")
+# Resolved: CI gives the build as a relative path, and the live session starts
+# the runner from the run's own folder, where a relative path means nothing.
+ENGINE = (Path(os.environ["BANJO_BUILD_DIR"]).resolve() if os.environ.get("BANJO_BUILD_DIR")
           else ROOT / "build" / "integration" / "Release") / \
     ("banjo_platform_cli.exe" if os.name == "nt" else "banjo_platform_cli")
 
