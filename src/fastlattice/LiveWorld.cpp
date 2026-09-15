@@ -541,6 +541,30 @@ struct LiveWorld::HeatedCells {
     std::unordered_map<std::string, thermo::ZoneFactors> mean;
 };
 
+namespace {
+
+// One authored part of a scene -- a body, or the bodies of one join -- as a
+// saved world names it (LiveWorld::snapshot "parts"), so that a world saved
+// before the scene changed can find each part's cells again in the scene as it
+// is now (LiveWorld::open with a carry). The scene generates each part's cells
+// on their own, from that part's own definition, and lays the parts end to end
+// (buildTileImpactSetup, mergeLattices): a part is one run of cells and one run
+// of bonds, and an unchanged part is the same runs moved by where it now begins.
+struct PartPrint {
+    std::uint32_t node_begin{}, node_end{}, bond_begin{}, bond_end{};
+    // Its cells and bonds in a few numbers, as fingerprintOf takes the whole
+    // lattice's: "" when they are not one run each, which no scene builds and
+    // which could not then be carried.
+    std::string cells;
+    // Every field its bodies were authored with, and what the scene declares
+    // of their heat.
+    std::string definition, heat;
+    std::vector<std::string> bodies;
+    bool anchored{};
+};
+
+}  // namespace
+
 struct LiveWorld::Impl {
     TileImpactRequest request{};
     std::unique_ptr<TileImpactSetup> setup;
@@ -1292,6 +1316,11 @@ struct LiveWorld::Impl {
     // a saved world carries them, and is only ever opened into the same cells.
     std::size_t fingerprint_nodes{}, fingerprint_bonds{};
     std::string fingerprint_hash;
+    // And each authored part of it, and what lays every cell out (PartPrint,
+    // latticeSettingsOf): what a world carried into this scene once it has
+    // changed finds each thing's cells again by.
+    std::vector<PartPrint> part_prints;
+    std::string lattice_settings;
     // What opening from a saved world gave back (LiveWorld::restored).
     LiveRestore restored;
     // The rigid bodies told what the thermal network says they weigh now, so
@@ -1362,6 +1391,134 @@ LatticeFingerprint fingerprintOf(const TileImpactSetup &setup) {
     char text[17];
     std::snprintf(text, sizeof text, "%016llx", static_cast<unsigned long long>(h));
     return {setup.matter.nodes.size(), setup.asset.bonds.size(), text};
+}
+
+// A number as text, exactly: two definitions are the same only when every
+// number in them is.
+std::string exactly(double v) {
+    char text[40];
+    std::snprintf(text, sizeof text, "%.17g", v);
+    return text;
+}
+
+// What lays out every cell of every body, whatever the body: a saved thing's
+// cells can only be found again under their numbers in a scene that lays cells
+// out the same way.
+std::string latticeSettingsOf(const TileImpactRequest &r) {
+    return "cell " + exactly(r.cell_size_m) + " horizon " + std::to_string(r.neighbor_horizon_cells) + " seed " +
+           std::to_string(r.material_seed) + " law " + std::to_string(static_cast<int>(r.failure_law)) +
+           " plastic " + std::to_string(r.plasticity ? 1 : 0) + " hardening " + exactly(r.hardening_ratio) +
+           " loose " + std::to_string(r.loose_cells ? 1 : 0) + " catalog " + std::to_string(r.catalog_material ? 1 : 0);
+}
+
+// One authored body by every field it was authored with: a thing is unchanged
+// only when every one of them is -- where it was made, how it was set moving,
+// its colour and its join as much as its shape and what it is made of.
+std::string bodyDefinition(const SceneBody &b) {
+    const auto three = [](const Vec3 &v) { return exactly(v.x) + " " + exactly(v.y) + " " + exactly(v.z); };
+    const auto word = [](const std::string &s) { return std::to_string(s.size()) + ":" + s; };
+    return word(b.name) + " shape " + std::to_string(static_cast<int>(b.shape)) + " material " +
+           std::to_string(static_cast<int>(b.material)) + " size " + three(b.dimensions_m) + " at " +
+           three(b.center_m) + " moving " + three(b.velocity_m_s) + " spinning " + three(b.spin_rad_s) +
+           " turned " + three(b.rotation_deg) + (b.anchored ? " anchored" : " loose") + (b.subtract ? " cuts" : " adds") +
+           " colour " + std::to_string(b.color_rgba) + " join " + word(b.join);
+}
+
+// What the scene declares of each body's heat and contents, by name: the fields
+// of a body's own entry in the scene document the thermal network reads
+// (readSceneSettings).
+std::unordered_map<std::string, std::string> heatDeclarationsOf(const std::string &scene_json) {
+    std::unordered_map<std::string, std::string> out;
+    if (scene_json.empty()) return out;
+    const nlohmann::json doc = nlohmann::json::parse(scene_json, nullptr, false);
+    if (!doc.is_object() || !doc.contains("bodies") || !doc.at("bodies").is_array()) return out;
+    for (const nlohmann::json &body : doc.at("bodies")) {
+        if (!body.is_object() || !body.contains("name") || !body.at("name").is_string()) continue;
+        nlohmann::json said = nlohmann::json::object();
+        for (const char *key : {"contents", "temperature_k", "layer_depth_m", "environment"})
+            if (body.contains(key)) said[key] = body.at(key);
+        if (!said.empty()) out[body.at("name").get<std::string>()] = said.dump();
+    }
+    return out;
+}
+
+// Each authored part of a scene, as a saved world names it (PartPrint): where
+// its cells and bonds begin and end, what they are, and what its bodies were
+// authored as.
+std::vector<PartPrint> partPrintsOf(const TileImpactSetup &setup, const TileImpactRequest &r) {
+    if (!setup.multi_body || setup.part_of_node.size() != setup.matter.nodes.size()) return {};
+    const std::size_t count = setup.part_bodies.size();
+    constexpr std::uint32_t kNone = std::numeric_limits<std::uint32_t>::max();
+    std::vector<std::uint32_t> first_node(count, kNone), last_node(count, 0), nodes(count, 0);
+    std::vector<std::uint32_t> first_bond(count, kNone), last_bond(count, 0), bonds(count, 0);
+    std::vector<char> crossed(count, 0);
+    for (std::uint32_t i = 0; i < setup.part_of_node.size(); ++i) {
+        const std::uint32_t p = setup.part_of_node[i];
+        if (p >= count) return {};
+        first_node[p] = std::min(first_node[p], i);
+        last_node[p] = std::max(last_node[p], i);
+        ++nodes[p];
+    }
+    const std::vector<BondRest> &rest = setup.asset.bonds;
+    for (std::uint32_t k = 0; k < rest.size(); ++k) {
+        if (rest[k].node_a >= setup.part_of_node.size() || rest[k].node_b >= setup.part_of_node.size()) return {};
+        const std::uint32_t p = setup.part_of_node[rest[k].node_a];
+        if (setup.part_of_node[rest[k].node_b] != p) crossed[p] = 1;
+        first_bond[p] = std::min(first_bond[p], k);
+        last_bond[p] = std::max(last_bond[p], k);
+        ++bonds[p];
+    }
+    const std::unordered_map<std::string, std::string> heat = heatDeclarationsOf(r.thermo_scene_json);
+    std::vector<PartPrint> parts(count);
+    for (std::size_t p = 0; p < count; ++p) {
+        PartPrint &part = parts[p];
+        for (const std::size_t index : setup.part_bodies[p]) {
+            if (index >= r.bodies.size()) continue;
+            const SceneBody &body = r.bodies[index];
+            part.bodies.push_back(body.name);
+            part.definition += bodyDefinition(body) + "\n";
+            const auto said = heat.find(body.name);
+            part.heat += (said == heat.end() ? std::string{} : said->second) + "\n";
+            if (body.anchored) part.anchored = true;
+        }
+        if (nodes[p] == 0) continue;
+        part.node_begin = first_node[p];
+        part.node_end = last_node[p] + 1;
+        part.bond_begin = bonds[p] == 0 ? part.node_begin : first_bond[p];
+        part.bond_end = bonds[p] == 0 ? part.node_begin : last_bond[p] + 1;
+        if (part.node_end - part.node_begin != nodes[p] || crossed[p] != 0 ||
+            (bonds[p] != 0 && part.bond_end - part.bond_begin != bonds[p]))
+            continue;
+        // What fingerprintOf takes of the whole lattice, for this part alone:
+        // where each of its cells is, to the micrometre, and which two of its
+        // cells each of its bonds joins, counted from its own first cell.
+        std::uint64_t h = 1469598103934665603ULL;   // FNV-1a, 64 bits
+        const auto mix = [&h](std::uint64_t v) {
+            for (int i = 0; i < 8; ++i) {
+                h ^= (v >> (8 * i)) & 0xffU;
+                h *= 1099511628211ULL;
+            }
+        };
+        const auto micrometres = [](double v) {
+            return static_cast<std::uint64_t>(static_cast<std::int64_t>(std::llround(v * 1.0e6)));
+        };
+        mix(nodes[p]);
+        mix(bonds[p]);
+        for (std::uint32_t i = part.node_begin; i < part.node_end; ++i) {
+            const Vec3 &at = setup.matter.nodes[i].position_world_m;
+            mix(micrometres(at.x));
+            mix(micrometres(at.y));
+            mix(micrometres(at.z));
+        }
+        for (std::uint32_t k = part.bond_begin; k < part.bond_end; ++k) {
+            mix(rest[k].node_a - part.node_begin);
+            mix(rest[k].node_b - part.node_begin);
+        }
+        char text[17];
+        std::snprintf(text, sizeof text, "%016llx", static_cast<unsigned long long>(h));
+        part.cells = text;
+    }
+    return parts;
 }
 
 // Numbers as a saved world writes them: every double exactly (a JSON number
@@ -1500,6 +1657,314 @@ void keepWhatIsThere(thermo::Declarations &declared,
     });
 }
 
+// How a saved world goes into a scene that has changed since it was saved
+// (LiveWorld::open with a carry): which of its authored parts are still what
+// they were and where their cells and bonds are numbered now, which of its
+// bodies come back as they were saved, and why each of the rest does not.
+struct CarryPlan {
+    static constexpr std::size_t npos = static_cast<std::size_t>(-1);
+    static constexpr std::uint32_t none = std::numeric_limits<std::uint32_t>::max();
+    // False when no cell can be found again: the saved world does not say what
+    // its parts were, or the scene now lays every cell out another way.
+    bool exact{};
+    std::string why_not;
+    struct SavedPart {
+        std::uint32_t node_begin{}, node_end{}, bond_begin{}, bond_end{};
+        std::string cells, definition, heat;
+        std::vector<std::string> bodies;
+        std::size_t now{npos};    // this scene's part authored the same way, or npos
+    };
+    std::vector<SavedPart> saved;
+    // Per part of this scene: the saved part authored the same way (npos for
+    // one new or changed), whether it comes back as it was saved, and if not,
+    // why -- and whether that is because its cells are not the saved ones.
+    std::vector<std::size_t> saved_of;
+    std::vector<char> carried, cells_differ;
+    std::vector<std::string> why;
+    // Per part of this scene, where its cells and bonds begin.
+    std::vector<std::uint32_t> node_begin_now, bond_begin_now;
+    // Each saved body's part, by the body's name (npos for one whose cells are
+    // not all of one part), and the saved bodies of each saved part.
+    std::unordered_map<std::string, std::size_t> part_of_body;
+    std::vector<std::vector<std::string>> bodies_of;
+    // The saved parts in the order their cells and bonds begin, for finding
+    // the part a saved cell or bond is in.
+    std::vector<std::pair<std::uint32_t, std::size_t>> by_node, by_bond;
+
+    [[nodiscard]] std::size_t partOfNode(std::uint32_t k) const {
+        auto it = std::upper_bound(by_node.begin(), by_node.end(), k,
+                                   [](std::uint32_t v, const auto &entry) { return v < entry.first; });
+        if (it == by_node.begin()) return npos;
+        const std::size_t p = std::prev(it)->second;
+        return k < saved[p].node_end ? p : npos;
+    }
+    [[nodiscard]] std::size_t partOfBond(std::uint32_t k) const {
+        auto it = std::upper_bound(by_bond.begin(), by_bond.end(), k,
+                                   [](std::uint32_t v, const auto &entry) { return v < entry.first; });
+        if (it == by_bond.begin()) return npos;
+        const std::size_t p = std::prev(it)->second;
+        return k < saved[p].bond_end ? p : npos;
+    }
+    [[nodiscard]] bool partBack(std::size_t p) const {
+        return p != npos && saved[p].now != npos && carried[saved[p].now] != 0;
+    }
+    // Whether a saved body comes back as it was saved.
+    [[nodiscard]] bool carries(const std::string &body) const {
+        const auto found = part_of_body.find(body);
+        return found != part_of_body.end() && partBack(found->second);
+    }
+    // This scene's number for a saved cell or bond of a part that comes back:
+    // its number in its own part, from where that part now begins. None for
+    // one that does not come back.
+    [[nodiscard]] std::uint32_t node(std::uint32_t k) const {
+        const std::size_t p = partOfNode(k);
+        if (!partBack(p)) return none;
+        return k - saved[p].node_begin + node_begin_now[saved[p].now];
+    }
+    [[nodiscard]] std::uint32_t bond(std::uint32_t k) const {
+        const std::size_t p = partOfBond(k);
+        if (!partBack(p)) return none;
+        return k - saved[p].bond_begin + bond_begin_now[saved[p].now];
+    }
+};
+
+// A joint's kind in the room's words, for saying why a thing is not carried.
+std::string jointWord(const std::string &kind) {
+    if (kind == "hinge") return "pin";
+    if (kind == "slider") return "slide";
+    if (kind == "link") return "rope";
+    if (kind == "drum") return "drum's rope";
+    if (kind == "elastic") return "spring";
+    return kind;
+}
+
+// Which of a saved world's things come back as they were saved in a scene that
+// has changed since (CarryPlan). A part comes back when this scene authors it
+// exactly as the saved one was authored and builds it the same cells; and it
+// comes back whole or not at all -- its pieces, its dent and its cuts are all
+// of its cells. Then, since a thing on a joint is made again only with it: a
+// part is not carried when it holds on to anything by a joint that does not
+// come back -- the host no longer declares it the same way, or its other end
+// is not carried -- or when the host is about to declare something new on it.
+// Scenery never moves, so it is carried all the same; and a saved thing whose
+// name the scene now gives something new is not carried either, since a room
+// has one of each name.
+CarryPlan planCarry(const nlohmann::json &doc, const std::vector<PartPrint> &now, const std::string &settings,
+                    const LiveCarry &carry) {
+    CarryPlan plan;
+    const std::size_t count = now.size();
+    plan.saved_of.assign(count, CarryPlan::npos);
+    plan.carried.assign(count, 0);
+    plan.cells_differ.assign(count, 0);
+    plan.why.assign(count, std::string{});
+    for (const PartPrint &part : now) {
+        plan.node_begin_now.push_back(part.node_begin);
+        plan.bond_begin_now.push_back(part.bond_begin);
+    }
+    if (!doc.contains("parts") || !doc.at("parts").is_array() || count == 0) {
+        plan.why_not = "it does not say what its things were, so what the room left alone cannot be told from what "
+                       "it changed";
+        return plan;
+    }
+    for (const nlohmann::json &p : doc.at("parts")) {
+        CarryPlan::SavedPart part;
+        part.node_begin = p.at("nodes").at(0).get<std::uint32_t>();
+        part.node_end = p.at("nodes").at(1).get<std::uint32_t>();
+        part.bond_begin = p.at("bonds").at(0).get<std::uint32_t>();
+        part.bond_end = p.at("bonds").at(1).get<std::uint32_t>();
+        part.cells = p.value("cells", std::string{});
+        part.definition = p.value("definition", std::string{});
+        part.heat = p.value("heat", std::string{});
+        part.bodies = p.value("bodies", std::vector<std::string>{});
+        plan.saved.push_back(std::move(part));
+    }
+    plan.bodies_of.assign(plan.saved.size(), {});
+    for (std::size_t s = 0; s < plan.saved.size(); ++s) {
+        if (plan.saved[s].node_end > plan.saved[s].node_begin) plan.by_node.emplace_back(plan.saved[s].node_begin, s);
+        if (plan.saved[s].bond_end > plan.saved[s].bond_begin) plan.by_bond.emplace_back(plan.saved[s].bond_begin, s);
+    }
+    std::sort(plan.by_node.begin(), plan.by_node.end());
+    std::sort(plan.by_bond.begin(), plan.by_bond.end());
+    // Each part of this scene is the saved part authored exactly the same way.
+    std::unordered_map<std::string, std::size_t> by_definition;
+    for (std::size_t s = 0; s < plan.saved.size(); ++s) by_definition.emplace(plan.saved[s].definition, s);
+    for (std::size_t g = 0; g < count; ++g) {
+        const auto found = by_definition.find(now[g].definition);
+        if (found == by_definition.end() || plan.saved[found->second].now != CarryPlan::npos) continue;
+        plan.saved_of[g] = found->second;
+        plan.saved[found->second].now = g;
+    }
+    // Each saved body's part, from its cells: all of one part, which no bond
+    // crosses, or it cannot be carried.
+    for (const nlohmann::json &b : doc.at("bodies")) {
+        const std::string name = b.at("name").get<std::string>();
+        const std::vector<std::uint32_t> cells = unpackedArray<std::uint32_t>(b, "nodes_b64");
+        std::size_t part = cells.empty() ? CarryPlan::npos : plan.partOfNode(cells.front());
+        for (const std::uint32_t k : cells)
+            if (plan.partOfNode(k) != part) {
+                if (part != CarryPlan::npos && plan.saved[part].now != CarryPlan::npos)
+                    plan.why[plan.saved[part].now] = "the " + name + "'s cells are not all of one thing";
+                part = CarryPlan::npos;
+                break;
+            }
+        plan.part_of_body[name] = part;
+        if (part != CarryPlan::npos) plan.bodies_of[part].push_back(name);
+    }
+    const std::string settings_then = doc.value("lattice", std::string{});
+    if (settings_then != settings) {
+        plan.why_not = settings_then.empty()
+                           ? "it does not say how its cells were laid out, so none of them can be found again"
+                           : "the room lays its cells out another way now (" + settings_then + " then, " + settings +
+                                 " now), so no thing's cells are the ones it was saved with";
+        return plan;
+    }
+    plan.exact = true;
+    for (std::size_t g = 0; g < count; ++g) {
+        const std::size_t s = plan.saved_of[g];
+        if (s == CarryPlan::npos || !plan.why[g].empty()) continue;
+        const CarryPlan::SavedPart &part = plan.saved[s];
+        if (now[g].cells.empty() || part.cells != now[g].cells) {
+            plan.why[g] = "its cells are not the ones it was saved with (" +
+                          (part.cells.empty() ? std::string("none said") : part.cells) + " then, " +
+                          (now[g].cells.empty() ? std::string("not one run") : now[g].cells) + " now)";
+            plan.cells_differ[g] = 1;
+            continue;
+        }
+        plan.carried[g] = 1;
+    }
+
+    std::unordered_map<std::string, std::size_t> part_now_of_name;
+    for (std::size_t g = 0; g < count; ++g)
+        for (const std::string &name : now[g].bodies) part_now_of_name.emplace(name, g);
+    const auto partNowOf = [&](const std::string &body) {
+        const auto found = plan.part_of_body.find(body);
+        return found == plan.part_of_body.end() || found->second == CarryPlan::npos ? CarryPlan::npos
+                                                                                    : plan.saved[found->second].now;
+    };
+    const auto uncarry = [&](std::size_t g, const std::string &why, bool scenery_too) {
+        if (g == CarryPlan::npos || plan.carried[g] == 0 || (now[g].anchored && !scenery_too)) return false;
+        plan.carried[g] = 0;
+        plan.why[g] = why;
+        return true;
+    };
+    for (const std::string &name : carry.declared_anew)
+        if (const auto found = part_now_of_name.find(name); found != part_now_of_name.end())
+            uncarry(found->second, "the room gave it a new pin, edge or point, written where it was made", false);
+    struct Held {
+        unsigned id{};
+        std::string a, b, kind;
+    };
+    std::vector<Held> held;
+    for (const nlohmann::json &j : doc.value("joints", nlohmann::json::array()))
+        if (j.value("attached", false))
+            held.push_back({j.at("id").get<unsigned>(), j.value("a", std::string{}), j.value("b", std::string{}),
+                            j.value("kind", std::string{"hinge"})});
+    for (bool again = true; again;) {
+        again = false;
+        for (const Held &j : held) {
+            const bool declared = carry.joints.count(j.id) != 0;
+            if (declared && plan.carries(j.a) && plan.carries(j.b)) continue;
+            const std::string kind = jointWord(j.kind);
+            for (const auto &[end, other] : {std::pair{j.a, j.b}, std::pair{j.b, j.a}}) {
+                const std::string why = declared ? "it is on a " + kind + " to the " + other +
+                                                       ", which did not come back as it was"
+                                                 : "it was on a " + kind + " the room changed or took away";
+                again = uncarry(partNowOf(end), why, false) || again;
+            }
+        }
+        // A thing this scene makes as it has it, under a name a saved thing
+        // that comes back already has: the saved thing is not carried.
+        std::set<std::string> fresh_names;
+        for (std::size_t g = 0; g < count; ++g)
+            if (plan.carried[g] == 0 && !now[g].bodies.empty()) fresh_names.insert(now[g].bodies.front());
+        for (const auto &[name, part] : plan.part_of_body)
+            if (plan.partBack(part) && fresh_names.count(name) != 0 && now[plan.saved[part].now].bodies.front() != name)
+                again = uncarry(plan.saved[part].now, "the room has made something else called " + name, true) || again;
+    }
+    return plan;
+}
+
+// A parcel of matter as a saved world writes it: each substance's mass, and
+// its one internal energy, exactly.
+nlohmann::json savedParcel(const thermo::Parcel &parcel) {
+    return {{"kg_b64", packedArray(parcel.kg)}, {"internal_energy_j", savedNumber(parcel.internal_energy_j)}};
+}
+
+thermo::Parcel parcelFrom(const nlohmann::json &j) {
+    thermo::Parcel parcel;
+    parcel.kg = unpackedArray<double>(j, "kg_b64");
+    parcel.internal_energy_j = numberFrom(j.at("internal_energy_j"));
+    return parcel;
+}
+
+// What the thermal network holds for one body, whole (thermo::Lump): its matter
+// and its heat zone by zone, what it held when it joined and the hottest each
+// zone has been -- what char and what pyrolysis took are decided by those. Its
+// gas region by name, since regions are numbered as they are declared.
+nlohmann::json savedLump(const thermo::Lump &l, const thermo::ThermoState &state) {
+    const bool in_region = l.environment >= 0 && static_cast<std::size_t>(l.environment) < state.regions.size();
+    return {{"body", l.body},
+            {"material", l.material},
+            {"surface", savedParcel(l.surface)},
+            {"core", savedParcel(l.core)},
+            {"layer_depth_m", savedNumber(l.layer_depth_m)},
+            {"layer_fuel_kg", savedNumber(l.layer_fuel_kg)},
+            {"area_m2", savedNumber(l.area_m2)},
+            {"exposed_area_m2", savedNumber(l.exposed_area_m2)},
+            {"volume_m3", savedNumber(l.volume_m3)},
+            {"emissivity", savedNumber(l.emissivity)},
+            {"conductivity_w_m_k", savedNumber(l.conductivity_w_m_k)},
+            {"core_conductance_w_k", savedNumber(l.core_conductance_w_k)},
+            {"declared", l.declared},
+            {"anchored", l.anchored},
+            {"environment", in_region ? state.regions[static_cast<std::size_t>(l.environment)].name : std::string{}},
+            {"mirrored_mass_kg", savedNumber(l.mirrored_mass_kg)},
+            {"initial_kg_b64", packedArray(l.initial_kg)},
+            {"peak_surface_k", savedNumber(l.peak_surface_k)},
+            {"peak_core_k", savedNumber(l.peak_core_k)},
+            {"heat_release_w", savedNumber(l.heat_release_w)},
+            {"fuel_use_kg_s", savedNumber(l.fuel_use_kg_s)},
+            {"heater_w", savedNumber(l.heater_w)},
+            {"gained_w", savedNumber(l.gained_w)},
+            {"lost_w", savedNumber(l.lost_w)},
+            {"parked", l.parked}};
+}
+
+thermo::Lump lumpFrom(const nlohmann::json &j, const thermo::ThermoState &state, std::size_t substances) {
+    thermo::Lump l;
+    l.body = j.at("body").get<std::string>();
+    l.material = j.value("material", std::string{});
+    l.surface = parcelFrom(j.at("surface"));
+    l.core = parcelFrom(j.at("core"));
+    l.initial_kg = unpackedArray<double>(j, "initial_kg_b64");
+    if (l.surface.kg.size() != substances || l.core.kg.size() != substances || l.initial_kg.size() != substances)
+        throw std::invalid_argument("the " + l.body + "'s heat is not one number a substance");
+    l.layer_depth_m = numberFrom(j.at("layer_depth_m"));
+    l.layer_fuel_kg = numberFrom(j.at("layer_fuel_kg"));
+    l.area_m2 = numberFrom(j.at("area_m2"));
+    l.exposed_area_m2 = numberFrom(j.at("exposed_area_m2"));
+    l.volume_m3 = numberFrom(j.at("volume_m3"));
+    l.emissivity = numberFrom(j.at("emissivity"));
+    l.conductivity_w_m_k = numberFrom(j.at("conductivity_w_m_k"));
+    l.core_conductance_w_k = numberFrom(j.at("core_conductance_w_k"));
+    l.declared = j.value("declared", false);
+    l.anchored = j.value("anchored", false);
+    l.environment = -1;
+    const std::string region = j.value("environment", std::string{});
+    for (std::size_t i = 0; i < state.regions.size() && !region.empty(); ++i)
+        if (state.regions[i].name == region) l.environment = static_cast<int>(i);
+    l.mirrored_mass_kg = numberFrom(j.at("mirrored_mass_kg"));
+    l.peak_surface_k = numberFrom(j.at("peak_surface_k"));
+    l.peak_core_k = numberFrom(j.at("peak_core_k"));
+    l.heat_release_w = numberFrom(j.at("heat_release_w"));
+    l.fuel_use_kg_s = numberFrom(j.at("fuel_use_kg_s"));
+    l.heater_w = numberFrom(j.at("heater_w"));
+    l.gained_w = numberFrom(j.at("gained_w"));
+    l.lost_w = numberFrom(j.at("lost_w"));
+    l.parked = j.value("parked", false);
+    return l;
+}
+
 }  // namespace
 
 LiveWorld::LiveWorld() : impl_(std::make_unique<Impl>()) {}
@@ -1507,7 +1972,8 @@ LiveWorld::~LiveWorld() = default;
 
 std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request) { return openFrom(request, nullptr); }
 
-std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request, const Saved *saved) {
+std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request, const Saved *saved,
+                                               const LiveCarry *carry) {
     std::unique_ptr<LiveWorld> live(new LiveWorld());
     Impl &impl = *live->impl_;
     impl.request = request;
@@ -1530,19 +1996,26 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
     // chat keeps its water: the same water over whatever ground the scene's
     // edits leave. Water that will not go back -- saved on another grid, say --
     // is said, and the scene's own is used.
+    //
+    // Carried into a scene that has changed, the water is the scene's own: a
+    // host carries the running room's water into the scene it hands over
+    // whenever the ground under it is the same (server.with_water), and ground
+    // that has changed is new water.
+    const bool carrying = saved != nullptr && carry != nullptr;
     std::string water_note;
     if (!r.environment_scene_json.empty()) {
-        const bool carry = saved != nullptr && saved->doc.contains("water") && saved->doc.at("water").is_object();
+        const bool carry_water = saved != nullptr && !carrying && saved->doc.contains("water") &&
+                                 saved->doc.at("water").is_object();
         try {
             std::string scene_text = r.environment_scene_json;
-            if (carry) {
+            if (carry_water) {
                 nlohmann::json scene = nlohmann::json::parse(scene_text);
                 scene["water"]["state"] = saved->doc.at("water");
                 scene_text = scene.dump();
             }
             impl.environment = terrain::Environment::fromScene(scene_text);
         } catch (const std::exception &error) {
-            if (!carry) throw;
+            if (!carry_water) throw;
             water_note = std::string("the water: it could not be put back (") + error.what() +
                          "), so it is as the room declares it";
             impl.environment = terrain::Environment::fromScene(r.environment_scene_json);
@@ -1574,20 +2047,36 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
     impl.fingerprint_nodes = print.nodes;
     impl.fingerprint_bonds = print.bonds;
     impl.fingerprint_hash = print.hash;
-    if (saved != nullptr) {
+    // And each authored part of it, which a world carried into this scene once
+    // it has changed finds its things' cells by.
+    impl.part_prints = partPrintsOf(setup, r);
+    impl.lattice_settings = latticeSettingsOf(r);
+    // Carried into a changed scene: which saved things are still what they
+    // were, and where their cells and bonds are numbered now (CarryPlan).
+    CarryPlan plan;
+    if (carrying) plan = planCarry(saved->doc, impl.part_prints, impl.lattice_settings, *carry);
+    // A saved bond's number in this scene: the same for a world opened whole;
+    // for one carried, its number in its own part from where that part begins
+    // now -- or none, for a part that does not come back as it was saved.
+    const auto bondNow = [&](std::uint32_t k) { return carrying ? plan.bond(k) : k; };
+    if (saved != nullptr && (!carrying || plan.exact)) {
         const nlohmann::json &doc = saved->doc;
-        const nlohmann::json &was = doc.at("fingerprint");
-        const std::size_t was_nodes = was.at("nodes").get<std::size_t>();
-        const std::size_t was_bonds = was.at("bonds").get<std::size_t>();
-        const std::string was_hash = was.at("hash").get<std::string>();
-        if (was_nodes != print.nodes || was_bonds != print.bonds || was_hash != print.hash)
-            throw SavedWorldMismatch("it was saved from a scene whose cells are not this one's: " +
-                                     std::to_string(was_nodes) + " cells and " + std::to_string(was_bonds) +
-                                     " bonds (" + was_hash + ") against " + std::to_string(print.nodes) + " and " +
-                                     std::to_string(print.bonds) + " (" + print.hash + ")");
+        if (!carrying) {
+            const nlohmann::json &was = doc.at("fingerprint");
+            const std::size_t was_nodes = was.at("nodes").get<std::size_t>();
+            const std::size_t was_bonds = was.at("bonds").get<std::size_t>();
+            const std::string was_hash = was.at("hash").get<std::string>();
+            if (was_nodes != print.nodes || was_bonds != print.bonds || was_hash != print.hash)
+                throw SavedWorldMismatch("it was saved from a scene whose cells are not this one's: " +
+                                         std::to_string(was_nodes) + " cells and " + std::to_string(was_bonds) +
+                                         " bonds (" + was_hash + ") against " + std::to_string(print.nodes) +
+                                         " and " + std::to_string(print.bonds) + " (" + print.hash + ")");
+        }
         // What a blade severed stays severed, in the scene's own matter where
         // every later run finds it -- before anything reads the bonds.
-        for (const std::uint32_t k : unpackedArray<std::uint32_t>(doc, "dead_bonds_b64")) {
+        for (const std::uint32_t severed : unpackedArray<std::uint32_t>(doc, "dead_bonds_b64")) {
+            const std::uint32_t k = bondNow(severed);
+            if (carrying && k == CarryPlan::none) continue;
             if (k >= setup.matter.bonds.size())
                 throw std::invalid_argument("a severed bond is not one of this scene's");
             ActiveBondState &bond = setup.matter.bonds[k];
@@ -1603,23 +2092,39 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         const auto strain = unpackedArray<double>(set, "strain_b64");
         if (extension.size() != set_bonds.size() || strain.size() != set_bonds.size())
             throw std::invalid_argument("the saved permanent set is not one number a bond");
-        for (std::size_t k = 0; k < set_bonds.size(); ++k) {
-            if (set_bonds[k] >= impl.plastic_extension_m.size())
+        for (std::size_t n = 0; n < set_bonds.size(); ++n) {
+            const std::uint32_t k = bondNow(set_bonds[n]);
+            if (carrying && k == CarryPlan::none) continue;
+            if (k >= impl.plastic_extension_m.size())
                 throw std::invalid_argument("a bond with a permanent set is not one of this scene's");
-            impl.plastic_extension_m[set_bonds[k]] = extension[k];
-            impl.plastic_strain_m[set_bonds[k]] = strain[k];
+            impl.plastic_extension_m[k] = extension[n];
+            impl.plastic_strain_m[k] = strain[n];
         }
     }
 
     // Nothing has been struck, so every part is still one whole component --
     // unless the world is opened again from a saved one, whose bodies are made
     // from their own cells below instead.
-    const auto components =
-        saved != nullptr ? std::vector<FragmentComponent>{} : findConnectedComponents(setup.matter);
+    //
+    // Carried into a changed scene, only the parts that do not come back as
+    // they were saved are made here -- as the scene has them, and numbered
+    // after every body the saved world numbered.
+    std::vector<FragmentComponent> components;
+    if (saved == nullptr || carrying) components = findConnectedComponents(setup.matter);
+    if (carrying)
+        std::erase_if(components, [&](const FragmentComponent &component) {
+            if (component.node_indices.empty() || component.node_indices.front() >= setup.part_of_node.size())
+                return false;
+            const std::uint32_t part = setup.part_of_node[component.node_indices.front()];
+            return part < plan.carried.size() && plan.carried[part] != 0;
+        });
     if (saved == nullptr && components.empty()) throw std::runtime_error("a live world needs at least one body");
+    MatterBodyId first_fresh = 1000;
+    if (carrying && saved->doc.contains("next") && saved->doc.at("next").contains("body"))
+        first_fresh = std::max<MatterBodyId>(first_fresh, saved->doc.at("next").at("body").get<MatterBodyId>());
 
-    FragmentBuildResult build = saved != nullptr ? FragmentBuildResult{} : buildFragmentRepresentations(setup.matter, components, {
-        .first_body_id = 1000,
+    FragmentBuildResult build = components.empty() ? FragmentBuildResult{} : buildFragmentRepresentations(setup.matter, components, {
+        .first_body_id = first_fresh,
         .maximum_rigid_fragments = std::max<std::size_t>(1, components.size()),
         .minimum_nodes_per_rigid_fragment = 1,
         .maximum_collision_points = 192,
@@ -1735,8 +2240,11 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
     // joint's point, an edge, a tool's point, the grip -- is where it was on it.
     // It is turned and set moving as it was once it is in the world, below.
     // Under our own body ids, which the rest of the engine keys by.
+    //
+    // Carried into a changed scene: only the saved bodies of parts that come
+    // back as they were saved, each cell under this scene's number for it.
     std::vector<Placement> placements;
-    if (saved != nullptr) {
+    if (saved != nullptr && (!carrying || plan.exact)) {
         const nlohmann::json &doc = saved->doc;
         // What each part is made of, as the scene's bodies say: what the loop
         // above fills in from each whole part.
@@ -1757,6 +2265,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
             const std::string name = described.name;
             if (name.empty() || !names.insert(name).second)
                 throw std::invalid_argument("two saved bodies are called \"" + name + "\"");
+            if (carrying && !plan.carries(name)) continue;
             described.material = b.value("material", std::string{});
             described.shape = b.value("shape", std::string{"hull"});
             described.dimensions_m = vecFrom(b.at("dimensions_m"));
@@ -1769,7 +2278,9 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
             const MatterBodyId id = b.at("body_id").get<MatterBodyId>();
             if (id < 1000 || !ids.insert(id).second)
                 throw std::invalid_argument("the saved " + name + " has a body id that is not its own");
-            const std::vector<std::uint32_t> nodes = unpackedArray<std::uint32_t>(b, "nodes_b64");
+            std::vector<std::uint32_t> nodes = unpackedArray<std::uint32_t>(b, "nodes_b64");
+            if (carrying)
+                for (std::uint32_t &node : nodes) node = plan.node(node);
             const std::vector<Vec3> offsets = unpackedVecs(b, "offsets_b64");
             if (nodes.empty() || offsets.size() != nodes.size())
                 throw std::invalid_argument("the saved " + name + " has no cells, or not a place for each");
@@ -1861,9 +2372,16 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
             build.rigid_fragments.push_back(std::move(fragment));
             placements.push_back(std::move(at));
         }
-        if (placements.empty()) throw std::invalid_argument("the saved world has nothing in it");
-        impl.next_body_id = std::max<MatterBodyId>(doc.at("next").at("body").get<MatterBodyId>(), *ids.rbegin() + 1);
+        // Carried, nothing of it may come back -- the room changed everything
+        // in it -- and what the scene has instead is there.
+        if (placements.empty() && !carrying) throw std::invalid_argument("the saved world has nothing in it");
+        impl.next_body_id = std::max({impl.next_body_id, doc.at("next").at("body").get<MatterBodyId>(),
+                                      ids.empty() ? MatterBodyId{1000} : *ids.rbegin() + 1});
     }
+    // Carried, the room is never left empty: a scene whose every thing is
+    // unchanged, and was swept up in the saved world, is opened as it is.
+    if (carrying && build.rigid_fragments.empty())
+        throw std::invalid_argument("nothing of the saved world or of the scene would be in the room");
 
     // The most bodies a live world will hold: what runReversibleTrial allows,
     // which is what breaking depends on.
@@ -1932,6 +2450,33 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         impl.world->applyRigidState(at.id, at.pose);
         if (!at.parked && !at.awake) impl.world->sleep(at.id);
     }
+    // Carried into a changed scene: a whole thing whose cells could not be
+    // found again is put back where it was left, as a world that did not fit
+    // puts it back (putBackWhereLeft); and what rested on a saved thing that did
+    // not come back as it was -- the room took it away, or has it as the room
+    // makes it now -- is woken to fall. Jolt wakes nothing sleeping on a body
+    // that is simply not there (LiveWorld::park).
+    std::vector<std::string> put_back;
+    if (carrying && plan.exact) {
+        std::set<std::string> unmatched;
+        for (std::size_t g = 0; g < plan.carried.size(); ++g)
+            if (plan.cells_differ[g] != 0 && plan.saved_of[g] != CarryPlan::npos)
+                for (const std::string &name : plan.bodies_of[plan.saved_of[g]]) unmatched.insert(name);
+        if (!unmatched.empty()) put_back = live->putBackWhereLeft(*saved, &unmatched);
+        const std::set<std::string> there(put_back.begin(), put_back.end());
+        for (const nlohmann::json &b : saved->doc.at("bodies")) {
+            const std::string name = b.at("name").get<std::string>();
+            if (plan.carries(name) || there.count(name) != 0 || !b.contains("pose")) continue;
+            const Vec3 at = rigidFrom(b.at("pose")).center_of_mass_world_m;
+            const double reach = 0.5 * length(vecFrom(b.at("dimensions_m"))) + 0.05;
+            for (const Placement &p : placements) {
+                if (p.anchored || p.parked) continue;
+                const std::size_t j = impl.index_of.at(p.name);
+                if (length(p.pose.center_of_mass_world_m - at) <= reach + 0.5 * length(impl.described[j].dimensions_m))
+                    impl.world->wake(p.id);
+            }
+        }
+    }
     // What the scene declares about heat, chemistry and gas. A declaration the
     // network refuses refuses the scene, with the network's own words, rather
     // than opening a world that quietly lacks the fire it was asked for. A world
@@ -1942,16 +2487,114 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         if (saved != nullptr) keepWhatIsThere(declared, impl.index_of);
         if (declared.any()) thermo::apply(live->ensureThermo(), declared);
     }
+    // Carried: the heat of each thing that came back as it was saved -- what
+    // it holds and how hot each zone is, its fuel and its char, the hottest it
+    // has been -- as the saved world's network held it, unless the scene now
+    // declares that thing's heat another way, when it is as declared. Heaters
+    // and gas regions are the scene's, from the start (notCarried).
+    std::size_t carried_heat = 0;
+    // What the host declared that did not come back as it was, in words.
+    std::vector<std::string> lost;
+    if (carrying && plan.exact && saved->doc.contains("heat") && saved->doc.at("heat").is_object()) {
+        const nlohmann::json &heat = saved->doc.at("heat");
+        // Into the saved world itself, which outlives what is kept of it here.
+        static const nlohmann::json no_lumps = nlohmann::json::array();
+        const nlohmann::json &lumps = heat.contains("lumps") && heat.at("lumps").is_array() ? heat.at("lumps") : no_lumps;
+        std::vector<const nlohmann::json *> coming;
+        for (const nlohmann::json &j : lumps) {
+            const std::string body = j.value("body", std::string{});
+            if (!plan.carries(body)) continue;
+            const std::size_t s = plan.part_of_body.at(body);
+            if (plan.saved[s].heat != impl.part_prints[plan.saved[s].now].heat) {
+                lost.push_back("the " + body + "'s heat: the room declares it anew");
+                continue;
+            }
+            coming.push_back(&j);
+        }
+        if (!coming.empty()) {
+            thermo::ThermoWorld &network = live->ensureThermo();
+            const std::size_t substances = network.model().size();
+            const std::size_t then = heat.value("substances", std::size_t{0});
+            if (then != substances) {
+                lost.push_back("heat: the saved world's network knew " + std::to_string(then) + " substances and this "
+                               "one knows " + std::to_string(substances) + ", so every thing's heat is as the room "
+                               "declares it");
+            } else {
+                thermo::ThermoState state = network.state();
+                for (const nlohmann::json *j : coming) {
+                    thermo::Lump lump = lumpFrom(*j, state, substances);
+                    // The rigid body was made again from its cells, so it is
+                    // told what the network says it weighs -- only when that
+                    // differs, so a thing heat has not lightened keeps its
+                    // motion to the last bit.
+                    const double kg = thermo::massKg(lump.surface) + thermo::massKg(lump.core);
+                    if (const auto at = impl.index_of.find(lump.body);
+                        at != impl.index_of.end() && impl.inWorld(at->second) && !impl.described[at->second].anchored) {
+                        const MatterBodyId id = impl.body_of[at->second];
+                        if (kg > 0.0 && std::abs(kg - impl.world->mechanicalState(id).mass_kg) > 1.0e-3 * kg)
+                            impl.world->setMass(id, kg);
+                    }
+                    lump.mirrored_mass_kg = kg;
+                    bool replaced = false;
+                    for (thermo::Lump &have : state.lumps)
+                        if (have.body == lump.body) {
+                            have = lump;
+                            replaced = true;
+                        }
+                    if (!replaced) state.lumps.push_back(std::move(lump));
+                    ++carried_heat;
+                }
+                network.restore(state);
+                network.refresh(live->thermoShapes(), setup.ground_y);
+            }
+        }
+    }
     if (saved == nullptr) return live;
+    if (carrying && !plan.exact) {
+        // Nothing can be carried exactly -- the saved world does not say what
+        // its things were, or the room lays its cells out another way now --
+        // so the room opens as it is, with each whole thing the change did not
+        // touch put back where it was left, as a world that did not fit puts it
+        // back: never a thing the room has changed.
+        LiveRestore said;
+        said.tier = "none";
+        said.why = plan.why_not;
+        said.saved_t_s = saved->doc.contains("t_s") ? numberFrom(saved->doc.at("t_s")) : 0.0;
+        said.not_kept = notCarried();
+        std::set<std::string> unchanged;
+        for (std::size_t s = 0; s < plan.saved.size(); ++s)
+            if (plan.saved[s].now != CarryPlan::npos)
+                for (const std::string &name : plan.bodies_of[s]) unchanged.insert(name);
+        said.bodies = live->putBackWhereLeft(*saved, &unchanged).size();
+        if (said.bodies > 0) said.tier = "poses";
+        impl.restored = std::move(said);
+        return live;
+    }
 
     // ---- the rest of a saved world -------------------------------------------
     const nlohmann::json &doc = saved->doc;
     LiveRestore said;
-    said.tier = "whole";
+    said.tier = carrying ? "carried" : "whole";
     said.saved_t_s = numberFrom(doc.at("t_s"));
     said.bodies = placements.size();
-    said.not_kept = notKept();
+    said.not_kept = carrying ? notCarried() : notKept();
     if (!water_note.empty()) said.not_kept.push_back(water_note);
+    // What comes back of what the host declared: all of it, for a world opened
+    // whole; carried into a changed scene, what the host still declares the
+    // same way (LiveCarry), on things that came back as they were saved.
+    const LiveCarry nothing_asked;
+    const LiveCarry &asked = carrying ? *carry : nothing_asked;
+    const auto kept = [&](const std::set<unsigned> &declared, unsigned id) {
+        return !carrying || declared.count(id) != 0;
+    };
+    const auto back = [&](const std::string &body) { return !carrying || plan.carries(body); };
+    // A pin by the two things it joins, as the saved world has it.
+    const auto pinBetween = [&](unsigned id) {
+        for (const nlohmann::json &o : doc.at("joints"))
+            if (o.value("id", 0U) == id)
+                return "the " + o.value("a", std::string{}) + " and the " + o.value("b", std::string{});
+        return std::string("pin ") + std::to_string(id);
+    };
     // Set aside again, where each was put away and holding what it held.
     for (const Placement &at : placements) {
         if (!at.parked) continue;
@@ -1967,7 +2610,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
     // the bonds each crosses, found again from its cells.
     for (const auto &[name, list] : doc.at("kerfs").items()) {
         const auto found = impl.index_of.find(name);
-        if (found == impl.index_of.end()) continue;
+        if (found == impl.index_of.end() || !back(name)) continue;
         for (const nlohmann::json &k : list) {
             Impl::Kerf kerf{};
             kerf.blade = k.at("blade").get<unsigned>();
@@ -2004,6 +2647,17 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         blade.body_id = b.at("body_id").get<MatterBodyId>();
         blade.frame_nodes = unpackedArray<std::uint32_t>(b, "frame_nodes_b64");
         blade.frame_offsets = unpackedVecs(b, "frame_offsets_b64");
+        if (carrying) {
+            if (!kept(asked.blades, blade.id) || !back(blade.body)) continue;
+            for (std::uint32_t &node : blade.frame_nodes) node = plan.node(node);
+            if (std::find(blade.frame_nodes.begin(), blade.frame_nodes.end(), CarryPlan::none) !=
+                blade.frame_nodes.end()) {
+                lost.push_back("the " + blade.body + "'s edge: its cells are not all the " + blade.body +
+                               "'s, so it is as the room declares it");
+                continue;
+            }
+            ++said.carried.blades;
+        }
         impl.blades.push_back(std::move(blade));
     }
     impl.next_blade = doc.at("next").at("blade").get<unsigned>();
@@ -2026,6 +2680,17 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
             point.frame_nodes = unpackedArray<std::uint32_t>(p, "frame_nodes_b64");
             point.frame_offsets = unpackedVecs(p, "frame_offsets_b64");
             point.attached = p.value("attached", true);
+            if (carrying) {
+                if (!kept(asked.tool_points, point.id) || !back(point.body)) continue;
+                for (std::uint32_t &node : point.frame_nodes) node = plan.node(node);
+                if (std::find(point.frame_nodes.begin(), point.frame_nodes.end(), CarryPlan::none) !=
+                    point.frame_nodes.end()) {
+                    lost.push_back("the " + point.body + "'s point: its cells are not all the " + point.body +
+                                   "'s, so it is as the room declares it");
+                    continue;
+                }
+                ++said.carried.tool_points;
+            }
             points.push_back(std::move(point));
         }
         impl.tools.restore(points, doc.at("next").at("point").get<unsigned>());
@@ -2082,6 +2747,13 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         joint.radius_m = o.value("radius_m", 0.0);
         joint.winds = o.value("winds", 1) < 0 ? -1 : 1;
         joint.rigid = 0;
+        // Carried: one the host still declares the same way, between two
+        // things that came back as they were saved (planCarry has already
+        // left out anything that was on one that does not).
+        if (carrying) {
+            if (!kept(asked.joints, joint.id) || !back(joint.a) || !back(joint.b)) continue;
+            ++said.carried.joints;
+        }
         const auto one = impl.index_of.find(joint.a);
         const auto two = impl.index_of.find(joint.b);
         if (joint.attached && o.contains("held") && one != impl.index_of.end() && two != impl.index_of.end() &&
@@ -2212,6 +2884,18 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         store.max_power_w = numberFrom(o.at("max_power_w"));
         store.given_j = numberFrom(o.at("given_j"));
         store.short_j = numberFrom(o.at("short_j"));
+        // Carried: what it holds and has given, while what it is in came back
+        // as it was saved and the host still declares it the same way.
+        if (carrying) {
+            const bool declared = kept(asked.energy_stores, store.id);
+            if (!declared || (!store.body.empty() && !back(store.body))) {
+                if (declared)
+                    lost.push_back("the " + store.name + ": the " + store.body + " it is in did not come back as it "
+                                   "was, so it is as the room declares it");
+                continue;
+            }
+            ++said.carried.energy_stores;
+        }
         impl.energy_stores.push_back(std::move(store));
     }
     for (const nlohmann::json &o : doc.value("motors", nlohmann::json::array())) {
@@ -2240,6 +2924,23 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         motor.said.heat_j = numberFrom(o.at("heat_j"));
         motor.said.drawn_j = numberFrom(o.at("drawn_j"));
         motor.said.friction_heat_j = numberFrom(o.at("friction_heat_j"));
+        // Carried: its command, brake and account, while its pin and its store
+        // came back and the host still declares it the same way.
+        if (carrying) {
+            const bool declared = kept(asked.motors, motor.said.id);
+            const bool pin = std::any_of(impl.joints.begin(), impl.joints.end(),
+                                         [&](const Impl::SceneJoint &j) { return j.id == motor.said.joint; });
+            const bool store = std::any_of(impl.energy_stores.begin(), impl.energy_stores.end(),
+                                           [&](const LiveEnergyStore &s) { return s.id == motor.said.store; });
+            if (!declared || !pin || !store) {
+                if (declared)
+                    lost.push_back("the motor on the pin between " + pinBetween(motor.said.joint) + ": " +
+                                   (pin ? "its store" : "its pin") +
+                                   " did not come back as it was, so it is as the room declares it");
+                continue;
+            }
+            ++said.carried.motors;
+        }
         impl.motors.push_back(std::move(motor));
     }
     impl.next_energy_store = doc.value("next_energy_store", 1U);
@@ -2261,9 +2962,13 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         impl.hand_work_j = numberFrom(hand.at("work_j"));
         const std::string holding = hand.value("holding", std::string{});
         if (const auto found = impl.index_of.find(holding);
-            !holding.empty() && found != impl.index_of.end() && impl.inWorld(found->second)) {
+            !holding.empty() && found != impl.index_of.end() && impl.inWorld(found->second) && back(holding)) {
             impl.holding = found->second;
             impl.wielding = hand.value("wielding", false);
+            said.carried.hand = carrying;
+        } else if (carrying && !holding.empty()) {
+            lost.push_back("the hand: what it held, the " + holding + ", did not come back as it was, so the hand is "
+                           "empty");
         }
     }
     // The clock and the counters, so what comes next is named and numbered
@@ -2273,6 +2978,61 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
     impl.last_dt_s = numberFrom(doc.at("last_dt_s"));
     impl.foresee_horizon_s = numberFrom(doc.at("foresee_horizon_s"));
     impl.survey_due = true;
+    if (carrying) {
+        LiveRestore::Carried &n = said.carried;
+        n.placed = put_back.size();
+        n.fresh = impl.described.size() - placements.size();
+        n.heat = carried_heat;
+        // Thing by thing, what did not come back as it was saved and why: this
+        // scene's own things first -- changed, or not carried -- and then what
+        // the scene no longer has.
+        std::vector<char> spoken(plan.saved.size(), 0);
+        const std::set<std::string> there(put_back.begin(), put_back.end());
+        const auto savedPartNamed = [&](const std::vector<std::string> &names) {
+            for (std::size_t t = 0; t < plan.saved.size(); ++t) {
+                if (plan.saved[t].now != CarryPlan::npos || spoken[t] != 0) continue;
+                for (const std::string &name : names)
+                    if (std::find(plan.saved[t].bodies.begin(), plan.saved[t].bodies.end(), name) !=
+                        plan.saved[t].bodies.end())
+                        return t;
+            }
+            return CarryPlan::npos;
+        };
+        for (std::size_t g = 0; g < plan.carried.size(); ++g) {
+            if (plan.carried[g] != 0 || impl.part_prints[g].bodies.empty()) continue;
+            const std::string &lead = impl.part_prints[g].bodies.front();
+            if (const std::size_t s = plan.saved_of[g]; s != CarryPlan::npos) {
+                spoken[s] = 1;
+                if (plan.bodies_of[s].empty()) continue;
+                const bool returned = std::any_of(plan.bodies_of[s].begin(), plan.bodies_of[s].end(),
+                                                  [&](const std::string &name) { return there.count(name) != 0; });
+                std::string line = "the " + lead + ": " + plan.why[g] +
+                                   (returned ? ", so it was put back where it was left, whole"
+                                             : ", so it is as the room has it");
+                if (plan.bodies_of[s].size() > 1)
+                    line += " (it was in " + std::to_string(plan.bodies_of[s].size()) + " pieces)";
+                said.not_carried.push_back(std::move(line));
+                continue;
+            }
+            // Changed: the saved thing that had one of its names. Otherwise it
+            // is new, and there is nothing to say.
+            const std::size_t t = savedPartNamed(impl.part_prints[g].bodies);
+            if (t == CarryPlan::npos) continue;
+            spoken[t] = 1;
+            if (plan.bodies_of[t].empty()) continue;
+            said.not_carried.push_back("the " + lead + ": the room changed it, so it is as the room has it now" +
+                                       std::string(plan.bodies_of[t].size() > 1 ? ", whole" : ""));
+        }
+        for (std::size_t t = 0; t < plan.saved.size(); ++t) {
+            if (plan.saved[t].now != CarryPlan::npos || spoken[t] != 0 || plan.bodies_of[t].empty()) continue;
+            n.gone += plan.bodies_of[t].size();
+            said.not_carried.push_back("the " + (plan.saved[t].bodies.empty() ? plan.bodies_of[t].front()
+                                                                              : plan.saved[t].bodies.front()) +
+                                       ": the room no longer has it");
+        }
+        said.not_carried.insert(said.not_carried.end(), lost.begin(), lost.end());
+        said.not_kept.insert(said.not_kept.begin(), said.not_carried.begin(), said.not_carried.end());
+    }
     impl.restored = std::move(said);
     return live;
 }
@@ -10239,6 +10999,14 @@ std::vector<std::string> LiveWorld::notKept() {
             "not step for step as it would have"};
 }
 
+std::vector<std::string> LiveWorld::notCarried() {
+    return {"heaters and gas regions: as the room declares them, from the start",
+            "anything under way: a world is carried only between breaks, strokes of the hand, cuts and a point's "
+            "time in the ground, so the last one saved before any of those is what comes back",
+            "the solver's memory of its contacts: a thing that was moving carries on from where it was, but "
+            "not step for step as it would have"};
+}
+
 const LiveRestore &LiveWorld::restored() const { return impl_->restored; }
 
 std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest) const {
@@ -10276,6 +11044,20 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
     nlohmann::json doc;
     doc["format"] = kWorldFormat;
     doc["fingerprint"] = {{"nodes", I.fingerprint_nodes}, {"bonds", I.fingerprint_bonds}, {"hash", I.fingerprint_hash}};
+    // And each authored part of it, and what lays every cell out, so that a
+    // world carried into this scene once it has changed finds each thing's
+    // cells again (LiveWorld::open with a carry).
+    doc["lattice"] = I.lattice_settings;
+    nlohmann::json parts = nlohmann::json::array();
+    for (const PartPrint &part : I.part_prints)
+        parts.push_back({{"bodies", part.bodies},
+                         {"definition", part.definition},
+                         {"heat", part.heat},
+                         {"cells", part.cells},
+                         {"anchored", part.anchored},
+                         {"nodes", nlohmann::json::array({part.node_begin, part.node_end})},
+                         {"bonds", nlohmann::json::array({part.bond_begin, part.bond_end})}});
+    doc["parts"] = std::move(parts);
     doc["spec_digest"] = spec_digest;
     doc["t_s"] = savedNumber(I.time_s);
     doc["steps"] = I.steps_taken;
@@ -10528,6 +11310,15 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
         const nlohmann::json water = nlohmann::json::parse(I.environment->stateJson(), nullptr, false);
         if (water.is_object() && water.contains("depth_b64")) doc["water"] = water;
     }
+    // What the thermal network holds for each body, for a world carried into
+    // this scene once it has changed: the heat of each thing that comes back
+    // comes back with it. A world opened whole does not read it yet (notKept).
+    if (I.thermo) {
+        const thermo::ThermoState &state = I.thermo->state();
+        nlohmann::json lumps = nlohmann::json::array();
+        for (const thermo::Lump &lump : state.lumps) lumps.push_back(savedLump(lump, state));
+        if (!lumps.empty()) doc["heat"] = {{"substances", I.thermo->model().size()}, {"lumps", std::move(lumps)}};
+    }
     doc["not_kept"] = notKept();
     return doc.dump();
 }
@@ -10560,15 +11351,74 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request, con
     return live;
 }
 
+std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request, const std::string &snapshot,
+                                           const LiveCarry &carry) {
+    Saved saved;
+    try {
+        saved.doc = nlohmann::json::parse(snapshot);
+        if (!saved.doc.is_object() || saved.doc.value("format", std::string{}) != kWorldFormat)
+            throw std::invalid_argument("it is not a saved world this engine reads");
+    } catch (const std::exception &error) {
+        std::unique_ptr<LiveWorld> live = openFrom(request, nullptr);
+        LiveRestore said;
+        said.tier = "none";
+        said.why = std::string("the saved world could not be read: ") + error.what();
+        said.not_kept = notCarried();
+        live->impl_->restored = std::move(said);
+        return live;
+    }
+    try {
+        return openFrom(request, &saved, &carry);
+    } catch (const std::exception &error) {
+        // Nothing half carried: the scene as it is, and why.
+        std::unique_ptr<LiveWorld> live = openFrom(request, nullptr);
+        LiveRestore said;
+        said.tier = "none";
+        said.why = std::string("the saved world could not be carried into this room: ") + error.what();
+        said.not_kept = notCarried();
+        live->impl_->restored = std::move(said);
+        return live;
+    }
+}
+
+LiveCarry LiveWorld::carryAll(const std::string &snapshot) {
+    LiveCarry all;
+    const nlohmann::json doc = nlohmann::json::parse(snapshot, nullptr, false);
+    if (!doc.is_object()) return all;
+    const auto ids = [&doc](const char *key, std::set<unsigned> &into) {
+        if (!doc.contains(key) || !doc.at(key).is_array()) return;
+        for (const nlohmann::json &entry : doc.at(key))
+            if (entry.is_object() && entry.contains("id")) into.insert(entry.at("id").get<unsigned>());
+    };
+    ids("joints", all.joints);
+    ids("energy_stores", all.energy_stores);
+    ids("motors", all.motors);
+    ids("blades", all.blades);
+    ids("tool_points", all.tool_points);
+    return all;
+}
+
 void LiveWorld::placeWhereLeft(const Saved &saved, const std::string &why) {
-    Impl &I = *impl_;
     LiveRestore said;
     said.tier = "none";
     said.why = why;
     said.not_kept = notKept();
+    bool read = true;
+    try {
+        if (saved.doc.contains("t_s")) said.saved_t_s = numberFrom(saved.doc.at("t_s"));
+    } catch (const std::exception &) {
+        read = false;
+    }
+    if (read) said.bodies = putBackWhereLeft(saved).size();
+    if (said.bodies > 0) said.tier = "poses";
+    impl_->restored = std::move(said);
+}
+
+std::vector<std::string> LiveWorld::putBackWhereLeft(const Saved &saved, const std::set<std::string> *only) {
+    Impl &I = *impl_;
+    std::vector<std::string> put;
     try {
         const nlohmann::json &doc = saved.doc;
-        if (doc.contains("t_s")) said.saved_t_s = numberFrom(doc.at("t_s"));
         // What cannot be put back on its own: a thing on a joint, or carrying
         // an edge or a point, which the scene declares against where it was
         // authored.
@@ -10585,6 +11435,7 @@ void LiveWorld::placeWhereLeft(const Saved &saved, const std::string &why) {
             const std::string name = b.value("name", std::string{});
             if (name.empty() || held_by_something.count(name) != 0 || b.contains("parked") || !b.contains("pose"))
                 continue;
+            if (only != nullptr && only->count(name) == 0) continue;
             // Still whole and its authored self: not a piece, never dented or
             // reshaped, not scenery.
             if (b.value("fragment", false) || b.value("anchored", false) || b.value("revision", 0U) != 0) continue;
@@ -10598,13 +11449,12 @@ void LiveWorld::placeWhereLeft(const Saved &saved, const std::string &why) {
                 continue;
             I.world->applyRigidState(I.body_of[i], rigidFrom(b.at("pose")));
             if (!b.value("awake", true)) I.world->sleep(I.body_of[i]);
-            ++said.bodies;
+            put.push_back(name);
         }
     } catch (const std::exception &) {
         // What could be put back was; the rest is where the scene has it.
     }
-    if (said.bodies > 0) said.tier = "poses";
-    I.restored = std::move(said);
+    return put;
 }
 
 } // namespace banjo::fastlattice

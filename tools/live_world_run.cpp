@@ -119,11 +119,26 @@
 //                                            a cut or a point in the ground is under
 //                                            way. `spec_digest` is the host's own
 //                                            word for its scene, carried as it is
-//   args --scene FILE [--cell M] [--snapshot FILE]   with --snapshot, the scene
-//                                            opened again as the saved world left it;
-//                                            the opening reply carries "restored":
-//                                            {tier ("whole", "poses" or "none"), why,
-//                                            saved_t_s, bodies, not_kept, parked}
+//   args --scene FILE [--cell M] [--snapshot FILE [--carry FILE]]
+//                                            with --snapshot, the scene opened again
+//                                            as the saved world left it; the opening
+//                                            reply carries "restored": {tier ("whole",
+//                                            "poses" or "none"), why, saved_t_s,
+//                                            bodies, not_kept, parked}. With --carry
+//                                            too, the saved world carried into a
+//                                            scene that has changed since, thing by
+//                                            thing (LiveWorld::open with a LiveCarry):
+//                                            the file is {"joints", "energy_stores",
+//                                            "motors", "blades", "tool_points": [the
+//                                            saved world's ids of those the host still
+//                                            declares the same way], "declared_anew":
+//                                            [things it will declare something new
+//                                            on]}, and "restored" says tier "carried"
+//                                            with "carried" {placed, fresh, gone,
+//                                            joints, energy_stores, motors, blades,
+//                                            tool_points, heat, hand} and
+//                                            "not_carried", what did not come back as
+//                                            it was saved and why
 //   out  {"ok":true,"t":0.033,"stepped_back":false,
 //         "bodies":[{"name":"ball","shape":"sphere","dimensions_m":[...],
 //                    "position_m":[...],"orientation_wxyz":[...],"held":false,
@@ -236,8 +251,37 @@ nlohmann::json restoredJson(const LiveRestore &restored) {
         parked.push_back({{"name", p.name},
                           {"at_m", nlohmann::json::array({p.at_m.x, p.at_m.y, p.at_m.z})},
                           {"facing_wxyz", nlohmann::json::array({p.facing.w, p.facing.x, p.facing.y, p.facing.z})}});
-    return {{"tier", restored.tier}, {"why", restored.why}, {"saved_t_s", restored.saved_t_s},
-            {"bodies", restored.bodies}, {"not_kept", restored.not_kept}, {"parked", std::move(parked)}};
+    nlohmann::json out{{"tier", restored.tier}, {"why", restored.why}, {"saved_t_s", restored.saved_t_s},
+                       {"bodies", restored.bodies}, {"not_kept", restored.not_kept}, {"parked", std::move(parked)}};
+    // Carried into a scene that has changed: how much of each came back as it
+    // was saved, and thing by thing what did not.
+    if (restored.tier == "carried") {
+        const LiveRestore::Carried &n = restored.carried;
+        out["carried"] = {{"placed", n.placed}, {"fresh", n.fresh}, {"gone", n.gone}, {"joints", n.joints},
+                          {"energy_stores", n.energy_stores}, {"motors", n.motors}, {"blades", n.blades},
+                          {"tool_points", n.tool_points}, {"heat", n.heat}, {"hand", n.hand}};
+        out["not_carried"] = restored.not_carried;
+    }
+    return out;
+}
+
+// What a host still declares of a saved world, from --carry's file (LiveCarry):
+// the saved world's ids for the pins, stores, motors, edges and points it
+// declares the same way, and the things it will declare something new on.
+LiveCarry carryFrom(const nlohmann::json &doc) {
+    LiveCarry carry;
+    const auto ids = [&doc](const char *key, std::set<unsigned> &into) {
+        if (!doc.contains(key)) return;
+        for (const nlohmann::json &id : doc.at(key)) into.insert(id.get<unsigned>());
+    };
+    ids("joints", carry.joints);
+    ids("energy_stores", carry.energy_stores);
+    ids("motors", carry.motors);
+    ids("blades", carry.blades);
+    ids("tool_points", carry.tool_points);
+    if (doc.contains("declared_anew"))
+        for (const nlohmann::json &name : doc.at("declared_anew")) carry.declared_anew.insert(name.get<std::string>());
+    return carry;
 }
 
 nlohmann::json flightJson(const LiveFlight &flight) {
@@ -1231,8 +1275,9 @@ int main(int argc, char **argv) {
         // CUDA is the request default and most builds do not have it; the
         // playground asks for the parallel CPU lane and so does this.
         request.backend = BackendKind::CpuParallel;
-        // A saved world to open the scene into (LiveWorld::snapshot), if any.
-        std::string snapshot_path;
+        // A saved world to open the scene into (LiveWorld::snapshot), if any,
+        // and what of it to carry into a scene that has changed since.
+        std::string snapshot_path, carry_path;
         for (int i = 1; i < argc; ++i) {
             const std::string option = argv[i];
             const auto value = [&]() -> std::string {
@@ -1255,9 +1300,12 @@ int main(int argc, char **argv) {
             else if (option == "--cell") request.cell_size_m = std::stod(value());
             else if (option == "--ground-material") request.ground_material = presetFromName(value());
             else if (option == "--snapshot") snapshot_path = value();
+            else if (option == "--carry") carry_path = value();
             else throw std::invalid_argument("unknown option: " + option);
         }
         if (request.bodies.empty()) throw std::invalid_argument("a live world needs --scene");
+        if (!carry_path.empty() && snapshot_path.empty())
+            throw std::invalid_argument("--carry says what to carry of a saved world, and there is no --snapshot");
 
         std::unique_ptr<LiveWorld> world;
         if (snapshot_path.empty()) {
@@ -1268,8 +1316,18 @@ int main(int argc, char **argv) {
             // opening reply says so (`restored`).
             std::ifstream saved(snapshot_path, std::ios::binary);
             if (!saved) throw std::invalid_argument("cannot read the saved world " + snapshot_path);
-            world = LiveWorld::open(request, std::string(std::istreambuf_iterator<char>(saved),
-                                                         std::istreambuf_iterator<char>()));
+            std::string text{std::istreambuf_iterator<char>(saved), std::istreambuf_iterator<char>()};
+            if (carry_path.empty()) {
+                world = LiveWorld::open(request, text);
+            } else {
+                // Carried into a scene that has changed since it was saved,
+                // thing by thing: what the host still declares is in the file.
+                std::ifstream asked(carry_path, std::ios::binary);
+                if (!asked) throw std::invalid_argument("cannot read what to carry, " + carry_path);
+                const nlohmann::json carry = nlohmann::json::parse(
+                    std::string(std::istreambuf_iterator<char>(asked), std::istreambuf_iterator<char>()));
+                world = LiveWorld::open(request, text, carryFrom(carry));
+            }
         }
         // The opening state, so a host can draw the scene before it moves --
         // the ground and the water whole, if it has them.

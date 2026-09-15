@@ -13,12 +13,17 @@ This checks everything between a room and them:
 - the playground's action step finds the motor by the thing it turns;
 - saved as the server saves it and opened again, as a restarted server opens
   it, it comes back braked with its battery as it was -- the world's own, not
-  added again from the room's spec -- and the room's action winds it on.
+  added again from the room's spec -- and the room's action winds it on;
+- changed through the server's own routes -- the room's chat adding a crate,
+  with a scripted model in place of the paid one, or a thing's stand step --
+  the room keeps everything the change did not touch: the hoist still wound up,
+  its battery as it was, the ball where it was put.
 
     BANJO_LIVE_ENGINE=<build>/Release/banjo_live_world_run.exe python tests/machine_room_tests.py -v
 """
 from __future__ import annotations
 
+import json
 import math
 import os
 import sys
@@ -467,6 +472,190 @@ class TheTestRoomComesBackFromTheTools(unittest.TestCase):
         self.assertEqual([j for j in again["joints"] if j["kind"] == "drum"],
                          [j for j in original["joints"] if j["kind"] == "drum"])
         self.assertEqual([a["label"] for a in again["actions"]], ["Wind it up", "Stop", "Let it down"])
+
+
+def a_room_to_change() -> dict:
+    """The hoist, with an iron ball to be carried somewhere else and an oak
+    plank lying down to be stood up."""
+    room = hoist_room()
+    room["bodies"] += [
+        {"name": "ball", "shape": "sphere", "material": "iron", "size_mm": [100, 100, 100],
+         "center_mm": [1000, 50, 1000]},
+        {"name": "plank", "shape": "box", "material": "oak", "size_mm": [400, 100, 100],
+         "center_mm": [-1000, 50, 1000]}]
+    return room
+
+
+def an_oak_crate_beside_the_hoist(rounds: list):
+    """The room's model, scripted: asked for a crate, it adds one beside the
+    hoist with the MCP's own add_object, and says so."""
+    def model(api_key, model_name, conversation):
+        rounds.append(len(conversation))
+        if len(rounds) == 1:
+            return {"status": "completed", "usage": {}, "output": [{
+                "type": "function_call", "call_id": "c1", "name": "add_object",
+                "arguments": json.dumps({"object": {"name": "new crate", "shape": "box", "material": "oak",
+                                                    "size_m": [0.3, 0.3, 0.3], "position_m": [0.6, 0.6]}})}]}
+        return {"status": "completed", "usage": {},
+                "output": [{"type": "message",
+                            "content": [{"type": "output_text", "text": "An oak crate is beside the hoist."}]}]}
+    return model
+
+
+@unittest.skipIf(ENGINE is None or LIBRARY is None, "the live world runner or the C library is not built")
+class AChangeKeepsTheRoomAsItStood(unittest.TestCase):
+    """The owner, 2026-09-15: "nothing should be resetting rooms". A room whose
+    hoist has been wound up and whose ball has been carried somewhere else is
+    changed through the server's own routes, and opened again carrying the
+    world that was running (live_session.Live.open with a carry): the hoist is
+    still up with its battery as it was, the ball where it was put, and the
+    change is there. Before, both routes opened the room again from its spec,
+    which put the crate back on the ground, the battery full and the ball where
+    it was authored."""
+
+    def setUp(self):
+        import tempfile
+        import threading
+        from http.server import ThreadingHTTPServer
+        from unittest import mock
+        import room_store
+        import server
+        import world_room
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        folder = Path(temporary.name)
+        with mock.patch.object(server, "local_configuration",
+                               return_value=("a scripted model's key", "a scripted model")):
+            app = server.Playground(ENGINE, ENGINE, folder / "runs")
+        app.pool.shutdown(wait=False)
+        app.store = room_store.RoomStore(folder / "rooms")
+        self.addCleanup(app.live.shutdown)
+        # The room, under a name of its own; the chat's transcript is not kept.
+        for patcher in (mock.patch.dict(world_room.SCENES, {"tests-carry": a_room_to_change}),
+                        mock.patch.object(server, "remember_chat")):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+        httpd.app = app
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+
+        def stop():
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=5)
+        self.addCleanup(stop)
+        self.app, self.port = app, httpd.server_port
+
+    def post(self, path: str, body: dict) -> tuple[int, dict]:
+        import http.client
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=180)
+        try:
+            connection.request("POST", path, body=json.dumps(body),
+                               headers={"Content-Type": "application/json", "X-Banjo-Token": self.app.csrf_token})
+            response = connection.getresponse()
+            return response.status, json.loads(response.read())
+        finally:
+            connection.close()
+
+    @staticmethod
+    def step(session, seconds: float) -> None:
+        for _ in range(max(1, round(seconds / (8 / 240.0)))):
+            session.send(op="step", dt=1 / 240.0, n=8)
+
+    @staticmethod
+    def as_it_stands(state: dict) -> dict:
+        """What must not reset, as the room reports it."""
+        bodies = {b["name"]: b for b in state["bodies"]}
+        machines = state["machines"]
+        return {"crate": bodies["crate"]["position_m"], "ball": bodies["ball"]["position_m"],
+                "battery": (machines["stores"][0]["charge_j"], machines["stores"][0]["given_j"]),
+                "motor": (machines["motors"][0]["state"], machines["motors"][0]["drawn_j"],
+                          machines["motors"][0]["turned_rad"]),
+                "rope": (machines["ropes"][0]["out_m"], machines["ropes"][0]["wound_m"])}
+
+    def wound_up_and_moved(self):
+        """The room opened, its hoist wound up for a second and braked there,
+        and its ball carried a metre and put down."""
+        status, opened = self.post("/api/world/open", {"scene": "tests-carry", "fresh": True})
+        self.assertEqual(status, 200, opened)
+        session = self.app.live.session
+        self.step(session, 0.3)
+        motor = session.state["machines"]["motors"][0]["id"]
+        y0 = next(b for b in session.state["bodies"] if b["name"] == "crate")["position_m"][1]
+        session.send(op="drive", motor=motor, command=1.0)
+        self.step(session, 1.0)
+        session.send(op="drive", motor=motor, command=0.0, brake=True)
+        self.step(session, 0.5)
+        session.send(op="grab", name="ball")
+        session.send(op="move", to=[1.8, 0.3, 1.0])
+        self.step(session, 0.5)
+        session.send(op="release")
+        self.step(session, 1.0)
+        before = self.as_it_stands(session.state)
+        self.assertGreater(before["crate"][1] - y0, 0.3, "the hoist did not wind the crate up")
+        self.assertGreater(math.dist(before["ball"], [1.0, 0.05, 1.0]), 0.5, "the ball was not moved")
+        return session, before
+
+    def test_the_chats_change_keeps_the_hoist_up_and_the_ball_where_it_was(self):
+        import world_chat
+        from unittest import mock
+        session, before = self.wound_up_and_moved()
+        rounds: list = []
+        with mock.patch.object(world_chat, "_call", an_oak_crate_beside_the_hoist(rounds)):
+            status, answer = self.post("/api/world/ask",
+                                       {"session": session.id, "message": "put an oak crate beside the hoist"})
+        self.assertEqual(status, 200, answer)
+        self.assertTrue(answer.get("reopened"), answer)
+        state = answer["state"]
+        restored = state["restored"]
+        after = self.as_it_stands(state)
+        print(f"\n   before the chat: the crate at {before['crate']}, the battery {before['battery']}, the ball at "
+              f"{before['ball']}\n   after it: {restored['tier']}, {restored['bodies']} bodies as they were, "
+              f"{restored['carried']}; the crate at {after['crate']}, the battery {after['battery']}, the ball at "
+              f"{after['ball']}", flush=True)
+        self.assertEqual(restored["tier"], "carried", restored.get("why"))
+        self.assertEqual(restored["not_carried"], [], "something the chat did not touch was not carried")
+        self.assertEqual(restored["carried"]["fresh"], 1, "not only the new crate is as the room has it")
+        self.assertEqual(after, before, "the hoist, its battery or the ball is not as it stood")
+        self.assertIn("new crate", {b["name"] for b in state["bodies"]}, "the chat's crate is not in the room")
+        self.assertEqual(state["machines"]["motors"][0]["state"], "braking")
+        # And it goes on: braked, the crate stays up; told to, the hoist winds on.
+        live = self.app.live.session
+        self.assertIsNot(live, session)
+        self.step(live, 0.5)
+        held = self.as_it_stands(live.state)
+        self.assertLess(abs(held["crate"][1] - before["crate"][1]), 0.002, "opened again, the crate did not stay up")
+        live.send(op="drive", motor=live.state["machines"]["motors"][0]["id"], command=1.0)
+        self.step(live, 0.5)
+        self.assertGreater(self.as_it_stands(live.state)["crate"][1] - held["crate"][1], 0.1,
+                           "opened again, the hoist did not wind on")
+
+    def test_a_stand_step_keeps_the_rest_of_the_room(self):
+        session, before = self.wound_up_and_moved()
+        status, answer = self.post("/api/world/action",
+                                   {"session": session.id, "object": "plank", "builtin": "stand_upright"})
+        self.assertEqual(status, 200, answer)
+        self.assertFalse(answer.get("refused"), answer)
+        self.assertTrue(answer.get("reopened"), answer)
+        state = answer["state"]
+        restored = state["restored"]
+        after = self.as_it_stands(state)
+        plank = next(b for b in state["bodies"] if b["name"] == "plank")
+        print(f"\n   stood the plank up: {restored['tier']}, {restored['carried']}, {restored['not_carried']}; the "
+              f"plank is {plank['dimensions_m']} facing {plank.get('orientation_wxyz')}", flush=True)
+        self.assertEqual(restored["tier"], "carried", restored.get("why"))
+        self.assertEqual(after, before, "the hoist, its battery or the ball is not as it stood")
+        self.assertEqual(restored["carried"]["fresh"], 1, "not only the plank is as the room has it")
+        self.assertEqual([line.split(":")[0] for line in restored["not_carried"]], ["the plank"])
+        # Standing, it is tallest up and down, as the room now has it.
+        w, x, y, z = plank.get("orientation_wxyz") or [1.0, 0.0, 0.0, 0.0]
+        up = [2 * (x * y - w * z), 1 - 2 * (x * x + z * z), 2 * (y * z + w * x)]  # the plank's own y, in the world
+        sizes = plank["dimensions_m"]
+        tallest = max(range(3), key=lambda k: sizes[k])
+        axes = [[1 - 2 * (y * y + z * z), 2 * (x * y + w * z), 2 * (x * z - w * y)], up,
+                [2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y)]]
+        self.assertGreater(abs(axes[tallest][1]), 0.99, "the plank is not standing")
 
 
 class TheTestRoomIsAHoist(unittest.TestCase):

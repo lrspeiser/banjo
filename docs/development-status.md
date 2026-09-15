@@ -1,5 +1,24 @@
 # Development status and handoff
 
+**A change to a room keeps what it did not touch.** Branch `agent/room-carry`, from `48fbee4`. The owner, 2026-09-15: "nothing should be resetting rooms". Every chat change and every action's stand step opened the room again from its spec: the hoist's crate went back to the ground and its battery back to full, and everything moved, broken, dented, swung, held or heated went back as authored.
+- The engine carries a saved world into a changed scene thing by thing: `LiveWorld::open(request, snapshot, LiveCarry)`, restored tier `"carried"` (docs/a-world-that-keeps-running.md, "A room changed while it runs keeps what the change did not touch").
+  - An authored part's cells are its own numbers moved by where its part begins, because the scene builds each part on its own and lays them end to end. A saved world now carries `parts` (each part's runs of cells and bonds, a fingerprint of them, every field its bodies were authored with), `lattice` and `heat` (the thermal network's lumps). A whole restore reads none of them.
+  - An unchanged part comes back as a whole restore brings it back, with the joints, stores, motors, edges and points the host still declares the same way (`LiveCarry`, by the saved ids), the hand's hold and its heat. A thing on a joint that did not come back, or one the host declares something new on, is as the scene has it; one whose cells are not the saved ones is put back where it was left if it is whole, and said. What rested on a thing that went is woken.
+  - `restored` counts what came back (`carried`: placed, fresh, gone, joints, energy_stores, motors, blades, tool_points, heat, hand) and says thing by thing what did not (`not_carried`, also at the front of `not_kept`).
+- The runner takes `--carry FILE` beside `--snapshot FILE`, and says `carried` and `not_carried` in `restored`.
+- The playground:
+  - `live_session`: each world keeps what it was given of the room's declarations with the ids it has for them (`Session.declared`); `carry_plan` compares a changed spec with that; `Live.open(app, {"spec", "snapshot", "carry": True})` carries and adopts what came back (`_carried`), declaring only what is new or changed. A kept motor the room now tells something else is told so.
+  - `server.world_to_carry` saves the running world before the chat's reopen and a stand step's, asking again for up to 2 s while something is under way, then carrying the one kept last if it was saved from this world's spec.
+  - `inventory_room.after_open` keeps a carried hold in the hand; the page takes the hold over and says what did not come back ("As the room has it now: ...").
+- Not carried yet:
+  - the in-process lane (`--live-inprocess`): the C library opens a saved world whole or not at all, so a room changed there still opens from its spec, and says so in the log;
+  - heat across a restart: a whole restore still declares heat from the spec (it does not read the saved `heat`);
+  - heaters and gas regions, which are the scene's, from the start; and the solver's memory of its contacts, as for a restart.
+- Tests:
+  - `room_carry_tests` (new, in ctest): a thing added first in the scene, a thing taken away, a thing moved in the spec, a pin the host no longer declares, cells that are not the saved ones, heat declared anew, a cut block with its severed bonds and edge, and the same scene still whole. Numbers in the doc above.
+  - `machine_room_tests` 12: through the server's own routes with the real runner, a hoist wound up and a ball moved, then the chat's ask (a scripted model's `add_object`) and a stand step: the crate at 0.96277 m and the battery at 4719.94 J (280.06 J given) before and after, the ball where it was put, the new crate there.
+  - `world_page_journey_tests` AChatChangeKeepsTheHoistUp: in headless Chrome, E winds the hoist up and Stop brakes it, the chat (tests/scripted_chat_server.py, a scripted model in place of the paid one) adds a crate through the page's own chat box, and the hoist is still up with its battery as it was.
+
 **The machine world begins: a battery, a motor on a pin with a brake, and a rope drum.** Branch `agent/machine-world`, from `7ff4581`. The owner's next direction (docs/machine-world.md) is a planet of machines. Creatures and tools there are machines that draw on stores of energy, and every joule is accounted for. Its first milestone is a battery hoist.
 - In the engine:
   - `LiveWorld::energyStore` is a battery: capacity, charge, voltage and most power.
@@ -52,7 +71,7 @@
   - Python around the change: actions 25, room_store 24, inventory_room 9, world_room 55, the page journeys 3 and fracture_lab all pass.
   - `ctest -LE long -j4`: 129 of 130 before the saved world's machines. The one failure is live_world's timing check under load; run alone, 34 of 34.
 - Not yet:
-  - the chat telling a motor what to do works on the room as the chat built it: the room is opened again from its spec, so the crate goes back to where it was made and the battery back to full. A thing's own actions work on the room as it is. Which the chat should do is the owner's call;
+  - the chat telling a motor what to do works on the room as the chat built it, so the room is opened again. Since `agent/room-carry` it is opened carrying the running world: the crate stays where it was and the battery as it was, and the motor is told what the chat said. A thing's own actions work on the room as it is. Which the chat should do is the owner's call;
   - a drum on a body that breaks being re-hung onto its pieces;
   - the heat of the windings going to the thermal model;
   - opened again from a saved world, a braked crate settles 1.1 mm in its first second, the same 1.1 mm it settles in a fresh room when the brake first takes its weight. The likely cause is that a saved world does not keep the solver's warm start; not yet looked into.

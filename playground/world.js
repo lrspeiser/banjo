@@ -4855,6 +4855,20 @@ function adoptRebuilt(answer) {
   } else {
     clearGround();
   }
+  // Carried into the changed room (`restored` "carried"), the engine's hand
+  // still holds what it held when that came back as it was: taken over as a
+  // reload or a restart takes it over (open). And, said plainly, what is not
+  // as it was -- what the change touched, and what could not be carried.
+  const restored = answer.state.restored;
+  const carried = !!(restored && restored.tier === "carried");
+  const holding = carried && answer.state.hand ? answer.state.hand.holding : "";
+  if (holding && world.bodies.has(holding)) {
+    const pinned = (answer.state.joints || []).some((j) => j.attached !== false
+                                                      && (j.a === holding || j.b === holding));
+    if (pinned) adoptHold(holding); else adoptGrip(holding, null);
+  }
+  if (carried && (restored.not_carried || []).length)
+    say("world", `As the room has it now: ${restored.not_carried.join("; ")}.`);
   // Drawn: the frame report starts over with the rebuilt world.
   traceNewWorld(answer.state.t);
   if (answer.joint_problems && answer.joint_problems.length)

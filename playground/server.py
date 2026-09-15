@@ -1344,10 +1344,14 @@ class Handler(BaseHTTPRequestHandler):
                         # Objects cannot be added to or taken out of a running
                         # world: a world is opened from a scene and that is the
                         # set of bodies it has. So a change means opening the
-                        # room again from what it has become. Everything in
-                        # flight lands back where it was authored to; that is
-                        # the cost, and it is said out loud rather than hidden.
-                        opened=app.live.open(app,{"spec":with_water(session,app.room.spec,ground_was)})
+                        # room again from what it has become -- carrying the
+                        # world that was running into it (world_to_carry), so
+                        # that everything the change did not touch is as it
+                        # stood. What did not come back as it was is said, thing
+                        # by thing, in the opening's `restored`.
+                        spec=with_water(session,app.room.spec,ground_was)
+                        saved,_=world_to_carry(app,session)
+                        opened=app.live.open(app,{"spec":spec,**({"snapshot":saved,"carry":True} if saved else {})})
                         app.live_holder="world"
                         opened["inventory"]=inventory_room.after_open(app,opened)
                         # The world the chat's room is now, kept with it.
@@ -1576,6 +1580,48 @@ def with_water(session,spec,ground_was):
     return dict(spec,water=dict(spec.get("water") or {},state=state))
 
 
+# How long a chat change or a stand step waits for the running world to be one
+# a saved world can carry -- a break being worked out, a stroke of the hand, an
+# edge in a cut -- before it carries the one kept last (keep_world). The page
+# steps the world meanwhile, and each of those is over in well under a second
+# of its time.
+CARRY_WAIT_S=2.0
+
+
+def world_to_carry(app,session):
+    """The room's running world as it stands, saved, for opening the room again
+    from a spec the chat or an action has just changed with everything the
+    change did not touch carried into it (Live.open with `carry`): what was
+    moved, what broke and how, dents, a gate swung open, a hoist's crate wound
+    up and its battery's charge, what the hand holds, heat. Opened again from
+    the spec alone, every one of those went back as it was authored.
+
+    `session` is the world the change was asked of; one opened since, by another
+    page, is not this room's to carry. While something is under way that a
+    saved world cannot carry, the world is asked again until CARRY_WAIT_S has
+    gone, and then the one kept last (keep_world) is carried if it was saved
+    from this world's spec. (None, why) when there is nothing to carry, and the
+    room opens from its spec as it did before."""
+    if session is None or app.live.session is not session or getattr(app,"live_holder",None)!="world":
+        return None,"the room's world is not the one running"
+    snapshot=getattr(app.live,"snapshot",None)
+    if snapshot is None: return None,"this live world cannot be saved"
+    deadline=time.monotonic()+CARRY_WAIT_S
+    while True:
+        saved,refused=snapshot()
+        if saved is not None: return saved,""
+        if time.monotonic()>=deadline: break
+        time.sleep(0.1)
+    kept=getattr(getattr(app,"room",None),"world_record",None)
+    if isinstance(kept,dict) and kept.get("spec_digest")==getattr(session,"spec_digest",None):
+        log.info("rooms: the running world would not be saved (%s); the one kept at %.1f s is carried",
+                 refused,float(kept.get("t_s") or 0.0))
+        return kept,refused
+    log.info("rooms: the running world would not be saved (%s), and none kept is its own; the room opens "
+             "from its spec",refused)
+    return None,refused
+
+
 # How far in front of the person a stand step puts a thing it sets "in_front".
 ACTION_AHEAD_M=1.2
 # How long a hand's stroke may take before the action says it did not get there.
@@ -1711,7 +1757,12 @@ def _stand(app,room,name,step,person):
     finally:
         room_world.close_room(world_id)
     room_store.keep(app,room)
-    opened=app.live.open(app,{"spec":with_water(session,room.spec,ground_was)})
+    # Opened again carrying the world that was running, so that everything else
+    # in the room is as it stood (world_to_carry); the thing stood up is as the
+    # room now has it.
+    spec=with_water(session,room.spec,ground_was)
+    saved,_=world_to_carry(app,session)
+    opened=app.live.open(app,{"spec":spec,**({"snapshot":saved,"carry":True} if saved else {})})
     app.live_holder="world"
     # The bag's things open standing in the room again: set aside once more.
     opened["inventory"]=inventory_room.after_open(app,opened)
