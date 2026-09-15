@@ -988,6 +988,13 @@ if(BANJO_BUILD_TESTS)
             banjo_enable_warnings(banjo_live_world_tests)
             add_test(NAME banjo_live_world_tests COMMAND banjo_live_world_tests)
 
+            # A room opened again from a scene that has changed keeps everything
+            # the change did not touch: a saved world carried in thing by thing.
+            add_executable(banjo_room_carry_tests tests/room_carry_tests.cpp)
+            target_link_libraries(banjo_room_carry_tests PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
+            banjo_enable_warnings(banjo_room_carry_tests)
+            add_test(NAME banjo_room_carry_tests COMMAND banjo_room_carry_tests)
+
             # Heat, chemistry and gas inside a live world: a heated gas lifting
             # a load through a real slide, a refused step taking its chemistry
             # back, a burning plank breaking and sharing out what it held.

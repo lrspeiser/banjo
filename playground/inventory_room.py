@@ -126,7 +126,11 @@ def after_open(app: Any, opened: dict[str, Any] | None = None) -> dict[str, Any]
     # from its spec; what it held, in one opened again as it stood.
     holding = str((state.get("hand") or {}).get("holding") or "")
     restored = opened.get("restored") if isinstance(opened, dict) else None
-    whole = isinstance(restored, dict) and restored.get("tier") == "whole"
+    # Opened again as it stood: whole after a restart, or carried into a room
+    # the chat or an action has changed -- where the engine's hand still holds
+    # what it held when that came back as it was, and what was set aside is
+    # still away.
+    whole = isinstance(restored, dict) and restored.get("tier") in ("whole", "carried")
     parked: set[str] = set()
     with record.lock:
         changed = False

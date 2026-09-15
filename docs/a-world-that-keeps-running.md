@@ -356,6 +356,83 @@ counts, and a hash of every cell's place, part and bonds. One that does not fit
 opens the scene as it is, `"tier": "poses"`, with each thing still whole and its
 own self put back where it was left.
 
+### A room changed while it runs keeps what the change did not touch
+
+A world is opened from a scene, and a scene is the set of bodies it has, so
+every change the room's chat made -- and every thing an action stood up --
+opened the room again from its spec. That put everything back where it was
+authored: what had been moved, what had broken, dents, a gate swung open, a
+hoist's crate wound up and its battery's charge, what the hand held, heat. The
+owner, 2026-09-15: "nothing should be resetting rooms."
+
+Now the running world is saved a moment before (`server.world_to_carry`) and
+carried into the scene as the change left it, thing by thing:
+`LiveWorld::open(request, snapshot, carry)`, the runner's `--snapshot FILE
+--carry FILE`.
+
+**Where a thing's cells are now.** The scene generates each authored part's
+cells on its own -- one body, or the bodies of one join, from that part's own
+definition and the room's cell size -- and lays the parts end to end
+(`buildTileImpactSetup`, `mergeLattices`). So an unchanged part's cells and bonds
+are its own numbers moved by where the part begins now, whatever was added,
+taken away or changed around it. A saved world carries, for each part, where its
+cells and bonds began and ended, a fingerprint of them and every field its bodies
+were authored with (`"parts"`), and what lays every cell out (`"lattice"`).
+
+**What comes back exactly.** A part the scene authors exactly as it was saved --
+name, shape, size, material, where it was made, how it was set moving, its turn,
+colour and join, for every body in it -- and whose cells are the saved ones
+comes back as a whole restore brings a thing back: its cells, its pieces if it
+broke, its dent and cuts, where it is and how it moves, asleep or awake. With
+it come back the joints the host still declares the same way between two things
+that came back, reading what they read (a drum's rope keeps its tally); the
+stores and motors on those (charge, account, command, brake, what each said);
+edges and points; the hand's hold; and its heat as the thermal network held it,
+unless the scene now declares that thing's heat another way.
+
+**What the host says.** Pins, stores, motors, edges and points go in from the
+host, not the scene, so only the host can say which it still declares the same
+way (`LiveCarry`, by the saved world's ids). The live session compares each with
+what the running world was given (`Session.declared`, `carry_plan`), and names
+the things a new or changed pin, edge or point is on (`declared_anew`): written
+where they were made, it would miss them wherever they have got to.
+
+**What does not come back as it was, and why.** `restored` says `"tier":
+"carried"`, how much of each came back (`"carried"`) and, thing by thing, what
+did not (`"not_carried"`, also at the front of `not_kept`):
+
+- a thing the room changed or took away is as the scene has it;
+- a thing on a joint that did not come back -- the room changed the pin, or its
+  other end -- is as the scene has it, since a thing on a joint is made again
+  only with it; scenery never moves, so it comes back regardless;
+- a thing whose cells are not the saved ones (a build that lays them out another
+  way) falls back alone: put back where it was left if it is still whole and its
+  own self, as a world that did not fit puts it back, otherwise as the scene has
+  it;
+- heat the scene declares anew is as declared; heaters and gas regions are the
+  scene's, from the start;
+- and what rested on a thing that went is woken, so it falls: Jolt wakes nothing
+  sleeping on a body that is simply not there.
+
+The water is the scene's own: the server carries the running room's water into
+the spec whenever the ground under it is the same (`with_water`), and the
+ground's digs are part of the spec. A world that cannot be carried at all -- one
+saved without its parts, or into a room that now lays its cells out another way
+-- opens the scene as it is, with each unchanged whole thing put back where it
+was left (`"poses"`), and says why.
+
+Measured in `room_carry_tests`: a room with a ball carried somewhere else, a pane
+broken into pieces, a dented ball, a door swung 50 degrees, a hoist wound up and
+braked, a hot and a warmed iron block and a mallet in the hand -- 139 bodies --
+saved, and carried into its scene with a crate added in front of everything. All
+139 came back field for field, their 10,821 cells under new numbers and the 252
+bonds that carried a permanent set with them; the hot block at 698.406 K and the
+warm one at 295.98 K, as saved. The door's pin read 50.17 degrees and swung on to
+9.56; the hoist wound on 0.8616 turns, taking on 0.541382 m of rope for 0.541382 m
+of the drum's radius times its turn; the heat ledger closed to 4e-5 J of 5.1e8 J.
+With the anvil taken away instead, the dented ball on it woke and fell 0.106 m,
+keeping its 0.112 mm dent.
+
 ## The clock was never the problem. The event was late.
 
 Three pauses fixed — the run off the caller's thread, the wire trimmed, the

@@ -797,14 +797,40 @@ struct LiveRestore {
     //          way -- so the world opened from its scene and each thing still
     //          whole and its authored self, on no joint and carrying no edge or
     //          point, was put back where it was left.
+    // "carried" the scene had changed since the world was saved (the room's
+    //          chat added, moved or took something away; a thing was stood
+    //          up), so the saved world was carried into it thing by thing
+    //          (LiveWorld::open with a LiveCarry). Each authored thing the
+    //          change did not touch came back exactly as it was saved -- its
+    //          cells, its pieces, its dent and cuts, where it was and how it
+    //          moved, asleep or awake -- with the pins, stores, motors, edges
+    //          and points the host still declares the same way, its heat, and
+    //          the hand's hold. What the change added, moved or took away is as
+    //          the scene has it.
     // "none"   opened from its scene; nothing saved could be used.
     // "" for a world not opened from a saved one.
     std::string tier;
     std::string why;              // why not whole, in words; "" when whole
     double saved_t_s{};           // the saved world's clock
     std::size_t bodies{};         // how many bodies came back (were put back, for "poses")
-    // What a saved world does not carry yet, in words.
+    // What a saved world does not carry yet, in words. For "carried", what did
+    // not come back as it was saved first, thing by thing (not_carried).
     std::vector<std::string> not_kept;
+    // For "carried": thing by thing, what did not come back as it was saved,
+    // and why -- the room changed it or took it away, or it could not be
+    // carried exactly.
+    std::vector<std::string> not_carried;
+    // For "carried": how much of each came back as it was saved, and how many
+    // bodies are as the scene has them instead.
+    struct Carried {
+        std::size_t placed{};     // whole things whose cells could not be found again, put back where left
+        std::size_t fresh{};      // bodies as the scene has them: new, changed, or not carried
+        std::size_t gone{};       // saved bodies of things the scene no longer has
+        std::size_t joints{}, energy_stores{}, motors{}, blades{}, tool_points{};
+        std::size_t heat{};       // bodies whose heat came back
+        bool hand{};              // the hand holds what it held
+    };
+    Carried carried;
     // What is set aside in the world opened again, where each was put away and
     // facing the way poses() says things face: a host whose own record says
     // one of them is out in the world can bring it back there.
@@ -814,6 +840,24 @@ struct LiveRestore {
         Quat facing{};
     };
     std::vector<Parked> parked;
+};
+
+// What a host still declares of a saved world, for opening that world into a
+// scene that has changed since it was saved (LiveWorld::open with a carry).
+//
+// Pins, edges, points, stores and motors go in from the host once the scene is
+// open; the scene names none of them. So only the host can say which it still
+// declares as it did when the world was saved -- each by the id the saved world
+// has for it (LiveWorld::snapshot). One it does not name comes back no more: the
+// host declares what it has now in its place.
+struct LiveCarry {
+    std::set<unsigned> joints, energy_stores, motors, blades, tool_points;
+    // Things the host is about to declare something new on -- a pin, an edge, a
+    // point -- written against where the scene authors them. Each comes back as
+    // the scene has it, because a declaration made against where a thing was
+    // authored misses it wherever it has got to since. Scenery never moves, so
+    // what is anchored comes back as it was all the same.
+    std::set<std::string> declared_anew;
 };
 
 // A scene that keeps running instead of being run.
@@ -1458,20 +1502,43 @@ public:
     // scene itself cannot be opened.
     [[nodiscard]] static std::unique_ptr<LiveWorld> open(const TileImpactRequest &request,
                                                          const std::string &snapshot);
+    // The scene opened carrying a saved world whose scene has changed since --
+    // the room's chat added, moved or took something away, or a thing was
+    // stood up. Each authored thing whose definition is unchanged comes back
+    // exactly as it was saved: the scene builds each authored thing's cells on
+    // their own, and lays them end to end, so an unchanged thing's cells are
+    // its own numbers moved by where its part now begins, and its pieces, dents
+    // and cuts are found again under those. What the change touched is as the
+    // scene has it; `carry` says which of its pins, stores, motors, edges and
+    // points the host still declares the same way. restored() says what came
+    // back and what did not, thing by thing ("carried"). A saved world that
+    // cannot be carried at all opens the scene as it is, and says why.
+    [[nodiscard]] static std::unique_ptr<LiveWorld> open(const TileImpactRequest &request,
+                                                         const std::string &snapshot, const LiveCarry &carry);
+    // Every pin, store, motor, edge and point a saved world holds, for a host
+    // whose declarations have not changed since it was saved.
+    [[nodiscard]] static LiveCarry carryAll(const std::string &snapshot);
     // What opening from a saved world gave back; an empty tier for a world
     // opened from its scene.
     [[nodiscard]] const LiveRestore &restored() const;
     // What a saved world does not carry yet, in words.
     [[nodiscard]] static std::vector<std::string> notKept();
+    // What a world carried into a changed scene does not carry, in words.
+    [[nodiscard]] static std::vector<std::string> notCarried();
 
 private:
     // A saved world as read back, and the one open both ways go through.
     struct Saved;
+    // With `carry`, the saved world is carried into a scene that has changed.
     [[nodiscard]] static std::unique_ptr<LiveWorld> openFrom(const TileImpactRequest &request,
-                                                             const Saved *saved);
+                                                             const Saved *saved, const LiveCarry *carry = nullptr);
     // After a saved world that did not fit: each thing still whole and its
     // authored self put back where it was left (LiveRestore "poses").
     void placeWhereLeft(const Saved &saved, const std::string &why);
+    // Each saved thing still whole and its authored self, on no joint and
+    // carrying no edge or point, put back where it was left -- only those named
+    // in `only`, when it is given. The names of those that were.
+    std::vector<std::string> putBackWhereLeft(const Saved &saved, const std::set<std::string> *only = nullptr);
     // Every body as the water sees it: shape, where it is, how it moves.
     [[nodiscard]] std::vector<water::BodyInWater> waterBodies();
     // Every body as the network sees it: where it is, how it is turned, what

@@ -18,6 +18,11 @@ with the room (room_store), and one that starts again opens it whole.
   as stopped by then, as it has for anyone who reloads after a restart.
 - Asked to stop and started again, it gives back a thing where it was put.
 
+A change to a room keeps what it did not touch (server.world_to_carry): the
+hoist wound up and braked, the room's chat -- a scripted model in place of the
+paid one (tests/scripted_chat_server.py) -- adds a crate through the page's own
+chat box, and the hoist is still up with its battery as it was, at realtime.
+
 Each starts a playground server of its own on a free port, with the engine the
 build made (BANJO_BUILD_DIR, or build/integration/Release) and rooms in a
 folder of its own, and drives headless Chrome over the DevTools protocol
@@ -66,13 +71,16 @@ def free_port() -> int:
         return probe.getsockname()[1]
 
 
-def start_server(port: int, folder: Path, log) -> subprocess.Popen | None:
+def start_server(port: int, folder: Path, log, program: Path | None = None,
+                 env_added: dict | None = None) -> subprocess.Popen | None:
     """A playground server of the test's own on `port`, keeping its rooms in
-    `folder`; None if it did not come up within a minute."""
-    env = dict(os.environ, OPENAI_API_KEY="", BANJO_LIVE_ENGINE=str(RUNNER))
+    `folder`; None if it did not come up within a minute. `program` runs in
+    server.py's place, with its arguments (tests/scripted_chat_server.py), and
+    `env_added` goes into its environment."""
+    env = dict(os.environ, OPENAI_API_KEY="", BANJO_LIVE_ENGINE=str(RUNNER), **(env_added or {}))
     if LIBRARY.is_file():
         env["BANJO_LIBRARY"] = str(LIBRARY)
-    command = [sys.executable, "-u", str(ROOT / "playground" / "server.py"), "--port", str(port),
+    command = [sys.executable, "-u", str(program or ROOT / "playground" / "server.py"), "--port", str(port),
                "--engine", str(ENGINE), "--rooms", str(folder / "rooms"), "--runs", str(folder / "runs")]
     if STUDIO.is_file():
         command += ["--studio", str(STUDIO)]
@@ -308,6 +316,38 @@ class PageJourney(unittest.TestCase):
         self.assertTrue(self.wait_for("!banjoRoom.world.held", 30), f"E did not put it there: {self.situation()}")
         return self.at_rest(name)
 
+    def press_tab(self):
+        for kind in ("keyDown", "keyUp"):
+            self.page.send("Input.dispatchKeyEvent", {"type": kind, "key": "Tab", "code": "Tab",
+                                                      "windowsVirtualKeyCode": 9, "nativeVirtualKeyCode": 9})
+            time.sleep(0.05)
+
+    def choose(self, what):
+        """Tab through the choices of what the crosshair is on until `what` is
+        the one E does. The side view works out what is chosen in the frame
+        after a key, and in CI's software drawing a frame can be a second away."""
+        for _ in range(10):
+            if self.wait_for("banjoRoom.details().rows.some((r) => r[2] === 'chosen' && r[1] === "
+                             f"{json.dumps(what)})", 2):
+                return True
+            self.press_tab()
+        return False
+
+    def machines(self):
+        return self.js("banjoRoom.world.machines")
+
+    def open_the_hoist(self):
+        """The tests-machines room, looking at the hoist's drum from in front."""
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-machines"})
+        self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.status().scene === 'tests-machines' && "
+                                      "banjoRoom.ready()", 300), "the hoist room did not open")
+        self.assertTrue(self.wait_for("banjoRoom.world.machines && banjoRoom.world.machines.motors && "
+                                      "banjoRoom.world.machines.motors.length === 1", 60),
+                        f"the room's steps do not carry its machines: {self.situation()}")
+        self.page.evaluate("banjoRoom.standAt(0.1, 1.62, 2.2); banjoRoom.lookAt(0.0, 2.0, 0.0); true")
+        self.assertTrue(self.wait_for("banjoRoom.world.aim && banjoRoom.world.aim.name === 'hoist: drum'", 10),
+                        "the crosshair is not on the drum")
+
 
 class AReloadKeepsTheRoom(PageJourney):
 
@@ -463,26 +503,6 @@ class AHoistWindsInThePage(PageJourney):
     motor draws. Tab on to "Stop" and E again, and the crate stays up with the
     motor drawing nothing."""
 
-    def press_tab(self):
-        for kind in ("keyDown", "keyUp"):
-            self.page.send("Input.dispatchKeyEvent", {"type": kind, "key": "Tab", "code": "Tab",
-                                                      "windowsVirtualKeyCode": 9, "nativeVirtualKeyCode": 9})
-            time.sleep(0.05)
-
-    def choose(self, what):
-        """Tab through the drum's choices until `what` is the one E does. The
-        side view works out what is chosen in the frame after a key, and in
-        CI's software drawing a frame can be a second away."""
-        for _ in range(10):
-            if self.wait_for("banjoRoom.details().rows.some((r) => r[2] === 'chosen' && r[1] === "
-                             f"{json.dumps(what)})", 2):
-                return True
-            self.press_tab()
-        return False
-
-    def machines(self):
-        return self.js("banjoRoom.world.machines")
-
     def test_e_winds_the_crate_up_and_stop_holds_it(self):
         self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-machines"})
         self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.status().scene === 'tests-machines' && "
@@ -533,6 +553,96 @@ class AHoistWindsInThePage(PageJourney):
         self.assertEqual(now["motors"][0]["drawn_j"], held["motors"][0]["drawn_j"],
                          "braked, the motor went on drawing")
         self.no_page_errors("after winding the hoist")
+
+
+class AChatChangeKeepsTheHoistUp(PageJourney):
+    """The room's chat changes a room, and what it did not touch is as it stood
+    (server.world_to_carry, live_session.Live.open with a carry). In the
+    tests-machines room E winds the hoist up and Stop brakes it; then the chat,
+    asked in the page's own chat box, adds a crate beside it -- a scripted model
+    in place of the paid one (tests/scripted_chat_server.py), working the
+    room's real tools. The crate is there, the hoist is still up with its
+    battery as it was, and the room runs on at realtime. Before, the chat's
+    change put the hoist's crate back on the ground and its battery back to
+    full."""
+
+    ANSWERS = [
+        {"status": "completed", "usage": {}, "output": [{
+            "type": "function_call", "call_id": "c1", "name": "add_object",
+            "arguments": json.dumps({"object": {"name": "new crate", "shape": "box", "material": "oak",
+                                                "size_m": [0.3, 0.3, 0.3], "position_m": [0.8, 0.6]}})}]},
+        {"status": "completed", "usage": {}, "output": [{"type": "message", "content": [
+            {"type": "output_text", "text": "An oak crate is beside the hoist."}]}]},
+    ]
+
+    @classmethod
+    def start(cls) -> subprocess.Popen:
+        answers = cls.folder / "scripted-chat.json"
+        answers.write_text(json.dumps(cls.ANSWERS), encoding="utf-8")
+        server = start_server(cls.port, cls.folder, cls.log, program=ROOT / "tests" / "scripted_chat_server.py",
+                              env_added={"BANJO_SCRIPTED_CHAT": str(answers)})
+        if server is None:
+            raise RuntimeError(f"the playground did not come up on {cls.port}:\n"
+                               + cls.log_path.read_text(encoding="utf-8", errors="replace")[-2000:])
+        return server
+
+    def test_the_chats_crate_comes_and_the_hoist_stays_up(self):
+        self.open_the_hoist()
+        self.assertTrue(self.offering("Wind it up"), f"E is not offering to wind it up: {self.situation()}")
+        self.press_e()
+        self.assertTrue(self.wait_for("banjoRoom.world.machines.motors[0].state === 'driving'", 30),
+                        f"E did not set the motor winding: {self.situation()}")
+        # Tab on to Stop straight away, rather than waiting to see whether it is
+        # chosen: left winding for the four seconds that took, the crate went up
+        # into the drum.
+        time.sleep(0.8)
+        self.press_tab()
+        self.assertTrue(self.choose("Stop"), f"Tab did not move on to Stop: {self.situation()}")
+        self.press_e()
+        self.assertTrue(self.wait_for("banjoRoom.world.machines.motors[0].state === 'braking'", 30),
+                        f"Stop did not put the brake on: {self.situation()}")
+        time.sleep(1.0)
+        crate_y = "banjoRoom.world.bodies.get('hoist: crate').mesh.position.y"
+        before, y_before = self.machines(), self.js(crate_y)
+        self.assertGreater(before["ropes"][0]["wound_m"], 0.1, "the hoist was not wound up")
+        session = self.js("banjoRoom.world.session")
+
+        # Asked as a person asks: typed into the room's chat and sent.
+        self.page.evaluate("document.getElementById('ask-text').value = 'put an oak crate beside the hoist'; "
+                           "document.getElementById('ask').requestSubmit(); true")
+        self.assertTrue(self.wait_for(f"banjoRoom.world.session !== {json.dumps(session)} && "
+                                      "banjoRoom.world.bodies.has('new crate') && "
+                                      "banjoRoom.world.bodies.has('hoist: crate')", 120),
+                        f"the chat's crate did not come: {self.situation()}")
+        time.sleep(1.0)
+        after, y_after = self.machines(), self.js(crate_y)
+        rope0, rope1 = before["ropes"][0], after["ropes"][0]
+        store0, store1 = before["stores"][0], after["stores"][0]
+        print(f"\n   wound up and braked: {rope0['wound_m']:.4f} m of rope on the drum, the crate at {y_before:.4f} m,"
+              f" the battery at {store0['charge_j']:.2f} J ({store0['given_j']:.2f} J given)"
+              f"\n   after the chat's crate: {rope1['wound_m']:.4f} m on the drum, the crate at {y_after:.4f} m,"
+              f" the battery at {store1['charge_j']:.2f} J ({store1['given_j']:.2f} J given), the motor"
+              f" {after['motors'][0]['state']}", flush=True)
+        self.assertEqual(after["motors"][0]["state"], "braking", "the hoist's motor is not braked as it was")
+        self.assertLess(abs(rope1["out_m"] - rope0["out_m"]), 0.001, "the rope is not as far out as it was")
+        self.assertEqual((store1["charge_j"], store1["given_j"]), (store0["charge_j"], store0["given_j"]),
+                         "the battery is not as it was")
+        self.assertEqual(after["motors"][0]["drawn_j"], before["motors"][0]["drawn_j"],
+                         "the motor's account is not as it was")
+        self.assertLess(abs(y_after - y_before), 0.005, "the crate the page draws is not where it hung")
+        said = self.js("banjoRoom.status().said") or []
+        self.assertFalse(any(line.startswith("As the room has it now") for line in said),
+                         f"the page said something was not carried: {said[-3:]}")
+
+        # And the room runs on at realtime, with no page errors.
+        t0, w0 = self.js("banjoRoom.status().time_s"), time.monotonic()
+        time.sleep(3.0)
+        t1, w1 = self.js("banjoRoom.status().time_s"), time.monotonic()
+        realtime = 100.0 * (t1 - t0) / (w1 - w0)
+        print(f"   after the chat's change the room ran {t1 - t0:.2f} s of its time in {w1 - w0:.2f} s:"
+              f" {realtime:.1f}% of realtime", flush=True)
+        self.assertGreater(realtime, 90.0, "the room did not run at realtime after the chat's change")
+        self.no_page_errors("after the chat's change")
 
 
 if __name__ == "__main__":

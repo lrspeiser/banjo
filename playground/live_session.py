@@ -101,6 +101,124 @@ def spec_digest(spec: Any) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _plain(entry: Any) -> Any:
+    """A declaration as the room writes it, less the id a world gave it."""
+    return {k: v for k, v in entry.items() if k != "id"} if isinstance(entry, dict) else entry
+
+
+def _made(motor: dict[str, Any]) -> dict[str, Any]:
+    """A motor as it is made -- its pin, its store, its torque and speed and
+    brake -- without what the room last told it (command and brake), which a
+    world carried into a changed room keeps as it was told, unless the room
+    tells it something else now."""
+    return {k: v for k, v in motor.items() if k not in ("id", "command", "brake")}
+
+
+def _told(motor: dict[str, Any]) -> tuple[Any, Any]:
+    return motor.get("command"), motor.get("brake")
+
+
+def _declared(spec: dict[str, Any], machines: Any = None,
+              made: dict[str, Any] | None = None) -> dict[str, Any]:
+    """What a world was given of the room's declarations, each as the room
+    wrote it with the id the world has for it: its pins, edges and points (the
+    ids _hang, _arm, _point and _adopt give them), and its stores and motors --
+    by name, and by the two things a motor's pin joins -- from what the world
+    says it has (`machines`) or what _power made (`made`). When the room is
+    opened again from a spec the chat or an action has changed, what it still
+    declares the same way is carried by these ids (carry_plan)."""
+    def ided(key: str) -> list[tuple[Any, Any]]:
+        return [(_plain(entry), entry["id"]) for entry in spec.get(key) or []
+                if isinstance(entry, dict) and isinstance(entry.get("id"), int)]
+    stores = dict((made or {}).get("stores") or {})
+    motors = dict((made or {}).get("motors") or {})
+    if isinstance(machines, dict):
+        for store in machines.get("stores") or []:
+            if isinstance(store.get("id"), int):
+                stores.setdefault(str(store.get("name", "")), store["id"])
+        for motor in machines.get("motors") or []:
+            on = motor.get("on") or []
+            if isinstance(motor.get("id"), int) and len(on) == 2:
+                motors.setdefault((str(on[0]), str(on[1])), motor["id"])
+    declared = spec.get("machines") or {}
+    return {"joints": ided("joints"), "blades": ided("blades"), "tool_points": ided("tool_points"),
+            "stores": [(_plain(s), stores[s["name"]]) for s in declared.get("stores") or []
+                       if isinstance(s, dict) and stores.get(s.get("name")) is not None],
+            "motors": [(_made(m), _told(m), motors[tuple(m["on"])]) for m in declared.get("motors") or []
+                       if isinstance(m, dict) and motors.get(tuple(m.get("on") or ())) is not None]}
+
+
+def carry_plan(was: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
+    """Which of what a running world was given (Session.declared) a changed
+    spec still declares exactly the same way -- a pin at the same place between
+    the same two things, a battery of the same make in the same thing -- by the
+    ids the world has for them, for carrying the world into the room as it now
+    is (the runner's --carry, LiveWorld::open with a LiveCarry). The rest of
+    what the spec declares is new or changed and goes in afresh; and the things
+    a new or changed pin, edge or point is on are named (`declared_anew`),
+    because it is written against where they were made, so they come back as
+    the room has them. A kept motor the room now tells something else is told
+    so once it is back (`told`).
+
+    Returns {"engine": what the runner is given, "pairs": for each list the
+    spec's entry index -> the id it keeps, "told": motor index -> (command,
+    brake)}."""
+    engine: dict[str, Any] = {"joints": [], "energy_stores": [], "motors": [], "blades": [],
+                              "tool_points": [], "declared_anew": []}
+    pairs: dict[str, dict[int, Any]] = {"joints": {}, "stores": {}, "motors": {}, "blades": {},
+                                        "tool_points": {}}
+    told: dict[int, tuple[Any, Any]] = {}
+    anew: set[str] = set()
+
+    def keep(pool: list, want: Any) -> Any:
+        for k, (have, ident) in enumerate(pool):
+            if have == want:
+                del pool[k]
+                return ident
+        return None
+
+    pool = list(was.get("joints") or [])
+    for i, pin in enumerate(spec.get("joints") or []):
+        ident = keep(pool, _plain(pin)) if isinstance(pin, dict) else None
+        if ident is None:
+            if isinstance(pin, dict):
+                anew.update(str(pin.get(end) or "") for end in ("a", "b"))
+            continue
+        pairs["joints"][i] = ident
+        engine["joints"].append(ident)
+    for key in ("blades", "tool_points"):
+        pool = list(was.get(key) or [])
+        for i, entry in enumerate(spec.get(key) or []):
+            ident = keep(pool, _plain(entry)) if isinstance(entry, dict) else None
+            if ident is None:
+                if isinstance(entry, dict):
+                    anew.add(str(entry.get("body") or ""))
+                continue
+            pairs[key][i] = ident
+            engine[key].append(ident)
+    machines = spec.get("machines") or {}
+    pool = list(was.get("stores") or [])
+    for i, store in enumerate(machines.get("stores") or []):
+        ident = keep(pool, _plain(store)) if isinstance(store, dict) else None
+        if ident is not None:
+            pairs["stores"][i] = ident
+            engine["energy_stores"].append(ident)
+    motors = list(was.get("motors") or [])
+    for i, motor in enumerate(machines.get("motors") or []):
+        if not isinstance(motor, dict):
+            continue
+        for k, (made, told_then, ident) in enumerate(motors):
+            if made == _made(motor):
+                del motors[k]
+                pairs["motors"][i] = ident
+                engine["motors"].append(ident)
+                if _told(motor) != tuple(told_then):
+                    told[i] = _told(motor)
+                break
+    engine["declared_anew"] = sorted(name for name in anew if name)
+    return {"engine": engine, "pairs": pairs, "told": told}
+
+
 def _three(value: Any, what: str) -> list[float]:
     """Three finite numbers, or a refusal that says which were wrong."""
     if not isinstance(value, list) or len(value) != 3:
@@ -115,7 +233,8 @@ class Session:
     """One open world."""
 
     def __init__(self, engine_path: Path, spec: dict[str, Any], runs_path: Path,
-                 snapshot: dict[str, Any] | None = None) -> None:
+                 snapshot: dict[str, Any] | None = None,
+                 carry: dict[str, Any] | None = None) -> None:
         # Anything the panel can describe can be run live. A plate-and-ball spec
         # is translated into the objects it already is, rather than refused for
         # being the wrong shape.
@@ -149,6 +268,14 @@ class Session:
             saved = directory / "snapshot.json"
             saved.write_text(json.dumps(snapshot), encoding="utf-8")
             command += ["--snapshot", str(saved)]
+            # Carried into a room that has changed since it was saved (Live.open
+            # with a carry): what the room still declares the same way, by the
+            # saved world's ids (carry_plan). The opening reply says, thing by
+            # thing, what came back as it was and what is as the room has it.
+            if carry is not None:
+                asked = directory / "carry.json"
+                asked.write_text(json.dumps(carry), encoding="utf-8")
+                command += ["--carry", str(asked)]
         # A process group of its own (a session, on POSIX). Sharing the
         # server's, a Ctrl+C or Ctrl+Break meant for the server ended the world
         # with it, before the server could save the world on its way out
@@ -355,6 +482,21 @@ class Live:
         # stood when it was saved, rather than as its spec authors it.
         snapshot = body.get("snapshot") if isinstance(body.get("snapshot"), dict) else None
         with self._lock:
+            # With `carry`, the world that is running, saved a moment ago, is
+            # carried into the room as the chat or an action has just changed it:
+            # everything the change did not touch comes back as it stood. What
+            # the running world was given of the room's pins, machines, edges
+            # and points (Session.declared) says which of them the changed spec
+            # still declares the same way (carry_plan). With no such record --
+            # nothing of the room's is running -- what changed cannot be told
+            # from what did not, and the room opens from its spec.
+            plan = None
+            if snapshot is not None and body.get("carry"):
+                was = getattr(self.session, "declared", None) if self.session is not None else None
+                if isinstance(was, dict):
+                    plan = carry_plan(was, spec)
+                else:
+                    snapshot = None
             if self.session is not None:
                 self.session.close()
                 self.session = None
@@ -363,9 +505,17 @@ class Live:
             # the tests run both against the same scenes, so the choice is about
             # where a crash lands, not about what the physics does.
             if getattr(app, "live_inprocess", False):
+                # The C library opens a saved world whole or not at all, and
+                # cannot carry one into a changed room yet: there a room the
+                # chat changed opens from its spec, as it always did.
+                if plan is not None:
+                    _log.info("the in-process lane cannot carry the running world into the changed room; "
+                              "it opens from its spec")
+                    snapshot, plan = None, None
                 session = live_inprocess.InProcessSession(spec, snapshot=snapshot)
             else:
-                session = Session(app.engine_path, spec, app.runs_path, snapshot=snapshot)
+                session = Session(app.engine_path, spec, app.runs_path, snapshot=snapshot,
+                                  carry=plan["engine"] if plan is not None else None)
             self.session = session
             # What the room calls the spec this world was opened from, which a
             # snapshot of it carries (spec_digest).
@@ -384,24 +534,107 @@ class Live:
         # with a pick in it opened with no ground drawn at all.
         opening = dict(session.state)
         restored = opening.get("restored")
-        if isinstance(restored, dict) and restored.get("tier") == "whole":
+        tier = restored.get("tier") if isinstance(restored, dict) else None
+        if tier == "whole":
             # The world came back as it was saved, with its pins, edges and
             # points where they were -- a gate swung open, a pick carried across
             # the room. Declared again from the spec, each would go in where the
             # spec first put it in the world, which is no longer where its wood
             # is. The spec's own entries take the ids the world has for them.
-            return {"session": session.id, "spec": spec, **opening,
-                    **self._adopt(spec, opening)}
+            adopted = self._adopt(spec, opening)
+            session.declared = _declared(spec, opening.get("machines"))
+            return {"session": session.id, "spec": spec, **opening, **adopted}
+        if tier == "carried" and plan is not None:
+            return self._carried(session, spec, opening, plan)
+        made: dict[str, Any] = {}
         hung = self._hang(session, pins)
         # And its batteries and the motors on its pins, which name the pins.
-        hung.update(self._power(session, spec.get("machines") or {}, pins))
+        hung.update(self._power(session, spec.get("machines") or {}, pins, made=made))
         # And the edges, on bodies that are now standing there, for the same
         # reason the pins go in afterwards. docs/cutting-model.md.
         armed = self._arm(session, spec.get("blades") or [])
         # And the points of tools that dig, likewise. docs/ground-work.md.
         tooled = self._point(session, spec.get("tool_points") or [])
+        session.declared = _declared(spec, None, made)
         return {"session": session.id, "spec": spec, **opening, **session.state, **hung, **armed,
                 **tooled}
+
+    def _carried(self, session: Any, spec: dict[str, Any], opening: dict[str, Any],
+                 plan: dict[str, Any]) -> dict[str, Any]:
+        """The room opened carrying the world that was running (Live.open with
+        a carry). What the world kept of what it had been given takes the id it
+        has for it, as a world opened whole adopts its own (_adopt); everything
+        else the spec declares -- new, changed, or on a thing the world could
+        not carry -- goes in as it does into a room just opened (_hang, _power,
+        _arm, _point). A kept motor the room now tells something else (the chat
+        set it going) is told so.
+
+        The opening's bodies are kept as they are: they carry the cells of every
+        piece, which a later reply sends no more."""
+        pairs = plan["pairs"]
+        pins = spec.get("joints") or []
+        have = {j.get("id") for j in opening.get("joints") or []}
+        new_pins = []
+        for i, pin in enumerate(pins):
+            if isinstance(pin, dict) and pairs["joints"].get(i) in have:
+                pin["id"] = pairs["joints"][i]
+            else:
+                new_pins.append(pin)
+        hung = self._hang(session, new_pins)
+        machines = spec.get("machines") or {}
+        machines_now = opening.get("machines") or {}
+        stores_now = {s.get("id") for s in machines_now.get("stores") or []}
+        motors_now = {m.get("id") for m in machines_now.get("motors") or []}
+        made: dict[str, Any] = {"stores": {}, "motors": {}}
+        new_stores, new_motors, told = [], [], False
+        for i, store in enumerate(machines.get("stores") or []):
+            if pairs["stores"].get(i) in stores_now:
+                made["stores"][str(store.get("name", ""))] = pairs["stores"][i]
+            else:
+                new_stores.append(store)
+        for i, motor in enumerate(machines.get("motors") or []):
+            ident = pairs["motors"].get(i)
+            if ident not in motors_now:
+                new_motors.append(motor)
+                continue
+            made["motors"][tuple(str(v) for v in motor.get("on") or [])] = ident
+            if i in plan["told"]:
+                command, brake = plan["told"][i]
+                try:
+                    session.send(op="drive", motor=ident, command=float(command), brake=bool(brake))
+                    told = True
+                except LiveError as error:
+                    hung.setdefault("machine_problems", []).append(
+                        f"the motor on {' and '.join(motor.get('on') or [])} would not take what it was "
+                        f"told: {error}")
+        if new_stores or new_motors:
+            powered = self._power(session, {"stores": new_stores, "motors": new_motors}, pins, made=made)
+            if powered.get("machine_problems"):
+                hung.setdefault("machine_problems", []).extend(powered["machine_problems"])
+        blades = [b for b in spec.get("blades") or []]
+        have_blades = {b.get("id") for b in opening.get("blades") or []}
+        new_blades = []
+        for i, blade in enumerate(blades):
+            if isinstance(blade, dict) and pairs["blades"].get(i) in have_blades:
+                blade["id"] = pairs["blades"][i]
+            else:
+                new_blades.append(blade)
+        armed = self._arm(session, new_blades)
+        have_points = {p.get("id") for p in opening.get("tool_points") or []}
+        new_points = []
+        for i, point in enumerate(spec.get("tool_points") or []):
+            if isinstance(point, dict) and pairs["tool_points"].get(i) in have_points:
+                point["id"] = pairs["tool_points"][i]
+            else:
+                new_points.append(point)
+        tooled = self._point(session, new_points)
+        session.declared = _declared(spec, None, made)
+        out = {"session": session.id, "spec": spec, **opening, **hung, **armed, **tooled}
+        # Machines as they are now, when something was declared or told since
+        # the opening said them.
+        if (new_stores or new_motors or told) and isinstance(session.state.get("machines"), dict):
+            out["machines"] = session.state["machines"]
+        return out
 
     def rejoin(self, app: Any) -> dict[str, Any] | None:
         """The world that is running, for a page opening its room again.
@@ -553,7 +786,8 @@ class Live:
         return state
 
     @staticmethod
-    def _power(session: "Session", machines: Any, pins: Any) -> dict[str, Any]:
+    def _power(session: "Session", machines: Any, pins: Any,
+               made: dict[str, Any] | None = None) -> dict[str, Any]:
         """The room's stores of energy and the motors on its pins
         (docs/machine-world.md), once the pins are in.
 
@@ -561,13 +795,21 @@ class Live:
         pins as they go in -- and its unloaded speed in turns a minute, as a
         maker gives it. One with a brake starts with it on, so a crate hanging
         on a hoist does not fall the moment the room opens. What will not go in
-        is said, as a pin that will not hang is."""
+        is said, as a pin that will not hang is.
+
+        `made`, when given, has the id of each store the world already has by
+        name (a world carried into a changed room keeps its battery) and is
+        given the id of each store and motor that goes in: stores by name,
+        motors by the two things their pin joins."""
         if not machines:
             return {}
         if not isinstance(machines, dict):
             raise LiveError("a room's machines must be an object with stores and motors")
         problems: list[str] = []
-        stores: dict[str, Any] = {}
+        if made is not None:
+            made.setdefault("stores", {})
+            made.setdefault("motors", {})
+        stores: dict[str, Any] = dict(made["stores"]) if made is not None else {}
         for store in machines.get("stores") or []:
             name = str(store.get("name", ""))
             try:
@@ -581,6 +823,8 @@ class Live:
                 problems.append(f"{name or 'a store'} would not go in: {error}")
                 continue
             stores[name] = answer.get("store")
+            if made is not None:
+                made["stores"][name] = stores[name]
         hinges = {(str(p.get("a")), str(p.get("b"))): p.get("id")
                   for p in (pins or []) if isinstance(p, dict) and str(p.get("kind", "hinge")) == "hinge"}
         for motor in machines.get("motors") or []:
@@ -598,6 +842,8 @@ class Live:
                     stall_torque_n_m=float(motor.get("stall_torque_n_m", 0.0)),
                     no_load_rad_s=float(motor.get("no_load_rpm", 0.0)) * 3.141592653589793 / 30.0,
                     brake_torque_n_m=float(motor.get("brake_torque_n_m", 0.0)))
+                if made is not None and answer.get("motor") is not None:
+                    made["motors"][tuple(on)] = answer.get("motor")
                 brake = bool(motor.get("brake", float(motor.get("brake_torque_n_m", 0.0)) > 0.0))
                 command = float(motor.get("command", 0.0))
                 if brake or command:
